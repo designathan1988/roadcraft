@@ -123,40 +123,6 @@ export async function cityRun(page, cdp, out, opts, n = {}, photos = []) {
     requestAnimationFrame(step);
   })));
 
-  phase.now = 'bomba';
-  // 6. The bomb, then the pistol (Actions, Demolish drawer).
-  await look(page, views.bairro, 3000);
-  await dock(page, 5);
-  n.bombTab = await drawerTab(page, 'Bomba');
-  n.bomb = await measure(page, 9000, async () => {
-    const target = await page.evaluate(({ cx, cy }) => {
-      const bs = [...window.__roadcraft.doc.buildings.all()];
-      return bs.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) < Math.hypot(b.x - cx, b.y - cy) ? a : b));
-    }, { cx, cy });
-    await clickWorld(page, target.x, target.y);
-    await sleep(1500);
-    await shot(page, out, 'bomba', photos);
-  });
-  phase.now = 'pistola';
-  n.pistolTab = await drawerTab(page, 'Pistola');
-  if (person) {
-    await page.evaluate(() => window.__roadcraft.setTraffic(false));
-    const p = await page.evaluate(() => window.__roadcraft.sim.pedViews.find((q) => q.walking));
-    // From nearly overhead: a low camera beside a person can end inside a facade.
-    await look(page, { x: p.x, y: p.y, zoom: 60, azimuth: 0.6, elevation: 1.2 }, 2000);
-    n.pistol = await measure(page, 6000, async () => {
-      const q = await page.evaluate((id) => window.__roadcraft.sim.pedViews.find((r) => r.id === id), p.id);
-      if (!q) return;
-      const z = await page.evaluate(({ x, y }) => window.__roadcraft.scene().terrainHeightAt(x, y), q);
-      const s = await screenOf(page, q.x, q.y, z + 1.2);
-      await page.mouse.click(s.x, s.y);
-      await sleep(1200);
-      await shot(page, out, 'pistola', photos);
-    });
-    await page.evaluate(() => window.__roadcraft.setTraffic(true));
-  }
-  await page.keyboard.press('Escape');
-
   phase.now = 'vias';
   // 4. Ten roads drawn by clicks: five beside the city, five far from it.
   n.edits = [];
@@ -207,6 +173,42 @@ export async function cityRun(page, cdp, out, opts, n = {}, photos = []) {
     }
   }
   n.editsHeap = await heap(cdp, true);
+
+  // 6. The bomb, then the pistol (Actions, Demolish drawer). After the roads:
+  // at the SOURCE a shot can break the physics and hang the page
+  // (docs/PROBLEMS.md R1), which must not cost the steps before it.
+  phase.now = 'bomba';
+  await look(page, views.bairro, 3000);
+  await dock(page, 5);
+  n.bombTab = await drawerTab(page, 'Bomba');
+  n.bomb = await measure(page, 9000, async () => {
+    const target = await page.evaluate(({ cx, cy }) => {
+      const bs = [...window.__roadcraft.doc.buildings.all()];
+      return bs.reduce((a, b) => (Math.hypot(a.x - cx, a.y - cy) < Math.hypot(b.x - cx, b.y - cy) ? a : b));
+    }, { cx, cy });
+    await clickWorld(page, target.x, target.y);
+    await sleep(1500);
+    await shot(page, out, 'bomba', photos);
+  });
+  phase.now = 'pistola';
+  n.pistolTab = await drawerTab(page, 'Pistola');
+  if (person) {
+    await page.evaluate(() => window.__roadcraft.setTraffic(false));
+    const p = await page.evaluate(() => window.__roadcraft.sim.pedViews.find((q) => q.walking));
+    // From nearly overhead: a low camera beside a person can end inside a facade.
+    await look(page, { x: p.x, y: p.y, zoom: 60, azimuth: 0.6, elevation: 1.2 }, 2000);
+    n.pistol = await measure(page, 6000, async () => {
+      const q = await page.evaluate((id) => window.__roadcraft.sim.pedViews.find((r) => r.id === id), p.id);
+      if (!q) return;
+      const z = await page.evaluate(({ x, y }) => window.__roadcraft.scene().terrainHeightAt(x, y), q);
+      const s = await screenOf(page, q.x, q.y, z + 1.2);
+      await page.mouse.click(s.x, s.y);
+      await sleep(1200);
+      await shot(page, out, 'pistola', photos);
+    });
+    await page.evaluate(() => window.__roadcraft.setTraffic(true));
+  }
+  await page.keyboard.press('Escape');
 
   phase.now = 'parado';
   // 9. Standing still: the heap over `idleMinutes`, collected each minute.

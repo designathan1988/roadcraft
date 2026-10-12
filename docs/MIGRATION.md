@@ -597,3 +597,20 @@ normalizado porque a FONTE foi extraída com CRLF):
 - Pessoas cozidas de novo neste repositório (o selo mudou pela lista de assets): as
   37 classes procedurais são idênticas byte a byte; os 16 corpos são idênticos fora
   um UUID aleatório do three.js gravado em cada um.
+
+## Prova de igualdade pelo portão e pelos mapas
+
+- **Portão antigo (4299) × novo (5301)**, 3 rodadas intercaladas por modo
+  (`gate/runs/e2-igualdade`, fora do git): as medianas se sobrepõem nas faixas de
+  dispersão; as diferenças grandes têm causa no jogo antigo, igual nos dois lados
+  (o código é idêntico): uma execução com todas as vias esperando 3 s
+  (`docs/PROBLEMS.md` R8) e a pistola quebrando o Jolt (R1). Fotos: no plano, todas
+  dentro do ruído A/A da linha de base; no planeta, a diferença é a deriva das
+  nuvens com o relógio (examinada foto a foto); a linha de base A/A do planeta não
+  tem ruído das fotos da cidade (as execuções perderam os passos finais), refeita na
+  E3 com o portão corrigido.
+- **Mapas do jogador** (cópias do backup), abertos pelo seletor de arquivos do
+  próprio jogo, num Chrome visível com perfil temporário, na build nova: os 9 abrem
+  com as mesmas contagens de nós, vias e prédios do jogo antigo, sem erro de página,
+  e as fotos com o mesmo enquadramento diferem 0,4–2,1% dos pixels (ruído A/A:
+  0,7–2,4%).

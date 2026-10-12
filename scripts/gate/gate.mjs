@@ -34,7 +34,9 @@ const IDLE = Number(arg('idle', '0'));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const OUT = resolve(arg('out', join('gate', 'runs', stamp)));
 const MAPS = { plano: arg('map-plano'), planeta: arg('map-planeta') };
-const NOISE = arg('noise') && existsSync(arg('noise')) ? JSON.parse(readFileSync(arg('noise'), 'utf8')) : {};
+// `gate/baseline/noise.json` keeps the per-mode noise under `noise`, beside where it came from.
+const noiseFile = arg('noise') && existsSync(arg('noise')) ? JSON.parse(readFileSync(arg('noise'), 'utf8')) : {};
+const NOISE = noiseFile.noise ?? noiseFile;
 const GPU_NEEDED = 'RTX 3060';
 mkdirSync(OUT, { recursive: true });
 
