@@ -30,8 +30,12 @@ async function build(sha) {
   const src = join(out, 'src');
   rmSync(out, { recursive: true, force: true });
   mkdirSync(src, { recursive: true });
-  execFileSync('git', ['archive', '--format=tar', '-o', join(out, 'src.tar'), sha]);
-  execFileSync('tar', ['-xf', join(out, 'src.tar'), '-C', src]);
+  // The commit's files written out by git itself (a scratch index, then
+  // `checkout-index` into the folder): no tar, whose Git Bash build reads
+  // "C:/..." as a remote host.
+  const env = { ...process.env, GIT_INDEX_FILE: join(out, 'index') };
+  execFileSync('git', ['read-tree', sha], { env });
+  execFileSync('git', ['--work-tree', src, 'checkout-index', '--all', '--force'], { env });
   // The cooked people are not committed (regenerated): this checkout's, which
   // the build accepts only under the fingerprint of the commit's own code.
   if (existsSync('cooked')) cpSync('cooked', join(src, 'cooked'), { recursive: true });
