@@ -9,9 +9,10 @@
  *
  * Where the other one is: beside this one in the combined build
  * (`npm run build:modos`: `/plano/` and `/planeta/` on one origin, Vite's
- * `base`, so `import.meta.env.BASE_URL` says which), else on its own
- * development server (5177 the flat map, 5175 the planet; `VITE_FLAT_URL` /
- * `VITE_PLANET_URL` to point elsewhere).
+ * `base`, so `import.meta.env.BASE_URL` says which), else on this
+ * repository's development server, 5300 (`VITE_FLAT_URL` / `VITE_PLANET_URL` to
+ * point elsewhere). Never the old ports: 5175-5178 hold the player's maps, and
+ * a game opened there may migrate and rewrite them (docs/PROBLEMS.md R6).
  */
 export type GameMode = 'flat' | 'planet';
 
@@ -29,7 +30,7 @@ export function modeUrl(mode: GameMode): string {
   const path = mode === 'flat' ? 'plano' : 'planeta';
   if (base.endsWith('/plano/') || base.endsWith('/planeta/')) return `../${path}/?${ARRIVED_PARAM}=${path}`;
   const env = (mode === 'flat' ? import.meta.env['VITE_FLAT_URL'] : import.meta.env['VITE_PLANET_URL']) as string | undefined;
-  const url = env || (mode === 'flat' ? 'http://localhost:5177/' : 'http://localhost:5175/');
+  const url = env || 'http://127.0.0.1:5300/';
   return `${url}${url.includes('?') ? '&' : '?'}${ARRIVED_PARAM}=${path}`;
 }
 

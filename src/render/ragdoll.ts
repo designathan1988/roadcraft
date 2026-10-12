@@ -7,6 +7,7 @@ import type { BloodDecal } from './casualties';
 import type { Exhaust } from './exhaust';
 import type { Gore } from './gore';
 import { joltWorld, startJolt, type JointSpec, type JoltRagdoll, type JoltStatic, type JoltWorld, type PartSpec } from './ragdollJolt';
+import { across, coneFrames, direction, hingeFrame, unitOr } from './ragdollAxes';
 
 /**
  * Ragdolls: people knocked over or killed by a blow, or tripping, their own
@@ -330,6 +331,9 @@ interface Body {
 }
 
 const tmpA = new Vector3(), tmpB = new Vector3(), tmpC = new Vector3(), tmpD = new Vector3(), tmpE = new Vector3();
+/** The axes a body's frame falls back on when its particles give none (three's space: y up). */
+const WORLD_UP: Readonly<Vector3> = new Vector3(0, 1, 0);
+const WORLD_SIDE: Readonly<Vector3> = new Vector3(1, 0, 0);
 
 /** An angle brought within [lo, hi] (radians, the range under a turn): itself when inside, else the nearer end round the circle. */
 function clampAngle(a: number, lo: number, hi: number): number {
@@ -1541,12 +1545,13 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
   function joltSpec(body: Body): { parts: PartSpec[]; joints: JointSpec[]; points: Vector3[] } {
     const P = body.p.map((v) => v.clone().divideScalar(METRE));
     const R = (k: number): number => body.radius[k]! / METRE;
-    const dir = (a: number, b: number): Vector3 => new Vector3().subVectors(P[b]!, P[a]!).normalize();
-    const side = new Vector3().subVectors(P[RH]!, P[LH]!).add(tmpA.subVectors(P[RS]!, P[LS]!));
-    const up = dir(PEL, NEC);
-    side.addScaledVector(up, -side.dot(up)).normalize();
-    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
-    const fwd = new Vector3().crossVectors(side, new Vector3().subVectors(P[CHE]!, P[PEL]!)).normalize().multiplyScalar(body.front);
+    // Every axis unit and every joint frame a rotation, whatever the particles
+    // are (`ragdollAxes.ts`): two particles on one point (a limb torn off and
+    // pinned to its stump) gave a zero direction, and Jolt's solver broke on it.
+    const up = direction(P[PEL]!, P[NEC]!, WORLD_UP);
+    const dir = (a: number, b: number): Vector3 => direction(P[a]!, P[b]!, up);
+    const side = across(new Vector3().subVectors(P[RH]!, P[LH]!).add(tmpA.subVectors(P[RS]!, P[LS]!)), up, WORLD_SIDE);
+    const fwd = unitOr(new Vector3().crossVectors(side, new Vector3().subVectors(P[CHE]!, P[PEL]!)), new Vector3().crossVectors(side, up)).multiplyScalar(body.front);
     const capsule = (a: Vector3, b: Vector3, radius: number): PartSpec['shape'] => ({ kind: 'capsule', a, b, radius });
     const hand = (e: number, w: number): Vector3 => P[w]!.clone().addScaledVector(dir(e, w), 0.06);
     const width = Math.max(P[LS]!.distanceTo(P[RS]!), P[LH]!.distanceTo(P[RH]!));
@@ -1567,25 +1572,15 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       { shape: capsule(P[RK]!, P[RA]!, R(RA) * 0.85), particles: [RA] },
       { shape: capsule(P[RA]!, P[RT]!, R(RT) * 0.8), particles: [RT] },
     ];
-    const plane = (twist: Vector3): Vector3 => {
-      const q = side.clone().addScaledVector(twist, -side.dot(twist));
-      return q.lengthSq() > 1e-6 ? q.normalize() : new Vector3().crossVectors(twist, fwd).normalize();
-    };
     const cone = (parent: number, child: number, at: number, a: number, b: number, planeCone: number, normalCone: number, twist: number, lean = 0): JointSpec => {
-      const t2 = dir(a, b);
-      // The cone's middle leant forwards (`lean`, about the side axis) from where the bone is now.
-      const t1 = lean ? t2.clone().applyAxisAngle(side, lean) : t2.clone();
-      return { parent, child, at: P[at]!.clone(), kind: 'cone', twist1: t1, twist2: t2, plane: plane(t2), planeCone, normalCone, twistMin: -twist, twistMax: twist };
+      // The cone's middle leant forwards (`lean`, about the side axis) from
+      // where the bone is now: frame 1 is frame 2 turned, plane axis included.
+      const f = coneFrames(dir(a, b), side, lean, fwd);
+      return { parent, child, at: P[at]!.clone(), kind: 'cone', ...f, planeCone, normalCone, twistMin: -twist, twistMax: twist };
     };
     const hinge = (parent: number, child: number, a: number, mid: number, b: number, bends: Vector3, most: number, relaxed: number, tone: number): JointSpec => {
-      const t = dir(a, mid), s = dir(mid, b);
       // The axis it bends about, the bend the right way (`bends`: where the lower bone goes as it bends).
-      const fallback = new Vector3().crossVectors(t, bends).normalize();
-      let axis = new Vector3().crossVectors(t, s);
-      let bent = axis.length() > 0.15 ? Math.atan2(axis.length(), t.dot(s)) : 0;
-      if (axis.length() <= 0.15 || axis.dot(fallback) < 0) { axis = fallback; bent = Math.atan2(new Vector3().crossVectors(t, s).dot(axis), t.dot(s)); }
-      else axis.normalize();
-      const normal = t.clone().addScaledVector(axis, -t.dot(axis)).normalize();
+      const { axis, normal, bent } = hingeFrame(dir(a, mid), dir(mid, b), bends);
       return { parent, child, at: P[mid]!.clone(), kind: 'hinge', axis, normal, min: -bent - 0.05, max: most - bent, relax: -bent + relaxed, tone };
     };
     const back = fwd.clone().negate();

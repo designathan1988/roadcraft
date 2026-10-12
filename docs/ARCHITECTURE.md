@@ -85,11 +85,66 @@ and the files below). "Whole map" marks the products that F3 turns into per-cell
 - It never keys a cache on a global counter (rule that already cost dearly at the SOURCE: `docs/PROBLEMS.md`).
 - A topology change never stops traffic: vehicles are remapped.
 
-## 4. Events (F1)
-Closed list and delivery order: written by F1 before code.
+## 4. F1 — global controllers (written before the code)
 
-## 5. Commands (F1, F2)
-One registry; written by F1 before code.
+What F1 changes in the chain: nothing in the document or in any derived product.
+It changes WHO decides what the player's input does, and who owns the session's
+values. Reads: input events, the session store. Writes: the session store (tool,
+mode, view, selection...), and calls the same functions the SOURCE calls
+(`setTool`, `undo`, `cameraCommand`...). Depends on it: `ui/v2/shell.ts`, the
+keyboard handlers of `main.ts`, the F9 panel. Proof of no change: the gate and its
+pictures equal before and after (A/B within the A/A noise).
+
+### 4.1 Session store
+`core/gameState.ts` `GameState` already is the store F1 asks for (one writer,
+every change recorded with from/to/cause, watchers flushed after the task, F9
+"estado" tab). F1 keeps it and moves into it the session values still loose in
+`main.ts` (32 module-level `let`s at the SOURCE, listed by the lint rule
+`roadcraft/no-module-state`), or into the controller that owns them (render
+caches into `render/`, flight into the flight module).
+
+### 4.2 State machines (`core/statechart.ts`)
+SCXML semantics (W3C SCXML, read for F1): an event is processed to completion
+(a macrostep); events raised during it go to an internal FIFO drained before the
+next external event; a transition runs exit actions (innermost first), its own
+actions, then entry actions; among enabled transitions the first in document
+order wins and a child's beats its parent's; guards are pure; every transition is
+recorded (from, event, to, cause) in the same ring the F9 panel reads.
+- `toolMachine` (`editor/`): states = the tools (`inspect` is the free hand);
+  events `pick(tool)`, `putDown`, `escape`, `gesture.start/end`. Today's rule
+  "a tool button picks the tool, or puts it down when it is already in hand"
+  (`pickTool`) becomes one explicit transition; the "one click on Roads turns the
+  tool on and off" defect (F12) is then a fact about that transition, testable.
+- `modeMachine` (`ui/`): `planet` / `flatView` in the planet build, `flat` in the
+  flat build; `switch` → in place, or to the other page.
+
+### 4.3 Event bus (`core/bus.ts`)
+A closed, typed union; synchronous delivery in registration order by layer
+(world → sim → render → editor → ui); the listener list copied at the start of an
+emission; an emission during a delivery is queued and delivered after it (run to
+completion); a listener that throws is reported (`health`) and the others still
+run. The bus never draws: a listener that needs a frame asks for one.
+Closed list (F1): `doc.committed {cause, kinds, rects}`, `doc.loaded {source}`,
+`history.changed {canUndo, canRedo}`, `tool.changed {from, to}`,
+`mode.changed {from, to}`, `selection.changed`, `view.changed`,
+`persist.saved {bytes}`, `persist.failed {reason}`, `notify {key, params}`.
+
+### 4.4 Command registry (`core/commands.ts` + `editor/commandTable.ts`)
+One table of commands — `{ id, label (i18n key), keys (KeyboardEvent.code +
+modifiers, with a `when` context), enabled(ctx), run(ctx) → 'done' | 'cancelled' }`
+— behind the shortcuts, the dock, the drawers, the menus and the top bar (the
+operator of Blender and the keybindings of VS Code: the last rule matching key and
+`when` wins). The five `keydown` listeners of the SOURCE (three in `main.ts`, two
+in `ui/v2/shell.ts`) become one resolver. A test walks the table: every key,
+button and menu item resolves to a registered command; no command is unreachable.
+
+### 4.5 `main.ts`
+Only wiring after F1 and F4: it creates the controllers and hands each its
+collaborators. Logic it holds today moves to the module that owns the data (F4
+splits it under 800 lines).
+
+## 5. Commands on the document (F2)
+Written by F2 before code.
 
 ## 6. Persistence (F2)
 Written by F2 before code. Until then the SOURCE's format is kept byte for byte, so the player's maps

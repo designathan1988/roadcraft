@@ -1,5 +1,6 @@
 import type JoltModule from 'jolt-physics/wasm-compat';
 import { Matrix4, Quaternion, Vector3 } from 'three';
+import { validFrame } from './ragdollAxes';
 
 /**
  * The bodies on the ground simulated by Jolt Physics (JoltPhysics.js, the
@@ -67,7 +68,8 @@ export type JointSpec = {
    */
   readonly relax?: number; readonly tone?: number;
 } | {
-  readonly kind: 'cone'; readonly twist1: Vector3; readonly twist2: Vector3; readonly plane: Vector3;
+  /** Each body's frame: its twist and plane axes, unit and perpendicular (`ragdollAxes.ts` coneFrames). */
+  readonly kind: 'cone'; readonly twist1: Vector3; readonly twist2: Vector3; readonly plane1: Vector3; readonly plane2: Vector3;
   readonly planeCone: number; readonly normalCone: number; readonly twistMin: number; readonly twistMax: number;
 });
 export interface RagdollSpec {
@@ -90,6 +92,8 @@ export class JoltWorld {
   /** Parts next to each other in a ragdoll do not collide (subgroups by part index). */
   readonly groups: InstanceType<JoltApi['GroupFilterTable']>;
   private nextGroup = 1;
+  /** The joints in the physics now, by pointer: each is taken out exactly once (`removeConstraint`). */
+  private readonly live = new Set<number>();
   // Scratch Jolt values, reused.
   private readonly v3: InstanceType<JoltApi['Vec3']>;
   private readonly r3: InstanceType<JoltApi['RVec3']>;
@@ -219,6 +223,13 @@ export class JoltWorld {
 
   private joint(j: JointSpec, parts: readonly JBody[]): JConstraint {
     const J = this.J;
+    // Jolt makes the joint's frames rotations from these axes and checks them
+    // only in its debug build: refused here, never handed to the solver
+    // (`ragdollAxes.ts`, docs/PROBLEMS.md R1).
+    const frames = j.kind === 'hinge' ? [[j.axis, j.normal]] as const : [[j.twist1, j.plane1], [j.twist2, j.plane2]] as const;
+    for (const [a, b] of frames) {
+      if (!validFrame(a, b)) throw new Error(`Ragdoll joint ${j.parent}-${j.child} (${j.kind}): axes not unit and perpendicular`);
+    }
     const p = new J.RVec3(j.at.x, j.at.y, j.at.z);
     let c: JConstraint;
     if (j.kind === 'hinge') {
@@ -249,18 +260,19 @@ export class JoltWorld {
       const s = new J.SwingTwistConstraintSettings();
       s.mSpace = J.EConstraintSpace_WorldSpace;
       const t1 = new J.Vec3(j.twist1.x, j.twist1.y, j.twist1.z), t2 = new J.Vec3(j.twist2.x, j.twist2.y, j.twist2.z);
-      const pl = new J.Vec3(j.plane.x, j.plane.y, j.plane.z);
+      const pl1 = new J.Vec3(j.plane1.x, j.plane1.y, j.plane1.z), pl2 = new J.Vec3(j.plane2.x, j.plane2.y, j.plane2.z);
       s.mPosition1 = p; s.mPosition2 = p;
       s.mTwistAxis1 = t1; s.mTwistAxis2 = t2;
-      s.mPlaneAxis1 = pl; s.mPlaneAxis2 = pl;
+      s.mPlaneAxis1 = pl1; s.mPlaneAxis2 = pl2;
       s.mPlaneHalfConeAngle = j.planeCone; s.mNormalHalfConeAngle = j.normalCone;
       s.mTwistMinAngle = j.twistMin; s.mTwistMaxAngle = j.twistMax;
       s.mMaxFrictionTorque = 2;
       c = s.Create(parts[j.parent]!, parts[j.child]!);
-      J.destroy(s); J.destroy(t1); J.destroy(t2); J.destroy(pl);
+      J.destroy(s); J.destroy(t1); J.destroy(t2); J.destroy(pl1); J.destroy(pl2);
     }
     J.destroy(p);
     this.system.AddConstraint(c);
+    this.live.add(J.getPointer(c));
     return c;
   }
 
@@ -287,7 +299,21 @@ export class JoltWorld {
   }
   active(id: JBodyID): boolean { return this.bodies.IsActive(id); }
   deactivate(id: JBodyID): void { this.bodies.DeactivateBody(id); }
-  removeConstraint(c: JConstraint): void { this.system.RemoveConstraint(c); }
+  /**
+   * A joint out of the physics: refused, loudly, when it is not in it. Jolt's
+   * `ConstraintManager::Remove` checks this only in a debug build; in this
+   * release build a constraint already out pops ANOTHER one off its list, or
+   * reads freed memory, and the engine breaks later inside `Step` ("table index
+   * is out of bounds", docs/PROBLEMS.md R1).
+   */
+  removeConstraint(c: JConstraint): void {
+    if (!this.live.delete(this.J.getPointer(c))) {
+      throw new Error('A Jolt constraint was taken out twice (or never put in): every joint has one owner (ragdollJolt.ts tear)');
+    }
+    this.system.RemoveConstraint(c);
+  }
+  /** How many joints are in the physics now. */
+  get liveConstraints(): number { return this.live.size; }
   destroyBody(body: JBody): void { const id = body.GetID(); this.bodies.RemoveBody(id); this.bodies.DestroyBody(id); }
 }
 
@@ -389,6 +415,10 @@ export class JoltRagdoll {
     const pieceParts = this.parts.map((p, i) => (set.has(i) ? p : null));
     const pieceJoints = this.joints.map((c, i) => (c && set.has(this.jointSpecs[i]!.child) && set.has(this.jointSpecs[i]!.parent) ? c : null));
     for (const i of torn) this.parts[i] = null;
+    // The joints inside the piece go WITH it: one owner for every joint. Kept
+    // here too, both halves took them out of Jolt when destroyed, and a second
+    // `RemoveConstraint` corrupts the engine (docs/PROBLEMS.md R1).
+    pieceJoints.forEach((c, i) => { if (c) this.joints[i] = null; });
     // The particles that went with the piece stay here at the tear, on the stump.
     const stumpPart = this.parts[stump];
     if (stumpPart) {

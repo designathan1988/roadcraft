@@ -40,7 +40,11 @@ export default defineConfig({
     // not. Any path segment starting with an underscore is scratch now, and so
     // is the `zz` prefix this working tree already uses for the same kind of
     // one-off harness (`tests/render/zzCrowdGaitCompare.spec.ts` and friends).
-    exclude: ['tests/e2e/**', 'tests/planet/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*'],
+    // The counting suites (`tests/perf`, `tests/scale`) run on their own, one
+    // file at a time (`vitest.scale.config.ts`): they build whole grids of
+    // traffic, and beside the rest of the suite they ran out of time on CPU
+    // contention, not on a defect.
+    exclude: ['tests/e2e/**', 'tests/planet/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*'],
     // Tests always run with invariant assertions armed.
     env: { SIM_STRICT: '1' },
     // Not a speed limit - the budgets that matter are asserted by the tests

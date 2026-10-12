@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs `npm run check` and the performance/picture gate before a push
+# (scripts/prepush.mjs); a non-zero exit aborts the push.
+exec node scripts/prepush.mjs

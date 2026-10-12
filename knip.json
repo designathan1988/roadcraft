@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "index.html",
+    "src/main.ts!",
+    "src/render/buildings/fracture.worker.ts!",
+    "src/render/citizenBake.worker.ts!",
+    "src/render/ecology.worker.ts!",
+    "src/render/flatGround.worker.ts!",
+    "src/render/people/garmentPadding.worker.ts!",
+    "src/render/people/lodWorker.ts!",
+    "src/render/surfaceBake.worker.ts!",
+    "src/render/terrainLight.worker.ts!",
+    "scripts/**/*.mjs",
+    "desktop/main.cjs",
+    "eslint-rules/*.js"
+  ],
+  "project": ["src/**/*.ts!", "tests/**/*.ts", "scripts/**/*.mjs", "eslint-rules/*.js", "*.ts", "desktop/*.cjs"],
+  "ignoreDependencies": ["electron"],
+  "ignoreBinaries": ["taskkill.exe"]
+}

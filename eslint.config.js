@@ -1,5 +1,16 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import noSilentCatch from './eslint-rules/no-silent-catch.js';
+import noModuleState from './eslint-rules/no-module-state.js';
+
+/**
+ * The repository's own rules (`eslint-rules/`). What the SOURCE carried that
+ * breaks them is held in `eslint-suppressions.json` (ESLint's bulk
+ * suppressions): ESLint fails on any NEW violation, and on a suppression no
+ * longer needed, so the count can only fall; it reaches zero by stage F4
+ * (docs/PLAN.md).
+ */
+const roadcraft = { rules: { 'no-silent-catch': noSilentCatch, 'no-module-state': noModuleState } };
 
 /**
  * THE LAYER ORDER, ENFORCED.
@@ -96,6 +107,24 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   ...layerRules,
+  {
+    // One file, one responsibility; none over 800 lines (CLAUDE.md). No error
+    // swallowed anywhere; no mutable state loose in a module of the game.
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'scripts/**/*.mjs', '*.ts', '*.js'],
+    plugins: { roadcraft },
+    rules: {
+      'max-lines': ['error', { max: 800, skipBlankLines: false, skipComments: false }],
+      'no-empty': 'error',
+      'no-useless-catch': 'error',
+      'roadcraft/no-silent-catch': 'error',
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.d.ts'],
+    plugins: { roadcraft },
+    rules: { 'roadcraft/no-module-state': 'error' },
+  },
   {
     // Plain Node tooling. `eslint .` reaches it, and without globals every
     // `console` is an error.

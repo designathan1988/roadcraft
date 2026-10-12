@@ -17,17 +17,17 @@ const up = async (port) => {
     await sleep(500);
   }
 };
-let code = 1;
 try {
   await up(5302);
   await up(5303);
-  code = await new Promise((resolve) => {
+  const code = await new Promise((resolve) => {
     const gate = spawn(process.execPath, ['scripts/gate/gate.mjs', '--a', 'http://127.0.0.1:5302', '--b', 'http://127.0.0.1:5303', '--noise', 'gate/baseline/noise.json',
       '--map-plano', `${MAPS}/http_127.0.0.1_4180/idb__roadcraft-saves__sessions__roadcraft.world.v7.json`,
       '--map-planeta', `${MAPS}/http_localhost_4181/localStorage__roadcraft.planet.atlas864.v1.txt`, ...extra], { stdio: 'inherit' });
     gate.on('exit', (c) => resolve(c ?? 1));
   });
+  for (const s of servers) s.kill();
+  process.exit(code);
 } finally {
   for (const s of servers) s.kill();
 }
-process.exit(code);

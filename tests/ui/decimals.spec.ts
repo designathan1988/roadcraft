@@ -37,7 +37,9 @@ const SRC = join(process.cwd(), 'src');
 const PLAYER_TEXT = (file: string): boolean =>
   file.startsWith('ui/') || file === 'main.ts' || file === 'buildingsWiring.ts';
 // `toFixed` that is not prose: SVG coordinates, probe data, a number input's own value; timings (ms) in the F8/F9 inspectors.
-const MACHINE = /="\$\{|dataset\[|input\.value =|d="M/;
+// SVG attributes written through a setter (`set(el, key, 'd' | 'x' | 'opacity' ..., value)`, the flight
+// cockpit) and CSS colours (`rgba(...)`) are machine values too: they must keep the point in any language.
+const MACHINE = /="\$\{|dataset\[|input\.value =|d="M|set\([^,]+, [^,]+, '(d|x|y|cx|cy|r|width|height|opacity|transform)'|rgba\(/;
 
 function tsFilesUnder(dir: string): string[] {
   const out: string[] = [];

@@ -168,6 +168,14 @@ export function classifyTurn(inDir: Vec2, outDir: Vec2): TurnKind {
 }
 
 /**
+ * The work of the lane graph's builds, counted (`tests/scale/edit.spec.ts`):
+ * segments and nodes looked at. An edit must cost the same on a small map and a
+ * large one (CLAUDE.md); at the SOURCE every build looks at the whole map
+ * (stage F3 makes it local).
+ */
+export const laneletWork = { segments: 0, nodes: 0 };
+
+/**
  * Builds every lanelet and connector of the network.
  *
  * Link geometry is the lane centreline trimmed by the SAME asphalt trim the
@@ -247,6 +255,7 @@ export class LaneletGraph {
 
     for (const segId of ids) {
       yield;
+      laneletWork.segments++;
       const seg = doc.requireSegment(segId);
       // A tunnel with no geometry carries no traffic. Skipping the link
       // lanelets removes the segment from the routing graph outright — no
@@ -383,6 +392,7 @@ export class LaneletGraph {
     previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>): Generator<void, void, void> {
     for (const [nodeId, node] of doc.nodes) {
       yield;
+      laneletWork.nodes++;
       // A road's end that is a turning circle turns its traffic round (`junction/bulb.ts`).
       const bulb = node.incident.length === 1 && node.end === 'bulb';
       if (node.incident.length < 2 && !bulb) continue;
