@@ -9,7 +9,6 @@ export default defineConfig({
   plugins: [modelUrlsPlugin()],
   // The game's compile-time keys (`vite.config.ts`).
   define: {
-    __PLAY_MODE__: 'false',
     __PLANET__: 'false',
     // Metres in one world unit (`src/core/units.ts`); the variable
     // ROADCRAFT_METERS_PER_UNIT=0.4 runs the specs at the old scale (docs/ESCALA.md).

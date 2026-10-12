@@ -557,3 +557,43 @@ Dependências usadas pelo código do jogo: `clipper2-ts`, `earcut`, `jolt-physic
 - fecho.mjs 6f636dcbaa685ccf4f1a0464fe35da6ce30b0a0cf6b7fb965f92c14c2a833836
 - usados.mjs 2d4351aad0a57d31b33b38a73c9b401d65eccac95b992c43db28d9b9e2cd6292
 - copiar.mjs b5ac6538840c9c74b6d57113b8d20852905c74f9435697d3565703d591533ab1
+
+## Complemento: dados de teste lidos do disco
+
+Os specs leem dados com `readFileSync` (não por importação), o que o fecho não via:
+`tests/fixtures/**`, `tests/fuzz/fixtures/**` e os arquivos que um spec nomeia
+(`maps/cidade-com-estacionamento.json`). 47 arquivos a mais, copiados dos blobs e
+conferidos por `git hash-object` (a ferramenta passou a não sobrescrever arquivo que
+já existe no repositório). Lista completa atualizada em `docs/migration/copiados.txt`.
+
+## Retirada do que é SAI de dentro dos arquivos usados (guiada por ferramenta)
+
+- `main.ts`: o ramo `__PLAY_MODE__` do laboratório de armas (import de
+  `./weaponsLab`, que não foi copiado); a chave `__PLAY_MODE__` sai de
+  `globals.d.ts`, `vite.config.ts` e `vitest.config.ts`. O `tsc` passa sem erros.
+- `recast-navigation`: nenhum fecho o importa; `npm uninstall`.
+- 560 textos de interface sem referência no código copiado (`hgen` 369, `agent`
+  102, `lab` 76 e 13 avulsos), achados por `textos-sem-uso.mjs` (conservador: todo
+  token `a.b.c` ou prefixo `a.b.` do código conta como uso) e retirados pelos nós de
+  sintaxe do TypeScript (`remover-chaves.mjs`), nunca por substituição de texto.
+- `app.css`: `.inspect-card.bad` só casava com o laboratório de armas
+  (`oldInterface.spec` o acusou).
+- `package.json`: scripts que apontavam para arquivos não copiados (`verify:*`,
+  `screens`, `perf:gate`) saem; `gate` entra; servidores de desenvolvimento na 5300
+  (as portas antigas guardam mapas do jogador).
+
+## Prova de igualdade pela build
+
+As duas builds de produção (`build:modos`) da FONTE e do repositório novo, comparadas
+arquivo a arquivo (`comparar-builds.mjs`, nomes casados sem o hash, fim de linha
+normalizado porque a FONTE foi extraída com CRLF):
+- 4.401 de 4.445 arquivos iguais. Todos os blocos de JavaScript, workers e assets
+  são idênticos, exceto o `index-*.js` de cada modo.
+- `index-*.js` (`comparar-index.mjs`): igual ao da FONTE depois de tirar dele as
+  1.120 entradas de texto retiradas, trocar as duas impressões digitais de
+  cozimento (a lista de assets de pessoas perdeu `expressions.bin/json`, sem uso) e
+  ignorar o selo da build (`unknown` → `main 42c87ca`). Nenhuma outra diferença.
+- CSS: só as duas regras retiradas. `index.html`: só os nomes com hash.
+- Pessoas cozidas de novo neste repositório (o selo mudou pela lista de assets): as
+  37 classes procedurais são idênticas byte a byte; os 16 corpos são idênticos fora
+  um UUID aleatório do three.js gravado em cada um.

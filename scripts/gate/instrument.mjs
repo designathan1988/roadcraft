@@ -4,7 +4,6 @@
 // bytes handed to the GPU by buffer and texture uploads. Counters only: the
 // gate reads them as deltas over a measured window. The same script runs in
 // the base and the candidate, so its own small cost cancels out.
-/* global window, PerformanceObserver, WebGL2RenderingContext, WebGLRenderingContext, Element */
 export function instrument() {
   const g = {
     loaf: [],

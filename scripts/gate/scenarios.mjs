@@ -1,6 +1,5 @@
 // The gate's fixed scenarios, run in one game page through its real controls
 // (docs/PLAN.md section 2). Each returns numbers; pictures are written to `out`.
-/* global window, document, requestAnimationFrame */
 import { join } from 'node:path';
 import { begin, clickWorld, dock, drawerTab, drawn, end, heap, look, measure, phase, ready, screenOf, sleep } from './page.mjs';
 

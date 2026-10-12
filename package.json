@@ -8,9 +8,9 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "vite",
-    "dev:planet": "vite --mode planet --port 5175 --strictPort",
-    "dev:planet:old-unit": "vite --mode planet-old-unit --port 5176 --strictPort",
+    "dev": "vite --host 127.0.0.1 --port 5300 --strictPort",
+    "dev:planet": "vite --mode planet --host 127.0.0.1 --port 5300 --strictPort",
+    "dev:planet:old-unit": "vite --mode planet-old-unit --host 127.0.0.1 --port 5300 --strictPort",
     "build": "node scripts/run-limited.mjs npm run build:raw",
     "build:raw": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -24,21 +24,12 @@
     "test:coverage:raw": "vitest run --coverage",
     "check": "node scripts/run-limited.mjs npm run check:raw",
     "check:raw": "npm run lint && npm run typecheck && npm run test:coverage:raw && npm run test:planet:raw && npm run build:raw",
-    "verify": "npm run check && npm run verify:visual",
-    "verify:visual": "node scripts/run-limited.mjs npm run verify:visual:raw",
-    "verify:visual:raw": "npm run build:raw && node scripts/verify-visual.mjs",
-    "verify:buildings": "node scripts/run-limited.mjs npm run verify:buildings:raw",
-    "verify:buildings:raw": "npm run build:raw && node scripts/verify-buildings.mjs",
-    "screens": "node scripts/run-limited.mjs npm run screens:raw",
-    "screens:raw": "npm run build:raw && node scripts/verify-visual.mjs -- --shots",
-    "cook:people": "node scripts/cook-people.mjs",
-    "verify:ui": "node scripts/run-limited.mjs npm run verify:ui:raw",
-    "verify:ui:raw": "npm run build:raw && node scripts/verify-ui.mjs",
+    "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "test:planet:raw": "vitest run -c vitest.planet.config.ts",
     "test:planet": "node scripts/run-limited.mjs npm run test:planet:raw",
-    "perf:gate": "node scripts/run-limited.mjs --kill-gb=1.2 --min-free-gb=4 node scripts/perf-gate.mjs",
+    "gate": "node scripts/run-limited.mjs --kill-gb=1.2 --min-free-gb=4 node scripts/gate/gate.mjs",
     "build:modos": "node scripts/run-limited.mjs node scripts/build-modes.mjs"
   },
   "devDependencies": {
@@ -62,7 +53,6 @@
     "earcut": "^3.2.3",
     "jolt-physics": "^1.1.0",
     "polygon-clipping": "0.15.7",
-    "recast-navigation": "^0.43.1",
     "three": "^0.186.0"
   }
 }

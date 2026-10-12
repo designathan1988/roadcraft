@@ -2612,24 +2612,6 @@ mountAbout();
 // This mode is the one last played; a switch's `?modo=` leaves the address (`ui/modeChooser.ts`).
 settleMode();
 
-// The weapons lab (`?lab=armas`): a test street, a person always ready, the
-// guns and the bomb, and probes of every frame (`weaponsLab.ts`).
-if (__PLAY_MODE__ && ['armas', 'weapons'].includes(new URLSearchParams(location.search).get('lab') ?? '')) {
-  void Promise.all([import('./weaponsLab'), scene.effects()]).then(([{ startWeaponsLab }]) => setTimeout(() => startWeaponsLab({
-    sim, scene: () => scene, view: () => view, canvas: () => canvas3d,
-    loadDoc: (data) => { history.record(doc); applySnapshot(data, 'import'); },
-    lookAt: (x, y, zoom) => { camera.x = x; camera.y = y; camera.zoom = zoom; syncViewFromFlatCamera(); requestDraw(); },
-    heightAt: (p) => sceneHeightAt(p),
-    explode: (at, z, strength) => actions.explodeAt(at, z, null, strength),
-    setSpeed: (speed) => setSpeed(speed),
-    runSim: (seconds) => {
-      sim.clock.run(Math.max(1, Math.round(seconds / DT)), () => step(sim, { traffic: true, pedestrians: true }));
-      requestDraw();
-    },
-    requestDraw,
-  }), 300));
-}
-
 /**
  * A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the
  * map replaced (one undo step), the planned streets laid, the lots cut and

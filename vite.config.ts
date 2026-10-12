@@ -19,11 +19,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [buildStampPlugin(), cookPlugin(), modelUrlsPlugin()],
   // Compile-time keys (declared in `src/globals.d.ts`), replaced by literals in
   // the build so a branch behind `false` is dead code and its imports never
-  // reach a chunk. `__PLAY_MODE__`: walking the city as a person - weapons,
-  // shots, ragdolls, blood, blasts, destruction, the Jolt physics - off for
-  // now (docs/STATUS.md says how to turn it back on).
+  // reach a chunk.
   define: {
-    __PLAY_MODE__: 'false',
     __PLANET__: JSON.stringify(mode === 'planet' || mode === 'planet-old-unit'),
     // Metres in one world unit (`src/core/units.ts`).
     __METERS_PER_UNIT__: JSON.stringify(mode.endsWith('-old-unit') ? 0.4 : 1),
@@ -50,10 +47,11 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     host: '127.0.0.1',
-    // `PORT` lets a preview harness hand this server a free port when 5173 is
-    // already taken by another project's dev server. Falls back for `npm run dev`.
-    port: Number(process.env['PORT'] ?? 5173),
-    strictPort: false,
+    // 5300, this repository's port (CLAUDE.md "Servers"): the old origins
+    // (4180, 5173, 5175-5178, 4181-4183) hold the player's maps, and a game
+    // opened there may migrate and rewrite them. Strict: never another port.
+    port: Number(process.env['PORT'] ?? 5300),
+    strictPort: true,
     // Lets the page sample its own JavaScript (`new Profiler`), to find what
     // a frame spends its time on in the running game.
     headers: { 'Document-Policy': 'js-profiling' },

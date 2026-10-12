@@ -10,7 +10,7 @@
 // Only --a: the base alone (a baseline). --b equal to --a: an A/A run (noise).
 // Exit: 0 nothing worse; 1 something worse or a run failed; 3 NOT VERIFIED
 // (the machine was busy or the GPU was not the RTX 3060).
-import { chromium } from 'playwright';
+import { chromium } from '@playwright/test';
 import { cpus, freemem } from 'node:os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';

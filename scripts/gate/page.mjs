@@ -2,7 +2,6 @@
 // windows (frame intervals, long frames, GPU, programs linked, bytes uploaded,
 // draw calls), the heap through the DevTools protocol, and the real controls
 // (dock, drawer tabs, clicks on world points).
-/* global window, document, requestAnimationFrame, performance */
 
 export const W = 1280;
 export const H = 720;

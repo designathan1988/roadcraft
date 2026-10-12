@@ -146,8 +146,6 @@ body { user-select: none; -webkit-user-select: none; }
 .inspect-range input { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
 .inspect-range output { color: var(--text); font-variant-numeric: tabular-nums; }
 .inspect-range[data-disabled] { opacity: 0.45; }
-.inspect-card.bad { margin-top: 8px; border-color: rgba(255, 117, 107, 0.45); background: rgba(255, 117, 107, 0.08); }
-.inspect-card.bad span { letter-spacing: 0; line-height: 1.35; margin-top: 3px; }
 .inspect-note { margin: 9px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
 .signal-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .signal-chip {

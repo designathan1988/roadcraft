@@ -115,19 +115,18 @@ export default tseslint.config(
     // Chromium. Every one of these scripts drives a real page through
     // Playwright; the callback bodies are browser code by construction.
     files: [
-      'scripts/probe-*.mjs',
-      'scripts/perf-probe.mjs',
-      'scripts/perf-gate.mjs',
-      'scripts/transit-shots.mjs',
-      'scripts/walk-shots.mjs',
       'scripts/cook-people.mjs',
-      'scripts/verify-visual.mjs',
-      'scripts/agents-shots.mjs',
-      'scripts/agent-card-shots.mjs',
+      'scripts/gate/*.mjs',
     ],
     languageOptions: {
       globals: {
         window: 'readonly',
+        Element: 'readonly',
+        WebGL2RenderingContext: 'readonly',
+        WebGLRenderingContext: 'readonly',
+        OffscreenCanvas: 'readonly',
+        createImageBitmap: 'readonly',
+        btoa: 'readonly',
         document: 'readonly',
         localStorage: 'readonly',
         innerWidth: 'readonly',
