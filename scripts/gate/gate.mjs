@@ -2,17 +2,20 @@
 // in a visible Chrome on this machine's RTX 3060, in both modes, through the
 // real controls, in interleaved A/B rounds, each round a new Chrome with a
 // fresh temporary profile; writes numbers and pictures, and compares the
-// candidate (B) with the base (A) against the noise measured A/A.
+// candidate (B) with the base (A) metric by metric (`compare.mjs` summarize:
+// exact Mann-Whitney U and Cliff's delta). Six rounds by default, the order
+// alternating (AB, BA...); while a metric is suspicious, two more rounds (AB,
+// BA) up to --max-rounds, as Pinpoint asks for more values when undecided.
 //
 // node scripts/gate/gate.mjs --a <url> [--b <url>] [--modes plano,planeta]
-//   [--rounds 3] [--parts city,map,mode] [--idle 0] [--out dir]
-//   [--map-plano file] [--map-planeta file] [--noise file] [--label text]
+//   [--rounds 6] [--max-rounds 12] [--parts city,map,mode] [--idle 0] [--out dir]
+//   [--map-plano file] [--map-planeta file] [--label text]
 // Only --a: the base alone (a baseline). --b equal to --a: an A/A run (noise).
-// Exit: 0 nothing worse; 1 something worse or a run failed; 3 NOT VERIFIED
-// (the machine was busy or the GPU was not the RTX 3060).
+// Exit: 0 nothing worse; 1 something worse or the candidate failed; 3 NOT
+// VERIFIED (the machine was busy or the GPU was not the RTX 3060).
 import { chromium } from '@playwright/test';
 import { cpus, freemem } from 'node:os';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { instrument } from './instrument.mjs';
 import { H, W, phase, sleep } from './page.mjs';
@@ -27,16 +30,15 @@ const A = arg('a');
 const B = arg('b');
 if (!A) { console.error('uso: gate.mjs --a <url> [--b <url>] ...'); process.exit(2); }
 const MODES = arg('modes', 'plano,planeta').split(',');
-const ROUNDS = Number(arg('rounds', '3'));
+// Fewer than five a side can never reach p <= 0.01 (with 3 and 3 the smallest p is 0.1).
+const ROUNDS = Number(arg('rounds', '6'));
+const MAX_ROUNDS = Number(arg('max-rounds', '12'));
 // The mode switch runs at the end of the city part (on the populated world); `mode` alone runs it on an empty map.
 const PARTS = arg('parts', 'city,map').split(',');
 const IDLE = Number(arg('idle', '0'));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const OUT = resolve(arg('out', join('gate', 'runs', stamp)));
 const MAPS = { plano: arg('map-plano'), planeta: arg('map-planeta') };
-// `gate/baseline/noise.json` keeps the per-mode noise under `noise`, beside where it came from.
-const noiseFile = arg('noise') && existsSync(arg('noise')) ? JSON.parse(readFileSync(arg('noise'), 'utf8')) : {};
-const NOISE = noiseFile.noise ?? noiseFile;
 const GPU_NEEDED = 'RTX 3060';
 mkdirSync(OUT, { recursive: true });
 
@@ -114,38 +116,51 @@ async function runPart(part, url, mode, dir) {
 const sides = B ? ['A', 'B'] : ['A'];
 const urls = { A, B };
 const runs = {};
+/** One round of one mode: each side once, the order alternating with the round. */
+async function round(mode, r) {
+  const order = r % 2 === 0 ? sides : [...sides].reverse();
+  for (const side of order) {
+    const dir = join(OUT, mode, `${side}-r${r}`);
+    const merged = { numbers: {}, photos: [], errors: [], gpu: '' };
+    for (const part of PARTS) {
+      console.log(`${mode} rodada ${r} lado ${side}: ${part}`);
+      const res = await runPart(part, urls[side], mode, dir);
+      Object.assign(merged.numbers, res.numbers);
+      merged.photos.push(...res.photos);
+      merged.errors.push(...res.errors);
+      merged.gpu = res.gpu ?? merged.gpu;
+    }
+    runs[mode][side].push({ dir, ...merged });
+  }
+}
+const rounds = {};
 for (const mode of MODES) {
   runs[mode] = { A: [], B: [] };
-  for (let r = 0; r < ROUNDS; r++) {
-    const order = r % 2 === 0 ? sides : [...sides].reverse();
-    for (const side of order) {
-      const dir = join(OUT, mode, `${side}-r${r}`);
-      const merged = { numbers: {}, photos: [], errors: [], gpu: '' };
-      for (const part of PARTS) {
-        console.log(`${mode} rodada ${r} lado ${side}: ${part}`);
-        const res = await runPart(part, urls[side], mode, dir);
-        Object.assign(merged.numbers, res.numbers);
-        merged.photos.push(...res.photos);
-        merged.errors.push(...res.errors);
-        merged.gpu = res.gpu ?? merged.gpu;
-      }
-      runs[mode][side].push({ dir, ...merged });
-    }
+  let r = 0;
+  for (; r < ROUNDS; r++) await round(mode, r);
+  // Undecided metrics: two more rounds (AB, BA) at a time, up to the cap.
+  while (B && r + 2 <= MAX_ROUNDS) {
+    const suspects = summarize(runs[mode].A.map((x) => x.numbers), runs[mode].B.map((x) => x.numbers)).filter((x) => x.verdict === 'suspeito');
+    if (!suspects.length) break;
+    console.log(`${mode}: ${suspects.length} métricas suspeitas (${suspects.slice(0, 5).map((x) => x.key).join(', ')}): mais duas rodadas`);
+    await round(mode, r++);
+    await round(mode, r++);
   }
+  rounds[mode] = r;
 }
 
 // The verdict, per mode, and the pictures compared round by round.
-const report = { a: A, b: B ?? null, rounds: ROUNDS, parts: PARTS, at: new Date().toISOString(), modes: {} };
+const report = { a: A, b: B ?? null, rounds, parts: PARTS, at: new Date().toISOString(), modes: {} };
 let worse = false;
 const browser = await chromium.launch({ channel: 'chrome', headless: false });
 const blank = await browser.newPage();
 for (const mode of MODES) {
   const a = runs[mode].A.map((r) => r.numbers);
   const b = runs[mode].B.map((r) => r.numbers);
-  const rows = summarize(a, b, NOISE[mode] ?? {});
+  const rows = summarize(a, b);
   const pictures = [];
   if (B) {
-    for (let r = 0; r < ROUNDS; r++) {
+    for (let r = 0; r < rounds[mode]; r++) {
       const ra = runs[mode].A[r];
       const rb = runs[mode].B[r];
       for (const name of ra.photos.filter((p) => rb.photos.includes(p))) {
@@ -154,16 +169,21 @@ for (const mode of MODES) {
       }
     }
   }
-  const errors = [...runs[mode].A, ...runs[mode].B].flatMap((r) => r.errors);
+  // The candidate's errors fail it; the base's are reported (a base that
+  // crashes is what the candidate may be fixing). A baseline alone fails on its own.
+  const errorsA = runs[mode].A.flatMap((r) => r.errors);
+  const errorsB = runs[mode].B.flatMap((r) => r.errors);
+  const blocking = B ? errorsB : errorsA;
   const failed = rows.filter((x) => x.verdict === 'PIOR');
-  if (failed.length || errors.length) worse = true;
-  report.modes[mode] = { rows, pictures, errors, noiseAA: B === A ? noiseOf(a, b) : undefined, gpu: runs[mode].A[0]?.gpu };
-  console.log(`\n== ${mode}: ${failed.length} métricas piores, ${errors.length} erros`);
+  if (failed.length || blocking.length) worse = true;
+  report.modes[mode] = { rows, pictures, errorsA, errorsB, noiseAA: B === A ? noiseOf(a, b) : undefined, gpu: runs[mode].A[0]?.gpu };
+  console.log(`\n== ${mode}: ${rounds[mode]} rodadas; ${failed.length} métricas piores, ${rows.filter((x) => x.verdict === 'suspeito').length} suspeitas; erros: base ${errorsA.length}, candidato ${errorsB.length}`);
   for (const x of rows.filter((y) => y.judged)) {
-    console.log(`${x.verdict.padEnd(6)} ${x.key.padEnd(42)} A ${fmt(x.a)} [${fmt(x.aMin)}–${fmt(x.aMax)}]${B ? `  B ${fmt(x.b)} [${fmt(x.bMin)}–${fmt(x.bMax)}]` : ''}`);
+    console.log(`${x.verdict.padEnd(8)} ${x.key.padEnd(42)} A ${fmt(x.a)} [${fmt(x.aMin)}–${fmt(x.aMax)}]${B ? `  B ${fmt(x.b)} [${fmt(x.bMin)}–${fmt(x.bMax)}]  p ${x.p.toFixed(3)} δ ${x.delta.toFixed(2)}` : ''}`);
   }
   for (const p of pictures) console.log(`foto ${p.name} r${p.round}: ${(p.share * 100).toFixed(3)}% pixels diferentes, média ${p.mean.toFixed(2)}`);
-  if (errors.length) console.log('erros:', errors.join(' | '));
+  if (errorsA.length) console.log('erros da base:', errorsA.join(' | '));
+  if (errorsB.length) console.log('erros do candidato:', errorsB.join(' | '));
 }
 await browser.close();
 writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 1));

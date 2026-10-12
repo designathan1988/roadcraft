@@ -1,6 +1,6 @@
 // The gate's arithmetic: numbers of each run flattened to metric paths,
-// medians and spread per side, the base-versus-candidate verdict against the
-// noise measured A/A, and picture differences counted pixel by pixel inside a
+// medians and spread per side, the base-versus-candidate verdict by an exact
+// Mann-Whitney test and Cliff's delta, and picture differences counted pixel by pixel inside a
 // browser page (canvas decoding; no image library).
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -55,11 +55,64 @@ export function judged(path) {
 }
 
 /**
- * Per metric: the median and spread of each side, the relative noise when
- * an A/A pair is given, and the verdict: worse when the candidate's median
- * passes the base's by more than the noise and the absolute margin.
+ * The decision (docs/research/gate.md, "Statistics"): Chromium's Pinpoint
+ * calls two samples different at p <= 0.01 and has a third answer, "needs more
+ * values"; Mozilla's PerfCompare tests with Mann-Whitney U and shows a change
+ * only with a meaningful effect size (Cliff's delta, 0.47 and above: large).
  */
-export function summarize(runsA, runsB, noise = {}) {
+export const ALPHA = 0.01;
+/** Above ALPHA and up to this: suspicious, more rounds are run (Pinpoint's "unknown"). */
+export const ALPHA_SUSPECT = 0.05;
+export const LARGE_DELTA = 0.47;
+
+/**
+ * Mann-Whitney U, two-sided and exact: the p-value is the share of all ways of
+ * splitting the pooled values into two groups of these sizes whose rank sum is
+ * at least as far from its mean as the observed one (ties take the mean rank;
+ * the count of splits per rank sum by dynamic programming over the values).
+ * Also Cliff's delta of b against a: P(b > a) - P(b < a), from -1 to 1.
+ */
+export function mannWhitney(a, b) {
+  const n1 = a.length, n2 = b.length, n = n1 + n2;
+  let greater = 0, less = 0;
+  for (const x of b) for (const y of a) { if (x > y) greater++; else if (x < y) less++; }
+  const delta = (greater - less) / (n1 * n2);
+  // Ranks, doubled so mean ranks of ties are whole numbers.
+  const pooled = [...a.map((v) => ({ v, b: false })), ...b.map((v) => ({ v, b: true }))].sort((p, q) => p.v - q.v);
+  const rank2 = new Array(n);
+  for (let i = 0; i < n;) {
+    let j = i;
+    while (j + 1 < n && pooled[j + 1].v === pooled[i].v) j++;
+    for (let k = i; k <= j; k++) rank2[k] = i + j + 2;
+    i = j + 1;
+  }
+  const observed = pooled.reduce((s, p, i) => s + (p.b ? rank2[i] : 0), 0);
+  const total = rank2.reduce((s, r) => s + r, 0);
+  // ways[k][s]: subsets of k values whose doubled ranks sum to s.
+  const ways = Array.from({ length: n2 + 1 }, () => new Float64Array(total + 1));
+  ways[0][0] = 1;
+  for (let i = 0; i < n; i++) {
+    for (let k = Math.min(i + 1, n2); k >= 1; k--) {
+      const row = ways[k], prev = ways[k - 1], r = rank2[i];
+      for (let s = total; s >= r; s--) row[s] += prev[s - r];
+    }
+  }
+  const mean = (n2 * total) / n;
+  const far = Math.abs(observed - mean) - 1e-9;
+  let hit = 0, all = 0;
+  ways[n2].forEach((count, s) => { all += count; if (Math.abs(s - mean) >= far) hit += count; });
+  return { p: hit / all, delta };
+}
+
+/**
+ * Per metric: the median and spread of each side, the Mann-Whitney p and
+ * Cliff's delta of the candidate against the base, and the verdict. PIOR: the
+ * candidate is larger (worse: every judged metric is lower-is-better) with
+ * p <= ALPHA, a large delta and a median difference above the metric's
+ * absolute margin; `suspeito` the same at p <= ALPHA_SUSPECT (more rounds
+ * decide); `melhor` the mirror of PIOR; otherwise `igual`.
+ */
+export function summarize(runsA, runsB) {
   const flatA = runsA.map((r) => flatten(r));
   const flatB = runsB.map((r) => flatten(r));
   const keys = [...new Set([...flatA, ...flatB].flatMap((f) => Object.keys(f)))].sort();
@@ -70,13 +123,14 @@ export function summarize(runsA, runsB, noise = {}) {
     const mA = median(a);
     const mB = b.length ? median(b) : NaN;
     const margin = judged(key);
-    const rel = noise[key] ?? 0;
-    let verdict = '';
-    if (margin !== null && b.length && Number.isFinite(mA) && Number.isFinite(mB)) {
-      const limit = mA * (1 + rel) + margin;
-      verdict = mB > limit ? 'PIOR' : mB < mA * (1 - rel) - margin ? 'melhor' : 'igual';
+    let verdict = '', p = NaN, delta = NaN;
+    if (margin !== null && a.length >= 2 && b.length >= 2) {
+      ({ p, delta } = mannWhitney(a, b));
+      const up = mB - mA > margin && delta >= LARGE_DELTA;
+      const down = mA - mB > margin && delta <= -LARGE_DELTA;
+      verdict = up && p <= ALPHA ? 'PIOR' : up && p <= ALPHA_SUSPECT ? 'suspeito' : down && p <= ALPHA ? 'melhor' : 'igual';
     }
-    rows.push({ key, a: mA, aMin: Math.min(...a), aMax: Math.max(...a), b: mB, bMin: b.length ? Math.min(...b) : NaN, bMax: b.length ? Math.max(...b) : NaN, noise: rel, judged: margin !== null, verdict });
+    rows.push({ key, a: mA, aMin: Math.min(...a), aMax: Math.max(...a), b: mB, bMin: b.length ? Math.min(...b) : NaN, bMax: b.length ? Math.max(...b) : NaN, p, delta, judged: margin !== null, verdict });
   }
   return rows;
 }
