@@ -2,6 +2,8 @@
 export declare const ALPHA: number;
 export declare const ALPHA_SUSPECT: number;
 export declare const LARGE_DELTA: number;
+export declare const FAMILY_ALPHA: number;
+export declare const PRIMARY: readonly RegExp[];
 export declare function mannWhitney(a: readonly number[], b: readonly number[]): { p: number; delta: number };
 export interface SummaryRow {
   key: string;
@@ -10,6 +12,7 @@ export interface SummaryRow {
   p: number;
   delta: number;
   judged: boolean;
-  verdict: '' | 'PIOR' | 'suspeito' | 'melhor' | 'igual';
+  primary: boolean;
+  verdict: '' | 'PIOR' | 'suspeito' | 'melhor' | 'igual' | 'acima' | 'abaixo';
 }
 export declare function summarize(runsA: readonly object[], runsB: readonly object[]): SummaryRow[];

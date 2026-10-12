@@ -3,12 +3,13 @@
 // real controls, in interleaved A/B rounds, each round a new Chrome with a
 // fresh temporary profile; writes numbers and pictures, and compares the
 // candidate (B) with the base (A) metric by metric (`compare.mjs` summarize:
-// exact Mann-Whitney U and Cliff's delta). Six rounds by default, the order
-// alternating (AB, BA...); while a metric is suspicious, two more rounds (AB,
-// BA) up to --max-rounds, as Pinpoint asks for more values when undecided.
+// exact Mann-Whitney U and Cliff's delta; the primary metrics block as one
+// family under Holm's procedure, the others are told). Six rounds by default,
+// the order alternating (AB, BA...); while a primary metric is suspicious, two
+// more rounds (AB, BA) up to --max-rounds, as Pinpoint asks for more values.
 //
 // node scripts/gate/gate.mjs --a <url> [--b <url>] [--modes plano,planeta]
-//   [--rounds 6] [--max-rounds 12] [--parts city,map,mode] [--idle 0] [--out dir]
+//   [--rounds 6] [--max-rounds 8] [--parts city,map,mode] [--idle 0] [--out dir]
 //   [--map-plano file] [--map-planeta file] [--label text]
 // Only --a: the base alone (a baseline). --b equal to --a: an A/A run (noise).
 // Exit: 0 nothing worse; 1 something worse or the candidate failed; 3 NOT
@@ -32,7 +33,7 @@ if (!A) { console.error('uso: gate.mjs --a <url> [--b <url>] ...'); process.exit
 const MODES = arg('modes', 'plano,planeta').split(',');
 // Fewer than five a side can never reach p <= 0.01 (with 3 and 3 the smallest p is 0.1).
 const ROUNDS = Number(arg('rounds', '6'));
-const MAX_ROUNDS = Number(arg('max-rounds', '12'));
+const MAX_ROUNDS = Number(arg('max-rounds', '8'));
 // The mode switch runs at the end of the city part (on the populated world); `mode` alone runs it on an empty map.
 const PARTS = arg('parts', 'city,map').split(',');
 const IDLE = Number(arg('idle', '0'));

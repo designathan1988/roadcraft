@@ -39,6 +39,7 @@ import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './
 import { casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
 import type { SerializedBuilding } from './buildings/serialize';
+import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
@@ -1305,6 +1306,146 @@ export class RoadDoc {
     for (const kind of changed.others) this.changes.record(kind, null);
   }
 
+  // --------------------------------------------------- undo by records
+  // `world/docImage.ts` keeps the document as last committed and hands back,
+  // for undo and redo, the records, list stretches and values as they were;
+  // `restore` puts them back and writes the diary as `replaceWith` does: the
+  // roads, stamps, poles, landscaping, barriers and buildings where they were
+  // and are, every other kind of the map as a whole.
+
+  /** The id allocators' next ids: nodes, segments, poles, spans, barriers, landscaping, terrain stamps, buildings. */
+  allocatorMarks(): number[] {
+    return [this.nodeIds.peek, this.segIds.peek, this.poleIds.peek, this.spanIds.peek, this.barrierIds.peek, this.landscapeIds.peek, this.nextTerrainId, this.buildings.nextId];
+  }
+
+  restore(r: Restoration): void {
+    const roads: ChangeRect[] = [], utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [], stamps: ChangeRect[] = [];
+    const kinds = new Set<DocChangeKind>();
+    let roadsTouched = false;
+    const roadIds: number[] = [];
+    // Where the roads stand: each record's own rectangle, and a node's roads (its move moves them).
+    const roadRects = (): void => {
+      for (const { part, id } of r.records) {
+        if (part === 'nodes') {
+          const rect = this.nodeRect(id as NodeId);
+          if (rect) roads.push(rect);
+          for (const sid of this.nodes.get(id as NodeId)?.incident ?? []) { const s = this.segmentRect(sid); if (s) roads.push(s); }
+        } else if (part === 'segments') {
+          const rect = this.segmentRect(id as SegmentId);
+          if (rect) roads.push(rect);
+        }
+      }
+    };
+    const itemRects = (): void => {
+      for (const { part, id } of r.records) {
+        if (part === 'poles') { const p = this.poles.get(id as PoleId); if (p) utilities.push(rectAround([p], ITEM_PAD)!); }
+        if (part === 'poleSpans') {
+          const s = this.poleSpans.get(id as SpanId), p = s && this.poles.get(s.a), q = s && this.poles.get(s.b);
+          if (p && q) utilities.push(rectAround([p, q], ITEM_PAD)!);
+        }
+        if (part === 'landscape') { const item = this.landscape.get(id); if (item) landscape.push(rectAround([item], ITEM_PAD)!); }
+        if (part === 'barriers') { const b = this.barriers.get(id); if (b) barriers.push(rectAround(b.points, ITEM_PAD)!); }
+      }
+    };
+    roadRects();
+    itemRects();
+    for (const { part, id, value } of r.records) {
+      const put = <T>(map: Map<number, T>): void => { if (value === undefined) map.delete(id); else map.set(id, structuredClone(value) as T); };
+      switch (part) {
+        case 'nodes': put(this.nodes as Map<number, RoadNode>); this.dirtyNodes.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
+        case 'segments': put(this.segments as Map<number, RoadSegment>); this.dirtySegments.add(id as SegmentId); roadsTouched = true; roadIds.push(id); break;
+        case 'poles': put(this.poles as Map<number, UtilityPole>); kinds.add('utilities'); break;
+        case 'poleSpans': put(this.poleSpans as Map<number, UtilitySpan>); kinds.add('utilities'); break;
+        case 'landscape': put(this.landscape); kinds.add('landscape'); break;
+        case 'barriers': put(this.barriers); kinds.add('barriers'); break;
+        case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
+      }
+    }
+    for (const { part, start, remove, items } of r.lists) {
+      const list = this.listOf(part);
+      if (part === 'terrainStamps') for (const s of list.slice(start, start + remove) as TerrainStamp[]) stamps.push(circleRect(s));
+      list.splice(start, remove, ...items.map((item) => structuredClone(item)));
+      if (part === 'terrainStamps') for (const s of items as TerrainStamp[]) stamps.push(circleRect(s));
+      const kind = LIST_KINDS[part];
+      if (kind && part !== 'terrainStamps') kinds.add(kind);
+    }
+    for (const { part, value } of r.values) this.restoreValue(part, value, kinds);
+    roadRects();
+    itemRects();
+    const where = (rects: readonly ChangeRect[]): readonly ChangeRect[] | null => (rects.length ? rects : null);
+    if (roadsTouched || kinds.has('roads')) this.roadsChanged(kinds.has('roads') ? null : where(roads), true, { ids: roadIds, detail: 'restored' });
+    if (stamps.length || kinds.has('terrain')) this.changes.record('terrain', kinds.has('terrain') ? null : stamps);
+    if (kinds.has('utilities')) this.changes.record('utilities', where(utilities));
+    if (kinds.has('landscape')) this.changes.record('landscape', where(landscape));
+    if (kinds.has('barriers')) this.changes.record('barriers', where(barriers));
+    for (const kind of kinds) if (!['roads', 'terrain', 'utilities', 'landscape', 'barriers'].includes(kind)) this.changes.record(kind, null);
+  }
+
+  /** A list of the document by its part's name (`restore`, `world/docImage.ts`). */
+  listOf(part: ListPart): unknown[] {
+    switch (part) {
+      case 'terrainStamps': return this.terrainStamps;
+      case 'terrainPaint': return this.terrainPaint;
+      case 'fogDabs': return this.fogDabs;
+      case 'gullyDabs': return this.gullyDabs;
+      case 'clouds': return this.clouds;
+      case 'trees': return this.trees;
+      case 'treeClearings': return this.treeClearings;
+      case 'elements': return this.elements;
+      case 'zones': return this.zones;
+      case 'zoneMarks': return this.zoneMarks;
+      case 'lots': return this.lots;
+      case 'lotKeys': return this.lotKeys;
+      case 'people': return this.people;
+      case 'gridOrigins': return this.gridOrigins;
+    }
+  }
+
+  /** A value of the document by its part's name (`world/docImage.ts`). */
+  valueOf(part: ValuePart): unknown {
+    switch (part) {
+      case 'terrainRelief': return this.terrainRelief;
+      case 'markingStyle': return this.markingStyle;
+      case 'nature': return this.nature;
+      case 'fogSettings': return this.fogSettings;
+      case 'gullyAuto': return this.gullyAuto;
+      case 'weather': return this.weather;
+      case 'economy': return this.economy;
+      case 'transit': return this.transit;
+      case 'nextZoneId': return this.nextZoneId;
+      case 'nextLotId': return this.nextLotId;
+      case 'allocators': return this.allocatorMarks();
+    }
+  }
+
+  private restoreValue(part: ValuePart, raw: unknown, kinds: Set<DocChangeKind>): void {
+    const value = structuredClone(raw);
+    switch (part) {
+      case 'terrainRelief': this.terrainRelief = value as ReliefVersion; kinds.add('terrain'); return;
+      case 'markingStyle': this.markingStyle = value as MarkingStyleId; kinds.add('roads'); return;
+      case 'nature': this.nature = value as NatureSettings | null; kinds.add('nature'); return;
+      case 'fogSettings': this.fogSettings = value as FogSettings; kinds.add('fog'); return;
+      case 'gullyAuto': this.gullyAuto = value as number; kinds.add('gullies'); return;
+      case 'weather': this.weather = value as Weather; kinds.add('weather'); return;
+      case 'economy': this.economy = value as Economy; kinds.add('economy'); return;
+      case 'transit': this.transit = value as TransitData; kinds.add('transit'); return;
+      case 'nextZoneId': this.nextZoneId = value as number; return;
+      case 'nextLotId': this.nextLotId = value as number; return;
+      case 'allocators': {
+        const [nodes, segs, poles, spans, barriers, landscape, terrain, buildings] = value as number[];
+        this.nodeIds = new IdAllocator(nodes!);
+        this.segIds = new IdAllocator(segs!);
+        this.poleIds = new IdAllocator(poles!);
+        this.spanIds = new IdAllocator(spans!);
+        this.barrierIds = new IdAllocator(barriers!);
+        this.landscapeIds = new IdAllocator(landscape!);
+        this.nextTerrainId = terrain!;
+        this.buildings.restoreNextId(buildings!);
+        return;
+      }
+    }
+  }
+
   /**
    * Takes `source`'s contents and says what differed: the roads, the land,
    * the poles and the barriers (written with their places by `replaceWith`),
@@ -1833,6 +1974,25 @@ function coordinateKey(x: number, y: number): string {
   const nx = Object.is(x, -0) ? 0 : x;
   const ny = Object.is(y, -0) ? 0 : y;
   return `${nx}\u0000${ny}`;
+}
+
+/** The document's keyed collections, its ordered lists and its single values, as undo restores them (`RoadDoc.restore`). */
+export type RecordPart = 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings';
+export type ListPart = 'terrainStamps' | 'terrainPaint' | 'fogDabs' | 'gullyDabs' | 'clouds' | 'trees' | 'treeClearings' | 'elements'
+  | 'zones' | 'zoneMarks' | 'lots' | 'lotKeys' | 'people' | 'gridOrigins';
+export type ValuePart = 'terrainRelief' | 'markingStyle' | 'nature' | 'fogSettings' | 'gullyAuto' | 'weather' | 'economy' | 'transit'
+  | 'nextZoneId' | 'nextLotId' | 'allocators';
+/** The diary kind each list is written under; the grid's origins are written under none. */
+export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind | null>> = {
+  terrainStamps: 'terrain', terrainPaint: 'paint', fogDabs: 'fog', gullyDabs: 'gullies', clouds: 'clouds', trees: 'trees',
+  treeClearings: 'clearings', elements: 'elements', zones: 'zones', zoneMarks: 'zones', lots: 'lots', lotKeys: 'lots', people: 'people',
+  gridOrigins: null,
+};
+/** What undo or redo puts back: records (undefined: none), stretches of lists (`splice`), values. */
+export interface Restoration {
+  readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly value: unknown }[];
+  readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
+  readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
 
 export interface SerializedDoc {

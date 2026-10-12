@@ -1,114 +1,138 @@
 import { RoadDoc, type SerializedDoc } from '@world/doc';
+import { DocImage, sideOf, type DocPatch } from '@world/docImage';
 import type { Network } from '@world/network';
 import { repairNearConnections } from './repair';
 
 /**
- * Undo/redo over serialized document snapshots.
+ * Undo and redo by the records an edit changed (docs/ARCHITECTURE.md 5).
  *
- * Snapshots hold only the authoring document — nodes, segments, curves. Derived
- * geometry, lanelets, signal plans and agents are all rebuilt from it, so there
- * is exactly one thing to save and no chance of restoring a half-consistent
- * mixture of model and cache.
+ * Each step was a snapshot of the whole document as text, written before the
+ * edit, and every edit wrote the whole document again after it to see whether
+ * anything changed (12.7 MB a time on a city of 1 530 buildings). A step is
+ * now a patch (`world/docImage.ts`): the records, list stretches and values
+ * the edit changed, as they were and as they are, found by comparing the
+ * document with the image of it last committed, only where the diary says
+ * something moved.
+ *
+ * An edit is `begin` ... `end`. A gesture that only begins (a brush stroke, a
+ * slider dragged) is closed by whatever comes next: the next `begin`, an undo,
+ * a redo. A change made with no edit open (a building growing on its own) is
+ * taken into the image at the next `begin` without a step of its own, as the
+ * snapshot taken then would have held it.
+ * Derived geometry, lanelets, signal plans and agents are rebuilt from the
+ * document, so it is the one thing to keep.
  */
 export class History {
-  /**
-   * Each snapshot kept as its JSON text: written once, immutable, and its size
-   * is its length. Kept as objects, every edit serialized the town three times
-   * and rebuilt a whole document from it - `toJSON`, `RoadDoc.fromJSON`,
-   * `toJSON` again, and `JSON.stringify` only to count its bytes - which on a
-   * town of furnished buildings made adding a storey take seconds.
-   */
-  private readonly undoStack: string[] = [];
-  private readonly redoStack: string[] = [];
-  /** Approximate bytes held by each stack's entries, index-aligned. */
-  private readonly undoBytes: number[] = [];
-  private readonly redoBytes: number[] = [];
+  private readonly undoStack: DocPatch[] = [];
+  private readonly redoStack: DocPatch[] = [];
+  /** The document as last committed; taken at the first edit. */
+  private image: DocImage | null = null;
+  /** An edit has begun and not ended. */
+  private open = false;
 
   /**
-   * `limit` steps, and at most `byteBudget` bytes of snapshots across both
+   * `limit` steps, and at most `byteBudget` bytes of patches across both
    * stacks. A count alone let 120 copies of a large city (thousands of terrain
    * stamps, every building) grow to hundreds of megabytes.
    */
   constructor(private readonly limit = 60, private readonly byteBudget = 96 * 1024 * 1024) {}
 
-  /** Bytes currently held, approximately (UTF-16 of the serialized snapshots). */
+  /** Bytes currently held, approximately (UTF-16 of the patches). */
   get bytes(): number {
-    return sum(this.undoBytes) + sum(this.redoBytes);
+    let total = 0;
+    for (const p of this.undoStack) total += p.bytes;
+    for (const p of this.redoStack) total += p.bytes;
+    return total;
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.undoStack.length > 0 || this.open;
   }
 
   get canRedo(): boolean {
     return this.redoStack.length > 0;
   }
 
-  /** Records the document as it was BEFORE a mutation. */
-  record(doc: RoadDoc): void {
-    this.recordText(serialize(doc));
+  /** An edit begins: the one before it is closed (or what changed on its own taken in). */
+  begin(doc: RoadDoc): void {
+    this.settle(doc);
+    this.open = true;
   }
 
-  /** Records a snapshot already written as text (`serialize`), as it was BEFORE a mutation. */
-  recordText(text: string): void {
-    this.push(this.undoStack, this.undoBytes, text);
-    this.redoStack.length = 0;
-    this.redoBytes.length = 0;
-    this.trim();
+  /** The edit ends: its patch becomes a step; whether it changed anything. */
+  end(doc: RoadDoc): boolean {
+    const changed = this.close(doc);
+    this.open = false;
+    return changed;
   }
 
-  undo(current: RoadDoc): SerializedDoc | null {
-    const previous = this.undoStack.pop();
-    if (previous === undefined) return null;
-    this.undoBytes.pop();
-    this.push(this.redoStack, this.redoBytes, serialize(current));
-    this.trim();
-    return JSON.parse(previous) as SerializedDoc;
+  /** Puts back the document as it was before the last step; false with nothing to undo. */
+  undo(doc: RoadDoc): boolean {
+    this.settle(doc);
+    const patch = this.undoStack.pop();
+    if (!patch) return false;
+    doc.restore(sideOf(patch, 'before'));
+    this.image!.commit(doc);
+    this.redoStack.push(patch);
+    return true;
   }
 
-  redo(current: RoadDoc): SerializedDoc | null {
-    const next = this.redoStack.pop();
-    if (next === undefined) return null;
-    this.redoBytes.pop();
-    this.push(this.undoStack, this.undoBytes, serialize(current));
+  /** Puts back the step last undone; false with nothing to redo. */
+  redo(doc: RoadDoc): boolean {
+    this.settle(doc);
+    const patch = this.redoStack.pop();
+    if (!patch) return false;
+    doc.restore(sideOf(patch, 'after'));
+    this.image!.commit(doc);
+    this.undoStack.push(patch);
     this.trim();
-    return JSON.parse(next) as SerializedDoc;
+    return true;
   }
 
   clear(): void {
     this.undoStack.length = 0;
     this.redoStack.length = 0;
-    this.undoBytes.length = 0;
-    this.redoBytes.length = 0;
+    this.image = null;
+    this.open = false;
   }
 
-  private push(stack: string[], bytes: number[], text: string): void {
-    stack.push(text);
-    bytes.push(text.length * 2);
+  /** The open edit closed as a step, or, with none open, what changed on its own taken into the image. */
+  private settle(doc: RoadDoc): void {
+    if (this.open) {
+      this.close(doc);
+      this.open = false;
+    } else if (this.image) this.image.commit(doc);
+    else this.image = new DocImage(doc);
+  }
+
+  private close(doc: RoadDoc): boolean {
+    this.image ??= new DocImage(doc);
+    const patch = this.image.commit(doc);
+    if (!patch) return false;
+    this.undoStack.push(patch);
+    this.redoStack.length = 0;
+    this.trim();
+    return true;
   }
 
   /** Drops the OLDEST undo steps past the count or the byte budget; the newest always stays. */
   private trim(): void {
-    while (this.undoStack.length > this.limit) {
-      this.undoStack.shift();
-      this.undoBytes.shift();
-    }
-    while (this.undoStack.length > 1 && this.bytes > this.byteBudget) {
-      this.undoStack.shift();
-      this.undoBytes.shift();
-    }
+    while (this.undoStack.length > this.limit) this.undoStack.shift();
+    while (this.undoStack.length > 1 && this.bytes > this.byteBudget) this.undoStack.shift();
   }
 }
 
-/** A document as the text the history keeps. */
-export function serialize(doc: RoadDoc): string {
-  return doc.toText();
+/**
+ * The network after an undo or a redo: rebuilt only when the roads moved (a
+ * storey, a pole or a brush dab leaves it, and everything built on it, alone).
+ */
+export function followNetwork(doc: RoadDoc, net: Network): void {
+  if (net.revision !== doc.revision) net.rebuild();
 }
 
-function sum(values: readonly number[]): number {
-  let total = 0;
-  for (const v of values) total += v;
-  return total;
+/** A document as the text the autosave writes. */
+export function serialize(doc: RoadDoc): string {
+  return doc.toText();
 }
 
 /**
@@ -125,10 +149,10 @@ export function restoreInto(target: RoadDoc, data: SerializedDoc, net: Network):
 }
 
 /**
- * Restores one of the model's own snapshots - undo, redo - exactly. Running
- * the legacy repair here made undo edit the map: a dead end the Move tool had
- * left inside a road was split into a junction the player never drew, and
- * undo and redo stopped being inverses.
+ * Restores a document saved by the model itself exactly (a failed load put
+ * back, a gesture cancelled). Running the legacy repair here made undo edit
+ * the map: a dead end the Move tool had left inside a road was split into a
+ * junction the player never drew, and undo and redo stopped being inverses.
  */
 export function restoreSnapshot(target: RoadDoc, data: SerializedDoc, net: Network): void {
   target.replaceFromJSON(data, { repair: false });

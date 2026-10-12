@@ -40,7 +40,7 @@ import {
 } from '@editor/buildings';
 import { footprintSize, snapPlacement } from '@editor/buildingSnap';
 import { BuildingTool, type ToolHost, type ToolView } from '@editor/buildingTool';
-import { History, restoreInto } from '@editor/history';
+import { History, followNetwork } from '@editor/history';
 import { commitDraft } from '@editor/commit';
 import { offsetPlan, shapeBody } from '@editor/buildingPlans';
 import { localFootprint } from '@world/buildings/footprints';
@@ -226,13 +226,15 @@ describe('building commands', () => {
     const history = new History();
     const b = place(ctx, 'apartments');
     const roads = doc.revision;
-    history.record(doc);
+    history.begin(doc);
     expect(editBuilding(ctx, b.id, (draft) => opSetStoreys(draft, 1, 9)).ok).toBe(true);
     expect(doc.revision).toBe(roads);
     expect(doc.buildings.get(b.id)!.volumes[0]!.storeys).toHaveLength(9);
-    restoreInto(doc, history.undo(doc)!, net);
+    expect(history.undo(doc)).toBe(true);
+    followNetwork(doc, net);
     expect(doc.buildings.get(b.id)!.volumes[0]!.storeys).toHaveLength(5);
-    restoreInto(doc, history.redo(doc)!, net);
+    expect(doc.revision).toBe(roads);
+    expect(history.redo(doc)).toBe(true);
     expect(doc.buildings.get(b.id)!.volumes[0]!.storeys).toHaveLength(9);
   });
 
@@ -240,15 +242,18 @@ describe('building commands', () => {
     const { ctx, doc, net } = world();
     const b = place(ctx, 'house', { x: 0, y: 60 * U });
     const history = new History();
-    history.record(doc);
+    const roadsBefore = doc.segments.size;
+    history.begin(doc);
     const result = commitDraft(doc, net, { kind: 'free', at: { x: 20 * U, y: -200 * U } }, { kind: 'free', at: { x: 20 * U, y: 300 * U } }, 1, null, 'ground');
     expect(result.committed).toBe(true);
     net.rebuild();
     expect(footprintRects(doc.buildings.get(b.id)!).some((r) => touchesRoad(net, r))).toBe(true);
     expect(clearBuildingsOnRoads(ctx)).toBe(1);
     expect(doc.buildings.size).toBe(0);
-    restoreInto(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(doc.buildings.size).toBe(1);
+    expect(doc.segments.size).toBe(roadsBefore);
   });
 });
 
@@ -304,9 +309,9 @@ describe('the tool', () => {
       context: () => ctx,
       groundKey: () => `${doc.revision}:${doc.terrainRevision}`,
       commit(edit: () => EditResult): EditResult {
-        const before = RoadDoc.fromJSON(doc.toJSON());
+        history.begin(doc);
         const r = edit();
-        if (r.ok) history.record(before);
+        history.end(doc);
         return r;
       },
       changed: () => {},

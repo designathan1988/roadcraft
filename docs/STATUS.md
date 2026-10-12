@@ -76,11 +76,26 @@ Build de depuração do Jolt: 5.394 asserts de eixos de junta inválidos em 12 b
   desenhar, com via no inspetor, depois da tecla 1, depois de T T); cada clique fez o
   esperado. Fica em aberto em PROBLEMS até haver um relato com os passos.
 
+### F2a — Desfazer por registros (feito; envio junto)
+- O desfazer guarda só os registros que a edição mudou (imagem confirmada do
+  documento, comparada só onde o diário andou; `world/docImage.ts`). Mapa grande do
+  jogador: **quadro do Ctrl+Z/Ctrl+Y 177–185 ms → 7–15 ms**; fotos conferidas (vias
+  somem e voltam, saldo devolvido). Teste por modelo: 25 sementes × 30 edições
+  aleatórias desfeitas até o início e refeitas até o fim, idênticas.
+- Desenhar via: custo igual ao antigo (clone 18–20 ms + 60–100 ms depois da edição):
+  próximo passo da F2/F3.
+
+### Semáforos (relato do jogador, 2026-10-12)
+"Cruzamentos todos verdes ou todos vermelhos e carros passam": medido no jogo novo,
+plano e planeta — 180 cruzamentos sinalizados, 1.571 entradas de carros, nenhuma no
+vermelho; fotos de perto batem com a simulação (um verde, os outros vermelhos). Não
+reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador).
+
 ## Em andamento
-- Envio de E3 + F1 pelo portão corrigido.
+- Envio de E3 + F1 + portão (Holm) + F2a.
 
 ## Próxima etapa
-- F2: documento por comandos (desenho em `docs/ARCHITECTURE.md` seção 5).
+- F2b: o clique de via sem clonar o documento inteiro.
 
 ## NÃO VERIFICADO
 - **O painel do navegador do app ficou oculto às ~08:20** e só o jogador o reabre

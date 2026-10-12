@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { History, restoreSnapshot } from '@editor/history';
+import { History, followNetwork } from '@editor/history';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
+import { Rng } from '@core/rng';
 
 function city(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
@@ -17,22 +18,23 @@ function city(): { doc: RoadDoc; net: Network } {
 }
 
 /**
- * Undo restores the model's own snapshot. It used to replace the whole
- * document, bump every revision and rebuild the road network (twice), the
- * lanelets and the simulation topology - for a storey, a pole, a brush dab.
+ * Undo puts back the records an edit changed (docs/ARCHITECTURE.md 5). It used
+ * to replace the whole document from a text snapshot, bump every revision and
+ * rebuild the road network (twice), the lanelets and the simulation topology -
+ * for a storey, a pole, a brush dab.
  */
 describe('undo', () => {
   it('of a building edit leaves the road revisions, and the network, alone', () => {
     const { doc, net } = city();
     const history = new History();
-    history.record(doc);
+    history.begin(doc);
     doc.buildings.add({ ...generateBody('residential', 30, 30, 2), x: 0, y: 80, rotation: 0 } as unknown as Building);
     const roads = doc.revision;
     const traffic = doc.trafficRevision;
     const built = net.revision;
 
-    const snapshot = history.undo(doc)!;
-    restoreSnapshot(doc, snapshot, net);
+    expect(history.undo(doc)).toBe(true);
+    followNetwork(doc, net);
     expect(doc.buildings.size).toBe(0);
     expect(doc.revision).toBe(roads);
     expect(doc.trafficRevision).toBe(traffic);
@@ -42,13 +44,14 @@ describe('undo', () => {
   it('of a road edit moves the revisions and rebuilds', () => {
     const { doc, net } = city();
     const history = new History();
-    history.record(doc);
+    history.begin(doc);
     const c = doc.addNode({ x: 200, y: 200 });
     doc.addSegment([...doc.nodes.keys()][1]!, c.id, 1);
     net.rebuild();
     const roads = doc.revision;
 
-    restoreSnapshot(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(doc.segments.size).toBe(1);
     expect(doc.revision).toBeGreaterThan(roads);
     expect(net.revision).toBe(doc.revision);
@@ -58,29 +61,107 @@ describe('undo', () => {
     const { doc, net } = city();
     const history = new History();
     const start = JSON.stringify(doc.toJSON());
-    history.record(doc);
+    history.begin(doc);
     const c = doc.addNode({ x: 100, y: 150 });
     doc.addSegment([...doc.nodes.keys()][0]!, c.id, 2);
     const edited = JSON.stringify(doc.toJSON());
-    restoreSnapshot(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(JSON.stringify(doc.toJSON())).toBe(start);
-    restoreSnapshot(doc, history.redo(doc)!, net);
+    history.redo(doc);
+    followNetwork(doc, net);
     expect(JSON.stringify(doc.toJSON())).toBe(edited);
+  });
+
+  it('makes no step of an edit that changed nothing', () => {
+    const { doc } = city();
+    const history = new History();
+    history.begin(doc);
+    expect(history.end(doc)).toBe(false);
+    history.begin(doc);
+    doc.setSegmentLanes([...doc.segments.keys()][0]!, doc.requireSegment([...doc.segments.keys()][0]!).lanes);
+    expect(history.end(doc)).toBe(false);
+    expect(history.canUndo).toBe(false);
+  });
+
+  it('keeps a change made with no edit open, and undoes only the edit after it', () => {
+    const { doc } = city();
+    const history = new History();
+    history.begin(doc);
+    history.end(doc);
+    // A building grown on its own, then a road drawn.
+    doc.buildings.add({ ...generateBody('residential', 30, 30, 2), x: 0, y: 80, rotation: 0 } as unknown as Building);
+    history.begin(doc);
+    doc.addNode({ x: 0, y: 400 });
+    history.end(doc);
+    history.undo(doc);
+    expect(doc.nodes.size).toBe(2);
+    expect(doc.buildings.size).toBe(1);
+  });
+
+  it('is exact through random edits of every kind, undone to the start and redone to the end', () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const rng = new Rng(seed);
+      const { doc } = city();
+      const history = new History(1000, Infinity);
+      const start = JSON.stringify(doc.toJSON());
+      let steps = 0;
+      for (let k = 0; k < 30; k++) {
+        history.begin(doc);
+        const nodes = [...doc.nodes.keys()], segments = [...doc.segments.keys()];
+        const pick = <T>(xs: T[]): T => xs[Math.floor(rng.float() * xs.length)]!;
+        switch (Math.floor(rng.float() * 8)) {
+          case 0: { const n = doc.addNode({ x: rng.float() * 2000, y: rng.float() * 2000 }); if (nodes.length) doc.addSegment(pick(nodes), n.id, 1 + Math.floor(rng.float() * 3)); break; }
+          case 1: if (segments.length > 1) doc.removeSegment(pick(segments)); break;
+          case 2: if (nodes.length) doc.moveNode(pick(nodes), { x: rng.float() * 2000, y: rng.float() * 2000 }); break;
+          case 3: if (segments.length) doc.setSegmentLanes(pick(segments), 2 + 2 * Math.floor(rng.float() * 3)); break;
+          case 4: doc.addPole({ x: rng.float() * 2000, y: rng.float() * 2000 }, rng.float() < 0.5); break;
+          case 5: doc.buildings.add({ ...generateBody('residential', 30, 30, 2), x: rng.float() * 2000, y: rng.float() * 2000, rotation: 0 } as unknown as Building); break;
+          case 6: doc.addTerrainStamp({ mode: 'raise', x: rng.float() * 2000, y: rng.float() * 2000, radius: 50, strength: 2 }); break;
+          case 7: doc.setWeather({ rain: rng.float() }); break;
+        }
+        if (history.end(doc)) steps++;
+      }
+      const end = JSON.stringify(doc.toJSON());
+      for (let i = 0; i < steps; i++) expect(history.undo(doc)).toBe(true);
+      expect(history.undo(doc)).toBe(false);
+      expect(JSON.stringify(doc.toJSON()), `seed ${seed}, undone`).toBe(start);
+      for (let i = 0; i < steps; i++) expect(history.redo(doc)).toBe(true);
+      expect(JSON.stringify(doc.toJSON()), `seed ${seed}, redone`).toBe(end);
+    }
   });
 });
 
 describe('the history', () => {
-  it('keeps within its byte budget by dropping the oldest steps', () => {
+  it('keeps within its byte budget by dropping the oldest steps, the newest kept', () => {
     const { doc } = city();
     const history = new History(60, 20_000);
     for (let i = 0; i < 40; i++) {
+      history.begin(doc);
       doc.addNode({ x: i * 10, y: 300 });
-      history.record(doc);
+      history.end(doc);
     }
     expect(history.bytes).toBeLessThanOrEqual(20_000);
     expect(history.canUndo).toBe(true);
-    // The newest step is the one kept.
-    const last = history.undo(doc)!;
-    expect(last.nodes.length).toBe(doc.nodes.size);
+    const nodes = doc.nodes.size;
+    history.undo(doc);
+    expect(doc.nodes.size).toBe(nodes - 1);
+  });
+
+  it('holds a step of one road far smaller than the map', () => {
+    const { doc } = city();
+    for (let i = 0; i < 300; i++) {
+      const a = doc.addNode({ x: i * 30, y: 1000 });
+      const b = doc.addNode({ x: i * 30, y: 1200 });
+      doc.addSegment(a.id, b.id, 1);
+    }
+    const history = new History();
+    history.begin(doc);
+    history.end(doc);
+    history.begin(doc);
+    const a = doc.addNode({ x: 0, y: 2000 });
+    doc.addSegment([...doc.nodes.keys()][0]!, a.id, 1);
+    history.end(doc);
+    expect(history.bytes).toBeLessThan(JSON.stringify(doc.toJSON()).length / 20);
   });
 });

@@ -3,7 +3,7 @@ import { RoadDoc } from '../../src/world/doc';
 import { Network } from '../../src/world/network';
 import { LaneletGraph } from '../../src/world/lanelets';
 import { roadProfile, roadType } from '../../src/world/roadTypes';
-import { History, restoreSnapshot } from '../../src/editor/history';
+import { History, followNetwork } from '../../src/editor/history';
 import { duplicateSegment, splitSegment } from '../../src/editor/commit';
 import { normalizeRoadSection } from '../../src/world/roadSection';
 import { kmh, m } from '../../src/world/units';
@@ -73,7 +73,7 @@ describe('authored road cross-section', () => {
   it('persists independent snapshots and restores undo/redo with revision invalidation', () => {
     const { doc, net, segment } = street();
     const history = new History();
-    history.record(doc);
+    history.begin(doc);
     const oldRevision = doc.revision;
     const oldTraffic = doc.trafficRevision;
     doc.setSegmentSection(segment.id, section);
@@ -83,9 +83,11 @@ describe('authored road cross-section', () => {
     doc.setSegmentSection(segment.id, { ...section, sidewalk: m(5) });
     expect(saved.segments[0]!.section).toEqual(section);
     expect(RoadDoc.fromJSON(saved).requireSegment(segment.id).section).toEqual(section);
-    restoreSnapshot(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(doc.requireSegment(segment.id).section).toBeUndefined();
-    restoreSnapshot(doc, history.redo(doc)!, net);
+    history.redo(doc);
+    followNetwork(doc, net);
     expect(doc.requireSegment(segment.id).section?.sidewalk).toBe(m(5));
   });
 

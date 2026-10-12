@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { duplicateSegment, joinSegments, splitSegment } from '@editor/commit';
-import { History, restoreInto } from '@editor/history';
+import { History, followNetwork } from '@editor/history';
 
 function street(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
@@ -51,13 +51,12 @@ describe('history', () => {
   it('restores the document a step at a time', () => {
     const { doc, net } = street();
     const history = new History();
-    history.record(doc);
+    history.begin(doc);
     const a = doc.addNode({ x: 0, y: 300 });
     doc.addSegment([...doc.nodes.keys()][0]!, a.id, 1);
     expect(doc.segments.size).toBe(2);
-    const previous = history.undo(doc);
-    expect(previous).not.toBeNull();
-    restoreInto(doc, previous!, net);
+    expect(history.undo(doc)).toBe(true);
+    followNetwork(doc, net);
     expect(doc.segments.size).toBe(1);
   });
 });

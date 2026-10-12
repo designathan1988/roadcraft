@@ -85,6 +85,30 @@ export class BuildingStore {
     this.changed([was, now], 'replaced');
   }
 
+  /**
+   * Puts back a building as it was, or takes it away (`undefined`): undo and
+   * redo (`world/docImage.ts`). The record is copied; the diary is told where
+   * it stood and where it stands.
+   */
+  restore(id: BuildingId, value: Building | undefined): void {
+    const was = this.items.get(id);
+    if (value === undefined) {
+      if (!was) return;
+      this.items.delete(id);
+      this.changed([was], 'restored');
+      return;
+    }
+    const now = cloneBuilding(value);
+    this.items.set(id, now);
+    this.ids.reserve(id);
+    this.changed(was ? [was, now] : [now], 'restored');
+  }
+
+  /** The id the allocator hands out next, set back by undo. */
+  restoreNextId(next: number): void {
+    this.ids = new IdAllocator(next);
+  }
+
   remove(id: BuildingId): boolean {
     const was = this.items.get(id);
     if (!was) return false;

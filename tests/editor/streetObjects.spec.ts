@@ -4,7 +4,7 @@ import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { buildWalkways } from '@world/walkways';
 import { CROSSWALK_DEPTH, STOP_BAR_SETBACK } from '@world/approach';
-import { History, restoreSnapshot } from '@editor/history';
+import { History, followNetwork } from '@editor/history';
 import { commitPedestrianCrossing } from '@editor/streetObjects';
 import { joinSegments, splitSegment } from '@editor/commit';
 import { junctionDetail } from '@world/markings';
@@ -59,7 +59,7 @@ describe('authored pedestrian crossing', () => {
     const { doc, net, segment } = street(true);
     const history = new History(), before = doc.toJSON();
     const original = net.polylines.get(doc, segment.id);
-    history.record(doc);
+    history.begin(doc);
     const result = commitPedestrianCrossing(doc, net, segment.id, 'zebra');
     expect(result.committed).toBe(true);
     if (!result.committed) return;
@@ -75,9 +75,11 @@ describe('authored pedestrian crossing', () => {
     const after = doc.toJSON(), loaded = new RoadDoc();
     loaded.replaceFromJSON(after, { repair: false });
     expect(loaded.toJSON()).toEqual(after);
-    restoreSnapshot(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(doc.toJSON()).toEqual(before);
-    restoreSnapshot(doc, history.redo(doc)!, net);
+    history.redo(doc);
+    followNetwork(doc, net);
     expect(doc.toJSON()).toEqual(after);
   });
 

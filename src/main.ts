@@ -90,7 +90,7 @@ import { applyProfileTo } from '@editor/roads/profile';
 import { drawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
-import { History, restoreInto, restoreSnapshot, serialize } from '@editor/history';
+import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, exportToFile, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
@@ -594,7 +594,7 @@ const terrainBrush = new TerrainBrush({
   // player let go. During a stroke only the ground is rebuilt (`holdRoads`),
   // so it is the ground's own cost that paces the brush.
   interval: (stroking) => Math.max(TERRAIN_MIN_MS, (stroking ? scene.stats.terrainMs : scene.stats.rebuildMs) * 1.4),
-  record: () => { history.record(doc); updateHistoryButtons(); },
+  record: () => { history.begin(doc); updateHistoryButtons(); },
   redraw: () => requestDraw(),
 });
 /** The brush in hand, as one dab reads it (`editor/terrainBrush.ts` `DabSettings`). */
@@ -1185,12 +1185,9 @@ const transitEditor = new TransitTool({
 });
 setTransitTool(transitEditor);
 
-/** `mutate`, reporting whether the edit actually changed anything. */
 /**
- * The document as text, kept while nothing in it has moved: every edit took
- * a snapshot of the whole document before and after (for undo), and the
- * "after" of one edit is the "before" of the next unless something changed
- * in between - which moves one of the document's revision counters.
+ * The document as text for the autosave, kept while nothing in it has moved
+ * (undo no longer takes text: `editor/history.ts`).
  */
 let docText: { key: string; text: string } | null = null;
 function serializedDoc(): string {
@@ -1205,24 +1202,22 @@ function serializedDoc(): string {
   return text;
 }
 
-// The autosave writes the same text the undo keeps (`Persistence.documentText`).
 persistence.documentText = (d) => (d === doc ? serializedDoc() : null);
 
 function mutateBuilt(fn: () => boolean): boolean {
   const mutateAt = performance.now();
-  const before = serializedDoc();
+  history.begin(doc);
   performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
   // What the diary says this edit came from (`world/changes.ts`).
   doc.changes.causeNext(`ferramenta ${game.tool}`);
   const changed = fn();
   doc.changes.causeNext('jogo');
-  if (!changed) return false;
   // An edit that reports success without changing anything - the same lane
   // count, a split on an existing endpoint, a pole line traced over itself -
-  // used to push an undo step and throw away the redo stack.
-  docText = null;
-  if (before === serializedDoc()) return false;
-  history.recordText(before);
+  // used to push an undo step and throw away the redo stack: the step is the
+  // records it changed (`editor/history.ts`), none is none.
+  const recorded = history.end(doc);
+  if (!changed || !recorded) return false;
   performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
   // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
   // network is unchanged, and rebuilding it (and, behind it, the simulation
@@ -1541,7 +1536,7 @@ const cloudTool = new CloudTool({
   brush: () => cloudBrush(),
   drift: () => scene.cloudDrift(),
   rayAt: (px, py, height) => view.toWorldAt(px, py, height, surface.cssW, surface.cssH),
-  record: () => history.record(doc),
+  record: () => history.begin(doc),
   changed: () => {
     updateHistoryButtons();
     persistence.saveSessionSoon(doc, sessionSettings);
@@ -2061,7 +2056,7 @@ function mapSlider(min: number, max: number, step: number, get: () => number, se
   return {
     min, max, step, get,
     set: (v) => {
-      if (!recorded) { history.record(doc); recorded = true; updateHistoryButtons(); }
+      if (!recorded) { history.begin(doc); recorded = true; updateHistoryButtons(); }
       set(v);
       persistence.saveSessionSoon(doc, sessionSettings);
       requestDraw();
@@ -2191,7 +2186,7 @@ function mapBiome(): string {
 function setMapBiome(key: string): void {
   const next = isRegionId(key) ? { region: key, seed: doc.nature?.seed ?? newNature().seed } : null;
   if (JSON.stringify(doc.nature) === JSON.stringify(next)) return;
-  history.record(doc);
+  history.begin(doc);
   doc.setNature(next);
   updateHistoryButtons();
   requestDraw();
@@ -2200,7 +2195,7 @@ function setMapBiome(key: string): void {
 /** One edit of the whole map, asked first and undoable: what each "clear" and "spread" button does. */
 function wholeMapEdit(confirmKey: string | null, edit: () => void): void {
   if (confirmKey && !window.confirm(t(confirmKey))) return;
-  history.record(doc);
+  history.begin(doc);
   edit();
   updateHistoryButtons();
   persistence.saveSessionSoon(doc, sessionSettings);
@@ -2437,7 +2432,7 @@ function generateCity(options: CityOptions): { roads: number; lots: number; zone
   // laid as planned it stood at the atlas's origin wherever the view was.
   const placed = __PLANET__ ? placeCityOnPlanet(plan) : { plan, toPlan: (p: { x: number; y: number }) => p };
   const cityDoc = layCity(placed.plan);
-  history.record(doc);
+  history.begin(doc);
   // The footways wide enough for street trees before the lots are cut (V7).
   widenCityFootways(cityDoc);
   // The planet keeps its own land: a new document's relief was the flat
@@ -2507,7 +2502,7 @@ function newMap(): void {
   // Discarding the whole map is the largest edit the editor can make, so it is
   // the one that most needs to be undoable. Opening a file already records;
   // this did not, which left Ctrl+Z unable to recover a map cleared by mistake.
-  history.record(doc);
+  history.begin(doc);
   // A new map is empty, painted to the Brazilian standard (docs/VIAS.md V6).
   applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
   roadTool.reset();
@@ -2545,15 +2540,18 @@ function openImported(result: ImportResult): boolean {
     return false;
   }
   const before = doc.toJSON();
+  // Opening a map is an edit like any other: undo gives the map before it back.
+  history.begin(doc);
   try {
     applySnapshot(result.session.document, 'import');
   } catch (error) {
     console.error('The map could not be loaded.', error);
     applySnapshot(before);
+    history.end(doc);
     flashHint('hint.openFailed');
     return false;
   }
-  history.record(RoadDoc.fromJSON(before, { repair: false }));
+  history.end(doc);
   updateHistoryButtons();
   restoreSettings(result.session.settings);
   flashHint('hint.opened');
@@ -2609,18 +2607,34 @@ function undo(): void {
   // moving a node of the restored map, and record the half-done state as redo.
   cancelGestures();
   doc.changes.causeNext('desfazer');
-  const snapshot = history.undo(doc);
-  applySnapshot(snapshot);
+  const done = history.undo(doc);
+  if (done) afterRestore();
   doc.changes.causeNext('jogo');
-  if (snapshot) flashHint('hint.undone');
+  if (done) flashHint('hint.undone');
 }
 function redo(): void {
   cancelGestures();
   doc.changes.causeNext('refazer');
-  const snapshot = history.redo(doc);
-  applySnapshot(snapshot);
+  const done = history.redo(doc);
+  if (done) afterRestore();
   doc.changes.causeNext('jogo');
-  if (snapshot) flashHint('hint.redone');
+  if (done) flashHint('hint.redone');
+}
+/**
+ * The game after an undo or a redo put records back (`editor/history.ts`): the
+ * network rebuilt only when the roads moved (a storey, a pole or a brush dab
+ * leaves it, and everything built on it, alone), the rest as after a snapshot.
+ */
+function afterRestore(): void {
+  roadTool.cancel();
+  followNetwork(doc, net);
+  buildings.restored();
+  select(null, game.selectedSegmentS, null, 'outro mapa');
+  closeInspector();
+  persistence.saveSessionSoon(doc, sessionSettings);
+  updateHistoryButtons();
+  updateStatus();
+  requestDraw();
 }
 
 /** Whether there is something to undo and to redo, in the game's state. */
@@ -4295,7 +4309,7 @@ onLanguageChange(() => {
  */
 function setMarkingStyle(value: string): void {
   if (!isMarkingStyle(value) || value === doc.markingStyle) return;
-  history.record(doc);
+  history.begin(doc);
   doc.setMarkingStyle(value);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
@@ -4481,7 +4495,7 @@ mountHealthPanel({
   cityBuiltIn: () => cityBuiltIn,
   /** Replaces the map as loading a file does: document, network and simulation topology. */
   loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => {
-    history.record(doc);
+    history.begin(doc);
     applySnapshot(data, 'import');
   },
   /**

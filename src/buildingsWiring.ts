@@ -15,7 +15,7 @@ import { type EditResult, addBuildingRecord, clearBuildingsOnRoads, deleteBuildi
 import { BuildingTool, type ToolHost, type ToolView } from '@editor/buildingTool';
 import type { PlanShape, Primitive } from '@editor/buildingPlans';
 import { BlueprintLibrary } from '@editor/blueprintLibrary';
-import { serialize, type History } from '@editor/history';
+import type { History } from '@editor/history';
 import { BUILDER_CATALOG, DRAW_SHAPES, OPENING_COMPONENTS, TIER_SHAPES, type BuilderCategoryId, type BuilderField } from '@ui/builder/catalog';
 import type { Viewport } from '@view/viewport';
 import type { SceneHandle } from '@render/renderer';
@@ -165,10 +165,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     context: () => ({ doc, net, groundAt: (x: number, y: number) => scene.builtGroundAt(x, y) }),
     groundKey: () => `${doc.revision}:${doc.terrainRevision}`,
     commit(edit: () => EditResult): EditResult {
-      const before = serialize(doc);
+      history.begin(doc);
       const result = edit();
+      history.end(doc);
       if (!result.ok) return result;
-      history.recordText(before);
       // The camera stays where the player put it: placing a building used to
       // re-frame it, which threw the view across the map mid-gesture.
       deps.afterEdit();

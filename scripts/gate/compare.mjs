@@ -45,7 +45,7 @@ const JUDGED = [
   [/^openMs$/, 50], [/^openMapMs$/, 100], [/^modeMs$/, 50],
   [/\.(p95|p99|max)$/, 2], [/\.(stutters|over50|loafCount)$/, 1], [/\.loafMax$/, 5], [/\.loafBlocking$/, 10],
   [/\.gpu\.(p95|p99)$/, 0.5], [/\.drawn\.calls$/, 5],
-  [/\.programsLinked$/, 0], [/\.upload(Buffer|Texture)$/, 65536],
+  [/\.programsLinked$/, 0], [/^playPrograms$/, 0], [/\.upload(Buffer|Texture)$/, 65536],
   [/^edits\.(clickMs|worldMs|readyMs|groundMs|maxGap)(\.max)?$/, 5], [/^edits\.over33(\.max)?$/, 1],
   [/Heap\.usedMB$/, 5], [/^idle\.slopeMBperMin$/, 1],
 ];
@@ -61,9 +61,23 @@ export function judged(path) {
  * only with a meaningful effect size (Cliff's delta, 0.47 and above: large).
  */
 export const ALPHA = 0.01;
-/** Above ALPHA and up to this: suspicious, more rounds are run (Pinpoint's "unknown"). */
+/** A primary metric not rejected by Holm with an unadjusted p up to this: suspicious, more rounds (Pinpoint's "unknown"). */
 export const ALPHA_SUSPECT = 0.05;
 export const LARGE_DELTA = 0.47;
+/** The family-wise error rate of the primary metrics (Holm). */
+export const FAMILY_ALPHA = 0.05;
+/**
+ * The metrics that block, one family per mode: the targets of the task
+ * (docs/PLAN.md, F13) - the frame where the player looks, the largest frame
+ * while the camera moves, a road drawn until ready and its worst gap, the stall
+ * opening a big map, the bomb, the heap, and the shader
+ * programs linked during play. Twelve, so six rounds a side (smallest p 0.0022)
+ * can pass Holm's first step (0.05 / 12 = 0.0042).
+ */
+export const PRIMARY = [
+  /^views\.(rua|bairro|alto)\.p99$/, /^(spin|pan|zoom)\.max$/, /^edits\.readyMs$/, /^edits\.maxGap\.max$/,
+  /^openMap\.loafMax$/, /^bomb\.p99$/, /^editsHeap\.usedMB$/, /^playPrograms$/,
+];
 
 /**
  * Mann-Whitney U, two-sided and exact: the p-value is the share of all ways of
@@ -113,8 +127,8 @@ export function mannWhitney(a, b) {
  * decide); `melhor` the mirror of PIOR; otherwise `igual`.
  */
 export function summarize(runsA, runsB) {
-  const flatA = runsA.map((r) => flatten(r));
-  const flatB = runsB.map((r) => flatten(r));
+  const flatA = runsA.map((r) => withPlayPrograms(flatten(r)));
+  const flatB = runsB.map((r) => withPlayPrograms(flatten(r)));
   const keys = [...new Set([...flatA, ...flatB].flatMap((f) => Object.keys(f)))].sort();
   const rows = [];
   for (const key of keys) {
@@ -123,16 +137,38 @@ export function summarize(runsA, runsB) {
     const mA = median(a);
     const mB = b.length ? median(b) : NaN;
     const margin = judged(key);
-    let verdict = '', p = NaN, delta = NaN;
+    const primary = PRIMARY.some((re) => re.test(key));
+    let verdict = '', p = NaN, delta = NaN, up = false, down = false;
     if (margin !== null && a.length >= 2 && b.length >= 2) {
       ({ p, delta } = mannWhitney(a, b));
-      const up = mB - mA > margin && delta >= LARGE_DELTA;
-      const down = mA - mB > margin && delta <= -LARGE_DELTA;
-      verdict = up && p <= ALPHA ? 'PIOR' : up && p <= ALPHA_SUSPECT ? 'suspeito' : down && p <= ALPHA ? 'melhor' : 'igual';
+      up = mB - mA > margin && delta >= LARGE_DELTA;
+      down = mA - mB > margin && delta <= -LARGE_DELTA;
+      // The others are told, never block: with some three hundred metrics a
+      // few pass p <= 0.01 by chance in any run.
+      verdict = primary ? 'igual' : up && p <= ALPHA ? 'acima' : down && p <= ALPHA ? 'abaixo' : 'igual';
     }
-    rows.push({ key, a: mA, aMin: Math.min(...a), aMax: Math.max(...a), b: mB, bMin: b.length ? Math.min(...b) : NaN, bMax: b.length ? Math.max(...b) : NaN, p, delta, judged: margin !== null, verdict });
+    rows.push({ key, a: mA, aMin: Math.min(...a), aMax: Math.max(...a), b: mB, bMin: b.length ? Math.min(...b) : NaN, bMax: b.length ? Math.max(...b) : NaN, p, delta, judged: margin !== null, primary, up, down, verdict });
   }
+  // The primary metrics block, as one family: Holm's step-down at FAMILY_ALPHA
+  // (Holm 1979: the k-th smallest p against alpha / (m + 1 - k), stopping at the
+  // first that fails), worse only with a large effect past the margin.
+  const family = rows.filter((r) => r.primary && Number.isFinite(r.p)).sort((x, y) => x.p - y.p);
+  let holding = true;
+  family.forEach((r, k) => {
+    holding &&= r.p <= FAMILY_ALPHA / (family.length - k);
+    if (holding && r.up) r.verdict = 'PIOR';
+    else if (holding && r.down) r.verdict = 'melhor';
+    else if (r.up && r.p <= ALPHA_SUSPECT) r.verdict = 'suspeito';
+  });
   return rows;
+}
+
+/** The shader programs linked while playing (the views, the camera moving, the big map looked at): the target is none. */
+function withPlayPrograms(flat) {
+  let sum = 0, any = false;
+  for (const [k, v] of Object.entries(flat)) if (/^(views\.\w+|spin|pan|zoom|mapView)\.programsLinked$/.test(k)) { sum += v; any = true; }
+  if (any) flat.playPrograms = sum;
+  return flat;
 }
 
 /** Relative A/A noise per metric: |median A - median A'| / median A, and each side's own spread. */

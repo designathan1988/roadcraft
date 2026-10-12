@@ -64,7 +64,7 @@ for (const [, localSha, , remoteSha] of pushes) {
   console.error(`pre-push: portão ${base.slice(0, 8)} (base) × ${localSha.slice(0, 8)} (candidato)`);
   const [a, b] = [await build(base), await build(localSha)];
   // One heavy job at a time on the player's machine: the gate waits its turn too.
-  // Up to 12 rounds of ~10 min in each mode when a metric stays suspicious: 5 h.
+  // Up to 8 rounds of ~11 min in each mode when a primary metric stays suspicious: ~3 h, 5 h of room.
   const code = await run('node', ['scripts/run-limited.mjs', '--kill-gb=1.2', '--min-free-gb=4', 'node', 'scripts/gate/serve-and-gate.mjs', a, b], { env: { RUN_LIMITED_TIMEOUT_S: '18000' } });
   if (code !== 0) process.exit(code);
 }

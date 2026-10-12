@@ -165,7 +165,13 @@ collaborators. Logic it holds today moves to the module that owns the data (F4
 splits it under 800 lines).
 
 ## 5. Commands on the document (F2)
-Draft written during F1 (2026-10-12), to be completed before F2's code.
+Step F2a done (2026-10-12): `world/docImage.ts` (the image and the patch),
+`RoadDoc.restore` (the one writer that puts records back), `editor/history.ts`
+(`begin`/`end`, undo and redo by patches). Measured on the player's big map
+(1 348 buildings): undo/redo frame 177–185 ms → 7–15 ms. Drawing a road costs
+the same as before: a whole-document text is only 4–6 ms there (the buildings'
+text is cached per record); the click's cost is `commit/clone` (18–20 ms) and
+the work after the edit (60–100 ms) - the next steps.
 
 What the SOURCE does: every edit (`main.ts` `mutateBuilt`) serializes the whole
 document before and after (`serializedDoc`, cached while no diary counter moved),

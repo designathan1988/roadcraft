@@ -12,7 +12,7 @@ afrouxar orçamento ou teste). Cada uma com a recomendação e o porquê.
 
 | # | Decisão | Recomendação | Por quê |
 |---|---|---|---|
-| — | (nenhuma até agora) | | |
+| A1 | Onde apareceram os semáforos todos verdes ou todos vermelhos com carros passando (planeta ou plano; jogo antigo nas portas 4180/5173 ou o novo)? | Dizer o lugar e, se der, o mapa | No jogo novo, plano e planeta, 1.571 entradas medidas, nenhuma no vermelho, e as fotos batem com a simulação: sem o lugar não há como reproduzir |
 
 ## Abertos
 
@@ -45,6 +45,14 @@ achados aqui. A etapa que trata cada um está na coluna "Etapa".
 ## Já tentado e que não resolveu
 
 Trazido da FONTE, para não repetir.
+
+- **R17, regra do portão, tentativa 1 (2026-10-12):** mediana de 3 rodadas contra o
+  ruído de uma sessão A/A → 114 "pioras" falsas. **Tentativa 2:** Mann-Whitney +
+  delta de Cliff em TODAS as ~300 métricas, "suspeito" a p ≤ 0,05 pedindo rodadas →
+  a cada 2 rodadas outras métricas ficavam suspeitas por acaso (comparações
+  múltiplas) e o portão ia sempre a 12 rodadas; envio interrompido. **Tentativa 3**
+  (depois de ler Holm 1979): 12 métricas principais por modo (as metas do pedido)
+  formam uma família sob Holm a α = 0,05 e só elas barram; as outras só informam.
 
 - **Lista vazia compartilhada em `shadowsAhead` (`leaderIndex.ts`, P70), 2026-10-09.**
   Desfeito sem medir; ganho esperado pequeno. Medir antes de refazer.

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
-import { History, restoreSnapshot } from '@editor/history';
+import { History, followNetwork } from '@editor/history';
 import { commitRoundabout } from '@editor/roundabout';
 import { FLAT_WORLD } from '@world/flatEarth';
 import { segmentMarkings } from '@world/markings';
@@ -18,7 +18,7 @@ describe('roundabout command', () => {
     const doc = new RoadDoc(), net = new Network(doc), history = new History();
     net.rebuild();
     const before = doc.toJSON();
-    history.record(doc);
+    history.begin(doc);
     const result = commitRoundabout(doc, net, { x: 0, y: 0 }, 100);
     expect(result.committed).toBe(true);
     if (!result.committed) return;
@@ -84,9 +84,11 @@ describe('roundabout command', () => {
       .map((lane) => ({ ...lane, centre: lane.centre.toPoints() }));
     expect(lanes(graph)).toEqual(lanes(freshGraph));
     const after = doc.toJSON();
-    restoreSnapshot(doc, history.undo(doc)!, net);
+    history.undo(doc);
+    followNetwork(doc, net);
     expect(doc.toJSON()).toEqual(before);
-    restoreSnapshot(doc, history.redo(doc)!, net);
+    history.redo(doc);
+    followNetwork(doc, net);
     expect(doc.toJSON()).toEqual(after);
   });
 
