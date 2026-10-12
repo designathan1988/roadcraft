@@ -1,0 +1,445 @@
+import { steadyRatio } from '@core/scalar';
+import { containsPoint, localFootprint } from './footprints';
+import { m } from '../units';
+import { type FacadeBay, facadeBays, groundVolumes, localToWorld, volumeLift } from './geometry';
+import type { BayComponent, Building, FaceId } from './types';
+
+/**
+ * How a building meets the ground. See docs/buildings.md section 2.
+ *
+ * The caller passes the ground: the renderer passes the height the terrain
+ * TRIANGLES are drawn at (`renderedHeightAt`), because that is what a floor
+ * has to clear - CLAUDE.md's trap about terrain height having two meanings.
+ */
+
+/**
+ * The ground floor stands at least this far above the highest ground under it:
+ * one kerb, so a building on level ground has a level entrance.
+ */
+export const PLINTH_MIN = m(0.15);
+/** The plinth runs this far below the lowest ground, so no slope shows under it. */
+export const PLINTH_BURY = m(0.8);
+/**
+ * The steepest site a building may be placed on: ground spread under the
+ * footprint, each block's ground read about its own floor (`levelLowest`,
+ * `levelHighest`) - a split level stepping down its slope takes a slope a
+ * building on one floor could not.
+ */
+export const MAX_PLINTH = m(5.5);
+export const STEP_RISE = m(0.17);
+export const STEP_RUN = m(0.3);
+
+export type GroundAt = (x: number, y: number) => number;
+
+/**
+ * Height of a PAVED surface at a point - a footway, a carriageway - or NaN
+ * where there is none. The terrain under a footway is shaped well below the
+ * paving (`SHAPE_DROP` in `world/elevation.ts`), so the land and the surface a
+ * person stands on are two different answers there; the renderer answers this
+ * one from the solved road surfaces. A caller with no roads passes nothing.
+ */
+export type PavedAt = (x: number, y: number) => number;
+
+const NO_PAVING: PavedAt = () => NaN;
+
+/** Components that are a way in, on level 0. */
+// Doors only: a shopfront is a window on the street, not a way in. Counted
+// as entrances, a row of shopfronts gave a row of flights of steps.
+export const ACCESS_COMPONENTS: ReadonlySet<BayComponent> = new Set<BayComponent>(['door', 'doubleDoor', 'garageDoor', 'loadingDoor']);
+
+/** How far in front of an entrance paving still counts as the street it opens onto. */
+const ENTRANCE_REACH = m(1.5);
+/** Sampling step when looking for the edge of the paving in front of an entrance. */
+const SCAN_STEP = m(0.1);
+/** Wall kept between a recessed flight and the back of its volume. */
+const RECESS_BACK = m(1.2);
+
+/**
+ * Extension point: a way into the building on its ground floor.
+ *
+ * `ground` is the height of the land in front of it and `steps` the flight
+ * that brings the threshold down to it. A flight never crosses paving: where
+ * there is no room for it in front of the facade (a building on the back of a
+ * footway) it is set into the building instead, `recess` deep, like a porch.
+ * Pedestrians and deliveries will attach to the footway graph here.
+ */
+export interface Entrance {
+  readonly volume: number;
+  readonly side: FaceId;
+  readonly index: number;
+  readonly component: BayComponent;
+  /** World point of the threshold, on the facade line. */
+  readonly x: number;
+  readonly y: number;
+  readonly nx: number;
+  readonly ny: number;
+  readonly width: number;
+  /** How far its bay stands out from (negative: is set back into) its side, by a relief. */
+  readonly push: number;
+  /** Absolute height of the ground at the foot of the steps. */
+  readonly ground: number;
+  /**
+   * Absolute height of the floor it opens from: the ground floor, or the
+   * floor of its own block where that block stands at a level of its own
+   * (`Volume.lift`). The steps rise from `ground` to here.
+   */
+  readonly floor: number;
+  /** Number of steps from the ground up to the floor; 0 = level access. */
+  readonly steps: number;
+  /**
+   * How far behind the facade line the threshold is, when the flight is set
+   * into the building (0: the flight, if any, stands outside).
+   */
+  readonly recess: number;
+  /**
+   * Length of the slab at `ground` height from the foot of a recessed flight
+   * out to the paving, over the verge between them (0: none).
+   */
+  readonly threshold: number;
+}
+
+export interface Foundation {
+  /** Absolute world height of the ground floor. */
+  readonly floor: number;
+  readonly lowest: number;
+  readonly highest: number;
+  /** Absolute height of the bottom of the plinth. */
+  readonly bottom: number;
+  /** Ground spread under the footprint: what `MAX_PLINTH` limits. */
+  readonly spread: number;
+  readonly entrances: readonly Entrance[];
+}
+
+/** The ground under a building: its lowest and highest point, absolute and about each block's own floor. */
+export interface FootprintGround {
+  readonly lowest: number;
+  readonly highest: number;
+  /**
+   * The same, each point read about the floor of the block over it - the
+   * ground less the block's `Volume.lift`: on a split level each block
+   * stands on its own part of the slope, its plinth and its cut measured
+   * from its own floor ("Split-level home": each tier on its own grade).
+   * Equal to `lowest` and `highest` for a building on one floor.
+   */
+  readonly levelLowest: number;
+  readonly levelHighest: number;
+}
+
+/** Samples the ground over every ground volume, at about half-module spacing. */
+export function sampleFootprint(b: Building, groundAt: GroundAt): FootprintGround {
+  let lowest = Infinity;
+  let highest = -Infinity;
+  let levelLowest = Infinity;
+  let levelHighest = -Infinity;
+  // The building's own walls decide; its lots (lawns graded to their own
+  // surface, `pads.ts`) only when it has nothing else.
+  const all = groundVolumes(b);
+  const solid = all.filter((v) => !v.open);
+  for (const v of solid.length ? solid : all) {
+    const lift = volumeLift(v);
+    const take = (h: number): void => {
+      if (!Number.isFinite(h)) return;
+      lowest = Math.min(lowest, h);
+      highest = Math.max(highest, h);
+      levelLowest = Math.min(levelLowest, h - lift);
+      levelHighest = Math.max(levelHighest, h - lift);
+    };
+    for (const vertex of localFootprint(v)) {
+      const p = localToWorld(b, vertex.x, vertex.y);
+      take(groundAt(p.x, p.y));
+    }
+    const stepsX = Math.max(1, Math.min(24, Math.ceil(v.w / (b.module * 0.5))));
+    const stepsY = Math.max(1, Math.min(24, Math.ceil(v.d / (b.module * 0.5))));
+    for (let a = 0; a <= stepsX; a++) {
+      for (let c = 0; c <= stepsY; c++) {
+        const lx = v.x + (v.w * a) / stepsX;
+        const ly = v.y + (v.d * c) / stepsY;
+        if (v.outline && !containsPoint(v, { x: lx, y: ly })) continue;
+        const p = localToWorld(b, lx, ly);
+        take(groundAt(p.x, p.y));
+      }
+    }
+  }
+  if (!Number.isFinite(lowest)) return { lowest: 0, highest: 0, levelLowest: 0, levelHighest: 0 };
+  return { lowest, highest, levelLowest, levelHighest };
+}
+
+const isAccess = (bay: FacadeBay): boolean => bay.level === 0 && ACCESS_COMPONENTS.has(bay.component);
+
+/** Plan length of a flight of `steps`: one tread each, and the top one doubled as a landing. */
+export const flightRun = (steps: number): number => (steps > 0 ? (steps + 1) * STEP_RUN : 0);
+
+/**
+ * The paving at the level of land at `land`: paving storeys above or below it
+ * is a deck passing by, not the street a door opens onto (a house beside a
+ * raised road stood on a plinth as tall as the road).
+ */
+function atLevel(pavedAt: PavedAt, land: number, low = land): PavedAt {
+  if (pavedAt === NO_PAVING) return pavedAt;
+  // Within the plinth's reach of the land under the building, from its lowest
+  // point to its highest: a street at the foot of a hillside site is the
+  // street it opens onto, however high the hill behind rises.
+  return (x, y) => {
+    const h = pavedAt(x, y);
+    return h >= low - MAX_PLINTH && h <= land + MAX_PLINTH ? h : NaN;
+  };
+}
+
+/**
+ * The highest paving any entrance opens onto, or -Infinity. The ground floor
+ * is never below it: a door onto a footway is at the footway's level, not a
+ * step down from it.
+ */
+function entrancePaving(bays: readonly FacadeBay[], pavedAt: PavedAt): number {
+  let best = -Infinity;
+  for (const bay of bays) {
+    if (!isAccess(bay)) continue;
+    for (const d of [m(0.25), ENTRANCE_REACH * 0.5, ENTRANCE_REACH]) {
+      const h = pavedAt(bay.x + bay.nx * d, bay.y + bay.ny * d);
+      if (Number.isFinite(h)) {
+        // A door of a block at a floor of its own puts the ground floor that
+        // far from its paving (`bay.z` of a ground-level bay is its block's lift).
+        best = Math.max(best, h - bay.z);
+        break;
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Distance from a facade to the first paving in front of it, or Infinity if
+ * there is none within `limit`: the room a flight of steps has there.
+ */
+function pavingEdge(bay: FacadeBay, pavedAt: PavedAt, limit: number): number {
+  const paved = (d: number): boolean => Number.isFinite(pavedAt(bay.x + bay.nx * d, bay.y + bay.ny * d));
+  let outside = 0;
+  for (let d = SCAN_STEP; d <= limit + 1e-9; d += SCAN_STEP * 2.5) {
+    if (!paved(d)) {
+      outside = d;
+      continue;
+    }
+    // The edge is between the last dry sample and this one: halve the gap.
+    let inside = d;
+    while (inside - outside > SCAN_STEP * 0.25) {
+      const mid = (inside + outside) / 2;
+      if (paved(mid)) inside = mid;
+      else outside = mid;
+    }
+    return outside;
+  }
+  return paved(0) ? 0 : Infinity;
+}
+
+export function foundationOf(
+  b: Building,
+  groundAt: GroundAt,
+  bays?: readonly FacadeBay[],
+  anyPaving: PavedAt = NO_PAVING,
+  designedFloor?: number,
+): Foundation {
+  const all = bays ?? facadeBays(b);
+  const { lowest, highest, levelLowest, levelHighest } = sampleFootprint(b, groundAt);
+  const pavedAt = atLevel(anyPaving, highest, lowest);
+  const groundFloor = designedFloor ?? floorOver(highest, all, pavedAt, lotFront(b, pavedAt));
+  const volumes = new Map(b.volumes.map((v) => [v.id, v]));
+  const entrances: Entrance[] = [];
+  for (const bay of all) {
+    if (!isAccess(bay)) continue;
+    // The floor this door opens from: its block's own, on a split level.
+    const floor = groundFloor + bay.z;
+    // What a person stands on at `d` in front of the facade: the paving where
+    // there is some, the land elsewhere.
+    const surface = (d: number): number => {
+      const x = bay.x + bay.nx * d;
+      const y = bay.y + bay.ny * d;
+      const paved = pavedAt(x, y);
+      return Number.isFinite(paved) ? paved : groundAt(x, y);
+    };
+    let ground = surface(b.module * 0.5);
+    let steps = stepsFor(floor - ground);
+    let recess = 0;
+    let threshold = 0;
+    if (steps > 0) {
+      // A flight may run out to the paving and no further.
+      const room = pavingEdge(bay, pavedAt, flightRun(stepsFor(floor - Math.min(ground, lowest))) + m(0.5));
+      // At and past the edge of the paving, the paving is what one stands on:
+      // not the verge between it and the building, shaped down with the road.
+      const stand = (d: number): number => (d >= room ? surface(room + SCAN_STEP * 0.3) : surface(d));
+      ground = stand(b.module * 0.5);
+      steps = stepsFor(floor - ground);
+      if (flightRun(steps) <= room) {
+        // Read the ground again where the flight would land.
+        ground = Math.min(ground, stand(Math.max(b.module * 0.5, flightRun(steps) + m(0.4))));
+        steps = stepsFor(floor - ground);
+      }
+      if (flightRun(steps) > room) {
+        // No room in front: the flight is set into the building. It starts
+        // where a person arrives from - the paving, when that is right there
+        // (a threshold slab bridges the verge), else the land at the facade.
+        const fromPaving = room <= ENTRANCE_REACH;
+        ground = stand(fromPaving ? room : m(0.2));
+        threshold = fromPaving ? room : 0;
+        steps = stepsFor(floor - ground);
+        const v = volumes.get(bay.volume);
+        const depth = v ? (bay.side === 0 || bay.side === 2 ? v.d : v.w) : b.module;
+        // A volume too shallow for the whole flight takes as many treads as
+        // fit, each a little steeper.
+        const fit = Math.max(0, depth - RECESS_BACK);
+        if (flightRun(steps) > fit) steps = Math.max(0, Math.floor(fit / STEP_RUN + 1e-9) - 1);
+        recess = flightRun(steps);
+        if (steps === 0) threshold = 0;
+      }
+    }
+    entrances.push({
+      volume: bay.volume,
+      side: bay.side,
+      index: bay.index,
+      component: bay.component,
+      x: bay.x,
+      y: bay.y,
+      nx: bay.nx,
+      ny: bay.ny,
+      width: bay.width,
+      push: bay.push,
+      ground,
+      floor,
+      steps,
+      recess,
+      threshold,
+    });
+  }
+  return {
+    floor: groundFloor,
+    lowest,
+    highest,
+    bottom: lowest - PLINTH_BURY,
+    spread: levelHighest - levelLowest,
+    entrances: mergeEntrances(entrances),
+  };
+}
+
+/**
+ * Side-by-side ways in become ONE wide flight.
+ *
+ * Two doors on neighbouring bays used to be two narrow flights with a strip of
+ * bare wall between them - a chasm a person could not use and nobody would
+ * build. Every run of contiguous bays that share a way in (same volume, same
+ * side, same component, same flight geometry) is a single entrance, as wide as
+ * the run.
+ */
+function mergeEntrances(list: readonly Entrance[]): Entrance[] {
+  const out: Entrance[] = [];
+  for (const entrance of list) {
+    const last = out[out.length - 1];
+    if (last && adjacentEntrance(last, entrance)) {
+      out[out.length - 1] = { ...last, width: last.width + entrance.width };
+      continue;
+    }
+    out.push(entrance);
+  }
+  return out;
+}
+
+function adjacentEntrance(a: Entrance, b: Entrance): boolean {
+  if (a.volume !== b.volume || a.side !== b.side || a.component !== b.component) return false;
+  if (Math.abs(a.ground - b.ground) > 1e-6 || Math.abs(a.floor - b.floor) > 1e-6 || a.steps !== b.steps || a.recess !== b.recess || a.threshold !== b.threshold) return false;
+  // One bay further along the same side: the two runs touch.
+  const bays = a.width > 1e-6 ? Math.round(steadyRatio(a.width, Math.max(1e-6, b.width))) : 1;
+  return b.index === a.index + Math.max(1, bays);
+}
+
+/**
+ * Ground-floor heights of stored buildings, remembered until `key` changes.
+ * The caller builds the key from every revision the ground depends on (the
+ * roads shape the terrain, so the network's counts as well as the land's).
+ */
+export class FloorCache {
+  private key = '';
+  private readonly floors = new Map<number, number>();
+
+  floorOf(b: Building, groundAt: GroundAt, key: string, pavedAt: PavedAt = NO_PAVING): number {
+    if (key !== this.key) {
+      this.key = key;
+      this.floors.clear();
+    }
+    const known = this.floors.get(b.id);
+    if (known !== undefined) return known;
+    const floor = floorHeight(b, groundAt, pavedAt);
+    this.floors.set(b.id, floor);
+    return floor;
+  }
+}
+
+/** The absolute ground-floor height of a building, uncached. Same rule as `foundationOf`. */
+export function floorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = NO_PAVING): number {
+  const { lowest, highest } = sampleFootprint(b, groundAt);
+  const paved = atLevel(pavedAt, highest, lowest);
+  return floorOver(highest, facadeBays(b), paved, lotFront(b, paved));
+}
+
+/**
+ * The highest pavement along the open edges of a building's lots - the car
+ * park or the garden between its door and the street - or -Infinity. A car
+ * park is entered from the street at the street's level.
+ */
+function lotFront(b: Building, pavedAt: PavedAt): number {
+  if (pavedAt === NO_PAVING) return -Infinity;
+  let best = -Infinity;
+  for (const v of b.volumes) {
+    if (!v.open) continue;
+    const ring = localFootprint(v);
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
+      const len = Math.hypot(q.x - p.x, q.y - p.y);
+      if (len < 1e-6) continue;
+      // Either side of the edge: only the outside can be a street.
+      const nx = (q.y - p.y) / len, ny = -(q.x - p.x) / len;
+      for (const t of [0.25, 0.5, 0.75]) for (const side of [1, -1]) {
+        const a = localToWorld(b, p.x + (q.x - p.x) * t + side * nx * m(0.6), p.y + (q.y - p.y) * t + side * ny * m(0.6));
+        const h = pavedAt(a.x, a.y);
+        if (Number.isFinite(h)) best = Math.max(best, h);
+      }
+    }
+  }
+  return best;
+}
+
+/** Height of a ground floor's threshold over the pavement it opens onto. */
+export const THRESHOLD = m(0.04);
+
+/**
+ * The ground floor's height.
+ *
+ * On a street the ground floor is at the pavement's level - at its door, or
+ * along its front if no door opens onto the street - with no more than a
+ * threshold: that is how a town stands on a slope, its ground floors stepping
+ * down the street with it and the land behind cut away to them (the site is
+ * graded, `pads.ts`). Set by the highest ground under it instead, every
+ * building on a slope stood on a stone plinth with a flight of steps up to
+ * its door, and its car park on a retaining wall.
+ *
+ * A building with no pavement before it stands on its highest ground, a
+ * plinth above it. Its blocks' own floors (`Volume.lift`) are not read
+ * here: a block the player sinks (the Builder's block level) goes into the
+ * ground, as Revit's base offset sets a wall below its level.
+ */
+function floorOver(highest: number, bays: readonly FacadeBay[], pavedAt: PavedAt, lot = -Infinity): number {
+  if (pavedAt === NO_PAVING) return highest + PLINTH_MIN;
+  const door = entrancePaving(bays, pavedAt);
+  if (Number.isFinite(door)) return door + THRESHOLD;
+  if (Number.isFinite(lot)) return lot + THRESHOLD;
+  let front = -Infinity;
+  for (const bay of bays) {
+    if (bay.level !== 0) continue;
+    const h = pavedAt(bay.x + bay.nx * m(0.5), bay.y + bay.ny * m(0.5));
+    if (Number.isFinite(h)) front = Math.max(front, h - bay.z);
+  }
+  return Number.isFinite(front) ? front + THRESHOLD : highest + PLINTH_MIN;
+}
+
+/** Steps needed to climb `rise`; a threshold under two risers needs none. */
+export function stepsFor(rise: number): number {
+  if (!(rise > STEP_RISE * 1.5)) return 0;
+  return Math.min(40, Math.ceil(rise / STEP_RISE));
+}

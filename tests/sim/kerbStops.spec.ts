@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+
+import { step } from '@sim/pipeline';
+import { DT } from '@sim/params';
+import { m } from '@world/units';
+import { collisions, fixtureDoc, simOf } from './support/bodies';
+
+/**
+ * PEOPLE GET IN AND OUT OF CARS AT THE KERB.
+ *
+ * Before this nobody ever got in or out of a vehicle and no door ever moved.
+ * These tests run the saved player map and follow every kerb stop: the car
+ * stops in the kerb lane, a kerb-side door opens only once it has stopped and
+ * nobody is in the way of it, the passenger moves across, the door shuts, and
+ * a dropped-off passenger is a pedestrian on the footway afterwards.
+ */
+describe('kerb stops', () => {
+  it('stop, open the door only when stopped and clear, move somebody across, and shut it', () => {
+    const sim = simOf(fixtureDoc(), 0x51de, 2);
+    const phaseOf = new Map<number, string>();
+    let drops = 0;
+    let passengersAlighting = 0;
+    let picks = 0;
+    let movingWithDoorOpen = 0;
+    let openedIntoSomebody = 0;
+    let overlaps = 0;
+    let droppedOnFootway = 0;
+
+    for (let i = 0; i < Math.round(300 / DT); i++) {
+      // The people as every pedestrian engine publishes them (`SimWorld.pedViews`).
+      const before = new Set(sim.pedViews.map((p) => p.id));
+      step(sim, { traffic: true, pedestrians: true });
+      if (i % 10 === 0) overlaps += collisions(sim).length;
+      for (const v of sim.vehicles.values()) {
+        const stop = v.kerbStop;
+        const key = stop ? `${stop.kind}:${stop.phase}` : '';
+        const prev = phaseOf.get(v.id) ?? '';
+        if (v.doors.some((d) => d > 0) && v.v > 0.05) movingWithDoorOpen++;
+        if (stop && key !== prev && stop.phase === 'open') {
+          // The door starts to open: nobody inside its swing.
+          const lane = sim.lanelet(v.lanelet)!;
+          const f = lane.centre.sampleAt(Math.max(0, v.s - v.archetype.length * 0.5));
+          for (const p of sim.pedViews) {
+            if (p.id === stop.pedId) continue;
+            if (Math.hypot(p.x - f.p.x, p.y - f.p.y) < v.archetype.width / 2 + m(0.3)) openedIntoSomebody++;
+          }
+        }
+        if (prev.endsWith('transfer') && key.endsWith('close')) {
+          if (prev.startsWith('drop')) {
+            drops++;
+            // Delivery mates get back into the same vehicle. Their drop
+            // uses the door animation but deliberately creates no walker.
+            if (!stop?.keep) passengersAlighting++;
+          }
+          else picks++;
+        }
+        phaseOf.set(v.id, key);
+      }
+      for (const p of sim.pedViews) {
+        if (before.has(p.id)) continue;
+        // A new pedestrian next to a car with a door open is a passenger out.
+        const near = [...sim.vehicles.values()].some((v) => v.kerbStop?.kind === 'drop' &&
+          (v.kerbStop.phase === 'transfer' || v.kerbStop.phase === 'close'));
+        if (near && p.ground === 'footway') droppedOnFootway++;
+      }
+    }
+
+    expect(drops).toBeGreaterThan(2);
+    expect(picks).toBeGreaterThan(0);
+    expect(droppedOnFootway).toBeGreaterThanOrEqual(passengersAlighting);
+    expect(movingWithDoorOpen).toBe(0);
+    expect(openedIntoSomebody).toBe(0);
+    expect(overlaps).toBe(0);
+    // Five minutes of the whole map with every body checked: under a minute
+    // alone, three under a machine busy with other builds.
+  }, 300_000);
+});
+
+describe('a kerb stop always ends (P1-26)', () => {
+  it('drives on when the stop cannot finish: an empty delivery hold, a door that waits for nobody', () => {
+    const sim = simOf(fixtureDoc(), 0x51de, 1);
+    sim.trafficIntensity = 1;
+    for (let i = 0; i < Math.round(20 / DT) && sim.vehicles.size < 2; i++) step(sim, { traffic: true, pedestrians: false });
+    sim.trafficIntensity = 0;
+    const [a, b] = [...sim.vehicles.values()];
+    expect(a && b).toBeTruthy();
+    const stuck = (phase: 'hold' | 'open', lanelet: string) => ({
+      kind: phase === 'hold' ? 'drop' as const : 'pick' as const, lanelet, at: 0, door: 0, seat: 0, phase, t: 0, elapsed: 0,
+      pedId: null, person: null, transferTime: 1, fetchTime: 1e9, walked: 0, keep: true, hold: 7, seatStage: true,
+    });
+    a!.kerbStop = stuck('hold', a!.lanelet);
+    b!.kerbStop = stuck('open', b!.lanelet);
+    b!.doors = [1];
+    let longest = 0;
+    for (let i = 0; i < Math.round(60 / DT); i++) {
+      step(sim, { traffic: true, pedestrians: false });
+      for (const v of [a!, b!]) if (v.kerbStop) longest = Math.max(longest, v.kerbStop.elapsed);
+    }
+    expect(a!.kerbStop).toBeNull();
+    expect(b!.kerbStop).toBeNull();
+    expect(b!.doors.every((open) => open === 0)).toBe(true);
+    expect(longest).toBeLessThan(45);
+  });
+});
+
+describe('nobody is set down where they cannot walk on', () => {
+  it.each([[false, 'stays in the seat'], [true, 'leaves the seat']])('alight %s: the passenger %s', (walks, _what) => {
+    const sim = simOf(fixtureDoc(), 0x51de, 1);
+    sim.trafficIntensity = 1;
+    for (let i = 0; i < Math.round(20 / DT) && sim.vehicles.size < 1; i++) step(sim, { traffic: true, pedestrians: false });
+    sim.trafficIntensity = 0;
+    const [v] = [...sim.vehicles.values()];
+    expect(v).toBeTruthy();
+    // The bridge's answer: where nothing on foot is reached from the door, nobody gets out.
+    let asked = 0;
+    sim.pedEngine.bridge.alight = () => { asked++; return walks; };
+    v!.seats |= 1 << 1;
+    v!.people[1] = 7;
+    v!.kerbStop = {
+      kind: 'drop', lanelet: v!.lanelet, at: v!.s, door: 0, seat: 1, phase: 'transfer', t: 0, elapsed: 0,
+      pedId: null, person: { seed: 7, gender: 'f', ageClass: 'adult', footX: 0, footY: 0, footHeading: 0 },
+      transferTime: 0.1, fetchTime: 0, walked: 0, keep: false, hold: 0, seatStage: false,
+    };
+    for (let i = 0; i < Math.round(2 / DT) && v!.kerbStop?.phase === 'transfer'; i++) step(sim, { traffic: true, pedestrians: false });
+    expect(asked).toBe(1);
+    expect((v!.seats & (1 << 1)) !== 0).toBe(!walks);
+    expect(v!.people[1] === 7).toBe(!walks);
+  });
+});

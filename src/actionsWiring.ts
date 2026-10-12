@@ -1,0 +1,486 @@
+import { walkersNear } from '@sim/agents/walk';
+import type { BodyPart } from '@sim/people/view';
+import type { Occupant } from '@render/ragdoll';
+import type { BlastHit, SceneHandle } from '@render/renderer';
+import { vehiclePose } from '@sim/pose';
+import { strandVehicle } from '@sim/vehicles/state';
+import type { SimWorld } from '@sim/world';
+import type { Viewport } from '@view/viewport';
+import type { Vec2 } from '@core/vec2';
+import { closestOnSegment } from '@core/intersect';
+import { pointInPolygon } from '@core/polygon';
+import type { RoadDoc } from '@world/doc';
+import type { Network } from '@world/network';
+import type { PoleId } from '@world/ids';
+import { type Building, type BuildingId } from '@world/buildings/types';
+import { levelElevation, solidFootprints, volumeElevation, worldToLocal } from '@world/buildings/geometry';
+import { resolveBlocks } from '@world/buildings/blocks';
+import { signalPosts } from '@world/signalPosts';
+import { m, stepsIn } from '@world/units';
+import { onChartOf } from '@world/planet/charts';
+
+/**
+ * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
+ * fire after): a shot at the person, the rider or the car under the pointer;
+ * a blow of the chosen force that wrecks everything in its reach - buildings
+ * broken a piece at a time, people, cars, poles and their wires, traffic
+ * lights, street things, a crater in bare earth - and the fires it leaves,
+ * spreading their smoke. Part of the composition root, as
+ * `buildingsWiring.ts` is: it reaches the document, the simulation and the
+ * scene at once. `main.ts` hands it what it needs and calls `strikeAt`,
+ * `shootAt` and `explodeAt`.
+ */
+export interface ActionsDeps {
+  readonly doc: RoadDoc;
+  readonly net: Network;
+  readonly sim: SimWorld;
+  readonly scene: SceneHandle;
+  /** The building drawn under a screen point (`buildingsWiring.ts` tool). */
+  buildingAt(screen: Vec2): number | null;
+  view(): Viewport;
+  /** The canvas size, CSS pixels. */
+  size(): { readonly w: number; readonly h: number };
+  /** The height of what is drawn at a point: ground, road or plate. */
+  heightAt(p: Vec2): number;
+  /** The bomb's force (`ui/toolChoices.ts` `strikeChoice.strength`). */
+  strength(): number;
+  /** An edit of the document, one undo step. */
+  mutate(fn: () => boolean): void;
+  /** Runs `fn` with the diary's cause set (`main.ts` `caused`). */
+  caused<T>(cause: string, fn: () => T): T;
+  hint(key: string): void;
+  redraw(): void;
+  /** Nothing grows on zoned lots before this wall-clock time (rubble lying). */
+  holdGrowth(until: number): void;
+}
+
+export interface Actions {
+  /** The bomb at a screen point (`world` the ground under it). */
+  strikeAt(sx: number, sy: number, world: Vec2): void;
+  /** The pistol at a screen point; false when it hit nothing. */
+  shootAt(sx: number, sy: number): boolean;
+  /** An explosion at `world`, height `z` (on building `b` when it landed on one). */
+  explodeAt(world: Vec2, z: number, b: Building | null, strength: number, quiet?: boolean): void;
+}
+
+export function createActions(deps: ActionsDeps): Actions {
+  const { doc, net, sim, scene } = deps;
+  const ground = (p: Vec2): number => deps.heightAt(p);
+
+  /** Shots each vehicle has taken on its bodywork: enough of them and it burns and blows up. */
+  const vehicleShots = new Map<number, number>();
+  /** Buildings that already shorted and burst their pipes (once each). */
+  const shorted = new Set<number>();
+  /** Buildings a blow reached, broken one a frame. */
+  const deferredHits: { id: number; x: number; y: number; z: number; force: number }[] = [];
+  /** A frame asked for the buildings waiting to break; none while none wait. */
+  let breaking = false;
+  const burning = new Map<number, { since: number; nextFlame: number; until: number }>();
+
+  /**
+   * The pistol: a shot at the person under the pointer, striking the part of
+   * the body clicked - the head, the body, an arm or a leg, the side as the
+   * body faces (`PedestrianEngine.shot`): the wound, the blood, a limb off,
+   * death. From the view, with no player on the map.
+   */
+  function shootAt(sx: number, sy: number): boolean {
+    const { w, h } = deps.size();
+    const view = deps.view();
+    const under = view.toWorldAt(sx, sy, ground(view.toWorld(sx, sy, w, h)), w, h);
+    let best: { id: number; height: number; d: number; x: number; y: number; heading: number } | null = null;
+    for (const p of walkersNear(sim, under.x, under.y, m(25))) {
+      // Down on the ground: their body is shot where it lies (below).
+      if (scene.isDown(p.id)) continue;
+      const base = ground(p);
+      // Up the body's axis: where the line of sight through the pointer passes nearest it.
+      for (let k = 0; k <= 37; k++) {
+        const height = m(0.05) * k;
+        const q = view.toWorldAt(sx, sy, base + height, w, h);
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        // The body's reach about its axis, arms out included (at 0.3 m a shot on an arm out swinging missed).
+        if (d < m(0.42) && (!best || d < best.d)) best = { id: p.id, height, d, x: p.x, y: p.y, heading: p.heading };
+      }
+    }
+    if (!best) {
+      // The bodies on the ground, alive or dead, along the line of sight:
+      // between just under the ground and a little above the tallest thing it
+      // can strike (a van, a rider's head); from much higher the point was
+      // behind a camera zoomed in close, and the line went askew.
+      const lo = ground(under) - m(0.3), hi = lo + m(5);
+      const a = view.toWorldAt(sx, sy, hi, w, h), b = view.toWorldAt(sx, sy, lo, w, h);
+      const hit = scene.shootBody([a.x, a.y, hi], [b.x, b.y, lo]);
+      if (hit && hit !== 'hit') {
+        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const done = sim.pedEngine.shot?.(sim, hit.alive, hit.part, b.x - ((b.x - a.x) / len) * m(10), b.y - ((b.y - a.y) / len) * m(10));
+        if (done) scene.wound(b.x, b.y, lo + m(0.4), (b.x - a.x) / len, (b.y - a.y) / len, done.severed);
+      }
+      if (hit) { deps.redraw(); return true; }
+      if (shootVehicle(a, b, hi, lo)) { deps.redraw(); return true; }
+      deps.hint('hint.shoot.miss');
+      return false;
+    }
+    // The shot's way: from the viewer into the scene, which on the ground is
+    // the way up the screen (taken from a point higher on the line of sight it
+    // pointed back at the viewer, and the person turned away to face it).
+    const gz = ground(best);
+    const farther = view.toWorldAt(sx, sy - 40, gz, w, h), nearer = view.toWorldAt(sx, sy + 40, gz, w, h);
+    let dx = farther.x - nearer.x, dy = farther.y - nearer.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    // Left or right of the body's middle, as the body faces.
+    const at = view.toWorldAt(sx, sy, ground(best) + best.height, w, h);
+    const side = (at.x - best.x) * -Math.sin(best.heading) + (at.y - best.y) * Math.cos(best.heading);
+    const part: BodyPart = best.height > m(1.5) ? 'head'
+      : best.height > m(0.9) ? (Math.abs(side) > m(0.17) ? (side > 0 ? 'armL' : 'armR') : 'torso')
+        : side >= 0 ? 'legL' : 'legR';
+    const done = sim.pedEngine.shot?.(sim, best.id, part, best.x - dx * m(10), best.y - dy * m(10));
+    if (!done) return false;
+    scene.wound(best.x, best.y, ground(best) + best.height, dx, dy, done.severed);
+    deps.redraw();
+    return true;
+  }
+
+  /**
+   * A shot along the line of sight from `a` (height `hi`) to `b` (height `lo`)
+   * at the traffic, as GTA lets a player shoot at it: a cyclist or a
+   * motorcyclist shot off their machine, dead, the machine falling over; a
+   * driver shot through the glass, the car rolling to a stop; the bodywork
+   * sparking, and after a dozen hits the car on fire and blowing up.
+   */
+  function shootVehicle(a: Vec2, b: Vec2, hi: number, lo: number): boolean {
+    let best: { v: ReturnType<typeof sim.vehicles.get> & object; t: number; x: number; y: number; z: number; up: number; angle: number } | null = null;
+    for (const v of sim.vehicles.values()) {
+      const pose = vehiclePose(sim, v, 1);
+      if (!pose) continue;
+      const g = ground(pose.p);
+      const c = Math.cos(pose.angle), s = Math.sin(pose.angle);
+      // A rider sits above a two-wheeler's frame: the box up to their head.
+      const two = v.archetype.shape === 'bicycle' || v.archetype.shape === 'motorcycle';
+      const L = v.archetype.length / 2, W = Math.max(v.archetype.width / 2, two ? m(0.35) : 0), H = two ? Math.max(v.archetype.height, m(1.75)) : v.archetype.height;
+      // The segment in the vehicle's frame, clipped by each pair of faces (slabs).
+      const ax = a.x - pose.p.x, ay = a.y - pose.p.y, bx = b.x - pose.p.x, by = b.y - pose.p.y;
+      const p0 = [ax * c + ay * s, -ax * s + ay * c, hi - g], p1 = [bx * c + by * s, -bx * s + by * c, lo - g];
+      const lo3 = [-L, -W, 0], hi3 = [L, W, H];
+      let t0 = 0, t1 = 1;
+      for (let i = 0; i < 3 && t0 <= t1; i++) {
+        const d = p1[i]! - p0[i]!;
+        if (Math.abs(d) < 1e-9) { if (p0[i]! < lo3[i]! || p0[i]! > hi3[i]!) t0 = 2; continue; }
+        let ta = (lo3[i]! - p0[i]!) / d, tb = (hi3[i]! - p0[i]!) / d;
+        if (ta > tb) [ta, tb] = [tb, ta];
+        t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+      }
+      if (t0 > t1 || (best && t0 >= best.t)) continue;
+      const z = hi + (lo - hi) * t0;
+      best = { v, t: t0, x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0, z, up: (z - g) / H, angle: pose.angle };
+    }
+    if (!best) return false;
+    const { v, x, y, z } = best;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dirX = (b.x - a.x) / len, dirY = (b.y - a.y) / len;
+    const shape = v.archetype.shape;
+    const css = String(v.color ?? '#777777');
+    const color = parseInt(css.replace('#', '').slice(0, 6), 16) || 0x777777;
+    if (shape === 'bicycle' || shape === 'motorcycle') {
+      // The rider shot off: thrown down dead, the machine falling over.
+      const g = ground({ x, y });
+      scene.wound(x, y, g + m(1.2), dirX, dirY, null);
+      scene.flingOccupants([{ id: 8_000_000 + v.id, x, y, z: g + m(0.9), heading: best.angle, blastX: x - dirX * m(4), blastY: y - dirY * m(4),
+        power: 0.15, kind: 'dead', index: scene.driverBody(v, x, y) }]);
+      scene.dropVehicle({ id: v.id, archetype: v.archetype, x, y, angle: best.angle, color, dirX, dirY });
+      sim.removeVehicle(v);
+      vehicleShots.delete(v.id);
+      return true;
+    }
+    // Through the glass (the upper part of the body): the driver killed, the car rolling to a stop.
+    const glass = best.up > 0.55;
+    scene.vehicleHit(x, y, z, dirX, dirY, glass, glass);
+    if (glass) strandVehicle(v);
+    const n = (vehicleShots.get(v.id) ?? 0) + 1;
+    vehicleShots.set(v.id, n);
+    if (vehicleShots.size > 200) vehicleShots.clear();
+    if (n >= 12) {
+      vehicleShots.delete(v.id);
+      const pose = vehiclePose(sim, v, 1);
+      if (pose) explodeAt(pose.p, ground(pose.p), null, 3);
+    }
+    return true;
+  }
+
+  /**
+   * The bomb (the player's order of 2026-10-05): a blow of the chosen force
+   * where the pointer is. A building breaks a piece at a time and comes down
+   * when little is left; a street gets a crater. Anybody close enough dies,
+   * anybody near runs away.
+   */
+  function strikeAt(sx: number, sy: number, world: Vec2): void {
+    const strength = deps.strength();
+    // A building already broken is no longer drawn as itself, so the pick by
+    // its meshes misses it: found by its footprint under the pointer instead.
+    const id = deps.buildingAt({ x: sx, y: sy });
+    const b = id !== null ? doc.buildings.get(id as BuildingId)
+      : [...doc.buildings.all()].find((c) => rayOnBuilding(c, sx, sy, ground({ x: c.x, y: c.y })) !== null);
+    // Where the blow lands: the first point of the building along the
+    // pointer's ray (its roof or the face under the pointer); else the ground.
+    let target = world, z = ground(world);
+    if (b) {
+      const hit = rayOnBuilding(b, sx, sy, z);
+      if (hit) { target = hit; z = hit.z; }
+    }
+    explodeAt(target, z, b ?? null, strength);
+  }
+
+  /**
+   * An explosion at `world`, height `z` (on building `b` when it landed on
+   * one): it wrecks everything within its reach, not only what it lands on -
+   * buildings, people, cars, poles and their wires, traffic lights, street
+   * things, the road itself.
+   */
+  function explodeAt(world: Vec2, z: number, b: Building | null, strength: number, quiet = false): void {
+    const radius = m(2.5 + strength * 1.1);
+    const kill = radius * 0.5, scare = m(70 + strength * 10);
+    const dead = sim.pedEngine.impact?.(sim, world.x, world.y, kill, scare) ?? 0;
+    // On the planet everything the blast reaches is measured on ITS chart:
+    // a pole, a car or a building kept on the next piece's chart lies tens of
+    // km off in the atlas, out of every reach - and a wire between the two
+    // was laid across the atlas, standing up over the town (the player). What
+    // is handed to the scene (debris, wires, wrecks) is written there too.
+    const here = (p: Readonly<Vec2>): Vec2 => onChartOf(p, world);
+    const near = (x: number, y: number, reach: number): boolean => {
+      const q = here({ x, y });
+      return Math.hypot(q.x - world.x, q.y - world.y) < reach;
+    };
+    const paved = Number.isFinite(scene.pavedHeightAt(world.x, world.y));
+    const struck: BlastHit['ground'] = b && z > ground(world) + m(0.5) ? 'building' : paved ? 'road' : 'earth';
+    const hit: { ground: BlastHit['ground']; crater: boolean; poles: BlastHit['poles'][number][]; wires: BlastHit['wires'][number][];
+      posts: BlastHit['posts'][number][]; vehicles: BlastHit['vehicles'][number][]; items: BlastHit['items'][number][] } =
+      { ground: struck, crater: struck !== 'building', poles: [], wires: [], posts: [], vehicles: [], items: [] };
+    let downs = 0;
+    deps.mutate(() => {
+      let changed = false;
+      // Buildings: each struck at its nearest point, harder the nearer.
+      for (const c of [...doc.buildings.all()]) {
+        let best = Infinity, px = world.x, py = world.y;
+        // Its farthest corner from its own centre, on its own chart: past
+        // that and the reach, nothing of it is struck (no chart carried).
+        const own = solidFootprints(c);
+        let extent = 0;
+        for (const ring of own) for (const q of ring) extent = Math.max(extent, Math.hypot(q.x - c.x, q.y - c.y));
+        const centre = here(c);
+        if (Math.hypot(centre.x - world.x, centre.y - world.y) - extent > radius) continue;
+        for (const ring of own.map((r) => r.map(here))) {
+          if (pointInPolygon(world, ring)) { best = 0; break; }
+          for (let i = 0; i < ring.length; i++) {
+            const q = closestOnSegment(world, ring[i]!, ring[(i + 1) % ring.length]!).point;
+            const d = Math.hypot(q.x - world.x, q.y - world.y);
+            if (d < best) { best = d; px = q.x; py = q.y; }
+          }
+        }
+        if (best > radius) continue;
+        // Where it is struck, written on the building's own chart (its pieces are).
+        const at = c === b ? { ...onChartOf(world, c), z } : { ...onChartOf({ x: px, y: py }, c), z: Math.max(z, ground({ x: px, y: py }) + m(1.5)) };
+        const force = c === b ? strength : Math.max(1, strength * (1 - best / radius) * 1.2);
+        // Breaking a building into its pieces is the costly part (a Voronoi
+        // fracture of its meshes): the one struck now, the others a frame each
+        // after, so a big blow does not freeze the game for seconds.
+        if (c !== b) { if (best < radius * 0.75 || force >= 4) { deferredHits.push({ id: c.id, ...at, force }); scheduleBreak(); } continue; }
+        if (scene.strikeBuilding(c, at.x, at.y, at.z, force)) {
+          doc.buildings.remove(c.id);
+          scene.forgetRuin(c.id);
+          burning.delete(c.id);
+          downs++;
+          changed = true;
+        } else {
+          // Its wiring shorting and its pipes bursting at a few points on the
+          // side the blast struck: sparks and spouts of water for a while -
+          // only the first time it is struck, and only for a moment.
+          const base = ground({ x: c.x, y: c.y });
+          const floors = Math.max(1, Math.max(...c.volumes.map((v) => v.base + v.storeys.length)));
+          const spots = shorted.has(c.id) ? 0 : Math.min(2, 1 + Math.round(force / 8));
+          shorted.add(c.id);
+          for (let k = 0; k < spots; k++) {
+            const h = base + levelElevation(c, Math.floor(Math.random() * floors)) + m(1 + Math.random() * 1.5);
+            const jx = px + (Math.random() - 0.5) * m(6), jy = py + (Math.random() - 0.5) * m(6);
+            if (Math.random() < 0.75) scene.sparkAt(jx, jy, h, 0.6 + Math.random() * 0.8);
+            else scene.leak(jx, jy, h, 1 + Math.random() * 1.5);
+          }
+        }
+      }
+      // Everything round it left filthy: the buildings within twice the reach
+      // blackened with soot and dust (their weathering, `decay`).
+      for (const c of [...doc.buildings.all()]) {
+        const q = here(c);
+        const d = Math.hypot(q.x - world.x, q.y - world.y);
+        if (d > radius * 2.2) continue;
+        const add = 0.35 * (1 - d / (radius * 2.2)) * Math.min(1, strength / 8);
+        if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.put({ ...c, decay: Math.min(1, (c.decay ?? 0) + add) })); changed = true; }
+      }
+      // Poles: broken whole, snapped or to splinters; the wires torn off them
+      // pull the next poles over, or hang from them.
+      const broken = new Set<PoleId>();
+      for (const pole of doc.poles.values()) if (near(pole.x, pole.y, radius)) broken.add(pole.id);
+      for (const span of doc.poleSpans.values()) {
+        for (const [from, to] of [[span.a, span.b], [span.b, span.a]] as const) {
+          if (!broken.has(to) || broken.has(from)) continue;
+          const p = doc.poles.get(from);
+          if (p && near(p.x, p.y, radius * 2.2) && Math.random() < 0.5) broken.add(from);
+        }
+      }
+      for (const span of doc.poleSpans.values()) {
+        const pa = doc.poles.get(span.a), pb = doc.poles.get(span.b);
+        if (!pa || !pb) continue;
+        const qa = here(pa), qb = here(pb);
+        if (broken.has(span.a) && !broken.has(span.b)) hit.wires.push({ fromX: qb.x, fromY: qb.y, toX: qa.x, toY: qa.y });
+        if (broken.has(span.b) && !broken.has(span.a)) hit.wires.push({ fromX: qa.x, fromY: qa.y, toX: qb.x, toY: qb.y });
+      }
+      for (const id of broken) {
+        const pole = doc.poles.get(id)!;
+        const q = here(pole);
+        const d = Math.hypot(q.x - world.x, q.y - world.y) || 1;
+        const close = d < radius * 0.4;
+        const mode = d > radius ? 'whole' : close && Math.random() < 0.6 ? 'splinter' : Math.random() < 0.5 ? 'snap' : 'whole';
+        hit.poles.push({ x: q.x, y: q.y, lamp: pole.lamp, mode, dirX: (q.x - world.x) / d, dirY: (q.y - world.y) / d });
+        doc.removePole(id);
+        changed = true;
+      }
+      // Traffic lights: a junction whose posts the blast reaches loses them.
+      for (const post of signalPosts(net, sim.graph)) {
+        if (!near(post.x, post.y, radius)) continue;
+        const q = here(post);
+        hit.posts.push({ x: q.x, y: q.y, yaw: post.yaw });
+        if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }
+      }
+      // Trees, benches, bins, lamps, signs: thrown and gone.
+      for (const item of [...doc.landscape.values()]) {
+        if (!near(item.x, item.y, radius)) continue;
+        hit.items.push({ kind: item.kind, ...here(item) });
+        if (item.kind === 'hydrant') scene.geyser(item.x, item.y, ground(item));
+        doc.removeLandscape(item.id);
+        changed = true;
+      }
+      // Bare earth: a crater dug into the terrain.
+      if (struck === 'earth') {
+        doc.addTerrainStamp({ x: world.x, y: world.y, radius: radius * 0.5, strength: m(0.6 + strength * 0.12), mode: 'lower' });
+        changed = true;
+      }
+      return changed;
+    });
+    // Cars: thrown, burning shells - the traffic. Who was in them or on them:
+    // thrown out dead, torn, burnt black near the blast.
+    const aboard: Occupant[] = [];
+    // `x`, `y` on the blast's chart (`here`).
+    const throwAboard = (id: number, x: number, y: number, angle: number, rider: boolean, index: number | null = null): void => {
+      const d = Math.hypot(x - world.x, y - world.y);
+      const close = d < radius * 0.6;
+      aboard.push({ id: 8_000_000 + id, x, y, z: ground({ x, y }) + m(rider ? 1.0 : 0.6), heading: angle,
+        blastX: world.x, blastY: world.y, power: Math.max(0.3, 1 - d / (radius * 1.1)),
+        kind: close && Math.random() < 0.5 ? 'torn' : 'dead', charred: !rider || close, index });
+    };
+    for (const v of [...sim.vehicles.values()]) {
+      const pose = vehiclePose(sim, v, 1);
+      if (!pose || !near(pose.p.x, pose.p.y, radius * 1.1)) continue;
+      const css = String(v.color ?? '#777777');
+      // On the blast's chart; the heading turns little over a few metres of the next piece.
+      const p = here(pose.p);
+      hit.vehicles.push({ x: p.x, y: p.y, angle: pose.angle, length: v.archetype.length, width: v.archetype.width,
+        height: v.archetype.height, color: parseInt(css.replace('#', '').slice(0, 6), 16) || 0x777777, id: v.id, archetype: v.archetype });
+      throwAboard(v.id, p.x, p.y, pose.angle, v.archetype.shape === 'bicycle' || v.archetype.shape === 'motorcycle', scene.driverBody(v, pose.p.x, pose.p.y));
+      sim.removeVehicle(v);
+    }
+    (globalThis as Record<string, unknown>)['__lastBlast'] = { ...hit, radius, at: world };
+    scene.explode(world.x, world.y, z, radius, hit);
+    if (aboard.length) scene.flingOccupants(aboard);
+    // Soot and ash over the ground round it, kept: streets and lots left dirty.
+    const blots = Math.min(40, Math.round(6 + stepsIn(radius, 3)));
+    for (let k = 0; k < blots; k++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * radius * 1.6;
+      const x = world.x + Math.cos(a) * r, y = world.y + Math.sin(a) * r;
+      scene.soot(x, y, ground({ x, y }), m(2 + Math.random() * 4) + radius * 0.08);
+    }
+    if (struck === 'road') scene.strikeGround(world.x, world.y, strength);
+    if (downs > 0 || hit.poles.length || hit.vehicles.length) deps.holdGrowth(performance.now() + 90_000);
+    if (!quiet) deps.hint(downs > 0 ? 'hint.strike.down' : dead > 0 ? 'hint.strike.deaths' : b ? 'hint.strike.hit' : 'hint.strike.ground');
+    if (b && doc.buildings.has(b.id)) ignite(b.id);
+    deps.redraw();
+  }
+
+  // A building struck comes down when its pieces are ready (made off the main thread).
+  scene.onBuildingDown((id) => {
+    if (!doc.buildings.has(id as BuildingId)) return;
+    deps.mutate(() => { doc.buildings.remove(id as BuildingId); scene.forgetRuin(id); burning.delete(id); return true; });
+    deps.redraw();
+  });
+
+  /** The buildings a blow reached, four a frame (MDN: one `requestAnimationFrame` per frame, asked again while some wait). */
+  function breakDeferred(): void {
+    breaking = false;
+    for (let k = 0; k < 4 && deferredHits.length; k++) breakOne(deferredHits.shift()!);
+    if (deferredHits.length) scheduleBreak();
+  }
+  function scheduleBreak(): void {
+    if (breaking) return;
+    breaking = true;
+    requestAnimationFrame(breakDeferred);
+  }
+  function breakOne(next: { id: number; x: number; y: number; z: number; force: number }): void {
+    const c = doc.buildings.get(next.id as BuildingId);
+    if (c && scene.strikeBuilding(c, next.x, next.y, next.z, next.force)) {
+      deps.mutate(() => { doc.buildings.remove(c.id); scene.forgetRuin(c.id); burning.delete(c.id); return true; });
+    }
+    deps.redraw();
+  }
+
+  /**
+   * Buildings on fire (the player's order of 2026-10-05: "o fogo ir tomando
+   * conta dos prédios vizinhos, acontecendo explosões, e ir ficando um clima
+   * ruim"): each burns with flames and a black column for a minute or two,
+   * at most three at once.
+   */
+  function ignite(id: number): void {
+    if (burning.has(id) || burning.size >= 3) return;
+    const now = performance.now() / 1000;
+    burning.set(id, { since: now, nextFlame: now, until: now + 50 + Math.random() * 40 });
+  }
+  setInterval(() => {
+    const now = performance.now() / 1000;
+    for (const [id, f] of [...burning]) {
+      const b = doc.buildings.get(id as BuildingId);
+      if (!b || now > f.until) { burning.delete(id); continue; }
+      const pts = solidFootprints(b).flat();
+      if (!pts.length) { burning.delete(id); continue; }
+      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+      const size = Math.min(m(30), Math.max(m(6), Math.hypot(pts[0]!.x - cx, pts[0]!.y - cy)));
+      const base = ground({ x: cx, y: cy });
+      if (now >= f.nextFlame) {
+        // Fires at a few points of the building, from the ground up its height.
+        for (let k = 0; k < 2; k++) {
+          const p = pts[Math.floor(Math.random() * pts.length)]!;
+          const x = cx + (p.x - cx) * Math.random(), y = cy + (p.y - cy) * Math.random();
+          scene.burn(x, y, base + m(2 + Math.random() * 10), Math.min(size * 0.3, m(3)), 7);
+        }
+        f.nextFlame = now + 6;
+      }
+    }
+    if (burning.size) deps.redraw();
+  }, 500);
+
+  /** The first point of building `b` along the screen ray through (sx, sy): marched down from its top. */
+  function rayOnBuilding(b: Building, sx: number, sy: number, base: number): (Vec2 & { z: number }) | null {
+    const { w, h: height } = deps.size();
+    const view = deps.view();
+    const volumes = resolveBlocks(b).volumes.filter((v) => !v.open);
+    // Each block at its own heights (a split level, `Volume.lift`).
+    let top = 0, low = 0;
+    for (const v of volumes) { top = Math.max(top, volumeElevation(b, v, v.base + v.storeys.length)); low = Math.min(low, volumeElevation(b, v, v.base)); }
+    for (let h = top + m(1); h >= low; h -= m(0.5)) {
+      const p = view.toWorldAt(sx, sy, base + h, w, height);
+      const l = worldToLocal(b, p);
+      for (const v of volumes) {
+        if (l.x < v.x || l.x > v.x + v.w || l.y < v.y || l.y > v.y + v.d) continue;
+        if (h <= volumeElevation(b, v, v.base + v.storeys.length) && h >= volumeElevation(b, v, v.base)) return { x: p.x, y: p.y, z: base + h };
+      }
+    }
+    return null;
+  }
+
+  return { strikeAt, shootAt, explodeAt };
+}

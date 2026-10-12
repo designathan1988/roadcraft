@@ -1,0 +1,269 @@
+{
+ "name": "modernOffice",
+ "use": "commercial",
+ "density": "high",
+ "savedAt": "2026-10-10T00:00:00.000Z",
+ "body": {
+  "schema": 2,
+  "use": "commercial",
+  "function": "office",
+  "module": 7.5,
+  "groundHeight": 11.5,
+  "storeyHeight": 9.25,
+  "palette": 2,
+  "materials": {
+   "wall": {
+    "finish": "plaster",
+    "colour": 15855078
+   },
+   "roof": {
+    "finish": "concrete",
+    "colour": 9079430
+   },
+   "trim": {
+    "finish": "stone",
+    "colour": 14210252
+   }
+  },
+  "volumes": [
+   {
+    "id": 1,
+    "x": -37.5,
+    "y": 15.0,
+    "w": 75.0,
+    "d": 47.5,
+    "base": 0,
+    "roof": "terrace",
+    "storeys": [
+     {
+      "facade": {
+       "fill": "shopfront",
+       "bays": {
+        "0:4": "doubleDoor"
+       },
+       "sides": {
+        "1": "shopfront",
+        "3": "shopfront"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "shopfront",
+       "sides": {
+        "1": "shopfront",
+        "3": "shopfront"
+       }
+      }
+     }
+    ],
+    "materials": {
+     "wall": {
+      "finish": "stone",
+      "colour": 13222580
+     }
+    },
+    "facadeGeometry": {
+     "0": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "1": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "2": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "3": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     }
+    }
+   },
+   {
+    "id": 2,
+    "x": -37.5,
+    "y": 15.0,
+    "w": 75.0,
+    "d": 47.5,
+    "base": 2,
+    "roof": "flat",
+    "storeys": [
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     },
+     {
+      "facade": {
+       "fill": "window",
+       "sides": {
+        "1": "window",
+        "3": "window"
+       }
+      }
+     }
+    ],
+    "materials": {
+     "wall": {
+      "finish": "plaster",
+      "colour": 15855078
+     }
+    },
+    "facadeGeometry": {
+     "0": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "1": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "2": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     },
+     "3": {
+      "windowWidth": 0.6,
+      "windowHeight": 0.6,
+      "sill": 2
+     }
+    }
+   }
+  ],
+  "nextElementId": 1,
+  "cores": [],
+  "nextVolumeId": 3,
+  "blueprint": "signature:modernOffice"
+ }
+}

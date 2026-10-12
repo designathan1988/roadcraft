@@ -1,0 +1,411 @@
+/* Roadcraft interface v2 - see shell.ts. One stylesheet, one set of tokens.
+
+   Three pieces, as Cities: Skylines II lays them out:
+   - the dock of categories, bottom centre (icons, names in tooltips);
+   - above it the asset panel: the tool's modes as tabs, its things as cards;
+   - the tool options, bottom left: one row per setting, its short name at the
+     left and its controls beside it, the whole map's settings under a divider.
+   Every target is at least 24 x 24 px (WCAG 2.2, 2.5.8); most are 30-32 px. */
+:root {
+  --v-bg: rgba(14, 22, 24, 0.9);
+  --v-bg-solid: #10191b;
+  --v-raise: rgba(255, 255, 255, 0.05);
+  --v-raise-2: rgba(255, 255, 255, 0.09);
+  --v-line: rgba(255, 255, 255, 0.1);
+  --v-text: #eef4f2;
+  --v-muted: #a3b4b0;
+  --v-accent: #4fe0bf;
+  --v-accent-soft: rgba(79, 224, 191, 0.14);
+  --v-accent-line: rgba(79, 224, 191, 0.5);
+  --v-accent-ink: #062520;
+  --v-danger: #ff6f61;
+  --v-danger-ink: #ffb3aa;
+  --v-r: 12px;
+  --v-r-s: 8px;
+  --v-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --v-dock-h: 62px;
+  --v-hud-h: 46px;
+  --v-opts-w: 300px;
+  --v-card: 46px;
+  --v-card-w: 74px;
+}
+
+/* ---------------------------------------------------------------- base */
+.v2 { position: absolute; inset: 0; pointer-events: none; z-index: 5; color: var(--v-text); font: 13px/1.3 Inter, ui-sans-serif, "Segoe UI", Roboto, sans-serif; }
+.v2 * { box-sizing: border-box; }
+.v2 button, .v2 select, .v2 input { font: inherit; color: inherit; }
+.v2 button { cursor: pointer; }
+.v2 button:disabled { opacity: 0.35; cursor: default; }
+.v2 [hidden] { display: none !important; }
+.v2 :focus-visible { outline: 2px solid var(--v-accent); outline-offset: 1px; }
+.v2-hud, .v2-dock, .v2-drawer, .v2-toolopts, .v2-pop, .v2-side, .v2-toast {
+  pointer-events: auto;
+  background: var(--v-bg);
+  border: 1px solid var(--v-line);
+  box-shadow: var(--v-shadow);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+/* A name kept for screen readers and the tooltip, not drawn. */
+.v2-icon > span, .v2-pill > span, .v2-seg-b > span, .v2-tabs.compact .v2-tab.icon:not(.on) > span, .v2-tabs.tight .v2-tab.icon > span, .v2-choice.icon > span,
+.v2-verb > span, .v2-act > span {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- HUD */
+.v2-hud {
+  position: absolute; top: 12px; left: 12px; right: 12px; height: var(--v-hud-h);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  padding: 0 8px; border-radius: var(--v-r);
+}
+.v2-city { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.v2-clock { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.v2-money { font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v2-stats { color: var(--v-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Segmented groups in the bar: the sky, the speed. */
+.v2-seg, .v2-speed { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--v-raise); border: 1px solid var(--v-line); }
+.v2-seg-b, .v2-speed-b {
+  position: relative; display: grid; place-items: center; min-width: 34px; height: 28px; padding: 0 6px;
+  border: 0; border-radius: 999px; background: none; color: var(--v-muted); font-weight: 700; font-size: 14px;
+}
+.v2-seg-b:hover, .v2-speed-b:hover { color: var(--v-text); }
+.v2-seg-b.on, .v2-speed-b.on { background: var(--v-accent); color: var(--v-accent-ink); }
+/* Junctions that cannot be built: a warning chip with their count. */
+.v2-warn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 1px solid rgba(255, 111, 97, 0.55); border-radius: 999px; background: rgba(255, 111, 97, 0.14); color: var(--v-danger-ink); font-size: 12.5px; }
+.v2-warn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.v2-warn:hover { border-color: var(--v-danger); }
+.v2-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.v2-pill, .v2-icon {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  width: 32px; height: 32px; padding: 0; flex: none;
+  border: 1px solid var(--v-line); border-radius: 10px; background: var(--v-raise); color: var(--v-text);
+}
+.v2-pill:hover, .v2-icon:hover:not(:disabled) { background: var(--v-raise-2); border-color: var(--v-accent-line); }
+.v2-icon.on, .v2-pill.on { color: var(--v-accent); border-color: var(--v-accent); background: var(--v-accent-soft); }
+.v2-icon.danger { color: var(--v-danger-ink); }
+/* Inside the buildings: the floor and its steps, while the layer is on. */
+.v2-inside { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid var(--v-line); }
+.v2-inside-level { min-width: 22px; padding: 0 2px; font-size: 12px; font-weight: 700; text-align: center; }
+
+/* ---------------------------------------------------------------- popovers */
+.v2-pop { position: absolute; z-index: 9; min-width: 280px; max-width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 100px); overflow: auto; padding: 6px; border-radius: var(--v-r); }
+.v2-pop-body { display: grid; gap: 2px; }
+.v2-pop hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: var(--v-line); }
+.v2-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 38px; padding: 6px 10px; border: 0; border-radius: var(--v-r-s); background: none; text-align: left; font-size: 14px; }
+.v2-row:hover { background: var(--v-raise-2); }
+.v2-row svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; color: var(--v-muted); }
+/* A layer's switch: a pill at the end of its row. */
+.v2-switch { padding-right: 52px; }
+.v2-switch::after { content: ""; position: absolute; right: 10px; top: 50%; width: 30px; height: 16px; margin-top: -8px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+.v2-switch::before { content: ""; position: absolute; right: 26px; top: 50%; z-index: 1; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--v-muted); transition: transform 0.15s; }
+.v2-switch.on::after { background: rgba(79, 224, 191, 0.45); }
+.v2-switch.on::before { transform: translateX(14px); background: var(--v-accent); }
+.v2-switch.on svg { color: var(--v-accent); }
+.v2-pop .v2-orow { padding: 2px 8px; }
+.v2-metrics { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 4px 0 0; padding: 8px 10px 4px; border-top: 1px solid var(--v-line); font-size: 13px; }
+.v2-metrics dt { color: var(--v-muted); }
+.v2-metrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.v2-pop-body.icons { display: flex; gap: 2px; }
+.v2-pop:has(> .v2-pop-body.icons) { min-width: 0; padding: 4px; }
+.v2-pop-body.icons .v2-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+/* Help: keys and what they do, the keys of every section in one column: each
+   section's own grid sized it to its own keys, and the three columns of
+   descriptions stood at three places (MDN, CSS subgrid). */
+.v2-pop-body.help { gap: 6px; grid-template-columns: auto 1fr; column-gap: 10px; }
+.v2-pop-body.help > * { grid-column: 1 / -1; }
+.v2-pop-body.help > .v2-keys { display: grid; grid-template-columns: subgrid; }
+.v2-pop-body.help > .v2-keys > .v2-subhead { grid-column: 1 / -1; }
+.v2-keys dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 4px 0 0; padding: 0 8px; align-items: baseline; }
+.v2-pop-body.help > .v2-keys > dl { grid-column: 1 / -1; grid-template-columns: subgrid; }
+.v2-keys dt { margin: 0; }
+.v2-keys dd { margin: 0; color: var(--v-muted); font-size: 12.5px; }
+.v2-keys kbd { display: inline-block; padding: 2px 6px; border: 1px solid var(--v-line); border-bottom-width: 2px; border-radius: 6px; background: var(--v-raise); font-family: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.3; white-space: nowrap; }
+.v2-more { padding: 0 8px; }
+.v2-more summary { cursor: pointer; color: var(--v-accent); font-size: 12.5px; padding: 4px 0; }
+.v2-help { padding: 4px 0; }
+.v2-help strong { font-size: 13px; }
+.v2-help p { margin: 2px 0 0; color: var(--v-muted); font-size: 12.5px; line-height: 1.45; }
+
+/* ---------------------------------------------------------------- dock */
+.v2-dock {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 4px; border-radius: 14px; max-width: calc(100vw - 24px); overflow-x: auto; scrollbar-width: none;
+}
+/* A tool: its icon and, under it, its short name (recognised, not recalled). */
+.v2-cat {
+  position: relative; display: grid; grid-template-rows: 24px auto; justify-items: center; align-content: center; gap: 3px;
+  min-width: 66px; height: 52px; padding: 0 6px; border: 1px solid transparent; border-radius: 10px; background: none; color: var(--v-muted);
+}
+.v2-cat-name { font-size: 11px; font-weight: 600; line-height: 1.1; white-space: nowrap; letter-spacing: 0.01em; }
+.v2-cat:hover { background: var(--v-raise); color: var(--v-text); }
+.v2-cat.on { background: var(--v-accent-soft); border-color: var(--v-accent); color: var(--v-accent); }
+.v2-cat.danger.on { background: rgba(255, 111, 97, 0.14); border-color: var(--v-danger); color: var(--v-danger); }
+.v2-cat svg { width: 22px; height: 22px; }
+.v2-cat kbd { display: none; }
+
+/* ---------------------------------------------------------------- asset panel (drawer) */
+.v2-drawer {
+  position: absolute; left: 50%; bottom: calc(12px + var(--v-dock-h) + 10px); transform: translateX(-50%);
+  width: max-content; min-width: 0; max-width: calc(100vw - 24px);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head close" "body body"; align-items: center;
+  border-radius: var(--v-r); overflow: hidden;
+}
+.v2-drawer:has(> .v2-drawer-head > .v2-tabs[hidden]) { grid-template-areas: "body close"; }
+.v2-drawer-head { grid-area: head; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 6px; border-bottom: 1px solid var(--v-line); }
+.v2-drawer-head > .v2-tabs { min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+.v2-drawer-head:has(> .v2-tabs[hidden]) { display: none; }
+.v2-drawer > .v2-icon { grid-area: close; width: 34px; height: auto; align-self: stretch; margin: 0; border: 0; border-bottom: 1px solid var(--v-line); border-radius: 0; background: none; }
+.v2-drawer:has(> .v2-drawer-head > .v2-tabs[hidden]) > .v2-icon { align-self: center; width: 26px; height: 26px; margin: 0 6px; border: 1px solid var(--v-line); border-radius: 8px; }
+.v2-drawer > .v2-drawer-body { grid-area: body; display: flex; align-items: center; min-width: 0; }
+.v2-title { display: none; }
+.v2-tabs { display: flex; gap: 2px; align-items: center; }
+.v2-tab { height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--v-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* A mode: its icon and its name; squeezed, only the mode in use keeps the name. */
+.v2-tab.icon { display: inline-flex; align-items: center; gap: 6px; position: relative; padding: 0 10px 0 8px; }
+.v2-tab.icon > svg { flex: none; }
+.v2-tabs.compact .v2-tab.icon:not(.on), .v2-tabs.tight .v2-tab.icon { width: 34px; padding: 0; justify-content: center; }
+.v2-tab:hover:not(:disabled) { color: var(--v-text); background: var(--v-raise-2); }
+.v2-tab.on { color: var(--v-accent-ink); background: var(--v-accent); border-color: var(--v-accent); }
+.v2-hint { display: none !important; }
+
+/* The strip: the things, in sections side by side, scrolling sideways. */
+.v2-strip {
+  flex: 1; min-width: 0; display: flex; gap: 0; padding: 6px 8px; align-items: flex-start;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.v2-strip::-webkit-scrollbar { height: 6px; }
+.v2-strip::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+.v2-strip:empty { display: none; }
+/* More past an edge (`fadeEdges`, `shell.ts`): that edge fades out (MDN mask-image). */
+.v2-drawer [data-more="right"] { mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent); }
+.v2-drawer [data-more="left"] { mask-image: linear-gradient(to left, #000 calc(100% - 64px), transparent); }
+.v2-drawer [data-more="both"] { mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); }
+.v2-section { flex: none; display: grid; }
+/* One group of things apart from the next: a line between them (proximity). */
+.v2-section + .v2-section { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--v-line); }
+.v2-section:has(> .v2-section-items:empty) { display: none; }
+.v2-section-title { display: none; }
+.v2-section-items { display: grid; grid-auto-flow: column; grid-template-rows: auto; gap: 4px; }
+/* Two rows of smaller cards when the things are many: all of them in view. */
+.v2-strip.two-rows { --v-card: 40px; }
+.v2-strip.two-rows .v2-section-items { grid-template-rows: repeat(2, auto); }
+.v2-strip.two-rows .v2-card-art.glyph svg { width: 24px; height: 24px; }
+.v2-strip.two-rows .v2-ground, .v2-strip.two-rows .v2-zone-swatch { width: 28px; height: 28px; }
+.v2-card {
+  position: relative; display: grid; grid-template-rows: var(--v-card) auto; width: var(--v-card-w); padding: 0; overflow: hidden;
+  border: 1px solid var(--v-line); border-radius: 8px; background: var(--v-raise); text-align: center;
+}
+/* The thing's name under its picture: two lines at most, the rest in the
+   tooltip; a word is never broken (it was, where it met the card's edge:
+   "Mediterrâne / o") - the card grows to it (`fitDrawer`, `shell.ts`). */
+.v2-card-name {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  height: 2.4em; margin: 3px 4px; font-size: 10.5px; line-height: 1.2; font-weight: 600; color: var(--v-muted);
+}
+.v2-card:hover:not(:disabled) .v2-card-name, .v2-card.on .v2-card-name { color: var(--v-text); }
+.v2-card:hover:not(:disabled) { border-color: rgba(79, 224, 191, 0.6); background: var(--v-raise-2); }
+.v2-card.on { border-color: var(--v-accent); box-shadow: 0 0 0 2px var(--v-accent) inset; }
+.v2-card.danger .v2-card-art { color: var(--v-danger-ink); }
+.v2-card-art { width: 100%; height: var(--v-card); object-fit: cover; background: radial-gradient(120% 90% at 50% 30%, #3a5a54 0%, #1d2d2b 100%); }
+.v2-card-art.glyph { display: grid; place-items: center; color: #cfe3de; }
+.v2-card-art.glyph svg { width: 28px; height: 28px; }
+.v2-card.on .v2-card-art.glyph { color: var(--v-accent); }
+/* A building's picture whole, not cropped, and big enough to tell one from the next. */
+.v2-strip .v2-card.model { --v-card: 54px; --v-card-w: 80px; }
+.v2-card.model .v2-card-art { object-fit: contain; }
+.v2-zone-swatch { display: block; width: 32px; height: 32px; border-radius: 10px; background: var(--zone); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.25); }
+/* A ground's colour, on a card or in a row of map biomes. */
+.v2-ground { display: block; width: 32px; height: 32px; border-radius: 9px; background: var(--c); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3); }
+.v2-choice .v2-ground { width: 20px; height: 20px; border-radius: 6px; }
+.v2-choice.icon:has(> .v2-ground) { width: 28px; height: 28px; }
+.v2-ground.none { background: linear-gradient(135deg, transparent 46%, var(--v-muted) 48%, var(--v-muted) 52%, transparent 54%); box-shadow: inset 0 0 0 1px var(--v-muted); }
+.v2-style { display: flex; height: 32px; border-radius: 8px; overflow: hidden; }
+.v2-style i { width: 14px; height: 100%; }
+.v2-verb {
+  position: relative; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-raise);
+}
+.v2-verb svg { width: 16px; height: 16px; }
+.v2-verb:hover:not(:disabled) { border-color: rgba(79, 224, 191, 0.6); }
+.v2-verb.on { border-color: var(--v-accent); color: var(--v-accent); background: var(--v-accent-soft); }
+.v2-verb.danger { color: var(--v-danger-ink); }
+.v2-muted { margin: 0; color: var(--v-muted); font-size: 11.5px; }
+
+/* ---------------------------------------------------------------- tool options */
+.v2-toolopts {
+  position: absolute; left: 12px; bottom: 12px; width: var(--v-opts-w); max-width: calc(100vw - 24px);
+  display: grid; gap: 2px; padding: 6px 8px; border-radius: var(--v-r);
+  max-height: calc(100dvh - var(--v-hud-h) - 36px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.v2-options { display: grid; gap: 2px; }
+/* One setting a row: the name at the left, the controls beside it. */
+.v2-orow { display: grid; grid-template-columns: 66px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; }
+.v2-orow-name { color: var(--v-muted); font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-orow-ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.v2-orow.range .v2-orow-ctrls { flex-wrap: nowrap; }
+.v2-range { flex: 1; min-width: 0; height: 22px; margin: 0; accent-color: var(--v-accent); }
+.v2-range-out { min-width: 48px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--v-text); white-space: nowrap; }
+/* The whole map's settings, after the brush's. */
+.v2-subhead { margin-top: 4px; padding: 6px 0 2px; border-top: 1px solid var(--v-line); color: var(--v-muted); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.v2-toolopts > .v2-head-tools { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 4px; border-top: 1px solid var(--v-line); }
+.v2-toolopts > .v2-head-tools:empty { display: none; }
+.v2-toolopts .v2-options[hidden] + .v2-head-tools { border-top: 0; padding-top: 0; }
+/* Choices: icons in a segmented row; words where no icon reads. */
+.v2-choices { display: flex; flex-wrap: wrap; gap: 2px; }
+.v2-choice { min-height: 30px; padding: 3px 8px; border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-raise); font-size: 12px; line-height: 1.2; white-space: nowrap; }
+.v2-choice:hover:not(:disabled) { border-color: var(--v-accent-line); }
+.v2-choice.on { color: var(--v-accent-ink); background: var(--v-accent); border-color: var(--v-accent); font-weight: 650; }
+.v2-choice.icon { position: relative; display: grid; place-items: center; width: 32px; height: 32px; min-height: 0; padding: 0; border-color: transparent; background: none; color: var(--v-muted); }
+.v2-choice.icon:hover:not(:disabled) { color: var(--v-text); background: var(--v-raise-2); }
+.v2-choice.icon.on { color: var(--v-accent-ink); background: var(--v-accent); border-color: var(--v-accent); }
+.v2-num { font-size: 13px; font-weight: 700; }
+.v2-stepper { display: inline-grid; grid-template-columns: 26px minmax(36px, auto) 26px; align-items: center; gap: 2px; }
+.v2-stepper .v2-icon { width: 26px; height: 26px; border-radius: 7px; }
+.v2-stepper-value { padding: 0 2px; text-align: center; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A map action (clear every stroke, spread clouds): an icon, asking first. */
+.v2-act { position: relative; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-raise); }
+.v2-act:hover { border-color: var(--v-accent-line); }
+.v2-act.danger { color: var(--v-danger-ink); }
+.v2-act.danger:hover { border-color: var(--v-danger); }
+/* The Builder's groups (its own panels, `renderBuild`). */
+.v2-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 0; }
+.v2-group + .v2-group { border-top: 1px solid var(--v-line); }
+.v2-search { width: 100%; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-bg-solid); color: var(--v-text); user-select: text; }
+.v2-group .v2-search { width: 132px; }
+.v2-search:focus { outline: none; border-color: var(--v-accent); }
+.v2-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-swatch { width: 24px; height: 24px; padding: 0; border: 1px solid var(--v-line); border-radius: 7px; background: var(--c); }
+.v2-swatch.on { outline: 2px solid var(--v-accent); outline-offset: 2px; }
+.v2-swatch.custom { background: conic-gradient(#e66, #ec6, #6c6, #6ce, #66e, #c6e, #e66); -webkit-appearance: none; appearance: none; }
+.v2-swatch.custom::-webkit-color-swatch { opacity: 0; }
+
+/* Public transport: one row per line - its colour, name, vehicles, away. */
+.v2-transit-line { display: flex; align-items: center; gap: 6px; min-width: 260px; padding: 4px 8px; border-radius: 8px; background: var(--v-raise); }
+.v2-transit-line > i { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+.v2-transit-line > b { font-weight: 700; }
+.v2-transit-line > span:not(.v2-transit-count) { flex: 1; font-size: 12px; opacity: 0.75; }
+.v2-transit-count { min-width: 18px; text-align: center; font-weight: 700; }
+
+/* ---------------------------------------------------------------- selection */
+/* The panel holds still; the inspector scrolls inside it, and its end fades
+   out while there is more past it (`fadeEnds`, `shell.ts`). */
+.v2-side { position: absolute; right: 12px; top: calc(12px + var(--v-hud-h) + 10px); width: 340px; max-height: calc(100dvh - var(--v-hud-h) - var(--v-dock-h) - 60px); display: flex; flex-direction: column; overflow: hidden; padding: 12px; border-radius: 16px; }
+.v2-side .inspector { position: static !important; display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; width: 100% !important; max-height: none !important; padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; transform: none !important; backdrop-filter: none !important; font-size: 13px; }
+.v2-side .inspector[data-more-y="bottom"] { mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); }
+.v2-side .inspector[data-more-y="top"] { mask-image: linear-gradient(to top, #000 calc(100% - 48px), transparent); }
+.v2-side .inspector[data-more-y="both"] { mask-image: linear-gradient(to bottom, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+/* The road inspector's fields: the number boxes were left in the browser's
+   white, the only light control on the dark panel. */
+.v2-side .inspect-select { font-size: 11.5px; }
+.v2-side .inspect-select input[type="number"], .v2-side .inspect-select select {
+  width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--v-line); border-radius: var(--v-r-s);
+  background: var(--v-bg-solid); color: var(--v-text); font-size: 13px; color-scheme: dark;
+}
+.v2-side .inspect-select input[type="number"]:focus, .v2-side .inspect-select select:focus { outline: none; border-color: var(--v-accent); }
+/* A junction that cannot be built: said first, in the danger colour. */
+.v2-side .inspect-warning { margin: 0 0 8px; padding: 8px 10px; border: 1px solid rgba(255, 111, 97, 0.5); border-radius: var(--v-r-s); background: rgba(255, 111, 97, 0.12); color: var(--v-danger-ink); font-size: 12px; line-height: 1.4; }
+.v2-side .inspect-warning strong { color: var(--v-danger); }
+.v2-shell #builder .bw-inspector {
+  top: calc(12px + var(--v-hud-h) + 10px); right: 12px; width: 340px; padding-bottom: 6px;
+  max-height: calc(100dvh - var(--v-hud-h) - var(--v-dock-h) - 60px);
+  background: var(--v-bg); border: 1px solid var(--v-line); border-radius: 16px; box-shadow: var(--v-shadow); font-size: 14px;
+}
+.v2-shell #builder .bw-inspector-title { font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--v-text); }
+.v2-shell #builder .bw-inspector-name { font-size: 17px; }
+.v2-shell #builder .bw-field { grid-template-columns: 1fr 100px 18px; font-size: 14px; }
+.v2-shell #builder .bw-field-input { height: 34px; font-size: 14px; }
+.v2-shell #builder .bw-inspector-actions .bw-action { height: 38px; }
+
+/* ---------------------------------------------------------------- tooltip, answers */
+.v2-tip { position: fixed; z-index: 20; pointer-events: none; padding: 4px 8px; border: 1px solid var(--v-line); border-radius: 6px; background: var(--v-bg-solid); color: var(--v-text); font-size: 12px; font-weight: 600; white-space: pre; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+.v2-toast { position: absolute; left: 50%; top: calc(12px + var(--v-hud-h) + 10px); transform: translateX(-50%); z-index: 10; max-width: min(520px, calc(100vw - 24px)); padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; pointer-events: none; }
+
+/* ---------------------------------------------------------------- narrower screens */
+@media (max-width: 1100px) {
+  .v2-stats { display: none; }
+}
+/* The centred dock (~490 px) and the tool options (300 px at the left) meet
+   below ~1140 px: the dock then stands right of the options' place, scrolling
+   if it must, so neither covers a control of the other (seen at 1024 × 768).
+   Always there, options open or not: a dock that moved when a tool opened
+   left the cursor on the next tool. */
+@media (781px <= width < 1160px) {
+  .v2 > .v2-dock {
+    left: calc(24px + var(--v-opts-w)); transform: none; max-width: calc(100vw - var(--v-opts-w) - 36px);
+  }
+}
+@media (max-width: 780px) {
+  :root { --v-dock-h: 70px; --v-hud-h: 50px; --v-opts-w: calc(100vw - 16px); }
+  .v2-hud { top: 8px; left: 8px; right: 8px; grid-template-columns: 1fr auto; padding: 0 8px; }
+  .v2-speed, .v2-stats, .v2-sky { display: none; }
+  .v2-dock { left: 8px; right: 8px; bottom: 8px; transform: none; justify-content: space-between; }
+  .v2-cat { width: auto; flex: 1 0 52px; height: 58px; }
+  .v2-drawer { left: 8px; right: 8px; width: auto; transform: none; bottom: calc(8px + var(--v-dock-h) + 8px); max-height: 52dvh; }
+  .v2-tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .v2-toolopts { left: 8px; bottom: calc(8px + var(--v-dock-h) + 8px + 160px); max-height: 30dvh; }
+  .v2-side, .v2-shell #builder .bw-inspector { right: 8px; width: min(300px, calc(100vw - 16px)); }
+}
+
+/* ---------------------------------------------------------------- lists of choices (no browser select) */
+.v2-dd {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; height: 30px; max-width: 100%; min-width: 0;
+  padding: 0 8px 0 10px; border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-raise); color: var(--v-text); font-size: 12.5px;
+}
+.v2-dd:hover, .v2-dd[aria-expanded="true"] { border-color: var(--v-accent-line); background: var(--v-raise-2); }
+.v2-dd-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-dd > svg { flex: none; color: var(--v-muted); }
+.v2-orow .v2-dd { flex: 1; }
+.v2-dd-list {
+  position: fixed; z-index: 12; pointer-events: auto; display: grid; gap: 1px; max-height: min(320px, 60dvh); overflow-y: auto; padding: 4px;
+  border: 1px solid var(--v-line); border-radius: var(--v-r-s); background: var(--v-bg-solid); box-shadow: var(--v-shadow);
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.v2-dd-opt { height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--v-text); font-size: 12.5px; text-align: left; white-space: nowrap; }
+.v2-dd-opt:hover { background: var(--v-raise-2); }
+.v2-dd-opt.on { color: var(--v-accent); font-weight: 650; }
+
+/* A panel's name over its rows. */
+.v2-pop-title { padding: 6px 10px 4px; color: var(--v-muted); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* What a mode with nothing to pick does, in the panel itself. */
+.v2-note { max-width: 520px; margin: 0; padding: 4px 6px; color: var(--v-muted); font-size: 12.5px; line-height: 1.4; white-space: normal; }
+
+/* A colour chosen among colours: ringed, its colour still seen (it was covered by the accent fill). */
+.v2-choice.icon.on:has(> .v2-ground) { background: none; box-shadow: inset 0 0 0 2px var(--v-accent); }
+
+/* Sliders in the theme: a thin track, filled to the value by accent-color, a round thumb. */
+.v2 input[type="range"].v2-range { accent-color: var(--v-accent); color-scheme: dark; cursor: pointer; }
+
+/* The Builder's inspector keeps its select (its own module): dark, with the theme's arrow. */
+.v2-shell #builder .bw-field-select {
+  appearance: none; -webkit-appearance: none; color-scheme: dark; padding-right: 22px; text-overflow: ellipsis;
+  background: var(--v-bg-solid) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3b4b0' stroke-width='2'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E") no-repeat right 4px center / 14px;
+  border: 1px solid var(--v-line); color: var(--v-text);
+}
+/* A choice has no unit: it takes the unit's column too and is as wide as its
+   longest option, so "Prédio residencial" is not cut to "Prédio re…". */
+.v2-shell #builder .bw-field:has(> .bw-field-select) { grid-template-columns: minmax(0, 1fr) auto; }
+.v2-shell #builder .bw-field-select { grid-column: 2 / -1; width: auto; min-width: 100px; max-width: 200px; }
+
+/* ---------------------------------------------------------------- the compass (compass.ts) */
+/* Bottom right, clear of the dock (centre) and the side panel (top right). */
+.v2-compass {
+  position: absolute; right: 16px; bottom: 16px; width: 52px; height: 52px; padding: 0;
+  pointer-events: auto; touch-action: none; border-radius: 50%;
+  background: var(--v-bg); border: 1px solid var(--v-line); box-shadow: var(--v-shadow);
+  backdrop-filter: blur(18px) saturate(130%); -webkit-backdrop-filter: blur(18px) saturate(130%);
+  cursor: grab; transition: border-color 120ms ease, transform 120ms ease;
+}
+.v2-compass:hover { border-color: var(--v-accent-line); transform: scale(1.06); }
+.v2-compass.held { cursor: grabbing; border-color: var(--v-accent); }
+.v2-compass svg { display: block; width: 100%; height: 100%; }
+.v2-compass-ring { fill: none; stroke: var(--v-line); stroke-width: 1.5; }
+.v2-compass-needle { transform-origin: 24px 24px; transform-box: view-box; }
+.v2-compass-n { fill: #ff6f61; }
+.v2-compass-s { fill: var(--v-muted); opacity: 0.7; }
+.v2-compass text { fill: #fff; font: 700 8px/1 Inter, ui-sans-serif, sans-serif; pointer-events: none; }
+@media (max-width: 780px) {
+  .v2-compass { right: 8px; bottom: calc(8px + var(--v-dock-h) + 8px); width: 44px; height: 44px; }
+}

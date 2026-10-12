@@ -1,0 +1,1712 @@
+{
+  "name": "brickFrame",
+  "use": "residential",
+  "density": "high",
+  "savedAt": "2026-10-05T19:16:01.513Z",
+  "body": {
+    "schema": 2,
+    "use": "residential",
+    "function": "residentialTower",
+    "module": 7.5,
+    "groundHeight": 11.25,
+    "storeyHeight": 7.75,
+    "palette": 4,
+    "materials": {
+      "wall": {
+        "finish": "brick",
+        "colour": 10769983
+      },
+      "trim": {
+        "finish": "ceramic",
+        "colour": 14276303
+      },
+      "roof": {
+        "finish": "concrete",
+        "colour": 9079430
+      }
+    },
+    "volumes": [
+      {
+        "id": 1,
+        "x": -33.75,
+        "y": 12.5,
+        "w": 60,
+        "d": 47.5,
+        "base": 0,
+        "roof": "terrace",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "wideWindow",
+              "sides": {
+                "1": "wideWindow",
+                "3": "wideWindow"
+              },
+              "bays": {
+                "0:4": "doubleDoor"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "wideWindow",
+              "sides": {
+                "1": "wideWindow",
+                "3": "wideWindow"
+              }
+            }
+          }
+        ],
+        "materials": {
+          "wall": {
+            "finish": "ceramic",
+            "colour": 6251366
+          }
+        },
+        "facadeGeometry": {
+          "0": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "1": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "2": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "3": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          }
+        }
+      },
+      {
+        "id": 2,
+        "x": -28.75,
+        "y": 17.5,
+        "w": 20,
+        "d": 37.5,
+        "base": 2,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          }
+        ],
+        "materials": {
+          "wall": {
+            "finish": "brick",
+            "colour": 10769983
+          }
+        },
+        "facadeGeometry": {
+          "0": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "1": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "2": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "3": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "x": 2.5,
+        "y": 17.5,
+        "w": 18.75,
+        "d": 37.5,
+        "base": 2,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "balcony",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          }
+        ],
+        "materials": {
+          "wall": {
+            "finish": "brick",
+            "colour": 10769983
+          }
+        },
+        "facadeGeometry": {
+          "0": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "1": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "2": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "3": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          }
+        }
+      },
+      {
+        "id": 4,
+        "x": -8.75,
+        "y": 16,
+        "w": 11.25,
+        "d": 39,
+        "base": 2,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          },
+          {
+            "facade": {
+              "fill": "ribbon",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          }
+        ],
+        "materials": {
+          "wall": {
+            "finish": "glass",
+            "colour": 9416896
+          }
+        },
+        "facadeGeometry": {
+          "0": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "1": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "2": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          },
+          "3": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25,
+            "pierWidth": 1.25,
+            "pierDepth": 0.75,
+            "pierEvery": 2
+          }
+        }
+      },
+      {
+        "id": 5,
+        "x": -21.25,
+        "y": 25,
+        "w": 35,
+        "d": 22.5,
+        "base": 23,
+        "roof": "terrace",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "window",
+              "sides": {
+                "1": "window",
+                "3": "window"
+              }
+            }
+          }
+        ],
+        "materials": {
+          "wall": {
+            "finish": "brick",
+            "colour": 10769983
+          }
+        },
+        "facadeGeometry": {
+          "0": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "1": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "2": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          },
+          "3": {
+            "windowWidth": 0.6,
+            "windowHeight": 0.7,
+            "sill": 1.25
+          }
+        }
+      },
+      {
+        "id": 6,
+        "x": -37.5,
+        "y": 0,
+        "w": 66.25,
+        "d": 12.5,
+        "base": 0,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "wall"
+            }
+          }
+        ],
+        "open": "paving"
+      },
+      {
+        "id": 7,
+        "x": 28.75,
+        "y": 0,
+        "w": 8.75,
+        "d": 12.5,
+        "base": 0,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "wall"
+            }
+          }
+        ],
+        "open": "asphalt"
+      },
+      {
+        "id": 8,
+        "x": 28.75,
+        "y": 12.5,
+        "w": 8.75,
+        "d": 47.5,
+        "base": 0,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "wall"
+            }
+          }
+        ],
+        "open": "asphalt"
+      },
+      {
+        "id": 9,
+        "x": -37.5,
+        "y": 60,
+        "w": 75,
+        "d": 40,
+        "base": 0,
+        "roof": "flat",
+        "storeys": [
+          {
+            "facade": {
+              "fill": "wall"
+            }
+          }
+        ],
+        "open": "asphalt"
+      }
+    ],
+    "nextElementId": 68,
+    "cores": [],
+    "nextVolumeId": 10,
+    "blueprint": "signature:brickFrame",
+    "elements": [
+      {
+        "id": 1,
+        "kind": "planter",
+        "x": -31.25,
+        "y": 5.625,
+        "facing": 0,
+        "w": 5,
+        "d": 5,
+        "z": 0,
+        "h": 1.5
+      },
+      {
+        "id": 2,
+        "kind": "tree",
+        "x": -31.25,
+        "y": 5.625,
+        "facing": 0,
+        "w": 6.25,
+        "d": 6.25,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 3,
+        "kind": "bench",
+        "x": -31.25,
+        "y": 9.625,
+        "facing": 0,
+        "w": 4,
+        "d": 1.25,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 4,
+        "kind": "planter",
+        "x": -16.25,
+        "y": 5.625,
+        "facing": 0,
+        "w": 5,
+        "d": 5,
+        "z": 0,
+        "h": 1.5
+      },
+      {
+        "id": 5,
+        "kind": "tree",
+        "x": -16.25,
+        "y": 5.625,
+        "facing": 0,
+        "w": 6.25,
+        "d": 6.25,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 6,
+        "kind": "bench",
+        "x": -16.25,
+        "y": 9.625,
+        "facing": 0,
+        "w": 4,
+        "d": 1.25,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 7,
+        "kind": "planter",
+        "x": 13.75,
+        "y": 5.625,
+        "facing": 0,
+        "w": 5,
+        "d": 5,
+        "z": 0,
+        "h": 1.5
+      },
+      {
+        "id": 8,
+        "kind": "tree",
+        "x": 13.75,
+        "y": 5.625,
+        "facing": 0,
+        "w": 6.25,
+        "d": 6.25,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 9,
+        "kind": "bench",
+        "x": 13.75,
+        "y": 9.625,
+        "facing": 0,
+        "w": 4,
+        "d": 1.25,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 10,
+        "kind": "planter",
+        "x": 28.75,
+        "y": 5.625,
+        "facing": 0,
+        "w": 5,
+        "d": 5,
+        "z": 0,
+        "h": 1.5
+      },
+      {
+        "id": 11,
+        "kind": "tree",
+        "x": 28.75,
+        "y": 5.625,
+        "facing": 0,
+        "w": 6.25,
+        "d": 6.25,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 12,
+        "kind": "bench",
+        "x": 28.75,
+        "y": 9.625,
+        "facing": 0,
+        "w": 4,
+        "d": 1.25,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 13,
+        "kind": "lamp",
+        "x": -35,
+        "y": 10.5,
+        "facing": 0,
+        "w": 0.75,
+        "d": 0.75,
+        "z": 0,
+        "h": 11.25
+      },
+      {
+        "id": 14,
+        "kind": "lamp",
+        "x": 35,
+        "y": 10.5,
+        "facing": 0,
+        "w": 0.75,
+        "d": 0.75,
+        "z": 0,
+        "h": 11.25
+      },
+      {
+        "id": 15,
+        "kind": "bollard",
+        "x": -35.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 16,
+        "kind": "bollard",
+        "x": -30.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 17,
+        "kind": "bollard",
+        "x": -25.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 18,
+        "kind": "bollard",
+        "x": -20.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 19,
+        "kind": "bollard",
+        "x": -15.499999999999998,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 20,
+        "kind": "bollard",
+        "x": -10.499999999999998,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 21,
+        "kind": "bollard",
+        "x": -5.499999999999998,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 22,
+        "kind": "bollard",
+        "x": -0.4999999999999982,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 23,
+        "kind": "bollard",
+        "x": 4.500000000000002,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 24,
+        "kind": "bollard",
+        "x": 9.500000000000002,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 25,
+        "kind": "bollard",
+        "x": 14.500000000000002,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 26,
+        "kind": "bollard",
+        "x": 19.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 27,
+        "kind": "bollard",
+        "x": 24.5,
+        "y": 0.875,
+        "facing": 0,
+        "w": 0.5,
+        "d": 0.5,
+        "z": 0,
+        "h": 2.25
+      },
+      {
+        "id": 28,
+        "kind": "pavement",
+        "x": -35.625,
+        "y": 36.25,
+        "facing": 0,
+        "w": 3.75,
+        "d": 47.5,
+        "z": 0,
+        "h": 0.25,
+        "material": {
+          "finish": "brick",
+          "colour": 10130828
+        }
+      },
+      {
+        "id": 29,
+        "kind": "lamp",
+        "x": -36.75,
+        "y": 36.25,
+        "facing": 0,
+        "w": 0.75,
+        "d": 0.75,
+        "z": 0,
+        "h": 8.75
+      },
+      {
+        "id": 30,
+        "kind": "pavement",
+        "x": -35.625,
+        "y": 36.25,
+        "facing": 0,
+        "w": 3.75,
+        "d": 47.5,
+        "z": 0,
+        "h": 0.275,
+        "material": {
+          "finish": "stone",
+          "colour": 9078140
+        }
+      },
+      {
+        "id": 31,
+        "kind": "drain",
+        "x": -35.625,
+        "y": 17.5,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 32,
+        "kind": "drain",
+        "x": -35.625,
+        "y": 30,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 33,
+        "kind": "drain",
+        "x": -35.625,
+        "y": 42.5,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 34,
+        "kind": "drain",
+        "x": -35.625,
+        "y": 55,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 35,
+        "kind": "bin",
+        "x": -34.625,
+        "y": 55,
+        "facing": 3,
+        "w": 2.75,
+        "d": 1.5,
+        "z": 0,
+        "h": 2.75
+      },
+      {
+        "id": 36,
+        "kind": "slab",
+        "x": -34.625,
+        "y": 51.5,
+        "facing": 0,
+        "w": 1.5,
+        "d": 2,
+        "z": 0,
+        "h": 1.25,
+        "material": {
+          "finish": "wood",
+          "colour": 8018746
+        }
+      },
+      {
+        "id": 37,
+        "kind": "slab",
+        "x": -34.625,
+        "y": 51.5,
+        "facing": 0,
+        "w": 1.25,
+        "d": 1.5,
+        "z": 1.25,
+        "h": 1,
+        "material": {
+          "finish": "wood",
+          "colour": 9136709
+        }
+      },
+      {
+        "id": 38,
+        "kind": "drain",
+        "x": 33.125,
+        "y": 30,
+        "facing": 0,
+        "w": 1.25,
+        "d": 1.25,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 39,
+        "kind": "drain",
+        "x": 27.249999999999996,
+        "y": 17.5,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 40,
+        "kind": "drain",
+        "x": 27.249999999999996,
+        "y": 30,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 41,
+        "kind": "drain",
+        "x": 27.249999999999996,
+        "y": 42.5,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 42,
+        "kind": "drain",
+        "x": 27.249999999999996,
+        "y": 55,
+        "facing": 0,
+        "w": 0.875,
+        "d": 0.875,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 43,
+        "kind": "bin",
+        "x": 27.874999999999996,
+        "y": 55,
+        "facing": 3,
+        "w": 2.75,
+        "d": 1.5,
+        "z": 0,
+        "h": 2.75
+      },
+      {
+        "id": 44,
+        "kind": "slab",
+        "x": 27.874999999999996,
+        "y": 51.5,
+        "facing": 0,
+        "w": 1.5,
+        "d": 2,
+        "z": 0,
+        "h": 1.25,
+        "material": {
+          "finish": "wood",
+          "colour": 8018746
+        }
+      },
+      {
+        "id": 45,
+        "kind": "slab",
+        "x": 27.874999999999996,
+        "y": 51.5,
+        "facing": 0,
+        "w": 1.25,
+        "d": 1.5,
+        "z": 1.25,
+        "h": 1,
+        "material": {
+          "finish": "wood",
+          "colour": 9136709
+        }
+      },
+      {
+        "id": 46,
+        "kind": "parking",
+        "x": 4.440892098500626e-15,
+        "y": 93.375,
+        "facing": 2,
+        "w": 68.75,
+        "d": 12.5,
+        "z": 0,
+        "h": 0.3
+      },
+      {
+        "id": 47,
+        "kind": "planter",
+        "x": 34.375,
+        "y": 93.375,
+        "facing": 0,
+        "w": 3.750000000000007,
+        "d": 4,
+        "z": 0,
+        "h": 1.25
+      },
+      {
+        "id": 48,
+        "kind": "parking",
+        "x": -4.1249999999999964,
+        "y": 66.25,
+        "facing": 0,
+        "w": 62.5,
+        "d": 12.5,
+        "z": 0,
+        "h": 0.3
+      },
+      {
+        "id": 49,
+        "kind": "drain",
+        "x": 0,
+        "y": 80,
+        "facing": 0,
+        "w": 1.25,
+        "d": 1.25,
+        "z": 0,
+        "h": 0.25
+      },
+      {
+        "id": 50,
+        "kind": "lamp",
+        "x": -36,
+        "y": 80,
+        "facing": 0,
+        "w": 0.75,
+        "d": 0.75,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 51,
+        "kind": "lamp",
+        "x": 36,
+        "y": 80,
+        "facing": 0,
+        "w": 0.75,
+        "d": 0.75,
+        "z": 0,
+        "h": 12.5
+      },
+      {
+        "id": 52,
+        "kind": "bin",
+        "x": 25.75,
+        "y": 61.5,
+        "facing": 0,
+        "w": 3.5,
+        "d": 1.75,
+        "z": 0,
+        "h": 2.75
+      },
+      {
+        "id": 53,
+        "kind": "slab",
+        "x": 34,
+        "y": 62,
+        "facing": 0,
+        "w": 3,
+        "d": 2.5,
+        "z": 0,
+        "h": 0.35000000000000003,
+        "material": {
+          "finish": "wood",
+          "colour": 10254928
+        }
+      },
+      {
+        "id": 54,
+        "kind": "slab",
+        "x": 34,
+        "y": 62,
+        "facing": 0,
+        "w": 3,
+        "d": 2.5,
+        "z": 0.35000000000000003,
+        "h": 0.35000000000000003,
+        "material": {
+          "finish": "wood",
+          "colour": 9137221
+        }
+      },
+      {
+        "id": 55,
+        "kind": "gate",
+        "x": 33.125,
+        "y": 0.25,
+        "facing": 0,
+        "w": 7.75,
+        "d": 0.3,
+        "z": 0,
+        "h": 4.5
+      },
+      {
+        "id": 56,
+        "kind": "wall",
+        "x": -20.84375,
+        "y": 0.35000000000000003,
+        "facing": 0,
+        "w": 33.3125,
+        "d": 0.5,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 57,
+        "kind": "wall",
+        "x": 12.468749999999993,
+        "y": 0.35000000000000003,
+        "facing": 0,
+        "w": 33.3125,
+        "d": 0.5,
+        "z": 0,
+        "h": 1.125
+      },
+      {
+        "id": 58,
+        "kind": "fence",
+        "x": -20.84375,
+        "y": 0.35000000000000003,
+        "facing": 0,
+        "w": 33.3125,
+        "d": 0.3,
+        "z": 1.125,
+        "h": 4
+      },
+      {
+        "id": 59,
+        "kind": "fence",
+        "x": 12.468749999999993,
+        "y": 0.35000000000000003,
+        "facing": 0,
+        "w": 33.3125,
+        "d": 0.3,
+        "z": 1.125,
+        "h": 4
+      },
+      {
+        "id": 60,
+        "kind": "wall",
+        "x": -37.25,
+        "y": 6.375,
+        "facing": 1,
+        "w": 12.25,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 61,
+        "kind": "wall",
+        "x": -37.25,
+        "y": 34.3125,
+        "facing": 1,
+        "w": 43.625,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 62,
+        "kind": "wall",
+        "x": -37.25,
+        "y": 77.9375,
+        "facing": 1,
+        "w": 43.625,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 63,
+        "kind": "wall",
+        "x": 37.25,
+        "y": 6.375,
+        "facing": 1,
+        "w": 12.25,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 64,
+        "kind": "wall",
+        "x": 37.25,
+        "y": 34.3125,
+        "facing": 1,
+        "w": 43.625,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 65,
+        "kind": "wall",
+        "x": 37.25,
+        "y": 77.9375,
+        "facing": 1,
+        "w": 43.625,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 66,
+        "kind": "wall",
+        "x": -18.625000000000004,
+        "y": 99.75,
+        "facing": 0,
+        "w": 37.25,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      },
+      {
+        "id": 67,
+        "kind": "wall",
+        "x": 18.625,
+        "y": 99.75,
+        "facing": 0,
+        "w": 37.25,
+        "d": 0.5,
+        "z": 0,
+        "h": 5.5
+      }
+    ],
+    "lotPlan": 10
+  }
+}

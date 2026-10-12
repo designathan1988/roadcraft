@@ -1,0 +1,8 @@
+{
+  "name": "roadcraft",
+  "productName": "Roadcraft",
+  "version": "0.1.0",
+  "description": "Roadcraft in a window of its own",
+  "main": "main.cjs",
+  "private": true
+}

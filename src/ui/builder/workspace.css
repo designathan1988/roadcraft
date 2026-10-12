@@ -1,0 +1,118 @@
+/* The Builder's selection panel (`workspace.ts`): the numbers of what is
+   selected and the actions on it, on the right of the map. The interface v2
+   (`ui/v2/shell.css`, `.v2-shell #builder ...`) sets its place and type over
+   these; the colours are the Builder's (`--bw-*`, `ui/app.css`).
+
+   The rules were three stylesheets once - this one, construction.css and an
+   older "v2" for the Builder's own bars (a rail, a top bar, a dock, scoped to
+   `data-ui="v2"`). The bars left in 5g; what styled them went with them, and
+   what styles the panel was gathered here in the same order, so it cascades
+   as it did. */
+
+/* --- the panel's icon buttons */
+.bw-icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--bw-border);
+  border-radius: var(--bw-radius);
+  background: transparent;
+  color: var(--bw-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.bw-icon-button:hover:not(:disabled) { color: var(--bw-text); border-color: var(--bw-active); }
+.bw-icon-button { width: 30px; padding: 0; justify-content: center; }
+.bw-icon-button:disabled { opacity: 0.3; }
+
+/* --- the panel */
+.bw-inspector {
+  position: absolute;
+  top: 138px;
+  right: 10px;
+  width: 268px;
+  max-height: calc(100dvh - 138px - 60px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--bw-panel) 92%, transparent);
+  border: 1px solid var(--bw-border);
+  border-radius: var(--bw-radius);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bw-inspector.collapsed { width: 34px; max-height: 34px; overflow: hidden; }
+.bw-inspector.collapsed .bw-inspector-title { display: none; }
+.bw-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  border-bottom: 1px solid var(--bw-border);
+}
+.bw-inspector.collapsed .bw-inspector-head { border-bottom: 0; padding: 2px; }
+.bw-inspector-title { color: var(--bw-muted); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+.bw-inspector-body { padding: 8px 10px 12px; display: grid; gap: 6px; }
+.bw-inspector-name { color: var(--bw-text); font-size: 12.5px; font-weight: 600; }
+.bw-field { display: grid; grid-template-columns: 1fr 76px 14px; align-items: center; gap: 6px; color: var(--bw-muted); font-size: 11px; }
+.bw-field-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--bw-border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bw-bg) 70%, transparent);
+  color: var(--bw-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.bw-field-input:focus { outline: none; border-color: var(--bw-active); }
+.bw-field-unit { color: var(--bw-muted); font-size: 10px; }
+.bw-field-text { grid-column: 2 / -1; color: var(--bw-text); font-size: 11px; text-align: right; }
+.bw-field-material { grid-template-columns: 1fr auto; }
+
+@media (max-width: 780px) {
+  .bw-inspector { width: min(230px, calc(60vw - 12px)); top: 136px; max-height: calc(100dvh - 330px); }
+}
+
+/* --- the selection's actions: duplicate, mirror, join, save, demolish */
+.bw-inspector { top: 64px; max-height: calc(100dvh - 64px - 60px); }
+.bw-inspector-actions {
+  display: flex;
+  gap: 3px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bw-border);
+}
+.bw-inspector.collapsed .bw-inspector-actions { display: none; }
+.bw-inspector-actions .bw-action { flex: 1; height: 30px; }
+.bw-inspector-actions .bw-action.danger:hover { color: var(--bw-danger); border-color: var(--bw-danger); }
+
+/* --- the type and sizes the interface reads at (13 px and up), once the
+   shell is mounted (`.v2-shell` on the root, `ui/v2/shell.ts`) */
+:root.v2-shell {
+  --v2-text-s: 13px;
+  --v2-text-m: 14px;
+  --v2-text-l: 16px;
+  --v2-top: 52px;
+}
+:root.v2-shell #builder { font-size: var(--v2-text-m); }
+:root.v2-shell .bw-icon-button { font-size: var(--v2-text-s); }
+:root.v2-shell .bw-icon-button { height: 34px; }
+:root.v2-shell .bw-icon-button { width: 34px; }
+@media (min-width: 781px) {
+  :root.v2-shell .bw-inspector {
+    top: calc(var(--v2-top) + 20px);
+    width: 304px;
+    max-height: calc(100dvh - var(--v2-top) - 20px - 60px);
+  }
+}
+:root.v2-shell .bw-inspector-title { font-size: var(--v2-text-s); letter-spacing: 0; text-transform: none; color: var(--bw-text); font-weight: 650; }
+:root.v2-shell .bw-inspector-name { font-size: var(--v2-text-l); }
+:root.v2-shell .bw-field { grid-template-columns: 1fr 92px 18px; font-size: var(--v2-text-s); }
+:root.v2-shell .bw-field-input { height: 30px; font-size: var(--v2-text-s); }
+:root.v2-shell .bw-field-unit,
+:root.v2-shell .bw-field-text { font-size: var(--v2-text-s); }
