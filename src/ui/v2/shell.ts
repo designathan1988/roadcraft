@@ -470,6 +470,12 @@ export interface ShellDeps {
 export interface ShellHandle {
   /** Opens a tool's panel with that tool in hand (the road inspector's eyedropper). */
   openTool(tool: string): void;
+  /**
+   * A tool's key was pressed (`editor/gameKeys.ts`), after the tool machine
+   * took it or put it down: the drawer opens on the tool in hand, closes when
+   * the key put it down (as the dock's second click), and I opens Information.
+   */
+  toolKeyed(tool: string): void;
 }
 
 export function mountShell(deps: ShellDeps): ShellHandle {
@@ -2157,14 +2163,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       later();
     }
   });
-  window.addEventListener('keydown', (e) => {
-    // A tool picked from the keyboard opens its drawer.
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (/^[1-6tbipfzhkucmx]$/i.test(e.key)) {
-      open = true;
-      later();
-    }
-  });
   onLanguageChange(() => {
     impossibleShown = -1;
     moneyShown = NaN;
@@ -2189,6 +2187,10 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       open = true;
       if (tool() !== next) deps.pickTool(next);
       render();
+    },
+    toolKeyed(next) {
+      open = next === 'inspect' || tool() !== 'inspect';
+      later();
     },
   };
 }

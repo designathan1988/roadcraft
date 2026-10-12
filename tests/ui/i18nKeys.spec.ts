@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { EN } from '@ui/i18n/en';
 import { isTerrainMode } from '@world/terrain';
+import { TOOLS } from '@editor/toolMachine';
 
 /**
  * Keys the CODE asks for exist.
@@ -22,7 +23,6 @@ const walk = (dir: string): string[] =>
     return path.endsWith('.ts') ? [path] : [];
   });
 const sources = walk(root).filter((path) => !path.includes(`${join('ui', 'i18n')}`));
-const main = readFileSync(join(root, 'main.ts'), 'utf8');
 
 const defined = (key: string): boolean => key in EN || `${key}.one` in EN;
 
@@ -46,8 +46,7 @@ describe('keys used in code', () => {
   });
 
   it('every tool has its desktop hint, and every terrain brush its own', () => {
-    const union = /type Tool =([\s\S]*?);/.exec(main)?.[1] ?? '';
-    const tools = [...union.matchAll(/'(\w+)'/g)].map((m) => m[1] as string);
+    const tools = TOOLS;
     expect(tools.length).toBeGreaterThan(6);
     const missing: string[] = [];
     for (const tool of tools) {

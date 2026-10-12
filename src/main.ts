@@ -122,25 +122,9 @@ import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 import { clearBulbs } from '@world/junction/bulb';
 
-type Tool =
-  | 'building'
-  | 'zone'
-  | 'road'
-  | 'roundabout'
-  | 'terrain'
-  | 'upgrade'
-  | 'move'
-  | 'split'
-  | 'bulldoze'
-  | 'control'
-  | 'inspect'
-  | 'pole'
-  | 'streetscape'
-  | 'barrier'
-  | 'transit'
-  | 'person';
-/** Every tool, as the interface names them. */
-const TOOLS: readonly Tool[] = ['building', 'zone', 'road', 'roundabout', 'terrain', 'upgrade', 'move', 'split', 'bulldoze', 'control', 'inspect', 'pole', 'streetscape', 'barrier', 'transit', 'person'];
+import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
+import { createGameKeys } from '@editor/gameKeys';
+
 type Alignment = 'straight' | 'curve' | 'free';
 
 // The interface language is resolved and applied BEFORE anything reads a label,
@@ -448,6 +432,14 @@ const gameState = new GameState({
 }, () => { if (booted) requestDraw(); });
 /** The game's state, read-only: `game.tool`, `game.paused`, `game.selectedSegment`... */
 const game = gameState.values;
+/**
+ * The tool in hand (`editor/toolMachine.ts`): the only way it changes. It
+ * writes `game.tool` through `takeTool`, and lets go of what Inspect picked.
+ */
+const tools = createToolMachine(game.tool, {
+  take: takeTool,
+  letGo: () => { if (game.selectedSegment !== null || game.selectedNode !== null) closeInspectorPanel(); },
+});
 /** The gully brush's strength, % (Paisagem > Relevo > Ravinas). */
 let gullyStrength = 60;
 /** How many clouds "spread over the sky" lays, and how much they vary, %. */
@@ -928,23 +920,7 @@ function land(): void {
   syncViewFromFlatCamera();
   requestDraw();
 }
-window.addEventListener('keydown', (e) => {
-  if (!flight) return;
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-  // Ctrl is the way down while flying; other shortcuts with it stay the page's.
-  const ctrl = e.code === 'ControlLeft' || e.code === 'ControlRight';
-  if ((e.ctrlKey && !ctrl && !flight.active) || e.metaKey || e.altKey) return;
-  // V is the road tool's too (its plan: straight, curve, freehand, `ui/roads/keys.ts`):
-  // with that tool in hand it stays the road's, and the bar's Fly button takes off.
-  if (e.code === 'KeyV' && !e.repeat && !e.ctrlKey && !(!flight.active && game.tool === 'road')) {
-    e.preventDefault(); e.stopImmediatePropagation();
-    if (flight.active) land(); else takeOff();
-    return;
-  }
-  if (!flight.active) return;
-  if (e.code === 'KeyU' && !e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); setClean(!document.body.classList.contains('flight-clean')); return; }
-  if (flight.press(e.code, e.shiftKey)) { e.preventDefault(); e.stopImmediatePropagation(); requestDraw(); }
-}, { capture: true });
+// The flight's keys are rules of the game's keys (`editor/gameKeys.ts`, wired below).
 window.addEventListener('keyup', (e) => { if (flight?.active) flight.release(e.code, e.shiftKey); }, { capture: true });
 // The bar's Fly button (`ui/v2/shell.ts`): takes off, or lands while flying.
 window.addEventListener('roadcraft:flight', () => { if (flight?.active) land(); else takeOff(); });
@@ -1965,166 +1941,6 @@ canvas.addEventListener(
   { passive: false },
 );
 
-window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-  const meta = e.ctrlKey || e.metaKey;
-
-  // The building tool's own keys (R, +/-, Delete, Ctrl+C/V/D, 1-4) first.
-  if (game.tool === 'building' && buildings.key(e)) {
-    e.preventDefault();
-    return;
-  }
-
-  // A run being traced: Enter ends it, Backspace takes the last point back,
-  // Esc drops it.
-  if (!meta && game.tool === 'transit' && transitEditor.key(e.key)) { e.preventDefault(); return; }
-  if (!meta && game.tool === 'barrier' && barrierTool.key(e.key)) { e.preventDefault(); return; }
-
-  // The road tool's keys, as the player bound them (`editor/roads/keys.ts`).
-  const roadAction = !meta && !e.altKey && game.tool === 'road' ? roadKeyAction(e.key) : null;
-  if (roadAction) {
-    e.preventDefault();
-    if (roadAction === 'alignment') {
-      const order: readonly Alignment[] = ['straight', 'curve', 'free'];
-      setAlignment(order[(order.indexOf(game.alignment) + 1) % order.length]!);
-    } else roadTool.stepHeight(roadAction === 'heightUp' ? 1 : -1);
-    return;
-  }
-
-  if (!meta && game.tool === 'inspect' && game.selectedNode !== null &&
-    doc.node(game.selectedNode)?.smooth && (e.key === 'PageUp' || e.key === 'PageDown')) {
-    e.preventDefault();
-    const current = doc.requireNode(game.selectedNode).heightOffset / UNITS_PER_METER;
-    setNodeHeightMetres(game.selectedNode, current + (e.key === 'PageUp' ? 1 : -1));
-    return;
-  }
-
-  // Turning the view is only offered where there is something to turn. The flat
-  // viewport answers `rotate` with nothing rather than pretending.
-  // Q/E turn the camera by 15 degrees, Shift by a quarter turn. Home (below,
-  // with the arrows) puts it back where the game starts and frames the map.
-  // Held, Q/E turn the camera smoothly; Shift+Q/E a quarter turn, glided.
-  if (!meta && !e.altKey && (e.code === 'KeyQ' || e.code === 'KeyE')) {
-    if (e.shiftKey) {
-      if (!e.repeat) cameraMotion.turn((e.code === 'KeyQ' ? -1 : 1) * Math.PI / 2);
-    } else cameraMotion.press(e.code, false);
-    requestDraw();
-    return;
-  }
-
-  if (meta && e.key.toLowerCase() === 's') {
-    e.preventDefault();
-    saveMap();
-    return;
-  }
-  if (meta && e.key.toLowerCase() === 'o') {
-    e.preventDefault();
-    void openMap();
-    return;
-  }
-  if (meta && e.key.toLowerCase() === 'd') {
-    e.preventDefault();
-    duplicateSelectedSegment();
-    return;
-  }
-
-  if (meta && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-    e.preventDefault();
-    undo();
-    return;
-  }
-  if (meta && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
-    e.preventDefault();
-    redo();
-    return;
-  }
-
-  // Delete removes what Inspect has picked: the road it shows.
-  if (!meta && (e.key === 'Delete' || e.key === 'Backspace') && game.tool === 'inspect' && game.selectedSegment !== null) {
-    e.preventDefault();
-    const id = game.selectedSegment;
-    closeInspectorPanel();
-    mutate(() => {
-      doc.removeSegment(id);
-      doc.pruneOrphanNodes();
-      return true;
-    });
-    return;
-  }
-
-  // Space pauses and resumes, as in every simulation game. A button the
-  // player reached with the keyboard keeps Space for itself; one merely
-  // clicked with the mouse (and so still focused) must not swallow it.
-  if (!meta && e.key === ' ') {
-    const target = e.target as HTMLElement | null;
-    if (target instanceof HTMLButtonElement && focusCameFromKeyboard()) return;
-    e.preventDefault();
-    target?.blur?.();
-    setSpeed(game.paused ? game.speed : 0);
-    return;
-  }
-
-  // While sculpting, the number row picks the OPERATION. The road palette is
-  // hidden in that mode, so binding the digits to road classes there was a
-  // shortcut to something the player cannot see.
-  if (game.tool === 'terrain') {
-    const modes: readonly BrushMode[] = ['raise', 'lower', 'flatten', 'river', 'paint', 'mesa', 'canyon', 'escarpment', 'sugarloaf', 'fog', 'cloud', 'elements', 'gully', 'trees', 'weather'];
-    const chosen = modes[Number(e.key) - 1];
-    if (chosen) {
-      setTerrainMode(chosen);
-      return;
-    }
-    if (e.key === '[' || e.key === ']') {
-      setTerrainRadius(game.terrainRadius + (e.key === ']' ? 10 : -10));
-      return;
-    }
-    // Shift with the brackets: the strength (the wheel only zooms now).
-    if (e.key === '{' || e.key === '}') {
-      setTerrainStrength(game.terrainStrength + (e.key === '}' ? 1 : -1));
-      return;
-    }
-    if (e.key === '-' || e.key === '_' || e.key === '=' || e.key === '+') {
-      setTerrainStrength(game.terrainStrength + (e.key === '=' || e.key === '+' ? 1 : -1));
-      return;
-    }
-  }
-
-  const digit = Number(e.key);
-  if (digit >= 1 && digit <= ROAD_TYPES.length) {
-    // The class palette is shown only with the road tool, so choosing a class
-    // from another tool also picks up the tool that draws it.
-    if (game.tool !== 'road') setTool('road');
-    selectRoadType(digit - 1);
-    return;
-  }
-
-  // F8: what changed, where (`drawChanges`).
-  if (e.key === 'F8') {
-    showChanges = !showChanges;
-    requestDraw();
-    return;
-  }
-
-  // R is the building's rotation and nothing else; the road tool is the
-  // number row, which also picks the class (above).
-  const shortcuts: Record<string, Tool> = {
-    u: 'upgrade',
-    m: 'move',
-    x: 'split',
-    b: 'bulldoze',
-    c: 'control',
-    t: 'terrain',
-    i: 'inspect',
-    p: 'pole',
-    g: 'streetscape',
-    f: 'barrier',
-    z: 'zone',
-    h: 'building',
-    o: 'transit',
-  };
-  const next = shortcuts[e.key.toLowerCase()];
-  if (next) pickTool(next);
-});
 
 // -------------------------------------------------------------------- ui
 // The interface (`ui/v2/shell.ts`) reads the game's state and calls the
@@ -2428,10 +2244,11 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
 
 /**
  * Puts a tool in hand: what it does to the game (gestures dropped, the
- * selection let go, the Builder switched on or off). How the interface shows
- * it is `showTool`, told by the game's state at the next frame.
+ * selection let go, the Builder switched on or off). Called only by the tool
+ * machine (`tools`), on entering a tool's state. How the interface shows it
+ * is `showTool`, told by the game's state at the next frame.
  */
-function setTool(next: Tool): void {
+function takeTool(next: Tool): void {
   cancelGestures();
   gameState.set('tool', next, 'ferramenta escolhida');
   if (next !== 'inspect') {
@@ -2452,11 +2269,9 @@ function showTool(next: Tool): void {
 }
 gameState.watch(['tool'], () => showTool(game.tool));
 
-/** The tool a tool's button lights: the road's own options light the road. */
-function heldTool(): Tool {
-  const roadFamily = game.tool === 'road' || game.tool === 'upgrade' || game.tool === 'split'
-    || game.tool === 'control' || game.tool === 'move' || game.tool === 'roundabout';
-  return roadFamily ? 'road' : game.tool;
+/** Takes a tool in hand (a panel's own choice, a road class key). */
+function setTool(next: Tool): void {
+  tools.send({ type: 'pick', tool: next });
 }
 
 /**
@@ -2465,14 +2280,12 @@ function heldTool(): Tool {
  * this is the free hand, where a click on the map inspects what it hits.
  */
 function freeSelection(): void {
-  if (game.selectedSegment !== null || game.selectedNode !== null) closeInspectorPanel();
-  if (game.tool !== 'inspect') setTool('inspect');
+  tools.send({ type: 'putDown' });
 }
 
 /** A tool button or key: picks the tool, or puts it down when it is already in hand. */
 function pickTool(next: Tool): void {
-  if (next === 'inspect' || next === heldTool()) freeSelection();
-  else setTool(next);
+  tools.send({ type: 'toggle', tool: next });
 }
 
 /** The interface's handle: the road inspector's eyedropper opens the road tool through it. */
@@ -2485,7 +2298,6 @@ let shell: ShellHandle | null = null;
  */
 function mountInterface(): void {
   showTool(game.tool);
-  const isTool = (next: string): next is Tool => (TOOLS as readonly string[]).includes(next);
   shell = mountShell({
     workspace: buildings.workspace,
     game: gameState,
@@ -2946,51 +2758,108 @@ function listenHint(listen: (text: string, flash: boolean) => void): void {
 }
 if (bootFailed) flashHint('hint.bootFailed');
 
-/**
- * Arrow-key panning, through the seam and bound to the WINDOW.
- *
- * It used to be bound to the minimap's own `keydown`, so it did nothing unless
- * the player had first clicked the minimap — while the on-screen hint told them
- * the arrows move the camera. And it wrote the flat camera's `x`/`y`, which the
- * isometric renderer never reads, so even with the minimap focused it moved
- * nothing at all.
- */
-const arrowPan = (e: KeyboardEvent): void => {
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT')) return;
-  // Escape ends whatever is being drawn. A pole line is traced in stretches,
-  // so there has to be a way to say "that is the end of this line" without
-  // switching tool and back.
-  if (e.key === 'Escape') {
-    if (gestureInProgress()) {
-      cancelGestures();
-      e.preventDefault();
-    } else if (game.selectedSegment !== null || game.selectedNode !== null) {
-      // With nothing being drawn, Escape puts down what Inspect picked up.
-      closeInspectorPanel();
-      e.preventDefault();
-    } else if (game.tool !== 'inspect') {
-      // ...and then the tool itself: the free hand.
-      freeSelection();
-      e.preventDefault();
-    }
-    return;
-  }
-  // W A S D and the arrows move over the ground the way the camera faces,
-  // Page Up/Down tilt, + and - zoom: held, as a glide (`view/cameraMotion.ts`);
-  // never with Ctrl or Alt (Ctrl+S saves, Ctrl+D duplicates). Q/E are taken
-  // above, with the other keys of the game.
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.code !== 'KeyQ' && e.code !== 'KeyE' && cameraMotion.press(e.code, e.shiftKey)) {
-    // Fall through.
-  } else if (e.key === 'Home') {
-    view.setOrbit(DEFAULT_AZIMUTH, DEFAULT_ELEVATION);
-    fitView();
-  } else return;
-  e.preventDefault();
-  requestDraw();
-};
-window.addEventListener('keydown', arrowPan);
+/** The terrain brush's operations in the number row's order (1 = raise). */
+const TERRAIN_KEY_MODES: readonly BrushMode[] = ['raise', 'lower', 'flatten', 'river', 'paint', 'mesa', 'canyon', 'escarpment', 'sugarloaf', 'fog', 'cloud', 'elements', 'gully', 'trees', 'weather'];
+/** Every key the game answers (`editor/gameKeys.ts`): one command a key. */
+const gameKeys = createGameKeys({
+  tool: () => game.tool,
+  flight: {
+    ready: () => flight !== null,
+    active: () => flight?.active ?? false,
+    toggle: () => { if (flight?.active) land(); else takeOff(); },
+    toggleClean: () => setClean(!document.body.classList.contains('flight-clean')),
+    press: (code, shift) => flight?.press(code, shift) ?? false,
+  },
+  buildingKey: (e) => buildings.key(e),
+  // A run being traced: Enter ends it, Backspace takes the last point back, Esc drops it.
+  transitKey: (key) => transitEditor.key(key),
+  barrierKey: (key) => barrierTool.key(key),
+  // The road tool's keys, as the player bound them (`ui/roads/keys.ts`).
+  roadKey: (key) => {
+    const action = roadKeyAction(key);
+    if (action === 'alignment') {
+      const order: readonly Alignment[] = ['straight', 'curve', 'free'];
+      setAlignment(order[(order.indexOf(game.alignment) + 1) % order.length]!);
+    } else if (action) roadTool.stepHeight(action === 'heightUp' ? 1 : -1);
+    return action !== null;
+  },
+  smoothNodePicked: () => game.selectedNode !== null && (doc.node(game.selectedNode)?.smooth ?? false),
+  stepNodeHeight: (metres) => {
+    const id = game.selectedNode;
+    if (id === null) return;
+    setNodeHeightMetres(id, doc.requireNode(id).heightOffset / UNITS_PER_METER + metres);
+  },
+  camera: {
+    turn: (radians) => cameraMotion.turn(radians),
+    press: (code, shift) => cameraMotion.press(code, shift),
+    home: () => { view.setOrbit(DEFAULT_AZIMUTH, DEFAULT_ELEVATION); fitView(); },
+  },
+  requestDraw,
+  saveMap,
+  openMap: () => void openMap(),
+  duplicateRoad: () => duplicateSelectedSegment(),
+  undo,
+  redo,
+  roadPicked: () => game.selectedSegment !== null,
+  // Delete removes what Inspect has picked: the road it shows.
+  deleteRoad: () => {
+    const id = game.selectedSegment;
+    if (id === null) return;
+    closeInspectorPanel();
+    mutate(() => {
+      doc.removeSegment(id);
+      doc.pruneOrphanNodes();
+      return true;
+    });
+  },
+  // A button the player reached with the keyboard keeps Space for itself; one
+  // merely clicked with the mouse (and so still focused) must not swallow it.
+  keyboardOnButton: (e) => e.target instanceof HTMLButtonElement && focusCameFromKeyboard(),
+  // The focused control is let go by the listener below.
+  togglePause: () => setSpeed(game.paused ? game.speed : 0),
+  terrainMode: (index) => {
+    const chosen = TERRAIN_KEY_MODES[index - 1];
+    if (chosen) setTerrainMode(chosen);
+    return chosen !== undefined;
+  },
+  terrainRadius: (step) => setTerrainRadius(game.terrainRadius + step * 10),
+  terrainStrength: (step) => setTerrainStrength(game.terrainStrength + step),
+  roadClassCount: ROAD_TYPES.length,
+  // The class palette is shown only with the road tool, so choosing a class
+  // from another tool also picks up the tool that draws it.
+  pickRoadClass: (index) => {
+    if (game.tool !== 'road') setTool('road');
+    selectRoadType(index);
+    shell?.toolKeyed('road');
+  },
+  // F8: what changed, where (`drawChanges`).
+  toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
+  toolKey: (next) => {
+    pickTool(next);
+    shell?.toolKeyed(next);
+  },
+  // Escape ends whatever is being drawn (a pole line is traced in stretches:
+  // this is "that is the end of this line"), then puts down what Inspect
+  // picked up, then the tool itself: the free hand.
+  escape: () => {
+    if (gestureInProgress()) cancelGestures();
+    else if (game.selectedSegment !== null || game.selectedNode !== null) closeInspectorPanel();
+    else if (game.tool !== 'inspect') freeSelection();
+    else return false;
+    return true;
+  },
+});
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+  const rule = gameKeys.press({ code: e.code, key: e.key, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, alt: e.altKey }, e);
+  if (!rule) return;
+  if (rule.prevent !== false) e.preventDefault();
+  // A control merely clicked keeps the focus, and a key makes the browser ring
+  // it (`:focus-visible`): the Roads button stayed ringed beside the tool the
+  // key took, two buttons that looked chosen. The game's key lets it go; one
+  // reached with Tab keeps its ring.
+  if (e.target instanceof HTMLElement && e.target !== document.body && !focusCameFromKeyboard()) e.target.blur();
+});
 window.addEventListener('keyup', (e) => { cameraMotion.release(e.code, e.shiftKey); });
 // A key let go elsewhere never comes up here: nothing stays held.
 window.addEventListener('blur', () => cameraMotion.releaseAll());
@@ -4460,6 +4329,7 @@ function setQuality(value: string): void {
 (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
   now: gameState.snapshot(),
   changes: gameState.latest(count).map((c) => `#${c.serial} ${c.key}: ${String(c.from)} → ${String(c.to)} (${c.cause})`),
+  toolMachine: tools.latest(count).map((r) => `#${r.serial} ${r.from} → ${r.to} (${r.event})`),
 });
 /** The game's health in the console (`core/health.ts`): what broke or was slow, newest first. */
 (window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
@@ -4553,7 +4423,10 @@ mountHealthPanel({
     return `#${c.serial} ${c.kind} · ${c.cause}${c.parent ? ` ← #${c.parent}` : ''} · ${where}${c.ms !== undefined ? ` · ${c.ms.toFixed(1)} ms` : ''}${c.detail ? ` · ${c.detail}` : ''}`;
   }),
   state: (n) => ({
-    now: Object.entries(gameState.snapshot()).map(([key, value]) => `${key}: ${valueText(value)}`),
+    now: [
+      ...Object.entries(gameState.snapshot()).map(([key, value]) => `${key}: ${valueText(value)}`),
+      ...tools.latest(3).map((r) => `tool machine #${r.serial}: ${r.from} → ${r.to} (${r.event})`),
+    ],
     wide: gpuLines(),
     changes: gameState.latest(n).map((c) => `${c.key}: ${valueText(c.from)} → ${valueText(c.to)} (${c.cause})`),
   }),

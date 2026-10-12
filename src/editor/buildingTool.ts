@@ -2725,10 +2725,14 @@ export class BuildingTool {
         this.selectedRoofDetail = null;
       } else if (this.mode === 'place') {
         this.setMode('edit');
-      } else if (this.activeModelTool) this.activeModelTool = null;
+      // The pointer selecting is where the Builder rests (`buildingsWiring`
+      // activate): nothing to put down.
+      } else if (this.activeModelTool && this.activeModelTool !== 'select') this.activeModelTool = null;
       // Nothing else in hand: Escape puts the building down, and the panel
       // goes back to the ways to create.
       else if (this.selection) this.selection = null;
+      // Nothing at all: the key is not the Builder's (the game's Escape puts the tool down).
+      else return false;
       this.host.changed();
       return true;
     }

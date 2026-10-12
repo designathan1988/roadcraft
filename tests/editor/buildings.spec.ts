@@ -404,6 +404,22 @@ describe('the tool', () => {
     expect(t.selection?.building).toBe(selected);
   });
 
+  it('steps Escape back one thing at a time, and passes it on with nothing in hand (PROBLEMS R16)', () => {
+    const { t } = tool();
+    // Where the Builder rests: the pointer selecting, nothing picked.
+    t.armModelTool('select');
+    expect(t.key('Escape', false, false)).toBe(false);
+    t.chooseBlueprint('house');
+    t.pointerMove({ x: 0, y: 0 }, { x: 0, y: 0 }, false);
+    t.pointerDown({ x: 0, y: 0 }, { x: 0, y: 0 }, false);
+    t.pointerUp(false);
+    expect(t.selection).not.toBeNull();
+    t.armModelTool('select');
+    expect(t.key('Escape', false, false)).toBe(true);
+    expect(t.selection).toBeNull();
+    expect(t.key('Escape', false, false)).toBe(false);
+  });
+
   it('draws on a selected roof without clearing the selection or transform gizmo', () => {
     const { t } = tool();
     t.chooseBlueprint('block');

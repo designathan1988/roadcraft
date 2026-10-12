@@ -1139,13 +1139,15 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       }
       const revision = doc.buildings.revision;
       const used = tool.key(e.key, ctrl, e.shiftKey);
-      if (used) {
+      // Escape with nothing left to put down: the pointer selects; with the
+      // pointer already selecting, the key is the game's (the tool put down).
+      const back = e.key === 'Escape' && toolId !== 'select' && !tool.planPoints;
+      if (used || back) {
         afterGesture(revision);
-        // Escape with nothing left to put down: the pointer selects.
-        if (e.key === 'Escape' && toolId !== 'select' && !tool.planPoints) backToSelect();
+        if (back) backToSelect();
         dirty = true;
       }
-      return used;
+      return used || back;
     },
     activate() {
       dirty = true;

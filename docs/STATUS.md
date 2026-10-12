@@ -44,16 +44,43 @@ página).
 Build de depuração do Jolt: 5.394 asserts de eixos de junta inválidos em 12 bombas →
 0 depois de `render/ragdollAxes.ts`; ver `docs/research/ragdoll-joints.md`.
 
-## Em andamento
-- E3: `eslint-rules/` (`catch` mudo, estado solto em módulo), `max-lines` 800,
+### E3 — Proteções (feita; envio pendente do portão corrigido)
+- `eslint-rules/` (`catch` mudo, estado solto em módulo), `max-lines` 800,
   `eslint-suppressions.json` (dívida trazida: 131 `catch` mudos, 42 arquivos > 800
   linhas, 343 estados soltos), `tests/arch/imports.spec.ts` (camadas com imports
   relativos; 7 ciclos na linha de base), `knip` com linha de base (481),
-  `.githooks/pre-push` + `scripts/prepush.mjs`, `npm run check` sem cobertura (os specs
-  de tempo não valem com o código instrumentado).
+  `.githooks/pre-push` + `scripts/prepush.mjs`, `npm run check` sem cobertura.
+- Primeiro envio pelo portão (base 7513dc0 × candidato bf76aef, 3 rodadas, 2026-10-12
+  10:56–12:00): R1 confirmado no portão — o código antigo quebrou a física na pistola em
+  1 de 3 rodadas do plano; com a correção, 0 de 6 execuções (plano e planeta). O envio
+  foi barrado por 41 + 73 "pioras" em cenas cujo código não mudou: defeito do próprio
+  portão (R17), corrigido com teste estatístico (Mann-Whitney U exato + delta de Cliff,
+  regra do Pinpoint/Chromium e do PerfCompare/Mozilla), 6 rodadas, rodadas extras quando
+  suspeito, e só erros do candidato barram.
+
+### F1 — Controladores (feita no código; envio junto com a E3)
+- `core/statechart.ts` (semântica do SCXML), `editor/toolMachine.ts` (a ferramenta como
+  máquina de estados; único caminho que troca a ferramenta; transições no `__state()` e
+  no F9), `core/commands.ts` + `editor/gameKeys.ts` (registro de comandos e tabela de
+  teclas; um ouvinte de teclado no lugar de quatro). `core/bus.ts` escrito, entra na F2
+  com os eventos do documento.
+- Defeitos corrigidos e vistos no jogo (sonda com mouse e teclado reais, jogo antigo
+  4299 × novo 5300, 46 fotos cada): R16 (uma tecla fazia duas coisas: `=` no Relevo
+  mudava força 24→25 E zoom 3,75→7,94; PageUp com Vias subia a via E inclinava a câmera
+  0,81→1,17; Ctrl+B pegava Demolir; O e G não abriam a gaveta; um Esc no Construtor
+  largava tudo), R18 (anel de foco deixava dois botões do dock parecendo escolhidos).
+  No novo: cada tecla uma ação; Espaço, Q/E, Ctrl+Z/Y, desenhar e inspecionar via iguais
+  ao antigo.
+- "Um clique em Vias liga e desliga a ferramenta" (auditoria 3.8): NÃO reproduzido no
+  jogo antigo em 9 estados de partida (mão livre, Informação, Relevo, depois de Esc, de
+  desenhar, com via no inspetor, depois da tecla 1, depois de T T); cada clique fez o
+  esperado. Fica em aberto em PROBLEMS até haver um relato com os passos.
+
+## Em andamento
+- Envio de E3 + F1 pelo portão corrigido.
 
 ## Próxima etapa
-- Fechar a E3 (check verde, gancho ligado, A/A do portão no jogo novo), depois F1.
+- F2: documento por comandos (desenho em `docs/ARCHITECTURE.md` seção 5).
 
 ## NÃO VERIFICADO
 - **O painel do navegador do app ficou oculto às ~08:20** e só o jogador o reabre

@@ -60,8 +60,10 @@ owner in docs/STATUS.md before changing them.
 
 ## How to add
 
-- **An editing tool:** in `main.ts` add it to the `Tool` union, a `case` in the
-  `pointerdown` switch and a letter in the `shortcuts` map; add a button with
+- **An editing tool:** add it to the `Tool` union and `TOOLS` in
+  `editor/toolMachine.ts` (under `roads` if the Roads button holds it), a `case`
+  in the `pointerdown` switch of `main.ts` and a letter in `TOOL_LETTERS` of
+  `editor/gameKeys.ts` (keys are rules there, never a new `keydown` listener); add a button with
   `data-tool="…"` to `index.html` and its icon and tooltip in the interface
   (`src/ui/v2/shell.ts` presses `.tool[data-tool]`); then `tool.<name>`,
   `hint.<name>` and `hint.mobile.<name>` in both dictionaries. The junction-control

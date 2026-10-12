@@ -118,7 +118,11 @@ recorded (from, event, to, cause) in the same ring the F9 panel reads.
 - `modeMachine` (`ui/`): `planet` / `flatView` in the planet build, `flat` in the
   flat build; `switch` → in place, or to the other page.
 
-### 4.3 Event bus (`core/bus.ts`)
+### 4.3 Event bus (`core/bus.ts`) — written, enters with F2
+Its first events are the document's (`doc.committed`, `history.changed`,
+`persist.*`), which F2 introduces; the session values already have their
+watchers (`core/gameState.ts`). A module with no caller would be dead code, so
+the bus lands with its first listener.
 A closed, typed union; synchronous delivery in registration order by layer
 (world → sim → render → editor → ui); the listener list copied at the start of an
 emission; an emission during a delivery is queued and delivered after it (run to
@@ -129,14 +133,31 @@ Closed list (F1): `doc.committed {cause, kinds, rects}`, `doc.loaded {source}`,
 `mode.changed {from, to}`, `selection.changed`, `view.changed`,
 `persist.saved {bytes}`, `persist.failed {reason}`, `notify {key, params}`.
 
-### 4.4 Command registry (`core/commands.ts` + `editor/commandTable.ts`)
-One table of commands — `{ id, label (i18n key), keys (KeyboardEvent.code +
-modifiers, with a `when` context), enabled(ctx), run(ctx) → 'done' | 'cancelled' }`
-— behind the shortcuts, the dock, the drawers, the menus and the top bar (the
-operator of Blender and the keybindings of VS Code: the last rule matching key and
-`when` wins). The five `keydown` listeners of the SOURCE (three in `main.ts`, two
-in `ui/v2/shell.ts`) become one resolver. A test walks the table: every key,
-button and menu item resolves to a registered command; no command is unreachable.
+### 4.4 Command registry (`core/commands.ts` + `editor/gameKeys.ts`)
+One table of commands — `{ id, label (i18n key), enabled(ctx), run(ctx) →
+'done' | 'cancelled' | 'pass' }` — and key rules `{ code | key, ctrl, shift, alt,
+when, command, args, prevent }` (the operator of Blender, whose PASS_THROUGH is
+`pass`, and the keybindings of VS Code: the last rule bound whose key and `when`
+match and whose command does not pass wins). `editor/gameKeys.ts` writes the
+rules first-wins, in the order the SOURCE's listeners read keys (flight, the tool
+in hand, Q/E, page shortcuts, Delete, Space, terrain, road classes, F8, tool
+letters, Escape, camera), and binds them reversed. Done in F1: the four game
+`keydown` listeners of the SOURCE (three in `main.ts`, the drawer's in
+`ui/v2/shell.ts`) are one listener in `main.ts`; one key runs one command
+(PROBLEMS R16). The select widget's own keys (WAI-ARIA APG listbox, capture
+phase, only while a list is open) and the compass button's stay with those
+widgets: they are focus-scoped, not game commands. Keyup (held camera and
+flight keys) stays one listener each. Still to route through the registry: the
+dock, the drawers, the menus and the top bar (they call the same functions the
+commands call).
+
+### 4.4b Tool machine (done in F1)
+`editor/toolMachine.ts`: the tools are states, the road tools children of
+`roads`; `pick`, `toggle` (a tool's button or key) and `putDown` are its events;
+entering a state is the only call of `takeTool` (`main.ts`), the only writer of
+`game.tool`. `tests/editor/toolMachine.spec.ts` checks it against the SOURCE's
+`pickTool` rule for every pair of tools. Its transitions are in `__state()`
+(`toolMachine`) and in the F9 state tab.
 
 ### 4.5 `main.ts`
 Only wiring after F1 and F4: it creates the controllers and hands each its
@@ -144,7 +165,48 @@ collaborators. Logic it holds today moves to the module that owns the data (F4
 splits it under 800 lines).
 
 ## 5. Commands on the document (F2)
-Written by F2 before code.
+Draft written during F1 (2026-10-12), to be completed before F2's code.
+
+What the SOURCE does: every edit (`main.ts` `mutateBuilt`) serializes the whole
+document before and after (`serializedDoc`, cached while no diary counter moved),
+compares the two texts to know whether anything changed, and pushes the "before"
+text on the undo stack (`editor/history.ts`, 60 steps, 96 MB budget). Undo parses
+a whole snapshot and replaces the document (`applySnapshot`). The autosave writes
+the same whole text. On a city of 1 530 buildings that is 12.7 MB serialized per
+edit, twice, and parsed per undo.
+
+Sources read: tldraw `packages/store/src/lib/RecordsDiff.ts` (a diff is
+`added`, `updated [from, to]`, `removed` by record id; the inverse swaps added and
+removed and each from/to; squashing keeps the first `from` and the last `to`,
+and an add then remove cancels), Excalidraw `packages/element/src/store.ts`
+(changes found by comparing each element's `version` with the last snapshot's,
+cloning only the changed ones; the inverse delta is computed on undo), Nystrom
+*Game Programming Patterns*, "Command".
+
+Design:
+- The document's ~60 writers (`world/doc.ts` `addNode`, `setSegmentLanes`,
+  `addTerrainStamp`..., `BuildingStore.add/put/remove`) are already the only
+  way records change (direct field writes outside them are being audited: one
+  found, `world/rescale.ts`). Each writer tells the open transaction the record's
+  state BEFORE it changes (`tx.before(collection, id, record)`, a clone of that
+  one record, once per record per transaction) and after (`tx.after`).
+- `mutate` opens the transaction, runs the edit, closes it into a `RecordsDiff`
+  per collection. An empty diff is "nothing changed" (replaces the text compare).
+- History keeps diffs: undo applies the reverse diff through the same writers
+  (so the diary, dirty cells and derived data follow as for any edit), redo the
+  diff. A gesture (a drag, a brush stroke) squashes its diffs into one step.
+  Bytes held are proportional to what changed.
+- Collections kept as arrays without ids (terrain stamps, paint, fog and gully
+  dabs, clouds, trees, zones, lots...) get ids or are diffed as appended ranges;
+  decided per collection in F2.
+- Proof: a fast-check model test (`fc.commands`) runs random edits, undoes all
+  and compares with the start (deep equal), redoes all and compares with the end;
+  a debug check compares the diff with a full serialization on every edit in
+  tests and in F9.
+- Autosave: the dirty records of the diffs since the last save, written to
+  IndexedDB by record in one transaction; the whole-map text only for "Save as"
+  and export. Persistence changes only after the player's maps are backed up
+  again and each one reopens (CLAUDE.md).
 
 ## 6. Persistence (F2)
 Written by F2 before code. Until then the SOURCE's format is kept byte for byte, so the player's maps
