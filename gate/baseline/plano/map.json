@@ -1,0 +1,140 @@
+{
+ "part": "map",
+ "url": "http://127.0.0.1:4299",
+ "mode": "plano",
+ "machine": {
+  "cpu": 11,
+  "freeGB": 17.8
+ },
+ "gpu": "WebKit WebGL | ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+ "errors": [],
+ "numbers": {
+  "openMapMs": 13990,
+  "openMap": {
+   "ms": 13991,
+   "frames": 53,
+   "p50": 266.5,
+   "p95": 867,
+   "p99": 1467.300000000001,
+   "max": 1467.300000000001,
+   "stutters": 36,
+   "over50": 36,
+   "loafCount": 36,
+   "loafMax": 1437,
+   "loafBlocking": 11631.099999999997,
+   "loafWorst": [
+    {
+     "duration": 1437,
+     "scripts": [
+      {
+       "source": "index-Cd2j3Iup.js",
+       "fn": "",
+       "invoker": "MessagePort.onmessage",
+       "duration": 1436
+      }
+     ]
+    },
+    {
+     "duration": 1049,
+     "scripts": [
+      {
+       "source": "index-Cd2j3Iup.js",
+       "fn": "",
+       "invoker": "MessagePort.onmessage",
+       "duration": 1047
+      }
+     ]
+    },
+    {
+     "duration": 871,
+     "scripts": [
+      {
+       "source": "index-Cd2j3Iup.js",
+       "fn": "",
+       "invoker": "MessagePort.onmessage",
+       "duration": 870
+      }
+     ]
+    }
+   ],
+   "gpu": {
+    "p50": 5.21,
+    "p95": 5.21,
+    "p99": 5.21,
+    "max": 5.21,
+    "n": 1,
+    "label": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+   },
+   "programsLinked": 25,
+   "uploadBuffer": 943082262,
+   "uploadTexture": 97138280,
+   "uploadCalls": 4095,
+   "uploadTop": [
+    {
+     "kind": "texSubImage2D 512x512 f1908 t1401",
+     "MB": 16.8
+    },
+    {
+     "kind": "texSubImage2D 2048x2048 f1908 t1401",
+     "MB": 16.8
+    },
+    {
+     "kind": "texSubImage2D 1024x1024 f1908 t1401",
+     "MB": 12.6
+    },
+    {
+     "kind": "texSubImage3D 1024x1024 f1908 t1401",
+     "MB": 12.6
+    },
+    {
+     "kind": "texSubImage2D 2176x1088 f1908 t1401",
+     "MB": 9.5
+    }
+   ]
+  },
+  "map": {
+   "nodes": 163,
+   "segments": 296,
+   "buildings": 1348,
+   "x": 2.184049079754601,
+   "y": 12.386503067484663
+  },
+  "mapView": {
+   "ms": 6007.900000002235,
+   "frames": 360,
+   "p50": 16.69999999999709,
+   "p95": 16.80000000000291,
+   "p99": 18.60000000000582,
+   "max": 26.599999999998545,
+   "stutters": 0,
+   "over50": 0,
+   "loafCount": 0,
+   "loafMax": 0,
+   "loafBlocking": 0,
+   "loafWorst": [],
+   "gpu": {
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "max": 0,
+    "n": 0,
+    "label": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+   },
+   "programsLinked": 0,
+   "uploadBuffer": 0,
+   "uploadTexture": 0,
+   "uploadCalls": 0,
+   "uploadTop": [],
+   "drawn": {
+    "calls": 1020,
+    "triangles": 23443500,
+    "programs": 159,
+    "geometries": 706,
+    "textures": 150
+   }
+  }
+ },
+ "photos": [
+  "mapa-grande"
+ ]
+}

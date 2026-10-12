@@ -1,0 +1,39 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "roadcraft2-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5300", "--strictPort"],
+      "port": 5300
+    },
+    {
+      "name": "roadcraft2-probe",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "preview", "--outDir", "C:/Codex-Shared/roadcraft-2-dist", "--host", "127.0.0.1", "--port", "5301", "--strictPort"],
+      "port": 5301
+    },
+    {
+      "name": "roadcraft2-old",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Codex-Shared/roadcraft-fonte-4cc2926e/node_modules/vite/bin/vite.js",
+        "preview",
+        "--outDir",
+        "C:/Codex-Shared/roadcraft-fonte-4cc2926e-dist",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "4299",
+        "--strictPort"
+      ],
+      "port": 4299
+    },
+    {
+      "name": "roadcraft2-player",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "preview", "--outDir", "C:/Codex-Shared/roadcraft-2-player", "--host", "127.0.0.1", "--port", "4300", "--strictPort"],
+      "port": 4300
+    }
+  ]
+}

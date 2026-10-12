@@ -1,0 +1,14 @@
+{
+ "part": "city",
+ "url": "http://127.0.0.1:4299",
+ "mode": "planeta",
+ "machine": {
+  "cpu": 6,
+  "freeGB": 17.8
+ },
+ "errors": [
+  "FALHA: TimeoutError: page.waitForFunction: Timeout 240000ms exceeded."
+ ],
+ "numbers": {},
+ "photos": []
+}
