@@ -1,0 +1,56 @@
+{
+ "name": "highway-meeting-ramps-square-built-as-gore",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    3.13,
+    180.64
+   ],
+   "b": [
+    -9.63,
+    90.69
+   ],
+   "type": 0,
+   "curve": null,
+   "h0": 7.53,
+   "h1": 0
+  },
+  {
+   "op": "draw",
+   "a": [
+    183.7,
+    -135.98
+   ],
+   "b": [
+    273.05,
+    -172.36
+   ],
+   "type": 4,
+   "curve": null,
+   "structure": "ground"
+  },
+  {
+   "op": "path",
+   "a": [
+    221.6,
+    -178.03
+   ],
+   "b": [
+    272.92,
+    -128
+   ],
+   "type": 5,
+   "curve": null,
+   "h0": 0,
+   "h1": 0
+  },
+  {
+   "op": "delete",
+   "pick": 0.25
+  }
+ ]
+}

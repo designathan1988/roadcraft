@@ -1,0 +1,39 @@
+{
+ "name": "lane-end-reversed-by-short-trim-piece",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "draw",
+   "a": [
+    -250.72,
+    66.88
+   ],
+   "b": [
+    -108.1,
+    61.02
+   ],
+   "type": 0,
+   "curve": null,
+   "structure": "ground"
+  },
+  {
+   "op": "draw",
+   "a": [
+    -162.73,
+    66.88
+   ],
+   "b": [
+    -162.73,
+    29.16
+   ],
+   "type": 2,
+   "curve": {
+    "t": 0.65,
+    "h": -9.93
+   },
+   "structure": "ground"
+  }
+ ]
+}

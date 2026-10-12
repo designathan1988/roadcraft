@@ -1,0 +1,59 @@
+{
+ "name": "lane-end-reversed-on-curved-approach",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    277.54,
+    -229.87
+   ],
+   "b": [
+    267.21,
+    -279.49
+   ],
+   "type": 1,
+   "curve": null,
+   "h0": 0,
+   "h1": 8.07
+  },
+  {
+   "op": "path",
+   "a": [
+    280,
+    -209.66
+   ],
+   "b": [
+    211.08,
+    -280
+   ],
+   "type": 3,
+   "curve": null,
+   "h0": 2.97,
+   "h1": 0
+  },
+  {
+   "op": "curve",
+   "pick": 0.58,
+   "t": 0.49,
+   "h": -12.47
+  },
+  {
+   "op": "path",
+   "a": [
+    263.44,
+    -233.77
+   ],
+   "b": [
+    237.33,
+    -158.25
+   ],
+   "type": 3,
+   "curve": null,
+   "h0": 0,
+   "h1": -1.43
+  }
+ ]
+}

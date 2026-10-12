@@ -1,0 +1,38 @@
+{
+ "name": "open-elevation-step-at-ramp-plate",
+ "category": "elevationStep",
+ "detail": "jump 0.47 at s=199.25",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    46.68,
+    613.76
+   ],
+   "b": [
+    -48.83,
+    700
+   ],
+   "type": 0,
+   "curve": null,
+   "h0": 0,
+   "h1": 11.44
+  },
+  {
+   "op": "path",
+   "a": [
+    188.05,
+    612.69
+   ],
+   "b": [
+    -198.42,
+    700
+   ],
+   "type": 0,
+   "curve": null,
+   "h0": 14.98,
+   "h1": -21.97
+  }
+ ]
+}

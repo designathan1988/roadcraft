@@ -1,0 +1,38 @@
+{
+ "name": "turn-shaped-for-the-bus-alone-on-gentle-bend",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    -97.28,
+    -175.37
+   ],
+   "b": [
+    -117.91,
+    -98.73
+   ],
+   "type": 4,
+   "curve": null,
+   "h0": 0,
+   "h1": 0
+  },
+  {
+   "op": "path",
+   "a": [
+    -118,
+    -99
+   ],
+   "b": [
+    -229.49,
+    -51.79
+   ],
+   "type": 4,
+   "curve": null,
+   "h0": -9.36,
+   "h1": 8.5
+  }
+ ]
+}

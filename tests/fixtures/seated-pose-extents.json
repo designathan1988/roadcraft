@@ -1,0 +1,572 @@
+{
+  "byBody": {
+    "carDrive": {
+      "mh_34": {
+        "bottom": -0.161,
+        "under": -0.074
+      },
+      "mh_55": {
+        "bottom": -0.16,
+        "under": -0.101
+      },
+      "mh_44": {
+        "bottom": -0.224,
+        "under": -0.224
+      },
+      "mh_48": {
+        "bottom": -0.16,
+        "under": -0.083
+      },
+      "mh_14": {
+        "bottom": -0.161,
+        "under": -0.079
+      },
+      "mh_64": {
+        "bottom": -0.16,
+        "under": -0.078
+      },
+      "mh_38": {
+        "bottom": -0.165,
+        "under": -0.09
+      },
+      "mh_59": {
+        "bottom": -0.16,
+        "under": -0.089
+      },
+      "mh_45": {
+        "bottom": -0.165,
+        "under": -0.09
+      },
+      "mh_51": {
+        "bottom": -0.16,
+        "under": -0.094
+      },
+      "mh_18": {
+        "bottom": -0.16,
+        "under": -0.09
+      },
+      "mh_67": {
+        "bottom": -0.166,
+        "under": -0.103
+      }
+    },
+    "carRide": {
+      "mh_34": {
+        "bottom": -0.161,
+        "under": -0.074
+      },
+      "mh_55": {
+        "bottom": -0.16,
+        "under": -0.1
+      },
+      "mh_44": {
+        "bottom": -0.223,
+        "under": -0.223
+      },
+      "mh_48": {
+        "bottom": -0.16,
+        "under": -0.078
+      },
+      "mh_14": {
+        "bottom": -0.161,
+        "under": -0.079
+      },
+      "mh_64": {
+        "bottom": -0.16,
+        "under": -0.077
+      },
+      "mh_38": {
+        "bottom": -0.165,
+        "under": -0.09
+      },
+      "mh_59": {
+        "bottom": -0.16,
+        "under": -0.088
+      },
+      "mh_45": {
+        "bottom": -0.165,
+        "under": -0.089
+      },
+      "mh_51": {
+        "bottom": -0.16,
+        "under": -0.094
+      },
+      "mh_18": {
+        "bottom": -0.16,
+        "under": -0.089
+      },
+      "mh_67": {
+        "bottom": -0.166,
+        "under": -0.102
+      }
+    },
+    "carRear": {
+      "mh_34": {
+        "bottom": -0.212,
+        "under": -0.078
+      },
+      "mh_55": {
+        "bottom": -0.21,
+        "under": -0.098
+      },
+      "mh_44": {
+        "bottom": -0.219,
+        "under": -0.219
+      },
+      "mh_48": {
+        "bottom": -0.21,
+        "under": -0.074
+      },
+      "mh_14": {
+        "bottom": -0.212,
+        "under": -0.082
+      },
+      "mh_64": {
+        "bottom": -0.21,
+        "under": -0.077
+      },
+      "mh_38": {
+        "bottom": -0.214,
+        "under": -0.131
+      },
+      "mh_59": {
+        "bottom": -0.21,
+        "under": -0.133
+      },
+      "mh_45": {
+        "bottom": -0.214,
+        "under": -0.109
+      },
+      "mh_51": {
+        "bottom": -0.21,
+        "under": -0.117
+      },
+      "mh_18": {
+        "bottom": -0.21,
+        "under": -0.13
+      },
+      "mh_67": {
+        "bottom": -0.217,
+        "under": -0.126
+      }
+    },
+    "cabDrive": {
+      "mh_34": {
+        "bottom": -0.451,
+        "under": -0.085
+      },
+      "mh_55": {
+        "bottom": -0.45,
+        "under": -0.11
+      },
+      "mh_44": {
+        "bottom": -0.45,
+        "under": -0.243
+      },
+      "mh_48": {
+        "bottom": -0.45,
+        "under": -0.124
+      },
+      "mh_14": {
+        "bottom": -0.452,
+        "under": -0.134
+      },
+      "mh_64": {
+        "bottom": -0.45,
+        "under": -0.127
+      },
+      "mh_38": {
+        "bottom": -0.45,
+        "under": -0.099
+      },
+      "mh_59": {
+        "bottom": -0.45,
+        "under": -0.097
+      },
+      "mh_45": {
+        "bottom": -0.45,
+        "under": -0.096
+      },
+      "mh_51": {
+        "bottom": -0.45,
+        "under": -0.107
+      },
+      "mh_18": {
+        "bottom": -0.45,
+        "under": -0.098
+      },
+      "mh_67": {
+        "bottom": -0.452,
+        "under": -0.108
+      }
+    },
+    "cabRide": {
+      "mh_34": {
+        "bottom": -0.45,
+        "under": -0.127
+      },
+      "mh_55": {
+        "bottom": -0.45,
+        "under": -0.11
+      },
+      "mh_44": {
+        "bottom": -0.45,
+        "under": -0.243
+      },
+      "mh_48": {
+        "bottom": -0.45,
+        "under": -0.142
+      },
+      "mh_14": {
+        "bottom": -0.451,
+        "under": -0.173
+      },
+      "mh_64": {
+        "bottom": -0.45,
+        "under": -0.165
+      },
+      "mh_38": {
+        "bottom": -0.45,
+        "under": -0.117
+      },
+      "mh_59": {
+        "bottom": -0.45,
+        "under": -0.106
+      },
+      "mh_45": {
+        "bottom": -0.45,
+        "under": -0.13
+      },
+      "mh_51": {
+        "bottom": -0.45,
+        "under": -0.182
+      },
+      "mh_18": {
+        "bottom": -0.45,
+        "under": -0.103
+      },
+      "mh_67": {
+        "bottom": -0.45,
+        "under": -0.108
+      }
+    },
+    "chair": {
+      "mh_34": {
+        "bottom": -0.54,
+        "under": -0.183
+      },
+      "mh_55": {
+        "bottom": -0.54,
+        "under": -0.113
+      },
+      "mh_44": {
+        "bottom": -0.54,
+        "under": -0.254
+      },
+      "mh_48": {
+        "bottom": -0.54,
+        "under": -0.175
+      },
+      "mh_14": {
+        "bottom": -0.541,
+        "under": -0.226
+      },
+      "mh_64": {
+        "bottom": -0.54,
+        "under": -0.218
+      },
+      "mh_38": {
+        "bottom": -0.54,
+        "under": -0.128
+      },
+      "mh_59": {
+        "bottom": -0.54,
+        "under": -0.117
+      },
+      "mh_45": {
+        "bottom": -0.54,
+        "under": -0.13
+      },
+      "mh_51": {
+        "bottom": -0.54,
+        "under": -0.102
+      },
+      "mh_18": {
+        "bottom": -0.54,
+        "under": -0.114
+      },
+      "mh_67": {
+        "bottom": -0.54,
+        "under": -0.119
+      }
+    }
+  },
+  "carDrive": {
+    "top": 0.874,
+    "bottom": -0.224,
+    "fwd": 0.867,
+    "back": 0.361,
+    "half": 0.284,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carDriveMirror": {
+    "top": 0.87,
+    "bottom": -0.224,
+    "fwd": 0.867,
+    "back": 0.339,
+    "half": 0.286,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carDriveRight": {
+    "top": 0.875,
+    "bottom": -0.224,
+    "fwd": 0.867,
+    "back": 0.356,
+    "half": 0.287,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRide": {
+    "top": 0.873,
+    "bottom": -0.223,
+    "fwd": 0.837,
+    "back": 0.359,
+    "half": 0.283,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRideLeft": {
+    "top": 0.873,
+    "bottom": -0.223,
+    "fwd": 0.837,
+    "back": 0.345,
+    "half": 0.285,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRideRight": {
+    "top": 0.874,
+    "bottom": -0.223,
+    "fwd": 0.837,
+    "back": 0.354,
+    "half": 0.286,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRearRide": {
+    "top": 0.879,
+    "bottom": -0.219,
+    "fwd": 0.667,
+    "back": 0.324,
+    "half": 0.286,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRearLeft": {
+    "top": 0.879,
+    "bottom": -0.219,
+    "fwd": 0.667,
+    "back": 0.311,
+    "half": 0.287,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "carRearRight": {
+    "top": 0.88,
+    "bottom": -0.219,
+    "fwd": 0.667,
+    "back": 0.319,
+    "half": 0.29,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_44"
+    }
+  },
+  "cabDrive": {
+    "top": 0.872,
+    "bottom": -0.452,
+    "fwd": 0.657,
+    "back": 0.338,
+    "half": 0.285,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "cabDriveMirror": {
+    "top": 0.87,
+    "bottom": -0.452,
+    "fwd": 0.657,
+    "back": 0.316,
+    "half": 0.287,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "cabDriveRight": {
+    "top": 0.869,
+    "bottom": -0.452,
+    "fwd": 0.657,
+    "back": 0.324,
+    "half": 0.287,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "cabRide": {
+    "top": 0.87,
+    "bottom": -0.451,
+    "fwd": 0.607,
+    "back": 0.331,
+    "half": 0.283,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_45",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "cabRideLeft": {
+    "top": 0.87,
+    "bottom": -0.451,
+    "fwd": 0.607,
+    "back": 0.316,
+    "half": 0.285,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "cabRideRight": {
+    "top": 0.87,
+    "bottom": -0.451,
+    "fwd": 0.607,
+    "back": 0.321,
+    "half": 0.286,
+    "worst": {
+      "top": "mh_67",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "chairSit": {
+    "top": 0.877,
+    "bottom": -0.541,
+    "fwd": 0.627,
+    "back": 0.271,
+    "half": 0.283,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "chairSitLeft": {
+    "top": 0.878,
+    "bottom": -0.541,
+    "fwd": 0.627,
+    "back": 0.268,
+    "half": 0.284,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "chairSitRight": {
+    "top": 0.877,
+    "bottom": -0.541,
+    "fwd": 0.627,
+    "back": 0.27,
+    "half": 0.284,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "chairSitPhone": {
+    "top": 0.865,
+    "bottom": -0.541,
+    "fwd": 0.627,
+    "back": 0.263,
+    "half": 0.284,
+    "worst": {
+      "top": "mh_45",
+      "fwd": "mh_67",
+      "back": "mh_14",
+      "half": "mh_45",
+      "bottom": "mh_14"
+    }
+  },
+  "bodies": 12,
+  "phases": 8
+}

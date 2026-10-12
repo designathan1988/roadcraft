@@ -1,0 +1,50 @@
+{
+ "name": "curved-mouth-strip-missing-from-turn-surface",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    -163.08,
+    182.64
+   ],
+   "b": [
+    -137.58,
+    206.55
+   ],
+   "type": 3,
+   "curve": {
+    "t": 0.42,
+    "h": -5.88
+   },
+   "h0": 0,
+   "h1": 0
+  },
+  {
+   "op": "curve",
+   "pick": 0.14,
+   "t": 0.34,
+   "h": 11.81
+  },
+  {
+   "op": "path",
+   "a": [
+    -156.36,
+    197.38
+   ],
+   "b": [
+    -101.74,
+    141.14
+   ],
+   "type": 2,
+   "curve": {
+    "t": 0.31,
+    "h": -24.19
+   },
+   "h0": -11.12,
+   "h1": 2.84
+  }
+ ]
+}

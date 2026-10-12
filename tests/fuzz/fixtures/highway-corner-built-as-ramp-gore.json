@@ -1,0 +1,42 @@
+{
+ "name": "highway-corner-built-as-ramp-gore",
+ "category": "turnOffSurface",
+ "detail": "no physical body class fits this movement",
+ "sim": null,
+ "ops": [
+  {
+   "op": "path",
+   "a": [
+    211.83,
+    -68.06
+   ],
+   "b": [
+    238.4,
+    -38.8
+   ],
+   "type": 4,
+   "curve": null,
+   "h0": 0,
+   "h1": 0
+  },
+  {
+   "op": "path",
+   "a": [
+    186.74,
+    3.9
+   ],
+   "b": [
+    280,
+    -92.68
+   ],
+   "type": 4,
+   "curve": null,
+   "h0": 0,
+   "h1": 0
+  },
+  {
+   "op": "upgrade",
+   "pick": 0.57
+  }
+ ]
+}
