@@ -129,6 +129,31 @@ export class Network {
    */
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
   readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
+  /** Each ribbon's place in `ribbons`, at a revision (`ribbonsMeeting`). */
+  private ribbonOrderAt = { revision: -1, order: new Map<SegmentId, number>() };
+
+  /**
+   * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
+   * `ribbons`: what a loop over every ribbon would meet there, in the order it
+   * would meet them, so a search that keeps the first of equals finds the same.
+   * Flat map only: on the planet a point and a road beside it can be kept on
+   * charts tens of km apart in the atlas.
+   */
+  ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
+    if (this.ribbonOrderAt.revision !== this.revision) {
+      const order = new Map<SegmentId, number>();
+      let i = 0;
+      for (const id of this.ribbons.keys()) order.set(id, i++);
+      this.ribbonOrderAt = { revision: this.revision, order };
+    }
+    const { order } = this.ribbonOrderAt;
+    const out: SegmentRibbon[] = [];
+    for (const id of this.segmentCells.idsMeeting(rect)) {
+      const ribbon = this.ribbons.get(id);
+      if (ribbon && order.has(id)) out.push(ribbon);
+    }
+    return out.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
 
   /**
    * Nodes the editor would refuse to create, with the gap that condemns them,

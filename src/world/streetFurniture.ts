@@ -3,7 +3,7 @@ import { chartAt, directionOnChart } from './planet/charts';
 import type { Network } from './network';
 import type { SegmentId } from './ids';
 import { m } from './units';
-import { LANDSCAPE_RADIUS, type LandscapeKind, crossingAccesses, footwayAt, medianAt, onCrossingAccess } from './landscape';
+import { LANDSCAPE_RADIUS, type LandscapeKind, crossingAccesses, crossingAccessTester, footwayAt, medianAt } from './landscape';
 
 export { TREE_PIT } from './section';
 
@@ -136,8 +136,8 @@ export function streetFurniture(net: Network): FurnitureItem[] {
   }
   // Nothing stands in a zebra's landing (`crossingAccesses`): a crossing
   // built after an item was placed hides it rather than block the crossing.
-  const accesses = crossingAccesses(net);
-  return items.filter((item) => !onCrossingAccess(net, accesses, item.segment, item.x, item.y, item.radius));
+  const onAccess = crossingAccessTester(net, crossingAccesses(net));
+  return items.filter((item) => !onAccess(item.segment, item.x, item.y, item.radius));
 }
 
 /** The items a person on the footway has to walk around. */

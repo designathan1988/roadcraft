@@ -1709,18 +1709,24 @@ export function createSceneRenderer(
   const rebuildUtilities = (net: Network): void => {
     if (!elevation) return;
     utilityRevision = net.doc.utilityRevision;
+    const at = performance.now();
     if (utilities) {
       builtTriangles -= utilities.triangles;
       world.remove(utilities.group);
       utilities.dispose();
     }
+    const atBuild = performance.now();
     utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires);
     world.add(utilities.group);
     builtTriangles += utilities.triangles;
+    const atFurniture = performance.now();
     // The placed things and the signs read the landscaping and the roads, not
     // the poles (`world/streetFurniture.ts`): a pole edit made them all again
     // (~20 ms each time, the profile of a road's power line, 2026-10-11).
     if (furnitureLandscape !== net.doc.changes.serialOf('landscape')) rebuildFurniture(net);
+    performance.measure('hitch:utilities/dispose', { start: at, end: atBuild });
+    performance.measure('hitch:utilities/build', { start: atBuild, end: atFurniture });
+    performance.measure('hitch:utilities/furniture', { start: atFurniture, end: performance.now() });
   };
 
   /** The landscaping's diary serial the street furniture was last built at. */
@@ -1796,7 +1802,14 @@ export function createSceneRenderer(
   const rebuildWorld = (net: Network): void => {
     worldNet = net;
     if (networkRevision === net.revision && terrainRevision === net.doc.terrainRevision) {
-      if (utilityRevision !== net.doc.utilityRevision) rebuildUtilities(net);
+      // A world being built builds the poles too (`worldSteps`): built here as
+      // well, every road drawn made the poles and the furniture of the whole
+      // map twice, the second time in one frame (52-63 ms on the player's map).
+      if (worldJob === null && utilityRevision !== net.doc.utilityRevision) {
+        const atUtilities = performance.now();
+        rebuildUtilities(net);
+        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end: performance.now() });
+      }
       return;
     }
     const started = performance.now();
@@ -1839,6 +1852,7 @@ export function createSceneRenderer(
     landDirty = null;
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
     let changed: [number, number, number, number][] | null = null;
+    const atBlocks = performance.now();
     if (previousElevation && (landStill || landBlocks)) {
       changed = changedBlocks(previousElevation, elevation);
       if (landBlocks) {
@@ -1846,6 +1860,7 @@ export function createSceneRenderer(
         for (const b of landBlocks) if (!seen.has(`${b[0]},${b[1]}`)) changed.push(b);
       }
     }
+    performance.measure('hitch:road-edit/changed blocks', { start: atBlocks, end: performance.now() });
     // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
     worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', net.doc.changes.version,
       { ms: performance.now() - started, detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || net.doc.changes.version;
@@ -1854,8 +1869,10 @@ export function createSceneRenderer(
     // solve did: the 'elevation' entry just written is what the things on the
     // ground read (`groundChanges`).
     // The footways moved where the solve did: the grass mask is drawn again there.
+    const atGrass = performance.now();
     if (changed === null) markGrass(null);
     else for (const block of changed) markGrass(block);
+    performance.measure('hitch:road-edit/grass marked', { start: atGrass, end: performance.now() });
     const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_REGIONS.length * MAP_SIZE * MAP_SIZE * 0.25;
     pendingBlocks = local ? blocks : null;
     // The land itself changed: at once. After a road edit, and for the first
@@ -1926,6 +1943,9 @@ export function createSceneRenderer(
     // complaint. The lamp columns in `scenery.ts` already do this; the poles
     // were the one piece of street furniture reading the bare ground.
     const atutilities = performance.now();
+    // The poles' revision this world is built at: one that moves after this
+    // step is built when the world is in place.
+    const utilityBuilt = net.doc.utilityRevision;
     const keepUtilities = utilities !== null && utilityRevision === net.doc.utilityRevision
       && !blocksReach(blocks, [...net.doc.poles.values()].map((pole) => around(pole.x, pole.y, m(12))));
     const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires);
@@ -1977,7 +1997,7 @@ export function createSceneRenderer(
     world.add(scenery.grass);
     utilities = freshUtilities;
     world.add(utilities.group);
-    utilityRevision = net.doc.utilityRevision;
+    utilityRevision = utilityBuilt;
     builtTriangles = triangles + roads.triangles + details.triangles + scenery.triangles + utilities.triangles;
     // The street furniture and signs: `rebuildFurniture` takes the old ones out itself.
     const atfurniture = performance.now();

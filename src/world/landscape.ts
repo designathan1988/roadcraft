@@ -1,6 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import { onChartOf, pointViews } from './planet/charts';
-import type { Network } from './network';
+import type { Network, SegmentRibbon } from './network';
 import type { NodeId, SegmentId } from './ids';
 import type { RoadSide, RoadType } from './roadTypes';
 import { m } from './units';
@@ -120,6 +120,18 @@ export interface FootwayHit {
 const FAR_PAD = m(40);
 
 /**
+ * The ribbons a point within `reach` of a road's surface can be on. On the
+ * flat map those whose surfaces reach `reach` round it, in the order of
+ * `net.ribbons` (`Network.ribbonsMeeting`): every item of street furniture
+ * placed asked every road of the map, some 45 ms of each road drawn on the
+ * player's map (profile of 2026-10-12). On the planet a road beside the point
+ * can be kept on another chart, far in the atlas: every ribbon, as before.
+ */
+function ribbonsNear(net: Network, at: Vec2, reach: number): Iterable<SegmentRibbon> {
+  return __PLANET__ ? net.ribbons.values() : net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach]);
+}
+
+/**
  * The footway a point stands on, or, with `reach`, the nearest one within
  * that distance of the footway's own band. Null on a carriageway, a highway,
  * a junction plate or open ground.
@@ -129,7 +141,7 @@ export function footwayAt(net: Network, at0: Vec2, reach = 0): FootwayHit | null
   let bestMiss = Infinity;
   const hit = { s: 0, distance: 0 };
   const view = pointViews(at0, reach + FAR_PAD);
-  for (const ribbon of net.ribbons.values()) {
+  for (const ribbon of ribbonsNear(net, at0, reach)) {
     const road = ribbon.road;
     if (!carriesPedestrians(road) || road.sidewalk <= 0) continue;
     const segment = net.doc.segment(ribbon.id);
@@ -211,7 +223,7 @@ export const MEDIAN_UTURN_OPENING = m(10);
 export function medianAt(net: Network, at0: Vec2, reach = 0): MedianHit | null {
   const hit = { s: 0, distance: 0 };
   const view = pointViews(at0, reach + FAR_PAD);
-  for (const ribbon of net.ribbons.values()) {
+  for (const ribbon of ribbonsNear(net, at0, reach)) {
     const road = ribbon.road;
     if (!plantedMedian(road)) continue;
     const segment = net.doc.segment(ribbon.id);
@@ -344,6 +356,36 @@ export function onCrossingAccess(
     return Math.abs(dx * access.tx + dy * access.ty) < CROSSWALK_DEPTH / 2 + m(0.3) + radius &&
       Math.abs(-dx * access.ty + dy * access.tx) < access.across + radius;
   });
+}
+
+/** The side of the cells `crossingAccessTester` files the landings in. */
+const ACCESS_CELL = m(32);
+
+/**
+ * `onCrossingAccess` for many items against the same landings: on the flat map
+ * the landings filed once by cell, each item asking the cells within reach of
+ * it. Every item of street furniture asked every crossing of the map, some
+ * 19 ms of each road drawn on the player's map (profile of 2026-10-12). On the
+ * planet a landing is met on its own chart: every landing, as before.
+ */
+export function crossingAccessTester(net: Network, accesses: readonly CrossingAccess[]): (segment: SegmentId, x: number, y: number, radius: number) => boolean {
+  if (__PLANET__) return (segment, x, y, radius) => onCrossingAccess(net, accesses, segment, x, y, radius);
+  const cells = new Map<string, CrossingAccess[]>();
+  let reach = 0;
+  for (const a of accesses) {
+    reach = Math.max(reach, Math.hypot(CROSSWALK_DEPTH / 2 + m(0.3), a.across));
+    const key = `${Math.floor(a.x / ACCESS_CELL)},${Math.floor(a.y / ACCESS_CELL)}`;
+    const list = cells.get(key);
+    if (list) list.push(a); else cells.set(key, [a]);
+  }
+  return (segment, x, y, radius) => {
+    const r = reach + radius * Math.SQRT2;
+    const near: CrossingAccess[] = [];
+    for (let cx = Math.floor((x - r) / ACCESS_CELL); cx <= Math.floor((x + r) / ACCESS_CELL); cx++) {
+      for (let cy = Math.floor((y - r) / ACCESS_CELL); cy <= Math.floor((y + r) / ACCESS_CELL); cy++) near.push(...(cells.get(`${cx},${cy}`) ?? []));
+    }
+    return near.length > 0 && onCrossingAccess(net, near, segment, x, y, radius);
+  };
 }
 
 export type LandscapeSnap =
