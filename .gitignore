@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.vite/
+.cache/
+*.local
+.DS_Store
+# People cooked ahead (npm run cook:people); regenerated, never committed
+cooked/
+# Gate runs (numbers and pictures of a run); the baseline lives in gate/baseline
+gate/runs/
