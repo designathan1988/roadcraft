@@ -98,6 +98,23 @@ export function samePlain(a: unknown, b: unknown): boolean {
 
 const copy = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
 
+const IMMUTABLE = new Set<RecordPart>(RECORDS.filter((r) => r.immutable).map((r) => r.part));
+const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
+
+/**
+ * What a patch holds that the document does not, UTF-16 bytes of its text: the
+ * copies, and of a record replaced whole (a building) only its old version -
+ * its new one is the document's own. A town grown under one edit (1 348
+ * buildings) was written out whole only to be counted: 75 ms on the click after.
+ */
+function bytesHeld(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
+  let bytes = 0;
+  for (const r of records) bytes += textBytes(r.before) + (IMMUTABLE.has(r.part) ? 0 : textBytes(r.after));
+  for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
+  for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
+  return bytes;
+}
+
 export class DocImage {
   private readonly records = new Map<RecordPart, Map<number, unknown>>();
   private readonly lists = new Map<ListPart, unknown[]>();
@@ -127,29 +144,46 @@ export class DocImage {
    * in the diary since (and the small values every time).
    */
   commit(doc: RoadDoc): DocPatch | null {
+    return this.update(doc, true);
+  }
+
+  /**
+   * The image brought up to the document, keeping nothing of what changed: a
+   * change made with no edit open (a town growing on its own) is taken in
+   * without a patch, which would copy every grown building into a step
+   * nobody keeps.
+   */
+  absorb(doc: RoadDoc): void {
+    this.update(doc, false);
+  }
+
+  private update(doc: RoadDoc, keep: boolean): DocPatch | null {
     const moved = (kinds: readonly DocChangeKind[]): boolean => kinds.some((k) => doc.changes.serialOf(k) > (this.seen.get(k) ?? 0));
     const records: DocPatch['records'][number][] = [];
     const lists: DocPatch['lists'][number][] = [];
     const values: DocPatch['values'][number][] = [];
     for (const r of RECORDS) {
       if (!moved(r.kinds)) continue;
+      const at = performance.now();
       const kept = this.records.get(r.part)!;
       for (const [id, now] of r.entries(doc)) {
         const was = kept.get(id);
         if (was === now || (was !== undefined && samePlain(was, now))) continue;
         const after = r.immutable ? now : copy(now);
-        records.push({ part: r.part, id, before: was, after });
+        if (keep) records.push({ part: r.part, id, before: was, after });
         kept.set(id, after);
       }
       for (const [id, was] of kept) {
         if (r.get(doc, id) !== undefined) continue;
-        records.push({ part: r.part, id, before: was, after: undefined });
+        if (keep) records.push({ part: r.part, id, before: was, after: undefined });
         kept.delete(id);
       }
+      if (performance.now() - at > 2) performance.measure(`hitch:image/${r.part} ${kept.size}`, { start: at, end: performance.now() });
     }
     for (const part of LISTS) {
       const kind = LIST_KINDS[part];
       if (kind !== null && !moved([kind])) continue;
+      const at = performance.now();
       const kept = this.lists.get(part)!;
       const now = doc.listOf(part);
       let start = 0;
@@ -159,8 +193,9 @@ export class DocImage {
       if (start === kept.length && start === now.length) continue;
       const before = kept.slice(start, kept.length - end);
       const after = now.slice(start, now.length - end).map((item) => copy(item));
-      lists.push({ part, start, before, after });
-      kept.splice(start, before.length, ...after.map((item) => copy(item)));
+      if (keep) lists.push({ part, start, before, after });
+      kept.splice(start, before.length, ...(keep ? after.map((item) => copy(item)) : after));
+      if (performance.now() - at > 2) performance.measure(`hitch:image/${part} ${now.length}`, { start: at, end: performance.now() });
     }
     for (const part of Object.keys(VALUES) as ValuePart[]) {
       const kind = VALUES[part];
@@ -168,12 +203,12 @@ export class DocImage {
       const was = this.values.get(part);
       const now = doc.valueOf(part);
       if (samePlain(was, now)) continue;
-      values.push({ part, before: was, after: copy(now) });
+      if (keep) values.push({ part, before: was, after: copy(now) });
       this.values.set(part, copy(now));
     }
     this.see(doc);
     if (!records.length && !lists.length && !values.length) return null;
-    return { records, lists, values, bytes: 2 * JSON.stringify({ records, lists, values }).length };
+    return { records, lists, values, bytes: bytesHeld(records, lists, values) };
   }
 
   private see(doc: RoadDoc): void {

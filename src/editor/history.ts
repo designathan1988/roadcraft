@@ -72,7 +72,7 @@ export class History {
     const patch = this.undoStack.pop();
     if (!patch) return false;
     doc.restore(sideOf(patch, 'before'));
-    this.image!.commit(doc);
+    this.image!.absorb(doc);
     this.redoStack.push(patch);
     return true;
   }
@@ -83,7 +83,7 @@ export class History {
     const patch = this.redoStack.pop();
     if (!patch) return false;
     doc.restore(sideOf(patch, 'after'));
-    this.image!.commit(doc);
+    this.image!.absorb(doc);
     this.undoStack.push(patch);
     this.trim();
     return true;
@@ -101,18 +101,26 @@ export class History {
     if (this.open) {
       this.close(doc);
       this.open = false;
-    } else if (this.image) this.image.commit(doc);
-    else this.image = new DocImage(doc);
+    } else if (this.image) this.timed('history/absorb', () => this.image!.absorb(doc));
+    else this.image = this.timed('history/image', () => new DocImage(doc));
   }
 
   private close(doc: RoadDoc): boolean {
-    this.image ??= new DocImage(doc);
-    const patch = this.image.commit(doc);
+    this.image ??= this.timed('history/image', () => new DocImage(doc));
+    const patch = this.timed('history/commit', () => this.image!.commit(doc));
     if (!patch) return false;
     this.undoStack.push(patch);
     this.redoStack.length = 0;
     this.trim();
     return true;
+  }
+
+  /** `work`, timed in the page's measures (`hitch:` entries, docs/performance.md). */
+  private timed<T>(what: string, work: () => T): T {
+    const start = performance.now();
+    const out = work();
+    performance.measure(`hitch:${what}`, { start, end: performance.now() });
+    return out;
   }
 
   /** Drops the OLDEST undo steps past the count or the byte budget; the newest always stays. */

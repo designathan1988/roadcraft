@@ -12,6 +12,7 @@ afrouxar orçamento ou teste). Cada uma com a recomendação e o porquê.
 
 | # | Decisão | Recomendação | Por quê |
 |---|---|---|---|
+| A2 | Aceitar a bomba no planeta ~7 ms mais lenta no pior quadro (p99 64,5 → 71,6 ms, portão 2026-10-12, p = 0,002) em troca da correção R1 (a bomba/pistola deixam de quebrar a física e travar a página)? | Aceitar agora e recuperar os 7 ms na F11 (física dos corpos) | A piora já aparece com só a correção R1 (envio da E3) e não no plano; as juntas inválidas da FONTE faziam o Jolt abandonar corpos, o que era mais barato e travava o jogo |
 | A1 | Onde apareceram os semáforos todos verdes ou todos vermelhos com carros passando (planeta ou plano; jogo antigo nas portas 4180/5173 ou o novo)? | Dizer o lugar e, se der, o mapa | No jogo novo, plano e planeta, 1.571 entradas medidas, nenhuma no vermelho, e as fotos batem com a simulação: sem o lugar não há como reproduzir |
 
 ## Abertos
