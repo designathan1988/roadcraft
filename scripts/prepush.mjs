@@ -46,7 +46,8 @@ if (git('status', '--porcelain') !== '') {
   process.exit(1);
 }
 console.error('pre-push: npm run check');
-if ((await run('npm', ['run', 'check'])) !== 0) process.exit(1);
+// The whole check takes some 20 minutes here; `run-limited` stops a job at 8 by default.
+if ((await run('npm', ['run', 'check'], { env: { RUN_LIMITED_TIMEOUT_S: '3600' } })) !== 0) process.exit(1);
 
 for (const [, localSha, , remoteSha] of pushes) {
   if (ZERO.test(localSha)) continue;
@@ -57,7 +58,9 @@ for (const [, localSha, , remoteSha] of pushes) {
     continue;
   }
   console.error(`pre-push: portão ${base.slice(0, 8)} (base) × ${localSha.slice(0, 8)} (candidato)`);
-  const code = await run('node', ['scripts/gate/serve-and-gate.mjs', await build(base), await build(localSha)]);
+  const [a, b] = [await build(base), await build(localSha)];
+  // One heavy job at a time on the player's machine: the gate waits its turn too.
+  const code = await run('node', ['scripts/run-limited.mjs', '--kill-gb=1.2', '--min-free-gb=4', 'node', 'scripts/gate/serve-and-gate.mjs', a, b], { env: { RUN_LIMITED_TIMEOUT_S: '10800' } });
   if (code !== 0) process.exit(code);
 }
 process.exit(0);
