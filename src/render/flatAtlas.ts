@@ -6,6 +6,8 @@ import type { RoadDoc } from '@world/doc';
 import { MAP_HALF, MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
 import { GroundChanges } from './groundChanges';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
+import { readFarWoods } from './ecologyPool';
+import { createFarForest } from './farForest';
 import type { PlateMesh } from './plateMesh';
 import type { WaterLook } from './water';
 import {
@@ -206,6 +208,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
+  // THE WOODS OF THE PLATES NOT IN FULL (`farForest.ts`): every plate's
+  // trees worked out in the background, drawn as impostors on the far ground.
+  const farForest = createFarForest(MAP_REGIONS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
+  root.add(farForest.object);
+  let focusX = 0, focusY = 0;
   let farRelief: ReliefVersion | null = null;
   let far: FlatFar | null = null;
   const buildFar = (relief: ReliefVersion): void => {
@@ -359,6 +366,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       p.source.natureRevision = doc.natureRevision;
       p.source.nature = doc.nature;
     }
+    if (doc.terrainRelief !== undefined) farForest.book.sync(doc.terrainRelief, doc.nature, focusX, focusY);
     if (doc.terrainRevision !== seenTerrain) {
       seenTerrain = doc.terrainRevision;
       const relief = doc.terrainRelief;
@@ -479,6 +487,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // once its corners are read off the page, one a frame at most - the far
       // patch stands in meanwhile, never a frame stopped for it.
       setFlatGroundFocus(x, y);
+      focusX = x;
+      focusY = y;
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
       const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
       if (key !== focusKey) {
@@ -516,6 +526,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     bakeRelief(renderer: WebGLRenderer, focus) {
       const at = focus ? plates[plateOf(focus.x, -focus.z)]! : null;
       for (const p of shownList) p.surface!.bakeRelief(renderer, p === at && focus ? { x: focus.x - p.cx, z: focus.z + p.cy } : null);
+      // The far woods: each plate's fade from whether it is in full and its own trees can grow.
+      const now = performance.now() / 1000;
+      for (const p of plates) farForest.book.setFull(p.index, p.shown, p.surface?.ecology() != null, now);
+      farForest.update(renderer, now);
     },
     setWaterLook(look: WaterLook) {
       const was = lastLook;
@@ -617,6 +631,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     dispose() {
       for (const p of plates) p.surface?.dispose();
       farSurface.dispose();
+      farForest.dispose();
       slab.geometry.dispose();
       (slab.material as MeshStandardMaterial).map?.dispose();
       (slab.material as MeshStandardMaterial).dispose();

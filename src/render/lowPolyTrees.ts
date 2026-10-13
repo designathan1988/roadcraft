@@ -565,7 +565,7 @@ export function lowPolyTreeParts(kind: LowPolyKind, seed: number): LowPolyParts 
  * sheet (Polycount on leaf cards).
  */
 let atlasTexture: CanvasTexture | null | undefined;
-function foliageAtlas(): CanvasTexture | null {
+export function foliageAtlas(): CanvasTexture | null {
   if (atlasTexture !== undefined) return atlasTexture;
   if (typeof document === 'undefined') return (atlasTexture = null);
   // 512 texels a clump (was 256): the leaves, 14-24 texels long, were
