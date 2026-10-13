@@ -13,7 +13,7 @@ import { type BayComponent, type Building, type FaceId, type LotSurface, type Vo
 import { lotSurfaces } from '@world/buildings/lots';
 import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
-import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, roofPlantOf, terraceParasols } from './roofPlan';
+import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceParasols } from './roofPlan';
 
 /**
  * A BUILDING FROM AFAR: its blocks as they stand, one plain mesh, with the
@@ -489,21 +489,9 @@ function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (s
 
 /** The machine rooms over the lift cores, on the highest flat roof over each (`buildingMesh.ts`). */
 function emitMachineRooms(w: MassWriter, b: Building, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
-  const u = b.module;
   const trim = rgb(trimMaterial(b));
-  for (const core of b.cutaway === undefined ? b.cores : []) {
-    let best: Volume | null = null;
-    const cx = core.x + u / 2, cy = core.y + u / 2;
-    for (const v of b.volumes) {
-      if (v.open || cx < v.x || cx >= v.x + v.w || cy < v.y || cy >= v.y + v.d) continue;
-      if (!best || volumeTop(v) > volumeTop(best)) best = v;
-    }
-    if (!best || (best.roof !== 'flat' && best.roof !== 'terrace')) continue;
+  for (const { volume: best, x0, y0, x1, y1 } of machineRooms(b)) {
     const z = floor + volumeHeight(b, best);
-    const inset = PARAPET_T + m(0.05);
-    const x0 = Math.max(core.x, best.x + inset), x1 = Math.min(core.x + u, best.x + best.w - inset);
-    const y0 = Math.max(core.y, best.y + inset), y1 = Math.min(core.y + u, best.y + best.d - inset);
-    if (x1 - x0 < m(1) || y1 - y0 < m(1)) continue;
     const skin = best.dress ? rgb(wallMaterial(b, best, 0)) : trim;
     box(w, x0, y0, x1, y1, z, z + MACHINE_ROOM_H, skin, rgbOf(ROOF_COLOURS.plant));
   }

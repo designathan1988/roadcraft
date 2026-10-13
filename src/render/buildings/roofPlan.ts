@@ -31,8 +31,42 @@ export function roofPlantOf(b: Building, v: Volume): readonly RoofPlantItem[] {
     // A new town's buildings are of every vintage: the seed stands in for the years.
     age: age > 0 ? age : (((b.id * 2_246_822_519) >>> 0) % 1000) / 1000,
     hasCore: b.cores.length > 0,
-    blocked: b.volumes.filter((o) => o !== v && !o.open && o.base === volumeTop(v)).map((o) => ({ x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.d })),
+    // The blocks on this roof, and the machine rooms over its lift cores: a
+    // skylight stood with its face in a machine room's (2026-10-13).
+    blocked: [
+      ...b.volumes.filter((o) => o !== v && !o.open && o.base === volumeTop(v)).map((o) => ({ x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.d })),
+      ...machineRooms(b).filter((r) => r.volume === v),
+    ],
   });
+}
+
+/** How far a machine room keeps inside its roof's edge: off the parapet (0.25 m thick) by 5 cm. */
+const MACHINE_ROOM_INSET = m(0.3);
+
+/**
+ * The machine rooms over the lift cores, each on the highest flat roof over
+ * its core and kept inside the parapet (a core at the block's edge stood
+ * with its face in the parapet's, 2026-10-13). One plan for both levels
+ * (`buildingMesh.ts`, `massing.ts`) and for the roof plant kept off them.
+ */
+export function machineRooms(b: Building): { volume: Volume; x0: number; y0: number; x1: number; y1: number }[] {
+  const out: { volume: Volume; x0: number; y0: number; x1: number; y1: number }[] = [];
+  if (b.cutaway !== undefined) return out;
+  const u = b.module;
+  for (const core of b.cores) {
+    let best: Volume | null = null;
+    const cx = core.x + u / 2, cy = core.y + u / 2;
+    for (const v of b.volumes) {
+      if (v.open || cx < v.x || cx >= v.x + v.w || cy < v.y || cy >= v.y + v.d) continue;
+      if (!best || volumeTop(v) > volumeTop(best)) best = v;
+    }
+    if (!best || (best.roof !== 'flat' && best.roof !== 'terrace')) continue;
+    const x0 = Math.max(core.x, best.x + MACHINE_ROOM_INSET), x1 = Math.min(core.x + u, best.x + best.w - MACHINE_ROOM_INSET);
+    const y0 = Math.max(core.y, best.y + MACHINE_ROOM_INSET), y1 = Math.min(core.y + u, best.y + best.d - MACHINE_ROOM_INSET);
+    if (x1 - x0 < m(1) || y1 - y0 < m(1)) continue;
+    out.push({ volume: best, x0, y0, x1, y1 });
+  }
+  return out;
 }
 
 /** A used roof terrace's seeded choices (`buildingMesh.ts` `emitTerrace`): 0..1 by the building, the block and `k`. */

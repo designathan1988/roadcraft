@@ -32,8 +32,8 @@ const COLOUR_APART = 0.07;
 const MIN_OVERLAP = m(0.02) * m(0.02);
 /** The buildings measured: the first of the town, with their lots, walls, gates and pavings. */
 const SAMPLE = 100;
-/** The overlapping area over the sample, m² (3.59 on 2026-10-13); it only shrinks. */
-const BUDGET = 3.6;
+/** The overlapping area over the sample, m² (3.59 on 2026-10-13, 0.38 after the fences, gates, walls, bands, canopies and machine rooms were parted); it only shrinks. */
+const BUDGET = 0.39;
 
 function face(a: V3, b: V3, c: V3, kind: string, look: string, rgb: V3, out: Face[]): void {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];

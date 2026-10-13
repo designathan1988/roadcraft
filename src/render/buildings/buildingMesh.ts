@@ -92,7 +92,7 @@ import {
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
 import { LOT_COLOURS } from './massing';
-import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
+import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
 import type { FlagInstance } from './flagLayer';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
@@ -804,11 +804,14 @@ function emitBuilding(
       const level = v.base + k;
       if (level === 0) continue;
       const z = floor + volumeElevation(b, v, level);
-      if (lines === 'every') band(e, v, z, BAND_OUT, BAND_H, trim);
+      // Not where another block stands against the wall over and under the
+      // line: two flush blocks' bands of two colours lay there in one plane.
+      const hidden = (side: FaceId): [number, number][] => bothCovered(coveredSpans(b, v, side, level - 1), coveredSpans(b, v, side, level));
+      if (lines === 'every') band(e, v, z, BAND_OUT, BAND_H, trim, hidden);
       // One string course over the ground floor: the base read from the body.
-      else if (lines === 'base') { if (level === 1) band(e, v, z, m(0.12), m(0.32), trim); }
+      else if (lines === 'base') { if (level === 1) band(e, v, z, m(0.12), m(0.32), trim, hidden); }
       // The floor slabs shown flush, a thin line of the wall's own render, darker.
-      else flushBand(e, v, z, m(0.03), m(0.24), shaded(wallOf(v, 0), 0.86));
+      else flushBand(e, v, z, m(0.03), m(0.24), shaded(wallOf(v, 0), 0.86), hidden);
     }
   }
 
@@ -877,26 +880,9 @@ function emitBuilding(
     }
   }
 
-  // ---- cores: a lift overrun on the highest flat roof over the core
-  const u = b.module;
-  // Cut open, the shafts are seen from inside: no machine room over them.
-  for (const core of b.cutaway === undefined ? b.cores : []) {
-    let best: Volume | null = null;
-    const cx = core.x + u / 2;
-    const cy = core.y + u / 2;
-    for (const v of b.volumes) {
-      if (cx < v.x || cx >= v.x + v.w || cy < v.y || cy >= v.y + v.d) continue;
-      if (!best || volumeTop(v) > volumeTop(best)) best = v;
-    }
-    if (!best || (best.roof !== 'flat' && best.roof !== 'terrace')) continue;
+  // ---- cores: a lift overrun on the highest flat roof over the core (`roofPlan.ts`)
+  for (const { volume: best, x0, y0, x1, y1 } of machineRooms(b)) {
     const z = floor + volumeHeight(b, best);
-    // Kept inside the parapet: a core at the block's edge stood with its face
-    // in the parapet's, the two fighting for depth (the player's photo,
-    // 2026-10-13).
-    const inset = PARAPET_T + m(0.05);
-    const x0 = Math.max(core.x, best.x + inset), x1 = Math.min(core.x + u, best.x + best.w - inset);
-    const y0 = Math.max(core.y, best.y + inset), y1 = Math.min(core.y + u, best.y + best.d - inset);
-    if (x1 - x0 < m(1) || y1 - y0 < m(1)) continue;
     // The machine room clad in the building's own skin: a white box on
     // every tower top read as a separate thing set on it. Masonry under a
     // glass skin: a lift's machine room is a closed room, never glazed.
@@ -1076,6 +1062,17 @@ function bayHash(bay: FacadeBay): number {
   return (h ^ (h >>> 13)) >>> 0;
 }
 
+/**
+ * The height of a door canopy's slab (its centre, `half` its thickness): `over`
+ * above the door's head, but under the slab of a balcony on the storey over
+ * it - a canopy at the door's height ran into a varanda gourmet's slab, the
+ * two tops in one plane (2026-10-13). The gourmet slab and its edge beam
+ * hang 0.29 m under the storey's floor; the canopy's fascia 0.06 m lower still.
+ */
+function canopyAt(head: number, H: number, half: number, over: number): number {
+  return Math.min(head + over, H - m(0.42) - half);
+}
+
 function emitBay(
   e: Emitter,
   f: BayFace,
@@ -1171,9 +1168,12 @@ function emitBay(
       if (bay.level === 0) {
         // A canopy over the door: a slab with a fascia at its edge (a drip),
         // and two brackets under it into the wall.
-        e.put('concrete', f, am, o.h1 + m(0.3), -m(0.45), w + m(0.7), m(0.12), m(0.9));
-        e.put('concrete', f, am, o.h1 + m(0.26), -m(0.88), w + m(0.7), m(0.2), m(0.05));
-        for (const side of [-1, 1]) e.put('frame', f, am + side * (w / 2 + m(0.2)), o.h1 + m(0.12), -m(0.25), m(0.06), m(0.3), m(0.5), tc);
+        const cz = canopyAt(o.h1, H, m(0.06), m(0.3));
+        e.put('concrete', f, am, cz, -m(0.45), w + m(0.7), m(0.12), m(0.9));
+        e.put('concrete', f, am, cz - m(0.04), -m(0.88), w + m(0.7), m(0.2), m(0.05));
+        // The brackets up to the slab's soffit, not into it: their backs and
+        // the slab's lay in the wall's plane over the 3 cm they crossed.
+        for (const side of [-1, 1]) e.put('frame', f, am + side * (w / 2 + m(0.2)), cz - m(0.06) - m(0.15), -m(0.25), m(0.06), m(0.3), m(0.5), tc);
         emitPorchLight(e, f, W, am, w, o.h1);
       }
       break;
@@ -1203,8 +1203,9 @@ function emitBay(
         e.put('frame', f, am, o.h0 + leafTop + m(0.06), o.depth - m(0.03), w, m(0.12), m(0.08), tc);
       }
       if (bay.level === 0) {
-        e.put('concrete', f, am, o.h1 + m(0.3), -m(0.55), w + m(1), m(0.14), m(1.1));
-        e.put('concrete', f, am, o.h1 + m(0.25), -m(1.08), w + m(1), m(0.24), m(0.05));
+        const cz = canopyAt(o.h1, H, m(0.07), m(0.3));
+        e.put('concrete', f, am, cz, -m(0.55), w + m(1), m(0.14), m(1.1));
+        e.put('concrete', f, am, cz - m(0.05), -m(1.08), w + m(1), m(0.24), m(0.05));
         emitPorchLight(e, f, W, am, w, o.h1);
       }
       break;
@@ -2129,7 +2130,10 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     const along = x1 - x0 >= y1 - y0;
     const lip = m(0.04);
     const cap = m(0.07);
-    const foot = z0 + (along ? m(0.22) : m(0.23));
+    // And walls that cross in plan (a churrasqueira's counter and the sink
+    // set against it, 2026-10-13) each at a course of their own, by the
+    // element: two plinths at one height laid their tops in one plane.
+    const foot = z0 + (along ? m(0.22) : m(0.23)) + m(0.02) * (el.id % 3);
     // Past the ends by `PART_INSET`; the plinth and the coping proud of both faces by `lip`.
     const ex = along ? PART_INSET : 0, ey = along ? 0 : PART_INSET;
     const gx = along ? PART_INSET : lip, gy = along ? lip : PART_INSET;
@@ -2426,38 +2430,41 @@ function emitFence(e: Emitter, el: BuildingElement, z0: number, z1: number, c: P
     const vy = ux;
     return { x: el.x + ux * u + vx * v, y: el.y + uy * u + vy * v };
   };
-  const railTop = z0 + el.h;
-  const railMid = z0 + el.h * 0.45;
+  const t = light ? m(0.03) : m(0.06);
+  // The rails, boxes a post wide: as two flat ribbons they had no sides to
+  // see, and a ribbon's top lay at a wall's round height (a rail top at
+  // 1.23 m in the body of a wall of 1.30 m under its coping). Their tops on
+  // the half centimetre (`RAIL_OFF`), off the whole centimetres the walls,
+  // copings and plinths are built in.
+  const railTop = z0 + el.h - m(0.07) - RAIL_OFF;
+  const railMid = z0 + el.h * 0.45 + RAIL_OFF;
+  const a = at(-half, 0), b = at(half, 0);
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+  const r = m(0.02);
   for (const [z, tall] of [[railMid, m(0.06)], [railTop, m(0.07)]] as const) {
-    const a = at(-half, 0);
-    const b = at(half, 0);
-    const n = { x: -(b.y - a.y), y: b.x - a.x };
-    const len = Math.hypot(n.x, n.y) || 1;
-    const t = m(0.03);
-    const nx = (n.x / len) * t;
-    const ny = (n.y / len) * t;
-    e.shell.face(
-      [e.L(a.x - nx, a.y - ny, z), e.L(b.x - nx, b.y - ny, z), e.L(b.x + nx, b.y + ny, z), e.L(a.x + nx, a.y + ny, z)],
-      e.N(n.x / len, n.y / len, 0),
-      c,
-    );
-    e.shell.face(
-      [e.L(a.x - nx, a.y - ny, z + tall), e.L(b.x - nx, b.y - ny, z + tall), e.L(b.x + nx, b.y + ny, z + tall), e.L(a.x + nx, a.y + ny, z + tall)],
-      e.N(0, 0, 1),
-      c,
-    );
+    const q = (u: number, v: number, h: number): V3 => e.L(a.x + ux * u - uy * v, a.y + uy * u + ux * v, h);
+    e.shell.face([q(0, -r, z), q(len, -r, z), q(len, -r, z + tall), q(0, -r, z + tall)], e.N(uy, -ux), c);
+    e.shell.face([q(len, r, z), q(0, r, z), q(0, r, z + tall), q(len, r, z + tall)], e.N(-uy, ux), c);
+    e.shell.face([q(0, -r, z + tall), q(len, -r, z + tall), q(len, r, z + tall), q(0, r, z + tall)], [0, 0, 1], c);
+    e.shell.face([q(0, r, z), q(len, r, z), q(len, -r, z), q(0, -r, z)], [0, 0, -1], c);
   }
   // Posts every couple of metres on a fence, closer together on a railing,
-  // and always at both ends.
+  // at both ends - INSIDE the run, a hair off its end (`PART_INSET`): a post
+  // centred on the run's end stood half past it, into the building or the
+  // wall the run ends at, and one flush with the end had its face in the
+  // plane of the wall across the corner (2026-10-13).
   const spacing = light ? m(0.45) : m(2);
   const posts = Math.max(2, Math.round(el.w / spacing) + 1);
+  const reach = Math.max(0, half - t - PART_INSET);
   for (let k = 0; k < posts; k++) {
-    const u = -half + (el.w * k) / (posts - 1);
+    const u = -reach + (2 * reach * k) / (posts - 1);
     const p = at(u, 0);
-    const t = light ? m(0.03) : m(0.06);
     e.box(p.x - t, p.y - t, p.x + t, p.y + t, z0, z1 + m(0.05), c);
   }
 }
+/** A fence rail's height off the whole centimetre: 5 mm. */
+const RAIL_OFF = m(0.005);
 const FLOWER_KERB: Paint = paint({ finish: 'stone', colour: 0xa9a196 });
 
 /** A flower bed: soil in a stone kerb, with a handful of coloured blooms. */
@@ -2519,6 +2526,8 @@ const PARKING_ASPHALT: Paint = paint({ finish: 'concrete', colour: 0x4a4d4f });
 const GATE_PAINT: Paint = paint({ finish: 'metal', colour: 0x2f3437 });
 /** The narrowest gate drawn standing open: a car's (`sim/agents/parking.ts` `CAR_GATE`); a person's is 1.2-2 m. */
 const CAR_GATE_OPEN = m(2.2);
+/** A gate pillar's width along the gate. */
+const GATE_POST = m(0.17);
 const BIN_BODY: Paint = paint({ finish: 'metal', colour: 0x3d5a43 });
 const BIN_LID: Paint = paint({ finish: 'metal', colour: 0x2b3a2e });
 const LAMP_POST: Paint = paint({ finish: 'metal', colour: 0x40464a });
@@ -2547,7 +2556,9 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
   switch (el.kind) {
     case 'gate': {
       const look = el.material ? c : GATE_PAINT;
-      const post = Math.min(0.2, m(0.14) / length);
+      // A gate's pillars stand proud of the wall either side of it: 0.14 m off
+      // the wall's line was the face of a 0.2 m wall's plinth (0.1 + 0.04).
+      const post = Math.min(0.2, GATE_POST / length);
       part(0, post, -0.4, 1.4, zb, z1 + m(0.1), look);
       part(1 - post, 1, -0.4, 1.4, zb, z1 + m(0.1), look);
       if (el.w < CAR_GATE_OPEN) {
@@ -2649,13 +2660,13 @@ function postAt(e: Emitter, P: (u: number, a: number, z: number) => V3, u: numbe
 }
 
 /** A horizontal band around a volume at height z (a storey line or a cornice). */
-function band(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint): void {
+function band(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint, hidden?: (side: FaceId) => [number, number][]): void {
   // A moulding is a PROFILE, not a slab: a fillet under a projecting drip,
   // whose shadow line is what makes it read at a distance.
   // Each step of the profile its faces and the ledge on top (`flushBand`):
   // drawn as a box, its top was a slab over the whole block at every floor,
   // inside the building, a floor nobody sees drawn on every storey.
-  const tier = (o: number, z0: number, z1: number, paint: Paint): void => flushBand(e, v, (z0 + z1) / 2, o, z1 - z0, paint);
+  const tier = (o: number, z0: number, z1: number, paint: Paint): void => flushBand(e, v, (z0 + z1) / 2, o, z1 - z0, paint, hidden);
   tier(out * 0.45, z - height / 2, z - height * 0.1, shaded(c, 0.94));
   tier(out, z - height * 0.1, z + height / 2, c);
 }
@@ -2668,7 +2679,7 @@ function band(e: Emitter, v: Volume, z: number, out: number, height: number, c: 
  * plane of a neighbouring block's band of another colour, and the two
  * flickered.
  */
-function flushBand(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint): void {
+function flushBand(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint, hidden?: (side: FaceId) => [number, number][]): void {
   const ring = localFootprint(v);
   const z0 = z - height / 2, z1 = z + height / 2;
   // A rectangle's corners closed as the box closed them; a shaped block's as before.
@@ -2680,9 +2691,20 @@ function flushBand(e: Emitter, v: Volume, z: number, out: number, height: number
     const tx = (q.x - p.x) / length, ty = (q.y - p.y) / length;
     const nx = ty, ny = -tx;
     const P = (a: number, o: number, h: number): V3 => e.L(p.x + tx * a + nx * o, p.y + ty * a + ny * o, h);
-    e.shell.face([P(-grow, out, z0), P(length + grow, out, z0), P(length + grow, out, z1), P(-grow, out, z1)], e.N(nx, ny), c);
-    e.shell.face([P(-grow, 0, z1), P(length, 0, z1), P(length, out, z1), P(-grow, out, z1)], [0, 0, 1], c);
+    // Only the stretches no other block covers; grown past a corner only at the side's own ends.
+    for (const [s0, s1] of hidden ? exposedParts(hidden(i), 0, length) : [[0, length] as [number, number]]) {
+      const a0 = s0 <= 1e-6 ? -grow : s0, a1 = s1 >= length - 1e-6 ? length + grow : s1;
+      e.shell.face([P(a0, out, z0), P(a1, out, z0), P(a1, out, z1), P(a0, out, z1)], e.N(nx, ny), c);
+      e.shell.face([P(a0, 0, z1), P(s1, 0, z1), P(s1, out, z1), P(a0, out, z1)], [0, 0, 1], c);
+    }
   }
+}
+
+/** The stretches covered in both lists (sorted, each its own spans). */
+function bothCovered(a: readonly [number, number][], b: readonly [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [a0, a1] of a) for (const [b0, b1] of b) { const s = Math.max(a0, b0), t = Math.min(a1, b1); if (t > s + 1e-6) out.push([s, t]); }
+  return out.sort((p, q) => p[0] - q[0]);
 }
 
 /**
