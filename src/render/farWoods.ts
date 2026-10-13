@@ -77,7 +77,7 @@ const MODELS = 6;
 const SLOTS: Readonly<Record<'oak' | 'cypress' | 'palm', readonly number[]>> = { oak: [0, 1], cypress: [2, 3], palm: [4, 5] };
 
 /** A cell's hash in 0..1 (`renderer.ts` cellHash): the same numbers, so the far trees are the near ones. */
-export function cellHash(a: number, b: number, salt: number): number {
+function cellHash(a: number, b: number, salt: number): number {
   let h = Math.imul(a | 0, 374_761_393) ^ Math.imul(b | 0, 668_265_263) ^ Math.imul(salt, 2_246_822_519);
   h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
   return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;

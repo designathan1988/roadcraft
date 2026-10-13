@@ -55,7 +55,7 @@ import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTO
  */
 
 /** Trees a plate's slot holds: its budget at the map's scale with room (`farWoods.ts` HEADROOM). */
-export const SLOT = 4_096;
+const SLOT = 4_096;
 /** How long after a plate's own trees could grow its far ones start to go, and how long they take, seconds. */
 const NEAR_GROWS = 0.7;
 const DISSOLVE = 0.6;

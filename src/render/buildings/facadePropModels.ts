@@ -316,7 +316,7 @@ function bushGeometry(): BufferGeometry {
  * hood (coifa) over the grill narrowing into its flue, which runs up the
  * wall to the slab above. 1.2 m along, 0.6 m out, 2.3 m high.
  */
-export const GRILL = { w: 1.2, d: 0.6, h: 2.3 } as const;
+const GRILL = { w: 1.2, d: 0.6, h: 2.3 } as const;
 function grillGeometry(): BufferGeometry {
   const { w, d } = GRILL;
   const brick: [number, number, number] = [0.72, 0.38, 0.27];

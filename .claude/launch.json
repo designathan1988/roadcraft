@@ -4,7 +4,14 @@
     {
       "name": "roadcraft2-dev",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5300", "--strictPort"],
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5300",
+        "--strictPort"
+      ],
       "port": 5300
     },
     {
@@ -26,8 +33,34 @@
     {
       "name": "roadcraft2-player",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["node_modules/vite/bin/vite.js", "preview", "--outDir", "C:/Codex-Shared/roadcraft-2-player", "--host", "127.0.0.1", "--port", "4300", "--strictPort"],
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "preview",
+        "--outDir",
+        "C:/Codex-Shared/roadcraft-2-player",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "4300",
+        "--strictPort"
+      ],
       "port": 4300
+    },
+    {
+      "name": "roadcraft2-check",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "preview",
+        "--outDir",
+        "C:/Users/JONATH~1/AppData/Local/Temp/claude/C--Codex-Shared-roadcraft-2/3de9db7d-96fc-4d19-9250-7fb0cefcdf8e/scratchpad/snap/dist",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5301",
+        "--strictPort"
+      ],
+      "port": 5301
     }
   ]
 }

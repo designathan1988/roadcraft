@@ -130,7 +130,6 @@
  "exports src/render/lightning.ts boltSegments",
  "exports src/render/lowPolyTrees.ts NEAR_LEAVES",
  "exports src/render/mesh/textureBaker.ts grayscaleCanvas",
- "exports src/render/natureTrees.ts TREE_MODELS",
  "exports src/render/occupants.ts LEAF_CLEARANCE",
  "exports src/render/occupants.ts STAND_UP_REACH",
  "exports src/render/occupants.ts kerbRoute",

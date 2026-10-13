@@ -81,7 +81,6 @@ const FRAGMENT = /* glsl */ `
   uniform float uContactLength;
   varying vec2 vUv;
 
-  float hash12(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   vec3 worldAt(vec2 uv, float depth) {
     vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
     return (uCameraWorld * vec4(v.xyz / v.w, 1.0)).xyz;
@@ -101,23 +100,26 @@ const FRAGMENT = /* glsl */ `
     vec3 P = worldAt(vUv, depth);
     vec3 N = normalize(cross(dFdx(P), dFdy(P)));
     if (dot(N, uCameraPos - P) < 0.0) N = -N;
-    float jitter = hash12(gl_FragCoord.xy);
 
     // The sky past the buildings round it.
     float vis = 1.0;
-    if (uSky > 0.0) {
-      vec2 p = vec2(P.x, -P.z);
+    vec2 p = vec2(P.x, -P.z);
+    vec2 inWindow = (p - uWindow.xy) / (uWindow.z * uWindow.w);
+    if (uSky > 0.0 && inWindow.x > 0.0 && inWindow.y > 0.0 && inWindow.x < 1.0 && inWindow.y < 1.0) {
       vec2 facing = vec2(N.x, -N.z);
       bool wall = abs(N.y) < 0.6;
       if (wall) facing = normalize(facing);
       float sum = 0.0, count = 0.0;
       for (int k = 0; k < 8; k++) {
-        float a = (float(k) + jitter) * 0.7853982;
+        // Fixed directions and steps: drawn at random per pixel with no filter
+        // after them (three's GTAO denoises its random taps), the town was
+        // grained all over (the player, 2026-10-13: "ficou tudo com noise").
+        float a = (float(k) + 0.5) * 0.7853982;
         vec2 d = vec2(cos(a), sin(a));
         if (wall && dot(d, facing) < 0.15) continue;
         float rise = 0.0;
-        for (int s = 0; s < 4; s++) {
-          float r = ${CELL.toFixed(1)} * (0.75 + float(s * s) * 1.6);
+        for (int s = 0; s < 3; s++) {
+          float r = ${CELL.toFixed(1)} * (0.9 + float(s * s) * 2.4);
           rise = max(rise, (heightAt(p + d * r) - P.y) / r);
         }
         sum += 1.0 / (1.0 + rise * rise);
@@ -132,9 +134,9 @@ const FRAGMENT = /* glsl */ `
     // The sun's contact shadows.
     float shade = 0.0;
     float far = distance(uCameraPos, P);
-    if (uContact > 0.0 && dot(N, uSunDir) > 0.05 && far < 260.0) {
-      for (int i = 1; i <= 12; i++) {
-        float t = (float(i) - 0.5 + jitter) / 12.0 * uContactLength;
+    if (uContact > 0.0 && dot(N, uSunDir) > 0.05 && far < 120.0) {
+      for (int i = 1; i <= 8; i++) {
+        float t = float(i) / 8.0 * uContactLength;
         vec3 Q = P + N * 0.04 + uSunDir * t;
         vec4 clip = uViewProjection * vec4(Q, 1.0);
         vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
@@ -143,7 +145,7 @@ const FRAGMENT = /* glsl */ `
         float dQ = distance(uCameraPos, Q), dS = distance(uCameraPos, S);
         if (dS < dQ - 0.03 && dQ - dS < 0.8) { shade = 1.0; break; }
       }
-      shade *= 1.0 - smoothstep(120.0, 260.0, far);
+      shade *= 1.0 - smoothstep(70.0, 120.0, far);
     }
 
     gl_FragColor = vec4(src.rgb * mix(1.0, vis, uSky) * (1.0 - shade * uContact), src.a);

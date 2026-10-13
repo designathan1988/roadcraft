@@ -102,8 +102,13 @@ export function facadeProps(component: BayComponent, level: number, use: Buildin
   const one = (kind: FacadePropKind, a: number, h: number, o0: number, turn: number, colour: number, s = 1): void => {
     out.push({ kind, a, h, out: o0, turn, sx: m(s), sy: m(s), sz: m(s), colour });
   };
-  // Flats cool their rooms with a split each; offices mostly with central plant on the roof.
-  const acShare = use === 'residential' ? 0.32 : use === 'mixed' ? 0.26 : use === 'commercial' ? 0.12 : 0.04;
+  // A split under a window, by the window: some 15-20 % of Brazilian homes
+  // have an air conditioner at all, 0.4 units a home on average (EPE, via
+  // IDEC "Eficiência do ar-condicionado: uma emergência"), and a flat has three or four windows -
+  // one window in fourteen or so. A third of them (0.32) put a condenser
+  // under nearly every window of a block (the player, 2026-10-13). Offices
+  // cool mostly from plant on the roof.
+  const acShare = use === 'residential' ? 0.07 : use === 'mixed' ? 0.06 : use === 'commercial' ? 0.04 : 0.02;
   const acCase = (): number => (rnd() < old * 0.8 ? AC_CASES[4]! : pick(AC_CASES.slice(0, 4)));
   /** A pot of 30 to 55 cm and its plant: a rosette (a lily, a spider plant) or a round shrub. */
   const plant = (a: number, out0: number, h: number): void => {
