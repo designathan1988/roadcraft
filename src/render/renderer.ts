@@ -50,7 +50,7 @@ import type { SimWorld } from '@sim/world';
 import type { Viewport } from '@view/viewport';
 
 import { createAgentMeshes, type AgentMeshes } from './agents';
-import { createEnvironment } from './environment';
+import { createEnvironment, slopeScaledShadowOffset } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
@@ -441,6 +441,7 @@ export function createSceneRenderer(
   // boot and silently gave us the hard filter anyway, so the softness the
   // scene was tuned for never existed. Name what we actually get.
   renderer.shadowMap.type = PCFShadowMap;
+  slopeScaledShadowOffset();
   // Drawn once a frame, on request (see `post.render` below). Left automatic,
   // three redraws every shadow map on EVERY `renderer.render`, and the frame
   // has two scene renders with the sun in them - the main pass and the

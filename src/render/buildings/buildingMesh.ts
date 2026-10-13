@@ -6,7 +6,8 @@ import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
 import { slotFor } from './lightSlots';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
-import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
+import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
+import { ROOM_FLOATS, roomsOfStorey, stoneFloor } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
   type BufferAttribute,
@@ -15,7 +16,9 @@ import {
   Float32BufferAttribute,
   Group,
   InstancedBufferAttribute,
+  InstancedInterleavedBuffer,
   InstancedMesh,
+  InterleavedBufferAttribute,
   Mesh,
   type Object3D,
   Sphere,
@@ -126,6 +129,8 @@ interface Placement {
   colour?: Color;
   /** A window pane's space (`lightSlots.ts`): lit when its room is. */
   slot?: number;
+  /** A window pane's room behind it (`roomBehind.ts`, ROOM_FLOATS numbers). */
+  room?: readonly number[];
 }
 
 type Rgb = readonly [number, number, number];
@@ -187,6 +192,14 @@ const PLINTH_RISE = m(0.012);
 const LOGGIA_DEPTH = m(1.4);
 /** How far a varanda gourmet's slab stands out of the wall. */
 const GOURMET_OUT = m(1.6);
+/** How thick the side wall at the end of a run of varandas gourmet is. */
+const GOURMET_CHEEK = m(0.2);
+/** How far inside its bay that wall stands: off the bay's edge, where the slab and the next bay end. */
+const CHEEK_IN = m(0.003);
+/** How far under the storey's floor that wall starts: under the slab, at no height another part ends at. */
+const CHEEK_FOOT = m(0.307);
+/** How far into the building's wall that wall's back is let. */
+const CHEEK_BURY = m(0.011);
 
 interface Opening {
   a0: number;
@@ -558,13 +571,18 @@ class Emitter {
   /** An instance placed on a bay face, turned so its local +Z is the face's outward normal. */
   /** The space of the bay being drawn, for its panes (-1: none). */
   slot = -1;
+  /** The room behind a pane centred `a` along the bay and `h` up it, for the bay being emitted (`roomBehind.ts`). */
+  room: ((a: number, h: number) => readonly number[]) | null = null;
 
   put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color): void {
     const p = this.P(f, a, h, depth);
     const n = this.N(f.nx, f.ny);
     const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]), sx, sy, sz };
     if (colour) placement.colour = colour;
-    if (kind === 'glass' || kind === 'glassDark') placement.slot = this.slot;
+    if (kind === 'glass' || kind === 'glassDark') {
+      placement.slot = this.slot;
+      if (this.room) placement.room = this.room(a, h);
+    }
     this.parts[kind].push(placement);
   }
 
@@ -697,6 +715,9 @@ function emitBuilding(
   const componentAt = new Map<string, BayComponent>();
   for (const bay of bays) componentAt.set(`${bay.volume}:${bay.level}:${bay.side}:${bay.index}`, bay.component);
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
+  // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws.
+  const interiors = new Map<number, FloorInterior>();
+  const roomsOf = new Map<string, ReturnType<typeof roomsOfStorey>>();
   for (const bay of bays) {
     const v = volumes.get(bay.volume) as Volume;
     const face: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: bay.width, H: bay.height };
@@ -734,11 +755,24 @@ function emitBuilding(
       e.rect(face, 0, face.W, 0, face.H, m(0.25), e.N(-face.nx, -face.ny), inner);
     }
     e.slot = slotOfBay(b, v, bay, spacesOf);
+    if (b.id >= 0 && b.cutaway === undefined) {
+      const key = `${v.id}:${bay.level}`;
+      let look = roomsOf.get(key);
+      if (!look) {
+        let inside = interiors.get(bay.level);
+        if (!inside) { inside = interiorAt(b, bay.level); interiors.set(bay.level, inside); }
+        look = roomsOfStorey(b, v, inside, bay.level);
+        roomsOf.set(key, look);
+      }
+      const behind = look;
+      e.room = (a, h) => behind(face.ax, face.ay, face.tx, face.ty, face.nx, face.ny, a, h, face.H - m(0.3));
+    }
     // The base weathered at the block's own foot (a split level stands at its own floor).
     shell.ground = floor + volumeLift(v);
-    emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left === 'pillar', right === 'pillar', recess, controls);
+    emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left, right, recess, controls);
     shell.ground = floor;
     e.slot = -1;
+    e.room = null;
     const ribDepth = controls?.pierDepth ?? (grammar === 'artDecoCrown' ? m(.65) : grammar === 'artDeco' ? m(.3) : 0);
     if (ribDepth > 0 && bay.index % (controls?.pierEvery ?? 1) === 0) {
       // Shallow, continuous-looking stone pilasters give every mass a vertical
@@ -887,10 +921,8 @@ function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void
   // The cut floor's height where a point of the plan is: each block's own,
   // on a split level (`Volume.lift`).
   const zAt = (x: number, y: number): number => floor + liftAt(b, cut, x, y) + levelElevation(b, cut);
-  // Homes and hotels have wooden floors; everywhere else, stone.
-  const homely = b.function === 'house' || b.function === 'townhouse' || b.function === 'apartments' ||
-    b.function === 'residentialTower' || b.function === 'hotel' || (!b.function && b.use === 'residential');
-  const floorLook = homely && cut > 0 || b.function === 'house' || b.function === 'townhouse' ? WOOD_FLOOR : FLOOR_FINISH;
+  // Homes and hotels have wooden floors; everywhere else, stone (the windows show the same, `roomBehind.ts`).
+  const floorLook = stoneFloor(b, cut) ? FLOOR_FINISH : WOOD_FLOOR;
   for (const v of b.volumes) {
     if (v.mode === 'void' || v.mode === 'intersect' || v.open) continue;
     if (!(v.base <= cut && volumeTop(v) > cut)) continue;
@@ -1030,8 +1062,9 @@ function emitBay(
   wall: Paint,
   trim: Paint,
   awning: Color,
-  pillarLeft: boolean,
-  pillarRight: boolean,
+  /** What the bays either side of it hold, along the same storey (none past the side's ends). */
+  left: BayComponent | undefined,
+  right: BayComponent | undefined,
   /** An entrance whose flight is set into the building: the opening becomes a porch this deep. */
   recess = 0,
   geometry?: FacadeGeometry,
@@ -1046,8 +1079,8 @@ function emitBay(
     e.rect(f, 0, W, 0, H, ARCADE, out, wall);
     e.strip(f, 0, W, H, 0, ARCADE, [0, 0, -1], trim);
     e.strip(f, 0, W, 0.02, 0, ARCADE, [0, 0, 1], ARCADE_FLOOR);
-    if (!pillarLeft) e.jamb(f, 0, 0, H, 0, ARCADE, along, wall);
-    if (!pillarRight) e.jamb(f, W, 0, H, 0, ARCADE, back, wall);
+    if (left !== 'pillar') e.jamb(f, 0, 0, H, 0, ARCADE, along, wall);
+    if (right !== 'pillar') e.jamb(f, W, 0, H, 0, ARCADE, back, wall);
     const d = m(0.55);
     e.put('column', f, W / 2, H / 2, m(0.35), d, H, d);
     return;
@@ -1193,10 +1226,29 @@ function emitBay(
       // glass parapet along its front edge.
       e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
       e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
-      e.put('fin', f, W / 2, -m(0.12), -GOURMET_OUT / 2, W, m(0.24), GOURMET_OUT, slabColour(wall));
-      e.put('glassRail', f, W / 2, 0, -GOURMET_OUT + m(0.04), W, m(1.05), 1);
+      const slab = slabColour(wall);
+      // Where the run of balconies ends, the side wall that carries the
+      // slabs storey on storey and closes the balcony (the Brazilian varanda
+      // gourmet's cheek, in the wall's own finish), a hair inside the bay so
+      // its face is in no plane of the slab's or the next bay's; the rail and
+      // its cap end inside it. Between two balconies, the low party screen
+      // that parts one flat's from the next.
+      const closedLeft = left !== 'gourmet', closedRight = right !== 'gourmet';
+      const r0 = closedLeft ? CHEEK_IN + GOURMET_CHEEK / 2 : 0, r1 = closedRight ? W - CHEEK_IN - GOURMET_CHEEK / 2 : W;
+      e.put('fin', f, W / 2, -m(0.12), -GOURMET_OUT / 2, W, m(0.24), GOURMET_OUT, slab);
+      // The slab's edge beam, a drip under its front: the slab reads as a
+      // floor of the building carried out, not a tray.
+      e.put('fin', f, W / 2, -m(0.2), -GOURMET_OUT + m(0.06), W, m(0.18), m(0.16), slab);
+      e.put('glassRail', f, (r0 + r1) / 2, 0, -GOURMET_OUT + m(0.04), r1 - r0, m(1.05), 1);
       // The rail's metal cap along the top of the glass, in the frames' colour.
-      e.put('fin', f, W / 2, m(1.06), -GOURMET_OUT + m(0.04), W, m(0.05), m(0.06), tc);
+      e.put('fin', f, (r0 + r1) / 2, m(1.06), -GOURMET_OUT + m(0.04), r1 - r0, m(0.05), m(0.06), tc);
+      for (const [u, closed] of [[CHEEK_IN + GOURMET_CHEEK / 2, closedLeft], [W - CHEEK_IN - GOURMET_CHEEK / 2, closedRight]] as const) {
+        // A storey high from under the slab, so the cheeks of the storeys
+        // stack into one wall; 5 cm proud of the slab's edge, never in its plane.
+        // Its back let into the wall, off the plane the slab's and the other parts' backs lie in.
+        if (closed) e.put('fin', f, u, H / 2 - CHEEK_FOOT, (CHEEK_BURY - GOURMET_OUT - m(0.05)) / 2, GOURMET_CHEEK, H, GOURMET_OUT + m(0.05) + CHEEK_BURY, slab);
+      }
+      if (!closedRight) e.put('frame', f, W, m(0.55), -GOURMET_OUT / 2 - m(0.1), m(0.06), m(1.1), GOURMET_OUT - m(0.2), tc);
       break;
     }
     case 'frenchWindow':
@@ -3112,6 +3164,8 @@ export interface PartBatch {
   readonly count: number;
   /** Window panes: each one's light slot. */
   readonly slots?: Float32Array;
+  /** Window panes: each one's room behind it, ROOM_FLOATS numbers (`roomBehind.ts`); a depth of 0 for none known. */
+  readonly rooms?: Float32Array;
 }
 
 /**
@@ -3141,6 +3195,13 @@ export interface BuildingChunk {
   readonly lotGround?: LotGround;
   /** A signature building's ground floor height: its body is drawn by `signature.ts`. */
   readonly signatureFloor?: number;
+}
+
+/** The rooms behind a batch of panes, ROOM_FLOATS a pane; zeros (no room) where none is known. */
+function roomsOfPanes(list: readonly Placement[]): Float32Array {
+  const out = new Float32Array(list.length * ROOM_FLOATS);
+  list.forEach((p, i) => { if (p.room) out.set(p.room, i * ROOM_FLOATS); });
+  return out;
 }
 
 /** Column-major T * Ry * S, written straight into `out` at `offset`. */
@@ -3208,7 +3269,7 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
     });
     const glassy = kind === 'glass' || kind === 'glassDark';
     batches[kind] = glassy
-      ? { matrices, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1) }
+      ? { matrices, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1), rooms: roomsOfPanes(list) }
       : { matrices, colours, count: list.length };
   }
   const shells: Partial<Record<Finish, ShellChunk>> = {};
@@ -3390,6 +3451,18 @@ export function* assembleBuildingMeshesSteps(
         k += batch.count;
       }
       geometry.setAttribute('litSlot', new InstancedBufferAttribute(slots, 1));
+      // And the room behind each, for the interior drawn through it (`kit.ts`).
+      const rooms = new Float32Array(count * ROOM_FLOATS);
+      k = 0;
+      for (const chunk of chunks) {
+        const batch = chunk.parts[kind];
+        if (batch.rooms) rooms.set(batch.rooms, k * ROOM_FLOATS);
+        k += batch.count;
+      }
+      const roomBuffer = new InstancedInterleavedBuffer(rooms, ROOM_FLOATS);
+      geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
+      geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
+      geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
     }
     const mesh = new InstancedMesh(geometry, ghost ? kit.ghostParts : dim ? kit.dimParts : kit.material[kind], count);
     if (glassy) mesh.userData['ownGeometry'] = true;

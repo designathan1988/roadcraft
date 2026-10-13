@@ -1,4 +1,5 @@
 import {
+  ShaderChunk,
   AmbientLight,
   BackSide,
   Color,
@@ -616,4 +617,28 @@ export function createEnvironment(
       sun.dispose();
     },
   };
+}
+
+/**
+ * The sun's normal offset by the slope of the receiver: as Unity's URP biases
+ * a shadow (`Shadows.hlsl` `ApplyShadowBias`: the normal bias times
+ * `1 - saturate(dot(lightDirection, normalWS))`), small on a face turned to
+ * the sun, large where the light grazes it. Fixed for every face, a low sun
+ * (the morning, the evening) drew every paving and porch floor shadowing
+ * itself in diagonal stripes (the player, 2026-10-13, "pisca pisca"); raised
+ * for every face, every shadow parted from its caster. The light's direction
+ * is the depth axis of its shadow matrix (an orthographic light: the third
+ * row), so nothing new is passed in. In its own block: three unrolls the
+ * loop without braces. Patched once, before any program is built.
+ */
+export function slopeScaledShadowOffset(): void {
+  const chunk = ShaderChunk.shadowmap_vertex;
+  const plain = 'shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias, 0 );';
+  if (!chunk.includes(plain)) {
+    if (chunk.includes('sunAxis')) return;
+    throw new Error('three.js shadowmap_vertex changed: the slope-scaled sun offset no longer applies');
+  }
+  ShaderChunk.shadowmap_vertex = chunk.replace(plain, `{ vec3 sunAxis = normalize( vec3( directionalShadowMatrix[ i ][ 0 ][ 2 ], directionalShadowMatrix[ i ][ 1 ][ 2 ], directionalShadowMatrix[ i ][ 2 ][ 2 ] ) );
+			float grazing = 1.0 - clamp( - dot( shadowWorldNormal, sunAxis ), 0.0, 1.0 );
+			shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias * ( 0.4 + 2.6 * grazing ), 0 ); }`);
 }

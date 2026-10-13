@@ -331,3 +331,32 @@ export function createFurnitureMaterial(): MeshStandardMaterial {
   material.name = 'building-furniture';
   return material;
 }
+
+/**
+ * Each kind's colour as the eye takes it in from across a room: its model's
+ * vertex colours averaged over its surface, three numbers a kind in
+ * `FURNITURE_KINDS` order. The windows draw the piece behind them in it
+ * (`kit.ts`, the room seen through the glass), the same piece the cut-open
+ * view draws.
+ */
+export function furnitureTones(geometry: Readonly<Record<FurnitureKind, BufferGeometry>>): Float32Array {
+  const out = new Float32Array(FURNITURE_KINDS.length * 3);
+  FURNITURE_KINDS.forEach((kind, k) => {
+    const g = geometry[kind];
+    const position = g.getAttribute('position'), colour = g.getAttribute('color'), index = g.index;
+    const corners = index ? index.count : position.count;
+    let r = 0, gr = 0, b = 0, total = 0;
+    for (let t = 0; t + 2 < corners; t += 3) {
+      const i0 = index ? index.getX(t) : t, i1 = index ? index.getX(t + 1) : t + 1, i2 = index ? index.getX(t + 2) : t + 2;
+      const ux = position.getX(i1) - position.getX(i0), uy = position.getY(i1) - position.getY(i0), uz = position.getZ(i1) - position.getZ(i0);
+      const vx = position.getX(i2) - position.getX(i0), vy = position.getY(i2) - position.getY(i0), vz = position.getZ(i2) - position.getZ(i0);
+      const area = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+      r += area * (colour.getX(i0) + colour.getX(i1) + colour.getX(i2)) / 3;
+      gr += area * (colour.getY(i0) + colour.getY(i1) + colour.getY(i2)) / 3;
+      b += area * (colour.getZ(i0) + colour.getZ(i1) + colour.getZ(i2)) / 3;
+      total += area;
+    }
+    out.set(total > 0 ? [r / total, gr / total, b / total] : [0.5, 0.5, 0.5], k * 3);
+  });
+  return out;
+}

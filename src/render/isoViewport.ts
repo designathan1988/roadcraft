@@ -232,6 +232,35 @@ export function createIsoRig(
         }
       }
     }
+    if (camera === persp && solidsAt) {
+      // At ANY distance, never inside a building: the occluding pull above
+      // fades out from the rooftops (`pullWeight`), and from there on the eye
+      // stood inside the towers it orbited, the walls cut by the near plane
+      // (the player, 2026-10-13: "a câmera não pode atravessar o prédio").
+      // Brought forward along the line of sight to where it leaves the
+      // building (Cinemachine's Deoccluder, "Pull Camera Forward"); with the
+      // point looked at inside too, lifted over the roof.
+      const floorAt = solidsAt;
+      const inside = (t: number): boolean => {
+        const y = camera.position.y + (target.y - camera.position.y) * t;
+        return y < floorAt(camera.position.x + (target.x - camera.position.x) * t, -(camera.position.z + (target.z - camera.position.z) * t));
+      };
+      if (inside(0)) {
+        if (inside(1)) camera.position.y = floorAt(camera.position.x, -camera.position.z);
+        else {
+          let lo = 0, hi = 1;
+          for (let i = 0; i < 16; i++) {
+            const mid = (lo + hi) / 2;
+            if (inside(mid)) lo = mid; else hi = mid;
+          }
+          camera.position.lerp(target, hi);
+        }
+      }
+      // The near plane short of the nearest building: at 2 % of a long view
+      // distance it stood metres ahead of the eye and cut the facade open.
+      const gap = camera.position.y - floorAt(camera.position.x, -camera.position.z);
+      persp.near = Math.max(m(0.08), Math.min(persp.near, camera.position.distanceTo(target) * 0.02, (gap + m(1)) * 0.5));
+    }
     if (camera === persp && groundAt) {
       // And never under the ground where it stands: raised over it, still
       // looking at the same point (the camera-terrain clamp of Cesium's and
