@@ -21,6 +21,8 @@ import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassingMaterial } from './massingMaterial';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
+import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
+import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { m } from '@world/units';
 
 /**
@@ -83,7 +85,8 @@ export type PartKind =
   | 'fin'
   | 'louvre'
   | 'glassRail'
-  | 'brise';
+  | 'brise'
+  | FacadePropKind;
 
 export const PART_KINDS: readonly PartKind[] = [
   'glass',
@@ -103,6 +106,7 @@ export const PART_KINDS: readonly PartKind[] = [
   'louvre',
   'glassRail',
   'brise',
+  ...FACADE_PROP_KINDS,
 ];
 
 /** Warm light of the rooms behind the glass. */
@@ -397,6 +401,7 @@ export function createBuildingKit(): BuildingKit {
     louvre: louvreGeometry(),
     glassRail: glassRailGeometry(),
     brise: briseGeometry(),
+    ...createFacadePropGeometries(),
   };
 
   const concrete = new MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.82, metalness: 0 });
@@ -445,6 +450,22 @@ export function createBuildingKit(): BuildingKit {
     glassRail: new MeshStandardMaterial({
       color: 0xa9c4c4, roughness: 0.05, metalness: 0.2, envMapIntensity: 1.4, transparent: true, opacity: 0.42, depthWrite: false,
     }),
+    // The props on the facades and balconies (`facadeProps.ts`): toned per
+    // vertex (a condenser's dark grille), tinted per instance. The leaves are
+    // single strips, seen from both sides.
+    acUnit: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.55, metalness: 0.15 }),
+    pot: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 }),
+    foliage: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
+    bush: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
+    grill: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 }),
+    kettle: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.35, metalness: 0.3 }),
+    lounger: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0 }),
+    // The wheels are rings seen from both sides.
+    bike: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.4, metalness: 0.3, side: DoubleSide }),
+    chair: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.6, metalness: 0 }),
+    table: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.55, metalness: 0.1 }),
+    airer: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0 }),
+    dish: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.5, metalness: 0.2 }),
     wash: new MeshBasicMaterial({
       map: lightPoolTexture(), color: PORCH_LIGHT, transparent: true, opacity: 0, blending: AdditiveBlending,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4, visible: false,
@@ -463,7 +484,7 @@ export function createBuildingKit(): BuildingKit {
     m.polygonOffsetFactor = -1;
     m.polygonOffsetUnits = -4;
   }
-  prefilterThinParts(material);
+  prefilterThinParts(material, THIN_PROPS);
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
   // The furniture's models, made once: drawn in a cut-open interior, and
@@ -505,6 +526,7 @@ export function createBuildingKit(): BuildingKit {
     frame: frameFarGeometry(),
     railing: railingFarGeometry(),
     roofRailing: roofRailingFarGeometry(),
+    acUnit: acFarGeometry(),
   };
   const geometries = new Set<BufferGeometry>([...Object.values(geometry), ...Object.values(far)]);
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
@@ -522,7 +544,7 @@ export function createBuildingKit(): BuildingKit {
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun: without them
     // the shadow of every building is a lattice of lit windows.
-    castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise']),
+    castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS]),
     furniture() {
       if (!furniture) {
         furniture = { geometry: furnitureGeometry, material: createFurnitureMaterial() };

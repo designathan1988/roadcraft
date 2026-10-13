@@ -91,6 +91,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
+import { FACADE_PROP_KINDS, facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
 import type { FlagInstance } from './flagLayer';
@@ -159,7 +160,7 @@ const ROOF_PLANT: Paint = paint({ finish: 'concrete', colour: ROOF_COLOURS.plant
  * balcony railings in their building's trim (the materials are white). A
  * part placed with no colour takes the old fixed one.
  */
-const COLOURED_PARTS: ReadonlySet<PartKind> = new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise']);
+const COLOURED_PARTS: ReadonlySet<PartKind> = new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS]);
 const WHITE_RGB: Rgb = [1, 1, 1];
 const PART_DEFAULT_COLOUR: Partial<Record<PartKind, Rgb>> = { frame: linear(0xe8e6df), railing: linear(0x33373a), fin: linear(0xe8e6df), brise: linear(0xe8e6df), louvre: linear(0x3d6b45) };
 /** The trim's colour as a three Color, one per paint. */
@@ -502,6 +503,11 @@ class Emitter {
     this.parts = parts;
   }
 
+  /** The building being emitted. */
+  get building(): Building {
+    return this.b;
+  }
+
   /** A local plan point at absolute height z, in world axes. */
   L(lx: number, ly: number, z: number): V3 {
     return [this.b.x + lx * this.c - ly * this.s, this.b.y + lx * this.s + ly * this.c, z];
@@ -574,10 +580,10 @@ class Emitter {
   /** The room behind a pane centred `a` along the bay and `h` up it, for the bay being emitted (`roomBehind.ts`). */
   room: ((a: number, h: number) => readonly number[]) | null = null;
 
-  put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color): void {
+  put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color, turn = 0): void {
     const p = this.P(f, a, h, depth);
     const n = this.N(f.nx, f.ny);
-    const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]), sx, sy, sz };
+    const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]) + turn, sx, sy, sz };
     if (colour) placement.colour = colour;
     if (kind === 'glass' || kind === 'glassDark') {
       placement.slot = this.slot;
@@ -1286,6 +1292,11 @@ function emitBay(
     }
     default:
       break;
+  }
+  // What hangs on the bay and stands on its balcony (`facadeProps.ts`), its own by the bay.
+  const b = e.building;
+  for (const p of facadeProps(bay.component, bay.level, b.use, b.decay ?? 0, bayHash(bay), W, o)) {
+    e.put(p.kind, f, p.a, p.h, -p.out, p.sx, p.sy, p.sz, new Color(p.colour), p.turn);
   }
 }
 

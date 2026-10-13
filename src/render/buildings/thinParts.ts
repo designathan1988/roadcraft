@@ -36,7 +36,11 @@ export function twoSided(g: BufferGeometry): BufferGeometry {
  * The thin parts' materials pre-filtered (see below), set once on the kit's
  * materials.
  */
-export function prefilterThinParts(material: Readonly<Record<'frame' | 'railing' | 'roofRailing', Material>>): void {
+export function prefilterThinParts<K extends string>(
+  material: Readonly<Record<'frame' | 'railing' | 'roofRailing' | K, Material>>,
+  /** Further thin parts: the kind, its bar's width (m) and the tone behind it. */
+  more: readonly (readonly [K, number, number])[] = [],
+): void {
   // Thin parts pre-filtered: a window frame's bar (5 cm) or a baluster
   // (2 cm) under a pixel wide is hit by some pixels and missed by the next,
   // and the skyline crawled with white dots in every move (the player,
@@ -45,8 +49,9 @@ export function prefilterThinParts(material: Readonly<Record<'frame' | 'railing'
   // behind - in proportion to the bar's share of the pixel, as the relief is
   // faded out of the finishes (Toksvig, "Mipmapping Normal Maps"; the same
   // pre-filtering as `finishes.ts`). Full colour once the bar spans a pixel.
-  for (const [kind, bar, behind] of [['frame', 0.05, 0.08], ['railing', 0.02, 0.16], ['roofRailing', 0.02, 0.16]] as const) {
-    const thin = material[kind] as MeshStandardMaterial;
+  const list: readonly (readonly [string, number, number])[] = [['frame', 0.05, 0.08], ['railing', 0.02, 0.16], ['roofRailing', 0.02, 0.16], ...more];
+  for (const [kind, bar, behind] of list) {
+    const thin = material[kind as 'frame'] as MeshStandardMaterial;
     thin.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;')
