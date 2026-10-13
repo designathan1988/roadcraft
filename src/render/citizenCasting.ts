@@ -244,15 +244,22 @@ export class CastingRegistry {
   private drawn: { seed: number; index: number; company: Company; companyId: number; code: DressCode }[] = [];
   recordCensus = false;
 
-  constructor(private readonly roster: readonly CitizenModel[] = CROWD, private readonly forgetAfter = 3600) {}
+  /**
+   * `remember`: how many people are kept dressed at most. A person's body is
+   * theirs for good: forgotten after a minute out of sight (3600 frames), a
+   * walker came back on screen re-cast - by where they stood and who was
+   * near - in other clothes and another haircut (the player, 2026-10-13: "se
+   * trocam de roupa e cabelo"). Only past this many, the longest unseen go.
+   */
+  constructor(private readonly roster: readonly CitizenModel[] = CROWD, private readonly remember = 40_000) {}
 
-  /** Starts a frame: the census empties and, now and then, the long-unseen are forgotten. */
+  /** Starts a frame: the census empties and, past `remember`, the longest unseen are forgotten. */
   beginFrame(): void {
     this.frame++;
     this.drawn.length = 0;
-    if (this.frame % 240 !== 0) return;
-    for (const [seed, entry] of this.cast) {
-      if (this.frame - entry.seen < this.forgetAfter) continue;
+    if (this.frame % 240 !== 0 || this.cast.size <= this.remember) return;
+    const oldest = [...this.cast].sort((a, b) => a[1].seen - b[1].seen).slice(0, this.cast.size - this.remember);
+    for (const [seed, entry] of oldest) {
       this.cast.delete(seed);
       this.wearers.get(entry.index)?.delete(seed);
     }
@@ -310,9 +317,13 @@ export class CastingRegistry {
           ctx.hasChild ?? ctx.ageClass === 'child');
         const code: DressCode = options.find((candidate) => candidate.includes(wardrobe)) ?? [wardrobe];
         this.codes.set(group, code);
+        // The generated occupants of a vehicle are re-dressed to match (they are
+        // barely seen inside it); a party on foot keeps every member's clothes:
+        // re-cast in view, they changed clothes in front of the player.
+        const vehicle = ctx.company === 'car' || ctx.company === 'bus' || ctx.company === 'truck';
         for (const [seed, entry] of this.cast) {
           if (seed === ctx.seed || entry.group !== group) continue;
-          if (code.includes(this.roster[entry.index]!.wardrobe)) { entry.code = code; continue; }
+          if (!vehicle || code.includes(this.roster[entry.index]!.wardrobe)) { entry.code = code; continue; }
           this.cast.delete(seed);
           this.wearers.get(entry.index)?.delete(seed);
         }
