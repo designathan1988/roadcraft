@@ -170,11 +170,5 @@
  "whole-map-per-frame  src/world/solids.ts solidsOf  for RoadDoc.poles": 1,
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  spread RoadDoc.segments": 1,
- "whole-map-per-frame  src/world/zoneGrid.ts pavedTester  spread Network.ribbons": 1,
- "window-key-listener  src/buildingsWiring.ts createBuildingWiring  window keydown": 1,
- "window-key-listener  src/buildingsWiring.ts createBuildingWiring  window keyup": 1,
- "window-key-listener  src/ui/chrome.ts trackFocusModality  window keydown": 1,
- "window-key-listener  src/ui/healthPanel.ts mountHealthPanel  window keydown": 1,
- "window-key-listener  src/ui/roads/keysPanel.ts openRoadKeys  window keydown": 1,
- "window-key-listener  src/ui/v2/shell.ts mountShell  window keydown": 1
+ "whole-map-per-frame  src/world/zoneGrid.ts pavedTester  spread Network.ribbons": 1
 }

@@ -67,7 +67,8 @@ function clock(entry: HealthEntry): string {
   return CLOCK.format(entry.wall);
 }
 
-export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void } {
+/** The panel's keys, for the game's keys (`editor/gameKeys.ts`): F9 toggles it, Escape closes it (false: it was closed). */
+export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void; close(): boolean } {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -250,10 +251,15 @@ export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void 
     const text = JSON.stringify({ health: sources.log.latest(256), world: sources.world(60), state: sources.state(40) }, null, 1);
     void navigator.clipboard?.writeText(text).then(() => { copy.textContent = t('health.copied'); setTimeout(label, 1500); }, () => {});
   });
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 'F9') { event.preventDefault(); toggle(); }
-    else if (event.key === 'Escape' && !pop.hidden) { pop.hidden = true; button.setAttribute('aria-expanded', 'false'); }
-  });
+  // F9 and Escape come through the game's keys (`editor/gameKeys.ts`): a
+  // listener of its own here closed the panel AND let the same Escape put
+  // the tool down.
+  const close = (): boolean => {
+    if (pop.hidden) return false;
+    pop.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    return true;
+  };
   window.addEventListener('resize', () => { if (!pop.hidden) place(); });
 
   // In the top bar, before Help; on its own in the corner without the v2 interface.
@@ -289,5 +295,5 @@ export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void 
     if (!pop.hidden && (open !== 'health' || sources.log.changes !== seen)) { seen = sources.log.changes; render(); }
   }, 1000);
 
-  return { toggle };
+  return { toggle, close };
 }

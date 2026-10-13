@@ -19,6 +19,7 @@ export function focusCameFromKeyboard(): boolean {
 
 /** Starts telling a Tab from a click. Call once. */
 export function trackFocusModality(): void {
+  // own key listener: notes that the focus came by Tab (the focus ring's modality), runs no command.
   window.addEventListener('keydown', (e) => { if (e.key === 'Tab') tabbing = true; }, true);
   window.addEventListener('pointerdown', () => { tabbing = false; }, true);
 }

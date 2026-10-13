@@ -13,11 +13,12 @@ interface World {
   road: boolean;
   buildingUses: (key: string) => boolean;
   focusFromKeyboard: boolean;
+  healthOpen: boolean;
   calls: string[];
 }
 
 function setup(start: Partial<World> = {}) {
-  const w: World = { tool: 'inspect', flying: false, smoothNode: false, road: false, buildingUses: () => false, focusFromKeyboard: false, calls: [], ...start };
+  const w: World = { tool: 'inspect', flying: false, smoothNode: false, road: false, buildingUses: () => false, focusFromKeyboard: false, healthOpen: false, calls: [], ...start };
   const log = (what: string) => () => { w.calls.push(what); };
   const deps: GameKeyDeps = {
     tool: () => w.tool,
@@ -55,6 +56,10 @@ function setup(start: Partial<World> = {}) {
     roadClassCount: 6,
     pickRoadClass: (i) => w.calls.push(`class ${i}`),
     toggleChanges: log('changes'),
+    health: {
+      toggle: log('health toggle'),
+      close: () => { if (!w.healthOpen) return false; w.healthOpen = false; w.calls.push('health close'); return true; },
+    },
     toolKey: (t) => w.calls.push(`tool ${t}`),
     escape: () => { w.calls.push('escape'); return true; },
   };
@@ -74,6 +79,20 @@ describe('the game keys', () => {
     held = false;
     press('Escape', 'Escape');
     expect(w.calls).toEqual(['building Escape', 'escape']);
+  });
+
+  it('lets the open F9 monitor have Escape, and the tool in hand the next one', () => {
+    // At the SOURCE the monitor listened on the window: one Escape closed it AND put the tool down.
+    const { w, press } = setup({ tool: 'building', buildingUses: (k) => k === 'Escape', healthOpen: true });
+    press('Escape', 'Escape');
+    press('Escape', 'Escape');
+    expect(w.calls).toEqual(['health close', 'building Escape']);
+  });
+
+  it('toggles the F9 monitor through the game keys', () => {
+    const { w, press } = setup();
+    press('F9', 'F9');
+    expect(w.calls).toEqual(['health toggle']);
   });
 
   it('gives + and - to the terrain brush strength, not also to the zoom', () => {

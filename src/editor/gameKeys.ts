@@ -67,6 +67,8 @@ export interface GameKeyDeps {
   roadClassCount: number;
   pickRoadClass(index: number): void;
   toggleChanges(): void;
+  /** The F9 monitor (`ui/healthPanel.ts`): toggled, or closed (false: it was not open). */
+  health: { toggle(): void; close(): boolean };
   /** A tool's key: takes the tool or puts it down (`toolMachine` `toggle`), and the drawer follows. */
   toolKey(tool: Tool): void;
   /** Escape, one step back: the stroke, then what Inspect picked, then the tool; false: nothing to put down. */
@@ -117,6 +119,8 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
   command('terrain.strength', (_e, step) => done(() => d.terrainStrength(step as 1 | -1)));
   command('road.class', (e) => done(() => d.pickRoadClass(Number(e.key) - 1)));
   command('debug.changes', () => done(d.toggleChanges));
+  command('debug.health', () => done(d.health.toggle));
+  command('health.close', () => used(d.health.close()));
   command('tool.key', (e) => done(() => d.toolKey(TOOL_LETTERS[e.key.toLowerCase()]!)));
   command('escape', () => used(d.escape()));
   command('camera.keys', (e) => held(d.camera.press(e.code, e.shiftKey), d.requestDraw));
@@ -131,6 +135,9 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
     { code: 'KeyV', ctrl: false, alt: false, command: 'flight.toggle', when: (e) => d.flight.ready() && !e.repeat && !(!d.flight.active() && d.tool() === 'road') },
     { code: 'KeyU', alt: false, command: 'flight.clean', when: (e) => d.flight.active() && !e.metaKey && !e.repeat },
     { alt: false, command: 'flight.keys', when: (e) => d.flight.active() && !e.metaKey },
+    // The F9 monitor: an open popover takes Escape before the tool in hand (WAI-ARIA, Escape closes the popup).
+    { key: 'F9', command: 'debug.health' },
+    { key: 'Escape', command: 'health.close' },
     // The tool in hand reads its own keys first.
     { command: 'building.keys', when: tool('building') },
     { ctrl: false, command: 'transit.keys', when: tool('transit') },

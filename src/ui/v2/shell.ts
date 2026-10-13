@@ -1062,6 +1062,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   // The keys of a select (WAI-ARIA APG, select-only combobox): the arrows,
   // Home and End move between the choices, Escape closes and gives the focus
   // back to the button. They stop here: the camera's keys must not move too.
+  // own key listener: the open list's keys (WAI-ARIA select), held before the game sees them.
   window.addEventListener('keydown', (e) => {
     if (!ddOpen) return;
     const { list, anchor } = ddOpen;

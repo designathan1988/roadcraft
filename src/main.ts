@@ -2848,6 +2848,8 @@ const gameKeys = createGameKeys({
   },
   // F8: what changed, where (`drawChanges`).
   toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
+  // F9: the monitor (`healthPanel`, mounted at the end of this file).
+  health: { toggle: () => healthPanel.toggle(), close: () => healthPanel.close() },
   toolKey: (next) => {
     pickTool(next);
     shell?.toolKeyed(next);
@@ -4434,7 +4436,7 @@ function noteAtlasPhantoms(): void {
 }
 
 const valueText = (value: unknown): string => (value === null || value === undefined ? '—' : typeof value === 'number' ? String(Math.round(value * 100) / 100) : String(value));
-mountHealthPanel({
+const healthPanel = mountHealthPanel({
   log: health,
   world: (n) => doc.changes.latest(n).map((c) => {
     const where = c.rects === null ? 'mapa inteiro' : `${c.rects.length} ret.`;

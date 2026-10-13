@@ -201,6 +201,20 @@ function indexMember(memberName, unit, container) {
   }
 }
 
+/**
+ * A key listener that runs no command of the game, said so with its reason in
+ * a comment just above its statement (`// own key listener: <why>`): it tracks
+ * a modifier or the focus, or holds the keys while a panel of its own is open.
+ */
+function ownListener(call) {
+  let statement = call;
+  while (statement && !ts.isExpressionStatement(statement)) statement = statement.parent;
+  if (!statement) return false;
+  const text = statement.getSourceFile().getFullText();
+  return (ts.getLeadingCommentRanges(text, statement.getFullStart()) ?? [])
+    .some((r) => /own key listener: \S/.test(text.slice(r.pos, r.end)));
+}
+
 const units = [];
 const unitSet = new Set();
 /** Key listeners on the window or the document: [file, what]. */
@@ -212,7 +226,7 @@ for (const file of sources) {
     if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'addEventListener'
       && n.arguments[0] && ts.isStringLiteral(n.arguments[0]) && /^key(down|up|press)$/.test(n.arguments[0].text)) {
       const target = skipParens(n.expression.expression);
-      if (ts.isIdentifier(target) && (target.text === 'window' || target.text === 'document')) keyListeners.push([n, `${target.text} ${n.arguments[0].text}`]);
+      if (ts.isIdentifier(target) && (target.text === 'window' || target.text === 'document') && !ownListener(n)) keyListeners.push([n, `${target.text} ${n.arguments[0].text}`]);
     }
     // Members: methods, accessors and function-valued properties of classes and object literals.
     if ((ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n)) && n.body && n.name && ts.isIdentifier(n.name)) indexMember(n.name.text, n, n.parent);

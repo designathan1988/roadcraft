@@ -201,7 +201,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     tool.free = wanted;
     host.changed();
   };
+  // own key listener: follows the Alt key held (free placement), runs no command.
   window.addEventListener('keydown', (e) => setFree(e.altKey));
+  // own key listener: follows the Alt key let go, runs no command.
   window.addEventListener('keyup', (e) => setFree(e.altKey));
   window.addEventListener('blur', () => setFree(false));
 

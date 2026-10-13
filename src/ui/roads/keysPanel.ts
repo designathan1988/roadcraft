@@ -90,6 +90,7 @@ export function openRoadKeys(anchor?: HTMLElement): void {
     note = '';
     render();
   };
+  // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
   window.addEventListener('keydown', onKey, true);
 
   if (anchor) {

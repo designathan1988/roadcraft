@@ -43,6 +43,8 @@ export function frame(doc: RoadDoc): void {
   for (const n of doc.nodes.values()) void n;
   void doc.name.length;
   window.addEventListener('keydown', () => undefined);
+  // own key listener: follows a modifier, runs no command.
+  window.addEventListener('keyup', () => undefined);
 }
 `;
 

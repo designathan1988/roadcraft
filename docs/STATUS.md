@@ -114,7 +114,8 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   janela só no `main.ts`. 192 achados na linha de base (`code-rules.baseline.json`, só
   diminui), que é a lista de trabalho; teste das regras em `tests/arch/checkCode.spec.ts`.
   Primeiro corrigido: o `draw` copiava todo o paisagismo a cada quadro numa hora da cidade sem
-  planta crescendo.
+  planta crescendo. Depois: R21 (Esc com o monitor F9 aberto também largava a ferramenta),
+  visto no jogo; linha de base em 186.
 
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
