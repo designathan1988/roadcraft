@@ -85,15 +85,6 @@ breaks far from where you edit in `sim/`.
   tick's displacement made every sidestep swing the body (the zigzag) and turned
   a standing person round on still legs. The heading follows the path through a
   turn rate and holds while standing; the renderer steps the feet round.
-- **On the planet (`__PLANET__`) a position means nothing without its chart.**
-  A lane is laid on the chart of the node it leaves, a junction's turns and its
-  zebras on its node's, a footway on its segment's: across a border between
-  pieces two of them are tens of km apart in the atlas. A body moving onto a
-  lane or way of another chart takes its place, its last place and its heading
-  with it (`pose.ts`, `agents/walk.ts carryOnto`); a distance between two
-  things is taken on one chart (`world/planet/charts.ts onChartOf`); a grid of
-  neighbours files ghost images on the charts round it (`walk.ts imagesOf`,
-  `gapOpen`). `tests/planet/traffic.spec.ts` (run with `vitest.planet.config.ts`).
 - **One shape per walker.** Every field a `Walker` may be given later is in
   `WALKER_SHAPE` (`agents/walk.ts`), spread into every walker literal: a
   new optional field added only where it happens gives walkers new hidden

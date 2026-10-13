@@ -5,7 +5,6 @@ import type { NodeId, SegmentId } from './ids';
 import type { Network } from './network';
 import { CASING_BAND, FOOTWAY_RISE, Level, type RoadType, casingHalf, footwayOn } from './roadTypes';
 import { m } from './units';
-import { chartAt, chartToChartInto, chartsTouching } from './planet/charts';
 import { ROAD_TUNING } from './roads/tuning';
 import {
   ROAD_GROUND_CLEARANCE,
@@ -816,25 +815,14 @@ export function buildRoadElevation(
   }
 
   // --------------------------------------------------------------- the index
-  // On the planet each road is also filed, as a ghost image, on the charts of
-  // the pieces its box reaches (`ghostProfiles`): a query is asked in the
-  // coordinates of the piece it is on, and the stretch of a road written on
-  // the next piece's chart was not there - the ground under it was never cut
-  // (grass over the asphalt across the border) and nothing walked on it.
-  const ghosts = ghostProfiles(profiles);
-  const index = new SpatialIndex(ghosts.length ? [...profiles, ...ghosts] : profiles);
+  const index = new SpatialIndex(profiles);
   /** Each road's whole solved profile as a digest, with its box (`differences`). */
-  const profileSummaries = new Map<SegmentId, { digest: number; box: Aabb; oversized: boolean; ghosts?: Aabb[] }>();
+  const profileSummaries = new Map<SegmentId, { digest: number; box: Aabb; oversized: boolean }>();
   for (const profile of profiles) {
     const d = new Digest().add(profile.id).addText(profile.structure).add(profile.manualVertical ? 1 : 0).add(profile.type)
       .add(profile.half).add(profile.median).add(profile.sidewalk).add(profile.step).addAll(profile.h).addAll(profile.line.xy);
     if (profile.sidewalkLeft !== profile.sidewalkRight || profile.look) d.add(profile.sidewalkLeft).add(profile.sidewalkRight).add(profile.look);
     profileSummaries.set(profile.id, { digest: d.value(), box: profile.bbox, oversized: index.isOversized(profile) });
-  }
-  // A road's ghost images move with it: their boxes are where it changed too (`differences`).
-  for (const ghost of ghosts) {
-    const summary = profileSummaries.get(ghost.id);
-    if (summary) (summary.ghosts ??= []).push(ghost.bbox);
   }
 
   /** Everything a query reads from one profile, digested once per build. */
@@ -1028,11 +1016,10 @@ export function buildRoadElevation(
       const theirs = other.summaries?.();
       if (!theirs) return null;
       const out: { minX: number; minY: number; maxX: number; maxY: number }[] = [];
-      const take = (s: { box: Aabb; oversized: boolean; ghosts?: readonly Aabb[] }): boolean => {
+      const take = (s: { box: Aabb; oversized: boolean }): boolean => {
         if (s.oversized) return false;
-        for (const box of [s.box, ...(s.ghosts ?? [])]) {
-          out.push({ minX: box.minX - INDEX_CELL, minY: box.minY - INDEX_CELL, maxX: box.maxX + INDEX_CELL, maxY: box.maxY + INDEX_CELL });
-        }
+        const box = s.box;
+        out.push({ minX: box.minX - INDEX_CELL, minY: box.minY - INDEX_CELL, maxX: box.maxX + INDEX_CELL, maxY: box.maxY + INDEX_CELL });
         return true;
       };
       for (const [id, s] of mine) {
@@ -1119,8 +1106,7 @@ export function buildRoadElevation(
       }
       return { along, across };
     },
-    // With the ghost images: a piece's ground is cut under the stretch of a road kept on the next piece's chart.
-    shapeBounds: () => [...profiles, ...ghosts].map((profile) => profile.bbox),
+    shapeBounds: () => profiles.map((profile) => profile.bbox),
     shapeAt(x, y, naturalGround) {
       // EVERY structure may shape the ground, and which one does is decided by
       // authority rather than by distance.
@@ -1869,48 +1855,6 @@ function heightAtArc(profile: Profile, s: number): number {
   const a = h[low] as number;
   const b = h[high] as number;
   return a + (b - a) * (at - low);
-}
-
-// ------------------------------------------------------------ ghost images
-
-const carried = { x: 0, y: 0 };
-const touched = new Set<number>();
-
-/**
- * THE GHOST IMAGES OF THE ROADS ON THE PLANET: a road's profile is written on
- * one chart (`world/planet/charts.ts`: the chart of its line, `chartBetween`
- * its ends), and its box may reach over its piece's border onto the next
- * piece, whose ground is kept - and asked about - in that piece's own
- * coordinates. Each such road is filed there too, its line carried point by
- * point onto that chart (the transition map, exact), its stations stretched
- * to the carried length (a piece's map keeps lengths to a few parts in a
- * thousand), every height as it is. The pattern of the grids of neighbours
- * that file ghost images on the charts round them (`sim/agents/walk.ts`
- * `imagesOf`, `charts.ts` `withGhostImages`). None on the flat map.
- */
-function ghostProfiles(profiles: readonly Profile[]): Profile[] {
-  if (!__PLANET__) return [];
-  const out: Profile[] = [];
-  for (const profile of profiles) {
-    const box = profile.bbox;
-    const own = chartAt((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2);
-    chartsTouching(own, box.minX, box.minY, box.maxX, box.maxY, touched);
-    if (touched.size === 0) continue;
-    const margin = box.maxX - profile.line.bbox.maxX;
-    for (const other of touched) {
-      const xy = profile.line.xy;
-      const moved = new Float64Array(xy.length);
-      for (let i = 0; i < xy.length; i += 2) {
-        chartToChartInto(own, other, xy[i] as number, xy[i + 1] as number, carried);
-        moved[i] = carried.x;
-        moved[i + 1] = carried.y;
-      }
-      const line = Polyline.fromFlat(moved);
-      const length = Math.max(1e-3, line.length);
-      out.push({ ...profile, line, length, step: profile.step * (length / profile.length), bbox: expandBox(line.bbox, margin) });
-    }
-  }
-  return out;
 }
 
 // ------------------------------------------------------------ spatial index

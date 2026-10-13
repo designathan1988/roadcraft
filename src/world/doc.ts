@@ -1,5 +1,4 @@
 import { type MarkingStyleId, isMarkingStyle } from './roads/markingStyle';
-import { onChartOf } from './planet/charts';
 import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, normalizeSignalSettings, rulesDigest, signalDigest } from './roads/rules';
 import { type LaneLink, linksDigest, normalizeLaneLinks } from './roads/connectors';
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
@@ -22,7 +21,7 @@ import { type Barrier, type BarrierKind, isBarrierKind } from './barriers';
 // Runtime imports, and safe: `geometry` and `legAngles` take `RoadDoc` as a
 // TYPE only, so nothing here is part of a runtime cycle.
 import { TUNNEL_HEADROOM, type RoadStructure, migrateStructure } from './structures';
-import { MAX_TERRAIN_STAMPS, RELIEF_LEGACY, isReliefVersion, type ReliefVersion, type TerrainStamp } from './terrain';
+import { MAX_TERRAIN_STAMPS, RELIEF_LEGACY, readRelief, type ReliefVersion, type TerrainStamp } from './terrain';
 import { clampToMap } from './bounds';
 import { normalizeParking, sameParking, type SegmentParking } from './parking';
 import { type LandscapeItem, type LandscapeKind, type SignType, SIGN_TEXT_MAX, isLandscapeKind, isSignType } from './landscape';
@@ -44,7 +43,6 @@ import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from '
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { rescaleSerializedDoc } from './rescale';
-import { FACE_HALF } from '@core/cubeSphere';
 import { METERS_PER_UNIT } from './units';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
@@ -179,18 +177,10 @@ export interface RoadSegment {
  * `markNode` for why not from the dirty sets). Nothing in this file knows about lanes,
  * vehicles or rendering.
  */
-/**
- * The places a run of points (a wall, a span of wire) covers, for the diary of
- * changes: on the planet one box a stretch, each on its first point's chart
- * with the second carried there - one box round points kept on two charts
- * spanned the atlas between them, and every tile under it was built again.
- * One box round them all on the flat map.
- */
+/** The place a run of points (a wall, a span of wire) covers, for the diary of changes: one box round them all. */
 function rectsAlong(points: readonly { readonly x: number; readonly y: number }[], pad: number): ChangeRect[] {
-  if (!__PLANET__ || points.length < 2) { const r = rectAround(points, pad); return r ? [r] : []; }
-  const out: ChangeRect[] = [];
-  for (let i = 1; i < points.length; i++) out.push(rectAround([points[i - 1]!, onChartOf(points[i]!, points[i - 1]!)], pad)!);
-  return out;
+  const r = rectAround(points, pad);
+  return r ? [r] : [];
 }
 
 export class RoadDoc {
@@ -254,12 +244,6 @@ export class RoadDoc {
    * key loads on the old field, so its roads stay where they were.
    */
   terrainRelief: ReliefVersion = RELIEF_LEGACY;
-  /**
-   * The grid's origins on the planet (atlas points): one where each town's
-   * building started (`world/planet/charts.ts` setGridOrigin, chosen in
-   * `main.ts`). Saved with the map, so a town keeps the grid it was drawn on.
-   */
-  gridOrigins: { x: number; y: number }[] = [];
   /**
    * The regional standard of the map's road paint (docs/VIAS.md V6,
    * `roads/markingStyle.ts`). 'classic' for every map saved before the
@@ -496,8 +480,7 @@ export class RoadDoc {
     let bestD = radius;
     for (const barrier of this.barriers.values()) {
       for (let i = 1; i < barrier.points.length; i++) {
-        // On the stretch's first point's chart (`world/planet/charts.ts` layRun).
-        const a = barrier.points[i - 1]!, b = onChartOf(barrier.points[i]!, a), q = onChartOf(at, a);
+        const a = barrier.points[i - 1]!, b = barrier.points[i]!, q = at;
         const dx = b.x - a.x, dy = b.y - a.y;
         const len = dx * dx + dy * dy;
         const t = len > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len)) : 0;
@@ -543,10 +526,8 @@ export class RoadDoc {
     let best: UtilityPole | null = null;
     let bestSq = radius * radius;
     for (const pole of this.poles.values()) {
-      // On the planet a pole kept on the next piece's chart is met on its chart.
-      const q = onChartOf(at, pole);
-      const dx = pole.x - q.x;
-      const dy = pole.y - q.y;
+      const dx = pole.x - at.x;
+      const dy = pole.y - at.y;
       const d = dx * dx + dy * dy;
       if (d <= bestSq) {
         bestSq = d;
@@ -739,20 +720,6 @@ export class RoadDoc {
   }
 
   /** Moves a node freely; junction geometry adapts to the resulting angle. */
-  /**
-   * Writes a node's point on another chart of the planet (`world/planet/charts.ts`):
-   * the same ground in other coordinates, so no edit - its curves are not
-   * refitted and nothing is clamped. Only a working copy is recoded (an edit
-   * worked out on one chart, `editor/commit.ts`).
-   */
-  recodeNode(id: NodeId, at: Vec2): void {
-    const n = this.nodes.get(id);
-    if (!n || (n.x === at.x && n.y === at.y)) return;
-    n.x = at.x;
-    n.y = at.y;
-    this.markNode(id);
-  }
-
   moveNode(id: NodeId, to: Vec2): boolean {
     const n = this.nodes.get(id);
     if (!n) return false;
@@ -1264,7 +1231,6 @@ export class RoadDoc {
     copy.terrainStamps.length = 0;
     copy.terrainStamps.push(...this.terrainStamps.map((stamp) => ({ ...stamp })));
     copy.terrainRelief = this.terrainRelief;
-    copy.gridOrigins = this.gridOrigins.map((o) => ({ ...o }));
     copy.markingStyle = this.markingStyle;
     copy.nature = this.nature ? { ...this.nature } : null;
     copy.buildings.copyAllocator(this.buildings);
@@ -1366,8 +1332,7 @@ export class RoadDoc {
       if (part === 'terrainStamps') for (const s of list.slice(start, start + remove) as TerrainStamp[]) stamps.push(circleRect(s));
       list.splice(start, remove, ...items.map((item) => structuredClone(item)));
       if (part === 'terrainStamps') for (const s of items as TerrainStamp[]) stamps.push(circleRect(s));
-      const kind = LIST_KINDS[part];
-      if (kind && part !== 'terrainStamps') kinds.add(kind);
+      if (part !== 'terrainStamps') kinds.add(LIST_KINDS[part]);
     }
     for (const { part, value } of r.values) this.restoreValue(part, value, kinds);
     roadRects();
@@ -1397,7 +1362,6 @@ export class RoadDoc {
       case 'lots': return this.lots;
       case 'lotKeys': return this.lotKeys;
       case 'people': return this.people;
-      case 'gridOrigins': return this.gridOrigins;
     }
   }
 
@@ -1601,7 +1565,6 @@ export class RoadDoc {
       this.terrainStamps.push(...source.terrainStamps.map((stamp) => ({ ...stamp })));
       this.terrainRelief = source.terrainRelief;
     }
-    this.gridOrigins = source.gridOrigins.map((o) => ({ ...o }));
 
     this.nodeIds = new IdAllocator(source.nodeIds.peek);
     this.segIds = new IdAllocator(source.segIds.peek);
@@ -1646,8 +1609,6 @@ export class RoadDoc {
     return {
       version: 1,
       unit: METERS_PER_UNIT,
-      // The planet's size it is made on (`rescale.ts`): a map from a planet of another size is moved onto this one.
-      ...(__PLANET__ ? { planetHalf: FACE_HALF } : {}),
       nodes: [...this.nodes.values()].map((n) => ({
         // Copied, never aliased. `setMovementBlocked` mutates this array in
         // place (`push`/`splice`), so handing out the live reference made every
@@ -1681,7 +1642,6 @@ export class RoadDoc {
       terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
       // Only for the natural land: a legacy map serialises as before.
       ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
-      ...(this.gridOrigins.length ? { gridOrigins: this.gridOrigins.map((o) => [o.x, o.y] as const) } : {}),
       ...(this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {}),
       ...(this.nature ? { nature: { ...this.nature } } : {}),
       ...(this.terrainPaint.length > 0 ? { paint: this.terrainPaint.map((dab) => ({ ...dab })) } : {}),
@@ -1874,10 +1834,7 @@ export class RoadDoc {
       doc.changes.record('fog', null, loaded);
     }
     // Absent: a map from before the natural land, which stays on the old one.
-    doc.terrainRelief = isReliefVersion(data.relief) ? data.relief : RELIEF_LEGACY;
-    doc.gridOrigins = Array.isArray(data.gridOrigins)
-      ? data.gridOrigins.filter((o) => Array.isArray(o) && Number.isFinite(o[0]) && Number.isFinite(o[1])).map((o) => ({ x: o[0], y: o[1] }))
-      : [];
+    doc.terrainRelief = readRelief(data.relief) ?? RELIEF_LEGACY;
     doc.markingStyle = isMarkingStyle(data.markingStyle) ? data.markingStyle : 'classic';
     // Absent: a map from before the ecosystem, which keeps its ground.
     doc.nature = isNatureSettings(data.nature) ? { region: data.nature.region, seed: data.nature.seed } : null;
@@ -1979,14 +1936,13 @@ function coordinateKey(x: number, y: number): string {
 /** The document's keyed collections, its ordered lists and its single values, as undo restores them (`RoadDoc.restore`). */
 export type RecordPart = 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings';
 export type ListPart = 'terrainStamps' | 'terrainPaint' | 'fogDabs' | 'gullyDabs' | 'clouds' | 'trees' | 'treeClearings' | 'elements'
-  | 'zones' | 'zoneMarks' | 'lots' | 'lotKeys' | 'people' | 'gridOrigins';
+  | 'zones' | 'zoneMarks' | 'lots' | 'lotKeys' | 'people';
 export type ValuePart = 'terrainRelief' | 'markingStyle' | 'nature' | 'fogSettings' | 'gullyAuto' | 'weather' | 'economy' | 'transit'
   | 'nextZoneId' | 'nextLotId' | 'allocators';
-/** The diary kind each list is written under; the grid's origins are written under none. */
-export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind | null>> = {
+/** The diary kind each list is written under. */
+export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind>> = {
   terrainStamps: 'terrain', terrainPaint: 'paint', fogDabs: 'fog', gullyDabs: 'gullies', clouds: 'clouds', trees: 'trees',
   treeClearings: 'clearings', elements: 'elements', zones: 'zones', zoneMarks: 'zones', lots: 'lots', lotKeys: 'lots', people: 'people',
-  gridOrigins: null,
 };
 /** What undo or redo puts back: records (undefined: none), stretches of lists (`splice`), values. */
 export interface Restoration {
@@ -1999,8 +1955,6 @@ export interface SerializedDoc {
   readonly version: 1;
   /** Metres per world unit the map was saved in (`world/units.ts`); absent: 0.4, every map before 2026-10-10 (`rescale.ts`). */
   readonly unit?: number;
-  /** On the planet: the FACE_HALF of the planet it was made on (absent: 3 000, `rescale.ts`). */
-  readonly planetHalf?: number;
   readonly nodes: readonly {
     id: number; x: number; y: number; heightOffset?: number; smooth?: boolean;
     control?: JunctionControl; blockedMovements?: readonly string[];
@@ -2035,7 +1989,6 @@ export interface SerializedDoc {
   readonly terrain?: readonly TerrainStamp[];
   /** `ReliefVersion`; absent on maps made before the natural landform. */
   readonly relief?: number;
-  readonly gridOrigins?: readonly (readonly [number, number])[];
   /** The regional standard of the road paint (docs/VIAS.md V6); absent: 'classic'. */
   readonly markingStyle?: string;
   /** The ecosystem (`NatureSettings`); absent on maps made before it. */

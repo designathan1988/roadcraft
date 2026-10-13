@@ -2,21 +2,15 @@ import { RoadDoc, type JunctionControl, type SegmentDirection, type SerializedDo
 import { ROAD_TYPES } from '@world/roadTypes';
 import { normalizeRoadSection } from '@world/roadSection';
 import { migrateStructure } from '@world/structures';
-import { isReliefVersion, isTerrainMode, isTerrainProfile } from '@world/terrain';
+import { isTerrainMode, isTerrainProfile, readRelief } from '@world/terrain';
 import { isNatureSettings } from '@world/ecology';
 import { readEconomy } from '@world/economy';
 import { isSerializedBuildings } from '@world/buildings/serialize';
-import { planetPointInUnit, savedPlanetHalf, unitFactor } from '@world/rescale';
-import { FACE_HALF } from '@core/cubeSphere';
+import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 
-/**
- * Where the map is kept. The planet keeps its own: its points are written on
- * the maps of its pieces (`world/planet/atlas.ts`), and a planet saved with
- * other pieces (the 96 of 2026-10-10, key `roadcraft.world.v7` on its own
- * server) is left as it was, never read with the wrong ones.
- */
-const KEY = __PLANET__ ? 'roadcraft.planet.atlas864.v1' : 'roadcraft.world.v7';
+/** Where the map is kept. */
+const KEY = 'roadcraft.world.v7';
 /** Where storage the loader could not read is kept, rather than deleted. */
 export const QUARANTINE_KEY = `${KEY}.unreadable`;
 const DEBOUNCE_MS = 700;
@@ -73,12 +67,6 @@ export interface SavedSettings {
   readonly congestionOverlay: boolean;
   /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10 (docs/ESCALA.md). */
   readonly unit?: number;
-  /**
-   * On the planet, the size of the planet the camera was saved on (its
-   * FACE_HALF in units): the atlas it is written in depends on it. Absent
-   * (before 2026-10-11): the map's saved beside it.
-   */
-  readonly planetHalf?: number;
 }
 
 export interface SavedSession {
@@ -203,7 +191,7 @@ export class Persistence {
       const parsed: unknown = JSON.parse(stored);
       if (isRecord(parsed) && isSavedSession(parsed)) {
         const storedAt = isFiniteNumber(parsed.savedAt) ? parsed.savedAt : 0;
-        if (storedAt > localAt) return { document: parsed.document, settings: this.readSettings(parsed.document) ?? normalizeSettings(parsed.settings, savedPlanetHalf(parsed.document)) };
+        if (storedAt > localAt) return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
       }
     } catch { /* unreadable: the small key's map */ }
     return local;
@@ -265,17 +253,14 @@ export class Persistence {
     }
   }
 
-  /**
-   * The separately stored settings, when present and readable. `map`: the map
-   * they go with, whose planet a camera saved without its own is on.
-   */
-  private readSettings(map: unknown): SavedSettings | null {
+  /** The separately stored settings, when present and readable. */
+  private readSettings(): SavedSettings | null {
     if (this.storageKey !== KEY) return null;
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (!raw) return null;
       const parsed: unknown = JSON.parse(raw);
-      return isSavedSettings(parsed) ? normalizeSettings(parsed, savedPlanetHalf(map)) : null;
+      return isSavedSettings(parsed) ? normalizeSettings(parsed) : null;
     } catch {
       return null;
     }
@@ -334,7 +319,7 @@ export class Persistence {
       if (isRecord(parsed) && parsed.stored === 'indexeddb') return null;
       if (isSerializedDoc(parsed)) return { document: parsed, settings: defaultSettings() };
       if (isSavedSession(parsed)) {
-        return { document: parsed.document, settings: this.readSettings(parsed.document) ?? normalizeSettings(parsed.settings, savedPlanetHalf(parsed.document)) };
+        return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
       }
     } catch {
       // Unparseable. Fall through and set it aside rather than reread it.
@@ -434,17 +419,15 @@ const DEMANDS = [0.55, 1, 1.55];
 /**
  * Settings as the controls can show them. A file could carry any finite
  * number: a negative speed froze the simulation while it read as playing,
- * with no speed button lit. `mapHalf`: the planet of the map saved with them,
- * for a camera that does not say its own.
+ * with no speed button lit.
  */
-export function normalizeSettings(settings: SavedSettings, mapHalf?: number): SavedSettings {
+export function normalizeSettings(settings: SavedSettings): SavedSettings {
   const intensity = (value: number): number => Math.min(MAX_INTENSITY, Math.max(0, value));
   const demand = settings.demandMultiplier;
   return {
     ...settings,
-    camera: cameraInUnit(settings, mapHalf),
+    camera: cameraInUnit(settings),
     unit: METERS_PER_UNIT,
-    ...(__PLANET__ ? { planetHalf: FACE_HALF } : {}),
     speed: SPEEDS.includes(settings.speed) ? settings.speed : 1,
     trafficIntensity: intensity(settings.trafficIntensity),
     pedestrianIntensity: intensity(settings.pedestrianIntensity),
@@ -460,25 +443,18 @@ export function normalizeSettings(settings: SavedSettings, mapHalf?: number): Sa
  */
 export const MAX_INTENSITY = 3;
 
-/** Settings as stored: with the unit (and on the planet, the planet) their camera is in. */
-const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT, ...(__PLANET__ ? { planetHalf: FACE_HALF } : {}) });
+/** Settings as stored: with the unit their camera is in. */
+const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
 
 /**
  * The saved camera in this build's world unit (`world/rescale.ts`): its zoom
- * is pixels a unit. On the flat map the town shrinks about the origin and the
- * camera's point with it. On the planet the point is an address in the atlas
- * of the build that saved it, whose spacing was in ITS units and for ITS
- * planet: read with those, it looks at the same place of the sphere. Kept as
- * it was, it pointed kilometres off, at bare ground (2026-10-11).
+ * is pixels a unit. The town shrinks about the origin and the camera's point
+ * with it.
  */
-function cameraInUnit(settings: SavedSettings, mapHalf: number | undefined): SavedSettings['camera'] {
+function cameraInUnit(settings: SavedSettings): SavedSettings['camera'] {
   const factor = unitFactor(settings.unit);
   const c = settings.camera;
-  if (!__PLANET__) return factor === 1 ? c : { ...c, zoom: c.zoom / factor, x: c.x * factor, y: c.y * factor };
-  const half = isFiniteNumber(settings.planetHalf) && settings.planetHalf > 0 ? settings.planetHalf : mapHalf ?? FACE_HALF;
-  if (factor === 1 && Math.abs(half - FACE_HALF) < 1e-6) return c;
-  const at = planetPointInUnit(c.x, c.y, half, METERS_PER_UNIT * factor);
-  return { ...c, zoom: c.zoom / factor, x: at.x, y: at.y };
+  return factor === 1 ? c : { ...c, zoom: c.zoom / factor, x: c.x * factor, y: c.y * factor };
 }
 
 function defaultSettings(): SavedSettings {
@@ -501,7 +477,6 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
     (settings.cars === undefined || isFiniteNumber(settings.cars)) &&
     (settings.people === undefined || isFiniteNumber(settings.people)) &&
     (settings.demandMultiplier === undefined || isFiniteNumber(settings.demandMultiplier)) &&
-    (settings.planetHalf === undefined || isFiniteNumber(settings.planetHalf)) &&
     typeof settings.congestionOverlay === 'boolean';
 }
 
@@ -576,7 +551,7 @@ export async function importFromFile(): Promise<ImportResult> {
 /** Accepts legacy geometry-only files while preserving complete session files. */
 function readImportedSession(value: unknown): SavedSession | null {
   if (isSerializedDoc(value)) return { document: value, settings: defaultSettings() };
-  return isSavedSession(value) ? { document: value.document, settings: normalizeSettings(value.settings, savedPlanetHalf(value.document)) } : null;
+  return isSavedSession(value) ? { document: value.document, settings: normalizeSettings(value.settings) } : null;
 }
 
 /** Strict boundary validation for local storage and imported files. */
@@ -624,11 +599,11 @@ export function isSerializedDoc(value: unknown): value is SerializedDoc {
     segmentIds.add(segment.id);
   }
 
-  // The relief versions the document reads (`terrain.ts` isReliefVersion): a
-  // list of its own here missed the Earth's (4, 2026-10-10), and every new
-  // planet map was set aside as unreadable on the next reload - the game
-  // opened on an empty map (found 2026-10-11).
-  if (value.relief !== undefined && !isReliefVersion(value.relief)) return false;
+  // The relief versions the document reads (`terrain.ts` readRelief): a list
+  // of its own here missed one (4, 2026-10-10), and every map with it was set
+  // aside as unreadable on the next reload - the game opened on an empty map
+  // (found 2026-10-11).
+  if (value.relief !== undefined && readRelief(value.relief) === null) return false;
   if (value.nature !== undefined && !isNatureSettings(value.nature)) return false;
   if (value.terrain !== undefined) {
     if (!Array.isArray(value.terrain)) return false;

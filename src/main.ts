@@ -1,13 +1,6 @@
 import { profileOf } from '@world/roads/profile';
-import { planetLocalMinutes } from '@world/planet/sun';
 import { hasTransit } from '@world/transit';
 import { mountCompass, northOnScreen, northTurn, type Compass } from '@ui/v2/compass';
-import { PLANET_MAX_PIECE, gestureChart, ownPoint } from './editor/planetFrame';
-import { tileOfDirection } from '@core/planetTiles';
-import { atlasToSphereInto, chartAt, inChart, onChartOf, setGridOrigin, toOwner } from '@world/planet/charts';
-import { chooseGridOrigin as pickGridOrigin } from '@world/planet/gridOrigin';
-import { SEA_LEVEL, earthHeight } from '@world/planet/relief';
-import { PLANET_RADIUS } from '@core/cubeSphere';
 import { flipProfile, streetChain } from '@world/roads/streetChain';
 import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
@@ -29,11 +22,11 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan } from '@world/cityGen/plan';
+import { DEFAULT_CITY, planCity, type CityOptions } from '@world/cityGen/plan';
 import { greenCity, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
-import { MAX_TERRAIN_STAMPS, RELIEF_EARTH, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
+import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
 import type { GeologyKind } from '@world/terrainPaint';
 import { DEFAULT_REGION, isRegionId, type NatureSettings } from '@world/ecology';
 import type { NodeId, SegmentId } from '@world/ids';
@@ -48,7 +41,7 @@ import {
 } from '@editor/poles';
 import { blockGridChoice, onRoadGridChange, roadGridShown, signChoice, strikeChoice, zoneColoursShown, paintKind, poleLampMode, poleToolMode, roadWidth, streetscapeKind, fogErase, fogBrush, setFogBrush, gullyErase, treeMode, treeKind, treeBrush, setTreeBrush, cloudMode, cloudBrush, setCloudBrush, elementKind, elementMode, elementBrush, setElementBrush } from '@ui/toolChoices';
 import { TERRAIN_MIN_MS, TerrainBrush, type DabSettings } from '@editor/terrainBrush';
-import { scatterClouds, type PlacedCloud } from '@world/clouds';
+import { scatterClouds } from '@world/clouds';
 import { CloudTool } from '@editor/cloudTool';
 import { playThunder } from '@ui/thunder';
 import { MAP_SIZE } from '@world/bounds';
@@ -63,12 +56,12 @@ import { Camera } from '@view/camera';
 import { type Viewport, flatViewport } from '@view/viewport';
 import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
-import { createSceneRenderer, type FlightMark, type SceneHandle, type SkyMode } from '@render/renderer';
+import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
 import { forgetOtherDerived, readDerivedAll, writeDerivedMany } from '@render/derivedCache';
 
 declare const __CONFLICT_ZONES_HASH__: string | undefined;
-import { DEFAULT_AZIMUTH, DEFAULT_ELEVATION, isFlatView, isoZoomBounds, setFlatView } from '@render/isoViewport';
+import { DEFAULT_AZIMUTH, DEFAULT_ELEVATION, isoZoomBounds } from '@render/isoViewport';
 
 import { SimWorld } from '@sim/world';
 import { rebindAgents, step } from '@sim/pipeline';
@@ -102,9 +95,6 @@ import { formatCost } from '@ui/roads/money';
 import { type BuildMode, buildRuns } from '@world/roads/buildMode';
 import { profileRoad } from '@world/roads/profile';
 import { mountAbout, openAbout } from '@ui/about';
-import { registerViewSwitch, savedFlatView, settleMode } from '@ui/modeChooser';
-import { mountFlightStick } from '@ui/flightStick';
-import { mountFlightCockpit } from '@ui/flightCockpit';
 import { applyTranslations, formatDecimal, initLanguage, onLanguageChange, setGlobalParams, t } from '@ui/i18n';
 import { onRoadKeysChange, roadKeyAction, roadKeyParams } from '@ui/roads/keys';
 import {
@@ -141,15 +131,6 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
  * (`ui/healthWatch.ts`); shown by the top bar's health button and F9
  * (`ui/healthPanel.ts`); `__health()` in the console.
  */
-/**
- * One world, two views (the player, 2026-10-11): on the planet the mode button
- * turns the same world flat or round in place (`ui/modeChooser.ts`,
- * `render/isoViewport.ts` `setFlatView`); the view last chosen comes back.
- */
-if (__PLANET__) {
-  setFlatView(savedFlatView());
-  registerViewSwitch({ flat: () => isFlatView(), set: (flat) => { setFlatView(flat); requestDraw(); } });
-}
 const health = new HealthLog();
 const frameTimer = new FrameTimer();
 const healthWatch = watchHealth({
@@ -169,9 +150,7 @@ const healthWatch = watchHealth({
 
 const doc = new RoadDoc();
 // A new map is a level plain (the player, 2026-10-09); a saved one keeps its own (restored below).
-// On the planet a new map is the Earth: continents and oceans (the player,
-// 2026-10-10: "quero que crie o planeta Terra com continentes e oceano").
-const NEW_RELIEF = __PLANET__ ? RELIEF_EARTH : RELIEF_FLAT;
+const NEW_RELIEF = RELIEF_FLAT;
 doc.terrainRelief = NEW_RELIEF;
 /** A new map's ecosystem: the default biome, its patches laid by a seed of its own. */
 const newNature = (region = DEFAULT_REGION): NatureSettings => ({ region, seed: Math.floor(Math.random() * 1_000_000_000) });
@@ -240,21 +219,6 @@ if (saved) {
   try {
     doc.changes.causeNext('mapa salvo carregado');
     restoreInto(doc, saved, net);
-    // A planet map saved with no road and no terrain edit opens as the Earth:
-    // a map saved before the Earth existed stayed a green ball with no sea
-    // (the player, 2026-10-10: "cadê a Terra"). Its buildings stand on the
-    // ground wherever it is (their floors are read from it), so they come
-    // too - as long as each stands on land there, never under the sea.
-    const onEarthLand = (x: number, y: number): boolean => {
-      const at = { x: 0, y: 0, z: 0 };
-      atlasToSphereInto(x, y, at);
-      return earthHeight(at.x, at.y, at.z) > SEA_LEVEL + m(0.4);
-    };
-    if (__PLANET__ && doc.terrainRelief !== RELIEF_EARTH && doc.nodes.size === 0 && doc.segments.size === 0
-      && doc.terrainStamps.length === 0 && doc.terrainPaint.length === 0
-      && [...doc.buildings.all()].every((b) => onEarthLand(b.x, b.y))) {
-      doc.terrainRelief = RELIEF_EARTH;
-    }
     doc.changes.causeNext('jogo');
   } catch (error) {
     console.error('The saved map could not be loaded; it was set aside.', error);
@@ -677,305 +641,6 @@ primeSurfaceBake(await surfaceBake);
 sim.conflicts.seed(await keptZones);
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw);
 
-// ------------------------------------------------------------- the local grid
-// The planet's grid hangs where the map says (`world/planet/gridOrigin.ts`):
-// the origin a town was started on (`doc.gridOrigins`), the nearest within
-// `GRID_REACH`; a town without one, and empty land, on a fixed point of the
-// sphere by the place alone - never by the way the view came. A town's is
-// saved with the map the first time it is chosen, so it stays as the town
-// grows round it. A change of origin fades
-// the grid out, moves it and fades it back in (`GRID_FADE_MS` each way):
-// switched from one frame to the next, every line jumped.
-const GRID_REACH = PLANET_RADIUS * 0.3;
-const GRID_FADE_MS = 150;
-let gridActive: { x: number; y: number } | null = null;
-/** The origin being faded to, and when the fade began. */
-let gridNext: { x: number; y: number } | null = null;
-let gridFadeFrom = 0;
-let gridCheckedAt = -Infinity;
-const sameOrigin = (p: { x: number; y: number } | null, q: { x: number; y: number } | null): boolean =>
-  p === q || (p !== null && q !== null && p.x === q.x && p.y === q.y);
-function chooseGridOrigin(now: number): void {
-  if (!__PLANET__) return;
-  if (gridNext) {
-    const t = (now - gridFadeFrom) / GRID_FADE_MS;
-    if (t >= 1 && !sameOrigin(gridActive, gridNext)) {
-      gridActive = gridNext;
-      setGridOrigin(gridActive.x, gridActive.y);
-    }
-    if (t >= 2) gridNext = null;
-    scene.setGridFade(t < 1 ? 1 - t : Math.min(1, t - 1));
-    requestDraw();
-  }
-  if (now - gridCheckedAt < 250) return;
-  gridCheckedAt = now;
-  const centre = view.centre;
-  // A view not placed yet (or thrown off by a bad call) has no ground under
-  // it: asked with it, the atlas threw and the frame loop with it.
-  if (!Number.isFinite(centre.x) || !Number.isFinite(centre.y)) return;
-  const choice = pickGridOrigin({ x: centre.x, y: centre.y }, doc.gridOrigins, doc.nodes.values(), gridNext ?? gridActive, GRID_REACH);
-  // A town without an origin: this one is the town's now, saved with the map.
-  if (choice.town) {
-    doc.gridOrigins.push({ x: choice.origin.x, y: choice.origin.y });
-    persistence.saveSessionSoon(doc, sessionSettings);
-  }
-  if (sameOrigin(choice.origin, gridNext ?? gridActive)) return;
-  if (gridActive === null || !roadGridShown()) {
-    // Nothing on screen to fade: straight there.
-    gridActive = { x: choice.origin.x, y: choice.origin.y };
-    gridNext = null;
-    scene.setGridFade(1);
-    setGridOrigin(gridActive.x, gridActive.y);
-    requestDraw();
-    return;
-  }
-  gridNext = { x: choice.origin.x, y: choice.origin.y };
-  gridFadeFrom = now;
-  requestDraw();
-}
-
-// ------------------------------------------------------------- free flight
-// The free camera (`render/planet/flight.ts`), as the player set it out
-// (2026-10-10): the cursor hidden and the mouse captured (Pointer Lock API,
-// MDN) the moment it takes off; the mouse turns the view; Esc frees the
-// mouse for the panels and a click on the scene takes it again; V or the
-// bar's Fly button lands. A small sight marks the middle of the view.
-const flight = scene.flight;
-const flightHud = document.createElement('div');
-flightHud.className = 'flight-hud';
-flightHud.hidden = true;
-// Out of the way (the player: "tira essa merda da frente"): one small line
-// in the corner, the keys' hint only for the first seconds of a flight.
-flightHud.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:30;pointer-events:none;color:rgba(232,244,255,.85);font:500 12px/1.4 system-ui,sans-serif;'
-  + 'max-width:min(520px,calc(100vw - 24px));text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.6)';
-/**
- * The corner's width: up to the bar of tools at the bottom, never under it.
- * At 520 px the keys' hint ran under the bar's first buttons on a screen of
- * 1280 (2026-10-11). Measured when the flight starts and the window changes.
- */
-function fitFlightHud(): void {
-  const bar = document.querySelector('.v2-dock')?.getBoundingClientRect();
-  const room = bar && bar.width > 0 ? bar.left - 24 - 12 : window.innerWidth - 24;
-  flightHud.style.maxWidth = `${Math.max(160, Math.min(520, room))}px`;
-}
-window.addEventListener('resize', () => { if (!flightHud.hidden) fitFlightHud(); });
-const flightSight = document.createElement('div');
-flightSight.id = 'flightSight';
-flightHud.id = 'flightHud';
-flightSight.hidden = true;
-flightSight.style.cssText = 'position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;z-index:30;pointer-events:none;'
-  + 'border:1.5px solid rgba(255,255,255,.75);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,.7)';
-const FLIGHT_HINT_MS = 6000;
-let flightStartedAt = 0;
-document.body.append(flightHud, flightSight);
-// The mouse as a stick round the sight, drawn (`ui/flightStick.ts`).
-const flightStickView = mountFlightStick(document.body);
-// The cockpit's head-up display round the sight (`ui/flightCockpit.ts`).
-const flightCockpit = mountFlightCockpit(document.body);
-/** Lets the stick go: no turn, nothing drawn. */
-const releaseStick = (): void => { flight?.steer(0, 0); flightStickView.hide(); };
-// U hides the whole interface while flying - the view alone, to look at and to
-// photograph - and shows it again; landing shows it.
-const cleanStyle = document.createElement('style');
-cleanStyle.textContent = 'body.flight-clean #app > :not(#game):not(#game-scene), body.flight-clean > :not(#app):not(#flightHud):not(#flightSight):not(script):not(style) { visibility: hidden !important; }'
-  + ' body.flight-clean #flightHud { visibility: hidden !important; }';
-document.head.append(cleanStyle);
-const setClean = (on: boolean): void => { document.body.classList.toggle('flight-clean', on); };
-let flightShownAt = 0;
-/**
- * The view turned by dragging with the middle button (the wheel) held: the
- * mouse is never captured (the player, 2026-10-11: no pointer lock, "mais
- * controle e precisão"). Its motion turns the view one to one while the
- * button is down - the pointer captured to the canvas (\`setPointerCapture\`,
- * MDN) so a drag past its edge still turns - and a free pointer turns
- * nothing. The middle button's own autoscroll is cancelled on its mousedown.
- */
-let flightDrag: number | null = null;
-const metresText = (units: number): string => {
-  const metres = units / UNITS_PER_METER;
-  return metres >= 10_000 ? `${formatDecimal(metres / 1000, 0)} km` : metres >= 1000 ? `${formatDecimal(metres / 1000, 1)} km` : `${formatDecimal(metres, 0)} m`;
-};
-/**
- * THE PLACES TO FLY TO, marked on the screen while flying (the player,
- * 2026-10-11: space "sem nada para fazer ou explorar"): the moon, the sun,
- * the space station and the asteroid field, each a small ring and its name
- * and distance, as a space game's navigation marks; held at the screen's
- * edge, pointing the way, when off screen or behind. Moved every frame
- * (transforms only: nothing laid out again).
- */
-const flightMarksLayer = document.createElement('div');
-flightMarksLayer.id = 'flightMarks';
-flightMarksLayer.hidden = true;
-flightMarksLayer.style.cssText = 'position:fixed;inset:0;z-index:29;pointer-events:none;overflow:hidden';
-document.body.append(flightMarksLayer);
-const flightMarkEls = new Map<string, { el: HTMLDivElement; label: HTMLSpanElement }>();
-const flightMarksNow: FlightMark[] = [];
-/** The marks already placed this frame (left, top, right, bottom), to stack one that would cover another. */
-const flightMarkBoxes: number[] = [];
-function updateFlightMarks(): void {
-  const on = !!flight?.active && !document.body.classList.contains('flight-clean');
-  flightMarksLayer.hidden = !on;
-  if (!on) return;
-  const r = canvas.getBoundingClientRect();
-  // Between the bar at the top and the dock at the bottom, never over them.
-  const top = Math.max(28, (document.querySelector('.v2-hud')?.getBoundingClientRect().bottom ?? 0) - r.top + 18);
-  // And over the flight's key hints, in the corner over the dock (they were covered: "Asteroides · 104 km" over "W/S").
-  const dockTop = document.querySelector('.v2-dock')?.getBoundingClientRect().top ?? r.bottom;
-  const hudTop = flightHud.hidden ? r.bottom : flightHud.getBoundingClientRect().top;
-  const bottom = Math.max(28, r.bottom - Math.min(dockTop, hudTop) + 18);
-  const side = 28;
-  flightMarkBoxes.length = 0;
-  // The sight in the middle is taken: a mark's name there stacks off it (it cut "Estação espacial · 112 m").
-  const sightX = window.innerWidth / 2 - r.left, sightY = window.innerHeight / 2 - r.top;
-  flightMarkBoxes.push(sightX - 10, sightY, sightX + 10, sightY);
-  for (const mark of scene.flightMarks(flightMarksNow)) {
-    let item = flightMarkEls.get(mark.key);
-    if (!item) {
-      const el = document.createElement('div');
-      el.style.cssText = 'position:absolute;left:0;top:0;display:flex;align-items:center;gap:6px;white-space:nowrap;'
-        + 'color:rgba(232,244,255,.9);font:500 11px/1.2 system-ui,sans-serif;text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.7);will-change:transform';
-      const ring = document.createElement('span');
-      ring.style.cssText = 'width:10px;height:10px;border:1.5px solid rgba(140,220,255,.9);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,.8);flex:none';
-      const label = document.createElement('span');
-      el.append(ring, label);
-      flightMarksLayer.append(el);
-      item = { el, label };
-      flightMarkEls.set(mark.key, item);
-    }
-    // Off screen or behind the eye: at the edge, the way to turn to it.
-    let x = mark.x, y = mark.y;
-    const inside = mark.ahead && x >= side && x <= r.width - side && y >= top && y <= r.height - bottom;
-    if (!inside) {
-      // Along the way from the middle of the free area to it, held at that area's edge.
-      const cx = r.width / 2, cy = (top + r.height - bottom) / 2;
-      let dx = x - cx, dy = y - cy;
-      if (!mark.ahead) { dx = -dx; dy = -dy; }
-      const k = Math.min((r.width / 2 - side) / Math.max(1e-6, Math.abs(dx)), ((r.height - bottom - top) / 2) / Math.max(1e-6, Math.abs(dy)));
-      x = cx + dx * k;
-      y = cy + dy * k;
-    }
-    // The name on the side towards the middle, so it is never cut at an edge.
-    item.el.style.flexDirection = x > r.width / 2 ? 'row-reverse' : 'row';
-    const text = `${t(`flight.mark.${mark.key}`)} · ${metresText(mark.distance)}`;
-    if (item.label.textContent !== text) item.label.textContent = text;
-    item.el.style.opacity = inside ? '1' : '0.65';
-    const shift = x > r.width / 2 ? item.el.offsetWidth - 6 : 6;
-    // Over another mark: stacked a line further in, towards the middle.
-    const wide = item.el.offsetWidth, step = 16, inward = y > (top + r.height - bottom) / 2 ? -1 : 1;
-    for (let tries = 0; tries < 6; tries++) {
-      const left = x - shift, right = left + wide;
-      let hit = false;
-      for (let k = 0; k < flightMarkBoxes.length; k += 4) {
-        if (left < flightMarkBoxes[k + 2]! && right > flightMarkBoxes[k]! && Math.abs(y - flightMarkBoxes[k + 1]!) < step) { hit = true; break; }
-      }
-      if (!hit) break;
-      y += inward * step;
-    }
-    flightMarkBoxes.push(x - shift, y, x - shift + wide, y);
-    item.el.style.transform = `translate(${r.left + x - shift}px, ${r.top + y - 6}px)`;
-  }
-}
-function updateFlightHud(now: number): void {
-  if (!flight?.active) return;
-  if (now - flightShownAt < 100) return;
-  flightShownAt = now;
-  const st = flight.state;
-  const speed = metresText(st.speed);
-  const hint = now - flightStartedAt < FLIGHT_HINT_MS ? `<div style="opacity:.75">${t('flight.hint')}</div>` : '';
-  flightHud.innerHTML = hint + `<div>${speed}/s${st.boost ? ' ⚡' : ''} · ${t('flight.height', { body: t(`flight.body.${st.near}`) })}: ${metresText(st.height)}`
-    + `${st.throttle !== 1 ? ` · ${t('flight.throttle')} ${formatDecimal(st.throttle, st.throttle < 1 ? 2 : 1)}×` : ''}</div>`;
-}
-// A tab closed by mistake mid-flight (Ctrl to go down, W ahead: Chrome's Ctrl+W
-// cannot be taken by the page) asks first (`beforeunload`).
-const holdTab = (e: BeforeUnloadEvent): void => { e.preventDefault(); };
-function takeOff(): void {
-  if (!flight || flight.active) return;
-  cameraMotion.stop();
-  flight.enter();
-  flightHud.hidden = false;
-  fitFlightHud();
-  flightSight.hidden = false;
-  flightCockpit.show(true);
-  flightShownAt = 0;
-  flightStartedAt = performance.now();
-  flightDrag = null;
-  window.addEventListener('beforeunload', holdTab);
-  requestDraw();
-}
-function land(): void {
-  if (!flight?.active) return;
-  const { landing, height } = flight.exit();
-  flightDrag = null;
-  releaseStick();
-  flightCockpit.show(false);
-  flightHud.hidden = true;
-  flightSight.hidden = true;
-  flightMarksLayer.hidden = true;
-  setClean(false);
-  window.removeEventListener('beforeunload', holdTab);
-  if (landing) { camera.x = landing.x; camera.y = landing.y; }
-  // As much ground in view as the height the flight left at.
-  camera.zoom = Math.max(view.zoomBounds.min, surface.cssH / (2 * Math.max(m(8), height * 0.55)));
-  syncViewFromFlatCamera();
-  requestDraw();
-}
-// The flight's keys are rules of the game's keys (`editor/gameKeys.ts`, wired below).
-window.addEventListener('keyup', (e) => { if (flight?.active) flight.release(e.code, e.shiftKey); }, { capture: true });
-// The bar's Fly button (`ui/v2/shell.ts`): takes off, or lands while flying.
-window.addEventListener('roadcraft:flight', () => { if (flight?.active) land(); else takeOff(); });
-window.addEventListener('blur', () => flight?.releaseAll());
-canvas.addEventListener('pointerdown', (e) => {
-  if (!flight?.active) return;
-  e.stopImmediatePropagation();
-  e.preventDefault();
-  // The middle button held: the drag turns the view.
-  if (e.button === 1) {
-    flightDrag = e.pointerId;
-    canvas.setPointerCapture(e.pointerId);
-    releaseStick();
-  }
-}, { capture: true });
-// The middle button's autoscroll is started on its mousedown (MDN, MouseEvent.button).
-canvas.addEventListener('mousedown', (e) => { if (flight?.active && e.button === 1) e.preventDefault(); }, { capture: true });
-canvas.addEventListener('auxclick', (e) => { if (flight?.active && e.button === 1) e.preventDefault(); }, { capture: true });
-canvas.addEventListener('pointermove', (e) => {
-  if (!flight?.active) return;
-  e.stopImmediatePropagation();
-  if (flightDrag !== e.pointerId) {
-    // No button held: the mouse is a stick round the sight (`flight.ts` FlightStick).
-    if (e.pointerType === 'mouse' && e.buttons === 0) {
-      const half = window.innerHeight / 2;
-      flight.steer((e.clientX - window.innerWidth / 2) / half, (e.clientY - half) / half);
-      flightStickView.show(e.clientX, e.clientY, flight.stickDeadZone);
-      requestDraw();
-    }
-    return;
-  }
-  flight.look(e.movementX, e.movementY);
-  requestDraw();
-}, { capture: true });
-const endFlightDrag = (e: PointerEvent): void => {
-  if (flightDrag !== e.pointerId) return;
-  flightDrag = null;
-  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-};
-for (const type of ['pointerup', 'pointercancel', 'contextmenu'] as const) {
-  canvas.addEventListener(type, (e) => {
-    if (!flight?.active) return;
-    e.stopImmediatePropagation(); e.preventDefault();
-    if (e instanceof PointerEvent && type !== 'contextmenu') endFlightDrag(e);
-  }, { capture: true });
-}
-canvas.addEventListener('lostpointercapture', (e) => { if (flightDrag === e.pointerId) flightDrag = null; });
-// The mouse off the scene (over a panel, out of the window): the stick let go.
-canvas.addEventListener('pointerleave', () => { if (flight?.active) releaseStick(); });
-canvas.addEventListener('wheel', (e) => {
-  if (!flight?.active) return;
-  e.stopImmediatePropagation();
-  e.preventDefault();
-  flight.wheel(-Math.sign(e.deltaY));
-  requestDraw();
-}, { capture: true, passive: false });
 // The traffic's topology is not built here: it is built a slice a frame while
 // the opening puts the town together (`TopologyCatchUp`, its frames not yet
 // shown), the traffic held until it is in. Built here, its conflict zones
@@ -1076,72 +741,8 @@ function syncViewFromFlatCamera(): void {
 }
 
 function fitView(): void {
-  if (__PLANET__) {
-    // On one chart (`planetBounds`): a box over the atlas's cells, whose
-    // neighbours on the sphere lie tens of km apart, framed nothing.
-    const { box, chart } = planetBounds();
-    camera.fit(box, surface.cssW, surface.cssH);
-    const at = toOwner(chart, { x: camera.x, y: camera.y });
-    camera.x = at.x;
-    camera.y = at.y;
-  } else camera.fit(worldBounds(), surface.cssW, surface.cssH);
+  camera.fit(worldBounds(), surface.cssW, surface.cssH);
   syncViewFromFlatCamera();
-}
-
-/**
- * The roads' box on ONE chart of the planet: the chart of the piece under
- * the middle of the roads on the sphere (their directions' mean), every node
- * carried onto it. With no road, the view's own place.
- */
-function planetBounds(): { box: { minX: number; minY: number; maxX: number; maxY: number }; chart: number } {
-  const sum = { x: 0, y: 0, z: 0 }, dir = { x: 0, y: 0, z: 0 };
-  for (const n of doc.nodes.values()) {
-    atlasToSphereInto(n.x, n.y, dir);
-    sum.x += dir.x; sum.y += dir.y; sum.z += dir.z;
-  }
-  if (Math.hypot(sum.x, sum.y, sum.z) < 1e-9) {
-    const c = view.centre;
-    return { box: { minX: c.x - 200, minY: c.y - 200, maxX: c.x + 200, maxY: c.y + 200 }, chart: chartAt(c.x, c.y) };
-  }
-  const chart = tileOfDirection(sum);
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const n of doc.nodes.values()) {
-    const p = inChart(chart, n);
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
-  }
-  return { box: { minX, minY, maxX, maxY }, chart };
-}
-
-/**
- * A planned city laid about the place in the middle of the view, on the
- * planet: the plan's streets on that piece's map, each stretch longer than
- * `PLANET_MAX_PIECE` cut into equal parts (a piece's map is true near it,
- * and a long road is cut so, `editor/commit.ts` cutLongRoads), and every
- * point kept on the chart of the piece it lies on. `toPlan` takes a point of
- * the document back into the plan's coordinates.
- */
-function placeCityOnPlanet(plan: CityPlan): { plan: CityPlan; toPlan: (p: { x: number; y: number }) => { x: number; y: number } } {
-  const c = view.centre;
-  const chart = chartAt(c.x, c.y);
-  const own = (p: { x: number; y: number }) => toOwner(chart, { x: c.x + p.x, y: c.y + p.y });
-  const edges = plan.graph.edges.map((e) => {
-    const line = [plan.graph.nodes[e.a]!, ...e.points, plan.graph.nodes[e.b]!];
-    const points: { x: number; y: number }[] = [];
-    for (let i = 0; i + 1 < line.length; i++) {
-      const a = line[i]!, b = line[i + 1]!;
-      if (i > 0) points.push(a);
-      const parts = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / PLANET_MAX_PIECE);
-      for (let k = 1; k < parts; k++) points.push({ x: a.x + ((b.x - a.x) * k) / parts, y: a.y + ((b.y - a.y) * k) / parts });
-    }
-    return { ...e, points: points.map(own) };
-  });
-  const graph = { nodes: plan.graph.nodes.map(own), edges };
-  const toPlan = (p: { x: number; y: number }) => {
-    const q = inChart(chart, p);
-    return { x: q.x - c.x, y: q.y - c.y };
-  };
-  return { plan: { ...plan, graph }, toPlan };
 }
 
 function syncFlatCameraFromView(): void {
@@ -1609,8 +1210,6 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  // A gesture starting is read on the map of the planet's piece it starts on (`Viewport.holdChart`).
-  if (!gestureInProgress()) view.holdChart?.(e.clientX - r.left, e.clientY - r.top);
   const world = pointerWorld(e);
   if (game.tool === 'road') roadTool.pointerAt({ x: e.clientX - r.left, y: e.clientY - r.top });
   // A curve waiting for its bend: this press sets it.
@@ -1780,19 +1379,12 @@ canvas.addEventListener('pointermove', (e) => {
   // A mouse whose button is no longer down has ended its stroke, whether or
   // not the release reached us.
   if (e.pointerType === 'mouse' && e.buttons === 0 && terrainBrush.stroking) endTerrainStroke();
-  // No gesture going on: the pointer reads the piece it is over again.
-  if (e.buttons === 0 && !gestureInProgress()) view.releaseChart?.();
   const r = canvas.getBoundingClientRect();
   const screen: Vec2 = { x: e.clientX - r.left, y: e.clientY - r.top };
   if (game.tool === 'road') roadTool.pointerAt(screen);
-  // The pointer's look (`app.css`): a closed hand while it turns or drags
-  // the camera; on the planet the arrow over space, where no tool reaches.
+  // The pointer's look (`app.css`): a closed hand while it turns or drags the camera.
   const held = cameraHand.active ? 'held' : '';
   if (canvas.dataset['camera'] !== held) canvas.dataset['camera'] = held;
-  if (__PLANET__ && e.buttons === 0) {
-    const over = view.grab?.(screen.x, screen.y, 0) ? 'ground' : 'space';
-    if (canvas.dataset['over'] !== over) canvas.dataset['over'] = over;
-  }
   // A pinch, an orbit or a pan takes the move first.
   if (cameraHand.move(e.pointerId, screen)) return;
 
@@ -2200,22 +1792,6 @@ function wholeMapEdit(confirmKey: string | null, edit: () => void): void {
   persistence.saveSessionSoon(doc, sessionSettings);
   requestDraw();
 }
-/**
- * Clouds spread about the view (`scatterClouds`, which lays them about the
- * map's middle). On the planet the map's middle is one piece at the atlas's
- * origin, wherever the player looks: they are laid about the place in the
- * middle of the view instead, each kept on the chart of the piece it comes
- * to lie over, and kept apart from the clouds already there, on its chart.
- */
-function scatterCloudsHere(count: number, like: Parameters<typeof scatterClouds>[1], variation: number,
-  existing: readonly PlacedCloud[]): ReturnType<typeof scatterClouds> {
-  if (!__PLANET__) return scatterClouds(count, like, variation, MAP_SIZE / 2, existing, Math.random);
-  const centre = view.toWorld(surface.cssW / 2, surface.cssH / 2, surface.cssW, surface.cssH);
-  const chart = chartAt(centre.x, centre.y);
-  const near = existing.map((c) => { const q = onChartOf(c, centre); return { ...c, x: q.x - centre.x, y: q.y - centre.y }; });
-  return scatterClouds(count, like, variation, MAP_SIZE / 2, near, Math.random)
-    .map((c) => ({ ...c, ...toOwner(chart, { x: centre.x + c.x, y: centre.y + c.y }) }));
-}
 const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   clearTerrain: () => wholeMapEdit('confirm.clearTerrain', () => doc.clearTerrain()),
   clearGullies: () => { if (doc.gullyDabs.length > 0) wholeMapEdit('confirm.clearGullies', () => doc.clearGullies()); },
@@ -2229,9 +1805,9 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   // height and density, varied - each one then to move, set or take away.
   scatterClouds: () => wholeMapEdit(null, () => {
     const brush = cloudBrush();
-    const laid = scatterCloudsHere(cloudScatter.count, {
+    const laid = scatterClouds(cloudScatter.count, {
       size: brush.size * UNITS_PER_METER, height: brush.height * UNITS_PER_METER, density: brush.density / 100,
-    }, cloudScatter.variation / 100, doc.clouds);
+    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, Math.random);
     if (doc.addClouds(laid) < cloudScatter.count) flashHint('hint.cloud.full');
   }),
 };
@@ -2375,7 +1951,7 @@ function mountInterface(): void {
 }
 /** The compass in a corner of the interface (`mountInterface`). */
 let compass: Compass | null = null;
-/** Points the compass where north lies on screen: up the map on the flat map, the pole on the planet. */
+/** Points the compass where north lies on screen: up the map. */
 function updateCompass(): void {
   compass?.point(northOnScreen(view, surface.cssW, surface.cssH));
 }
@@ -2415,8 +1991,6 @@ function toggleCongestion(): void {
 trackFocusModality();
 onRoadGridChange(requestDraw);
 mountAbout();
-// This mode is the one last played; a switch's `?modo=` leaves the address (`ui/modeChooser.ts`).
-settleMode();
 
 /**
  * A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the
@@ -2426,22 +2000,16 @@ settleMode();
 let cityGrowth: { left: number; total: number; started: number } | null = null;
 function generateCity(options: CityOptions): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
   const plan = planCity(options);
-  // On the planet the city is laid about the place looked at, on that
-  // piece's map, every point kept on the piece it lies on (`placeCityOnPlanet`);
-  // laid as planned it stood at the atlas's origin wherever the view was.
-  const placed = __PLANET__ ? placeCityOnPlanet(plan) : { plan, toPlan: (p: { x: number; y: number }) => p };
-  const cityDoc = layCity(placed.plan);
+  const cityDoc = layCity(plan);
   history.begin(doc);
   // The footways wide enough for street trees before the lots are cut (V7).
   widenCityFootways(cityDoc);
-  // The planet keeps its own land: a new document's relief was the flat
-  // map's, and generating a town wiped the continents and the seas.
-  applySnapshot(__PLANET__ ? { ...cityDoc.toJSON(), relief: doc.terrainRelief } : cityDoc.toJSON(), 'import');
+  applySnapshot(cityDoc.toJSON(), 'import');
   if (net.revision !== doc.revision) net.rebuild();
   applyLots(doc, planLots(doc, net));
   // A square in each neighbourhood and the streets' trees and furniture (V7).
   const green = greenCity(doc, net, options.seed);
-  const zoned = zoneCity(doc, plan, placed.toPlan);
+  const zoned = zoneCity(doc, plan);
   lotTool.refused.clear();
   lotTool.refusedFor(net.revision);
   cityGrowth = { left: zoned, total: zoned, started: performance.now() };
@@ -2776,13 +2344,6 @@ const TERRAIN_KEY_MODES: readonly BrushMode[] = ['raise', 'lower', 'flatten', 'r
 /** Every key the game answers (`editor/gameKeys.ts`): one command a key. */
 const gameKeys = createGameKeys({
   tool: () => game.tool,
-  flight: {
-    ready: () => flight !== null,
-    active: () => flight?.active ?? false,
-    toggle: () => { if (flight?.active) land(); else takeOff(); },
-    toggleClean: () => setClean(!document.body.classList.contains('flight-clean')),
-    press: (code, shift) => flight?.press(code, shift) ?? false,
-  },
   buildingKey: (e) => buildings.key(e),
   // A run being traced: Enter ends it, Backspace takes the last point back, Esc drops it.
   transitKey: (key) => transitEditor.key(key),
@@ -2974,15 +2535,7 @@ function frame(now: number): void {
   frameTimer.mark('painéis');
   const wall = frameClock.tick(now);
   // The camera's glide: keys held, the wheel's notches being spent.
-  chooseGridOrigin(now);
-  if (flight?.active) {
-    flight.step(wall);
-    updateFlightHud(now);
-    const ship = flight.state;
-    flightCockpit.update({ speed: ship.speed, height: ship.height, unit: m(1), throttle: ship.throttle, pitch: ship.pitch, horizon: ship.horizon, warp: ship.warp, fov: flight.lens });
-    updateFlightMarks();
-    requestDraw();
-  } else if (cameraMotion.step(wall)) persistence.saveSettingsSoon(sessionSettings);
+  if (cameraMotion.step(wall)) persistence.saveSettingsSoon(sessionSettings);
   // The coast of a drag let go (`cameraGestures.ts`).
   cameraHand.step(wall);
   frameTimer.mark('câmera');
@@ -3055,7 +2608,6 @@ function frame(now: number): void {
     // rewrites the statistics block, never the control under the pointer.
     refreshInspector();
     noteSimulationIssues();
-    noteAtlasPhantoms();
   }
   syncLoadingCurtain();
   frameTimer.mark('painéis');
@@ -3065,8 +2617,8 @@ function frame(now: number): void {
   // Keep animating while anything is moving; otherwise settle. The clock
   // running over a town where nothing the simulation moves can be seen (no
   // vehicle, person, signal or line) asks only the slower frame the clouds
-  // do: every frame of the display was drawn for a still picture - a fresh
-  // planet, or a map with no streets yet, held the CPU and the GPU at sixty
+  // do: every frame of the display was drawn for a still picture - a map
+  // with no streets yet held the CPU and the GPU at sixty
   // frames a second (three.js manual, "Rendering on Demand").
   const simMoving = !game.paused && simShowsMotion();
   if (!document.hidden && (simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
@@ -3381,9 +2933,6 @@ function drawOverlayScreen(): void {
   if (bulldozeBox) {
     const { a, b } = bulldozeBox;
     const corners = [{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }, { x: a.x, y: b.y }];
-    // On the planet the box is on the map of the piece it was pressed on: each
-    // point of its edges is drawn where it lies (`editor/planetFrame.ts`).
-    const boxChart = chartAt(a.x, a.y);
     ctx.save();
     ctx.beginPath();
     corners.forEach((p, i) => {
@@ -3391,8 +2940,7 @@ function drawOverlayScreen(): void {
       const n = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / GRID_CELL));
       for (let k = 0; k < n; k++) {
         const on = { x: p.x + (q.x - p.x) * k / n, y: p.y + (q.y - p.y) * k / n };
-        const g = __PLANET__ ? ownPoint(boxChart, on) : on;
-        const s = view.toScreen(g, w, h, sceneHeightAt(g));
+        const s = view.toScreen(on, w, h, sceneHeightAt(on));
         if (i === 0 && k === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
       }
     });
@@ -3577,12 +3125,7 @@ function drawOverlayScreen(): void {
       chosenWidth === null ? undefined : sectionForWidth(plainRt, chosenWidth, Math.round(plainRt.speedLimit * 3.6 * METERS_PER_UNIT)),
       roadParking());
     const pieces = roadTool.pieces(roadPreview);
-    // On the planet the gesture is on the map of the piece it started on, past
-    // that piece too: each point is drawn, and its ground read, where it lies
-    // (`editor/planetFrame.ts`).
-    const gesture = __PLANET__ ? gestureChart(pieces) : 0;
-    const own = (p: Vec2): Vec2 => (__PLANET__ ? ownPoint(gesture, p) : p);
-    const groundUnder = (p: Vec2): number => { const o = own(p); return scene.terrainHeightAt(o.x, o.y); };
+    const groundUnder = (p: Vec2): number => scene.terrainHeightAt(p.x, p.y);
     const points: Vec2[] = [];
     const projected: Vec2[] = [];
     const groundProjected: Vec2[] = [];
@@ -3608,8 +3151,8 @@ function drawOverlayScreen(): void {
         const ground = groundUnder(p);
         points.push(p);
         offsets.push(offset);
-        groundProjected.push(view.toScreen(own(p), w, h, ground));
-        projected.push(view.toScreen(own(p), w, h, ground + offset));
+        groundProjected.push(view.toScreen(p, w, h, ground));
+        projected.push(view.toScreen(p, w, h, ground + offset));
       }
       previewHeight = nextHeight;
     }
@@ -3624,8 +3167,8 @@ function drawOverlayScreen(): void {
         const p = { x: st.x, y: st.y };
         points.push(p);
         offsets.push(st.deck - groundUnder(p));
-        projected.push(view.toScreen(own(p), w, h, st.deck));
-        groundProjected.push(view.toScreen(own(p), w, h, st.ground));
+        projected.push(view.toScreen(p, w, h, st.deck));
+        groundProjected.push(view.toScreen(p, w, h, st.ground));
         modes.push(st.mode);
       }
     }
@@ -3638,9 +3181,8 @@ function drawOverlayScreen(): void {
       !(limited && roadPreview.snap.guide === 'network') && refusal === null;
     // Use the length of both projected world axes. Reading only the horizontal
     // component made the preview several pixels thinner than the committed 3D
-    // road in an isometric view, especially at the far zoom.
-    // Measured where the road is (on the planet the atlas's origin is another place of the sphere).
-    const here = __PLANET__ && points[0] ? own(points[0]) : { x: 0, y: 0 };
+    // road in an isometric view, especially at the far zoom. Measured where the road is.
+    const here = points[0] ?? { x: 0, y: 0 };
     const origin = at(here);
     const xAxis = at({ x: here.x + 100, y: here.y });
     const yAxis = at({ x: here.x, y: here.y + 100 });
@@ -3682,8 +3224,8 @@ function drawOverlayScreen(): void {
         const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
         const p = points[i]!, z = (projected[i] && groundProjected[i]) ? offsets[i]! : 0;
         const l = { x: p.x + nx * half, y: p.y + ny * half }, r = { x: p.x - nx * half, y: p.y - ny * half };
-        left.push(view.toScreen(own(l), w, h, groundUnder(l) + z));
-        right.push(view.toScreen(own(r), w, h, groundUnder(r) + z));
+        left.push(view.toScreen(l, w, h, groundUnder(l) + z));
+        right.push(view.toScreen(r, w, h, groundUnder(r) + z));
       }
       ctx.beginPath();
       left.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
@@ -4227,15 +3769,8 @@ function duplicateSelectedSegment(id = game.selectedSegment): void {
 const statusListeners: ((status: ShellStatus) => void)[] = [];
 /** The city's numbers now: the clock, the traffic, the money, the junctions that cannot be built. */
 function currentStatus(): ShellStatus {
-  // The time of day and the residents' day (`sim/city`). On the planet the
-  // sun stands over the planet, so the clock reads the time it makes where
-  // the view looks (`world/planet/sun.ts`), as the sky there shows it.
-  // The ground in the middle of the screen: out at the globe the view's
-  // centre (the point the planet is set down about) lies tens of degrees off it.
-  const looked = __PLANET__ ? view.toWorld(surface.cssW / 2, surface.cssH / 2, surface.cssW, surface.cssH) : null;
-  const minutes = looked
-    ? planetLocalMinutes(sim.city.minutes(sim), looked.x, looked.y)
-    : sim.city.minutes(sim) % 1440;
+  // The time of day and the residents' day (`sim/city`).
+  const minutes = sim.city.minutes(sim) % 1440;
   let speedSum = 0;
   let queued = 0;
   for (const v of sim.vehicles.values()) {
@@ -4397,41 +3932,6 @@ function noteSimulationIssues(): void {
     issuesSeen.add(issue);
     health.record('invariant', 'warning', `Simulação: ${issue.code}`, { detail: `${issue.subject}: ${issue.detail} (passo ${issue.tick})` });
   }
-}
-
-/**
- * On the planet, in development: after the drawn world changed, its
- * triangles and lines across two cells of the atlas (`render/planet/atlasPhantoms.ts`,
- * the class of the wire grown straight up, docs/PROBLEMAS.md PL2) in the
- * health log, by object. Looked for in idle time, once each change.
- */
-let phantomsKey = '';
-let phantomsAsked = false;
-function noteAtlasPhantoms(): void {
-  if (!__PLANET__ || !import.meta.env.DEV || phantomsAsked) return;
-  const key = `${doc.revision}:${doc.utilityRevision}:${doc.buildings.revision}`;
-  if (key === phantomsKey) return;
-  phantomsAsked = true;
-  // In steps while the browser is idle, then asked for again (MDN, Background
-  // Tasks API); started over if the world changes meanwhile.
-  const steps = scene.atlasPhantoms();
-  const look = (deadline?: IdleDeadline): void => {
-    if (`${doc.revision}:${doc.utilityRevision}:${doc.buildings.revision}` !== key) { phantomsAsked = false; return; }
-    const until = performance.now() + Math.min(8, deadline ? Math.max(1, deadline.timeRemaining()) : 8);
-    for (;;) {
-      const step = steps.next();
-      if (step.done) {
-        phantomsAsked = false;
-        phantomsKey = key;
-        const found = step.value;
-        if (found.length) health.record('invariant', 'warning', 'Planeta: geometria atravessando o atlas', { detail: found.map((f) => `${f.name}: ${f.count}`).join(' · ') });
-        return;
-      }
-      if (performance.now() >= until) break;
-    }
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(look, { timeout: 4000 }); else setTimeout(look, 50);
-  };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(look, { timeout: 4000 }); else setTimeout(look, 500);
 }
 
 const valueText = (value: unknown): string => (value === null || value === undefined ? '—' : typeof value === 'number' ? String(Math.round(value * 100) / 100) : String(value));

@@ -71,8 +71,6 @@ export interface QualitySettings {
   readonly mist: boolean;
   /** The spray and mist at the foot of waterfalls (their falling water is drawn on every tier). */
   readonly waterfalls: boolean;
-  /** The camera's motion blur in free flight (`postprocess.ts` MOTION_BLUR, needs post-processing). */
-  readonly motionBlur: boolean;
 }
 
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
@@ -101,7 +99,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: false,
     mist: false,
     waterfalls: false,
-    motionBlur: false,
   },
   medium: {
     pixelRatio: 1.25,
@@ -128,7 +125,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: false,
     waterfalls: true,
-    motionBlur: false,
   },
   high: {
     pixelRatio: 1.5,
@@ -155,7 +151,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
-    motionBlur: true,
   },
   ultra: {
     pixelRatio: 2,
@@ -182,7 +177,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
-    motionBlur: true,
   },
 };
 

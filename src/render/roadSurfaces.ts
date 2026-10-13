@@ -22,11 +22,6 @@ import type { RoadElevation } from '@world/elevation';
 import { m } from '@world/units';
 import { medianNose } from '@world/landscape';
 import { PAINT_RISE, markingQuads, paintMaterial } from './markings';
-import { chartAt, chartToChartInto, chartsTouching, onTerritory, territory, withGhostImages } from '@world/planet/charts';
-import type { FacePoint } from '@core/cubeSphere';
-
-/** Scratch for a point carried to another chart of the planet. */
-const carried: FacePoint = { x: 0, y: 0 };
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import {
@@ -520,17 +515,11 @@ export function* roadSurfaceSteps(
     // road's centreline: round a junction's corner the nearest leg's
     // centreline is far off, and the batter started at the bottom - a grey
     // wall of footway skirt under the corner's paving.
-    // With their ghost images on the planet: the part of a street lying on
-    // the next piece is built on that piece's chart (`spread`), where the
-    // footway's edge, kept on the street's own chart, was never found - the
-    // batter fell flat to the ground and the footway's brick skirt stood as a
-    // wall along the street past the border (the tools over a border,
-    // 2026-10-11).
     let footwayEdges: Polyline[] | null = null;
     const edges = (): Polyline[] => {
       if (!footwayEdges) {
         footwayEdges = [];
-        for (const poly of withGhostImages(levelPolygons(net, Level.Sidewalk, include))) for (const ring of poly) {
+        for (const poly of levelPolygons(net, Level.Sidewalk, include)) for (const ring of poly) {
           if (ring.length >= 3) footwayEdges.push(Polyline.fromPoints([...ring.map(([px, py]) => ({ x: px!, y: py! })), { x: ring[0]![0]!, y: ring[0]![1]! }]));
         }
       }
@@ -797,15 +786,15 @@ export function* roadSurfaceSteps(
     };
     yield;
     for (const name of ['casing', 'sidewalk', 'curb', 'asphalt'] as const) {
-      for (const input of spread(levels[name])) file(input, (into) => into.levels[name].push(input));
+      for (const input of levels[name]) file(input, (into) => into.levels[name].push(input));
     }
     for (const name of ['kerb', 'planting', 'paved'] as const) {
-      for (const input of spread(medians[name])) file(input, (into) => into.medians[name].push(input));
+      for (const input of medians[name]) file(input, (into) => into.medians[name].push(input));
     }
-    for (const input of spread(ramps)) file(input, (into) => into.ramps.push(input));
-    for (const input of spread(ribbonAsphalt)) file(input, (into) => into.ribbons.push(input));
+    for (const input of ramps) file(input, (into) => into.ramps.push(input));
+    for (const input of ribbonAsphalt) file(input, (into) => into.ribbons.push(input));
     for (const [color, list] of quads) {
-      for (const input of spread(list)) {
+      for (const input of list) {
         file(input, (into) => {
           const bucket = into.quads.get(color);
           if (bucket) bucket.push(input);
@@ -949,44 +938,6 @@ export function* roadSurfaceSteps(
   };
 }
 
-/**
- * On the planet, every input also on the charts whose pieces it reaches
- * (`world/planet/charts.ts`): written on its own chart, a junction plate or
- * a road near a piece's border lies partly on the next piece, which draws
- * that part (`territoryCut`) - so each chart merges, bands and clips with
- * everything that lies on its ground, and every surface is drawn whole, once.
- * On the flat map, the list itself.
- */
-function spread(list: readonly Input[]): readonly Input[] {
-  if (!__PLANET__) return list;
-  const out: Input[] = [];
-  const reached = new Set<number>();
-  for (const input of list) {
-    out.push(input);
-    const own = chartAt((input.minX + input.maxX) / 2, (input.minY + input.maxY) / 2);
-    // A box on its piece holds a ring on it (a piece's ground is near enough convex on its map).
-    if (onTerritory(own, input.minX, input.minY) && onTerritory(own, input.maxX, input.minY) &&
-      onTerritory(own, input.minX, input.maxY) && onTerritory(own, input.maxX, input.maxY)) continue;
-    chartsTouching(own, input.minX, input.minY, input.maxX, input.maxY, reached);
-    for (const chart of reached) {
-      const there = inputOf(input.poly.map((ring) => ring.map((point) => {
-        chartToChartInto(own, chart, point[0] as number, point[1] as number, carried);
-        return [carried.x, carried.y];
-      })));
-      if (there) out.push(there);
-    }
-  }
-  return out;
-}
-
-/** The ground a tile's chart draws, as clipper input, or null when the whole tile is on it. */
-function territoryCut(rect: TileRect): MultiPoly | null {
-  const chart = chartAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2);
-  if (onTerritory(chart, rect[0], rect[1]) && onTerritory(chart, rect[2], rect[1]) &&
-    onTerritory(chart, rect[0], rect[3]) && onTerritory(chart, rect[2], rect[3])) return null;
-  return [[territory(chart).map(([x, y]) => [x, y])]];
-}
-
 function inputsOf(polys: readonly Poly[]): Input[] {
   const out: Input[] = [];
   for (const poly of polys) {
@@ -1034,7 +985,6 @@ function buildTile(
   };
   let ribbonsOnly: MultiPoly | null = null;
   const bundle = new Map<string, Tile>();
-  const cut = __PLANET__ ? territoryCut(rect) : null;
   for (const spec of specs) {
     const source = spec.source;
     let polygons: MultiPoly;
@@ -1050,9 +1000,7 @@ function buildTile(
         polygons = intersection(merged(list), ribbonsOnly);
       }
     }
-    let inside = polygons.length > 0 ? clipToRect(polygons, rect) : [];
-    // On the planet a tile draws only its chart's own ground (`spread`).
-    if (inside.length > 0 && cut) inside = intersection(inside, cut);
+    const inside = polygons.length > 0 ? clipToRect(polygons, rect) : [];
     if (inside.length > 0) bundle.set(spec.options.name, meshTile({ ...spec.options, polygons: inside }, rect));
   }
   return bundle;

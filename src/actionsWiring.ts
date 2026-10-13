@@ -17,7 +17,6 @@ import { levelElevation, solidFootprints, volumeElevation, worldToLocal } from '
 import { resolveBlocks } from '@world/buildings/blocks';
 import { signalPosts } from '@world/signalPosts';
 import { m, stepsIn } from '@world/units';
-import { onChartOf } from '@world/planet/charts';
 
 /**
  * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
@@ -239,16 +238,7 @@ export function createActions(deps: ActionsDeps): Actions {
     const radius = m(2.5 + strength * 1.1);
     const kill = radius * 0.5, scare = m(70 + strength * 10);
     const dead = sim.pedEngine.impact?.(sim, world.x, world.y, kill, scare) ?? 0;
-    // On the planet everything the blast reaches is measured on ITS chart:
-    // a pole, a car or a building kept on the next piece's chart lies tens of
-    // km off in the atlas, out of every reach - and a wire between the two
-    // was laid across the atlas, standing up over the town (the player). What
-    // is handed to the scene (debris, wires, wrecks) is written there too.
-    const here = (p: Readonly<Vec2>): Vec2 => onChartOf(p, world);
-    const near = (x: number, y: number, reach: number): boolean => {
-      const q = here({ x, y });
-      return Math.hypot(q.x - world.x, q.y - world.y) < reach;
-    };
+    const near = (x: number, y: number, reach: number): boolean => Math.hypot(x - world.x, y - world.y) < reach;
     const paved = Number.isFinite(scene.pavedHeightAt(world.x, world.y));
     const struck: BlastHit['ground'] = b && z > ground(world) + m(0.5) ? 'building' : paved ? 'road' : 'earth';
     const hit: { ground: BlastHit['ground']; crater: boolean; poles: BlastHit['poles'][number][]; wires: BlastHit['wires'][number][];
@@ -260,14 +250,13 @@ export function createActions(deps: ActionsDeps): Actions {
       // Buildings: each struck at its nearest point, harder the nearer.
       for (const c of [...doc.buildings.all()]) {
         let best = Infinity, px = world.x, py = world.y;
-        // Its farthest corner from its own centre, on its own chart: past
-        // that and the reach, nothing of it is struck (no chart carried).
+        // Its farthest corner from its own centre: past that and the reach,
+        // nothing of it is struck.
         const own = solidFootprints(c);
         let extent = 0;
         for (const ring of own) for (const q of ring) extent = Math.max(extent, Math.hypot(q.x - c.x, q.y - c.y));
-        const centre = here(c);
-        if (Math.hypot(centre.x - world.x, centre.y - world.y) - extent > radius) continue;
-        for (const ring of own.map((r) => r.map(here))) {
+        if (Math.hypot(c.x - world.x, c.y - world.y) - extent > radius) continue;
+        for (const ring of own) {
           if (pointInPolygon(world, ring)) { best = 0; break; }
           for (let i = 0; i < ring.length; i++) {
             const q = closestOnSegment(world, ring[i]!, ring[(i + 1) % ring.length]!).point;
@@ -276,8 +265,8 @@ export function createActions(deps: ActionsDeps): Actions {
           }
         }
         if (best > radius) continue;
-        // Where it is struck, written on the building's own chart (its pieces are).
-        const at = c === b ? { ...onChartOf(world, c), z } : { ...onChartOf({ x: px, y: py }, c), z: Math.max(z, ground({ x: px, y: py }) + m(1.5)) };
+        // Where it is struck.
+        const at = c === b ? { x: world.x, y: world.y, z } : { x: px, y: py, z: Math.max(z, ground({ x: px, y: py }) + m(1.5)) };
         const force = c === b ? strength : Math.max(1, strength * (1 - best / radius) * 1.2);
         // Breaking a building into its pieces is the costly part (a Voronoi
         // fracture of its meshes): the one struck now, the others a frame each
@@ -308,8 +297,7 @@ export function createActions(deps: ActionsDeps): Actions {
       // Everything round it left filthy: the buildings within twice the reach
       // blackened with soot and dust (their weathering, `decay`).
       for (const c of [...doc.buildings.all()]) {
-        const q = here(c);
-        const d = Math.hypot(q.x - world.x, q.y - world.y);
+        const d = Math.hypot(c.x - world.x, c.y - world.y);
         if (d > radius * 2.2) continue;
         const add = 0.35 * (1 - d / (radius * 2.2)) * Math.min(1, strength / 8);
         if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.put({ ...c, decay: Math.min(1, (c.decay ?? 0) + add) })); changed = true; }
@@ -328,31 +316,28 @@ export function createActions(deps: ActionsDeps): Actions {
       for (const span of doc.poleSpans.values()) {
         const pa = doc.poles.get(span.a), pb = doc.poles.get(span.b);
         if (!pa || !pb) continue;
-        const qa = here(pa), qb = here(pb);
-        if (broken.has(span.a) && !broken.has(span.b)) hit.wires.push({ fromX: qb.x, fromY: qb.y, toX: qa.x, toY: qa.y });
-        if (broken.has(span.b) && !broken.has(span.a)) hit.wires.push({ fromX: qa.x, fromY: qa.y, toX: qb.x, toY: qb.y });
+        if (broken.has(span.a) && !broken.has(span.b)) hit.wires.push({ fromX: pb.x, fromY: pb.y, toX: pa.x, toY: pa.y });
+        if (broken.has(span.b) && !broken.has(span.a)) hit.wires.push({ fromX: pa.x, fromY: pa.y, toX: pb.x, toY: pb.y });
       }
       for (const id of broken) {
         const pole = doc.poles.get(id)!;
-        const q = here(pole);
-        const d = Math.hypot(q.x - world.x, q.y - world.y) || 1;
+        const d = Math.hypot(pole.x - world.x, pole.y - world.y) || 1;
         const close = d < radius * 0.4;
         const mode = d > radius ? 'whole' : close && Math.random() < 0.6 ? 'splinter' : Math.random() < 0.5 ? 'snap' : 'whole';
-        hit.poles.push({ x: q.x, y: q.y, lamp: pole.lamp, mode, dirX: (q.x - world.x) / d, dirY: (q.y - world.y) / d });
+        hit.poles.push({ x: pole.x, y: pole.y, lamp: pole.lamp, mode, dirX: (pole.x - world.x) / d, dirY: (pole.y - world.y) / d });
         doc.removePole(id);
         changed = true;
       }
       // Traffic lights: a junction whose posts the blast reaches loses them.
       for (const post of signalPosts(net, sim.graph)) {
         if (!near(post.x, post.y, radius)) continue;
-        const q = here(post);
-        hit.posts.push({ x: q.x, y: q.y, yaw: post.yaw });
+        hit.posts.push({ x: post.x, y: post.y, yaw: post.yaw });
         if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }
       }
       // Trees, benches, bins, lamps, signs: thrown and gone.
       for (const item of [...doc.landscape.values()]) {
         if (!near(item.x, item.y, radius)) continue;
-        hit.items.push({ kind: item.kind, ...here(item) });
+        hit.items.push({ kind: item.kind, x: item.x, y: item.y });
         if (item.kind === 'hydrant') scene.geyser(item.x, item.y, ground(item));
         doc.removeLandscape(item.id);
         changed = true;
@@ -367,7 +352,6 @@ export function createActions(deps: ActionsDeps): Actions {
     // Cars: thrown, burning shells - the traffic. Who was in them or on them:
     // thrown out dead, torn, burnt black near the blast.
     const aboard: Occupant[] = [];
-    // `x`, `y` on the blast's chart (`here`).
     const throwAboard = (id: number, x: number, y: number, angle: number, rider: boolean, index: number | null = null): void => {
       const d = Math.hypot(x - world.x, y - world.y);
       const close = d < radius * 0.6;
@@ -379,8 +363,7 @@ export function createActions(deps: ActionsDeps): Actions {
       const pose = vehiclePose(sim, v, 1);
       if (!pose || !near(pose.p.x, pose.p.y, radius * 1.1)) continue;
       const css = String(v.color ?? '#777777');
-      // On the blast's chart; the heading turns little over a few metres of the next piece.
-      const p = here(pose.p);
+      const p = pose.p;
       hit.vehicles.push({ x: p.x, y: p.y, angle: pose.angle, length: v.archetype.length, width: v.archetype.width,
         height: v.archetype.height, color: parseInt(css.replace('#', '').slice(0, 6), 16) || 0x777777, id: v.id, archetype: v.archetype });
       throwAboard(v.id, p.x, p.y, pose.angle, v.archetype.shape === 'bicycle' || v.archetype.shape === 'motorcycle', scene.driverBody(v, pose.p.x, pose.p.y));

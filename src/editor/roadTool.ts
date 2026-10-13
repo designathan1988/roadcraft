@@ -228,7 +228,7 @@ export class RoadTool {
       const q = snapToGrid(start.at, GRID_CELL, gridOffset);
       let best: { at: Vec2; s: number; d: number } | null = null;
       for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) {
-        // The neighbouring grid point (on the planet the face's grid is not the chart's axes).
+        // The neighbouring grid point.
         const hit = line.closestPoint(snapToGrid({ x: q.x + dx * GRID_CELL, y: q.y + dy * GRID_CELL }, GRID_CELL, gridOffset));
         if (hit.distance < m(0.6) && (!best || Math.hypot(hit.point.x - start.at.x, hit.point.y - start.at.y) < best.d)) {
           best = { at: hit.point, s: hit.s, d: Math.hypot(hit.point.x - start.at.x, hit.point.y - start.at.y) };

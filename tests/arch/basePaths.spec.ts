@@ -4,9 +4,9 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * EVERY FILE THE GAME FETCHES IS UNDER THE BUILD'S BASE. The two modes are
- * served from one origin, each under its own base (`/plano/`, `/planeta/`,
- * `scripts/build-modes.mjs`, Vite's `base`). A fetch of `/cooked/...` there is
+ * EVERY FILE THE GAME FETCHES IS UNDER THE BUILD'S BASE. A build may be
+ * served under a base of its own (Vite's `base`; the two modes of before were
+ * `/plano/` and `/planeta/`). A fetch of `/cooked/...` there is
  * answered with the root page, not the file: the cooked people's manifest
  * failed to parse, silently, and every person in the player's game was built
  * on the main thread as they came into view (audit of 2026-10-12). A path

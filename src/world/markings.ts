@@ -11,7 +11,7 @@ import {
   travelShift,
   travelWidth,
 } from '@world/roadTypes';
-import { frameFromNode, nodeChart, segmentStartsAt } from '@world/geometry';
+import { frameFromNode, segmentStartsAt } from '@world/geometry';
 import { laneTurnAllowed } from './roadSection';
 import type { Network, SegmentRibbon } from '@world/network';
 import { offsetPolyline } from '@core/offset';
@@ -492,7 +492,7 @@ function midBlockDetail(net: Network, view: Aabb | undefined, stops: Bar[], zebr
       const seg = doc.segment(segId);
       if (!seg) continue;
       const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
-      const pl = net.polylines.at(doc, segId, nodeChart(doc, node.id));
+      const pl = net.polylines.get(doc, segId);
       const startsHere = segmentStartsAt(seg, node.id);
       const frameAt = (along: number) => frameFromNode(pl, startsHere, Math.max(0, Math.min(pl.length, along)));
       const crossing = net.crosswalkDistanceAt(segId, node.id);

@@ -1,10 +1,11 @@
 # CLAUDE.md — Roadcraft 2
 
 Browser game (TypeScript, three.js, Vite): the player builds roads on sculptable terrain, grows a
-town, and traffic, people and public transport are simulated live. ONE world seen two ways: the
-FLAT view and the PLANET (the same world on a sphere; flat near the ground, a globe when the camera
-rises). The Actions dock has the PISTOL and the BOMB (explosion, buildings falling apart, people and
-cars thrown, casualties, fire, craters). Every edit takes effect at once.
+town, and traffic, people and public transport are simulated live. ONE flat map, about 10 km on a
+side (`world/bounds.ts`), one world unit a metre. The spherical planet, the flat Earth and the 0.4 m
+unit were taken out on 2026-10-13 (the player's decision). The Actions dock has the PISTOL and the
+BOMB (explosion, buildings falling apart, people and cars thrown, casualties, fire, craters). Every
+edit takes effect at once.
 
 This repository (`C:/Codex-Shared/roadcraft-2`, remote `origin` =
 `https://github.com/designathan1988/roadcraft-2.0.git`, branch `main`) replaces the old Roadcraft.
@@ -85,8 +86,8 @@ affected and visible cells only. Each derived product declares what it reads and
   budget. Cars look as good as before up close.
 - Shadows: cascades; small objects stop casting far away; the shadow map is redrawn only when a
   caster moved. Post-processing has a per-pass GPU budget. Nothing is drawn that is not seen.
-- Planet: curvature only where it shows (flat near the ground; the far view draws simplified
-  per-cell versions), all chart/"border" logic in ONE module, opening without stalls.
+- Ground: plates drawn in full only near the view, the far view a simplified mesh per plate
+  (`render/flatAtlas.ts`), opening without stalls.
 - No allocation in hot loops (frame, sim step). Nothing computes geometry inside a draw call.
 - Optimise without losing visuals. Small visual trade-offs for speed are yours to decide; removing a
   feature or changing gameplay needs the player's yes. No fixed population cap: the limit is what the

@@ -1,5 +1,4 @@
 import { paletteOf, roofMaterial } from '@world/buildings/materials';
-import { onChartOf } from '@world/planet/charts';
 import type { Vec2 } from '@core/vec2';
 import clipping from 'polygon-clipping';
 import { signedArea } from '@core/polygon';
@@ -937,11 +936,7 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
   const mine = buildingBounds(draft, 0.5);
   for (const other of [...ctx.doc.buildings.all()]) {
     if (other.id === draft.id || skip.includes(other.id)) continue;
-    // On the draft's chart (on the planet, `world/planet/charts.ts`): a
-    // building kept on the next piece's chart is 1 600 units or more away as
-    // it stands, and no weld was tried - the validator refused the drop.
-    const there = (p: Vec2): Vec2 => onChartOf(p, draft);
-    const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)].map((ring) => ring.map(there));
+    const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
     const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     for (const ring of otherRings) for (const p of ring) {
       box.minX = Math.min(box.minX, p.x - 0.5); box.maxX = Math.max(box.maxX, p.x + 0.5);

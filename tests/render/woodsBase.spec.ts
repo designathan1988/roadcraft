@@ -12,7 +12,7 @@ describe("the woods' base", () => {
   it('is the sweep\'s own density less the ecosystem\'s share', () => {
     const half = 160, cx = 3840, cy = -1920;
     const natural = (x: number, y: number): number => 12 * Math.sin(x / 37) + 5 * Math.cos(y / 23) + x * 0.08;
-    const base = woodsBase(natural, half, cx, cy, false);
+    const base = woodsBase(natural, half, cx, cy);
     const cells = Math.floor((2 * half) / WOODS_SPACING), d = WOODS_SLOPE_STEP;
     expect(base.length).toBe(cells * cells);
     for (let o = 0; o < base.length; o += 7) {

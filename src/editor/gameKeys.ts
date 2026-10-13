@@ -3,8 +3,8 @@
  * registry (`core/commands.ts`, docs/ARCHITECTURE.md 4.4), read by the one
  * `keydown` listener `main.ts` wires.
  *
- * Before it four listeners each read every key (the flight's, the game's,
- * the camera's and the drawer's), so one key did two things: Escape in the
+ * Before it several listeners each read every key (the game's, the camera's
+ * and the drawer's), so one key did two things: Escape in the
  * Builder put the building down AND the tool; + and - in Terrain changed the
  * strength AND zoomed; Page Up on a picked node raised it AND tilted the
  * camera; Ctrl+F opened the browser's search AND took the barrier tool; and
@@ -12,8 +12,7 @@
  * key runs one command: the first rule of `RULES` whose key and `when` match,
  * a tool reading its own keys passing the ones it does not use (`pass`).
  *
- * The order is the old listeners' order: the flight, the tool in hand, the
- * camera turn, the page's shortcuts, the tool keys, Escape, the camera.
+ * The order is the old listeners' order: the tool in hand, the camera turn, the page's shortcuts, the tool keys, Escape, the camera.
  */
 import { CommandRegistry, type CommandResult, type KeyRule } from '@core/commands';
 import type { Tool } from './toolMachine';
@@ -21,16 +20,6 @@ import type { Tool } from './toolMachine';
 /** What the keys act on: the game's commands, handed in by `main.ts`. */
 export interface GameKeyDeps {
   tool(): Tool;
-  flight: {
-    /** Whether this view can fly at all. */
-    readonly ready: () => boolean;
-    readonly active: () => boolean;
-    /** Takes off, or lands while flying. */
-    readonly toggle: () => void;
-    readonly toggleClean: () => void;
-    /** A flight key held: whether the flight uses it. */
-    readonly press: (code: string, shift: boolean) => boolean;
-  };
   /** The Builder's own keys; whether it used this one. */
   buildingKey(e: KeyboardEvent): boolean;
   transitKey(key: string): boolean;
@@ -95,9 +84,6 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
   const tool = (t: Tool) => () => d.tool() === t;
   const command = (id: string, run: (e: KeyboardEvent, args?: unknown) => CommandResult): void => r.register({ id, label: `key.${id}`, run });
 
-  command('flight.toggle', () => done(d.flight.toggle));
-  command('flight.clean', () => done(d.flight.toggleClean));
-  command('flight.keys', (e) => held(d.flight.press(e.code, e.shiftKey), d.requestDraw));
   command('building.keys', (e) => used(d.buildingKey(e)));
   command('transit.keys', (e) => used(d.transitKey(e.key)));
   command('barrier.keys', (e) => used(d.barrierKey(e.key)));
@@ -129,12 +115,6 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
   const digits = (n: number): string[] => Array.from({ length: n }, (_, i) => String(i + 1));
   /** First rule first: the first that matches and does not pass acts. */
   const RULES: KeyRule<KeyboardEvent>[] = [
-    // The flight (`render/flight`): V takes off and lands (with the road tool
-    // in hand V is the road's plan, and the bar's button takes off); U clears
-    // the screen; its own keys while flying, Ctrl among them (the way down).
-    { code: 'KeyV', ctrl: false, alt: false, command: 'flight.toggle', when: (e) => d.flight.ready() && !e.repeat && !(!d.flight.active() && d.tool() === 'road') },
-    { code: 'KeyU', alt: false, command: 'flight.clean', when: (e) => d.flight.active() && !e.metaKey && !e.repeat },
-    { alt: false, command: 'flight.keys', when: (e) => d.flight.active() && !e.metaKey },
     // The F9 monitor: an open popover takes Escape before the tool in hand (WAI-ARIA, Escape closes the popup).
     { key: 'F9', command: 'debug.health' },
     { key: 'Escape', command: 'health.close' },

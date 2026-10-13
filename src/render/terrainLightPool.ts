@@ -1,18 +1,16 @@
-import { TILES } from '@core/planetTiles';
 import type { LightGrid, LightRequest, LightResult } from './terrainLightCompute';
 
 /**
- * THE PLANET'S LAND LIGHT, WORKED OUT BY A FEW SHARED WORKERS. Each of the
- * planet's 864 terrain plates (`planet/terrainAtlas.ts`) is the flat map's
- * own surface, and each started a worker of its own for its light
- * (`terrainLight.worker.ts`): 864 threads, each with its own heap, all baking
- * at once at the opening - the whole machine taken, and gigabytes of memory.
+ * THE LAND LIGHT, WORKED OUT BY A FEW SHARED WORKERS. Each terrain plate
+ * started a worker of its own for its light (`terrainLight.worker.ts`): with
+ * many plates, many threads, each with its own heap, all baking at once at
+ * the opening - the whole machine taken, and gigabytes of memory.
  *
  * A worker pool instead, the pattern of the Web Workers API (MDN, "Using Web
  * Workers": a fixed set of workers fed from a queue): `POOL_SIZE` workers,
  * each plate always sent to the same one (its land's shape is kept there
  * between requests, by the plate's key), one request in flight per worker,
- * and among those waiting the plate nearest the place looked at first.
+ * those waiting in the order asked.
  */
 
 /** Workers for every plate's light: a sliver of the machine, never all of it. */
@@ -33,8 +31,6 @@ interface Lane {
 
 let lanes: Lane[] | null = null;
 let broken = false;
-/** The plate looked at (`setLightFocus`): those nearest it are lit first. */
-let focus = -1;
 
 function start(grid: LightGrid): Lane[] | null {
   if (lanes || broken) return lanes;
@@ -72,18 +68,9 @@ function start(grid: LightGrid): Lane[] | null {
   return lanes;
 }
 
-/** How far a plate is from the one looked at: 0 there, 2 opposite. */
-function rank(key: number): number {
-  if (focus < 0) return 0;
-  const a = TILES[key]?.centre, b = TILES[focus]?.centre;
-  return a && b ? 1 - (a.x * b.x + a.y * b.y + a.z * b.z) : 0;
-}
-
 function next(lane: Lane): void {
   if (lane.busy || !lane.queue.length) return;
-  let best = 0;
-  for (let i = 1; i < lane.queue.length; i++) if (rank(lane.queue[i]!.key) < rank(lane.queue[best]!.key)) best = i;
-  const [job] = lane.queue.splice(best, 1);
+  const job = lane.queue.shift();
   lane.busy = job!;
   lane.worker.postMessage({ ...job!.request, key: job!.key }, [job!.request.heights.buffer]);
 }
@@ -99,9 +86,4 @@ export function submitLight(grid: LightGrid, key: number, request: LightRequest,
   lane.queue.push({ key, request, done, failed });
   next(lane);
   return true;
-}
-
-/** The plate the view looks at: the light of those nearest it is worked out first. */
-export function setLightFocus(tile: number): void {
-  focus = tile;
 }

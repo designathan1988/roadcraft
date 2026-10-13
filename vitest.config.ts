@@ -15,13 +15,6 @@ export const SLOW_SPECS: readonly string[] = Object.keys((JSON.parse(readFileSyn
 export default defineConfig({
   // The model files' URLs (`model-urls-plugin.ts`), as the game imports them.
   plugins: [modelUrlsPlugin()],
-  // The game's compile-time keys (`vite.config.ts`).
-  define: {
-    __PLANET__: 'false',
-    // Metres in one world unit (`src/core/units.ts`); the variable
-    // ROADCRAFT_METERS_PER_UNIT=0.4 runs the specs at the old scale (docs/ESCALA.md).
-    __METERS_PER_UNIT__: JSON.stringify(Number(process.env.ROADCRAFT_METERS_PER_UNIT ?? 1)),
-  },
   resolve: {
     alias: {
       '@core': r('./src/core'),
@@ -52,7 +45,7 @@ export default defineConfig({
     // file at a time (`vitest.scale.config.ts`): they build whole grids of
     // traffic, and beside the rest of the suite they ran out of time on CPU
     // contention, not on a defect.
-    exclude: ['tests/e2e/**', 'tests/planet/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*', ...SLOW_SPECS],
+    exclude: ['tests/e2e/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*', ...SLOW_SPECS],
     // Tests always run with invariant assertions armed.
     env: { SIM_STRICT: '1' },
     // A test that needs more than 10 s does not belong in the check (the

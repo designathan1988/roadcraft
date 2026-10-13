@@ -5,7 +5,7 @@ import { createLandLighter, type LightGrid, type LightRequest } from './terrainL
  * sends a copy of the heights (transferred, not copied again) with the sun and
  * what moved; the light of the corners that can have changed comes back,
  * transferred. The land's shape is kept here between requests - one per
- * `key` when the worker serves many lands (the planet's plates share a few
+ * `key` when the worker serves many lands (the map's plates share a few
  * workers, `terrainLightPool.ts`), and the key goes back with the answer.
  */
 let grid: LightGrid | null = null;

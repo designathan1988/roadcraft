@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import { onChartOf, pointViews } from './planet/charts';
 import type { Network, SegmentRibbon } from './network';
 import type { NodeId, SegmentId } from './ids';
 import type { RoadSide, RoadType } from './roadTypes';
@@ -104,31 +103,17 @@ export interface FootwayHit {
   /** Distance of the point from the centreline. */
   readonly across: number;
   readonly frame: { readonly p: Vec2; readonly t: Vec2; readonly n: Vec2 };
-  /**
-   * The chart the station and its frame are written on: the road's own
-   * segment's (on the planet, `world/planet/charts.ts`; 0 on the flat map).
-   */
-  readonly chart: number;
 }
 
 /**
- * ON THE PLANET a road's ribbon is kept on its segment's chart and a point
- * asked about on its own piece's: each road reads the point on its own chart
- * (`pointViews`), and what is found - the station, the frame, a place snapped
- * to - is written on that road's chart.
- */
-const FAR_PAD = m(40);
-
-/**
- * The ribbons a point within `reach` of a road's surface can be on. On the
- * flat map those whose surfaces reach `reach` round it, in the order of
- * `net.ribbons` (`Network.ribbonsMeeting`): every item of street furniture
- * placed asked every road of the map, some 45 ms of each road drawn on the
- * player's map (profile of 2026-10-12). On the planet a road beside the point
- * can be kept on another chart, far in the atlas: every ribbon, as before.
+ * The ribbons a point within `reach` of a road's surface can be on: those
+ * whose surfaces reach `reach` round it, in the order of `net.ribbons`
+ * (`Network.ribbonsMeeting`). Every item of street furniture placed asked
+ * every road of the map, some 45 ms of each road drawn on the player's map
+ * (profile of 2026-10-12).
  */
 function ribbonsNear(net: Network, at: Vec2, reach: number): Iterable<SegmentRibbon> {
-  return __PLANET__ ? net.ribbons.values() : net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach]);
+  return net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach]);
 }
 
 /**
@@ -136,19 +121,15 @@ function ribbonsNear(net: Network, at: Vec2, reach: number): Iterable<SegmentRib
  * that distance of the footway's own band. Null on a carriageway, a highway,
  * a junction plate or open ground.
  */
-export function footwayAt(net: Network, at0: Vec2, reach = 0): FootwayHit | null {
+export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null {
   let best: FootwayHit | null = null;
   let bestMiss = Infinity;
   const hit = { s: 0, distance: 0 };
-  const view = pointViews(at0, reach + FAR_PAD);
-  for (const ribbon of ribbonsNear(net, at0, reach)) {
+  for (const ribbon of ribbonsNear(net, at, reach)) {
     const road = ribbon.road;
     if (!carriesPedestrians(road) || road.sidewalk <= 0) continue;
     const segment = net.doc.segment(ribbon.id);
     if (!segment) continue;
-    const chart = net.polylines.chart(net.doc, ribbon.id);
-    const at = view(chart);
-    if (!at) continue;
     const box = ribbon.full.bbox;
     const pad = road.width / 2 + road.sidewalk + reach;
     if (at.x < box.minX - pad || at.x > box.maxX + pad || at.y < box.minY - pad || at.y > box.maxY + pad) continue;
@@ -168,7 +149,7 @@ export function footwayAt(net: Network, at0: Vec2, reach = 0): FootwayHit | null
     const miss = hit.distance < inner ? inner - hit.distance : hit.distance > outer ? hit.distance - outer : 0;
     if (miss > reach || miss >= bestMiss) continue;
     bestMiss = miss;
-    best = { segment: ribbon.id, road, s: hit.s, side: onLeft ? 1 : -1, across: hit.distance, frame: atFrame, chart };
+    best = { segment: ribbon.id, road, s: hit.s, side: onLeft ? 1 : -1, across: hit.distance, frame: atFrame };
   }
   return best;
 }
@@ -180,8 +161,6 @@ export interface MedianHit {
   /** The median's centre at the station. */
   readonly centre: Vec2;
   readonly frame: { readonly p: Vec2; readonly t: Vec2; readonly n: Vec2 };
-  /** The chart the centre and the frame are written on (`FootwayHit.chart`). */
-  readonly chart: number;
 }
 
 /** Narrowest median a tree is planted in: its pit and a kerb's width each side. */
@@ -220,17 +199,13 @@ export function medianNose(net: Network, segment: SegmentId, node: NodeId): numb
 export const MEDIAN_UTURN_OPENING = m(10);
 
 /** The planted median under a point (within `reach` of its band), or null. */
-export function medianAt(net: Network, at0: Vec2, reach = 0): MedianHit | null {
+export function medianAt(net: Network, at: Vec2, reach = 0): MedianHit | null {
   const hit = { s: 0, distance: 0 };
-  const view = pointViews(at0, reach + FAR_PAD);
-  for (const ribbon of ribbonsNear(net, at0, reach)) {
+  for (const ribbon of ribbonsNear(net, at, reach)) {
     const road = ribbon.road;
     if (!plantedMedian(road)) continue;
     const segment = net.doc.segment(ribbon.id);
     if (!segment || segment.direction !== 'both') continue;
-    const chart = net.polylines.chart(net.doc, ribbon.id);
-    const at = view(chart);
-    if (!at) continue;
     const box = ribbon.full.bbox;
     const pad = road.width / 2 + reach;
     if (at.x < box.minX - pad || at.x > box.maxX + pad || at.y < box.minY - pad || at.y > box.maxY + pad) continue;
@@ -244,7 +219,7 @@ export function medianAt(net: Network, at0: Vec2, reach = 0): MedianHit | null {
     const centre = { x: frame.p.x + frame.n.x * shift, y: frame.p.y + frame.n.y * shift };
     const off = Math.abs((at.x - centre.x) * frame.n.x + (at.y - centre.y) * frame.n.y);
     if (off > road.median / 2 + reach) continue;
-    return { segment: ribbon.id, s: hit.s, centre, frame, chart };
+    return { segment: ribbon.id, s: hit.s, centre, frame };
   }
   return null;
 }
@@ -347,12 +322,9 @@ export function onCrossingAccess(
   net: Network, accesses: readonly CrossingAccess[], segment: SegmentId, x: number, y: number, radius: number,
 ): boolean {
   const structure = net.doc.segment(segment)?.structure ?? 'ground';
-  const p = { x, y };
   return accesses.some((access) => {
     if (structure !== access.structure) return false;
-    // On the landing's chart, its node's (on the planet).
-    const q = onChartOf(p, access);
-    const dx = q.x - access.x, dy = q.y - access.y;
+    const dx = x - access.x, dy = y - access.y;
     return Math.abs(dx * access.tx + dy * access.ty) < CROSSWALK_DEPTH / 2 + m(0.3) + radius &&
       Math.abs(-dx * access.ty + dy * access.tx) < access.across + radius;
   });
@@ -362,14 +334,12 @@ export function onCrossingAccess(
 const ACCESS_CELL = m(32);
 
 /**
- * `onCrossingAccess` for many items against the same landings: on the flat map
- * the landings filed once by cell, each item asking the cells within reach of
- * it. Every item of street furniture asked every crossing of the map, some
- * 19 ms of each road drawn on the player's map (profile of 2026-10-12). On the
- * planet a landing is met on its own chart: every landing, as before.
+ * `onCrossingAccess` for many items against the same landings: the landings
+ * filed once by cell, each item asking the cells within reach of it. Every
+ * item of street furniture asked every crossing of the map, some 19 ms of each
+ * road drawn on the player's map (profile of 2026-10-12).
  */
 export function crossingAccessTester(net: Network, accesses: readonly CrossingAccess[]): (segment: SegmentId, x: number, y: number, radius: number) => boolean {
-  if (__PLANET__) return (segment, x, y, radius) => onCrossingAccess(net, accesses, segment, x, y, radius);
   const cells = new Map<string, CrossingAccess[]>();
   let reach = 0;
   for (const a of accesses) {
@@ -465,17 +435,14 @@ export function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: 
 }
 
 /** Whether a point is on any street's paving (carriageway, kerb or footway). */
-function onAnyRoad(net: Network, at0: Vec2): boolean {
-  const view = pointViews(at0, FAR_PAD);
-  for (const ribbon of net.ribbons.values()) {
-    const at = view(net.polylines.chart(net.doc, ribbon.id));
-    if (at && ribbon.full.distanceTo(at) < ribbon.road.width / 2 + ribbon.road.sidewalk + m(1)) return true;
+function onAnyRoad(net: Network, at: Vec2): boolean {
+  for (const ribbon of ribbonsNear(net, at, m(1))) {
+    if (ribbon.full.distanceTo(at) < ribbon.road.width / 2 + ribbon.road.sidewalk + m(1)) return true;
   }
   return false;
 }
 
-/** How far `a` is from `b`, on `b`'s chart (on the planet, `world/planet/charts.ts`). */
+/** How far `a` is from `b`. */
 function apart(a: Vec2, b: Vec2): number {
-  const q = onChartOf(a, b);
-  return Math.hypot(q.x - b.x, q.y - b.y);
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }

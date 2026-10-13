@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import { chartAt, directionOnChart } from './planet/charts';
 import type { Network } from './network';
 import type { SegmentId } from './ids';
 import { m } from './units';
@@ -102,25 +101,21 @@ export function streetFurniture(net: Network): FurnitureItem[] {
       // A tree or shrub in a planted median (docs/VIAS.md V7): nobody walks there.
       const median = kind === 'streetTree' || kind === 'shrub' ? medianAt(net, placed, m(0.3)) : null;
       if (median) {
-        const own = chartAt(placed.x, placed.y);
         items.push({ kind, x: placed.x, y: placed.y, segment: median.segment,
-          along: directionOnChart(median.chart, own, median.frame.p, median.frame.t),
-          outward: directionOnChart(median.chart, own, median.frame.p, median.frame.n),
+          along: { x: median.frame.t.x, y: median.frame.t.y },
+          outward: { x: median.frame.n.x, y: median.frame.n.y },
           on: 'median', radius: LANDSCAPE_RADIUS[placed.kind], seed: hash01(placed.id, 0x5eed),
           ...(placed.planted !== undefined ? { planted: placed.planted } : {}) });
       }
       continue;
     }
-    // The road's frame turned onto the item's own chart (on the planet the
-    // road's ribbon can be kept on the next piece's, turned against it).
-    const own = chartAt(placed.x, placed.y);
-    const outward = directionOnChart(hit.chart, own, hit.frame.p, { x: hit.frame.n.x * hit.side, y: hit.frame.n.y * hit.side });
+    const outward = { x: hit.frame.n.x * hit.side, y: hit.frame.n.y * hit.side };
     const base = {
       kind,
       x: placed.x,
       y: placed.y,
       segment: hit.segment,
-      along: directionOnChart(hit.chart, own, hit.frame.p, hit.frame.t),
+      along: { x: hit.frame.t.x, y: hit.frame.t.y },
       outward,
       on: 'footway' as const,
       radius: LANDSCAPE_RADIUS[placed.kind],

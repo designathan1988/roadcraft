@@ -1,5 +1,5 @@
 import { ClampToEdgeWrapping, DataTexture, DataUtils, HalfFloatType, LinearFilter, RGBAFormat } from 'three';
-import { WORLD_HALF } from '@world/bounds';
+import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { fogAt, type FogDab, type FogSample } from '@world/fogPaint';
 
 /**
@@ -12,8 +12,8 @@ import { fogAt, type FogDab, type FogSample } from '@world/fogPaint';
  * Rebuilt when the fog or the land changes.
  */
 
-/** Texels across the map: some 19 units a texel. */
-export const FOG_RES = 256;
+/** Texels across the map: some 20 m a texel. */
+export const FOG_RES = 512;
 
 export interface FogLayer {
   readonly texture: DataTexture;
@@ -38,8 +38,8 @@ export function createFogTexture(): DataTexture {
 /** Rasterises the fog dabs into `texture`: density, and the ground height under it. */
 export function rasterFog(texture: DataTexture, dabs: readonly FogDab[], groundAt: (x: number, y: number) => number): FogLayer {
   const data = texture.image.data as Uint16Array;
-  const half = WORLD_HALF;
-  const cell = (WORLD_HALF * 2) / FOG_RES;
+  const half = MAP_HALF;
+  const cell = MAP_SIZE / FOG_RES;
   // Only the texels a dab can reach are worked out: dabs culled per row.
   let low = Infinity, high = -Infinity, any = false;
   const zero = DataUtils.toHalfFloat(0);

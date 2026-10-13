@@ -25,7 +25,7 @@ import { convexOverlap, structuralProblem, validateBuilding } from '@world/build
 import { type Building, asBuildingId, componentAt } from '@world/buildings/types';
 import { isSerializedDoc } from '@editor/persistence';
 import { TUNED_UNIT } from '@world/units';
-import { FLAT_WORLD } from '@world/flatEarth';
+import { MAP_HALF } from '@world/bounds';
 
 /** `n` default modules, world units. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
@@ -217,7 +217,7 @@ describe('validation', () => {
 
   it('rejects a building off the map', () => {
     const doc = new RoadDoc();
-    expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: FLAT_WORLD.maxX + 35, y: 0 }))).toBe('bounds');
+    expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: MAP_HALF + 35, y: 0 }))).toBe('bounds');
   });
 
   it('treats touching rectangles as not overlapping', () => {

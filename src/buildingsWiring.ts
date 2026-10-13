@@ -1,5 +1,4 @@
 import { DEFAULT_FLAG, FLAG_COLOURS, FLAG_PATTERNS } from '@world/buildings/flags';
-import { onChartOf } from '@world/planet/charts';
 import type { Vec2 } from '@core/vec2';
 import { signedArea } from '@core/polygon';
 import { RoadDoc } from '@world/doc';
@@ -104,9 +103,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       // Two points on the pixel's line of sight, at two heights, give it.
       const { w, h } = deps.size();
       const low = deps.view().toWorldAt(s.x, s.y, 0, w, h);
-      // On the planet each point is written on its own piece's chart: the
-      // second carried onto the first's, so the line between them is one.
-      const high = onChartOf(deps.view().toWorldAt(s.x, s.y, 100, w, h), low);
+      const high = deps.view().toWorldAt(s.x, s.y, 100, w, h);
       const dx = low.x - high.x;
       const dy = low.y - high.y;
       const dz = -100;

@@ -6,7 +6,7 @@ import { type Vec2, dot } from '@core/vec2';
 import type { RoadDoc, RoadNode, RoadSegment } from './doc';
 import type { NodeCrossing, SegmentDirection } from './doc';
 import type { NodeId, SegmentId } from './ids';
-import { PolylineCache, nodeChart, segmentStartsAt } from './geometry';
+import { PolylineCache, segmentStartsAt } from './geometry';
 import {
   Level,
   SURFACE_LEVELS,
@@ -136,8 +136,6 @@ export class Network {
    * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
    * `ribbons`: what a loop over every ribbon would meet there, in the order it
    * would meet them, so a search that keeps the first of equals finds the same.
-   * Flat map only: on the planet a point and a road beside it can be kept on
-   * charts tens of km apart in the atlas.
    */
   ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
     if (this.ribbonOrderAt.revision !== this.revision) {
@@ -723,7 +721,7 @@ export class Network {
     const away = (id: SegmentId): Vec2 | null => {
       const seg = this.doc.segment(id);
       if (!seg) return null;
-      const pts = this.polylines.at(this.doc, id, nodeChart(this.doc, nodeId)).toPoints();
+      const pts = this.polylines.get(this.doc, id).toPoints();
       if (pts.length < 2) return null;
       const [p, q] = seg.a === nodeId ? [pts[0]!, pts[1]!] : [pts[pts.length - 1]!, pts[pts.length - 2]!];
       const len = Math.hypot(q.x - p.x, q.y - p.y);
@@ -1008,7 +1006,6 @@ export class Network {
     // The middle of each side's own footway (an asymmetric road, docs/VIAS.md V1).
     const lateralLeft = profile.width / 2 + footwayOn(profile, 'left') / 2;
     const lateralRight = profile.width / 2 + footwayOn(profile, 'right') / 2;
-    // On the segment's own chart, where its footways are drawn (`world/planet/charts.ts`).
     const line = this.polylines.get(this.doc, seg);
     const walkable = this.crossingSurface();
     const fits = (distance: number): boolean => {

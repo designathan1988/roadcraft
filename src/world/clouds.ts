@@ -9,9 +9,6 @@
 
 import { MAP_SIZE } from './bounds';
 import { m } from './units';
-import { PLANET_RADIUS, type Vec3 } from '@core/cubeSphere';
-import { tileOfDirection } from '@core/planetTiles';
-import { atlasToSphereInto, onChartOf, sphereToChartInto } from './planet/charts';
 
 export interface PlacedCloud {
   readonly id: number;
@@ -40,20 +37,6 @@ export const CLOUD_LIMITS = {
   size: [m(24), m(640)],
   density: [0.1, 1],
 } as const;
-
-/**
- * On the planet a cloud is drawn at this share of the height it is set at.
- * The planet is 3.8 km round, and the sky's clouds stand 450 m up and more
- * (a cumulus's 375 m over that): an eighth to a fifth of its radius, above
- * the air's own top (15 %, `render/planet/air.ts`), so from above the planet
- * they hung in black space beside it and their shadows fell a kilometre off.
- * Brought down to within the air, as the Earth's clouds lie well inside its
- * own; seen from the ground they still stand well over the roofs.
- */
-const PLANET_CLOUD_LIFT = 0.45;
-
-/** The height a cloud set at `height` is drawn at (`PLANET_CLOUD_LIFT`). */
-export const drawnCloudHeight = (height: number): number => (__PLANET__ ? height * PLANET_CLOUD_LIFT : height);
 
 const clamp = (v: number, [lo, hi]: readonly [number, number]): number => Math.min(hi, Math.max(lo, v));
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -109,7 +92,6 @@ export function scatterClouds(count: number, like: { size: number; height: numbe
  * ray meets higher ground first. Null if the ray misses every cloud.
  */
 export function cloudUnder(clouds: readonly PlacedCloud[], at: (height: number) => { x: number; y: number }): PlacedCloud | null {
-  if (__PLANET__) return cloudUnderOnPlanet(clouds, at);
   // The ray as a line through two of its points, a kilometre of height apart.
   const lo = at(0), hi = at(1000);
   const dx = hi.x - lo.x, dy = hi.y - lo.y, dz = 1000;
@@ -118,7 +100,7 @@ export function cloudUnder(clouds: readonly PlacedCloud[], at: (height: number) 
   let best: PlacedCloud | null = null;
   let bestEntry = -Infinity;
   for (const cloud of clouds) {
-    const cz = drawnCloudHeight(cloud.height) + cloud.size * 0.4;
+    const cz = cloud.height + cloud.size * 0.4;
     const radius = cloud.size * 0.55;
     // Along the ray (towards the camera) to the point nearest the centre.
     const t = (cloud.x - lo.x) * ux + (cloud.y - lo.y) * uy + cz * uz;
@@ -133,53 +115,10 @@ export function cloudUnder(clouds: readonly PlacedCloud[], at: (height: number) 
 }
 
 /**
- * `cloudUnder` on the planet, where "up" is the sphere's and no plane is level
- * everywhere: `at(height)` is where the ray meets the sphere that high
- * (`render/isoViewport.ts` hitAt), written on the chart of the piece it lies
- * on. A cloud is under the pointer when the ray crosses its middle's height
- * within its body's radius of its middle - measured on the cloud's own chart
- * (`onChartOf`: two charts' points are tens of km apart in the atlas). Of
- * those, the highest: the eye looks down on the planet, and its ray meets
- * the higher heap first.
- */
-function cloudUnderOnPlanet(clouds: readonly PlacedCloud[], at: (height: number) => { x: number; y: number }): PlacedCloud | null {
-  let best: PlacedCloud | null = null;
-  let bestHeight = -Infinity;
-  for (const cloud of clouds) {
-    const cz = drawnCloudHeight(cloud.height) + cloud.size * 0.4;
-    const q = onChartOf(at(cz), cloud);
-    if (Math.hypot(q.x - cloud.x, q.y - cloud.y) >= cloud.size * 0.55) continue;
-    if (cz > bestHeight) { bestHeight = cz; best = cloud; }
-  }
-  return best;
-}
-
-const turned: Vec3 = { x: 0, y: 0, z: 0 };
-
-/**
- * A point of the planet blown `distance` world units east round its axis (the
- * planet frame's z, `world/planet/sun.ts`): the clouds ride a zonal wind,
- * along the parallels, as the trade winds and the westerlies run. Its
- * place is then written on the chart of the piece it has come to, so a cloud
- * crosses from piece to piece as the drawing reads it (each chart's points
- * stay in its cell of the atlas, `planet/charts.ts`). Added to the atlas's
- * own x, it left its piece's cell after a few minutes of wind and jumped
- * to wherever that cell's chart put it.
- */
-function blownRoundAxis(x: number, y: number, distance: number): { x: number; y: number } {
-  atlasToSphereInto(x, y, turned);
-  const a = distance / PLANET_RADIUS, c = Math.cos(a), s = Math.sin(a);
-  const tx = turned.x * c - turned.y * s, ty = turned.x * s + turned.y * c;
-  turned.x = tx; turned.y = ty;
-  return sphereToChartInto(tileOfDirection(turned), turned, { x: 0, y: 0 });
-}
-
-/**
  * Where to keep a cloud that is to be seen at `seen` now: the wind's drift
  * taken off (`driftedCloud`'s inverse).
  */
 export function undriftedCloud(seen: { readonly x: number; readonly y: number }, drift: { readonly x: number; readonly y: number }): { x: number; y: number } {
-  if (__PLANET__) return blownRoundAxis(seen.x, seen.y, -drift.x);
   return { x: seen.x - drift.x, y: seen.y - drift.y };
 }
 
@@ -190,10 +129,6 @@ export function undriftedCloud(seen: { readonly x: number; readonly y: number },
  * as it nears the edge it wraps round, so it never pops).
  */
 export function driftedCloud(cloud: PlacedCloud, drift: { readonly x: number; readonly y: number }): { x: number; y: number; show: number } {
-  // On the planet there is no edge to wrap round: the wind carries it on
-  // round the planet, east along its parallel (`blownRoundAxis`; the drift's
-  // north-south part would herd every cloud to a pole).
-  if (__PLANET__) return { ...blownRoundAxis(cloud.x, cloud.y, drift.x), show: 1 };
   const span = MAP_SIZE;
   const wrap = (v: number): number => ((((v + span / 2) % span) + span) % span) - span / 2;
   const x = wrap(cloud.x + drift.x), y = wrap(cloud.y + drift.y);

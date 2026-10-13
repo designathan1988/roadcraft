@@ -9,8 +9,6 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5300 --strictPort",
-    "dev:planet": "vite --mode planet --host 127.0.0.1 --port 5300 --strictPort",
-    "dev:planet:old-unit": "vite --mode planet-old-unit --host 127.0.0.1 --port 5300 --strictPort",
     "build": "node scripts/run-limited.mjs npm run build:raw",
     "build:raw": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -23,18 +21,15 @@
     "test:coverage": "node scripts/run-limited.mjs npm run test:coverage:raw",
     "test:coverage:raw": "vitest run --coverage",
     "check": "node scripts/run-limited.mjs npm run check:raw",
-    "check:raw": "npm run lint && node scripts/check-code.mjs && node scripts/knip-check.mjs && npm run test:raw && npm run test:planet:raw && npm run test:scale:raw && vite build",
+    "check:raw": "npm run lint && node scripts/check-code.mjs && node scripts/knip-check.mjs && npm run test:raw && npm run test:scale:raw && vite build",
     "setup": "git config core.hooksPath .githooks",
     "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
-    "test:planet:raw": "vitest run -c vitest.planet.config.ts",
-    "test:planet": "node scripts/run-limited.mjs npm run test:planet:raw",
     "test:scale:raw": "vitest run -c vitest.scale.config.ts",
     "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw",
     "test:slow": "node scripts/run-limited.mjs npm run test:slow:raw",
-    "test:slow:raw": "vitest run -c vitest.slow.config.ts",
-    "build:modos": "node scripts/run-limited.mjs node scripts/build-modes.mjs"
+    "test:slow:raw": "vitest run -c vitest.slow.config.ts"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

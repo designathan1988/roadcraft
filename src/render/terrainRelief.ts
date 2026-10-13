@@ -64,15 +64,7 @@ import { m, perM } from '@world/units';
  */
 
 /** Texels across a level: 2.3 units a texel over the 4800-unit map, 0.3 in the close window. */
-// On the planet a plate is 1.9 km, not 4.8: 512 keeps its texel near the
-// flat map's (3.7 units against 2.3), at a sixteenth of the memory, for 96 plates.
-export const RELIEF_RES = __PLANET__ ? 512 : 2048;
-/**
- * On the planet, the level of a plate the view is not on: 256, a texel of
- * 2.6 units - the wrinkles still finer than the mesh's 16-unit cells, and the
- * plates seen beside the one looked at are farther and smaller on screen.
- */
-const FAR_RES = 256;
+export const RELIEF_RES = 2048;
 /** The close window's side: 240 m. */
 const WINDOW_SPAN = m(240);
 /** How far the view's ground may wander from the window's centre before it is baked again. */
@@ -259,7 +251,7 @@ const BAKE_FRAGMENT = /* glsl */ `
 `;
 
 export interface ReliefBake {
-  /** This bake's relief, for its own ground's shader (each plate of the planet has one). */
+  /** This bake's relief, for its own ground's shader (each plate has one). */
   readonly texture: { value: Texture };
   /** This bake's close window (`RELIEF_WINDOW` alike). */
   readonly window: { value: Vector4 };
@@ -291,9 +283,9 @@ let bakeProgram: 'none' | 'building' | 'ready' = 'none';
 export function createReliefBake(gridN: number, cell: number, half: number, macro: Texture): ReliefBake {
   /**
    * The gully brush's mask: one texel (none cut, none wiped) until a dab of it
-   * reaches this ground, then \`GULLY_RES\` across (\`gullyMask\`). On the
-   * planet each of the 864 plates kept a 256 x 256 mask (262 KB) though the
-   * brush is seldom used - 226 MB of the page's memory, and as much on the GPU.
+   * reaches this ground, then \`GULLY_RES\` across (\`gullyMask\`): every plate
+   * keeping a 256 x 256 mask (262 KB) though the brush is seldom used was
+   * hundreds of MB of the page's memory, and as much on the GPU.
    */
   const gullyMask = (res: number): DataTexture => {
     const mask = new DataTexture(new Uint8Array(res * res * 4), res, res, RGBAFormat, UnsignedByteType);
@@ -304,13 +296,7 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
     return mask;
   };
   let gullies = gullyMask(1);
-  /**
-   * The bake's target: the plate's own level, and the close window's while
-   * the view looks at this plate. On the planet a plate the view is not on
-   * has its level alone, at \`FAR_RES\` (\`targetFor\`): every one of the 864
-   * plates kept two 512 x 512 half-float levels with their mipmaps, 5.6 MB of
-   * video memory a plate - 4.8 GB in all.
-   */
+  /** The bake's target: the plate's own level, and the close window's while the view looks at this plate. */
   const targetFor = (res: number, levels: number): WebGLArrayRenderTarget => new WebGLArrayRenderTarget(res, res, levels, {
     type: HalfFloatType,
     format: RGBAFormat,
@@ -321,16 +307,7 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
     generateMipmaps: true,
     depthBuffer: false,
   });
-  let target = __PLANET__ ? targetFor(FAR_RES, 1) : targetFor(RELIEF_RES, 2);
-  /** Gives the bake the target it now needs (with the close window or without), baking its level again when it changes. */
-  const retarget = (close: boolean): void => {
-    const levels = close ? 2 : 1;
-    if (!__PLANET__ || target.depth === levels) return;
-    target.dispose();
-    target = close ? targetFor(RELIEF_RES, 2) : targetFor(FAR_RES, 1);
-    dirty = true;
-    closeDirty = true;
-  };
+  const target = targetFor(RELIEF_RES, 2);
   const corners = new Float32Array(gridN * gridN);
   const heights = new DataTexture(corners, gridN, gridN, RedFormat, FloatType);
   heights.minFilter = NearestFilter;
@@ -364,8 +341,7 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const frame = material.uniforms['uFrame']!.value as Vector3;
   const octaves = material.uniforms['uOctaves']!;
-  // Its own uniforms: a planet has six plates, each baked apart. The flat
-  // map's one bake is still read through `RELIEF_TEXTURE` and `RELIEF_WINDOW`.
+  // Its own uniforms: every plate is baked apart.
   const textureUniform = { value: RELIEF_TEXTURE.value };
   const windowUniform = { value: new Vector4(0, 0, WINDOW_SPAN, 0) };
   const window = windowUniform.value;
@@ -429,7 +405,6 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
         }
         return;
       }
-      retarget(focus !== null);
       if (dirty) {
         dirty = false;
         const startedAt = performance.now();

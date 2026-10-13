@@ -4,7 +4,6 @@ import type { Network, SegmentRibbon } from './network';
 import type { Junction } from './junction/build';
 import type { NodeId, SegmentId } from './ids';
 import { roadStructure } from './structures';
-import { chartAt, chartToChartInto } from './planet/charts';
 
 export type SurfaceSegmentFilter = (segment: SegmentId) => boolean;
 
@@ -150,30 +149,6 @@ export function levelRingsOf(
   }
 
   return out;
-}
-
-/**
- * `levelPolygons` on one chart of the planet (`world/planet/charts.ts`): each
- * ring is written on the chart of the piece it was laid on (a road's on its
- * own segment's, a plate on its node's), and rings of two charts merged
- * as they stand are tens of km apart in the atlas. Every ring is carried onto
- * `chart` first. For the few rings round one place (`include` a handful of
- * segments): it reads every ribbon of the map to filter them.
- */
-export function levelPolygonsOnChart(net: Network, level: SurfaceLevel, chart: number, include: SurfaceSegmentFilter): MultiPoly {
-  const rings = levelRings(net, level, include);
-  for (const poly of rings) {
-    for (let r = 0; r < poly.length; r++) {
-      const ring = poly[r]!;
-      const first = ring[0];
-      if (!first) continue;
-      const from = chartAt(first[0]!, first[1]!);
-      if (from === chart) continue;
-      const out = { x: 0, y: 0 };
-      poly[r] = ring.map(([x, y]) => { chartToChartInto(from, chart, x!, y!, out); return [out.x, out.y]; });
-    }
-  }
-  return union(rings);
 }
 
 /** One merged polygon set per surface level. */

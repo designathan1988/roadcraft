@@ -1,4 +1,3 @@
-import { onChartOf } from '@world/planet/charts';
 import {
   BufferGeometry,
   CylinderGeometry,
@@ -322,16 +321,11 @@ export function buildUtilities(
     const armA = framing.get(a.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
     const armB = framing.get(b.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
 
-    // On the first pole's chart: a span across a border joins two pieces'
-    // charts, and drawn between their raw points the wire crossed the atlas.
-    const bAt = onChartOf(b, a);
-    const armTip = onChartOf({ x: b.x + armB.x, y: b.y + armB.y }, a);
-    const armBx = armTip.x - bAt.x, armBy = armTip.y - bAt.y;
     const phase = (span.id * 2.399) % (Math.PI * 2);
-    const key = `${a.x},${a.y},${topA},${armA.x},${armA.y},${bAt.x},${bAt.y},${topB},${armBx},${armBy},${phase}`;
+    const key = `${a.x},${a.y},${topA},${armA.x},${armA.y},${b.x},${b.y},${topB},${armB.x},${armB.y},${phase}`;
     let chunk = wireCache?.get(key);
     if (!chunk) {
-      chunk = wireChunk(a.x, a.y, topA, armA.x, armA.y, bAt.x, bAt.y, topB, armBx, armBy, phase);
+      chunk = wireChunk(a.x, a.y, topA, armA.x, armA.y, b.x, b.y, topB, armB.x, armB.y, phase);
       wireCache?.set(key, chunk);
     }
     usedWires?.add(key);

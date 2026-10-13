@@ -1,13 +1,10 @@
-import { BufferAttribute, BufferGeometry, Color, Float32BufferAttribute, FrontSide, Group, Mesh, MeshStandardMaterial, type WebGLRenderer } from 'three';
+import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial, type WebGLRenderer } from 'three';
 import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
-import { RELIEF_EARTH, type ReliefVersion, type TerrainStamp } from '@world/terrain';
+import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
 import type { GullyDab } from '@world/gullies';
 import type { RoadDoc } from '@world/doc';
-import { FLAT_PLATE, FLAT_PLATES, FLAT_WORLD, flatGroundFor, flatPlateCentre, flatPlateOf, flatSeaFor, flatSeaHold, flatSeaOver } from '@world/flatEarth';
+import { MAP_HALF, MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
 import { GroundChanges } from './groundChanges';
-import { SEA_LEVEL } from '@world/planet/seaLevel';
-import { createFlatOcean } from './flatOcean';
-import { compileAhead } from './uploads';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
 import type { PlateMesh } from './plateMesh';
 import type { WaterLook } from './water';
@@ -27,15 +24,12 @@ import {
 import { m } from '@world/units';
 
 /**
- * THE FLAT MAP AS BIG AS THE GLOBE (docs/MAPA-PLANO-COMPLETO.md): the whole
- * Earth laid flat (`world/flatEarth.ts`, the equirectangular world map, 24 x
- * 12 km), drawn as a grid of the flat map's own plates (1.92 km, the old
- * map's), each a `createTerrainSurface` of its own, brought in where the view
- * is and let go when far, as the planet's pieces are (`planet/terrainAtlas.ts`,
- * Proland's split rule) - and the land beyond them a light mesh of the whole
- * world (as the planet's far globe). On one plane every plate meets the next
- * as it is: no charts, no curvature. A plate is centred on the origin: the old
- * flat map is that plate, its roads where they were.
+ * THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`): a grid of square
+ * plates, each a `createTerrainSurface` of its own, brought in where the view
+ * is and let go when far (Proland's split rule) - and the land beyond them a
+ * light mesh of the whole map. On one plane every plate meets the next as it
+ * is. A plate is centred on the origin: the maps made before stand on it,
+ * their roads where they were.
  */
 
 const REGION_STRIDE = 1000;
@@ -47,6 +41,7 @@ const NEAR_MOST = 9;
 const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
 const SIDE = Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1;
+const PLATES = MAP_REGIONS.length;
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -60,7 +55,6 @@ class PlateSource implements TerrainSource {
   stampSources: readonly TerrainStamp[] = [];
   paintSources: readonly PaintDab[] = [];
   terrainGround?: (x: number, y: number) => number;
-  terrainSea?: (x: number, y: number) => boolean;
 }
 
 interface Plate {
@@ -87,12 +81,11 @@ const reaches = (p: Plate, x: number, y: number, radius: number): boolean =>
   Math.abs(x - p.cx) <= TERRAIN_HALF + radius && Math.abs(y - p.cy) <= TERRAIN_HALF + radius;
 
 /**
- * The whole flat Earth's far ground, as the planet's far globe
- * (`planet/globeGround.ts`): a coarse patch of `FAR_QUADS` x `FAR_QUADS`
- * quads per plate, in world coordinates, every height the land's own, a skirt
- * hung `SKIRT` under each edge (hiding the step where a patch meets a plate
- * drawn in full). One geometry; its index lists the patches of the plates not
- * drawn in full (`farIndexInto`), so nothing is drawn twice.
+ * The map's far ground: a coarse patch of `FAR_QUADS` x `FAR_QUADS` quads per
+ * plate, in world coordinates, every height the land's own, a skirt hung
+ * `SKIRT` under each edge (hiding the step where a patch meets a plate drawn
+ * in full). One geometry; its index lists the patches of the plates not drawn
+ * in full (`farIndexInto`), so nothing is drawn twice.
  */
 const FAR_QUADS = 32;
 const FAR_SIDE = FAR_QUADS + 1;
@@ -101,19 +94,19 @@ const FAR_VERTS = FAR_SIDE * FAR_SIDE + 4 * FAR_SIDE;
 const FAR_INDICES = FAR_QUADS * FAR_QUADS * 6 + 4 * FAR_QUADS * 12;
 export interface FlatFar { readonly geometry: BufferGeometry; readonly all: Uint32Array; readonly high: Float32Array }
 export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar {
-  const positions = new Float32Array(FLAT_PLATES * FAR_VERTS * 3);
-  const normals = new Float32Array(FLAT_PLATES * FAR_VERTS * 3);
-  const steep = new Float32Array(FLAT_PLATES * FAR_VERTS);
-  const all = new Uint32Array(FLAT_PLATES * FAR_INDICES);
-  const high = new Float32Array(FLAT_PLATES);
-  const step = FLAT_PLATE / FAR_QUADS;
+  const positions = new Float32Array(PLATES * FAR_VERTS * 3);
+  const normals = new Float32Array(PLATES * FAR_VERTS * 3);
+  const steep = new Float32Array(PLATES * FAR_VERTS);
+  const all = new Uint32Array(PLATES * FAR_INDICES);
+  const high = new Float32Array(PLATES);
+  const step = PLATE_SIZE / FAR_QUADS;
   // Heights on a ring one cell wider than the patch, for its normals.
   const RING = FAR_SIDE + 2;
   const h = new Float64Array(RING * RING);
   let v = 0, w = 0;
-  for (let plate = 0; plate < FLAT_PLATES; plate++) {
-    const c = flatPlateCentre(plate);
-    const x0 = c.x - TERRAIN_HALF, y0 = c.y - TERRAIN_HALF;
+  for (let plate = 0; plate < PLATES; plate++) {
+    const c = MAP_REGIONS[plate]!;
+    const x0 = c.cx - TERRAIN_HALF, y0 = c.cy - TERRAIN_HALF;
     for (let j = 0; j < RING; j++) for (let i = 0; i < RING; i++) h[j * RING + i] = TERRAIN_BASE + ground(x0 + (i - 1) * step, y0 + (j - 1) * step);
     const first = v;
     let top = -Infinity;
@@ -142,8 +135,8 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
         all[w++] = p10; all[w++] = p11; all[w++] = p01;
       }
     }
-    // An edge on the world's own rim hangs no skirt: the slab's cut side stands there (`slabGeometry`).
-    const onRim = [c.y - TERRAIN_HALF <= FLAT_WORLD.minY + 1e-6, c.y + TERRAIN_HALF >= FLAT_WORLD.maxY - 1e-6, c.x - TERRAIN_HALF <= FLAT_WORLD.minX + 1e-6, c.x + TERRAIN_HALF >= FLAT_WORLD.maxX - 1e-6];
+    // An edge on the map's own rim hangs no skirt: the slab's cut side stands there (`slabGeometry`).
+    const onRim = [c.cy - TERRAIN_HALF <= -MAP_HALF + 1e-6, c.cy + TERRAIN_HALF >= MAP_HALF - 1e-6, c.cx - TERRAIN_HALF <= -MAP_HALF + 1e-6, c.cx + TERRAIN_HALF >= MAP_HALF - 1e-6];
     for (let e = 0; e < 4; e++) {
       const hung = v;
       for (let k = 0; k < FAR_SIDE; k++) {
@@ -179,7 +172,7 @@ export function farIndexInto(far: FlatFar, full: (plate: number) => boolean): nu
   const index = far.geometry.getIndex()!;
   const out = index.array as Uint32Array;
   let n = 0;
-  for (let plate = 0; plate < FLAT_PLATES; plate++) {
+  for (let plate = 0; plate < PLATES; plate++) {
     if (full(plate)) continue;
     out.set(far.all.subarray(plate * FAR_INDICES, (plate + 1) * FAR_INDICES), n);
     n += FAR_INDICES;
@@ -191,94 +184,38 @@ export function farIndexInto(far: FlatFar, full: (plate: number) => boolean): nu
   return n;
 }
 
-/**
- * The sea's own cut side where the world's rim crosses it: from the bed
- * (`groundAt`) up to sea level, every `TERRAIN_CELL` along the rim where the
- * sea stands (`seaAt`), facing out - so the sea seen from beside the slab is
- * water over its bed, not a sheet floating over a hole.
- */
-function seaRimGeometry(groundAt: (x: number, y: number) => number, seaAt: (x: number, y: number) => boolean): BufferGeometry {
-  const { minX, maxX, minY, maxY } = FLAT_WORLD;
-  const sides: readonly (readonly [number, number, number, number, number, number])[] = [
-    [minX, -maxY, maxX, -maxY, 0, -1], [maxX, -maxY, maxX, -minY, 1, 0], [maxX, -minY, minX, -minY, 0, 1], [minX, -minY, minX, -maxY, -1, 0],
-  ];
-  const positions: number[] = [], normals: number[] = [];
-  for (const [x0, z0, x1, z1, nx, nz] of sides) {
-    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / TERRAIN_CELL));
-    for (let k = 0; k < n; k++) {
-      const ax = x0 + ((x1 - x0) * k) / n, az = z0 + ((z1 - z0) * k) / n;
-      const bx = x0 + ((x1 - x0) * (k + 1)) / n, bz = z0 + ((z1 - z0) * (k + 1)) / n;
-      const ga = groundAt(ax, -az), gb = groundAt(bx, -bz);
-      if ((ga >= SEA_LEVEL && gb >= SEA_LEVEL) || !(seaAt(ax, -az) || seaAt(bx, -bz))) continue;
-      const ta = SEA_LEVEL, tb = SEA_LEVEL, la = Math.min(ga, SEA_LEVEL), lb = Math.min(gb, SEA_LEVEL);
-      // Wound so the face points out: (lower - upper) x (along) against the normal.
-      const outward = (la - ta) * (bz - az) * nx - (la - ta) * (bx - ax) * nz;
-      const quad: [number, number, number][] = [[ax, ta, az], [ax, la, az], [bx, tb, bz], [bx, lb, bz]];
-      for (const o of outward > 0 ? [0, 1, 2, 2, 1, 3] : [0, 2, 1, 2, 3, 1]) { positions.push(...quad[o]!); normals.push(nx, 0, nz); }
-    }
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
 export function createFlatAtlas(anisotropy: number): TerrainSurface {
-  const plates: Plate[] = Array.from({ length: FLAT_PLATES }, (_, index) => {
-    const c = flatPlateCentre(index);
-    return { index, cx: c.x, cy: c.y, source: new PlateSource(), surface: null, shown: false, used: -1, heights: null, mesh: null, asked: false, top: -Infinity };
-  });
+  const plates: Plate[] = MAP_REGIONS.map((c, index) =>
+    ({ index, cx: c.cx, cy: c.cy, source: new PlateSource(), surface: null, shown: false, used: -1, heights: null, mesh: null, asked: false, top: -Infinity }));
   const root = new Group();
   root.name = 'flat-world-ground';
 
-  // The far ground: a surface of its own lends the terrain's material (no
-  // rim, its light and ecology pooled), its geometry the whole flat Earth's.
-  const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, -1, FLAT_PLATES);
+  // The far ground: a surface of its own lends the terrain's material (its
+  // light and ecology pooled), its geometry the whole map's.
+  const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, PLATES);
   const farMesh = farSurface.ground;
   farMesh.name = 'flat-world-far';
   farMesh.frustumCulled = false;
   farMesh.receiveShadow = true;
   farMesh.visible = false;
   root.add(farMesh);
-  // The seas over every plate whose land goes under sea level (`flatOcean.ts`),
-  // into the scene once its program is built, in parallel (`compileAhead`):
-  // drawn first, it stopped a frame for as long as the driver took.
-  const ocean = createFlatOcean(anisotropy);
-  void compileAhead(ocean.mesh).then(() => { root.add(ocean.mesh); });
-  // THE SLAB under the whole flat Earth (the old map's cut sides, all round
-  // the world): its strata from the land down to the bedrock, and where the
-  // rim cuts the sea, the water standing to sea level over its bed.
+  // THE SLAB under the whole map (SimCity 4's): its cut sides all round, the
+  // strata from the land down to the bedrock.
   const slab = new Mesh(new BufferGeometry(), wallMaterial(anisotropy));
   slab.name = 'flat-world-slab';
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
-  const curtainMaterial = new MeshStandardMaterial({ color: new Color(0x1d5f8c), roughness: 0.25, metalness: 0, transparent: true, opacity: 0.82, side: FrontSide });
-  const curtain = new Mesh(new BufferGeometry(), curtainMaterial);
-  curtain.name = 'flat-world-sea-rim';
-  curtain.visible = false;
-  root.add(curtain);
   let farRelief: ReliefVersion | null = null;
-  /** Where the sea may stand (`flatSeaFor`), and the bed it reads: dry land where it may not. */
-  let seaHere: (x: number, y: number) => boolean = () => false;
-  let seaHold: (x: number, y: number, land: number) => number = () => 0;
-  const seaBed = (x: number, y: number, h: number): number => (seaHere(x, y) ? h : Math.max(h, SEA_LEVEL + 1));
   let far: FlatFar | null = null;
   const buildFar = (relief: ReliefVersion): void => {
     if (relief === farRelief) return;
     farRelief = relief;
-    const land = flatGroundFor(relief);
-    seaHere = flatSeaFor(relief);
-    seaHold = flatSeaHold(relief);
+    const land = (x: number, y: number): number => reliefHeight(relief, x, y);
     far = buildFlatFar(land);
     slab.geometry.dispose();
-    slab.geometry = slabGeometry(FLAT_WORLD.minX, FLAT_WORLD.maxX, FLAT_WORLD.minY, FLAT_WORLD.maxY, TERRAIN_CELL, (x, y) => TERRAIN_BASE + land(x, y));
+    slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, TERRAIN_CELL, (x, y) => TERRAIN_BASE + land(x, y));
     slab.visible = true;
-    curtain.geometry.dispose();
-    curtain.geometry = seaRimGeometry((x, y) => TERRAIN_BASE + land(x, y), seaHere);
-    curtain.visible = true;
-    ocean.build((x, y) => seaBed(x, y, TERRAIN_BASE + land(x, y)));
     farMesh.geometry.dispose();
     farMesh.geometry = far.geometry;
     farMesh.visible = true;
@@ -303,14 +240,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const d of dabs) if (reaches(p, d.x, d.y, d.radius)) mine.push({ ...d, x: d.x - p.cx, y: d.y - p.cy });
     p.surface!.setGullies(mine, auto);
   };
-  /**
-   * The sea reads a plate's ground as drawn - shaped by the works too: a
-   * causeway's or a pad's fill has its shore and its foam round it.
-   */
-  const seaReads = (p: Plate): void => {
-    const s = p.surface!;
-    ocean.setPlate(p.index, (x, y) => seaBed(x, y, s.renderedHeightAt(x - p.cx, y - p.cy)));
-  };
   /** A plate's highest drawn corner, read once each time its ground moved (not every plate's 90 601 at every change of the set). */
   const measureTop = (p: Plate): void => {
     const heights = p.surface!.ground.geometry.getAttribute('position').array;
@@ -327,7 +256,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (p.surface) return p.surface;
     // Each step of a plate's making measured (F9 and the probes read hitch: measures).
     const t0 = performance.now();
-    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, -1, p.index, p.mesh);
+    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.index, p.mesh);
     // The surface keeps what it copied; the plate keeps only its corners (its land's field).
     p.mesh = null;
     const t1 = performance.now();
@@ -361,7 +290,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.heights = null;
     p.mesh = null;
   };
-  const home = flatPlateOf(0, 0);
+  const home = plateOf(0, 0);
   const refresh = (): void => {
     frame++;
     const wanted = new Set<number>([home, ...content]);
@@ -392,7 +321,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (key === contentKey) return false;
     contentKey = key;
     const next = new Set<number>();
-    const mark = (x: number, y: number): void => { next.add(flatPlateOf(x, y)); };
+    const mark = (x: number, y: number): void => { next.add(plateOf(x, y)); };
     for (const n of d.nodes?.values() ?? []) mark(n.x, n.y);
     for (const b of d.buildings?.all() ?? []) mark(b.x, b.y);
     for (const l of d.lots ?? []) for (const c of l.corners) mark(c.x, c.y);
@@ -421,7 +350,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let seenTerrain = -1;
   let seenRelief: ReliefVersion | null = null;
   let seenPaint = -1;
-  let bare: (x: number, y: number) => number = flatGroundFor(RELIEF_EARTH);
+  /** The map's own land before any stamp, world coordinates (`reliefHeight`). */
+  let bare: (x: number, y: number) => number = () => 0;
   const sync = (doc: TerrainSource): void => {
     lastDoc = doc;
     for (const p of plates) {
@@ -431,20 +361,19 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     }
     if (doc.terrainRevision !== seenTerrain) {
       seenTerrain = doc.terrainRevision;
-      const reliefMoved = seenRelief !== doc.terrainRelief;
-      seenRelief = doc.terrainRelief;
-      if (reliefMoved) bare = flatGroundFor(doc.terrainRelief);
-      buildFar(doc.terrainRelief);
+      const relief = doc.terrainRelief;
+      const reliefMoved = seenRelief !== relief;
+      seenRelief = relief;
+      if (reliefMoved) bare = (x, y) => reliefHeight(relief, x, y);
+      buildFar(relief);
       plates.forEach((p, i) => {
         const copies = stampCopies[i]!;
         const sources = doc.terrainStamps.filter((s) => copyOn(copies, p, s) !== null);
-        p.source.terrainRelief = doc.terrainRelief;
+        p.source.terrainRelief = relief;
         if (reliefMoved || !p.source.terrainGround) {
           if (reliefMoved) { p.heights = null; p.mesh = null; p.asked = false; }
-          p.source.terrainGround = (lx, ly) => groundOn(p, lx, ly);
-          if (doc.terrainRelief === RELIEF_EARTH) delete p.source.terrainSea;
           // Read over the plate's own corners (off the page), not the field again at each.
-          else { const sea = flatSeaOver(doc.terrainRelief); p.source.terrainSea = (lx, ly) => sea(p.cx + lx, p.cy + ly, groundOn(p, lx, ly)); }
+          p.source.terrainGround = (lx, ly) => groundOn(p, lx, ly);
         }
         if (!reliefMoved && p.source.terrainRevision !== 0 && sameList(sources, p.source.stampSources)) return;
         p.source.stampSources = sources;
@@ -490,7 +419,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.asked = true;
     const relief = seenRelief;
     readFlatGround({
-      key: p.index, relief, tile: -1, at: { x: p.cx, y: p.cy }, cx: p.cx, cy: p.cy, half: TERRAIN_HALF, cell: TERRAIN_CELL, side: SIDE, base: TERRAIN_BASE,
+      key: p.index, relief, at: { x: p.cx, y: p.cy }, cx: p.cx, cy: p.cy, half: TERRAIN_HALF, cell: TERRAIN_CELL, side: SIDE, base: TERRAIN_BASE,
       done: (mesh) => {
         p.asked = false;
         // A plate made meanwhile keeps the field it was made on; a relief changed meanwhile, the new one.
@@ -530,7 +459,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     return total;
   };
   const ask = <T>(x: number, y: number, read: (s: TerrainSurface, lx: number, ly: number) => T, bareRead: (p: Plate, lx: number, ly: number) => T): T => {
-    const p = plates[flatPlateOf(x, y)]!;
+    const p = plates[plateOf(x, y)]!;
     return p.surface ? read(p.surface, x - p.cx, y - p.cy) : bareRead(p, x - p.cx, y - p.cy);
   };
 
@@ -541,7 +470,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   return {
     meshes: [root],
     highest: () => highest,
-    seaHold: (x, y, land) => seaHold(x, y, land),
     ground: firstSurface.ground,
     get parts() { return partsShown; },
     focus(x, y, reach) {
@@ -552,7 +480,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // patch stands in meanwhile, never a frame stopped for it.
       setFlatGroundFocus(x, y);
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
-      const key = `${flatPlateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
+      const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
       if (key !== focusKey) {
         focusKey = key;
         wantedNear.length = 0;
@@ -586,7 +514,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       farSurface.setSun(direction);
     },
     bakeRelief(renderer: WebGLRenderer, focus) {
-      const at = focus ? plates[flatPlateOf(focus.x, -focus.z)]! : null;
+      const at = focus ? plates[plateOf(focus.x, -focus.z)]! : null;
       for (const p of shownList) p.surface!.bakeRelief(renderer, p === at && focus ? { x: focus.x - p.cx, z: focus.z + p.cy } : null);
     },
     setWaterLook(look: WaterLook) {
@@ -596,7 +524,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       Object.assign(was, look);
       lookGiven = true;
       for (const p of plates) p.surface?.setWaterLook(look);
-      ocean.setLook(look);
     },
     setGullies(dabs: readonly GullyDab[], auto) {
       lastGullies = { dabs, auto };
@@ -609,7 +536,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     renderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt),
     wetAt: (x, y) => ask(x, y, (s, lx, ly) => s.wetAt(lx, ly), () => false),
     digest(minX, minY, maxX, maxY) {
-      const p = plates[flatPlateOf((minX + maxX) / 2, (minY + maxY) / 2)]!;
+      const p = plates[plateOf((minX + maxX) / 2, (minY + maxY) / 2)]!;
       if (!p.surface) return p.index * 7919 + (seenRelief ?? 0) * 31 + 1;
       return p.surface.digest(minX - p.cx, minY - p.cy, maxX - p.cx, maxY - p.cy) + p.index;
     },
@@ -621,10 +548,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         moved = true;
         lastPlate = p;
         measureTop(p);
-        // The sea reads the plate's land again: a raised island has its shore, a dug channel its depth.
-        seaReads(p);
       }
-      if (moved) { measureHighest(); ocean.commit(); }
+      if (moved) measureHighest();
       return moved;
     },
     updatePaint(doc) {
@@ -665,8 +590,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
       let moved = false;
       if (list === null) {
-        for (const p of shownList) if (p.surface!.shapeToRoads(shape && shaperFor(p, shape), null)) { moved = true; measureTop(p); seaReads(p); }
-        if (moved) { measureHighest(); ocean.commit(); }
+        for (const p of shownList) if (p.surface!.shapeToRoads(shape && shaperFor(p, shape), null)) { moved = true; measureTop(p); }
+        if (moved) measureHighest();
         return moved;
       }
       const byPlate = new Map<Plate, TerrainRegion[]>();
@@ -676,12 +601,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         if (!mine) byPlate.set(plate, mine = []);
         mine.push(local);
       }
-      for (const [p, regions] of byPlate) if (ensure(p).shapeToRoads(shape && shaperFor(p, shape), regions)) { moved = true; measureTop(p); seaReads(p); }
-      if (moved) { measureHighest(); ocean.commit(); }
+      for (const [p, regions] of byPlate) if (ensure(p).shapeToRoads(shape && shaperFor(p, shape), regions)) { moved = true; measureTop(p); }
+      if (moved) measureHighest();
       return moved;
     },
     regionOf(box) {
-      const p = plates[flatPlateOf((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)]!;
+      const p = plates[plateOf((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)]!;
       return encode(p, ensure(p).regionOf([box[0] - p.cx, box[1] - p.cy, box[2] - p.cx, box[3] - p.cy]));
     },
     rectOf(region) {
@@ -692,12 +617,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     dispose() {
       for (const p of plates) p.surface?.dispose();
       farSurface.dispose();
-      ocean.dispose();
       slab.geometry.dispose();
       (slab.material as MeshStandardMaterial).map?.dispose();
       (slab.material as MeshStandardMaterial).dispose();
-      curtain.geometry.dispose();
-      curtainMaterial.dispose();
     },
   };
 }

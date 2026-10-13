@@ -4,19 +4,6 @@ import { ROAD_CLEARANCE, touchesRoad } from '@world/buildings/validate';
 import type { Network } from '@world/network';
 import { CURB_BAND, Level, halfWidth } from '@world/roadTypes';
 import { m } from '@world/units';
-import { chartAt, inChart, layRun, onChartOf } from '@world/planet/charts';
-import { PLANET_MAX_PIECE } from './planetFrame';
-
-/**
- * ON THE PLANET a run's points are kept each on the chart of the piece it lies
- * on (`layRun`), a stretch worked out on its first point's chart, the second
- * carried there; a road's ribbon is kept on its segment's chart, and a point
- * is measured against it carried onto that chart (`onRibbon`).
- */
-const onRibbon = (net: Network, id: number, p: Vec2): Vec2 => {
-  const chart = net.polylines.chart(net.doc, id as never);
-  return chartAt(p.x, p.y) === chart ? p : inChart(chart, p);
-};
 
 /**
  * Drawing walls, fences and hedges along a path (`world/barriers.ts`).
@@ -32,7 +19,7 @@ const FOOTWAY_REACH = m(3);
 /** Shortest length of a run worth building, world units. */
 export const MIN_BARRIER_RUN = m(0.5);
 
-export function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec2): Vec2 {
+function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec2): Vec2 {
   if (!net) return at;
   const half = m(BARRIER_SIZE[kind].thickness) / 2;
   let best: { d: number; p: Vec2 } | null = null;
@@ -43,7 +30,7 @@ export function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec
     const back = KERB_BARRIERS.has(kind)
       ? ribbon.road.width / 2 + CURB_BAND + half + m(0.15)
       : halfWidth(ribbon.road, Level.Sidewalk) + ROAD_CLEARANCE + half + m(0.02);
-    const q = onRibbon(net, ribbon.id, at);
+    const q = at;
     const hit = ribbon.full.closestPoint(q);
     const off = Math.abs(hit.distance - back);
     if (off > FOOTWAY_REACH || (best && off >= best.d)) continue;
@@ -58,18 +45,17 @@ export function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec
  * Why a run cannot be built, or null: it reaches a road or its footway, as a
  * building's own parts may not (`validateBuilding`, same test).
  */
-export function barrierProblem(net: Network | null, kind: BarrierKind, points: readonly Vec2[]): 'road' | 'short' | null {
+function barrierProblem(net: Network | null, kind: BarrierKind, points: readonly Vec2[]): 'road' | 'short' | null {
   let length = 0;
   for (let i = 1; i < points.length; i++) {
-    const b = onChartOf(points[i]!, points[i - 1]!);
+    const b = points[i]!;
     length += Math.hypot(b.x - points[i - 1]!.x, b.y - points[i - 1]!.y);
   }
   if (points.length < 2 || length < MIN_BARRIER_RUN) return 'short';
   if (!net) return null;
   const half = Math.max(m(0.02), m(BARRIER_SIZE[kind].thickness) / 2 - m(0.05));
   for (let i = 1; i < points.length; i++) {
-    // The stretch's footprint on its first point's chart.
-    const a = points[i - 1]!, b = onChartOf(points[i]!, a);
+    const a = points[i - 1]!, b = points[i]!;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (len < 1e-6) continue;
     const nx = -(b.y - a.y) / len * half, ny = (b.x - a.x) / len * half;
@@ -165,13 +151,8 @@ export class BarrierTool {
     const { host } = this;
     const points = this.points ?? [];
     this.points = null;
-    // A double click lands two points on one spot: one of them is enough. On
-    // the planet the run is laid in pieces kept on their own charts (`layRun`).
-    const path = layRun(points.filter((p, i) => {
-      if (i === 0) return true;
-      const q = onChartOf(p, points[i - 1]!);
-      return Math.hypot(q.x - points[i - 1]!.x, q.y - points[i - 1]!.y) > 1e-3;
-    }), PLANET_MAX_PIECE);
+    // A double click lands two points on one spot: one of them is enough.
+    const path = points.filter((p, i) => i === 0 || Math.hypot(p.x - points[i - 1]!.x, p.y - points[i - 1]!.y) > 1e-3).map((p) => ({ x: p.x, y: p.y }));
     if (path.length < 2) { host.redraw(); return; }
     const problem = barrierProblem(host.net(), host.kind(), path);
     if (problem) {
@@ -201,7 +182,7 @@ export class BarrierTool {
 function onCarriageway(net: Network, rect: readonly Vec2[]): boolean {
   for (const ribbon of net.ribbons.values()) {
     const reach = ribbon.road.width / 2 + CURB_BAND - m(0.02);
-    for (const p of rect) if (ribbon.full.closestPoint(onRibbon(net, ribbon.id, p)).distance < reach) return true;
+    for (const p of rect) if (ribbon.full.closestPoint(p).distance < reach) return true;
   }
   return false;
 }

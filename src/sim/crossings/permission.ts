@@ -9,7 +9,6 @@ import { makeCrossingId } from '../signals/plan';
 import { reservationCoversCrossing } from '../intersections/crossingSpans';
 import { canStopComfortably } from '../vehicles/idm';
 import { vehiclePose } from '../pose';
-import { onChartOf } from '@world/planet/charts';
 
 /*
  * Whether somebody may step onto a zebra: the same rule for every pedestrian
@@ -214,15 +213,8 @@ export function vehicleBodyIntersectsCrossing(w: SimWorld, vehicle: Vehicle, cro
   if (!pose) return false;
   const first = crossing.path.point(0);
   const last = crossing.path.point(crossing.path.n - 1);
-  // On the zebra's chart: on the planet a car still on a lane from a node
-  // across a border is written on that node's chart (`world/planet/charts.ts`).
-  const at = onChartOf(pose.p, first);
-  let ux = Math.cos(pose.angle), uy = Math.sin(pose.angle);
-  if (at !== pose.p) {
-    const ahead = onChartOf({ x: pose.p.x + ux, y: pose.p.y + uy }, first);
-    const l = Math.hypot(ahead.x - at.x, ahead.y - at.y) || 1;
-    ux = (ahead.x - at.x) / l; uy = (ahead.y - at.y) / l;
-  }
+  const at = pose.p;
+  const ux = Math.cos(pose.angle), uy = Math.sin(pose.angle);
   const toBody = (x: number, y: number): { along: number; across: number } => {
     const dx = x - at.x, dy = y - at.y;
     return { along: dx * ux + dy * uy, across: -dx * uy + dy * ux };

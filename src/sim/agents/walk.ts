@@ -1,5 +1,4 @@
 import { Heap } from '@core/heap';
-import { chartAt, chartToChartInto } from '@world/planet/charts';
 import type { Vec2 } from '@core/vec2';
 import { newFrame } from '@core/polyline';
 import type { WalkGraph, Walkway } from '@world/walkways';
@@ -340,14 +339,6 @@ interface State {
   /** The walkers by cell for `anyoneWithin`, and the clock they were filed at (-1: again). */
   near: Map<number, Walker[]>;
   nearAt: number;
-  /**
-   * On the planet, the other charts each walkway's walkers are also filed on
-   * (`ghostsOf`), by way id; the walkers and their ghost images as filed this
-   * tick, and the tick they were made for.
-   */
-  wayGhosts: Map<number, readonly number[]>;
-  imaged: Walker[];
-  imagedAt: number;
   /** The vehicles by cell for `gapOpen`, filed once a tick when somebody first asks; the fastest of them. */
   traffic: Map<number, TrafficSeen[]>;
   trafficAt: number;
@@ -465,7 +456,7 @@ function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
     s = { graph: null, builtFor: '', wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], nextId: 1, onCarWay: new Map(),
-      shocks: [], clock: 0, shockLook: 0, near: new Map(), nearAt: -1, wayGhosts: new Map(), imaged: [], imagedAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
+      shocks: [], clock: 0, shockLook: 0, near: new Map(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parkedCells: new Map(), parkedSeen: [] };
     STATES.set(w, s);
   }
@@ -494,8 +485,6 @@ function ensureGraph(w: SimWorld, s: State): WalkGraph | null {
   if (s.graph && s.builtFor === key) return s.graph;
   s.graph = w.walkwaysFor(w.net.revision);
   s.builtFor = key;
-  s.wayGhosts = __PLANET__ ? wayGhostCharts(s.graph) : new Map();
-  s.imagedAt = -1;
   s.wayIndex.clear();
   for (const way of s.graph.ways) {
     const bb = way.path.bbox;
@@ -509,87 +498,6 @@ function ensureGraph(w: SimWorld, s: State): WalkGraph | null {
     }
   }
   return s.graph;
-}
-
-/**
- * GHOST IMAGES ACROSS THE PLANET'S CHARTS. A walker's place is written on the
- * chart of the way it walks on (`carryOnto`), and at a junction across a
- * border between pieces the footways, the corners and the zebras are kept on
- * two or three charts, tens of km apart in the atlas: the people a few
- * steps away round the corner were in no cell near it, and walked through
- * each other there. As molecular dynamics finds neighbours across a periodic
- * or a processor's boundary (LAMMPS, "Communication": every atom within the
- * cutoff of the boundary is also kept, as a ghost, on the other side, its
- * coordinates already shifted to its image there - doc.lammps.org,
- * Developer_par_comm), each walker on a way whose neighbourhood holds ways of
- * other charts is also filed on those charts, at its place and heading
- * there; the ghost is the walker itself in all else (its prototype), and the
- * queries are unchanged.
- *
- * The neighbourhood: the ways within two steps of it in the graph - across a
- * corner from one footway to the next, or over a zebra - which holds every
- * way a walker within the look of the cells (`CELL`) can stand on near a
- * border. Worked out once a graph, as LAMMPS keeps who is a ghost where
- * until it builds its neighbour lists again.
- */
-function wayGhostCharts(g: WalkGraph): Map<number, readonly number[]> {
-  const out = new Map<number, readonly number[]>();
-  const chartOf = (way: Walkway): number => chartAt(way.path.xy[0]!, way.path.xy[1]!);
-  const atNode = new Map<number, Walkway[]>();
-  for (const way of g.ways) {
-    for (const n of [way.a, way.b]) {
-      const list = atNode.get(n);
-      if (list) list.push(way); else atNode.set(n, [way]);
-    }
-  }
-  const around = (way: Walkway): Walkway[] => [...(atNode.get(way.a) ?? []), ...(atNode.get(way.b) ?? [])];
-  for (const way of g.ways) {
-    const own = chartOf(way);
-    const charts = new Set<number>();
-    for (const next of around(way)) {
-      charts.add(chartOf(next));
-      for (const far of around(next)) charts.add(chartOf(far));
-    }
-    charts.delete(own);
-    if (charts.size) out.set(way.id, [...charts]);
-  }
-  return out;
-}
-
-/** Each walker's ghost images, made once and kept (one a chart it is seen on). */
-const GHOSTS = new WeakMap<Walker, Walker[]>();
-
-/**
- * The walkers out on the street and, on the planet, their ghost images on the
- * other charts round the way each walks (`wayGhostCharts`), made once a tick.
- */
-function imagesOf(s: State): readonly Walker[] {
-  if (!__PLANET__ || !s.wayGhosts.size) return s.walkers;
-  if (s.imagedAt === s.clock) return s.imaged;
-  s.imagedAt = s.clock;
-  const out = s.imaged;
-  out.length = 0;
-  for (const p of s.walkers) {
-    out.push(p);
-    if (p.inside || p.done) continue;
-    const way = p.steps[p.leg]?.way;
-    const charts = way ? s.wayGhosts.get(way.id) : undefined;
-    if (!charts) continue;
-    const from = chartAt(p.x, p.y);
-    let ghosts = GHOSTS.get(p);
-    if (!ghosts) GHOSTS.set(p, ghosts = []);
-    let k = 0;
-    for (const chart of charts) {
-      if (chart === from) continue;
-      const ghost = ghosts[k] ?? (ghosts[k] = Object.create(p) as Walker);
-      k++;
-      ghost.heading = carryHeading(from, chart, p.x, p.y, p.heading);
-      chartToChartInto(from, chart, p.x, p.y, carried);
-      ghost.x = carried.x; ghost.y = carried.y;
-      out.push(ghost);
-    }
-  }
-  return out;
 }
 
 /** The walkway nearest a point within `reach` (crossings excluded: nobody starts on a zebra). */
@@ -747,55 +655,9 @@ function frameInto(st: Step, s: number, out: StepFrame): StepFrame {
   return out;
 }
 
-/** The chart a step's ground is written on (`world/planet/charts.ts`). */
-function stepChart(st: Step): number {
-  if (st.way) return chartAt(st.way.path.xy[0]!, st.way.path.xy[1]!);
-  return chartAt(st.a!.x, st.a!.y);
-}
-
-const carried = { x: 0, y: 0 };
-
-/**
- * A walker carried onto the chart of the step it goes on to: on the planet a
- * footway is written on its segment's chart and the corner or zebra it walks
- * on into on its node's, tens of km apart in the atlas across a border
- * between pieces. Its place, the place it is blended from (`pedPose`) and
- * its headings go with it, as a floating origin shifts a body's interpolation
- * state along with the body - the same ground and the same way, on the other
- * chart. Nothing on the flat map, or where the charts are one.
- */
-function carryOnto(p: Walker, st: Step): void {
-  if (!__PLANET__) return;
-  const to = stepChart(st);
-  const from = chartAt(p.x, p.y);
-  if (from !== to) {
-    p.heading = carryHeading(from, to, p.x, p.y, p.heading);
-    chartToChartInto(from, to, p.x, p.y, carried);
-    p.x = carried.x; p.y = carried.y;
-  }
-  const before = chartAt(p.prevX, p.prevY);
-  if (before !== to) {
-    p.prevHeading = carryHeading(before, to, p.prevX, p.prevY, p.prevHeading);
-    chartToChartInto(before, to, p.prevX, p.prevY, carried);
-    p.prevX = carried.x; p.prevY = carried.y;
-  }
-}
-
-/** A heading at a point of chart `from`'s map, on chart `to`'s map. */
-function carryHeading(from: number, to: number, x: number, y: number, heading: number): number {
-  chartToChartInto(from, to, x + Math.cos(heading), y + Math.sin(heading), carried);
-  const ax = carried.x, ay = carried.y;
-  chartToChartInto(from, to, x, y, carried);
-  return Math.atan2(ay - carried.y, ax - carried.x);
-}
-
-/** `project` of a body that may stand on another chart than the step (`carryOnto`). */
+/** `project` of a body onto a step. */
 function projectAcross(st: Step, x: number, y: number): { s: number; d: number } {
-  if (!__PLANET__) return projectInto(st, x, y, ACROSS_PROJECTION);
-  const from = chartAt(x, y), to = stepChart(st);
-  if (from === to) return projectInto(st, x, y, ACROSS_PROJECTION);
-  chartToChartInto(from, to, x, y, carried);
-  return projectInto(st, carried.x, carried.y, ACROSS_PROJECTION);
+  return projectInto(st, x, y, ACROSS_PROJECTION);
 }
 /** `projectAcross`'s: read at once by its one caller in the walkers' step. */
 const ACROSS_PROJECTION = { s: 0, d: 0 };
@@ -991,19 +853,6 @@ function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number):
       if (!vehiclePoseNowInto(w, v, pose)) continue;
       file(pose.p.x, pose.p.y, pose.angle, v.v);
       if (v.v > s.fastest) s.fastest = v.v;
-      // On the planet, a ghost image (`wayGhostCharts`) on the chart of the
-      // junction it drives into, whose zebras are kept there: a lane coming
-      // from a node across a border is written on that node's chart.
-      if (!__PLANET__) continue;
-      const lane = w.lanelet(v.lanelet);
-      const ahead = lane?.kind === 'link' ? lane.to : lane?.toLane !== undefined ? w.lanelet(lane.toLane)?.to : undefined;
-      const node = ahead !== undefined ? w.doc.node(ahead) : undefined;
-      if (!node) continue;
-      const from = chartAt(pose.p.x, pose.p.y), to = chartAt(node.x, node.y);
-      if (from === to) continue;
-      const angle = carryHeading(from, to, pose.p.x, pose.p.y, pose.angle);
-      chartToChartInto(from, to, pose.p.x, pose.p.y, carried);
-      file(carried.x, carried.y, angle, v.v);
     }
   }
   const reach = Math.max(GAP_NEAR, s.fastest * time);
@@ -1147,7 +996,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       if (s.nearAt !== s.clock) {
         s.nearAt = s.clock;
         s.near.clear();
-        for (const p of imagesOf(s)) {
+        for (const p of s.walkers) {
           if (p.inside || p.done) continue;
           const k = cellKey(p.x, p.y, CELL);
           const list = s.near.get(k);
@@ -1795,7 +1644,7 @@ function stepWalkers(w: SimWorld): void {
     bled = true;
   }
   if (bled) prune(s);
-  grid.build(imagesOf(s));
+  grid.build(s.walkers);
   // Those running in panic who trip: down on the ground (the renderer throws
   // the body, `ragdoll.trip`), up again and running after.
   for (const p of s.walkers) {
@@ -2194,7 +2043,6 @@ function stepWalkers(w: SimWorld): void {
       const ahead = p.s >= len - m(0.02) || arrived || (!st.lot && !next.lot && p.s > len - AHEAD && projectAcross(next, p.x, p.y).s >= 0);
       if (!ahead) break;
       p.leg++;
-      carryOnto(p, next);
       pr = projectInto(next, p.x, p.y, STEP_PROJECTION);
       p.s = pr.s; p.d = pr.d;
       p.aim = clamp(pr.d, room(next));

@@ -16,7 +16,7 @@ core → world → sim, render;  world → editor → ui;  core → view → ren
 | `core` | pure maths, geometry, RNG (`core/rng.ts`), generic containers (state store, diary, event bus, command registry) | DOM, three, `Math.random` |
 | `world` | the document and every derived product that is not a picture (network, road heights, ground shape, lanes, walkways, lots, docks, buildings' plans) | three, DOM, `sim`, `render` |
 | `sim` | vehicles, people, transit, signals; sole owner of agents | `render`, three, DOM, `Math.random` |
-| `view` | world ↔ screen (cameras, projections, the planet's charts) | three objects, DOM panels |
+| `view` | world ↔ screen (cameras, projections) | three objects, DOM panels |
 | `render` | everything three.js; sole owner of scene objects | the document's writers, DOM panels |
 | `editor` | input → commands on the document; tools and their state machines | three, DOM panels |
 | `ui` | the DOM: shell v2, panels, i18n | three |
@@ -115,8 +115,6 @@ recorded (from, event, to, cause) in the same ring the F9 panel reads.
   "a tool button picks the tool, or puts it down when it is already in hand"
   (`pickTool`) becomes one explicit transition; the "one click on Roads turns the
   tool on and off" defect (F12) is then a fact about that transition, testable.
-- `modeMachine` (`ui/`): `planet` / `flatView` in the planet build, `flat` in the
-  flat build; `switch` → in place, or to the other page.
 
 ### 4.3 Event bus (`core/bus.ts`) — written, enters with F2
 Its first events are the document's (`doc.committed`, `history.changed`,

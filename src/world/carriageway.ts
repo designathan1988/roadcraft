@@ -2,8 +2,6 @@ import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
 import type { Network } from './network';
 import { Level, halfWidth } from './roadTypes';
-import { chartsReaching } from './planet/charts';
-import { carryPolyline } from './geometry';
 import { m } from './units';
 
 /** Side of a cell of the carriageway index, world units. */
@@ -60,18 +58,6 @@ function indexOf(net: Network): CarriagewayIndex {
     if (!centre) continue;
     const half = halfWidth(ribbon.road, Level.Asphalt);
     file({ centre, half });
-    if (!__PLANET__) continue;
-    // On the planet a road's ribbon is kept on its segment's chart, and a
-    // point asked about is written on its own piece's - or on the chart a
-    // gesture is read on, past that piece. Each road is filed as well on
-    // every other chart whose kept ground its box can reach, carried there: a
-    // ghost image, as molecular dynamics keeps the atoms near a boundary on
-    // both sides of it, already at their image there (LAMMPS, "Communication",
-    // doc.lammps.org/Developer_par_comm.html), so a query stays one cell's.
-    const chart = net.polylines.chart(net.doc, ribbon.id);
-    const bb = centre.bbox;
-    const charts = chartsReaching(chart, bb.minX - half, bb.minY - half, bb.maxX + half, bb.maxY + half);
-    for (const other of charts) if (other !== chart) file({ centre: carryPolyline(centre, chart, other), half });
   }
   const index = { revision: net.revision, cells };
   indexes.set(net, index);

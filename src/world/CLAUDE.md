@@ -60,44 +60,12 @@ breaks far from where you edit in `world/`, and how to add the common things.
   the document revision for a storey rebuilds the road network, the lanelets and
   the simulation. A road edit demolishes any building it now overlaps
   (`clearBuildingsOnRoads`, called from `mutateBuilt`) in the same undo step.
-
-- **On the planet, a junction is worked out on its node's chart.** Its turns
-  (`lanelets.ts` `here`), its surface (`turnPaths.ts JunctionSurface`) and its
-  corners and zebras (`walkways.ts atNode`, `surfaces.ts
-  levelPolygonsOnChart`) read lanes, ribbons and plates kept on other pieces'
-  charts: each is carried onto the node's first. Read as they stand, every turn
-  at a node across a border fitted no body (no car came in or through) and its
-  footway corners ran 1 to 22 km. `tests/planet/traffic.spec.ts`.
-- **On the planet, a point test against polygons needs their ghost images.**
-  Paving, kerbs and road lines kept on one piece's chart are also carried onto
-  every chart their box reaches (`planet/charts.ts withGhostImages`,
-  `zoneGrid.ts pavedTester`, `poleLines.ts`, `lots.ts pavingOf`): a point of
-  one piece then finds the next piece's street. Without them a lot cut by a
-  border was laid over the neighbour's road. Lot rasters are one per group of
-  near streets, never one over the atlas (3.3 s → 0.2 s).
-- **On the planet, the roads' height field has ghost images too.**
-  `elevation.ts` `ghostProfiles` files each road also on the charts its box
-  reaches, so a piece asking in its own coordinates (its ground's cut and
-  fill, `pavedHeightAt`) sees the stretch of a road kept on the next piece's
-  chart. Without them a strip of grass crossed the asphalt at the border.
-  `tests/planet/roadGhostGround.spec.ts`.
-- **The planet's grid is the cube faces' own** (equiangular metres,
-  `grid.ts snapToGrid` → `planet/charts.ts snapToFaceGridInto`, drawn by
-  `render/terrain.ts` uGrid): one grid for the sphere, continuous over every
-  piece's border and cube edge; only the 8 cube corners have 120° cells. A
-  grid on each piece's chart broke at every border. `tests/planet/grid.spec.ts`.
-
-- **On the planet, nothing drawn crosses a cell of the atlas.** A piece builds on
-  its own map out to `TILE_REACH` past its border, inside its cell; a line or a
-  triangle with ends in two cells is a phantom through the sphere (the wire
-  grown straight up, PL2). The F9 monitor counts them after each rebuild in
-  development (`render/planet/atlasPhantoms.ts`, PL17).
-- **The local grid's origin comes from the map and the place**
-  (`planet/gridOrigin.ts`): a town's saved origin, or a fixed candidate of the
-  sphere - never the point the view came in by (PL18).
-- **Scenes in specs are in 0.4 m units times U** (`TUNED_UNIT`): the same metres
-  at any unit (`docs/ESCALA.md`). A raw number in a spec's scene is a scene 2.5
-  times smaller at 1 m.
+- **The terrain's cell is 6.4 m** (`world/bounds.ts` PLATE_SIZE, 320 cells a
+  plate): the grading of lots on a hillside was tuned at it, and at 6.25 or
+  6.67 m earth rose over a terrace's paving (`tests/world/steppedYards.spec.ts`).
+- **Scenes in specs written in steps of 0.4 m** (`TUNED_UNIT`, the unit of
+  before 2026-10-11) are multiplied by U: the same metres (`docs/ESCALA.md`).
+  A raw number in such a scene is a scene 2.5 times smaller.
 
 ## How to add
 

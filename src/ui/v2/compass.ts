@@ -1,19 +1,16 @@
 import type { Vec2 } from '@core/vec2';
 import type { Viewport } from '@view/viewport';
-import { chartAt, inChartInto, towardsNorthInto } from '@world/planet/charts';
 import { onLanguageChange, t } from '../i18n';
 
 /**
  * THE COMPASS, a corner of the screen (Google Earth's and Cesium's navigation
  * widget, Cities: Skylines' north arrow): a needle that turns with the camera
- * and always points where north lies on the screen - the planet's own north
- * pole on the planet (`towardsNorthInto`), up the map on the flat map. A
+ * and always points where north lies on the screen - up the map (+y). A
  * click turns the view to face north, gliding (`CameraMotion.turn`); a drag
  * across it turns the camera, up and down tilts it.
  */
 
-const north = { x: 0, y: 0 };
-const toNorth = (c: Vec2): Vec2 => towardsNorthInto(c.x, c.y, 10, north);
+const toNorth = (c: Vec2): Vec2 => ({ x: c.x, y: c.y + 10 });
 
 /**
  * Where north lies on the screen from the middle of the view: radians
@@ -33,16 +30,11 @@ export function northOnScreen(view: Viewport, w: number, h: number): number {
  * angle it really needs (on the screen a tilt squeezes it).
  */
 function groundAngleToNorth(view: Viewport, w: number, h: number): number {
-  // The ground the view turns about (out at the globe it is not under the
-  // middle of the screen: the globe is framed whole there).
+  // The ground the view turns about.
   const c = view.centre;
   const at = view.toScreen(c, w, h);
-  // The screen's up there, laid on the ground: a few pixels up, on the
-  // centre's own chart (a point past a piece's border is written on its
-  // neighbour's). Farther up the screen the ground curves away from the
-  // globe, and the way to it is not the way up the screen.
-  const raw = view.toWorld(at.x, at.y - 4, w, h);
-  const up = inChartInto(chartAt(c.x, c.y), raw.x, raw.y, { x: 0, y: 0 });
+  // The screen's up there, laid on the ground: a few pixels up.
+  const up = view.toWorld(at.x, at.y - 4, w, h);
   const n = toNorth(c);
   const ux = up.x - c.x, uy = up.y - c.y, nx = n.x - c.x, ny = n.y - c.y;
   if (Math.hypot(ux, uy) < 1e-9 || Math.hypot(nx, ny) < 1e-9) return 0;
@@ -52,10 +44,8 @@ function groundAngleToNorth(view: Viewport, w: number, h: number): number {
 /**
  * The turn (`Viewport.orbit`'s azimuth, radians) still wanted to bring north
  * straight up the screen, as the view stands: the orbit turns the map's
- * directions the other way on the screen. Close to the ground one turn by it
- * is enough; out at the globe the view's tilt turns with the orbit and a
- * step leaves part of it, so it is asked again each frame
- * (`CameraMotion.aim`).
+ * directions the other way on the screen. Asked again each frame of the
+ * glide (`CameraMotion.aim`).
  */
 export function northTurn(view: Viewport, w: number, h: number): number {
   return -groundAngleToNorth(view, w, h);

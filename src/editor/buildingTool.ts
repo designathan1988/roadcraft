@@ -1,5 +1,4 @@
 import { DEFAULT_FLAG, type FlagDesign } from '@world/buildings/flags';
-import { onChartOf } from '@world/planet/charts';
 import type { Vec2 } from '@core/vec2';
 import { signedArea } from '@core/polygon';
 import {
@@ -1412,8 +1411,7 @@ export class BuildingTool {
     const raw = height === null ? world : this.view.planeAt(screen, height);
     if (free) return raw;
     const building = this.selected();
-    // Compared with the building's outline on its own chart (on the planet).
-    const p = building ? onChartOf(raw, building) : raw;
+    const p = raw;
     let closest: Vec2 | null = null;
     let best = this.view.pickPixels * .8;
     if (building) for (const volume of building.volumes) {
@@ -2346,9 +2344,7 @@ export class BuildingTool {
         const p = this.view.planeAt(screen, drag.z);
         const f = footprintBox(draft);
         const c = localDirToWorld(draft, (f.x0 + f.x1) / 2, (f.y0 + f.y1) / 2);
-        // The pointer's travel on the building's own chart (on the planet the
-        // two may be kept on charts turned against each other).
-        const at = onChartOf(p, draft), from = onChartOf(drag.start, draft);
+        const at = p, from = drag.start;
         const centre = { x: draft.x + c.x + at.x - from.x, y: draft.y + c.y + at.y - from.y };
         const ctx = this.host.context();
         const snap = snapPlacement(ctx.doc, ctx.net, footprintSize(draft), centre, draft.rotation, draft.id);

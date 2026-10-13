@@ -29,9 +29,8 @@ export type FillRule = 'evenodd' | 'nonzero';
  * what the renderer draws.
  *
  * ONE GRID PER CLUSTER of rings. A single dense grid over the rings' bounds
- * paid for every empty cell between them: on the planet the rings of each
- * piece are kept on that piece's chart, kilometres apart in the atlas, and the
- * player's map (1 130 segments) built two grids of 3.3 million cells each,
+ * paid for every empty cell between them: rings kilometres apart made the
+ * player's map (1 130 segments) build two grids of 3.3 million cells each,
  * 200 ms of every road edit and 50 MB thrown away (2026-10-11) - the cost of a
  * uniform grid over sparse data, which a hashed or compact grid stores only
  * where it is occupied (Ihmsen et al., "SPH Fluids in Computer Graphics";
@@ -40,8 +39,7 @@ export type FillRule = 'evenodd' | 'nonzero';
  * clusters lie farther apart than that. A ring winds nothing outside its own
  * bounds, so a point's winding is its cluster's alone, and the queries that
  * reach out (a distance, a line, a box) ask every cluster they reach: the
- * answers are the single grid's. A town on the flat map is one cluster, the
- * old grid itself.
+ * answers are the single grid's. One town is one cluster, the old grid itself.
  */
 export class RegionIndex {
   private readonly rule: FillRule;
@@ -231,7 +229,7 @@ export class RegionIndex {
     return this.run(px, py, dx, dy, reach, out);
   }
 
-  /** How many dense grids the rings were filed in (one on the flat map). */
+  /** How many dense grids the rings were filed in (one for one town). */
   get clusterCount(): number {
     return this.grids.length;
   }

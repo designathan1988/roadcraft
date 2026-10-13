@@ -40,14 +40,15 @@ export interface TerrainStamp {
   readonly stroke?: number;
   /**
    * Where a rough dab's noise is measured from (`rough`): the first dab of
-   * its stroke, written on the same piece's map as the dab itself. Measured
+   * its stroke, written in the same coordinates as the dab itself. Measured
    * from the point itself, the noise was the map's own (Unity Terrain Tools'
-   * "World" coordinate space), and on the planet every piece's map gives the
-   * same ground other numbers: the two pieces either side of a border raised
-   * the same stroke into two different hills, a step of up to 4 m along the
-   * border (2026-10-11). From a point both pieces carry with the dab, they
-   * agree; every dab of a stroke still shares it, so the stroke's lobes stay
-   * one. Absent (dabs before this field, the town's own landform): the point.
+   * "World" coordinate space), and every plate's own coordinates give the
+   * same ground other numbers (`render/flatAtlas.ts`): the two plates either
+   * side of a border raised the same stroke into two different hills, a step
+   * of up to 4 m along it (2026-10-11). From a point both plates carry with
+   * the dab, they agree; every dab of a stroke still shares it, so the
+   * stroke's lobes stay one. Absent (dabs before this field, the town's own
+   * landform): the point.
    */
   readonly ox?: number;
   readonly oy?: number;
@@ -197,17 +198,25 @@ export function valueNoise(x: number, y: number): number {
  * Which land a map starts from (`RoadDoc.terrainRelief`): 1 the gentle
  * four-octave field every map saved before this existed was built on, 2 the
  * natural landform (`naturalRelief`), 3 a level plain (height 0 everywhere,
- * the player's flat map), 4 the planet's Earth: continents and oceans
- * (`planet/relief.ts` `earthRelief3`; read only through the planet's own
- * ground, the flat map never makes it). A map keeps the one it was made on,
- * so its roads never find the ground moved under them.
+ * the player's flat map). A map keeps the one it was made on, so its roads
+ * never find the ground moved under them.
  */
-export type ReliefVersion = 1 | 2 | 3 | 4;
+export type ReliefVersion = 1 | 2 | 3;
 export const RELIEF_LEGACY: ReliefVersion = 1;
 export const RELIEF_NATURAL: ReliefVersion = 2;
 export const RELIEF_FLAT: ReliefVersion = 3;
-export const RELIEF_EARTH: ReliefVersion = 4;
-export const isReliefVersion = (value: unknown): value is ReliefVersion => value === 1 || value === 2 || value === 3 || value === 4;
+/**
+ * A saved map's relief as the document reads it, or null when the value is
+ * none. 4 was the planet's Earth (continents and oceans), gone with the
+ * planet (the player, 2026-10-13): such a map opens on the level plain.
+ */
+export const readRelief = (value: unknown): ReliefVersion | null =>
+  value === 1 || value === 2 || value === 3 ? value : value === 4 ? RELIEF_FLAT : null;
+
+/** The map's own land at a point, before any stamp: its relief's field. */
+export function reliefHeight(relief: ReliefVersion, x: number, y: number): number {
+  return relief === RELIEF_FLAT ? 0 : relief === RELIEF_NATURAL ? naturalRelief(x, y) : baseRelief(x, y);
+}
 
 /** 0..1 smoothstep of `t`, clamped. */
 const smooth01 = (t: number): number => {
@@ -295,9 +304,9 @@ export class TerrainIndex {
   readonly relief: ReliefVersion;
 
   /**
-   * The land under the stamps when it is not the plane's own relief: a planet
-   * face's, read at the sphere (`planet/relief.ts` faceGround). Undefined on
-   * the flat map.
+   * The land under the stamps when it is read otherwise than from the relief
+   * at the point itself: a plate's, in its own coordinates, from the corners
+   * read off the page (`render/flatAtlas.ts`). Undefined: the relief's field.
    */
   readonly ground: ((x: number, y: number) => number) | undefined;
 
@@ -357,7 +366,7 @@ export function sampleTerrainHeight(
   const list = stamps instanceof TerrainIndex ? stamps.near(x, y) : stamps;
   const relief = stamps instanceof TerrainIndex ? stamps.relief : RELIEF_LEGACY;
   const ground = stamps instanceof TerrainIndex ? stamps.ground : undefined;
-  let height = ground ? ground(x, y) : relief === RELIEF_FLAT ? 0 : relief === RELIEF_NATURAL ? naturalRelief(x, y) : baseRelief(x, y);
+  let height = ground ? ground(x, y) : reliefHeight(relief, x, y);
   // The stroke being gathered (see `TerrainStamp.stroke`): its id, its mode,
   // and the strongest signed move any of its dabs makes here so far.
   let stroke: number | undefined;

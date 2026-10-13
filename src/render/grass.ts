@@ -8,7 +8,6 @@ import type { Network } from '@world/network';
 import type { RoadElevation } from '@world/elevation';
 import { m, perM } from '@world/units';
 import { TERRAIN_HALF } from './terrain';
-import { planetSphereInView } from './planet/bend';
 
 /**
  * Grass you can see blades of: instanced tufts and wildflowers over the ground.
@@ -323,7 +322,7 @@ export function buildGrass(
         const colours = field.mesh.instanceColor?.array as Float32Array | undefined;
         let n = 0;
         for (const cell of field.cells) {
-          if (!planetSphereInView(frustum, cell.sphere)) continue;
+          if (!frustum.intersectsSphere(cell.sphere)) continue;
           matrices.set(field.matrices.subarray(cell.start * 16, (cell.start + cell.count) * 16), n * 16);
           if (colours) colours.set(field.colours.subarray(cell.start * 3, (cell.start + cell.count) * 3), n * 3);
           n += cell.count;

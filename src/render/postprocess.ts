@@ -3,12 +3,9 @@ import {
   RedFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { WORLD_HALF } from '@world/bounds';
-import { PLANET_RADIUS } from '@core/cubeSphere';
-import { planetCentre, planetDrawnSphere, planetInverse, planetMotion, planetPointInto } from './planet/bend';
-import { AIR_GLSL, ATMOSPHERE_TOP, type Air, SURFACE_AIR } from './planet/air';
+import { MAP_HALF } from '@world/bounds';
 import { m, perM } from '@world/units';
-import { drawnCloudHeight, driftedCloud, type PlacedCloud } from '@world/clouds';
+import { driftedCloud, type PlacedCloud } from '@world/clouds';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
@@ -62,27 +59,16 @@ export interface PostChain {
    */
   setNight(dark: number): void;
   /**
-   * How far the view has gone out to space (0 the ground .. 1), on the
-   * planet: the sun's disc and the brightest stars bloom there, by day too.
-   */
-  setSpace(share: number): void;
-  /**
    * How much of the light on the ground comes straight from the sun
    * (`SceneEnvironment.directShare`): all a cloud's shadow can take away.
    */
   setDirectShare(share: number): void;
   /**
-   * On the planet, the air round it as drawn this frame (`planet/space.ts`
-   * `Space.air`): a cloud's shadow takes from the ground's light seen through
-   * it, never from the air's own.
+   * The sky the player set (`Atmosphere`) and the light it is lit by; the
+   * map is seen as a model over the void, the air round it drawn too: the
+   * backdrop and the haze of distance.
    */
-  setAir(air: Air): void;
-  /**
-   * The sky the player set (`Atmosphere`), the light it is lit by, and
-   * whether the map is seen as a model over the void (building it), when
-   * the air round it is drawn too: the backdrop and the haze of distance.
-   */
-  setAtmosphere(atmosphere: Atmosphere, sun: Vector3, skyColor: Color, sunLight: Color, backdrop: boolean,
+  setAtmosphere(atmosphere: Atmosphere, sun: Vector3, skyColor: Color, sunLight: Color,
     /** How far in front of the camera the view's equivalent eye stands (`uEyeShift`): 0 in perspective. */
     eyeShift?: number): void;
   /** The clouds the player placed (`world/clouds.ts`). */
@@ -94,67 +80,8 @@ export interface PostChain {
    * lies over, and the map's settings - or none.
    */
   setGroundFog(fog: { texture: Texture; low: number; high: number; density: number } | null): void;
-  /**
-   * The contact shading on or off. Out at the planet's globe it is a shade
-   * of a unit on ground thousands away, and its depth-rebuilt normals drew a
-   * dark line across the globe: off there.
-   */
-  setAmbientOcclusion(on: boolean): void;
-  /**
-   * The camera's motion blur (`MOTION_BLUR`): the share of a frame the
-   * shutter is open (0 off). On in free flight only.
-   */
-  setMotionBlur(shutter: number): void;
   dispose(): void;
 }
-
-/**
- * THE CAMERA'S MOTION BLUR, as a full-screen pass from the depth alone
- * (Rosado, "Motion Blur as a Post-Processing Effect", GPU Gems 3 ch. 27):
- * each pixel's point rebuilt from the depth with the inverse view-projection,
- * projected by the last frame's, and the image sampled along the difference.
- * On the planet three's space is set down anew each frame (`planetMotion`):
- * the last frame's matrix is taken through it, so the still ground does not
- * smear when only the planet's setting moved. The camera's motion only
- * (still things blur, moving ones as the camera sees them); the blur is held
- * to `MOTION_BLUR_MOST` of the screen, so a turn never smears it whole.
- */
-const MOTION_BLUR_SAMPLES = 9;
-const MOTION_BLUR_MOST = 0.045;
-const MOTION_BLUR = {
-  uniforms: {
-    tDiffuse: { value: null as Texture | null },
-    tDepth: { value: null as Texture | null },
-    uInverseViewProjection: { value: new Matrix4() },
-    uLastViewProjection: { value: new Matrix4() },
-    uShutter: { value: 0 },
-  },
-  vertexShader: `varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse;
-    uniform sampler2D tDepth;
-    uniform mat4 uInverseViewProjection;
-    uniform mat4 uLastViewProjection;
-    uniform float uShutter;
-    varying vec2 vUv;
-    void main() {
-      vec4 here = texture2D(tDiffuse, vUv);
-      float depth = texture2D(tDepth, vUv).x;
-      vec4 world = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-      world /= world.w;
-      vec4 last = uLastViewProjection * world;
-      vec2 velocity = last.w > 0.0 ? (vUv - (last.xy / last.w * 0.5 + 0.5)) * uShutter : vec2(0.0);
-      float length2 = length(velocity);
-      if (length2 > ${MOTION_BLUR_MOST.toFixed(4)}) velocity *= ${MOTION_BLUR_MOST.toFixed(4)} / length2;
-      if (length2 < 0.0008) { gl_FragColor = here; return; }
-      vec4 sum = here;
-      for (int i = 1; i < ${MOTION_BLUR_SAMPLES}; i++) {
-        float t = float(i) / float(${MOTION_BLUR_SAMPLES - 1}) - 0.5;
-        sum += texture2D(tDiffuse, vUv + velocity * t);
-      }
-      gl_FragColor = sum / float(${MOTION_BLUR_SAMPLES});
-    }`,
-};
 
 /**
  * The player's sky (Paisagem > Céu e clima): how much of it is cloud, at
@@ -193,22 +120,10 @@ export function createPostChain(
       setSize() {
         /* the renderer's own resize is enough */
       },
-      setAmbientOcclusion() {
-        /* no contact shading without the chain */
-      },
-      setMotionBlur() {
-        /* no motion blur without the chain */
-      },
-      setSpace() {
-        /* no bloom without the chain */
-      },
       setNight() {
         /* no bloom without the chain */
       },
       setDirectShare() {
-        /* no cloud shadows without the chain */
-      },
-      setAir() {
         /* no cloud shadows without the chain */
       },
       setAtmosphere() {
@@ -350,33 +265,6 @@ export function createPostChain(
   // Gentle and tight, and only for real lights (lamps, headlamps, lanterns
   // over 1.05): stronger and wider, with every lit window over the threshold,
   // the night town was washed out in halos (the player, 2026-10-09).
-  // The camera's motion blur in free flight (`MOTION_BLUR`), before the bloom: the scene's light smeared, then spilled.
-  const motionBlur = quality.motionBlur ? new ShaderPass(MOTION_BLUR) : null;
-  /** Whether the last frame's view is kept (false from a take-off: no smear from where the view was before). */
-  let motionBlurHistory = false;
-  if (motionBlur) {
-    motionBlur.enabled = false;
-    const blur = motionBlur;
-    const lastView = new Matrix4(), lastProjection = new Matrix4(), lastMotion = new Matrix4();
-    const draw = blur.render.bind(blur);
-    blur.render = (...args: Parameters<ShaderPass['render']>) => {
-      const u = blur.uniforms as Record<string, { value: unknown }>;
-      u['tDepth']!.value = sceneDepth;
-      const now = (u['uInverseViewProjection']!.value as Matrix4).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-      const last = u['uLastViewProjection']!.value as Matrix4;
-      if (motionBlurHistory) {
-        last.multiplyMatrices(lastProjection, lastView);
-        if (__PLANET__) last.multiply(lastMotion).multiply(planetInverse());
-      } else last.copy(now);
-      now.invert();
-      lastView.copy(camera.matrixWorldInverse);
-      lastProjection.copy(camera.projectionMatrix);
-      if (__PLANET__) lastMotion.copy(planetMotion());
-      motionBlurHistory = true;
-      draw(...args);
-    };
-    composer.addPass(blur);
-  }
   const bloomStrength = level === 'ultra' ? 0.22 : 0.18;
   const bloom = new UnrealBloomPass(new Vector2(size.x, size.y), bloomStrength, 0.32, 1.05);
   bloom.enabled = false;
@@ -446,7 +334,6 @@ export function createPostChain(
     const shade = pass.render.bind(pass);
     pass.render = (...args: Parameters<ShaderPass['render']>) => {
       pass.uniforms['tDepth']!.value = sceneDepth;
-      if (__PLANET__ && planetAir?.inside) planetAir.renderPerspective(args[0], camera);
       const on = (pass.uniforms['uCloudCount']!.value as number) > 0;
       pass.uniforms['uCloudsOn']!.value = on ? 1 : 0;
       const gl = args[0];
@@ -478,9 +365,9 @@ export function createPostChain(
     };
     composer.addPass(clouds);
     // Its program built now, in parallel (KHR_parallel_shader_compile), for
-    // the composer's target it draws into, as the bloom's and GTAO's are: on
-    // the planet it carries the whole air (`planet/air.ts`), and built at its
-    // first frame it stopped the opening for 2.6 s (profile of 2026-10-10).
+    // the composer's target it draws into, as the bloom's and GTAO's are:
+    // built at its first frame it stopped the opening for 2.6 s (profile of
+    // 2026-10-10).
     // With its two inner programs, the bodies' and the shadow map's, each for
     // the target it draws into.
     {
@@ -515,22 +402,12 @@ export function createPostChain(
   // the morning (some a fifth of the light at 06:30), and from the map's
   // zoom the land was covered in near-black blotches (2026-10-08).
   let night = 0;
-  /** The planet's air (`setAir`): its aerial perspective volume is made for this camera before the pass reads it. */
-  let planetAir: Air | null = null;
-  /** How far out to space the view is (`setSpace`). */
-  let space = 0;
   let directShare = CLOUD_SHADOW_STRENGTH;
-  // On the planet the sun stands at another height at each place in view, and
-  // night is where it has set: both are taken per pixel there
-  // (CLOUD_SHADOWS), and this is the shadow under the zenith's sun.
-  const shadowStrength = (): number => (__PLANET__ ? CLOUD_SHADOW_STRENGTH : directShare * Math.max(0, 1 - night * 1.5));
+  const shadowStrength = (): number => directShare * Math.max(0, 1 - night * 1.5);
 
   return {
     enabled: true,
     target,
-    setAmbientOcclusion(on) {
-      if (gtao) gtao.enabled = on;
-    },
     render(delta) {
       if (clouds) {
         camera.updateMatrixWorld();
@@ -539,40 +416,8 @@ export function createPostChain(
         const u = clouds.uniforms as Record<string, { value: unknown }>;
         const count = layClouds(u['uCloud']!.value as Vector4[], u['uPuff']!.value as Vector4[], u['uLife']!.value as number[], u['uBase']!.value as number[], u['uShow']!.value as number[], placedClouds, cloudDrift);
         u['uCloudCount']!.value = count;
-        // On the planet no plane lies under every cloud: each shadow is marched.
-        const plane = __PLANET__ ? null : cloudShadowFrame(u['uCloud']!.value as Vector4[], u['uBase']!.value as number[], count,
+        const plane = cloudShadowFrame(u['uCloud']!.value as Vector4[], u['uBase']!.value as number[], count,
           u['uSunDir']!.value as Vector3, u['uShadowRect']!.value as Vector4);
-        if (__PLANET__) {
-          // The ground as drawn (`planetDrawnSphere`): the clouds' bases and their shadows on it.
-          const drawnRadius = planetDrawnSphere(onPlanet);
-          (u['uPlanet']!.value as Vector4).set(onPlanet.x, onPlanet.y, onPlanet.z, drawnRadius);
-          planetCentre(onPlanet);
-          (u['uPlanetInverse']!.value as Matrix4).copy(planetInverse());
-          // The aerial perspective's distance scale by the eye's height: a
-          // quarter of the true air by the ground, rising to the shell's own
-          // share at the top (`SURFACE_AIR`), so crossing it changes nothing.
-          const high = Math.min(1, Math.max(0, (camera.position.distanceTo(onPlanet) - PLANET_RADIUS) / (ATMOSPHERE_TOP - PLANET_RADIUS)));
-          u['uAirScale']!.value = 0.25 + (SURFACE_AIR - 0.25) * high * high * (3 - 2 * high);
-          // The air's own share comes in over the top 40% of its height only:
-          // below, the view keeps the distance-scaled air it always had (taken
-          // from mid altitude the whole path's light tinted the land blue).
-          const late = Math.min(1, Math.max(0, (high - 0.6) / 0.4));
-          u['uAirHigh']!.value = late * late * (3 - 2 * late);
-          // The clouds and their shadows give way as the view takes in the
-          // globe: by how tall the view is over the ground under the eye,
-          // in planet widths - whole up to 0.2, gone at 0.6 (the whole globe
-          // in view is some 0.8), so from mid altitude down they show whole and out at the globe the clouds
-          // kept round the place looked at are not a clump of white balls
-          // and dark stains in its middle. The eye's height, not the depth
-          // in the middle of the screen: a low view's middle lies far down
-          // the horizon, and the clouds went at mid altitude.
-          const fov = (camera as Camera & { fov?: number }).fov ?? 35;
-          const span = 2 * Math.max(0, camera.position.distanceTo(onPlanet) - PLANET_RADIUS) * Math.tan((fov * Math.PI) / 360);
-          const t = Math.min(1, Math.max(0, (span / (2 * PLANET_RADIUS) - 0.2) / 0.4));
-          const fade = 1 - t * t * (3 - 2 * t);
-          u['uGlobeFade']!.value = fade;
-          u['uStrength']!.value = CLOUD_SHADOW_STRENGTH * fade;
-        }
         u['uShadowMapOn']!.value = plane === null ? 0 : 1;
         if (plane !== null) u['uShadowPlane']!.value = plane;
         (clouds.uniforms['uProjectionInverse'] as { value: Matrix4 }).value.copy(camera.projectionMatrixInverse);
@@ -584,41 +429,17 @@ export function createPostChain(
         hadClouds = count > 0;
         lastView.copy(camera.matrixWorld);
         lastProjection.copy(camera.projectionMatrix);
-        // Nothing of it shows - no cloud, no mist, no painted fog, no air round
-        // the map: the pass is skipped, not run over every pixel for nothing.
-        clouds.enabled = cloudsReady && (count > 0 || (u['uFog']!.value as number) > 0 || (u['uGroundFog']!.value as Vector4).w > 0.5
-          || (u['uBackdrop']!.value as number) > 0.5 || (__PLANET__ && !!planetAir?.inside));
+        // The air round the map is always drawn: the pass runs once it is built.
+        clouds.enabled = cloudsReady;
       }
       composer.render(delta);
     },
-    setMotionBlur(shutter) {
-      if (!motionBlur) return;
-      (motionBlur.uniforms['uShutter'] as { value: number }).value = shutter;
-      if (!motionBlur.enabled && shutter > 0) motionBlurHistory = false;
-      motionBlur.enabled = shutter > 0;
-    },
-    setSpace(share) {
-      space = share;
-      bloom.enabled = night > 0.05 || space > 0.01;
-      bloom.strength = bloomStrength * Math.max(Math.min(1, night), space);
-    },
     setNight(dark) {
       night = dark;
-      bloom.enabled = dark > 0.05 || space > 0.01;
-      bloom.strength = bloomStrength * Math.max(Math.min(1, dark), space);
+      bloom.enabled = dark > 0.05;
+      bloom.strength = bloomStrength * Math.min(1, dark);
       if (clouds) (clouds.uniforms['uStrength'] as { value: number }).value = shadowStrength();
       if (clouds) (clouds.uniforms['uDark'] as { value: number }).value = dark;
-    },
-    setAir(air) {
-      planetAir = air;
-      if (!clouds) return;
-      const from = air.uniforms;
-      for (const name of ['uAirCentre', 'uAirSun'] as const) {
-        ((clouds.uniforms[name] as { value: Vector3 }).value).copy(from[name]!.value as Vector3);
-      }
-      for (const name of ['uAirIntensity', 'uAirInside', 'tAirTransmittance', 'tAirMulti', 'tAirSky', 'tAirPerspective'] as const) {
-        clouds.uniforms[name]!.value = from[name]!.value;
-      }
     },
     setDirectShare(share) {
       if (Math.abs(share - directShare) < 0.005) return;
@@ -640,10 +461,9 @@ export function createPostChain(
       (u['uGroundFog']!.value as Vector4).set(fog.density, 0, 0, 1);
       (u['uGroundFogSlab']!.value as Vector2).set(fog.low - 2, fog.high);
     },
-    setAtmosphere(atmosphere, sun, skyColor, sunLight, backdrop, eyeShift = 0) {
+    setAtmosphere(atmosphere, sun, skyColor, sunLight, eyeShift = 0) {
       if (!clouds) return;
       const u = clouds.uniforms as Record<string, { value: unknown }>;
-      u['uBackdrop']!.value = backdrop ? 1 : 0;
       u['uEyeShift']!.value = eyeShift;
       u['uCloudBase']!.value = atmosphere.cloudBase;
       (u['uSunLight']!.value as Color).copy(sunLight);
@@ -732,9 +552,8 @@ function layClouds(bounds: Vector4[], puffs: Vector4[], lives: number[], bases: 
     // depth goes with the concentration, so the whole cloud fades evenly).
     // Fed to `life` it eroded the shape instead, and a cloud near the edge
     // broke into loose white flecks, one lying over the land (2026-10-08).
-    // (On the planet there is no edge to wrap round: `driftedCloud`.)
     const at = driftedCloud(cloud, drift);
-    const height = drawnCloudHeight(cloud.height);
+    const height = cloud.height;
     layOne(slot, 1_000_003 + cloud.id * 7919, at.x, -at.y, height, cloud.size, cloud.yaw, cloud.density, 1, bounds, puffs, lives);
     shows[slot] = at.show;
     // Each its own flat base, at its own height (one height for the whole
@@ -745,28 +564,18 @@ function layClouds(bounds: Vector4[], puffs: Vector4[], lives: number[], bases: 
   return slot;
 }
 
-const onPlanet = new Vector3();
-/** A sphere of the flat sky (centre x, height y, z; radius w) where the planet draws it. */
-function placeOnPlanet(v: Vector4): void {
-  planetPointInto(v.x, v.y, v.z, onPlanet);
-  v.set(onPlanet.x, onPlanet.y, onPlanet.z, v.w);
-}
-
 /** One cloud into slot `i`: its bounding sphere, its puffs (jittered by `id`), how grown it is (`life`). */
 function layOne(i: number, id: number, x: number, z: number, base: number, size: number, yaw: number, life: number, grown: number,
   bounds: Vector4[], puffs: Vector4[], lives: number[]): void {
   lives[i] = life;
   const c = Math.cos(yaw), sn = Math.sin(yaw);
   bounds[i]!.set(x, base + size * 0.5, z, size * 1.12);
-  // On the planet: carried to where the planet draws that point of the sky.
-  if (__PLANET__) placeOnPlanet(bounds[i]!);
   for (let k = 0; k < CLOUD_PUFFS; k++) {
     const [a, up, b, r] = PUFFS[k]!;
     const ja = a + (cloudHash(id * 11 + k, 6) - 0.5) * 0.16;
     const jb = b + (cloudHash(id * 11 + k, 7) - 0.5) * 0.16;
     const jr = r * (0.88 + 0.24 * cloudHash(id * 11 + k, 8)) * grown;
     puffs[i * CLOUD_PUFFS + k]!.set(x + (ja * c - jb * sn) * size, base + up * size * grown, z + (ja * sn + jb * c) * size, jr * size);
-    if (__PLANET__) placeOnPlanet(puffs[i * CLOUD_PUFFS + k]!);
   }
 }
 
@@ -814,23 +623,7 @@ const CLOUD_SHADOWS = {
     tGroundFog: { value: null as Texture | null },
     uGroundFog: { value: new Vector4() },
     uGroundFogSlab: { value: new Vector2() },
-    uMapHalf: { value: WORLD_HALF },
-    uPlanet: { value: new Vector4() },
-    uPlanetInverse: { value: new Matrix4() },
-    // On the planet, how much of the clouds is drawn as the view takes in the globe (1 near the ground .. 0 at the whole globe).
-    uGlobeFade: { value: 1 },
-    // The planet's air (`planet/air.ts`, `setAir`): set each frame.
-    ...(__PLANET__ ? {
-      uAirCentre: { value: new Vector3() }, uAirSun: { value: new Vector3(0, 1, 0) }, uAirIntensity: { value: 1 }, uAirInside: { value: 0 },
-      tAirTransmittance: { value: null as Texture | null }, tAirMulti: { value: null as Texture | null },
-      tAirSky: { value: null as Texture | null }, tAirPerspective: { value: null as Texture | null },
-      // How far the aerial perspective's distances are scaled (Unreal's
-      // "Aerial Perspective Distance Scale"): the town seen from close by
-      // keeps its colours, and it reaches the true air towards the top.
-      uAirScale: { value: 1 },
-      uAirHigh: { value: 0 },
-    } : {}),
-    uBackdrop: { value: 0 },
+    uMapHalf: { value: MAP_HALF },
     // How far in front of the camera the view's equivalent eye stands, units
     // (`setAtmosphere`): 0 in perspective; in the orthographic view the camera
     // stands far back by construction, and the air is measured from where the
@@ -873,7 +666,6 @@ const CLOUD_SHADOWS = {
   fragmentShader: /* glsl */ `
     #define MAX_CLOUDS ${MAX_CLOUDS}
     #define PUFFS ${CLOUD_PUFFS}
-    ${__PLANET__ ? AIR_GLSL : ''}
     uniform sampler2D tDiffuse;
     uniform sampler2D tDepth;
     uniform mat4 uProjectionInverse;
@@ -897,21 +689,10 @@ const CLOUD_SHADOWS = {
     uniform vec4 uGroundFog;
     uniform vec2 uGroundFogSlab;
     uniform float uMapHalf;
-    uniform float uBackdrop;
     uniform float uEyeShift;
-    ${__PLANET__ ? 'uniform float uAirScale; uniform float uAirHigh;' : ''}
-    // The planet as drawn (\`planet/bend.ts\`): its centre and radius; w 0 on the flat map.
-    uniform vec4 uPlanet;
-    uniform float uGlobeFade;
-    // The drawn world back to the planet's own frame: what is fixed on the
-    // planet (a cloud's billows) is read there, or it swims as the view moves.
-    uniform mat4 uPlanetInverse;
-    vec3 planetFixed(vec3 p) {
-      return uPlanet.w > 0.0 ? (uPlanetInverse * vec4(p, 1.0)).xyz : p;
-    }
-    // Height over the ground's base level: over the sphere on the planet.
+    // Height over the ground's base level.
     float altitude(vec3 p) {
-      return uPlanet.w > 0.0 ? length(p - uPlanet.xyz) - uPlanet.w : p.y;
+      return p.y;
     }
     uniform vec3 uSkyDeep;
     uniform vec3 uSkyGlow;
@@ -960,10 +741,8 @@ const CLOUD_SHADOWS = {
         // Each puff a little flattened, and joined wide: one heap with a
         // lumpy top, not a bunch of balls.
         vec3 o = p - s.xyz;
-        // Flattened along its own up: the world's y on the flat map, the
-        // planet's radius over it on the planet.
-        vec3 cloudUp = uPlanet.w > 0.0 ? normalize(s.xyz - uPlanet.xyz) : vec3(0.0, 1.0, 0.0);
-        o += cloudUp * dot(o, cloudUp) * 0.3;
+        // Flattened along its own up: the world's y.
+        o.y += o.y * 0.3;
         d = smin(d, length(o) - s.w, size * 0.2);
       }
       // A flat base: the cloud stops at its condensation level.
@@ -983,14 +762,13 @@ const CLOUD_SHADOWS = {
       // The billows boil: they rise and turn over as the cloud lives.
       vec3 drift = vec3(uTime * 0.05, -uTime * 0.04, uTime * 0.02);
       float life = uLife[c];
-      vec3 fixedP = planetFixed(p);
-      vec3 q = fixedP / (size * 0.3) + drift;
+      vec3 q = p / (size * 0.3) + drift;
       float low = noise3(q) * 0.5 + noise3(q * 2.03 + 5.1) * 0.3 + noise3(q * 4.1 + 9.7) * 0.2;
       // The outline broken by that noise, deep enough that no puff keeps a
       // sphere's clean edge.
       float shape = clamp(heap(c, p) * 3.2 - (1.0 - low) * (0.55 + 0.4 * (1.0 - life)) - (1.0 - life) * 0.8, 0.0, 1.0);
       if (shape <= 0.0) return 0.0;
-      vec3 r = fixedP / (size * 0.055) + drift * 2.3;
+      vec3 r = p / (size * 0.055) + drift * 2.3;
       float b1 = 1.0 - abs(noise3(r) * 2.0 - 1.0);
       float b2 = 1.0 - abs(noise3(r * 2.13 + 3.3) * 2.0 - 1.0);
       float detail = b1 * 0.65 + b2 * 0.35;
@@ -1062,51 +840,12 @@ const CLOUD_SHADOWS = {
         } else {
           through = shadowThrough(hit);
         }
-        // On the planet only ground turned to the sun has sunlight for a
-        // cloud to take: on the night side its march still met clouds on the
-        // far side of the globe, and laid their shadows where no sun falls.
-        // And of the light on lit ground a cloud takes the sun's direct part
-        // alone: the sky's own light (about a fifth of the sun's from the
-        // zenith on a clear day) still falls in its shadow. Low sun, little
-        // of the light is direct, and a shadow there is faint: per pixel, as
-        // the sun stands at each place of the globe (one strength for the
-        // whole view, read where it looks, laid the long shadows of an
-        // evening town as dark as a noon one).
-        float sunUp = uPlanet.w > 0.0 ? dot(normalize(hit - uPlanet.xyz), uSunDir) : 1.0;
-        float facing = uPlanet.w > 0.0 ? smoothstep(0.0, 0.15, sunUp) * 1.2 * max(sunUp, 0.0) / (max(sunUp, 0.0) + 0.2) : 1.0;
-        float shaded = 1.0 - uStrength * facing * (1.0 - exp(-through * 7.0));
-        ${__PLANET__ ? `
-        // Seen from above the planet the pixel is the air's own light plus the
-        // ground's through it (the shell drawn with ONE, SRC_ALPHA,
-        // planet/air.ts): the shadow takes from the ground's part only.
-        // Taken from the whole, the air in front of a shadow went dark with
-        // it and from space each was a black stain beside its cloud.
-        // (From inside the air the air is laid on below, after the shadow.)
-        if (shaded < 1.0 && uAirInside < 0.5) {
-          vec3 airOwn = airRay(ro, rd, tScene).rgb;
-          colour = airOwn + (colour - airOwn) * shaded;
-        } else colour *= shaded;` : 'colour *= shaded;'}
+        // Of the light on lit ground a cloud takes the sun's direct part
+        // alone (uStrength, setDirectShare): the sky's own light still
+        // falls in its shadow.
+        float shaded = 1.0 - uStrength * (1.0 - exp(-through * 7.0));
+        colour *= shaded;
       }
-      ${__PLANET__ ? `
-      // THE AIR in front of what the pixel sees, from inside it (Hillaire's
-      // aerial perspective volume, \`planet/air.ts\`): what is seen through
-      // it plus its own light. From space the shell over the scene draws it.
-      if (!sky && uAirInside > 0.5) {
-        // Near the ground the air's distances are scaled (Unreal's "Aerial
-        // Perspective View Distance Scale"); as the eye climbs, what it gives
-        // is scaled instead, as the shell over the ground from space scales
-        // it (\`space.ts\`, \`SURFACE_AIR\`, with the limb's rays taking the
-        // whole air): at the top of the air the two are one. A distance scaled
-        // from high up kept only the thin top of each ray, and leaving the air
-        // turned the land blue in one notch of the wheel (its blue 41 -> 66).
-        vec4 near = airPerspective(vUv, tScene * uAirScale);
-        vec4 whole = airPerspective(vUv, tScene);
-        float pass = length(cross(ro - uAirCentre, rd));
-        float share = mix(uAirScale, 1.0, smoothstep(AIR_R * 0.9, AIR_R * 1.002, pass));
-        vec4 far = vec4(whole.rgb * share, mix(1.0, whole.a, share));
-        vec4 ap = mix(near, far, uAirHigh);
-        colour = colour * ap.a + ap.rgb;
-      }` : ''}
       // The air between the eye and what the pixel sees: from the view's
       // equivalent eye (\`uEyeShift\`). Measured from the orthographic camera,
       // 5 000 units back whatever the zoom, rain mist covered half of every
@@ -1133,7 +872,7 @@ const CLOUD_SHADOWS = {
       // pale horizon from afar and ground seen close up stays clear. The backdrop hangs on the view's direction, as a
       // sky infinitely far: the map slides over it, and it turns only with the
       // camera - its parallax.
-      if (uBackdrop > 0.5) {
+      {
         float zen = acos(clamp(abs(rd.y), 0.0, 1.0));
         float air = 1.0 / (cos(zen) + 0.15 * pow(max(93.885 - degrees(zen), 1e-3), -1.253));
         float glow = 1.0 - exp(-air * 0.12);
@@ -1173,7 +912,7 @@ const CLOUD_SHADOWS = {
           // The haze is the low air's (aerosols, scale height 1.2 km, as
           // Hillaire's atmosphere has its Mie layer): its density falls as
           // e^(-y/H) with height, so a ray down from high up crosses little
-          // of it. Taken as uniform, the whole flat Earth seen from a few
+          // of it. Taken as uniform, the whole map seen from a few
           // kilometres up lay under a half-white veil (the player,
           // 2026-10-11). The optical depth along the ray in closed form
           // (Quilez, "Better fog": the integral of a e^(-b y) along it), from
@@ -1369,23 +1108,7 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
         // Over the map only now (layClouds), so they show from every zoom
         // (the player, 2026-10-07: "quero que as nuvens apareçam"); only
         // past the whole map's width do they give way to their shadows.
-        // On the planet the clouds show at every zoom, out to the whole globe:
-        // given way to their shadows past a width, they came and went in a
-        // notch of the wheel (the player, 2026-10-10).
         float bodies = 1.0 - smoothstep(${m(3600).toFixed(2)}, ${m(5600).toFixed(2)}, spanFocus);
-        if (uPlanet.w > 0.0) {
-          // On the planet they give way as the view takes in the globe, over
-          // a wide span of zoom, not a notch (\`uGlobeFade\`): out there the
-          // clouds kept round the place looked at (layClouds) were a clump of
-          // white balls in the middle of the globe, one of them hanging past
-          // its limb (the player, 2026-10-10).
-          bodies = uGlobeFade;
-          // And, high enough for them to start giving way, never past the
-          // limb: only where the view's ray meets the ground does a cloud
-          // stand between the eye and it. Lower down a cloud over the
-          // horizon stands against the sky, and is drawn whole.
-          if (uGlobeFade < 1.0 && sphereSpan(ro, rd, uPlanet).y <= 0.0) bodies = 0.0;
-        }
         vec2 spans[MAX_CLOUDS];
         for (int c = 0; c < MAX_CLOUDS; c++) {
           spans[c] = vec2(-1.0);

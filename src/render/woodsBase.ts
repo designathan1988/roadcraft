@@ -1,14 +1,10 @@
-import { PLANET_RADIUS, type Vec3 } from '@core/cubeSphere';
-import { atlasToSphereInto } from '@world/planet/charts';
 import { m } from '@world/units';
-import { natureDensity, natureDensity3 } from './natureNoise';
+import { natureDensity } from './natureNoise';
 
 /** The woods' lattice: one candidate tree a cell this wide (`renderer.ts` natureSweep). */
 export const WOODS_SPACING = m(5);
 /** The step the land's slope is read over, either side of a cell's centre. */
 export const WOODS_SLOPE_STEP = m(6);
-
-const sphere: Vec3 = { x: 0, y: 0, z: 0 };
 
 /**
  * THE WOODS' DENSITY OF A PLATE BUT ITS ECOSYSTEM, off the page
@@ -19,11 +15,10 @@ const sphere: Vec3 = { x: 0, y: 0, z: 0 };
  * plate's sweep on the page (profiled 2026-10-11).
  *
  * `natural(x, y)`: the plate's natural land at a point of its map (as
- * `naturalRenderedHeightAt`); `cx`, `cy`: the plate's centre in world (or
- * the planet's atlas) coordinates; `planet`: the noise read at the point of
- * the sphere, as on the planet.
+ * `naturalRenderedHeightAt`); `cx`, `cy`: the plate's centre in world
+ * coordinates.
  */
-export function woodsBase(natural: (x: number, y: number) => number, half: number, cx: number, cy: number, planet: boolean): Float32Array {
+export function woodsBase(natural: (x: number, y: number) => number, half: number, cx: number, cy: number): Float32Array {
   const cells = Math.floor((half * 2) / WOODS_SPACING);
   const out = new Float32Array(cells * cells);
   const d = WOODS_SLOPE_STEP;
@@ -32,13 +27,7 @@ export function woodsBase(natural: (x: number, y: number) => number, half: numbe
       const x = -half + (i + 0.5) * WOODS_SPACING, y = -half + (j + 0.5) * WOODS_SPACING;
       const slope = Math.hypot(natural(x + d, y) - natural(x - d, y), natural(x, y + d) - natural(x, y - d)) / (2 * d);
       const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
-      const wx = x + cx, wy = y + cy;
-      let density: number;
-      if (planet) {
-        atlasToSphereInto(wx, wy, sphere);
-        density = natureDensity3(sphere.x * PLANET_RADIUS, sphere.y * PLANET_RADIUS, sphere.z * PLANET_RADIUS, m(1), hillside, 0);
-      } else density = natureDensity(wx, wy, m(1), hillside, 0);
-      out[j * cells + i] = density;
+      out[j * cells + i] = natureDensity(x + cx, y + cy, m(1), hillside, 0);
     }
   }
   return out;

@@ -2,7 +2,7 @@ import { dot } from '@core/vec2';
 import { Ring } from '@core/ring';
 import type { RoadDoc, RoadSegment } from '../doc';
 import type { NodeId, SegmentId } from '../ids';
-import { type PolylineCache, frameFromNode, nodeChart, segmentStartsAt } from '../geometry';
+import { type PolylineCache, frameFromNode, segmentStartsAt } from '../geometry';
 import {
   Level,
   type RoadSide,
@@ -142,10 +142,9 @@ const CHAIN_BEND = (5 * Math.PI) / 180;
 export function bendAtNode(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId): number {
   const node = doc.node(nodeId);
   if (!node || node.incident.length !== 2) return 0;
-  const chart = nodeChart(doc, nodeId);
   const dirs = node.incident.map((segId) => {
     const seg = doc.requireSegment(segId);
-    return frameFromNode(cache.at(doc, segId, chart), segmentStartsAt(seg, nodeId), 0).dir;
+    return frameFromNode(cache.get(doc, segId), segmentStartsAt(seg, nodeId), 0).dir;
   });
   return Math.PI - Math.acos(Math.max(-1, Math.min(1, dot(dirs[0]!, dirs[1]!))));
 }

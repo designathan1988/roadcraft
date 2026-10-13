@@ -67,8 +67,8 @@ export class CameraMotion {
   /**
    * Zoom still to spend (log factor), the screen point it is about, and the
    * ground point it holds there - picked once when the zoom began
-   * (`Viewport.grab`), null over the sky or space (then it is about the
-   * view's centre, as Cesium zooms with the pointer off the globe).
+   * (`Viewport.grab`), null over the sky (then it is about the view's
+   * centre, as Cesium zooms with the pointer off the ground).
    */
   private pendingZoom = 0;
   private zoomAt: { x: number; y: number; height: number; grabbed: Vec2 | null } = { x: 0, y: 0, height: 0, grabbed: null };
@@ -131,7 +131,7 @@ export class CameraMotion {
    * still wanted (rad, `Viewport.orbit`'s azimuth) as the view stands, and is
    * asked again every frame - a closed loop, as a turn worked out once
    * misses where a step of the orbit does not turn the ground by just its
-   * angle (out at the globe). Over when less than a milliradian is left.
+   * angle. Over when less than a milliradian is left.
    */
   aim(left: () => number): void {
     this.aiming = left;

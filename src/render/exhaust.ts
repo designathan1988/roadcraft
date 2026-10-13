@@ -7,7 +7,6 @@ import {
 } from 'three';
 
 import { windUniforms } from './wind';
-import { PLANET_VERTEX, bendGLSL, planetUniforms } from './planet/bend';
 import { m, TUNED_UNIT } from '@world/units';
 
 /**
@@ -73,10 +72,8 @@ export function createExhaust(): Exhaust {
       uTime: { value: 0 },
       uWindDir: windUniforms.uWindDir,
       uHalfH: { value: 400 },
-      ...planetUniforms(),
     },
     vertexShader: /* glsl */ `
-      ${PLANET_VERTEX}
       uniform float uTime;
       uniform vec2 uWindDir;
       uniform float uHalfH;
@@ -136,8 +133,7 @@ export function createExhaust(): Exhaust {
           p.xz += uWindDir * (3.0 * t + 0.6 * t * t) + out2 * spreadOut * t;
         }
         p = born + (p - born) * ${TUNED_UNIT.toFixed(6)};
-        // Where the planet draws it (planet/bend.ts; the point itself on the flat map).
-        vec4 mv = viewMatrix * vec4(${bendGLSL('(modelMatrix * vec4(p, 1.0)).xyz')}, 1.0);
+        vec4 mv = viewMatrix * vec4((modelMatrix * vec4(p, 1.0)).xyz, 1.0);
         gl_Position = projectionMatrix * mv;
         float grow = aKind > 8.5 ? 0.0 : aKind > 7.5 ? 1.2 : aKind > 5.5 ? 0.2 : aKind > 4.5 ? 1.6 : aKind > 3.5 ? 0.6 : aKind > 2.5 ? 3.2 : aKind > 1.5 ? 2.6 : 2.0;
         float s = aSize * (0.5 + grow * age);

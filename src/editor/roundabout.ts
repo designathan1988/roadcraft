@@ -5,8 +5,6 @@ import type { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { casingHalf, ROAD_TYPES, roadProfile } from '@world/roadTypes';
-import { chartAt } from '@world/planet/charts';
-import { editOnChart } from './commit';
 import { m } from '@world/units';
 
 export const ROUNDABOUT_MIN_RADIUS = m(32);
@@ -30,19 +28,6 @@ export function commitRoundabout(
   centre: Vec2,
   radius = m(40),
   type = 0,
-): RoundaboutResult {
-  // On the planet, laid on the chart of its centre with every road there
-  // (`editOnChart`): its ring and arms are cut into pieces as a road is.
-  if (__PLANET__) return editOnChart(doc, net, chartAt(centre.x, centre.y), (d, n) => layRoundabout(d, n, centre, radius, type));
-  return layRoundabout(doc, net, centre, radius, type);
-}
-
-function layRoundabout(
-  doc: RoadDoc,
-  net: Network,
-  centre: Vec2,
-  radius: number,
-  type: number,
 ): RoundaboutResult {
   if (!Number.isFinite(radius) || radius < ROUNDABOUT_MIN_RADIUS || radius > ROUNDABOUT_MAX_RADIUS ||
     !Number.isFinite(centre.x) || !Number.isFinite(centre.y) || !Number.isInteger(type) || !ROAD_TYPES[type]) {

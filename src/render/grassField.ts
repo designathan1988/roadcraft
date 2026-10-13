@@ -109,7 +109,7 @@ export function createGrassMask(): GrassMask {
   return {
     texture,
     draw(polys, rings, size, rect, centre = { x: 0, y: 0 }) {
-      // The plate's centre (a planet face's; the origin on the flat map).
+      // The plate's centre, world x/y.
       const cx = centre.x, cy = centre.y;
       const k = MASK_SIDE / size, half = size / 2;
       // The rectangle in mask pixels (rows from the north edge), a pixel wider each way.
@@ -222,7 +222,7 @@ export function createGrass(quality: { readonly grassBlades: number }, ring: Gra
     uGrassHeight: { value: heightTexture as Texture },
     uGrassMask: { value: mask.texture },
     uGrassPlate: { value: [0, 1] as [number, number] },
-    // The plate's centre, world x/y (a planet face's; the origin on the flat map).
+    // The plate's centre, world x/y.
     uGrassCentre: { value: [0, 0] as [number, number] },
     uGrassEco: { value: blankEcology as Texture },
     // half, cell and corners per side of the ecology grid

@@ -13,9 +13,7 @@ import { bandMid, bandWidth, sectionOf } from './section';
 import { orientedPolyline } from './geometry';
 import { CROSSWALK_DEPTH } from './approach';
 import { EndType, FillRule, JoinType, inflatePathsD, unionD, type PathsD } from 'clipper2-ts';
-import { levelPolygons, levelPolygonsOnChart } from './surfaces';
-import { chartAt, chartToChartInto } from './planet/charts';
-import { nodeChart } from './geometry';
+import { levelPolygons } from './surfaces';
 import type { SurfaceLevel } from './roadTypes';
 import { pointInPolygon } from '@core/polygon';
 import type { MultiPoly } from '@core/clipper';
@@ -249,14 +247,12 @@ interface FootwayEnd {
 class WalkingLines {
   private readonly cache = new Map<string, Polyline[]>();
   private readonly edges = new Map<string, Polyline[]>();
-  /**
-   * `polygons` the merged rings of a level on the decks it lets in: the whole
-   * map's by default, or the few round one junction of the planet carried
-   * onto its node's chart (`walkingLinesAt`).
-   */
-  constructor(private readonly net: Network,
-    private readonly polygons: (level: SurfaceLevel, include: (id: SegmentId) => boolean) => MultiPoly =
-    (level, include) => levelPolygons(net, level, include)) {}
+  constructor(private readonly net: Network) {}
+
+  /** The merged rings of a level on the decks it lets in. */
+  private polygons(level: SurfaceLevel, include: (id: SegmentId) => boolean): MultiPoly {
+    return levelPolygons(this.net, level, include);
+  }
 
   private readonly pavings = new Map<string, MultiPoly>();
 
@@ -615,37 +611,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
     const clean = eased.filter((p, q) => q === 0 || Math.hypot(p.x - eased[q - 1]!.x, p.y - eased[q - 1]!.y) > 1e-6);
     return clean.length >= 2 ? Polyline.fromPoints(clean) : null;
   };
-  const everywhere = new WalkingLines(net);
-  /**
-   * On the planet, a node's footway ends and the lines walked round it on the
-   * node's chart (`world/planet/charts.ts`). A footway is laid on its own
-   * segment's chart and a junction on its node's; across a border between
-   * pieces the two are tens of km apart in the atlas, and a corner joined
-   * between them ran that far (22 km "corners", walked off across the map).
-   * The ends carried onto the node's chart keep their walkways and graph
-   * nodes - only where they lie, and which way is in, is read there - and
-   * the walking lines are made from the few surfaces round the node, carried
-   * there too. The ends themselves, and the whole map's lines, where every
-   * end is on the node's chart already (everywhere on the flat map).
-   */
-  const atNode = (nodeId: NodeId, list: readonly FootwayEnd[]): { ends: readonly FootwayEnd[]; walking: WalkingLines } => {
-    if (!__PLANET__) return { ends: list, walking: everywhere };
-    const chart = nodeChart(doc, nodeId);
-    if (list.every((e) => chartAt(e.p.x, e.p.y) === chart)) return { ends: list, walking: everywhere };
-    const ends = list.map((e) => {
-      const from = chartAt(e.p.x, e.p.y);
-      if (from === chart) return e;
-      const p = chartToChartInto(from, chart, e.p.x, e.p.y, { x: 0, y: 0 });
-      const ahead = chartToChartInto(from, chart, e.p.x + e.into.x, e.p.y + e.into.y, { x: 0, y: 0 });
-      const l = Math.hypot(ahead.x - p.x, ahead.y - p.y) || 1;
-      return { ...e, p, into: { x: (ahead.x - p.x) / l, y: (ahead.y - p.y) / l } };
-    });
-    // The surfaces a corner here can meet: the node's legs and the plates at
-    // their far ends (`levelRings` lets in a plate whose lowest leg it lets in).
-    const near = new Set<SegmentId>(doc.requireNode(nodeId).incident);
-    const walking = new WalkingLines(net, (level, include) => levelPolygonsOnChart(net, level, chart, (id) => near.has(id) && include(id)));
-    return { ends, walking };
-  };
+  const walking = new WalkingLines(net);
   const join = (from: FootwayEnd, to: FootwayEnd, nodeId: NodeId, kerb: Vec2 | null, drawn: Polyline | null = null): void => {
     joined.add(from.node); joined.add(to.node);
     const out = { x: -to.into.x, y: -to.into.y };
@@ -670,7 +636,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
   for (const [nodeId, mine] of ends) {
     yield;
     const node = doc.requireNode(nodeId);
-    const { ends: here, walking } = atNode(nodeId, mine);
+    const here = mine;
     const byLevel = net.junctions.get(nodeId);
     const junction = byLevel?.get(Level.Sidewalk);
     if (junction && junction.legs.length >= 2 && !junction.transition) {
@@ -732,9 +698,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
       const a = landOn(g, left, segId, nodeId);
       const b = landOn(g, right, segId, nodeId);
       if (a === null || b === null || a === b) continue;
-      // On the node's chart, where `f` was read (a footway's point is on its
-      // segment's: across a border, another piece's chart).
-      const pa = onChart(g.nodes[a]!, f.p), pb = onChart(g.nodes[b]!, f.p);
+      const pa = g.nodes[a]!, pb = g.nodes[b]!;
       // As wide as the zebra painted.
       g.add({ kind: 'crossing', path: Polyline.fromPoints([pa, pb]), width: CROSSWALK_DEPTH, lo: -CROSSWALK_DEPTH / 2, hi: CROSSWALK_DEPTH / 2, kerb: 0,
         segment: segId, node: nodeId, structure: deckOf(doc, segId), a, b });
@@ -746,7 +710,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
   for (const [nodeId, mine] of ends) {
     const end = doc.requireNode(nodeId);
     if (end.incident.length !== 1) continue;
-    const here = atNode(nodeId, mine).ends;
+    const here = mine;
     const left = here.find((e) => e.side > 0), right = here.find((e) => e.side < 0);
     if (!left || !right || left.way.structure !== right.way.structure || left.way.segment === undefined) continue;
     if (Math.hypot(left.p.x - right.p.x, left.p.y - right.p.y) < JOIN) continue;
@@ -772,13 +736,6 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
   return g;
 }
 
-/** `p` on the chart `ref` is written on (`world/planet/charts.ts`); `p` itself on the flat map. */
-function onChart(p: Vec2, ref: Vec2): Vec2 {
-  if (!__PLANET__) return p;
-  const from = chartAt(p.x, p.y), to = chartAt(ref.x, ref.y);
-  return from === to ? p : chartToChartInto(from, to, p.x, p.y, { x: 0, y: 0 });
-}
-
 /** The footway end of `seg` at this node on the given side of the leg (its normal `nrm`, sign +1 left). */
 function sideOf(ends: readonly FootwayEnd[], seg: SegmentId, node: Vec2, nrm: Vec2, sign: 1 | -1): FootwayEnd | null {
   let best: FootwayEnd | null = null, bestSide = 0;
@@ -799,8 +756,7 @@ function landOn(g: WalkGraph, p: Vec2, seg: SegmentId, node: NodeId): number | n
   for (const way of g.ways) {
     const mine = (way.kind === 'footway' && way.segment === seg) || (way.kind === 'corner' && way.node === node);
     if (!mine) continue;
-    // On the walkway's own chart: a footway's is its segment's, a corner's its node's.
-    const c = way.path.closestPoint(onChart(p, way.path.sampleAt(0).p));
+    const c = way.path.closestPoint(p);
     if (!best || c.distance < best.distance) best = { way, s: c.s, distance: c.distance };
   }
   if (!best || best.distance > best.way.width / 2 + LAND_REACH) return null;

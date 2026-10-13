@@ -1,5 +1,4 @@
 import type { Polyline } from '@core/polyline';
-import { chartAt, onChartOf, toOwner } from '@world/planet/charts';
 import { type Vec2, dist } from '@core/vec2';
 import type { PoleId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
@@ -110,9 +109,7 @@ export interface PoleSnap {
  */
 export function snapPole(doc: RoadDoc, net: Network, at: Vec2, reach: number): PoleSnap {
   const hit = doc.poleNear(at, reach);
-  // Its place on the asker's chart: the run is routed there with the rest of
-  // its points (a pole across a border is kept on its own piece's chart).
-  if (hit) return { at: onChartOf(hit, at), kind: 'pole', pole: hit.id };
+  if (hit) return { at: hit, kind: 'pole', pole: hit.id };
   // Anywhere on the pavement takes its line; off it, only just beside the line.
   const footway = onFootway(net, at);
   const on = nearestOnContour(poleLinesAt(net, at), at, footway ? m(12) : LINE_CATCH);
@@ -133,11 +130,6 @@ export interface PoleRunPlan {
   readonly from: PoleSnap;
   readonly to: PoleSnap;
   readonly poles: readonly PlannedPole[];
-  /**
-   * The chart the run is planned on (its first end's): on the planet its
-   * poles are written on the charts of the pieces they stand on when built.
-   */
-  readonly chart?: number;
   /** Set when nothing would be built, and why. */
   readonly refused?: PoleRunRefusal;
 }
@@ -509,12 +501,9 @@ function computePoleRun(
   lamps: PoleLampMode,
   margin: number,
 ): PoleRunPlan {
-  // One chart for the whole run, its first end's: an end over a border is
-  // carried onto it (the pointer gives each on its own piece's chart).
-  const chart = chartAt(rawFrom.x, rawFrom.y);
   const from = snapPole(doc, net, rawFrom, reach);
-  const to = snapPole(doc, net, onChartOf(rawTo, rawFrom), reach);
-  const refuse = (refused: PoleRunRefusal): PoleRunPlan => ({ from, to, poles: [], refused, chart });
+  const to = snapPole(doc, net, rawTo, reach);
+  const refuse = (refused: PoleRunRefusal): PoleRunPlan => ({ from, to, poles: [], refused });
   if (from.kind === 'free' || to.kind === 'free') return refuse('offFootway');
   if (from.pole !== undefined && from.pole === to.pole) return { from, to, poles: [] };
   if (dist(from.at, to.at) < 1e-3) return { from, to, poles: [] };
@@ -592,7 +581,7 @@ function computePoleRun(
     poles.push(planned);
   });
   if (poles.length < 2) return { from, to, poles: [] };
-  return { from, to, poles, chart };
+  return { from, to, poles };
 }
 
 /**
@@ -608,9 +597,7 @@ export function commitPoleRunPoles(doc: RoadDoc, plan: PoleRunPlan): PoleId[] | 
   if (plan.refused || plan.poles.length < 2) return null;
 
   const ids: PoleId[] = plan.poles.map(
-    // A new pole on the chart of the piece it stands on (a run planned on one
-    // chart reaches over the border), as a node is.
-    (pole) => pole.existing ?? doc.addPole(plan.chart === undefined ? pole.at : toOwner(plan.chart, pole.at), pole.lamp).id,
+    (pole) => pole.existing ?? doc.addPole({ x: pole.at.x, y: pole.at.y }, pole.lamp).id,
   );
 
   let built = false;

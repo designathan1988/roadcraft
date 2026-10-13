@@ -13,7 +13,6 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { m } from '@world/units';
-import { planetPointInto } from './planet/bend';
 
 /**
  * Sky, sun and atmosphere.
@@ -93,26 +92,9 @@ export interface SceneEnvironment {
    * The time of day, minutes after midnight: the sun's path, the sky, the
    * light; the moon at night. Returns how dark it is, 0 by day to 1 at night.
    */
-  /**
-   * `towards`: on the planet, where the sun really is (three's space, unit,
-   * `planet/bend.ts` planetSun) - fixed over the planet, the camera moving
-   * round it - and `minutes` the time it makes at the place looked at; its
-   * colour and strength follow that time, its direction is this one.
-   */
-  setTimeOfDay(minutes: number, towards?: Vector3): number;
+  setTimeOfDay(minutes: number): number;
   /** Smoke in the air, 0..1: the fog closes in and browns, the light dims. */
   setSmog(k: number): void;
-  /**
-   * How far the view has gone out to space, on the planet (0 the ground's sky
-   * .. 1 black space, `planet/space.ts`): the sky dome fades to black, and
-   * the stars, the sun and the air round the planet show instead.
-   */
-  setSpace(share: number): void;
-  /**
-   * The eye's up and how far below the level its horizon lies (sine of the
-   * dip), on the planet: the sky dome reaches down to the real horizon.
-   */
-  setHorizon(up: Vector3, dipSine: number): void;
   /**
    * The weather on the light (`world/weather.ts`): how overcast (0 clear ..
    * 1 a storm sky - the sun dimmed behind the clouds, the sky greyed, the
@@ -146,22 +128,17 @@ const SKY_FRAGMENT = `
   uniform vec3 uGround;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
-  uniform float uSpace;
-  uniform vec3 uUp;
-  uniform float uDip;
 
   void main() {
-    // Height over the horizon: on the planet the horizon dips below the
-    // level as the eye climbs (cos dip = R / (R + h)), and the sky reaches
-    // down to it; on the flat map the level is the horizon.
-    float h = (dot(normalize(vSkyDirection), uUp) + uDip) / (1.0 + uDip);
+    // Height over the horizon: the level is the horizon.
+    float h = normalize(vSkyDirection).y;
     vec3 sky = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.62));
     sky = mix(uGround, sky, smoothstep(-0.12, 0.02, h));
     // A broad, soft glow around the sun, and a tighter core inside it. Enough
     // to tell the eye where the light comes from without drawing a disc.
     float sun = max(dot(normalize(vSkyDirection), uSunDirection), 0.0);
     sky += uSunColor * (pow(sun, 7.0) * 0.28 + pow(sun, 120.0) * 0.9);
-    gl_FragColor = vec4(sky * (1.0 - uSpace), 1.0);
+    gl_FragColor = vec4(sky, 1.0);
   }
 `;
 
@@ -179,35 +156,21 @@ const SUN_STEP = (0.1 * Math.PI) / 180;
 /** How far the view may go from the ground point the shadow grid hangs on before it is hung on another. */
 const GRID_REACH = m(100);
 
-/** Where a point of the ground (map x, y, height) is drawn, three's space, into `out` (`planet/bend.ts` planetPointInto). */
-export type DrawnGround = (x: number, y: number, h: number, out: Vector3) => Vector3;
-
 /**
  * THE SHADOW MAP MOVED IN WHOLE TEXELS OF THE GROUND (Microsoft, "Common
  * Techniques to Improve Shadow Depth Maps", Moving the Light in Texel-Sized
  * Increments): the light's frustum is centred on the view, its middle rounded
  * to a texel grid that stays put on the ground, so a shadow's edge lands on
  * the same texels frame after frame and does not shimmer as the view moves.
- *
- * On the flat map the ground stays put in three's space and the grid is
- * three's own. On the planet the ground moves through three's space under the
- * view - the planet is set down under the point looked at each frame
- * (`planet/bend.ts` planetMotion), rolling as a ball from the globe and
- * nearly still at the street, where it is drawn flat - and a grid of three's
- * space slid under every shadow during a drag and jumped when the view
- * crossed a piece (the player, 2026-10-10: the shadows did not follow the
- * rotation evenly). The grid hangs instead on a frame of the drawn ground
- * itself: a point of the map near the view (`origin`), its east and its up,
- * each drawn where the picture puts them, so it moves exactly as the ground
- * does at every curvature. Hung on another point when the view goes on, it is
- * hung so the texel under the view stays where it was.
+ * The grid hangs on a frame of the ground: a point of the map near the view
+ * (`origin`), its east and its up. Hung on another point when the view goes
+ * on, it is hung so the texel under the view stays where it was.
  *
  * The sun the light falls from is held in that frame and moved only once the
- * true one has drifted `SUN_STEP` from it: on the planet the sun turns over
- * the ground as the view goes round (it is fixed over the planet), and a sun
- * turning every frame turns the grid with it - the same shimmer.
+ * true one has drifted `SUN_STEP` from it: a sun turning every frame turns
+ * the grid with it - the same shimmer.
  */
-export class GroundShadowGrid {
+class GroundShadowGrid {
   /** The map point the frame hangs on, and whether there is one. */
   private ox = 0;
   private oy = 0;
@@ -234,7 +197,10 @@ export class GroundShadowGrid {
   /** The last rounded centre, in the frame (from its origin). */
   private readonly last = new Vector3();
 
-  constructor(private readonly drawn: DrawnGround) {}
+  /** Where a point of the ground (map x, y, height) is drawn, three's space, into `out`. */
+  private drawn(x: number, y: number, h: number, out: Vector3): Vector3 {
+    return out.set(x, h, -y);
+  }
 
   /** The frame at the map point (ox, oy), drawn now. */
   private frame(): void {
@@ -269,11 +235,8 @@ export class GroundShadowGrid {
   ): void {
     if (this.hung) this.frame();
     if (!this.hung || this.o.distanceTo(centre) > GRID_REACH) {
-      // Carry the held sun and the last rounded centre (where the ground has
-      // them now) over to the new frame.
-      // The light's axes too: taken over as they are, never made again from
-      // the new point's own up, which is a degree or two off the old one's
-      // 100 m away on the globe - and turned every shadow as it was hung.
+      // Carry the held sun, the last rounded centre and the light's axes
+      // over to the new frame as they are.
       const hadGrid = this.hung;
       if (hadGrid) {
         this.fromFrame(this.held, this.s);
@@ -335,7 +298,7 @@ export class GroundShadowGrid {
 
   /**
    * The light's first right and up (in the frame) for a sun (in the frame):
-   * right level, square to the ground's up - as on the flat map - unless the
+   * right level, square to the ground's up, unless the
    * sun is nearly overhead, then square to the ground's south.
    */
   private axes(sun: Vector3): void {
@@ -368,9 +331,6 @@ export function createEnvironment(
       uGround: { value: groundTint },
       uSunDirection: { value: sunDirection },
       uSunColor: { value: sunColor },
-      uSpace: { value: 0 },
-      uUp: { value: new Vector3(0, 1, 0) },
-      uDip: { value: 0 },
     },
     vertexShader: SKY_VERTEX,
     fragmentShader: SKY_FRAGMENT,
@@ -489,9 +449,7 @@ export function createEnvironment(
   const snapped = new Vector3();
   /** The sun the light falls from: the true one, moved in steps (`GroundShadowGrid`). */
   const castSun = new Vector3();
-  const grid = new GroundShadowGrid(__PLANET__
-    ? (x, y, h, out) => planetPointInto(x, h, -y, out)
-    : (x, y, h, out) => out.set(x, h, -y));
+  const grid = new GroundShadowGrid();
   const top = new Vector3();
   const offset = new Vector3();
   const centre = new Vector3();
@@ -503,10 +461,7 @@ export function createEnvironment(
   let flash = 0;
   const STORM_SKY = new Color(0x6f7782);
   const FLASH = new Color(0xdfe6ff);
-  /** How far out to space the view is, on the planet (`setSpace`). */
-  let space = 0;
   const FILL_WHITE = new Color(0xf2f2ee);
-  const SPACE_SUN = new Color(1, 0.98, 0.95);
   return {
     sun,
     skyColor: horizon,
@@ -565,16 +520,12 @@ export function createEnvironment(
       // looks at the target with the camera's `up`).
       sun.shadow.camera.up.copy(lightUp);
     },
-    setTimeOfDay(minutes, towards) {
+    setTimeOfDay(minutes) {
       const hour = (((minutes / 60) % 24) + 24) % 24;
       // The sun's day: up at six, highest at noon, down at six, crossing the
       // sky from east to west round the bearing that throws shadows well.
       const day = (hour - 6) / 12;
-      // On the planet, the sun's real height where the view looks (the
-      // planet is set down with that place's up as three's y, \`bend.ts\`):
-      // near a pole a tilted sun circles low all day, and an hour read off
-      // the longitude called a sun 3.5 degrees up night.
-      const height = towards ? Math.max(-1, Math.min(1, towards.y)) : Math.sin(Math.PI * day);
+      const height = Math.sin(Math.PI * day);
       // How much daylight: full from a few degrees up, none below the horizon.
       const light = Math.min(1, Math.max(0, (height + 0.1) / 0.25));
       const dark = 1 - light;
@@ -582,7 +533,6 @@ export function createEnvironment(
         const elevation = Math.max(0.12, height) * (58 * Math.PI) / 180;
         const azimuth = SUN_AZIMUTH + (Math.min(1, Math.max(0, day)) - 0.5) * (110 * Math.PI) / 180;
         sunDirection.set(Math.cos(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.sin(azimuth) * Math.cos(elevation)).normalize();
-        if (towards) sunDirection.copy(towards);
       } else {
         // The moon: high, cold and faint, from a fixed bearing.
         sunDirection.set(Math.cos(SUN_AZIMUTH + 0.6) * 0.55, 0.83, Math.sin(SUN_AZIMUTH + 0.6) * 0.55).normalize();
@@ -612,27 +562,6 @@ export function createEnvironment(
       }
       ambient.intensity = 0.07 * light + 0.05 * dark;
       fill.color.copy(FILL_WHITE);
-      if (towards) {
-        // ON THE PLANET the light is the real sun, wherever the view looks:
-        // the ground turned from it is night by its own shape (the light's
-        // N.L), so the sun never becomes the moon - a moon over the view lit
-        // the whole globe from above, the day side as dark as the night. Near
-        // the ground the day's warmth and strength follow the local hour as
-        // on the flat map, and the moon is the fill light; out in space the
-        // sun has its full, white strength, and no sky fills the shade.
-        sunDirection.copy(towards);
-        const ground = 4.2 * (0.25 + 0.75 * Math.min(1, Math.max(0, height) * 2.5 + 0.2)) * light;
-        sun.intensity = ground + (4.2 - ground) * space;
-        sun.color.setRGB(1, 0.96 - warm * 0.12 * light, 0.9 - warm * 0.28 * light).lerp(SPACE_SUN, space);
-        if (dark > 0) {
-          fill.position.set(Math.cos(SUN_AZIMUTH + 0.6) * 0.55, 0.83, Math.sin(SUN_AZIMUTH + 0.6) * 0.55).multiplyScalar(1000);
-          fill.color.copy(FILL_WHITE).lerp(MOON, dark);
-          fill.intensity = Math.max(fill.intensity * light, 0.85 * dark);
-        }
-        fill.intensity *= 1 - space;
-        hemisphere.intensity = hemisphere.intensity * (1 - space) + 0.05 * space;
-        ambient.intensity = ambient.intensity * (1 - space) + 0.012 * space;
-      }
       zenith.copy(DAY_ZENITH).lerp(NIGHT_ZENITH, dark);
       horizon.copy(DAY_HORIZON).lerp(DUSK_HORIZON, warm * light * 0.7).lerp(NIGHT_HORIZON, dark);
       // An overcast sky: the sun behind the clouds - much less of it, and
@@ -654,7 +583,7 @@ export function createEnvironment(
       sunColor.copy(DAY_SUN).lerp(DUSK_SUN, warm).multiplyScalar(light);
       // No town-wide haze (the player: the smoke stays where the fire is).
       void smog; void SMOG;
-      scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4) * (1 - 0.85 * space);
+      scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4);
       return dark;
     },
     directShare() {
@@ -667,17 +596,6 @@ export function createEnvironment(
       return direct / Math.max(1e-6, direct + diffuse);
     },
     setSmog(k) { smog = Math.max(0, Math.min(1, k)); },
-    setHorizon(up, dipSine) {
-      (skyMaterial.uniforms['uUp']!.value as Vector3).copy(up);
-      skyMaterial.uniforms['uDip']!.value = dipSine;
-    },
-    setSpace(share) {
-      space = share;
-      skyMaterial.uniforms['uSpace']!.value = share;
-      // On the planet the sky is the air's own, from the ground to space
-      // (\`planet/air.ts\`, drawn by \`planet/space.ts\`): the dome is not drawn.
-      sky.visible = false;
-    },
     setWeather(k, f) { overcast = Math.max(0, Math.min(1, k)); flash = Math.max(0, Math.min(1.5, f)); },
     setQuality(next) {
       sun.castShadow = next.shadows;

@@ -28,20 +28,10 @@ owner in docs/STATUS.md before changing them.
   `main.ts`), not by a fixed interval.
 - **A missing hint key shows a blank hint bar, not an error.** `hintKey` derives
   the key from the tool.
-- **On the planet, two points written on different charts are ~30 km apart in
-  the atlas** when they are neighbours on the sphere. A road edit runs the flat
-  code on ONE chart with every point of its copy brought there
-  (`planetFrame.ts` `enterFrame`); bringing only the roads near the gesture drew
-  phantom roads across the atlas and refused crossings. Long roads are cut to
-  `PLANET_MAX_PIECE` after the edit's crossings (`commit.ts` `cutLongRoads`),
-  never on the gesture. Code that measures points against each other outside
-  that frame (the pole tool, `layPowerLines`, the furniture) is not ported yet.
-  Planet specs: `npx vitest run --config vitest.planet.config.ts`.
 - **A brush stroke covers the whole way between two pointer reports.** The
   browser coalesces fast moves and a slow frame reports the pointer far apart:
-  `lotTool.ts` walks from the last sample in `STROKE_STEP` (2 m) steps, the
-  previous point carried onto the current one's chart. Testing only the
-  reported point zoned one lot in three along a street.
+  `lotTool.ts` walks from the last sample in `STROKE_STEP` (2 m) steps.
+  Testing only the reported point zoned one lot in three along a street.
   `tests/editor/zoneStroke.spec.ts`.
 - **Heavy commands go through `scripts/run-limited.mjs`** (vitest, tsc, probes,
   builds): one at a time on the machine (a lock file), started only with CPU
@@ -50,13 +40,10 @@ owner in docs/STATUS.md before changing them.
   not npx: `node scripts/run-limited.mjs node node_modules/vitest/vitest.mjs run …`.
 
 - **The load boundary validates with the document's own predicates**
-  (`persistence.ts` isSerializedDoc: `isReliefVersion` from `world/terrain.ts`).
-  A list of its own here went stale when the planet's Earth relief (4) came:
-  every new planet map was set aside as unreadable on the next reload and the
-  game opened empty (PL20). A value the document reads must pass here too.
-- **A saved camera on the planet is an atlas address** (`cameraInUnit`): read in
-  another unit it goes through the old atlas to the sphere and back, as the
-  map's points do (`world/rescale.ts` planetPointInUnit, PL15).
+  (`persistence.ts` isSerializedDoc: `readRelief` from `world/terrain.ts`).
+  A list of its own here went stale when a new relief (4) came: every map
+  with it was set aside as unreadable on the next reload and the game opened
+  empty (PL20). A value the document reads must pass here too.
 
 ## How to add
 

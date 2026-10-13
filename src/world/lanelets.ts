@@ -10,7 +10,7 @@ import { laneOffset, laneWidth, roadProfile, travelLanes } from './roadTypes';
 import { PARKING_DEPTH } from './parking';
 import { laneLineCrossable, laneTurnAllowed, laneUse } from './roadSection';
 import { linksDigest, linksOf } from './roads/connectors';
-import { carryPolyline, nodeChart, orientedPolyline } from './geometry';
+import { orientedPolyline } from './geometry';
 import { type ApproachGroup, computeApproachGroups } from './approachGroups';
 import { TUNNELS_DRAWN } from './structures';
 import { JunctionSurface, bulbTurnPath, medianUturnPath, turnPath } from './turnPaths';
@@ -475,26 +475,6 @@ export class LaneletGraph {
       const connectorIds: ConnectorId[] = [];
       const road = carriedPair(doc, nodeId);
 
-      // Every lane met here on the node's chart (`world/planet/charts.ts`):
-      // a link is laid on the chart of the node it leaves (`orientedPolyline`),
-      // so one arriving from a node across a border is written on another
-      // piece's chart, tens of km away in the atlas - and a turn between it
-      // and a lane leaving here, swept on this junction's plate, fitted no
-      // body: no car came in or went through there. The lanes as they are on
-      // the flat map, where every chart is one.
-      const chart = nodeChart(doc, nodeId);
-      const onNode = new Map<LaneletId, Lanelet>();
-      const here = (lane: Lanelet): Lanelet => {
-        if (!__PLANET__ || lane.from === undefined) return lane;
-        let known = onNode.get(lane.id);
-        if (!known) {
-          const from = nodeChart(doc, lane.from);
-          known = from === chart ? lane : { ...lane, centre: carryPolyline(lane.centre, from, chart) };
-          onNode.set(lane.id, known);
-        }
-        return known;
-      };
-
       const addConnector = (
         inId: LaneletId, inLane: Lanelet, outId: LaneletId, outLane: Lanelet, turn: TurnKind, carried = false,
       ): void => {
@@ -502,9 +482,8 @@ export class LaneletGraph {
         if (this.connectors.has(cid)) return;
         const waiting = inbound
           .map((id) => this.lanelets.get(id))
-          .filter((l): l is Lanelet => !!l && l.id !== inId)
-          .map(here);
-        const inCentre = here(inLane).centre, outCentre = here(outLane).centre;
+          .filter((l): l is Lanelet => !!l && l.id !== inId);
+        const inCentre = inLane.centre, outCentre = outLane.centre;
         const turnResult = bulb
           ? bulbTurnPath(inCentre, outCentre, surfaceOf(), { x: node.x, y: node.y }, BULB_TURN_RADIUS)
           : node.uturn === inLane.segment && turn === 'uturn' && node.incident.length === 2
@@ -549,7 +528,7 @@ export class LaneletGraph {
       for (const inId of inbound) {
         const inLane = this.lanelets.get(inId);
         if (!inLane || inLane.segment === undefined) continue;
-        const inDir = endDirection(here(inLane).centre);
+        const inDir = endDirection(inLane.centre);
         const incomingSegment = doc.requireSegment(inLane.segment);
         const rules = inLane.from === incomingSegment.a ? incomingSegment.section?.turnsForward : incomingSegment.section?.turnsBackward;
         const rule = rules?.[inLane.laneIndex ?? 0];
@@ -569,7 +548,7 @@ export class LaneletGraph {
             if (!outId || !outLane) continue;
             if (node.blockedMovements.includes(movementKey(inLane.segment, link.to))) continue;
             const isReverse = outLane.segment === inLane.segment;
-            const turn = isReverse ? 'uturn' : classifyTurn(inDir, tangentAtStart(here(outLane).centre));
+            const turn = isReverse ? 'uturn' : classifyTurn(inDir, tangentAtStart(outLane.centre));
             const carried = !isReverse && road !== null && road.includes(inLane.segment) && road.includes(link.to);
             addConnector(inId, inLane, outId, outLane, turn, carried);
             made++;
@@ -592,7 +571,7 @@ export class LaneletGraph {
           // A movement back down the segment it came from is a U-turn; allow it
           // only where there is nowhere else to go.
           const isReverse = outLane.segment === inLane.segment;
-          const outDir = tangentAtStart(here(outLane).centre);
+          const outDir = tangentAtStart(outLane.centre);
           const turn = isReverse ? 'uturn' : classifyTurn(inDir, outDir);
           if (!laneTurnAllowed(rule, turn)) continue;
           // The road the node is ON carries its lanes across, however it bends.

@@ -60,7 +60,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/editor/lotPlan.ts": {
@@ -123,7 +123,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 41
+      "count": 29
     },
     "roadcraft/no-silent-catch": {
       "count": 10
@@ -252,13 +252,10 @@
   },
   "src/render/ecologyPool.ts": {
     "roadcraft/no-module-state": {
-      "count": 7
+      "count": 6
     }
   },
   "src/render/flatGround.worker.ts": {
-    "roadcraft/no-module-state": {
-      "count": 2
-    },
     "roadcraft/no-silent-catch": {
       "count": 1
     }
@@ -266,14 +263,6 @@
   "src/render/flatGroundPool.ts": {
     "roadcraft/no-module-state": {
       "count": 5
-    }
-  },
-  "src/render/isoViewport.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-module-state": {
-      "count": 1
     }
   },
   "src/render/lowPolyTrees.ts": {
@@ -379,29 +368,6 @@
       "count": 7
     }
   },
-  "src/render/planet/air.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
-  "src/render/planet/bend.ts": {
-    "roadcraft/no-module-state": {
-      "count": 6
-    }
-  },
-  "src/render/planet/skyLife.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/render/planet/space.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/render/postprocess.ts": {
     "max-lines": {
       "count": 1
@@ -487,7 +453,7 @@
   },
   "src/render/terrainLightPool.ts": {
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "src/render/terrainRelief.ts": {
@@ -555,7 +521,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 20
+      "count": 19
     }
   },
   "src/sim/ambient/ambient.ts": {
@@ -688,14 +654,6 @@
   "src/ui/materialSwatch.ts": {
     "roadcraft/no-module-state": {
       "count": 1
-    }
-  },
-  "src/ui/modeChooser.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    },
-    "roadcraft/no-silent-catch": {
-      "count": 4
     }
   },
   "src/ui/planSwatch.ts": {
@@ -908,7 +866,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 5
+      "count": 4
     }
   },
   "src/world/landscape.ts": {
@@ -931,16 +889,6 @@
   },
   "src/world/network.ts": {
     "max-lines": {
-      "count": 1
-    }
-  },
-  "src/world/planet/charts.ts": {
-    "roadcraft/no-module-state": {
-      "count": 7
-    }
-  },
-  "src/world/planet/relief.ts": {
-    "roadcraft/no-module-state": {
       "count": 1
     }
   },
@@ -967,11 +915,6 @@
   "src/world/turnPaths.ts": {
     "roadcraft/no-module-state": {
       "count": 3
-    }
-  },
-  "src/world/walkways.ts": {
-    "max-lines": {
-      "count": 1
     }
   },
   "tests/arch/roads.spec.ts": {

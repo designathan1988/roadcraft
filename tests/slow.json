@@ -16,7 +16,6 @@
     "tests/sim/pose.spec.ts": 90.2,
     "tests/render/citizenGait.spec.ts": 84.9,
     "tests/sim/agents/population.spec.ts": 84.1,
-    "tests/world/flatEarth.spec.ts": 80.3,
     "tests/sim/curvature.spec.ts": 75.5,
     "tests/render/water.spec.ts": 74.5,
     "tests/sim/shortLinkBox.spec.ts": 60.7,

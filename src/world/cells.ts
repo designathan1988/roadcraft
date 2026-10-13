@@ -2,8 +2,8 @@ import type { ChangeRect } from './changes';
 import { m } from './units';
 
 /**
- * THE WORLD'S CELLS: one fixed grid over the plane every map is laid on (the
- * flat map's, a planet chart's, the atlas's), the partition an edit's cost is
+ * THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the
+ * partition an edit's cost is
  * measured in (docs/relatorio-desempenho-mapas-enormes-2026-10-11.md 6.2).
  *
  * A fixed grid, not a tree: the cheapest structure to keep in step with

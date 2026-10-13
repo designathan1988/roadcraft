@@ -24,8 +24,8 @@ import { LIST_KINDS, type ListPart, type RecordPart, type Restoration, type Road
 
 /** Each saved key of the map and the part that keeps it: a key added to the format and not here does not compile. */
 export const PARTS_OF_SAVED = {
-  version: null, unit: null, planetHalf: null,
-  nodes: 'nodes', segments: 'segments', terrain: 'terrainStamps', relief: 'terrainRelief', gridOrigins: 'gridOrigins',
+  version: null, unit: null,
+  nodes: 'nodes', segments: 'segments', terrain: 'terrainStamps', relief: 'terrainRelief',
   markingStyle: 'markingStyle', nature: 'nature', poles: 'poles', poleSpans: 'poleSpans', paint: 'terrainPaint',
   fog: ['fogDabs', 'fogSettings'], gullies: ['gullyDabs', 'gullyAuto'], clouds: 'clouds', elements: 'elements', trees: 'trees',
   weather: 'weather', treeClearings: 'treeClearings', landscape: 'landscape', transit: 'transit', barriers: 'barriers',
@@ -181,8 +181,7 @@ export class DocImage {
       if (performance.now() - at > 2) performance.measure(`hitch:image/${r.part} ${kept.size}`, { start: at, end: performance.now() });
     }
     for (const part of LISTS) {
-      const kind = LIST_KINDS[part];
-      if (kind !== null && !moved([kind])) continue;
+      if (!moved([LIST_KINDS[part]])) continue;
       const at = performance.now();
       const kept = this.lists.get(part)!;
       const now = doc.listOf(part);

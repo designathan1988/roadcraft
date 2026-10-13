@@ -1,7 +1,7 @@
 /**
  * THE PERFORMANCE BUDGETS: one table for the game's own watch (the F9 monitor,
- * `ui/healthWatch.ts`), the specs (`tests/perf/budgets.spec.ts`,
- * `tests/planet/perfBudgets.spec.ts`, run by `npm run check`).
+ * `ui/healthWatch.ts`), the specs (`tests/perf/budgets.spec.ts`, run by
+ * `npm run check`).
  *
  * A ratchet: each number is what the game does now with a margin, and may
  * only go DOWN. Raising one needs the player's yes (CLAUDE.md, "Performance
@@ -56,8 +56,8 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
 }
 
 /**
- * The specs' counts: exact, the same on every run (`tests/perf`,
- * `tests/planet/perfBudgets.spec.ts`). Measured 2026-10-11.
+ * The specs' counts: exact, the same on every run (`tests/perf`). Measured
+ * 2026-10-11.
  */
 export const COUNT_BUDGETS = {
   /** Rings measured per corner of the ground graded to the default town's 761 buildings (7.59): the nearest-ring pruning (`pads.ts`). */
@@ -66,8 +66,6 @@ export const COUNT_BUDGETS = {
   kerbEdgesPerAsk: { max: 260, level: 'error', why: 'poda do meio-fio (208,6; sem ela a cidade inteira)' },
   /** Cells of the default town's crossing surface (21 297). */
   townWalkableCells: { max: 30_000, level: 'error', why: 'grades das travessias da cidade padrão (21 297)' },
-  /** Cells per road segment of a planet network over three charts, one on another face (108): a grid per cluster, never one over the atlas between them (millions). */
-  planetWalkableCellsPerSegment: { max: 200, level: 'error', why: 'grades por grupo no planeta (108 por segmento)' },
   /** Triangles of the road surfaces of `tests/fixtures/grid-and-bends.json` (275 691): neither bloated nor stripped of detail. */
   fixtureRoadTriangles: { min: 220_000, max: 330_000, level: 'error', why: 'superfícies das vias da cena fixa (275 691)' },
   /** Meshes (draw calls) of the same surfaces (134). */

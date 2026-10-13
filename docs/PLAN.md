@@ -231,7 +231,7 @@ com fotos examinadas uma a uma, `docs/STATUS.md` atualizado, commit e push.
 | F7 Pessoas | F6 | um sistema na GPU, preparado na build; bonitas de perto (causa confirmada antes) | CPU, envios, travadas | perto, aprovadas pelo jogador | fotos de perto pedem o "sim" do jogador → "Aguardando o jogador" |
 | F8 Sombras e pós | F7 | cascatas, sombra refeita só quando algo se moveu, objeto pequeno sem sombra longe, orçamento por passe, nada desenhado sem ser visto | GPU por passe | iguais ou melhores | mudança visual da sombra → fotos antes/depois |
 | F9 Memória | F8 | crescimento parado eliminado; nenhuma alocação em laço quente | heap/min, MB/s | — | causa não achada → instantâneos comparados |
-| F10 Planeta e plano | F9 | curvatura só onde aparece; cartas e divisas num módulo; abertura sem travada; transição contínua; experimento de tamanho de mundo | GPU no zoom, abertura | transição, perto e longe | quebrar mapas existentes → importador testado |
+| F10 Mapa | F9 | feito em 2026-10-13 por decisão do jogador: planeta e Terra desenrolada fora, mapa plano de 10,24 km, unidade de 1 m (`docs/STATUS.md`) | — | — | — |
 | F11 Simulação | F10 | pedestres, lotes, caminhões e A* medidos e corrigidos; worker só se o portão pedir | ms de passo | trânsito ao longo do tempo | — |
 | F12 Defeitos abertos | F11 | cada item de `PROBLEMS.md` + os do pedido, com causa e teste | por item | por item | — |
 | F13 Fechamento | F12 | check, fuzz, portão, teste de jogo, docs; metas finais da seção 7 do pedido | todas | todas | — |

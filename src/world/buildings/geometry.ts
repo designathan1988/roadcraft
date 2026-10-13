@@ -1,6 +1,5 @@
 import { steadyRatio } from '@core/scalar';
 import type { Vec2 } from '@core/vec2';
-import { onChartOf } from '../planet/charts';
 import { pointInPolygon } from '@core/polygon';
 import { TUNED_UNIT, m } from '../units';
 import { localFootprint, edgeFrame, volumeSides, offsetRing, overlapArea, supportShare } from './footprints';
@@ -47,14 +46,9 @@ export function worldToLocal(b: Building, p: Vec2): Vec2 {
   return { x: dx * c + dy * s, y: -dx * s + dy * c };
 }
 
-/**
- * `worldToLocal` for a point written on its own piece's chart - the pointer,
- * a click: on the planet a building is kept on one chart and the point is
- * carried onto it first (`world/planet/charts.ts` onChartOf; two charts'
- * points are 1 600 units or more apart in the atlas). The same on the flat map.
- */
+/** `worldToLocal` for a point the pointer gives (a click). */
 export function worldToLocalAt(b: Building, p: Vec2): Vec2 {
-  return worldToLocal(b, onChartOf(p, b));
+  return worldToLocal(b, p);
 }
 
 /** A local direction turned into the world. */

@@ -1,6 +1,3 @@
-import { FACE_HALF, PLANET_RADIUS, type Vec3 } from '@core/cubeSphere';
-import { TILES, TILE_HALF, sphereToTileInto, tileOfDirection, tileToSphereInto } from '@core/planetTiles';
-import { ATLAS_COLUMNS, ATLAS_ROWS, atlasToTileInto, tileToAtlas, type TileLocal } from './planet/atlas';
 import type { SerializedDoc } from './doc';
 import { METERS_PER_UNIT } from './units';
 
@@ -13,14 +10,7 @@ import { METERS_PER_UNIT } from './units';
  * positions, widths, heights, radii, a building's every measure. Angles,
  * counts, ids, shares (0..1), times and money are left alone.
  *
- * Positions on the flat map scale about the origin, the map's centre. On the
- * planet a position is an address in the atlas (a piece's centre plus a point
- * of its map, `planet/atlas.ts`): pieces keep their size in units while the
- * town shrinks in units, so the town is shrunk about ONE point of the sphere
- * (the middle of its roads, on the map of the piece holding it, an azimuthal
- * equidistant chart, `core/planetTiles.ts`) and every point is written back
- * on the piece that then owns it. Scaling each point about its own piece's
- * centre would tear every road crossing a border in two.
+ * Positions scale about the origin, the map's centre.
  */
 
 /** The unit every map saved before the field existed was made in. */
@@ -94,170 +84,17 @@ export function rescaleBuilding(raw: unknown, factor: number, place: PlaceFn | n
   return b;
 }
 
-const sphere: Vec3 = { x: 0, y: 0, z: 0 };
-const local: TileLocal = { tile: 0, x: 0, y: 0 };
-const chart = { x: 0, y: 0 };
-
-/**
- * The planet's transform: about the middle of `anchors` (atlas points), on
- * the map of the piece that holds it, then back into the atlas.
- */
-function planetPlace(anchors: readonly { x: number; y: number }[], factor: number): PlaceFn {
-  // The middle: the mean direction of the anchors on the sphere.
-  let sx = 0, sy = 0, sz = 0;
-  for (const p of anchors) {
-    atlasToTileInto(p.x, p.y, local);
-    tileToSphereInto(local.tile, local.x, local.y, sphere);
-    sx += sphere.x; sy += sphere.y; sz += sphere.z;
-  }
-  const home = tileOfDirection({ x: sx, y: sy, z: sz });
-  // The middle on that piece's map: the mean of the anchors there.
-  let ax = 0, ay = 0;
-  for (const p of anchors) {
-    atlasToTileInto(p.x, p.y, local);
-    tileToSphereInto(local.tile, local.x, local.y, sphere);
-    sphereToTileInto(home, sphere, chart);
-    ax += chart.x; ay += chart.y;
-  }
-  ax /= anchors.length; ay /= anchors.length;
-  return (x, y) => {
-    atlasToTileInto(x, y, local);
-    tileToSphereInto(local.tile, local.x, local.y, sphere);
-    sphereToTileInto(home, sphere, chart);
-    tileToSphereInto(home, ax + (chart.x - ax) * factor, ay + (chart.y - ay) * factor, sphere);
-    const owner = tileOfDirection(sphere);
-    sphereToTileInto(owner, sphere, chart);
-    return tileToAtlas(owner, chart.x, chart.y);
-  };
-}
-
-/**
- * The planet's size every map was made on before the field existed: faces of
- * 3 000 units (the planet grew 2.5x on 2026-10-10, to faces of 6 km).
- */
-export const LEGACY_PLANET_HALF = 3000;
-
-/**
- * An atlas point of a planet of another size (`half`: its FACE_HALF) saved
- * at another unit (`unit`, metres a unit) as a sphere direction, into `out`.
- * The pieces are the same angles of the sphere whatever its size
- * (`core/planetTiles.ts`, equiangular), so only their maps' scale and the
- * atlas's spacing change with it: `planet/atlas.ts` ATLAS_PITCH, from the
- * widest piece and its reach, in THAT build's units (a reach of 120 m on a
- * grid of 160 m with 80 m to spare - 300, 400 and 200 at 0.4 m a unit, as
- * every build before the switch had them).
- */
-function oldAtlasToSphereInto(half: number, unit: number, x: number, y: number, out: Vec3): Vec3 {
-  const k = half / FACE_HALF;
-  const grid = 160 / unit;
-  const pitch = Math.ceil((2 * (TILE_HALF * k + 120 / unit) + 80 / unit) / grid) * grid;
-  const col = Math.min(ATLAS_COLUMNS - 1, Math.max(0, Math.round(x / pitch) + ATLAS_COLUMNS / 2));
-  const row = Math.min(ATLAS_ROWS - 1, Math.max(0, Math.round(y / pitch) + ATLAS_ROWS / 2));
-  const tile = row * ATLAS_COLUMNS + col;
-  const lx = x - (col - ATLAS_COLUMNS / 2) * pitch, ly = y - (row - ATLAS_ROWS / 2) * pitch;
-  // The piece's own map at that planet's radius (`tileToSphereInto` at another R).
-  const t = TILES[tile]!, r = Math.hypot(lx, ly);
-  if (r < 1e-9) { out.x = t.centre.x; out.y = t.centre.y; out.z = t.centre.z; return out; }
-  const theta = r / (PLANET_RADIUS * k), c = Math.cos(theta), sn = Math.sin(theta) / r;
-  out.x = c * t.centre.x + sn * (lx * t.east.x + ly * t.north.x);
-  out.y = c * t.centre.y + sn * (lx * t.east.y + ly * t.north.y);
-  out.z = c * t.centre.z + sn * (lx * t.east.z + ly * t.north.z);
-  return out;
-}
-
-/**
- * The transform of a map made on a planet of another size (`half`), its town
- * kept the same size: about the middle of its anchors, each point's offset
- * from it measured on the middle's piece's map at the old radius and laid at
- * the same offset (times `factor`) on that map at the new one.
- */
-function resizedPlanetPlace(anchors: readonly { x: number; y: number }[], half: number, unit: number, factor: number): PlaceFn {
-  const k = half / FACE_HALF;
-  let sx = 0, sy = 0, sz = 0;
-  for (const p of anchors) {
-    oldAtlasToSphereInto(half, unit, p.x, p.y, sphere);
-    sx += sphere.x; sy += sphere.y; sz += sphere.z;
-  }
-  const home = tileOfDirection({ x: sx, y: sy, z: sz });
-  // A direction on `home`'s map at the old radius (the map scales with it).
-  const oldChart = (d: Vec3): { x: number; y: number } => {
-    sphereToTileInto(home, d, chart);
-    return { x: chart.x * k, y: chart.y * k };
-  };
-  let ax = 0, ay = 0;
-  for (const p of anchors) {
-    const c = oldChart(oldAtlasToSphereInto(half, unit, p.x, p.y, sphere));
-    ax += c.x; ay += c.y;
-  }
-  ax /= anchors.length; ay /= anchors.length;
-  // The middle's place on the new planet: the same direction (the mean of
-  // the points on the old map, not the map of their mean direction - on a
-  // planet a few km round the two differed by 10 cm), on the new map, whose
-  // scale is the old one's over k. With the planet the same size in metres
-  // every point then lands exactly where it was.
-  const mx = ax / k, my = ay / k;
-  return (x, y) => {
-    const c = oldChart(oldAtlasToSphereInto(half, unit, x, y, sphere));
-    tileToSphereInto(home, mx + (c.x - ax) * factor, my + (c.y - ay) * factor, sphere);
-    const owner = tileOfDirection(sphere);
-    sphereToTileInto(owner, sphere, chart);
-    return tileToAtlas(owner, chart.x, chart.y);
-  };
-}
-
-/**
- * A point of the atlas a planet of faces `half` units saved at `unit` metres
- * a unit, in this build's atlas: the same direction of the sphere, on the
- * piece that owns it now. What a saved camera looks at goes through this; a
- * map's points go through `resizedPlanetPlace`, which also keeps its town's
- * size when the planet's changed.
- */
-export function planetPointInUnit(x: number, y: number, half: number, unit: number): { x: number; y: number } {
-  oldAtlasToSphereInto(half, unit, x, y, sphere);
-  const owner = tileOfDirection(sphere);
-  sphereToTileInto(owner, sphere, chart);
-  return tileToAtlas(owner, chart.x, chart.y);
-}
-
-/** The size of the planet a saved map was made on (`planetHalf`; none: the first one). */
-export const savedPlanetHalf = (data: unknown): number => {
-  const said = isRecord(data) ? data.planetHalf : undefined;
-  return finite(said) && said > 0 ? said : LEGACY_PLANET_HALF;
-};
-
-/** The positions' transform for a map in the new unit: flat about the origin, the planet about its town. */
-export function placeFor(anchors: readonly { x: number; y: number }[], factor: number): PlaceFn {
-  if (!__PLANET__ || anchors.length === 0) return (x, y) => ({ x: x * factor, y: y * factor });
-  return planetPlace(anchors, factor);
-}
-
-/** Every point a document has that can stand for where its town is. */
-function anchorsOf(data: SerializedDoc): { x: number; y: number }[] {
-  const out: { x: number; y: number }[] = [];
-  for (const n of data.nodes ?? []) if (finite(n.x) && finite(n.y)) out.push(n);
-  if (out.length === 0) for (const b of (data.buildings ?? []) as unknown[]) if (isRecord(b) && finite(b.x) && finite(b.y)) out.push(b as { x: number; y: number });
-  if (out.length === 0) for (const s of data.terrain ?? []) if (finite(s.x) && finite(s.y)) out.push(s);
-  return out;
-}
-
 /**
  * A serialized document in this build's unit. Returns `data` itself when it
  * already is; otherwise a copy, every length scaled (see the file's comment).
  */
 export function rescaleSerializedDoc(data: SerializedDoc): SerializedDoc {
   const factor = unitFactor((data as { unit?: unknown }).unit);
-  // On the planet: the size of the planet it was made on (none: the first, `LEGACY_PLANET_HALF`).
-  const half = __PLANET__ ? savedPlanetHalf(data) : FACE_HALF;
-  const resized = __PLANET__ && Math.abs(half - FACE_HALF) > 1e-6;
-  if (factor === 1 && !resized) return data;
-  const anchors = anchorsOf(data);
-  // On the planet the atlas it was saved in is read with that build's own
-  // measures (its unit and its planet), whatever changed.
-  const oldUnit = METERS_PER_UNIT * factor;
-  const place = __PLANET__ && anchors.length ? resizedPlanetPlace(anchors, half, oldUnit, factor) : placeFor(anchors, factor);
+  if (factor === 1) return data;
+  const place: PlaceFn = (x, y) => ({ x: x * factor, y: y * factor });
   const at = <T>(r: T): T => placed(r, place);
   const scale = <T>(keys: readonly string[]) => (r: T): T => lengths(at(r), factor, keys);
-  const out: Loose = { ...data, unit: METERS_PER_UNIT, ...(__PLANET__ ? { planetHalf: FACE_HALF } : {}) };
+  const out: Loose = { ...data, unit: METERS_PER_UNIT };
   out.nodes = data.nodes.map((n) => lengths(at(n), factor, ['heightOffset']));
   out.segments = data.segments.map((s) => {
     const seg: Loose = { ...s };

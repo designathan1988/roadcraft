@@ -237,12 +237,12 @@ function waterNormalTexture(size: number, anisotropy: number): DataTexture {
 
 /**
  * The ripple texture, baked once per size and filtering and shared by every
- * water surface (the planet has one per piece): a texture is not freed with
+ * water surface (one per plate): a texture is not freed with
  * the material that uses it (three.js manual, "How to dispose of Objects"),
  * so the surfaces never dispose it.
  */
 const normalsMade = new Map<string, DataTexture>();
-export function sharedWaterNormals(anisotropy: number): DataTexture {
+function sharedWaterNormals(anisotropy: number): DataTexture {
   const size = waterTextureSize(anisotropy);
   const id = `${size}:${anisotropy}`;
   let made = normalsMade.get(id);
@@ -321,7 +321,7 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
     uGround: { value: null as Texture | null },
     // half extent, cell, corners per side; z = 0 until a ground is set.
     uGroundGrid: { value: new Vector3(0, 1, 0) },
-    // Where the ground's grid is centred, three's x, z (a planet face's centre).
+    // Where the ground's grid is centred, three's x, z (its plate's centre).
     uGroundOrigin: { value: new Vector2() },
     uWaves: { value: 0.3 },
     uFoamAmount: { value: 0.4 },

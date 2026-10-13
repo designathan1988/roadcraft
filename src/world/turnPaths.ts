@@ -9,8 +9,6 @@ import { mouthOverlapStrip } from './junction/mouthOverlap';
 import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictPoints';
 import { m, stepsIn } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
-import { nodeChart } from './geometry';
-import { carryPoints } from './planet/charts';
 
 /**
  * The path a vehicle drives through a junction, as open as the kerbs allow.
@@ -84,24 +82,17 @@ export class JunctionSurface {
   constructor(net: Network, node: NodeId) {
     const at = net.doc.node(node);
     this.centre = { x: at?.x ?? 0, y: at?.y ?? 0 };
-    // On the node's chart (`world/planet/charts.ts`): the plate is laid there,
-    // each leg's surface on its own segment's chart and the far plate on its
-    // node's - written on other pieces' charts across a border, tens of km
-    // away in the atlas, and a body swept over them found no ground.
-    const chart = at ? nodeChart(net.doc, node) : 0;
-    const add = (ring: Poly, from = chart): void => {
-      const points = carryPoints(from, chart, ring);
-      if (points.length < 3) return;
-      this.areas.push(areaOf(points));
+    const add = (ring: Poly): void => {
+      if (ring.length < 3) return;
+      this.areas.push(areaOf(ring));
     };
     // A road's own outline and, on a curved road, the strips the drawn surface
     // lays across its mouths (`junction/mouthOverlap.ts`).
     const road = (segment: SegmentId, level: Level.Asphalt | Level.Curb, mouths: readonly NodeId[]): void => {
       const ribbon = net.ribbons.get(segment);
       if (!ribbon) return;
-      const from = net.polylines.chart(net.doc, segment);
       const ring = ribbon.rings[level];
-      if (ring && !ring.isEmpty) add(ring.flatten(), from);
+      if (ring && !ring.isEmpty) add(ring.flatten());
       const seg = net.doc.segments.get(segment);
       const trims = net.trims.get(segment);
       if (!seg?.curve || !trims) return;
@@ -111,7 +102,7 @@ export class JunctionSurface {
         if (trim <= 0) continue;
         const strip = mouthOverlapStrip(ribbon.full, halfWidth(ribbon.road, level),
           seg.a === end ? trim : ribbon.full.length - trim);
-        if (strip) add(strip, from);
+        if (strip) add(strip);
       }
     };
     for (const level of [Level.Asphalt, Level.Curb] as const) {
@@ -128,7 +119,7 @@ export class JunctionSurface {
         const far = seg ? (seg.a === node ? seg.b : seg.a) : undefined;
         road(segment, level, far === undefined || far === node ? [node] : [node, far]);
         if (far === undefined || far === node) continue;
-        for (const farRing of net.junctions.get(far)?.get(level)?.rings ?? []) if (!farRing.isEmpty) add(farRing.flatten(), nodeChart(net.doc, far));
+        for (const farRing of net.junctions.get(far)?.get(level)?.rings ?? []) if (!farRing.isEmpty) add(farRing.flatten());
         // And the roads on beyond it: past a node with no plate (one road
         // bending on, a chain) the approach of a short leg is already the next
         // road's, and a body a length behind the stop line stands on it (fuzz

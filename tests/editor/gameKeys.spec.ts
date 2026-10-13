@@ -8,7 +8,6 @@ import type { Tool } from '@editor/toolMachine';
  */
 interface World {
   tool: Tool;
-  flying: boolean;
   smoothNode: boolean;
   road: boolean;
   buildingUses: (key: string) => boolean;
@@ -18,17 +17,10 @@ interface World {
 }
 
 function setup(start: Partial<World> = {}) {
-  const w: World = { tool: 'inspect', flying: false, smoothNode: false, road: false, buildingUses: () => false, focusFromKeyboard: false, healthOpen: false, calls: [], ...start };
+  const w: World = { tool: 'inspect', smoothNode: false, road: false, buildingUses: () => false, focusFromKeyboard: false, healthOpen: false, calls: [], ...start };
   const log = (what: string) => () => { w.calls.push(what); };
   const deps: GameKeyDeps = {
     tool: () => w.tool,
-    flight: {
-      ready: () => true,
-      active: () => w.flying,
-      toggle: log('flight toggle'),
-      toggleClean: log('flight clean'),
-      press: (code) => { const used = ['KeyW', 'ControlLeft'].includes(code); if (used) w.calls.push(`flight ${code}`); return used; },
-    },
     buildingKey: (e) => { const used = w.buildingUses(e.key); if (used) w.calls.push(`building ${e.key}`); return used; },
     transitKey: () => false,
     barrierKey: () => false,
@@ -142,17 +134,7 @@ describe('the game keys', () => {
     expect(w.calls).toEqual(['undo', 'redo', 'redo', 'save', 'duplicate', 'delete road']);
   });
 
-  it('flies on its own keys and lets the rest reach the game', () => {
-    const { w, press } = setup({ flying: true });
-    press('KeyW', 'w');
-    press('ControlLeft', 'Control', { ctrl: true });
-    press('ArrowUp', 'ArrowUp');
-    press('KeyU', 'u');
-    press('KeyV', 'v');
-    expect(w.calls).toEqual(['flight KeyW', 'flight ControlLeft', 'camera ArrowUp', 'flight clean', 'flight toggle']);
-  });
-
-  it('leaves V to the road plan with the road tool in hand, on the ground', () => {
+  it('leaves V to the road plan with the road tool in hand', () => {
     const { w, press } = setup({ tool: 'road' });
     press('KeyV', 'v');
     expect(w.calls).toEqual(['road v']);

@@ -2,7 +2,6 @@ import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
 import {
   BufferGeometry,
-  Color,
   Float32BufferAttribute,
   FrontSide,
   Mesh,
@@ -29,10 +28,7 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { UNITS_PER_METER as UNITS_PER_METER_HERE, m, perM } from '@world/units';
-import { TILES_PER_SIDE, TILE_COUNT as PLANET_TILE_COUNT } from '@core/planetTiles';
-import { gridOrigin, onGridOrigin } from '@world/planet/charts';
-import { PLATE_CELL } from '@world/planet/atlas';
+import { m, perM } from '@world/units';
 
 import type { RoadDoc } from '@world/doc';
 import { BIOME_KINDS, COVER_KINDS, PAINT_KINDS, isBiomeKind, isGeologyKind, type CoverKind, type GeologyKind, type PaintDab } from '@world/terrainPaint';
@@ -41,15 +37,12 @@ import { GroundChanges } from './groundChanges';
 import { createLandLighter, unionCorners, type CornerRect, type LightRequest, type LightResult } from './terrainLightCompute';
 import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
-import { SEA_LEVEL } from '@world/planet/relief';
-import { FLAT_EARTH_GLSL } from './flatEarthGlsl';
 import type { PlateMesh } from './plateMesh';
 import { steepnessInto } from './terrainSteep';
 import type { ChangeJournal } from '@world/changes';
-import { MAP_SIZE } from '@world/bounds';
+import { MAP_HALF, PLATE_SIZE } from '@world/bounds';
 import {
   MAX_TERRAIN_STAMPS,
-  RELIEF_EARTH,
   RIVER_BED_FLOOR,
   TERRAIN_WATER_HEIGHT,
   TerrainIndex,
@@ -62,26 +55,15 @@ import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
 import { RELIEF_TEXTURE, createReliefBake } from './terrainRelief';
-import { ICE_FIELD_GLSL } from './planet/iceField';
-
-/** Pieces on a face of the planet's cube (`core/planetTiles.ts`). */
-const TILES_PER_FACE = TILES_PER_SIDE * TILES_PER_SIDE;
 
 /**
- * Side of the playable, editable terrain plate, in world units.
- *
- * The world the editor authors in is 4096 units across. The plate is a little
- * wider so the player never reaches its rim, and a separate, cheap backdrop
- * carries the view out to the horizon beyond it — a single large plate at the
- * resolution the play area needs would be most of the frame's vertex budget
- * spent on ground nobody builds on.
+ * Side of one terrain plate, in world units: the map is laid in square plates
+ * (`world/bounds.ts`), each its own mesh, so a plate far off the view costs a
+ * coarse stand-in and an edit rebuilds the plate it touched.
  */
-const TERRAIN_SIZE = MAP_SIZE;
-/**
- * Cells per side. 300 gives a 16-unit cell: 6.4 m, fine enough for a brush.
- * The planet's faces are wider (6 km): 375 keeps the same cell.
- */
-const TERRAIN_SEGMENTS = __PLANET__ ? Math.round(MAP_SIZE / PLATE_CELL) : 300;
+const TERRAIN_SIZE = PLATE_SIZE;
+/** Cells per side: 320 cells of 6.4 m (`world/bounds.ts` PLATE_SIZE), fine enough for a brush. */
+const TERRAIN_SEGMENTS = 320;
 export const TERRAIN_BASE = m(-0.048);
 
 /** Radius of a river's water disc, as a fraction of the stamp that carved it. */
@@ -94,159 +76,6 @@ const WATER_FILL = 0.45;
 const WATER_MARGIN = m(0.16);
 /** Grid resolution of the unified river surface. */
 const WATER_CELL = m(1.6);
-
-/**
- * THE PLANET'S CLIMATES in the ground's colour: value noise read at the point
- * of the sphere, so the biomes' borders wander the same on both sides of every
- * border between pieces (Catlike Coding, "Seamless Cube Sphere": noise at the
- * 3-D position, never per face). Empty on the flat map, whose shaders hold no
- * planet.
- */
-const PLANET_BIOME_NOISE = `
-  ${FLAT_EARTH_GLSL}
-  ${ICE_FIELD_GLSL}
-  // \`natureNoise.ts\` natureNoise, the same integer hash (uint wraps as Math.imul does).
-  float woodsHash(int a, int b, int c, uint salt) {
-    uint v = (uint(a) * 374761393u) ^ (uint(b) * 668265263u) ^ (uint(c) * 1440670441u) ^ (salt * 2246822519u);
-    v = (v ^ (v >> 13u)) * 1274126177u;
-    return float(v ^ (v >> 16u)) / 4294967296.0;
-  }
-  float woodsLayer(ivec3 c, vec2 sm, int z, uint salt) {
-    float top = mix(woodsHash(c.x, c.y, z, salt), woodsHash(c.x + 1, c.y, z, salt), sm.x);
-    float bottom = mix(woodsHash(c.x, c.y + 1, z, salt), woodsHash(c.x + 1, c.y + 1, z, salt), sm.x);
-    return mix(top, bottom, sm.y);
-  }
-  // \`natureNoise.ts\` natureNoise3 at a point of the sphere (world units).
-  float woodsNoise(vec3 p, float scale, uint salt) {
-    vec3 g = p / scale, c = floor(g), f = g - c;
-    vec3 sm = f * f * (3.0 - 2.0 * f);
-    ivec3 ci = ivec3(c);
-    return mix(woodsLayer(ci, sm.xy, ci.z, salt), woodsLayer(ci, sm.xy, ci.z + 1, salt), sm.z);
-  }
-  float planetBiomeHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-  float planetBiomeNoise(vec3 x) {
-    vec3 i = floor(x), f = fract(x);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(mix(planetBiomeHash(i), planetBiomeHash(i + vec3(1, 0, 0)), f.x), mix(planetBiomeHash(i + vec3(0, 1, 0)), planetBiomeHash(i + vec3(1, 1, 0)), f.x), f.y),
-               mix(mix(planetBiomeHash(i + vec3(0, 0, 1)), planetBiomeHash(i + vec3(1, 0, 1)), f.x), mix(planetBiomeHash(i + vec3(0, 1, 1)), planetBiomeHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-  }
-`;
-
-/**
- * The biomes by latitude, as the Earth's (the planet's axis is its frame's z,
- * world/planet/sun.ts): ice caps over the poles (the polar circles, ~66
- * degrees), tundra and taiga below them, the dry belt of the subtropics where
- * the Hadley cells' air comes down (~30 degrees: the Sahara, the Atacama,
- * Australia's deserts), and the wet green of the tropics. Only the ground's
- * HUE turns - its own texture, brightness and contrast kept, as the savanna's
- * straw is - so it is the same land to build on.
- */
-const PLANET_BIOMES = `
-  {
-    vec3 biomeE, biomeN;
-    vec3 globe = planetDirection(vTerrainAtlas, biomeE, biomeN);
-    // Continents of climate: a broad wander at the planet's scale, a finer one on its edges.
-    float wander = (planetBiomeNoise(globe * 2.3) - 0.5) * 0.26 + (planetBiomeNoise(globe * 8.9 + 4.1) - 0.5) * 0.08
-      + (planetBiomeNoise(globe * 31.0 + 9.3) - 0.5) * 0.025;
-    float lat = clamp(abs(globe.z) + wander, 0.0, 1.0);
-    float luma = dot(blended.rgb, vec3(0.3, 0.6, 0.1));
-    // The texture's own light and shade, about its mean: carried onto every
-    // biome's colour, so sand and snow keep the ground's grain.
-    float grain = clamp(luma / 0.19, 0.55, 1.5);
-    // Taiga and tundra: a cold, browner olive, thinning to lichen.
-    float cold = smoothstep(0.7, 0.86, lat);
-    vec3 tundra = luma * mix(vec3(0.92, 1.0, 0.72), vec3(1.2, 1.1, 0.88), smoothstep(0.8, 0.9, lat));
-    blended.rgb = mix(blended.rgb, tundra, cold * 0.8 * living);
-    // The dry belt: steppe gold over a wide band, the deserts in its heart
-    // where the air is driest - whole regions, not stripes.
-    float belt = exp(-pow((lat - 0.47) / 0.17, 2.0));
-    float arid = planetBiomeNoise(globe * 2.1 + 11.0) * 0.75 + planetBiomeNoise(globe * 7.3 + 3.0) * 0.25;
-    float dryness = belt * (0.35 + 1.1 * arid);
-    float steppe = smoothstep(0.3, 0.6, dryness);
-    float desert = smoothstep(0.55, 0.9, dryness);
-    vec3 straw = luma * vec3(1.32, 1.06, 0.5);
-    // Ochre, as the Earth's deserts seen from orbit (pale sand read as cloud from afar).
-    vec3 sand = vec3(0.58, 0.42, 0.24) * grain * (0.9 + 0.2 * planetBiomeNoise(globe * 140.0));
-    blended.rgb = mix(blended.rgb, straw, steppe * 0.7 * living);
-    blended.rgb = mix(blended.rgb, sand, desert * 0.92 * living);
-    // THE ICE (\`world/planet/ice.ts\`): where the relief stands it - a sheet
-    // over the land, a shelf over the sea - its edge one pixel sharp, as the
-    // cliff under it is (the paint was a white wash with a blurred rim, the
-    // player 2026-10-11). Snow over it, albedo about 0.8; bare blue ice
-    // (about 0.56, smoother) where the wind scours it, near the margin and
-    // on every steep face, blue because dense ice absorbs the red (USGS);
-    // transverse crevasses across the flow, which runs out to the edge, so
-    // they follow the edge's own lines.
-    // Only a polar face's pieces (and the far globe's one draw) can hold ice:
-    // every point over |z| 0.707 is on the cube's faces 2 and 5, and the ice
-    // begins past 0.85. A branch on the piece's uniform, so every pixel of a
-    // draw takes it alike and the derivatives in it stay defined.
-    if (uPlanetTile < 0.0 || int(uPlanetTile) / ${TILES_PER_FACE} == 2 || int(uPlanetTile) / ${TILES_PER_FACE} == 5) {
-    vec2 iceIn2 = iceInside2(globe);
-    float iceIn = iceIn2.x;
-    float iceAA = max(fwidth(iceIn), 1e-4);
-    vec3 iceAt = globe * PLANET_R;
-    bool icePolar = abs(globe.z) >= ICE_CUT_Z;
-    // The crevasses run along the edge's own lines, a little bent; their
-    // coordinate and its screen footprint, out of any branch.
-    float iceBend = icePolar ? iceNoise(iceAt, ${m(70).toFixed(4)}, 76u) : 0.0;
-    float crevU = (iceIn2.y + iceBend * ${m(3).toFixed(4)}) / ${m(13).toFixed(4)};
-    float crevAA = fwidth(crevU);
-    // The face's layers fade before they are finer than the pixel (they ran into moire).
-    float layersSeen = 1.0 - smoothstep(0.25, 0.6, fwidth(vTerrainWorld.y) / ${m(1.1).toFixed(4)});
-    terrainIce = smoothstep(-0.5 * iceAA, 0.5 * iceAA, iceIn);
-    if (terrainIce > 0.0) {
-      float drift = iceNoise(iceAt, ${m(47).toFixed(4)}, 71u) * 0.6 + iceNoise(iceAt, ${m(13).toFixed(4)}, 72u) * 0.4;
-      // The snow's small dunes and sastrugi, seen close.
-      float dunes = iceNoise(iceAt, ${m(3.5).toFixed(4)}, 78u);
-      vec3 snowTop = vec3(0.8, 0.84, 0.9) * (0.93 + 0.1 * drift);
-      // Bare blue ice: the ablation zone by the margin, and a few patches
-      // scoured inland (blue-ice areas are about 1% of Antarctica's ice).
-      float scour = smoothstep(0.7, 0.82, iceNoise(iceAt, ${m(260).toFixed(4)}, 73u) * 0.7
-        + iceNoise(iceAt, ${m(70).toFixed(4)}, 74u) * 0.3
-        + 0.3 * (1.0 - smoothstep(${m(30).toFixed(4)}, ${m(260).toFixed(4)}, iceIn)));
-      // The faces: the front and the margin's wall (the steep band the
-      // relief rises over, \`ice.ts\` FRONT_WIDTH) - bare ice in the layers
-      // the years laid down, blue as dense ice is.
-      float face = max(smoothstep(12.0, 24.0, slopeDeg), 1.0 - smoothstep(ICE_FRONT_WIDTH * 0.55, ICE_FRONT_WIDTH * 0.9, iceIn));
-      float layers = 0.5 + 0.5 * sin(vTerrainWorld.y * ${(Math.PI * 2 / m(1.1)).toFixed(4)} + iceBend * 5.0);
-      vec3 blueIce = vec3(0.44, 0.6, 0.72) * (0.92 + 0.1 * drift);
-      vec3 faceIce = mix(vec3(0.26, 0.46, 0.62), vec3(0.55, 0.7, 0.82), mix(0.5, layers, layersSeen) * 0.55 + drift * 0.25);
-      vec3 iceColour = mix(snowTop, blueIce, scour * 0.75);
-      iceColour = mix(iceColour, faceIce, face);
-      // The crevasses (transverse: across the flow, which runs out to the
-      // edge): bands of them a little in from the margin and along a few
-      // shear zones inland, each crack a few tens of metres long, en
-      // echelon, a metre or so wide - a dark slot, blue walls, white lips.
-      float field = smoothstep(${m(35).toFixed(4)}, ${m(70).toFixed(4)}, iceIn) * (1.0 - smoothstep(${m(160).toFixed(4)}, ${m(300).toFixed(4)}, iceIn))
-        + smoothstep(0.82, 0.88, iceNoise(iceAt, ${m(600).toFixed(4)}, 75u));
-      // Each crack a run of the noise over its threshold: some 10 to 30 m.
-      float crack = smoothstep(0.6, 0.68, iceNoise(iceAt, ${m(16).toFixed(4)}, 77u)) * clamp(field, 0.0, 1.0);
-      float across = abs(fract(crevU) - 0.5);
-      float halfWidth = 0.02 + 0.016 * drift;
-      float crevasse = crack * (1.0 - smoothstep(halfWidth - crevAA, halfWidth + crevAA, across));
-      // Seen from afar a crevasse is a line under a pixel: its share of the pixel, never a flicker.
-      crevasse *= clamp(halfWidth / max(crevAA, 1e-4), 0.0, 1.0);
-      // The slot in shadow, its walls deep blue only at the lips.
-      vec3 crevColour = mix(vec3(0.015, 0.05, 0.1), vec3(0.12, 0.32, 0.5), smoothstep(0.7 * halfWidth, halfWidth, across));
-      iceColour = mix(iceColour, crevColour, crevasse * (1.0 - face));
-      blended.rgb = mix(blended.rgb, iceColour, terrainIce);
-      terrainIceGlaze = max(max(scour * 0.75, face * 0.55), crevasse);
-      terrainIceThin = max(face, crevasse);
-      // The bumps: the crevasse sunk, the snow's drifts, fading with the pixel's footprint.
-      float near = 1.0 - smoothstep(0.05, 0.4, crevAA);
-      terrainIceBump = (-crevasse * (1.0 - face) * ${m(0.6).toFixed(4)} + (drift - 0.5) * ${m(0.7).toFixed(4)} + (dunes - 0.5) * ${m(0.18).toFixed(4)}) * near * terrainIce;
-      // The face read as the wall it stands for: the relief can only rise
-      // over three of its cells (\`ice.ts\` FRONT_WIDTH), so the light is
-      // given the steepness of a cliff - twice the rise again over the band.
-      terrainIceBump += 2.0 * ICE_FRONT_HEIGHT * smoothstep(0.0, ICE_FRONT_WIDTH, iceIn);
-    }
-    }
-    // The tropics' wet green, a little deeper.
-    float tropic = 1.0 - smoothstep(0.12, 0.32, lat);
-    blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.86, 1.04, 0.84), tropic * 0.6 * living);
-  }
-`;
 
 /**
  * World size of one terrain quad.
@@ -286,29 +115,7 @@ export const GRASS_FIELD: { value: [number, number, number, number] } = { value:
  * laid, changed or removed - a set of lines over the ground went under it
  * wherever the ground was cut or filled after them (the player, 2026-10-06).
  */
-export const TERRAIN_GRID: { value: [number, number, number] } = { value: [m(10), 0, m(960)] };
-/**
- * The planet's pieces drawn in full (`planet/terrainAtlas.ts`), one bit a
- * piece, 24 to a float (exact in a float's mantissa): the far globe's ground
- * draws the others only. A uniform array, not a texture: the terrain's
- * fragment shader already holds the 16 texture units WebGL guarantees.
- */
-/**
- * The planet grid's origin (`world/planet/charts.ts` setGridOrigin): its
- * centre, east and north on the sphere, shared by every plate and moved with
- * the place the player builds.
- */
-const GRID_ORIGIN_GLSL = 'uniform vec3 GRID_C; uniform vec3 GRID_E; uniform vec3 GRID_N;';
-const GRID_FRAME = { c: { value: new Vector3() }, e: { value: new Vector3() }, n: { value: new Vector3() } };
-const readGridFrame = (): void => {
-  const o = gridOrigin();
-  GRID_FRAME.c.value.set(o.c.x, o.c.y, o.c.z);
-  GRID_FRAME.e.value.set(o.e.x, o.e.y, o.e.z);
-  GRID_FRAME.n.value.set(o.n.x, o.n.y, o.n.z);
-};
-if (__PLANET__) { readGridFrame(); onGridOrigin(readGridFrame); }
-export const PLANET_ACTIVE_WORDS = Math.ceil(PLANET_TILE_COUNT / 24);
-export const PLANET_ACTIVE_TILES: { value: Float32Array } = { value: new Float32Array(PLANET_ACTIVE_WORDS) };
+export const TERRAIN_GRID: { value: [number, number, number] } = { value: [m(10), 0, MAP_HALF] };
 /**
  * How far into the dry season the land is, 0 (the rains: everything green)
  * to 1 (the height of the drought: the savanna's grass straw-gold). Shared
@@ -317,19 +124,12 @@ export const PLANET_ACTIVE_TILES: { value: Float32Array } = { value: new Float32
 export const SEASON_DRY: { value: number } = { value: 0.4 };
 
 /**
- * What the surface reads of the document: the map's own, or (on the planet)
- * one face's share of it, in the face's coordinates (`planet/terrainAtlas.ts`).
+ * What the surface reads of the document: one plate's share of it, in the
+ * plate's own coordinates (`flatAtlas.ts`).
  */
 export type TerrainSource = Pick<RoadDoc, 'changes' | 'terrainRevision' | 'terrainStamps' | 'terrainRelief' | 'natureRevision' | 'nature' | 'paintRevision' | 'terrainPaint'> & {
-  /** The land under the stamps when it is not the plane's relief (a planet face's, `planet/relief.ts`). */
+  /** The map's relief under the stamps, in the plate's own coordinates. */
   readonly terrainGround?: (x: number, y: number) => number;
-  /**
-   * Where the sea may stand (the plate's own coordinates), when the land is
-   * the Earth's only in part: the whole flat Earth round an old map, whose own
-   * plate keeps its dry valleys (`world/flatEarth.ts` flatSeaFor). A map on
-   * the Earth's relief has its sea everywhere.
-   */
-  readonly terrainSea?: (x: number, y: number) => boolean;
 };
 
 export interface TerrainSurface {
@@ -403,8 +203,8 @@ export interface TerrainSurface {
   update(doc: TerrainSource, stroking?: boolean): boolean;
   /**
    * Brings the painted ground up to `doc.paintRevision`. `deferEcology`: the
-   * ecosystem is left to `settleEcology` (the planet's atlas reads its 864
-   * plates' a few at a time, nearest the view first).
+   * ecosystem is left to `settleEcology` (the atlas reads its plates' a few
+   * at a time, nearest the view first).
    */
   updatePaint(doc: TerrainSource, deferEcology?: boolean): void;
   /** Whether the ecosystem waits to be read again (`settleEcology`). */
@@ -465,22 +265,16 @@ export interface TerrainSurface {
   readonly parts: readonly TerrainPart[];
   /**
    * The highest corner of the drawn ground, when the surface keeps it as its
-   * ground moves (the planet's atlas, from its plates' horizon caps): read
-   * instead of every corner of every plate (`SceneHandle.landTop`).
+   * ground moves (the atlas, from its plates'): read instead of every corner
+   * of every plate (`SceneHandle.landTop`).
    */
   highest?(): number;
   /**
-   * Where the view looks (atlas x, y) and how much ground it takes in (the
-   * screen's half height, world units): the planet's atlas keeps in full the
-   * pieces near it (`planet/terrainAtlas.ts`). Nothing on the flat map.
+   * Where the view looks (world x, y) and how much ground it takes in (the
+   * screen's half height, world units): the atlas keeps in full the plates
+   * near it (`flatAtlas.ts`).
    */
   focus?(x: number, y: number, reach: number): void;
-  /**
-   * How much the sea holds a road up at a point (0..1, world x, y) over land
-   * `land` high: where the land is the Earth's, its sea is a floor no road
-   * goes under (`world/flatEarth.ts` seaRoadGround). None on a plate with no sea.
-   */
-  seaHold?(x: number, y: number, land: number): number;
   /**
    * The woods' density but the ecosystem's share per cell, made off the page
    * with the plate's first build (`woodsBase.ts`), while the natural land is
@@ -494,9 +288,8 @@ export interface TerrainSurface {
 export type TerrainRegion = readonly [number, number, number, number];
 
 /**
- * A plate of the ground and where its centre stands: the flat map is one, at
- * the origin; the planet's atlas six (`planet/terrainAtlas.ts`). `surface`
- * speaks the plate's own coordinates, about its centre.
+ * A plate of the ground and where its centre stands (`flatAtlas.ts`).
+ * `surface` speaks the plate's own coordinates, about its centre.
  */
 export interface TerrainPart {
   readonly surface: TerrainSurface;
@@ -902,8 +695,8 @@ export function terrainBakes(anisotropy: number): {
  *  - **Macro variation.** A slow noise tints wide regions warm or cool, so the
  *    ground has weather in it rather than one flat green.
  */
-/** Texels across the map in each painted-ground weight texture. */
-const PAINT_RES = __PLANET__ ? 256 : 1024;
+/** Texels across a plate in each painted-ground weight texture. */
+const PAINT_RES = 1024;
 
 /**
  * The water's level at every terrain corner within a few cells of water, for
@@ -1050,8 +843,8 @@ function bakedRows(texture: Texture): Uint8Array | Uint8ClampedArray | null {
  */
 /**
  * The rock layers and the macro map, made once and shared by every plate of
- * ground: the planet has 96 plates, and an array of the rock textures made
- * per plate was gigabytes of the same pixels.
+ * ground: an array of the rock textures made per plate was gigabytes of the
+ * same pixels.
  */
 const layersMade = new Map<string, DataArrayTexture>();
 function sharedLayers(key: string, textures: readonly Texture[], srgb: boolean, anisotropy: number): DataArrayTexture {
@@ -1162,9 +955,9 @@ const LIGHT_LAYER = 2;
  * The side of the painted ground's array before anything is painted on it:
  * the land's light layer (one texel a terrain corner) fits in it, and the
  * paint layers are empty. Grown to `PAINT_RES` by the first dab
- * (`growPaint`): on the planet each of the 864 plates kept a 256 x 256 x 3
- * array (786 KB) though almost none is ever painted - 680 MB of the page's
- * memory, and as much again on the GPU.
+ * (`growPaint`): every plate keeping its full array though almost none is
+ * ever painted cost hundreds of MB of the page's memory, and as much again on
+ * the GPU.
  */
 const PAINT_START_RES = Math.min(PAINT_RES, 2 ** Math.ceil(Math.log2(TERRAIN_SEGMENTS + 1)));
 function paintLayers(res = PAINT_START_RES): DataArrayTexture {
@@ -1220,8 +1013,8 @@ function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab): void {
   }
 }
 
-/** Side of the forest density grid over the plate (7.5 m a cell). */
-const FOREST_RES = __PLANET__ ? 128 : 256;
+/** Side of the forest density grid over the plate (7.8 m a cell). */
+const FOREST_RES = 256;
 
 /**
  * Lays one dab into the cover densities: its own cover towards full, every
@@ -1319,7 +1112,6 @@ function terrainMaterial(
     uPaintSize: { value: TERRAIN_SIZE },
     uGrassField: GRASS_FIELD,
     uGrid: TERRAIN_GRID,
-    ...(__PLANET__ ? { GRID_C: GRID_FRAME.c, GRID_E: GRID_FRAME.e, GRID_N: GRID_FRAME.n } : {}),
     uShore: { value: shore as Texture },
     uShoreGrid: { value: new Vector3(TERRAIN_HALF, TERRAIN_CELL, GRID) },
     uRockMap: { value: sharedLayers('map', bakes.rocks.map((bake) => bake.map), true, anisotropy) as Texture },
@@ -1346,15 +1138,9 @@ function terrainMaterial(
     // Set to the surface's own bake (`createTerrainSurface`).
     uRelief: RELIEF_TEXTURE,
     uReliefWindow: { value: new Vector4(0, 0, 1, 0) },
-    // Where this plate stands in the world (the planet's atlas: each face's
-    // own); the map's grids are read from it. Zero on the flat map.
+    // Where this plate stands in the world: its own coordinates (its grids,
+    // its textures) are the world's less this.
     uTileOrigin: { value: new Vector3() },
-    // The planet's piece this plate is (-1: none): it draws only its own part
-    // of the sphere (\`planet/bend.ts\` planetOwns).
-    uPlanetTile: { value: -1 },
-    // The planet's pieces drawn in full this frame (`PLANET_ACTIVE_TILES`):
-    // the far globe's ground (`uPlanetTile` -2) is not drawn over them.
-    ...(__PLANET__ ? { uPlanetActive: PLANET_ACTIVE_TILES } : {}),
   };
   material.userData['terrainUniforms'] = uniforms;
 
@@ -1367,7 +1153,6 @@ function terrainMaterial(
          varying vec3 vTerrainWorld;
          varying vec3 vTerrainAtlas;
          varying vec3 vTerrainNormal;
-         ${__PLANET__ ? 'varying vec3 vTerrainDir;' : ''}
          attribute float aSteep;
          varying float vTerrainSteep;
          uniform vec3 uTileOrigin;`,
@@ -1379,49 +1164,14 @@ function terrainMaterial(
          // world's (what lies round the camera).
          vTerrainAtlas = (modelMatrix * vec4(transformed, 1.0)).xyz;
          vTerrainWorld = vTerrainAtlas - uTileOrigin;
-         ${__PLANET__ ? `
-         // The point's direction from the planet's centre, once a vertex: the
-         // fragments read it interpolated (a 16-unit cell's chord is off the
-         // arc by a hundredth of a unit) instead of each working its piece's
-         // frame and trigonometry out again.
-         { vec3 pe, pn; vTerrainDir = planetDirection(vTerrainAtlas, pe, pn); }` : ''}
          vTerrainNormal = normalize(mat3(modelMatrix) * objectNormal);
          vTerrainSteep = aSteep;`,
       );
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
-        '#include <clipping_planes_fragment>',
-        __PLANET__
-          ? `#include <clipping_planes_fragment>
-             // Each piece's ground draws its own part of the sphere, with half a
-             // grid cell over its border so no hairline opens between two.
-             if (uPlanetTile >= 0.0 && !planetOwnsDirection(normalize(vTerrainDir), uPlanetTile, ${(TERRAIN_CELL / 2).toFixed(1)})) discard;
-             // The far globe's ground (\`planet/globeGround.ts\`): not over a piece drawn in full.
-             if (uPlanetTile < -1.5) {
-               vec2 globeLocal;
-               int globeTile = planetTile(vTerrainAtlas, globeLocal);
-               int globeWord = globeTile / 24;
-               float globeBits = uPlanetActive[globeWord];
-               if (mod(floor(globeBits / exp2(float(globeTile - globeWord * 24))), 2.0) > 0.5) discard;
-             }`
-          : '#include <clipping_planes_fragment>',
-      )
-      .replace(
         '#include <common>',
         `#include <common>
-         uniform float uPlanetTile;
-         // The planet's ice here (\`planet/iceField.ts\`, set with the biomes;
-         // none on the flat map): how much of the pixel it covers, the height
-         // of its bumps (crevasses, the snow's drifts) for the normal, how much
-         // of it is bare, glazed ice rather than snow, and how thin it is to
-         // the light (its faces and crevasses).
-         float terrainIce = 0.0;
-         float terrainIceBump = 0.0;
-         float terrainIceGlaze = 0.0;
-         float terrainIceThin = 0.0;
-         ${__PLANET__ ? `varying vec3 vTerrainDir; uniform float uPlanetActive[${PLANET_ACTIVE_WORDS}]; ${GRID_ORIGIN_GLSL}` : ''}
-         ${PLANET_BIOME_NOISE}
          varying vec3 vTerrainWorld;
          varying vec3 vTerrainAtlas;
          varying vec3 vTerrainNormal;
@@ -1437,7 +1187,7 @@ function terrainMaterial(
          // that scale only undulates.
          float terrainReliefHeight(vec4 t, float wide) { return t.r * wide + t.a * mix(0.5, 1.0, wide); }
          void terrainReliefLevel(vec2 uv, float layer, float span, float wide, out vec2 grad, out float crease, out vec2 rest) {
-           // A texel of the level as baked: on the planet a plate off the view has a smaller one (terrainRelief.ts FAR_RES).
+           // A texel of the level as baked.
            float e = max(1.0 / float(textureSize(uRelief, 0).x), 0.5 * max(fwidth(uv.x), fwidth(uv.y)));
            vec4 t0 = texture(uRelief, vec3(uv, layer));
            vec3 c0 = vec3(terrainReliefHeight(t0, wide), t0.gb);
@@ -2018,24 +1768,6 @@ function terrainMaterial(
            // canopy (eco.r) darkens it only once its trees stand there.
            blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.3, 0.36, 0.24), clamp(shoreSample.w * 1.6, 0.0, 0.9));
          }
-         ${PLANET_BIOMES}
-         ${__PLANET__ ? `
-         // The woods' own tone under the trees and in their place from afar
-         // (the trees end with the full pieces; past them only this tone):
-         // the masses stay, as a forest seen from orbit is a darker tone of
-         // the land - never a pop from trees to bare ground. Worked out per
-         // pixel from the same noise the trees stand by (\`natureNoise.ts\`),
-         // at the same map coordinates: one pattern on every piece.
-         {
-           vec3 woodsAt = normalize(vTerrainDir) * PLANET_R;
-           float woodsPatch = woodsNoise(woodsAt, ${(170 * UNITS_PER_METER_HERE).toFixed(4)}, 7u) * 0.6
-             + woodsNoise(woodsAt, ${(55 * UNITS_PER_METER_HERE).toFixed(4)}, 9u) * 0.3
-             + woodsNoise(woodsAt, ${(18 * UNITS_PER_METER_HERE).toFixed(4)}, 11u) * 0.1;
-           float woodsMass = clamp((woodsPatch - 0.47) / 0.3, 0.0, 1.0);
-           float woodsDensity = woodsMass * 0.72 + 0.35 * 0.3 - 0.06;
-           float woods = smoothstep(0.38, 0.7, woodsDensity);
-           blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.5, 0.68, 0.45), woods * living * (1.0 - terrainIce));
-         }` : ''}
          // (No slope wear, dry tops, pale crests or dark hollows in the colours
          // any more: the player asked for the terrain's effects to go.)
          {
@@ -2107,7 +1839,7 @@ function terrainMaterial(
          // darker, so the blades stand in a lawn and not on a bright card.
          float grassDist = distance(vec2(vTerrainAtlas.x, -vTerrainAtlas.z), uGrassField.xy);
          float grassUnder = uGrassField.w * (1.0 - smoothstep(uGrassField.z * 0.45, uGrassField.z * 0.95, grassDist));
-         blended.rgb *= mix(1.0, 0.8, grassUnder * (1.0 - clamp(dirtMix + rockMix, 0.0, 1.0)) * (1.0 - terrainIce));
+         blended.rgb *= mix(1.0, 0.8, grassUnder * (1.0 - clamp(dirtMix + rockMix, 0.0, 1.0)));
          // Painted ground (world/terrainPaint.ts): a weight per layer, the
          // grass showing through what the weights leave.
          vec2 paintUv = vec2((vTerrainWorld.x + uPaintHalf) / uPaintSize, (uPaintHalf - vTerrainWorld.z) / uPaintSize);
@@ -2133,21 +1865,8 @@ function terrainMaterial(
          diffuseColor *= blended;
          // The grid: a line a pixel wide at every cell, on the map only.
          if (uGrid.y > 0.0) {
-           ${__PLANET__ ? `
-           // On the planet: one grid for the sphere, the map about the
-           // grid's origin (\`world/planet/charts.ts\` setGridOrigin, the one the
-           // road tool snaps to): smooth everywhere, no cube edge or corner.
-           vec2 g;
-           float onMap = 1.0;
-           {
-             vec3 d = normalize(vTerrainDir);
-             vec2 en = vec2(dot(d, GRID_E), dot(d, GRID_N));
-             float across = length(en);
-             float arc = atan(across, dot(d, GRID_C));
-             g = (across > 1e-7 ? en * (arc * PLANET_R / across) : vec2(0.0)) / uGrid.x;
-           }` : `
-           vec2 g = vec2(vTerrainWorld.x, -vTerrainWorld.z) / uGrid.x;
-           float onMap = step(abs(vTerrainWorld.x), uGrid.z) * step(abs(vTerrainWorld.z), uGrid.z);`}
+           vec2 g = vec2(vTerrainAtlas.x, -vTerrainAtlas.z) / uGrid.x;
+           float onMap = step(abs(vTerrainAtlas.x), uGrid.z) * step(abs(vTerrainAtlas.z), uGrid.z);
            vec2 gw = fwidth(g);
            vec2 toLine = abs(fract(g - 0.5) - 0.5) / max(gw, vec2(1e-4));
            float line = 1.0 - min(min(toLine.x, toLine.y), 1.0);
@@ -2169,30 +1888,11 @@ function terrainMaterial(
          // wall in shade was a black hole. The grass, the soil and the rims
          // are lit exactly as before.
          #if NUM_DIR_LIGHTS > 0
-           reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.3, 0.28, 0.23) * rockMix * (1.0 - terrainIce) * (1.0 - clamp(dot(normal, normalize(directionalLights[0].direction)), 0.0, 1.0));
-           // The ice's light through it (Barre-Brisebois and Bouchard, GDC 2011,
-           // Frostbite's translucency): the sun seen through a thin face or a
-           // crevasse's lip glows blue - the red absorbed on its long path in
-           // dense ice (USGS) - and a little of it everywhere in the ice.
-           ${`if (terrainIce > 0.0) {
-             vec3 iceL = normalize(directionalLights[0].direction);
-             vec3 iceH = normalize(iceL + normal * 0.35);
-             float iceBack = pow(clamp(dot(normalize(vViewPosition), -iceH), 0.0, 1.0), 5.0) * 1.4;
-             float iceDay = planetDaylight(geometryPosition, iceL);
-             reflectedLight.directDiffuse += directionalLights[0].color * iceDay * (iceBack + 0.08)
-               * mix(0.18, 1.0, terrainIceThin) * vec3(0.08, 0.4, 0.6) * terrainIce;
-           }`}
+           reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.3, 0.28, 0.23) * rockMix * (1.0 - clamp(dot(normal, normalize(directionalLights[0].direction)), 0.0, 1.0));
          #endif
          // (The land's own baked light - the relief's shadow, the sky a hollow
          // sees, the dark creases - is not applied any more: the player asked
          // for the terrain's lights to go, 2026-10-08.)`,
-      )
-      .replace(
-        '#include <roughnessmap_fragment>',
-        `#include <roughnessmap_fragment>
-         // Snow is matt; the wind-glazed and the bare blue ice are smooth
-         // enough to throw the sun back (blue-ice areas: smooth, rippled).
-         roughnessFactor = mix(roughnessFactor, mix(0.74, 0.3, terrainIceGlaze), terrainIce);`,
       )
       .replace(
         '#include <normal_fragment_maps>',
@@ -2220,24 +1920,14 @@ function terrainMaterial(
            vec3 fineN = mix(bladeN, soilN, clamp(dirtMix + rockMix, 0.0, 1.0));
            mapN.xy += fineN.xy * 1.2 * terrainDetailW;
          }
-         // Ice and snow have none of the grass's or the rock's bumps: their own (below).
-         mapN = normalize(mix(mapN, vec3(0.0, 0.0, 1.0), terrainIce));
          normal = normalize(tbn * mapN);
          // (The fine relief's bumps are not added to the normal any more: the
-         // player asked for the terrain's effects to go.)
-         ${`
-         // The ice's own bumps (crevasses, drifts), by the height's screen
-         // derivatives - taken here, out of any branch.
-         if (uPlanetTile < 0.0 || int(uPlanetTile) / ${TILES_PER_FACE} == 2 || int(uPlanetTile) / ${TILES_PER_FACE} == 5) {
-           vec2 iceDH = vec2(dFdx(terrainIceBump), dFdy(terrainIceBump));
-           vec3 iceSX = dFdx(-vViewPosition), iceSY = dFdy(-vViewPosition);
-           if (terrainIce > 0.0) normal = normalize(mix(normal, icePerturbNormal(iceSX, iceSY, normal, iceDH, faceDirection), terrainIce));
-         }`}`,
+         // player asked for the terrain's effects to go.)`,
       );
   };
   // A changed program key forces three to compile this variant separately from
   // any other standard material in the scene.
-  material.customProgramCacheKey = () => 'terrain-splat-v31';
+  material.customProgramCacheKey = () => 'terrain-splat-v32';
   return material;
 }
 
@@ -2327,9 +2017,8 @@ function strataTexture(anisotropy: number): DataTexture {
 }
 
 /**
- * THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the whole
- * flat Earth's, `flatAtlas.ts`), as a plate's own (`rebuildWalls`): from the
- * land's drawn height (`topAt`, world x, y, read every `step`) down past a
+ * THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the map's,
+ * `flatAtlas.ts`): from the land's drawn height (`topAt`, world x, y, read every `step`) down past a
  * topsoil band to a flat bottom `SLAB_DEPTH` under the base level and
  * below the lowest of the rim - SimCity 4's slab, the map a block of land on
  * its bedrock. For `wallMaterial`.
@@ -2523,21 +2212,14 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
 }
 
 /**
- * `origin`: where the plate's centre stands in the world - the origin on the
- * flat map, a face's centre in the planet's atlas (`render/planet/terrainAtlas.ts`).
- * Every coordinate the surface is given or returns is the plate's own, about
- * its centre; only its meshes are moved there.
+ * One plate of the ground (`flatAtlas.ts`). `origin`: where the plate's
+ * centre stands in the world. Every coordinate the surface is given or
+ * returns is the plate's own, about its centre; only its meshes are moved
+ * there. `plate`: the plate's key, by which it shares the few light and
+ * ecology workers. `prebuilt`: the plate's first build worked out off the page
+ * (`plateMesh.ts`), copied in by the first `update` when no stamp reaches it.
  */
-/**
- * `tile`: the planet's piece the plate is (its shader reads it), -1 off the
- * planet. `plate`: the plate's key among many plates side by side (the
- * planet's pieces, the whole flat Earth's plates, `flatAtlas.ts`), -1 when it
- * is the only one: a plate among many has no rim (its neighbours meet it) and
- * shares the few light and ecology workers, keyed by it. `prebuilt`: the
- * plate's first build worked out off the page (`plateMesh.ts`), copied in by
- * the first `update` when no stamp reaches it.
- */
-export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number } = { x: 0, y: 0 }, tile = -1, plate = tile, prebuilt: PlateMesh | null = null): TerrainSurface {
+export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null): TerrainSurface {
   const bakes = terrainBakes(anisotropy);
   const material = terrainMaterial(bakes, anisotropy);
 
@@ -2561,50 +2243,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   ground.position.set(origin.x, 0, -origin.y);
   ground.updateMatrix();
 
-  // A planet piece (`tile` set) meets its neighbours' ground: it has no rim, so
-  // neither the land beyond it nor its cut sides are built (on 96 pieces they
-  // were over a second of the boot and 70 MB, all hidden).
-  const rim = plate < 0;
   /** The woods' base made off the page with the first build (`woodsBase`), while it holds. */
   let woods: Float32Array | null = null;
-
-  // Land beyond the editable plate, so the map does not end in mid-air.
-  //
-  // It is a FRAME, not a plane. A plane under the plate is the wrong shape: the
-  // plate's own ground dips below it wherever the base relief goes negative, and
-  // the plane then draws straight over the terrain, the roads and everything on
-  // them — which is exactly how a full plane hid most of the road network behind
-  // a grey sheet. A frame occupies only the ground the plate does not.
-  //
-  // Its INNER ring is stitched to the plate's own rim (see `rebuildFrame`): a
-  // constant-height frame was fine while the land could only move ten metres
-  // either way, and became a straight slice through mountains and pits the
-  // moment the brush could make them.
-  const backdrop = new Mesh(
-    new BufferGeometry(),
-    new MeshStandardMaterial({ color: new Color(0x53694a), roughness: 1, metalness: 0 }),
-  );
-  backdrop.name = 'terrain-backdrop';
-  backdrop.receiveShadow = false;
-  backdrop.matrixAutoUpdate = false;
-  backdrop.position.set(origin.x, 0, -origin.y);
-  backdrop.updateMatrix();
-
-  // The map's cut sides, SimCity 4's slab: from the rim straight down to a flat
-  // bottom, in soil layers, so the plate reads as a block of land standing on
-  // the plain background rather than a sheet ending in mid-air. In play the
-  // backdrop is drawn over the rim and hides them.
-  const walls = new Mesh(
-    new BufferGeometry(),
-    // Without a rim nothing draws them: the strata texture is not baked.
-    rim ? wallMaterial(anisotropy) : new MeshStandardMaterial(),
-  );
-  walls.name = 'terrain-walls';
-  walls.receiveShadow = false;
-  walls.castShadow = false;
-  walls.matrixAutoUpdate = false;
-  walls.position.set(origin.x, 0, -origin.y);
-  walls.updateMatrix();
 
   const waterSurface = createWaterSurface(anisotropy);
   const water = new Mesh(new BufferGeometry(), waterSurface.material);
@@ -2619,8 +2259,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   waterSurface.attach(water);
   // Hidden while it holds no water (`rebuildWater` shows it): three binds a
   // mesh's program and every texture of its material before it finds the
-  // geometry empty (r186 `renderBufferDirect`), and on the planet the 864
-  // pieces' empty water sheets were some 500 such binds a frame at the globe.
+  // geometry empty (r186 `renderBufferDirect`): every plate's empty water
+  // sheet was such a bind a frame.
   water.visible = false;
 
   let index = new TerrainIndex([], 0);
@@ -2637,8 +2277,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const relief = createReliefBake(GRID, TERRAIN_CELL, TERRAIN_HALF, material.userData['macro'] as Texture);
   {
     // The ground reads its own bake, and its grids from where it stands.
-    const own = material.userData['terrainUniforms'] as { uRelief: { value: Texture }; uReliefWindow: { value: Vector4 }; uTileOrigin: { value: Vector3 }; uPlanetTile: { value: number } };
-    own.uPlanetTile.value = tile;
+    const own = material.userData['terrainUniforms'] as { uRelief: { value: Texture }; uReliefWindow: { value: Vector4 }; uTileOrigin: { value: Vector3 } };
     own.uRelief = relief.texture;
     own.uReliefWindow = relief.window;
     own.uTileOrigin.value.set(origin.x, 0, -origin.y);
@@ -2766,182 +2405,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const renderedHeightAt = (x: number, y: number): number => sampleGrid(grid, flip, x, y);
   const naturalRenderedHeightAt = (x: number, y: number): number => sampleGrid(natural, naturalFlip, x, y);
 
-  /**
-   * Stitches the land outside the plate to the plate's own rim.
-   *
-   * The inner ring IS the rim: one vertex per plate cell, at the height the
-   * triangles are drawn at (`grid`), so the seam is watertight whatever the
-   * player sculpts — a mountain cut off by the map's edge, a pit at the
-   * corner. From there the ground steps down to the distant level over two
-   * wide rings, so a hillside at the edge reads as land falling away.
-   *
-   * It used to be one flat sheet at a fixed height, which was honest while
-   * the brush could only move the ground ten metres; the moment it could
-   * build a mountain, the sheet sliced through it.
-   *
-   * Rebuilt whenever the rim moves — a terrain edit or a road shaping the
-   * ground near the edge — and it is 2 400 vertices, so that is a fraction of
-   * a frame, not a budget.
-   */
-  const FRAME_STEP_OUT = m(280);
-  const FRAME_FAR = m(5_200);
-  const DISTANT_LEVEL = TERRAIN_BASE - m(1.4);
-  const rebuildFrame = (): void => {
-    if (!rim) return;
-    const half = TERRAIN_HALF;
-    const perSide = TERRAIN_SEGMENTS;
-    const count = perSide * 4;
-    /** Ring vertices, one per cell per side, anticlockwise in local x/z. */
-    const ring = (h: number): { x: number; z: number }[] => {
-      const out: { x: number; z: number }[] = [];
-      for (let s = 0; s < 4; s++) {
-        for (let k = 0; k < perSide; k++) {
-          const t = -h + (2 * h * k) / perSide;
-          if (s === 0) out.push({ x: t, z: -h });
-          else if (s === 1) out.push({ x: h, z: t });
-          else if (s === 2) out.push({ x: -t, z: h });
-          else out.push({ x: -h, z: -t });
-        }
-      }
-      return out;
-    };
-    const inner = ring(half);
-    // The rim's own heights, and the level the land outside continues at.
-    let sum = 0;
-    const rimHeight = inner.map((p) => {
-      const value = sampleGrid(grid, flip, p.x, -p.z);
-      sum += value;
-      return value;
-    });
-    const mean = sum / count;
-    const levels = [null, FRAME_STEP_OUT, FRAME_STEP_OUT * 2, FRAME_FAR];
-    const rings = [inner, ring(half + levels[1]!), ring(half + levels[2]!), ring(half + levels[3]!)];
-    const heightOf = (r: number, k: number): number => {
-      if (r === 0) return rimHeight[k] as number;
-      if (r === 1) return mean;
-      if (r === 2) return (mean + DISTANT_LEVEL) / 2;
-      return DISTANT_LEVEL;
-    };
-    const positions: number[] = [];
-    /** Wound so the face points UP, measured rather than assumed. */
-    const pushQuad = (a: readonly number[], b: readonly number[], c: readonly number[], d: readonly number[]): void => {
-      const area = (p: readonly number[], q: readonly number[], r: readonly number[]): number =>
-        (q[0]! - p[0]!) * (r[2]! - p[2]!) - (r[0]! - p[0]!) * (q[2]! - p[2]!);
-      const forward = area(a, b, c) < 0;
-      if (forward) positions.push(...a, ...b, ...c, ...a, ...c, ...d);
-      else positions.push(...a, ...d, ...c, ...a, ...c, ...b);
-    };
-    const at = (r: number, k: number): number[] => {
-      const point = rings[r]![k % count] as { x: number; z: number };
-      return [point.x, heightOf(r, k % count), point.z];
-    };
-    for (let r = 0; r + 1 < rings.length; r++) {
-      for (let k = 0; k < count; k++) pushQuad(at(r, k), at(r, k + 1), at(r + 1, k + 1), at(r + 1, k));
-    }
-    const next = new BufferGeometry();
-    next.setAttribute('position', new Float32BufferAttribute(positions, 3));
-    // Lit as level ground, every face alike: its faces are long thin slivers
-    // from the rim outwards, and each lit by its own slope they drew dark
-    // streaks fanning out from the map.
-    const up = new Float32Array(positions.length);
-    for (let k = 1; k < up.length; k += 3) up[k] = 1;
-    next.setAttribute('normal', new Float32BufferAttribute(up, 3));
-    next.computeBoundingSphere();
-    const previous = backdrop.geometry;
-    backdrop.geometry = next;
-    previous.dispose();
-    rebuildWalls();
-  };
-
-  /**
-   * The cut sides, sewn to the same rim: per side one column per plate cell,
-   * from the rim's drawn height down past a topsoil band to a flat bottom
-   * below the lowest point of the rim. The layers are laid by ABSOLUTE height,
-   * so they run level under a hill as real strata do.
-   */
-  const rebuildWalls = (): void => {
-    const h = TERRAIN_HALF;
-    const n = TERRAIN_SEGMENTS;
-    // Each side from corner to corner, with its outward normal (local x/z).
-    const sides: readonly (readonly [number, number, number, number, number, number])[] = [
-      [-h, -h, h, -h, 0, -1],
-      [h, -h, h, h, 1, 0],
-      [h, h, -h, h, 0, 1],
-      [-h, h, -h, -h, -1, 0],
-    ];
-    let lowest = Infinity;
-    const tops = sides.map(([x0, z0, x1, z1]) => {
-      const row: number[] = [];
-      for (let k = 0; k <= n; k++) {
-        const x = x0 + ((x1 - x0) * k) / n;
-        const z = z0 + ((z1 - z0) * k) / n;
-        const y = sampleGrid(grid, flip, x, -z);
-        row.push(y);
-        lowest = Math.min(lowest, y);
-      }
-      return row;
-    });
-    const floor = Math.min(TERRAIN_BASE - SLAB_DEPTH, lowest - m(16));
-    const positions: number[] = [];
-    const normals: number[] = [];
-    const uvs: number[] = [];
-    const colours: number[] = [];
-    /** Metres under the rim, for the shader's grass lip and topsoil (`wallMaterial`). */
-    const below: number[] = [];
-    // Row shades: full under the rim (the shader draws the lip), shaded to the bottom.
-    const LIP = 1;
-    const BODY = 1;
-    const BOTTOM = 0.42;
-    sides.forEach(([x0, z0, x1, z1, nx, nz], s) => {
-      const top = tops[s]!;
-      const length = Math.hypot(x1 - x0, z1 - z0);
-      const vertex = (k: number, y: number, shade: number): void => {
-        const x = x0 + ((x1 - x0) * k) / n;
-        const z = z0 + ((z1 - z0) * k) / n;
-        positions.push(x, y, z);
-        normals.push(nx, 0, nz);
-        uvs.push(((s * length + (length * k) / n) / STRATA_SPAN_X), y / STRATA_SPAN_Y);
-        colours.push(shade, shade, shade);
-        below.push(top[k]! - y);
-      };
-      for (let k = 0; k < n; k++) {
-        const ya = top[k]!;
-        const yb = top[k + 1]!;
-        const bands: readonly (readonly [number, number, number, number])[] = [
-          [ya, yb, LIP, LIP],
-          [ya - TOPSOIL, yb - TOPSOIL, BODY, BODY],
-          [floor, floor, BOTTOM, BOTTOM],
-        ];
-        for (let b = 0; b + 1 < bands.length; b++) {
-          const [ua, ub, sa] = bands[b]!;
-          const [la, lb, sl] = bands[b + 1]!;
-          // Wound so the face points OUT, measured rather than assumed:
-          // (b - a) x (c - a) for a = upper k, b = lower k, c = upper k+1.
-          const ax = x0 + ((x1 - x0) * k) / n;
-          const az = z0 + ((z1 - z0) * k) / n;
-          const cx = x0 + ((x1 - x0) * (k + 1)) / n;
-          const cz = z0 + ((z1 - z0) * (k + 1)) / n;
-          // b - a = (0, la - ua, 0); c - a = (cx - ax, ., cz - az).
-          const outward = (la - ua) * (cz - az) * nx - (la - ua) * (cx - ax) * nz;
-          const quad: [number, number, number][] = [[k, ua, sa], [k, la, sl], [k + 1, ub, sa], [k + 1, lb, sl]];
-          const order = outward > 0 ? [0, 1, 2, 2, 1, 3] : [0, 2, 1, 2, 3, 1];
-          for (const o of order) vertex(...quad[o]!);
-        }
-      }
-    });
-    const next = new BufferGeometry();
-    next.setAttribute('position', new Float32BufferAttribute(positions, 3));
-    next.setAttribute('normal', new Float32BufferAttribute(normals, 3));
-    next.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
-    next.setAttribute('color', new Float32BufferAttribute(colours, 3));
-    next.setAttribute('aBelow', new Float32BufferAttribute(below, 1));
-    next.computeBoundingSphere();
-    const previous = walls.geometry;
-    walls.geometry = next;
-    previous.dispose();
-  };
-  rebuildFrame();
-
   const position = geometry.getAttribute('position');
 
   const rewrite = (x0: number, x1: number, y0: number, y1: number): void => {
@@ -3064,16 +2527,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // was 0.8 ms for each of the hundred-odd quarter blocks of a road edit.
     if (geometry.boundingSphere) for (const i of changed) geometry.boundingSphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
     else geometry.computeBoundingSphere();
-    for (const i of changed) if (onRim(i)) { rebuildFrame(); break; }
     lastChanged = changed;
     return true;
-  };
-
-  /** Whether a grid corner is on the plate's rim, which the backdrop is sewn to. */
-  const onRim = (i: number): boolean => {
-    const ix = i % GRID;
-    const iy = (i - ix) / GRID;
-    return ix === 0 || iy === 0 || ix === GRID - 1 || iy === GRID - 1;
   };
 
   const normal = geometry.getAttribute('normal');
@@ -3194,9 +2649,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let nature: NatureSettings | null = null;
   let natureSeen = -1;
   let ecologyField: EcologyField | null = null;
-  /** Where the land has a sea (the Earth's), a byte a corner, or null: its bed is water for what grows. */
-  let seaMask: Uint8Array | null = null;
-  let seaSource: true | ((x: number, y: number) => boolean) | null = null;
   let ecologyRevision = 0;
   /** The ecosystem must be read again; done when no stroke is held (as the water is). */
   let ecologyStale = true;
@@ -3233,16 +2685,16 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const wet = new Uint8Array(GRID * GRID);
     for (let i = 0; i < wet.length; i++) {
       const level = levels[i] as number;
-      wet[i] = (level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05) || (seaMask !== null && seaMask[i] === 1 && (natural[i] as number) < SEA_LEVEL) ? 1 : 0;
+      wet[i] = level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05 ? 1 : 0;
     }
     const over = ecologyField && dirty !== 'all' && dirty !== null && !ecologyInFlight ? dirty : null;
     const sand = material.userData['sandCorners'] as Float32Array, basalt = material.userData['basaltCorners'] as Float32Array;
     const ask = ++ecologyAsk;
-    // A planet plate's whole field is read off the page (`ecologyPool.ts`):
-    // 90 ms of a frame each time the view brought a plate in. The plate shows
-    // the field it had (none, new) until it comes back; a newer reading
-    // asked meanwhile wins. A stroke's small region stays here.
-    if (plate >= 0 && !over && ecologyOffPage()) {
+    // A plate's whole field is read off the page (`ecologyPool.ts`): 90 ms of
+    // a frame each time the view brought a plate in. The plate shows the
+    // field it had (none, new) until it comes back; a newer reading asked
+    // meanwhile wins. A stroke's small region stays here.
+    if (!over && ecologyOffPage()) {
       const input = {
         side: GRID, cell: TERRAIN_CELL, heights: Float64Array.from(natural), water: wet,
         sandstone: Float32Array.from(sand), basalt: Float32Array.from(basalt),
@@ -3279,7 +2731,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       wet = new Uint8Array(GRID * GRID);
       for (let i = 0; i < wet.length; i++) {
         const level = levels[i] as number;
-        wet[i] = (level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05) || (seaMask !== null && seaMask[i] === 1 && (natural[i] as number) < SEA_LEVEL) ? 1 : 0;
+        wet[i] = level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05 ? 1 : 0;
       }
     }
     const startedAt = performance.now();
@@ -3428,8 +2880,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   vergeMaterial.userData = landData;
   vergeMaterial.onBeforeCompile = (shader, renderer) => {
     material.onBeforeCompile(shader, renderer);
-    // The batter belongs to a road, not to a piece of the planet's ground: never cut away.
-    shader.uniforms['uPlanetTile'] = { value: -1 };
     shader.fragmentShader = shader.fragmentShader.replace(
       'float slopeDeg = terrainSlope();',
       'float slopeDeg = 0.0;',
@@ -3476,10 +2926,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     landMoved = rect === 'all' || landMoved === 'all' ? 'all' : landMoved ? unionCorners(landMoved, rect) : rect;
   };
   const litSun = { x: 0, y: -1, z: 0 };
-  // Worked out in a worker (`terrainLight.worker.ts`), one request at a time:
-  // the edits and sun turns made meanwhile wait, joined, for the next.
+  // Worked out by the plates' few shared workers (`terrainLightPool.ts`), one
+  // request at a time: the edits and sun turns made meanwhile wait, joined,
+  // for the next.
   const lightGrid = { n: GRID, cell: TERRAIN_CELL };
-  let lightWorker: Worker | null = null;
   let lightLocal: ((request: LightRequest) => LightResult) | null = null;
   let lightBusy = false;
   /** The document's diary (`world/changes.ts`), as the last `update` saw it, and the entry the light in flight follows from. */
@@ -3501,29 +2951,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     diary?.record('light', [[origin.x - TERRAIN_HALF + rect.x0 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y1 * TERRAIN_CELL, origin.x - TERRAIN_HALF + rect.x1 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y0 * TERRAIN_CELL]],
       { cause: 'luz do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
   };
-  // A planet plate (`tile` >= 0) shares the planet's few light workers
-  // (`terrainLightPool.ts`): a worker of its own each was 864 threads.
-  if (typeof Worker !== 'undefined' && plate < 0) {
-    try {
-      lightWorker = new Worker(new URL('./terrainLight.worker.ts', import.meta.url), { type: 'module' });
-      lightWorker.postMessage({ grid: lightGrid });
-      lightWorker.onmessage = (event: MessageEvent<LightResult | { error: string }>) => {
-        lightBusy = false;
-        if ('error' in event.data) console.warn('[terrain] the land\'s light failed in its worker', event.data.error);
-        else applyLight(event.data);
-      };
-      lightWorker.onerror = (event) => {
-        console.warn('[terrain] the land\'s light worker is unavailable; it is worked out on the page', event.message);
-        lightWorker?.terminate();
-        lightWorker = null;
-        lightBusy = false;
-        landMoved = 'all';
-      };
-    } catch (error) {
-      console.warn('[terrain] the land\'s light worker is unavailable; it is worked out on the page', error);
-      lightWorker = null;
-    }
-  }
   const setSun = (sun: { readonly x: number; readonly y: number; readonly z: number }): void => {
     // A stroke held: the water waits for its end, and so does this.
     if (waterStale || lightBusy) return;
@@ -3534,19 +2961,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const request: LightRequest = { heights: grid.slice(), sun: { ...litSun }, moved: landMoved, relightAll: turned };
     landMoved = null;
     lightCause = diary?.version ?? 0;
-    if (lightWorker) {
-      lightBusy = true;
-      lightWorker.postMessage(request, [request.heights.buffer]);
-      return;
-    }
-    if (plate >= 0) {
-      lightBusy = true;
-      const sent = submitLight(lightGrid, plate, request,
-        (result) => { lightBusy = false; applyLight(result); },
-        () => { lightBusy = false; landMoved = 'all'; });
-      if (sent) return;
-      lightBusy = false;
-    }
+    lightBusy = true;
+    const sent = submitLight(lightGrid, plate, request,
+      (result) => { lightBusy = false; applyLight(result); },
+      () => { lightBusy = false; landMoved = 'all'; });
+    if (sent) return;
+    lightBusy = false;
     lightLocal ??= createLandLighter(lightGrid);
     applyLight(lightLocal(request));
   };
@@ -3653,7 +3073,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   const parts: TerrainPart[] = [];
   const surface: TerrainSurface = {
-    meshes: rim ? [backdrop, walls, ground, water] : [ground, water],
+    meshes: [ground, water],
     parts,
     regionOf(box) {
       const last = TERRAIN_SEGMENTS;
@@ -3771,19 +3191,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const before = revision;
       revision = doc.terrainRevision;
       index = new TerrainIndex(doc.terrainStamps, revision, doc.terrainRelief, doc.terrainGround);
-      // The Earth's land has a sea: under its level the ground is sea bed (`refreshEcology`).
-      const sea = doc.terrainRelief === RELIEF_EARTH ? true : doc.terrainSea ?? null;
-      if (sea !== seaSource) {
-        seaSource = sea;
-        seaMask = sea === null ? null : new Uint8Array(GRID * GRID).fill(sea === true ? 1 : 0);
-        if (seaMask && typeof sea === 'function') {
-          // Rows run down the map (y falling), as the grid's corners.
-          for (let row = 0; row < GRID; row++) for (let col = 0; col < GRID; col++) {
-            if (sea(-TERRAIN_HALF + col * TERRAIN_CELL, TERRAIN_HALF - row * TERRAIN_CELL)) seaMask[row * GRID + col] = 1;
-          }
-        }
-        ecologyAll();
-      }
 
       // Only the cells a new stamp reaches are rewritten. A brush stroke adds
       // one 80-unit stamp; rewriting all 90 601 corners for it is what made
@@ -3819,7 +3226,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         normal.needsUpdate = true;
         steep.set(made.steep);
         steepAttribute.needsUpdate = true;
-        rebuildFrame();
         geometry.boundingSphere = new Sphere(new Vector3(0, (made.low + made.high) / 2, 0), Math.hypot(TERRAIN_HALF * Math.SQRT2, (made.high - made.low) / 2));
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
@@ -3849,7 +3255,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       position.needsUpdate = true;
       if (box) retriangulate(box[0], Math.min(GRID - 1, box[1] + 1), box[2], Math.min(GRID - 1, box[3] + 1));
       else retriangulate(0, GRID - 1, 0, GRID - 1);
-      let rimMoved = !box;
       if (box) {
         // Only the corners the dab rewrote can have tilted, with their ring of
         // neighbours; the whole plate's normals were a third of a dab.
@@ -3858,14 +3263,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
           for (let ix = box[0]; ix <= box[1]; ix++) moved.push(iy * GRID + ix);
         }
         refreshNormals(moved);
-        rimMoved = moved.some(onRim);
       } else {
         geometry.computeVertexNormals();
         refreshAllSteep();
       }
-      // The backdrop is sewn to the rim (see `rebuildFrame`): a dab that moved
-      // an edge corner re-sews it, and one in the middle of the plate does not.
-      if (rimMoved) rebuildFrame();
       geometry.computeBoundingSphere();
       lastStamps = doc.terrainStamps;
       // The water - every pool and river on the map - is the deferred part of
@@ -3886,11 +3287,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       relief.dispose();
       geometry.dispose();
       material.dispose();
-      backdrop.geometry.dispose();
-      (backdrop.material as MeshStandardMaterial).dispose();
-      walls.geometry.dispose();
-      (walls.material as MeshStandardMaterial).map?.dispose();
-      (walls.material as MeshStandardMaterial).dispose();
       water.geometry.dispose();
       waterSurface.dispose();
       groundTexture.dispose();

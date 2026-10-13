@@ -4,7 +4,7 @@ import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { History, followNetwork } from '@editor/history';
 import { commitRoundabout } from '@editor/roundabout';
-import { FLAT_WORLD } from '@world/flatEarth';
+import { MAP_HALF } from '@world/bounds';
 import { segmentMarkings } from '@world/markings';
 import { Level, SURFACE_LEVELS } from '@world/roadTypes';
 import { SimWorld } from '@sim/world';
@@ -98,8 +98,8 @@ describe('roundabout command', () => {
     net.rebuild();
     const before = doc.toJSON();
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'occupied' });
-    // Past the flat Earth's last plate.
-    expect(commitRoundabout(doc, net, { x: FLAT_WORLD.maxX + 50, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'bounds' });
+    // Past the map's edge.
+    expect(commitRoundabout(doc, net, { x: MAP_HALF + 50, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'bounds' });
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, NaN).committed).toBe(false);
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, 5).committed).toBe(false);
     expect(doc.toJSON()).toEqual(before);

@@ -120,6 +120,24 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   jogo (zonas aparecem, somem lote a lote enquanto as casas crescem, nada fica da ferramenta
   Zonas ao trocar). Linha de base em 185.
 
+### Só o mapa plano, de 10,24 km, em metros (2026-10-13, decisão do jogador)
+- Saíram o planeta esférico (esfera, cartas, atlas, voo livre, botão de modo, build de modos,
+  `--mode planet`, specs do planeta), a Terra desenrolada de 24,96 × 13,44 km (oceano, gelo,
+  climas por latitude, relevo da Terra) e a unidade de 0,4 m (`__METERS_PER_UNIT__` e os modos
+  `-old-unit`; os mapas salvos em 0,4 m continuam convertidos ao abrir). Saiu também o resto da
+  câmera do modo Jogar, que nada chamava.
+- O mapa: 5 × 5 placas de 2,048 km (`world/bounds.ts`), 10,24 km de lado, célula do terreno de
+  6,4 m. Com 10 km exatos a célula virava 6,67 m ou 6,25 m e o nivelamento das encostas deixava
+  terra sobre o piso de terraços (`tests/world/steppedYards.spec.ts`, 8 e 1 superfícies).
+- Chão: o relevo do próprio mapa em todas as placas (planície nos mapas novos); um mapa com o
+  relevo "Terra" (4) abre na planície. Os mapas salvos no modo planeta ficam no armazenamento,
+  mas não são lidos (estavam em coordenadas do atlas da esfera).
+- Linhas de base só encolheram: lint (supressões), knip (448), analisador de código (176).
+- Visto no jogo (painel do app, servidor 5300): mapa inteiro de longe (quadrado com a laje,
+  sem oceano nem gelo), canto do mapa a 4,4 km (laje e matas), via urbana desenhada (asfalto,
+  faixas, meio-fio, postes, fios, carros andando, dinheiro descontado), ajuda sem o voo, console
+  sem erros.
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs

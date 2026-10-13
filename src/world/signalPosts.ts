@@ -2,7 +2,6 @@ import { addScaled, angleOf, perp } from '@core/vec2';
 import { crosswalkDistance } from './approach';
 import type { LaneletGraph } from './lanelets';
 import type { Network } from './network';
-import { nodeChart } from './geometry';
 import type { NodeId, SegmentId } from './ids';
 import { roadProfile } from './roadTypes';
 import { m } from './units';
@@ -39,7 +38,7 @@ export function signalPostPlace(net: Network, node: NodeId, segmentId: SegmentId
   if (!segment) return null;
   const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
   const mouth = net.mouthDistance(segmentId, node);
-  const polyline = net.polylines.at(net.doc, segmentId, nodeChart(net.doc, node));
+  const polyline = net.polylines.get(net.doc, segmentId);
   // Sample outward from the node to find the kerb position, then reverse
   // that tangent: traffic on this approach travels TOWARD the node.
   const outward = segment.a === node ? polyline : polyline.reversed();

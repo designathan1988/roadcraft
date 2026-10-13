@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type LargeStore, MAX_INTENSITY, Persistence, QUARANTINE_KEY, isSerializedDoc, normalizeSettings } from '@editor/persistence';
 import { RoadDoc } from '@world/doc';
 import { insideMap } from '@world/bounds';
-import { RELIEF_EARTH, RELIEF_FLAT, RELIEF_LEGACY, RELIEF_NATURAL } from '@world/terrain';
+import { RELIEF_FLAT, RELIEF_LEGACY, RELIEF_NATURAL } from '@world/terrain';
 
 /**
  * The boundary where data from OUTSIDE enters the model: the autosave and
@@ -42,12 +42,18 @@ describe('the load boundary', () => {
   it('accepts every relief a map is saved with, the planet Earth too', () => {
     // The Earth's (4) was refused here while the document read it: every new
     // planet map was set aside on the next reload, the game opening empty.
-    for (const relief of [RELIEF_LEGACY, RELIEF_NATURAL, RELIEF_FLAT, RELIEF_EARTH]) {
+    for (const relief of [RELIEF_LEGACY, RELIEF_NATURAL, RELIEF_FLAT]) {
       const doc = new RoadDoc();
       doc.terrainRelief = relief;
       expect(isSerializedDoc(doc.toJSON()), `relief ${relief}`).toBe(true);
     }
+    expect(isSerializedDoc({ ...base(), relief: 4 })).toBe(true);
     expect(isSerializedDoc({ ...base(), relief: 5 })).toBe(false);
+  });
+
+  it('opens a map saved on the planet Earth (4) on the level plain', () => {
+    // The planet and its Earth are gone (2026-10-13): its maps open flat, never set aside.
+    expect(RoadDoc.fromJSON({ ...new RoadDoc().toJSON(), relief: 4 }).terrainRelief).toBe(RELIEF_FLAT);
   });
 
   it('accepts the stamps the brush and the default town lay', () => {

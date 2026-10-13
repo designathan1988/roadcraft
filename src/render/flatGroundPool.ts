@@ -2,10 +2,10 @@ import type { ReliefVersion } from '@world/terrain';
 import type { PlateMesh } from './plateMesh';
 
 /**
- * THE FLAT EARTH'S LAND, WORKED OUT OFF THE PAGE. A plate the view brings in
- * (`flatAtlas.ts`) needs the Earth's height at each of its grid corners; read
- * on the page's thread that was a few hundred milliseconds a plate, a hitch
- * at every zoom or drag (profiled 2026-10-11). As Proland produces its tiles
+ * THE MAP'S LAND, WORKED OUT OFF THE PAGE. A plate the view brings in
+ * (`flatAtlas.ts`) needs the land's height at each of its grid corners and
+ * its first build; on the page's thread that was a few hundred milliseconds
+ * a plate, a hitch at every zoom or drag (profiled 2026-10-11). As Proland produces its tiles
  * asynchronously and draws the first ancestor that is ready meanwhile, and
  * Cesium hands its terrain to workers, the corners are read by a worker here
  * (`flatGround.worker.ts`) and the plate's far patch stands in until they
@@ -19,8 +19,6 @@ import type { PlateMesh } from './plateMesh';
 interface Job {
   readonly key: number;
   readonly relief: ReliefVersion;
-  /** A planet's piece (its land on its own map, `cx`/`cy` 0), or -1 for the flat Earth's plate at `cx`, `cy`. */
-  readonly tile: number;
   /** Where the job lies, for its order (the nearest the view first): world x, y. */
   readonly at: { readonly x: number; readonly y: number };
   readonly cx: number;
@@ -55,12 +53,12 @@ function start(): Lane[] | null {
         lane.busy = null;
         if (job && job.id === event.data.id) {
           if (event.data.mesh) job.done(event.data.mesh);
-          else { console.warn('[terrain] a plate of the flat Earth failed in its worker', event.data.error); job.failed(); }
+          else { console.warn('[terrain] a plate of the land failed in its worker', event.data.error); job.failed(); }
         }
         pump();
       };
       worker.onerror = (event) => {
-        console.warn('[terrain] the flat Earth worker failed', event.message);
+        console.warn('[terrain] a land worker failed', event.message);
         const job = lane.busy;
         lane.busy = null;
         job?.failed();
@@ -69,7 +67,7 @@ function start(): Lane[] | null {
       lanes.push(lane);
     }
   } catch (error) {
-    console.warn('[terrain] the flat Earth workers are unavailable; the land is read on the page', error);
+    console.warn('[terrain] the land workers are unavailable; the land is read on the page', error);
     broken = true;
     lanes = null;
   }
@@ -87,7 +85,7 @@ function pump(): void {
     }
     const job = queue.splice(best, 1)[0]!;
     lane.busy = { ...job, id: nextId++ };
-    lane.worker.postMessage({ id: lane.busy.id, relief: job.relief, tile: job.tile, cx: job.cx, cy: job.cy, half: job.half, cell: job.cell, side: job.side, base: job.base });
+    lane.worker.postMessage({ id: lane.busy.id, relief: job.relief, cx: job.cx, cy: job.cy, half: job.half, cell: job.cell, side: job.side, base: job.base });
   }
 }
 

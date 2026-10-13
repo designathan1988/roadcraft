@@ -1,7 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import type { NodeId, SegmentId } from '../ids';
 import type { Network } from '../network';
-import { nodeChart } from '../geometry';
 import { roadProfile } from '../roadTypes';
 import { SIGNAL_POST_KERB } from '../signalPosts';
 import { kmh, m } from '../units';
@@ -47,7 +46,7 @@ export function derivedSigns(net: Network): DerivedSign[] {
       if (!segment || segment.a === segment.b) continue;
       const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
       if (road.id === 'highway' || road.id === 'ramp') continue;
-      const line = net.polylines.at(doc, segId, nodeChart(doc, node.id));
+      const line = net.polylines.get(doc, segId);
       // Outward from the node along the segment.
       const outward = segment.a === node.id ? line : line.reversed();
       const mouth = net.mouthDistance(segId, node.id);

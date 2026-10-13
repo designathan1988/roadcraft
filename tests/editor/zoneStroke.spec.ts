@@ -34,7 +34,7 @@ describe('the zone brush over street land', () => {
     for (let x = -60; x <= 60; x += 4) tool.move(1, { x: m(x), y: m(14) });
     tool.up(1, true);
     // Let go before the proposal was ready: the rest of it is worked out at
-    // once (some 0.2 s on the planet at its worst), so the zone shows the
+    // once (some 0.2 s at its worst), so the zone shows the
     // moment the button is let go - no "working it out" wait.
     expect(hints).not.toContain('hint.zone.pending');
     expect(hints).not.toContain('hint.zone.empty');

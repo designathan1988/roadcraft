@@ -8,8 +8,6 @@ import { m } from './units';
 import { GRID_CELL } from './grid';
 import { onFootway, onKerbed } from './poleLines';
 import type { Polyline } from '@core/polyline';
-import { chartsReaching } from './planet/charts';
-import { carryPolyline } from './geometry';
 
 /**
  * The zoning grid: the land along every street, cut into cells the player
@@ -115,21 +113,9 @@ export function quadsOverlap(a: readonly Vec2[], b: readonly Vec2[], slack: numb
 export function pavedTester(doc: RoadDoc, net: Network): { onRoad: (p: Vec2) => boolean; onPlate: (p: Vec2) => boolean } {
   // What a cell may not sit on: any road's carriageway and footway, at ground.
   const ribbons = [...net.ribbons.values()].filter((r) => doc.segment(r.id)?.structure === 'ground');
-  // Each road's line and reach - on the planet with its ghost images on the
-  // charts round it (`world/planet/charts.ts` chartsReaching), so a point of
-  // one piece's chart finds the road of the next piece beside it.
+  // Each road's line and reach.
   interface Road { readonly line: Polyline; readonly reach: number }
-  const roads: Road[] = [];
-  for (const r of ribbons) {
-    const reach = halfWidth(r.road, Level.Sidewalk);
-    roads.push({ line: r.full, reach });
-    if (!__PLANET__) continue;
-    const chart = net.polylines.chart(net.doc, r.id);
-    const bb = r.full.bbox;
-    for (const other of chartsReaching(chart, bb.minX - reach, bb.minY - reach, bb.maxX + reach, bb.maxY + reach)) {
-      if (other !== chart) roads.push({ line: carryPolyline(r.full, chart, other), reach });
-    }
-  }
+  const roads: Road[] = ribbons.map((r) => ({ line: r.full, reach: halfWidth(r.road, Level.Sidewalk) }));
   // The roads bucketed by their reach, so a point is measured against the
   // few streets near it, not every street in the town.
   const ROAD_CELL = m(25);

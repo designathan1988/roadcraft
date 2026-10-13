@@ -4,7 +4,7 @@
  * says) worked out once from the positions, then each corner takes the
  * steepest of the cells round it. The same answer as reading every corner's
  * eight faces, which worked each face out six times through Vector3s - 50 ms
- * of a planet plate coming in (profiled 2026-10-10).
+ * of a plate coming in (profiled 2026-10-10).
  *
  * `positions`: x, y (up), z per corner, `side` corners a row; `flip[k]` for
  * cell k = cx + cy * (side - 1): its diagonal runs a-c instead of b-d.

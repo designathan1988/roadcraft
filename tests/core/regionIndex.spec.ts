@@ -54,9 +54,8 @@ describe('region index', () => {
   });
 
   it('files rings kilometres apart in small grids of their own, answering as one grid would', () => {
-    // As the planet keeps each piece's rings on its own chart, far apart in
-    // the atlas: one dense grid over all of them was millions of empty cells
-    // (the player's map, 3.3 million a grid, 2026-10-11).
+    // Towns far apart: one dense grid over all of them was millions of empty
+    // cells (the player's map, 3.3 million a grid, 2026-10-11).
     const at = (ring: Vec2[], dx: number, dy: number): Vec2[] => ring.map((p) => ({ x: p.x + dx, y: p.y + dy }));
     const rings = [square, hole, star, at(square, 9000, 0), at(star, 9000, 40), at(square, -3000, 7000), at(hole, -3000, 7000),
       // And one just past the gap from the first: its own cluster, near enough for a line or a distance to reach both.

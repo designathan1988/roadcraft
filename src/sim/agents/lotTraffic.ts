@@ -1,5 +1,4 @@
 import { Rng } from '@core/rng';
-import { onChartOf } from '@world/planet/charts';
 import { m, stepsIn } from '@world/units';
 import { DRIVER_NOISE, DT, JAM_GAP } from '../params';
 import { vehiclePose } from '../pose';
@@ -450,9 +449,7 @@ export class LotTraffic {
       if (s >= path.length) break;
     }
     let clear = true;
-    for (const view of w.pedViews) {
-      // On the planet, somebody on a way kept on another piece's chart is met on the car's.
-      const p = discs.length ? onChartOf(view, discs[0]!) : view;
+    for (const p of w.pedViews) {
       for (const d of discs) if (Math.hypot(p.x - d.x, p.y - d.y) < r) { clear = false; break; }
       if (!clear) break;
     }

@@ -3,7 +3,6 @@ import type { Network } from '@world/network';
 import { carriesPedestrians } from '@world/pedestrianAccess';
 import { m } from '@world/units';
 import type { NodeId, PoleId, SegmentId } from '@world/ids';
-import { onChartOf } from '@world/planet/charts';
 import { commitPoleRunPoles, planPoleRun } from '../poles';
 
 /**
@@ -26,8 +25,7 @@ export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<Seg
   let built = 0;
   /**
    * The pole ending a run at a node, and whether the run left from it (its
-   * segment's a) or came to it (its b). A street of several segments - every
-   * one on the planet, cut every 200 m (editor/commit.ts cutLongRoads) - was
+   * segment's a) or came to it (its b). A street of several segments was
    * strung a line per segment, each held back 4 m from the node: the line
    * broke at every one of them, a gap of wire between two poles 8 m apart.
    * Where a run comes to a plain node (two roads) and the next leaves it on
@@ -58,7 +56,7 @@ export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<Seg
     // pole: one pole at the joint, not two 8 m apart.
     const coming = ends.get(segment.a);
     const start = coming && !coming.leaving && doc.node(segment.a)?.incident.length === 2 ? doc.poles.get(coming.pole) : undefined;
-    const from = start ? onChartOf(start, at(s0)) : at(s0);
+    const from = start ?? at(s0);
     const plan = planPoleRun(doc, net, from, at(s1), SNAP_REACH, undefined, 'all');
     const poles = commitPoleRunPoles(doc, plan);
     if (!poles) continue;

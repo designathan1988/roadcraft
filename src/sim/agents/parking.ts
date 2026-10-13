@@ -1,5 +1,4 @@
 import { pointInPolygon } from '@core/polygon';
-import { chartAt, chartToChartInto, chartsReaching, directionOnChart, pointViews } from '@world/planet/charts';
 import { localDirToWorld, storedBounds, localToWorld, solidFootprints, worldToLocal } from '@world/buildings/geometry';
 import { Digest } from '@core/digest';
 import { type LotGrid, buildLotGrid, wayOut } from './lotNav';
@@ -694,37 +693,21 @@ function laneFor(w: SimWorld, x: number, y: number, among?: Iterable<Lanelet>, s
   let best: BayLane | null = null;
   let bestD = LANE_REACH;
   const listed = among ? [...among] : null;
-  // On the planet each lane is kept on the chart of the node it leaves, and
-  // a lot or a stop on its own piece's: the lanes of each chart round the
-  // point are read with the point carried onto that chart (`pointViews`), and
-  // the place found is given back on the asker's chart - turned with it. Read
-  // as they stood, the kerb lane of a street across a border (its direction
-  // kept on the next piece's chart) was never found, and nothing drove in or
-  // out of the lots there. One chart on the flat map.
-  const own = chartAt(x, y);
-  const charts = __PLANET__ ? chartsReaching(own, x - LANE_REACH, y - LANE_REACH, x + LANE_REACH, y + LANE_REACH) : [own];
-  const view = pointViews({ x, y }, LANE_REACH);
-  for (const chart of charts) {
-    const q = view(chart);
-    if (!q) continue;
-    // A lane farther than LANE_REACH is never taken: only those near are read.
-    for (const lane of listed ?? lanesNear(w, q.x, q.y, LANE_REACH)) {
-      if (lane.kind !== 'link' || lane.length < 2 * LANE_END + m(6)) continue;
-      if (segment !== undefined && lane.segment !== segment) continue;
-      if (w.rt(lane.id).ghost) continue;
-      if (__PLANET__ && chartAt(lane.centre.xy[0]!, lane.centre.xy[1]!) !== chart) continue;
-      const hit = lane.centre.closestPoint(q);
-      if (hit.distance >= bestD) continue;
-      const at = Math.max(LANE_END, Math.min(lane.length - LANE_END, hit.s));
-      const f = lane.centre.sampleAt(at);
-      // Right-hand traffic: the kerb, and the lots beyond it, are on the right of
-      // the direction of travel. A lane with the bay on its left is the far one.
-      if ((q.x - f.p.x) * f.t.y - (q.y - f.p.y) * f.t.x <= 0) continue;
-      bestD = hit.distance;
-      const p = chart === own ? f.p : chartToChartInto(chart, own, f.p.x, f.p.y, { x: 0, y: 0 });
-      const t = chart === own ? f.t : directionOnChart(chart, own, f.p, f.t);
-      best = { lanelet: lane.id, at, x: p.x, y: p.y, tx: t.x, ty: t.y };
-    }
+  const q = { x, y };
+  // A lane farther than LANE_REACH is never taken: only those near are read.
+  for (const lane of listed ?? lanesNear(w, x, y, LANE_REACH)) {
+    if (lane.kind !== 'link' || lane.length < 2 * LANE_END + m(6)) continue;
+    if (segment !== undefined && lane.segment !== segment) continue;
+    if (w.rt(lane.id).ghost) continue;
+    const hit = lane.centre.closestPoint(q);
+    if (hit.distance >= bestD) continue;
+    const at = Math.max(LANE_END, Math.min(lane.length - LANE_END, hit.s));
+    const f = lane.centre.sampleAt(at);
+    // Right-hand traffic: the kerb, and the lots beyond it, are on the right of
+    // the direction of travel. A lane with the bay on its left is the far one.
+    if ((q.x - f.p.x) * f.t.y - (q.y - f.p.y) * f.t.x <= 0) continue;
+    bestD = hit.distance;
+    best = { lanelet: lane.id, at, x: f.p.x, y: f.p.y, tx: f.t.x, ty: f.t.y };
   }
   return best;
 }

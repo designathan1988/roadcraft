@@ -25,12 +25,10 @@ folder imports `three`. This file lists what breaks far from where you edit here
 - **Ear clipping fans.** `earcut` on a long thin band makes triangles with
   1400-unit edges. `splitToSpan` cuts the polygon first; never feed it a long one.
 - **The shadow map moves in whole texels of the GROUND** (`environment.ts`
-  `GroundShadowGrid`): its grid hangs on a frame of the drawn ground, and the
-  shadow camera's `up` is the grid's. Round the light's centre in three's own
-  space, or let three pick the camera's up, and on the planet (where the ground
-  moves through three's space under the view) every shadow shimmers in a drag
-  and jumps at a piece's border. The light falls from a sun held in steps of
-  0.1 degree (`SUN_STEP`), not the sky's sun disc (`sunDirection`).
+  `GroundShadowGrid`): its grid hangs on a frame of the ground, and the shadow
+  camera's `up` is the grid's. Let three pick the camera's up and every shadow
+  shimmers in a drag. The light falls from a sun held in steps of 0.1 degree
+  (`SUN_STEP`), not the sky's sun disc (`sunDirection`).
 - **`shadowMap.enabled` is a quality tier setting.** If shadows stop working, check
   the tier first.
 - **Textures are baked once** (`materials.ts`, `mesh/textureBaker.ts` cache by key).

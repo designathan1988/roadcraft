@@ -1,7 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
-import { cloudUnder, drawnCloudHeight, driftedCloud, undriftedCloud } from '@world/clouds';
-import { onChartOf } from '@world/planet/charts';
+import { cloudUnder, driftedCloud, undriftedCloud } from '@world/clouds';
 import { UNITS_PER_METER } from '@world/units';
 
 /** What the cloud tool reads of the game and does to it. */
@@ -55,8 +54,8 @@ export class CloudTool {
     const seen = doc.clouds.map((c) => ({ ...c, ...driftedCloud(c, drift) }));
     const picked = cloudUnder(seen, (h) => host.rayAt(px, py, h));
     if (mode === 'add') {
-      // Under the pointer at the height it is drawn at (`drawnCloudHeight`).
-      const at = host.rayAt(px, py, drawnCloudHeight(height) + size * 0.3);
+      // Under the pointer at the height it is drawn at.
+      const at = host.rayAt(px, py, height + size * 0.3);
       host.record();
       // Kept where it is put: the wind's drift taken off.
       const kept = undriftedCloud(at, drift);
@@ -70,9 +69,8 @@ export class CloudTool {
     if (mode === 'remove') doc.removeCloud(picked.id);
     else if (mode === 'edit') doc.updateCloud(picked.id, { size, height, density: brush.density / 100 });
     else {
-      // The grip on the cloud as seen, on its chart (on the planet the pointer's
-      // point can be written on the next piece's).
-      const at = onChartOf(host.rayAt(px, py, drawnCloudHeight(picked.height) + picked.size * 0.3), picked);
+      // The grip on the cloud as seen.
+      const at = host.rayAt(px, py, picked.height + picked.size * 0.3);
       this.drag = { pointer, id: picked.id, dx: picked.x - at.x, dy: picked.y - at.y };
     }
     host.changed();
@@ -84,7 +82,7 @@ export class CloudTool {
     const drag = this.drag;
     const cloud = drag ? host.doc.clouds.find((c) => c.id === drag.id) : undefined;
     if (!drag || !cloud) return;
-    const at = host.rayAt(px, py, drawnCloudHeight(cloud.height) + cloud.size * 0.3);
+    const at = host.rayAt(px, py, cloud.height + cloud.size * 0.3);
     const kept = undriftedCloud({ x: at.x + drag.dx, y: at.y + drag.dy }, host.drift());
     host.doc.updateCloud(cloud.id, { x: kept.x, y: kept.y });
     host.changed();

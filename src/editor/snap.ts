@@ -3,11 +3,7 @@ import { type Vec2, addScaled, angleOf, dist, fromAngle, normalize, sub } from '
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { carryPolyline, nodeChart, orientedPolyline } from '@world/geometry';
-import { chartToChartInto, faceGridHeading, inChartInto, pointerChartOf } from '@world/planet/charts';
-import type { FacePoint } from '@core/cubeSphere';
-
-const chartToChart = (from: number, to: number, p: Vec2): Vec2 => chartToChartInto(from, to, p.x, p.y, { x: 0, y: 0 });
+import { orientedPolyline } from '@world/geometry';
 import { casingHalf, roadProfile } from '@world/roadTypes';
 import { segSeg } from '@core/intersect';
 import { roadStructure } from '@world/structures';
@@ -112,22 +108,16 @@ export function findAnchor(
   const nodeRadius = 30 / zoom;
   let best: Anchor = { kind: 'free', at: p };
   let bestScore = Infinity;
-  // On the planet the pointer's point is written on one chart (the gesture's,
-  // `world/planet/charts.ts`): every node and road is read on it, and what is
-  // found is given on it.
-  const chart = pointerChartOf(p.x, p.y);
-  const on: FacePoint = { x: 0, y: 0 };
 
   for (const node of doc.nodes.values()) {
     if (exclude?.has(node.id)) continue;
     if (targetHeightOffset !== undefined &&
       Math.abs(node.heightOffset - targetHeightOffset) > m(0.3)) continue;
-    inChartInto(chart, node.x, node.y, on);
-    const d = dist(p, on);
+    const d = dist(p, node);
     if (d > nodeRadius) continue;
     if (d < bestScore) {
       bestScore = d;
-      best = { kind: 'node', at: { x: on.x, y: on.y }, node: node.id };
+      best = { kind: 'node', at: { x: node.x, y: node.y }, node: node.id };
     }
   }
 
@@ -137,7 +127,6 @@ export function findAnchor(
   // the projected segment is exactly zero away. The segment then stole the
   // click and the Move tool panned the camera instead of moving the junction.
   if (best.kind === 'node') return best;
-  const carried = new Map<number, Vec2>();
 
   for (const [id, seg] of doc.segments) {
     // A pointer visibly inside a road must be able to attach to that road even
@@ -149,13 +138,7 @@ export function findAnchor(
       casingHalf(roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking)),
     );
     const pl = net.polylines.get(doc, id);
-    // The pointer on the road's own chart (one carry per chart, not per road).
-    const own = net.polylines.chart(doc, id);
-    let q = p;
-    if (own !== chart) {
-      q = carried.get(own) ?? chartToChart(chart, own, p);
-      carried.set(own, q);
-    }
+    const q = p;
     // Reject by bounding box first. `closestPoint` walks every flattened point
     // of the polyline, and this ran on EVERY segment of the map for every
     // pointer move — so simply sliding the mouse across a large map cost a full
@@ -182,7 +165,7 @@ export function findAnchor(
     }
     if (hit.distance < bestScore) {
       bestScore = hit.distance;
-      best = { kind: 'segment', at: own === chart ? hit.point : chartToChart(own, chart, hit.point), segment: id, s: hit.s };
+      best = { kind: 'segment', at: hit.point, segment: id, s: hit.s };
     }
     void seg;
   }
@@ -257,8 +240,7 @@ function snapHeading(
     for (const segId of node?.incident ?? []) {
       const seg = doc.segment(segId);
       if (!seg) continue;
-      // On the gesture's chart: neighbouring charts can be turned against each other.
-      const pl = carryPolyline(orientedPolyline(doc, seg, start.node), nodeChart(doc, start.node), pointerChartOf(start.at.x, start.at.y));
+      const pl = orientedPolyline(doc, seg, start.node);
       const look = Math.min(m(4.8), Math.max(m(0.4), pl.length * 0.2));
       const outgoing = angleOf(normalize(sub(pl.sampleAt(look).p, pl.point(0))));
       candidates.push({ angle: outgoing + Math.PI, guide: 'continue' });
@@ -280,11 +262,8 @@ function snapHeading(
       candidates.push({ angle: landing + (i * Math.PI) / 12, guide: 'angle' });
     }
   } else {
-    // The grid's orthogonals plus 45s, which is the grid most street layouts
-    // follow - on the planet the face grid's own lines where the road starts
-    // (`gridHeadings`), not the map's axes.
-    const grid = gridHeadings(start.at);
-    for (const angle of grid) candidates.push({ angle, guide: 'orthogonal' });
+    // The grid's orthogonals plus 45s, which is the grid most street layouts follow.
+    for (const angle of GRID_HEADINGS) candidates.push({ angle, guide: 'orthogonal' });
     // And every 15 degrees from them, as a coarser fallback - but not while
     // the grid is drawn (its cells, `setGridSnapStep`): a road then runs along
     // its lines or its diagonals, the nearest of the eight, whatever the drag.
@@ -292,7 +271,7 @@ function snapHeading(
     // askew, its ends alone on the grid (the player, 2026-10-10).
     if (gridSnapStep > GRID_STEP) gridOnly = true;
     else for (let i = 0; i < 24; i++) {
-      candidates.push({ angle: grid[0]! + (i * Math.PI) / 12, guide: 'angle' });
+      candidates.push({ angle: (i * Math.PI) / 12, guide: 'angle' });
     }
   }
 
@@ -387,8 +366,7 @@ export function snapEndpoint(
   // as solid as before — and it arrives at an angle the editor is willing to
   // build.
   if (network.kind === 'segment' && network.segment !== undefined && useAngles) {
-    // The road landed on, on the gesture's chart.
-    const target = net.polylines.at(doc, network.segment, pointerChartOf(start.at.x, start.at.y));
+    const target = net.polylines.get(doc, network.segment);
     const points = target.toPoints();
     const reach = dist(start.at, raw) * 2 + 1;
     const heading = angleOf(sub(raw, start.at));
@@ -487,7 +465,7 @@ export function snapEndpoint(
 function onGridAlong(start: Vec2, at: Vec2, angle: number, length: number, lengthStep: number): Vec2 {
   const g = gridSnapStep, o = gridSnapOffset;
   const startOnGrid = onGrid(start, g, o);
-  const grid = gridHeadings(start);
+  const grid = GRID_HEADINGS;
   const k = grid.findIndex((h) => Math.abs(normalizeAngle(angle - h)) < 1e-9);
   if (startOnGrid && k >= 0) {
     const diagonal = k >= 4;
@@ -501,17 +479,8 @@ function onGridAlong(start: Vec2, at: Vec2, angle: number, length: number, lengt
   return snapToGrid(at, g, o);
 }
 
-/**
- * The grid's eight headings at a point: its two lines both ways, then the
- * diagonals between them. The world's axes and 45s on the flat map; on the
- * planet the face grid's lines through the point (`faceGridHeading`), which a
- * piece's map turns.
- */
-function gridHeadings(p: Vec2): number[] {
-  const e = faceGridHeading(p.x, p.y, 0), n = faceGridHeading(p.x, p.y, 1);
-  const d1 = e + normalizeAngle(n - e) / 2, d2 = n + normalizeAngle(e + Math.PI - n) / 2;
-  return [e, n, e + Math.PI, n + Math.PI, d1, d2, d1 + Math.PI, d2 + Math.PI];
-}
+/** The grid's eight headings: its two lines both ways, then the diagonals between them. */
+const GRID_HEADINGS: readonly number[] = [0, Math.PI / 2, Math.PI, Math.PI * 1.5, Math.PI / 4, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
 
 /**
  * Height of an authored connection, relative to the designed ground, or

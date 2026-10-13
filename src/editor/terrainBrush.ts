@@ -5,7 +5,6 @@ import { oneTree, plantTrees, type TreeBrush, type TreeKind } from '@world/trees
 import type { TerrainMode } from '@world/terrain';
 import type { GeologyKind, PaintKind } from '@world/terrainPaint';
 import { UNITS_PER_METER, m } from '@world/units';
-import { chartAt, inChart } from '@world/planet/charts';
 
 /**
  * THE TERRAIN BRUSH: what one dab does, for every brush of the land tool
@@ -63,7 +62,7 @@ const NOISE_ORIGIN_REACH = m(120);
 /** A stroke's noise origin for a dab at `at`, on `at`'s map (moved on to `at` when it has gone too far). */
 function noiseOrigin(stroke: { origin: Vec2 } | null, at: Vec2): Vec2 | null {
   if (!stroke) return null;
-  const o = __PLANET__ ? inChart(chartAt(at.x, at.y), stroke.origin) : stroke.origin;
+  const o = stroke.origin;
   if (Math.hypot(o.x - at.x, o.y - at.y) <= NOISE_ORIGIN_REACH) return o;
   stroke.origin = { x: at.x, y: at.y };
   return stroke.origin;

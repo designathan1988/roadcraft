@@ -4,7 +4,6 @@ import { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import { buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
-import { flatGroundFor } from '@world/flatEarth';
 import { buildModeAt, buildRuns, buildTotals, orderAlong, stationsAlong } from '@world/roads/buildMode';
 import { RAISED_LIFT } from '@world/structures';
 import { ROAD_TUNING } from '@world/roads/tuning';
@@ -30,8 +29,8 @@ const piece = (x0: number, h0: number, x1: number, h1: number): RoadPathPiece =>
   ({ start: { at: { x: x0, y: 0 }, heightOffset: h0 }, end: { at: { x: x1, y: 0 }, heightOffset: h1 }, curve: null });
 
 function laidStations(doc: RoadDoc, net: Network, before: ReadonlySet<SegmentId>, startX: number) {
-  // The ground the road tool lays on (`commit.ts`): the flat Earth's past the first plate.
-  const index = new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief, flatGroundFor(doc.terrainRelief));
+  // The ground the road tool lays on (`commit.ts`).
+  const index = new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief);
   const ground = (x: number, y: number): number => sampleTerrainHeight(index, x, y);
   const laid = new Set([...doc.segments.keys()].filter((id) => !before.has(id)));
   return stationsAlong(net, buildRoadElevation(net, ground), ground, orderAlong(doc, laid, { x: startX, y: 0 }), STATION_STEP);

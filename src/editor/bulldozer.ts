@@ -4,8 +4,6 @@ import type { Network } from '@world/network';
 import { deleteLot, lotCentre } from '@world/lots';
 import { landscapeNear } from '@world/landscape';
 import type { Anchor } from './snap';
-import type { FacePoint } from '@core/cubeSphere';
-import { chartAt, chartToChartInto, inChartInto } from '@world/planet/charts';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 
 /** What the bulldozer reads of the game and does to it. */
@@ -129,17 +127,10 @@ export class Bulldozer {
   private boxed(a: Vec2, b: Vec2): void {
     const { doc, net } = this.host;
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
-    // On the planet the box is on the map of the piece it was pressed on, and
-    // everything is read on that map (`world/planet/charts.ts`).
-    const chart = chartAt(a.x, a.y);
-    const on: FacePoint = { x: 0, y: 0 };
-    const within = (p: FacePoint): boolean => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
-    const inside = (p: Vec2): boolean => within(inChartInto(chart, p.x, p.y, on));
+    const inside = (p: Vec2): boolean => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
     const segments = [...doc.segments.keys()].filter((id) => {
       const line = net.ribbons.get(id)?.full;
-      if (!line) return false;
-      const mid = line.sampleAt(line.length / 2).p;
-      return within(chartToChartInto(net.polylines.chart(doc, id), chart, mid.x, mid.y, on));
+      return line ? inside(line.sampleAt(line.length / 2).p) : false;
     });
     const builtIds = [...doc.buildings.all()].filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);

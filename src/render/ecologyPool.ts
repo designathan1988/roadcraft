@@ -1,17 +1,16 @@
-import { TILES } from '@core/planetTiles';
 import type { EcologyField, EcologyInput } from '@world/ecology';
 
 /**
- * THE PLANET'S ECOSYSTEMS, WORKED OUT OFF THE PAGE. A plate brought in full
- * as the view nears it (`planet/terrainAtlas.ts`) read its whole ecosystem
- * on the page's thread - 90 ms of one frame, a hitch at every plate the
- * zoom or a drag brought in (profiled 2026-10-10). As Cesium hands its
- * terrain meshes to a worker (`TaskProcessor`) and a planet renderer shows
- * the coarse level until the fine one is made (Proland), the field is read
- * by one worker here and the plate shows its land without it meanwhile.
+ * THE ECOSYSTEMS, WORKED OUT OFF THE PAGE. A plate brought in full as the
+ * view nears it read its whole ecosystem on the page's thread - 90 ms of one
+ * frame, a hitch at every plate the zoom or a drag brought in (profiled
+ * 2026-10-10). As Cesium hands its terrain meshes to a worker
+ * (`TaskProcessor`) and a renderer shows the coarse level until the fine one
+ * is made (Proland), the field is read by one worker here and the plate shows
+ * its land without it meanwhile.
  *
  * One job per plate at a time: asked again before its turn, the newer land
- * replaces the queued one; the plate nearest the place looked at goes first.
+ * replaces the queued one; the rest in the order asked.
  */
 
 interface Job {
@@ -27,7 +26,6 @@ let broken = false;
 let busy: (Job & { id: number }) | null = null;
 const queue: Job[] = [];
 let nextId = 1;
-let focus = -1;
 const listeners = new Set<() => void>();
 
 function start(): Worker | null {
@@ -60,18 +58,9 @@ function start(): Worker | null {
   return worker;
 }
 
-/** How far a plate is from the one looked at: 0 there, 2 opposite. */
-function rank(key: number): number {
-  if (focus < 0) return 0;
-  const a = TILES[key]?.centre, b = TILES[focus]?.centre;
-  return a && b ? 1 - (a.x * b.x + a.y * b.y + a.z * b.z) : 0;
-}
-
 function pump(): void {
   if (busy || !queue.length || !worker) return;
-  let best = 0;
-  for (let i = 1; i < queue.length; i++) if (rank(queue[i]!.key) < rank(queue[best]!.key)) best = i;
-  const [job] = queue.splice(best, 1);
+  const job = queue.shift();
   busy = { ...job!, id: nextId++ };
   worker.postMessage({ id: busy.id, input: job!.input }, job!.transfer);
 }
@@ -92,11 +81,6 @@ export function readEcology(key: number, input: EcologyInput, transfer: ArrayBuf
   const job: Job = { key, input, transfer, done, failed };
   if (queued >= 0) queue[queued] = job; else queue.push(job);
   pump();
-}
-
-/** The plate looked at: those nearest it are read first. */
-export function setEcologyFocus(key: number): void {
-  focus = key;
 }
 
 /** Called each time a field comes back (the scene draws again). */

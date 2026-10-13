@@ -12,7 +12,6 @@ import { union } from '@core/clipper';
 import { Level, type SurfaceLevel } from './roadTypes';
 import type { NodeId, SegmentId } from './ids';
 import { deckOf } from './walkways';
-import { chartAt, chartToChartInto, chartsReaching, withGhostImages } from './planet/charts';
 import { m } from './units';
 import type { ChangeRect } from './changes';
 import { cellAt, cellRect, grow } from './cells';
@@ -56,15 +55,7 @@ function polesInclude(net: Network): (id: SegmentId) => boolean {
   };
 }
 
-/**
- * The contours of the kerb line round the kerbed polygons. Taken with their
- * ghost images on the planet, before the union: a street over a border is
- * kept as pieces on their own charts, and each chart's kerb line runs on over
- * the border only when the next piece's kerb, carried onto it, is merged into
- * one contour with its own - a pole run asked across it found no line along
- * the footway past the border, or two lines with no way between them (the
- * tools over a border, 2026-10-11).
- */
+/** The contours of the kerb line round the kerbed polygons. */
 function contoursOf(kerbed: MultiPoly): Polyline[] {
   const paths: PathsD = [];
   for (const poly of kerbed) for (const ring of poly) paths.push(ring.map(([x, y]) => ({ x: x!, y: y! })));
@@ -88,10 +79,8 @@ export function poleLines(net: Network): PoleLines {
   const known = cache.get(net);
   if (known && known.revision === net.revision) return known.lines;
   const include = polesInclude(net);
-  const kerbed = withGhostImages(levelPolygons(net, Level.Curb, include));
-  // Point tests (`insideMulti`) read them with their ghost images (on the
-  // planet: a point of one piece's chart finds the next piece's paving).
-  const paving = withGhostImages(levelPolygons(net, Level.Sidewalk, include));
+  const kerbed = levelPolygons(net, Level.Curb, include);
+  const paving = levelPolygons(net, Level.Sidewalk, include);
   const lines = { contours: contoursOf(kerbed), paving, kerbed, accesses: crossingAccesses(net) };
   cache.set(net, { revision: net.revision, lines });
   return lines;
@@ -107,27 +96,6 @@ export function poleLines(net: Network): PoleLines {
  */
 export const LINES_HALO = m(32);
 
-/**
- * Where the rings that land in `rect` come from: `rect`, and on the planet
- * its image on each chart that reaches it - a street kept on the next piece's
- * chart puts its ghost image here (`withGhostImages`).
- */
-function sourceRects(rect: ChangeRect): ChangeRect[] {
-  const chart = chartAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2);
-  const out: ChangeRect[] = [rect];
-  const at = { x: 0, y: 0 };
-  for (const other of chartsReaching(chart, rect[0], rect[1], rect[2], rect[3])) {
-    if (other === chart) continue;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) {
-      chartToChartInto(chart, other, rect[0] + (rect[2] - rect[0]) * fx, rect[1] + (rect[3] - rect[1]) * fy, at);
-      x0 = Math.min(x0, at.x); y0 = Math.min(y0, at.y); x1 = Math.max(x1, at.x); y1 = Math.max(y1, at.y);
-    }
-    // A chart's map bends away from its neighbour's: room for the bend between the samples.
-    out.push(grow([x0, y0, x1, y1], m(8)));
-  }
-  return out;
-}
 
 /** What the regional pole lines did: made, kept, and the streets made from. A count for the budgets (`core/perfBudget.ts`). */
 export const poleLinesWork = { made: 0, kept: 0, segments: 0 };
@@ -157,7 +125,7 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
   const known = byRect.get(key);
   const segmentEpoch = net.segmentCells.epoch, junctionEpoch = net.junctionCells.epoch;
   if (known && known.segmentEpoch === segmentEpoch && known.junctionEpoch === junctionEpoch) { poleLinesWork.kept++; return known.lines; }
-  const sources = sourceRects(grow(rect, LINES_HALO));
+  const sources = [grow(rect, LINES_HALO)];
   let stamp = '';
   for (const r of sources) stamp += `${net.segmentCells.stamp(r)}|${net.junctionCells.stamp(r)};`;
   if (known && known.stamp === stamp) {
@@ -185,8 +153,8 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
     if (byLevel) junctions.push([id, byLevel]);
   }
   const include = polesInclude(net);
-  const kerbed = withGhostImages(union(levelRingsOf(net, Level.Curb, ribbons, junctions, include)));
-  const paving = withGhostImages(union(levelRingsOf(net, Level.Sidewalk, ribbons, junctions, include)));
+  const kerbed = union(levelRingsOf(net, Level.Curb, ribbons, junctions, include));
+  const paving = union(levelRingsOf(net, Level.Sidewalk, ribbons, junctions, include));
   const lines: PoleLines = {
     contours: contoursOf(kerbed), paving, kerbed,
     accesses: crossingAccessesAt(net, [...ends].sort((a, b) => a - b)),

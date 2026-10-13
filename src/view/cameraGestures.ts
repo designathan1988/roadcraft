@@ -1,6 +1,5 @@
 import type { Vec2 } from '@core/vec2';
 import { clamp } from '@core/scalar';
-import { PLANET_RADIUS } from '@core/cubeSphere';
 import type { Viewport } from './viewport';
 
 /** What the camera's gestures read of the game and do to it. */
@@ -39,14 +38,6 @@ const COAST_DECAY_S = 0.45;
 const COAST_MIN_ORBIT = 0.02;
 const COAST_MIN_PAN = 6;
 /**
- * Out this far towards the whole globe (`Viewport.globe`), a drag with either
- * button turns the camera round the planet as a trackball: the ground under
- * the hand goes with it at the pixel rate it is drawn at, in any direction,
- * over every face. Holding the grabbed ground point instead (a pan's rule)
- * lost it at the globe's limb, and the planet jumped.
- */
-const GLOBE_SPIN = 0.12;
-/**
  * How the hand's speed is read when a drag is let go, as Android's
  * VelocityTracker reads a fling (AOSP libs/input/VelocityTracker.cpp): a line
  * fitted to the samples of the last `SPEED_HORIZON_MS` (one event's move over
@@ -57,13 +48,6 @@ const GLOBE_SPIN = 0.12;
 const SPEED_HORIZON_MS = 100;
 const SPEED_STOPPED_MS = 40;
 const MAX_FLING_PX_S = 4000;
-/**
- * The most ground a coast may carry the view over at the globe (an arc, world
- * units): an eighth of the way round. At the hand's own speed a flick spun the
- * planet ten times over in four seconds (the player, 2026-10-10: the view
- * would not cross the globe smoothly).
- */
-const GLOBE_COAST_ARC = (PLANET_RADIUS * Math.PI) / 4;
 
 /**
  * THE CAMERA'S GESTURES: the pointers on the canvas, a pan, an orbit, a
@@ -81,7 +65,7 @@ export class CameraGestures {
   /** A pan: the ground point held, or none (`grabbed` null) when it slides by the drag; `last` the pointer, CSS px. */
   private pan: { id: number; grabbed: Vec2 | null; height: number; last: Vec2 } | null = null;
   /** An orbit: where it was pressed and last was, CSS px; a right click that stays a click cancels the gesture in progress. */
-  private orbit: { id: number; last: Vec2; pressed: Vec2; moved: boolean; cancelOnClick: boolean; height: number; spun: boolean } | null = null;
+  private orbit: { id: number; last: Vec2; pressed: Vec2; moved: boolean; cancelOnClick: boolean; height: number } | null = null;
   private pinch: { d0: number; zoom0: number; world: Vec2; height: number; angle: number } | null = null;
   /** The hand's speed in the drag in progress (orbit rad/s or pan px/s), and when it last moved, ms. */
   private speed = { x: 0, y: 0, at: 0, from: { x: 0, y: 0 } };
@@ -166,30 +150,12 @@ export class CameraGestures {
     const min = kind === 'orbit' ? COAST_MIN_ORBIT : COAST_MIN_PAN;
     let { x: vx, y: vy } = this.handSpeed();
     // The fling's ceiling, in the drag's unit (an orbit's is in radians).
-    let most = kind === 'orbit' ? MAX_FLING_PX_S * ORBIT_PER_PX : MAX_FLING_PX_S;
-    // At the globe a pan's px are thousands of units each: the coast carries
-    // the view no farther than `GLOBE_COAST_ARC` (its distance is speed x decay).
-    const view = this.host.view();
-    if (kind === 'pan' && this.spinning(view)) {
-      const scale = view.scaleAtCentre ?? view.zoom;
-      most = Math.min(most, (GLOBE_COAST_ARC * scale) / COAST_DECAY_S);
-    }
+    const most = kind === 'orbit' ? MAX_FLING_PX_S * ORBIT_PER_PX : MAX_FLING_PX_S;
     const v = Math.hypot(vx, vy);
     if (v > most) { vx *= most / v; vy *= most / v; }
     if (moving && Math.hypot(vx, vy) > min) this.coast = { kind, vx, vy };
     this.speed = { x: 0, y: 0, at: 0, from: { x: 0, y: 0 } };
     this.samples.length = 0;
-  }
-
-  /** Whether the view is out at the globe, where a drag spins the camera round it. */
-  private spinning(view: Viewport): boolean {
-    return (view.globe ?? 0) > GLOBE_SPIN;
-  }
-
-  /** The camera turned round the planet by a drag of (dx, dy) CSS px: the ground under the hand goes with it. */
-  private spin(view: Viewport, dx: number, dy: number): void {
-    const units = 1 / Math.max(1e-6, view.scaleAtCentre ?? view.zoom);
-    view.slide(-dx * units, dy * units);
   }
 
   /** Advances the coast by `dt` seconds of wall time: true when the camera moved. */
@@ -252,7 +218,7 @@ export class CameraGestures {
 
   /** The camera swung round the ground under `at` (at `height`); `cancelOnClick`: a click cancels what is in progress. */
   startOrbit(id: number, at: Vec2, cancelOnClick: boolean, height: number): void {
-    this.orbit = { id, last: at, pressed: at, moved: false, cancelOnClick, height, spun: false };
+    this.orbit = { id, last: at, pressed: at, moved: false, cancelOnClick, height };
     this.speed = { x: 0, y: 0, at: 0, from: at };
   }
 
@@ -303,15 +269,6 @@ export class CameraGestures {
       const dx = screen.x - orbit.last.x;
       const dy = screen.y - orbit.last.y;
       orbit.last = screen;
-      if (this.spinning(view)) {
-        orbit.spun = true;
-        this.track(dx, dy);
-        this.spin(view, dx, dy);
-        host.orbited();
-        host.redraw();
-        return true;
-      }
-      orbit.spun = false;
       this.track(dx * ORBIT_PER_PX, dy * ORBIT_PER_PX);
       // A turntable: the near side of the map follows the hand; dragging
       // down lifts the camera towards a plan view.
@@ -324,8 +281,7 @@ export class CameraGestures {
       const pan = this.pan;
       const dx = screen.x - pan.last.x, dy = screen.y - pan.last.y;
       this.track(dx, dy);
-      if (this.spinning(view)) this.spin(view, dx, dy);
-      else if (pan.grabbed) view.panTo(pan.grabbed, screen.x, screen.y, w, h, pan.height);
+      if (pan.grabbed) view.panTo(pan.grabbed, screen.x, screen.y, w, h, pan.height);
       else {
         // The ground follows the hand: dragged right it goes right, dragged
         // down it comes nearer. `scaleAtCentre` is pixels per unit at the point looked at.
@@ -355,7 +311,7 @@ export class CameraGestures {
     let clickCancels = false;
     if (this.orbit?.id === id) {
       clickCancels = this.orbit.cancelOnClick && !this.orbit.moved;
-      if (this.orbit.moved) this.throwCoast(this.orbit.spun ? 'pan' : 'orbit');
+      if (this.orbit.moved) this.throwCoast('orbit');
       this.orbit = null;
     }
     return { wasPinching, clickCancels };

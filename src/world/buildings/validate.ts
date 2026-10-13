@@ -1,8 +1,7 @@
 import { AREA_EPS, validOutline, overlapArea, roofPartFits } from './footprints';
 import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
-import { MAP_REACH, regionAt } from '../bounds';
-import { carryPoints, chartAt, chartsReaching } from '../planet/charts';
+import { insideMap } from '../bounds';
 import type { RoadDoc } from '../doc';
 import type { Network } from '../network';
 import { Level, halfWidth } from '../roadTypes';
@@ -161,42 +160,24 @@ export function validateBuilding(
   if (structural) return structural;
 
   const box = buildingBounds(b);
-  // Its own plate's (on the planet, the face its middle stands on, and as far
-  // past the border as a face's reach goes).
-  const plate = regionAt((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2);
-  const limit = plate.half + MAP_REACH - BUILDING_MAP_MARGIN;
-  if (box.minX < plate.cx - limit || box.minY < plate.cy - limit || box.maxX > plate.cx + limit || box.maxY > plate.cy + limit) return 'bounds';
+  // On the world: the plates of the ground are one plane, so a building may
+  // stand across the line between two of them.
+  if (!insideMap({ x: box.minX, y: box.minY }, BUILDING_MAP_MARGIN) || !insideMap({ x: box.maxX, y: box.maxY }, BUILDING_MAP_MARGIN)) return 'bounds';
 
   const rects = [...footprintRects(b, -TOUCH), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as Network, rect))) return 'road';
 
-  // On the planet the neighbours kept on other pieces' charts are met on
-  // their own charts (planet/charts.ts): compared in the atlas, a building
-  // across a border was never in the way.
-  const own = chartAt((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2);
-  const reach = chartsReaching(own, box.minX, box.minY, box.maxX, box.maxY);
-  const partyOn = new Map<number, Vec2[][]>([[own, party]]);
-  const boxOn = new Map<number, ReturnType<typeof boundsOf>>([[own, box]]);
-  for (const chart of reach) {
-    if (chart === own) continue;
-    const carried = party.map((ring) => carryPoints(own, chart, ring));
-    partyOn.set(chart, carried);
-    boxOn.set(chart, boundsOf(carried.flat()));
-  }
   for (const other of ctx.doc.buildings.all()) {
     if (other.id === b.id || ignored?.has(other.id)) continue;
     const ob = storedBounds(other);
-    const chart = chartAt((ob.minX + ob.maxX) / 2, (ob.minY + ob.maxY) / 2);
-    const mine = partyOn.get(chart), mineBox = boxOn.get(chart);
-    if (!mine || !mineBox) continue;
-    if (ob.minX > mineBox.maxX || ob.maxX < mineBox.minX || ob.minY > mineBox.maxY || ob.maxY < mineBox.minY) continue;
+    if (ob.minX > box.maxX || ob.maxX < box.minX || ob.minY > box.maxY || ob.maxY < box.minY) continue;
     const others = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
     // Two buildings may share a party wall: their volumes meet, and may run a
     // few centimetres into each other, as terraced houses and a row of shops
     // do. Measured with each volume shrunk by `PARTY_WALL`, so a joint is
     // never a gap (the player's order of 2026-10-05).
-    for (const a of mine) for (const c of others) if (overlapArea(a, c) > AREA_EPS) return 'building';
+    for (const a of party) for (const c of others) if (overlapArea(a, c) > AREA_EPS) return 'building';
   }
 
   if (ctx.groundAt) {
@@ -212,31 +193,8 @@ export function validateBuilding(
 
 /** Whether a footprint rectangle reaches any road's footway or junction plate. */
 export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
-  const contacts = roadContacts(net);
-  if (contacts.touches(rect)) return true;
-  if (!__PLANET__ || !rect.length) return false;
-  // The roads kept on the neighbouring pieces' charts, met on their charts:
-  // a road whose segment is kept on the next piece can run past the border
-  // right beside the building.
-  const box = boundsOf(rect);
-  const own = chartAt((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2);
-  for (const chart of chartsReaching(own, box.minX, box.minY, box.maxX, box.maxY)) {
-    if (chart !== own && contacts.touches(carryPoints(own, chart, rect), CHART_SLACK)) return true;
-  }
-  return false;
+  return roadContacts(net).touches(rect);
 }
-
-/**
- * The share of a road's reach a building carried onto another chart may come
- * within it and still not touch it. A piece's map is true to the sphere along
- * its radii and stretched across them by (d / R) / sin(d / R): 0.5 % at the
- * farthest a chart keeps anything (a piece's corner and its reach, about
- * 650 units out). A road and a building each laid exactly on its own chart
- * read on another can so meet by that share of their distance - a house
- * flush with the footway of a road's piece kept on one chart overlapped by a
- * few millimetres the footway of the next piece, kept on its neighbour's.
- */
-const CHART_SLACK = 0.006;
 
 /** A road's reach, or a junction's carriageway, with its box (`RoadContacts`). */
 type Contact =
@@ -292,8 +250,7 @@ class RoadContacts {
     }
   }
 
-  /** `slack`: a share of each road's reach let pass (`CHART_SLACK`). */
-  touches(rect: readonly Vec2[], slack = 0): boolean {
+  touches(rect: readonly Vec2[]): boolean {
     const box = boundsOf(rect);
     const stamp = ++this.stamp;
     for (let i = Math.floor(box.minX / CONTACT_CELL); i <= Math.floor(box.maxX / CONTACT_CELL); i++) {
@@ -303,7 +260,7 @@ class RoadContacts {
           this.seen.set(c, stamp);
           if (c.minX > box.maxX || c.maxX < box.minX || c.minY > box.maxY || c.maxY < box.minY) continue;
           if (c.kind === 'road') {
-            if (polylineDistance(c.line, rect) < c.reach * (1 - slack) - ROAD_CONTACT_EPS) return true;
+            if (polylineDistance(c.line, rect) < c.reach - ROAD_CONTACT_EPS) return true;
           } else if (polygonsOverlap(c.ring, rect) && overlapArea(c.ring, rect) > JUNCTION_TOUCH) {
             return true;
           }

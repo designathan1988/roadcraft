@@ -11,7 +11,6 @@ import { createLotOverlay, type LotOverlayInput } from './lotOverlay';
 import { onCarriageway } from '@world/carriageway';
 import {
   BufferGeometry,
-  Ray,
   ShaderMaterial,
   AdditiveBlending,
   DoubleSide,
@@ -53,7 +52,7 @@ import type { Viewport } from '@view/viewport';
 import { createAgentMeshes, type AgentMeshes } from './agents';
 import { createEnvironment } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
-import { PERSPECTIVE_FOV, type Chase, createIsoRig, isFlatView } from './isoViewport';
+import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
@@ -74,7 +73,7 @@ import { buildStructureDetails, structureRibbons, type StructureDetails } from '
 import { createExhaust } from './exhaust';
 import { GROW_MINUTES } from '@world/landscape';
 import { applyWear, createWearField } from './wear';
-import { MAP_REGIONS, MAP_SIZE, WORLD_HALF, regionAt } from '@world/bounds';
+import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { buildSigns, type SignLayer } from './signs';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
@@ -82,18 +81,8 @@ import { buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, 
 import { buildBarriers, type Barriers } from './barriers';
 import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
 import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
-import { createTerrainAtlas } from './planet/terrainAtlas';
 import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
-import { SEA_LEVEL } from '@world/planet/seaLevel';
-import { ROAD_SEA_FREEBOARD, seaRoadGround } from '@world/flatEarth';
-import { Flight } from './planet/flight';
-import { atlasPhantomSteps, type AtlasPhantom } from './planet/atlasPhantoms';
-import { PLANET_VERTEX, bendGLSL, forcePlanetCurvature, installPlanet, planetCentre, planetCurvature, planetEye, planetLocalMinutes, planetMotion, planetPick, planetPointInto, planetScene, planetSphereInView, planetSun, planetUniforms } from './planet/bend';
-import { planetLocalMinutes as planetLocalMinutesAt } from '@world/planet/sun';
-import { createSpace } from './planet/space';
-import { createCloudShell } from './planet/cloudShell';
-import { PLANET_RADIUS } from '@core/cubeSphere';
 import { GRASS_NEAR_REACH, type MaskRect, createGrass, createGrassMask } from './grassField';
 import { surfaces as roadSurfacesOf } from '@world/surfaces';
 import { buildingPads, type Pad } from '@world/buildings/pads';
@@ -118,10 +107,7 @@ import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } fro
 import { GroundDependant, type GroundRecord, type Rect, rectAround, unionRect } from './groundChanges';
 import { FOREST_SPECIES, buildGroundCover, createGroundCoverKit, type CoverPlacement, type ForestSpecies, type GroundCover, type TreePlacement } from './groundCover';
 import { clearingIndex } from '@world/trees';
-import { natureDensity, natureDensity3 } from './natureNoise';
-import { atlasToSphereInto as woodsAtlasToSphere } from '@world/planet/charts';
-import { iceInside } from '@world/planet/ice';
-import { PLANET_RADIUS as PLANET_R } from '@core/cubeSphere';
+import { natureDensity } from './natureNoise';
 import { buildNatureForest, forestRoom, loadNatureTrees, seedOfKind, type NatureForest, type NatureTreeKit } from './natureTrees';
 import { createFogTexture, rasterFog, type FogLayer } from './fogLayer';
 import { buildElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
@@ -152,15 +138,6 @@ import { isCoverKind } from '@world/terrainPaint';
 
 /** How the sky is kept: `cycle` follows the residents' clock. */
 export type SkyMode = 'day' | 'night' | 'cycle';
-
-/** A place in space marked on the flight's screen (`SceneHandle.flightMarks`). */
-export interface FlightMark {
-  key: 'moon' | 'sun' | 'station' | 'asteroid' | 'comet';
-  x: number;
-  y: number;
-  distance: number;
-  ahead: boolean;
-}
 
 
 /** What an explosion broke, for the renderer to throw (`blast.ts`): world coordinates. */
@@ -201,14 +178,6 @@ export interface DrawOptions {
    * roads once for the whole stroke.
    */
   readonly holdRoads?: boolean;
-}
-
-/** The play camera (`src/play.ts`), world space: x, y and height. */
-export interface PlayCamera {
-  readonly eye: readonly [number, number, number];
-  readonly look: readonly [number, number, number];
-  readonly focus: readonly [number, number, number];
-  readonly fov: number;
 }
 
 export interface SceneHandle {
@@ -301,22 +270,6 @@ export interface SceneHandle {
   /** Perspective camera on, or the orthographic (isometric) view. */
   setPerspective(on: boolean): void;
   /**
-   * The play camera (`src/play.ts`): first or third person, perspective for
-   * as long as it is on; null gives the orbit (and the projection it had) back.
-   */
-  setChase(chase: PlayCamera | null): void;
-  /** The free camera (`planet/flight.ts`): null off the planet. */
-  readonly flight: Flight | null;
-  /**
-   * In free flight, the places in space to fly to - the moon, the sun, the
-   * station, the asteroid field - on the screen (CSS px from the canvas's
-   * corner), their distance from the eye (world units), and whether they
-   * stand in front of it; written into `out`, the same objects each call.
-   */
-  flightMarks(out: FlightMark[]): FlightMark[];
-  /** A person not drawn (the player's own body, seen from inside the head). */
-  setHiddenPerson(id: number | null): void;
-  /**
    * While a whole city is being built (`editor/cityGenerator.ts`), the
    * buildings and the ground graded round them are not rebuilt every frame:
    * once, when it is let go.
@@ -368,8 +321,6 @@ export interface SceneHandle {
   landTop(): number;
   /** The universal grid (`world/grid.ts`) drawn over the whole map, on the ground, or not. */
   setGrid(on: boolean): void;
-  /** The grid's strength, 0..1, while its origin changes (`main.ts`: it fades out, moves, fades back in). */
-  setGridFade(fade: number): void;
   /**
    * The grid's cells a road was just laid over light up and fade back, a
    * blink; the cells round them follow a little later and fainter, by `ring`
@@ -377,8 +328,6 @@ export interface SceneHandle {
    * corner, world units.
    */
   flashGrid(cells: readonly { x: number; y: number; ring: number }[]): void;
-  /** On the planet, the drawn world's triangles and lines across two cells of the atlas, by object (`planet/atlasPhantoms.ts`); none on the flat map. */
-  atlasPhantoms(): Generator<void, readonly AtlasPhantom[], void>;
   /** The roads just laid light up and fade back, a blink, over their whole width. */
   flashRoads(ids: readonly SegmentId[]): void;
   /**
@@ -446,13 +395,6 @@ function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) 
   return out;
 }
 
-/**
- * The most ground the view may take in (the screen's half height, world
- * units) with the trees still drawn: past it a tree is under a pixel or two
- * (at 1 000 they went from a few hundred metres up, the player 2026-10-10).
- */
-const TREE_VIEW = 30_000;
-
 export function createSceneRenderer(
   canvas: HTMLCanvasElement,
   initialCentre: Vec2,
@@ -460,10 +402,8 @@ export function createSceneRenderer(
   initialQuality: QualityLevel | 'auto' = 'auto',
   onAssetsReady: () => void = () => {},
 ): SceneHandle {
-  // The planet: three's vertex chunks bent round it before any program is built (`planet/bend.ts`).
-  if (__PLANET__) installPlanet();
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
-  if (__PLANET__) onEcologyRead(onAssetsReady);
+  onEcologyRead(onAssetsReady);
   const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
@@ -550,7 +490,6 @@ export function createSceneRenderer(
   const anisotropy = Math.min(quality.anisotropy, maxAnisotropy);
 
   let gridWanted = false;
-  let gridFade = 1;
   /** The blinks of cells under a road just laid (`flashGrid`), until each has faded. */
   const gridFlashes: { mesh: Mesh; material: ShaderMaterial; start: number; end: number }[] = [];
   /** A blink on the ground: triangles (three's x, height, -y) lighting up and fading, each by its ring's delay. */
@@ -559,16 +498,13 @@ export function createSceneRenderer(
     geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
     geometry.setAttribute('aRing', new Float32BufferAttribute(ring, 1));
     const material = new ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, ...planetUniforms() },
-      // Where the planet draws the ground (planet/bend.ts; the point itself on
-      // the flat map): drawn flat in three's space, the blink stood off the
-      // curved ground away from the point looked at.
-      vertexShader: `${PLANET_VERTEX}
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
         attribute float aRing; varying float vRing;
         void main() {
           vRing = aRing;
           vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
-          gl_Position = projectionMatrix * viewMatrix * vec4(${bendGLSL('p')}, 1.0);
+          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
       fragmentShader: `uniform float uTime; varying float vRing;
         void main() {
@@ -594,9 +530,6 @@ export function createSceneRenderer(
   /** Behind the map while building it (`draw`): a plain dark blue. */
   const MAP_BACKGROUND = new Color(0x0c1a2c);
   const scene = new Scene();
-  if (__PLANET__) planetScene(scene);
-  /** The planet's sun this frame (`planetSun`). */
-  const planetSunNow = new Vector3();
   // The root never moves. Keep its identity matrix from forcing every static
   // world child to recompute a world matrix on every render pass.
   scene.matrixAutoUpdate = false;
@@ -610,139 +543,24 @@ export function createSceneRenderer(
     shadows: quality.shadows,
     shadowMapSize: quality.shadowMapSize,
   });
-  // On the planet: the stars, the sun, the moon and the air round it (`planet/space.ts`).
-  const space = __PLANET__ ? createSpace(scene, renderer) : null;
-  // The cloud cover seen from the top of the air out to the globe (`planet/cloudShell.ts`).
-  const cloudShell = __PLANET__ ? createCloudShell(scene) : null;
-  /** The lowest the eye may stand over the buildings (the rig's solids), for the flight. */
-  let solidsFloorAt: ((x: number, y: number) => number) | null = null;
-  // The free camera, flying over and away from the planet.
-  const stationDrift = new Vector3();
-  /** The flight's marks (\`flightMarks\`), one object each, reused. */
-  const markSlots: FlightMark[] = Array.from({ length: 5 }, () => ({ key: 'moon' as FlightMark['key'], x: 0, y: 0, distance: 0, ahead: false }));
-  const markProject = new Vector3();
-  const flight = __PLANET__ && space ? new Flight({
-    get camera() { return rig.camera as PerspectiveCamera; },
-    // Solid to fly into, the comet's nucleus as well (`skyLife.ts`).
-    bodies: () => space.allBodies(),
-    rocks: (at) => space.asteroids.nearest(at, 6),
-    // The asteroid swarm's motion, and the station's beside it.
-    drift: (at, out) => space.asteroids.driftAt(at, out).add(space.life.driftAt(at, stationDrift)),
-    // The ground, or a building's roof over it (the camera's own solids, `setSolids`).
-    groundAt: (x, y) => Math.max(terrain.renderedHeightAt(x, y), solidsFloorAt ? solidsFloorAt(x, y) : -Infinity),
-    setPose: (pose) => rig.setFlight(pose),
-  }) : null;
-  if (import.meta.env.DEV && space) Object.assign(window, { __space: space, __spaceCamera: () => rig.camera });
-  const spaceCentre = new Vector3();
-  /**
-   * The hour the sun makes on the ground in the middle of the screen. Out at
-   * the globe the camera looks at the planet's centre from aslant, and that
-   * ground lies tens of degrees from the point the planet is set down about
-   * (its anchor): "always day" lit the anchor, near the limb, and left the
-   * middle of the view in the dawn.
-   */
-  /** The longitude offset (minutes) the fixed sky's sun stands at now, or -1. */
-  let fixedOffset = -1;
-  /** The planet's hour frozen at a free flight's take-off (`flight`), or -1. */
-  let flightClock = -1;
-  /**
-   * How far behind the view the fixed sky's sun follows it, seconds (an
-   * exponential ease by wall time, as three's OrbitControls damps by time):
-   * the shadows turn WITH the view as it goes round the planet. Kept still
-   * until the view had gone two hours of longitude and then turned there,
-   * the sun went 31 degrees in the two seconds after a drag had stopped - the
-   * shadows swung on their own (the player: "as sombras não acompanham de
-   * modo uniforme"). The land's baked light follows it in steps of 2 degrees
-   * (`terrain.ts` setSun), never more.
-   */
-  const FIXED_SKY_EASE_S = 0.35;
-  /**
-   * Out from the ground past this share of the way to the whole globe the
-   * fixed sky's sun follows the view at once (`draw`): kept still and then
-   * moved, the globe turned under the view was lit now from one side, now
-   * from another (the player, 2026-10-10: "a mesma área fica entre escura e
-   * clara ao mover milímetros do globo").
-   */
-  const FIXED_SKY_GLOBE = 0.05;
-  /** Minutes of longitude from `a` to `b` the short way round, -720..720. */
-  const arc = (a: number, b: number): number => ((((b - a + 720) % 1440) + 1440) % 1440) - 720;
-  const centreRay = new Ray();
-  const lookDirection = new Vector3();
-  const lookedMinutes = (minutes: number): number => {
-    rig.camera.getWorldDirection(lookDirection);
-    centreRay.set(rig.camera.position, lookDirection);
-    const ground = planetPick(centreRay, 0);
-    return ground ? planetLocalMinutesAt(minutes, ground.x, ground.y) : planetLocalMinutes(minutes);
-  };
-  const spaceUp = new Vector3();
-  /**
-   * THE PLANET TURNS, seen from space (the player, 2026-10-11: "a Terra gira
-   * de verdade", in space and in flight only): the sky turns round the
-   * planet's axis with the hour (`space.ts`, `world/planet/sun.ts`), and out
-   * at the globe the camera turns with it - the stars and the sun held still
-   * on the screen, the planet turning under the view - as Kerbal Space
-   * Program keeps a body's own frame near it and the stars' far out. The
-   * angle turned is kept (`spinTurned`) and given back as the view comes down,
-   * so the ground found is the one left. Only while the hour runs (the
-   * cycling sky; a fixed sky follows the view); a jump of the clock is not
-   * turned through.
-   */
-  let spinClock = Number.NaN;
-  /** The sky's turn since the view went out (`spinTurned`), and the share of it the view has taken (`spinApplied`). */
-  let spinTurned = 0;
-  let spinApplied = 0;
-  /** The share of the turn the view takes, by how far out it is (`Viewport.globe`). */
-  const SPIN_GLOBE: readonly [number, number] = [0.35, 0.8];
-  const spinAxis = new Vector3();
-  const planetSpin = (clock: number): void => {
-    const step = Number.isFinite(spinClock) && Number.isFinite(clock) ? ((((clock - spinClock + 720) % 1440) + 1440) % 1440) - 720 : 0;
-    spinClock = clock;
-    // The sky's own turn: sigma = -(minutes - 720) / 1440 turns (`sun.ts` planetSunInto).
-    const sky = Math.abs(step) > 30 ? 0 : (-step / 1440) * Math.PI * 2;
-    if (flight?.active) {
-      spinAxis.set(0, 0, 1).transformDirection(planetMotion());
-      flight.spinWithSky(spinAxis, sky);
-      return;
-    }
-    const view = rig.viewport;
-    if (!view.spinPlanet) return;
-    const t = Math.min(1, Math.max(0, ((view.globe ?? 0) - SPIN_GLOBE[0]) / (SPIN_GLOBE[1] - SPIN_GLOBE[0])));
-    const share = t * t * (3 - 2 * t);
-    // Out in space the turn is taken; coming down the view gives it back as
-    // its share falls, on the ground none of it is left.
-    if (share > 0) spinTurned += sky; else spinTurned = 0;
-    const wanted = share * spinTurned;
-    if (wanted !== spinApplied) { view.spinPlanet(wanted - spinApplied); spinApplied = wanted; }
-  };
-
   const materials: SceneMaterials = createMaterials(anisotropy);
   // Streets and footways wear with use (`wear.ts`).
-  const wear = createWearField(WORLD_HALF * 2);
+  const wear = createWearField(MAP_SIZE);
   let lastWall = -1;
-  applyWear(materials.asphalt, wear, WORLD_HALF * 2, 0, 'asphalt');
-  applyWear(materials.footway, wear, WORLD_HALF * 2, 1, 'footway');
+  applyWear(materials.asphalt, wear, MAP_SIZE, 0, 'asphalt');
+  applyWear(materials.footway, wear, MAP_SIZE, 1, 'footway');
   materials.setDetail(quality.surfaceDetail);
   // Every prop model and material, built once. A rebuild writes only the
   // instance matrices.
   const sceneryKit: SceneryKit = createSceneryKit();
-  // On the planet, six plates: the cube's faces side by side (`planet/terrainAtlas.ts`).
-  // The whole Earth either way: the planet's atlas, or the flat Earth's plates (`flatAtlas.ts`).
-  const terrain: TerrainSurface = __PLANET__ ? createTerrainAtlas(anisotropy) : createFlatAtlas(anisotropy);
+  // The map's ground, in plates (`flatAtlas.ts`).
+  const terrain: TerrainSurface = createFlatAtlas(anisotropy);
   /**
    * The ground what is built stands on - the roads solved on it, the
-   * buildings' floors worked out on it: the natural land, and where the sea
-   * is, never under its surface and a freeboard. A road drawn over the sea is
-   * a causeway (the ground is filled up to it) or, built as one, a bridge; a
-   * house stands on its pad filled up from the bed - never on the sea bed
-   * under the water (the player, 2026-10-11: build on the water).
-   * Lifted by the sea's hold (`seaHold`, 0..1, `world/flatEarth.ts`
-   * seaRoadGround): continuous everywhere, round an old map's plate too.
+   * buildings' floors worked out on it: the natural land as drawn, before any
+   * road shaped it.
    */
-  const builtGroundAt = (x: number, y: number): number => {
-    const h = terrain.naturalRenderedHeightAt(x, y);
-    if (h >= SEA_LEVEL + ROAD_SEA_FREEBOARD || !terrain.seaHold) return h;
-    return seaRoadGround(h, terrain.seaHold(x, y, h));
-  };
+  const builtGroundAt = (x: number, y: number): number => terrain.naturalRenderedHeightAt(x, y);
   // The perspective view looks at the ground and stays over it (`IsoRig.setGround`).
   rig.setGround((x, y) => terrain.renderedHeightAt(x, y));
   // The grass field round the camera (`grass.ts`): its ground heights and the
@@ -757,7 +575,7 @@ export function createSceneRenderer(
   grass.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
   grassFar.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
   if (import.meta.env.DEV) (window as unknown as { __grass?: unknown; __scene?: unknown }).__grass = grass;
-  if (import.meta.env.DEV) Object.assign(window, { __scene: scene, __gl: renderer, __curvature: forcePlanetCurvature });
+  if (import.meta.env.DEV) Object.assign(window, { __scene: scene, __gl: renderer });
   let grassGroundFor = '';
   let grassMaskFor = '';
   /** Where the grass mask must be drawn again: a rectangle, the whole map, or nowhere. */
@@ -815,18 +633,6 @@ export function createSceneRenderer(
     }
   };
   scene.add(...terrain.meshes);
-  // The ground's program (the biggest of the game) built ahead, in parallel,
-  // and the ground drawn once it is: drawn first, the opening stopped 0.6 s
-  // while the driver built it (profile of the play build, 2026-10-10).
-  // Asked at the first frame (`compileAhead` answers only once the renderer
-  // drains it, `drainCompiles`); hidden until then.
-  let groundWarm: 'no' | 'asked' | 'done' = __PLANET__ ? 'no' : 'done';
-  if (__PLANET__) for (const mesh of terrain.meshes) mesh.visible = false;
-  const warmGround = (): void => {
-    if (groundWarm !== 'no') return;
-    groundWarm = 'asked';
-    void compileAhead(terrain.meshes[0]!).then(() => { groundWarm = 'done'; for (const mesh of terrain.meshes) mesh.visible = true; });
-  };
 
   const world = new Group();
   world.name = 'world';
@@ -1110,7 +916,7 @@ export function createSceneRenderer(
   const crowdBounds = new Sphere(new Vector3(), 8);
   const pedestrianVisible = (x: number, y: number, height: number): boolean => {
     crowdBounds.center.set(x, height + 3, -y);
-    return planetSphereInView(crowdFrustum, crowdBounds);
+    return crowdFrustum.intersectsSphere(crowdBounds);
   };
   // How tall a person stands on the screen, canvas pixels: feet and head
   // through the view-projection (either camera); seen from straight above,
@@ -1118,9 +924,8 @@ export function createSceneRenderer(
   const pixelFoot = new Vector3(), pixelOther = new Vector3(), pixelBase = new Vector3(), cameraRight = new Vector3();
   const personPixels = (x: number, y: number, z: number, height: number): number => {
     const halfW = renderer.domElement.width * 0.5, halfH = renderer.domElement.height * 0.5;
-    // Where the planet draws them (`planetPointInto`; the points themselves on the flat map).
-    planetPointInto(x, z, -y, pixelFoot);
-    planetPointInto(x, z + height, -y, pixelOther).applyMatrix4(crowdProjection);
+    pixelFoot.set(x, z, -y);
+    pixelOther.set(x, z + height, -y).applyMatrix4(crowdProjection);
     pixelBase.copy(pixelFoot).addScaledVector(cameraRight, height).applyMatrix4(crowdProjection);
     pixelFoot.applyMatrix4(crowdProjection);
     const tall = Math.hypot((pixelOther.x - pixelFoot.x) * halfW, (pixelOther.y - pixelFoot.y) * halfH);
@@ -1134,7 +939,7 @@ export function createSceneRenderer(
    * drawn by.
    */
   const screenScale = (x: number, y: number, z: number): number => {
-    planetPointInto(x, z, -y, pixelFoot);
+    pixelFoot.set(x, z, -y);
     pixelOther.copy(pixelFoot).add(cameraRight).applyMatrix4(crowdProjection);
     pixelFoot.applyMatrix4(crowdProjection);
     return Math.hypot((pixelOther.x - pixelFoot.x) * cssHalfW, (pixelOther.y - pixelFoot.y) * cssHalfH);
@@ -1147,7 +952,7 @@ export function createSceneRenderer(
   const vehicleVisible = (x: number, y: number, height: number, radius: number): boolean => {
     vehicleBounds.center.set(x, height + radius * 0.3, -y);
     vehicleBounds.radius = radius;
-    return planetSphereInView(crowdFrustum, vehicleBounds);
+    return crowdFrustum.intersectsSphere(vehicleBounds);
   };
   scene.add(...agents.meshes);
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
@@ -1311,6 +1116,8 @@ export function createSceneRenderer(
   }
   let lampsKey = '';
   let tallestFor = -1;
+  /** The sky's mesh (`environment.ts`), found once by name (`draw`). */
+  let skyMesh: Object3D | null = null;
   let lastDark = -1;
   let tallestTop = 0;
   const tallestBox = new Box3();
@@ -1370,8 +1177,8 @@ export function createSceneRenderer(
   const watchRoads = (net: Network): void => {
     const now = performance.now();
     // Not while the world is being rebuilt: until the job lands the new roads
-    // have no picture yet by design (on the planet a rebuild spans seconds,
-    // and the first road drawn was reported missing every time).
+    // have no picture yet by design (a long rebuild had the first road drawn
+    // reported missing every time).
     if (now - roadsWatchedAt < 1000 || !reveal.opened || net.doc.segments.size === 0 || worldJob !== null) return;
     roadsWatchedAt = now;
     let vertices = 0;
@@ -1582,7 +1389,7 @@ export function createSceneRenderer(
     // every block of the map used to be digested twice on every edit.
     const where = after.differences?.(before) ?? null;
     if (where && !where.length) return out;
-    // Every plate's own blocks (the planet's six faces; the flat map's one).
+    // Every plate's own blocks.
     for (const plate of MAP_REGIONS) {
       for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
         for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
@@ -1903,7 +1710,7 @@ export function createSceneRenderer(
     if (changed === null) markGrass(null);
     else for (const block of changed) markGrass(block);
     performance.measure('hitch:road-edit/grass marked', { start: atGrass, end: performance.now() });
-    const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_REGIONS.length * MAP_SIZE * MAP_SIZE * 0.25;
+    const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25;
     pendingBlocks = local ? blocks : null;
     // The land itself changed: at once. After a road edit, and for the first
     // world when the game opens: a few milliseconds a frame (`pumpWorld`) -
@@ -2214,17 +2021,11 @@ export function createSceneRenderer(
   let transitPreview: ReturnType<typeof buildTrackPreview> | null = null;
   let transitPreviewKey = '';
 
-  // The play camera's state: the projection the orbit had before it.
   let buildingsHeld = false;
-  const chaseCamera: Chase = { eye: new Vector3(), look: new Vector3(), fov: 60, focus: new Vector3() };
-  /** Playing: the ring round the player always counted as seen (the camera turns), u. */
-  const PLAY_NEAR = m(45);
-  /** Playing: how far down the street a person or a car is still big enough to see appear, u. */
-  const PLAY_SEEN = m(320);
-  /** Playing: radians added to each side of the camera's width (the mouse turns it). */
+  /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
+  const VIEW_SEEN = m(320);
+  /** In perspective: radians added to each side of the camera's width (the camera turns). */
   const VIEW_MARGIN = 0.35;
-  /** Playing: how far ahead the sun's shadows are drawn, u (one map; beyond it, cascades would be needed). */
-  const PLAY_SHADOW_FAR = m(80);
   const shadowCentre = new Vector3();
   /**
    * The trees of the painted forest (`world/terrainPaint.ts` 'forest'): one
@@ -2306,7 +2107,7 @@ export function createSceneRenderer(
     const area = forestAreaOf(doc);
     if (!area) return [];
     // On one lattice anchored at the first plate's corner, within each plate
-    // (the planet's faces; the flat map's one) the painting reaches.
+    // the painting reaches.
     const out: [number, number, number, number][] = [];
     for (const plate of MAP_REGIONS) {
       const first = Math.ceil((plate.cx - plate.half + TERRAIN_HALF) / spacing);
@@ -2353,8 +2154,6 @@ export function createSceneRenderer(
    * player asked for few (2026-10-08) - the masses stay, thinned evenly.
    */
   const NATURE_TREES = 2_500;
-  /** How far off the ice's margin the first trees stand: the tundra between them. */
-  const ICE_TREELINE = m(120);
   /** The ecosystem's sweep: where a tree may grow, the budget the tier allows, and the room a forest of them needs. */
   interface NatureSweep {
     readonly key: string;
@@ -2375,7 +2174,6 @@ export function createSceneRenderer(
     kept: { readonly key: string; readonly of: readonly Candidate[]; readonly idx: readonly number[]; readonly z: readonly number[] } | null;
   }
   const naturePlates = new WeakMap<object, NaturePlate>();
-  const woodsSphere = { x: 0, y: 0, z: 0 };
   const natureSweep = (key: string): NatureSweep => {
     const trees: Candidate[] = [];
     if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key, trees, budget: 0, room: null };
@@ -2396,8 +2194,7 @@ export function createSceneRenderer(
     // ecosystem's canopy and trees, broad patches of a slow noise, and the
     // slopes and valleys (woods hold the hillsides; the plains are the
     // fields a town is built on).
-    // Plate by plate (the planet's faces; the flat map's one), each read in
-    // its own coordinates; the lattice's cells numbered over the whole
+    // Plate by plate, each read in its own coordinates; the lattice's cells numbered over the whole
     // world, so no two plates grow the same wood.
     const cells = Math.floor((TERRAIN_HALF * 2) / NATURE_SPACING);
     const plates: NaturePlate[] = [];
@@ -2411,8 +2208,8 @@ export function createSceneRenderer(
       const field = part.surface.ecology();
       if (!field) continue;
       // Kept from the last sweep while its own ecology and the land are as
-      // they were: on the planet every piece brought in full or let go swept
-      // all the others again (half a second over a camera's turn).
+      // they were: every plate brought in full or let go swept all the others
+      // again (half a second over a camera's turn).
       const plateKey = `${part.surface.ecologyRevision}${rest}`;
       const known = naturePlates.get(part.surface);
       if (known && known.key === plateKey) {
@@ -2448,11 +2245,7 @@ export function createSceneRenderer(
             const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
             // The patches drawn out to clear masses: woods on the plains too, as
             // capões, and clean meadows between them.
-            // On the planet at its point of the sphere: one pattern over every piece (`natureNoise.ts`).
-            if (__PLANET__) {
-              woodsAtlasToSphere(wx, wy, woodsSphere);
-              density = natureDensity3(woodsSphere.x * PLANET_R, woodsSphere.y * PLANET_R, woodsSphere.z * PLANET_R, m(1), hillside, ecology);
-            } else density = natureDensity(wx, wy, m(1), hillside, ecology);
+            density = natureDensity(wx, wy, m(1), hillside, ecology);
           }
           // The bands: inner forest, its edge, scattered trees, a rare lone one.
           if (density > 0.62) { odds[o] = 0.92; band[o] = 3; }
@@ -2467,13 +2260,11 @@ export function createSceneRenderer(
       plates.push(plate);
       treeSum += plateSum;
     }
-    // As many flat maps' budgets as the plates in full cover, the woods as
-    // thick as on one flat map: the budget shared by area. On the planet only
-    // the pieces kept in full are swept (`planet/terrainAtlas.ts`), and the
-    // whole flat Earth's plates are as many (`flatAtlas.ts`): a sum over the
-    // few plates made them denser the closer the view, and one map's budget
-    // over nine plates spent it all on the first plates swept, the last bare
-    // (2026-10-10, 2026-10-11).
+    // As many plates' budgets as the plates in full cover, the woods as thick
+    // on each: the budget shared by area. Only the plates kept in full are
+    // swept (`flatAtlas.ts`): a sum over the few plates made them denser the
+    // closer the view, and one budget over nine plates spent it all on the
+    // first plates swept, the last bare (2026-10-10, 2026-10-11).
     const plateArea = (2 * TERRAIN_HALF) ** 2;
     const base = NATURE_TREES * Math.min(1, quality.vegetation / 2_600);
     const budget = base * Math.max(1, (plates.length * plateArea) / m(1_920) ** 2);
@@ -2520,12 +2311,6 @@ export function createSceneRenderer(
   const natureOpen = (net: Network, x: number, y: number, z: number): boolean => {
     const plate = regionAt(x, y);
     if (Math.abs(x - plate.cx) > plate.half - m(2) || Math.abs(y - plate.cy) > plate.half - m(2)) return false;
-    // Nothing grows on the planet's ice (`world/planet/ice.ts`), nor on the
-    // tundra just off its margin: trees stood on the ice caps (2026-10-11).
-    if (__PLANET__) {
-      woodsAtlasToSphere(x, y, woodsSphere);
-      if (iceInside(woodsSphere.x, woodsSphere.y, woodsSphere.z) > -ICE_TREELINE) return false;
-    }
     const level = terrain.shoreLevelAt(x, y);
     if (level !== null && level > z - m(0.3)) return false;
     const g = m(2);
@@ -2702,62 +2487,13 @@ export function createSceneRenderer(
       shore: keptOf(idx, z),
     };
   };
-  let orbitPerspective: boolean | null = null;
-  let hiddenPerson: number | null = null;
-
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the
     // effects, and now the physics the bodies fall with (`warmPhysics`). The
     // idle preload below makes the effects only.
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
-    flight,
-    flightMarks(out) {
-      out.length = 0;
-      if (!space || !flight?.active) return out;
-      const camera = rig.camera;
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      const at = (key: FlightMark['key'], centre: Vector3, slot: number): void => {
-        const mark = markSlots[slot]!;
-        mark.key = key;
-        mark.distance = camera.position.distanceTo(centre);
-        markProject.copy(centre).project(camera);
-        mark.ahead = markProject.z < 1 && markProject.z > -1;
-        mark.x = (markProject.x * 0.5 + 0.5) * w;
-        mark.y = (0.5 - markProject.y * 0.5) * h;
-        out.push(mark);
-      };
-      for (const b of space.allBodies()) at(b.name, b.centre, b.name === 'moon' ? 0 : b.name === 'sun' ? 1 : b.name === 'station' ? 2 : 4);
-      at('asteroid', space.asteroids.centre, 3);
-      return out;
-    },
-    setChase(chase) {
-      if (chase && orbitPerspective === null) {
-        orbitPerspective = rig.perspective;
-        if (!rig.perspective) handle.setPerspective(true);
-      }
-      if (chase) {
-        chaseCamera.eye.set(chase.eye[0], chase.eye[2], -chase.eye[1]);
-        chaseCamera.look.set(chase.look[0], chase.look[2], -chase.look[1]);
-        chaseCamera.focus.set(chase.focus[0], chase.focus[2], -chase.focus[1]);
-        (chaseCamera as { fov: number }).fov = chase.fov;
-      }
-      rig.setChase(chase ? chaseCamera : null);
-      if (!chase && orbitPerspective !== null) {
-        const was = orbitPerspective;
-        orbitPerspective = null;
-        if (!was) handle.setPerspective(false);
-      }
-      onAssetsReady();
-    },
-    setHiddenPerson(id) {
-      hiddenPerson = id;
-    },
     holdBuildings(on) {
       buildingsHeld = on;
-    },
-    *atlasPhantoms() {
-      // In steps, for the monitor's idle time (`main.ts` noteAtlasPhantoms).
-      return __PLANET__ ? yield* atlasPhantomSteps(world) : [];
     },
     flashGrid(cells) {
       if (!cells.length) return;
@@ -2780,14 +2516,9 @@ export function createSceneRenderer(
     },
     setGrid(on) {
       // Drawn by the ground's own material (`TERRAIN_GRID`): always on it,
-      // over the whole world (the flat Earth's far ground is in world units:
-      // held to the old plate, the grid drew that plate's square).
-      TERRAIN_GRID.value = [GRID_CELL, on ? 0.08 * gridFade : 0, WORLD_HALF];
+      // over the whole map, in world units.
+      TERRAIN_GRID.value = [GRID_CELL, on ? 0.08 : 0, MAP_HALF];
       if (on !== gridWanted) { gridWanted = on; onAssetsReady(); }
-    },
-    setGridFade(fade) {
-      gridFade = Math.min(1, Math.max(0, fade));
-      TERRAIN_GRID.value = [GRID_CELL, gridWanted ? 0.08 * gridFade : 0, WORLD_HALF];
     },
     shootBody: (a, b) => fx?.shootBody(a, b) ?? null,
     isDown: (id) => fx?.hides(id) ?? false,
@@ -2828,9 +2559,9 @@ export function createSceneRenderer(
     landTop() {
       if (landTopFor !== landVersion) {
         landTopFor = landVersion;
-        // Kept by the planet's atlas as its plates' ground moves: walking the
-        // 864 plates' corners was 40 ms, on the first move of the pointer
-        // after every change of the land.
+        // Kept by the atlas as its plates' ground moves: walking every plate's
+        // corners was 40 ms, on the first move of the pointer after every
+        // change of the land.
         let top = terrain.highest?.() ?? -Infinity;
         const corners = Math.round((TERRAIN_HALF * 2) / TERRAIN_CELL);
         if (!terrain.highest) for (const part of terrain.parts) {
@@ -3266,17 +2997,6 @@ export function createSceneRenderer(
           }
         }
       }
-      // No tree drawn once the view takes in so much ground that one is a dot
-      // of a pixel or two: on the planet, seen from the sky, the woods were a
-      // scatter of dark specks over the land (the player, 2026-10-10). The
-      // screen's half height in world units, as the relief's window reads it.
-      if (__PLANET__) {
-        const across = renderer.domElement.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
-        const treesShown = across < TREE_VIEW;
-        for (const forest of [natureForest, paintedForest, plantedForest]) {
-          if (forest) for (const mesh of forest.meshes) if (mesh.visible !== treesShown) mesh.visible = treesShown;
-        }
-      }
       // Near trees in full, far ones light, by their distance to the camera.
       if (natureForest) {
         const eye = rig.camera.position;
@@ -3362,7 +3082,7 @@ export function createSceneRenderer(
           return floor;
         };
         let solids: CameraSolids | null = null;
-        rig.setSolids(solidsFloorAt = (x, y) => {
+        rig.setSolids((x, y) => {
           if (!solids) {
             const t0 = performance.now();
             solids = cameraSolids(net.doc.buildings.all(), floorOf);
@@ -3443,19 +3163,15 @@ export function createSceneRenderer(
         if (t > f.end) { scene.remove(f.mesh); f.mesh.geometry.dispose(); f.material.dispose(); gridFlashes.splice(i, 1); }
         else onAssetsReady();
       }
-      // Building the city, the map stands on a plain dark blue: no sky and no
-      // land past its edge; in play, the sky and the land round it (the player,
-      // 2026-10-06).
-      // The orbit camera brought down low keeps the building view: the map a
-      // block of land on the plain blue, its cut sides showing. The land and
-      // sky it opened round the map there read as a card on a green plain
-      // (the player, 2026-10-10: remove that green background).
+      // The map stands on a plain dark blue: no sky and no land past its edge,
+      // the map a block of land with its cut sides showing (the player,
+      // 2026-10-06; 2026-10-10: the land and sky round the map read as a card
+      // on a green plain).
       {
-        const open = rig.chasing;
-        const sky = scene.getObjectByName('sky');
-        if (sky && !__PLANET__) sky.visible = open;
-        for (const mesh of terrain.meshes) if (mesh.name === 'terrain-backdrop') mesh.visible = open;
-        scene.background = open || __PLANET__ ? null : MAP_BACKGROUND;
+        // Found once: looked up by name it walked the whole scene every frame.
+        skyMesh ??= scene.getObjectByName('sky') ?? null;
+        if (skyMesh) skyMesh.visible = false;
+        scene.background = MAP_BACKGROUND;
       }
       if (scenery) {
         scenery.grass.visible = quality.detailProps && rig.viewport.zoom >= GRASS_MIN_ZOOM;
@@ -3494,7 +3210,7 @@ export function createSceneRenderer(
         },
         // The bodies of shots and blows (`playEffects.ts`), once anybody has shot or struck.
         ...(fx ? { ragdolls: (citizens: Parameters<PlayEffects['frame']>[0]) => fx!.frame(citizens, sim, wallDt, fxDt) } : {}),
-        hiddenPed: (id) => id === hiddenPerson || (fx?.hides(id) ?? false),
+        hiddenPed: (id) => fx?.hides(id) ?? false,
       });
       exhaust.tick(windClock, renderer.domElement.height / 2);
       fx?.update(wallDt, fxDt);
@@ -3535,43 +3251,8 @@ export function createSceneRenderer(
       // Day and night, by the city's clock (`sim/city/city.ts`).
       // "Dia": four in the afternoon, the sun 29 degrees up - long enough
       // shadows to model the land, as the player's picture (2026-10-07).
-      // On the planet "always day" and "always night" are the hour WHERE THE
-      // VIEW LOOKS: a fixed 16:00 of the planet's clock left half the globe,
-      // and often the place looked at, in the night. The sun's hour at a place
-      // is the clock plus its longitude (`world/planet/sun.ts`), so the clock
-      // that makes it there is the hour less that offset.
-      // On the planet's globe "Dia" comes towards midday as the view goes out
-      // (13:00 at the whole globe): at 16:00 the night began 30 degrees past
-      // the place looked at, a band of it across the side seen.
-      const globeDay = __PLANET__ ? Math.min(1, Math.max(0, ((rig.viewport.globe ?? 0) - 0.05) / 0.25)) : 0;
-      const fixedHour = skyMode === 'day' ? 16 * 60 - 180 * globeDay : skyMode === 'night' ? 22 * 60 : null;
-      // The fixed hour's sun follows the middle of the view a moment behind
-      // it (`FIXED_SKY_EASE_S`), so the shadows turn with the view as it goes
-      // round the planet; the land's baked light follows in steps of 2 degrees.
-      // Out at the globe it follows at once, as a globe without its own sun
-      // is lit from the view (Cesium's `Globe.enableLighting` off, Google
-      // Earth without the sun): the side turned to the player is always the
-      // day, and a turn of the globe only moves the light a little.
-      if (__PLANET__ && fixedHour !== null) {
-        const atGlobe = (rig.viewport.globe ?? 0) >= FIXED_SKY_GLOBE;
-        const target = lookedMinutes(0);
-        if (fixedOffset < 0 || atGlobe) fixedOffset = target;
-        else {
-          const k = 1 - Math.exp(-Math.min(0.1, Math.max(0, delta)) / FIXED_SKY_EASE_S);
-          fixedOffset = (((fixedOffset + arc(fixedOffset, target) * k) % 1440) + 1440) % 1440;
-        }
-      } else fixedOffset = -1;
-      const viewClock = fixedHour === null ? sim.city.minutes(sim) : __PLANET__ ? fixedHour - fixedOffset : fixedHour;
-      // In free flight the sky is space itself: the fixed hour's sun, set by
-      // the place looked at, stays where it was at take-off - followed, the sun
-      // and the moon (`space.ts`, its orbit by the hour) moved with the view
-      // and could never be reached.
-      if (flight?.active && fixedHour !== null) {
-        if (flightClock < 0) flightClock = viewClock;
-      } else flightClock = -1;
-      const clock = flightClock >= 0 ? flightClock : viewClock;
-      // Only while the hour runs: with a fixed sky the hour follows the view, and turning with it fed back.
-      if (__PLANET__) planetSpin(fixedHour === null ? clock : Number.NaN);
+      const fixedHour = skyMode === 'day' ? 16 * 60 : skyMode === 'night' ? 22 * 60 : null;
+      const clock = fixedHour === null ? sim.city.minutes(sim) : fixedHour;
       {
         // THE WEATHER (`world/weather.ts`): the wind carries the clouds and
         // bends the plants and the smoke; the rain falls through the view;
@@ -3609,30 +3290,9 @@ export function createSceneRenderer(
         rain.update(weather.rain, target, span, rainWind, step);
         weatherActive = weather.rain > 0 || weather.lightning > 0 || flash > 0 || (weather.wind > 0 && placedCloudsShown);
       }
-      // On the planet the sun stands over the planet, not over the view: the
-      // time it makes where the view looks, and its true direction there.
-      const dark = __PLANET__ ? environment.setTimeOfDay(planetLocalMinutes(clock), planetSun(clock, planetSunNow)) : environment.setTimeOfDay(clock);
+      const dark = environment.setTimeOfDay(clock);
       // What a cloud's shadow can take: the sun's share of the light now.
       post.setDirectShare(environment.directShare());
-      if (space) {
-        planetCentre(spaceCentre);
-        // The real horizon from the eye's height over the sphere.
-        spaceUp.subVectors(rig.camera.position, spaceCentre);
-        const eyeRadius = spaceUp.length();
-        spaceUp.divideScalar(Math.max(1e-6, eyeRadius));
-        // Over the world drawn flat the horizon is a plane's: no dip.
-        const dipCos = isFlatView() ? 1 : Math.min(1, PLANET_RADIUS / Math.max(PLANET_RADIUS, eyeRadius));
-        environment.setHorizon(spaceUp, Math.sqrt(1 - dipCos * dipCos));
-        space.update({ camera: rig.camera, globe: rig.viewport.globe ?? 0, dark, minutes: clock, sun: planetSunNow,
-          centre: spaceCentre, motion: planetMotion(), pixelRatio: renderer.getPixelRatio(), height: canvas.clientHeight, flat: isFlatView() });
-        cloudShell?.update({ camera: rig.camera, centre: spaceCentre, motion: planetMotion(), sun: planetSunNow,
-          curvature: planetCurvature(), seconds: clock * 60 });
-        environment.setSpace(space.spaceShare);
-        post.setSpace(space.spaceShare);
-        post.setAir(space.air);
-        // Free flight: the camera's motion blur, a half-open shutter (a film camera's 180 degrees).
-        post.setMotionBlur(flight?.active ? 0.5 : 0);
-      }
       if (Math.abs(dark - lastDark) > 0.01) {
         lastDark = dark;
         post.setNight(dark);
@@ -3653,45 +3313,15 @@ export function createSceneRenderer(
         const atGrass = performance.now();
         if (show) keepGrassInputs(net);
         performance.measure('hitch:draw/Grass', { start: atGrass, end: performance.now() });
-        const at = rig.chasing ? chaseCamera.focus : target;
-        grass.update(at.x, at.z, show, windClock);
-        GRASS_FIELD.value = [at.x, -at.z, GRASS_NEAR_REACH * 3, show ? 1 : 0];
-        grassFar.update(at.x, at.z, show, windClock);
+        grass.update(target.x, target.z, show, windClock);
+        GRASS_FIELD.value = [target.x, -target.z, GRASS_NEAR_REACH * 3, show ? 1 : 0];
+        grassFar.update(target.x, target.z, show, windClock);
       }
-      if (rig.chasing) {
-        // Playing, the camera sees down the street: the shadows cover the
-        // view out past PLAY_SHADOW_FAR, inside one fixed disc round that slice
-        // of the frustum - its size never changes as the camera turns, so the
-        // map neither resizes nor shimmers (Microsoft, "Common Techniques to
-        // Improve Shadow Depth Maps": fit to the view frustum, bound by a
-        // sphere, move in texel steps). Fitted to the screen at the orbit's
-        // zoom, it was 5 m round the player and every shadow farther off
-        // came and went.
-        // A disc of PLAY_SHADOW_FAR round a point half that far ahead of the
-        // player: the street ahead to one and a half times it, the sides, a
-        // little behind.
-        shadowCentre.copy(viewDirection).setY(0).normalize().multiplyScalar(PLAY_SHADOW_FAR / 2).add(chaseCamera.focus);
-        environment.follow(shadowCentre, PLAY_SHADOW_FAR / 1.25, PLAY_SHADOW_FAR / 1.25, viewDirection, Math.max(0, tallestTop - target.y));
-      } else {
-        // The shadows round the ground looked at.
-        environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
-      }
+      // The shadows round the ground looked at.
+      environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
       // What the simulation must show in full: people step round each other
       // only where they are seen, and big enough to see it (`SimWorld.focus`).
-      if (rig.chasing) {
-        // Playing: the ring round the player, and the camera's own cone.
-        const dx = chaseCamera.look.x - chaseCamera.eye.x, dy = -(chaseCamera.look.z - chaseCamera.eye.z);
-        const len = Math.hypot(dx, dy) || 1;
-        const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
-        const halfAcross = Math.atan(Math.tan((chaseCamera.fov * Math.PI) / 360) * aspect);
-        sim.focus = {
-          x: target.x,
-          y: -target.z,
-          r: PLAY_NEAR,
-          detail: true,
-          view: { ex: chaseCamera.eye.x, ey: -chaseCamera.eye.z, dx: dx / len, dy: dy / len, cos: Math.cos(Math.min(Math.PI, halfAcross + VIEW_MARGIN)), far: PLAY_SEEN },
-        };
-      } else {
+      {
         // In perspective, tilted towards the horizon, the camera sees far past
         // the circle round the centre of the view: its cone is given too, so
         // nobody is made or taken away anywhere it looks (the circle alone let
@@ -3708,7 +3338,7 @@ export function createSceneRenderer(
             view = {
               ex: rig.camera.position.x, ey: -rig.camera.position.z,
               dx: coneDirection.x / flat, dy: -coneDirection.z / flat,
-              cos: Math.cos(Math.min(Math.PI, halfAcross + VIEW_MARGIN)), far: PLAY_SEEN,
+              cos: Math.cos(Math.min(Math.PI, halfAcross + VIEW_MARGIN)), far: VIEW_SEEN,
             };
           }
         }
@@ -3735,14 +3365,8 @@ export function createSceneRenderer(
         rig.camera.position.add(shakeOffset);
         rig.camera.updateMatrixWorld();
       }
-      // The land's own light (its hills' shading, baked a plate at a time) is
-      // left as it is while the view is out at the globe, where it is too fine
-      // to see and the sun follows every turn: worked out again for each, it
-      // kept the light workers busy on all 864 plates. It catches up once the
-      // view comes down.
-      if (!__PLANET__ || (rig.viewport.globe ?? 0) < FIXED_SKY_GLOBE) {
-        terrain.setSun(sunTowards.copy(environment.sun.position).sub(environment.sun.target.position));
-      }
+      // The land's own light (its hills' shading, baked a plate at a time).
+      terrain.setSun(sunTowards.copy(environment.sun.position).sub(environment.sun.target.position));
       {
         // The relief's close window (terrainRelief.ts) round the ground the
         // view looks at, drawn a little towards the camera, where the ground
@@ -3762,7 +3386,7 @@ export function createSceneRenderer(
           gulliesFor = net.doc.gullyRevision;
           terrain.setGullies(net.doc.gullyDabs, net.doc.gullyAuto);
         }
-        // The planet keeps in full only the pieces near what the view takes in (`planet/terrainAtlas.ts`).
+        // The atlas keeps in full only the plates near what the view takes in (`flatAtlas.ts`).
         terrain.focus?.(centre.x, centre.y, halfHeight);
         terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
@@ -3810,10 +3434,8 @@ export function createSceneRenderer(
       // (`isoViewport`: halfHeight / tan(fov / 2) from the view's centre).
       const eyeShift = rig.perspective ? 0
         : rig.camera.position.distanceTo(rig.target) - halfHeight / Math.tan((PERSPECTIVE_FOV * Math.PI) / 360);
-      post.setAtmosphere(air, environment.sun.position.clone().sub(environment.sun.target.position), environment.skyColor,
-        // On the planet there is no void round a model: space and the air round
-        // the planet are drawn instead (`planet/space.ts`).
-        sunLight.copy(environment.sun.color).multiplyScalar(environment.sun.intensity), !rig.chasing && !__PLANET__, eyeShift);
+      post.setAtmosphere(air, sunTowards.copy(environment.sun.position).sub(environment.sun.target.position), environment.skyColor,
+        sunLight.copy(environment.sun.color).multiplyScalar(environment.sun.intensity), eyeShift);
       const atRender = performance.now();
       // The people's skeletons on the GPU (`people/crowdAnimation.ts`), before anybody draws them.
       agents.renderPalettes(renderer);
@@ -3844,10 +3466,6 @@ export function createSceneRenderer(
           performance.mark('opening:shown', { detail: { waitedMs: performance.now() - openingSince, workedMs: reveal.worked, whole } });
         }
       }
-      // Out at the globe the contact shading is off (`PostChain.setAmbientOcclusion`).
-      if (__PLANET__) post.setAmbientOcclusion((rig.viewport.globe ?? 0) < 0.02);
-      // Past the planet's horizon nothing is drawn (`planet/bend.ts`).
-      if (__PLANET__) planetEye(rig.camera.position);
       if (reveal.opened) {
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
@@ -3860,9 +3478,8 @@ export function createSceneRenderer(
       // One waiting texture a frame to the GPU, before anybody draws it.
       drainUploads(renderer, 1);
       drainCompiles(renderer, rig.camera, scene, post.target);
-      // From the second frame on, the compiler answers: warm the road shaders, and the ground's.
+      // From the second frame on, the compiler answers: warm the road shaders.
       warmRoadShaders();
-      warmGround();
       warmBlastShaders();
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
@@ -3906,7 +3523,6 @@ export function createSceneRenderer(
       terrain.dispose();
       materials.dispose();
       environment.dispose();
-      space?.dispose();
       post.dispose();
       lotOverlay?.dispose();
       renderer.dispose();

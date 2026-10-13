@@ -48,17 +48,6 @@ export interface Viewport {
    */
   toScreen(p: Vec2, cssW: number, cssH: number, height?: number): Vec2;
   /**
-   * On the planet: every point picked from here on is read on the map of the
-   * piece under (px, py) (`render/planet/bend.ts` inTileChart), until
-   * `releaseChart`. Two pieces side by side on the sphere are far apart in the
-   * atlas, so a gesture that ran over a border jumped across the atlas between
-   * two points: a road drawn in zigzags, a demolition box in shards. A
-   * gesture is read on ONE piece's map, which goes on past its border.
-   */
-  holdChart?(px: number, py: number): void;
-  /** Picks read on the piece under the pointer again. */
-  releaseChart?(): void;
-  /**
    * Whether the ground under a pointer, on the plane at `height`, can be held
    * by a pan: false where the pointer's ray misses that plane (over the
    * horizon) or meets it so far off that a pixel would carry the view far.
@@ -72,25 +61,18 @@ export interface Viewport {
    * ground's own height there). `grabbed`: the point `grab` picked when the
    * zoom began, held under the pointer for the whole glide - re-read each
    * step, what one step left off was taken as the point to hold by the
-   * next, and over the globe the place pointed at slid away (Cesium's
-   * `handleZoom` picks once, when a zoom gesture starts).
+   * next, and the place pointed at slid away (Cesium's `handleZoom` picks
+   * once, when a zoom gesture starts).
    */
   zoomAt(px: number, py: number, factor: number, cssW: number, cssH: number, height?: number, grabbed?: Vec2): void;
   /**
    * The point a zoom about (px, py) holds, and the height of the plane it is
    * held on (the ground's `height`, or the plane the view holds instead far
-   * down a street); null where the pointer is over the sky or space.
+   * down a street); null where the pointer is over the sky.
    */
   grab?(px: number, py: number, height: number): { readonly world: Vec2; readonly height: number } | null;
   /** Moves the view over the ground, world units: `right` across the screen, `forward` the way the camera faces. */
   slide(right: number, forward: number): void;
-  /**
-   * On the planet: turns the whole camera round the planet's axis by
-   * `radians` (the sky's own sense), the ground under it going the other
-   * way - the view out in space held still against the stars while the
-   * planet turns (`renderer.ts` planetSpin). Absent on the flat map.
-   */
-  spinPlanet?(radians: number): void;
   /** Where the camera's eye is (x, y on the map, z its height), or null for a flat view. */
   readonly eye: { readonly x: number; readonly y: number; readonly z: number } | null;
   /** Turns the view. A no-op where there is nothing to turn. */
@@ -131,13 +113,7 @@ export interface Viewport {
    * reload of a zoomed-in session back to 320%.
    */
   readonly zoomBounds: { readonly min: number; readonly max: number };
-  /**
-   * On the planet, how far out to the whole globe the view is: 0 at the
-   * ground, 1 the globe whole. Absent on the flat map. Past a little of it
-   * the hand turns the camera round the planet (`cameraGestures.ts`).
-   */
-  readonly globe?: number;
-  /** Screen pixels per world unit at the point looked at, as drawn (with the globe's own pull back). */
+  /** Screen pixels per world unit at the point looked at, as drawn. */
   readonly scaleAtCentre?: number;
 }
 

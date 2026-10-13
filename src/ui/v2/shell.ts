@@ -69,7 +69,6 @@ import { keyLabel, onRoadKeysChange, roadKey } from '../roads/keys';
 import { materialSwatch } from '../materialSwatch';
 import { planSwatch } from '../planSwatch';
 import './shell.css';
-import { nextView, switchMode } from '../modeChooser';
 import { TREE_KINDS } from '@world/trees';
 
 type Category = 'roads' | 'zones' | 'build' | 'landscape' | 'transit' | 'people' | 'demolish' | 'info';
@@ -101,7 +100,6 @@ const ICON: Record<string, string> = {
   info: '<circle cx="11" cy="11" r="6"/><path d="m16 16 5 5"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   camera: '<path d="M3 8h4l2-3h6l2 3h4v11H3Z"/><circle cx="12" cy="13" r="3.5"/>',
-  rocket: '<path d="M12 2c3 2 5 6 5 10l-2 4H9l-2-4c0-4 2-8 5-10Z"/><circle cx="12" cy="9" r="1.6"/><path d="M9 16l-2 4 3-1M15 16l2 4-3-1"/>',
   sim: '<path d="M4 18 9 9l4 5 3-4 4 8"/><path d="M4 18h16"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7v.5"/><path d="M12 17.5v.5"/>',
   undo: '<path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/>',
@@ -261,9 +259,6 @@ const ICON: Record<string, string> = {
   m_save: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
   m_about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/>',
   m_quality: '<path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><path d="M12 12h9"/>',
-  // The other mode's button: a globe for the planet, a flat block of map for the flat one.
-  mode_planet: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5a13 13 0 0 1 0 17a13 13 0 0 1 0-17"/>',
-  mode_flat: '<path d="M2.5 17 7 7h14.5L17 17Z"/><path d="M4.8 12h14.5"/><path d="M12 7l-2.2 10"/>',
   m_language: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
   // A road's cross-section: the bands across it (the profile editor, docs/VIAS.md V2).
   profile: '<path d="M3 7h18M3 17h18"/><path d="M7 7v10M12 9v2m0 2v2M17 7v10"/>',
@@ -562,18 +557,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   const undo = button('v2-icon', t('action.undo'), () => deps.undo(), svg('undo', 18));
   const redo = button('v2-icon', t('action.redo'), () => deps.redo(), svg('redo', 18));
   const menuB = button('v2-pill', t('builder.menu.app'), () => toggle('menu', menuB), svg('menu', 18));
-  // The other view or mode, at any moment (`ui/modeChooser.ts`): on the
-  // planet the same world drawn flat, in place; on the flat build the other
-  // page (the map in hand saved as it is left).
-  const modeB = button('v2-pill', '', () => { switchMode(); labelMode(); });
-  const labelMode = (): void => {
-    const next = nextView();
-    const key = next === 'planet' ? 'mode.toPlanet' : 'mode.toFlat';
-    modeB.innerHTML = `${svg(next === 'planet' ? 'mode_planet' : 'mode_flat', 18)}<span></span>`;
-    (modeB.querySelector('span') as HTMLElement).textContent = t(key);
-    modeB.title = t(__PLANET__ ? `${key}.view` : `${key}.tip`);
-  };
-  labelMode();
   // Sliders, not the mountain-like chart line, which read as the Landscape icon.
   const simB = button('v2-pill', t('builder.menu.simulation'), () => toggle('sim', simB), svg('advanced', 18));
   const camB = button('v2-pill', t('camera.label'), () => toggle('camera', camB), svg('camera', 18));
@@ -584,9 +567,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   // here, a show/hide pair in the zoning panel and a switch in the
   // simulation menu.
   const layersB = button('v2-pill', t('v2.layers'), () => toggle('layers', layersB), svg('layers', 18));
-  // The free flight (`render/planet/flight.ts`, main.ts): in plain sight, not only the V key.
-  const flightB = button('v2-pill', t('flight.button'), () => window.dispatchEvent(new CustomEvent('roadcraft:flight')), svg('rocket', 18));
-  flightB.title = t('flight.on');
   // See inside the buildings (the Builder's command, `buildingsWiring.ts`):
   // its switch is a layer; while it is on, the floor and a step down and up
   // stay in the bar. A building opened by a click on the map is told here too.
@@ -612,7 +592,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   };
   syncInside();
   workspace.onInside((now) => { inside = now; syncInside(); });
-  actionsBar.append(...(__PLANET__ ? [flightB] : []), insideBar, layersB, simB, camB, undo, redo, helpB, modeB, menuB);
+  actionsBar.append(insideBar, layersB, simB, camB, undo, redo, helpB, menuB);
   hud.append(city, speed, actionsBar);
 
   // ================================================================ popovers
@@ -719,9 +699,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     inspect: [['help.key.click', 'help.do.pick'], ['help.key.pageUpDown', 'help.do.nodeHeight'], ['help.key.esc', 'help.do.close']],
     road: [['v2.key.drag', 'v2.do.road'], ['help.key.pageUpDown', 'palette.height'], ['v2.key.digits', 'palette.kind']],
   };
-  const CAMERA_KEYS = [['help.key.orbitDrag', 'help.do.orbit'], ['help.key.panDrag', 'help.do.pan'], ['help.key.wheel', 'help.do.zoom'], ['help.key.qe', 'help.do.turn'], ['help.key.home', 'help.do.resetView'],
-    // On the planet, the free flight (`render/planet/flight.ts`): the bar's button says V, and so does the help.
-    ...(__PLANET__ ? [['v2.key.fly', 'v2.do.fly']] as const : [])] as const;
+  const CAMERA_KEYS = [['help.key.orbitDrag', 'help.do.orbit'], ['help.key.panDrag', 'help.do.pan'], ['help.key.wheel', 'help.do.zoom'], ['help.key.qe', 'help.do.turn'], ['help.key.home', 'help.do.resetView']] as const;
   const GLOBAL_KEYS = [['v2.key.tools', 'v2.do.tools'], ['help.key.undo', 'v2.do.undo'], ['v2.key.redo', 'v2.do.redo'], ['v2.key.space', 'v2.do.pause'], ['v2.key.f9', 'v2.do.health']] as const;
   const keyList = (title: string, rows: readonly (readonly [string, string])[]): HTMLElement => {
     const box = el('div', 'v2-keys');
@@ -2175,7 +2153,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       b.title = t(key);
       delete b.dataset['tip'];
     }
-    labelMode();
     syncInside();
     if (popId) fillPop(popId);
     later();

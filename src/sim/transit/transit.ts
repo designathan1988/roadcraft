@@ -2,7 +2,6 @@ import type { Vec2 } from '@core/vec2';
 import type { BuildingId } from '@world/buildings/types';
 import { type RailGraph, type TransitLine, type TransitStop, railGraph, railPath } from '@world/transit';
 import { m } from '@world/units';
-import { onChartOf } from '@world/planet/charts';
 import { DRIVER_NOISE, DT } from '../params';
 import type { SimWorld } from '../world';
 import { ARCHETYPES, bodyClassOfArchetype } from '../vehicles/archetypes';
@@ -182,8 +181,7 @@ export class TransitSim {
       if (!track) continue;
       let yaw = 0, best = Infinity;
       for (let i = 1; i < track.points.length; i++) {
-        // On the stretch's chart (`world/transit.ts`), the station carried there.
-        const a = track.points[i - 1]!, b = onChartOf(track.points[i]!, a), s = onChartOf(st, a);
+        const a = track.points[i - 1]!, b = track.points[i]!, s = st;
         const d = Math.hypot((a.x + b.x) / 2 - s.x, (a.y + b.y) / 2 - s.y);
         if (d < best) { best = d; yaw = Math.atan2(b.y - a.y, b.x - a.x); }
       }
@@ -210,8 +208,7 @@ export class TransitSim {
       }
       if (!ok || points.length < 2) continue;
       const at: number[] = [0];
-      // Each stretch on its first point's chart (`world/transit.ts`).
-      const stretch = (a: Vec2, b: Vec2): number => { const q = onChartOf(b, a); return Math.hypot(q.x - a.x, q.y - a.y); };
+      const stretch = (a: Vec2, b: Vec2): number => Math.hypot(b.x - a.x, b.y - a.y);
       for (let i = 1; i < points.length; i++) at.push(at[i - 1]! + stretch(points[i - 1]!, points[i]!));
       const length = at[at.length - 1]! + stretch(points[points.length - 1]!, points[0]!);
       // The loop turns back at the first station and at the last one out.
@@ -230,8 +227,7 @@ export class TransitSim {
           for (let j = 1; j < c.n; j++) {
             const p = c.point(j - 1), q = c.point(j);
             for (let i = 0; i < points.length; i++) {
-              // The stretch on the lane's chart.
-              const a = onChartOf(points[i]!, p), b = onChartOf(points[(i + 1) % points.length]!, p);
+              const a = points[i]!, b = points[(i + 1) % points.length]!;
               const hit = crossAt(a, b, p, q);
               if (!hit) continue;
               const laneS = c.closestPoint({ x: p.x + (q.x - p.x) * hit.v, y: p.y + (q.y - p.y) * hit.v }).s;
@@ -389,15 +385,14 @@ export class TransitSim {
     const at = rail.at, pts = rail.points;
     const d = ((s % rail.length) + rail.length) % rail.length;
     let lo = 0, hi = at.length - 1;
-    // On the stretch's first point's chart (`world/transit.ts`).
     if (d >= at[hi]!) {
-      const a = pts[hi]!, b = onChartOf(pts[0]!, a);
+      const a = pts[hi]!, b = pts[0]!;
       const span = rail.length - at[hi]!;
       const u = span > 0 ? (d - at[hi]!) / span : 0;
       return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, heading: Math.atan2(b.y - a.y, b.x - a.x) };
     }
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (at[mid]! <= d) lo = mid; else hi = mid; }
-    const a = pts[lo]!, b = onChartOf(pts[hi]!, a);
+    const a = pts[lo]!, b = pts[hi]!;
     const span = at[hi]! - at[lo]!;
     const u = span > 0 ? (d - at[lo]!) / span : 0;
     return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, heading: Math.atan2(b.y - a.y, b.x - a.x) };
@@ -513,9 +508,7 @@ export class TransitSim {
    */
   plan(w: SimWorld, from: Vec2, to: Vec2): { line: number; board: number; alight: number } | null {
     const t = w.doc.transit;
-    // Distances on one chart each (on the planet, `world/planet/charts.ts`).
-    const toHere = onChartOf(to, from);
-    const direct = Math.hypot(toHere.x - from.x, toHere.y - from.y);
+    const direct = Math.hypot(to.x - from.x, to.y - from.y);
     let best: { line: number; board: number; alight: number; cost: number } | null = null;
     for (const line of t.lines) {
       // Only lines running now.
@@ -524,8 +517,7 @@ export class TransitSim {
       for (const id of line.stops) {
         const s = this.stops.get(id);
         if (!s) continue;
-        const f = onChartOf(from, s), g = onChartOf(to, s);
-        const da = Math.hypot(s.x - f.x, s.y - f.y), db = Math.hypot(s.x - g.x, s.y - g.y);
+        const da = Math.hypot(s.x - from.x, s.y - from.y), db = Math.hypot(s.x - to.x, s.y - to.y);
         if (da < STOP_REACH && (!a || da < a.d)) a = { id, d: da };
         if (db < STOP_REACH && (!b || db < b.d)) b = { id, d: db };
       }

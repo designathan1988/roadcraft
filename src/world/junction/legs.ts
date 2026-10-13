@@ -3,7 +3,7 @@ import { LEG_TRIM_CAP } from '../approach';
 import type { RoadDoc, SegmentDirection } from '../doc';
 import type { NodeId, SegmentId } from '../ids';
 import { type RoadSide, type RoadType, type SurfaceLevel, halfWidth, roadProfile, sideHalfWidth, sidewalkHalf, symmetric, travelShift } from '../roadTypes';
-import { type PolylineCache, frameFromNode, farNode, nodeChart, segmentStartsAt } from '../geometry';
+import { type PolylineCache, frameFromNode, farNode, segmentStartsAt } from '../geometry';
 
 /**
  * One approach arm of a junction, resolved at a specific surface level.
@@ -97,13 +97,11 @@ export function buildLegs(
 
   // Stable input order so cluster/leg indices are deterministic across rebuilds.
   const incident = node.incident.slice().sort((x, y) => x - y);
-  const chartOfNode = nodeChart(doc, nodeId);
 
   const legs: Leg[] = incident.map((segId) => {
     const seg = doc.requireSegment(segId);
     const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
-    // Framed on the node's chart (`world/planet/charts.ts`): the plate and every leg on one map.
-    const pl = cache.at(doc, segId, chartOfNode);
+    const pl = cache.get(doc, segId);
     const startsHere = segmentStartsAt(seg, nodeId);
     // The leg points away from the node: from `a` it looks along a -> b and
     // its `+nrm` side is the road's left; from `b` it is the road's right.

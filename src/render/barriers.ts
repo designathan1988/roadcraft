@@ -1,5 +1,4 @@
 import { BoxGeometry, Group, InstancedMesh, type Material, MeshStandardMaterial, Object3D } from 'three';
-import { onChartOf } from '@world/planet/charts';
 
 import { BARRIER_SIZE, type Barrier } from '@world/barriers';
 import type { RoadDoc } from '@world/doc';
@@ -99,8 +98,7 @@ function placeBarrier(barrier: Barrier, groundAt: (x: number, y: number) => numb
   const thickness = m(size.thickness);
   let sincePost = Infinity;
   for (let i = 1; i < barrier.points.length; i++) {
-    // On the stretch's first point's chart, the second carried there (`world/planet/charts.ts` layRun).
-    const a = barrier.points[i - 1]!, b = onChartOf(barrier.points[i]!, a);
+    const a = barrier.points[i - 1]!, b = barrier.points[i]!;
     const length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < 1e-6) continue;
     const yaw = Math.atan2(b.y - a.y, b.x - a.x);
@@ -153,8 +151,7 @@ function placeKerbBarrier(barrier: Barrier, groundAt: (x: number, y: number) => 
   const guard = barrier.kind === 'guardrail';
   const step = m(guard ? 2 : 1.5);
   for (let i = 1; i < barrier.points.length; i++) {
-    // On the stretch's first point's chart, the second carried there (`world/planet/charts.ts` layRun).
-    const a = barrier.points[i - 1]!, b = onChartOf(barrier.points[i]!, a);
+    const a = barrier.points[i - 1]!, b = barrier.points[i]!;
     const length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < 1e-6) continue;
     const yaw = Math.atan2(b.y - a.y, b.x - a.x);

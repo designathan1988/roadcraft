@@ -1,7 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from './doc';
 import type { NodeId } from './ids';
-import { PolylineCache, nodeChart } from './geometry';
+import { PolylineCache } from './geometry';
 
 /**
  * How sharply two roads may meet at one node.
@@ -37,7 +37,7 @@ export function legAngles(doc: RoadDoc, cache: PolylineCache, node: NodeId): num
   for (const segId of source.incident) {
     const segment = doc.segment(segId);
     if (!segment) continue;
-    const points = cache.at(doc, segId, nodeChart(doc, node)).toPoints();
+    const points = cache.get(doc, segId).toPoints();
     if (points.length < 2) continue;
     const startsHere = segment.a === node;
     const at = (startsHere ? points[0] : points[points.length - 1]) as Vec2;

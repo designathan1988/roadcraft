@@ -55,8 +55,6 @@ body { user-select: none; -webkit-user-select: none; }
 #game[data-tool="inspect"] { cursor: pointer; }
 #game[data-tool="bulldoze"] { cursor: not-allowed; }
 #game[data-tool="terrain"] { cursor: cell; }
-/* On the planet, over space: nothing there for a tool, the plain arrow. */
-#game[data-over="space"][data-tool] { cursor: default; }
 /* Turning or dragging the camera: a closed hand, whatever the tool. */
 #game[data-camera="held"][data-tool] { cursor: grabbing; }
 

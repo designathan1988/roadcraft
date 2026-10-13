@@ -11,7 +11,6 @@ import { m, stepsIn } from './units';
 import { pavedTester, quadsOverlap } from './zoneGrid';
 import type { ZoneDensity, ZoneUse } from './zones';
 import { rectAround, type ChangeRect } from './changes';
-import { chartAt, chartToChartInto, chartsReaching, onChartOf, onTerritory, withGhostImages } from './planet/charts';
 import type { BuildingId } from './buildings/types';
 
 /**
@@ -97,9 +96,7 @@ export function insideLot(point: Vec2, l: Pick<Lot, 'corners'>): boolean {
   let inside = false;
   const q = l.corners;
   if (!q.length) return false;
-  // On the lot's own chart (planet/charts.ts onChartOf): a pointer read on
-  // another piece's chart was never inside a lot across a border.
-  const p = onChartOf(point, q[0]!);
+  const p = point;
   for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
     const a = q[i]!, b = q[j]!;
     if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
@@ -253,22 +250,9 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
   const fitFree = (corners: Vec2[]): Vec2[] | null => {
     const box = rectAround(corners);
     if (!box) return null;
-    // The other lots on this one's chart (on the planet, `world/planet/charts.ts`):
-    // a lot kept on the next piece's chart is thousands of units away as it
-    // stands, and two lots either side of a border overlapped. Only the
-    // charts that can reach this box are read.
-    const chart = chartAt(corners[0]!.x, corners[0]!.y);
-    const reaching = __PLANET__ ? chartsReaching(chart, box[0], box[1], box[2], box[3]) : null;
     const near: Vec2[][] = [];
     for (const q of [...kept.map((l) => l.corners), ...add.map((c) => c.corners)]) {
-      let ring = q as Vec2[];
-      if (reaching) {
-        const own = chartAt(q[0]!.x, q[0]!.y);
-        if (own !== chart) {
-          if (!reaching.includes(own)) continue;
-          ring = q.map((p) => chartToChartInto(own, chart, p.x, p.y, { x: 0, y: 0 }));
-        }
-      }
+      const ring = q as Vec2[];
       const b = rectAround(ring);
       if (b && b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1]) near.push(ring);
     }
@@ -288,13 +272,10 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
 
   // The land as rasters over the streets' reach: paved or not, then labelled
   // into connected pieces; those that do not reach the raster's edge are
-  // closed blocks. One raster a GROUP of streets lying near one another in the
-  // atlas: on the planet each piece's streets are kept on its own chart, in
-  // its own cell of the atlas, and one raster round them all spanned the
-  // cells between - 50 000 by 12 000 units, some 23 million cells tested, a
-  // zone stroke's proposal waiting 3.3 s (the player, 2026-10-10: "tem que
-  // aparecer na hora que clica"). The flat map's streets make one group, or
-  // several apart, as before.
+  // closed blocks. One raster a GROUP of streets lying near one another: one
+  // raster round towns far apart spanned the empty land between them - some
+  // 23 million cells tested, a zone stroke's proposal waiting 3.3 s (the
+  // player, 2026-10-10: "tem que aparecer na hora que clica").
   const pad = LOT_DEPTH + m(20);
   interface Land {
     readonly minX: number; readonly minY: number; readonly W: number; readonly H: number;
@@ -383,13 +364,6 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       yield;
       const pts = piece.cells.map((c) => ({ x: minX + ((c % W) + 0.5) * RASTER, y: minY + (Math.floor(c / W) + 0.5) * RASTER }));
       const box = orientedBox(hull(pts));
-      // On the planet a block across a border is closed on both charts (each
-      // reads the other's streets, `pavedTester`): the one whose own piece its
-      // middle lies on cuts it, once.
-      if (__PLANET__) {
-        const own = chartAt(box.c.x, box.c.y);
-        if (!onTerritory(own, box.c.x, box.c.y)) continue;
-      }
       const key = `b:${Math.round(stepsIn(box.c.x, 4))},${Math.round(stepsIn(box.c.y, 4))},${Math.round(stepsIn(box.L, 4))},${Math.round(stepsIn(box.D, 4))}`;
       keys.push(key);
       if (known.has(key)) continue;
@@ -415,7 +389,7 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
         const t0 = -D / 2 + r * depth, t1 = t0 + depth;
         const taken: [number, number][] = [];
         for (const l of kept) {
-          const q = l.corners.map((p) => frame(onChartOf(p, box.c)));
+          const q = l.corners.map((p) => frame(p));
           const lt0 = Math.min(...q.map((p) => p.t)), lt1 = Math.max(...q.map((p) => p.t));
           if (Math.min(lt1, t1) - Math.max(lt0, t0) < depth * 0.25) continue;
           const ls0 = Math.min(...q.map((p) => p.s)), ls1 = Math.max(...q.map((p) => p.s));
@@ -494,8 +468,7 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
         for (const l of [...kept, ...add]) {
           let near = false, ls0 = Infinity, ls1 = -Infinity;
           for (const corner of l.corners) {
-            // On the street's chart (on the planet).
-            const q = onChartOf(corner, line.sampleAt(0).p);
+            const q = corner;
             const c = line.closestPoint(q);
             const f = line.sampleAt(c.s);
             // Across the street, on this side: positive on the side's left.
@@ -781,8 +754,7 @@ function pavingOf(net: Network, grow = 0): { poly: MultiPoly[number]; box: [numb
   const known = cached.find((c) => c.grow === grow);
   if (known) return known.pieces;
   const ringArea = (r: readonly Vec2[]): number => lotArea({ corners: r });
-  // With their ghost images: a lot cut by a border is cut by the next piece's paving too.
-  const pieces = (net.doc.segments.size ? withGhostImages(levelPolygons(net, Level.Sidewalk)) : []).map((raw) => {
+  const pieces = (net.doc.segments.size ? levelPolygons(net, Level.Sidewalk) : []).map((raw) => {
     const poly = grow === 0 ? raw : raw.map((ring, k) => {
       const pts = ring.map(([x, y]) => ({ x: x!, y: y! }));
       // Outer counter-clockwise, holes clockwise: the right-hand offset then grows the paving.

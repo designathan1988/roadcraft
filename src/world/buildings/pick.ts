@@ -1,5 +1,4 @@
 import { bayWidth, baysOn, elementRect, storedBounds, roofHeightAt, roofRise, volumeElevation, volumeHeight, volumeRectLocal, worldToLocal } from './geometry';
-import { chartAt, chartToChartInto } from '../planet/charts';
 import { containsPoint, edgeFrame, volumeSides } from './footprints';
 import type { Building, BuildingId, FaceId } from './types';
 import { m } from '../units';
@@ -43,37 +42,13 @@ export interface BuildingHit {
  * foundation), which the caller caches: sampling the ground for every
  * building on every pointer move would be the slow part.
  */
-/**
- * The ray on the chart a building is kept on (on the planet,
- * `world/planet/charts.ts`): the same two points of the line - on the ground
- * and 100 up, where the view gives it (`ToolView.ray`) - written on that
- * chart, the origin as far back along it as before, so the distances along
- * it (`t`) of two buildings on two charts still compare. A ray read as it
- * stands against a building kept on the next piece's chart was 1 600 units
- * or more away from it: that part of a building could not be picked.
- */
-function rayOnChartOf(ray: Ray3, b: Building): Ray3 {
-  if (!__PLANET__ || ray.dz === 0) return ray;
-  const t0 = -ray.oz / ray.dz, t1 = (m(40) - ray.oz) / ray.dz;
-  const gx = ray.ox + ray.dx * t0, gy = ray.oy + ray.dy * t0;
-  const from = chartAt(gx, gy), to = chartAt(b.x, b.y);
-  if (from === to) return ray;
-  const low = chartToChartInto(from, to, gx, gy, { x: 0, y: 0 });
-  const high = chartToChartInto(from, to, ray.ox + ray.dx * t1, ray.oy + ray.dy * t1, { x: 0, y: 0 });
-  const dx = low.x - high.x, dy = low.y - high.y, dz = -m(40);
-  const len = Math.hypot(dx, dy, dz);
-  const ux = dx / len, uy = dy / len, uz = dz / len;
-  return { ox: high.x - ux * t1, oy: high.y - uy * t1, oz: m(40) - uz * t1, dx: ux, dy: uy, dz: uz };
-}
-
 export function pickBuilding(
   buildings: Iterable<Building>,
-  seen: Ray3,
+  ray: Ray3,
   floorOf: (b: Building) => number,
 ): BuildingHit | null {
   let best: BuildingHit | null = null;
   for (const b of buildings) {
-    const ray = rayOnChartOf(seen, b);
     // Cheap reject first, before the floor (which samples the ground and the
     // footways): the ray's footprint over any height. Every building in town
     // had its floor worked out for every click - 85 ms a click in the default

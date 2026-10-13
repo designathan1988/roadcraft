@@ -6,25 +6,11 @@ import { modelUrlsPlugin } from './model-urls-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-// `--mode planet` builds and serves the planet: six flat maps on a cube, drawn
-// as a sphere (`src/core/cubeSphere.ts`). Any other mode is the flat game, and
-// every `if (__PLANET__)` branch is dead code there. The world unit is one
-// metre; a mode ending in `-old-unit` (`planet-old-unit`, `flat-old-unit`)
-// serves it at the 0.4 m unit of before, to compare side by side
-// (docs/ESCALA.md).
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   root: '.',
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never
   // inlined (`model-urls-plugin.ts`).
   plugins: [buildStampPlugin(), cookPlugin(), modelUrlsPlugin()],
-  // Compile-time keys (declared in `src/globals.d.ts`), replaced by literals in
-  // the build so a branch behind `false` is dead code and its imports never
-  // reach a chunk.
-  define: {
-    __PLANET__: JSON.stringify(mode === 'planet' || mode === 'planet-old-unit'),
-    // Metres in one world unit (`src/core/units.ts`).
-    __METERS_PER_UNIT__: JSON.stringify(mode.endsWith('-old-unit') ? 0.4 : 1),
-  },
   publicDir: false,
   // The dependencies are found from the game's own pages only. By default
   // Vite crawls every `.html` under the root (vite.dev/config/
@@ -87,4 +73,4 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-}));
+});

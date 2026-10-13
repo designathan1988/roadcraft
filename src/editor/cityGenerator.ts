@@ -83,23 +83,17 @@ export function greenCity(doc: RoadDoc, net: Network, seed: number): { squares: 
  * or a collector and the district is lively enough, parks left open. Returns
  * how many lots were zoned.
  */
-/**
- * `toPlan`: a point of the document in the plan's own coordinates (on the
- * planet the city is laid about the place looked at, each point kept on its
- * piece's chart, and read back on one chart here; the identity on the flat
- * map). The plan's zones and the nearness to a main road are both read there.
- */
-export function zoneCity(doc: RoadDoc, plan: CityPlan, toPlan: (p: Vec2) => Vec2 = (p) => p): number {
+export function zoneCity(doc: RoadDoc, plan: CityPlan): number {
   const main = new Set(['avenue', 'urban'].map((id) => ROAD_TYPES.findIndex((t) => t.id === id)));
   const mains: [Vec2, Vec2][] = [];
   for (const s of doc.segments.values()) {
     if (!main.has(s.type)) continue;
     const a = doc.nodes.get(s.a), b = doc.nodes.get(s.b);
-    if (a && b) mains.push([toPlan(a), toPlan(b)]);
+    if (a && b) mains.push([a, b]);
   }
   const groups = new Map<string, number[]>();
   for (const lot of doc.lots as readonly Lot[]) {
-    const anchor = toPlan(lotFrame(lot).anchor);
+    const anchor = lotFrame(lot).anchor;
     const zone = plan.zoneAt(anchor, nearAny(anchor, mains, m(22)));
     if (zone === 'park') continue;
     const key = `${zone.use}:${zone.density}`;

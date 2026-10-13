@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import { chartAt, onChartOf, ownPointer, ownShape, pointerChartOf } from '@world/planet/charts';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import {
@@ -68,15 +67,9 @@ export class LotTool {
 
   /** The corners of a lot being drawn point by point (the polygon mode). */
   private polygon: Vec2[] = [];
-  /**
-   * The chart the polygon's points are read on (the gesture's, planet/charts.ts
-   * pointerChartOf), kept from its first point: the pointer lets the chart go
-   * between clicks.
-   */
-  private polygonChart = 0;
   /** A drawn cut line, and a side being curved. */
-  private cutLine: { pointer: number; chart: number; a: Vec2; b: Vec2 } | null = null;
-  private curve: { pointer: number; chart: number; a: Vec2; b: Vec2; through: Vec2 } | null = null;
+  private cutLine: { pointer: number; a: Vec2; b: Vec2 } | null = null;
+  private curve: { pointer: number; a: Vec2; b: Vec2; through: Vec2 } | null = null;
   /**
    * A stroke of the brush, a corner being dragged, a lot being drawn, the
    * first lot of a join. A stroke takes stored lots (`ids`) and proposed
@@ -103,8 +96,8 @@ export class LotTool {
    * change; nothing is stored until the player paints.
    */
   private proposal: { key: string; steps: Generator<void, LotPlan> | null; lots: readonly Vec2[][]; keys: readonly string[] } | null = null;
-  private corner: { pointer: number; chart: number; from: Vec2; to: Vec2 } | null = null;
-  private drawn: { pointer: number; chart: number; a: Vec2; b: Vec2; angle: number } | null = null;
+  private corner: { pointer: number; from: Vec2; to: Vec2 } | null = null;
+  private drawn: { pointer: number; a: Vec2; b: Vec2; angle: number } | null = null;
   private joinFirst: number | null = null;
   /** A stroke of the delete mode: the lots and buildings it has passed over, removed on release as one undo step. */
   private erase: { pointer: number; last: Vec2; lots: Set<number>; buildings: Set<BuildingId> } | null = null;
@@ -305,7 +298,7 @@ export class LotTool {
     let best: { a: Vec2; b: Vec2 } | null = null, bestD = 18 / Math.max(0.05, this.host.zoom());
     for (const l of this.doc.lots) for (let i = 0; i < l.corners.length; i++) {
       const a = l.corners[i]!, b = l.corners[(i + 1) % l.corners.length]!;
-      const q = onChartOf(p, a);
+      const q = p;
       const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
       const t = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2));
       const d = Math.hypot(a.x + dx * t - q.x, a.y + dy * t - q.y);
@@ -319,7 +312,7 @@ export class LotTool {
     let best: { lot: Lot; side: number; a: Vec2; b: Vec2 } | null = null, bestD = 18 / Math.max(0.05, this.host.zoom());
     for (const l of this.doc.lots) for (let i = 0; i < l.corners.length; i++) {
       const a = l.corners[i]!, b = l.corners[(i + 1) % l.corners.length]!;
-      const q = onChartOf(p, a);
+      const q = p;
       const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
       const t = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2));
       // Inside the lot counts as nearer: of two lots sharing a side, the one the pointer is in.
@@ -362,7 +355,7 @@ export class LotTool {
   private streetAngleNear(p: Vec2): number {
     let best = Infinity, angle = 0;
     for (const r of this.net.ribbons.values()) {
-      const q = onChartOf(p, r.full.point(0));
+      const q = p;
       const d = r.full.distanceTo(q);
       if (d >= best) continue;
       const f = r.full.sampleAt(r.full.closestPoint(q).s);
@@ -380,8 +373,7 @@ export class LotTool {
       if (lot.building !== undefined) this.erase.buildings.add(lot.building as BuildingId);
     }
     for (const b of this.doc.buildings.all()) {
-      const q = onChartOf(world, b);
-      if (Math.hypot(b.x - q.x, b.y - q.y) > m(80)) continue;
+      if (Math.hypot(b.x - world.x, b.y - world.y) > m(80)) continue;
       if (solidFootprints(b).some((ring) => insideLot(world, { corners: ring }))) this.erase.buildings.add(b.id as BuildingId);
     }
   }
@@ -407,21 +399,17 @@ export class LotTool {
     const settings = host.settings();
     if (settings.mode === 'edit' || settings.mode === 'front' || settings.mode === 'split' || settings.mode === 'join' ||
       settings.mode === 'curve' || settings.mode === 'delete') this.adoptProposal();
-    // What the pointer POINTS AT, on its own piece's chart; the gesture's own
-    // chart is kept for the shapes it draws (planet/charts.ts ownPointer).
-    const chart = pointerChartOf(world.x, world.y);
-    const at = ownPointer(world, chart);
+    const at = { x: world.x, y: world.y };
     const lot = this.lotAt(at);
     const zoom = Math.max(0.05, host.zoom());
     if (settings.mode === 'edit') {
       // The nearest corner within reach of the pointer.
       let best: Vec2 | null = null, bestD = 14 / zoom;
       for (const l of doc.lots) for (const q of l.corners) {
-        const p = onChartOf(at, q);
-        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        const d = Math.hypot(q.x - at.x, q.y - at.y);
         if (d < bestD) { bestD = d; best = q; }
       }
-      if (best) this.corner = { pointer, chart, from: { ...best }, to: { ...world } };
+      if (best) this.corner = { pointer, from: { ...best }, to: { ...world } };
     } else if (settings.mode === 'front') {
       // The side clicked becomes the lot's front, the side its building faces.
       const side = this.sideAt(at);
@@ -432,7 +420,7 @@ export class LotTool {
         host.hint('hint.lot.front');
       }
     } else if (settings.mode === 'split') {
-      if (settings.splitKind === 'line') this.cutLine = { pointer, chart, a: { ...world }, b: { ...world } };
+      if (settings.splitKind === 'line') this.cutLine = { pointer, a: { ...world }, b: { ...world } };
       else if (lot) {
         let ok = false;
         host.mutate(() => (ok = splitLot(doc, lot.id, { kind: settings.splitKind as 'vertical' | 'horizontal', parts: settings.splitParts })));
@@ -441,20 +429,19 @@ export class LotTool {
     } else if (settings.mode === 'polygon') {
       // A point a click; the first point again (or a double click) closes it.
       const p = this.snap(world);
-      if (!this.polygon.length) this.polygonChart = chart;
       const first = this.polygon[0];
       const closing = first && this.polygon.length >= 3 && (Math.hypot(p.x - first.x, p.y - first.y) < 12 / zoom || detail >= 2);
       if (closing) {
         const points = [...this.polygon];
         this.polygon = [];
         let made = false;
-        const landed = this.landLot(ownShape(this.polygonChart, points));
+        const landed = this.landLot(points);
         host.mutate(() => (made = landed !== null && addPolygonLot(doc, landed.corners, landed.front) !== null));
         host.hint(made ? 'hint.lot.added' : 'hint.lot.addFail');
       } else this.polygon.push(p);
     } else if (settings.mode === 'curve') {
       const side = this.sideNear(at);
-      if (side) this.curve = { pointer, chart, a: side.a, b: side.b, through: { ...world } };
+      if (side) this.curve = { pointer, a: side.a, b: side.b, through: { ...world } };
     } else if (settings.mode === 'join') {
       if (lot && this.joinFirst === null) { this.joinFirst = lot.id; host.hint('hint.lot.joinPick'); }
       else if (lot && this.joinFirst !== null && lot.id !== this.joinFirst) {
@@ -465,7 +452,7 @@ export class LotTool {
         this.joinFirst = null;
       } else this.joinFirst = null;
     } else if (settings.mode === 'add') {
-      this.drawn = { pointer, chart, a: this.snap(world), b: this.snap(world), angle: this.streetAngleNear(at) };
+      this.drawn = { pointer, a: this.snap(world), b: this.snap(world), angle: this.streetAngleNear(at) };
     } else if (settings.mode === 'delete') {
       // Lots, the buildings on them or anywhere under the stroke, and the zoned cells: all at once.
       this.erase = { pointer, last: at, lots: new Set(), buildings: new Set() };
@@ -485,16 +472,16 @@ export class LotTool {
     const { host } = this;
     if (this.stroke?.pointer === pointer) {
       const stroke = this.stroke;
-      const at = ownPointer(world);
+      const at = { x: world.x, y: world.y };
       // The whole way from the last sample, a step shorter than any lot's
       // front: a fast drag reports its pointer far apart (the browser
       // coalesces moves, a slow frame more so - MDN, PointerEvent
       // getCoalescedEvents), and a stroke along a street zoned every third
       // lot and left grass between (seen in the game).
-      const from = onChartOf(stroke.last, at);
+      const from = stroke.last;
       const steps = Math.min(400, Math.ceil(Math.hypot(at.x - from.x, at.y - from.y) / STROKE_STEP));
       for (let k = 1; k <= steps; k++) {
-        const p = k === steps ? at : ownPointer({ x: from.x + (at.x - from.x) * k / steps, y: from.y + (at.y - from.y) * k / steps }, chartAt(at.x, at.y));
+        const p = k === steps ? at : { x: from.x + (at.x - from.x) * k / steps, y: from.y + (at.y - from.y) * k / steps };
         const lot = this.lotAt(p);
         if (lot) stroke.ids.add(lot.id);
         else if (!stroke.remove) this.brushProposed(p);
@@ -506,11 +493,11 @@ export class LotTool {
     if (this.erase?.pointer === pointer) {
       // The whole way from the last sample, as the brush's stroke.
       const erase = this.erase;
-      const at = ownPointer(world);
-      const from = onChartOf(erase.last, at);
+      const at = { x: world.x, y: world.y };
+      const from = erase.last;
       const steps = Math.min(400, Math.ceil(Math.hypot(at.x - from.x, at.y - from.y) / STROKE_STEP));
       for (let k = 1; k <= steps; k++) {
-        this.eraseUnder(k === steps ? at : ownPointer({ x: from.x + (at.x - from.x) * k / steps, y: from.y + (at.y - from.y) * k / steps }, chartAt(at.x, at.y)));
+        this.eraseUnder(k === steps ? at : { x: from.x + (at.x - from.x) * k / steps, y: from.y + (at.y - from.y) * k / steps });
       }
       erase.last = at;
       host.redraw();
@@ -545,8 +532,7 @@ export class LotTool {
     if (this.corner?.pointer === pointer) {
       const drag = this.corner;
       this.corner = null;
-      // The corner's new place on the corner's own chart.
-      const to = onChartOf(ownPointer(drag.to, drag.chart), drag.from);
+      const to = { x: drag.to.x, y: drag.to.y };
       if (commit && Math.hypot(to.x - drag.from.x, to.y - drag.from.y) > m(0.3)) {
         host.mutate(() => moveLotCorner(doc, drag.from, to));
         this.refused.clear();
@@ -557,19 +543,17 @@ export class LotTool {
       const line = this.cutLine;
       this.cutLine = null;
       if (commit && Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) > m(2)) {
-        // Every lot the line crosses is cut along it, the line taken onto each lot's own chart.
-        const ownA = ownPointer(line.a, line.chart), ownB = ownPointer(line.b, line.chart);
-        const lineOn = (l: Lot): { a: Vec2; b: Vec2 } => ({ a: onChartOf(ownA, l.corners[0]!), b: onChartOf(ownB, l.corners[0]!) });
+        // Every lot the line crosses is cut along it.
+        const a = { x: line.a.x, y: line.a.y }, b = { x: line.b.x, y: line.b.y };
         const crossed = doc.lots.filter((l) => {
           if (!l.corners.length) return false;
-          const { a, b } = lineOn(l);
           return cutLines(l, { kind: 'line', a, b }).length &&
             l.corners.some((q) => (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) > 0) &&
             l.corners.some((q) => (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) < 0) &&
             segmentCrossesLot(a, b, l.corners);
         });
         let ok = false;
-        host.mutate(() => { for (const l of crossed) ok = splitLot(doc, l.id, { kind: 'line', ...lineOn(l) }) || ok; return ok; });
+        host.mutate(() => { for (const l of crossed) ok = splitLot(doc, l.id, { kind: 'line', a, b }) || ok; return ok; });
         host.hint(ok ? 'hint.lot.split' : 'hint.lot.splitFail');
       }
       host.redraw();
@@ -577,8 +561,7 @@ export class LotTool {
     if (this.curve?.pointer === pointer) {
       const bend = this.curve;
       this.curve = null;
-      // Bent through a point on the side's own chart.
-      if (commit) host.mutate(() => curveLotSide(doc, bend.a, bend.b, onChartOf(ownPointer(bend.through, bend.chart), bend.a)));
+      if (commit) host.mutate(() => curveLotSide(doc, bend.a, bend.b, { x: bend.through.x, y: bend.through.y }));
       host.redraw();
     }
     if (this.drawn?.pointer === pointer) {
@@ -587,7 +570,7 @@ export class LotTool {
       if (commit) {
         let made = false;
         const rect = lotRect(drawn.a, drawn.b, drawn.angle);
-        const landed = rect ? this.landLot(ownShape(drawn.chart, rect)) : null;
+        const landed = rect ? this.landLot(rect) : null;
         host.mutate(() => (made = landed !== null && addPolygonLot(doc, landed.corners, landed.front) !== null));
         host.hint(made ? 'hint.lot.added' : 'hint.lot.addFail');
       }

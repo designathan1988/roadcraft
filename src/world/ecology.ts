@@ -173,8 +173,8 @@ const smooth = (a: number, b: number, x: number): number => {
 
 /**
  * A community's fields, listed once: read anew for every corner they were an
- * array made per call, a large part of the planet's opening (864 plates of
- * 1 849 corners, each blended once or twice) and of its garbage.
+ * array made per call, a large part of the opening (every plate's corners,
+ * each blended once or twice) and of its garbage.
  */
 let communityKeys: readonly (keyof Community)[] | null = null;
 
