@@ -366,7 +366,7 @@ export class RoadDoc {
    * `revision`: a pole is not part of the road network, and moving
    * `revision` for one rebuilt the network, the lanelets, the whole
    * simulation topology and every road mesh - about 330 ms per pole on a
-   * 180-segment map (tests/bench) - to draw a post. The renderer's utility
+   * 180-segment map (measured then) - to draw a post. The renderer's utility
    * layer and the footway graph (`sim/peds/sidewalk.ts`) watch this instead.
    */
   get utilityRevision(): number { return this.changes.serialOf('utilities', 'landscape'); }

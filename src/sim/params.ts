@@ -8,12 +8,17 @@ import { kmh, m } from '@world/units';
  * downstream-storage formula came out negative for short links (defect 2.2).
  */
 
-/** Fixed simulation step. Physics never depends on frame rate. */
-export const DT = 1 / 60;
+/** Fixed simulation step (`dt.ts`, a module of its own for the people's cook). */
+export { DT } from './dt';
 /** Cap on catch-up steps per frame, so a stall cannot spiral. */
 export const MAX_SUBSTEPS = 5;
 /** Wall-clock time is clamped to this before being accumulated. */
 export const MAX_FRAME = 0.25;
+/**
+ * The most wall time the simulation's steps may take in one frame, ms
+ * (`SimClock.advance`): half a 60 Hz frame, the other half the drawing's.
+ */
+export const SIM_FRAME_BUDGET_MS = 8;
 
 /**
  * A lane change is a PATH, not a slide.

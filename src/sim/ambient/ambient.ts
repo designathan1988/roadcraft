@@ -2,7 +2,7 @@ import { Rng } from '@core/rng';
 import { m, stepsIn } from '@world/units';
 import type { Building } from '@world/buildings/types';
 import { solidFootprints } from '@world/buildings/geometry';
-import { DT, PED_CEILING } from '../params';
+import { DT, FLEET_CEILING, PED_CEILING } from '../params';
 import type { SimWorld } from '../world';
 import { ARCHETYPES, bodyClassOfArchetype, type Archetype } from '../vehicles/archetypes';
 import { chooseVehicleDestination } from '../routing/destination';
@@ -67,6 +67,8 @@ export const MAX_DRIVERS = 180;
 const MAX_DRIVERS_FAR = 110;
 /** Seconds between two looks at the budget. */
 const LOOK_EVERY = 0.25;
+/** Most walkers, and most drivers, taken away a look down to the machine's ceilings (`trimToCeilings`). */
+const TRIM_PER_LOOK = 10;
 /** Most made in one look: the population fills over a second or two. */
 const MAKE_PER_LOOK = 8;
 /**
@@ -177,6 +179,7 @@ export class AmbientWorld {
     if (this.clock < LOOK_EVERY) return;
     this.clock = 0;
     if (this.source === 'edges') {
+      this.trimToCeilings(w);
       this.edgePeople(w);
       this.parking(w);
       return;
@@ -201,6 +204,43 @@ export class AmbientWorld {
     this.people(w, focus, reach, wantWalkers);
     this.traffic(w, focus, carReach, wantDrivers);
     this.parking(w);
+  }
+
+  /**
+   * Down to the population the machine sustains (`SimWorld.populationShare`,
+   * `sim/populationGovernor.ts`): over the ceilings it sets, walkers and
+   * drivers made here are taken away out of sight, `TRIM_PER_LOOK` a look,
+   * as the view's own life takes away who is past its reach (`people`,
+   * `traffic`). Without it a cut kept every walker and car until its trip
+   * ended, minutes later, and the cost stayed the full town's (measured
+   * 2026-10-13). People are out of sight
+   * when not drawn (`focus.detail`) or out of the view; cars are drawn at
+   * every zoom. The hour's own thinning is still left to the trips' ends.
+   */
+  private trimToCeilings(w: SimWorld): void {
+    const focus = w.focus;
+    let walkers = Math.min(TRIM_PER_LOOK, w.pedViews.length - Math.floor(PED_CEILING * w.populationShare));
+    for (const id of this.walkers) {
+      if (walkers <= 0) break;
+      const at = walkerOf(w, id);
+      if (!at || (focus && focus.detail && this.seen(w, focus, at.x, at.y, m(4)))) continue;
+      removeWalker(w, id);
+      this.walkers.delete(id);
+      walkers--;
+    }
+    // A count chosen on the panel is not scaled by the machine (`trafficTarget`).
+    if (w.trafficCount !== null) return;
+    let drivers = Math.min(TRIM_PER_LOOK, w.vehicles.size - Math.floor(FLEET_CEILING * w.populationShare));
+    for (const id of this.drivers) {
+      if (drivers <= 0) break;
+      const v = w.vehicles.get(id);
+      const pose = v ? vehiclePose(w, v, 1) : null;
+      if (!v || !pose || (focus && this.seen(w, focus, pose.p.x, pose.p.y, v.archetype.length))) continue;
+      w.removeVehicle(v);
+      this.drivers.delete(id);
+      this.sighted.delete(id);
+      drivers--;
+    }
   }
 
   // ------------------------------------------------------------ on foot

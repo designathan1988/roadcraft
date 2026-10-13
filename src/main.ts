@@ -65,7 +65,8 @@ import { DEFAULT_AZIMUTH, DEFAULT_ELEVATION, isoZoomBounds } from '@render/isoVi
 
 import { SimWorld } from '@sim/world';
 import { rebindAgents, step } from '@sim/pipeline';
-import { DT, NARROW_SCREEN_SHARE, NARROW_SCREEN_WIDTH } from '@sim/params';
+import { DT, NARROW_SCREEN_SHARE, NARROW_SCREEN_WIDTH, SIM_FRAME_BUDGET_MS } from '@sim/params';
+import { PopulationGovernor } from '@sim/populationGovernor';
 
 import { type Anchor, anchorForHeight, findAnchor, roadSnap, setRoadSnap } from '@editor/snap';
 import { duplicateSegment, joinSegments, splitSegment } from '@editor/commit';
@@ -238,9 +239,15 @@ sim.auditLevel = 'cheap';
 // The status bar's alerts: checked once a second of play, not on every one
 // of its sixty ticks - a whole pass over the fleet and the signals each tick.
 sim.auditEvery = 60;
-/** The simulation never reads the screen; the screen's size is handed to it. */
+/**
+ * The population the machine sustains (`sim/populationGovernor.ts`), never
+ * more than the device's own share. The simulation never reads the screen;
+ * the screen's size is handed to it.
+ */
+const populationGovernor = new PopulationGovernor(1);
 function syncPopulationShare(): void {
-  sim.populationShare = window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1;
+  populationGovernor.setMax(window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1);
+  sim.populationShare = populationGovernor.share;
 }
 syncPopulationShare();
 
@@ -2004,7 +2011,9 @@ function generateCity(options: CityOptions): { roads: number; lots: number; zone
   history.begin(doc);
   // The footways wide enough for street trees before the lots are cut (V7).
   widenCityFootways(cityDoc);
-  applySnapshot(cityDoc.toJSON(), 'import');
+  // On the level plain, as every new map (a document made fresh reads the
+  // relief of the maps of before, and the town stood on its lumps).
+  applySnapshot({ ...cityDoc.toJSON(), relief: NEW_RELIEF }, 'import');
   if (net.revision !== doc.revision) net.rebuild();
   applyLots(doc, planLots(doc, net));
   // A square in each neighbourhood and the streets' trees and furniture (V7).
@@ -2566,7 +2575,8 @@ function frame(now: number): void {
   frameTimer.mark('topologia');
   const alpha = holdSim
     ? 1
-    : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }));
+    : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }), SIM_FRAME_BUDGET_MS);
+  if (!holdSim) sim.populationShare = populationGovernor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, now / 1000, sim.vehicles.size, sim.pedViews.length);
   frameTimer.mark('simulação');
 
   if (net.revision !== doc.revision) {
@@ -3946,7 +3956,8 @@ const healthPanel = mountHealthPanel({
       ...Object.entries(gameState.snapshot()).map(([key, value]) => `${key}: ${valueText(value)}`),
       ...tools.latest(3).map((r) => `tool machine #${r.serial}: ${r.from} → ${r.to} (${r.event})`),
     ],
-    wide: gpuLines(),
+    wide: [...gpuLines(),
+      `simulação: ${populationGovernor.stepMs.toFixed(1)} ms/passo · população ${Math.round(populationGovernor.share * 100)}% (${sim.vehicles.size} veículos, ${sim.pedViews.length} pessoas)`],
     changes: gameState.latest(n).map((c) => `${c.key}: ${valueText(c.from)} → ${valueText(c.to)} (${c.cause})`),
   }),
 });

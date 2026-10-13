@@ -138,6 +138,20 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   faixas, meio-fio, postes, fios, carros andando, dinheiro descontado), ajuda sem o voo, console
   sem erros.
 
+### Simulação no orçamento, população regulada, chão sem manchas, elenco fixo (2026-10-13)
+- Medido no jogo (cidade padrão, 624 carros, 1.001 pessoas): passo de 9–12 ms (pedestres 3,4;
+  despacho e rotas 2,1; admissão 1,8; restrições 1,8; integração 1,5).
+- `SimClock.advance` com orçamento de 8 ms por quadro (`SIM_FRAME_BUDGET_MS`): passado dele, a
+  simulação desacelera em vez de esticar o quadro. `sim/populationGovernor.ts` baixa e sobe a
+  fatia dos tetos de população pelo custo do passo (Unity Adaptive Performance), e o ambiente
+  tira, fora da vista, quem passa dos tetos. Sonda no jogo: pessoas 850 → 443 em 15 s, passo
+  10–12 → 5,5–8 ms.
+- Relevos antigos (1, 2) só na placa de antes (±960 m), suavizados em 480 m até a planície:
+  espalhados nos 10 km, o ruído de valor iluminado virava manchas em degraus por todo o chão
+  (foto do jogador). A cidade gerada nasce na planície.
+- Elenco fixo (`cook-plugin.ts` CAST): os bonecos cozidos não dependem mais do código; o build
+  não pede `cook:people` a cada mudança. `DT` num módulo próprio (`sim/dt.ts`).
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs

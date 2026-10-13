@@ -7,7 +7,6 @@
  "enumMembers src/world/roadTypes.ts Shadow",
  "exports build-stamp.ts readBuildStamp",
  "exports cook-plugin.ts derivedHash",
- "exports cook-plugin.ts peopleCookHash",
  "exports src/core/aabb.ts center",
  "exports src/core/aabb.ts containsPoint",
  "exports src/core/aabb.ts height",

@@ -32,6 +32,9 @@ export class SimClock {
   speed = 1;
 
   private acc = 0;
+  /** The last `advance`: how many steps it ran and their mean wall time, ms (0 when none ran). */
+  lastSteps = 0;
+  lastStepMs = 0;
 
   get time(): number {
     return this.tick * DT;
@@ -40,8 +43,18 @@ export class SimClock {
   /**
    * Advances by wall-clock seconds, calling `step` once per fixed interval.
    * Returns the interpolation alpha in [0, 1) for rendering.
+   *
+   * `budgetMs`: the most wall time the steps of one frame may take. Past it
+   * no further step is run this frame (one always is) and the debt is shed,
+   * as at `MAX_SUBSTEPS`: a simulation that costs more than real time slows
+   * down instead of stretching every frame (Fiedler, "Fix Your Timestep!":
+   * clamp the steps a frame and it "will appear to slow down under heavy
+   * load"; Unity's Maximum Allowed Timestep caps the fixed work a frame).
+   * At 4x speed six steps of 10 ms took 60 ms of every frame.
    */
-  advance(wallDelta: number, step: () => void): number {
+  advance(wallDelta: number, step: () => void, budgetMs = Infinity, now: () => number = () => performance.now()): number {
+    this.lastSteps = 0;
+    this.lastStepMs = 0;
     if (this.paused) return 1;
 
     // Clamped at both ends. A long stall must not flood the accumulator, and a
@@ -51,15 +64,20 @@ export class SimClock {
     this.acc += snapToTicks(clamp(wallDelta, 0, MAX_FRAME)) * this.speed;
 
     let n = 0;
-    while (this.acc >= DT && n < MAX_SUBSTEPS) {
+    const start = this.acc >= DT ? now() : 0;
+    let spent = 0;
+    while (this.acc >= DT && n < MAX_SUBSTEPS && spent < budgetMs) {
       step();
       this.acc -= DT;
       n++;
+      spent = now() - start;
     }
+    this.lastSteps = n;
+    this.lastStepMs = n > 0 ? spent / n : 0;
 
     // Shed the debt rather than carrying it: catching up over later frames only
     // makes the stall worse.
-    if (n === MAX_SUBSTEPS) this.acc = 0;
+    if (this.acc >= DT) this.acc = 0;
 
     return this.acc / DT;
   }

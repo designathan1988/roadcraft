@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { importClosure } from '../../cook-plugin';
 
 /**
- * The cooked people are used only under the fingerprint of the code that
- * builds them (`cook-plugin.ts`). Hashing whole folders staled every cooked
- * body on an edit to code no body uses - the procedural crowd - and the game
- * built each one during play, 200-550 ms a body (docs/performance.md #7).
+ * The import closure the derived caches are fingerprinted by (`cook-plugin.ts`
+ * `importClosure`), read on the code that builds a person: everything that
+ * runs, nothing beside it. Hashing whole folders staled a cache on an edit to
+ * code it is not made by. (The cooked people themselves are a fixed cast
+ * since 2026-10-13, `CAST`: no longer fingerprinted by code.)
  */
-describe('the people cook fingerprint', () => {
+describe('the import closure a fingerprint reads', () => {
   const closure = importClosure(process.cwd(), 'src/render/riggedCitizens.ts')
     .map((file) => file.replace(/\\/g, '/').replace(`${process.cwd().replace(/\\/g, '/')}/`, ''));
 

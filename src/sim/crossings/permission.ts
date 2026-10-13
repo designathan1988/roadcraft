@@ -65,7 +65,7 @@ export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: nu
  * (`indexReservations`): vehicles do not move while pedestrians step, and the
  * check used to walk the whole fleet - allocating a set per vehicle - for
  * every pedestrian asking to cross, about 0.76 ms of a 6.9 ms tick with 450
- * vehicles (tests/bench). Only the vehicles filed under the crossing asked
+ * vehicles (measured then). Only the vehicles filed under the crossing asked
  * about are examined now, by exactly the same rules.
  */
 const RESERVATIONS = new WeakMap<SimWorld, Map<string, { v: Vehicle; connector: string }[]>>();

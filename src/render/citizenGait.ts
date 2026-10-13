@@ -1,5 +1,5 @@
 import { SIT_DOWN_SECONDS, STAND_UP_SECONDS, type PedView } from '@sim/people/view';
-import { DT } from '@sim/params';
+import { DT } from '@sim/dt';
 import { m } from '@world/units';
 import {
   WALK_ADVANCE, strideShare, walkDuration, walkSource,

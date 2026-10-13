@@ -7,7 +7,7 @@ import {
 import { PIXAR, REALISTIC, cartoonBody, styleFor, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { personHash, type PartyView, type PedView } from '@sim/people/view';
-import { DT } from '@sim/params';
+import { DT } from '@sim/dt';
 import { m, perM } from '@world/units';
 import { CROWD, CROWD_IDS, CastingRegistry, type CastingContext, type Company } from './citizenCasting';
 import { NO_HELMET, type RiderClipKey } from './riderPoses';

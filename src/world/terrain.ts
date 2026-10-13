@@ -213,9 +213,24 @@ export const RELIEF_FLAT: ReliefVersion = 3;
 export const readRelief = (value: unknown): ReliefVersion | null =>
   value === 1 || value === 2 || value === 3 ? value : value === 4 ? RELIEF_FLAT : null;
 
+/**
+ * Where a map's own relief (1, 2) stands: the plate of the map of before,
+ * 1.92 km about the origin, where the maps made then and their roads lie,
+ * eased into the level plain over `RELIEF_BLEND` past it. Spread over the
+ * whole map of 10 km, the old field's value noise lit by a low sun read as
+ * dark blotches in steps over all the land (the player, 2026-10-13: "os
+ * gráficos estão péssimos"); before, the Earth's land took over there.
+ */
+const RELIEF_HALF = m(960);
+const RELIEF_BLEND = m(480);
+
 /** The map's own land at a point, before any stamp: its relief's field. */
 export function reliefHeight(relief: ReliefVersion, x: number, y: number): number {
-  return relief === RELIEF_FLAT ? 0 : relief === RELIEF_NATURAL ? naturalRelief(x, y) : baseRelief(x, y);
+  if (relief === RELIEF_FLAT) return 0;
+  const out = Math.max(Math.abs(x), Math.abs(y)) - RELIEF_HALF;
+  if (out >= RELIEF_BLEND) return 0;
+  const h = relief === RELIEF_NATURAL ? naturalRelief(x, y) : baseRelief(x, y);
+  return out <= 0 ? h : h * (1 - smooth01(out / RELIEF_BLEND));
 }
 
 /** 0..1 smoothstep of `t`, clamped. */

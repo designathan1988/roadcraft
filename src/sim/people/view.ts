@@ -1,5 +1,5 @@
 import type { SegmentId } from '@world/ids';
-import { DT } from '../params';
+import { DT } from '../dt';
 
 /**
  * A person as everything outside the pedestrian engine sees them.
