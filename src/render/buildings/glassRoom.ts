@@ -1,6 +1,7 @@
 import { Color, type MeshStandardMaterial } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { SLOT_WIDTH, litTableDriven, litTexture } from './lightSlots';
+import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
 
 /**
  * The window panes' material: the room behind each pane drawn by interior
@@ -15,9 +16,11 @@ export function roomBehindGlass(
     readonly tones: Float32Array;
     readonly roomsAwake: { value: number };
     readonly roomDaylight: { value: number };
+    /** Seconds, for a television's flicker. */
+    readonly tvClock: { value: number };
   },
 ): void {
-  const { tones, roomsAwake, roomDaylight } = shared;
+  const { tones, roomsAwake, roomDaylight, tvClock } = shared;
   const lin = (hex: number): string => { const c = new Color().setHex(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
   // At night not every window is lit, nor all alike: each pane draws its own
   // lot from where it stands - a third dark, the rest from dim to bright,
@@ -28,6 +31,7 @@ export function roomBehindGlass(
     shader.uniforms.litTableDriven = litTableDriven;
     shader.uniforms.roomsAwake = roomsAwake;
     shader.uniforms.roomDaylight = roomDaylight;
+    shader.uniforms.tvClock = tvClock;
     shader.uniforms.furnitureTone = { value: tones };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
@@ -87,6 +91,7 @@ varying float vRoomLot;
 varying float vLit;
 varying vec2 vPane;
 uniform float roomDaylight;
+uniform float tvClock;
 varying vec4 vRoomA;
 varying vec4 vRoomB;
 varying vec4 vRoomC;
@@ -94,7 +99,8 @@ varying vec3 vRoomEye;
 varying vec3 vRoomRay;
 varying vec2 vPaneSize;
 uniform vec3 furnitureTone[${FURNITURE_KINDS.length}];
-float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }`)
+float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }
+${ROOM_LAMP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 // The room behind the pane. Where the building's interior is known
 // (roomBehind.ts): its own box - side walls, back wall, floor and
@@ -277,10 +283,15 @@ roughnessFactor = mix(roughnessFactor, 0.55, paneTiny);`)
 float shown = step(fract(vRoomLot * 5.31), 0.64);
 float level = 0.3 + 0.85 * fract(vRoomLot * 7.13) * fract(vRoomLot * 2.17 + 0.4);
 float roomLit = shown * (vLit >= 0.0 ? vLit * level : step(0.34, vRoomLot) * level);
-vec3 roomTint = mix(vec3(1.0), vec3(0.62, 0.78, 1.15), step(0.9, fract(vRoomLot * 3.71)));
+// The lamp's colour by the room (\`roomLamps.ts\`): warm or cool white in a
+// home, neutral to daylight in an office or a shop (a stone floor), and in
+// some homes only the television's blue light, jumping at each cut.
+float office = vRoomA.z > 0.05 && vRoomB.y > 0.5 && vRoomB.y < 1.5 ? 1.0 : 0.0;
+vec3 roomTint = roomLamp(fract(vRoomLot * 17.31), office);
+roomTint = mix(roomTint, tvLight(tvClock, vRoomLot), (1.0 - office) * step(1.0 - ${TV_SHARE.toFixed(2)}, fract(vRoomLot * 3.71)));
 // At night the lamp lights the room: its walls, floor and furniture seen, not a sheet of light.
 totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.55, 0.0, 1.6));
 totalEmissiveRadiance += roomSeen * roomDaylight;`);
   };
-  glassy.customProgramCacheKey = () => `room-lights-awake-interior-v8-${kind}`;
+  glassy.customProgramCacheKey = () => `room-lights-awake-interior-v9-${kind}`;
 }

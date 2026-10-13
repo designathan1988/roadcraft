@@ -1,4 +1,5 @@
 import { Color, MeshStandardMaterial } from 'three';
+import { ROOM_LAMP_GLSL } from './roomLamps';
 
 /**
  * The material of buildings seen from afar (`massing.ts`): their walls in the
@@ -21,8 +22,6 @@ import { Color, MeshStandardMaterial } from 'three';
  * (`kit.ts`), a neutral dark grey - not a blue.
  */
 const GLASS = new Color(0x585f63);
-/** A lit room's glow (`kit.ts` ROOM_LIGHT). */
-const ROOM_GLOW = new Color(0xffc27a);
 /** Where a window sits in its storey, from the floor (shares of the storey height). */
 const SILL = 0.3;
 const HEAD = 0.85;
@@ -38,7 +37,6 @@ export function createMassingMaterial(uniforms: MassingUniforms): MeshStandardMa
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
   material.name = 'building-massing';
   const glass = `vec3(${GLASS.r.toFixed(5)}, ${GLASS.g.toFixed(5)}, ${GLASS.b.toFixed(5)})`;
-  const glow = `vec3(${ROOM_GLOW.r.toFixed(5)}, ${ROOM_GLOW.g.toFixed(5)}, ${ROOM_GLOW.b.toFixed(5)})`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms['roomsAwake'] = uniforms.roomsAwake;
     shader.uniforms['massingNight'] = uniforms.massingNight;
@@ -54,6 +52,8 @@ varying vec2 vGlazing;
 varying float vHeight;
 float massGlass = 0.0;
 float massLit = 0.0;
+vec3 massLamp = vec3(1.0);
+${ROOM_LAMP_GLSL}
 // The integral of a pulse [a0, a1) repeated every 1, from 0 to x.
 float massPulseIntegral(float x, float a0, float a1) { return floor(x) * (a1 - a0) + clamp(fract(x), a0, a1) - a0; }
 // The pulse averaged over a pixel's footprint w (a box filter).
@@ -71,17 +71,25 @@ if (vFacade.y > 0.0) {
   massGlass = across * up * step(0.0, cell.y);
   // Which room is lit: its own lot near, the share awake once a window is under a pixel.
   vec2 room = floor(cell);
-  float lot = fract(sin(dot(room, vec2(12.9898, 78.233)) + vGlazing.y * 437.585) * 43758.5453);
+  float seed = fract(vGlazing.y), office = step(1.5, vGlazing.y);
+  float lot = fract(sin(dot(room, vec2(12.9898, 78.233)) + seed * 437.585) * 43758.5453);
   float near = step(1.0 - roomsAwake, lot);
-  massLit = mix(near, roomsAwake, smoothstep(0.5, 1.5, max(foot.x, foot.y)));
+  float sub = smoothstep(0.5, 1.5, max(foot.x, foot.y));
+  massLit = mix(near, roomsAwake, sub);
+  // Its lamp from the mix the detailed panes draw from (\`roomLamps.ts\`);
+  // under a pixel, the mix's mean, so a far block holds its colour.
+  vec3 meanLamp = office > 0.5
+    ? (roomLamp(0.1, 1.0) * 0.5 + roomLamp(0.6, 1.0) * 0.35 + roomLamp(0.95, 1.0) * 0.15)
+    : (roomLamp(0.1, 0.0) * 0.36 + roomLamp(0.45, 0.0) * 0.24 + roomLamp(0.65, 0.0) * 0.1 + roomLamp(0.9, 0.0) * 0.3);
+  massLamp = mix(roomLamp(fract(lot * 17.31), office), meanLamp, sub);
   // A curtain wall is its own colour (its finish's mean, \`finishes.ts\` \`finishAlbedo\`):
   // painted the windows' glass it turned navy blue from afar while the
   // detailed tower is near black (the player, 2026-10-13: "as cores mudam muito").
   if (share < 0.99) diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += ${glow} * massingNight * massLit * massGlass;`);
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
-  material.customProgramCacheKey = () => 'building-massing';
+  material.customProgramCacheKey = () => 'building-massing-lamps';
   return material;
 }

@@ -58,6 +58,8 @@ const roomsAwake = { value: awakeShare(22) };
  */
 const ROOM_DAYLIGHT = 0.2;
 const roomDaylight = { value: 0 };
+/** Seconds since the kit was made, for a television's flicker (`roomLamps.ts`). */
+const tvClock = { value: 0 };
 
 /**
  * Everything the buildings layer draws with, built ONCE per renderer.
@@ -109,8 +111,6 @@ export const PART_KINDS: readonly PartKind[] = [
   ...FACADE_PROP_KINDS,
 ];
 
-/** Warm light of the rooms behind the glass. */
-const ROOM_LIGHT = 0xffc27a;
 /** The lantern beside a front door: a warm lamp behind frosted glass. */
 const PORCH_LIGHT = 0xffd49a;
 /**
@@ -491,7 +491,7 @@ export function createBuildingKit(): BuildingKit {
   // their colours read by the windows for the piece seen through them.
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
-  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight });
+  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createFinishMaterials();
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
@@ -560,12 +560,14 @@ export function createBuildingKit(): BuildingKit {
       }
       // Rooms lit behind the glass: a warm glow, brighter than any lit wall
       // (`lightLevels.ts`), less behind the darker glass.
-      const room = NIGHT_LUMINANCE.window / (luminanceOf(ROOM_LIGHT) * ROOM_LIT_MEAN);
+      // White: each room's lamp gives the colour (`roomLamps.ts`, luminance 1).
+      const room = NIGHT_LUMINANCE.window / ROOM_LIT_MEAN;
       for (const [kind, k] of [['glass', 1], ['glassDark', 0.64]] as const) {
         const mat = material[kind] as MeshStandardMaterial;
-        mat.emissive.setHex(ROOM_LIGHT);
+        mat.emissive.setHex(0xffffff);
         mat.emissiveIntensity = dark * k * room;
       }
+      tvClock.value = performance.now() / 1000;
       massingNight.value = dark * room;
       roomDaylight.value = (1 - dark) * ROOM_DAYLIGHT;
       // The lanterns at the front doors, and their light on the wall.

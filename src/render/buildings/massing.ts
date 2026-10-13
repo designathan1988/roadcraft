@@ -41,7 +41,11 @@ export interface MassingChunk {
    * a roof), the storey height, and the height its first storey starts at.
    */
   readonly facade: Float32Array;
-  /** Per vertex: the share of a bay its windows take across (1: a curtain wall), and the building's seed (0..1) for which rooms are lit. */
+  /**
+   * Per vertex: the share of a bay its windows take across (1: a curtain
+   * wall), and the building's seed (0..1) for which rooms are lit, plus 2 on
+   * an office or a shop (`roomLamps.ts`: their lamps are cooler).
+   */
   readonly glazing: Float32Array;
   readonly index: Uint32Array;
 }
@@ -145,7 +149,8 @@ export function emitMassing(
 ): MassingChunk | null {
   const resolved = resolveBlocks(b);
   const closed = resolved.volumes.filter((v) => !v.open);
-  const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296);
+  const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
+  const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office);
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`);
   // a building of lots only lays them over the highest ground under them.
   const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
