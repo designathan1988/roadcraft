@@ -187,6 +187,25 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   sem picos de script. Ainda ~40 quadros/s com quadros de 50 ms às vezes: falta GPU (sombras 4 ms,
   pessoas 3,7, prédios 3,7, chão 2,4, pós 5,8) e o desenho na CPU (1.273 chamadas).
 
+### S1a — Prédios de longe (HLOD) (2026-10-13, etapa S do plano)
+- Pesquisa lida: HLOD do Unreal (World Partition), *Interior Mapping* (van Dongen 2008), erro de
+  tela do Cesium (`Cesium3DTile.getScreenSpaceError`), `LOD.update` do three, `BatchedMesh`,
+  procedurais filtráveis (Quilez), POM (Tatarchuk 2006), impostores octaédricos, CityGo.
+- `render/buildings/massing.ts`: cada prédio em volumes a partir das MESMAS baias do detalhe
+  (`facadeBays`: só paredes externas, relevos, galerias, cor por andar), telhados com beiral,
+  platibanda onde o telhado termina, casas de máquinas e equipamento de telhado do mesmo plano
+  (`roofPlan.ts`), lotes pavimentados. `massingMaterial.ts`: janelas no shader por baia e andar,
+  filtradas por pixel, acesas à noite como as do detalhe. `massCells.ts`: uma malha por célula
+  de 240 m, trocada pelo erro de tela (1,5 m, 2 px, histerese 0,85).
+- Causas achadas no detalhe pelo teste e corrigidas: faixa de andar desenhava uma laje escondida
+  na planta inteira a cada andar; embasamento e calçamento dentro do prédio nos lados encostados.
+- `tests/render/massing.spec.ts`: distância de Hausdorff 3D entre os dois níveis (área ≤ 3 %
+  além de 1,5 m), 54 prédios, 4,6 s.
+- Medido (cidade de 1.348 prédios, 1775×922): visão geral GPU 25 → 11 ms, chamadas 1.273 → 340;
+  ~56 triângulos por prédio de longe contra ~13 mil no detalhe. Visto: dia, noite, transição.
+- Ainda não: o detalhe continua montado para todas as células (S1b: só perto), e o nível
+  intermediário com relevo (POM) e *Interior Mapping* de verdade.
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs

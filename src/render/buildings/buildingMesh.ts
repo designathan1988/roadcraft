@@ -70,7 +70,6 @@ import {
   wallMaterial,
 } from '@world/buildings/materials';
 import { FOLLOWS_GROUND, elementRect, followPieces, onGround, partGroups, stairSteps, unsupportedElements } from '@world/buildings/elements';
-import { planRoofPlant } from '@world/buildings/roofPlant';
 import { isRetainingStone } from '@world/buildings/cityBuildings';
 import { TERRAIN_CELL, TERRAIN_HALF } from '../terrain';
 import { highestGroundUnder } from './lawnGround';
@@ -89,6 +88,8 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
+import { LOT_COLOURS } from './massing';
+import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
 import type { FlagInstance } from './flagLayer';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
@@ -146,7 +147,7 @@ const paint = (m: MaterialSpec, shade = 1): Paint => ({ rgb: linear(m.colour, sh
 const TERRACE: Paint = paint({ finish: 'stone', colour: 0xb0a595 });
 const ARCADE_FLOOR: Paint = paint({ finish: 'stone', colour: 0x9d968a });
 const SAW_GLASS: Paint = paint({ finish: 'glass', colour: 0x3c5360 });
-const ROOF_PLANT: Paint = paint({ finish: 'concrete', colour: 0x6c6a64 });
+const ROOF_PLANT: Paint = paint({ finish: 'concrete', colour: ROOF_COLOURS.plant });
 
 /**
  * Parts drawn with a colour per instance: awnings, and the window frames and
@@ -671,7 +672,7 @@ function emitBuilding(
     // Its ledge a little over the floor (`PLINTH_RISE`), so a yard laid at
     // the floor's level meets its face, not its top.
     const ledge = top + PLINTH_RISE;
-    emitPlinth(e, v, Math.min(f.bottom, top - PLINTH_BURY), ledge, plinth, notches);
+    emitPlinth(e, b, v, Math.min(f.bottom, top - PLINTH_BURY), ledge, plinth, notches);
     // A projection standing on the ground stands on the plinth too.
     for (const r of v.reliefs ?? []) {
       const rect = r.storey0 === 0 ? projectionRect(b, v, r) : null;
@@ -1226,6 +1227,7 @@ function emitBay(
  */
 function emitPlinth(
   e: Emitter,
+  b: Building,
   v: Volume,
   bottom: number,
   floor: number,
@@ -1233,9 +1235,14 @@ function emitPlinth(
   notches: ReadonlyMap<FaceId, readonly { a0: number; a1: number; recess: number }[]>,
 ): void {
   const g = PLINTH_GROW;
+  // Only along the outside: where another block of the ground stands against
+  // a side, the plinth (and its ledge) would be inside the building.
+  const coveredOf = (side: FaceId, base: number): [number, number][] =>
+    coveredSpans(b, v, side, 0).map(([a0, a1]) => [base + a0, base + a1] as [number, number]);
   if (v.outline) {
     for (const side of volumeSides(v)) {
       const f = edgeFrame(v, side);
+      const covered = coveredOf(side, 0);
       const at = (a: number, depth: number, z: number): V3 => e.L(f.x + f.tx * a - f.nx * depth, f.y + f.ty * a - f.ny * depth, z);
       const n = e.N(f.nx, f.ny);
       const t = e.N(f.tx, f.ty);
@@ -1243,8 +1250,10 @@ function emitPlinth(
       let from = 0;
       const wallTo = (to: number): void => {
         if (to - from < 1e-4) return;
-        e.shell.face([at(from, -g, bottom), at(to, -g, bottom), at(to, -g, floor), at(from, -g, floor)], n, c);
-        e.shell.face([at(from, -g, floor), at(to, -g, floor), at(to, g, floor), at(from, g, floor)], [0, 0, 1], c);
+        for (const [p0, p1] of exposedParts(covered, from, to)) {
+          e.shell.face([at(p0, -g, bottom), at(p1, -g, bottom), at(p1, -g, floor), at(p0, -g, floor)], n, c);
+          e.shell.face([at(p0, -g, floor), at(p1, -g, floor), at(p1, g, floor), at(p0, g, floor)], [0, 0, 1], c);
+        }
       };
       for (const cut of cuts) {
         wallTo(cut.a0);
@@ -1274,11 +1283,15 @@ function emitPlinth(
     const n = { x: edge.nx, y: edge.ny };
     const out = e.N(n.x, n.y);
     const cuts = [...(notches.get(side) ?? [])].sort((p, q) => p.a0 - q.a0);
+    // A side runs along its axis from the block's corner (`sideStart`).
+    const covered = coveredOf(side, alongX ? v.x : v.y);
     let from = lo;
     const wallTo = (to: number): void => {
       if (to - from < 1e-4) return;
-      e.shell.face([point(from, 0, bottom), point(to, 0, bottom), point(to, 0, floor), point(from, 0, floor)], out, c);
-      e.shell.face([point(from, 0, floor), point(to, 0, floor), point(to, g, floor), point(from, g, floor)], [0, 0, 1], c);
+      for (const [p0, p1] of exposedParts(covered, from, to)) {
+        e.shell.face([point(p0, 0, bottom), point(p1, 0, bottom), point(p1, 0, floor), point(p0, 0, floor)], out, c);
+        e.shell.face([point(p0, 0, floor), point(p1, 0, floor), point(p1, g, floor), point(p0, g, floor)], [0, 0, 1], c);
+      }
     };
     for (const cut of cuts) {
       wallTo(cut.a0);
@@ -1375,14 +1388,7 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
     const y = v.y + dy;
     e.box(x - m(0.18), y - m(0.18), x + m(0.18), y + m(0.18), z, z + 0.02, DRAIN);
   }
-  const age = b.decay ?? 0;
-  const items = planRoofPlant({
-    building: b.id, volume: v.id, use: b.use, storeys: v.base + v.storeys.length,
-    x0: v.x, y0: v.y, x1: v.x + v.w, y1: v.y + v.d,
-    // A new town's buildings are of every vintage: the seed stands in for the years.
-    age: age > 0 ? age : (((b.id * 2_246_822_519) >>> 0) % 1000) / 1000,
-    hasCore: b.cores.length > 0,
-  });
+  const items = roofPlantOf(b, v);
   for (const it of items) {
     const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, w = it.x1 - it.x0, d = it.y1 - it.y0;
     switch (it.kind) {
@@ -1461,19 +1467,16 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
 }
 
 /** Water tanks: the blue fibreglass of most roofs, the grey and the white of others, a sand-coloured one. */
-const TANK_PAINTS: readonly Paint[] = [
-  paint({ finish: 'plaster', colour: 0x4a7fb8 }), paint({ finish: 'plaster', colour: 0x8d9399 }),
-  paint({ finish: 'plaster', colour: 0xdcdedb }), paint({ finish: 'plaster', colour: 0xc9b48a }),
-];
-const CHIMNEY: Paint = paint({ finish: 'brick', colour: 0x8c4a35 });
+const TANK_PAINTS: readonly Paint[] = TANK_COLOURS.map((colour) => paint({ finish: 'plaster', colour }));
+const CHIMNEY: Paint = paint({ finish: 'brick', colour: ROOF_COLOURS.chimney });
 
 const DRAIN: Paint = paint({ finish: 'metal', colour: 0x2d3033 });
-const SOLAR: Paint = paint({ finish: 'glass', colour: 0x1d2b45 });
-const SKYLIGHT: Paint = paint({ finish: 'glass', colour: 0x8fb4c6 });
+const SOLAR: Paint = paint({ finish: 'glass', colour: ROOF_COLOURS.solar });
+const SKYLIGHT: Paint = paint({ finish: 'glass', colour: ROOF_COLOURS.skylight });
 const DECK: Paint = paint({ finish: 'wood', colour: 0x9a7650 });
 const POT: Paint = paint({ finish: 'ceramic', colour: 0xa8573a });
 const POT_SOIL: Paint = paint({ finish: 'plaster', colour: 0x3a2a1d });
-const PARASOL: Paint = paint({ finish: 'plaster', colour: 0xe7dcc4 });
+const PARASOL: Paint = paint({ finish: 'plaster', colour: ROOF_COLOURS.parasol });
 
 /**
  * A roof terrace that is used (the player's order of 2026-10-05): a timber
@@ -1483,10 +1486,11 @@ const PARASOL: Paint = paint({ finish: 'plaster', colour: 0xe7dcc4 });
  * every roof).
  */
 function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint): void {
-  if (v.outline || v.w < m(4) || v.d < m(4)) return;
-  const rnd = (k: number): number => (((b.id * 2654435761 + v.id * 40503 + k * 131) >>> 0) % 1000) / 1000;
+  const deck = terraceDeck(b, v);
+  if (!deck) return;
+  const rnd = (k: number): number => terraceSeed(b, v, k);
   // The deck, a part of the terrace.
-  const dx0 = v.x + m(0.8), dx1 = v.x + v.w * (0.55 + 0.2 * rnd(1)), dy0 = v.y + m(0.8), dy1 = v.y + v.d - m(0.8);
+  const { x0: dx0, x1: dx1, y0: dy0, y1: dy1 } = deck;
   e.box(dx0, dy0, dx1, dy1, z, z + m(0.06), DECK);
   // Terracotta pots along the edges, dark soil in them, at a spacing of its own.
   const potStep = m(1.8 + 1.6 * rnd(5));
@@ -1496,12 +1500,10 @@ function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint)
     }
   }
   // Tables under parasols.
-  const tables = Math.floor(Math.floor((dx1 - dx0) / m(3.5)) * (0.3 + 0.7 * rnd(7)));
-  for (let k = 0; k < tables; k++) {
-    const tx = dx0 + (k + 0.5) * ((dx1 - dx0) / tables), ty = (dy0 + dy1) / 2;
+  for (const { x: tx, y: ty } of terraceParasols(b, v)) {
     e.box(tx - m(0.4), ty - m(0.4), tx + m(0.4), ty + m(0.4), z + m(0.7), z + m(0.75), trim);
-    e.box(tx - m(0.04), ty - m(0.04), tx + m(0.04), ty + m(0.04), z, z + m(2.3), DRAIN);
-    e.box(tx - m(1.1), ty - m(1.1), tx + m(1.1), ty + m(1.1), z + m(2.3), z + m(2.4), PARASOL);
+    e.box(tx - m(0.04), ty - m(0.04), tx + m(0.04), ty + m(0.04), z, z + PARASOL_LOW, DRAIN);
+    e.box(tx - PARASOL_HALF, ty - PARASOL_HALF, tx + PARASOL_HALF, ty + PARASOL_HALF, z + PARASOL_LOW, z + PARASOL_HIGH, PARASOL);
     for (const s of [-1, 1]) e.box(tx + s * m(0.7) - m(0.2), ty - m(0.2), tx + s * m(0.7) + m(0.2), ty + m(0.2), z, z + m(0.45), trim);
   }
   // Loungers on the far side, a pergola of beams over them.
@@ -1528,19 +1530,20 @@ function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint)
     e.cylinder(tx, ty, m(0.78), z + m(0.95), z + m(1.15), tank, shaded(tank, 0.82));
   }
 }
-const CONDENSER: Paint = paint({ finish: 'metal', colour: 0xc9ccc9 });
+const CONDENSER: Paint = paint({ finish: 'metal', colour: ROOF_COLOURS.condenser });
 const DOOR_PAINT: Paint = paint({ finish: 'metal', colour: 0x5c6468 });
 
+/** Each lot surface in its finish, in the colour the far view lays it in too (`massing.ts`). */
 const LOT_PAINT: Readonly<Record<LotSurface, Paint>> = {
-  grass: paint({ finish: 'concrete', colour: 0x6f9a4c }),
-  paving: paint({ finish: 'stone', colour: 0xc4beb2 }),
-  gravel: paint({ finish: 'concrete', colour: 0xa9a294 }),
-  sand: paint({ finish: 'plaster', colour: 0xe2cf9c }),
-  water: paint({ finish: 'glass', colour: 0x4f8fb3 }),
-  asphalt: paint({ finish: 'concrete', colour: 0x515457 }),
-  concrete: paint({ finish: 'concrete', colour: 0xb9b6ae }),
-  pavers: paint({ finish: 'brick', colour: 0x9a958c }),
-  tiles: paint({ finish: 'ceramic', colour: 0xb4785a }),
+  grass: paint({ finish: 'concrete', colour: LOT_COLOURS.grass }),
+  paving: paint({ finish: 'stone', colour: LOT_COLOURS.paving }),
+  gravel: paint({ finish: 'concrete', colour: LOT_COLOURS.gravel }),
+  sand: paint({ finish: 'plaster', colour: LOT_COLOURS.sand }),
+  water: paint({ finish: 'glass', colour: LOT_COLOURS.water }),
+  asphalt: paint({ finish: 'concrete', colour: LOT_COLOURS.asphalt }),
+  concrete: paint({ finish: 'concrete', colour: LOT_COLOURS.concrete }),
+  pavers: paint({ finish: 'brick', colour: LOT_COLOURS.pavers }),
+  tiles: paint({ finish: 'ceramic', colour: LOT_COLOURS.tiles }),
 };
 const LOT_KERB = paint({ finish: 'stone', colour: 0xb3ada0 });
 /**
@@ -2116,9 +2119,21 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
       if (length < 1e-6) continue;
       const tx = (q.x - p.x) / length, ty = (q.y - p.y) / length;
       const n = { x: ty, y: -tx };
-      const from = { x: p.x - tx * (g + APRON) + n.x * g, y: p.y - ty * (g + APRON) + n.y * g };
-      const to = { x: q.x + tx * g + n.x * g, y: q.y + ty * g + n.y * g };
-      strip(from, to, APRON, n.x, n.y);
+      // Only along the outside: against another block of the ground the
+      // apron lay inside the building. The side's own axis (`sideStart`) runs
+      // against the ring on a rectangle's back and left sides.
+      const s = sideStart(v, i as FaceId);
+      const reversed = s.tx * tx + s.ty * ty < 0;
+      const covered = coveredSpans(b, v, i as FaceId, 0)
+        .map(([a0, a1]) => (reversed ? [length - a1, length - a0] : [a0, a1]) as [number, number])
+        .sort((u, w) => u[0] - w[0]);
+      for (const [p0, p1] of exposedParts(covered, 0, length)) {
+        // Grown past the corner it starts from, to the plinth at the one it ends at.
+        const a0 = p0 < 1e-6 ? -(g + APRON) : p0, a1 = p1 > length - 1e-6 ? length + g : p1;
+        const from = { x: p.x + tx * a0 + n.x * g, y: p.y + ty * a0 + n.y * g };
+        const to = { x: p.x + tx * a1 + n.x * g, y: p.y + ty * a1 + n.y * g };
+        strip(from, to, APRON, n.x, n.y);
+      }
     }
   }
   for (const x of f.entrances) {
@@ -2566,14 +2581,10 @@ function postAt(e: Emitter, P: (u: number, a: number, z: number) => V3, u: numbe
 function band(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint): void {
   // A moulding is a PROFILE, not a slab: a fillet under a projecting drip,
   // whose shadow line is what makes it read at a distance.
-  const tier = (o: number, z0: number, z1: number, paint: Paint): void => {
-    if (!v.outline) { e.box(v.x - o, v.y - o, v.x + v.w + o, v.y + v.d + o, z0, z1, paint); return; }
-    for (const side of volumeSides(v)) {
-      const f = edgeFrame(v, side), n = e.N(f.nx, f.ny);
-      const P = (a: number, z: number): V3 => e.L(f.x + f.tx * a + f.nx * o, f.y + f.ty * a + f.ny * o, z);
-      e.shell.face([P(0, z0), P(f.length, z0), P(f.length, z1), P(0, z1)], n, paint);
-    }
-  };
+  // Each step of the profile its faces and the ledge on top (`flushBand`):
+  // drawn as a box, its top was a slab over the whole block at every floor,
+  // inside the building, a floor nobody sees drawn on every storey.
+  const tier = (o: number, z0: number, z1: number, paint: Paint): void => flushBand(e, v, (z0 + z1) / 2, o, z1 - z0, paint);
   tier(out * 0.45, z - height / 2, z - height * 0.1, shaded(c, 0.94));
   tier(out, z - height * 0.1, z + height / 2, c);
 }

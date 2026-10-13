@@ -1914,7 +1914,7 @@ export function createSceneRenderer(
     tiny.setAttribute('uv', new Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
     tiny.setAttribute('aDecay', new Float32BufferAttribute([0, 0, 0], 1));
     const group = new Group();
-    const mats = [...Object.values(kit.shell), ...Object.values(kit.material), kit.furniture().material];
+    const mats = [...Object.values(kit.shell), ...Object.values(kit.material), kit.furniture().material, kit.massing];
     for (const mat of mats) {
       const mesh = new Mesh(tiny, mat);
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
@@ -3109,7 +3109,12 @@ export function createSceneRenderer(
           k = halfH / Math.tan((PERSPECTIVE_FOV * Math.PI) / 360) / Math.max(1e-3, eye.distanceTo(rig.target));
         }
         const t = rig.target;
-        buildings.cullDetails(t.x + (eye.x - t.x) * k, -(t.z + (eye.z - t.z) * k), t.y + (eye.y - t.y) * k, m(500));
+        const ex = t.x + (eye.x - t.x) * k, ey = -(t.z + (eye.z - t.z) * k), ez = t.y + (eye.y - t.y) * k;
+        // The far level of the buildings by the error on the screen, in CSS
+        // pixels (Cesium's screen-space error divides by the pixel ratio).
+        const pxAtMetre = canvas.clientHeight / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
+        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
+        buildings.cullDetails(ex, ey, ez, m(500));
       }
       buildings.setShadowFar(rig.viewport.zoom < FACADE_SHADOW_ZOOM);
       if (roads) roads.group.visible = true;

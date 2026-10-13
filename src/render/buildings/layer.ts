@@ -13,7 +13,9 @@ import { m } from '@world/units';
 import { cutOpen } from '@world/buildings/interior';
 import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk } from './buildingMesh';
 import { createFlagLayer } from './flagLayer';
-import { buildSignature, disposeSignature } from './signature';
+import { buildSignature, disposeSignature, drawsSignature } from './signature';
+import { emitMassing, type MassingChunk } from './massing';
+import { createMassCells } from './massCells';
 import { type BuildingKit, PART_KINDS, type PartKind, createBuildingKit } from './kit';
 
 /**
@@ -72,6 +74,14 @@ export interface BuildingLayer {
    * triangles drawn in every frame of the overview.
    */
   cullDetails(eyeX: number, eyeY: number, eyeZ: number, reach: number): void;
+  /**
+   * Each cell of buildings drawn near (in detail) or far (its buildings'
+   * masses, `massCells.ts`) by the error on the screen: from the eye (map
+   * x/y and height), `pxAtMetre` the pixels a metre spans a metre away in a
+   * perspective view, or `orthoPx` the pixels a metre spans in an
+   * orthographic one (null in perspective). Before `cullDetails`.
+   */
+  levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void;
   /**
    * "Ocultar outros": undefined draws every building solid, null fades them
    * all, and an id fades every building but that one.
@@ -139,6 +149,9 @@ export function createBuildingLayer(): BuildingLayer {
   // Every flag in the city, waving: one instanced draw (`flagLayer.ts`).
   const flagLayer = createFlagLayer();
   group.add(flagLayer.group);
+  /** The buildings from afar, a mesh a cell (`massCells.ts`). */
+  const massCells = createMassCells(kit, BATCH_CELL);
+  group.add(massCells.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
@@ -177,7 +190,7 @@ export function createBuildingLayer(): BuildingLayer {
    * versions of its parts (`cullDetails`): kept per batch, so the key is read
    * once, not every frame.
    */
-  const detailState = new WeakMap<BuildingMeshes, { x: number; y: number; far: boolean }>();
+  const detailState = new WeakMap<BuildingMeshes, { x: number; y: number; far: boolean; parent: string }>();
   /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
   let lighterNow = false;
   const applyDetail = (o: Object3D): void => {
@@ -255,6 +268,17 @@ export function createBuildingLayer(): BuildingLayer {
   // same string object while the record is (`recordText`), compared by
   // reference; joined into one key, every lookup copied it whole.
   const chunks = new Map<BuildingId, { record: string; digest: string; chunk: BuildingChunk }>();
+  /** Each building's mass from afar (`massing.ts`), kept as its chunk is: by its record and the ground under it. */
+  const masses = new Map<BuildingId, { record: string; digest: string; mass: MassingChunk | null }>();
+  const massFor = (b: Building, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt): MassingChunk | null => {
+    const record = recordText(b);
+    const digest = digestFor(b, record, groundKey, groundAt, pavedAt);
+    const known = masses.get(b.id);
+    if (known && known.record === record && known.digest === digest) return known.mass;
+    const mass = emitMassing(b, groundAt, pavedAt, naturalAt, drawsSignature(b));
+    masses.set(b.id, { record, digest, mass });
+    return mass;
+  };
   const chunkFor = (b: Building, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt,
     naturalAt: GroundAt = groundAt): BuildingChunk => {
     const record = recordText(b);
@@ -367,7 +391,9 @@ export function createBuildingLayer(): BuildingLayer {
         const until = warming.loading ? performance.now() + (this.hidden ? HIDDEN_SLICE_MS : LOADING_SLICE_MS) : workUntil(WARM_SLICE_MS);
         if (!until) return false;
         while (warming.at < warming.queue.length && performance.now() < until) {
-          drawn(warming.queue[warming.at++]!, groundAt, groundKey, pavedAt, naturalAt);
+          const b = warming.queue[warming.at++]!;
+          drawn(b, groundAt, groundKey, pavedAt, naturalAt);
+          massFor(b, groundAt, groundKey, pavedAt, naturalAt);
         }
         if (warming.at < warming.queue.length) return false;
         // Then the cells whose buildings changed, a cell at a time.
@@ -423,6 +449,7 @@ export function createBuildingLayer(): BuildingLayer {
           chunks.delete(id);
           groundDigests.delete(id);
         }
+        for (const id of masses.keys()) if (!doc.buildings.has(id)) masses.delete(id);
         const solid = dimmed === undefined ? shown : shown.filter((b) => b.id === dimmed);
         const others = dimmed === undefined ? [] : shown.filter((b) => b.id !== dimmed);
         if (cutChunks.size > 64) cutChunks.clear();
@@ -434,6 +461,16 @@ export function createBuildingLayer(): BuildingLayer {
           stage.clear();
         }
         group.add(stored.group, details.group);
+        // The far level of every cell, from the masses of its buildings.
+        const byCell = new Map<string, MassingChunk[]>();
+        for (const b of shown) {
+          const mass = massFor(b, groundAt, groundKey, pavedAt, naturalAt);
+          const cell = `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
+          let list = byCell.get(cell);
+          if (!list) byCell.set(cell, list = []);
+          if (mass) list.push(mass);
+        }
+        massCells.update(byCell);
         faded = others.length > 0
           ? assembleBuildingMeshes(others.map((b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt)), kit, false, true)
           : null;
@@ -502,6 +539,11 @@ export function createBuildingLayer(): BuildingLayer {
       far = next;
       applyFacadeDetail();
     },
+    levelOfDetail(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
+      // A building cut open or the others faded: every cell in its detail.
+      massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, dimmed !== undefined || cutaway !== null);
+      for (const [key, cell] of cells) cell.part.group.visible = massCells.near(key);
+    },
     cullDetails(eyeX, eyeY, eyeZ, reach) {
       const r2 = reach * reach;
       for (const [key, cell] of detailCells) {
@@ -510,11 +552,15 @@ export function createBuildingLayer(): BuildingLayer {
         const fresh = !state;
         if (!state) {
           const comma = key.indexOf(',');
-          state = { x: (Number(key.slice(0, comma)) + 0.5) * DETAIL_CELL, y: (Number(key.slice(comma + 1)) + 0.5) * DETAIL_CELL, far: false };
+          const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+          // Its cell of the coarse grid (two of these a side), read once.
+          const parent = `${Math.floor((i * DETAIL_CELL) / BATCH_CELL)},${Math.floor((j * DETAIL_CELL) / BATCH_CELL)}`;
+          state = { x: (i + 0.5) * DETAIL_CELL, y: (j + 0.5) * DETAIL_CELL, far: false, parent };
           detailState.set(cell.part, state);
         }
         const cx = state.x - eyeX, cy = state.y - eyeY;
-        cell.part.group.visible = cx * cx + cy * cy + eyeZ * eyeZ < r2;
+        // Drawn while its coarse cell is near, and within the reach.
+        cell.part.group.visible = massCells.near(state.parent) && cx * cx + cy * cy + eyeZ * eyeZ < r2;
         // Past `FULL_DETAIL_REACH` from the eye to the cell's nearest point
         // its frames and railings are drawn by their street faces (`kit.far`):
         // a frame's 6 cm side is under half a pixel there, and full frames in
@@ -562,6 +608,7 @@ export function createBuildingLayer(): BuildingLayer {
     },
     dispose() {
       flagLayer.dispose();
+      massCells.dispose();
       stored?.dispose();
       details?.dispose();
       faded?.dispose();

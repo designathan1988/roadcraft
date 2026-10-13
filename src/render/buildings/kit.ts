@@ -19,6 +19,7 @@ import { createFurnitureGeometries, createFurnitureMaterial } from './furnitureK
 import type { FurnitureKind } from '@world/buildings/interior';
 import { SLOT_WIDTH, litTableDriven, litTexture } from './lightSlots';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
+import { createMassingMaterial } from './massingMaterial';
 import { m } from '@world/units';
 
 /**
@@ -167,6 +168,8 @@ export interface BuildingKit {
   /** "Ocultar outros": the same shells, faded, for every building but the edited one. */
   readonly dimShell: Readonly<Record<Finish, MeshStandardMaterial>>;
   readonly dimParts: MeshStandardMaterial;
+  /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
+  readonly massing: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
   readonly castsShadow: ReadonlySet<PartKind>;
   /** The furniture models, built the first time an interior is drawn. */
@@ -564,7 +567,10 @@ export function createBuildingKit(): BuildingKit {
   const dimParts = dim(material['concrete'] as MeshStandardMaterial);
   dimParts.opacity = 0.16;
 
-  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ghostShell, ghostParts, dimParts]);
+  // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
+  const massingNight = { value: 0 };
+  const massing = createMassingMaterial({ roomsAwake, massingNight });
+  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ghostShell, ghostParts, dimParts, massing]);
   const far: Partial<Record<PartKind, BufferGeometry>> = {
     frame: frameFarGeometry(),
     railing: railingFarGeometry(),
@@ -582,6 +588,7 @@ export function createBuildingKit(): BuildingKit {
     ghostParts,
     dimShell,
     dimParts,
+    massing,
     // Glass, doors and shutters close the openings for the sun: without them
     // the shadow of every building is a lattice of lit windows.
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise']),
@@ -606,6 +613,7 @@ export function createBuildingKit(): BuildingKit {
         mat.emissive.setHex(ROOM_LIGHT);
         mat.emissiveIntensity = dark * k * room;
       }
+      massingNight.value = dark * room;
       roomDaylight.value = (1 - dark) * ROOM_DAYLIGHT;
       // The lanterns at the front doors, and their light on the wall.
       (material.lamp as MeshStandardMaterial).emissiveIntensity = dark * NIGHT_LUMINANCE.porchLamp / luminanceOf(PORCH_LIGHT);

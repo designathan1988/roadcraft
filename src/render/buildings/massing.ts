@@ -1,0 +1,501 @@
+import earcut from 'earcut';
+import clipping from 'polygon-clipping';
+import { Color } from 'three';
+import { resolveBlocks } from '@world/buildings/blocks';
+import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
+import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
+import {
+  bayWidth, coveredSpans, exposedParts, type FacadeBay, facadeBays, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
+  sawtoothRun, shedFall, sideLength, sideStart, volumeHeight,
+} from '@world/buildings/geometry';
+import { type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
+import { type BayComponent, type Building, type FaceId, type LotSurface, type Volume, volumeTop } from '@world/buildings/types';
+import { lotSurfaces } from '@world/buildings/lots';
+import type { Vec2 } from '@core/vec2';
+import { m } from '@world/units';
+import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, roofPlantOf, terraceParasols } from './roofPlan';
+
+/**
+ * A BUILDING FROM AFAR: its blocks as they stand, one plain mesh, with the
+ * windows drawn by the shader (`kit.ts` `massingMaterial`) - the hierarchical
+ * level of detail of every city of size. Unreal's HLOD stands a proxy mesh
+ * and one material in for a cell's actors out of its loading range ("World
+ * Partition - Hierarchical Level of Detail"); a building far off is boxes
+ * whose windows and rooms the pixel shader finds from the regular spacing of
+ * floors and bays, in constant time and no memory (van Dongen, "Interior
+ * Mapping", CGI 2008). It keeps what the eye reads from afar: the blocks'
+ * silhouette (unions and cuts resolved, outlines, every kind of roof with its
+ * eaves), the wall and roof colours of the detailed building, the machine
+ * rooms on the towers, and the rhythm of its windows - its bays and storeys -
+ * lit at night as its rooms are.
+ *
+ * Positions are in three's axes (x, height, -y), as every shell of the layer.
+ */
+
+export interface MassingChunk {
+  readonly position: Float32Array;
+  readonly normal: Float32Array;
+  readonly colour: Float32Array;
+  /**
+   * Per vertex: metres along its face, the face's bay width (0: no windows,
+   * a roof), the storey height, and the height its first storey starts at.
+   */
+  readonly facade: Float32Array;
+  /** Per vertex: the share of a bay its windows take across (1: a curtain wall), and the building's seed (0..1) for which rooms are lit. */
+  readonly glazing: Float32Array;
+  readonly index: Uint32Array;
+}
+
+/** Where the wall of a block on the ground starts: below the lowest ground under it, as the detailed plinth does. */
+const BURY = m(1.5);
+/** The parapet round a flat roof, and the attic band of the 'attic' dress (`buildingMesh.ts`). */
+const PARAPET_H = m(0.85);
+const ATTIC_H = m(1.5);
+const PARAPET_T = m(0.25);
+/** A pitched roof's overhang at the eaves (`buildingMesh.ts` EAVES). */
+const EAVES = m(0.45);
+/** A machine room over a lift core. */
+const MACHINE_ROOM_H = m(3);
+
+const TERRACE_RGB = rgbOf(0xb0a595);
+const SAW_GLASS_RGB = rgbOf(0x3c5360);
+
+function rgbOf(hex: number, shade = 1): [number, number, number] {
+  const c = new Color().setHex(hex);
+  return [c.r * shade, c.g * shade, c.b * shade];
+}
+
+type Rgb = readonly [number, number, number];
+/** A facade's pattern at a vertex: along, bay, storey height, first storey's height; and the glass share. */
+interface Facade { readonly bay: number; readonly storey: number; readonly z0: number; readonly share: number }
+const NO_FACADE: Facade = { bay: 0, storey: 1, z0: 0, share: 0 };
+
+class MassWriter {
+  readonly position: number[] = [];
+  readonly normal: number[] = [];
+  readonly colour: number[] = [];
+  readonly facade: number[] = [];
+  readonly glazing: number[] = [];
+  readonly index: number[] = [];
+
+  constructor(private readonly b: Building, private readonly seed: number) {}
+
+  /** A point of the building's plan at height z, in three's axes. */
+  P(lx: number, ly: number, z: number): [number, number, number] {
+    const w = localToWorld(this.b, lx, ly);
+    return [w.x, z, -w.y];
+  }
+
+  /** A plan direction (local) and up, as a three normal. */
+  N(lx: number, ly: number, up = 0): [number, number, number] {
+    const c = Math.cos(this.b.rotation), s = Math.sin(this.b.rotation);
+    const wx = lx * c - ly * s, wy = lx * s + ly * c;
+    const l = Math.hypot(wx, wy, up) || 1;
+    return [wx / l, up / l, -wy / l];
+  }
+
+  /**
+   * A convex polygon of points (three's axes), all with one normal and
+   * colour; `along` its points' metres along their face (walls only).
+   */
+  face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], rgb: Rgb, f: Facade = NO_FACADE, along?: readonly number[]): void {
+    const base = this.position.length / 3;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
+      this.position.push(p[0], p[1], p[2]);
+      this.normal.push(n[0], n[1], n[2]);
+      this.colour.push(rgb[0], rgb[1], rgb[2]);
+      this.facade.push(along?.[i] ?? 0, f.bay, f.storey, f.z0);
+      this.glazing.push(f.share, this.seed);
+    }
+    // Wound to face its normal (three's axes mirror the plan's y).
+    const a = points[0]!, b = points[1]!, c = points[2]!;
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const forward = (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] >= 0;
+    for (let i = 1; i + 1 < points.length; i++) {
+      if (forward) this.index.push(base, base + i, base + i + 1);
+      else this.index.push(base, base + i + 1, base + i);
+    }
+  }
+
+  chunk(): MassingChunk {
+    return {
+      position: new Float32Array(this.position),
+      normal: new Float32Array(this.normal),
+      colour: new Float32Array(this.colour),
+      facade: new Float32Array(this.facade),
+      glazing: new Float32Array(this.glazing),
+      index: new Uint32Array(this.index),
+    };
+  }
+}
+
+/** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
+const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
+
+/**
+ * A building's mass from afar, on the ground it stands on (the floor worked
+ * out as the detailed building's, `floorHeight`); null when it has no closed
+ * block (a park) or its body is drawn by its own design (`signature.ts`).
+ */
+export function emitMassing(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false): MassingChunk | null {
+  const resolved = resolveBlocks(b);
+  const closed = resolved.volumes.filter((v) => !v.open);
+  const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296);
+  // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`);
+  // a building of lots only lays them over the highest ground under them.
+  const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  if (floor !== undefined && !signature) {
+    const shade = shadeOf(b);
+    const rgb = (spec: MaterialSpec): Rgb => rgbOf(spec.colour, shade);
+    // The body as the detailed building draws it: its closed blocks alone (`buildingMesh.ts` `emitChunk`).
+    const body = { ...resolved, volumes: closed };
+    for (const v of closed) emitVolume(w, body, v, floor, rgb);
+    emitMachineRooms(w, body, floor, rgb);
+  }
+  emitLotPlates(w, resolved, floor, groundAt, pavedAt);
+  return w.position.length ? w.chunk() : null;
+}
+
+/**
+ * The colours of a lot's surface (`buildingMesh.ts` draws them in their
+ * finishes): grass is the terrain's own and is not laid.
+ */
+export const LOT_COLOURS: Readonly<Record<LotSurface, number>> = {
+  grass: 0x6f9a4c, paving: 0xc4beb2, gravel: 0xa9a294, sand: 0xe2cf9c, water: 0x4f8fb3,
+  asphalt: 0x515457, concrete: 0xb9b6ae, pavers: 0x9a958c, tiles: 0xb4785a,
+};
+
+/**
+ * The paved lots - car parks, yards, courts - as the detailed lots lay them
+ * (`lotSurfaces`, at the building's floor or over the ground): from afar a
+ * car park is still a grey patch the size of a block's corner.
+ */
+function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undefined, groundAt: GroundAt, pavedAt?: PavedAt): void {
+  const lots = b.volumes.filter((v) => v.open && v.open !== 'grass');
+  if (lots.length === 0) return;
+  let ground = -Infinity;
+  for (const v of b.volumes) {
+    if (!v.open) continue;
+    for (const p of localFootprint(v)) { const q = localToWorld(b, p.x, p.y); ground = Math.max(ground, groundAt(q.x, q.y)); }
+    const c = localToWorld(b, v.x + v.w / 2, v.y + v.d / 2);
+    ground = Math.max(ground, groundAt(c.x, c.y));
+  }
+  const level = buildingFloor ?? ground + m(0.12);
+  const up = w.N(0, 0, 1);
+  for (const surface of lotSurfaces(b, level, pavedAt)) {
+    const v = surface.volume;
+    if (!v.open || v.open === 'grass') continue;
+    const colour = rgbOf(LOT_COLOURS[v.open]);
+    const ring = localFootprint(v);
+    const flatRing = ring.flatMap((p) => [p.x, p.y]);
+    const tris = earcut(flatRing);
+    const point = (k: number): [number, number, number] => {
+      const q = localToWorld(b, flatRing[2 * k]!, flatRing[2 * k + 1]!);
+      return [q.x, surface.heightAt(q.x, q.y), -q.y];
+    };
+    for (let i = 0; i < tris.length; i += 3) w.face([point(tris[i]!), point(tris[i + 1]!), point(tris[i + 2]!)], up, colour);
+  }
+}
+
+/** The share of a bay its window takes across, by what the bay holds (a curtain wall is all glass). */
+const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
+  window: 0.5, sashWindow: 0.5, shutteredWindow: 0.5, brise: 0.5,
+  wideWindow: 0.75, ribbon: 0.8, bayWindow: 0.75,
+  frenchWindow: 0.6, balcony: 0.6, gourmet: 0.7, loggia: 0.7,
+  door: 0.35, doubleDoor: 0.5, shopfront: 0.85, pillar: 0.7,
+};
+/** How far an arcade's wall steps back behind its columns (`buildingMesh.ts` ARCADE). */
+const ARCADE = m(1.8);
+
+/**
+ * A block's walls from its bays as the detailed building lays them
+ * (`facadeBays`): only the stretches that are an outside wall (none against
+ * another block), each storey in its own colour, a relief standing out or set
+ * back as far as the detailed one, an arcade's wall behind its columns - the
+ * bays of a storey alike in a row drawn as one face. Then its parapet, where
+ * the roof really ends, and its roof.
+ */
+function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
+  const eaves = floor + volumeHeight(b, v);
+  const rows = new Map<string, FacadeBay[]>();
+  for (const bay of facadeBays(b)) {
+    if (bay.volume !== v.id) continue;
+    const key = `${bay.side}:${bay.level}`;
+    const list = rows.get(key);
+    if (list) list.push(bay); else rows.set(key, [bay]);
+  }
+  for (const row of rows.values()) {
+    row.sort((p, q) => p.start - q.start);
+    const side = row[0]!.side;
+    const f = edgeFrame(v, side), s = sideStart(v, side);
+    const t = { x: s.tx, y: s.ty };
+    // The run's outward offset: a relief's push, an arcade's wall set back.
+    const offsetOf = (bay: FacadeBay): number => (bay.component === 'pillar' ? -ARCADE : bay.push);
+    const shareOf = (bay: FacadeBay): number => GLASS_SHARE[bay.component] ?? 0;
+    let i = 0;
+    while (i < row.length) {
+      const first = row[i]!;
+      let j = i + 1;
+      while (j < row.length && Math.abs(offsetOf(row[j]!) - offsetOf(first)) < 1e-3 && shareOf(row[j]!) === shareOf(first)
+        && Math.abs(row[j]!.start - (row[j - 1]!.start + row[j - 1]!.width)) < 1e-3) j++;
+      const last = row[j - 1]!;
+      const a0 = first.start, a1 = last.start + last.width, d = offsetOf(first);
+      const z0 = floor + first.z, z1 = z0 + first.height;
+      // A storey on the ground runs down past the lowest ground under it, as the plinth does.
+      const zb = v.base === 0 && first.storey === 0 ? z0 - BURY : z0;
+      const spec = wallMaterial(b, v, side, first.storey);
+      const glass = spec.finish === 'glass' ? 1 : shareOf(first);
+      const at = (a: number, out: number, z: number): [number, number, number] => w.P(s.x + t.x * a + f.nx * out, s.y + t.y * a + f.ny * out, z);
+      const facade = { bay: bayWidth(b, v, side), storey: first.height, z0, share: glass };
+      w.face([at(a0, d, zb), at(a1, d, zb), at(a1, d, z1), at(a0, d, z1)], w.N(f.nx, f.ny), rgb(spec), facade, [a0, a1, a1, a0]);
+      if (Math.abs(d) > 1e-3) {
+        // Its cheeks at both ends and its head: a box standing out, or a recess.
+        const colour = rgb(spec);
+        const sign = d > 0 ? 1 : -1;
+        w.face([at(a0, 0, zb), at(a0, d, zb), at(a0, d, z1), at(a0, 0, z1)], w.N(-t.x * sign, -t.y * sign), colour);
+        w.face([at(a1, d, zb), at(a1, 0, zb), at(a1, 0, z1), at(a1, d, z1)], w.N(t.x * sign, t.y * sign), colour);
+        w.face([at(a0, 0, z1), at(a1, 0, z1), at(a1, d, z1), at(a0, d, z1)], w.N(0, 0, sign), colour);
+      }
+      i = j;
+    }
+  }
+  const flat = v.roof === 'flat';
+  const crown = flat ? (v.dress?.crown === 'attic' ? ATTIC_H : PARAPET_H) : 0;
+  if (crown > 0) {
+    // The parapet only where the roof really ends: not against a neighbour as tall or taller (`buildingMesh.ts` `emitRoof`).
+    const top = volumeTop(v);
+    for (const side of volumeSides(v)) {
+      const f = edgeFrame(v, side), s = sideStart(v, side);
+      const spans = [...coveredSpans(b, v, side, top - 1), ...coveredSpans(b, v, side, top)].sort((p, q) => p[0] - q[0]);
+      const spec = wallMaterial(b, v, side);
+      const wall = rgb({ ...spec, finish: spec.finish === 'glass' ? 'concrete' : spec.finish });
+      const inner: Rgb = [wall[0] * 0.82, wall[1] * 0.82, wall[2] * 0.82];
+      const at = (a: number, depth: number, z: number): [number, number, number] => w.P(s.x + s.tx * a - f.nx * depth, s.y + s.ty * a - f.ny * depth, z);
+      for (const [p0, p1] of exposedParts(spans, 0, sideLength(v, side))) {
+        w.face([at(p0, 0, eaves), at(p1, 0, eaves), at(p1, 0, eaves + crown), at(p0, 0, eaves + crown)], w.N(f.nx, f.ny), wall);
+        w.face([at(p0, 0, eaves + crown), at(p1, 0, eaves + crown), at(p1, PARAPET_T, eaves + crown), at(p0, PARAPET_T, eaves + crown)], w.N(0, 0, 1), wall);
+        w.face([at(p1, PARAPET_T, eaves), at(p0, PARAPET_T, eaves), at(p0, PARAPET_T, eaves + crown), at(p1, PARAPET_T, eaves + crown)], w.N(-f.nx, -f.ny), inner);
+      }
+    }
+  }
+  emitRoof(w, b, v, floor, eaves, rgb);
+}
+
+function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: number, rgb: (spec: MaterialSpec) => Rgb): void {
+  const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(b, v));
+  const up = w.N(0, 0, 1);
+  if (v.roof === 'flat' || v.roof === 'terrace') {
+    // The slab at the roof's own level (its parapet is the walls'), and what
+    // stands on it - as the detailed roof has them.
+    const ring = localFootprint(v);
+    const flatRing = ring.flatMap((p) => [p.x, p.y]);
+    const tris = earcut(flatRing);
+    for (let i = 0; i < tris.length; i += 3) {
+      w.face([0, 1, 2].map((k) => w.P(flatRing[2 * tris[i + k]!]!, flatRing[2 * tris[i + k]! + 1]!, eaves)), up, roof);
+    }
+    const built = b.volumes.some((o) => o !== v && !o.open && o.base === volumeTop(v));
+    if (v.roof === 'flat') emitRoofPlant(w, b, v, eaves, rgb);
+    else if (!built) {
+      const parasol = rgbOf(ROOF_COLOURS.parasol);
+      for (const p of terraceParasols(b, v)) box(w, p.x - PARASOL_HALF, p.y - PARASOL_HALF, p.x + PARASOL_HALF, p.y + PARASOL_HALF, eaves + PARASOL_LOW, eaves + PARASOL_HIGH, parasol, parasol);
+    }
+    return;
+  }
+  if (v.outline) { emitPolygonRoof(w, b, v, eaves, roof, rgb); return; }
+  const x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.d;
+  const slope = roofSlope(v);
+  const wallOf = (side: FaceId): Rgb => rgb(wallMaterial(b, v, side));
+  if (v.roof === 'gable' || v.roof === 'hip') {
+    const alongX = ridgeAlongX(v);
+    const eave = eaves - EAVES * slope;
+    const ridge = eaves + roofRise(b, v);
+    const span = alongX ? y1 - y0 : x1 - x0;
+    const hip = v.roof === 'hip' ? Math.min(span / 2, (alongX ? x1 - x0 : y1 - y0) / 2) : 0;
+    const L = (along: number, across: number, z: number): [number, number, number] => (alongX ? w.P(along, across, z) : w.P(across, along, z));
+    const a0 = alongX ? x0 : y0, a1 = alongX ? x1 : y1, c0 = alongX ? y0 : x0, c1 = alongX ? y1 : x1, cm = (c0 + c1) / 2;
+    const o = EAVES, r0 = a0 + hip, r1 = a1 - hip;
+    w.face([L(a0 - o, c0 - o, eave), L(a1 + o, c0 - o, eave), L(r1, cm, ridge), L(r0, cm, ridge)], alongX ? w.N(0, -slope, 1) : w.N(-slope, 0, 1), roof);
+    w.face([L(a1 + o, c1 + o, eave), L(a0 - o, c1 + o, eave), L(r0, cm, ridge), L(r1, cm, ridge)], alongX ? w.N(0, slope, 1) : w.N(slope, 0, 1), roof);
+    if (v.roof === 'hip') {
+      w.face([L(a0 - o, c1 + o, eave), L(a0 - o, c0 - o, eave), L(r0, cm, ridge)], alongX ? w.N(-slope, 0, 1) : w.N(0, -slope, 1), roof);
+      w.face([L(a1 + o, c0 - o, eave), L(a1 + o, c1 + o, eave), L(r1, cm, ridge)], alongX ? w.N(slope, 0, 1) : w.N(0, slope, 1), roof);
+    } else {
+      w.face([L(a0, c0, eaves), L(a0, c1, eaves), L(a0, cm, ridge)], alongX ? w.N(-1, 0) : w.N(0, -1), wallOf(alongX ? 3 : 0));
+      w.face([L(a1, c1, eaves), L(a1, c0, eaves), L(a1, cm, ridge)], alongX ? w.N(1, 0) : w.N(0, 1), wallOf(alongX ? 1 : 2));
+    }
+    return;
+  }
+  if (v.roof === 'shed') {
+    const fall = shedFall(v);
+    const lowAlongX = fall === 0 || fall === 2;
+    const eaveLength = lowAlongX ? x1 - x0 : y1 - y0, run = lowAlongX ? y1 - y0 : x1 - x0;
+    const Q = (a: number, t: number, z: number): [number, number, number] => {
+      switch (fall) {
+        case 0: return w.P(x0 + a * (x1 - x0), y0 + t * (y1 - y0), z);
+        case 2: return w.P(x0 + a * (x1 - x0), y1 - t * (y1 - y0), z);
+        case 3: return w.P(x0 + t * (x1 - x0), y0 + a * (y1 - y0), z);
+        default: return w.P(x1 - t * (x1 - x0), y0 + a * (y1 - y0), z);
+      }
+    };
+    const high = eaves + run * slope;
+    const oa = EAVES / eaveLength, ot = EAVES / run;
+    const nf = fall === 0 ? [0, -1] : fall === 2 ? [0, 1] : fall === 3 ? [-1, 0] : [1, 0];
+    w.face([Q(-oa, -ot, eaves - EAVES * slope), Q(1 + oa, -ot, eaves - EAVES * slope), Q(1 + oa, 1 + ot, high + EAVES * slope), Q(-oa, 1 + ot, high + EAVES * slope)],
+      w.N(nf[0]! * slope, nf[1]! * slope, 1), roof);
+    const back = ((fall + 2) % 4) as FaceId;
+    for (const end of [0, 1, 2, 3].filter((s) => s !== fall && s !== back) as FaceId[]) {
+      const a = (lowAlongX ? end === 3 : end === 0) ? 0 : 1;
+      const ne = end === 0 ? [0, -1] : end === 2 ? [0, 1] : end === 3 ? [-1, 0] : [1, 0];
+      w.face([Q(a, 0, eaves), Q(a, 1, eaves), Q(a, 1, high)], w.N(ne[0]!, ne[1]!), wallOf(end));
+    }
+    const nb = back === 0 ? [0, -1] : back === 2 ? [0, 1] : back === 3 ? [-1, 0] : [1, 0];
+    w.face([Q(0, 1, eaves), Q(1, 1, eaves), Q(1, 1, high), Q(0, 1, high)], w.N(nb[0]!, nb[1]!), wallOf(back));
+    return;
+  }
+  // Sawtooth: its teeth, the steep face glazed.
+  const tooth = sawtoothRun(b, v);
+  const toothRise = tooth * 0.5 * slope;
+  for (let t0 = y0; t0 < y1 - 1e-6; t0 += tooth) {
+    const t1 = Math.min(y1, t0 + tooth);
+    const h = toothRise * ((t1 - t0) / tooth);
+    w.face([w.P(x0, t0, eaves), w.P(x1, t0, eaves), w.P(x1, t1, eaves + h), w.P(x0, t1, eaves + h)], w.N(0, -1, 2), roof);
+    w.face([w.P(x1, t1, eaves), w.P(x0, t1, eaves), w.P(x0, t1, eaves + h), w.P(x1, t1, eaves + h)], w.N(0, 1), SAW_GLASS_RGB);
+    w.face([w.P(x0, t0, eaves), w.P(x0, t1, eaves), w.P(x0, t1, eaves + h)], w.N(-1, 0), wallOf(3));
+    w.face([w.P(x1, t1, eaves), w.P(x1, t0, eaves), w.P(x1, t1, eaves + h)], w.N(1, 0), wallOf(1));
+  }
+  void floor;
+}
+
+/**
+ * A pitched roof over a shaped block: the roof's surface (`roofHeightAt`)
+ * over its footprint, cut by the planes it is made of as the detailed roof
+ * is, and a gable filling each wall up to it.
+ */
+function emitPolygonRoof(w: MassWriter, b: Building, v: Volume, eaves: number, roof: Rgb, rgb: (spec: MaterialSpec) => Rgb): void {
+  const ring = localFootprint(v);
+  const height = (p: Vec2): number => eaves + roofHeightAt(b, v, p);
+  const x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.d;
+  const rect = (a: number, c: number, d: number, f: number): Vec2[] => [{ x: a, y: c }, { x: d, y: c }, { x: d, y: f }, { x: a, y: f }];
+  // The planes the roof is made of, as `buildingMesh.ts` `emitPolygonRoof` cuts them.
+  let patches: Vec2[][];
+  if (v.roof === 'gable') {
+    patches = ridgeAlongX(v)
+      ? [rect(x0, y0, x1, (y0 + y1) / 2), rect(x0, (y0 + y1) / 2, x1, y1)]
+      : [rect(x0, y0, (x0 + x1) / 2, y1), rect((x0 + x1) / 2, y0, x1, y1)];
+  } else if (v.roof === 'hip') {
+    const alongX = v.w >= v.d, long = alongX ? v.w : v.d, short = alongX ? v.d : v.w, h = short / 2;
+    const P = (u: number, a: number): Vec2 => (alongX ? { x: x0 + u, y: y0 + a } : { x: x0 + a, y: y0 + u });
+    patches = [[P(0, 0), P(h, h), P(0, short)], [P(long, 0), P(long, short), P(long - h, h)],
+      [P(0, 0), P(long, 0), P(long - h, h), P(h, h)], [P(h, h), P(long - h, h), P(long, short), P(0, short)]];
+  } else if (v.roof === 'shed') {
+    patches = [rect(x0, y0, x1, y1)];
+  } else {
+    patches = [];
+    const run = sawtoothRun(b, v);
+    for (let from = y0; from < y1 - 1e-6; from += run) {
+      const to = Math.min(y1, from + run), mid = (from + to) / 2;
+      patches.push(rect(x0, from, x1, mid), rect(x0, mid, x1, to));
+    }
+  }
+  const footprint = asPolygon(ring);
+  for (const patch of patches) {
+    for (const piece of clipping.intersection(footprint, asPolygon(patch))) {
+      const outer = piece[0];
+      if (!outer || outer.length < 4) continue;
+      const pts = outer.slice(0, -1).map(([x, y]) => ({ x: x!, y: y! }));
+      const flatRing = pts.flatMap((p) => [p.x, p.y]);
+      const tris = earcut(flatRing);
+      // The plane's normal from three of its points.
+      const a = pts[0]!, c = pts[Math.floor(pts.length / 2)]!, d = pts[pts.length - 1]!;
+      const pa = w.P(a.x, a.y, height(a)), pc = w.P(c.x, c.y, height(c)), pd = w.P(d.x, d.y, height(d));
+      const ux = pc[0] - pa[0], uy = pc[1] - pa[1], uz = pc[2] - pa[2], vx = pd[0] - pa[0], vy = pd[1] - pa[1], vz = pd[2] - pa[2];
+      let n: [number, number, number] = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      const l = Math.hypot(n[0], n[1], n[2]) || 1;
+      n = [n[0] / l, n[1] / l, n[2] / l];
+      if (n[1] < 0) n = [-n[0], -n[1], -n[2]];
+      for (let i = 0; i < tris.length; i += 3) {
+        w.face([0, 1, 2].map((k) => { const p = pts[tris[i + k]!]!; return w.P(p.x, p.y, height(p)); }), n, roof);
+      }
+    }
+  }
+  // Each wall filled up to the roof over it (a gable where the ridge meets it).
+  const sides = volumeSides(v);
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len < 1e-6) continue;
+    const steps = 8;
+    const nx = (q.y - p.y) / len, ny = -(q.x - p.x) / len;
+    const colour = rgb(wallMaterial(b, v, (sides[i] ?? 0) as FaceId));
+    for (let k = 0; k < steps; k++) {
+      const s0 = { x: p.x + ((q.x - p.x) * k) / steps, y: p.y + ((q.y - p.y) * k) / steps };
+      const s1 = { x: p.x + ((q.x - p.x) * (k + 1)) / steps, y: p.y + ((q.y - p.y) * (k + 1)) / steps };
+      const h0 = height(s0), h1 = height(s1);
+      if (h0 - eaves < 1e-3 && h1 - eaves < 1e-3) continue;
+      w.face([w.P(s0.x, s0.y, eaves), w.P(s1.x, s1.y, eaves), w.P(s1.x, s1.y, h1), w.P(s0.x, s0.y, h0)], w.N(nx, ny), colour);
+    }
+  }
+}
+
+/** A box of the plan from z0 to z1: its four sides and its top. */
+function box(w: MassWriter, x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, sides: Rgb, top: Rgb): void {
+  w.face([w.P(x0, y0, z0), w.P(x1, y0, z0), w.P(x1, y0, z1), w.P(x0, y0, z1)], w.N(0, -1), sides);
+  w.face([w.P(x1, y1, z0), w.P(x0, y1, z0), w.P(x0, y1, z1), w.P(x1, y1, z1)], w.N(0, 1), sides);
+  w.face([w.P(x1, y0, z0), w.P(x1, y1, z0), w.P(x1, y1, z1), w.P(x1, y0, z1)], w.N(1, 0), sides);
+  w.face([w.P(x0, y1, z0), w.P(x0, y0, z0), w.P(x0, y0, z1), w.P(x0, y1, z1)], w.N(-1, 0), sides);
+  w.face([w.P(x0, y0, z1), w.P(x1, y0, z1), w.P(x1, y1, z1), w.P(x0, y1, z1)], w.N(0, 0, 1), top);
+}
+
+/**
+ * The plant on a flat roof a metre or more across (`roofPlan.ts`, the plan
+ * the detailed roof draws): machine rooms, tanks, air handlers, solar
+ * arrays, skylights, chimneys. Masts, dishes, vents, hatches and condensers
+ * are under the far level's error and left out.
+ */
+function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (spec: MaterialSpec) => Rgb): void {
+  const plant = rgbOf(ROOF_COLOURS.plant);
+  const trimSpec = trimMaterial(b);
+  // The trim as the detailed building has it: metal frames' mouldings are the skin a shade lighter.
+  const trim = trimSpec.finish === 'metal' && b.materials?.wall ? rgbOf(b.materials.wall.colour, shadeOf(b) * 1.1) : rgb(trimSpec);
+  for (const it of roofPlantOf(b, v)) {
+    const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, half = Math.min(it.x1 - it.x0, it.y1 - it.y0) / 2;
+    switch (it.kind) {
+      case 'liftRoom': case 'tankBox': box(w, it.x0, it.y0, it.x1, it.y1, z, z + it.h, trim, plant); break;
+      case 'airHandler': { const c = rgbOf(ROOF_COLOURS.condenser); box(w, it.x0, it.y0, it.x1, it.y1, z + m(0.2), z + it.h, c, c); break; }
+      case 'skylight': box(w, it.x0, it.y0, it.x1, it.y1, z, z + it.h, plant, rgbOf(ROOF_COLOURS.skylight)); break;
+      case 'solar': { const c = rgbOf(ROOF_COLOURS.solar); box(w, it.x0, it.y0, it.x1, it.y1, z + m(0.25), z + m(0.32), c, c); break; }
+      case 'tank': {
+        // A round tank as the square of its area (r * 0.84, `buildingMesh.ts`).
+        const r = half * 0.84 * Math.sqrt(Math.PI) / 2;
+        const c = rgbOf(TANK_COLOURS[it.variant % TANK_COLOURS.length]!);
+        box(w, cx - r, cy - r, cx + r, cy + r, z, z + it.h, c, c);
+        break;
+      }
+      case 'chimney': { const r = half * 0.9 * Math.sqrt(Math.PI) / 2, c = rgbOf(ROOF_COLOURS.chimney); box(w, cx - r, cy - r, cx + r, cy + r, z, z + it.h, c, c); break; }
+      default: break;
+    }
+  }
+}
+
+/** The machine rooms over the lift cores, on the highest flat roof over each (`buildingMesh.ts`). */
+function emitMachineRooms(w: MassWriter, b: Building, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
+  const u = b.module;
+  const trim = rgb(trimMaterial(b));
+  for (const core of b.cutaway === undefined ? b.cores : []) {
+    let best: Volume | null = null;
+    const cx = core.x + u / 2, cy = core.y + u / 2;
+    for (const v of b.volumes) {
+      if (v.open || cx < v.x || cx >= v.x + v.w || cy < v.y || cy >= v.y + v.d) continue;
+      if (!best || volumeTop(v) > volumeTop(best)) best = v;
+    }
+    if (!best || (best.roof !== 'flat' && best.roof !== 'terrace')) continue;
+    const z = floor + volumeHeight(b, best);
+    const inset = PARAPET_T + m(0.05);
+    const x0 = Math.max(core.x, best.x + inset), x1 = Math.min(core.x + u, best.x + best.w - inset);
+    const y0 = Math.max(core.y, best.y + inset), y1 = Math.min(core.y + u, best.y + best.d - inset);
+    if (x1 - x0 < m(1) || y1 - y0 < m(1)) continue;
+    const skin = best.dress ? rgb(wallMaterial(b, best, 0)) : trim;
+    box(w, x0, y0, x1, y1, z, z + MACHINE_ROOM_H, skin, rgbOf(ROOF_COLOURS.plant));
+  }
+}
