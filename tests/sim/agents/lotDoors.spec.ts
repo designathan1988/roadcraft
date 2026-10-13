@@ -1,4 +1,3 @@
-import { appendFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
@@ -71,7 +70,7 @@ beforeAll(() => {
 
 describe('the way from a lot door out through its people gate', () => {
   it('is found for the lots with a gate, and keeps clear of walls, fences and the building', () => {
-    let gated = 0, found = 0, ms = 0, worstMs = 0;
+    let gated = 0, found = 0;
     const missing: string[] = [];
     for (const b of doc.buildings.all()) {
       // A gate in front of the building (`lotPlan.ts`: on the path to the door); a lot built up to the
@@ -79,22 +78,9 @@ describe('the way from a lot door out through its people gate', () => {
       const front = personGates(b).some((g) => b.volumes.some((v) => !v.open && v.base === 0 && g.x > v.x && g.x < v.x + v.w && v.y > g.y + m(1)));
       if (!front) continue;
       gated++;
-      const t0 = performance.now();
       const way = doorWay(b);
-      const took = performance.now() - t0;
-      ms += took;
-      worstMs = Math.max(worstMs, took);
       if (!way) {
         missing.push(`${b.id}:${b.function}`);
-        if (process.env.DOORS_DIAG) {
-          // (`DOORS_DIAG=<file>`: what stands at each lot whose gate leads to no door.)
-          const U = m(1);
-          const g = personGates(b)[0]!;
-          const near = (b.elements ?? []).filter((e) => Math.abs(e.x - g.x) < m(3) && e.y > g.y - m(1) && e.y < g.y + m(14))
-            .map((e) => `${e.kind}@${(e.x / U).toFixed(1)},${(e.y / U).toFixed(1)} ${(e.w / U).toFixed(1)}x${(e.d / U).toFixed(1)} f${e.facing} z${(e.z / U).toFixed(1)}`);
-          const vols = b.volumes.filter((v) => !v.open).map((v) => `${(v.x / U).toFixed(1)},${(v.y / U).toFixed(1)} ${(v.w / U).toFixed(1)}x${(v.d / U).toFixed(1)} b${v.base}`);
-          appendFileSync(process.env.DOORS_DIAG, `${b.id} gate ${(g.x / U).toFixed(2)},${(g.y / U).toFixed(2)} w${(g.w / U).toFixed(1)} f${g.facing}\n  vols ${vols.join(' | ')}\n  near ${near.join(' | ')}\n`);
-        }
         continue;
       }
       found++;
@@ -115,7 +101,6 @@ describe('the way from a lot door out through its people gate', () => {
       // From the door (in front of the building) to outside the lot's front.
       expect(local[local.length - 1]!.y).toBeLessThan(0);
     }
-    if (process.env.DOORS_REPORT) appendFileSync(process.env.DOORS_REPORT, `${JSON.stringify({ gated, found, meanMs: ms / gated, worstMs, missing })}\n`);
     expect(gated).toBeGreaterThan(10);
     // Not all: a part standing in the gate itself (a bollard in a tower's forecourt gate, measured) shuts it.
     expect(found / gated, `${found} of ${gated} lots with a people's gate in front have a way to the door: ${missing.join(' ')}`).toBeGreaterThan(0.9);
@@ -188,8 +173,6 @@ describe('the scenery uses the gates', () => {
       }
     }
     const g = sim.ambient.gateWalks;
-    // `DOORS_REPORT=<file>`: the counts, for the record (docs/PROBLEMAS.md).
-    if (process.env.DOORS_REPORT) appendFileSync(process.env.DOORS_REPORT, `${JSON.stringify({ ...g, nearestM: worst / m(1), lotSeconds, longestStand, out: outOfDoor.size, in: inAtDoor.size })}\n`);
     expect(g.made).toBeGreaterThan(10);
     expect(g.fromGate + g.toGate, `${g.fromGate} out of doors, ${g.toGate} in at doors of ${g.made}`).toBeGreaterThan(g.made * 0.2);
     expect(outOfDoor.size).toBeGreaterThan(0);

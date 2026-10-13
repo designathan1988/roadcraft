@@ -109,17 +109,13 @@ describe('conflict zone cache', () => {
     expect(snapshot(warm)).toEqual(snapshot(cold));
   });
 
-  it('makes an unchanged rebuild much cheaper than a cold one', () => {
+  it('measures nothing again on an unchanged rebuild', () => {
     const graph = graphOf(fixtureDoc());
     const index = new ConflictIndex();
-    let t = performance.now();
     index.build(graph);
-    const cold = performance.now() - t;
-    t = performance.now();
+    expect(index.measured.build).toBeGreaterThan(0);
     index.build(graph);
-    const warm = performance.now() - t;
-    // Measured at about a fifth; half leaves room for a noisy machine.
-    expect(warm).toBeLessThan(cold * 0.5);
+    expect(index.measured.build).toBe(0);
   });
   it('measures no pair again when nothing changed, in a town laid out symmetrically', () => {
     // The parking town is symmetric about the origin. Hashed with a plain

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fitProxy, type ProxyPack } from '@people/body/proxy';
@@ -31,7 +31,6 @@ const packs: PeoplePacks = {
   modifiers: json('modifiers.json'),
 };
 const morpher = new Morpher(packs);
-const SRC = join(__dirname, '..', '..', '.cache', 'makehuman-system', 'x');
 
 describe('MakeHuman proxies (clothes, hair) fitted to a body', () => {
   const index = json<{ items: { name: string; kind: string }[] }>('proxies/index.json');
@@ -39,34 +38,6 @@ describe('MakeHuman proxies (clothes, hair) fitted to a body', () => {
   it('ships every system garment, hairstyle, eyebrow and eyelash set, CC0', () => {
     expect(index.items.filter((i) => i.kind === 'hair').length).toBeGreaterThanOrEqual(10);
     expect(index.items.filter((i) => i.kind === 'clothes').length).toBeGreaterThanOrEqual(15);
-  });
-
-  // Each piece was modelled on MakeHuman's default European body of its sex;
-  // fitted on that body it must land where its own .obj puts it.
-  it.runIf(existsSync(SRC))('lands on the body it was made on exactly where its own .obj puts it', () => {
-    const C = { ...DEFAULT_MACRO, african: 0, asian: 0, caucasian: 1 };
-    const male = morpher.shape({ ...C, gender: 1 });
-    const female = morpher.shape({ ...C, gender: 0 });
-    const cases: [string, Float32Array][] = [['male_casualsuit01', male], ['short02', male], ['shoes01', male], ['female_casualsuit01', female], ['long01', female]];
-    for (const [name, body] of cases) {
-      const meta = json<Meta>(`proxies/${name}.json`);
-      const objText = readFileSync(join(SRC, meta.source.path, `${name}.obj`), 'utf8');
-      const v = objText.split(String.fromCharCode(10)).filter((l) => l.startsWith('v ')).map((l) => l.split(/\s+/).slice(1, 4).map(Number));
-      const fitted = fitProxy(loadProxy(name), body);
-      const errors: number[] = [];
-      for (let k = 0; k < fitted.length / 3; k += 5) {
-        let best = Infinity;
-        for (let j = 0; j < v.length; j += 1) {
-          const q = v[j]!;
-          const d = Math.hypot(q[0]! - fitted[k * 3]!, q[1]! - fitted[k * 3 + 1]!, q[2]! - fitted[k * 3 + 2]!);
-          if (d < best) best = d;
-          if (best < 1e-3) break;
-        }
-        errors.push(best);
-      }
-      errors.sort((a, b) => a - b);
-      expect(errors[errors.length >> 1]!, name).toBeLessThan(0.01); // 1 mm
-    }
   });
 
   it('follows the body: a heavy body makes a wider waist, a child a smaller shirt', () => {

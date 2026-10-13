@@ -39,7 +39,18 @@ const MAX_CPU = Number(process.env.RUN_LIMITED_MAX_CPU ?? 70);
 const MIN_FREE_GB = Number(process.env.RUN_LIMITED_MIN_FREE_GB ?? 6);
 const TIMEOUT_S = Number(process.env.RUN_LIMITED_TIMEOUT_S ?? 480);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+/** Whether a process lives (signal 0 only tests it: ESRCH none, EPERM one we may not signal). */
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code === 'EPERM') return true;
+    throw error;
+  }
+}
+/** Runs `fn`; a missing file (ENOENT: another job removed it first) is no error, anything else is. */
+function unlessGone(fn) {
+  try { return fn(); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
 const busy = () => cpus().reduce((a, c) => ({ idle: a.idle + c.times.idle, total: a.total + Object.values(c.times).reduce((x, y) => x + y, 0) }), { idle: 0, total: 0 });
 async function cpuPercent() {
   const a = busy();
@@ -47,35 +58,58 @@ async function cpuPercent() {
   const b = busy();
   return 100 * (1 - (b.idle - a.idle) / Math.max(1, b.total - a.total));
 }
+// The wait has an end: a job that never gets the machine fails and says who
+// holds it, rather than hanging a check, a push or a conversation's turn.
+const WAIT_S = Number(process.env.RUN_LIMITED_WAIT_S ?? 600);
+const WHAT = [requested, ...args].join(' ').slice(0, 200);
+/** The holder of the lock: `{ pid, what }` (a bare pid from older runs), or null when unreadable. */
+function holder() {
+  const text = unlessGone(() => readFileSync(LOCK, 'utf8'));
+  if (text === null) return null;
+  if (/^\d+$/.test(text.trim())) return { pid: Number(text), what: '?' };
+  // Read between its creation and its first write: held, by somebody not known yet.
+  try { return JSON.parse(text); } catch (error) { if (error instanceof SyntaxError) return { pid: -1, what: 'starting' }; throw error; }
+}
 function tryLock() {
   try {
     const fd = openSync(LOCK, 'wx');
-    writeSync(fd, String(process.pid));
+    writeSync(fd, JSON.stringify({ pid: process.pid, what: WHAT }));
     closeSync(fd);
     return true;
-  } catch {
-    // Held: by a live process, wait; by a dead one, take it over.
-    let owner;
-    try { owner = Number(readFileSync(LOCK, 'utf8')); } catch { return false; }
-    if (owner && alive(owner)) return false;
-    try { unlinkSync(LOCK); } catch { /* raced */ }
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    // Held: by a live process (or one still writing it), wait; by a dead one, take it over.
+    const owner = holder();
+    if (!owner || owner.pid < 0 || alive(owner.pid)) return false;
+    unlessGone(() => unlinkSync(LOCK));
     return false;
   }
 }
 const releaseLock = () => {
-  try { if (Number(readFileSync(LOCK, 'utf8')) === process.pid) unlinkSync(LOCK); } catch { /* gone */ }
+  if (holder()?.pid === process.pid) unlessGone(() => unlinkSync(LOCK));
 };
 let said = '';
 const say = (text) => { if (text !== said) { said = text; process.stderr.write(`[run-limited] ${text}
 `); } };
+const giveUpAt = Date.now() + WAIT_S * 1000;
 for (;;) {
-  if (!tryLock()) { say('waiting: another heavy job is running on this machine'); await sleep(3000); continue; }
-  const cpu = await cpuPercent();
-  const free = freemem() / 2 ** 30;
-  if (cpu <= MAX_CPU && free >= MIN_FREE_GB) break;
-  releaseLock();
-  say(`waiting: CPU ${cpu.toFixed(0)}% (max ${MAX_CPU}), free memory ${free.toFixed(1)} GB (min ${MIN_FREE_GB})`);
-  await sleep(5000);
+  let why;
+  if (!tryLock()) {
+    const owner = holder();
+    why = `another heavy job is running on this machine: pid ${owner?.pid ?? '?'} (${owner?.what ?? '?'})`;
+  } else {
+    const cpu = await cpuPercent();
+    const free = freemem() / 2 ** 30;
+    if (cpu <= MAX_CPU && free >= MIN_FREE_GB) break;
+    releaseLock();
+    why = `CPU ${cpu.toFixed(0)}% (max ${MAX_CPU}), free memory ${free.toFixed(1)} GB (min ${MIN_FREE_GB})`;
+  }
+  if (Date.now() > giveUpAt) {
+    process.stderr.write(`[run-limited] gave up after ${WAIT_S} s waiting (RUN_LIMITED_WAIT_S): ${why}\n`);
+    process.exit(1);
+  }
+  say(`waiting: ${why}`);
+  await sleep(3000);
 }
 process.on('exit', releaseLock);
 const logicalProcessors = cpus().length;
@@ -124,7 +158,8 @@ const guard = windows && child.pid
     `if ($free -lt ${process.env.RUN_LIMITED_KILL_GB ?? 2}) { [Console]::Error.WriteLine('[run-limited] stopped: free memory ' + [math]::Round($free, 1) + ' GB'); taskkill.exe /PID $root /T /F | Out-Null; break }; ` +
     `Start-Sleep -Seconds 2 }`], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true })
   : null;
-child.on('exit', () => { try { guard?.kill(); } catch { /* gone */ } });
+// `kill` answers false for a guard already gone; it throws only for a bad signal.
+child.on('exit', () => { guard?.kill(); });
 const runaway = setTimeout(() => {
   process.stderr.write(`[run-limited] stopped after ${TIMEOUT_S} s (RUN_LIMITED_TIMEOUT_S)
 `);

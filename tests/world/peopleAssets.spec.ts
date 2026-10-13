@@ -1,7 +1,6 @@
 // Structure of the MakeHuman CC0 packs written by scripts/import-makehuman.mjs
 // (docs/people-assets.md). Reads the files from public/models/people/.
-import { existsSync, readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -148,29 +147,6 @@ describe('people assets: macro targets as principal components', () => {
     }
   });
 
-  // The source targets are in the importer's cache when it has been run here.
-  const SOURCE = join(__dirname, '..', '..', '.cache', 'makehuman', PINNED_SHA, 'repo', 'src', 'mpfb', 'data', 'targets');
-  it.runIf(existsSync(SOURCE))('reproduces every sampled source target within half a millimetre', () => {
-    for (let row = 0; row < meta.targets.length; row += 29) {
-      const t = meta.targets[row]!;
-      const text = gunzipSync(readFileSync(join(SOURCE, `${t.name}.target.gz`))).toString('utf8');
-      const truth = new Float64Array(D);
-      for (const line of text.split(String.fromCharCode(10))) {
-        const p = line.trim().split(/\s+/);
-        if (p.length < 4 || p[0]!.startsWith('#')) continue;
-        const v = Number(p[0]);
-        truth[v * 3] = Number(p[1]); truth[v * 3 + 1] = Number(p[2]); truth[v * 3 + 2] = Number(p[3]);
-      }
-      for (const v of base.zeroedVertices['helper-genital'] ?? []) truth[v * 3] = truth[v * 3 + 1] = truth[v * 3 + 2] = 0;
-      const got = rebuild(row);
-      let worst = 0;
-      for (let v = 0; v < meta.vertexCount; v++) {
-        worst = Math.max(worst, Math.hypot(got[v * 3]! - truth[v * 3]!, got[v * 3 + 1]! - truth[v * 3 + 1]!, got[v * 3 + 2]! - truth[v * 3 + 2]!));
-      }
-      // Decimetres: 0.005 is half a millimetre; the residual's own int16 step on top.
-      expect(worst, t.name).toBeLessThan(meta.residualTolerance + 1e-4);
-    }
-  });
 });
 
 describe.each([

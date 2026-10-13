@@ -21,9 +21,8 @@ function indexOf(doc: ReturnType<typeof layoutDoc>['doc']) {
   const graph = new LaneletGraph();
   graph.build(doc, net);
   const conflicts = new ConflictIndex();
-  const t0 = performance.now();
   conflicts.build(graph);
-  return { graph, conflicts, ms: performance.now() - t0 };
+  return { graph, conflicts };
 }
 
 describe('swept conflict zones', () => {
@@ -80,19 +79,14 @@ describe('swept conflict zones', () => {
     }
   });
 
-  it('builds a whole player map inside an edit budget', () => {
-    // The best of three cold builds, each on a fresh index. One build alone
-    // timed the JIT warming up and whatever else the suite was running beside
-    // it: 150 ms on its own, nearly 2 s under the full suite with coverage.
-    let best = Infinity;
-    for (let run = 0; run < 3; run++) {
-      const { conflicts, ms } = indexOf(fixtureDoc());
-      expect(conflicts.points.filter(Boolean).length).toBeGreaterThan(100);
-      best = Math.min(best, ms);
-    }
-    // Rebuilt on every topology edit. Generous for a CI machine, and still a
-    // hard stop on anything quadratic in the sampled rectangles.
-    expect(best).toBeLessThan(1500);
+  it('measures a whole player map within its count of pairs', () => {
+    // Counted, not timed (the timed version read 150 ms alone and nearly 2 s
+    // beside the rest of the suite): the pairs a cold build measures, 518 on
+    // this map on 2026-10-13. More is a change in what is measured: either a
+    // fault, or a new ceiling written here with the reason.
+    const { conflicts } = indexOf(fixtureDoc());
+    expect(conflicts.points.filter(Boolean).length).toBeGreaterThan(100);
+    expect(conflicts.measured.build).toBeLessThanOrEqual(518);
   });
 
   it('keeps a conflict id stable across a rebuild', () => {

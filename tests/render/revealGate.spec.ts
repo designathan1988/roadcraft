@@ -45,9 +45,15 @@ describe('the frames of a load', () => {
     vi.stubGlobal('requestAnimationFrame', () => 0);
     let frames = 0;
     let loading = true;
-    const clock: FrameClock = new FrameClock(() => { frames++; if (frames < 5) clock.request(); else loading = false; }, () => loading);
-    clock.request();
-    await new Promise((r) => setTimeout(r, 50));
+    // Waited for on the fifth frame itself, never on the clock: no frame, and the test's own limit fails it.
+    await new Promise<void>((fifth) => {
+      const clock: FrameClock = new FrameClock(() => {
+        frames++;
+        if (frames < 5) clock.request();
+        else { loading = false; fifth(); }
+      }, () => loading);
+      clock.request();
+    });
     expect(frames).toBe(5);
   });
 });

@@ -109,14 +109,6 @@ describe('a MakeHuman person rigged for the crowd', () => {
   });
 });
 
-it('builds a rigged person in a fraction of a second', () => {
-  const t0 = performance.now();
-  for (let i = 0; i < 3; i++) rigFor(100 + i);
-  const each = (performance.now() - t0) / 3;
-  console.log(`rig ${each.toFixed(0)} ms per person`);
-  expect(each).toBeLessThan(400);
-});
-
 
 it('separates adult sex profile mesh distributions at 95%', () => {
   // Anatomy is measured on the generated body, before clothes or hair can

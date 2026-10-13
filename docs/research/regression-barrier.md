@@ -147,3 +147,33 @@ Next, in order:
 Limits: GPU time, driver behaviour and how things look are not provable from the code. Counters
 cover the causes of slowness (objects drawn, triangles, bytes uploaded, programs); the short
 visual check covers the look.
+
+## The gate, the check by change and the rules of the tests (2026-10-13)
+Taken from the building editor next door (`C:/Codex-Shared/builder`: `scripts/check.mjs`, `gate.mjs`,
+`lock.mjs`, `test/unit/arch.test.ts`), where they hold, and adapted here. Sources read:
+- Claude Code hooks: `PostToolUse` runs after a tool; a `Stop` hook that exits 2 keeps Claude
+  working with stderr as the reason; `stop_hook_active` is true while Claude continues because of a
+  stop hook ("check this value ... to avoid blocking on a condition that will never resolve"); after
+  eight continuations in a row the turn ends anyway; exec form (`command` + `args`) for paths with
+  `${CLAUDE_PROJECT_DIR}`; default timeout 600 s. https://code.claude.com/docs/en/hooks
+- ESLint cache: valid from the file and the configuration; it does not track dependencies between
+  files, so it is wrong only for rules that read other files or the types (none here);
+  `--cache-strategy content` for checkouts that touch mtimes.
+  https://eslint.org/docs/latest/use/command-line-interface#caching
+- Vitest: `--changed` / `related` follow static imports only, not dynamic ones (the architecture
+  specs read files and import nothing), so every spec runs; profiling the workers with `execArgv`.
+  https://vitest.dev/guide/cli ; https://vitest.dev/guide/profiling-test-performance
+- git `pre-push` gets the pushed refs on stdin. `git read-tree` into a temporary `GIT_INDEX_FILE`
+  and `git checkout-index --prefix` write a commit's files elsewhere without touching the index or
+  the folder. https://git-scm.com/docs/githooks ; https://git-scm.com/docs/git-checkout-index
+- Software Engineering at Google, ch. 11 (above): speed and determinism first; a test that needs a
+  machine's files or an environment variable, or that reads the wall clock, is neither.
+
+What was measured before (2026-10-13): the check 89 s (lint 12.3, code 11.8, knip 2.2, specs 50.1
+with 41 s of imports, scale 7.2, build 5.5); 45 slow specs, 45 min, run by nobody; three benchmarks
+(`tests/bench`, only with `BENCH=1`, one pointing at a script gone); two tests that ran only with a
+cache of the MakeHuman sources (absent here); eight specs asserting milliseconds of wall time; two
+waiting on a real timer. A profile of one slow spec (`queuedSwing`, seed 2: 300 s simulated, 18,000
+ticks, 15.6 s) found no single hot spot: the time is the simulation itself (walking 18 %, vehicle
+integration 18 %, lane changes 15 %, obstacles 14 %), 0.87 ms a tick. The slow specs are slow because
+they simulate minutes of a town, not because of a fault; they are rewritten as small scenarios.

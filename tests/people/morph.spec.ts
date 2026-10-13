@@ -96,18 +96,5 @@ describe('person model: bodies', () => {
     for (const params of cases) {
       expect(morpher.height(params, body)).toBeCloseTo(bodyHeight(morpher.shape(params), body), 3);
     }
-    const t0 = performance.now();
-    for (const params of cases) morpher.height(params, body);
-    console.log(`height ${((performance.now() - t0) / cases.length).toFixed(2)} ms per body`);
-  });
-
-  it('morphs a whole body in a few milliseconds', () => {
-    const out = new Float32Array(morpher.vertexCount * 3);
-    morpher.shape(DEFAULT_MACRO, {}, out);
-    const t0 = performance.now();
-    for (let i = 0; i < 5; i++) morpher.shape({ ...DEFAULT_MACRO, gender: i / 4, age: 0.2 + i * 0.15 }, {}, out);
-    const each = (performance.now() - t0) / 5;
-    expect(each).toBeLessThan(200);
-    console.log(`morph ${each.toFixed(1)} ms per body`);
   });
 });

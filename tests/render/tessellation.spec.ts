@@ -89,7 +89,6 @@ describe('tessellation cost', () => {
     net.rebuild();
     const layer = bands(surfaces(net));
 
-    const started = Date.now();
     let total = 0;
     for (const polygons of Object.values(layer)) {
       const built = mesh(polygons);
@@ -97,9 +96,7 @@ describe('tessellation cost', () => {
       total += triangles(built);
       expect(longestEdge(built)).toBeLessThanOrEqual(MAX_EDGE + 1e-6);
     }
+    // The work is counted (triangles), never timed (tests/arch/testRules.spec.ts).
     expect(total).toBeLessThan(200_000);
-    // Generous, because a cold JIT on a shared runner is not a frame budget;
-    // it is here to catch a regression of the kind that took 2.7 seconds.
-    expect(Date.now() - started).toBeLessThan(4_000);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Mesh } from 'three';
 
 import { unifiedWaterGeometry, type WaterStamp } from '@render/terrain';
@@ -125,16 +125,22 @@ describe('createWaterSurface', () => {
     surface.dispose();
   });
 
-  it('drives its own clock from the mesh it is attached to', async () => {
-    const surface = createWaterSurface(4);
-    const mesh = new Mesh();
-    surface.attach(mesh);
-    expect(surface.time.value).toBe(0);
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    // The arguments are the renderer's; nothing here reads them.
-    (mesh.onBeforeRender as unknown as () => void)();
-    expect(surface.time.value).toBeGreaterThan(0);
-    surface.dispose();
+  it('drives its own clock from the mesh it is attached to', () => {
+    // A fake clock the test moves: the water reads `performance.now()`.
+    vi.useFakeTimers({ toFake: ['performance'] });
+    try {
+      const surface = createWaterSurface(4);
+      const mesh = new Mesh();
+      surface.attach(mesh);
+      expect(surface.time.value).toBe(0);
+      vi.advanceTimersByTime(30);
+      // The arguments are the renderer's; nothing here reads them.
+      (mesh.onBeforeRender as unknown as () => void)();
+      expect(surface.time.value).toBeGreaterThan(0);
+      surface.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

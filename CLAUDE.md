@@ -102,10 +102,22 @@ affected and visible cells only. Each derived product declares what it reads and
 Regressions are stopped by reading the code, in seconds, never by playing the game before a push
 (the player, 2026-10-13: no slow processes, no endless tests; research and sources in
 `docs/research/regression-barrier.md`).
-- `npm run check`, also the pre-push hook, about a minute and a half: lint (layers, file size, no
-  empty/silent `catch`, no module state), the code rules, `knip` (no unused file, export or
-  dependency), the specs that run in seconds, architecture tests, the counting (scale) suites,
-  the build.
+- `npm run check` (`scripts/check.mjs`, about a minute): lint (layers, file size, no empty/silent
+  `catch`, no module state; cached by file content), the code rules, `knip` (no unused file, export
+  or dependency), the specs, architecture tests, the counting (scale) suites, the build. It runs
+  what the change can affect (git against HEAD: docs only → nothing; tests only → no build), each
+  step under a hard limit, stops at the first failure and prints the seconds of each step.
+- Held, not only asked (`.claude/settings.json` → `scripts/gate.mjs`): a turn of a conversation that
+  edited a file here (docs aside) does not end while the check is red; the reason reaches Claude.
+  Continued by the gate and still red, the check runs once more and the turn ends with a warning
+  to the player. Edits made by shell commands only (sed, git rm) are not seen: run the check by hand.
+  Red because of another conversation's files: say so; never change or commit them.
+- The pre-push (`.githooks/pre-push`, `npm run setup` once) runs `npm run check:all` on the COMMIT
+  being pushed: in place when the folder is that commit, else on its files exported to a temporary
+  folder (`scripts/prepush.mjs`), so one conversation's unsaved work neither blocks another's push
+  nor hides a file a commit forgot.
+- Heavy jobs take the machine's lock (`scripts/run-limited.mjs`): one at a time, below-normal
+  priority on four cores; the wait has an end (`RUN_LIMITED_WAIT_S`) and names who holds the lock.
 - The code rules (`scripts/check-code.mjs`, ~8 s): one TypeScript program types the code and
   builds the call graph from the functions marked `@perFrame` (`main.ts` `frame`, the sim
   `step`). Nothing a frame reaches makes a three.js material or compiles a shader; per-frame code
@@ -114,10 +126,14 @@ Regressions are stopped by reading the code, in seconds, never by playing the ga
   big as the map; key listeners on the window only in `main.ts`. What was there is in
   `code-rules.baseline.json`, which only shrinks; `--why "<text>"` shows how a frame reaches a
   finding. A `@rebuild` mark is a claim the analysis trusts: put it only where it is true.
-- Every test of the check finishes in 10 s (`vitest.config.ts` testTimeout; no spec may declare
-  more, `tests/arch/slowSpecs.spec.ts`). The specs that took longer are listed in `tests/slow.json`,
-  run only by `npm run test:slow`, and are rewritten to run in seconds (counters, model-based
-  tests) until the list is empty; the list only shrinks.
+- The rules of the tests (`tests/arch/testRules.spec.ts`): every test runs in every check (no
+  `.only`, `.skip`, `.todo`, `skipIf` or `runIf`: a test that needs an environment variable or a
+  file of one machine runs nowhere; `it.fails` stays for a recorded defect); no real clock (no
+  `performance.now()`/`Date.now()`, no wait on a timer, unless the file installs fake timers): work
+  is counted, never timed; every test finishes in 10 s (`vitest.config.ts` testTimeout, none may
+  declare more). The specs that took longer are listed in `tests/slow.json`, run only by
+  `npm run test:slow`, and are rewritten to run in seconds (a small scenario of the same defect,
+  counters, model-based tests) until the list is empty; the list only shrinks.
 - Performance is checked as counts, not timings: each derived product has a work counter, and the
   same edit costs the same on a small map and a large one (`tests/scale`). Wall-clock measures
   are noise and never block anything.
@@ -167,7 +183,8 @@ persistence, back them up to files and prove each one opens in this game.
 
 ```bash
 npm run dev            # the game on localhost:5300
-npm run check          # lint + typecheck + knip + fast tests + counters + build (~1 min; also pre-push)
+npm run check          # what the change can affect: lint, code rules, knip, specs, counters, build (~1 min)
+npm run check:all      # every step whatever changed (the pre-push runs it on the pushed commit)
 npm run test:slow      # the slow specs of tests/slow.json, by hand only, while they are rewritten
 npm run cook:people    # after changing people code or assets (dev server up)
 ```

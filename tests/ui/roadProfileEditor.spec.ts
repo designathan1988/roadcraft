@@ -122,16 +122,6 @@ describe('the drawn section', () => {
     expect(metresText(m(3))).toBe('3');
     expect(metresText(m(2.4))).toBe(formatDecimal(2.4, 1));
   });
-
-  it('is cheap enough to redraw on every pointer move', () => {
-    const boulevard = classTemplates().find((x) => x.id.endsWith('boulevard'))?.profile ?? street;
-    const runs = 300;
-    const started = performance.now();
-    for (let i = 0; i < runs; i++) drawSection(boulevard, { width: 960, height: 200, selected: i % 4 });
-    const each = (performance.now() - started) / runs;
-    // A frame is 16 ms; the picture should take a small slice of it.
-    expect(each).toBeLessThan(2);
-  });
 });
 
 describe('the editor and the inspector use the interface’s own controls', () => {

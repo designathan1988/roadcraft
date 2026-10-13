@@ -1,4 +1,3 @@
-import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { auditBuildings, auditForms, auditLots, growCity } from './cityAudit';
 
@@ -16,15 +15,10 @@ const CITIES = [
 describe('generated city', () => {
   for (const options of CITIES) {
     it(`seed ${options.seed}: lots on land, every lot built, no clashes, real roofs`, () => {
-      const t0 = performance.now();
       const city = growCity(options);
       const lots = auditLots(city);
       const buildings = auditBuildings(city);
       const forms = auditForms(city);
-      // The tally, for a hunt run by hand: CITY_AUDIT_OUT=<file>.
-      if (process.env.CITY_AUDIT_OUT) appendFileSync(process.env.CITY_AUDIT_OUT,
-        `CIDADE ${options.seed} (${((performance.now() - t0) / 1000).toFixed(1)} s) ${JSON.stringify({ lots, buildings, forms })}
-`);
       // 2. Lots on the block's own land, none over another, none giant.
       expect(lots.onPaving, 'lots over the paving').toBe(0);
       expect(lots.overlapping, 'lots over each other').toBe(0);

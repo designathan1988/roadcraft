@@ -10,8 +10,7 @@ import { Network } from '@world/network';
 /**
  * THE GENERATED CITY'S GREEN (docs/VIAS.md V7): no street trees (the
  * player, 2026-10-09), the streets' furniture, one square per neighbourhood made
- * of a whole block (no loose lawn inside a block), its trees inside it, and
- * all of it laid fast.
+ * of a whole block (no loose lawn inside a block), its trees inside it.
  */
 describe('a generated city is planted', () => {
   it('small city: squares of whole blocks, one per neighbourhood at most, street trees and medians planted', () => {
@@ -22,11 +21,8 @@ describe('a generated city is planted', () => {
     net.rebuild();
     applyLots(doc, planLots(doc, net));
     const lotsBefore = [...doc.lots] as Lot[];
-    const started = performance.now();
     const green = greenCity(doc, net, 5);
-    const ms = performance.now() - started;
     expect(green.squares).toBeGreaterThanOrEqual(1);
-    expect(ms).toBeLessThan(15_000);
     // No lot remains under a square's tree; every square tree stood on a lot (inside the block).
     const lotsAfter = doc.lots as readonly Lot[];
     for (const tree of doc.trees) {

@@ -14,11 +14,6 @@
       "count": 2
     }
   },
-  "scripts/run-limited.mjs": {
-    "roadcraft/no-silent-catch": {
-      "count": 6
-    }
-  },
   "src/buildingsWiring.ts": {
     "max-lines": {
       "count": 1
@@ -925,11 +920,6 @@
   "tests/core/gameState.spec.ts": {
     "roadcraft/no-silent-catch": {
       "count": 1
-    }
-  },
-  "tests/fuzz/fuzz.spec.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 2
     }
   },
   "tests/fuzz/support/runner.ts": {
