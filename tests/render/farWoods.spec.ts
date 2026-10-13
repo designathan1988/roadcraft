@@ -50,7 +50,7 @@ function stubReader(): { read: FarWoodsReader; asked: number[] } {
   const one = (ask: FarWoodsAsk): FarWoods => {
     const n = 3;
     const f = (v: number): Float32Array => new Float32Array(n).fill(v);
-    return { count: n, x: f(ask.cx), y: f(ask.cy), z: f(0), size: f(10), yaw: f(0), seed: f(0.1), pick: f(0.5), planned: 100, work: 1 };
+    return { count: n, x: f(ask.cx), y: f(ask.cy), z: f(0), size: f(10), yaw: f(0), seed: f(0.1), pick: f(0.5), planned: 20_000, work: 1 };
   };
   return { asked, read: (key, ask, done) => { asked.push(key); done(one(ask)); } };
 }
@@ -94,6 +94,19 @@ describe('the far woods\' bookkeeping', () => {
     book.setFull(home, false, false, 13);
     book.step(13);
     expect(book.plates[home]!.fade).toBe(1);
+  });
+
+  it('stands as thick as the quality tier lets the near woods stand, none at none', () => {
+    const { read } = stubReader();
+    const book = new FarWoodsBook(MAP_REGIONS, GRID, read);
+    book.sync(RELIEF_NATURAL, NATURE, 0, 0);
+    const full = book.scale;
+    book.setVegetation(1_300);
+    expect(book.scale).toBeLessThan(full);
+    book.setVegetation(0);
+    expect(book.scale).toBe(0);
+    book.setVegetation(2_600);
+    expect(book.scale).toBe(full);
   });
 
   it('asks nothing on a map with no ecosystem', () => {

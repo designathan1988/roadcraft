@@ -276,6 +276,12 @@ export interface TerrainSurface {
    */
   focus?(x: number, y: number, reach: number): void;
   /**
+   * The vegetation the quality tier allows (`quality.ts` vegetation, as the
+   * near trees' budget reads it): the atlas' far woods (`farForest.ts`)
+   * stand as thick as the near ones will.
+   */
+  setVegetation?(amount: number): void;
+  /**
    * The woods' density but the ecosystem's share per cell, made off the page
    * with the plate's first build (`woodsBase.ts`), while the natural land is
    * that build's (no stamp since); else null, and the sweep works it out.

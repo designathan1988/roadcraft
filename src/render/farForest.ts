@@ -21,7 +21,7 @@ import type { NatureSettings } from '@world/ecology';
 import type { ReliefVersion } from '@world/terrain';
 import { lowPolyTreeParts } from './lowPolyTrees';
 import { TREE_MODELS } from './natureTrees';
-import { woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
+import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
 import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, hemiOctaDirection, frameBasis } from './impostorShaders';
 
 /**
@@ -107,6 +107,8 @@ export class FarWoodsBook {
   /** Bumped when a plate's woods come in: the instances to write. */
   arrived: number[] = [];
   scale = 1;
+  /** The trees per 1920 m square the quality tier allows (`setVegetation`). */
+  private budget = FAR_WOODS_BUDGET;
 
   constructor(regions: readonly { readonly cx: number; readonly cy: number }[], private readonly grid: FarWoodsGrid, private readonly read: FarWoodsReader) {
     this.plates = regions.map((r, index) => ({ index, cx: r.cx, cy: r.cy, asked: '', woods: null, full: false, nearSince: NaN, fade: 1 }));
@@ -140,7 +142,20 @@ export class FarWoodsBook {
   private rescale(): void {
     let sum = 0, n = 0;
     for (const p of this.plates) if (p.woods) { sum += p.woods.planned; n++; }
-    this.scale = n ? woodsScale(sum / n, this.grid.half) : 1;
+    this.scale = n ? woodsScale(sum / n, this.grid.half, this.budget) : 1;
+  }
+
+  /**
+   * The vegetation the quality tier allows, as the near sweep reads it
+   * (`renderer.ts` natureSweep: its budget scaled by `vegetation / 2600`,
+   * none at 0): the far woods as thick as the near ones.
+   */
+  setVegetation(amount: number): void {
+    const budget = FAR_WOODS_BUDGET * Math.min(1, Math.max(0, amount) / 2_600);
+    if (budget === this.budget) return;
+    this.budget = budget;
+    this.rescale();
+    if (budget === 0) this.scale = 0;
   }
 
   /** Whether plate `index` is drawn in full, and whether its own ecosystem is in (its near trees can grow). */
@@ -370,8 +385,8 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
         look.clearUpdateRanges();
         for (const index of book.arrived) write(index);
         book.arrived = [];
-        uniforms.uScale.value = book.scale;
       }
+      uniforms.uScale.value = book.scale;
       if (book.step(now)) for (const p of book.plates) uniforms.uFade.value[p.index] = p.fade;
     },
     dispose() {

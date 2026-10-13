@@ -544,6 +544,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       for (const p of plates) if (p.surface) gulliesFor(p, dabs, auto);
       if (lastDoc && readContent(lastDoc)) refresh();
     },
+    setVegetation(amount) {
+      farForest.book.setVegetation(amount);
+    },
     vergeMaterial: firstSurface.vergeMaterial,
     heightAt: (x, y) => ask(x, y, (s, lx, ly) => s.heightAt(lx, ly), bareAt),
     naturalRenderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.naturalRenderedHeightAt(lx, ly), bareAt),
