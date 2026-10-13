@@ -15,8 +15,12 @@ import { Color, MeshStandardMaterial } from 'three';
  * a pixel.
  */
 
-/** The glass a window is seen as from afar: between the detailed panes' clear and darker glass (`kit.ts`). */
-const GLASS = new Color(0x56656e);
+/**
+ * The glass a window is seen as from afar: what the detailed pane shows by
+ * day, the room behind it at a fifth of its colour and the sky's sheen
+ * (`kit.ts`), a neutral dark grey - not a blue.
+ */
+const GLASS = new Color(0x585f63);
 /** A lit room's glow (`kit.ts` ROOM_LIGHT). */
 const ROOM_GLOW = new Color(0xffc27a);
 /** Where a window sits in its storey, from the floor (shares of the storey height). */
@@ -70,7 +74,10 @@ if (vFacade.y > 0.0) {
   float lot = fract(sin(dot(room, vec2(12.9898, 78.233)) + vGlazing.y * 437.585) * 43758.5453);
   float near = step(1.0 - roomsAwake, lot);
   massLit = mix(near, roomsAwake, smoothstep(0.5, 1.5, max(foot.x, foot.y)));
-  diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
+  // A curtain wall is its own colour (its finish's mean, \`finishes.ts\` \`finishAlbedo\`):
+  // painted the windows' glass it turned navy blue from afar while the
+  // detailed tower is near black (the player, 2026-10-13: "as cores mudam muito").
+  if (share < 0.99) diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += ${glow} * massingNight * massLit * massGlass;`);

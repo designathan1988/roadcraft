@@ -14,13 +14,13 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Finish } from '@world/buildings/materials';
-import { createFinishMaterials } from './finishes';
+import { createFinishMaterials, finishAlbedo } from './finishes';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
-import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
-import { SLOT_WIDTH, litTableDriven, litTexture } from './lightSlots';
+import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassingMaterial } from './massingMaterial';
 import { prefilterThinParts, twoSided } from './thinParts';
+import { roomBehindGlass } from './glassRoom';
 import { m } from '@world/units';
 
 /**
@@ -77,7 +77,6 @@ export type PartKind =
   | 'awning'
   | 'column'
   | 'glassDark'
-  | 'curtain'
   | 'water'
   | 'lamp'
   | 'wash'
@@ -97,7 +96,6 @@ export const PART_KINDS: readonly PartKind[] = [
   'awning',
   'column',
   'glassDark',
-  'curtain',
   'water',
   'lamp',
   'wash',
@@ -171,6 +169,8 @@ export interface BuildingKit {
   /** "Ocultar outros": the same shells, faded, for every building but the edited one. */
   readonly dimShell: Readonly<Record<Finish, MeshStandardMaterial>>;
   readonly dimParts: MeshStandardMaterial;
+  /** Each finish's colour from afar (`finishes.ts` `finishAlbedo`), for the far level of the buildings. */
+  readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
@@ -389,7 +389,6 @@ export function createBuildingKit(): BuildingKit {
     awning: awningGeometry(),
     column: new CylinderGeometry(0.5, 0.5, 1, 12),
     glassDark: glassPlane,
-    curtain: unitBox,
     water: unitBox,
     lamp: unitBox,
     // Placed at the lantern's centre (the same lot), the plane drawn back on the wall.
@@ -422,10 +421,9 @@ export function createBuildingKit(): BuildingKit {
     // Per-instance colours (with the frames and railings), and it alone uses this material.
     awning: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 }),
     column: concrete,
-    // Window variety: a pane that reflects less (a darker room behind it) and
-    // a curtain drawn behind the frame - no two rows of windows alike.
+    // Window variety: a pane that reflects less (a darker room behind it) -
+    // no two rows of windows alike.
     glassDark: new MeshStandardMaterial({ color: 0x5d6c74, roughness: 0.08, metalness: 0, envMapIntensity: 1.3, shadowSide: DoubleSide }),
-    curtain: new MeshStandardMaterial({ color: 0xe9e1d2, roughness: 0.95, metalness: 0 }),
     // Pool water: clear, glossy and a little turquoise, the tiled floor showing
     // through it - not a blue tile texture laid at the rim.
     water: new MeshStandardMaterial({
@@ -472,189 +470,7 @@ export function createBuildingKit(): BuildingKit {
   // their colours read by the windows for the piece seen through them.
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
-  const lin = (hex: number): string => { const c = new Color().setHex(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
-  // At night not every window is lit, nor all alike: each pane draws its own
-  // lot from where it stands - a third dark, the rest from dim to bright,
-  // some cooler (a television) - so a block reads as rooms, not a lamp.
-  for (const kind of ['glass', 'glassDark'] as const) {
-    const glassy = material[kind] as MeshStandardMaterial;
-    glassy.onBeforeCompile = (shader) => {
-      shader.uniforms.litTable = { value: litTexture };
-      shader.uniforms.litTableDriven = litTableDriven;
-      shader.uniforms.roomsAwake = roomsAwake;
-      shader.uniforms.roomDaylight = roomDaylight;
-      shader.uniforms.furnitureTone = { value: tones };
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>
-varying float vRoomLot;
-varying float vLit;
-varying vec2 vPane;
-attribute float litSlot;
-uniform sampler2D litTable;
-uniform float litTableDriven;
-uniform float roomsAwake;
-attribute vec4 roomA;
-attribute vec4 roomB;
-attribute vec4 roomC;
-varying vec4 vRoomA;
-varying vec4 vRoomB;
-varying vec4 vRoomC;
-varying vec3 vRoomEye;
-varying vec3 vRoomRay;`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-  vPane = position.xy;
-  // The room behind the pane (roomBehind.ts), and the view ray in its
-  // frame: x across the pane, y up, z into the building, metres.
-  vRoomA = roomA; vRoomB = roomB; vRoomC = roomC;
-#ifdef USE_INSTANCING
-  mat4 paneToWorld = modelMatrix * instanceMatrix;
-#else
-  mat4 paneToWorld = modelMatrix;
-#endif
-  float paneW = length(paneToWorld[0].xyz), paneH = length(paneToWorld[1].xyz);
-  vec3 paneX = paneToWorld[0].xyz / paneW, paneY = paneToWorld[1].xyz / paneH, paneZ = normalize(paneToWorld[2].xyz);
-  vec3 sight = (paneToWorld * vec4(position, 1.0)).xyz - cameraPosition;
-  vRoomEye = vec3(position.x * paneW, position.y * paneH, 0.0);
-  vRoomRay = vec3(dot(sight, paneX), dot(sight, paneY), -dot(sight, paneZ));
-#ifdef USE_INSTANCING
-  vec3 roomAt = instanceMatrix[3].xyz;
-#else
-  vec3 roomAt = vec3(0.0);
-#endif
-  vRoomLot = fract(sin(dot(floor(roomAt * 0.37), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-  // The room behind the pane (lightSlots.ts): lit exactly when somebody is
-  // in it and awake, when a simulation of the residents drives the table.
-  // Without one (the residents are not simulated) each space draws its own
-  // lot - every window of a flat with the flat - against the share of people
-  // awake at this hour (\`roomsAwake\`, ATUS): lit in the evening, most dark
-  // after midnight. A pane with no room known draws by where it stands.
-  if (litSlot > -0.5 && litTableDriven > 0.5) {
-    vLit = texture2D(litTable, vec2((mod(litSlot, ${SLOT_WIDTH}.0) + 0.5) / ${SLOT_WIDTH}.0, (floor(litSlot / ${SLOT_WIDTH}.0) + 0.5) / 64.0)).r;
-  } else {
-    float spaceLot = litSlot > -0.5 ? fract(sin(litSlot * 12.9898 + 4.1414) * 43758.5453) : vRoomLot;
-    vLit = step(1.0 - roomsAwake, spaceLot);
-  }`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>
-varying float vRoomLot;
-varying float vLit;
-varying vec2 vPane;
-uniform float roomDaylight;
-varying vec4 vRoomA;
-varying vec4 vRoomB;
-varying vec4 vRoomC;
-varying vec3 vRoomEye;
-varying vec3 vRoomRay;
-uniform vec3 furnitureTone[${FURNITURE_KINDS.length}];
-float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }`)
-        .replace('#include <color_fragment>', `#include <color_fragment>
-  // The room behind the pane. Where the building's interior is known
-  // (roomBehind.ts): its own box - side walls, back wall, floor and
-  // ceiling where the rooms the cut-open view draws have them - traced by
-  // the view ray (interior mapping, van Dongen 2008: the nearest of the
-  // room's planes the ray leaves by), its floor wood or stone as that view
-  // draws it, and the largest piece of its furniture in that piece's own
-  // colours, as a box in the same place. Lit by its window: brighter by the
-  // glass, darker deep in, darker in the corners. Elsewhere (a pane with no
-  // room known), the painted room of before.
-  vec3 roomSeen;
-  if (vRoomA.z > 0.05) {
-    vec3 o = vRoomEye;
-    vec3 d = vRoomRay;
-    d = vec3(abs(d.x) < 1e-4 ? 1e-4 : d.x, abs(d.y) < 1e-4 ? 1e-4 : d.y, max(d.z, 1e-4));
-    vec3 lo = vec3(-vRoomA.x, -vRoomA.w, 0.0), hi = vec3(vRoomA.y, vRoomB.x, vRoomA.z);
-    vec3 tFar = max((lo - o) / d, (hi - o) / d);
-    float t = min(min(tFar.x, tFar.y), tFar.z);
-    vec3 p = o + d * t;
-    vec3 wallC = ${lin(0xece6da)};
-    vec3 c;
-    float shade;
-    if (t == tFar.y && d.y < 0.0) {
-      if (vRoomB.y > 0.5) {
-        // Stone tiles, 60 cm, their joints.
-        vec2 tile = fract(vec2(p.x, p.z) / 0.6);
-        float joint = step(0.035, tile.x) * step(0.035, tile.y);
-        c = ${lin(0xb9b2a5)} * mix(0.72, 1.0, joint) * (0.94 + 0.06 * roomHash(floor(p.x / 0.6) + 17.0 * floor(p.z / 0.6)));
-      } else {
-        // Floorboards, 14 cm across, running into the room, each its own shade.
-        float board = floor(p.x / 0.14);
-        float seam = step(0.06, fract(p.x / 0.14)) * step(0.02, fract((p.z + roomHash(board) * 3.0) / 2.4));
-        c = ${lin(0xa27548)} * mix(0.6, 1.0, seam) * (0.85 + 0.25 * roomHash(board));
-      }
-      shade = 0.85;
-    } else if (t == tFar.y) {
-      c = ${lin(0xf4f1ea)};
-      shade = 0.9;
-    } else {
-      c = wallC;
-      // A skirting along the foot of every wall.
-      c *= mix(0.62, 1.0, step(0.1, p.y + vRoomA.w));
-      shade = t == tFar.x ? 0.72 : 0.84;
-    }
-    // Into the room the daylight falls off; the corners and edges in shade.
-    shade *= mix(1.0, 0.42, clamp(p.z / 7.0, 0.0, 1.0));
-    vec3 edge = min(p - lo, hi - p);
-    float nearEdge = t == tFar.x ? min(edge.y, edge.z) : t == tFar.y ? min(edge.x, edge.z) : min(edge.x, edge.y);
-    shade *= mix(0.55, 1.0, smoothstep(0.0, 0.6, nearEdge));
-    if (vRoomB.z > -0.5) {
-      // The piece of furniture: a box standing on the floor (the slab test).
-      vec3 flo = vec3(vRoomC.x - vRoomC.y, -vRoomA.w, vRoomC.z), fhi = vec3(vRoomC.x + vRoomC.y, -vRoomA.w + vRoomB.w, vRoomC.w);
-      vec3 fa = (flo - o) / d, fb = (fhi - o) / d;
-      vec3 fn = min(fa, fb), ff = max(fa, fb);
-      float tn = max(max(fn.x, fn.y), fn.z), tf = min(min(ff.x, ff.y), ff.z);
-      if (tn <= tf && tn > 0.0 && tn < t) {
-        vec3 q = o + d * tn;
-        c = furnitureTone[int(vRoomB.z + 0.5)];
-        shade = (tn == fn.y ? 0.95 : tn == fn.x ? 0.62 : 0.78) * mix(1.0, 0.45, clamp(q.z / 7.0, 0.0, 1.0));
-        // Its foot in its own shadow on the floor.
-        shade *= mix(0.7, 1.0, smoothstep(0.0, 0.25, q.y - flo.y));
-      }
-    }
-    roomSeen = c * shade * 0.9 + diffuseColor.rgb * 0.04;
-  } else {
-    float lot = vRoomLot;
-    vec3 wallC = mix(vec3(0.78, 0.72, 0.62), vec3(0.62, 0.68, 0.72), step(0.5, fract(lot * 5.3)));
-    wallC = mix(wallC, vec3(0.85, 0.8, 0.7), step(0.8, fract(lot * 2.9)));
-    float yy = vPane.y + 0.5, xx = vPane.x + 0.5;
-    vec3 room = wallC * (0.55 + 0.25 * yy);
-    room = mix(room, vec3(0.32, 0.24, 0.18), smoothstep(0.22, 0.12, yy));
-    room = mix(room, wallC * 1.05, smoothstep(0.86, 0.95, yy) * 0.6);
-    float side = step(0.45, fract(lot * 11.0)) > 0.5 ? xx : 1.0 - xx;
-    room = mix(room, vec3(0.86, 0.82, 0.74), step(0.62, fract(lot * 13.0)) * step(side, 0.22));
-    float furniture = step(0.5, fract(lot * 17.0)) * step(abs(xx - 0.55), 0.22) * step(yy, 0.42);
-    room = mix(room, vec3(0.28, 0.22, 0.18), furniture * 0.85);
-    roomSeen = mix(diffuseColor.rgb, room, 0.55);
-  }
-  // A pane a few pixels across or less: its own room, its dark or light
-  // glass and its own reflection averaged into one quiet tone. Each pane
-  // drawn as its own random shade was the "chuvisco" over every facade from
-  // the middle distance out (the player, 2026-10-09). Measured on screen
-  // (\`vPane\` spans the pane), so it holds at any zoom and lens.
-  float paneTiny = smoothstep(0.12, 0.45, max(fwidth(vPane.x), fwidth(vPane.y)));
-  roomSeen = mix(roomSeen, vec3(0.42, 0.45, 0.47), paneTiny);
-  // The glass itself scatters next to nothing: what a pane shows is the
-  // room through it (sent out below, \`roomDaylight\`) and its Fresnel
-  // reflection. Lit as a wall, the room took the sun on the facade and
-  // every sunny pane read as a painted beige panel.
-  diffuseColor.rgb *= 0.06;`)
-        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-  roughnessFactor = mix(roughnessFactor, 0.55, paneTiny);`)
-        .replace('#include <envmap_physical_pars_fragment>', `#include <envmap_physical_pars_fragment>`)
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  // Not every occupied room shows its light (blinds, a lamp in the next
-  // room): about a third stay dark, and the lit ones range from a dim lamp
-  // to a bright ceiling light - so a night tower reads as windows, not as a
-  // sheet of cream (the player, 2026-10-09: "incandescente").
-  float shown = step(fract(vRoomLot * 5.31), 0.64);
-  float level = 0.3 + 0.85 * fract(vRoomLot * 7.13) * fract(vRoomLot * 2.17 + 0.4);
-  float roomLit = shown * (vLit >= 0.0 ? vLit * level : step(0.34, vRoomLot) * level);
-  vec3 roomTint = mix(vec3(1.0), vec3(0.62, 0.78, 1.15), step(0.9, fract(vRoomLot * 3.71)));
-  // At night the lamp lights the room: its walls, floor and furniture seen, not a sheet of light.
-  totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.55, 0.0, 1.6));
-  totalEmissiveRadiance += roomSeen * roomDaylight;`);
-    };
-    glassy.customProgramCacheKey = () => `room-lights-awake-interior-v6-${kind}`;
-  }
+  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight });
   const shell = createFinishMaterials();
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
@@ -703,6 +519,7 @@ float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }`)
     dimShell,
     dimParts,
     massing,
+    finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun: without them
     // the shadow of every building is a lattice of lit windows.
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise']),

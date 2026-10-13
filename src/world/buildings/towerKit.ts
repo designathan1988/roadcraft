@@ -2,7 +2,7 @@ import type { Rng } from '@core/rng';
 import { m } from '../units';
 import type { BlueprintBody } from './blueprints';
 import { Model, mat } from './cityBuildings';
-import type { MaterialSpec } from './materials';
+import { GENERIC_SLAB, type MaterialSpec } from './materials';
 import type { BayComponent, BuildingElement, BuildingFunction, FacadePattern, RoofDetail, Side, Volume } from './types';
 
 /**
@@ -221,7 +221,7 @@ export function makeTower(spec: TowerSpec, rng: Rng): BlueprintBody {
   const strip = st.strip ? pick(rng, st.strip) : null;
   const base = pick(rng, st.base);
   const model = new Model(st.fn, st.use, rng.int(0, 7)).heights(st.ground, st.storey)
-    .look(wall, mat('concrete', 0x8a8a86), pick(rng, STONE_LIGHT));
+    .look(wall, mat('concrete', GENERIC_SLAB), pick(rng, STONE_LIGHT));
 
   // The podium: the street floors in the base material, shopfront or lobby glass.
   const podiumFill: BayComponent = st.use === 'commercial' ? 'shopfront' : 'wideWindow';

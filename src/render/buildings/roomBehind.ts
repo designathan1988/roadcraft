@@ -16,7 +16,7 @@ import { m } from '@world/units';
  * instance's +x runs, depth into the building, heights from the pane's
  * centre), metres:
  *   0 left, 1 right, 2 depth, 3 below,
- *   4 above, 5 stone floor (0 wood, 1 stone), 6 furniture kind (-1 none), 7 its height,
+ *   4 above, 5 floor (`FloorKind`), 6 furniture kind (-1 none), 7 its height,
  *   8 its centre across, 9 its half width across, 10 its near face, 11 its far face.
  */
 export const ROOM_FLOATS = 12;
@@ -57,11 +57,22 @@ function firstHit(walls: readonly number[], ox: number, oy: number, dx: number, 
   return best;
 }
 
-/** Homes and hotels have wooden floors above the street; everywhere else, stone (`buildingMesh.ts` `emitInterior`). */
-export function stoneFloor(b: Building, level: number): boolean {
+/** A floor's finish: 0 wood, 1 stone, 2 porcelain tiles. */
+export type FloorKind = 0 | 1 | 2;
+
+/**
+ * A storey's floor (`buildingMesh.ts` `emitInterior` and the windows alike):
+ * stone where people pass (shops, offices, the street floor), and in homes
+ * and hotels mostly light porcelain tiles - the floor of most Brazilian flats
+ * - some buildings in wood. All wood, every window seen from above showed
+ * a brown floor (the player, 2026-10-13).
+ */
+export function floorKind(b: Building, level: number): FloorKind {
   const homely = b.function === 'house' || b.function === 'townhouse' || b.function === 'apartments' ||
     b.function === 'residentialTower' || b.function === 'hotel' || (!b.function && b.use === 'residential');
-  return !(homely && level > 0 || b.function === 'house' || b.function === 'townhouse');
+  if (!(homely && level > 0 || b.function === 'house' || b.function === 'townhouse')) return 1;
+  // One building's floors alike, picked from its id.
+  return ((Math.imul(b.id + 7, 0x9e3779b1) >>> 0) % 10) < 3 ? 0 : 2;
 }
 
 /**
@@ -78,7 +89,7 @@ export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, lev
     const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
     walls.push(p.x, p.y, q.x, q.y);
   }
-  const stone = stoneFloor(b, level) ? 1 : 0;
+  const stone = floorKind(b, level);
   return (ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): number[] => {
     const px = ax + tx * a, py = ay + ty * a;
     const depth = Math.max(m(0.8), firstHit(walls, px - nx * m(0.02), py - ny * m(0.02), -nx, -ny, MOST_DEEP));

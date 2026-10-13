@@ -7,7 +7,7 @@ import { deriveSpaces } from '@world/buildings/spaces';
 import { slotFor } from './lightSlots';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
-import { ROOM_FLOATS, roomsOfStorey, stoneFloor } from './roomBehind';
+import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
   type BufferAttribute,
@@ -898,14 +898,34 @@ function emitBuilding(
     const y0 = Math.max(core.y, best.y + inset), y1 = Math.min(core.y + u, best.y + best.d - inset);
     if (x1 - x0 < m(1) || y1 - y0 < m(1)) continue;
     // The machine room clad in the building's own skin: a white box on
-    // every tower top read as a separate thing set on it.
-    e.box(x0, y0, x1, y1, z, z + m(3), best.dress ? wallOf(best, 0) : trim, ROOF_PLANT);
+    // every tower top read as a separate thing set on it. Masonry under a
+    // glass skin: a lift's machine room is a closed room, never glazed.
+    const skin = best.dress ? wallOf(best, 0) : trim;
+    e.box(x0, y0, x1, y1, z, z + m(3), skin.finish === 'glass' ? MACHINE_ROOM : skin, ROOF_PLANT);
   }
   return floor;
 }
 
 const FLOOR_FINISH = paint({ finish: 'stone', colour: 0xb9b2a5 });
+/** A machine room's walls where the building's skin is glass: rendered blockwork. */
+const MACHINE_ROOM = paint({ finish: 'concrete', colour: 0xa7a49c });
+/** A parapet's metal coping: aluminium flashing. */
+const ALUMINIUM_COPING = paint({ finish: 'metal', colour: 0xb9bcbd });
+
+/**
+ * A parapet's coping: the trim where it is a masonry moulding of a quiet
+ * colour (a stone or rendered cap); a metal flashing - aluminium - where the
+ * trim is metal or glass or a strong colour. Every tower was capped by a band
+ * of pure blue or green paint (the player, 2026-10-13).
+ */
+function copingOf(trim: Paint): Paint {
+  const [r, g, b] = trim.rgb;
+  const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+  const strong = hi > 1e-6 && (hi - lo) / hi > 0.45;
+  return trim.finish === 'metal' || trim.finish === 'glass' || strong ? ALUMINIUM_COPING : trim;
+}
 const WOOD_FLOOR = paint({ finish: 'wood', colour: 0xa27548 });
+const PORCELAIN_FLOOR = paint({ finish: 'stone', colour: 0xd9d3c7 });
 const SHAFT = paint({ finish: 'concrete', colour: 0xb9b6ae });
 const CAB = paint({ finish: 'metal', colour: 0x9aa3a8 });
 const STEP = paint({ finish: 'stone', colour: 0xc9c2b3 });
@@ -922,7 +942,8 @@ function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void
   // on a split level (`Volume.lift`).
   const zAt = (x: number, y: number): number => floor + liftAt(b, cut, x, y) + levelElevation(b, cut);
   // Homes and hotels have wooden floors; everywhere else, stone (the windows show the same, `roomBehind.ts`).
-  const floorLook = stoneFloor(b, cut) ? FLOOR_FINISH : WOOD_FLOOR;
+  const kind = floorKind(b, cut);
+  const floorLook = kind === 1 ? FLOOR_FINISH : kind === 2 ? PORCELAIN_FLOOR : WOOD_FLOOR;
   for (const v of b.volumes) {
     if (v.mode === 'void' || v.mode === 'intersect' || v.open) continue;
     if (!(v.base <= cut && volumeTop(v) > cut)) continue;
@@ -1117,17 +1138,15 @@ function emitBay(
   switch (bay.component) {
     case 'window':
     case 'sashWindow': {
-      // No two rows alike: some rooms darker, some curtained, some with the
-      // roller shutter part way down - picked from the bay, so stable.
+      // No two rows alike: some rooms darker, some with the roller shutter
+      // part way down - picked from the bay, so stable. The curtains are the
+      // glass's (`kit.ts`, the room behind the pane: folds, weave, the light
+      // through them): as flat boxes they were slabs of cream paint.
       const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
       e.put(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      // The curtains and the shutter a little inside the frame's edges: as
-      // wide as it, their sides lay in the frame's own and fought it for depth.
-      if (pick >= 5 && pick < 9) {
-        const side = w * 0.26;
-        e.put('curtain', f, o.a0 + PART_INSET + side / 2, hm, o.depth - m(0.015), side, h - 2 * PART_INSET, m(0.01));
-        e.put('curtain', f, o.a1 - PART_INSET - side / 2, hm, o.depth - m(0.015), side, h - 2 * PART_INSET, m(0.01));
-      } else if (pick >= 9 && pick < 13) {
+      // The shutter a little inside the frame's edges: as wide as it, its
+      // sides lay in the frame's own and fought it for depth.
+      if (pick >= 9 && pick < 13) {
         const down = h * (0.25 + (pick - 9) * 0.15) - PART_INSET;
         e.put('shutter', f, am, o.h1 - PART_INSET - down / 2, o.depth - m(0.05), w - 2 * PART_INSET, down, m(0.04));
       }
@@ -2942,7 +2961,16 @@ function emitPolygonRoof(
     const f: BayFace = { ...sideFrame(v, side, 0), z0: z, W: frame.length, H: PARAPET_H };
     if (v.roof === 'flat' || v.roof === 'terrace') {
       if (v.roof === 'terrace') e.put('roofRailing', f, frame.length / 2, 0, m(.12), frame.length, m(1), 1);
-      else e.rect(f, 0, frame.length, 0, PARAPET_H, 0, e.N(f.nx, f.ny), wallOf(side));
+      else {
+        // A wall with two faces and a top, as the square blocks' parapets
+        // (\`emitRoof\`): drawn by its outer face alone, from the roof it was
+        // not there at all - a band floating round the tower (the player,
+        // 2026-10-13: "faces que não existem do outro lado").
+        const out = e.N(f.nx, f.ny);
+        e.rect(f, 0, frame.length, 0, PARAPET_H, 0, out, wallOf(side));
+        e.rect(f, 0, frame.length, 0, PARAPET_H, PARAPET_T, [-out[0], -out[1], 0], shaded(roofColour, 0.9));
+        e.strip(f, 0, frame.length, PARAPET_H, -m(0.05), PARAPET_T + m(0.05), [0, 0, 1], copingOf(trim));
+      }
     }
   }
   if (v.roof === 'flat' || v.roof === 'terrace') emitCornice(e, v, z, trim);
@@ -2999,10 +3027,15 @@ function emitRoof(
           } else {
             const out = e.N(face.nx, face.ny);
             e.rect(face, 0, W, 0, ph, 0, out, wallOf(side));
-            e.rect(face, 0, W, 0, ph, PARAPET_T, [-out[0], -out[1], 0], shaded(wallOf(side), 0.82));
+            // Its inner face is the roof's membrane carried up the parapet
+            // (a flat roof's membrane is "fully adhered up and over parapet
+            // walls"), not the facade: a glass tower's parapet was black
+            // glass inside.
+            e.rect(face, 0, W, 0, ph, PARAPET_T, [-out[0], -out[1], 0], shaded(roofColour, 0.9));
             // The coping: proud of both faces, so the rain drips clear of them.
-            e.strip(face, 0, W, ph, -m(0.05), PARAPET_T + m(0.05), up, trim);
-            e.rect(face, 0, W, ph - m(0.06), ph, -m(0.05), out, shaded(trim, 0.9));
+            const coping = copingOf(trim);
+            e.strip(face, 0, W, ph, -m(0.05), PARAPET_T + m(0.05), up, coping);
+            e.rect(face, 0, W, ph - m(0.06), ph, -m(0.05), out, shaded(coping, 0.9));
           }
         }
       }

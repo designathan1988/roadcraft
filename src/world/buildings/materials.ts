@@ -110,6 +110,14 @@ export function wallMaterial(b: Building, v: Volume, side: FaceId, storey?: numb
 }
 
 /**
+ * The slab the generator gives a tower or an office block (`procedural.ts`,
+ * `towerKit.ts`): no finish of its own, a placeholder for "a flat roof". On a
+ * flat roof it stands for any of `FLAT_ROOFS`; given as it is, 175 tower tops
+ * were one identical grey (the player, 2026-10-13).
+ */
+export const GENERIC_SLAB = 0x8a8a86;
+
+/**
  * Flat roofs as a town has them: tar-dark membrane, grey membrane, white
  * reflective sheet, beige gravel, bare concrete slab. One per building, by
  * its id - a whole town under one grey membrane read as a model, not a place.
@@ -131,7 +139,7 @@ export function roofMaterial(b: Building, v: Volume): MaterialSpec {
   // the clay tile or slate a style keeps for its pitched roofs. Given the
   // building's tile, every tower top read as a dark striped lid, and the
   // tile's courses shimmered from above (the player, 2026-10-09: "noise").
-  if (own && own.finish !== 'tile' && own.finish !== 'slate') return own;
+  if (own && own.finish !== 'tile' && own.finish !== 'slate' && !(own.finish === 'concrete' && own.colour === GENERIC_SLAB)) return own;
   const pick = (Math.imul((b.id | 0) + 7, 2654435761) >>> 0) % FLAT_ROOFS.length;
   return FLAT_ROOFS[pick]!;
 }

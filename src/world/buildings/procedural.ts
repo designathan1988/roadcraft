@@ -5,7 +5,7 @@ import type { BlueprintBody } from './blueprints';
 import { type ArchStyle, type Era, type GroundRole, STYLES, composeFacades, paintsOf, stoneBaseOf, styleFor } from './architecture';
 import { Model, mat } from './cityBuildings';
 import { elementClash } from './elements';
-import type { MaterialSpec } from './materials';
+import { GENERIC_SLAB, type MaterialSpec } from './materials';
 import { type BayComponent, type Building, type BuildingElement, type BuildingFunction, type RoofKind, type Volume, MIN_PITCH } from './types';
 
 /**
@@ -689,7 +689,7 @@ function office(rng: Rng, env: Envelope): MadeBuilding {
   const { W, D } = env;
   const style = styleFor('office', rng, env.character, env.era);
   const paints = paintsOf(style, rng);
-  const model = new Model('office', 'commercial', rng.int(0, 7)).heights(between(rng, 4.5, 5.5), between(rng, 3.4, 3.9)).look(paints.wall, mat('concrete', 0x8a8a86), paints.trim);
+  const model = new Model('office', 'commercial', rng.int(0, 7)).heights(between(rng, 4.5, 5.5), between(rng, 3.4, 3.9)).look(paints.wall, mat('concrete', GENERIC_SLAB), paints.trim);
   const floors = rng.int(8, 24);
   const w = half(W), d = half(D);
   let form = 'office:slab';

@@ -1,5 +1,5 @@
 import { planRoofPlant, type RoofPlantItem } from '@world/buildings/roofPlant';
-import type { Building, Volume } from '@world/buildings/types';
+import { type Building, type Volume, volumeTop } from '@world/buildings/types';
 import { m } from '@world/units';
 
 /**
@@ -31,6 +31,7 @@ export function roofPlantOf(b: Building, v: Volume): readonly RoofPlantItem[] {
     // A new town's buildings are of every vintage: the seed stands in for the years.
     age: age > 0 ? age : (((b.id * 2_246_822_519) >>> 0) % 1000) / 1000,
     hasCore: b.cores.length > 0,
+    blocked: b.volumes.filter((o) => o !== v && !o.open && o.base === volumeTop(v)).map((o) => ({ x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.d })),
   });
 }
 

@@ -59,6 +59,12 @@ export interface RoofSite {
   readonly age: number;
   /** A lift core drawn by the building itself (no machine room to add). */
   readonly hasCore: boolean;
+  /**
+   * The blocks standing on this roof (a setback, a tower on its podium), in
+   * the same frame: nothing is put in them or against their walls - a
+   * skylight stood in a block's wall, the two faces fighting (2026-10-13).
+   */
+  readonly blocked?: readonly { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }[];
 }
 
 interface Kind {
@@ -71,6 +77,13 @@ interface Kind {
   readonly most: number;
   /** Chance of one (and of each further one), by the site. */
   readonly chance: (s: RoofSite, area: number) => number;
+  /**
+   * Plant that grows with the floor it serves: one piece for this many square
+   * metres of roof, times its chance - a big roof carries a field of
+   * condensers and fans, not the same three as a small one (the player,
+   * 2026-10-13: "o topo dos prédios são todos iguais"). Up to `most` x 6.
+   */
+  readonly perArea?: number;
 }
 
 const USE = (s: RoofSite, r: number, c: number, i: number): number => (s.use === 'residential' ? r : s.use === 'industrial' ? i : c);
@@ -82,13 +95,14 @@ const CATALOGUE: readonly Kind[] = [
   { kind: 'tankBox', w: 3.2, d: 2.4, h: 2.2, most: 1, chance: (s) => (s.storeys >= 6 ? USE(s, 0.7, 0.5, 0.2) : 0) },
   { kind: 'tank', w: 1.9, d: 1.9, h: 1.5, most: 2, chance: (s) => (s.storeys < 6 ? USE(s, 0.75, 0.55, 0.35) : USE(s, 0.25, 0.2, 0.2)) },
   { kind: 'hatch', w: 0.9, d: 0.9, h: 0.45, most: 1, chance: () => 0.9 },
-  { kind: 'airHandler', w: 3.4, d: 1.8, h: 1.6, most: 2, chance: (s, a) => (a > 150 ? USE(s, 0.05, 0.55, 0.35) : 0) },
-  { kind: 'condenser', w: 0.9, d: 0.8, h: 0.85, most: 6, chance: (s) => USE(s, 0.35, 0.6, 0.3) * (0.6 + 0.6 * (1 - s.age)) },
+  { kind: 'airHandler', w: 3.4, d: 1.8, h: 1.6, most: 2, perArea: 260, chance: (s, a) => (a > 150 ? USE(s, 0.1, 0.8, 0.5) : 0) },
+  { kind: 'condenser', w: 0.9, d: 0.8, h: 0.85, most: 6, perArea: 30, chance: (s) => USE(s, 0.5, 0.8, 0.35) * (0.6 + 0.6 * (1 - s.age)) },
   { kind: 'solar', w: 4.6, d: 3.4, h: 0.4, most: 3, chance: (s) => USE(s, 0.3, 0.2, 0.45) * (1.3 - s.age) },
-  { kind: 'mast', w: 0.6, d: 0.6, h: 3.5, most: 1, chance: (s) => USE(s, 0.45, 0.25, 0.1) * (0.4 + s.age) },
-  { kind: 'dish', w: 0.9, d: 0.7, h: 1.2, most: 2, chance: (s) => USE(s, 0.35, 0.2, 0.05) },
+  // Telephone masts on a tall block (the antennas of a cell site), aerials on the old ones.
+  { kind: 'mast', w: 0.6, d: 0.6, h: 3.5, most: 3, chance: (s) => (s.storeys >= 10 ? 0.7 : USE(s, 0.45, 0.25, 0.1) * (0.4 + s.age)) },
+  { kind: 'dish', w: 0.9, d: 0.7, h: 1.2, most: 2, perArea: 180, chance: (s) => USE(s, 0.6, 0.3, 0.05) },
   { kind: 'skylight', w: 1.2, d: 1.2, h: 0.25, most: 6, chance: (s) => USE(s, 0.15, 0.25, 0.7) },
-  { kind: 'vent', w: 0.7, d: 0.7, h: 0.9, most: 5, chance: (s) => USE(s, 0.1, 0.3, 0.75) },
+  { kind: 'vent', w: 0.7, d: 0.7, h: 0.9, most: 5, perArea: 70, chance: (s) => USE(s, 0.1, 0.6, 0.75) },
   { kind: 'chimney', w: 0.9, d: 0.9, h: 4.5, most: 1, chance: (s) => USE(s, 0, 0, 0.3) },
 ];
 
@@ -128,10 +142,16 @@ export function planRoofPlant(site: RoofSite): RoofPlantItem[] {
     for (let j = Math.max(0, j0); j < Math.min(ny, j1); j++) for (let i = Math.max(0, i0); i < Math.min(nx, i1); i++) used[j * nx + i] = 1;
   };
   const clear = Math.ceil(CLEAR / CELL);
+  for (const r of site.blocked ?? []) {
+    take(Math.floor((r.x0 - gx0) / CELL) - clear, Math.floor((r.y0 - gy0) / CELL) - clear, Math.ceil((r.x1 - gx0) / CELL) + clear, Math.ceil((r.y1 - gy0) / CELL) + clear);
+  }
   const out: RoofPlantItem[] = [];
   for (const k of CATALOGUE) {
     let p = Math.min(1, k.chance(site, area));
-    for (let n = 0; n < k.most && rnd() < p; n++) {
+    // By the roof's area: so many pieces, each one placed (none fading out).
+    const target = k.perArea ? Math.min(k.most * 6, Math.round((area / k.perArea) * p + rnd() * 0.8)) : -1;
+    if (target >= 0) p = 1;
+    for (let n = 0; target >= 0 ? n < target : n < k.most && rnd() < p; n++) {
       const variant = Math.floor(rnd() * 4);
       // Arrays and air handlers sized by the roof and the variant; turned a quarter at random.
       const scale = k.kind === 'solar' ? 0.7 + variant * 0.25 : 1;
@@ -151,7 +171,7 @@ export function planRoofPlant(site: RoofSite): RoofPlantItem[] {
       const [i, j] = at;
       take(i - clear, j - clear, i + ci + clear, j + cj + clear);
       out.push({ kind: k.kind, x0: gx0 + i * CELL, y0: gy0 + j * CELL, x1: gx0 + i * CELL + pw, y1: gy0 + j * CELL + pd, h: m(k.h), variant });
-      p *= 0.6;
+      if (target < 0) p *= 0.6;
     }
   }
   return out;

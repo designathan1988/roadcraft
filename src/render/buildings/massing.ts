@@ -8,7 +8,7 @@ import {
   bayWidth, coveredSpans, exposedParts, type FacadeBay, facadeBays, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
   sawtoothRun, shedFall, sideLength, sideStart, volumeHeight,
 } from '@world/buildings/geometry';
-import { type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
+import { type Finish, type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
 import { type BayComponent, type Building, type FaceId, type LotSurface, type Volume, volumeTop } from '@world/buildings/types';
 import { lotSurfaces } from '@world/buildings/lots';
 import type { Vec2 } from '@core/vec2';
@@ -138,7 +138,11 @@ const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1
  * out as the detailed building's, `floorHeight`); null when it has no closed
  * block (a park) or its body is drawn by its own design (`signature.ts`).
  */
-export function emitMassing(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false): MassingChunk | null {
+export function emitMassing(
+  b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false,
+  /** Each finish's colour from afar (`finishes.ts` `finishAlbedo`): the detailed walls' tint times their texture's mean; none, the bare tint. */
+  tone?: Readonly<Record<Finish, readonly [number, number, number]>>,
+): MassingChunk | null {
   const resolved = resolveBlocks(b);
   const closed = resolved.volumes.filter((v) => !v.open);
   const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296);
@@ -147,7 +151,10 @@ export function emitMassing(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, 
   const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   if (floor !== undefined && !signature) {
     const shade = shadeOf(b);
-    const rgb = (spec: MaterialSpec): Rgb => rgbOf(spec.colour, shade);
+    const rgb = (spec: MaterialSpec): Rgb => {
+      const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
+      return t ? [c[0] * t[0], c[1] * t[1], c[2] * t[2]] : c;
+    };
     // The body as the detailed building draws it: its closed blocks alone (`buildingMesh.ts` `emitChunk`).
     const body = { ...resolved, volumes: closed };
     for (const v of closed) emitVolume(w, body, v, floor, rgb);
@@ -270,7 +277,9 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
       const spans = [...coveredSpans(b, v, side, top - 1), ...coveredSpans(b, v, side, top)].sort((p, q) => p[0] - q[0]);
       const spec = wallMaterial(b, v, side);
       const wall = rgb({ ...spec, finish: spec.finish === 'glass' ? 'concrete' : spec.finish });
-      const inner: Rgb = [wall[0] * 0.82, wall[1] * 0.82, wall[2] * 0.82];
+      // Inside, the roof's membrane carried up the parapet, as the detailed building has it (`buildingMesh.ts` `emitRoof`).
+      const roofTint = rgb(roofMaterial(b, v));
+      const inner: Rgb = [roofTint[0] * 0.9, roofTint[1] * 0.9, roofTint[2] * 0.9];
       const at = (a: number, depth: number, z: number): [number, number, number] => w.P(s.x + s.tx * a - f.nx * depth, s.y + s.ty * a - f.ny * depth, z);
       for (const [p0, p1] of exposedParts(spans, 0, sideLength(v, side))) {
         w.face([at(p0, 0, eaves), at(p1, 0, eaves), at(p1, 0, eaves + crown), at(p0, 0, eaves + crown)], w.N(f.nx, f.ny), wall);

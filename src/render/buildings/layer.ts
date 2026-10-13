@@ -275,7 +275,7 @@ export function createBuildingLayer(): BuildingLayer {
     const digest = digestFor(b, record, groundKey, groundAt, pavedAt);
     const known = masses.get(b.id);
     if (known && known.record === record && known.digest === digest) return known.mass;
-    const mass = emitMassing(b, groundAt, pavedAt, naturalAt, drawsSignature(b));
+    const mass = emitMassing(b, groundAt, pavedAt, naturalAt, drawsSignature(b), kit.finishTone);
     masses.set(b.id, { record, digest, mass });
     return mass;
   };
@@ -662,7 +662,7 @@ const FRAME_SIDE = m(0.06);
 /** A detail cell's frames and railings are drawn whole while a frame's side spans this many pixels (`cullDetails`). */
 const FULL_DETAIL_PIXELS = 0.4;
 const DETAIL_HYSTERESIS = 0.1;
-const DETAIL_PARTS: ReadonlySet<PartKind> = new Set(['frame', 'railing', 'roofRailing', 'louvre', 'curtain']);
+const DETAIL_PARTS: ReadonlySet<PartKind> = new Set(['frame', 'railing', 'roofRailing', 'louvre']);
 const COARSE_PARTS: ReadonlySet<PartKind> = new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind)));
 
 /**

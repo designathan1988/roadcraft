@@ -520,3 +520,38 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
   };
   material.customProgramCacheKey = () => `building-weathering-v3-${finish}`;
 }
+
+/**
+ * Each finish's colour as it reads from afar, three numbers to multiply a
+ * wall's tint by: the mean of its texture (the same recipe baked above,
+ * sampled on a lattice) and the light weathering every wall has
+ * (`applyWeathering`: about 9 % darker on average, none on glass). The far
+ * level of the buildings (`massing.ts`) paints its walls with it, as an HLOD
+ * proxy takes its colour from the materials it stands for (Unreal's merged
+ * materials): with the bare tint the town changed colour - brighter, more
+ * saturated - wherever a cell went far (the player, 2026-10-13).
+ */
+export function finishAlbedo(): Record<Finish, readonly [number, number, number]> {
+  const out = {} as Record<Finish, readonly [number, number, number]>;
+  const STEPS = 48;
+  for (const finish of FINISHES) {
+    const look = LOOKS[finish];
+    const shade = look.shade(look.size);
+    const texel = { r: 0, g: 0, b: 0, h: 0, rough: 0, metal: 0 };
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < STEPS; i++) {
+      for (let j = 0; j < STEPS; j++) {
+        texel.metal = 0;
+        shade(((i + 0.5) / STEPS) * look.size, ((j + 0.5) / STEPS) * look.size, texel);
+        r += texel.r; g += texel.g; b += texel.b;
+      }
+    }
+    const n = STEPS * STEPS;
+    const weathered = finish === 'glass' || finish === 'metal' ? 1 : WEATHERED_MEAN;
+    out[finish] = [(r / n) * weathered, (g / n) * weathered, (b / n) * weathered];
+  }
+  return out;
+}
+
+/** How dark the light weathering of every wall leaves it on average (`applyWeathering`, `d` of 0.3: 0.3 x (0.18 + 0.12 x 0.75 + a few streaks)). */
+const WEATHERED_MEAN = 0.91;
