@@ -986,6 +986,10 @@ export function createSceneRenderer(
   let plantedForest: NatureForest | null = null;
   let plantedFor = '';
   let natureTreesPending = true;
+  /** Whether the camera's pull in front of a building is still moving (`isoViewport.ts` `settle`): draw again. */
+  let cameraEasing = false;
+  /** The town's solids as filed for the camera, for the light shut out of the streets (`canyonLight.ts`). */
+  let townSolids: (() => CameraSolids) | null = null;
   /**
    * The placements' two steps (`natureSweep`/`natureKeep`, `coverSweep`/
    * `coverKeep`): each sweep with the key it was made for, the inputs the
@@ -1982,6 +1986,8 @@ export function createSceneRenderer(
 
   const applyQuality = (level: QualityLevel): void => {
     quality = QUALITY[level];
+    // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
+    terrain.setVegetation?.(quality.vegetation);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio));
     renderer.shadowMap.enabled = quality.shadows;
     materials.setDetail(quality.surfaceDetail);
@@ -2633,7 +2639,7 @@ export function createSceneRenderer(
     strikeAt: (x, y) => strikeAt(x, y),
     onStrike(listener) { strikeListeners.push(listener); },
     cloudDrift: () => cloudDrift,
-    busy: () => (fx?.busy() ?? false) || natureTreesPending,
+    busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,
     forgetRuin(id) { fx?.forgetRuin(id); },
     setTransitXray(on) {
@@ -2711,6 +2717,7 @@ export function createSceneRenderer(
       // stops and steps it, `setEffectsSpeed` / `stepEffects`).
       const fxDt = fx ? fx.clock(wallDt) : 0;
       lastWall = wallNow;
+      cameraEasing = rig.settle(wallDt);
       if (canvas.clientWidth !== lastWidth || canvas.clientHeight !== lastHeight) {
         lastWidth = canvas.clientWidth;
         lastHeight = canvas.clientHeight;
@@ -3064,7 +3071,7 @@ export function createSceneRenderer(
         }
       }
 
-      // The perspective camera kept out of the buildings (\`IsoRig.setSolids\`):
+      // The perspective camera kept out of the buildings (`IsoRig.setSolids`):
       // filed again only when a building changes.
       // Filed again only when a building or the ground changed, and only when
       // the camera asks (it reads them in the street, never from above): a
@@ -3083,15 +3090,19 @@ export function createSceneRenderer(
           return floor;
         };
         let solids: CameraSolids | null = null;
-        rig.setSolids((x, y) => {
+        const filed = (): CameraSolids => {
           if (!solids) {
             const t0 = performance.now();
             solids = cameraSolids(net.doc.buildings.all(), floorOf);
             performance.measure('camera:solids', { start: t0 });
           }
-          return solids.floorAt(x, y);
-        });
+          return solids;
+        };
+        rig.setSolids((x, y) => filed().floorAt(x, y));
+        townSolids = filed;
       }
+      // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
+      post.followTown(rig.target.x, -rig.target.z, townSolids, cameraSolidsFor);
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
       const plantMap = rig.viewport.zoom < PLANT_MAP_ZOOM;
       // Keep the full facade at street zoom: the planar far mesh loses frames

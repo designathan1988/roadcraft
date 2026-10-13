@@ -4,13 +4,14 @@ import { createIsoRig } from '@render/isoViewport';
 import { m } from '@world/units';
 
 /**
- * THE CAMERA DOES NOT SHAKE AMONG THE BUILDINGS. Close up, the eye was
- * pulled in front of any building that came between it and the point looked
- * at; as a drag carried a tower's corner into the sightline the eye jumped
- * 7.8 m in a frame (the player, 2026-10-13: "a câmera fica tripidando").
- * A steady drag along a row of towers between the eye and the point looked
- * at moves the eye with the drag - never more in a frame than the drag and
- * a little - and never into a building.
+ * THE CAMERA DOES NOT SHAKE AMONG THE BUILDINGS. Close up, the eye is
+ * brought in front of a building that stands between it and the point looked
+ * at; taken whole in every frame, every tower corner a drag carried through
+ * the sightline jerked the eye 7.8 m in a frame, back and forth (the player,
+ * 2026-10-13: "a câmera fica tripidando"). Timed as Cinemachine's Deoccluder
+ * times it (`settle`): a building that only crosses the sightline moves
+ * nothing; one that stays in the way brings the eye in once, held, and out
+ * again - never back and forth.
  */
 const W = 1280;
 const H = 720;
@@ -24,27 +25,59 @@ function towers(x: number, y: number): number {
   return m(41) - m(41) * (t * t * (3 - 2 * t));
 }
 
+function street() {
+  const rig = createIsoRig({ x: 0, y: 0 }, m(4));
+  rig.resize(W, H);
+  rig.setGround(() => 0);
+  rig.setSolids(towers);
+  rig.setPerspective(true);
+  // Looking across the towers, from low over the street.
+  rig.viewport.setOrbit(-Math.PI / 2, 0.35);
+  return rig;
+}
+
 describe('the camera among buildings', () => {
-  it('moves smoothly while a drag carries its sightline across roof after roof', () => {
-    const rig = createIsoRig({ x: 0, y: 0 }, m(4));
-    rig.resize(W, H);
-    rig.setGround(() => 0);
-    rig.setSolids(towers);
-    rig.setPerspective(true);
-    // Looking across the towers, from low over the street.
-    rig.viewport.setOrbit(-Math.PI / 2, 0.35);
-    const step = m(0.25);
+  it('does not move for towers a quick drag carries through the sightline', () => {
+    const rig = street();
+    const step = m(1.5);
     let last = rig.viewport.eye!;
     let worst = 0;
-    for (let frame = 0; frame < 600; frame++) {
+    for (let frame = 0; frame < 240; frame++) {
       rig.viewport.slide(step, 0);
+      rig.settle(1 / 60);
       const eye = rig.viewport.eye!;
       worst = Math.max(worst, Math.hypot(eye.x - last.x, eye.y - last.y, eye.z - last.z));
-      // Never inside a tower.
       expect(eye.z).toBeGreaterThanOrEqual(towers(eye.x, eye.y) - 1e-6);
       last = eye;
     }
-    // A frame's move: the drag's step and a fraction of the eye's distance, never a jump of metres.
-    expect(worst).toBeLessThan(step * 4);
+    // Each frame the drag's own step and a little: no jump of metres.
+    expect(worst).toBeLessThan(step * 1.6);
+  });
+
+  it('never goes back and forth while a slow drag passes tower after tower', () => {
+    const rig = street();
+    const reach = (): number => {
+      const e = rig.viewport.eye!, c = rig.viewport.centre;
+      return Math.hypot(e.x - c.x, e.y - c.y, e.z);
+    };
+    let last = reach();
+    let trend = 0;
+    let turns = 0;
+    const frames = 1200;
+    for (let frame = 0; frame < frames; frame++) {
+      rig.viewport.slide(m(0.25), 0);
+      rig.settle(1 / 60);
+      const now = reach();
+      const d = now - last;
+      if (Math.abs(d) > 0.01) {
+        const sign = Math.sign(d);
+        if (trend !== 0 && sign !== trend) turns++;
+        trend = sign;
+      }
+      last = now;
+    }
+    // Ten towers passed: in and out once each at most, never a shake.
+    const passed = (frames * m(0.25)) / m(30);
+    expect(turns).toBeLessThanOrEqual(Math.ceil(passed) * 2 + 2);
   });
 });

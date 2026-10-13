@@ -11,7 +11,7 @@ import type { Vec2 } from '@core/vec2';
 import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { m } from '@world/units';
 import type { Facing, Viewport } from '@view/viewport';
-import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, viewDistance } from '@view/cameraProfile';
+import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, pullWeight, viewDistance } from '@view/cameraProfile';
 
 /**
  * Close inspection of pedestrian faces, gaits and the people inside vehicles.
@@ -96,8 +96,24 @@ export interface IsoRig {
    * building without a jump and never blocked.
    */
   setSolids(floorAt: ((x: number, y: number) => number) | null): void;
+  /**
+   * One frame of the pull's own time, `dt` seconds, as Cinemachine's
+   * Deoccluder times it: nothing until a building has stood in the way
+   * `PULL_WAIT` ("Minimum Occlusion Time"), then eased in ("Damping When
+   * Occluded"), held at the nearest point ("Smoothing Time"), eased back out
+   * ("Damping"). Whether it is still moving (draw again).
+   */
+  settle(dt: number): boolean;
 }
 
+/** The pull in front of a building (`apply`): samples along the line of sight, and how deep in a building's margin one weighs whole. */
+const PULL_SAMPLES = 48;
+const PULL_SOFT = m(1.5);
+/** Cinemachine Deoccluder's Minimum Occlusion Time, Damping When Occluded, Smoothing Time and Damping (`settle`), seconds. */
+const PULL_WAIT = 0.35;
+const PULL_IN = 0.12;
+const PULL_HOLD = 0.4;
+const PULL_OUT = 0.6;
 /** How far over the ground under it the perspective camera keeps, units. */
 const GROUND_CLEARANCE = m(1.6);
 
@@ -194,13 +210,42 @@ export function createIsoRig(
     // 2026-10-10; master 2feec96a): three's `lookAt` keeps the part of `up`
     // across the view, and looking up that direction falls DOWN the screen.
     camera.up.set(-Math.cos(azimuth) * Math.sin(elevation), Math.cos(elevation), -Math.sin(azimuth) * Math.sin(elevation));
-    // A building between the eye and the point looked at is left there, as
-    // in a city builder's camera (Cities: Skylines): the eye was pulled in
-    // front of it, and when a tower's corner slid into the sightline the eye
-    // jumped metres in a frame - there is no way from behind a tower to in
-    // front of it but through it (`tests/render/cameraPull.spec.ts`; the
-    // player, 2026-10-13: "a câmera fica tripidando"). The eye is only kept
-    // out of the buildings themselves, below.
+    // Never behind a building from the point looked at, close up: the eye is
+    // brought in along the line of sight to just short of the building that
+    // stands between (camera-controls' `_collisionTest`; Cinemachine's
+    // Deoccluder, "Pull Camera Forward"). Each sample of the sightline weighs
+    // by how deep it stands in a building's margin (`cameraSolids.ts` eases
+    // its floor down over 2 m round the walls), so the pull grows as a
+    // corner comes in rather than flipping from nothing to metres. And it is
+    // taken as the Deoccluder takes it (`settle`): only once the building
+    // has stood in the way a moment, eased in, held, eased back out. Taken
+    // whole in every frame, every corner a drag carried through the sightline
+    // jerked the eye by metres and the camera shook (the player,
+    // 2026-10-13: "a câmera fica tripidando").
+    const pull = camera === persp && solidsAt ? pullWeight(halfHeight) : 0;
+    let wanted = 0;
+    if (pull > 0 && solidsAt) {
+      const floorAt = solidsAt;
+      const clear1 = target.y >= floorAt(target.x, -target.z);
+      if (clear1) {
+        for (let i = 0; i < PULL_SAMPLES; i++) {
+          const t = i / PULL_SAMPLES;
+          const x = camera.position.x + (target.x - camera.position.x) * t;
+          const y = camera.position.y + (target.y - camera.position.y) * t;
+          const z = camera.position.z + (target.z - camera.position.z) * t;
+          const deep = floorAt(x, -z) - y;
+          if (deep <= 0) continue;
+          const k = Math.min(1, deep / PULL_SOFT);
+          wanted = Math.max(wanted, k * k * (3 - 2 * k) * Math.min(1, t + 1 / PULL_SAMPLES) * pull);
+        }
+      }
+    }
+    pullWanted = wanted;
+    if (pullShown < 0) pullShown = wanted;
+    if (pullShown > 1e-6) {
+      camera.position.lerp(target, pullShown);
+      persp.near = Math.max(m(0.08), camera.position.distanceTo(target) * 0.02);
+    }
     if (camera === persp && solidsAt) {
       // At any distance, never inside a building: the eye stood inside the
       // towers it orbited, the walls cut by the near plane (the player,
@@ -246,6 +291,12 @@ export function createIsoRig(
   };
   /** The view's scale at the centre, as `apply` last set it. */
   let scaleNow = 1;
+  /** The pull as `apply` last found it wanted, and as shown (-1: not yet). */
+  let pullWanted = 0;
+  let pullShown = -1;
+  /** Seconds a building has stood in the way, and seconds the nearest point is still held. */
+  let pullBlocked = 0;
+  let pullHold = 0;
   /** The drawn ground's height at a map point (`setGround`). */
   let groundAt: ((x: number, y: number) => number) | null = null;
   /** The lowest the eye may stand over buildings (`setSolids`). */
@@ -445,6 +496,27 @@ export function createIsoRig(
     setGround(next) {
       groundAt = next;
       apply();
+    },
+    settle(dt) {
+      if (pullShown < 0 || dt <= 0) return false;
+      const gap = pullWanted - pullShown;
+      if (Math.abs(gap) < 1e-4) {
+        pullBlocked = 0;
+        if (gap !== 0) { pullShown = pullWanted; apply(); }
+        return false;
+      }
+      if (gap > 0) {
+        pullBlocked += dt;
+        if (pullBlocked < PULL_WAIT) return true;
+        pullShown += gap * (1 - Math.exp(-dt / PULL_IN));
+        pullHold = PULL_HOLD;
+      } else {
+        pullBlocked = 0;
+        if (pullHold > 0) { pullHold -= dt; return true; }
+        pullShown += gap * (1 - Math.exp(-dt / PULL_OUT));
+      }
+      apply();
+      return true;
     },
     setSolids(next) {
       solidsAt = next;

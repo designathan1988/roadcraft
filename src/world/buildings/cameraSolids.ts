@@ -45,6 +45,15 @@ interface Solid {
 export interface CameraSolids {
   /** The lowest the eye may stand at (x, y), world height; -Infinity away from every building. */
   floorAt(x: number, y: number): number;
+  /**
+   * Every solid volume filed in the cells over a map rectangle, as its
+   * building's frame (origin, cos, sin), its box in that frame and its roof's
+   * world height (no clearance): for the light the town shuts out of its
+   * streets (`render/canyonLight.ts`). A volume over several cells comes more
+   * than once.
+   */
+  forEachIn(x0: number, y0: number, x1: number, y1: number,
+    visit: (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void): void;
 }
 
 const smoothstep = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -83,6 +92,13 @@ export function cameraSolids(buildings: Iterable<Building>, floorOf: (b: Buildin
     }
   }
   return {
+    forEachIn(x0, y0, x1, y1, visit) {
+      for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
+        for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
+          for (const s of cells.get(key(cx, cy)) ?? []) visit(s.bx, s.by, s.cos, s.sin, s.x0, s.y0, s.x1, s.y1, s.top - CLEARANCE);
+        }
+      }
+    },
     floorAt(x, y) {
       const list = cells.get(key(Math.floor(x / CELL), Math.floor(y / CELL)));
       if (!list) return -Infinity;

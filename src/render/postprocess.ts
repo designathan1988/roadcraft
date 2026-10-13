@@ -16,6 +16,8 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 import type { QualityLevel, QualitySettings } from './quality';
 import { fullScreenTriangle } from './uploads';
+import { createCanyonLight } from './canyonLight';
+import type { CameraSolids } from '@world/buildings/cameraSolids';
 
 /**
  * The post chain: ambient occlusion, then anti-aliasing, then tone mapping.
@@ -63,6 +65,11 @@ export interface PostChain {
    * (`SceneEnvironment.directShare`): all a cloud's shadow can take away.
    */
   setDirectShare(share: number): void;
+  /**
+   * The view's centre (map x, y) and the town's solids with their key: the
+   * light the buildings shut out of the streets follows (`canyonLight.ts`).
+   */
+  followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, key: string): void;
   /**
    * The sky the player set (`Atmosphere`) and the light it is lit by; the
    * map is seen as a model over the void, the air round it drawn too: the
@@ -125,6 +132,9 @@ export function createPostChain(
       },
       setDirectShare() {
         /* no cloud shadows without the chain */
+      },
+      followTown() {
+        /* no street light without the chain */
       },
       setAtmosphere() {
         /* no clouds or mist without the chain */
@@ -257,6 +267,19 @@ export function createPostChain(
       console.error('Ambient occlusion shader precompile failed', error);
     }).finally(() => quad.dispose()));
     renderer.setRenderTarget(previous);
+  }
+
+  // The light the town shuts out of its streets, and the sun's contact
+  // shadows (`canyonLight.ts`): after the small occlusion, before the bloom.
+  const canyon = quality.ambientOcclusion ? createCanyonLight(camera, () => sceneDepth) : null;
+  if (canyon) {
+    composer.addPass(canyon.pass);
+    const quad = fullScreenTriangle();
+    const warm = new Scene();
+    warm.add(new Mesh(quad, canyon.pass.material));
+    warming.push(renderer.compileAsync(warm, camera).catch((error: unknown) => {
+      console.error('Street light shader precompile failed', error);
+    }).finally(() => quad.dispose()));
   }
 
   // Light that is brighter than white spills a little round itself: the sun
@@ -461,7 +484,11 @@ export function createPostChain(
       (u['uGroundFog']!.value as Vector4).set(fog.density, 0, 0, 1);
       (u['uGroundFogSlab']!.value as Vector2).set(fog.low - 2, fog.high);
     },
+    followTown(cx, cy, solids, key) {
+      canyon?.follow(cx, cy, solids, key);
+    },
     setAtmosphere(atmosphere, sun, skyColor, sunLight, eyeShift = 0) {
+      canyon?.setSun(sun, directShare);
       if (!clouds) return;
       const u = clouds.uniforms as Record<string, { value: unknown }>;
       u['uEyeShift']!.value = eyeShift;
@@ -481,6 +508,7 @@ export function createPostChain(
       historyValid = false;
     },
     dispose() {
+      canyon?.dispose();
       // After the programs built ahead are done (`warming`).
       void Promise.allSettled(warming).then(disposeAll);
     },
