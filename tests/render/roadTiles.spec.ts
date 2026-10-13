@@ -134,7 +134,7 @@ describe('road surface tiles', () => {
     expect(warm.built).toBeLessThan(15);
     const fresh = buildRoadSurfaces(net, elevation, materials, ground, reuseFor(() => elevation));
     expect(fingerprint(warm.group)).toBe(fingerprint(fresh.group));
-  }, 120_000);
+  });
 
   it('sends the GPU only the blocks of tiles an edit reaches, keeping the mesh of every other block', () => {
     // Every tile used to be merged into one mesh per surface on every edit and
@@ -185,7 +185,7 @@ describe('road surface tiles', () => {
     next.adopt();
     for (const mesh of next.meshes) expect(mesh.parent).toBe(next.group);
     expect(next.group.children.length).toBe(next.meshes.length);
-  }, 120_000);
+  });
 
   it('changes the solve only near a short street joined to a long one, and the cache stays exact over many edits', () => {
     // A street's whole profile was in the digest of every block it passes, so
@@ -199,7 +199,7 @@ describe('road surface tiles', () => {
     const reuse = reuseFor(() => elevation);
     buildRoadSurfaces(net, elevation, materials, ground, reuse);
     const middles = [...town.nodes.values()].filter((n) => n.incident.length === 2);
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < 2; k++) {
       const at = middles[(k * 7919) % middles.length]!;
       const before = elevation;
       town.addSegment(at.id, town.addNode({ x: at.x + 30 + 10 * k, y: at.y + 35 }).id, 1);
@@ -214,5 +214,5 @@ describe('road surface tiles', () => {
       const fresh = buildRoadSurfaces(net, elevation, materials, ground, reuseFor(() => elevation));
       expect(fingerprint(warm.group)).toBe(fingerprint(fresh.group));
     }
-  }, 240_000);
+  });
 });

@@ -330,22 +330,6 @@ export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
   return yard;
 }
 
-/** Every dock planned to the end (for probes and specs): how many a lorry can reach and leave, of how many. */
-export function dockReach(w: SimWorld, body: Steered): { reachable: number; total: number; yards: number } {
-  let reachable = 0, total = 0, yards = 0;
-  for (const b of w.doc.buildings.all()) {
-    const yard = yardOf(w, b, body);
-    if (!yard) continue;
-    yards++;
-    yard.docks.forEach((_, i) => {
-      total++;
-      while (!yard.planned(i)) yard.plan(i, 1e6);
-      if (yard.docks[i]!.gate >= 0) reachable++;
-    });
-  }
-  return { reachable, total, yards };
-}
-
 // ------------------------------------------------------------------ helpers
 
 const ASPHALT = new WeakMap<Network, { revision: number; polys: MultiPoly }>();

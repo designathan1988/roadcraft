@@ -177,3 +177,24 @@ waiting on a real timer. A profile of one slow spec (`queuedSwing`, seed 2: 300 
 ticks, 15.6 s) found no single hot spot: the time is the simulation itself (walking 18 %, vehicle
 integration 18 %, lane changes 15 %, obstacles 14 %), 0.87 ms a tick. The slow specs are slow because
 they simulate minutes of a town, not because of a fault; they are rewritten as small scenarios.
+
+## The slow specs rewritten (2026-10-13)
+44 of the 45 specs of `tests/slow.json` now run in the check, each test within 10 s: smaller worlds
+(the small generated city, a 12-block grid for the scale count, demand 1 where it is enough), shorter
+runs with a count proving the situation guarded did happen (vehicles queued, people met at
+crossings, a lane used, the events of a closed town at their measured times: a car parks at 53 s,
+leaves at 83 s, a person comes out of a gate at 105 s), one test per scenario, seed or fixture instead
+of one test over all of them, and a check counted then asserted once instead of an `expect` per
+vertex or per pair (an `expect` costs 5 µs, a comparison 0.004 µs). Measurement harnesses that only
+printed counts were deleted (`lorryDocks` "counts the docks", twice). Left: `lorryDocks`, 13 s of the
+simulation planning every yard's docks in the background, and a lorry that never docks with 6 or 12
+works in the block (src/sim, reported).
+
+Found while profiling, in the game's code (reported to the conversation working there):
+- `hybridAStar.run` and Reeds-Shepp inside `step` take half of a small closed town's tick time.
+- `rebuildTopology` measures every identical junction of a grid again (`conflictPoints.ts`
+  `pairTable` 45 %, `turnPaths.ts` `sweep` 30 %): 1.1 s for 36 junctions, 8.2 s for 256.
+
+The specs a change reaches (`vitest related`, the import graph of Vite) cut the check: a change in
+`src/render/water.ts` runs 30 spec files in 11 s; one in `src/sim/pipeline.ts` 65 files in about 70 s;
+every spec (`check:all`, the pre-push) about 110 s on four cores.

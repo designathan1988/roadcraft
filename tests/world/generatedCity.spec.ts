@@ -30,6 +30,6 @@ describe('generated city', () => {
       // 4. Roofs and halls of real proportion.
       expect(forms.wildRoofs, forms.examples.join('; ')).toBe(0);
       expect(forms.badHalls, forms.examples.join('; ')).toBe(0);
-    }, 600_000);
+    });
   }
 });

@@ -84,7 +84,7 @@ describe('a car parked in a lot', () => {
     w.pedestrianCount = 20;
     w.ambient.enabled = true;
     w.ambient.source = 'edges';
-    for (let i = 0; i < Math.round(60 / DT); i++) step(w, { traffic: true, pedestrians: true });
+    for (let i = 0; i < Math.round(10 / DT); i++) step(w, { traffic: true, pedestrians: true });
 
     const stalls = collectBays(w).filter((bay) => !bay.kerb);
     let checked = 0;
@@ -111,7 +111,8 @@ describe('a car parked in a lot', () => {
         }
       }
     }
+    console.log(`parkedInLot: ${checked} parked cars checked`);
     expect(checked).toBeGreaterThan(10);
     expect([...new Set(wrong)]).toEqual([]);
-  }, 300_000);
+  });
 });

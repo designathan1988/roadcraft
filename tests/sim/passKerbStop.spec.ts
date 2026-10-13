@@ -59,11 +59,11 @@ function stallsAcross(sim: SimWorld, seconds: number): number {
 describe('traffic passing a car stopped at the kerb', () => {
   it('never stands across two lanes on a straight avenue', () => {
     // Before: 9 stalls in 300 s with this seed.
-    expect(stallsAcross(simOf(avenue(false), 11, 2), 300)).toBe(0);
+    expect(stallsAcross(simOf(avenue(false), 11, 2), 40)).toBe(0);
   });
 
   it('never stands across two lanes on an avenue queueing at a signal', () => {
     // Before: 11 stalls in 300 s with this seed, the longest 78 s.
-    expect(stallsAcross(simOf(avenue(true), 22, 2), 300)).toBe(0);
+    expect(stallsAcross(simOf(avenue(true), 22, 2), 40)).toBe(0);
   });
 });

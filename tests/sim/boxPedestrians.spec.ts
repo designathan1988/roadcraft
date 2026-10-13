@@ -48,17 +48,21 @@ describe('pedestrians and turning traffic on a grid of streets', () => {
   it('never holds an admitted car inside a junction for a pedestrian', () => {
     const sim = simOf(grid(), 0x5eed, 2);
     const held = new Map<number, number>();
-    let stalls = 0;
-    for (let i = 0; i < Math.round(240 / DT); i++) {
+    let stalls = 0, yielding = 0;
+    for (let i = 0; i < Math.round(25 / DT); i++) {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
         const inBox = sim.lanelet(v.lanelet)?.kind === 'connector';
         const forPedestrian = v.constraints.obstacles.some((o) => o.kind === 'pedestrian');
+        if (forPedestrian) yielding++;
         const t = inBox && v.v < 0.2 && forPedestrian ? (held.get(v.id) ?? 0) + DT : 0;
         held.set(v.id, t);
         if (t >= 3 && t < 3 + DT) stalls++;
       }
     }
+    // Cars did meet people on the crossings (vehicle-ticks with a pedestrian ahead).
+    console.log(`boxPedestrians: ${yielding} vehicle-ticks with a pedestrian ahead`);
+    expect(yielding).toBeGreaterThan(100);
     expect(stalls).toBe(0);
   });
 });

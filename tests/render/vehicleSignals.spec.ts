@@ -15,7 +15,7 @@ describe('vehicle signals', () => {
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 7, 2);
     const seen = { left: 0, right: 0, through: 0 };
     let wrong = 0;
-    sim.clock.run(Math.round(120 / DT), () => {
+    sim.clock.run(Math.round(45 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         const lane = sim.lanelet(v.lanelet);
@@ -36,7 +36,7 @@ describe('vehicle signals', () => {
   it('signals BEFORE the stop line, not only once the turn has begun', () => {
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 7, 2);
     let early = 0;
-    sim.clock.run(Math.round(120 / DT), () => {
+    sim.clock.run(Math.round(45 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         const lane = sim.lanelet(v.lanelet);
@@ -52,7 +52,7 @@ describe('vehicle signals', () => {
   it('points the lamp into a lane change, towards the lane being entered', () => {
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 0x51de, 2);
     let changing = 0;
-    sim.clock.run(Math.round(120 / DT), () => {
+    sim.clock.run(Math.round(45 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         if (Math.abs(v.lateral) < 1) continue;
@@ -90,7 +90,7 @@ describe('vehicle signals', () => {
     let lefts = 0;
     let rights = 0;
     let worstStraight = 0;
-    sim.clock.run(Math.round(120 / DT), () => {
+    sim.clock.run(Math.round(45 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         const lane = sim.lanelet(v.lanelet);
@@ -117,7 +117,7 @@ describe('vehicle signals', () => {
     const last = new Map<number, number>();
     let boundaries = 0;
     let worst = 0;
-    sim.clock.run(Math.round(90 / DT), () => {
+    sim.clock.run(Math.round(45 / DT), () => {
       const before = new Map([...sim.vehicles.values()].map((v) => [v.id, v.lanelet]));
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {

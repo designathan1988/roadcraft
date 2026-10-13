@@ -36,18 +36,22 @@ describe('two signalised junctions a car length apart', () => {
   it('never admits a car it has no room for', () => {
     const sim = simOf(closeTees(), 0x5eed, 2);
     sim.auditEnabled = true;
-    let stuckInBox = 0;
+    let stuckInBox = 0, waitingOutside = 0;
     const still = new Map<number, number>();
-    for (let i = 0; i < Math.round(300 / DT); i++) {
+    for (let i = 0; i < Math.round(40 / DT); i++) {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
         const inBox = sim.lanelet(v.lanelet)?.kind === 'connector';
+        if (!inBox && v.v < 0.2) waitingOutside++;
         const held = inBox && v.v < 0.2 ? (still.get(v.id) ?? 0) + DT : 0;
         still.set(v.id, held);
         // Counted once per vehicle, on the tick it crosses ten seconds.
         if (held >= 10 && held < 10 + DT) stuckInBox++;
       }
     }
+    // Cars did queue at the reds (vehicle-ticks stopped outside a junction).
+    console.log(`shortLinkBox: ${waitingOutside} waiting vehicle-ticks`);
+    expect(waitingOutside).toBeGreaterThan(1000);
     expect(stuckInBox).toBe(0);
     expect(sim.issues.filter((x) => x.code === 'staleClaim')).toEqual([]);
   });

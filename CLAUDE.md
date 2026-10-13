@@ -105,8 +105,10 @@ Regressions are stopped by reading the code, in seconds, never by playing the ga
 - `npm run check` (`scripts/check.mjs`, about a minute): lint (layers, file size, no empty/silent
   `catch`, no module state; cached by file content), the code rules, `knip` (no unused file, export
   or dependency), the specs, architecture tests, the counting (scale) suites, the build. It runs
-  what the change can affect (git against HEAD: docs only → nothing; tests only → no build), each
-  step under a hard limit, stops at the first failure and prints the seconds of each step.
+  what the change can affect (git against HEAD: docs only → nothing; tests only → no build; the
+  specs whose imports reach a changed file, `vitest related`, plus those that read the code as text,
+  `ALWAYS` in `scripts/check.mjs`; data read by path is in `forceRerunTriggers` and runs them all),
+  each step under a hard limit, stops at the first failure and prints the seconds of each step.
 - Held, not only asked (`.claude/settings.json` → `scripts/gate.mjs`): a turn of a conversation that
   edited a file here (docs aside) does not end while the check is red; the reason reaches Claude.
   Continued by the gate and still red, the check runs once more and the turn ends with a warning

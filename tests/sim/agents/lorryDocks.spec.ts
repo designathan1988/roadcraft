@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
@@ -14,16 +13,13 @@ import { vehiclePose } from '@sim/pose';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { bodyClearExact } from '@sim/agents/hybridAStar';
-import { dockReach, lorryOf, yardOf } from '@sim/agents/lorryDocks';
-import { growCity } from '../../world/cityAudit';
+import { lorryOf, yardOf } from '@sim/agents/lorryDocks';
 
 /**
  * LORRIES TO THE DOCKS (coordinator's item B, 2026-10-11). A works' yard is
  * planned with hybrid-state A* (`sim/agents/lorryDocks.ts`): the lorry turns
  * no tighter than an SU-30 (9.7 m at the rear axle), shunts forward and back,
- * and backs onto the dock. The counts of docks a lorry reaches and leaves are
- * printed for the test block and for the generated city; a dock with no way
- * takes no lorry.
+ * and backs onto the dock; a dock with no way takes no lorry.
  *
  * A lorry sent to a dock stops before the gate, swings in with the street
  * closed to the traffic both ways, backs onto the dock, unloads and leaves by
@@ -54,30 +50,6 @@ function works(): RoadDoc {
 const LORRY = lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!);
 
 describe('lorries to the works docks', () => {
-  it('counts the docks a lorry reaches and leaves (test block)', () => {
-    const doc = works();
-    const net = new Network(doc);
-    net.rebuild();
-    const w = new SimWorld(doc, net, 1);
-    w.rebuildTopology();
-    const r = dockReach(w, LORRY);
-    console.log(`test block: ${r.reachable} of ${r.total} docks reached and left, ${r.yards} yards`);
-    if (process.env['LORRY_DOC']) writeFileSync(process.env['LORRY_DOC'], JSON.stringify([{ name: 'works', doc: doc.toJSON() }]));
-    expect(r.total).toBeGreaterThan(20);
-    expect(r.reachable).toBeGreaterThan(0);
-  }, 600_000);
-
-  it('counts the docks a lorry reaches and leaves (generated city)', () => {
-    const city = growCity({});
-    const net = new Network(city.doc);
-    net.rebuild();
-    const w = new SimWorld(city.doc, net, 1);
-    w.rebuildTopology();
-    const r = dockReach(w, LORRY);
-    console.log(`generated city: ${r.reachable} of ${r.total} docks reached and left, ${r.yards} yards`);
-    expect(r.total).toBeGreaterThan(0);
-    expect(r.reachable).toBeGreaterThan(0);
-  }, 900_000);
 
   it('backs a lorry onto a dock and takes it out again, through nothing', () => {
     const doc = works();
@@ -93,8 +65,9 @@ describe('lorries to the works docks', () => {
     w.ambient.source = 'edges';
     let target: { b: BuildingId; d: number } | null = null;
     for (const b of doc.buildings.all()) {
+      if (target) break;
       const yard = yardOf(w, b, LORRY);
-      if (!yard || target) continue;
+      if (!yard) continue;
       for (let i = 0; i < yard.docks.length && !target; i++) {
         while (!yard.planned(i)) yard.plan(i, 1e6);
         if (yard.docks[i]!.gate >= 0) target = { b: b.id, d: i };
@@ -109,7 +82,9 @@ describe('lorries to the works docks', () => {
     const dock = yard.docks[target!.d]!;
     const wrong: string[] = [];
     let atDoor = Infinity;
+    let ticks = 0;
     for (let i = 0; i < Math.round(600 / DT) && lorries.left === 0; i++) {
+      ticks = i;
       step(w, { traffic: true, pedestrians: true });
       const view = lorries.view()[0];
       if (!view || !Number.isFinite(view.x)) continue;
@@ -132,6 +107,7 @@ describe('lorries to the works docks', () => {
         }
       }
     }
+    console.log(`lorry: docked and left in ${(ticks * DT).toFixed(0)} s`);
     expect([...new Set(wrong)].slice(0, 10)).toEqual([]);
     expect(lorries.docked).toBe(1);
     expect(atDoor).toBeLessThan(m(0.05));

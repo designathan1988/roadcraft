@@ -16,7 +16,7 @@ import { collisions, fixtureDoc, simOf } from './support/bodies';
  */
 describe('kerb stops', () => {
   it('stop, open the door only when stopped and clear, move somebody across, and shut it', () => {
-    const sim = simOf(fixtureDoc(), 0x51de, 2);
+    const sim = simOf(fixtureDoc(), 0x51de, 1);
     const phaseOf = new Map<number, string>();
     let drops = 0;
     let passengersAlighting = 0;
@@ -26,7 +26,7 @@ describe('kerb stops', () => {
     let overlaps = 0;
     let droppedOnFootway = 0;
 
-    for (let i = 0; i < Math.round(300 / DT); i++) {
+    for (let i = 0; i < Math.round(40 / DT); i++) {
       // The people as every pedestrian engine publishes them (`SimWorld.pedViews`).
       const before = new Set(sim.pedViews.map((p) => p.id));
       step(sim, { traffic: true, pedestrians: true });
@@ -73,7 +73,7 @@ describe('kerb stops', () => {
     expect(overlaps).toBe(0);
     // Five minutes of the whole map with every body checked: under a minute
     // alone, three under a machine busy with other builds.
-  }, 300_000);
+  });
 });
 
 describe('a kerb stop always ends (P1-26)', () => {

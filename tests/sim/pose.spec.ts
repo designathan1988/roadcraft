@@ -93,7 +93,7 @@ describe('rendered pose', () => {
     let worst = 0;
     let worstDetail = '';
 
-    sim.clock.run(Math.round(240 / DT), () => {
+    sim.clock.run(Math.round(100 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
 
       for (const v of sim.vehiclesInIdOrder()) {
@@ -123,7 +123,7 @@ describe('rendered pose', () => {
     let worst = 0;
     let detail = '';
 
-    sim.clock.run(Math.round(240 / DT), () => {
+    sim.clock.run(Math.round(100 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
 
       for (const v of sim.vehiclesInIdOrder()) {
@@ -154,7 +154,7 @@ describe('rendered pose', () => {
     let sawSlide = false;
     let worstLateral = 0;
 
-    sim.clock.run(Math.round(300 / DT), () => {
+    sim.clock.run(Math.round(120 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
         if (Math.abs(v.lateral) > 0.05) sawSlide = true;
@@ -179,7 +179,7 @@ describe('rendered pose', () => {
     let checked = 0;
     let wrong = 0;
 
-    sim.clock.run(Math.round(300 / DT), () => {
+    sim.clock.run(Math.round(120 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
         // Only well inside a change, and on the same lanelet as the previous
@@ -219,7 +219,7 @@ describe('rendered pose', () => {
     let checked = 0;
     let worst = 0;
 
-    sim.clock.run(Math.round(200 / DT), () => {
+    sim.clock.run(Math.round(100 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
         const pose = vehiclePose(sim, v, 1);

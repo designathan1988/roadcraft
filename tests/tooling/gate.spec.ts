@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -34,6 +35,30 @@ describe('the end-of-turn gate', () => {
     expect(counts(join(ROOT, 'docs/PLAN.md'), ROOT)).toBe(false);
     expect(counts(join(ROOT, 'CLAUDE.md'), ROOT)).toBe(false);
     expect(counts(join(tmpdir(), 'x.ts'), ROOT)).toBe(false);
+  });
+});
+
+describe('the specs of the check', () => {
+  it('always runs those that read the code or the page as text, which no import leads to', async () => {
+    const { ALWAYS } = (await import(pathToFileURL(join(ROOT, 'scripts', 'check.mjs')).href)) as { ALWAYS: string[] };
+    const walk = (dir: string): string[] => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith('.spec.ts') ? [`${dir}/${e.name}`] : []);
+    const reading = walk('tests').filter((f) =>
+      /(readFileSync|readdirSync)\([^)]*(SRC|root|index\.html|src\/[^'"`]*\.ts)/.test(readFileSync(join(ROOT, f), 'utf8')));
+    expect(reading.length).toBeGreaterThan(5);
+    expect(reading.filter((f) => !ALWAYS.some((a) => f.startsWith(a)))).toEqual([]);
+  });
+
+  it('are those a change reaches, plus the always-run ones; every spec for a full check', async () => {
+    const { specsFor, ALWAYS } = (await import(pathToFileURL(join(ROOT, 'scripts', 'check.mjs')).href)) as
+      { specsFor: (files: string[] | null) => string[] | null; ALWAYS: string[] };
+    expect(specsFor(null)).toBeNull();
+    const specs = specsFor(['src/sim/pipeline.ts', 'docs/PLAN.md', 'src/gone.ts'])!;
+    expect(specs[0]).toBe('src/sim/pipeline.ts');
+    expect(specs).toContain('tests/arch/testRules.spec.ts');
+    expect(specs).toContain('tests/ui/oldInterface.spec.ts');
+    expect(specs.filter((f) => !f.endsWith('.spec.ts'))).toEqual(['src/sim/pipeline.ts']);
+    expect(ALWAYS.length).toBeGreaterThan(0);
   });
 });
 

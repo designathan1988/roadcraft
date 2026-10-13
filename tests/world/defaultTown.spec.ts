@@ -70,21 +70,27 @@ describe('the default town', () => {
   });
 
   it('puts nothing on a neighbour and nothing a building may not stand on', () => {
+    // Collected, then asserted once (an `expect` per pair of buildings took seconds).
+    const problems: string[] = [];
     for (const a of boxes) {
-      expect(structuralProblem(a.b), String(a.b.function)).toBeNull();
+      const structural = structuralProblem(a.b);
+      if (structural !== null) problems.push(`${a.b.function}: ${structural}`);
       for (const c of boxes) {
         if (c === a) continue;
         // Footprints may TOUCH (terraces stand shoulder to shoulder) but not
         // share any real area.
         const overlapX = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0);
         const overlapY = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
-        const shared = overlapX > 0.6 && overlapY > 0.6 ? overlapX * overlapY : 0;
-        expect(shared, `${a.b.function} on ${c.b.function}`).toBe(0);
+        if (overlapX > 0.6 && overlapY > 0.6) problems.push(`${a.b.function} on ${c.b.function}: ${(overlapX * overlapY).toFixed(1)}`);
       }
     }
     const net = new Network(doc);
     net.rebuild();
-    for (const a of boxes) expect(validateBuilding({ doc, net, groundAt: null }, a.b, a.b.id), String(a.b.function)).toBeNull();
+    for (const a of boxes) {
+      const invalid = validateBuilding({ doc, net, groundAt: null }, a.b, a.b.id);
+      if (invalid !== null) problems.push(`${a.b.function}: ${JSON.stringify(invalid)}`);
+    }
+    expect(problems).toEqual([]);
   });
 
   it('lays one street network: every node reachable, and only the roads out end', () => {

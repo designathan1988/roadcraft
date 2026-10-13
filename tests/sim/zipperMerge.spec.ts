@@ -35,7 +35,7 @@ describe('an avenue narrowing into a street', () => {
     let worstHeld = 0;
     let overlaps = 0;
     const held = new Map<number, number>();
-    for (let i = 0; i < Math.round(300 / DT); i++) {
+    for (let i = 0; i < Math.round(120 / DT); i++) {
       step(sim, { traffic: true, pedestrians: false });
       if (i % 5 === 0) overlaps += collisions(sim).length;
       for (const [node, junction] of sim.graph.junctions) {

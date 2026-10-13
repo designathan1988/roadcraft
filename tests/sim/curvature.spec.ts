@@ -55,11 +55,11 @@ describe('curvature speed', () => {
     const ceiling = 1.4;
     const absolute = MAX_LATERAL_ACCEL * 1.2 * 1.35;
     for (const [name, doc] of [['bend', bendDoc()], ['player-map', fixtureDoc()]] as const) {
-      const sim = simOf(doc, 5, 2);
+      const sim = simOf(doc, 5, 1);
       let worst = 0;
       let worstAbsolute = 0;
       let inBend = 0;
-      sim.clock.run(Math.round(150 / DT), () => {
+      sim.clock.run(Math.round(40 / DT), () => {
         step(sim, { traffic: true, pedestrians: false });
         for (const v of sim.vehicles.values()) {
           const k = curvatureAt(sim, v.lanelet, v.s - v.archetype.length / 2);
@@ -79,7 +79,7 @@ describe('curvature speed', () => {
     let worstBraking = 0;
     let worstOverCap = 0;
     let braked = 0;
-    sim.clock.run(Math.round(150 / DT), () => {
+    sim.clock.run(Math.round(60 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         const cap = curveSpeedCap(sim, v);

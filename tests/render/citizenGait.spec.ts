@@ -1,4 +1,3 @@
-import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createGait, gaitHeading, gaitPlays, stepGait, type Gait } from '@render/citizenGait';
 import { auditFlow, auditGait, type GaitController } from './support/gaitAudit';
@@ -24,19 +23,22 @@ const CONTROLLER: GaitController<Gait> = {
   heading: gaitHeading,
 };
 
+/** Simulated seconds of each audit (120 before 2026-10-13, when it ran in no check); the totals below scale with it. */
+const SECONDS = 15;
+const share = SECONDS / 120;
+
 describe('citizen gait', () => {
   it('steps at the pace the body moves, and steps round its turns', () => {
-    const audit = auditGait(CONTROLLER, 120);
-    if (process.env.GAIT_REPORT) appendFileSync(process.env.GAIT_REPORT, `${JSON.stringify(audit)}\n`);
-    expect(audit.walkSeconds).toBeGreaterThan(1000);
+    const audit = auditGait(CONTROLLER, SECONDS);
+    expect(audit.walkSeconds).toBeGreaterThan(1000 * share);
     // Slow motion: a walk cycle played at under three quarters of its rate.
     expect(audit.slowMotionSeconds / audit.walkSeconds).toBeLessThan(0.015);
     // Gliding: the body moving at a visible pace while the legs do not step.
     expect(audit.glideSeconds / audit.movingSeconds).toBeLessThan(0.008);
     // Swivelling on motionless legs, radians over the whole run: 12.2 before a
     // standing body was made to turn only as far as its turn clip steps it,
-    // with the feet leading and each step finished; 5.4 after.
-    expect(audit.unsteppedRotation).toBeLessThan(7.5);
+    // with the feet leading and each step finished; 5.4 after (in 120 s).
+    expect(audit.unsteppedRotation).toBeLessThan(7.5 * share);
     // Feet sliding, as a share of the pace: an absolute ceiling failed walkers
     // for walking at a real pace (1.15 m/s realised instead of 1.0) with the
     // same 2.4 % mismatch.
@@ -44,9 +46,8 @@ describe('citizen gait', () => {
   });
 
   it('walks round the furniture and the other people, not through them', () => {
-    const flow = auditFlow(120);
-    if (process.env.GAIT_REPORT) appendFileSync(process.env.GAIT_REPORT, `${JSON.stringify(flow)}\n`);
-    expect(flow.walkingSeconds).toBeGreaterThan(1000);
+    const flow = auditFlow(SECONDS);
+    expect(flow.walkingSeconds).toBeGreaterThan(1000 * share);
     expect(flow.insideFurniture / flow.walkingSeconds).toBeLessThan(0.003);
     expect(flow.overlapping / flow.walkingSeconds).toBeLessThan(0.01);
   });

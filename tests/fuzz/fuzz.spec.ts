@@ -19,24 +19,21 @@ const first = Number(process.env['FUZZ_FIRST'] ?? 1);
 const seeds = Array.from({ length: run.sequences }, (_, i) => first + i);
 
 describe('road fuzzer', () => {
-  it(`finds no defect in ${seeds.length} seeded sequences`, () => {
+  // One test per sequence, each in a few seconds (all of them in one test passed its 10 s).
+  for (const seed of seeds) it(`finds no defect in seeded sequence ${seed}`, () => {
     // A category with an OPEN fixture is a known, recorded defect; it runs but
     // does not fail the gate. Any other category fails it.
     const open = openCategories();
     const gated = (category: string): boolean => !open.has(category);
-    const failures: unknown[] = [];
-    for (const seed of seeds) {
-      const ops = generate(seed, run.ops);
-      const outcome = replay(ops, run.sim, gated);
-      if (!outcome.defects.length) continue;
-      const worst = outcome.defects[0] as Defect;
-      const minimal = shrink(ops, worst.category, run.sim);
-      if (process.env['FUZZ_RECORD'] === '1') {
-        saveFixture({ name: `${worst.category}-seed${seed}`, category: worst.category, detail: worst.detail,
-          sim: outcome.step < 0 ? run.sim : null, ops: minimal });
-      }
-      failures.push({ seed, defect: worst, ops: minimal });
+    const ops = generate(seed, run.ops);
+    const outcome = replay(ops, run.sim, gated);
+    if (!outcome.defects.length) return;
+    const worst = outcome.defects[0] as Defect;
+    const minimal = shrink(ops, worst.category, run.sim);
+    if (process.env['FUZZ_RECORD'] === '1') {
+      saveFixture({ name: `${worst.category}-seed${seed}`, category: worst.category, detail: worst.detail,
+        sim: outcome.step < 0 ? run.sim : null, ops: minimal });
     }
-    expect(failures).toEqual([]);
+    expect({ seed, defect: worst, ops: minimal }).toBeUndefined();
   });
 });

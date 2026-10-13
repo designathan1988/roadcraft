@@ -15,7 +15,8 @@ import { growCity } from './cityAudit';
  */
 describe('the parts of a generated city\'s lots', () => {
   it('never stand in each other', () => {
-    const city = growCity({});
+    // A small city: the same yards, a third of the parts (a medium one took 18 s).
+    const city = growCity({ size: 'small' });
     let parts = 0;
     const meets: string[] = [];
     for (const b of city.doc.buildings.all()) {
@@ -27,7 +28,8 @@ describe('the parts of a generated city\'s lots', () => {
       }
     }
     // A city's worth of yards was laid, or nothing was tested.
-    expect(parts).toBeGreaterThan(40_000);
+    console.log(`lotClash: ${parts} parts`);
+    expect(parts).toBeGreaterThan(10_000);
     expect(meets.slice(0, 6), `${meets.length} parts in each other`).toEqual([]);
-  }, 600_000);
+  });
 });

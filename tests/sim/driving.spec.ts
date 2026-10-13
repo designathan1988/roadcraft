@@ -22,7 +22,7 @@ import { collisions, fixtureDoc, simOf } from './support/bodies';
  */
 describe('driving', () => {
   it('signals, changes lane without oscillating, turns smoothly and keeps its distance', () => {
-    const sim = simOf(fixtureDoc(), 0x51de, 2);
+    const sim = simOf(fixtureDoc(), 0x51de, 1);
     const last = new Map<number, { lane: string; segment: number | undefined; index: number | undefined; angle: number;
       signalled: number; changes: { age: number; from: number; to: number }[] }>();
     let changes = 0;
@@ -33,7 +33,7 @@ describe('driving', () => {
     const headways: number[] = [];
     const cruise = new Map<string, number[]>();
 
-    for (let i = 0; i < Math.round(240 / DT); i++) {
+    for (let i = 0; i < Math.round(80 / DT); i++) {
       step(sim, { traffic: true, pedestrians: false });
       if (i % 10 === 0) overlaps += collisions(sim).length;
       for (const v of sim.vehicles.values()) {
@@ -77,7 +77,7 @@ describe('driving', () => {
     }
 
     expect(overlaps).toBe(0);
-    expect(changes).toBeGreaterThan(30);
+    expect(changes).toBeGreaterThan(22);
     // Nearly every change is signalled for a second first; the few that are
     // not are mandatory changes in a crawling queue (0.8 s lead).
     expect(signalledFirst / changes).toBeGreaterThan(0.75);
@@ -95,5 +95,5 @@ describe('driving', () => {
     expect(spread).toBeGreaterThan(0.02);
     const byId = Object.fromEntries(means);
     if (byId['bicycle'] !== undefined && byId['sedan'] !== undefined) expect(byId['bicycle']).toBeLessThan(byId['sedan']);
-  }, 180_000);
+  });
 });

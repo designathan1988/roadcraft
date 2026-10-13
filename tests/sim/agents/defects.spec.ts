@@ -1,18 +1,17 @@
-import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CITIES, formatDefects, measureDefects } from '../support/agentDefects';
+import { CITIES, measureDefects } from '../support/agentDefects';
 
 /**
  * The agents, in every kind of city the player builds, with the engines the
  * game runs: nobody stands frozen on a zebra or a pavement, nobody fidgets,
  * nobody slides, pops or jumps, and no junction locks.
  */
-const REPORT = process.env.AGENT_REPORT;
+/** Simulated seconds in each city but those that set their own (90 before 2026-10-13, which ran in no check). */
+const SECONDS = 20;
 describe('agents in every city', () => {
   for (const city of CITIES) {
     it(city.name, () => {
-      const r = measureDefects(city, Number(process.env.AGENT_SECONDS ?? city.seconds ?? 90));
-      if (REPORT) appendFileSync(REPORT, formatDefects(r) + '\n');
+      const r = measureDefects(city, city.seconds ?? SECONDS);
       expect(r.people).toBeGreaterThan(10);
       // Never stepping backwards nor jumping; sideways faster than a shuffle
       // and side-to-side pops only as the rarest slide along a wall.
@@ -40,6 +39,6 @@ describe('agents in every city', () => {
       // No car stands longer than a signal cycle: the longest measured is a
       // five-stage junction's red, 78 s; a frozen car would grow without end.
       expect(r.still).toBeLessThan(100);
-    }, 300_000);
+    });
   }
 });

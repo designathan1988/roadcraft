@@ -139,7 +139,7 @@ describe('overtaking', () => {
     // road while travelling the same way. Counting lane changes alone would
     // pass on a fleet that shuffled sideways and got nowhere.
     const { sim } = avenue();
-    run(sim, 120);
+    run(sim, 60);
 
     const direction = (id: string): string => id.slice(0, id.lastIndexOf(':'));
     const before = new Map<number, { s: number; dir: string }>();
@@ -198,7 +198,7 @@ describe('overtaking', () => {
     // inward stays there. The keep-to-the-kerb bias is what drains it back, and
     // this is the number that says whether it does.
     const { sim } = avenue();
-    run(sim, 240);
+    run(sim, 90);
     const byIndex = new Map<number, number>();
     for (const v of sim.vehiclesInIdOrder()) {
       const index = sim.lanelet(v.lanelet)?.laneIndex;
@@ -218,7 +218,7 @@ describe('overtaking', () => {
     run(sim, 60);
     const changes = new Map<number, number>();
     const lane = new Map<number, string>();
-    const seconds = 120;
+    const seconds = 60;
     for (let i = 0; i < Math.round(seconds / DT); i++) {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehiclesInIdOrder()) {
@@ -238,7 +238,7 @@ describe('overtaking', () => {
 
   it('keeps every vehicle on a real lanelet at a finite speed while doing it', () => {
     const { sim } = avenue();
-    run(sim, 300);
+    run(sim, 90);
     for (const v of sim.vehiclesInIdOrder()) {
       expect(Number.isFinite(v.s)).toBe(true);
       expect(Number.isFinite(v.v)).toBe(true);
@@ -254,7 +254,7 @@ describe('overtaking', () => {
     // The change is decided here and performed by the integrator; a gap test
     // that passed on stale positions would show up as two bodies in one place.
     const { sim } = avenue();
-    run(sim, 300);
+    run(sim, 90);
     const byLane = new Map<string, { s: number; length: number }[]>();
     for (const v of sim.vehiclesInIdOrder()) {
       const list = byLane.get(v.lanelet) ?? [];

@@ -65,13 +65,13 @@ function finiteState(sim: SimWorld): boolean {
 describe('traffic', () => {
   it('spawns vehicles on a connected network', () => {
     const fixture = crossroads('auto');
-    run(fixture, 60);
+    run(fixture, 10);
     expect(fixture.sim.vehicles.size).toBeGreaterThan(0);
   });
 
   it('keeps every vehicle on a real lanelet, at a finite speed', () => {
     const fixture = crossroads('auto');
-    run(fixture, 120);
+    run(fixture, 60);
     expect(finiteState(fixture.sim)).toBe(true);
   });
 
@@ -80,7 +80,7 @@ describe('traffic', () => {
     // yield right-of-way made every approach wait for every other one, and the
     // node wedged solid with nobody ever entering it.
     const fixture = crossroads('none');
-    run(fixture, 90);
+    run(fixture, 60);
     const moving = [...fixture.sim.vehiclesInIdOrder()].filter((v) => v.v > 0.5).length;
     expect(fixture.sim.vehicles.size).toBeGreaterThan(0);
     expect(moving).toBeGreaterThan(0);
@@ -88,7 +88,7 @@ describe('traffic', () => {
 
   it('moves traffic through a SIGNALISED junction', () => {
     const fixture = crossroads('signal');
-    run(fixture, 150);
+    run(fixture, 60);
     const moving = [...fixture.sim.vehiclesInIdOrder()].filter((v) => v.v > 0.5).length;
     expect(moving).toBeGreaterThan(0);
   });
@@ -127,7 +127,7 @@ describe('traffic', () => {
       const servedBySegment = new Map<number, number>();
       const seen = new Set<number>();
 
-      fixture.sim.clock.run(Math.round(240 / DT), () => {
+      fixture.sim.clock.run(Math.round(150 / DT), () => {
         step(fixture.sim, { traffic: true, pedestrians: true });
         for (const v of fixture.sim.vehicles.values()) {
           if (!v.admittedConnector || seen.has(v.id)) continue;
@@ -198,7 +198,7 @@ describe('traffic', () => {
       const seenStages = new Set<number>();
       let longestTurnWait = 0;
 
-      fixture.sim.clock.run(Math.round(200 / DT), () => {
+      fixture.sim.clock.run(Math.round(130 / DT), () => {
         step(fixture.sim, { traffic: true, pedestrians: true });
         for (const c of fixture.sim.controllers.values()) {
           seenStages.add(c.stageIndex);

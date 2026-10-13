@@ -162,7 +162,7 @@ describe('the kerb', () => {
     const lateralEvents: unknown[] = [];
     const lateralReported = new Set<number>();
 
-    sim.clock.run(Math.round(200 / DT), () => {
+    sim.clock.run(Math.round(50 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
 
       for (const v of sim.vehiclesInIdOrder()) {
@@ -250,7 +250,7 @@ describe('the kerb', () => {
     let walked = 0;
     let detail = '';
 
-    sim.clock.run(Math.round(200 / DT), () => {
+    sim.clock.run(Math.round(30 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
 
       for (const view of sim.pedViews) {

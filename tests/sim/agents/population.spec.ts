@@ -85,37 +85,67 @@ function run(w: SimWorld, seconds: number, each?: (t: number) => void): void {
 }
 
 describe('a map opened is already lived in', () => {
-  it('a closed town with no road end opens with the panel numbers and keeps them for two minutes', () => {
+  // One closed town for four tests run in order, 30 s each (each within a test's 10 s).
+  let town: SimWorld | null = null;
+  // The closed town, sampled every second through the tests that follow it.
+  const seen = { fewestCars: Infinity, fewestPeople: Infinity, sumCars: 0, sumPeople: 0, samples: 0 };
+  const sample = (w: SimWorld) => (t: number): void => {
+    if (Math.round(t / DT) % 60 !== 0) return;
+    seen.fewestCars = Math.min(seen.fewestCars, driving(w));
+    seen.fewestPeople = Math.min(seen.fewestPeople, w.pedViews.length);
+    seen.sumCars += driving(w);
+    seen.sumPeople += w.pedViews.length;
+    seen.samples++;
+  };
+
+  it('a closed town with no road end opens with the panel numbers and keeps them for 30 s', () => {
     const doc = closedGrid(2, 120, true);
     for (const node of doc.nodes.values()) expect(doc.degree(node.id)).toBeGreaterThan(1);
     expect(doc.buildings.size).toBeGreaterThan(8);
     const w = worldOf(doc, 40, 40);
+    town = w;
     run(w, 1);
     expect(w.vehicles.size).toBeGreaterThanOrEqual(38);
     expect(w.pedViews.length).toBeGreaterThanOrEqual(36);
-    let fewestCars = Infinity, fewestPeople = Infinity, sumCars = 0, sumPeople = 0, samples = 0;
-    run(w, 120, (t) => {
-      if (Math.round(t / DT) % 60 !== 0) return;
-      fewestCars = Math.min(fewestCars, driving(w));
-      fewestPeople = Math.min(fewestPeople, w.pedViews.length);
-      sumCars += driving(w);
-      sumPeople += w.pedViews.length;
-      samples++;
-    });
+    run(w, 30, sample(w));
+    expect(w.ambient.gateWalks.toGate).toBeGreaterThan(0);
+  });
+
+  it('and 30 s on, cars park in the lots', () => {
+    const w = town;
+    expect(w, 'the town of the test before').not.toBeNull();
+    if (!w) return;
+    // To 61 s: the first car parks in a lot at 53 s (measured 2026-10-13).
+    run(w, 30, sample(w));
+    expect(w.city.lots.parkedIn).toBeGreaterThan(0);
+  });
+
+  it('and 30 s more, cars leave the lots while the numbers hold', () => {
+    const w = town;
+    expect(w, 'the town of the test before').not.toBeNull();
+    if (!w) return;
+    // To 91 s: the first car leaves a lot at 83 s (measured 2026-10-13).
+    run(w, 30, sample(w));
     // Held round the number: cars parking are replaced by cars leaving a lot,
     // people going in by people coming out.
-    expect(fewestCars).toBeGreaterThanOrEqual(32);
-    expect(fewestPeople).toBeGreaterThanOrEqual(30);
-    expect(sumCars / samples).toBeGreaterThanOrEqual(36);
-    expect(sumPeople / samples).toBeGreaterThanOrEqual(34);
+    expect(seen.fewestCars).toBeGreaterThanOrEqual(32);
+    expect(seen.fewestPeople).toBeGreaterThanOrEqual(30);
+    expect(seen.sumCars / seen.samples).toBeGreaterThanOrEqual(36);
+    expect(seen.sumPeople / seen.samples).toBeGreaterThanOrEqual(34);
     // And the lots made the trips: cars went in and came out of them.
     expect(w.city.lots.parkedIn).toBeGreaterThan(0);
     expect(w.city.lots.leftBy).toBeGreaterThan(0);
-    expect(w.ambient.gateWalks.toGate).toBeGreaterThan(0);
-    // Five minutes on: people who went in at a gate are replaced by people
-    // coming out of one, and the numbers still hold.
+  });
+
+  it('and thirty seconds on, people come out of the gates others went in at, and the numbers hold', () => {
+    const w = town;
+    expect(w, 'the town of the test before').not.toBeNull();
+    if (!w) return;
+    // Thirty seconds on (the first person comes out of a gate at 105 s): people
+    // who went in at a gate are replaced by people coming out of one, and the
+    // numbers still hold. It ran five minutes more, in no check, until 2026-10-13.
     let laterCars = Infinity, laterPeople = Infinity, mostCars = 0;
-    run(w, 300, (t) => {
+    run(w, 30, (t) => {
       if (Math.round(t / DT) % 60 !== 0) return;
       laterCars = Math.min(laterCars, driving(w));
       mostCars = Math.max(mostCars, driving(w));
@@ -126,7 +156,7 @@ describe('a map opened is already lived in', () => {
     // Nor more than asked for: the cars coming out of the lots replace those gone in.
     expect(mostCars).toBeLessThanOrEqual(44);
     expect(laterPeople).toBeGreaterThanOrEqual(30);
-  }, 300_000);
+  });
 
   it('a map with road ends opens already lived in', () => {
     const w = worldOf(crossroads(), 30, 30);
@@ -136,7 +166,7 @@ describe('a map opened is already lived in', () => {
     expect(w.vehicles.size, 'cars').toBeGreaterThanOrEqual(27);
 
     expect(w.pedViews.length, 'people').toBeGreaterThanOrEqual(27);
-  }, 120_000);
+  });
 
   it('nobody is born on top of anybody', () => {
     const w = worldOf(closedGrid(2, 120, false), 120, 120);
@@ -165,5 +195,5 @@ describe('a map opened is already lived in', () => {
     expect(worstPeople).toBeGreaterThan(m(0.5));
     expect(seenCars.size).toBeGreaterThan(100);
     expect(worstCar).toBeGreaterThanOrEqual(JAM_GAP * 0.99);
-  }, 120_000);
+  });
 });

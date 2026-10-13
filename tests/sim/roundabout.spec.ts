@@ -89,11 +89,11 @@ function run(doc: RoadDoc, seconds: number, seed = 0x5eed): { left: number; wors
 
 describe('a ring of one-way streets with four arms', () => {
   it('keeps moving under heavy demand', () => {
-    const { left, worstStill } = run(ring(true), 300);
+    const { left, worstStill } = run(ring(true), 120);
     // Before: 0 vehicles left the ring in 300 s, and the whole fleet stood
-    // still from the first minute on.
-    expect(left).toBeGreaterThan(30);
-    expect(worstStill).toBeLessThan(150);
+    // still from the first minute on (two minutes here: 30 in five minutes was the bar).
+    expect(left).toBeGreaterThan(12);
+    expect(worstStill).toBeLessThan(100);
   });
 
   // The ring used to fill up anyway, on other seeds, with every link holding
@@ -101,9 +101,9 @@ describe('a ring of one-way streets with four arms', () => {
   // cycle of links (`sim/intersections/cycles.ts`).
   for (const seed of [22, 23]) {
     it(`never locks solid when drawn with the editor (seed ${seed})`, () => {
-      // Before metering, seed 22 left 2 vehicles out in 300 s.
-      const { left } = run(drawnRing(), 300, seed);
-      expect(left).toBeGreaterThan(20);
+      // Before metering, seed 22 left 2 vehicles out in 300 s (20 was the bar in five minutes).
+      const { left } = run(drawnRing(), 120, seed);
+      expect(left).toBeGreaterThan(8);
     });
   }
 });

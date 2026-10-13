@@ -42,11 +42,10 @@ function expectSameAsFull(doc: RoadDoc, net: Network, elevation: RoadElevation, 
 }
 
 describe('incremental network and height rebuild', () => {
-  it('equals a full rebuild after every op of the fuzz sequences', () => {
-    const seeds = Number(process.env['ORACLE_SEEDS'] ?? 8);
-    const length = Number(process.env['ORACLE_OPS'] ?? 24);
-    for (let seed = 1; seed <= seeds; seed++) {
-      const ops = generate(seed, length);
+  // One test per sequence and per fixture: each in well under a second, the whole in no single test's 10 s.
+  for (let seed = 1; seed <= 8; seed++) it(`equals a full rebuild after every op of fuzz sequence ${seed}`, () => {
+    {
+      const ops = generate(seed, 24);
       const state = freshState();
       let elevation = buildRoadElevation(state.net, FLAT_GROUND);
       for (let i = 0; i < ops.length; i++) {
@@ -59,8 +58,8 @@ describe('incremental network and height rebuild', () => {
     }
   });
 
-  it('equals a full rebuild over every recorded fuzz fixture', () => {
-    for (const fixture of loadFixtures()) {
+  for (const fixture of loadFixtures()) it(`equals a full rebuild over the fuzz fixture ${fixture.name}`, () => {
+    {
       const state = freshState();
       let elevation = buildRoadElevation(state.net, FLAT_GROUND);
       fixture.ops.forEach((op, i) => {

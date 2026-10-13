@@ -137,7 +137,7 @@ describe('signal plans', () => {
     const fixture = signalised([0, 90, 180, 270]);
     const offences: string[] = [];
 
-    fixture.sim.clock.run(Math.round(240 / DT), () => {
+    fixture.sim.clock.run(Math.round(150 / DT), () => {
       step(fixture.sim, { traffic: true, pedestrians: true });
 
       const held = new Set<number>();

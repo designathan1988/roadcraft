@@ -138,7 +138,7 @@ export const CITIES: readonly City[] = [
     // A narrow street of houses, busy with parties and people coming the
     // other way: two families meeting on one pavement.
     name: 'narrow-street',
-    seconds: 360,
+    seconds: 120,
     build: () => {
       const doc = new RoadDoc();
       const a = doc.addNode({ x: -180 * TUNED_UNIT, y: 0 }), b = doc.addNode({ x: 180 * TUNED_UNIT, y: 0 });
@@ -300,9 +300,4 @@ export function measureDefects(city: City, seconds: number): AgentDefects {
   r.backShare = r.back * DT / Math.max(1, movingSeconds);
   r.hotspots = [...hot].sort((a, b) => b[1] - a[1]).slice(0, 5);
   return r;
-}
-
-export function formatDefects(r: AgentDefects): string {
-  const f = (x: number, d = 1) => x.toFixed(d);
-  return JSON.stringify(r.vehicleMotion) + ' ' + `${r.name.padEnd(18)} people ${String(r.people).padStart(3)} cars ${String(r.vehicles).padStart(3)} | zebra ${f(r.zebraStand)}s pavement ${f(r.pavementStand)}s fidget ${f(r.fidgets, 2)}/min | back ${r.back} side ${f(r.side, 3)}/min jump ${r.jump} flip ${f(r.flip, 3)}/min closest ${f(r.closest, 2)}m overlap ${f(r.overlaps, 3)}/min | backShare ${f(r.backShare * 100, 2)}% mill ${f(r.milling * 100, 2)}% spell ${f(r.millingSpell)}s hot ${r.hotspots.map(([k, n]) => `${k}:${n}`).join(' ')} | junction ${f(r.junction, 0)}s still ${f(r.still, 0)}s | nets urgent ${f(r.urgent * 100, 2)}% ghost ${f(r.ghost * 100, 2)}%`;
 }

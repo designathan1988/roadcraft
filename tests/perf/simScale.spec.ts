@@ -45,7 +45,7 @@ function workOf(n: number, cars: number): { cleanup: number; stepped: number; de
   w.ambient.enabled = true;
   w.ambient.source = 'edges';
   w.clock.paused = false;
-  for (let i = 0; i < 600; i++) step(w, { traffic: true, pedestrians: false });
+  for (let i = 0; i < 300; i++) step(w, { traffic: true, pedestrians: false });
   const lanes = tickWork.cleanupLanes, controllers = tickWork.controllers, rested = signalWork.rested;
   const TICKS = 120;
   for (let i = 0; i < TICKS; i++) step(w, { traffic: true, pedestrians: false });
@@ -61,12 +61,14 @@ function workOf(n: number, cars: number): { cleanup: number; stepped: number; de
 
 describe('the work of a tick', () => {
   it('does not grow with the map for the same traffic', () => {
-    const small = workOf(6, 30), large = workOf(36, 30);
-    expect(large.signals).toBeGreaterThan(small.signals * 20);
+    // 4 times the area (36 times until 2026-10-13: building the large grid's topology took most of a
+    // minute, every identical junction measured again, docs/research/regression-barrier.md).
+    const small = workOf(6, 30), large = workOf(12, 30);
+    expect(large.signals).toBeGreaterThan(small.signals * 3);
     // The cleanup looks at the lanes an edit left, none here, whatever the map.
     expect(large.cleanup).toBe(small.cleanup);
     // The signals stepped and those that decide are those with somebody near: about as many on both.
     expect(large.stepped).toBeLessThanOrEqual(small.stepped + 30);
     expect(large.deciding).toBeLessThanOrEqual(small.deciding + 30);
-  }, 120_000);
+  });
 });

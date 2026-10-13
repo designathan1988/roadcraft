@@ -5,16 +5,18 @@
 //   lint    ESLint (layers, file size, no silent catch, no module state), cached by file content
 //   code    scripts/check-code.mjs: the types and the code rules over the call graph of a frame
 //   knip    no unused file, export or dependency
-//   unit    vitest: every spec, each test at most 10 s; the static rules of the code and of the tests
-//           (tests/arch)
-//   scale   the counting suites (tests/perf, tests/scale): the same edit costs the same on any map
+//   unit    vitest: the specs the change reaches through their imports, and those that read the code as
+//           text (`ALWAYS`: the static rules of the code and of the tests); each test at most 10 s
+//   scale   the counting suites (tests/perf, tests/scale) the change reaches: the same edit costs the
+//           same on any map
 //   build   vite build
 // What runs depends on what changed (git: the working tree against HEAD, untracked files included):
-// docs only → nothing; tests only → everything but the build; anything else → everything.
-// `--all` runs every step whatever changed (the pre-push, which checks the commit being pushed).
+// docs only → nothing; tests only → everything but the build; anything else → everything, the specs
+// chosen by what they import (test impact analysis; docs/research/regression-barrier.md).
+// `--all` runs every step and every spec whatever changed (the pre-push, on the commit being pushed).
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath } from 'node:url';
@@ -60,12 +62,47 @@ function eslintCache() {
   return `node_modules/.cache/eslint/${h.digest('hex').slice(0, 12)}.json`;
 }
 
+/**
+ * The specs that read the code or the page as text (through the file system, not by importing it): no
+ * import graph leads to them, so they run in every check. `tests/tooling/gate.spec.ts` keeps the list whole.
+ */
+export const ALWAYS = [
+  'tests/arch/', 'tests/tooling/', 'tests/ui/decimals.spec.ts', 'tests/ui/i18n.spec.ts', 'tests/ui/i18nKeys.spec.ts',
+  'tests/ui/oldInterface.spec.ts', 'tests/render/citizenLod.spec.ts', 'tests/render/vehicleFrame.spec.ts',
+];
+
+/**
+ * The specs a change calls for: `null` (every one) for a full check, else the changed files themselves and
+ * `ALWAYS`, given to `vitest related`, which runs the specs whose imports (static and dynamic, followed to
+ * the end) reach a changed file (vitest.dev/guide/cli; the graph is Vite's, `getTestDependencies`). Data the
+ * specs read by path (maps, fixtures, models, the page, JSON in `src`) is in `forceRerunTriggers`
+ * (`vitest.config.ts`): such a change runs every spec.
+ */
+export function specsFor(files) {
+  if (!files) return null;
+  const existing = files.filter((f) => !isDoc(f) && existsSync(join(ROOT, f)));
+  // `related` matches whole paths: a folder of `ALWAYS` stands for each spec in it.
+  const specs = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? specs(`${dir}${e.name}/`) : e.name.endsWith('.spec.ts') ? [`${dir}${e.name}`] : []);
+  const always = ALWAYS.flatMap((a) => (a.endsWith('/') ? specs(a) : [a]));
+  return [...new Set([...existing, ...always])];
+}
+
+/** `vitest run` for every spec, `vitest related --run` for those a change reaches. */
+function vitest(config, specs) {
+  const base = [node, 'node_modules/vitest/vitest.mjs', ...(config ? ['-c', config] : [])];
+  return specs ? [...base, 'related', '--run', ...specs] : [...base, 'run'];
+}
+
+/** The changed files (null: everything), set once by `main`. */
+let picked = null;
+
 const STEPS = {
   lint: { limit: 90, cmd: () => [node, 'node_modules/eslint/bin/eslint.js', '.', '--cache', '--cache-strategy', 'content', '--cache-location', eslintCache()] },
   code: { limit: 60, cmd: () => [node, 'scripts/check-code.mjs'] },
   knip: { limit: 60, cmd: () => [node, 'scripts/knip-check.mjs'] },
-  unit: { limit: 180, cmd: () => [node, 'node_modules/vitest/vitest.mjs', 'run'] },
-  scale: { limit: 90, cmd: () => [node, 'node_modules/vitest/vitest.mjs', 'run', '-c', 'vitest.scale.config.ts'] },
+  unit: { limit: 180, cmd: () => vitest(null, specsFor(picked)) },
+  scale: { limit: 90, cmd: () => vitest('vitest.scale.config.ts', specsFor(picked)) },
   build: { limit: 90, cmd: () => [node, 'node_modules/vite/bin/vite.js', 'build', '--logLevel', 'warn'] },
 };
 
@@ -92,6 +129,7 @@ function run(name) {
 
 async function main() {
   const files = process.argv.includes('--all') ? null : changed();
+  picked = files;
   const steps = stepsFor(files);
   console.log(files ? `changed: ${files.length ? files.join(', ') : 'nothing'}` : 'changed: everything (--all)');
   console.log(`steps: ${steps.join(', ') || 'none (docs only)'}`);

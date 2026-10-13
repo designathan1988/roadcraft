@@ -170,21 +170,23 @@ describe('unifiedWaterGeometry', () => {
     const geometry = unifiedWaterGeometry(disc(0), bowl);
     const position = attribute(geometry, 'position');
     const depth = attribute(geometry, WATER_DEPTH_ATTRIBUTE);
+    // Counted, then asserted once: an `expect` per vertex took seconds.
+    let bad = 0;
     for (let i = 0; i < position.count; i++) {
-      expect(Number.isFinite(position.getX(i))).toBe(true);
-      expect(Number.isFinite(position.getY(i))).toBe(true);
-      expect(Number.isFinite(position.getZ(i))).toBe(true);
-      expect(Number.isFinite(depth.getX(i))).toBe(true);
+      if (![position.getX(i), position.getY(i), position.getZ(i), depth.getX(i)].every(Number.isFinite)) bad++;
     }
+    expect(bad).toBe(0);
   });
 
   it('never leaves a vertex above the ground under it', () => {
     const geometry = unifiedWaterGeometry(disc(0), bowl);
     const position = attribute(geometry, 'position');
+    let above = 0;
     for (let i = 0; i < position.count; i++) {
       // World y is mirrored into three's z, so the sampler wants -z back.
-      expect(position.getY(i)).toBeGreaterThan(bowl(position.getX(i), -position.getZ(i)));
+      if (!(position.getY(i) > bowl(position.getX(i), -position.getZ(i)))) above++;
     }
+    expect(above).toBe(0);
   });
 
   it('carries the depth the shader tints and foams from', () => {
@@ -193,13 +195,15 @@ describe('unifiedWaterGeometry', () => {
     const depth = attribute(geometry, WATER_DEPTH_ATTRIBUTE);
     let deepest = 0;
     let shallowest = Infinity;
+    let wrong = 0;
     for (let i = 0; i < position.count; i++) {
       const expected = position.getY(i) - bowl(position.getX(i), -position.getZ(i));
-      expect(depth.getX(i)).toBeCloseTo(expected, 3);
-      expect(depth.getX(i)).toBeGreaterThan(0);
+      // toBeCloseTo(expected, 3): within half a thousandth.
+      if (!(Math.abs(depth.getX(i) - expected) < 5e-4) || !(depth.getX(i) > 0)) wrong++;
       deepest = Math.max(deepest, depth.getX(i));
       shallowest = Math.min(shallowest, depth.getX(i));
     }
+    expect(wrong).toBe(0);
     // A flat depth would make the tint, the opacity ramp and the foam band all
     // constant, which is the defect the attribute exists to fix.
     expect(deepest).toBeCloseTo(20, 0);
@@ -212,18 +216,19 @@ describe('unifiedWaterGeometry', () => {
     const geometry = unifiedWaterGeometry(disc(0), bowl);
     const position = attribute(geometry, 'position');
     const normal = attribute(geometry, 'normal');
+    let down = 0, tilted = 0;
     for (let i = 0; i < position.count; i += 3) {
       const ux = position.getX(i + 1) - position.getX(i);
       const uz = position.getZ(i + 1) - position.getZ(i);
       const vx = position.getX(i + 2) - position.getX(i);
       const vz = position.getZ(i + 2) - position.getZ(i);
-      expect(uz * vx - ux * vz).toBeGreaterThan(0);
+      if (!(uz * vx - ux * vz > 0)) down++;
     }
     for (let i = 0; i < normal.count; i++) {
-      expect(normal.getX(i)).toBe(0);
-      expect(normal.getY(i)).toBe(1);
-      expect(normal.getZ(i)).toBe(0);
+      if (normal.getX(i) !== 0 || normal.getY(i) !== 1 || normal.getZ(i) !== 0) tilted++;
     }
+    expect(down).toBe(0);
+    expect(tilted).toBe(0);
   });
 
   it('fills the hollow a river runs into, to the level of the river, and stops at its shore', () => {

@@ -27,7 +27,7 @@ describe('a U-turn through the median', () => {
     const sim = simOf(doc, 23, 2);
     const turning = new Set([...sim.graph.connectors.values()].filter((c) => c.turn === 'uturn').map((c) => c.lanelet));
     const turned = new Set<number>();
-    sim.clock.run(Math.round(240 / DT), () => {
+    sim.clock.run(Math.round(90 / DT), () => {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehiclesInIdOrder()) if (turning.has(v.lanelet)) turned.add(v.id);
     });

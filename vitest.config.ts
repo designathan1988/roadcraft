@@ -52,6 +52,14 @@ export default defineConfig({
     // player, 2026-10-13: no slow processes, no endless tests): it fails here,
     // and is made to run in seconds, never moved to the slow list.
     testTimeout: 10_000,
+    // What the specs read by path rather than import: a change to it runs every spec, even when the check
+    // picks the specs by their imports (`scripts/check.mjs`, `vitest related`). Vitest's own three first.
+    forceRerunTriggers: [
+      '**/package.json', '**/vitest.config.*', '**/vite.config.*',
+      '**/maps/**', '**/lots/**', '**/public/**', '**/index.html', '**/tests/fixtures/**', '**/tests/fuzz/fixtures/**',
+      '**/tests/slow.json',
+      '**/src/**/*.json',
+    ],
     // A CAP on the workers, not the default of one per hardware thread. Each
     // worker can be simulating a whole map; on a 24-thread machine the default
     // started 23 of them per run, and a few runs side by side froze the

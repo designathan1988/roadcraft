@@ -77,7 +77,7 @@ describe('walking height', () => {
     sim.pedestrianCount = 100;
     const last = new Map<number, { rise: number; ground: string }>();
     let switches = 0, worst = 0, detail = '';
-    sim.clock.run(Math.round(240 / DT), () => {
+    sim.clock.run(Math.round(100 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.pedViews) {
         if (v.ground === 'open') { last.delete(v.id); continue; }
@@ -119,7 +119,7 @@ describe('walking height', () => {
     let samples = 0, stepsAside = 0;
     const faults: string[] = [];
     const angle = (a: number): number => Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
-    sim.clock.run(Math.round(240 / DT), () => {
+    sim.clock.run(Math.round(100 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       const seen = new Set<number>();
       for (const v of sim.pedViews) {

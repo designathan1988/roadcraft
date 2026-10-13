@@ -44,8 +44,8 @@ function world(doLess: boolean): SimWorld {
   w.doLess = doLess;
   w.rebuildTopology();
   w.usePedestrianEngine(createAgentWalkEngine());
-  w.trafficCount = 160;
-  w.pedestrianCount = 120;
+  w.trafficCount = 100;
+  w.pedestrianCount = 80;
   w.ambient.enabled = true;
   w.ambient.source = 'edges';
   w.clock.paused = false;
@@ -84,15 +84,15 @@ describe('doing less', () => {
   it('runs the same ticks as doing everything, through edits', () => {
     const fast = world(true), full = world(false);
     let retiredFast = 0, retiredFull = 0, lookedFast = 0, lookedFull = 0, steppedFast = 0, steppedFull = 0;
-    for (let t = 1; t <= 2400; t++) {
+    for (let t = 1; t <= 400; t++) {
       let r = tickWork.retired, l = tickWork.cleanupLanes, c = tickWork.controllers;
       step(fast, { traffic: true, pedestrians: true });
       retiredFast += tickWork.retired - r; lookedFast += tickWork.cleanupLanes - l; steppedFast += tickWork.controllers - c;
       r = tickWork.retired; l = tickWork.cleanupLanes; c = tickWork.controllers;
       step(full, { traffic: true, pedestrians: true });
       retiredFull += tickWork.retired - r; lookedFull += tickWork.cleanupLanes - l; steppedFull += tickWork.controllers - c;
-      if (t % 400 === 0) { edit(fast, t / 400); edit(full, t / 400); }
-      if (t % 5 === 0) {
+      if (t % 80 === 0) { edit(fast, t / 80); edit(full, t / 80); }
+      if (t % 10 === 0) {
         const a = state(fast), b = state(full);
         if (a !== b) {
           const pa = a.split('|'), pb = b.split('|');
@@ -110,5 +110,5 @@ describe('doing less', () => {
     expect(retiredFast).toBeGreaterThan(0);
     expect(retiredFast).toBe(retiredFull);
     expect(lookedFast * 50).toBeLessThan(lookedFull);
-  }, 240_000);
+  });
 });

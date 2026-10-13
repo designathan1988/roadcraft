@@ -27,6 +27,12 @@ const LAYOUTS: readonly Layout[] = [
 ];
 
 const SECONDS = 240;
+/**
+ * The traffic demand of each layout: the lightest under which every approach
+ * both goes straight on and turns within the run (measured 2026-10-13: the
+ * local streets need 2, the rest 1; at 2 everywhere the run took 9 s a layout).
+ */
+const DEMAND: Record<string, number> = { locals: 2 };
 const kmh = (u: number): number => u * METERS_PER_UNIT * 3.6;
 
 interface RunReport {
@@ -60,7 +66,7 @@ function inZone(sim: SimWorld, id: number, connector: string, point: number): bo
 
 function run(layout: Layout, seconds = SECONDS): RunReport {
   const { doc } = layoutDoc(layout);
-  const sim = simOf(doc, 0x4a11, 2);
+  const sim = simOf(doc, 0x4a11, DEMAND[layout.name] ?? 1);
   const report: RunReport = {
     overlaps: 0, redEntries: 0, zoneViolations: 0, throughWithTurn: 0,
     served: new Map(), longestQueue: 0, pastLineAtRed: 0, pedestrianHits: 0,
@@ -167,7 +173,7 @@ describe('four-way signalised crossroads', () => {
       // Queues form at red and are discharged, never growing without bound.
       expect(r.longestQueue).toBeGreaterThan(0);
       expect(r.longestQueue).toBeLessThan(20);
-    }, 120_000);
+    });
   }
 
   it('never shows green to two movements whose cars could meet', () => {
@@ -241,5 +247,5 @@ describe('turning speed', () => {
     expect(Math.max(...rights)).toBeLessThan(35);
     expect(Math.max(...lefts)).toBeLessThan(45);
     expect(Math.min(...rights, ...lefts)).toBeGreaterThan(8);
-  }, 120_000);
+  });
 });

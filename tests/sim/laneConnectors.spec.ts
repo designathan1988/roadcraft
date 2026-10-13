@@ -15,7 +15,7 @@ import { layoutDoc, simOf } from './support/bodies';
  * lane carries buses only; nobody changes lane across a solid line.
  */
 const AVENUES = { name: 'avenues', bearings: [0, 90, 180, 270], types: [3, 3, 3, 3] } as const;
-const SECONDS = 200;
+const SECONDS = 40;
 
 function legs(doc: ReturnType<typeof layoutDoc>['doc']): SegmentId[] {
   return [...doc.segments.keys()].sort((a, b) => a - b);
@@ -35,14 +35,21 @@ describe('lane connections by hand', () => {
     const other = (sim.graph.inbound.get(centre) ?? []).find((id) => sim.lanelet(id)?.segment === north && sim.lanelet(id)?.laneIndex === 1)!;
     expect(sim.graph.exitsOf(other).length).toBeGreaterThan(0);
 
+    // Until the lane has carried a vehicle through the junction (50 vehicle-ticks on its connectors),
+    // at most 80 s: waited for on what happened, not on a length of time.
     const used = new Map<string, number>();
-    for (let i = 0; i < Math.round(SECONDS / DT); i++) {
+    let through = 0;
+    for (let i = 0; i < Math.round(80 / DT) && through < 50; i++) {
       step(sim, { traffic: true, pedestrians: false });
       for (const v of sim.vehicles.values()) {
         const c = sim.connector(v.lanelet);
-        if (c && c.fromLane === inLane) used.set(`${c.outSegment}:${sim.lanelet(c.toLane)?.laneIndex}`, (used.get(`${c.outSegment}:${sim.lanelet(c.toLane)?.laneIndex}`) ?? 0) + 1);
+        if (!c || c.fromLane !== inLane) continue;
+        through++;
+        const key = `${c.outSegment}:${sim.lanelet(c.toLane)?.laneIndex}`;
+        used.set(key, (used.get(key) ?? 0) + 1);
       }
     }
+    expect(through).toBeGreaterThanOrEqual(50);
     expect([...used.keys()]).toEqual([`${east}:0`]);
   });
 

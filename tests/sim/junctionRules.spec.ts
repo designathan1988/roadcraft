@@ -82,10 +82,10 @@ describe('who gives way to whom', () => {
       doc.setNodeControl(centre, control);
       const sim = simOf(doc, 0x77, 4);
       let lastMinute = 0;
-      const ticks = Math.round(300 / DT);
+      const ticks = Math.round(60 / DT);
       for (let i = 0; i < ticks; i++) {
         step(sim, { traffic: true, pedestrians: false });
-        if (i > ticks - Math.round(60 / DT)) {
+        if (i > ticks - Math.round(30 / DT)) {
           for (const v of sim.vehicles.values()) if (sim.lanelet(v.lanelet)?.kind === 'connector' && v.s < 1) lastMinute++;
         }
       }
@@ -148,7 +148,7 @@ describe('signals', () => {
     const c = sim.controllers.get(centre)!;
     const seen = new Map<number, number>();
     let last = `${c.stageIndex}${c.sub}`, since = 0;
-    for (let i = 0; i < Math.round(240 / DT); i++) {
+    for (let i = 0; i < Math.round(120 / DT); i++) {
       step(sim, { traffic: false, pedestrians: false });
       since += DT;
       const now = `${c.stageIndex}${c.sub}`;

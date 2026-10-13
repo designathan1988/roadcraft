@@ -115,5 +115,5 @@ describe('a city opened as a new game starts it', () => {
       + `${driving} cars (density ${cars}), ${onFoot} people (street table ${people})`;
     expect(driving, detail).toBeGreaterThanOrEqual(Math.floor(cars * 0.8));
     expect(onFoot, detail).toBeGreaterThanOrEqual(Math.floor(people * 0.8));
-  }, 120_000);
+  });
 });

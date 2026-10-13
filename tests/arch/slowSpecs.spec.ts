@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const slow = Object.keys((JSON.parse(readFileSync(join(root, 'tests', 'slow.json'), 'utf8')) as { files: Record<string, number> }).files);
 /** The length of the list when it was made (2026-10-13). Lowered as specs leave it; never raised. */
-const SLOW_AT_MOST = 44;
+const SLOW_AT_MOST = 1;
 
 describe('the slow specs', () => {
   it('only ever shrink, and each one listed exists', () => {

@@ -25,8 +25,8 @@ function asTheGameRuns(sim: SimWorld): SimWorld {
  */
 describe('a simulation reset', () => {
   it('forgets every agent and everything learned about the old map, and runs on', () => {
-    const sim = asTheGameRuns(simOf(fixtureDoc(), 0x5eed, 2));
-    for (let i = 0; i < Math.round(40 / DT); i++) step(sim, { traffic: true, pedestrians: true });
+    const sim = asTheGameRuns(simOf(fixtureDoc(), 0x5eed, 1));
+    for (let i = 0; i < Math.round(10 / DT); i++) step(sim, { traffic: true, pedestrians: true });
     expect(sim.vehicles.size).toBeGreaterThan(0);
     expect(sim.pedViews.length).toBeGreaterThan(0);
 
@@ -40,7 +40,7 @@ describe('a simulation reset', () => {
     expect(sim.completedTrips).toBe(0);
 
     // The next step rebuilds the topology and the city fills again.
-    for (let i = 0; i < Math.round(30 / DT); i++) step(sim, { traffic: true, pedestrians: true });
+    for (let i = 0; i < Math.round(10 / DT); i++) step(sim, { traffic: true, pedestrians: true });
     expect(sim.vehicles.size).toBeGreaterThan(0);
     expect(sim.pedViews.length).toBeGreaterThan(0);
     for (const v of sim.vehicles.values()) expect(sim.lanelet(v.lanelet)).toBeDefined();
@@ -49,8 +49,8 @@ describe('a simulation reset', () => {
 
 describe('pedestrians on a demolished footway', () => {
   it('walk on from where they stood, not carried across the map nor stacked on one spot', () => {
-    const sim = asTheGameRuns(simOf(fixtureDoc(), 0x5eed, 2));
-    for (let i = 0; i < Math.round(60 / DT); i++) step(sim, { traffic: true, pedestrians: true });
+    const sim = asTheGameRuns(simOf(fixtureDoc(), 0x5eed, 1));
+    for (let i = 0; i < Math.round(20 / DT); i++) step(sim, { traffic: true, pedestrians: true });
     // The road whose footways carry the most people.
     const count = new Map<number, number>();
     for (const p of sim.pedViews) if (p.segment !== undefined) count.set(p.segment, (count.get(p.segment) ?? 0) + 1);
