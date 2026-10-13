@@ -1232,6 +1232,7 @@ export function createSceneRenderer(
   /** Clouds placed on the map: they boil, so the frame is drawn now and then. */
   let placedCloudsShown = false;
   let natureTreesStarted = false;
+  /** @rebuild Once, when the first world is in (`draw`). */
   const startNatureTrees = (): void => {
     natureTreesStarted = true;
     void loadNatureTrees(anisotropy).then(async (kit) => {
@@ -1705,6 +1706,7 @@ export function createSceneRenderer(
   /**
    * The pole layer alone, on its own revision: a pole edit moves only
    * `doc.utilityRevision` (see `RoadDoc`), so it rebuilds this and nothing else.
+   * @rebuild Called when the utility revision moved.
    */
   const rebuildUtilities = (net: Network): void => {
     if (!elevation) return;
@@ -1735,7 +1737,28 @@ export function createSceneRenderer(
   /** The city hour the plants were last sized at (`plantGrowth`). */
   let growthHour = Number.NaN;
   let cityMinutes = Number.NaN;
-  /** `keepFurniture`: a road edit that reached none of the placed things - only the signs (street names, junctions) are made again. */
+  /**
+   * Planted trees and shrubs grow with the city's clock: resized once a city
+   * hour while any is still growing. The hour is taken whether one is or not:
+   * taken only by `rebuildFurniture`, an hour with nothing growing copied the
+   * whole landscaping on every frame until the next hour.
+   * @rebuild Once a city hour; every other frame returns at its first check.
+   */
+  const growPlants = (net: Network): void => {
+    const hour = Math.floor(cityMinutes / 60);
+    if (hour === growthHour) return;
+    growthHour = hour;
+    for (const item of net.doc.landscape.values()) {
+      if (item.planted !== undefined && cityMinutes - item.planted < GROW_MINUTES + 60) {
+        rebuildFurniture(net);
+        return;
+      }
+    }
+  };
+  /**
+   * `keepFurniture`: a road edit that reached none of the placed things - only the signs (street names, junctions) are made again.
+   * @rebuild Called when the landscaping, the poles or the city hour of growing plants moved.
+   */
   const rebuildFurniture = (net: Network, keepFurniture = false): void => {
     if (!keepFurniture) growthHour = Math.floor(cityMinutes / 60);
     if (!elevation) return;
@@ -1812,6 +1835,13 @@ export function createSceneRenderer(
       }
       return;
     }
+    buildWorld(net);
+  };
+  /**
+   * The roads' heights solved again and the world's rebuild started (`worldSteps`).
+   * @rebuild Called by `rebuildWorld` when the roads' or the land's revision moved.
+   */
+  const buildWorld = (net: Network): void => {
     const started = performance.now();
     // Only the roads changed (the land did not): the ground is cut and filled
     // again only where the solve of the roads differs.
@@ -1899,6 +1929,7 @@ export function createSceneRenderer(
   /**
    * What `worldSteps` builds before it is put in place at once. `sliced`: run
    * a slice a frame (`pumpWorld`), so it may wait for its shaders.
+   * @rebuild Started by `buildWorld`; its slices run only while a rebuild is in progress.
    */
   function* worldSteps(net: Network, blocks: [number, number, number, number][] | null, started: number, sliced: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
@@ -2020,6 +2051,7 @@ export function createSceneRenderer(
    * materials of `rebuildWorld`, compiled in the background, and thrown away.
    */
   let roadShadersWarm: 'no' | 'started' = 'no';
+  /** @rebuild Once; every later frame returns at its first check. */
   const warmRoadShaders = (): void => {
     if (roadShadersWarm !== 'no') return;
     roadShadersWarm = 'started';
@@ -2063,6 +2095,7 @@ export function createSceneRenderer(
    * they stalled that frame for most of a second.
    */
   let blastShadersWarm = false;
+  /** @rebuild Once; every later frame returns at its first check. */
   const warmBlastShaders = (): void => {
     if (blastShadersWarm) return;
     blastShadersWarm = true;
@@ -2098,6 +2131,7 @@ export function createSceneRenderer(
    * showed them - a stall on the first use of each tool.
    */
   let previewShadersWarm = false;
+  /** @rebuild Once; every later frame returns at its first check. */
   const warmPreviewShaders = (): void => {
     if (previewShadersWarm) return;
     previewShadersWarm = true;
@@ -2938,7 +2972,7 @@ export function createSceneRenderer(
       groundDiary = net.doc.changes;
       // Planted trees and shrubs grow with the city's clock: resized once a city hour.
       cityMinutes = sim.city.minutes(sim);
-      if (Math.floor(cityMinutes / 60) !== growthHour && [...net.doc.landscape.values()].some((i) => i.planted !== undefined && cityMinutes - i.planted < GROW_MINUTES + 60)) rebuildFurniture(net);
+      growPlants(net);
       const wallNow = performance.now();
       const wallDt = lastWall < 0 ? 0 : Math.min(0.1, (wallNow - lastWall) / 1000);
       // The bodies, guts and debris on their own clock (the weapons lab slows,

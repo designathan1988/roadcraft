@@ -111,6 +111,7 @@ export function trackBoxes(points: readonly { x: number; y: number }[], mode: 't
   return out;
 }
 
+/** @rebuild Called when the transit's revision or the ground under it moved (`renderer.ts`). */
 export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => number,
   pavedAt: (x: number, y: number) => number = () => NaN,
   onRoad: (p: { x: number; y: number }) => boolean = () => false): TransitMeshes {

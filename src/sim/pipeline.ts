@@ -50,6 +50,8 @@ export interface StepOptions {
  *   claims (grant)                             stage 5
  *   vehicle s, v, lanelet, lane order          stage 6
  *   claims (release), ghosts                   stages 6-7
+ *
+ * @perFrame Runs every tick: `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
  */
 export function step(w: SimWorld, opts: StepOptions = {}): void {
   const traffic = opts.traffic ?? true;
@@ -156,7 +158,10 @@ export function rebindAgents(w: SimWorld): void {
   rebindPeds(w);
 }
 
-/** The vehicle half of `rebindAgents`, after `SimWorld.rebuildVehicleTopology`. */
+/**
+ * The vehicle half of `rebindAgents`, after `SimWorld.rebuildVehicleTopology`.
+ * @rebuild Called after a topology rebuild.
+ */
 export function rebindVehicles(w: SimWorld): void {
   for (const v of w.vehiclesInIdOrder()) {
     // A shadow is a projection onto a sibling lane that may have been rebuilt
@@ -192,7 +197,10 @@ export function rebindVehicles(w: SimWorld): void {
   }
 }
 
-/** The pedestrian half of `rebindAgents`, after `SimWorld.rebuildWalkTopology`. */
+/**
+ * The pedestrian half of `rebindAgents`, after `SimWorld.rebuildWalkTopology`.
+ * @rebuild Called after a topology rebuild.
+ */
 export function rebindPeds(w: SimWorld): void {
   w.pedEngine.rebind(w);
 }

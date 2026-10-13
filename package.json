@@ -23,7 +23,7 @@
     "test:coverage": "node scripts/run-limited.mjs npm run test:coverage:raw",
     "test:coverage:raw": "vitest run --coverage",
     "check": "node scripts/run-limited.mjs npm run check:raw",
-    "check:raw": "npm run lint && npm run typecheck && node scripts/knip-check.mjs && npm run test:raw && npm run test:planet:raw && npm run test:scale:raw && vite build",
+    "check:raw": "npm run lint && node scripts/check-code.mjs && node scripts/knip-check.mjs && npm run test:raw && npm run test:planet:raw && npm run test:scale:raw && vite build",
     "setup": "git config core.hooksPath .githooks",
     "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
     "desktop": "electron desktop/main.cjs",

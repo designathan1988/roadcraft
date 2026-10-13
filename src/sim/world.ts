@@ -482,7 +482,10 @@ export class SimWorld {
 
   // -------------------------------------------------------------- topology
 
-  /** Rebuilds every derived index from the current network geometry. */
+  /**
+   * Rebuilds every derived index from the current network geometry.
+   * @rebuild Called when the network's traffic revision moved.
+   */
   rebuildTopology(): void {
     this.rebuildVehicleTopology();
     this.rebuildWalkTopology();
@@ -512,6 +515,7 @@ export class SimWorld {
    * (`ConflictIndex.prepare`). Nothing the agents read changes; the rebuild
    * that follows reads every pair back. A new crossroads used to stall the
    * frame of its rebuild about a tenth of a second.
+   * @rebuild Run while the topology is behind the network (`frameLoop.ts` `TopologyCatchUp`).
    */
   *prepareVehicleTopology(): Generator<void, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
@@ -545,6 +549,7 @@ export class SimWorld {
     if (graph.revision !== this.net.revision) graph.build(this.doc, this.net);
   }
 
+  /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
     // The links and junctions the preparation turned (`prepareVehicleTopology`).
     if (this.prepGraph && this.prepGraph.revision === this.net.revision) this.graph.seedCaches(this.prepGraph);
@@ -622,7 +627,10 @@ export class SimWorld {
     while (!step.done) step = steps.next();
   }
 
-  /** `rebuildWalkTopology` in steps (`SidewalkGraph.buildSteps`); the world is held until the last. */
+  /**
+   * `rebuildWalkTopology` in steps (`SidewalkGraph.buildSteps`); the world is held until the last.
+   * @rebuild Run while the topology is behind the network (`frameLoop.ts` `TopologyCatchUp`).
+   */
   *walkTopologySteps(): Generator<void, void, void> {
     if (this.vehicleTopologyRevision !== this.net.trafficRevision) this.rebuildVehicleTopology();
     yield* this.sidewalks.buildSteps(this.doc, this.net, this.graph);

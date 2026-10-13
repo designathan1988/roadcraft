@@ -106,15 +106,26 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   (`tests/arch/slowSpecs.spec.ts`). O teste de escala da edição (contadores, mapa pequeno ×
   grande) fica no check: 6 s sozinho. O da escala do passo da simulação (62 s) fica na lista
   até a topologia ficar barata (R20: ~30 ms por cruzamento).
-
-## Em andamento
-- Envio de E3 + F1 + F2a + F3a + barreira nova.
+- Enviado ao GitHub (`7513dc0..dacd587`).
+- Analisador de código (`scripts/check-code.mjs`, 8 s, no lugar do `tsc --noEmit`): grafo de
+  chamadas pelo verificador do TypeScript a partir do quadro e do passo da simulação; nada que o
+  quadro alcança cria material ou compila shader; o que roda por quadro não chama JSON,
+  `structuredClone` nem cálculo de volume, nem percorre coleção do tamanho do mapa; teclado na
+  janela só no `main.ts`. 192 achados na linha de base (`code-rules.baseline.json`, só
+  diminui), que é a lista de trabalho; teste das regras em `tests/arch/checkCode.spec.ts`.
+  Primeiro corrigido: o `draw` copiava todo o paisagismo a cada quadro numa hora da cidade sem
+  planta crescendo.
 
 ## Próxima etapa
-- Analisador de código (grafo de chamadas a partir do quadro, da edição e do passo da simulação),
-  contadores em todos os produtos derivados, e os specs lentos reescritos para segundos.
+- Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
+  tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs
+  lentos reescritos para segundos.
 
 ## NÃO VERIFICADO
+- O crescimento das plantas por hora da cidade (`renderer.ts` `growPlants`) não foi visto no
+  jogo: uma hora da cidade leva 3 min reais a 1× e uma hora de crescimento é 1/72 do total,
+  nada que uma foto curta mostre. A mudança só tira a cópia por quadro; a regra de quando
+  refazer ficou a mesma.
 - **O painel do navegador do app ficou oculto às ~08:20** e só o jogador o reabre
   (Ctrl+Shift+B). Desde então o que é visual foi verificado em janelas do Chrome
   abertas pelo Playwright (visíveis, na RTX 3060), não no painel.

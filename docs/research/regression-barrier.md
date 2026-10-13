@@ -107,14 +107,37 @@ Done (2026-10-13): the gate removed; `npm run check` and the pre-push run lint, 
 specs that finish in seconds (10 s cap per test, `tests/arch/slowSpecs.spec.ts`), architecture,
 counting suites and the build, about a minute; the slow specs listed in `tests/slow.json`.
 
+Done (2026-10-13): the code analyser, `scripts/check-code.mjs` (8 s, in place of `tsc --noEmit`,
+whose diagnostics it reports). Sources read for it:
+- Clang function effect analysis (`nonblocking`, `nonallocating`): constraints verified
+  transitively over calls whose bodies are visible; indirect calls only to annotated targets; an
+  unknown body "assumes the worst"; `blocking` as the explicit escape.
+  https://clang.llvm.org/docs/FunctionEffectAnalysis.html
+- Field-based call graphs for JavaScript (Feldthaus, Schäfer, Sridharan, Dolby, Tip, ICSE 2013):
+  fast and accurate in practice; its imprecision comes from merging members of the same name.
+  https://2013.icse-conferences.org/content/efficient-construction-approximate-call-graphs-javascript-ide-services.html ;
+  replication: https://ir.cwi.nl/pub/23111 ; dynamic property access is the most common cause of
+  missed edges (Chakraborty et al., 2022): https://arxiv.org/abs/2205.06780
+- TypeScript compiler API (`createProgram`, `getTypeChecker`, `getSymbolAtLocation`; the
+  program is the main cost): https://github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API ;
+  `isTypeAssignableTo` is public in 5.9 (`typescript.d.ts`).
+How it resolves a call: the checker's symbol, through aliases, to every body it names; a call
+through an interface or a base class to every implementation tied to that declaration (object
+literals by their contextual type, classes by their heritage); one the checker cannot tie, to the
+members of that name on holders whose type is assignable to the receiver's (class hierarchy
+analysis, Dean, Grove and Chambers, ECOOP 1995, with structural assignability). A function given
+as an argument runs inside the call when our callee calls that parameter, or when a library
+declares the parameter a function (`forEach`, `sort`), never for the deferring calls
+(`setTimeout`, `addEventListener`, `then`). Measured on the repository: 10,429 functions, 4,576
+reached per frame, 5,298 from the frame; 192 findings in the baseline. Its own test:
+`tests/arch/checkCode.spec.ts`. First defect fixed from the list: `renderer.ts` `draw` copied every
+landscaping item on every frame of a city hour with nothing growing (`growPlants`).
+
+Limits: precision in `renderer.ts` `draw` and `main.ts` needs them split (F4): the guards inside
+them are lines, not functions, so what they guard counts as per frame. Not yet: caches keyed on a
+global revision.
+
 Next, in order:
-1. A code analyser (ts-morph, seconds): calls reachable from `frame`, `draw` and the sim `step`
-   may not reach `JSON.*`, `structuredClone`, `new *Material`, `computeBoundingSphere`, `toText`;
-   no loop over a whole collection (`net.ribbons`, `doc.segments`, `doc.nodes`, `doc.landscape`,
-   `doc.buildings`) in code reachable from an edit or a frame, except listed load and save
-   modules; materials only from the catalogue; no cache keyed on a global revision; no new
-   `keydown` listener outside `editor/gameKeys.ts`. Precision needs `main.ts` and `renderer.ts`
-   split (F4).
 2. A work counter on every derived product without one (network, elevation, walkways,
    sidewalks, conflicts, lots, road surfaces, furniture, signs, buildings); the scale test: the
    same edit costs the same on a small and a large map, ratio at most 1.05, for every counter.

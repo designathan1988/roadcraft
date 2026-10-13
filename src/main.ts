@@ -2959,6 +2959,10 @@ function syncLoadingCurtain(): void {
 /** A frame has been drawn, and the first world has been put in place (the opening builds it in parts). */
 let drawnOnce = false;
 let worldShown = false;
+/**
+ * One frame: input, the topology catching up, the simulation, the drawing, the panels.
+ * @perFrame `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
+ */
 function frame(now: number): void {
   if (!booted) return;
   // Each system's time in this frame (`core/health.ts`): a long frame is told with the systems that took it.

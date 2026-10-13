@@ -101,9 +101,18 @@ affected and visible cells only. Each derived product declares what it reads and
 Regressions are stopped by reading the code, in seconds, never by playing the game before a push
 (the player, 2026-10-13: no slow processes, no endless tests; research and sources in
 `docs/research/regression-barrier.md`).
-- `npm run check`, also the pre-push hook, about a minute: lint (layers, file size, no empty/silent
-  `catch`, no module state), typecheck, `knip` (no unused file, export or dependency), the specs
-  that run in seconds, architecture tests, the counting (scale) suites, the build.
+- `npm run check`, also the pre-push hook, about a minute and a half: lint (layers, file size, no
+  empty/silent `catch`, no module state), the code rules, `knip` (no unused file, export or
+  dependency), the specs that run in seconds, architecture tests, the counting (scale) suites,
+  the build.
+- The code rules (`scripts/check-code.mjs`, ~8 s): one TypeScript program types the code and
+  builds the call graph from the functions marked `@perFrame` (`main.ts` `frame`, the sim
+  `step`). Nothing a frame reaches makes a three.js material or compiles a shader; per-frame code
+  (up to a function marked `@rebuild`: its work runs only when what it reads changed, or once)
+  calls no JSON, `structuredClone` or bounding-volume computation and loops over no collection as
+  big as the map; key listeners on the window only in `main.ts`. What was there is in
+  `code-rules.baseline.json`, which only shrinks; `--why "<text>"` shows how a frame reaches a
+  finding. A `@rebuild` mark is a claim the analysis trusts: put it only where it is true.
 - Every test of the check finishes in 10 s (`vitest.config.ts` testTimeout; no spec may declare
   more, `tests/arch/slowSpecs.spec.ts`). The specs that took longer are listed in `tests/slow.json`,
   run only by `npm run test:slow`, and are rewritten to run in seconds (counters, model-based

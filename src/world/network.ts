@@ -237,6 +237,7 @@ export class Network {
    * everything, so the result is the full rebuild's by construction;
    * `tests/world/incrementalRebuild.spec.ts` holds the two equal. `full`
    * forgets everything first: loading a map (`editor/history.ts`).
+   * @rebuild Called when the document's revision moved (an edit, a load), never every frame.
    */
   rebuild(options: { readonly full?: boolean } = {}): void {
     if (options.full) this.forget();

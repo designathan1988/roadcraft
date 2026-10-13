@@ -29,6 +29,7 @@ const SINK = m(0.15);
 
 interface Box { x: number; y: number; z: number; yaw: number; length: number; width: number; height: number }
 
+/** @rebuild Called when the barriers' revision or the ground under them moved (`renderer.ts`). */
 export function buildBarriers(doc: RoadDoc, groundAt: (x: number, y: number) => number): Barriers {
   const group = new Group();
   group.name = 'barriers';
