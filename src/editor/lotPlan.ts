@@ -265,6 +265,7 @@ const PAVERS = mat('brick', 0x9a958c);
 const PAVERS_WARM = mat('brick', 0xb08a6e);
 const CONCRETE_PATH = mat('concrete', 0xc8c4bb);
 const STONE_PATH = mat('stone', 0xd2cbbd);
+const ALLEY_COBBLES = mat('stone', 0x8a857c);
 /** A retaining wall's stone, and the flights cut through one. */
 const RETAINING = RETAINING_STONE;
 
@@ -743,14 +744,15 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   const stripVolumes = nextVolume, stripElements = nextElement;
   for (const s of [L, R]) {
     if (s.walk) {
-      lot.path(s.walk, isHouse ? CONCRETE_PATH : PAVERS);
+      // A passage between buildings is an alley, used as one (the player's
+      // order of 2026-10-05): old cobbles - its one paving; laid over the
+      // pavers of a path as well, the two lay in one plane and flickered -
+      // a drain down the middle, bins and crates against the wall, a lamp on
+      // a bracket.
+      lot.path(s.walk, isHouse ? CONCRETE_PATH : ALLEY_COBBLES);
       if (!isHouse && s.walk.y1 - s.walk.y0 > 12) lot.put('lamp', s.walk.x0 + 0.3, (s.walk.y0 + s.walk.y1) / 2, 0, 0.3, 0.3, 3.5);
       if (!isHouse) {
-        // A passage between buildings is an alley, used as one (the player's
-        // order of 2026-10-05): old cobbles, a drain down the middle, bins
-        // and crates against the wall, a lamp on a bracket.
         const wx = (s.walk.x0 + s.walk.x1) / 2, len = s.walk.y1 - s.walk.y0;
-        lot.put('pavement', wx, (s.walk.y0 + s.walk.y1) / 2, 0, s.walk.x1 - s.walk.x0, len, 0.11, 0, mat('stone', 0x8a857c));
         for (let py = s.walk.y0 + 2; py < s.walk.y1 - 1; py += 5) lot.put('drain', wx, py, 0, 0.35, 0.35, 0.1);
         const side = s.walk.x1 - wx > 0.6 ? s.walk.x1 - 0.35 : wx;
         if (len > 6) {

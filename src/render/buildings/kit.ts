@@ -442,6 +442,18 @@ export function createBuildingKit(): BuildingKit {
     }),
   };
   for (const [kind, m] of Object.entries(material)) m.name = `building-part-${kind}`;
+  // A part laid on the shell in its plane - a balcony's slab on the roof of
+  // the block beside it, a sill on its wall - wins it for depth everywhere
+  // instead of pixel by pixel (z-fighting: the player, 2026-10-13, "objetos se
+  // sobrepondo e piscando"): pulled towards the eye by a few depth steps, as
+  // a decal is (OpenGL `glPolygonOffset`, three's `Material.polygonOffset`).
+  // The source meant every part so (its `coplanar.spec`) and the parts here
+  // had lost it.
+  for (const m of Object.values(material)) {
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -4;
+  }
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
   // At night not every window is lit, nor all alike: each pane draws its own

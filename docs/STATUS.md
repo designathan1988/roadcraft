@@ -152,6 +152,27 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
 - Elenco fixo (`cook-plugin.ts` CAST): os bonecos cozidos não dependem mais do código; o build
   não pede `cook:people` a cada mudança. `DT` num módulo próprio (`sim/dt.ts`).
 
+### Prédios sem faces sobrepostas piscando (2026-10-13, fotos do jogador)
+- Detector `tests/render/coplanar.spec.ts`: arquiva cada face dos prédios pelo plano (1 mm) e
+  soma a área de faces de aspectos diferentes, no mesmo plano e no mesmo sentido, que se
+  cobrem. Antes: cerca de 5.000 m² em 150 prédios da cidade pequena. Depois: cerca de 5 m²,
+  e o teste trava 3,6 m² em 100 prédios (só diminui; 5 s).
+- Causas e camadas (`buildingMesh.ts`): as peças instanciadas ganham das paredes pelo
+  `polygonOffset` (`kit.ts`, glPolygonOffset). O meio-fio dos lotes fica 1,2 cm para dentro, sob a
+  placa, e as laterais das calçadas 6 mm para dentro: o muro sobre a borda fica com a face. O
+  embasamento fica 1,2 cm acima do piso (o pátio no nível do piso batia no topo dele), e a
+  soleira das portas também. O calçamento em volta dos prédios e as faixas rentes vão em
+  cata-vento (cada canto uma vez). O muro de divisa fica sobre o rodapé, sem sobrepor a ele.
+  A pingadeira das marquises, a grelha do ar-condicionado, as cortinas, as venezianas e a
+  casa de máquinas ficam afastadas dos planos vizinhos.
+- Duas causas no gerador: a viela levava calçamento duplo, com pavers e pedras no mesmo
+  retângulo (`editor/lotPlan.ts`); e a marquise sobre um gramado era assentada no chão como
+  uma laje (agora só o que está de pé na terra é assentado). Mapas salvos antes guardam a
+  viela dupla até a cidade ser gerada de novo.
+- Visto no jogo (5300, cidade gerada de novo): centro com casas de máquinas recuadas, loja
+  com toldos e grade, casa com marquise na parede e pátio de lajotas, pé da casa de perto.
+  Nenhuma faixa de pisca em quadro parado; o movimento foi visto só com zoom pela roda.
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs
