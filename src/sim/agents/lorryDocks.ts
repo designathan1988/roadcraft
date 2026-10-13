@@ -2,6 +2,7 @@ import { pointInPolygon } from '@core/polygon';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { isDock, lorryDocks, type LorryDock } from '@world/buildings/docks';
 import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
+import type { Lot } from '@world/lots';
 import { levelPolygons } from '@world/surfaces';
 import { Level } from '@world/roadTypes';
 import type { MultiPoly } from '@core/clipper';
@@ -11,7 +12,7 @@ import type { SimWorld } from '../world';
 import type { Archetype } from '../vehicles/archetypes';
 import { carGates, gatedProperty, gateExits, wallsOf, type BayLane, type LotExit } from './parking';
 import {
-  type AxlePose, bodyClear, bodyClearExact, type Clearance, clearanceOf, discsOf, fillRing, fillRings,
+  type AxlePose, bodyClear, bodyClearExact, type Clearance, clearanceSteps, discsOf, fillRing, fillRings,
   type Solid, type Steered, type Waypoint, WaySearch,
 } from './hybridAStar';
 
@@ -115,69 +116,15 @@ export class Yard {
   /** The lot's ring, local. */
   readonly ring: { x: number; y: number }[];
 
-  constructor(readonly building: Building, readonly key: string, w: SimWorld, body: Steered) {
+  /** Made by `buildYard`, whose grid and clearance it takes; here its gates and docks are worked out. */
+  constructor(readonly building: Building, readonly key: string, w: SimWorld, body: Steered, made: YardGrid) {
     this.body = body;
     const b = building;
-    const prop = gatedProperty(b)!;
-    const lot = w.doc.lots.find((l) => l.building === b.id);
-    this.ring = lot ? lot.corners.map((q) => worldToLocal(b, q)) : [];
-    const exits = gateExits(w, b, prop, wallsOf(w));
-    const x0 = prop.x - STREET_REACH, y0 = prop.y - STREET_REACH;
-    const nx = Math.ceil((prop.w + 2 * STREET_REACH) / CELL), ny = Math.ceil((prop.d + 2 * STREET_REACH) / CELL);
-    const solid: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny).fill(1) };
-    // Open: the lot, the carriageways round it and each gate's mouth across the footway.
-    if (this.ring.length) fillRing(solid, this.ring, 0);
-    const box = { x0: x0, y0: y0, x1: x0 + nx * CELL, y1: y0 + ny * CELL };
-    for (const poly of asphaltOf(w.net)) {
-      const rings = poly.map((ring) => ring.map(([x, y]) => worldToLocal(b, { x: x!, y: y! })));
-      const outer = rings[0];
-      if (!outer || outer.every((q) => q.x < box.x0) || outer.every((q) => q.x > box.x1)
-        || outer.every((q) => q.y < box.y0) || outer.every((q) => q.y > box.y1)) continue;
-      fillRings(solid, rings, 0);
-    }
-    const gates = carGates(b);
-    for (const exit of exits) {
-      if (!exit.outer) continue;
-      const ux = exit.outer.x - exit.inner.x, uy = exit.outer.y - exit.inner.y, ul = Math.hypot(ux, uy);
-      const ox = ux / ul, oy = uy / ul, tx = -oy, ty = ox;
-      const gx = exit.outer.x - ox * m(1.2), gy = exit.outer.y - oy * m(1.2);
-      const gate = nearestGate(gates, gx, gy);
-      const half = (gate?.w ?? m(5)) / 2 + MOUTH_FLARE, far = exit.out + m(2);
-      fillRing(solid, [
-        { x: gx - tx * half, y: gy - ty * half }, { x: gx + tx * half, y: gy + ty * half },
-        { x: gx + tx * half + ox * far, y: gy + ty * half + oy * far }, { x: gx - tx * half + ox * far, y: gy - ty * half + oy * far },
-      ], 0);
-    }
-    // Only the street near a gate: a lorry turns in and out there, and the
-    // search does not wander the whole frontage (each street cell is a few
-    // hundred poses more to try).
-    const mouths = exits.filter((e) => e.outer).map((e) => e.outer!);
-    for (let j = 0; j < ny; j++) {
-      for (let i = 0; i < nx; i++) {
-        const k = j * nx + i;
-        if (solid.blocked[k]) continue;
-        const x = x0 + (i + 0.5) * CELL, y = y0 + (j + 0.5) * CELL;
-        if (this.ring.length && pointInPolygon({ x, y }, this.ring)) continue;
-        if (!mouths.some((q) => Math.hypot(q.x - x, q.y - y) <= STREET_WINDOW)) solid.blocked[k] = 1;
-      }
-    }
-    // Shut: every other lot, every building's walls, this lot's solid parts (and its car stalls).
-    for (const other of w.doc.lots) if (other !== lot) fillRing(solid, other.corners.map((q) => worldToLocal(b, q)), 1);
-    for (const o of w.doc.buildings.all()) {
-      for (const v of o.volumes) {
-        if (v.open) continue;
-        const ring = [localToWorld(o, v.x, v.y), localToWorld(o, v.x + v.w, v.y), localToWorld(o, v.x + v.w, v.y + v.d), localToWorld(o, v.x, v.y + v.d)]
-          .map((q) => worldToLocal(b, q));
-        if (ring.every((q) => q.x < box.x0 || q.x > box.x1) || ring.every((q) => q.y < box.y0 || q.y > box.y1)) continue;
-        fillRing(solid, ring, 1);
-      }
-    }
-    for (const el of b.elements ?? []) {
-      if (!SOLID.has(el.kind) || el.z >= OVER_A_LORRY || isDock(el)) continue;
-      fillRing(solid, elementRing(el), 1);
-    }
+    this.ring = made.ring;
+    const exits = made.exits;
+    const solid = made.solid;
     this.solid = solid;
-    this.field = clearanceOf(solid);
+    this.field = made.field;
 
     for (const exit of exits) {
       if (!exit.outer || exit.lane.entryAt === undefined) continue;
@@ -315,30 +262,217 @@ export class Yard {
   }
 }
 
+/** A yard's grid as `buildYard` fills it, before its gates and docks. */
+interface YardGrid {
+  readonly ring: { x: number; y: number }[];
+  readonly exits: LotExit[];
+  readonly solid: Solid;
+  readonly field: Clearance;
+}
+
+/**
+ * Cells of work a slice of a yard's making: some 2 ms. A yard's grid (cells
+ * of 10 cm, a third of a million) was filled and its clearance worked out in
+ * one tick - 30 ms, the simulation's worst tick in the game (2026-10-13); now
+ * over a dozen.
+ */
+const YARD_SLICE = 40_000;
+
+/** Cell of the grid the lots and buildings near a yard are found by (`yardNeighbours`). */
+const NEIGHBOUR_CELL = m(64);
+
+/** The lots and the buildings by cell of a coarse grid, and each building's lot: what a yard looks up, not the whole map. */
+export interface YardNeighbours {
+  readonly key: string;
+  readonly lotOf: ReadonlyMap<number, Lot>;
+  readonly cells: ReadonlyMap<number, { readonly lots: Lot[]; readonly buildings: Building[] }>;
+}
+
+const neighbourCell = (i: number, j: number): number => i * 100_003 + j;
+
+/**
+ * The town's lots and buildings filed by cell, made again only when the
+ * buildings or the lots change: a yard asks for the cells over its grid (it
+ * went through every lot and every building of the map, each turned into
+ * its frame).
+ * @rebuild Its work runs when the buildings or the lots changed.
+ */
+export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardNeighbours {
+  const key = `${w.doc.buildings.revision}:${w.doc.lotRevision}`;
+  if (known && known.key === key) return known;
+  const lotOf = new Map<number, Lot>();
+  const cells = new Map<number, { lots: Lot[]; buildings: Building[] }>();
+  const file = (x0: number, y0: number, x1: number, y1: number, put: (c: { lots: Lot[]; buildings: Building[] }) => void): void => {
+    for (let i = Math.floor(x0 / NEIGHBOUR_CELL); i <= Math.floor(x1 / NEIGHBOUR_CELL); i++) {
+      for (let j = Math.floor(y0 / NEIGHBOUR_CELL); j <= Math.floor(y1 / NEIGHBOUR_CELL); j++) {
+        const k = neighbourCell(i, j);
+        let c = cells.get(k);
+        if (!c) cells.set(k, c = { lots: [], buildings: [] });
+        put(c);
+      }
+    }
+  };
+  for (const lot of w.doc.lots) {
+    if (lot.building !== undefined) lotOf.set(lot.building, lot);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of lot.corners) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+    file(x0, y0, x1, y1, (c) => c.lots.push(lot));
+  }
+  for (const o of w.doc.buildings.all()) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const v of o.volumes) {
+      for (const [lx, ly] of [[v.x, v.y], [v.x + v.w, v.y], [v.x + v.w, v.y + v.d], [v.x, v.y + v.d]] as const) {
+        const q = localToWorld(o, lx, ly);
+        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+      }
+    }
+    if (x0 <= x1) file(x0, y0, x1, y1, (c) => c.buildings.push(o));
+  }
+  return { key, lotOf, cells };
+}
+
+/** The lots and the buildings filed in the cells over a box of the world, each once. */
+function near(index: YardNeighbours, x0: number, y0: number, x1: number, y1: number): { lots: Set<Lot>; buildings: Set<Building> } {
+  const lots = new Set<Lot>(), buildings = new Set<Building>();
+  for (let i = Math.floor(x0 / NEIGHBOUR_CELL); i <= Math.floor(x1 / NEIGHBOUR_CELL); i++) {
+    for (let j = Math.floor(y0 / NEIGHBOUR_CELL); j <= Math.floor(y1 / NEIGHBOUR_CELL); j++) {
+      const c = index.cells.get(neighbourCell(i, j));
+      if (!c) continue;
+      for (const lot of c.lots) lots.add(lot);
+      for (const o of c.buildings) buildings.add(o);
+    }
+  }
+  return { lots, buildings };
+}
+
+/**
+ * Makes a yard a slice at a time: what is solid to a lorry filled in its
+ * grid - from what is near the yard only (the roads and buildings of the
+ * whole map were each turned into the yard's frame) - then its clearance.
+ */
+export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
+  const prop = gatedProperty(b)!;
+  const lot = index.lotOf.get(b.id);
+  const ring = lot ? lot.corners.map((q) => worldToLocal(b, q)) : [];
+  const exits = gateExits(w, b, prop, wallsOf(w));
+  const x0 = prop.x - STREET_REACH, y0 = prop.y - STREET_REACH;
+  const nx = Math.ceil((prop.w + 2 * STREET_REACH) / CELL), ny = Math.ceil((prop.d + 2 * STREET_REACH) / CELL);
+  const solid: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny).fill(1) };
+  const box = { x0: x0, y0: y0, x1: x0 + nx * CELL, y1: y0 + ny * CELL };
+  // The grid's box in the world, for what is near it.
+  const corners = [localToWorld(b, box.x0, box.y0), localToWorld(b, box.x1, box.y0), localToWorld(b, box.x1, box.y1), localToWorld(b, box.x0, box.y1)];
+  const wx0 = Math.min(...corners.map((q) => q.x)), wx1 = Math.max(...corners.map((q) => q.x));
+  const wy0 = Math.min(...corners.map((q) => q.y)), wy1 = Math.max(...corners.map((q) => q.y));
+  // Open: the lot, the carriageways round it and each gate's mouth across the footway.
+  if (ring.length) fillRing(solid, ring, 0);
+  for (const { rings: world, box: wb } of asphaltOf(w.net)) {
+    if (wb.x1 < wx0 || wb.x0 > wx1 || wb.y1 < wy0 || wb.y0 > wy1) continue;
+    fillRings(solid, world.map((r) => r.map(([x, y]) => worldToLocal(b, { x: x!, y: y! }))), 0);
+  }
+  yield;
+  const gates = carGates(b);
+  for (const exit of exits) {
+    if (!exit.outer) continue;
+    const ux = exit.outer.x - exit.inner.x, uy = exit.outer.y - exit.inner.y, ul = Math.hypot(ux, uy);
+    const ox = ux / ul, oy = uy / ul, tx = -oy, ty = ox;
+    const gx = exit.outer.x - ox * m(1.2), gy = exit.outer.y - oy * m(1.2);
+    const gate = nearestGate(gates, gx, gy);
+    const half = (gate?.w ?? m(5)) / 2 + MOUTH_FLARE, far = exit.out + m(2);
+    fillRing(solid, [
+      { x: gx - tx * half, y: gy - ty * half }, { x: gx + tx * half, y: gy + ty * half },
+      { x: gx + tx * half + ox * far, y: gy + ty * half + oy * far }, { x: gx - tx * half + ox * far, y: gy - ty * half + oy * far },
+    ], 0);
+  }
+  // Only the street near a gate: a lorry turns in and out there, and the
+  // search does not wander the whole frontage (each street cell is a few
+  // hundred poses more to try). The lot's own cells by a mask of its ring,
+  // not a point-in-polygon test a cell.
+  const inLot: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny) };
+  if (ring.length) fillRing(inLot, ring, 1);
+  const mouths = exits.filter((e) => e.outer).map((e) => e.outer!);
+  const window2 = STREET_WINDOW * STREET_WINDOW;
+  let work = 0;
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      if (solid.blocked[k] || inLot.blocked[k]) continue;
+      const x = x0 + (i + 0.5) * CELL, y = y0 + (j + 0.5) * CELL;
+      let near = false;
+      for (const q of mouths) if ((q.x - x) * (q.x - x) + (q.y - y) * (q.y - y) <= window2) { near = true; break; }
+      if (!near) solid.blocked[k] = 1;
+    }
+    if ((work += nx) >= YARD_SLICE) { work = 0; yield; }
+  }
+  // Shut: every other lot near, every building's walls near, this lot's solid parts (and its car stalls).
+  const around = near(index, wx0, wy0, wx1, wy1);
+  for (const other of around.lots) {
+    if (other === lot) continue;
+    fillRing(solid, other.corners.map((q) => worldToLocal(b, q)), 1);
+  }
+  for (const o of around.buildings) {
+    for (const v of o.volumes) {
+      if (v.open) continue;
+      const vring = [localToWorld(o, v.x, v.y), localToWorld(o, v.x + v.w, v.y), localToWorld(o, v.x + v.w, v.y + v.d), localToWorld(o, v.x, v.y + v.d)]
+        .map((q) => worldToLocal(b, q));
+      if (vring.every((q) => q.x < box.x0 || q.x > box.x1) || vring.every((q) => q.y < box.y0 || q.y > box.y1)) continue;
+      fillRing(solid, vring, 1);
+    }
+  }
+  for (const el of b.elements ?? []) {
+    if (!SOLID.has(el.kind) || el.z >= OVER_A_LORRY || isDock(el)) continue;
+    fillRing(solid, elementRing(el), 1);
+  }
+  yield;
+  const field = yield* clearanceSteps(solid, YARD_SLICE);
+  return new Yard(b, key, w, body, { ring, exits, solid, field });
+}
+
 /** The yards of a world, made when first asked and again when their building or the roads change. */
 const YARDS = new WeakMap<SimWorld, Map<number, Yard>>();
 
-export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
+/** What a yard is made from: the roads and the buildings as they stand. */
+export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
+
+/** A building's yard as already made: null when it has none, undefined when it must be made (`buildYard`). */
+export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
   if (!gatedProperty(b) || !lorryDocks(b).length) return null;
-  const key = `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
+  const known = YARDS.get(w)?.get(b.id);
+  return known && known.building === b && known.key === yardKey(w) ? known : undefined;
+}
+
+/** Keeps a yard made (`buildYard`) for its building. */
+export function keepYard(w: SimWorld, yard: Yard): void {
   let byBuilding = YARDS.get(w);
   if (!byBuilding) YARDS.set(w, byBuilding = new Map());
-  const known = byBuilding.get(b.id);
-  if (known && known.building === b && known.key === key) return known;
-  const yard = new Yard(b, key, w, body);
-  byBuilding.set(b.id, yard);
-  return yard;
+  byBuilding.set(yard.building.id, yard);
+}
+
+/** The yard of a building as it stands now, made to the end at once if it must be (probes and specs). */
+export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
+  const known = knownYard(w, b);
+  if (known !== undefined) return known;
+  const steps = buildYard(b, yardKey(w), w, body, yardNeighbours(w, null));
+  for (;;) {
+    const next = steps.next();
+    if (next.done) { keepYard(w, next.value); return next.value; }
+  }
 }
 
 // ------------------------------------------------------------------ helpers
 
-const ASPHALT = new WeakMap<Network, { revision: number; polys: MultiPoly }>();
-function asphaltOf(net: Network): MultiPoly {
+/** The carriageways' polygons, each with its box in the world: a yard takes in only those near it. */
+type AsphaltPiece = { readonly rings: MultiPoly[number]; readonly box: { x0: number; y0: number; x1: number; y1: number } };
+const ASPHALT = new WeakMap<Network, { revision: number; pieces: AsphaltPiece[] }>();
+function asphaltOf(net: Network): readonly AsphaltPiece[] {
   const known = ASPHALT.get(net);
-  if (known && known.revision === net.revision) return known.polys;
-  const polys = levelPolygons(net, Level.Asphalt as never);
-  ASPHALT.set(net, { revision: net.revision, polys });
-  return polys;
+  if (known && known.revision === net.revision) return known.pieces;
+  const pieces = levelPolygons(net, Level.Asphalt as never).map((rings): AsphaltPiece => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of rings[0] ?? []) { x0 = Math.min(x0, x!); x1 = Math.max(x1, x!); y0 = Math.min(y0, y!); y1 = Math.max(y1, y!); }
+    return { rings, box: { x0, y0, x1, y1 } };
+  });
+  ASPHALT.set(net, { revision: net.revision, pieces });
+  return pieces;
 }
 
 /** How far a gate's inside is from a dock's open end. */

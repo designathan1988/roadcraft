@@ -66,11 +66,15 @@ export class SimClock {
     let n = 0;
     const start = this.acc >= DT ? now() : 0;
     let spent = 0;
-    while (this.acc >= DT && n < MAX_SUBSTEPS && spent < budgetMs) {
+    while (this.acc >= DT && n < MAX_SUBSTEPS) {
       step();
       this.acc -= DT;
       n++;
       spent = now() - start;
+      // Another step only if it would end inside the budget, at the mean cost
+      // of the steps so far: one of 7 ms under a budget of 8 started a second,
+      // and the frame paid 14 (measured in the game, 2026-10-13).
+      if (spent + spent / n > budgetMs) break;
     }
     this.lastSteps = n;
     this.lastStepMs = n > 0 ? spent / n : 0;

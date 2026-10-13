@@ -230,11 +230,16 @@ export function createExhaust(): Exhaust {
       owed += dt * (moving ? 0.5 + Math.min(1, Math.abs(speed) * 0.02) : 0.15);
       const cos = Math.cos(angle), sin = Math.sin(angle);
       const tailX = x - cos * length * 0.5, tailY = y - sin * length * 0.5;
+      // The puff's place and size in steps of 0.4 m (`TUNED_UNIT`), as the
+      // shader's motions: read as metres they were 2.5 times too wide, a
+      // 2.4 m puff growing to 6 m at every tailpipe, and two milliseconds of
+      // the GPU's frame in blended smoke (measured 2026-10-13).
+      const u = TUNED_UNIT;
       while (owed >= 1) {
         owed -= 1;
-        spawn(tailX + (Math.random() - 0.5) * 0.8, tailY + (Math.random() - 0.5) * 0.8, z + 1.0, 0, 2.4, EXHAUST_LIFE);
+        spawn(tailX + (Math.random() - 0.5) * 0.8 * u, tailY + (Math.random() - 0.5) * 0.8 * u, z + 1.0 * u, 0, 2.4 * u, EXHAUST_LIFE);
       }
-      if (dusty && moving && Math.random() < dt * 6) spawn(tailX, tailY, z + 0.2, 1, 6, EXHAUST_LIFE * 1.5);
+      if (dusty && moving && Math.random() < dt * 6) spawn(tailX, tailY, z + 0.2 * u, 1, 6 * u, EXHAUST_LIFE * 1.5);
     },
     burst(x, y, z, count, k, spread, s, l) {
       for (let n = 0; n < count; n++) {

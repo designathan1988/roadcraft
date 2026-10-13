@@ -1,5 +1,5 @@
 import { Rng } from '@core/rng';
-import type { BuildingId } from '@world/buildings/types';
+import type { Building, BuildingId } from '@world/buildings/types';
 import type { LaneletId } from '@world/lanelets';
 import { m } from '@world/units';
 import { DRIVER_NOISE, DT } from '../params';
@@ -13,7 +13,7 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneClosures';
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
-import { type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardOf } from './lorryDocks';
+import { buildYard, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
 import { gatedProperty } from './parking';
 import { lorryDocks } from '@world/buildings/docks';
 import type { Waypoint } from './hybridAStar';
@@ -188,16 +188,39 @@ export class LorryTraffic {
     }
   }
 
-  private yardFor(w: SimWorld, building: BuildingId): Yard | null {
+  /**
+   * The yard being made, a slice a call: its grid of a third of a million
+   * cells filled and its clearance worked out in one tick took 30 ms, the
+   * simulation's worst tick in the game (2026-10-13).
+   */
+  private making: { building: Building; key: string; steps: Generator<void, Yard, void> } | null = null;
+  /** The lots and buildings near each yard (`yardNeighbours`), kept while they stand. */
+  private neighbours: YardNeighbours | null = null;
+
+  /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
+  private yardFor(w: SimWorld, building: BuildingId): Yard | null | undefined {
     const b = w.doc.buildings.get(building);
-    return b ? yardOf(w, b, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!)) : null;
+    if (!b) return null;
+    const known = knownYard(w, b);
+    if (known !== undefined) return known;
+    const key = yardKey(w);
+    if (!this.making || this.making.building !== b || this.making.key !== key) {
+      this.neighbours = yardNeighbours(w, this.neighbours);
+      this.making = { building: b, key, steps: buildYard(b, key, w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!), this.neighbours) };
+    }
+    const next = this.making.steps.next();
+    if (!next.done) return undefined;
+    this.making = null;
+    keepYard(w, next.value);
+    return next.value;
   }
 
-  /** A slice of planning for the dock in hand. */
+  /** A slice of planning for the dock in hand (a slice of making its yard first). */
   private plan(w: SimWorld): void {
     const p = this.planning;
     if (!p) return;
     const yard = this.yardFor(w, p.building);
+    if (yard === undefined) return;
     if (!yard || !yard.docks[p.dock]) { this.planning = null; return; }
     yard.plan(p.dock, PLAN_BUDGET);
     if (yard.planned(p.dock)) this.planning = null;
@@ -211,8 +234,8 @@ export class LorryTraffic {
     const pick = free[Math.floor(this.rng.float() * free.length)]!;
     const dock = Math.floor(this.rng.float() * pick.docks);
     const yard = this.yardFor(w, pick.building);
-    if (!yard) return;
-    if (!yard.planned(dock)) { this.planning ??= { building: pick.building, dock }; return; }
+    if (yard === null) return;
+    if (yard === undefined || !yard.planned(dock)) { this.planning ??= { building: pick.building, dock }; return; }
     const ways = yard.ways(dock);
     if (!ways) return;
     const gate = ways.gate;

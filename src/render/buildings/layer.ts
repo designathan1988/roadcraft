@@ -1,6 +1,6 @@
 import { workUntil } from '@core/frameWork';
 import { Digest } from '@core/digest';
-import { Group, type InstancedMesh, type Mesh } from 'three';
+import { Group, type InstancedMesh, type Mesh, type Object3D } from 'three';
 import { warmLooseAhead } from '../uploads';
 
 import { pointInPolygon } from '@core/polygon';
@@ -172,18 +172,32 @@ export function createBuildingLayer(): BuildingLayer {
   let version = 0;
   let far = false;
   let shadowFar = false;
+  /**
+   * Each detail cell's centre (map x/y) and whether it is drawn by the far
+   * versions of its parts (`cullDetails`): kept per batch, so the key is read
+   * once, not every frame.
+   */
+  const detailState = new WeakMap<BuildingMeshes, { x: number; y: number; far: boolean }>();
+  /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
+  let lighterNow = false;
+  const applyDetail = (o: Object3D): void => {
+    const mesh = o as InstancedMesh;
+    if (!mesh.isInstancedMesh) return;
+    const kind = mesh.name.startsWith('building-') ? (mesh.name.slice(9) as PartKind) : null;
+    const lighter = kind ? kit.far[kind] : undefined;
+    if (!kind || !lighter) return;
+    mesh.geometry = lighterNow ? lighter : kit.geometry[kind];
+    mesh.castShadow = !shadowFar && kit.castsShadow.has(kind);
+  };
   /** Applies geometry and shadow detail to every stored facade batch. */
   const applyFacadeDetail = (): void => {
-    for (const batch of [stored, details, faded]) {
-      batch?.group.traverse((o) => {
-        const mesh = o as InstancedMesh;
-        if (!mesh.isInstancedMesh) return;
-        const kind = mesh.name.startsWith('building-') ? (mesh.name.slice(9) as PartKind) : null;
-        const lighter = kind ? kit.far[kind] : undefined;
-        if (!kind || !lighter) return;
-        mesh.geometry = far ? lighter : kit.geometry[kind];
-        mesh.castShadow = !shadowFar && kit.castsShadow.has(kind);
-      });
+    for (const batch of [stored, faded]) {
+      lighterNow = far;
+      batch?.group.traverse(applyDetail);
+    }
+    for (const cell of detailCells.values()) {
+      lighterNow = far || (detailState.get(cell.part)?.far ?? false);
+      cell.part.group.traverse(applyDetail);
     }
   };
   /** The buildings drawn cut open, by id and floor: only those near the camera, kept while they stay. */
@@ -491,10 +505,31 @@ export function createBuildingLayer(): BuildingLayer {
     cullDetails(eyeX, eyeY, eyeZ, reach) {
       const r2 = reach * reach;
       for (const [key, cell] of detailCells) {
-        const comma = key.indexOf(',');
-        const cx = (Number(key.slice(0, comma)) + 0.5) * DETAIL_CELL - eyeX;
-        const cy = (Number(key.slice(comma + 1)) + 0.5) * DETAIL_CELL - eyeY;
+        let state = detailState.get(cell.part);
+        // A cell new since the last frame is put to its detail whatever it is.
+        const fresh = !state;
+        if (!state) {
+          const comma = key.indexOf(',');
+          state = { x: (Number(key.slice(0, comma)) + 0.5) * DETAIL_CELL, y: (Number(key.slice(comma + 1)) + 0.5) * DETAIL_CELL, far: false };
+          detailState.set(cell.part, state);
+        }
+        const cx = state.x - eyeX, cy = state.y - eyeY;
         cell.part.group.visible = cx * cx + cy * cy + eyeZ * eyeZ < r2;
+        // Past `FULL_DETAIL_REACH` from the eye to the cell's nearest point
+        // its frames and railings are drawn by their street faces (`kit.far`):
+        // a frame's 6 cm side is under half a pixel there, and full frames in
+        // every cell within the reach were 6.6 million triangles a frame
+        // downtown. Switched back nearer by `DETAIL_HYSTERESIS` of the reach,
+        // as three's `LOD.update` does, so a cell at the edge does not flicker.
+        const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
+        const near2 = nx * nx + ny * ny + eyeZ * eyeZ;
+        const edge = state.far ? FULL_DETAIL_REACH * (1 - DETAIL_HYSTERESIS) : FULL_DETAIL_REACH;
+        const nextFar = near2 > edge * edge;
+        if (fresh || nextFar !== state.far) {
+          state.far = nextFar;
+          lighterNow = far || nextFar;
+          cell.part.group.traverse(applyDetail);
+        }
       }
     },
     setShadowFar(next) {
@@ -574,6 +609,9 @@ const LOADING_COUNT = 100;
 /** Side of the cells the buildings are batched in, world units. */
 const BATCH_CELL = m(240);
 const DETAIL_CELL = m(120);
+/** Nearer than this to the eye, a detail cell's frames and railings are drawn whole (`cullDetails`). */
+const FULL_DETAIL_REACH = m(150);
+const DETAIL_HYSTERESIS = 0.1;
 const DETAIL_PARTS: ReadonlySet<PartKind> = new Set(['frame', 'railing', 'roofRailing', 'louvre', 'curtain']);
 const COARSE_PARTS: ReadonlySet<PartKind> = new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind)));
 

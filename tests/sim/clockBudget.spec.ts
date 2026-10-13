@@ -39,6 +39,15 @@ describe("the simulation's budget a frame", () => {
     expect(steps()).toBe(2);
   });
 
+  it('starts no step that would end past the budget', () => {
+    // Steps of 7 ms under 8: the second would end at 14.
+    const { clock, steps, run } = clockWithSteps(7);
+    clock.speed = 2;
+    run(DT, 8);
+    expect(steps()).toBe(1);
+    expect(clock.lastStepMs).toBe(7);
+  });
+
   it('without a budget, runs up to the step cap as before', () => {
     const { clock, steps, run } = clockWithSteps(10);
     clock.speed = 4;

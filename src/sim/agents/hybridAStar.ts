@@ -67,22 +67,39 @@ export interface Clearance extends Solid {
 
 /** The clearance field of a grid of solid cells: an exact Euclidean distance transform. */
 export function clearanceOf(solid: Solid): Clearance {
+  const steps = clearanceSteps(solid, Infinity);
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
+
+/**
+ * `clearanceOf` in slices: it yields after about `slice` cells of work, so
+ * a yard's field (a third of a million cells) is worked out over several
+ * ticks, not in one (a 30 ms tick in the game, 2026-10-13). The work is
+ * counted in cells, so the slicing is the same on every machine.
+ */
+export function* clearanceSteps(solid: Solid, slice: number): Generator<void, Clearance, void> {
   const { nx, ny, blocked, cell } = solid;
   const INF = Infinity;
   const sq = new Float64Array(nx * ny);
   for (let i = 0; i < nx * ny; i++) sq[i] = blocked[i] ? 0 : INF;
   const n = Math.max(nx, ny);
   const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  let work = 0;
   // Along the columns, then along the rows (the transform is separable).
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < ny; j++) f[j] = sq[j * nx + i]!;
     transform1d(f, ny, d, v, z);
     for (let j = 0; j < ny; j++) sq[j * nx + i] = d[j]!;
+    if ((work += ny) >= slice) { work = 0; yield; }
   }
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) f[i] = sq[j * nx + i]!;
     transform1d(f, nx, d, v, z);
     for (let i = 0; i < nx; i++) sq[j * nx + i] = d[i]!;
+    if ((work += nx) >= slice) { work = 0; yield; }
   }
   const clear = new Float32Array(nx * ny);
   for (let i = 0; i < nx * ny; i++) clear[i] = Math.sqrt(sq[i]!) * cell;

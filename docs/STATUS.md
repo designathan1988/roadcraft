@@ -173,6 +173,20 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   com toldos e grade, casa com marquise na parede e pátio de lajotas, pé da casa de perto.
   Nenhuma faixa de pisca em quadro parado; o movimento foi visto só com zoom pela roda.
 
+### Câmera: menos engasgos (2026-10-13, relato do jogador: "trava", "trepidação")
+- Medido no jogo (5300, cidade gerada, 1775×922): a câmera anda certo por quadro (velocidade ×
+  tempo); o engasgo era o tempo de quadro. Antes: CPU 28 ms (simulação 12–14, desenho 16), GPU
+  25 ms, picos de 50–117 ms e passos da simulação de até 61 ms.
+- Causas corrigidas: o orçamento de 8 ms rodava um segundo passo de 7 ms (agora só começa o passo
+  que cabe); o pátio de doca dos caminhões era montado inteiro num passo, 30 ms, varrendo todos os
+  lotes, prédios e o asfalto do mapa (agora em fatias de 40 mil células, com o que está perto
+  por um índice por revisão); a fumaça dos escapamentos estava 2,5× maior (unidade antiga de
+  0,4 m lida como metro); as molduras e grades de janela a mais de 150 m usam a versão de fachada
+  (LOD por célula, com histerese, como o `LOD.update` do three).
+- Depois, com a câmera andando 11 s: simulação p50 8 ms, máx. 16; CPU p50 23 ms; GPU p50 17–23 ms;
+  sem picos de script. Ainda ~40 quadros/s com quadros de 50 ms às vezes: falta GPU (sombras 4 ms,
+  pessoas 3,7, prédios 3,7, chão 2,4, pós 5,8) e o desenho na CPU (1.273 chamadas).
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs
