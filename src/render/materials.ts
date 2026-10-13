@@ -2,6 +2,7 @@ import { CanvasTexture, Color, DoubleSide, FrontSide, MeshStandardMaterial, Repe
 
 import { bakedTexture, bakeSurface, disposeBakedTextures, fbm, makeNoise, rememberBakedTexture, type SurfaceBake } from './mesh/textureBaker';
 import { applyDetail, detailSwitch, disposeDetailTextures } from './mesh/detailLayer';
+import { applyRoadEdges } from './mesh/roadEdges';
 import { m } from '@world/units';
 
 /**
@@ -433,6 +434,10 @@ export function createMaterials(anisotropy: number): SceneMaterials {
   applyDetail(asphalt, { kind: 'asphalt', macroTile: ASPHALT_TILE, albedo: 0.6, normal: 0.65, macroBlur: 1.6 }, anisotropy);
   applyDetail(asphaltRaised, { kind: 'asphalt', macroTile: ASPHALT_TILE, albedo: 0.6, normal: 0.65, macroBlur: 1.6 }, anisotropy);
   applyDetail(footwayMaterial, { kind: 'concrete', macroTile: FOOTWAY_TILE, albedo: 0.7, normal: 0.8, macroBlur: 0.6 }, anisotropy);
+  // The marks of their use along their edges (`mesh/roadEdges.ts`).
+  applyRoadEdges(asphalt, 'carriageway');
+  applyRoadEdges(asphaltRaised, 'carriageway');
+  applyRoadEdges(footwayMaterial, 'footway');
   applyDetail(kerbMaterial, { kind: 'concrete', macroTile: KERB_TILE, albedo: 0.55, normal: 0.7, macroBlur: 0.8 }, anisotropy);
   applyDetail(vergeMaterial, { kind: 'grass', macroTile: VERGE_TILE, albedo: 1, normal: 1.2, macroBlur: 2 }, anisotropy);
   applyDetail(deckMaterial, { kind: 'concrete', macroTile: DECK_TILE, albedo: 0.6, normal: 0.8, macroBlur: 1 }, anisotropy);

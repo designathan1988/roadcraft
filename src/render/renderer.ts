@@ -3294,6 +3294,7 @@ export function createSceneRenderer(
         environment.setWeather(Math.max(weather.rain * 0.85, storm * 0.6), flash);
         rainWind.set(wind.x, -wind.y);
         rain.update(weather.rain, target, span, rainWind, step);
+        sceneryKit.setHaze(Math.max(weather.rain, storm));
         weatherActive = weather.rain > 0 || weather.lightning > 0 || flash > 0 || (weather.wind > 0 && placedCloudsShown);
       }
       const dark = environment.setTimeOfDay(clock);

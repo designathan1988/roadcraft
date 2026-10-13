@@ -45,6 +45,7 @@ import {
   hydrantGeometry,
   lampGeometry,
   lampLensGeometry,
+  LAMP_HEIGHT,
   LAMP_OUTREACH,
   postboxGeometry,
   phoneGeometry,
@@ -92,8 +93,19 @@ const TREE_WIND: WindResponse = { sway: 0.045, flutter: 0.009 };
 const BUSH_WIND: WindResponse = { sway: 0.05, flutter: 0.014 };
 const GRASS_WIND: WindResponse = { sway: 0.22, flutter: 0.04 };
 
-/** Radius of the pool of light under a street lamp. */
+/** Radius of the bright core under a street lamp (the cone's foot). */
 export const LAMP_POOL_RADIUS = m(4.6);
+/**
+ * The light a street lamp lays on the road: not a spotlight's disc but the
+ * long patch of a road luminaire's spread (the IES "type II/III"
+ * distributions), some 1.6 mounting heights each way along the road and the
+ * carriageway's width across it, so the pools of neighbouring lamps overlap
+ * and the whole road is lit, as street lighting is designed to be (ABNT NBR
+ * 5101, CIE 115: an overall uniformity of about 0.4). Discs of 4.6 m left the
+ * road dark between the lamps (the player, 2026-10-13: "a via toda fica
+ * iluminada, não é?").
+ */
+const POOL_ALONG = 1.6;
 /**
  * A lamp's visible cone of light, drawn as Volumetric Light Beam draws one
  * (saladgamer.com/vlb-doc/comp-lightbeam-sd/): an open cone, additive, its
@@ -125,6 +137,15 @@ const BEAM_SIDE_SOFTNESS = 1.6;
 const BEAM_FADE = [m(60), m(140)] as const;
 
 /**
+ * The street lights' colour: white LED, some 4500 K. The orange of sodium
+ * lamps (0xffc98a) is gone from Brazilian streets - 90 % of São Paulo's
+ * public lighting was LED in 2021 (Prefeitura de São Paulo, "Parque de
+ * iluminação da cidade") - and with every window as warm the night town was
+ * one yellow (the player, 2026-10-13).
+ */
+const STREET_LED = 0xffe2c4;
+
+/**
  * The cone's material. Front faces only: the far side of an open cone added
  * again doubled the light down its middle. The light along it is VLB's
  * "Blend" of linear and quadratic falloff, from the lens (1) to the ground
@@ -135,7 +156,7 @@ function beamMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     name: 'street-light-beam',
     uniforms: {
-      uColor: { value: new Color(0xffc98a) },
+      uColor: { value: new Color(STREET_LED) },
       uIntensity: { value: 0 },
     },
     vertexShader: `
@@ -216,6 +237,12 @@ export interface SceneryKit {
   readonly lens: { readonly reach: number; readonly height: number };
   /** Lamps lit as night falls: 0 by day, 1 at night. */
   setNight(dark: number): void;
+  /**
+   * How thick the air is, 0 clear to 1 rain or fog: a lamp's cone of light is
+   * seen only in air that scatters it. In a clear night only the lit ground
+   * shows (the cones over a dry street, 2026-10-13).
+   */
+  setHaze(haze: number): void;
   dispose(): void;
 }
 
@@ -261,12 +288,18 @@ export function createSceneryKit(): SceneryKit {
   const pool = new CircleGeometry(1, 28);
   pool.rotateX(-Math.PI / 2);
   const poolGlow = new MeshBasicMaterial({
-    map: lightPoolTexture(), color: 0xffc98a, transparent: true, opacity: 0, blending: AdditiveBlending,
+    map: lightPoolTexture(), color: STREET_LED, transparent: true, opacity: 0, blending: AdditiveBlending,
     depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
   const beam = new CylinderGeometry(BEAM_SOURCE, 1, 1, BEAM_SIDES, BEAM_SEGMENTS, true);
   beam.translate(0, -0.5, 0);
   const beamGlow = beamMaterial();
+  let night = 0;
+  let haze = 0;
+  const lightBeams = (): void => {
+    (beamGlow.uniforms['uIntensity'] as { value: number }).value = BEAM_INTENSITY * night * haze;
+    beamGlow.visible = night * haze > 0.02;
+  };
   const foliageDepth = windDepthMaterial(TREE_WIND, 'tree');
   const shrubsDepth = windDepthMaterial(BUSH_WIND, 'bush');
   const geometries: BufferGeometry[] = [
@@ -310,12 +343,17 @@ export function createSceneryKit(): SceneryKit {
     beamGlow,
     lens,
     setNight(dark) {
+      night = dark;
       // The lens burns brighter than white at night, so it blooms.
       glow.color.setHex(0xffeec0).multiplyScalar(1 + 2.6 * dark);
-      poolGlow.opacity = 0.5 * dark;
+      // Overlapping pools add up (additive): each one fainter, the road evenly lit.
+      poolGlow.opacity = 0.32 * dark;
       poolGlow.visible = dark > 0.02;
-      (beamGlow.uniforms['uIntensity'] as { value: number }).value = BEAM_INTENSITY * dark;
-      beamGlow.visible = dark > 0.02;
+      lightBeams();
+    },
+    setHaze(next) {
+      haze = Math.max(0, Math.min(1, next));
+      lightBeams();
     },
     dispose() {
       for (const geometry of geometries) geometry.dispose();
@@ -621,10 +659,14 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
     switch (item.kind) {
       case 'lamp': {
         put('lamp', { ...at, yaw: inward });
-        // The light falls under the head, over the kerb and the road.
-        const reach = LAMP_OUTREACH * 0.85;
-        put('pool', { x: item.x - item.outward.x * reach, y: item.y - item.outward.y * reach, z: base + m(0.012),
-          yaw: 0, sx: LAMP_POOL_RADIUS, sy: 1, sz: LAMP_POOL_RADIUS });
+        // The light falls over the road and the footway behind the lamp:
+        // across, the carriageway's width; along it, POOL_ALONG mounting
+        // heights each way. Local X of the pool runs across the road.
+        const road = net.ribbons.get(item.segment)?.road;
+        const across = Math.max(LAMP_POOL_RADIUS, (road ? road.width : m(7)) * 0.55 + m(2.5));
+        const centre = Math.max(LAMP_OUTREACH * 0.85, across - m(3));
+        put('pool', { x: item.x - item.outward.x * centre, y: item.y - item.outward.y * centre, z: base + m(0.012),
+          yaw: inward, sx: across, sy: 1, sz: LAMP_HEIGHT * POOL_ALONG });
         // And the cone it is lit by, from the lens down to the road under it.
         put('beam', { x: item.x - item.outward.x * lens.reach, y: item.y - item.outward.y * lens.reach, z: base + lens.height,
           yaw: 0, sx: LAMP_BEAM_RADIUS, sy: lens.height + FOOTWAY_RISE, sz: LAMP_BEAM_RADIUS });

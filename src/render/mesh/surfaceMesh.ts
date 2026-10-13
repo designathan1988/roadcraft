@@ -1,6 +1,5 @@
 import earcut from 'earcut';
 import {
-  BufferAttribute,
   BufferGeometry,
   Float32BufferAttribute,
   Mesh,
@@ -87,6 +86,13 @@ export interface SurfaceMeshOptions {
    * junction polygon belonging to two classes at once and a draw call for each.
    */
   readonly tint?: TintFn;
+  /**
+   * Per-vertex place in the road's cross-section, for the material's marks
+   * along its edges (the grime of the gutter, the wheel tracks, the footway's
+   * edges): three numbers, linear across the road so they interpolate
+   * exactly (`roadSurfaces.ts`). Written (0, -1, 0) - none - when absent.
+   */
+  readonly section?: TintFn;
   readonly castShadow?: boolean;
   readonly receiveShadow?: boolean;
   /** Extra UV scale for the skirt, so its texture is not stretched. */
@@ -359,10 +365,11 @@ interface Streams {
   readonly normals: number[];
   readonly uvs: number[];
   readonly colors: number[];
+  readonly sections: number[];
   readonly indices: number[];
 }
 
-const streams = (): Streams => ({ positions: [], normals: [], uvs: [], colors: [], indices: [] });
+const streams = (): Streams => ({ positions: [], normals: [], uvs: [], colors: [], sections: [], indices: [] });
 
 /** One build's options and the scratch its callbacks write into. */
 interface Context {
@@ -370,10 +377,12 @@ interface Context {
   readonly uv: [number, number];
   /** White until a tint writes it, so an untinted surface is written white. */
   readonly rgb: [number, number, number];
+  /** The cross-section's three numbers (`section`), none until written. */
+  readonly cut: [number, number, number];
 }
 
 export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
-  const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1] };
+  const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1], cut: [0, -1, 0] };
 
   // Compact pieces first (see `splitToSpan`), then ear clipping inside each.
   const out = streams();
@@ -382,7 +391,7 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
   for (const piece of pieces) meshPiece(piece, context, out);
   if (options.bottom) meshSkirts(context, out);
 
-  const { positions, normals, uvs, colors, indices } = out;
+  const { positions, normals, uvs, colors, sections, indices } = out;
   if (indices.length === 0) return null;
   // Only the top face was given a placeholder normal; recomputing just those
   // vertices keeps the skirt's hard edges while the surface itself is smooth.
@@ -395,11 +404,12 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
   // `vertexColors` requires the attribute, and it is cheaper to write three
   // ones than to keep two variants of every road material.
   geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('roadSection', new Float32BufferAttribute(sections, 3));
   geometry.setIndex(indices);
   return finish(geometry, options);
 }
 
-function finish(geometry: BufferGeometry,
+export function finish(geometry: BufferGeometry,
   options: Pick<SurfaceMeshOptions, 'name' | 'material' | 'castShadow' | 'receiveShadow'>): Mesh {
   geometry.computeBoundingSphere();
   geometry.computeBoundingBox();
@@ -420,9 +430,9 @@ function finish(geometry: BufferGeometry,
  * keep the identical vertices along it.
  */
 function meshPiece(polygon: Poly, context: Context, out: Streams): void {
-  const { options, uv: scratch, rgb } = context;
-  const { top, maxEdge, uv, tint } = options;
-  const { positions, normals, uvs, colors, indices } = out;
+  const { options, uv: scratch, rgb, cut } = context;
+  const { top, maxEdge, uv, tint, section } = options;
+  const { positions, normals, uvs, colors, sections, indices } = out;
   const outer = polygon[0];
   if (!outer || outer.length < 3) return;
 
@@ -464,6 +474,8 @@ function meshPiece(polygon: Poly, context: Context, out: Streams): void {
     normals.push(0, 1, 0);
     if (tint) tint(x, y, rgb);
     colors.push(rgb[0], rgb[1], rgb[2]);
+    if (section) section(x, y, cut);
+    sections.push(cut[0], cut[1], cut[2]);
   }
   // World Y is mirrored into three's Z. That reflection flips handedness, so
   // a ring that is counter-clockwise on the map comes out clockwise in the
@@ -485,6 +497,7 @@ function meshPiece(polygon: Poly, context: Context, out: Streams): void {
         uvs.push(scratch[0], scratch[1]);
         normals.push(0, 1, 0);
         colors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
+        sections.push(sections[v * 3]!, sections[v * 3 + 1]!, sections[v * 3 + 2]!);
         fresh.push(positions.length / 3 - 1);
       }
       [a, b, c] = fresh as [number, number, number];
@@ -507,7 +520,7 @@ function meshSkirts(context: Context, out: Streams, cut?: TileRect): void {
   const { polygons, top, maxEdge, tint } = options;
   const bottom = options.bottom;
   if (!bottom) return;
-  const { positions, normals, uvs, colors, indices } = out;
+  const { positions, normals, uvs, colors, sections, indices } = out;
   const scale = options.skirtUvScale ?? 1;
   for (const polygon of polygons) {
     const outer = polygon[0];
@@ -541,6 +554,8 @@ function meshSkirts(context: Context, out: Streams, cut?: TileRect): void {
         positions.push(ax, topA, -ay, bx, topB, -by, bx, lowB, -by, ax, lowA, -ay);
         if (tint) tint((ax + bx) / 2, (ay + by) / 2, rgb);
         for (let n = 0; n < 4; n++) colors.push(rgb[0], rgb[1], rgb[2]);
+        // A skirt has no place in the section: none.
+        for (let n = 0; n < 4; n++) sections.push(0, -1, 0);
         // Written rather than averaged, so a kerb keeps its hard edge instead
         // of smearing into the surface above it.
         for (let n = 0; n < 4; n++) normals.push(nx, 0, nz);
@@ -567,6 +582,7 @@ export interface Tile {
   readonly normals: Float32Array;
   readonly uvs: Float32Array;
   readonly colors: Float32Array;
+  readonly sections: Float32Array;
   /** Local to the tile. */
   readonly indices: Uint32Array;
 }
@@ -620,7 +636,7 @@ export function clipToRect(polygons: MultiPoly, rect: TileRect): MultiPoly {
  * edges the cut itself made, which are interior to the whole surface.
  */
 export function meshTile(options: SurfaceMeshOptions, rect: TileRect): Tile {
-  const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1] };
+  const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1], cut: [0, -1, 0] };
   const out = streams();
   const spans: Poly[] = [];
   for (const polygon of options.polygons) splitToSpan(polygon, options.maxEdge * 6, spans);
@@ -634,6 +650,7 @@ export function meshTile(options: SurfaceMeshOptions, rect: TileRect): Tile {
     normals: new Float32Array(out.normals),
     uvs: new Float32Array(out.uvs),
     colors: new Float32Array(out.colors),
+    sections: new Float32Array(out.sections),
     indices: new Uint32Array(out.indices),
   };
 }
@@ -646,41 +663,6 @@ function alongCut(rect: TileRect, ax: number, ay: number, bx: number, by: number
       : Math.abs(ay - at) < CUT_SLACK && Math.abs(by - at) < CUT_SLACK) return true;
   }
   return false;
-}
-
-/** One mesh of a surface from its tiles, in order. */
-export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
-  'name' | 'material' | 'castShadow' | 'receiveShadow'>): Mesh | null {
-  let vertices = 0;
-  let count = 0;
-  for (const tile of parts) {
-    vertices += tile.positions.length / 3;
-    count += tile.indices.length;
-  }
-  if (count === 0) return null;
-  const positions = new Float32Array(vertices * 3);
-  const normals = new Float32Array(vertices * 3);
-  const uvs = new Float32Array(vertices * 2);
-  const colors = new Float32Array(vertices * 3);
-  const indices = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
-  let v = 0;
-  let k = 0;
-  for (const tile of parts) {
-    positions.set(tile.positions, v * 3);
-    normals.set(tile.normals, v * 3);
-    uvs.set(tile.uvs, v * 2);
-    colors.set(tile.colors, v * 3);
-    const local = tile.indices;
-    for (let i = 0; i < local.length; i++) indices[k++] = (local[i] as number) + v;
-    v += tile.positions.length / 3;
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new BufferAttribute(uvs, 2));
-  geometry.setAttribute('color', new BufferAttribute(colors, 3));
-  geometry.setIndex(new BufferAttribute(indices, 1));
-  return finish(geometry, options);
 }
 
 /** Bounding box of a polygon's outer ring, [minX, minY, maxX, maxY]. */

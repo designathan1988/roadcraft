@@ -5,7 +5,7 @@ import { Digest } from '@core/digest';
 import { offsetPolyline } from '@core/offset';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
-import { CASING_BAND, CURB_BAND, FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel } from '@world/roadTypes';
+import { CASING_BAND, CURB_BAND, FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel, laneWidth } from '@world/roadTypes';
 import type { CarriagewayMaterial, FootwayMaterial } from '@world/roadSection';
 import { footwayRiseAt, footwayRiseShare } from '@world/roads/footwayRise';
 import { levelPolygons, levelRings } from '@world/surfaces';
@@ -24,10 +24,10 @@ import { medianNose } from '@world/landscape';
 import { PAINT_RISE, markingQuads, paintMaterial } from './markings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
+import { mergeTiles } from './mesh/surfaceTiles';
 import {
   clipToRect,
   disposeMesh,
-  mergeTiles,
   meshTile,
   type HeightFn,
   type SurfaceMeshOptions,
@@ -498,6 +498,33 @@ export function* roadSurfaceSteps(
 
     const suffix = pass.id === 'ground' ? '' : `-${pass.id}`;
 
+    /**
+     * A point's place in the carriageway's cross-section, for the marks of
+     * its use (`mesh/roadEdges.ts`): signed offset across, half its width
+     * kerb to kerb, a lane's width. None on a junction's plate, where no one
+     * lane runs.
+     */
+    const asphaltSection: TintFn = (x, y, out) => {
+      const sample = elevation.roadAt(x, y, only, pass.segment !== undefined);
+      const ribbon = sample.segment === undefined ? undefined : net.ribbons.get(sample.segment);
+      const trims = sample.segment === undefined ? undefined : net.trims.get(sample.segment);
+      const from = trims?.a[Level.Asphalt] ?? 0, to = ribbon ? ribbon.full.length - (trims?.b[Level.Asphalt] ?? 0) : 0;
+      if (!ribbon || sample.along < from || sample.along > to) { out[0] = 0; out[1] = -1; out[2] = 0; return; }
+      out[0] = sample.across;
+      out[1] = ribbon.road.width / 2;
+      out[2] = laneWidth(ribbon.road);
+    };
+    /** A point's place across the footway: metres from the kerb's back, and the footway's width to the lot. */
+    const footwaySection: TintFn = (x, y, out) => {
+      const sample = elevation.roadAt(x, y, only, pass.segment !== undefined);
+      const ribbon = sample.segment === undefined ? undefined : net.ribbons.get(sample.segment);
+      if (!ribbon) { out[0] = 0; out[1] = -1; out[2] = 0; return; }
+      const side = sample.across >= 0 ? sample.sidewalkLeft : sample.sidewalkRight;
+      out[0] = Math.abs(sample.across) - ribbon.road.width / 2 - CURB_BAND;
+      out[1] = Math.max(m(0.5), (side ?? sample.sidewalk ?? m(2)) - CURB_BAND);
+      out[2] = 1;
+    };
+
     /** The footway's tone: its side's material on the road nearest the point (docs/VIAS.md V1). */
     const footwayTint: TintFn = (x, y, out) => {
       const sample = elevation.roadAt(x, y, only, pass.segment !== undefined);
@@ -593,6 +620,7 @@ export function* roadSurfaceSteps(
           // few slabs (`surfaceFrameAt`, panels), so pavers keep their size.
           ...uvFor(materials.scale.footway, materials.scale.footway * FOOTWAY_PANEL_TILES),
           tint: footwayTint,
+          section: footwaySection,
           castShadow: raised,
           receiveShadow: true,
           skirtUvScale: materials.scale.footway,
@@ -639,6 +667,7 @@ export function* roadSurfaceSteps(
           maxEdge,
           ...uvFor(materials.scale.asphalt),
           tint: asphaltTint,
+          section: asphaltSection,
           castShadow: raised,
           receiveShadow: true,
           skirtUvScale: materials.scale.deck,

@@ -547,7 +547,11 @@ export function createEnvironment(
       sun.intensity = 4.2 * (0.25 + 0.75 * Math.min(1, height * 2.5 + 0.2)) * light + 0.85 * dark;
       // 0.58 (a darker shade for "volume") left the whole town dark and
       // grey (the player, 2026-10-09): the sky light as it was.
-      hemisphere.intensity = 0.8 * light + 0.2 * dark;
+      // At night the town is lit from its own sky - the glow of its lights
+      // off the haze and the clouds, a bluish grey - enough that a facade
+      // reads as a facade, not as a black stain round its windows (the
+      // player, 2026-10-13); 0.2 drew the night town as a silhouette.
+      hemisphere.intensity = 0.8 * light + 0.4 * dark;
       {
         // A right angle and a little more round from the sun, lower than it.
         const fillAzimuth = Math.atan2(sunDirection.z, sunDirection.x) + (100 * Math.PI) / 180;
@@ -561,7 +565,7 @@ export function createEnvironment(
         const keyOnGround = sun.intensity * Math.max(0, sunDirection.y);
         fill.intensity = Math.min(1.0 * light, (0.5 * keyOnGround) / Math.sin(fillElevation));
       }
-      ambient.intensity = 0.07 * light + 0.05 * dark;
+      ambient.intensity = 0.07 * light + 0.08 * dark;
       fill.color.copy(FILL_WHITE);
       zenith.copy(DAY_ZENITH).lerp(NIGHT_ZENITH, dark);
       horizon.copy(DAY_HORIZON).lerp(DUSK_HORIZON, warm * light * 0.7).lerp(NIGHT_HORIZON, dark);
