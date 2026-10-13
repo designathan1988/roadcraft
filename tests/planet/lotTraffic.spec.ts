@@ -62,5 +62,5 @@ describe('the lots\' cars on the planet', () => {
     const lots = w.city.lots;
     expect(lots.called).toBeGreaterThan(0);
     expect(lots.parkedIn + lots.leftBy).toBeGreaterThan(0);
-  }, 180_000);
+  });
 });

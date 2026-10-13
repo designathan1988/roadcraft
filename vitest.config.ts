@@ -1,8 +1,16 @@
 import { defineConfig } from 'vitest/config';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { modelUrlsPlugin } from './model-urls-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+/**
+ * The specs that took 10 s or more (`tests/slow.json`): left out of every run
+ * but `npm run test:slow`, so `npm run check` and the push take about a minute.
+ * The list only shrinks (`tests/arch/slowSpecs.spec.ts`).
+ */
+export const SLOW_SPECS: readonly string[] = Object.keys((JSON.parse(readFileSync(r('./tests/slow.json'), 'utf8')) as { files: Record<string, number> }).files);
 
 export default defineConfig({
   // The model files' URLs (`model-urls-plugin.ts`), as the game imports them.
@@ -44,14 +52,13 @@ export default defineConfig({
     // file at a time (`vitest.scale.config.ts`): they build whole grids of
     // traffic, and beside the rest of the suite they ran out of time on CPU
     // contention, not on a defect.
-    exclude: ['tests/e2e/**', 'tests/planet/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*'],
+    exclude: ['tests/e2e/**', 'tests/planet/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*', ...SLOW_SPECS],
     // Tests always run with invariant assertions armed.
     env: { SIM_STRICT: '1' },
-    // Not a speed limit - the budgets that matter are asserted by the tests
-    // that own them. Several suites run minutes of a whole map, traffic and
-    // all, and under the full suite with coverage beside them they took up to
-    // seven times as long as alone and failed on a clock, not on a defect.
-    testTimeout: 180_000,
+    // A test that needs more than 10 s does not belong in the check (the
+    // player, 2026-10-13: no slow processes, no endless tests): it fails here,
+    // and is made to run in seconds, never moved to the slow list.
+    testTimeout: 10_000,
     // A CAP on the workers, not the default of one per hardware thread. Each
     // worker can be simulating a whole map; on a 24-thread machine the default
     // started 23 of them per run, and a few runs side by side froze the

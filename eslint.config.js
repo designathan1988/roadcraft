@@ -145,17 +145,10 @@ export default tseslint.config(
     // Playwright; the callback bodies are browser code by construction.
     files: [
       'scripts/cook-people.mjs',
-      'scripts/gate/*.mjs',
     ],
     languageOptions: {
       globals: {
         window: 'readonly',
-        Element: 'readonly',
-        WebGL2RenderingContext: 'readonly',
-        WebGLRenderingContext: 'readonly',
-        OffscreenCanvas: 'readonly',
-        createImageBitmap: 'readonly',
-        btoa: 'readonly',
         document: 'readonly',
         localStorage: 'readonly',
         innerWidth: 'readonly',

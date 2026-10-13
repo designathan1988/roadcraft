@@ -35,5 +35,5 @@ describe('the differences between two solves', () => {
       }
       expect(found).toEqual(full);
     }
-  }, 240_000);
+  });
 });

@@ -1,8 +1,7 @@
 /**
  * THE PERFORMANCE BUDGETS: one table for the game's own watch (the F9 monitor,
  * `ui/healthWatch.ts`), the specs (`tests/perf/budgets.spec.ts`,
- * `tests/planet/perfBudgets.spec.ts`, run by `npm run check`) and the browser
- * gate (`npm run perf:gate`, `scripts/perf-gate.mjs`).
+ * `tests/planet/perfBudgets.spec.ts`, run by `npm run check`).
  *
  * A ratchet: each number is what the game does now with a margin, and may
  * only go DOWN. Raising one needs the player's yes (CLAUDE.md, "Performance
@@ -73,27 +72,6 @@ export const COUNT_BUDGETS = {
   fixtureRoadTriangles: { min: 220_000, max: 330_000, level: 'error', why: 'superfícies das vias da cena fixa (275 691)' },
   /** Meshes (draw calls) of the same surfaces (134). */
   fixtureRoadMeshes: { max: 160, level: 'error', why: 'malhas das superfícies da cena fixa (134)' },
-} as const satisfies Readonly<Record<string, Budget>>;
-
-/**
- * The browser gate (`scripts/perf-gate.mjs`): a generated town with 400 cars
- * and 400 people on the planet, its street view, and three roads drawn by
- * clicks; medians. Measured 2026-10-11 headless (the Intel iGPU draws: the GPU
- * side is slower than the player's RTX 3060).
- */
-export const GATE_BUDGETS = {
-  frameCpuP95: { max: 16, level: 'error', why: 'quadro, CPU, p95 (11,9-13,8 ms)' },
-  simP95: { max: 6, level: 'error', why: 'simulação por quadro, p95 (3,6-4,7 ms)' },
-  drawP95: { max: 12, level: 'warn', why: 'desenho por quadro, p95 (8,5-9,9 ms, iGPU)' },
-  allocMBps: { max: 220, level: 'warn', why: 'alocação por segundo (168-176 MB/s)' },
-  gcShare: { max: 0.03, level: 'error', why: 'fração da thread principal no coletor (1 %)' },
-  drawCalls: { max: 700, level: 'error', why: 'draw calls de um quadro na rua (519-542)' },
-  triangles: { min: 8_500_000, max: 14_600_000, level: 'error', why: 'triângulos de um quadro na rua, sombras incluídas: nem inchado, nem sem detalhe (12,16 M)' },
-  heapMB: { max: 1700, level: 'warn', why: 'heap JS com a cidade (1 320-1 368 MB)' },
-  roadClickMs: { max: 180, level: 'error', why: 'quadro do clique de uma via, mediana (67,6 ms; 65-112 no mapa do jogador)' },
-  roadWorldMs: { max: 600, level: 'error', why: 'edição de via inteira, mediana (174 ms)' },
-  roadGroundMs: { max: 1200, level: 'warn', why: 'chão pronto depois do clique, mediana (414 ms)' },
-  roadLongFrames: { max: 6, level: 'warn', why: 'quadros longos por via, mediana (2)' },
 } as const satisfies Readonly<Record<string, Budget>>;
 
 /** Whether a value keeps its budget. */

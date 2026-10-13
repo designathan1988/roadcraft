@@ -98,7 +98,7 @@ export function samePlain(a: unknown, b: unknown): boolean {
 
 const copy = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
 
-const IMMUTABLE = new Set<RecordPart>(RECORDS.filter((r) => r.immutable).map((r) => r.part));
+const IMMUTABLE: readonly RecordPart[] = RECORDS.filter((r) => r.immutable).map((r) => r.part);
 const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
 
 /**
@@ -109,7 +109,7 @@ const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSO
  */
 function bytesHeld(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
   let bytes = 0;
-  for (const r of records) bytes += textBytes(r.before) + (IMMUTABLE.has(r.part) ? 0 : textBytes(r.after));
+  for (const r of records) bytes += textBytes(r.before) + (IMMUTABLE.includes(r.part) ? 0 : textBytes(r.after));
   for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
   for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
   return bytes;

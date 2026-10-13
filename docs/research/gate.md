@@ -1,5 +1,9 @@
 # The gate: how a build is measured (E1)
 
+> **Superseded on 2026-10-13.** The gate was removed (the player: hours before each push, few
+> scenes, noise). Regressions are stopped by reading the code and by counters, in seconds:
+> `docs/research/regression-barrier.md`. Kept as the record of what was tried.
+
 Question: how to measure a production build of the game on this machine so that
 a candidate can be compared with the base and a regression blocks the push.
 

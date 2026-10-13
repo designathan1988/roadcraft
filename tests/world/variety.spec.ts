@@ -76,6 +76,6 @@ describe('variety of grown buildings', () => {
       }
       console.log(`GÊMEOS ${use} ${density}: ${alike} de ${street.length} com um quase igual a menos de 100 m`);
       expect(alike / street.length, `${alike} of ${street.length} with a near twin within 100 m`).toBeLessThan(0.15);
-    }, 120_000);
+    });
   }
 });

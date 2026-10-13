@@ -98,19 +98,30 @@ affected and visible cells only. Each derived product declares what it reads and
 
 ## Protection against regressions
 
-- `npm run check`: lint (layers, file size, no empty/silent `catch`), typecheck, `knip` (no unused
-  file, export or dependency), unit tests, architecture tests, scale tests.
-- The gate (`scripts/gate.mjs`) runs in the pre-push hook and blocks the push: production build,
-  visible Chrome on the RTX 3060, fixed scenarios in BOTH views (flat and planet), budgets, and
-  reference pictures compared by pixel (people, cars and buildings up close included).
+Regressions are stopped by reading the code, in seconds, never by playing the game before a push
+(the player, 2026-10-13: no slow processes, no endless tests; research and sources in
+`docs/research/regression-barrier.md`).
+- `npm run check`, also the pre-push hook, about a minute: lint (layers, file size, no empty/silent
+  `catch`, no module state), typecheck, `knip` (no unused file, export or dependency), the specs
+  that run in seconds, architecture tests, the counting (scale) suites, the build.
+- Every test of the check finishes in 10 s (`vitest.config.ts` testTimeout; no spec may declare
+  more, `tests/arch/slowSpecs.spec.ts`). The specs that took longer are listed in `tests/slow.json`,
+  run only by `npm run test:slow`, and are rewritten to run in seconds (counters, model-based
+  tests) until the list is empty; the list only shrinks.
+- Performance is checked as counts, not timings: each derived product has a work counter, and the
+  same edit costs the same on a small map and a large one (`tests/scale`). Wall-clock measures
+  are noise and never block anything.
 - Loosening a tolerance, budget or test limit needs the line `aprovado pelo jogador em <data>`.
+  The performance gate in Chrome before each push was removed: aprovado pelo jogador em 2026-10-13.
 - A test written for a defect must fail on the old code and pass on the new.
 
-## Verify (no exceptions)
+## Verify (no exceptions, and short)
 
-- Open the game in the in-app browser with the pane DISPLAYED (hidden it draws 0 fps; ask for
-  Ctrl+Shift+B once and wait) and use the change as the player does: real controls, several
-  different inputs in sequence, camera low and close and also far, in both views.
+- After a change the player can see, open the game in the in-app browser with the pane DISPLAYED
+  (hidden it draws 0 fps; ask for Ctrl+Shift+B once and wait), go straight to what changed (the
+  debug surface puts the camera there) and use it as the player does: real controls, a few
+  different inputs, close and far, in the views it touches. Minutes, not long scripted probes:
+  no scenario runs, no dozens of pictures, nothing left running.
 - Take pictures, open every one and look for what the player would see wrong (hidden or cut text,
   overlaps, misalignment, floating or sunken parts, wrong language, aliasing, pixelation, jumps).
   Watch motion over time; a still proves nothing that moves. Fix every defect seen and look again.
@@ -124,7 +135,7 @@ affected and visible cells only. Each derived product declares what it reads and
 | port | what |
 |---|---|
 | 5300 | dev server of this repository (scratch storage) |
-| 5301 | Playwright e2e and probes (cleared storage) |
+| 5301 | a production build looked at by hand, when a check needs one (cleared storage) |
 | 4300 | the player's game: production build of the last verified commit only |
 | 4299 | the old game (reference build of the source commit), read-only |
 
@@ -146,7 +157,7 @@ persistence, back them up to files and prove each one opens in this game.
 
 ```bash
 npm run dev            # the game on localhost:5300
-npm run check          # lint + typecheck + knip + tests + build
-npm run gate           # the performance and image gate
+npm run check          # lint + typecheck + knip + fast tests + counters + build (~1 min; also pre-push)
+npm run test:slow      # the slow specs of tests/slow.json, by hand only, while they are rewritten
 npm run cook:people    # after changing people code or assets (dev server up)
 ```

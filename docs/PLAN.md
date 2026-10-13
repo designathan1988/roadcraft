@@ -120,6 +120,13 @@ branco: o jogo nunca rodou nos dados). Onde procurei:
 
 ## 2. Portão (E1) — especificação
 
+> **Substituído em 2026-10-13** (decisão do jogador: nada de processos lentos nem testes
+> intermináveis; a conferência visual fica, curta). O portão foi removido; a barreira de regressão
+> é o `npm run check` de ~1 min (análise do código, testes de segundos, contadores) — ver
+> `docs/research/regression-barrier.md`. Onde as etapas abaixo dizem "portão", vale: contadores
+> de trabalho mapa pequeno × grande e a conferência visual curta. A especificação abaixo fica
+> como registro.
+
 `scripts/gate.mjs <url> [--modo plano|planeta] [--cenarios ...] [--base <url>]`.
 - **Onde:** build de produção servida por `vite preview`; Chrome com JANELA
   visível (`channel: 'chrome'`, `headless: false`, `--use-angle=d3d11`), na RTX

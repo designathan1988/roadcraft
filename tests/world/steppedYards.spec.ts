@@ -163,7 +163,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
           }
         }
       }
-    }, 120_000);
+    });
   }
 
   it('leaves no earth over the paving of any lot along a street cut into its hill, every building graded together', () => {
@@ -219,7 +219,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
     // Before (27a7cb48): 23 of 290 surfaces, up to 7.46 m - flat car parks
     // under the bank of the street's cutting, shops grown set back on it.
     expect(wrong).toEqual([]);
-  }, 120_000);
+  });
 
   it('stands the crates of a raised or lowered service court on its paving, not that far over or under it', () => {
     const { buildings } = grow('commercial', 'low');
@@ -255,5 +255,5 @@ describe('car parks and loading yards stepped on a hillside', () => {
     console.log(`CAIXOTES: ${checked} no pátio em degrau, pior ${worst.toFixed(3)} m do piso`);
     expect(checked).toBeGreaterThan(0);
     expect(worst).toBeLessThan(m(0.02));
-  }, 120_000);
+  });
 });

@@ -27,7 +27,6 @@
  "exports src/core/health.ts FRAME_BUDGET_MS",
  "exports src/core/health.ts SYSTEM_BUDGET_MS",
  "exports src/core/offset.ts pruneSelfIntersections",
- "exports src/core/perfBudget.ts GATE_BUDGETS",
  "exports src/core/perfBudget.ts STEP_BUDGETS",
  "exports src/core/polyline.ts dedupe",
  "exports src/core/scalar.ts TAU",

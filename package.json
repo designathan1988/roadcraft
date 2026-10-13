@@ -23,7 +23,7 @@
     "test:coverage": "node scripts/run-limited.mjs npm run test:coverage:raw",
     "test:coverage:raw": "vitest run --coverage",
     "check": "node scripts/run-limited.mjs npm run check:raw",
-    "check:raw": "npm run lint && npm run typecheck && node scripts/knip-check.mjs && npm run test:raw && npm run test:planet:raw && npm run test:scale:raw && npm run build:raw",
+    "check:raw": "npm run lint && npm run typecheck && node scripts/knip-check.mjs && npm run test:raw && npm run test:planet:raw && npm run test:scale:raw && vite build",
     "setup": "git config core.hooksPath .githooks",
     "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
     "desktop": "electron desktop/main.cjs",
@@ -32,7 +32,8 @@
     "test:planet": "node scripts/run-limited.mjs npm run test:planet:raw",
     "test:scale:raw": "vitest run -c vitest.scale.config.ts",
     "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw",
-    "gate": "node scripts/run-limited.mjs --kill-gb=1.2 --min-free-gb=4 node scripts/gate/gate.mjs",
+    "test:slow": "node scripts/run-limited.mjs npm run test:slow:raw",
+    "test:slow:raw": "vitest run -c vitest.slow.config.ts",
     "build:modos": "node scripts/run-limited.mjs node scripts/build-modes.mjs"
   },
   "devDependencies": {

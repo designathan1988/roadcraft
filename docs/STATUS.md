@@ -91,11 +91,28 @@ plano e planeta — 180 cruzamentos sinalizados, 1.571 entradas de carros, nenhu
 vermelho; fotos de perto batem com a simulação (um verde, os outros vermelhos). Não
 reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador).
 
+### F3a — via desenhada sem refazer o mapa inteiro duas vezes (feito)
+- Mobiliário por via 38–81 → 15–43 ms (busca por célula, resultado idêntico, fotos de
+  perto antigo × novo iguais); quadro depois da via 44–63 → 3–6 ms (postes e mobiliário eram
+  refeitos duas vezes). Ainda há 5–9 quadros acima de 33 ms por via: postes e superfícies.
+
+### Barreira de regressão no lugar do portão (2026-10-13)
+- Decisão do jogador: nada de processos lentos nem testes intermináveis; a conferência visual
+  fica, curta e dirigida. Pesquisa: `docs/research/regression-barrier.md`.
+- Portão removido (`scripts/gate`, `gate/baseline`, orçamentos do portão). O `npm run check`,
+  também o pre-push, passa a ~1,5 min: 45 specs que levavam 10 s ou mais (3.170 s de 3.382 s)
+  ficaram em `tests/slow.json` (`npm run test:slow`, só à mão), com a lista só podendo
+  diminuir; todo teste do check tem teto de 10 s, e nenhum pode declarar mais
+  (`tests/arch/slowSpecs.spec.ts`). O teste de escala da edição (contadores, mapa pequeno ×
+  grande) fica no check: 6 s sozinho. O da escala do passo da simulação (62 s) fica na lista
+  até a topologia ficar barata (R20: ~30 ms por cruzamento).
+
 ## Em andamento
-- Envio de E3 + F1 + portão (Holm) + F2a.
+- Envio de E3 + F1 + F2a + F3a + barreira nova.
 
 ## Próxima etapa
-- F2b: o clique de via sem clonar o documento inteiro.
+- Analisador de código (grafo de chamadas a partir do quadro, da edição e do passo da simulação),
+  contadores em todos os produtos derivados, e os specs lentos reescritos para segundos.
 
 ## NÃO VERIFICADO
 - **O painel do navegador do app ficou oculto às ~08:20** e só o jogador o reabre

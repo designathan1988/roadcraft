@@ -104,7 +104,7 @@ describe('a building up a hillside street stands at its footway', () => {
       expect(up).toBeGreaterThan(8);
       // The steeper street grows its shops set back (measured 2026-10-11: 28 of 30), each carried out to its footway.
       if (grade > 0.25) expect(setBack).toBeGreaterThan(10);
-    }, 120_000);
+    });
   }
 
   it('measures the slope under a split level from the floor of each block', () => {

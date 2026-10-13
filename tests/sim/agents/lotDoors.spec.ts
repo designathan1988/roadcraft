@@ -67,7 +67,7 @@ beforeAll(() => {
   for (let k = 0; k < doc.lots.length * 3; k++) {
     if (growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed) === null && refused.size >= doc.lots.length) break;
   }
-}, 120_000);
+});
 
 describe('the way from a lot door out through its people gate', () => {
   it('is found for the lots with a gate, and keeps clear of walls, fences and the building', () => {
@@ -119,7 +119,7 @@ describe('the way from a lot door out through its people gate', () => {
     expect(gated).toBeGreaterThan(10);
     // Not all: a part standing in the gate itself (a bollard in a tower's forecourt gate, measured) shuts it.
     expect(found / gated, `${found} of ${gated} lots with a people's gate in front have a way to the door: ${missing.join(' ')}`).toBeGreaterThan(0.9);
-  }, 120_000);
+  });
 });
 
 describe('a shop on the footway', () => {
@@ -199,5 +199,5 @@ describe('the scenery uses the gates', () => {
     expect(spinning.size, spinDetail).toBe(0);
     // A body's centre stays a body's radius from any wall or fence (the pursuit cuts a corner a little).
     expect(worst, `nearest a boundary: ${worst.toFixed(2)}`).toBeGreaterThan(m(0.2));
-  }, 300_000);
+  });
 });

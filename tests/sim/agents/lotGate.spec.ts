@@ -75,7 +75,7 @@ describe('every grown lot closed by its boundary', () => {
       expect(open / total, `lot ${lot.id} (${bld.function}) open ${open}/${total}`).toBeLessThan(0.02);
     }
     expect(lots).toBeGreaterThan(10);
-  }, 120_000);
+  });
 });
 
 const BOUNDARY = new Set(['wall', 'fence', 'hedge', 'railing', 'gate']);
@@ -110,7 +110,7 @@ describe('a lot car park reached through its car gate', () => {
     w.rebuildTopology();
     parks = [...doc.buildings.all()].filter((b) => (b.elements ?? []).some((e) => e.kind === 'parking'));
     bays = collectBays(w).filter((bay) => !bay.kerb && parks.some((b) => b.id === bay.building));
-  }, 120_000);
+  });
 
   it('grows lots with car parks and car gates, each gate with its way out to the lane', () => {
     expect(parks.length).toBeGreaterThan(2);
@@ -156,7 +156,7 @@ describe('a lot car park reached through its car gate', () => {
         expect(hit, `building ${b.id}`).toBeUndefined();
       }
     }
-  }, 60_000);
+  });
 
   it('paints no kerb bay across a car gate', () => {
     const entrances = lotEntrances(doc);
