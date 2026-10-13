@@ -20,7 +20,6 @@ import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
 import { mountHealthPanel } from '@ui/healthPanel';
 import { METERS_PER_UNIT } from '@world/units';
-import type { LotOverlayInput } from '@render/lotOverlay';
 import { applyLots, planLots } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
@@ -3351,12 +3350,12 @@ function drawOverlayScreen(): void {
   // The lots, laid on the ground in the scene (`render/lotOverlay.ts`): in
   // the Zoning tool, and while roads are being built (unless the player
   // turned that off); zoned ones faintly with the other tools.
-  const showLots = game.tool === 'zone' || (doc.lots.some((l) => l.use) && zoneColoursShown());
+  const showLots = game.tool === 'zone' || (lotTool.anyZoned() && zoneColoursShown());
   if (showLots) {
     // What the Zoning tool draws (`editor/lotTool.ts`), in the scene; its labels on the 2D layer.
-    const { polygons, lines, points, labels } = lotTool.overlay(game.tool === 'zone');
-    const input: LotOverlayInput = { key: JSON.stringify([polygons, lines, points]), polygons, lines, points };
-    scene.setLotOverlay(input, doc.changes);
+    const overlay = lotTool.overlayKeyed(game.tool === 'zone');
+    const labels = overlay.labels;
+    scene.setLotOverlay(overlay, doc.changes);
     // Labels stay on the 2D layer, projected at the ground's real height.
     const ground = (p: Vec2): Vec2 => view.toScreen(p, w, h, scene.surfaceHeightAt(p.x, p.y));
     ctx.save();

@@ -115,7 +115,10 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   diminui), que é a lista de trabalho; teste das regras em `tests/arch/checkCode.spec.ts`.
   Primeiro corrigido: o `draw` copiava todo o paisagismo a cada quadro numa hora da cidade sem
   planta crescendo. Depois: R21 (Esc com o monitor F9 aberto também largava a ferramenta),
-  visto no jogo; linha de base em 186.
+  visto no jogo; e as zonas fracas com as outras ferramentas, que eram refeitas e viravam JSON a
+  cada quadro, agora só quando os lotes ou os prédios mudam (`LotTool.overlayKeyed`); visto no
+  jogo (zonas aparecem, somem lote a lote enquanto as casas crescem, nada fica da ferramenta
+  Zonas ao trocar). Linha de base em 185.
 
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,

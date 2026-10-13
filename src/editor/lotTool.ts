@@ -111,6 +111,48 @@ export class LotTool {
 
   constructor(private readonly host: LotToolHost) {}
 
+  /** The overlay with the other tools and the lots and buildings it was made from (`overlayKeyed`). */
+  private quiet: { key: string; overlay: LotOverlay & { readonly key: string } } | null = null;
+  private zonedFor = -1;
+  private zoned = false;
+
+  /** Whether any lot is zoned: the faint zones are shown with the other tools. Looked at again when the lots change. */
+  anyZoned(): boolean {
+    if (this.zonedFor !== this.doc.lotRevision) this.lookForZoned();
+    return this.zoned;
+  }
+
+  /** @rebuild Called when the lots changed (`anyZoned`). */
+  private lookForZoned(): void {
+    this.zonedFor = this.doc.lotRevision;
+    this.zoned = this.doc.lots.some((l) => l.use);
+  }
+
+  /**
+   * `overlay` with the key the scene compares (`render/lotOverlay.ts`). With
+   * the other tools and no gesture of this one left, it reads only the lots
+   * and the buildings (`lotsChanged` writes every change of a lot to the
+   * diary), so it is made again only when one of them changed (Nystrom,
+   * "Dirty Flag"): it was made, and turned to JSON for its key, on every frame.
+   */
+  overlayKeyed(editing: boolean): LotOverlay & { readonly key: string } {
+    const gesture = this.polygon.length > 0 || this.drawn !== null || this.cutLine !== null || this.curve !== null;
+    if (!editing && !gesture) {
+      const key = `lots ${this.doc.lotRevision} ${this.doc.buildings.revision}`;
+      return this.quiet?.key === key ? this.quiet.overlay : this.remakeQuiet(key);
+    }
+    // In the tool, what is under the pointer changes the drawing: compared whole.
+    const drawn = this.overlay(editing);
+    return { ...drawn, key: JSON.stringify([drawn.polygons, drawn.lines, drawn.points]) };
+  }
+
+  /** @rebuild Called when the lots or the buildings changed (`overlayKeyed`). */
+  private remakeQuiet(key: string): LotOverlay & { readonly key: string } {
+    const overlay = { ...this.overlay(false), key };
+    this.quiet = { key, overlay };
+    return overlay;
+  }
+
   private get doc(): RoadDoc { return this.host.doc; }
   private get net(): Network { return this.host.net; }
 
