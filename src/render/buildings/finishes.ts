@@ -470,9 +470,23 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
                      mix(mix(dHash(i + vec3(0, 0, 1)), dHash(i + vec3(1, 0, 1)), f.x), mix(dHash(i + vec3(0, 1, 1)), dHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
         }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
-        if (vDecay > 0.001) {
-          // After the texture: the stains darken the finish as painted.
-          float d = vDecay;
+        {
+          vec3 w = vDecayWorld;
+          // MACRO VARIATION, on every building: the finish's own texture
+          // averages to one flat tint once its texels are under a pixel, and
+          // a whole facade read as one sheet of plastic from the middle
+          // distance (the player, 2026-10-13). Grey noise at a few large
+          // scales multiplied into the colour, at half strength (Unreal's
+          // macro variation; Quilez, "Texture Repetition"): panels of render
+          // a shade apart, a storey a little darker, nothing that repeats.
+          float macro = dNoise(w * 0.045) * 0.55 + dNoise(w * 0.17) * 0.3 + dNoise(w * 0.6) * 0.15;
+          diffuseColor.rgb *= 0.9 + 0.2 * macro;
+        }
+        {
+          // After the texture: the stains darken the finish as painted. A
+          // town's walls are never new: a light weathering on every one (rain
+          // streaks, grime), heavier as a building runs down (\`aDecay\`).
+          float d = max(vDecay, ${glassy ? '0.0' : '0.3'});
           vec3 w = vDecayWorld;
           bool wall = abs(vDecayNormal.y) < 0.5;
           // Rain streaks: thin, long, running down from sills and copings.
@@ -481,6 +495,11 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
           float grime = 0.5 + 0.5 * dNoise(w * 0.22);
           float darken = d * (0.18 + 0.12 * grime + (wall ? 0.28 * streak : 0.1));
           diffuseColor.rgb *= 1.0 - darken;
+        }
+        if (vDecay > 0.001) {
+          float d = vDecay;
+          vec3 w = vDecayWorld;
+          bool wall = abs(vDecayNormal.y) < 0.5;
           ${glassy ? '' : roof ? `
           // Dark moss in the low corners of the roof.
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.55, 0.62, 0.45), d * 0.6 * smoothstep(0.6, 0.85, dNoise(w * 0.3)));` : `
@@ -499,5 +518,5 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
           mapN.xy *= 1.0 - smoothstep(0.6, 3.0, max(texelsPerPixel.x, texelsPerPixel.y));
         }`);
   };
-  material.customProgramCacheKey = () => `building-weathering-v2-${finish}`;
+  material.customProgramCacheKey = () => `building-weathering-v3-${finish}`;
 }

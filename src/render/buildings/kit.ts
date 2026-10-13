@@ -1,6 +1,6 @@
 import {
   BoxGeometry,
-  type BufferGeometry,
+  BufferGeometry,
   Color,
   CylinderGeometry,
   DoubleSide,
@@ -20,6 +20,7 @@ import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { SLOT_WIDTH, litTableDriven, litTexture } from './lightSlots';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassingMaterial } from './massingMaterial';
+import { prefilterThinParts, twoSided } from './thinParts';
 import { m } from '@world/units';
 
 /**
@@ -269,7 +270,7 @@ function railingFarGeometry(): BufferGeometry {
   }
   const merged = mergeGeometries(parts) as BufferGeometry;
   for (const p of parts) p.dispose();
-  return merged;
+  return twoSided(merged);
 }
 
 function roofRailingFarGeometry(): BufferGeometry {
@@ -277,7 +278,7 @@ function roofRailingFarGeometry(): BufferGeometry {
   for (let i = 0; i <= 4; i++) parts.push(quad(0.02, 0.94, -0.5 + i / 4, 0.5, 0.01));
   const merged = mergeGeometries(parts) as BufferGeometry;
   for (const p of parts) p.dispose();
-  return merged;
+  return twoSided(merged);
 }
 
 /** A straight railing along a roof edge, centred at z = 0. */
@@ -464,6 +465,7 @@ export function createBuildingKit(): BuildingKit {
     m.polygonOffsetFactor = -1;
     m.polygonOffsetUnits = -4;
   }
+  prefilterThinParts(material);
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
   // The furniture's models, made once: drawn in a cut-open interior, and

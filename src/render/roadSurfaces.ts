@@ -5,7 +5,7 @@ import { Digest } from '@core/digest';
 import { offsetPolyline } from '@core/offset';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
-import { CASING_BAND, FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel } from '@world/roadTypes';
+import { CASING_BAND, CURB_BAND, FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel } from '@world/roadTypes';
 import type { CarriagewayMaterial, FootwayMaterial } from '@world/roadSection';
 import { footwayRiseAt, footwayRiseShare } from '@world/roads/footwayRise';
 import { levelPolygons, levelRings } from '@world/surfaces';
@@ -125,10 +125,15 @@ const RAMP_MAX_EDGE = m(0.75);
 /** A raised deck follows nothing, so it needs vertices only for its shading. */
 const RAISED_MAX_EDGE = TERRAIN_CELL;
 
-/** Height of the median island's kerb above the carriageway. */
-const MEDIAN_KERB = 0.4;
-/** Height of the planting inside it. */
-export const MEDIAN_PLANTING = 0.62;
+/**
+ * Height of the median island's kerb above the carriageway: the footway's
+ * kerb (15 cm). Written as bare numbers of the old 0.4 m unit, it stood 40 cm
+ * high, the grass 62 cm, and a band of stone 70 cm wide ran either side - a
+ * promenade, not a kerb (the player, 2026-10-13: "meio fio ridículo").
+ */
+const MEDIAN_KERB = FOOTWAY_RISE;
+/** Height of the planting inside it: the soil a hair over the kerb's top, so the two are never one plane. */
+const MEDIAN_PLANTING = FOOTWAY_RISE + m(0.02);
 
 /**
  * What one build of the surfaces keeps for the next, so an edit rebuilds only
@@ -1045,7 +1050,8 @@ function medianStrips(
     const s0 = back(seg?.a, centre.point(0)), s1 = centre.length - back(seg?.b, centre.point(centre.n - 1));
     if (s1 - s0 < m(1)) continue;
     const points = s0 > 0 || s1 < centre.length ? centre.sub(s0, s1).toPoints() : centre.toPoints();
-    kerb.push(strip(points, (median + 1.4) / 2));
+    // The kerb stone round the island, as wide as the footway's (`CURB_BAND`).
+    kerb.push(strip(points, median / 2 + CURB_BAND));
     // Grass by default; paved in concrete or pavers when the profile says so.
     const material = ribbon.road.materials?.median;
     (material && material !== 'grass' ? paved : planting).push(strip(points, median / 2));

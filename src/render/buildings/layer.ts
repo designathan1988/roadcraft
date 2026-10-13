@@ -68,12 +68,12 @@ export interface BuildingLayer {
   /** Thin facade parts stop casting shadows when their shadow width is subpixel. */
   setShadowFar(far: boolean): void;
   /**
-   * The frames, railings and louvres of the cells farther than `reach` from
-   * the eye (world units, map x/y and height) are not drawn: there a 6 cm
-   * frame is far under a pixel, and they were the bulk of a large city's
-   * triangles drawn in every frame of the overview.
+   * The frames, railings and louvres of each cell: drawn while its buildings
+   * are (their far level decides, `levelOfDetail`, by the error on the
+   * screen), whole where a frame's side spans enough pixels and by their
+   * street faces beyond. The eye and the screen as `levelOfDetail` takes them.
    */
-  cullDetails(eyeX: number, eyeY: number, eyeZ: number, reach: number): void;
+  cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void;
   /**
    * Each cell of buildings drawn near (in detail) or far (its buildings'
    * masses, `massCells.ts`) by the error on the screen: from the eye (map
@@ -544,8 +544,7 @@ export function createBuildingLayer(): BuildingLayer {
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, dimmed !== undefined || cutaway !== null);
       for (const [key, cell] of cells) cell.part.group.visible = massCells.near(key);
     },
-    cullDetails(eyeX, eyeY, eyeZ, reach) {
-      const r2 = reach * reach;
+    cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
       for (const [key, cell] of detailCells) {
         let state = detailState.get(cell.part);
         // A cell new since the last frame is put to its detail whatever it is.
@@ -559,18 +558,20 @@ export function createBuildingLayer(): BuildingLayer {
           detailState.set(cell.part, state);
         }
         const cx = state.x - eyeX, cy = state.y - eyeY;
-        // Drawn while its coarse cell is near, and within the reach.
-        cell.part.group.visible = massCells.near(state.parent) && cx * cx + cy * cy + eyeZ * eyeZ < r2;
-        // Past `FULL_DETAIL_REACH` from the eye to the cell's nearest point
-        // its frames and railings are drawn by their street faces (`kit.far`):
-        // a frame's 6 cm side is under half a pixel there, and full frames in
-        // every cell within the reach were 6.6 million triangles a frame
-        // downtown. Switched back nearer by `DETAIL_HYSTERESIS` of the reach,
-        // as three's `LOD.update` does, so a cell at the edge does not flicker.
+        // Drawn while its coarse cell is drawn in detail: the far level takes
+        // over by the error on the screen (\`massCells.ts\`). A fixed reach of
+        // 500 m from the eye, its height counted, took every frame, railing and
+        // shutter off the town in any overview - windows as dark holes, the
+        // detail only with the camera at the wall (the player, 2026-10-13).
+        cell.part.group.visible = massCells.near(state.parent);
+        // Its frames and railings whole while a frame's side spans
+        // \`FULL_DETAIL_PIXELS\` or more, by their street faces (\`kit.far\`)
+        // beyond - the projected size, as the far level is chosen, and back
+        // nearer by \`DETAIL_HYSTERESIS\` (three's \`LOD.update\`).
         const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
-        const near2 = nx * nx + ny * ny + eyeZ * eyeZ;
-        const edge = state.far ? FULL_DETAIL_REACH * (1 - DETAIL_HYSTERESIS) : FULL_DETAIL_REACH;
-        const nextFar = near2 > edge * edge;
+        const near = Math.max(Math.hypot(nx, ny, eyeZ), 1);
+        const pixels = orthoPx !== null ? FRAME_SIDE * orthoPx : (FRAME_SIDE * pxAtMetre) / near;
+        const nextFar = pixels < FULL_DETAIL_PIXELS * (state.far ? 1 : 1 - DETAIL_HYSTERESIS);
         if (fresh || nextFar !== state.far) {
           state.far = nextFar;
           lighterNow = far || nextFar;
@@ -656,8 +657,10 @@ const LOADING_COUNT = 100;
 /** Side of the cells the buildings are batched in, world units. */
 const BATCH_CELL = m(240);
 const DETAIL_CELL = m(120);
-/** Nearer than this to the eye, a detail cell's frames and railings are drawn whole (`cullDetails`). */
-const FULL_DETAIL_REACH = m(150);
+/** A window frame's side, m (`buildingMesh.ts`, the frames' depth). */
+const FRAME_SIDE = m(0.06);
+/** A detail cell's frames and railings are drawn whole while a frame's side spans this many pixels (`cullDetails`). */
+const FULL_DETAIL_PIXELS = 0.4;
 const DETAIL_HYSTERESIS = 0.1;
 const DETAIL_PARTS: ReadonlySet<PartKind> = new Set(['frame', 'railing', 'roofRailing', 'louvre', 'curtain']);
 const COARSE_PARTS: ReadonlySet<PartKind> = new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind)));

@@ -50,11 +50,14 @@ function samples(position: Float32Array, index: Uint32Array, out: number[], step
   }
 }
 
+/** A cell of `FAR_ERROR` as one number (a town is well inside 2^20 cells a side). */
+const cellKey = (i: number, j: number, k: number): number => ((i + 524288) * 1048576 + (j + 524288)) * 4096 + (k + 2048);
+
 /** The samples filed by cell of `FAR_ERROR`, for the nearest within the error. */
-function bucket(points: readonly number[]): Map<string, number[]> {
-  const out = new Map<string, number[]>();
+function bucket(points: readonly number[]): Map<number, number[]> {
+  const out = new Map<number, number[]>();
   for (let p = 0; p < points.length; p += 4) {
-    const key = `${Math.floor(points[p]! / FAR_ERROR)},${Math.floor(points[p + 1]! / FAR_ERROR)},${Math.floor(points[p + 2]! / FAR_ERROR)}`;
+    const key = cellKey(Math.floor(points[p]! / FAR_ERROR), Math.floor(points[p + 1]! / FAR_ERROR), Math.floor(points[p + 2]! / FAR_ERROR));
     const list = out.get(key);
     if (list) list.push(points[p]!, points[p + 1]!, points[p + 2]!); else out.set(key, [points[p]!, points[p + 1]!, points[p + 2]!]);
   }
@@ -62,8 +65,9 @@ function bucket(points: readonly number[]): Map<string, number[]> {
 }
 
 /** The share of `points`' area farther than `reach` from every point of `other`. */
-function strays(points: readonly number[], other: Map<string, number[]>, reach: number): number {
+function strays(points: readonly number[], other: Map<number, number[]>, reach: number): number {
   let off = 0, all = 0;
+  const r2 = reach * reach;
   for (let p = 0; p < points.length; p += 4) {
     all += points[p + 3]!;
     const x = points[p]!, y = points[p + 1]!, z = points[p + 2]!;
@@ -72,11 +76,11 @@ function strays(points: readonly number[], other: Map<string, number[]>, reach: 
     for (let di = -1; di <= 1 && !near; di++) {
       for (let dj = -1; dj <= 1 && !near; dj++) {
         for (let dk = -1; dk <= 1 && !near; dk++) {
-          const list = other.get(`${i + di},${j + dj},${k + dk}`);
+          const list = other.get(cellKey(i + di, j + dj, k + dk));
           if (!list) continue;
           for (let q = 0; q < list.length; q += 3) {
             const dx = list[q]! - x, dy = list[q + 1]! - y, dz = list[q + 2]! - z;
-            if (dx * dx + dy * dy + dz * dz <= reach * reach) { near = true; break; }
+            if (dx * dx + dy * dy + dz * dz <= r2) { near = true; break; }
           }
         }
       }

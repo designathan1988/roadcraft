@@ -163,7 +163,6 @@
  "exports src/render/riderPoses.ts rimPoint",
  "exports src/render/riggedCitizens.ts companyOf",
  "exports src/render/riggedCitizens.ts peopleStyle",
- "exports src/render/roadSurfaces.ts MEDIAN_PLANTING",
  "exports src/render/scenery.ts LAMP_HEIGHT",
  "exports src/render/scenery.ts LAMP_OUTREACH",
  "exports src/render/terrain.ts FIELD_TINTS",
