@@ -6,6 +6,7 @@ import type { NodeId } from './ids';
 import type { Connector, ConnectorId, Lanelet, LaneletGraph } from './lanelets';
 import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
+import { rebuildWork } from './rebuildWork';
 
 /**
  * `cross`: the two centrelines intersect. `merge`: both end in the same lane.
@@ -214,6 +215,7 @@ export class ConflictIndex {
   *prepare(graph: LaneletGraph): Generator<void, void> {
     this.measured.prepare = 0;
     for (const junction of graph.junctions.values()) {
+      rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
       const sweeps: { sweep: Sweep; shape: SweepShape }[] = [];
       for (const id of ids) {
@@ -250,6 +252,7 @@ export class ConflictIndex {
     const nextSweeps = new Map<string, Float64Array>();
 
     for (const junction of graph.junctions.values()) {
+      rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
       const sweeps = new Map<ConnectorId, Sweep>();
       const shapes = new Map<ConnectorId, SweepShape>();

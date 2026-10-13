@@ -5,6 +5,7 @@ import { bodyClassOfArchetype } from '../vehicles/archetypes';
 import { routeToDestination } from './destination';
 import { planTrip } from '../drive/tactical';
 import { m } from '@world/units';
+import { rebuildWork } from '@world/rebuildWork';
 
 /** Horizon for a vehicle with no reachable boundary destination. */
 const HORIZON = 24;
@@ -32,6 +33,7 @@ export function trapLanes(w: SimWorld, body: number): ReadonlySet<LaneletId> {
   const into = new Map<LaneletId, LaneletId[]>();
   const links: LaneletId[] = [];
   for (const lane of w.graph.lanelets.values()) {
+    rebuildWork.routing++;
     if (lane.kind !== 'link') continue;
     links.push(lane.id);
     for (const cid of w.graph.exitsOf(lane.id)) {

@@ -882,11 +882,6 @@
       "count": 2
     }
   },
-  "src/world/network.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/world/poleLines.ts": {
     "roadcraft/no-module-state": {
       "count": 4

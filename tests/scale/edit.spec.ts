@@ -4,20 +4,26 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { laneletWork } from '@world/lanelets';
+import { networkWork, rebuildWork } from '@world/rebuildWork';
 import { m } from '@world/units';
 import { SimWorld } from '@sim/world';
+import { trapLanes } from '@sim/routing/router';
 
 /**
  * THE SAME EDIT COSTS THE SAME ON A SMALL MAP AND A LARGE ONE (CLAUDE.md:
  * "A scale test proves the same edit costs the same on a small map and a large
  * one (work counters, not timings)"). One isolated road added beside a closed
  * grid of 3 x 3 blocks and beside one of 12 x 12 (16 times the area); each
- * derived product counts what it looked at.
+ * derived product counts what it looked at, through the whole chain the game
+ * runs after a road edit: the network (`Network.rebuild`), the simulation's
+ * topology as the frame loop catches it up (`frameLoop.ts` `TopologyCatchUp`:
+ * the graph prepared ahead, the vehicle half, the walking half), the
+ * residents' walkways and the router's trap lanes.
  *
- * At the SOURCE some products rebuild the whole map on every edit (docs/PROBLEMS.md,
- * the audit 3.1). They are listed in `baseline.json` with the ratio measured
- * (large / small): a product NOT listed must not grow with the map, and a listed
- * ratio may only fall (stage F3 brings each to 1 and takes it out).
+ * Products that still rebuild the whole map on every edit are listed in
+ * `baseline.json` with the ratio measured (large / small): a product NOT
+ * listed must not grow with the map, and a listed ratio may only fall (each
+ * is brought to 1 and taken out).
  */
 const BLOCK = 120;
 
@@ -37,24 +43,48 @@ function grid(n: number): RoadDoc {
   return doc;
 }
 
+/** Everything the game runs after a road edit, as the frame loop runs it. */
+function catchUp(net: Network, w: SimWorld): void {
+  net.rebuild();
+  const prep = w.prepareVehicleTopology();
+  while (!prep.next().done) { /* a slice a frame in the game */ }
+  w.rebuildTopology();
+  w.walkwaysFor(net.revision);
+  trapLanes(w, 1);
+}
+
+const counters = (): Record<string, number> => ({
+  'net.sources': networkWork.sources,
+  'net.junctions': networkWork.junctions,
+  'net.segments': networkWork.segments,
+  'net.marks': networkWork.marks,
+  'lanes.segments': laneletWork.segments,
+  'lanes.nodes': laneletWork.nodes,
+  conflicts: rebuildWork.conflicts,
+  walkways: rebuildWork.walkways,
+  signals: rebuildWork.signals,
+  sidewalks: rebuildWork.sidewalks,
+  spans: rebuildWork.spans,
+  'sim.lanes': rebuildWork.lanes,
+  routing: rebuildWork.routing,
+});
+
 /** What one isolated road beside the grid costs each product, once the grid is built. */
 function editWork(n: number): Record<string, number> {
   const doc = grid(n);
   const net = new Network(doc);
-  net.rebuild();
   const w = new SimWorld(doc, net, 0x5ca1e);
-  w.rebuildTopology();
-  const before = { ...laneletWork };
+  catchUp(net, w);
+  const before = counters();
   const x = m(BLOCK) * (n / 2 + 2);
   const a = doc.addNode({ x, y: 0 });
   const b = doc.addNode({ x: x + m(60), y: 0 });
   doc.addSegment(a.id, b.id, 1);
-  net.rebuild();
-  w.rebuildTopology();
-  return {
-    'lanes.segments': laneletWork.segments - before.segments,
-    'lanes.nodes': laneletWork.nodes - before.nodes,
-  };
+  catchUp(net, w);
+  const after = counters();
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(after)) out[key] = after[key]! - before[key]!;
+  return out;
 }
 
 describe('the cost of one road edit', () => {

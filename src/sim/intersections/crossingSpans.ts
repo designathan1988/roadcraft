@@ -9,6 +9,7 @@ import type { SimWorld } from '../world';
 import type { CrossingOccupant } from '../crossings/state';
 import type { Vehicle } from '../vehicles/state';
 import { canStopComfortably } from '../vehicles/idm';
+import { rebuildWork } from '@world/rebuildWork';
 
 /** Arc interval of a crossing, measured from its `from` kerb. */
 export interface CrossingSpan {
@@ -65,6 +66,7 @@ export class CrossingSpans {
     const previous = this.measured;
     this.measured = new Map();
     for (const connector of w.graph.connectors.values()) {
+      rebuildWork.spans++;
       const path = w.lanelet(connector.lanelet)?.centre;
       if (!path) continue;
       for (const segment of w.doc.node(connector.node)?.incident ?? []) {
@@ -88,6 +90,7 @@ export class CrossingSpans {
     // Measure those physical overlaps once per topology, before any pedestrian
     // enters, so the red-light obstacle holds the front before that zebra.
     for (const junction of w.graph.junctions.values()) {
+      rebuildWork.spans++;
       const incident = w.doc.node(junction.node)?.incident ?? [];
       for (const laneId of junction.inbound) {
         const lane = w.lanelet(laneId);

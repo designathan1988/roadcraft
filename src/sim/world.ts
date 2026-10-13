@@ -30,6 +30,7 @@ import { buildWalkways, walkwaySteps, type WalkGraph } from '@world/walkways';
 import { mainRoadLegs } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
 import { type AutoControl, ControlAdvisor } from './roads/controlAdvisor';
+import { rebuildWork } from '@world/rebuildWork';
 /** The body class a signal plan is protected for: an ordinary car. */const CAR_CLASS: BodyClass = 1;
 
 /** Nobody walks until an engine is installed (`SimWorld.usePedestrianEngine`). */
@@ -399,6 +400,7 @@ export class SimWorld {
   } = { version: -1, nodes: [], signalised: [], junctionOf: new Map(), approachOf: new Map(), crossingOf: new Map() };
   private refreshJunctionOrder(): void {
     const nodes = [...this.graph.junctions.keys()].sort((a, b) => a - b);
+    rebuildWork.lanes += nodes.length;
     const signalised: SignalController[] = [];
     const junctionOf = new Map<LaneletId, NodeId>();
     const approachOf = new Map<LaneletId, SignalController>();
@@ -558,14 +560,19 @@ export class SimWorld {
     this.claims.dropMissing(this.conflicts);
     this.syncControllers();
     for (const segment of [...this.segmentVolume.keys()]) {
+      rebuildWork.lanes++;
       if (!this.doc.segment(segment as SegmentId)) this.segmentVolume.delete(segment);
     }
     this.vehicleTopologyRevision = this.net.trafficRevision;
     // The lanes the edit took, kept while vehicles still drive on them (`collectGhosts`).
-    for (const id of this.runtime.keys()) if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
+    for (const id of this.runtime.keys()) {
+      rebuildWork.lanes++;
+      if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
+    }
     this.junctionsVersion++;
     // The controls the flows chose stay chosen across an edit (V5).
     const nodes = new Set(this.graph.junctions.keys());
+    rebuildWork.lanes += nodes.size;
     this.flow.keepOnly(nodes);
     this.advisor.forget(nodes);
     if (this.applyAutoControl()) this.syncControllers();
@@ -579,6 +586,7 @@ export class SimWorld {
   private applyAutoControl(): boolean {
     let changed = false;
     for (const [node, junction] of this.graph.junctions) {
+      rebuildWork.lanes++;
       if (this.doc.node(node)?.control !== 'auto') continue;
       const choice = this.advisor.choice(node);
       if (!choice) continue;
@@ -853,6 +861,7 @@ export class SimWorld {
     const deps = this.signalDeps();
 
     for (const [node, junction] of this.graph.junctions) {
+      rebuildWork.signals++;
       const crossings = this.crossingsAt(node);
       const existing = this.controllers.get(node);
       const settings = this.doc.node(node)?.signal;

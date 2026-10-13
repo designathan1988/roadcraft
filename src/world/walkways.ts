@@ -19,6 +19,7 @@ import { pointInPolygon } from '@core/polygon';
 import type { MultiPoly } from '@core/clipper';
 import type { RoadStructure } from './structures';
 import { bulbLine } from './junction/bulb';
+import { rebuildWork } from './rebuildWork';
 
 /**
  * WHERE PEOPLE WALK, as lanes: the pedestrian network of the city.
@@ -485,6 +486,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
 
   // --- footways: down the middle of each side's through zone
   for (const segId of [...doc.segments.keys()].sort((a, b) => a - b)) {
+    rebuildWork.walkways++;
     const seg = doc.requireSegment(segId);
     const ribbon = net.ribbons.get(segId);
     if (!ribbon) continue;
@@ -677,6 +679,7 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
   yield;
   // --- crossings: over the carriageway on each zebra
   for (const [nodeId, node] of doc.nodes) {
+    rebuildWork.walkways++;
     if (node.incident.length < 2) continue;
     for (const segId of node.incident) {
       const d = net.crosswalkDistanceAt(segId, nodeId);

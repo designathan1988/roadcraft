@@ -11,6 +11,7 @@ import type { LaneletGraph, LaneletId } from '@world/lanelets';
 import { makeCrossingId, type CrossingId } from '../signals/plan';
 import { COARSE_EPS } from '@core/scalar';
 import { m } from '@world/units';
+import { rebuildWork } from '@world/rebuildWork';
 
 export type SidewalkNodeId = string;
 export type SidewalkEdgeId = string;
@@ -80,6 +81,7 @@ export class SidewalkGraph {
 
     // ---- kerb nodes, two per (junction node, leg) -------------------------
     for (const [nodeId, node] of doc.nodes) {
+      rebuildWork.sidewalks++;
       for (const segId of node.incident) {
         const seg = doc.segment(segId);
         if (!seg) continue;
@@ -116,6 +118,7 @@ export class SidewalkGraph {
 
     // ---- crossing edges, one per leg --------------------------------------
     for (const [nodeId, node] of doc.nodes) {
+      rebuildWork.sidewalks++;
       if (node.incident.length < 2) continue;
       for (const segId of node.incident) {
         const segment = doc.segment(segId);
@@ -128,7 +131,7 @@ export class SidewalkGraph {
         const crossing = makeCrossingId(nodeId, segId);
         const path = Polyline.fromPoints([right.at, left.at]);
         const lanes = [...graph.lanelets.values()]
-          .filter((l) => l.kind === 'link' && l.segment === segId)
+          .filter((l) => { rebuildWork.sidewalks++; return l.kind === 'link' && l.segment === segId; })
           .map((l) => l.id);
 
         this.addEdge({
@@ -150,6 +153,7 @@ export class SidewalkGraph {
     // ---- footway lines along each segment ---------------------------------
     for (const [segId, seg] of doc.segments) {
       yield;
+      rebuildWork.sidewalks++;
       const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
       if (!carriesPedestrians(rt)) continue;
       const pl = orientedPolyline(doc, seg, seg.a);

@@ -1,7 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from './doc';
 import type { NodeId } from './ids';
-import { PolylineCache } from './geometry';
+import type { PolylineCache } from './geometry';
 
 /**
  * How sharply two roads may meet at one node.
@@ -69,18 +69,3 @@ export function smallestGap(angles: readonly number[]): number {
   return worst;
 }
 
-/**
- * Every node that cannot be built, with the gap that condemns it.
- *
- * This is the sweep a LOAD uses. Loading must never refuse — refusing to open a
- * map destroys the user's work — so the map comes in whole and the offenders
- * are reported instead.
- */
-export function impossibleNodes(doc: RoadDoc, cache = new PolylineCache()): Map<NodeId, number> {
-  const out = new Map<NodeId, number>();
-  for (const node of doc.nodes.keys()) {
-    const gap = smallestGap(legAngles(doc, cache, node));
-    if (gap < MIN_LEG_ANGLE) out.set(node, gap);
-  }
-  return out;
-}
