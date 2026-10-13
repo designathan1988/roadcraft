@@ -63,18 +63,6 @@ export function fieldOfView(halfHeight: number): number {
   return lerp(NEAR_FOV, FAR_FOV, blend(halfHeight, NEAR_HALF, m(24)));
 }
 
-/**
- * How much of the pull in front of a building the camera takes at this
- * distance, 0..1 (`render/isoViewport.ts`): all of it in the street, where a
- * wall between the eye and the point looked at would fill the screen; none
- * from the rooftops out, where the overview must never be held among the
- * towers (a tower hiding a street behind it is how a city builder's
- * overview looks).
- */
-export function pullWeight(halfHeight: number): number {
-  return 1 - blend(halfHeight, NEAR_HALF * 4, NEAR_HALF * 16);
-}
-
 /** The camera's distance from the point it looks at, for the view to be `halfHeight` tall there. */
 export function viewDistance(halfHeight: number): number {
   return halfHeight / Math.tan((fieldOfView(halfHeight) * Math.PI) / 360);

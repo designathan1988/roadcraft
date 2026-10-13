@@ -11,7 +11,7 @@ import type { Vec2 } from '@core/vec2';
 import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { m } from '@world/units';
 import type { Facing, Viewport } from '@view/viewport';
-import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, pullWeight, viewDistance } from '@view/cameraProfile';
+import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, viewDistance } from '@view/cameraProfile';
 
 /**
  * Close inspection of pedestrian faces, gaits and the people inside vehicles.
@@ -98,8 +98,6 @@ export interface IsoRig {
   setSolids(floorAt: ((x: number, y: number) => number) | null): void;
 }
 
-/** The pull in front of a building (`apply`): samples along the line of sight. */
-const PULL_SAMPLES = 24;
 /** How far over the ground under it the perspective camera keeps, units. */
 const GROUND_CLEARANCE = m(1.6);
 
@@ -196,47 +194,17 @@ export function createIsoRig(
     // 2026-10-10; master 2feec96a): three's `lookAt` keeps the part of `up`
     // across the view, and looking up that direction falls DOWN the screen.
     camera.up.set(-Math.cos(azimuth) * Math.sin(elevation), Math.cos(elevation), -Math.sin(azimuth) * Math.sin(elevation));
-    const pull = camera === persp && solidsAt ? pullWeight(halfHeight) : 0;
-    if (pull > 0 && solidsAt) {
-      // Never behind a building from the point looked at: the eye is brought
-      // in along the line of sight to just short of the first building that
-      // line meets going OUT from that point (camera-controls'
-      // `_collisionTest`: rays from the target towards the camera, the
-      // distance cut to the first hit). Searched from the eye inwards, or
-      // lifted over the roof, the eye jumped as the view crossed a building.
-      // With the point looked at inside a building (the view on its wall)
-      // nothing is done, as camera-controls does.
-      const floorAt = solidsAt;
-      const clear = (t: number): boolean => {
-        const x = camera.position.x + (target.x - camera.position.x) * t;
-        const y = camera.position.y + (target.y - camera.position.y) * t;
-        const z = camera.position.z + (target.z - camera.position.z) * t;
-        return y >= floorAt(x, -z);
-      };
-      if (clear(1)) {
-        let free = 1;
-        let hit = -1;
-        for (let i = PULL_SAMPLES - 1; i >= 0; i--) {
-          const t = i / PULL_SAMPLES;
-          if (!clear(t)) { hit = t; break; }
-          free = t;
-        }
-        if (hit >= 0) {
-          for (let i = 0; i < 10; i++) {
-            const mid = (hit + free) / 2;
-            if (clear(mid)) free = mid; else hit = mid;
-          }
-          // Faded out with the distance (`pullWeight`): continuous in the zoom.
-          camera.position.lerp(target, free * pull);
-          persp.near = Math.max(m(0.08), camera.position.distanceTo(target) * 0.02);
-        }
-      }
-    }
+    // A building between the eye and the point looked at is left there, as
+    // in a city builder's camera (Cities: Skylines): the eye was pulled in
+    // front of it, and when a tower's corner slid into the sightline the eye
+    // jumped metres in a frame - there is no way from behind a tower to in
+    // front of it but through it (`tests/render/cameraPull.spec.ts`; the
+    // player, 2026-10-13: "a câmera fica tripidando"). The eye is only kept
+    // out of the buildings themselves, below.
     if (camera === persp && solidsAt) {
-      // At ANY distance, never inside a building: the occluding pull above
-      // fades out from the rooftops (`pullWeight`), and from there on the eye
-      // stood inside the towers it orbited, the walls cut by the near plane
-      // (the player, 2026-10-13: "a câmera não pode atravessar o prédio").
+      // At any distance, never inside a building: the eye stood inside the
+      // towers it orbited, the walls cut by the near plane (the player,
+      // 2026-10-13: "a câmera não pode atravessar o prédio").
       // Brought forward along the line of sight to where it leaves the
       // building (Cinemachine's Deoccluder, "Pull Camera Forward"); with the
       // point looked at inside too, lifted over the roof.
