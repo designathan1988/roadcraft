@@ -43,8 +43,19 @@ const asked = Number(process.env.VITEST_MAX_WORKERS);
 const env = { ...process.env, VITEST_MAX_WORKERS: String(Number.isFinite(asked) ? Math.min(workers, Math.max(1, asked)) : workers), ROADCRAFT_IN_JOB: joined.joined ? '1' : '' };
 
 const TIMEOUT_S = Number(process.env.RUN_LIMITED_TIMEOUT_S ?? 480);
-// `.cmd` shims need a shell on Windows (Node refuses to spawn them bare since CVE-2024-27980).
-const child = spawn(executable, args, { stdio: 'inherit', env, shell: windows && /\.cmd$/i.test(executable) });
+// `.cmd` shims need cmd.exe on Windows (Node refuses to spawn them bare since CVE-2024-27980), and
+// cmd.exe reads one command line: Node's docs, child_process, "Spawning .bat and .cmd files on Windows":
+// spawn cmd.exe with the file as an argument, and "if the script filename contains spaces, it needs to be
+// quoted". DO NOT go back to `shell: true` with the arguments apart: Node joins them with spaces unquoted
+// (`windowsVerbatimArguments`), and npx under "C:\Program Files\nodejs" ran "C:\Program" (2026-10-14).
+const viaCmd = windows && /\.cmd$/i.test(executable);
+/** One word of a cmd.exe command line: quoted when it holds a space or a character cmd.exe reads. */
+const cmdWord = (word) => (word === '' || /[\s"&|<>^()%!,;=]/.test(word) ? `"${word.replace(/"/g, '""')}"` : word);
+const child = viaCmd
+  // `/d` no AutoRun, `/s` the outer quotes taken off and the rest run as written, `/c` then exit.
+  ? spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${[executable, ...args].map(cmdWord).join(' ')}"`],
+    { stdio: 'inherit', env, windowsVerbatimArguments: true })
+  : spawn(executable, args, { stdio: 'inherit', env });
 let stopping = false;
 const stop = (signal) => {
   if (stopping || !child.pid) return;
