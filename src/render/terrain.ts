@@ -145,8 +145,10 @@ export interface TerrainSurface {
   /**
    * Bakes the fine relief the light reads (`terrainRelief.ts`) when the land
    * has changed since - once a stroke is let go, as the water is.
+   * `keepWindow`: no ground has the focus (the view too far out), so a close
+   * window this ground holds is kept for the view coming back.
    */
-  bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null): void;
+  bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null, keepWindow?: boolean): void;
   /** How the rivers and lakes look and move: waves, foam, current (`render/water.ts` WaterLook). */
   setWaterLook(look: WaterLook): void;
   /** The gullies the player cut or wiped, and how much of the steep land carries them of itself (`world/gullies.ts`). */
@@ -3100,8 +3102,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     setSun,
     setGullies(dabs, auto) { relief.setGullies(dabs, auto); },
     setWaterLook(look) { waterSurface.setLook(look); },
-    bakeRelief(renderer, focus) {
-      if (!waterStale) relief.bake(renderer, grid, focus);
+    bakeRelief(renderer, focus, keepWindow = false) {
+      if (!waterStale) relief.bake(renderer, grid, focus, keepWindow);
     },
     vergeMaterial,
     updatePaint,

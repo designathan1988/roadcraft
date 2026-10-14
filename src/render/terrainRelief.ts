@@ -262,9 +262,12 @@ export interface ReliefBake {
   /**
    * Bakes the relief over these corner heights (row by row, GRID by GRID) if
    * it is stale, and the close window round `focus` (three's x, z) - or turns
-   * it off when there is none (the view too far out for it to show).
+   * it off when there is none (the view too far out for it to show). The
+   * window's layer is let go when another ground has the focus (`keepWindow`
+   * false), and kept while none has (true): zooming out and in again bakes no
+   * plate twice.
    */
-  bake(renderer: WebGLRenderer, heights: Float64Array, focus: { readonly x: number; readonly z: number } | null): void;
+  bake(renderer: WebGLRenderer, heights: Float64Array, focus: { readonly x: number; readonly z: number } | null, keepWindow?: boolean): void;
   dispose(): void;
 }
 
@@ -307,7 +310,13 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
     generateMipmaps: true,
     depthBuffer: false,
   });
-  const target = targetFor(RELIEF_RES, 2);
+  /**
+   * The plate's own level alone, and the close window's layer only while the view looks at this
+   * plate (`bake`'s focus): one plate holds the window at a time. DO NOT give every plate the
+   * window's layer: each plate drawn in full held two 2048-texel layers of half floats with their
+   * mips (about 89 MB of the graphics card a plate), the second unused on all but one.
+   */
+  let target = targetFor(RELIEF_RES, 1);
   const corners = new Float32Array(gridN * gridN);
   const heights = new DataTexture(corners, gridN, gridN, RedFormat, FloatType);
   heights.minFilter = NearestFilter;
@@ -347,6 +356,14 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
   const window = windowUniform.value;
   let dirty = true;
   let closeDirty = true;
+  /** The target made again with `layers` layers (1: the plate's; 2: and the close window): everything baked again. */
+  const layersNow = (layers: number): void => {
+    if (target.depth === layers) return;
+    target.dispose();
+    target = targetFor(RELIEF_RES, layers);
+    dirty = true;
+    closeDirty = true;
+  };
   const layer = (renderer: WebGLRenderer, index: number, x: number, z: number, span: number, count: number): void => {
     frame.set(x, z, span);
     octaves.value = count;
@@ -394,7 +411,7 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
       dirty = true;
       closeDirty = true;
     },
-    bake(renderer, grid, focus) {
+    bake(renderer, grid, focus, keepWindow = false) {
       if (bakeProgram !== 'ready') {
         if (bakeProgram === 'none') {
           bakeProgram = 'building';
@@ -405,6 +422,8 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
         }
         return;
       }
+      // The window's layer while the focus is on this plate, let go when another plate has it.
+      layersNow(focus ? 2 : keepWindow ? target.depth : 1);
       if (dirty) {
         dirty = false;
         const startedAt = performance.now();

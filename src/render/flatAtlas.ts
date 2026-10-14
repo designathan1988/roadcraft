@@ -525,7 +525,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     },
     bakeRelief(renderer: WebGLRenderer, focus) {
       const at = focus ? plates[plateOf(focus.x, -focus.z)]! : null;
-      for (const p of shownList) p.surface!.bakeRelief(renderer, p === at && focus ? { x: focus.x - p.cx, z: focus.z + p.cy } : null);
+      // The close window is the focus plate's alone; with no focus (the view far out) its holder keeps it.
+      for (const p of shownList) p.surface!.bakeRelief(renderer, p === at && focus ? { x: focus.x - p.cx, z: focus.z + p.cy } : null, at === null);
       // The far woods: each plate's fade from whether it is in full and its own trees can grow.
       const now = performance.now() / 1000;
       for (const p of plates) farForest.book.setFull(p.index, p.shown, p.surface?.ecology() != null, now);
