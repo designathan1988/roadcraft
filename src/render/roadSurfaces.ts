@@ -547,20 +547,34 @@ export function* roadSurfaceSteps(
     // road's centreline: round a junction's corner the nearest leg's
     // centreline is far off, and the batter started at the bottom - a grey
     // wall of footway skirt under the corner's paving.
-    let footwayEdges: Polyline[] | null = null;
-    const edges = (): Polyline[] => {
+    // Filed by the cells of a grid their padded boxes cover: a point asks only
+    // the edges filed in its cell, the same ones the box test would pass. Every
+    // edge asked for every verge vertex was a square of the town's blocks:
+    // 6.6 s of a four-times town's first minute (2026-10-14).
+    let footwayEdges: Map<number, Polyline[]> | null = null;
+    const pad = CASING_BAND * 2;
+    const edgeCell = (x: number, y: number): number => (Math.floor(x / FOOTWAY_EDGE_CELL) + 32768) * 65536 + (Math.floor(y / FOOTWAY_EDGE_CELL) + 32768);
+    const edges = (): Map<number, Polyline[]> => {
       if (!footwayEdges) {
-        footwayEdges = [];
+        footwayEdges = new Map();
         for (const poly of levelPolygons(net, Level.Sidewalk, include)) for (const ring of poly) {
-          if (ring.length >= 3) footwayEdges.push(Polyline.fromPoints([...ring.map(([px, py]) => ({ x: px!, y: py! })), { x: ring[0]![0]!, y: ring[0]![1]! }]));
+          if (ring.length < 3) continue;
+          const line = Polyline.fromPoints([...ring.map(([px, py]) => ({ x: px!, y: py! })), { x: ring[0]![0]!, y: ring[0]![1]! }]);
+          const box = line.bbox;
+          for (let cx = Math.floor((box.minX - pad) / FOOTWAY_EDGE_CELL); cx <= Math.floor((box.maxX + pad) / FOOTWAY_EDGE_CELL); cx++) {
+            for (let cy = Math.floor((box.minY - pad) / FOOTWAY_EDGE_CELL); cy <= Math.floor((box.maxY + pad) / FOOTWAY_EDGE_CELL); cy++) {
+              const key = (cx + 32768) * 65536 + (cy + 32768);
+              const list = footwayEdges.get(key);
+              if (list) list.push(line); else footwayEdges.set(key, [line]);
+            }
+          }
         }
       }
       return footwayEdges;
     };
     const fromFootway = (x: number, y: number): number => {
       let best = Infinity;
-      const pad = CASING_BAND * 2;
-      for (const line of edges()) {
+      for (const line of edges().get(edgeCell(x, y)) ?? []) {
         const box = line.bbox;
         if (x < box.minX - pad || x > box.maxX + pad || y < box.minY - pad || y > box.maxY + pad) continue;
         best = Math.min(best, line.distanceTo({ x, y }));
@@ -985,6 +999,9 @@ function inputsOf(polys: readonly Poly[]): Input[] {
  * Every surface of one tile, from the rings that reach it: merged, banded and
  * clipped exactly as the whole network would be, then cut to the tile.
  */
+/** The grid the footways' outer edges are filed by for the verge's fall (`fromFootway`). */
+const FOOTWAY_EDGE_CELL = m(32);
+
 function buildTile(
   into: {
     readonly levels: Record<'casing' | 'sidewalk' | 'curb' | 'asphalt', readonly Input[]>;
