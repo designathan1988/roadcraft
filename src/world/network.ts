@@ -54,33 +54,24 @@ export class Network {
    */
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
   readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
-  /** Each ribbon's place in `ribbons`, at a revision (`ribbonsMeeting`). */
-  private ribbonOrderAt = { revision: -1, order: new Map<SegmentId, number>() };
-
-  /** @rebuild Called when the network moved (`revision`); otherwise returns the order it made. */
-  private ribbonOrder(): ReadonlyMap<SegmentId, number> {
-    if (this.ribbonOrderAt.revision !== this.revision) {
-      const order = new Map<SegmentId, number>();
-      let i = 0;
-      for (const id of this.ribbons.keys()) order.set(id, i++);
-      this.ribbonOrderAt = { revision: this.revision, order };
-    }
-    return this.ribbonOrderAt.order;
-  }
-
   /**
    * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
    * `ribbons`: what a loop over every ribbon would meet there, in the order it
    * would meet them, so a search that keeps the first of equals finds the same.
+   *
+   * `ribbons` is kept in increasing id order by its one writer
+   * (`networkBuild.ts` `insertionWatch`, and `copyState` copies it as it is),
+   * and `idsMeeting` answers in increasing id order: the two orders are one.
+   * DO NOT go back to a rank of every ribbon made again at each revision
+   * (`ribbonOrder`): every edit paid a walk of the map for the next question.
    */
   ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
-    const order = this.ribbonOrder();
     const out: SegmentRibbon[] = [];
     for (const id of this.segmentCells.idsMeeting(rect)) {
       const ribbon = this.ribbons.get(id);
-      if (ribbon && order.has(id)) out.push(ribbon);
+      if (ribbon) out.push(ribbon);
     }
-    return out.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+    return out;
   }
 
   /**
