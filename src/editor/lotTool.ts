@@ -47,7 +47,8 @@ export interface LotToolHost {
 
 /** What the scene draws of the lots (the shape of `render/lotOverlay.ts` `LotOverlayInput`, without its key). */
 export interface LotOverlay {
-  readonly polygons: { corners: readonly Vec2[]; fill: number | null; fillAlpha: number; line: number; lineAlpha: number; width: number }[];
+  /** `built`: a lot with a building, whose yard's paving is coloured too. */
+  readonly polygons: { corners: readonly Vec2[]; fill: number | null; fillAlpha: number; line: number; lineAlpha: number; width: number; built?: boolean }[];
   readonly lines: { a: Vec2; b: Vec2; colour: number; dashed: boolean; width: number }[];
   readonly points: { p: Vec2; colour: number; radius: number }[];
   /** Labels for the 2D layer: a lot's size, a side's length. */
@@ -635,7 +636,7 @@ export class LotTool {
       const fillAlpha = painting ? 0.6 : l.use ? (editing ? (built ? 0.22 : 0.45) : 0.25) : brushHover ? 0.35 : 0;
       polygons.push({ corners: l.corners.map(dragged), fill, fillAlpha,
         line: picked ? (settings.mode === 'delete' ? 0xff6b5e : 0xffd25e) : 0xffffff, lineAlpha: editing ? (picked ? 1 : 0.85) : 0,
-        width: picked ? 0.7 : 0.35 });
+        width: picked ? 0.7 : 0.35, ...(built ? { built: true } : {}) });
     }
     // The street land proposed as lots, in every mode of the tool (they
     // vanished from the Lots modes): faint outlines; painted in the stroke, in

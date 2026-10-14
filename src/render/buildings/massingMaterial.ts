@@ -1,5 +1,6 @@
 import { Color, MeshStandardMaterial } from 'three';
 import { ROOM_LAMP_GLSL } from './roomLamps';
+import { applyLotOverlay } from '../lotOverlay';
 
 /**
  * The material of buildings seen from afar (`massing.ts`): their walls in the
@@ -91,5 +92,7 @@ if (vFacade.y > 0.0) {
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
   material.customProgramCacheKey = () => 'building-massing-lamps';
+  // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
+  applyLotOverlay(material, 'massing', { building: true });
   return material;
 }
