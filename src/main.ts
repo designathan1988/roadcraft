@@ -2184,9 +2184,14 @@ try {
 gameState.watch(['sky'], () => { scene.setSkyMode(game.sky); requestDraw(); });
 scene.setSkyMode(game.sky);
 
+/**
+ * Save map: the map offered as a file, and the player told which way it went.
+ * DO NOT say "saved" without asking `exportToFile`: a map too large for one
+ * string failed in the click and the player read "Map saved to a file".
+ */
 function saveMap(): void {
-  exportToFile(doc, sessionSettings());
-  flashHint('hint.saved');
+  const offered = exportToFile(doc, sessionSettings(), undefined, () => flashHint('hint.exportFailed'));
+  if (offered) flashHint('hint.saved');
 }
 /**
  * Loads a picked map. The undo entry is recorded only once the map has

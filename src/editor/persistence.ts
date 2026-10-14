@@ -9,6 +9,7 @@ import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 import { PARTS_FROM_BUILDINGS, type PartStore, PartedSaves, indexedDbParts } from './chunkedSave';
+import { withUnit } from './mapExport';
 
 /** Where the map is kept. */
 const KEY = 'roadcraft.world.v7';
@@ -484,8 +485,6 @@ export function normalizeSettings(settings: SavedSettings): SavedSettings {
  */
 export const MAX_INTENSITY = 3;
 
-/** Settings as stored: with the unit their camera is in. */
-const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
 
 /**
  * The saved camera in this build's world unit (`world/rescale.ts`): its zoom

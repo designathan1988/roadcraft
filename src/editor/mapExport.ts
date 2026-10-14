@@ -2,6 +2,9 @@ import type { RoadDoc, SerializedDoc } from '@world/doc';
 import { METERS_PER_UNIT } from '@world/units';
 import type { SavedSession, SavedSettings } from './persistence';
 
+/** Settings as stored: with the unit their camera is in (the autosave's and the file's, one rule). */
+export const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
+
 /** A file as Save map writes it (`persistence.ts` `importFromFile` reads it back). */
 interface SerializedSession extends SavedSession {
   readonly version: 2;
@@ -32,7 +35,7 @@ export function exportToFile(
   try {
     const saved: SerializedSession | SerializedDoc = settings
       // With the unit its camera is in, as the autosave stamps it (`persistence.ts` withUnit).
-      ? { version: 2, document: doc.toJSON(), settings: { ...settings, unit: METERS_PER_UNIT } }
+      ? { version: 2, document: doc.toJSON(), settings: withUnit(settings) }
       : doc.toJSON();
     const blob = new Blob(jsonPieces(saved, EXPORT_SPLIT_DEPTH), { type: 'application/json' });
     url = URL.createObjectURL(blob);
