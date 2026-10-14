@@ -950,9 +950,11 @@ export function curveLotSide(doc: RoadDoc, a: Vec2, b: Vec2, through: Vec2): boo
 /** Zones lots (or clears them, `zone` null). */
 export function zoneLots(doc: RoadDoc, ids: readonly number[], zone: { use: ZoneUse; density: ZoneDensity } | null): boolean {
   const zoned: Lot[] = [];
-  for (let i = 0; i < doc.lots.length; i++) {
+  // By a set: `ids.includes` per lot was lots × the lots of the stroke.
+  const wanted = new Set(ids);
+  for (let i = 0; i < doc.lots.length && wanted.size; i++) {
     const l = doc.lots[i]!;
-    if (!ids.includes(l.id)) continue;
+    if (!wanted.delete(l.id)) continue;
     if (zone ? l.use === zone.use && l.density === zone.density : !l.use) continue;
     const { use: _u, density: _d, building, ...rest } = l;
     if (zone) doc.lots[i] = { ...rest, use: zone.use, density: zone.density, ...(building !== undefined ? { building } : {}) };
