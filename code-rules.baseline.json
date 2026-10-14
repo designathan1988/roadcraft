@@ -134,7 +134,6 @@
  "whole-map-per-frame  src/sim/world.ts SimWorld.syncControllers  for LaneletGraph.junctions": 1,
  "whole-map-per-frame  src/sim/world.ts SimWorld.syncControllers  spread SimWorld.controllers": 1,
  "whole-map-per-frame  src/ui/inspector.ts segmentStats  for LaneletGraph.lanelets": 1,
- "whole-map-per-frame  src/world/buildings/validate.ts validateBuilding  for BuildingStore.all": 1,
  "whole-map-per-frame  src/world/curbRamps.ts rampSet  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/world/doc.ts RoadDoc.poleNear  for RoadDoc.poles": 1,
  "whole-map-per-frame  src/world/doc.ts RoadDoc.removePole  spread RoadDoc.poleSpans": 1,
@@ -161,15 +160,11 @@
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  spread RoadDoc.segments": 1,
  "whole-map-per-frame  src/world/zoneGrid.ts pavedTester  spread Network.ribbons": 1,
- "whole-map-per-item  src/editor/zoning.ts addPlaced  for BuildingStore.all": 1,
  "whole-map-per-item  src/editor/zoning.ts cornerOf  spread Network.ribbons": 1,
  "whole-map-per-item  src/editor/zoning.ts growOnLot  filter RoadDoc.lots": 1,
  "whole-map-per-item  src/editor/zoning.ts growOnLot  findIndex RoadDoc.lots": 1,
  "whole-map-per-item  src/editor/zoning.ts growOnLot  for open(RoadDoc.lots)": 1,
  "whole-map-per-item  src/editor/zoning.ts lastGrown  for RoadDoc.lots": 1,
- "whole-map-per-item  src/editor/zoning.ts nearSignatures  for BuildingStore.all": 1,
- "whole-map-per-item  src/editor/zoning.ts neighbourStoreys  for BuildingStore.all": 1,
  "whole-map-per-item  src/editor/zoning.ts onStreet  some ribbons(Network.ribbons)": 1,
- "whole-map-per-item  src/world/buildings/validate.ts validateBuilding  for BuildingStore.all": 1,
  "whole-map-per-item  src/world/roads/footwayRise.ts flushIndex  for Network.ribbons": 1
 }

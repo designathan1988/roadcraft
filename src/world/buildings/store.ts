@@ -1,6 +1,7 @@
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
 import { storedBounds } from './geometry';
+import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, cloneBuilding } from './types';
 
@@ -28,6 +29,8 @@ function rectOf(b: Building): ChangeRect | null {
 export class BuildingStore {
   private readonly items = new Map<BuildingId, Building>();
   private ids = new IdAllocator(1);
+  /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
+  private grid: BuildingGrid | null = null;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
@@ -61,6 +64,16 @@ export class BuildingStore {
     return this.items.values();
   }
 
+  /**
+   * The buildings whose box (or anchor) may reach the rectangle, in the order
+   * of `all()`: a superset, the caller keeps its exact test (`grid.ts`). What
+   * asks about one place asks this, never `all()`.
+   */
+  near(minX: number, minY: number, maxX: number, maxY: number): Building[] {
+    this.grid ??= new BuildingGrid(this.items.values());
+    return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
+  }
+
   /** The id the next `add` will hand out. */
   get nextId(): BuildingId {
     return asBuildingId(this.ids.peek);
@@ -71,6 +84,7 @@ export class BuildingStore {
     const id = asBuildingId(this.ids.take());
     const building = { ...cloneBuilding(value as Building), id } as Building;
     this.items.set(id, building);
+    this.grid?.insert(building);
     this.changed([building], 'added');
     return building;
   }
@@ -81,6 +95,7 @@ export class BuildingStore {
     if (!was) return;
     const now = cloneBuilding(building);
     this.items.set(building.id, now);
+    this.grid?.update(now);
     // Where it stood and where it stands: a moved building changes both.
     this.changed([was, now], 'replaced');
   }
@@ -95,11 +110,14 @@ export class BuildingStore {
     if (value === undefined) {
       if (!was) return;
       this.items.delete(id);
+      this.grid?.delete(id);
       this.changed([was], 'restored');
       return;
     }
     const now = cloneBuilding(value);
     this.items.set(id, now);
+    // A record put back where one stood keeps its place in the order; a new one goes last, as in `items`.
+    if (was) this.grid?.update(now); else this.grid?.insert(now);
     this.ids.reserve(id);
     this.changed(was ? [was, now] : [now], 'restored');
   }
@@ -113,6 +131,7 @@ export class BuildingStore {
     const was = this.items.get(id);
     if (!was) return false;
     this.items.delete(id);
+    this.grid?.delete(id);
     this.changed([was], 'removed');
     return true;
   }
@@ -120,6 +139,7 @@ export class BuildingStore {
   clear(): void {
     if (this.items.size === 0) return;
     this.items.clear();
+    this.grid = null;
     this.changed(null, 'cleared');
   }
 
@@ -149,6 +169,7 @@ export class BuildingStore {
   /** Loads stored buildings, repairing or dropping what cannot be read. */
   load(data: readonly unknown[] | undefined): void {
     this.items.clear();
+    this.grid = null;
     for (const raw of data ?? []) {
       const building = migrateBuilding(raw);
       if (!building || this.items.has(building.id)) continue;
@@ -165,6 +186,7 @@ export class BuildingStore {
    */
   shareFrom(source: BuildingStore): void {
     this.items.clear();
+    this.grid = null;
     for (const [id, b] of source.items) this.items.set(id, b);
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     this.changed(null, 'shared');
@@ -196,6 +218,7 @@ export class BuildingStore {
       if (!was || (now !== was && this.textOf(now) !== this.textOf(was))) touched.push(now);
     }
     this.items.clear();
+    this.grid = null;
     for (const b of source.items.values()) this.items.set(b.id, cloneBuilding(b));
     this.changed(touched, 'replaced by an edit or an undo');
   }

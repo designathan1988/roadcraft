@@ -180,7 +180,8 @@ export function validateBuilding(
   const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as Network, rect))) return 'road';
 
-  for (const other of ctx.doc.buildings.all()) {
+  // The buildings by place (`BuildingStore.near`): this walked the town, up to 18 times a building grown.
+  for (const other of ctx.doc.buildings.near(box.minX, box.minY, box.maxX, box.maxY)) {
     if (other.id === b.id || ignored?.has(other.id)) continue;
     const ob = storedBounds(other);
     if (ob.minX > box.maxX || ob.maxX < box.minX || ob.minY > box.maxY || ob.maxY < box.minY) continue;

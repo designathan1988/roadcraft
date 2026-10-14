@@ -12,7 +12,7 @@ import { ZONE_CELL, ZONE_DEPTH, type ZoneCell, type ZoneGrid } from '@world/zone
 import type { ZoneDensity, ZoneMark, ZoneUse } from '@world/zones';
 import { lotBuildFrame, lotCentre } from '@world/lots';
 import { addBuildingRecord, type placeBuilding } from './buildings';
-import { MIN_SIZE, buildingBounds, footprintRects } from '@world/buildings/geometry';
+import { MIN_SIZE, buildingBounds, footprintRects, storedBounds } from '@world/buildings/geometry';
 import { intersection } from '@core/clipper';
 import { pointInPolygon } from '@core/polygon';
 import { Level, halfWidth } from '@world/roadTypes';
@@ -38,8 +38,9 @@ function addPlaced(ctx: SiteContext, record: Omit<Building, 'id'>): ReturnType<t
   const probe = { ...record, id: -1 } as unknown as Building;
   const box = buildingBounds(probe, m(2));
   const theirs: Vec2[][] = [];
-  for (const o of ctx.doc.buildings.all()) {
-    const ob = buildingBounds(o);
+  // The buildings by place (`BuildingStore.near`), not the town; the same box test.
+  for (const o of ctx.doc.buildings.near(box.minX, box.minY, box.maxX, box.maxY)) {
+    const ob = storedBounds(o);
     if (ob.minX > box.maxX || ob.maxX < box.minX || ob.minY > box.maxY || ob.maxY < box.minY) continue;
     theirs.push(...footprintRects(o), ...groundElements(o));
   }
@@ -437,7 +438,7 @@ function apart(a: Vec2, b: Vec2): number {
 /** The buildings round a point: each one's signature and how far it stands. */
 function nearSignatures(doc: RoadDoc, at: Vec2): { signature: Signature; distance: number }[] {
   const out: { signature: Signature; distance: number }[] = [];
-  for (const b of doc.buildings.all()) {
+  for (const b of doc.buildings.near(at.x - LIKE_REACH, at.y - LIKE_REACH, at.x + LIKE_REACH, at.y + LIKE_REACH)) {
     const d = apart(b, at);
     if (d < LIKE_REACH) out.push({ signature: signatureOfRecord(b), distance: d });
   }
@@ -459,8 +460,9 @@ function unlikeness(body: Building | Omit<Building, 'id' | 'x' | 'y' | 'rotation
 /** Storeys of the buildings beside a lot's front (within its width and a little), tallest block each. */
 function neighbourStoreys(doc: RoadDoc, anchor: Vec2, width: number): number[] {
   const out: number[] = [];
-  for (const b of doc.buildings.all()) {
-    if (apart(b, anchor) > width + m(12)) continue;
+  const reach = width + m(12);
+  for (const b of doc.buildings.near(anchor.x - reach, anchor.y - reach, anchor.x + reach, anchor.y + reach)) {
+    if (apart(b, anchor) > reach) continue;
     const top = Math.max(0, ...b.volumes.filter((v) => !v.open).map((v) => v.base + v.storeys.length));
     if (top > 0) out.push(top);
   }
@@ -561,6 +563,10 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
     { front: 0, side: 0, shrink: 1 }, { front: m(1.5), side: 0, shrink: 1 }, { front: m(3), side: m(1), shrink: 0.9 },
     { front: m(3), side: m(1), shrink: 0.75 }, { front: m(4), side: m(1.5), shrink: 0.6 }, { front: m(4), side: m(1.5), shrink: 0.45 },
   ];
+  // Read once, not a try: a try writes to the document only when it succeeds,
+  // and then returns, so the buildings round the lot are the same for all.
+  const neighbours = neighbourStoreys(doc, frame.anchor, frame.width);
+  const near = nearSignatures(doc, frame.anchor);
   for (const density of densities) for (const t of tries) {
     const lotW = (frame.width - JOINT - 2 * t.side) * t.shrink;
     const lotD = (frame.depth - m(0.3) - t.front) * t.shrink;
@@ -575,12 +581,11 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
       backDoor: plan.back.use !== 'none' && plan.back.use !== 'loading',
       ...quarterOf(frame.anchor, n),
       ...(driveSide ? { driveSide } : {}),
-      neighbours: neighbourStoreys(doc, frame.anchor, frame.width),
+      neighbours: [...neighbours],
     };
     // Of a few candidates, the one least like the buildings round it
     // (Mitchell's best candidate, in the space of what a building looks
     // like): drawn at random, a street still came out with twins side by side.
-    const near = nearSignatures(doc, frame.anchor);
     let made = madeToMeasure(use, density, envelope, rng);
     if (near.length) {
       let score = unlikeness(made.body, near);
