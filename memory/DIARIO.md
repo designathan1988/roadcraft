@@ -19,3 +19,9 @@
 - 2026-10-14 ~15h30 (auditoria): `6f22b1c` regras novas no check-code (CLARITY); `f01799a` índice de
   prédios por lugar (cidade idêntica; 12,0 → 7,8 s em 5.400 prédios). Timeouts do check completo de
   novo por carga (passam sozinhos).
+- 2026-10-14 ~16h10 (Hook de busca na internet): `1ee7f37` scripts/look.mjs (fotos 1920x1080 na
+  GPU, gestos, recomeça se o Vite recarregar, evalFile) + skills `investigando-desempenho` e
+  `conferindo-no-jogo`. Referência offline do three.js r186 e de 4 projetos em
+  C:/Codex-Shared/referencia. Plugins typescript-lsp e context7 instalados no usuário. Defeito
+  visto e passado à auditoria: fresta preta e textura borrada numa fachada (15-rua-arrastada.png).
+  Próximo: o "acusador" (script só de leitura) de usos do three.js contra o manual e dos padrões.

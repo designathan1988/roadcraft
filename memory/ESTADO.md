@@ -6,8 +6,20 @@ Atualizado: 2026-10-14 ~15h30.
 - **"Auditoria de desempenho three.js"**: otimização, correções no código (prédios, renderer,
   world, editor, sim), regras estáticas em `scripts/check-code.mjs`.
 - **"Hook de busca na internet"**: ferramentas de medida (`__roadcraft.memory()`,
-  `__roadcraft.budget('rua'|'bairro'|'mapa')`, `src/core/perfBudget.ts`), o `CLAUDE.md` da raiz,
-  contadores de trabalho por evento (testes de escala) e a regra "como adicionar um produto derivado".
+  `__roadcraft.budget('rua'|'bairro'|'mapa')`, `src/core/perfBudget.ts`), fotos e gestos
+  (`scripts/look.mjs`), o acusador (`scripts/acusar.mjs`), as skills `.claude/skills/`, o
+  `CLAUDE.md` da raiz, contadores de trabalho por evento (testes de escala). Pendente dela, para
+  quem continuar (2026-10-14 ~16h40, o jogador vai trocar de conta):
+  - contadores por evento que faltam em `tests/scale/buildingEdit.spec.ts`: anel de 2.048 do
+    diário (C1/D8), jardins (C2), `cameraSolids` (A8/C5), pads (C8) — a auditoria corrige, este
+    lado faz o contador que impede a volta;
+  - a regra "como adicionar um produto derivado" no CLAUDE.md: **só com o sim do jogador**
+    (pedido da auditoria, ainda sem resposta dele);
+  - plugins no usuário: `typescript-lsp` instalado, `%APPDATA%\npm` já no PATH, mas o app precisa
+    ser fechado e reaberto para a ferramenta LSP achar o `typescript-language-server`;
+    `context7` instalado, precisa ser autorizado pelo jogador (`/mcp` num terminal `claude`);
+  - referência offline: `C:/Codex-Shared/referencia/` (three.js r186 inteiro e 4 projetos;
+    índice no `README.md` de lá).
 - Combinado: uma não edita arquivo que a outra está mexendo; commit só dos próprios arquivos
   (caminhos explícitos). Cada arquivo salvo recarrega o jogo na 5300.
 
@@ -26,6 +38,10 @@ Atualizado: 2026-10-14 ~15h30.
   - `96d1d64` postes segurados durante o traçado (`holdUtilities`) — o HEAD volta a compilar.
   - `6f22b1c` regras `whole-map-nested` / `whole-map-per-item` no check-code.
   - `f01799a` índice de prédios por lugar (`BuildingStore.near`) no crescimento e na validação.
+  - `1ee7f37` (Hook) `scripts/look.mjs` e as skills `investigando-desempenho` e
+    `conferindo-no-jogo` — **envio NÃO autorizado ainda**.
+  - `cd4dc32` (Hook) `scripts/acusar.mjs` e `tests/arch/acusar.spec.ts` — **envio NÃO autorizado ainda**.
+  - `6914c7d` (auditoria) lotes abertos.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
