@@ -53,11 +53,6 @@ export function anyClosed(w: SimWorld): boolean {
   return !!byLane && byLane.size > 0;
 }
 
-/** Every closure dropped (a new map). */
-export function clearClosures(w: SimWorld): void {
-  CLOSED.delete(w);
-}
-
 /** Kept between a closed stretch and the nearest body on it or past it. */
 const CLEAR_MARGIN = m(2);
 
