@@ -9,5 +9,7 @@
   "sim.lanes": 10.56,
   "building+1:layer": 3.82,
   "building+1:ground": 3.82,
-  "building+1:ground:idle": 3.82
+  "building+1:ground:idle": 3.82,
+  "building+1:bays": 3.82,
+  "building+1:yards": 3.82
 }

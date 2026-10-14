@@ -9,6 +9,10 @@ import { beginFrameWork } from '@core/frameWork';
 import { m } from '@world/units';
 import { type DerivedChangeKind, journalWork } from '@world/changes';
 import { GroundDependant, type GroundRecord, type Rect } from '@render/groundChanges';
+import { Network } from '@world/network';
+import { SimWorld } from '@sim/world';
+import { collectBays } from '@sim/agents/parking';
+import { yardNeighbours } from '@sim/agents/lorryDocks';
 
 /**
  * ONE MORE BUILDING COSTS THE SAME IN A SMALL TOWN AND A LARGE ONE (the same
@@ -92,11 +96,27 @@ function addWork(n: number): Record<string, number> {
   // Built on the town as it stands: the serial of the ground it saw is the opening's.
   const ground = groundReader(doc, [-SPACING, -SPACING, (side + 2) * SPACING, (side + 2) * SPACING]);
   ground();
+  // The simulation's products of the buildings: the bays the parked cars
+  // stand in (`agents/parking.ts`, read by the scenery and the lots'
+  // traffic) and the yards' neighbours (`agents/lorryDocks.ts`).
+  const net = new Network(doc);
+  net.rebuild();
+  const w = new SimWorld(doc, net, 0x5ca1e);
+  collectBays(w);
+  const yards = yardNeighbours(w, null);
   reads.count = 0;
   doc.buildings.add(placed(n, side + 1, 0));
   settle(layer, doc);
+  const layerReads = reads.count;
+  reads.count = 0;
+  collectBays(w);
+  const bays = reads.count;
+  reads.count = 0;
+  yardNeighbours(w, yards);
   const out = {
-    layer: reads.count,
+    layer: layerReads,
+    bays,
+    yards: reads.count,
     // The frame after it, and the next one with nothing new: a building is
     // no change of the ground, and neither should cost more in a larger town.
     ground: ground(),
