@@ -1,8 +1,10 @@
 # Cidade no mapa inteiro (10 km): plano de engenharia
 
 Pedido do jogador (2026-10-14): a cidade gerada cobrindo o mapa inteiro de 10,24 km,
-bonita e rápida. Este documento é o plano medido; cada etapa entra com um commit,
-número antes e depois, e só segue quando o número bate.
+bonita e rápida, em computadores diferentes; depois maior e maior, rumo à cidade sem limite.
+"Feito" é o código sem o problema: o algoritmo escala com a cidade. **Os números deste
+documento NÃO são meta** (ordem do jogador, 2026-10-14 noite): servem só para achar onde ler
+o código. O plano em vigor é `docs/PLANO-ESPINHA-2026-10-14.md`.
 
 ## Onde estamos (medido 2026-10-14, Chrome, 1688×922)
 
@@ -37,9 +39,9 @@ Num registro gerado típico (9,5 KB), os elementos do lote são 7,1 KB.
 - **Tráfego em escala** ([Burghout, KTH](https://kth.se/polopoly_fs/1.742065.1600688570!/hybrid%20mesoscopic.pdf)):
   microscópico na área de interesse, mesoscópico por veículo no resto da rede.
 
-## Orçamentos para o mapa inteiro
+## Referências para o mapa inteiro (onde olhar; não são meta nem critério de pronto)
 
-| O quê | Orçamento |
+| O quê | Referência |
 |---|---|
 | Heap JS vivo | ≤ 1,5 GB (≤ ~15 KB por prédio, tudo incluído) |
 | Geração até a cidade de pé | ≤ 90 s, a página respondendo o tempo todo |
@@ -50,8 +52,10 @@ Num registro gerado típico (9,5 KB), os elementos do lote são 7,1 KB.
 
 ## Etapas
 
-1. **Caches com teto** — baias de fachada, linhas e grafo dos postes, massas em JS
-   soltas depois de ir à GPU, texto dos registros. Meta: heap da cidade 2× de 932 → <500 MB.
+1. **O que a cidade guarda à toa, pela causa** — massas e cascas soltas da CPU depois de ir à
+   GPU, o texto dos registros só quando preciso, baias de fachada e linhas dos postes derivadas
+   pelo que mudou (`world/derived.ts`). NÃO teto de cache: um cache que expulsa e refaz esconde o
+   custo, que volta com a cidade maior (CLAUDE.md).
 2. **Registro compacto do prédio** — os elementos do lote gerados de novo a partir do
    plano versionado (semente), guardados só quando o jogador os muda; arquivo e heap
    proporcionais ao que é único em cada prédio.
