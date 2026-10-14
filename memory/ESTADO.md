@@ -2,49 +2,28 @@
 
 Atualizado: 2026-10-14 (noite). A versão longa anterior está no git (`git show 8ddba37:memory/ESTADO.md`).
 
-## Quem trabalha
-- Uma conversa só, "Análise de otimização e desempenho do jogo", com agentes só de leitura
-  (ordem do jogador, 2026-10-14). As sessões Auditoria e Hook foram encerradas nessa noite; o
-  trabalho delas passou para esta conversa.
+## Quem trabalha (2026-10-14 noite)
+- Uma conversa só, "Análise de otimização e desempenho do jogo". Cinco agentes, cada um lendo
+  inteira uma parte do código e corrigindo no SEU worktree (C:/Codex-Shared/rc2-wt/<parte>, ramo
+  fix/<parte>, criado do main local): sim, world, render-cidade, render-vivos, editor-ui. Cada ramo
+  começa com o commit "Herdado" (o trabalho dos agentes parados e o meu, não revisado). Eu leio
+  cada diff, rodo o analisador no worktree e faço o merge. Ninguém edita a pasta principal.
 
 ## Plano em vigor
-`docs/PLANO-ESPINHA-2026-10-14.md` (aprovado pelo jogador em 2026-10-14). Fase 0 feita:
-- verificador de "feito" (hook `agent` global no `Stop`/`SubagentStop`,
-  `~/.claude/hooks/verificador-feito.md`, provado com `claude -p`: 5 casos em 13 rodadas); skill
-  `lendo-o-codigo`; CLAUDE.md, ORDENS.md e as notas falsas de `src/editor`, `src/sim`, `src/world`;
-  mensagens de check-code, knip e refs dizem "defeitos conhecidos ainda no código" (c18494b);
-  falsos positivos do research-gate tirados (29 comandos conferidos); o trabalho da célula em
-  worker lido inteiro (abaixo).
-- fase 1 em curso (bugs C7 independentes, cada um com teste que falha antes): segurança do
-  `innerHTML` corrigida (linha de transporte; barreira da classe pendente, fase do roteamento);
-  próximos da lista C7 do plano. O trabalho da célula em worker não entra em commit antes de
-  corrigir os defeitos abaixo e medir a memória com a máquina livre.
+`docs/PLANO-ESPINHA-2026-10-14.md` (diretriz do jogador no topo: desempenho e qualidade em
+computadores diferentes, rumo à cidade sem limite; ler o código inteiro, identificar e corrigir;
+teste no fim de cada bloco). No main: fase 0, innerHTML, projetos/modelos do jogador
+(core/keptList.ts), via invertida/coletora/postes, trilhos/caminhões, desgaste por heap, a
+espinha (world/derived.ts), instruções e checagem do turno só com a barreira (4bb1188, 07a0940).
+- Depois dos blocos: a cidade no mapa inteiro, `generateCity({ radius })` (plan.ts:109 limita a
+  MAP_HALF - 60 m; o mapa é fixo em 10,24 km, 5 × 5 placas), jogada como o jogador; o que ela
+  mostrar volta a ser lido e corrigido; depois o mundo sem borda (plano, "10 km e a cidade sem limite").
 
 ## Repositório (conferido em 2026-10-14 noite)
 - `main` à frente de `origin/main` (`b8c63c3`; eram 80 commits antes da fase 0); envio ao GitHub só com o sim do jogador.
-- Não commitado na árvore principal (da Auditoria):
-  `src/render/buildings/` `cell.worker.ts`, `cellArrays.ts`, `cellPool.ts`, `cellRequests.ts`,
-  `cellWork.ts`, `chunk.ts`, mudanças em `buildingMesh.ts`, `layer.ts`, `layerCells.ts`,
-  `townIndex.ts`; `tests/render/cellArrays.spec.ts`, `cellWork.spec.ts`. Lido inteiro em 2026-10-14
-  noite (os seis novos, `layer.ts` 1-735, `layerCells.ts` 1-311, `townIndex.ts` 1-131, os dois
-  testes, o diff de `buildingMesh.ts` e `uploads.ts` 1-232). Defeitos conferidos na linha:
-  - `disposeLanded` (`cellRequests.ts:56, 94, 111`) solta malhas ainda na fila de `warmLooseAhead`;
-    `warmOne` (`uploads.ts:172-205`) as desenha sem conferir: a geometria sobe de novo sem dono;
-  - o caminho inteiro limpa `pendingCells` (`layer.ts:596`) sem largar os pedidos: eles contam no
-    `STREAM_AHEAD` e o que pousa fica em `landed` sem ninguém tomar; `CellPool.cancel` só marca, o
-    worker faz todas as rodadas (`cellPool.ts:98-100, 161-180`); `summarize` sem id, não cancela
-    (`cellRequests.ts:98-100`);
-  - pedido de resumo tira a célula de `released` (`cellWork.ts:160`): célula longe deixa de ceder
-    primeiro as suas peças;
-  - por quadro: `entriesOf` de cada célula pendente (`layer.ts:427`); `[...lista, b]` por prédio na
-    fatia dos resumos (`layer.ts:453`);
-  - `streamCells` citado em 6 comentários e inexistente (`layer.ts:332, 660, 666`;
-    `layerCells.ts:63, 65, 109`); fórmula própria de chave de célula em `cellWork.ts:249`;
-  - os testes só cobrem o caminho na página (`workers = false`); nada cobre cancelamento nem
-    descarte. Relato da
-  Auditoria, NÃO conferido: geometria na CPU 692 MB contra 364,6 MB do código antigo (cascas do
-  worker presas na CPU?), medida com a máquina carregada e contexto WebGL perdido; mensagem de
-  commit pronta em `%TEMP%/claude/C--Codex-Shared-roadcraft-2/ed3156c1-*/scratchpad/commit-celulas.txt`.
+- A pasta principal está limpa (só as deleções do jogador e um relatório de outra sessão). O
+  trabalho que estava nela foi para os ramos das partes: a célula em worker (com os defeitos lidos
+  e corrigidos por mim; falta a causa da geometria presa na CPU) em fix/render-cidade.
 - Relato da Auditoria, NÃO conferido: `world/buildings/cameraSolids.ts` (eb31083), em follow, a
   troca de estoque vem antes de `const wholeWas = whole` e devolve false sem `version++`.
 - Ramos de agentes não mesclados em `main` (worktrees em `.claude/worktrees/`): `a432aff…` LOD (3
