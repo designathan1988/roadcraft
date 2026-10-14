@@ -459,6 +459,20 @@ export function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: 
   return best;
 }
 
+/** The largest radius of a placed item (`LANDSCAPE_RADIUS`). */
+const MAX_ITEM_RADIUS = Math.max(...Object.values(LANDSCAPE_RADIUS));
+
+/**
+ * `landscapeNear` over the document's items round the point only
+ * (`RoadDoc.landscapeIn`): what the pointer of the bulldozer and of the
+ * landscaping tool asks. DO NOT hand `doc.landscape.values()` to
+ * `landscapeNear` for one point: every item of the map, every move.
+ */
+export function landscapeNearIn(doc: { landscapeIn(rect: readonly [number, number, number, number]): LandscapeItem[] }, at: Vec2, radius: number): LandscapeItem | null {
+  const r = radius + MAX_ITEM_RADIUS;
+  return landscapeNear(doc.landscapeIn([at.x - r, at.y - r, at.x + r, at.y + r]), at, radius);
+}
+
 /** Whether a point is on any street's paving (carriageway, kerb or footway). */
 function onAnyRoad(net: Network, at: Vec2): boolean {
   for (const ribbon of ribbonsNear(net, at, m(1))) {
