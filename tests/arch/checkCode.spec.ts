@@ -150,6 +150,30 @@ export function frame(doc: RoadDoc, sight: Sight, sim: Sim, keyed: Keyed, rebuil
 }
 `;
 
+/**
+ * A call the checker cannot tie, tied by the member's name: a receiver of a
+ * named type of the game runs the holders that say they are one, not every
+ * holder of the same shape; an untyped receiver runs none. The roads' `dispose`
+ * (a loop over the map) was tied to every building cell's and to a mesh's.
+ */
+const DISPATCH = `
+export class RoadDoc { readonly nodes = new Map<number, number>(); }
+export interface Cell { dispose(): void }
+export function cellOf(): Cell {
+  return { dispose() {} };
+}
+export function roadsOf(doc: RoadDoc): { dispose(): void } {
+  const roads = { dispose() { for (const n of doc.nodes.values()) void n; } };
+  return roads;
+}
+declare const loose: any;
+/** @perFrame */
+export function frame(cell: Cell): void {
+  cell.dispose();
+  loose.dispose();
+}
+`;
+
 /** The rules' findings on a project of one file. */
 function findings(file: string, text: string): Record<string, number> {
   const dir = mkdtempSync(join(tmpdir(), 'check-code-'));
@@ -198,6 +222,13 @@ describe('the blind spots of the traversal rules', () => {
     });
     // The old rules keep their own findings: the field and the mark are counted under the new names only.
     expect(Object.keys(found).filter((key) => /^whole-map-(per-frame|nested)/.test(key) && /Sight\.walls|Sim\.vehicles/.test(key))).toEqual([]);
+  });
+});
+
+describe('a call tied by its member name', () => {
+  it('runs the holders of the named type only, and nothing for an untyped receiver', () => {
+    // DO NOT tie `cell.dispose()` to the roads' `dispose` because its shape fits, nor `loose.dispose()` to any.
+    expect(Object.keys(findings('dispatch.ts', DISPATCH)).filter((key) => key.includes('RoadDoc.nodes'))).toEqual([]);
   });
 });
 

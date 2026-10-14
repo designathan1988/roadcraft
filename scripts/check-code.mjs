@@ -168,13 +168,63 @@ const byName = new Map();
 const nameUnit = (name, unit, holder) => { const list = byName.get(name); const entry = { unit, holder }; if (list) list.push(entry); else byName.set(name, [entry]); };
 const holderTypes = new Map();
 const assignable = new Map();
+/** The named types of the game a type is (its interface, class or alias declared in `src/`). */
+function namedIn(type) {
+  const out = new Set();
+  for (const t of typesOf(type)) {
+    for (const s of [t.aliasSymbol, t.getSymbol()]) {
+      if (s && (s.flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.Class | ts.SymbolFlags.TypeAlias)) && (s.declarations ?? []).some(inSrc)) out.add(s);
+    }
+  }
+  return out;
+}
+/** The named types a holder declares itself to be: an object literal's contextual type, a class and its bases. */
+const holderNames = new Map();
+function namesOfHolder(holder) {
+  let names = holderNames.get(holder);
+  if (names) return names;
+  names = new Set();
+  if (ts.isObjectLiteralExpression(holder)) {
+    const contextual = checker.getContextualType(holder);
+    if (contextual) for (const s of namedIn(contextual)) names.add(s);
+  } else if (ts.isClassLike(holder)) {
+    const queue = [checker.getTypeAtLocation(holder)];
+    for (const clause of holder.heritageClauses ?? []) for (const t of clause.types) queue.push(checker.getTypeAtLocation(t));
+    for (let i = 0; i < queue.length; i++) {
+      for (const s of namedIn(queue[i])) names.add(s);
+      if (queue[i].isClassOrInterface()) queue.push(...checker.getBaseTypes(queue[i]));
+    }
+  }
+  holderNames.set(holder, names);
+  return names;
+}
+/** A holder whose type is assignable to the receiver's (its shape fits). */
+const fitting = new Map();
+function fits(holder, receiver) {
+  let type = holderTypes.get(holder);
+  if (!type) holderTypes.set(holder, type = checker.getTypeAtLocation(holder));
+  let byReceiver = fitting.get(holder);
+  if (!byReceiver) fitting.set(holder, byReceiver = new Map());
+  let ok = byReceiver.get(receiver);
+  if (ok === undefined) byReceiver.set(receiver, ok = typesOf(receiver).some((r) => checker.isTypeAssignableTo(type, r)));
+  return ok;
+}
 function holdsFor(holder, receiver) {
   let type = holderTypes.get(holder);
   if (!type) holderTypes.set(holder, type = checker.getTypeAtLocation(holder));
   let byReceiver = assignable.get(holder);
   if (!byReceiver) assignable.set(holder, byReceiver = new Map());
   let ok = byReceiver.get(receiver);
-  if (ok === undefined) byReceiver.set(receiver, ok = typesOf(receiver).some((r) => checker.isTypeAssignableTo(type, r)));
+  if (ok === undefined) {
+    // A receiver of a named type of the game (`BuildingMeshes`) runs the holders that say they are one - an
+    // object literal typed as it, a class implementing it -, not every holder whose shape happens to fit:
+    // `{ dispose(): void }` fits half the game (the roads' `dispose` was tied to every cell's, 2026-10-14).
+    const named = namedIn(receiver);
+    ok = named.size
+      ? [...namesOfHolder(holder)].some((s) => named.has(s))
+      : typesOf(receiver).some((r) => checker.isTypeAssignableTo(type, r));
+    byReceiver.set(receiver, ok);
+  }
   return ok;
 }
 
@@ -675,7 +725,14 @@ function factsOf(unit) {
     // are returned without a declared type): the members so named on holders
     // the receiver's type admits.
     const receiver = checker.getNonNullableType(checker.getTypeAtLocation(c.expression));
-    const byMember = (byName.get(nameNode.text) ?? []).filter((e) => holdsFor(e.holder, receiver)).map((e) => e.unit);
+    // A receiver the checker cannot type (`any`) or a type of a library (three's `InstancedMesh`): no member
+    // of the game runs. DO NOT tie it by name: `any` admits every holder, and a mesh's `dispose()` was tied to
+    // the 65 `dispose` methods of the game, the roads' among them (2026-10-14).
+    const library = (t) => (t.aliasSymbol ?? t.getSymbol())?.declarations?.every((d) => !inSrc(d)) ?? false;
+    if ((receiver.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) || typesOf(receiver).every(library)) { unresolved++; return []; }
+    const named = (byName.get(nameNode.text) ?? []).filter((e) => holdsFor(e.holder, receiver));
+    // No holder says it is the receiver's named type (a literal returned through a local): by its shape.
+    const byMember = (named.length ? named : (byName.get(nameNode.text) ?? []).filter((e) => fits(e.holder, receiver))).map((e) => e.unit);
     if (byMember.length) fieldBased++;
     else unresolved++;
     return byMember;
