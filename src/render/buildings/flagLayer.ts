@@ -123,6 +123,9 @@ export function createFlagLayer(): FlagLayer {
     set(flags) {
       if (mesh) {
         group.remove(mesh);
+        // Its geometry is its own clone (the instance attributes ride on it): three's
+        // `InstancedMesh.dispose` lets go of the instance buffers only, never the geometry.
+        mesh.geometry.dispose();
         mesh.dispose();
         mesh = null;
       }
@@ -160,7 +163,7 @@ export function createFlagLayer(): FlagLayer {
       group.add(mesh);
     },
     dispose() {
-      if (mesh) mesh.dispose();
+      if (mesh) { mesh.geometry.dispose(); mesh.dispose(); }
       geometry.dispose();
       mat.dispose();
     },
