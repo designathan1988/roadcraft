@@ -357,7 +357,7 @@ export function buildUtilities(
   if (kerbCache) for (const id of kerbCache.keys()) if (!poles.has(id)) kerbCache.delete(id);
 
   const { metal, timber, housing, wireMaterial, wireDepth, porcelain, steel,
-    mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = utilityParts();
+    mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = PARTS;
 
   const meshes = [
     instanced('utility-poles', mastGeometry, timber, masts),
@@ -545,13 +545,14 @@ interface UtilityParts {
   readonly boxGeometry: BoxGeometry;
   readonly lensGeometry: BufferGeometry;
 }
-let parts: UtilityParts | null = null;
 /**
- * Made once, never disposed (a few materials and small shapes): every road
- * edit near a pole made them all again, with their programs looked up anew.
+ * Made once, at load (`PARTS`, the end of this file), never disposed (a few
+ * materials and small shapes): every road edit near a pole made them all
+ * again, with their programs looked up anew; and made lazily on the first
+ * build, they were materials made in play (`scripts/check-code.mjs`
+ * material-in-frame: the catalogue is made at load).
  */
-function utilityParts(): UtilityParts {
-  if (parts) return parts;
+function makeUtilityParts(): UtilityParts {
   const metal = new MeshStandardMaterial({
     color: 0x4a4a46,
     roughness: 0.68,
@@ -570,7 +571,7 @@ function utilityParts(): UtilityParts {
   // mark hanging over the carriageway, read as a stray editor marker.
   const housing = new MeshStandardMaterial({ color: 0xa9b0ad, roughness: 0.5, metalness: 0.3 });
   const wires = wireMaterials();
-  parts = {
+  return {
     metal, timber, housing, wireMaterial: wires.lit, wireDepth: wires.depth,
     // A pin insulator: a glazed porcelain bell on a short pin.
     porcelain: new MeshStandardMaterial({ color: 0xd8dcd6, roughness: 0.25, metalness: 0 }),
@@ -583,7 +584,6 @@ function utilityParts(): UtilityParts {
     // One face, looking down: a lens only shines down (see `lampLensGeometry`).
     lensGeometry: new PlaneGeometry(1, 1).rotateX(Math.PI / 2),
   };
-  return parts;
 }
 
 /**
@@ -690,3 +690,10 @@ function woodTexture(): CanvasTexture | null {
   woodCache = t;
   return t;
 }
+
+/**
+ * The pole layer's parts, made when this module loads: after everything they use
+ * above (the wood's canvas cache included), and never in play.
+ * DO NOT make them lazily on the first build again: that is a material made in a frame.
+ */
+const PARTS: UtilityParts = makeUtilityParts();
