@@ -23,7 +23,8 @@
 //   { "lookAt": [x, y, zoom] }           the camera on a world point (__roadcraft.lookAt)
 //   { "wait": ms }                       real time, the game running
 //   { "frames": n }                      n drawn frames
-//   { "drag": [[x0, y0], [x1, y1]], "button"?: "left"|"right"|"middle", "steps"?: n, "keys"?: ["Shift"] }
+//   { "drag": [[x0, y0], [x1, y1]], "button"?: "left"|"right"|"middle", "steps"?: n, "keys"?: ["Shift"],
+//     "ms"?: the moves spread over this real time (a hand), "hold"?: ms still before letting go }
 //   { "wheel": [dx, dy], "at"?: [x, y] } scroll (zoom) at a screen point
 //   { "move": [x, y], "steps"?: n }      the pointer only (hover)
 //   { "click": [x, y], "button"?, "count"? }
@@ -180,7 +181,19 @@ async function steps(page, report) {
       for (const k of step.keys ?? []) await page.keyboard.down(k);
       await page.mouse.move(x0, y0);
       await page.mouse.down({ button: step.button ?? 'left' });
-      await page.mouse.move(x1, y1, { steps: step.steps ?? 30 });
+      if (step.ms) {
+        // A hand's pace: the moves spread over `ms` of real time (a mouse reports every few ms),
+        // not dispatched at once - a burst reads as a fling of thousands of pixels a second.
+        const n = step.steps ?? 30;
+        const t0 = Date.now();
+        for (let k = 1; k <= n; k++) {
+          await page.mouse.move(x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n);
+          const due = t0 + (step.ms * k) / n - Date.now();
+          if (due > 0) await page.waitForTimeout(due);
+        }
+      } else await page.mouse.move(x1, y1, { steps: step.steps ?? 30 });
+      // Held still before letting go: no fling.
+      if (step.hold) await page.waitForTimeout(step.hold);
       await page.mouse.up({ button: step.button ?? 'left' });
       for (const k of step.keys ?? []) await page.keyboard.up(k);
     } else if (step.wheel) {
