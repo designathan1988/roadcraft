@@ -13,3 +13,6 @@
   `02a690b`. Próximos contadores: anel do diário (C1/D8), jardins (C2), cameraSolids (A8/C5), pads (C8).
 - 2026-10-14 ~14h: a pedido do jogador, a memória virou a pasta `memory/` (índice curto importado +
   arquivos sob demanda), no desenho da memória automática do Claude Code; `MEMORIA.md` removido.
+- 2026-10-14 ~14h40 (auditoria): `96d1d64` postes segurados durante o traçado, com `--only`; o
+  `777b12a` da outra sessão tinha levado o renderer.ts do índice (ela desfez e refez como 6b487bb).
+  Regra nova em ORDENS: `git commit --only <caminhos>`. Portador e regras do check-code em stash.

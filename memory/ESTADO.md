@@ -1,6 +1,6 @@
 # Estado do trabalho — reescrever a cada mudança (não acumular)
 
-Atualizado: 2026-10-14 ~14h.
+Atualizado: 2026-10-14 ~14h40.
 
 ## Quem está trabalhando
 - **"Auditoria de desempenho three.js"**: otimização, correções no código (prédios, renderer,
@@ -21,19 +21,16 @@ Atualizado: 2026-10-14 ~14h.
     foi commitada, então o HEAD local não compila sozinho até ela entrar.
   - `02a690b` contador "um prédio a mais" (`tests/scale/buildingEdit.spec.ts`, linha de base
     `building+1:layer` 3,82) — **envio NÃO autorizado ainda** (perguntado ao jogador às ~13h40).
-  - `02a690b` contador "um prédio a mais" (`tests/scale/buildingEdit.spec.ts`, linha de base
-    `building+1:layer` 3,82) — **envio NÃO autorizado ainda** (perguntado ao jogador às ~13h40).
-  - `6940134` + o commit da pasta `memory/` (sessão de auditoria) — documentação.
+  - `6940134`, `267b9f5` memória e auditoria (sessão de auditoria) — documentação.
+  - `6b487bb` (outra sessão) teste de escala sem limite de tempo próprio.
+  - `96d1d64` postes segurados durante o traçado (`holdUtilities`) — o HEAD volta a compilar.
 - Não commitado (sessão de auditoria):
-  - `src/render/renderer.ts` + (já no HEAD) `src/main.ts`: segurar a camada de postes enquanto a cidade
-    é traçada (`holdUtilities`). Testado no jogo: 1 montagem (169 ms) contra 66; postes vistos na foto.
-    Falta: check completo e commit.
-  - `src/render/buildings/buildingMesh.ts` + `kit.ts`: "portador de envio" das cascas (malha invisível
+  - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
     presas na CPU não se reproduziram; pode jogar até 583 MB na placa (teto do plano 300). Decidir com
     medição na sequência exata da outra sessão (cidade salva, recarregar, vista salva zoom 11,44,
     medir entre 70 e 92 s), com e sem o portador, olhando `budget('rua')`.
-  - `scripts/check-code.mjs`: começo das regras novas (ver §6). Registro feito, regras ainda não.
+  - Em `git stash` ("regras check-code (em andamento)"): `scripts/check-code.mjs`, começo das regras novas.
   - `OTIMIZACAO.md`: itens 26-30.
 - Não mexer (de outros): `docs/RELATORIO-DESEMPENHO-2026-10-14.md`, `tests/scale/buildingEdit.spec.ts`,
   os apagados `.claude/*`, `.githooks/pre-push` (o jogador apagou; nunca commitar a deleção nem restaurar).
@@ -89,7 +86,6 @@ Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
   central: `serialOf(kinds) <= since → []`).
 
 ## Próximos passos (em ordem)
-1. Commitar `holdUtilities` (renderer.ts) depois do check completo — conserta o HEAD local.
 2. Terminar as regras do check-code (§6.1), semear a linha de base, commit.
 3. Índice espacial de prédios no store + corrigir a geração quadrática (zoning, validate, addPlaced)
    com digest de cidade idêntica.
