@@ -385,7 +385,7 @@ function growOnce(ctx: SiteContext, grid: ZoneGrid, refused: Set<string>, seed: 
  * facades of grown buildings), stamped on each building grown (`main.ts`).
  * Bumped when it changes.
  */
-export const LOT_PLAN_VERSION = 12;
+export const LOT_PLAN_VERSION = 13;
 
 /**
  * The ground floor a grown building on a lot will have: its street's paving

@@ -7,8 +7,8 @@ import { m } from '@world/units';
  * every storey). Split air-conditioner condensers on brackets under part of
  * the windows (never on a balcony's floor: the player, 2026-10-13), and on
  * the balconies the life of the flat behind - mostly little or nothing - by
- * the kind of building: a churrasqueira, a table and a lounger on a block's
- * varandas gourmet; the washing, a plastic chair and a pot on a plain block's
+ * the kind of building: a table and a lounger on a block's varandas
+ * gourmet; the washing, a plastic chair and a pot on a plain block's
  * balconies; next to nothing on an office's. A satellite dish beside a
  * window. Each bay draws its own from its hash, so no two flats match and no
  * column or row repeats.
@@ -22,12 +22,12 @@ import { m } from '@world/units';
  * 660 x 475 x 242 mm), held off the wall on a pair of steel brackets.
  */
 
-export type FacadePropKind = 'acUnit' | 'pot' | 'foliage' | 'bush' | 'chair' | 'table' | 'airer' | 'dish' | 'grill' | 'kettle' | 'lounger' | 'bike';
-export const FACADE_PROP_KINDS: readonly FacadePropKind[] = ['acUnit', 'pot', 'foliage', 'bush', 'chair', 'table', 'airer', 'dish', 'grill', 'kettle', 'lounger', 'bike'];
-/** The props whose shadow is worth its pass: the condensers, the pots, the plants and the churrasqueiras. */
-export const SHADOWED_PROPS: readonly FacadePropKind[] = ['acUnit', 'pot', 'foliage', 'bush', 'grill'];
+export type FacadePropKind = 'acUnit' | 'pot' | 'foliage' | 'bush' | 'chair' | 'table' | 'airer' | 'dish' | 'lounger' | 'bike';
+export const FACADE_PROP_KINDS: readonly FacadePropKind[] = ['acUnit', 'pot', 'foliage', 'bush', 'chair', 'table', 'airer', 'dish', 'lounger', 'bike'];
+/** The props whose shadow is worth its pass: the condensers, the pots and the plants. */
+export const SHADOWED_PROPS: readonly FacadePropKind[] = ['acUnit', 'pot', 'foliage', 'bush'];
 /** The props of thin bars, pre-filtered as the frames are (`thinParts.ts`): bar width, m, and the tone behind. */
-export const THIN_PROPS: readonly (readonly [FacadePropKind, number, number])[] = [['chair', 0.025, 0.3], ['airer', 0.02, 0.3], ['table', 0.04, 0.3], ['bike', 0.03, 0.3], ['kettle', 0.025, 0.3]];
+export const THIN_PROPS: readonly (readonly [FacadePropKind, number, number])[] = [['chair', 0.025, 0.3], ['airer', 0.02, 0.3], ['table', 0.04, 0.3], ['bike', 0.03, 0.3]];
 /** A plant pot's height, m (`facadePropModels.ts`). */
 export const POT_HIGH = 0.32;
 
@@ -60,7 +60,6 @@ const PLASTIC = [0xf0f0ec, 0xf0f0ec, 0x3f8a52, 0x3a62a8, 0xb8342e];
 const FINE = [0x8a5a36, 0x2b2b2b, 0xb8875a, 0xd9d4c8, 0x6d6a64];
 const LOUNGERS = [0xece6d8, 0x2f3a46, 0x7a8a6a, 0xb08a5a];
 const BIKES = [0xc0392b, 0x2c3e50, 0x16a085, 0xf1c40f, 0x9a9a9a, 0x2b2b2b];
-const KETTLES = [0x1b1b1b, 0x7a1e1e, 0x2b3c5a];
 
 /** The bay's opening, in its own frame: `a0`..`a1` along, `h0`..`h1` up, `depth` into the wall. */
 export interface PropOpening { a0: number; a1: number; h0: number; h1: number; depth: number }
@@ -85,8 +84,8 @@ function standardOf(component: BayComponent, use: BuildingUse, old: number): Sta
  * A balcony draws ONE arrangement for its flat (the player's numbers,
  * 2026-10-13): some 45 % bare; 25 % one thing (a chair, a small pot or the
  * washing); 15 % two or three (a table and two chairs, a chair and a pot);
- * 10 % the thing of its kind of flat (a churrasqueira, a lounger, a
- * bicycle, the washing); 5 % at most a small garden of three or four pots.
+ * 10 % the thing of its kind of flat (a lounger, a bicycle, the
+ * washing); 5 % at most a small garden of three or four pots.
  * A pot on one balcony in five at most; an office's balconies all but bare.
  */
 export function facadeProps(component: BayComponent, level: number, use: BuildingUse, old: number, hash: number, W: number, o: PropOpening): FacadeProp[] {
@@ -161,18 +160,18 @@ export function facadeProps(component: BayComponent, level: number, use: Buildin
     if (r < 0.95) {
       // The thing of its kind of flat.
       const t = rnd();
+      // No barbecue on any balcony (the player, 2026-10-14): where one stood,
+      // the balcony is bare; the draws are those of before, so every other
+      // balcony of the city keeps what it had.
       if (standard === 'high') {
-        // The churrasqueira of a varanda gourmet, against the wall at an end; else a lounger.
-        if (t < 0.6 && a1 - a0 > m(1.8)) one('grill', rnd() < 0.5 ? a0 + m(0.62) : a1 - m(0.62), m(0.002), m(0.31), 0, 0xffffff);
-        else one('lounger', mid, m(0.002), deep * 0.5, 0, pick(LOUNGERS));
-      } else if (t < 0.35) {
-        one('kettle', corner(), m(0.002), deep * 0.5, rnd() * 6.28, pick(KETTLES));
-      } else if (t < 0.65) {
-        // A bicycle along the wall.
-        one('bike', (a0 + a1) / 2, m(0.002), m(0.22), 0, pick(BIKES));
-      } else {
+        // A lounger on a varanda gourmet: on two in five, and on every narrow one.
+        if (t >= 0.6 || a1 - a0 <= m(1.8)) one('lounger', mid, m(0.002), deep * 0.5, 0, pick(LOUNGERS));
+      } else if (t >= 0.65) {
         airer();
         if (standard === 'popular') chair(rnd() < 0.5 ? a0 + m(0.3) : a1 - m(0.3), deep * 0.35, (rnd() - 0.5) * 0.8);
+      } else if (t >= 0.35) {
+        // A bicycle along the wall.
+        one('bike', (a0 + a1) / 2, m(0.002), m(0.22), 0, pick(BIKES));
       }
       return;
     }

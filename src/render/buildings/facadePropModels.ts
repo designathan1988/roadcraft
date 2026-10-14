@@ -268,8 +268,6 @@ export function createFacadePropGeometries(): Record<FacadePropKind, BufferGeome
     pot: potGeometry(),
     foliage: foliageGeometry(),
     bush: bushGeometry(),
-    grill: grillGeometry(),
-    kettle: kettleGeometry(),
     lounger: loungerGeometry(),
     bike: bikeGeometry(),
     chair: chairGeometry(),
@@ -306,55 +304,6 @@ function bushGeometry(): BufferGeometry {
     leaf.translate(nx * 0.17, 0.13 + ny * 0.14, nz * 0.17);
     const d = 0.7 + rnd() * 0.3;
     parts.push(tone(leaf, [0.85 * d, d, 0.78 * d]));
-  }
-  return merged(parts);
-}
-
-/**
- * A varanda gourmet's churrasqueira, against the wall, from the floor up:
- * a brick counter with the dark mouth of its firebox and a stone top, the
- * hood (coifa) over the grill narrowing into its flue, which runs up the
- * wall to the slab above. 1.2 m along, 0.6 m out, 2.3 m high.
- */
-const GRILL = { w: 1.2, d: 0.6, h: 2.3 } as const;
-function grillGeometry(): BufferGeometry {
-  const { w, d } = GRILL;
-  const brick: [number, number, number] = [0.72, 0.38, 0.27];
-  const parts: BufferGeometry[] = [
-    block(w, 0.9, d, 0, 0.45, 0, brick),
-    block(w + 0.04, 0.04, d + 0.04, 0, 0.92, 0, grey(0.55)),
-    // The grill's mouth in the counter's front, and the grate over the coals.
-    block(0.62, 0.32, 0.02, -0.18, 0.6, d / 2 + 0.006, grey(0.08)),
-    block(0.58, 0.02, 0.4, -0.18, 1.08, 0.02, grey(0.2)),
-    // The firebox's cheeks up to the hood.
-    block(0.08, 0.5, d * 0.8, -0.5, 1.19, -0.02, brick),
-    block(0.08, 0.5, d * 0.8, 0.14, 1.19, -0.02, brick),
-  ];
-  // The hood: a four-sided pyramid from the firebox up to the flue.
-  const hood = new CylinderGeometry(0.12, 0.47, 0.42, 4, 1, true);
-  hood.rotateY(Math.PI / 4);
-  hood.scale(1, 1, 0.75);
-  hood.translate(-0.18, 1.65, -0.03);
-  parts.push(tone(hood, brick));
-  parts.push(block(0.24, GRILL.h - 1.86, 0.24, -0.18, (1.86 + GRILL.h) / 2, -d / 2 + 0.14, brick));
-  return merged(parts);
-}
-
-/** A portable kettle grill on three legs, from the floor up: its bowl, lid and handle; 0.55 m across. */
-function kettleGeometry(): BufferGeometry {
-  const bowl = new SphereGeometry(0.28, 12, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
-  bowl.translate(0, 0.72, 0);
-  const lid = new SphereGeometry(0.28, 12, 3, 0, Math.PI * 2, 0, Math.PI * 0.42);
-  lid.scale(1, 0.75, 1);
-  lid.translate(0, 0.72, 0);
-  const parts: BufferGeometry[] = [tone(bowl, grey(1)), tone(lid, grey(0.92)), block(0.06, 0.04, 0.03, 0, 0.94, 0, grey(0.15))];
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2;
-    const leg = new BoxGeometry(0.025, 0.62, 0.025);
-    leg.rotateZ(0.12);
-    leg.rotateY(a);
-    leg.translate(Math.cos(a) * 0.2, 0.31, Math.sin(a) * 0.2);
-    parts.push(tone(leg, grey(0.35)));
   }
   return merged(parts);
 }

@@ -197,7 +197,7 @@ export interface BuildingKit {
 
 /** The props drawn from afar by a simplified copy (`createBuildingKit` `farReady`): the heaviest, their detail under a pixel there. */
 // Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured).
-const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'kettle', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'grill', 'lounger'];
+const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'lounger'];
 
 /** A box of the given size whose centre is at (x, y, z). */
 function box(w: number, h: number, d: number, x: number, y: number, z: number): BufferGeometry {
@@ -466,8 +466,6 @@ export function createBuildingKit(): BuildingKit {
     pot: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 }),
     foliage: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
     bush: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
-    grill: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 }),
-    kettle: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.35, metalness: 0.3 }),
     lounger: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0 }),
     // The wheels are rings seen from both sides.
     bike: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.4, metalness: 0.3, side: DoubleSide }),

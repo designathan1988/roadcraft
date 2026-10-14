@@ -880,17 +880,10 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
         const vx = W * (0.35 + rng.float() * 0.3);
         for (let k = 0; k < 3; k++) if (!lot.busy(vx + k * 1.3, lawnY0 + 3, 0.7)) lot.put('planter', vx + k * 1.3, lawnY0 + 3, 0, 0.9, 2.6, 0.35, undefined, mat('wood', 0x6b4f35));
       }
-      // A churrasqueira on the terrace's side: a brick counter with its grill
-      // and chimney, as every Brazilian back yard has.
-      {
-        const gx = terrace.x1 + 1.2 < W - 1 ? terrace.x1 + 0.9 : Math.max(1.2, terrace.x0 - 0.9);
-        const gy = terrace.y0 + 1;
-        if (rng.float() < 0.7 && !lot.busy(gx, gy, 0.8)) {
-          lot.put('wall', gx, gy, 0, 1.8, 0.7, 0.95, undefined, mat('brick', 0x9b4f37));
-          lot.put('slab', gx, gy, 0, 1.9, 0.8, 0.06, 0.95, mat('stone', 0x6f6a63));
-          lot.put('wall', gx, gy + 0.15, 0, 0.6, 0.4, 2.6, 0.95, mat('brick', 0x8e4632));
-        }
-      }
+      // No barbecue in the yard (the player, 2026-10-14). DO NOT drop this
+      // draw: it was the barbecue's, and without it every later piece of the
+      // yard (the clothes line, the sink, the far corner) would draw anew.
+      rng.float();
       // A clothes line across the lawn: two posts and the line between.
       if (depth >= 6 && W >= 8 && rng.float() < 0.55) {
         const cy = lawnY0 + depth * (0.4 + rng.float() * 0.3), cx0 = W * (0.15 + rng.float() * 0.2), cx1 = cx0 + W * 0.4;
