@@ -5,8 +5,10 @@ import {
   RGBAFormat,
   ShaderMaterial,
   type Camera,
+  type DirectionalLight,
   type Texture,
   UnsignedByteType,
+  Vector2,
   Vector3,
   Vector4,
 } from 'three';
@@ -80,6 +82,10 @@ const FRAGMENT = /* glsl */ `
   uniform float uSky;
   uniform float uContact;
   uniform float uContactLength;
+  uniform sampler2DShadow tSunShadow;
+  uniform mat4 uSunShadowMatrix;
+  uniform float uSunShadowOn;
+  uniform vec2 uSunShadowBias;
   varying vec2 vUv;
   ${DEPTH_GLSL}
 
@@ -94,13 +100,65 @@ const FRAGMENT = /* glsl */ `
     float v = t.r * 65280.0 + t.g * 255.0;
     return v < 0.5 ? -1e4 : v * ${STEP.toFixed(4)} - ${OFFSET.toFixed(1)};
   }
+  float depthTap(ivec2 p, ivec2 hi) {
+    return texelFetch(tDepth, clamp(p, ivec2(0), hi), 0).r;
+  }
+  // The surface's normal at a pixel, rebuilt from the depth round it as
+  // three's GTAO rebuilds it (GTAOShader computeNormalFromDepth; Yuwen Wu,
+  // "Accurate Normal Reconstruction from Depth Buffer"): on each axis the side
+  // whose two taps, carried on to the pixel, land nearest its own depth - the
+  // side on the same surface. DO NOT take dFdx/dFdy of the position: they are
+  // differences over a 2x2 block of pixels, and a block straddling an edge (a
+  // plinth's top and its face, a door's moulding, a stain's edge) mixes two
+  // surfaces - every other block along every edge was taken for a wall or a
+  // floor, facing the sun or not, and drawn as a staircase on the plinths and
+  // the steps and as dashes round the doors (2026-10-14).
+  vec3 normalAt(vec2 uv, float c0, vec3 C) {
+    ivec2 size = textureSize(tDepth, 0);
+    ivec2 hi = size - 1;
+    ivec2 p = ivec2(uv * vec2(size));
+    vec2 texel = 1.0 / vec2(size);
+    float l1 = depthTap(p - ivec2(1, 0), hi), l2 = depthTap(p - ivec2(2, 0), hi);
+    float r1 = depthTap(p + ivec2(1, 0), hi), r2 = depthTap(p + ivec2(2, 0), hi);
+    float b1 = depthTap(p - ivec2(0, 1), hi), b2 = depthTap(p - ivec2(0, 2), hi);
+    float t1 = depthTap(p + ivec2(0, 1), hi), t2 = depthTap(p + ivec2(0, 2), hi);
+    vec3 dx = abs(2.0 * l1 - l2 - c0) < abs(2.0 * r1 - r2 - c0)
+      ? C - worldAt(uv - vec2(texel.x, 0.0), l1)
+      : worldAt(uv + vec2(texel.x, 0.0), r1) - C;
+    vec3 dy = abs(2.0 * b1 - b2 - c0) < abs(2.0 * t1 - t2 - c0)
+      ? C - worldAt(uv - vec2(0.0, texel.y), b1)
+      : worldAt(uv + vec2(0.0, texel.y), t1) - C;
+    return normalize(cross(dx, dy));
+  }
+
+  // Whether the sun reaches a point by its shadow map, 0..1, tested as three's
+  // lights test it (shadowmap_pars_fragment; the normal offset as
+  // environment.ts slopeScaledShadowOffset scales it), so a contact shadow
+  // is laid only where the sun's light still falls. DO NOT darken what the
+  // shadow map has already shaded: a contact shadow takes away the sun, not
+  // the sky, and laid over the shadow of a parapet or a wall it drew that
+  // shadow a second time, in the steps of its march (2026-10-14: the steps in
+  // a roof's inner corner and on a canopy under a wall).
+  float sunReaches(vec3 P, vec3 N) {
+    if (uSunShadowOn < 0.5) return 1.0;
+    float grazing = 1.0 - clamp(dot(N, uSunDir), 0.0, 1.0);
+    vec4 c = uSunShadowMatrix * vec4(P + N * uSunShadowBias.y * (0.4 + 2.6 * grazing), 1.0);
+    c.xyz /= c.w;
+    if (c.x < 0.0 || c.y < 0.0 || c.x > 1.0 || c.y > 1.0 || c.z < 0.0 || c.z > 1.0) return 1.0;
+    #ifdef USE_REVERSED_DEPTH_BUFFER
+      c.z -= uSunShadowBias.x;
+    #else
+      c.z += uSunShadowBias.x;
+    #endif
+    return texture(tSunShadow, c.xyz);
+  }
 
   void main() {
     vec4 src = texture2D(tDiffuse, vUv);
     float depth = texture2D(tDepth, vUv).r;
     if (depthIsBackground(depth)) { gl_FragColor = src; return; }
     vec3 P = worldAt(vUv, depth);
-    vec3 N = normalize(cross(dFdx(P), dFdy(P)));
+    vec3 N = normalAt(vUv, depth, P);
     if (dot(N, uCameraPos - P) < 0.0) N = -N;
 
     // The sky past the buildings round it.
@@ -147,7 +205,7 @@ const FRAGMENT = /* glsl */ `
         float dQ = distance(uCameraPos, Q), dS = distance(uCameraPos, S);
         if (dS < dQ - 0.03 && dQ - dS < 0.8) { shade = 1.0; break; }
       }
-      shade *= 1.0 - smoothstep(70.0, 120.0, far);
+      shade *= (1.0 - smoothstep(70.0, 120.0, far)) * sunReaches(P, N);
     }
 
     gl_FragColor = vec4(src.rgb * mix(1.0, vis, uSky) * (1.0 - shade * uContact), src.a);
@@ -156,7 +214,7 @@ const FRAGMENT = /* glsl */ `
   .replace('m_lift_lo', m(0.4).toFixed(2))
   .replace('m_lift_hi', m(1.5).toFixed(2));
 
-export function createCanyonLight(camera: Camera, depthOf: () => Texture | null): CanyonLight {
+export function createCanyonLight(camera: Camera, depthOf: () => Texture | null, sunOf: () => DirectionalLight | null = () => null): CanyonLight {
   const data = new Uint8Array(SIDE * SIDE * 4);
   const next = new Uint8Array(SIDE * SIDE * 4);
   const heights = new DataTexture(data, SIDE, SIDE, RGBAFormat, UnsignedByteType);
@@ -181,6 +239,10 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null)
       uSky: { value: 0.8 },
       uContact: { value: 0.5 },
       uContactLength: { value: m(1.2) },
+      tSunShadow: { value: null as Texture | null },
+      uSunShadowMatrix: { value: new Matrix4() },
+      uSunShadowOn: { value: 0 },
+      uSunShadowBias: { value: new Vector2() },
     },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: FRAGMENT,
@@ -194,6 +256,15 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null)
     (u['uCameraWorld']!.value as Matrix4).copy(camera.matrixWorld);
     (u['uViewProjection']!.value as Matrix4).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     (u['uCameraPos']!.value as Vector3).setFromMatrixPosition(camera.matrixWorld);
+    // The sun's shadow map as the scene was lit with it this frame.
+    const light = sunOf();
+    const map = light && light.castShadow ? light.shadow.map?.depthTexture ?? null : null;
+    u['tSunShadow']!.value = map;
+    u['uSunShadowOn']!.value = map ? 1 : 0;
+    if (light && map) {
+      (u['uSunShadowMatrix']!.value as Matrix4).copy(light.shadow.matrix);
+      (u['uSunShadowBias']!.value as Vector2).set(light.shadow.bias, light.shadow.normalBias);
+    }
     draw(...args);
   };
 
