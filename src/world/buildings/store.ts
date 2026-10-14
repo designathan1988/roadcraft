@@ -289,6 +289,8 @@ export class BuildingStore {
   replaceWith(source: BuildingStore, changed: readonly BuildingId[] | null = null): void {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     const touched: Building[] = [];
+    /** Records that differ in their wear alone (`wear`): written as `buildingWear`, never as a change of shape. */
+    const worn: Building[] = [];
     const take = (id: BuildingId): void => {
       const was = this.items.get(id);
       const now = source.items.get(id);
@@ -307,7 +309,8 @@ export class BuildingStore {
         touched.push(kept);
       } else if (this.textOf(kept) !== this.textOf(was)) {
         this.grid?.update(kept);
-        touched.push(was, kept);
+        if ((kept.decay ?? 0) !== (was.decay ?? 0) && JSON.stringify({ ...kept, decay: was.decay }) === this.textOf(was)) worn.push(kept);
+        else touched.push(was, kept);
       }
     };
     if (changed) {
@@ -318,6 +321,7 @@ export class BuildingStore {
       for (const id of source.items.keys()) take(id);
     }
     if (touched.length) this.changed(touched, 'replaced by an edit or an undo');
+    if (worn.length) this.journal.record('buildingWear', worn.map(rectOf), { ids: worn.map((w) => w.id as number) });
   }
 
   /**
