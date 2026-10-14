@@ -447,6 +447,13 @@ interface State {
   grid: WalkerGrid;
   /** The parked cars' zones by cell, kept as the cars come, go and move (`ParkedZoneIndex`). */
   parked: ParkedZoneIndex;
+  /**
+   * Each party's walkers (`PedView.party.id`), in the order they were made:
+   * who walks with whom, asked when a companion is made and when one is shot
+   * (`startWalk`, `mourn`). DO NOT find them in `walkers`: every walker of
+   * the map, for each companion made.
+   */
+  parties: Map<number, Walker[]>;
 }
 
 /** A vehicle as `gapOpen` reads it: where it is, which way it faces, how fast it goes. */
@@ -549,7 +556,7 @@ function stateOf(w: SimWorld): State {
   if (!s) {
     s = { graph: null, builtFor: '', wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], nextId: 1, onCarWay: new Map(),
       shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
-      grid: new WalkerGrid(), parked: new ParkedZoneIndex() };
+      grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
   }
   return s;
@@ -1207,7 +1214,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       // the body comes to rest (`getUp`); everybody within `scare` runs.
       const s = stateOf(w);
       let dead = 0;
-      for (const p of [...s.walkers]) {
+      for (const p of walkersWithin(s, x, y, kill * 2)) {
         if (p.inside || p.done) continue;
         const d = hypot(p.x - x, p.y - y);
         if (d >= kill * 2) continue;
@@ -1491,7 +1498,7 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   if (leader) {
     // One group: the leader's id, its size, a child in it or not; a pair a couple, with a child a family.
     p.leader = leader.id;
-    const members = s.walkers.filter((q) => !q.done && q.view.party.id === leader.view.party.id);
+    const members = (s.parties.get(leader.view.party.id) ?? []).filter((q) => !q.done);
     const hasChild = ageClass === 'child' || members.some((q) => q.view.ageClass === 'child');
     const party = { id: leader.view.party.id, size: members.length + 1, archetype: hasChild ? 'family' as const : 'couple' as const, hasChild };
     for (const q of members) q.view.party = party;
@@ -1502,13 +1509,45 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   p.s = pr.s; p.d = pr.d; p.aim = clamp(pr.d, room(steps[0]!));
   s.walkers.push(p);
   s.byId.set(id, p);
+  joinParty(s, p);
   return id;
+}
+
+/** `p` filed with its party (`State.parties`). */
+function joinParty(s: State, p: Walker): void {
+  const list = s.parties.get(p.view.party.id);
+  if (list) list.push(p); else s.parties.set(p.view.party.id, [p]);
 }
 
 function finish(s: State, p: Walker, arrived = true): void {
   p.done = true;
   s.byId.delete(p.id);
   if (arrived) s.arrivals.push(p.trip);
+  const party = s.parties.get(p.view.party.id);
+  if (party) {
+    const at = party.indexOf(p);
+    if (at >= 0) party.splice(at, 1);
+    if (!party.length) s.parties.delete(p.view.party.id);
+  }
+}
+
+/**
+ * The walkers out on the street (not inside, not done) within `radius` of a
+ * point, in the walkers' own order: from the walkers' grid (`nearNow`), a
+ * cell's margin for anybody moved since they were filed. What a blow, a shot
+ * or a look round asks. DO NOT walk `State.walkers` for a place: every
+ * walker of the map, for each blow and each look.
+ */
+function walkersWithin(s: State, x: number, y: number, radius: number): Walker[] {
+  const r = radius + CELL;
+  const found: { p: Walker; rank: number }[] = [];
+  nearNow(s).someIn(Math.floor((x - r) / CELL), Math.floor((y - r) / CELL), Math.floor((x + r) / CELL), Math.floor((y + r) / CELL),
+    (p, rank) => {
+      if (!p.inside && !p.done && hypot(p.x - x, p.y - y) <= radius) found.push({ p, rank });
+      return false;
+    });
+  found.sort((a, b) => a.rank - b.rank);
+  return found.map((f) => f.p);
 }
 
 function prune(s: State): void {
@@ -1777,13 +1816,16 @@ function stepWalkers(w: SimWorld): void {
   if (s.shocks.length && s.clock >= s.shockLook) {
     s.shockLook = s.clock + 0.4;
     s.shocks = s.shocks.filter((k) => k.until > s.clock);
-    for (const p of s.walkers) {
-      if (p.inside || p.done || p.player || (p.fright ?? 0) > p.age || p.act) continue;
-      for (const k of s.shocks) {
+    // Shock by shock, those near each (`walkersWithin`), in the order of the
+    // shocks: a walker is frightened by the first one it is near, and is then
+    // frightened (`fright`) for the rest. DO NOT walk every walker of the map
+    // against every shock.
+    for (const k of s.shocks) {
+      for (const p of walkersWithin(s, k.x, k.y, k.radius)) {
+        if (p.inside || p.done || p.player || (p.fright ?? 0) > p.age || p.act) continue;
         const d = hypot(p.x - k.x, p.y - k.y);
         if (d > k.radius) continue;
         frighten(w, s, p, k.x, k.y, d, 18);
-        break;
       }
     }
   }
@@ -2289,7 +2331,7 @@ const seen = (p: Walker): WalkerSeen => ({ id: p.id, trip: p.trip, x: p.x, y: p.
 
 /** The walkers within `radius` of a point, out on the street. */
 export function walkersNear(w: SimWorld, x: number, y: number, radius: number): WalkerSeen[] {
-  return stateOf(w).walkers.filter((p) => !p.inside && !p.done && hypot(p.x - x, p.y - y) < radius).map(seen);
+  return walkersWithin(stateOf(w), x, y, radius).filter((p) => hypot(p.x - x, p.y - y) < radius).map(seen);
 }
 
 /** One walker, by id, or null when nobody of that id is out. */
@@ -2300,8 +2342,11 @@ export function walkerOf(w: SimWorld, id: number): WalkerSeen | null {
 
 /** Puts somebody walking under the player's hand: they stop following their route. */
 export function takeWalker(w: SimWorld, id: number): boolean {
-  const p = stateOf(w).byId.get(id);
+  const s = stateOf(w);
+  const p = s.byId.get(id);
   if (!p || p.done) return false;
+  // Out on the street now, if not before: the walkers are filed again (`nearNow`).
+  if (p.inside) s.nearAt = -1;
   p.inside = false;
   p.player = true;
   p.act = null;
@@ -2329,6 +2374,9 @@ export function addPlayerWalker(w: SimWorld, id: number, x: number, y: number, h
   };
   s.walkers.push(p);
   s.byId.set(id, p);
+  joinParty(s, p);
+  // Out on the street at once: the walkers are filed again (`nearNow`).
+  s.nearAt = -1;
 }
 
 /** The player's body moved: where it is now, the way it faces, how fast it goes. */
@@ -2421,7 +2469,7 @@ const PANIC_RUN = 3.4;
 export function startle(w: SimWorld, x: number, y: number, radius: number, seconds: number, except: number | null): number[] {
   const s = stateOf(w);
   const saw: number[] = [];
-  for (const p of s.walkers) {
+  for (const p of walkersWithin(s, x, y, radius)) {
     if (p.inside || p.done || p.player || p.id === except) continue;
     const d = hypot(p.x - x, p.y - y);
     if (d > radius) continue;
@@ -2437,7 +2485,7 @@ export function startle(w: SimWorld, x: number, y: number, radius: number, secon
  */
 function mourn(s: State, p: Walker): void {
   if (p.view.party.size < 2) return;
-  for (const q of s.walkers) {
+  for (const q of [...(s.parties.get(p.view.party.id) ?? [])]) {
     if (q === p || q.done || q.inside || q.player || q.view.party.id !== p.view.party.id) continue;
     if (hypot(q.x - p.x, q.y - p.y) > m(12) || woundOf(q) || q.act?.kind === 'fall') continue;
     const hold = 3 + (personHash(q.id ^ 0x3e1) % 4);
