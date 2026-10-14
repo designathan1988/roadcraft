@@ -130,8 +130,10 @@ do plano do pátio (commit "Z-fighting…", `depthConvention.ts`); `look.mjs` co
   check-code, contadores do passo, catálogo de referências, limpeza (knip/check-refs).
 - Auditoria: prédios (montagem da célula em worker: layer.ts, layerCells.ts, townIndex.ts,
   buildingMesh.ts), sólidos da câmera.
-- Checagem rápida no fim do turno religada (`eff6d94`, `.claude/settings.json`); `.githooks/pre-push`
-  continua apagado.
+- Checagem rápida no fim do turno religada (`eff6d94`, `.claude/settings.json`). `.githooks/pre-push`
+  fica apagado (decisão do jogador, 2026-10-14): antes de enviar ao GitHub, `npm run check:all` à mão.
+- Análise na mesma noite: cc04f0e, eff6d94, cf22f10, 4b20214, 21981fc, 0e30a3b, 7fab1d2 (ver DIARIO); em curso
+  S2 edição de via incremental.
 
 ## Sonda de ponta a ponta, cidade de 2.560 m (2026-10-14 noite, HEAD 2ee8af5)
 Sumiram do perfil da geração: poleLinesIn, insideRing, routeGraph, cloneBuilding, landOn, covered,
