@@ -808,17 +808,26 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
  * left as the drop made it, and the caller restores it.
  */
 export function moveNodeChecked(doc: RoadDoc, net: Network, id: NodeId, to: Vec2): DraftResult {
+  // The copy the rules judge against is also what a refused move puts back,
+  // as `guardRoadEdit` does: the caller keeps no copy of its own (the Move
+  // tool took the whole document as JSON at every press to undo a refusal).
+  // The copy itself is the F2 debt (docs/PLANO-ESPINHA-2026-10-14.md, C3).
   const before = snapshotRoads(doc, net);
   const money = roadsBefore(doc);
   if (!doc.moveNode(id, to)) return { committed: false, reason: 'duplicate' };
+  const refuse = (result: DraftResult): DraftResult => {
+    doc.replaceWith(before.doc);
+    net.adopt(before.net);
+    return result;
+  };
   const result = reconcileMovedNode(doc, net, id);
-  if (!result.committed) return result;
+  if (!result.committed) return refuse(result);
   net.rebuild();
   const refused = refuseRoadEdit(before, { doc, net });
-  if (refused) return { committed: false, reason: refused };
+  if (refused) return refuse({ committed: false, reason: refused });
   // The roads made longer are paid for, shorter partly paid back (`editor/roads/economy.ts`).
   const charge = settleRoadEdit(money, doc);
-  return charge.affordable ? { ...result, cost: charge.amount } : { committed: false, reason: 'funds', cost: charge.amount };
+  return charge.affordable ? { ...result, cost: charge.amount } : refuse({ committed: false, reason: 'funds', cost: charge.amount });
 }
 
 /** Joins two compatible straight segments meeting at an otherwise unused node. */
