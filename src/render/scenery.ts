@@ -506,18 +506,19 @@ function build(
   if (!geometry.boundingSphere) geometry.computeBoundingSphere();
   const reach = Math.max(geometry.boundingSphere?.radius ?? 1, near?.boundingSphere?.radius ?? 0);
   const centre = geometry.boundingSphere?.center ?? new Vector3();
+  // Each placement's matrix made once, as the instance buffer holds it (float32), and its sphere from it.
+  const given16 = new Float32Array(given.length * 16);
   const given4 = new Float32Array(given.length * 4);
   {
     const point = new Vector3();
     const matrix = new Matrix4();
-    const held = new Float32Array(16);
     given.forEach((p, i) => {
       object.position.set(p.x, p.z, -p.y);
       object.rotation.set(0, p.yaw, 0);
       object.scale.set(p.sx, p.sy, p.sz);
       object.updateMatrix();
-      object.matrix.toArray(held);
-      point.copy(centre).applyMatrix4(matrix.fromArray(held));
+      object.matrix.toArray(given16, i * 16);
+      point.copy(centre).applyMatrix4(matrix.fromArray(given16, i * 16));
       given4[i * 4] = point.x;
       given4[i * 4 + 1] = point.y;
       given4[i * 4 + 2] = point.z;
@@ -527,10 +528,8 @@ function build(
   // Stored in the order the cull walks the ground's cells (`instanceCull.ts`):
   // what one cell holds is one run of the buffer.
   const order = spatialOrder(given4, given.length);
-  const placements = Array.from(order, (i) => given[i]!);
   const spheres = new Float32Array(given.length * 4);
-  order.forEach((from, to) => spheres.set(given4.subarray(from * 4, from * 4 + 4), to * 4));
-  const mesh = new InstancedMesh(geometry, material, placements.length);
+  const mesh = new InstancedMesh(geometry, material, given.length);
   mesh.name = name;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -542,14 +541,13 @@ function build(
   // under moving trees.
   if (depth) mesh.customDepthMaterial = depth;
   let tinted = false;
-  placements.forEach((placement, index) => {
-    object.position.set(placement.x, placement.z, -placement.y);
-    object.rotation.set(0, placement.yaw, 0);
-    object.scale.set(placement.sx, placement.sy, placement.sz);
-    object.updateMatrix();
-    mesh.setMatrixAt(index, object.matrix);
-    if (placement.tint) {
-      mesh.setColorAt(index, placement.tint);
+  const matrices = mesh.instanceMatrix.array as Float32Array;
+  order.forEach((from, to) => {
+    spheres.set(given4.subarray(from * 4, from * 4 + 4), to * 4);
+    matrices.set(given16.subarray(from * 16, from * 16 + 16), to * 16);
+    const tint = given[from]!.tint;
+    if (tint) {
+      mesh.setColorAt(to, tint);
       tinted = true;
     }
   });
@@ -560,15 +558,18 @@ function build(
   }
   mesh.computeBoundingSphere();
   instances.set(mesh, {
-    matrices: Float32Array.from(mesh.instanceMatrix.array as Float32Array),
+    matrices: Float32Array.from(matrices),
     colours: tinted && mesh.instanceColor ? Float32Array.from(mesh.instanceColor.array as Float32Array) : null,
     spheres,
-    count: placements.length,
+    count: given.length,
   });
   return mesh;
 }
 
 const instances = new WeakMap<InstancedMesh, CulledInstances>();
+
+/** A plant's foliage cards (`plantMeshes`), left out at the map zoom. DO NOT test `-leaves`: no mesh has it, the cards showed at every zoom. */
+export const isLeafCards = (name: string): boolean => name.endsWith('-cards');
 
 /** A near-white multiplier, so no two plants of one species are identical. */
 export function foliageTint(rng: Rng): Color {
@@ -737,7 +738,7 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
   /** Each plant mesh with its two models, near first. */
   const plants: [InstancedMesh, BufferGeometry, BufferGeometry][] = [];
   plantMeshes('street-', trees, bushes, kit, meshes, plants);
-  const leafMeshes = meshes.filter((mesh) => mesh.name.endsWith('-leaves'));
+  const leafMeshes = meshes.filter((mesh) => isLeafCards(mesh.name));
   // The lens is lit from inside; it neither casts nor takes a shadow.
   for (const mesh of meshes) {
     if (mesh.name === 'street-light-lamps' || mesh.name === 'tree-pits' || mesh.name === 'street-light-pools' || mesh.name === 'street-light-beams') mesh.castShadow = false;
@@ -787,7 +788,7 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
       // DO NOT cull every mesh of the town at every move whatever is shown.
       cells.cull(frustum, (k) => {
         const mesh = meshes[k]!;
-        return mesh.visible && !(mapMode === true && mesh.name.endsWith('-leaves'));
+        return mesh.visible && !(mapMode === true && isLeafCards(mesh.name));
       });
     },
     exclude() {},
