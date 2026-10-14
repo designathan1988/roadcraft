@@ -7,6 +7,8 @@ import type { Building } from '@world/buildings/types';
 import { createBuildingLayer } from '@render/buildings/layer';
 import { beginFrameWork } from '@core/frameWork';
 import { m } from '@world/units';
+import { type DerivedChangeKind, journalWork } from '@world/changes';
+import { GroundDependant, type GroundRecord, type Rect } from '@render/groundChanges';
 
 /**
  * ONE MORE BUILDING COSTS THE SAME IN A SMALL TOWN AND A LARGE ONE (the same
@@ -31,6 +33,8 @@ function placed(index: number, column: number, row: number): Omit<Building, 'id'
 /** A square town of `n` buildings, and the reads of its buildings counted from now on. */
 function town(n: number): { doc: RoadDoc; reads: { count: number } } {
   const doc = new RoadDoc();
+  // The ground cut and filled before the town grew on it (the opening's world).
+  doc.changes.record('ground', null, { cause: 'test: the opening' });
   const side = Math.round(Math.sqrt(n));
   for (let i = 0; i < n; i++) doc.buildings.add(placed(i, i % side, Math.floor(i / side)));
   const reads = { count: 0 };
@@ -56,16 +60,48 @@ function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): vo
   throw new Error('the layer never settled');
 }
 
+/** The kinds of change the things on the ground read (`renderer.ts` `GROUND_KINDS`). */
+const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
+
+/**
+ * A thing standing on the ground under the whole town (the walls, the
+ * transport, the gardens: `renderer.ts` `onGround`), reading the diary as the
+ * renderer does: built again when a change of the ground since the serial of
+ * the last one it saw reaches it. What it costs a frame: the entries the
+ * diary looked at, and the whole town when it is built again.
+ */
+function groundReader(doc: RoadDoc, area: Rect): () => number {
+  const record: GroundRecord = {
+    get version() { return doc.changes.serialOf(...GROUND_KINDS); },
+    touches: (since, at) => doc.changes.touches(since, at, GROUND_KINDS),
+  };
+  const dependant = new GroundDependant(record);
+  return () => {
+    const before = journalWork.entries;
+    const rebuilt = dependant.stale('', area) ? doc.buildings.size : 0;
+    return journalWork.entries - before + rebuilt;
+  };
+}
+
 /** What each product read to take in one building added beside a town of `n`. */
 function addWork(n: number): Record<string, number> {
+  const side = Math.round(Math.sqrt(n));
   const { doc, reads } = town(n);
   const layer = createBuildingLayer();
   settle(layer, doc);
-  const side = Math.round(Math.sqrt(n));
+  // Built on the town as it stands: the serial of the ground it saw is the opening's.
+  const ground = groundReader(doc, [-SPACING, -SPACING, (side + 2) * SPACING, (side + 2) * SPACING]);
+  ground();
   reads.count = 0;
   doc.buildings.add(placed(n, side + 1, 0));
   settle(layer, doc);
-  const out = { layer: reads.count };
+  const out = {
+    layer: reads.count,
+    // The frame after it, and the next one with nothing new: a building is
+    // no change of the ground, and neither should cost more in a larger town.
+    ground: ground(),
+    'ground:idle': ground(),
+  };
   layer.dispose();
   return out;
 }

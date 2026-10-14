@@ -79,6 +79,14 @@ export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 /** How many entries are kept; a reader older than that takes everything as changed. */
 const KEPT = 2048;
 
+/**
+ * The work of the diary's readers: entries looked at to answer `since` and
+ * `touches`. A count, not a time (`tests/scale/buildingEdit.spec.ts`): a
+ * reader of one kind that walks every entry of the others since it last saw
+ * its own - one building more, one entry more to walk - shows at once.
+ */
+export const journalWork = { entries: 0 };
+
 const isRect = (area: ChangeRect | readonly ChangeRect[]): area is ChangeRect => typeof area[0] === 'number';
 const overlaps = (r: ChangeRect, a: ChangeRect): boolean => r[0] <= a[2] && r[2] >= a[0] && r[1] <= a[3] && r[3] >= a[1];
 
@@ -175,6 +183,7 @@ export class ChangeJournal {
     const out: Change[] = [];
     for (let s = since + 1; s <= this.serial; s++) {
       const entry = this.ring[s % KEPT];
+      journalWork.entries++;
       if (entry && entry.serial === s && (!kinds || kinds.includes(entry.kind))) out.push(entry);
     }
     return out;

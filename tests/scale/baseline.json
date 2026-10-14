@@ -7,5 +7,7 @@
   "sidewalks": 13.98,
   "spans": 15.78,
   "sim.lanes": 10.56,
-  "building+1:layer": 3.82
+  "building+1:layer": 3.82,
+  "building+1:ground": 3.82,
+  "building+1:ground:idle": 3.82
 }
