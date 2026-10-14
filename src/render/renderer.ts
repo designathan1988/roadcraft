@@ -90,8 +90,8 @@ import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { GRASS_NEAR_REACH, type MaskRect, createGrass, createGrassMask } from './grassField';
 import { surfaces as roadSurfacesOf } from '@world/surfaces';
 import { siteGrading } from '@world/buildings/siteGrading';
-import { type CameraSolids, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
-import { floorHeight } from '@world/buildings/foundation';
+import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
+import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
 import { TUNED_UNIT, m, perM } from '@world/units';
 /** Room lights kept in the scene for the floors cut open (`roomLamps.ts`). */
@@ -1249,8 +1249,36 @@ export function createSceneRenderer(
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
-  /** The buildings' floor for the camera's eye (`world/buildings/cameraSolids.ts`), by building, land and road revision. */
-  const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt));
+  /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
+  const groundSince: GroundSince = {
+    get version() { return groundChanges.version; },
+    rectsSince(since) {
+      const entries = groundDiary?.since(since, GROUND_KINDS);
+      if (!entries) return null;
+      const rects: ChangeRect[] = [];
+      for (const entry of entries) {
+        if (entry.rects === null) return null;
+        rects.push(...entry.rects);
+      }
+      return rects;
+    },
+  };
+  /** Where a building's floor reads the ground and the paving (`FLOOR_READ_REACH`), once per record. */
+  const floorBoxes = new WeakMap<Building, ChangeRect>();
+  const floorBox = (b: Building): ChangeRect => {
+    let box = floorBoxes.get(b);
+    if (!box) {
+      const r = storedBounds(b, FLOOR_READ_REACH);
+      floorBoxes.set(b, box = [r.minX, r.minY, r.maxX, r.maxY]);
+    }
+    return box;
+  };
+  /**
+   * The buildings' solids for the camera's eye (`world/buildings/cameraSolids.ts`): a building filed again when
+   * the diary names it or the ground moved where its floor reads it. NOT its bank (`bankBox`, 40 m and more
+   * round it): every site graded in a growing town floored again the dozens of buildings round it.
+   */
+  const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt), floorBox, FLOOR_READ_REACH);
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
    * a few seconds after a bomb the streets showed as grass, then came back;
@@ -3062,13 +3090,10 @@ export function createSceneRenderer(
       }
 
       // The perspective camera kept out of the buildings (`IsoRig.setSolids`):
-      // filed again only when a building changes.
-      // Filed again only when a building or the ground changed, and only when
-      // the camera asks (it reads them in the street, never from above): a
-      // bomb moves the buildings' revision, and filing the whole town in the
-      // frame of the blast was 440 ms of it (2026-10-09). Each record's floor
-      // is kept while the record and the ground are the same (`cameraSolidsKeeper`).
-      if (cameraSolidsKept.follow(net.doc.buildings, `${net.doc.terrainRevision}:${net.revision}`)) {
+      // only the buildings the diary names, or where the ground moved under
+      // their floor, are filed again (`cameraSolidsKeeper`); NOT the town at
+      // every building grown or every road solved.
+      if (cameraSolidsKept.follow(net.doc.buildings, groundSince)) {
         rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
         townSolids = () => cameraSolidsKept.solids();
       }

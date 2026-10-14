@@ -49,6 +49,12 @@ export const ACCESS_COMPONENTS: ReadonlySet<BayComponent> = new Set<BayComponent
 
 /** How far in front of an entrance paving still counts as the street it opens onto. */
 const ENTRANCE_REACH = m(1.5);
+/**
+ * The farthest `floorHeight` reads the ground or the paving past a building's
+ * bounds (the paving in front of a door, `ENTRANCE_REACH`; a lot's edge reads
+ * 0.6 m out): a change of the ground beyond it cannot move the floor.
+ */
+export const FLOOR_READ_REACH = ENTRANCE_REACH + m(0.1);
 /** Sampling step when looking for the edge of the paving in front of an entrance. */
 const SCAN_STEP = m(0.1);
 /** Wall kept between a recessed flight and the back of its volume. */
