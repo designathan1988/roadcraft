@@ -78,10 +78,10 @@ export const CENTRE_LINES: readonly CentreLine[] = ['dashed', 'solid', 'double']
 
 /** Who may drive a lane (`RoadSection.useForward`). */
 export type LaneUse = 'all' | 'bus';
-export const LANE_USES: readonly LaneUse[] = ['all', 'bus'];
+const LANE_USES: readonly LaneUse[] = ['all', 'bus'];
 /** The line between two lanes of one direction (`RoadSection.linesForward`). */
 export type LaneLine = 'dashed' | 'solid';
-export const LANE_LINES: readonly LaneLine[] = ['dashed', 'solid'];
+const LANE_LINES: readonly LaneLine[] = ['dashed', 'solid'];
 const LANE_LIST_KEYS = ['useForward', 'useBackward', 'linesForward', 'linesBackward'] as const;
 
 /** Physical edit bounds, shared by persistence and the section editor. */

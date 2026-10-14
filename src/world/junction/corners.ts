@@ -4,7 +4,7 @@ import { lineLine } from '@core/intersect';
 import { CURB_R_MAX, acuteSetback, curbRadius, filletCorner, type Fillet } from '@core/fillet';
 import { type Leg } from './legs';
 
-export type CornerMode = 'fillet' | 'bevel' | 'collinear' | 'taper';
+type CornerMode = 'fillet' | 'bevel' | 'collinear' | 'taper';
 
 export interface Corner {
   /** Index of the leg whose LEFT boundary feeds this corner. */
@@ -269,5 +269,5 @@ const collinear = (i: number, j: number, psi: number, t: number): Corner => ({
 });
 
 /** Distance along `leg` at which `p` sits, measured from the leg's ray origin. */
-export const project = (p: Vec2, leg: Leg): number =>
+const project = (p: Vec2, leg: Leg): number =>
   dot(sub(p, leg.origin), leg.dir);

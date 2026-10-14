@@ -14,7 +14,7 @@ import { m } from '../units';
  * R-2) or stop ("Parada obrigatória", R-1).
  */
 export type ApproachRule = 'priority' | 'yield' | 'stop';
-export const APPROACH_RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
+const APPROACH_RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
 
 export interface ApproachRuleEntry {
   readonly segment: SegmentId;
@@ -72,7 +72,7 @@ export const rulesDigest = (r: readonly ApproachRuleEntry[] | undefined): string
   r && r.length ? r.map((e) => `${e.segment}:${e.rule}`).join(',') : '';
 
 /** A road's rank at a junction: its authored priority, else its class (the order `admission.ts` uses). */
-export function roadRank(doc: RoadDoc, segment: SegmentId): number {
+function roadRank(doc: RoadDoc, segment: SegmentId): number {
   const s = doc.segment(segment);
   return s?.section?.priority ?? s?.type ?? 0;
 }

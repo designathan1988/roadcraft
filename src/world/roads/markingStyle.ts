@@ -18,7 +18,6 @@ import { m } from '../units';
  *   8-unit dashes and gaps.
  */
 export type MarkingStyleId = 'classic' | 'br' | 'us' | 'eu';
-export const MARKING_STYLES: readonly MarkingStyleId[] = ['br', 'us', 'eu', 'classic'];
 
 const YELLOW = '#e1c45a';
 const WHITE = '#eee8d7';

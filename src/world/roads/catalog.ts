@@ -48,7 +48,7 @@ interface Shape {
 }
 
 /** A profile from a short description, left edge to right edge looking from A to B. */
-export function shapeProfile(s: Shape): RoadProfileSpec {
+function shapeProfile(s: Shape): RoadProfileSpec {
   const [wl, wr] = typeof s.walk === 'number' ? [s.walk, s.walk] : s.walk;
   const e: ProfileElement[] = [];
   e.push({ kind: 'footway', width: m(wl), ...(s.flush ? { flush: true } : {}) });

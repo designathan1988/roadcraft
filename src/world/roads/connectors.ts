@@ -49,7 +49,7 @@ export function normalizeLaneLinks(raw: unknown): LaneLink[] | undefined {
 export const linkKey = (l: LaneLink): string => `${l.from}:${l.fromLane}>${l.to}:${l.toLane}`;
 
 /** Links in one order, so two lists that say the same thing are the same text. */
-export function sortLinks(links: readonly LaneLink[]): LaneLink[] {
+function sortLinks(links: readonly LaneLink[]): LaneLink[] {
   return [...links].sort((a, b) => a.from - b.from || a.fromLane - b.fromLane || a.to - b.to || a.toLane - b.toLane);
 }
 

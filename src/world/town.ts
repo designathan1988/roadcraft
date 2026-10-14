@@ -67,7 +67,7 @@ type Style ='cottage' | 'villa' | 'modern' | 'bungalow' | 'barn';
  * One house on a plot `W` wide and `D` deep (metres), its front on the
  * street at y = 0: drawn up from `rng`, so no two are alike.
  */
-export function house(rng: Rng, W: number, D: number): BlueprintBody {
+function house(rng: Rng, W: number, D: number): BlueprintBody {
   const style = pick<Style>(rng, ['cottage', 'villa', 'modern', 'bungalow', 'barn', 'villa', 'cottage', 'modern']);
   const wall = style === 'modern' ? pick(rng, [mat('plaster', 0xf6f4ef), mat('concrete', 0xc8c6bf), mat('plaster', 0xe4e1da), mat('wood', 0x8c6b4c), mat('panel', 0x7d878e)])
     : style === 'barn' ? pick(rng, [mat('wood', 0x6f5b48), mat('wood', 0x8c6b4c), mat('wood', 0x5d4636), mat('plaster', 0xf1ece2)])
@@ -314,52 +314,6 @@ export function houses(rng: Rng, lot: Box, into: Placer): void {
       t += m(W);
     }
   }
-}
-
-/**
- * The square at the heart of the town: a cross of paving with a fountain
- * where its arms meet, lawns with trees in the four corners, benches facing
- * the water, flowers and shrubs. (A building has at most 24 blocks and 64
- * parts: the plan is kept to that.)
- */
-export function square(rng: Rng, Wm: number, Dm: number): BlueprintBody {
-  const model = new Model('square', 'commercial', 3);
-  const arm = Math.min(18, Math.max(12, Math.min(Wm, Dm) * 0.3));
-  const pond: Rect = { x: Wm / 2 - arm / 2 + 3, y: Dm / 2 - arm / 2 + 3, w: arm - 6, d: arm - 6 };
-  const hub: Rect = { x: Wm / 2 - arm / 2, y: Dm / 2 - arm / 2, w: arm, d: arm };
-  // The arms of the cross, and the hub less the basin.
-  lotIn(model, 0, hub.y, hub.x, arm, 'paving');
-  lotIn(model, hub.x + arm, hub.y, Wm - hub.x - arm, arm, 'paving');
-  lotIn(model, hub.x, 0, arm, hub.y, 'paving');
-  lotIn(model, hub.x, hub.y + arm, arm, Dm - hub.y - arm, 'paving');
-  for (const r of around(hub, pond)) lotIn(model, r.x, r.y, r.w, r.d, 'paving');
-  lotIn(model, pond.x, pond.y, pond.w, pond.d, 'water');
-  const lawns: Rect[] = [
-    { x: 0, y: 0, w: hub.x, d: hub.y }, { x: hub.x + arm, y: 0, w: Wm - hub.x - arm, d: hub.y },
-    { x: 0, y: hub.y + arm, w: hub.x, d: Dm - hub.y - arm }, { x: hub.x + arm, y: hub.y + arm, w: Wm - hub.x - arm, d: Dm - hub.y - arm },
-  ];
-  for (const l of lawns) lotIn(model, l.x, l.y, l.w, l.d, 'grass');
-  // Trees in each lawn (a few), a flower bed and shrubs at the corner on the cross.
-  for (const l of lawns) {
-    const n = Math.min(4, Math.max(1, Math.floor((l.w * l.d) / 220)));
-    for (let i = 0; i < n; i++) {
-      const h = between(rng, 7, 11);
-      const r = h * 0.3 + 0.5;
-      model.el('tree', between(rng, l.x + r, l.x + l.w - r), between(rng, l.y + r, l.y + l.d - r), 0, { w: h * 0.6, d: h * 0.6, h });
-    }
-    const cx = l.x < hub.x ? l.x + l.w - 2 : l.x + 2;
-    const cy = l.y < hub.y ? l.y + l.d - 2 : l.y + 2;
-    model.el('flowers', cx, cy, 0, { w: 2.6, d: 2.6, h: 0.45 });
-    model.el('shrub', cx + (l.x < hub.x ? -3 : 3), cy, 0, { w: 1.6, d: 1.6, h: 1.3, material: HEDGE(rng) });
-    model.el('shrub', cx, cy + (l.y < hub.y ? -3 : 3), 0, { w: 1.4, d: 1.4, h: 1.1, material: HEDGE(rng) });
-  }
-  // Benches round the basin, facing it.
-  const sides: [number, number, Side][] = [[Wm / 2, hub.y + 1, 2], [Wm / 2, hub.y + arm - 1, 0], [hub.x + 1, Dm / 2, 1], [hub.x + arm - 1, Dm / 2, 3]];
-  for (const [x, y, f] of sides) {
-    const along = f === 0 || f === 2;
-    for (const k of [-3, 3]) model.el('bench', x + (along ? k : 0), y + (along ? 0 : k), f, { w: 1.8 });
-  }
-  return model.build();
 }
 
 /** A park: lawn, a pond, paths across it, trees in groups, shrubs, benches, a playground corner. */

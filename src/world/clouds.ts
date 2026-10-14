@@ -32,7 +32,7 @@ export interface PlacedCloud {
  */
 export const MAX_PLACED_CLOUDS = 24;
 
-export const CLOUD_LIMITS = {
+const CLOUD_LIMITS = {
   height: [m(32), m(960)],
   size: [m(24), m(640)],
   density: [0.1, 1],

@@ -21,7 +21,7 @@ export interface RoadTemplate {
 }
 
 /** The direction a class is drawn in (`editor/commit.ts`): one-lane classes one way. */
-export const classDirection = (type: number): SegmentDirection => (ROAD_TYPES[type]?.lanes === 1 ? 'aToB' : 'both');
+const classDirection = (type: number): SegmentDirection => (ROAD_TYPES[type]?.lanes === 1 ? 'aToB' : 'both');
 
 /** The classes as templates, in the order of the road tool. */
 export function classTemplates(): RoadTemplate[] {

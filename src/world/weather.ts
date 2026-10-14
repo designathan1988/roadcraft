@@ -28,7 +28,7 @@ export interface Weather {
 
 export const DEFAULT_WEATHER: Weather = { rain: 0, wind: 0, windDirection: 30, lightning: 0, thunder: 0.6, waves: 0.3, foam: 0.4, current: 1.2 };
 
-export const WEATHER_LIMITS = {
+const WEATHER_LIMITS = {
   rain: [0, 1],
   wind: [0, 30],
   windDirection: [0, 360],

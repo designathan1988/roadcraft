@@ -301,7 +301,7 @@ export function stepToSlope(body: BlueprintBody, site: SlopeSite): SplitLevel | 
  * The step a block's floor is snapped to when it is dragged: half the ground
  * storey, the distance split levels stand apart (`stepToSlope`).
  */
-export const liftStep = (b: Building): number => levelHeight(b, 0) / 2;
+const liftStep = (b: Building): number => levelHeight(b, 0) / 2;
 
 /** A lift snapped to the nearest half storey (`liftStep`) and held within `MAX_LIFT`. */
 export function snapLift(b: Building, lift: number): number {
@@ -351,7 +351,7 @@ export function opSetLift(b: Building, id: number, lift: number): boolean {
 }
 
 /** The narrowest bay a car's garage door is set in: a 2.4 m door and its jambs. */
-export const GARAGE_BAY = m(2.6);
+const GARAGE_BAY = m(2.6);
 
 /**
  * A garage in the lower ground floor of a house stepped a whole storey down

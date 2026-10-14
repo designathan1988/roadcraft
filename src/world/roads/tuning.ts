@@ -184,5 +184,3 @@ export const ROAD_TUNING = {
     demolitionRefund: 0.25,
   },
 } as const;
-
-export type RoadTuning = typeof ROAD_TUNING;

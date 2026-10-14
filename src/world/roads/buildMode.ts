@@ -16,7 +16,6 @@ import { ROAD_TUNING } from './tuning';
  * the preview names what the game will build.
  */
 export type BuildMode = 'ground' | 'embankment' | 'cutting' | 'bridge' | 'tunnel';
-export const BUILD_MODES: readonly BuildMode[] = ['ground', 'embankment', 'cutting', 'bridge', 'tunnel'];
 
 /** The way of building at one point: `lift` is the deck over the natural ground (world units). */
 export function buildModeAt(structure: RoadStructure, lift: number): BuildMode {

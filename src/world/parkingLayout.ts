@@ -33,7 +33,7 @@ import { m, stepsIn } from './units';
  * painted along the kerb.
  */
 
-export interface ParkingBay {
+interface ParkingBay {
   readonly segment: SegmentId;
   /** +1: left of the segment's a -> b direction; -1: right. */
   readonly side: 1 | -1;
@@ -46,7 +46,7 @@ export interface ParkingBay {
   readonly facing: Vec2;
 }
 
-export interface ParkingLine {
+interface ParkingLine {
   readonly segment: SegmentId;
   readonly points: readonly Vec2[];
   readonly width: number;

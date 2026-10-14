@@ -149,7 +149,7 @@ export class JunctionSurface {
 }
 
 /** Cubic Bezier from the end of `inCentre` to the start of `outCentre`. */
-export function bezierTurn(inCentre: Polyline, outCentre: Polyline, handleFraction: number): Polyline {
+function bezierTurn(inCentre: Polyline, outCentre: Polyline, handleFraction: number): Polyline {
   const a = inCentre.sampleAt(inCentre.length).p;
   const b = outCentre.sampleAt(0).p;
   const t0 = inCentre.sampleAt(inCentre.length).t;
@@ -404,7 +404,7 @@ export function bulbTurnPath(inCentre: Polyline, outCentre: Polyline, surface: J
  * a car 21 ft, a city bus 37.8 ft, a single-unit lorry 38 ft; a motorcycle
  * about 3 m.
  */
-export const CENTRE_TURN_RADIUS: readonly number[] = [m(3), m(6.4), m(11.6)];
+const CENTRE_TURN_RADIUS: readonly number[] = [m(3), m(6.4), m(11.6)];
 
 /**
  * A U-turn through an opening in the median (docs/VIAS.md V8, retorno): a

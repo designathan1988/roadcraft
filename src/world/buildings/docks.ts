@@ -23,7 +23,7 @@ export interface LorryDock {
 }
 
 /** A stall wider than this is a lorry's, not a car's (`sim/agents/parking.ts`). */
-export const LORRY_DOCK = m(3.2);
+const LORRY_DOCK = m(3.2);
 const STALL = m(2.5);
 
 export const isDock = (el: BuildingElement): boolean =>

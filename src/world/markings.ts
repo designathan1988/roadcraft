@@ -43,7 +43,7 @@ export interface StrokeSpec {
 }
 
 /** Dash pattern used for every broken line, in world units. */
-export const DASH: readonly number[] = [m(3.2), m(3.2)];
+const DASH: readonly number[] = [m(3.2), m(3.2)];
 const DASH_PERIOD = m(6.4);
 
 /**
@@ -234,7 +234,7 @@ export function approachLegends(net: Network, styleId: MarkingStyleId): StrokeSp
 }
 
 /** Painted turn arrows follow the same authored rule as the connector graph. */
-export function laneArrowMarkings(ribbon: SegmentRibbon): StrokeSpec[] {
+function laneArrowMarkings(ribbon: SegmentRibbon): StrokeSpec[] {
   const centre = ribbon.centre[Level.Asphalt];
   // Keep arrows behind the crossing/stop bar and suppress them on a short approach.
   if (!centre || centre.length < m(19.2)) return [];
@@ -295,7 +295,7 @@ const ZEBRA_EDGE = m(0.3);
  * The V6 monolith drew no stop bar anywhere, despite the simulation having a
  * stop position.
  */
-export function stopBar(
+function stopBar(
   origin: Vec2,
   dir: Vec2,
   nrm: Vec2,

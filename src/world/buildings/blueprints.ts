@@ -87,14 +87,14 @@ export function defaultFacade(use: BuildingUse, level: number, width: number, ri
 export const storeyUse = (use: BuildingUse, level: number): BuildingUse | undefined =>
   use === 'mixed' ? (level === 0 ? 'commercial' : 'residential') : undefined;
 
-export function defaultStorey(use: BuildingUse, level: number, width: number): Storey {
+function defaultStorey(use: BuildingUse, level: number, width: number): Storey {
   const storey: Storey = { facade: defaultFacade(use, level, width) };
   const own = storeyUse(use, level);
   if (own) storey.use = own;
   return storey;
 }
 
-export function defaultRoof(use: BuildingUse, storeys: number): RoofKind {
+function defaultRoof(use: BuildingUse, storeys: number): RoofKind {
   if (use === 'industrial') return storeys === 1 ? 'sawtooth' : 'flat';
   if (use === 'residential') return storeys <= 3 ? 'gable' : 'flat';
   return 'flat';

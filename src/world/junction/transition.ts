@@ -39,7 +39,7 @@ import { m } from '../units';
  */
 export const TAPER_RATIO = 8;
 /** Shortest taper worth drawing, end to end, in world units. */
-export const TAPER_MIN = m(9.6);
+const TAPER_MIN = m(9.6);
 /**
  * Largest bend at a node of two legs that is still one road running on: a
  * taper (when the widths differ), no zebra and no stop line. Past it the node
@@ -89,12 +89,8 @@ export function widthStep(a: RoadType, b: RoadType): number {
  *
  * One number for every surface level, so the kerb band keeps its width and the
  * footway grows smoothly: levels tapered over different lengths would cross.
+ * `step` is the width step already measured (`widthStep`, `legWidthStep`).
  */
-export function transitionRun(a: RoadType, b: RoadType): number {
-  return transitionRunFor(widthStep(a, b));
-}
-
-/** `transitionRun` for a width step already measured (`legWidthStep`). */
 export function transitionRunFor(step: number): number {
   return Math.max(TAPER_MIN, step * TAPER_RATIO) / 2;
 }

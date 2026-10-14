@@ -46,7 +46,7 @@ export interface LandscapeItem {
 /** City minutes a planted tree or shrub takes to reach its full size: three days. */
 export const GROW_MINUTES = 3 * 1440;
 /** The size a plant is planted at, as a share of its full size. */
-export const PLANTED_SIZE = 0.3;
+const PLANTED_SIZE = 0.3;
 
 /** A plant's size now, as a share of its full size: planted small, grown over `GROW_MINUTES`. */
 export function plantGrowth(planted: number | undefined, now: number): number {
@@ -164,7 +164,7 @@ export interface MedianHit {
 }
 
 /** Narrowest median a tree is planted in: its pit and a kerb's width each side. */
-export const MEDIAN_TREE_MIN = m(1.5);
+const MEDIAN_TREE_MIN = m(1.5);
 
 /** Whether a road's median takes plants: wide enough, kerbed (not painted flush), not paved. */
 export function plantedMedian(road: RoadType): boolean {
@@ -268,7 +268,7 @@ function depthFor(kind: LandscapeKind, road: RoadType, direction: 'both' | 'aToB
   }
 }
 
-export type LandscapeRefusal = 'offFootway' | 'narrow' | 'occupied' | 'crossing';
+type LandscapeRefusal = 'offFootway' | 'narrow' | 'occupied' | 'crossing';
 
 /** The landing of a crossing on the footways: kept clear of everything. */
 export interface CrossingAccess {

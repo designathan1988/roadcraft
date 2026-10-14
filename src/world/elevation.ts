@@ -371,7 +371,7 @@ export interface RoadElevation {
   summaries?(): ReadonlyMap<SegmentId, { digest: number; box: Aabb; oversized: boolean }>;
 }
 
-export interface RoadSample {
+interface RoadSample {
   /** Distance along the nearest road, in world units. */
   readonly along: number;
   /** Signed offset across it. */
@@ -1643,7 +1643,7 @@ function rampRise(d: number): number {
 }
 
 /** Plate edge to deck, for a ramp that climbs `rise`: sag, straight and crest. */
-export function rampLength(rise: number): number {
+function rampLength(rise: number): number {
   return rise <= 0 ? 0 : rise / RAMP_GRADE + RAMP_CURVE;
 }
 

@@ -72,7 +72,7 @@ export function floorArea(b: Building): number {
 }
 
 /** One home on a residential floor, and how it lies. */
-export interface FlatCell {
+interface FlatCell {
   readonly x: number;
   readonly y: number;
   readonly w: number;

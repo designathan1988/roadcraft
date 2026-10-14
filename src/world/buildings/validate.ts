@@ -64,7 +64,7 @@ export interface SiteContext {
 }
 
 /** Nothing the player builds may come closer than this to the map's rim. */
-export const BUILDING_MAP_MARGIN = m(3.2);
+const BUILDING_MAP_MARGIN = m(3.2);
 /**
  * Gap kept between a footprint and the back of a footway: next to nothing.
  * A town's facades stand ON the back of the pavement; at 0.3 (and the snap's
@@ -306,7 +306,7 @@ function roadContacts(net: Network): RoadContacts {
 
 // ------------------------------------------------------------------ geometry
 
-export function boundsOf(points: readonly Vec2[]): { minX: number; minY: number; maxX: number; maxY: number } {
+function boundsOf(points: readonly Vec2[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -368,7 +368,7 @@ function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
 }
 
 /** Shortest distance from an open polyline to a closed polygon (0 inside). */
-export function polylineDistance(line: readonly Vec2[], polygon: readonly Vec2[]): number {
+function polylineDistance(line: readonly Vec2[], polygon: readonly Vec2[]): number {
   for (const p of line) if (pointInPolygon(p, polygon)) return 0;
   let best = Infinity;
   for (let i = 0; i + 1 < line.length; i++) {
@@ -385,7 +385,7 @@ export function polylineDistance(line: readonly Vec2[], polygon: readonly Vec2[]
 }
 
 /** Whether two simple polygons overlap (share interior area, roughly). */
-export function polygonsOverlap(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+function polygonsOverlap(a: readonly Vec2[], b: readonly Vec2[]): boolean {
   for (const p of a) if (pointInPolygon(p, b)) return true;
   for (const p of b) if (pointInPolygon(p, a)) return true;
   for (let i = 0; i < a.length; i++) {

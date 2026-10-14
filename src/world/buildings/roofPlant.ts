@@ -27,7 +27,7 @@ import type { BuildingUse } from './types';
  * Sizes in world units, the roof's local frame (the volume's).
  */
 
-export type RoofPlantKind =
+type RoofPlantKind =
   | 'tank' | 'tankBox' | 'hatch' | 'condenser' | 'airHandler' | 'solar' | 'mast' | 'dish' | 'skylight' | 'vent' | 'liftRoom' | 'chimney';
 
 export interface RoofPlantItem {

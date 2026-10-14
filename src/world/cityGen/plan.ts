@@ -30,7 +30,7 @@ import { planarize, traceStreets, type StreetEdge, type StreetGraph, type Street
  * Everything follows from the seed: the same options give the same city.
  */
 
-export type CityStyle = 'grid' | 'organic' | 'radial' | 'mixed' | 'blocks';
+type CityStyle = 'grid' | 'organic' | 'radial' | 'mixed' | 'blocks';
 
 /**
  * Block sizes of the 'blocks' style, in metres: a rectangular grid laid
@@ -63,7 +63,7 @@ function blockGrid(R: number): StreetGraph {
   for (let i = 0; i <= nx; i++) for (let j = 0; j < ny; j++) edges.push({ a: id(i, j), b: id(i, j + 1), points: [], level: levelOf(i, nx) });
   return { nodes, edges };
 }
-export type CitySize = 'small' | 'medium' | 'large';
+type CitySize = 'small' | 'medium' | 'large';
 
 export interface CityOptions {
   readonly seed: number;

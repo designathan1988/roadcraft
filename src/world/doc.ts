@@ -66,7 +66,7 @@ export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' 
 export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
 
 /** Whether a movement key names segment `id` as its entry or its exit. */
-export function movementMentions(key: string, id: SegmentId): boolean {
+function movementMentions(key: string, id: SegmentId): boolean {
   const cut = key.indexOf('>');
   const text = String(id);
   return key.slice(0, cut) === text || key.slice(cut + 1) === text;

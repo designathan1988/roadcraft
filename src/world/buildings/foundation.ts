@@ -439,7 +439,7 @@ function floorOver(highest: number, bays: readonly FacadeBay[], pavedAt: PavedAt
 }
 
 /** Steps needed to climb `rise`; a threshold under two risers needs none. */
-export function stepsFor(rise: number): number {
+function stepsFor(rise: number): number {
   if (!(rise > STEP_RISE * 1.5)) return 0;
   return Math.min(40, Math.ceil(rise / STEP_RISE));
 }

@@ -103,7 +103,7 @@ export function oneTree(kind: TreeKind, brush: TreeBrush, x: number, y: number, 
 }
 
 /** Whether a point lies in a clearing. */
-export function inClearing(clearings: readonly TreeClearing[], x: number, y: number): boolean {
+function inClearing(clearings: readonly TreeClearing[], x: number, y: number): boolean {
   for (const c of clearings) if (Math.abs(c.x - x) < c.radius && Math.abs(c.y - y) < c.radius && Math.hypot(c.x - x, c.y - y) < c.radius) return true;
   return false;
 }

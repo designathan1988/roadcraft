@@ -20,9 +20,9 @@ import { m } from './units';
 export const CELL = m(256);
 
 /** A cell's key from its column and row (both within ±32 767). */
-export const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
-export const cellColumn = (key: number): number => Math.floor(key / 65536) - 32768;
-export const cellRow = (key: number): number => (key % 65536) - 32768;
+const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
+const cellColumn = (key: number): number => Math.floor(key / 65536) - 32768;
+const cellRow = (key: number): number => (key % 65536) - 32768;
 
 /** The rectangle a cell covers. */
 export function cellRect(key: number): ChangeRect {
@@ -34,7 +34,7 @@ export function cellRect(key: number): ChangeRect {
 export const cellAt = (x: number, y: number): number => cellKey(Math.floor(x / CELL), Math.floor(y / CELL));
 
 /** Calls `visit` with every cell a rectangle reaches. */
-export function forCellsOver(rect: ChangeRect, visit: (key: number) => void): void {
+function forCellsOver(rect: ChangeRect, visit: (key: number) => void): void {
   const cx0 = Math.floor(rect[0] / CELL), cx1 = Math.floor(rect[2] / CELL);
   const cy0 = Math.floor(rect[1] / CELL), cy1 = Math.floor(rect[3] / CELL);
   for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) visit(cellKey(cx, cy));
@@ -44,7 +44,7 @@ export function forCellsOver(rect: ChangeRect, visit: (key: number) => void): vo
 export const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1] - pad, r[2] + pad, r[3] + pad];
 
 /** Whether two rectangles overlap (touching counts). */
-export const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
 /** The work a filing did: things filed and cells visited. A count for the performance budgets (`core/perfBudget.ts`). */
 export const cellWork = { filed: 0, cellsRead: 0 };

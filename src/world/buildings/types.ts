@@ -22,7 +22,7 @@ export const asBuildingId = (n: number): BuildingId => n as BuildingId;
  */
 export const BUILDING_SCHEMA = 2;
 
-export const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
+const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
 export type BuildingUse = (typeof BUILDING_USES)[number];
 
 /** Replaceable facade components, one per bay. See docs/buildings.md. */
@@ -62,7 +62,7 @@ export type RoofKind = (typeof ROOF_KINDS)[number];
 
 import type { FlagDesign } from './flags';
 
-export const ROOF_DETAIL_KINDS = ['solar', 'skylight', 'vent', 'chimney', 'waterTank', 'spire', 'lantern'] as const;
+const ROOF_DETAIL_KINDS = ['solar', 'skylight', 'vent', 'chimney', 'waterTank', 'spire', 'lantern'] as const;
 export type RoofDetailKind = (typeof ROOF_DETAIL_KINDS)[number];
 export const isRoofDetailKind = (value: unknown): value is RoofDetailKind =>
   (ROOF_DETAIL_KINDS as readonly unknown[]).includes(value);

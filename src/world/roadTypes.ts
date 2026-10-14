@@ -12,16 +12,10 @@ import type { CentreLine, RoadSection, LaneLine, LaneTurnRule, LaneUse, SectionM
  * which is why no kerb or footway existed around any junction (defect 1.2).
  */
 export enum Level {
-  Shadow = 0,
   Casing = 1,
   Sidewalk = 2,
   Curb = 3,
   Asphalt = 4,
-  Markings = 5,
-  JunctionInterior = 6,
-  JunctionDetail = 7,
-  Median = 8,
-  Overlay = 9,
 }
 
 /** Levels that carry a filled surface built from roads and junctions alike. */
@@ -34,7 +28,7 @@ export const SURFACE_LEVELS = [
 
 export type SurfaceLevel = (typeof SURFACE_LEVELS)[number];
 
-export type MarkingStyle = 'none' | 'center' | 'lanes';
+type MarkingStyle = 'none' | 'center' | 'lanes';
 
 export interface RoadType {
   readonly id: string;
@@ -289,8 +283,8 @@ export const roadType = (i: number): RoadType =>
   ROAD_TYPES[Math.max(0, Math.min(ROAD_TYPES.length - 1, i))] as RoadType;
 
 /** Supported physical lane-count range for an individually configured road. */
-export const MIN_TRAVEL_LANES = 1;
-export const MAX_TRAVEL_LANES = 8;
+const MIN_TRAVEL_LANES = 1;
+const MAX_TRAVEL_LANES = 8;
 
 /**
  * Resolves the physical road profile for a segment.
