@@ -18,6 +18,13 @@ import { resolveBlocks } from '@world/buildings/blocks';
 import { signalPosts } from '@world/signalPosts';
 import { m, stepsIn } from '@world/units';
 import { landscapeAround } from '@editor/itemCells';
+import { Rng } from '@core/rng';
+import { MAX_STOREYS, MAX_STOREY_HEIGHT } from '@world/buildings/types';
+
+/** How high over the ground under the pointer a building can reach: the tallest stack of the tallest storeys, its roof and plinth. */
+const RAY_ABOVE = MAX_STOREYS * MAX_STOREY_HEIGHT + m(40);
+/** How far under the ground under the pointer a building can stand (one in a valley seen over a ridge). */
+const RAY_BELOW = m(120);
 
 /**
  * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
@@ -218,7 +225,7 @@ export function createActions(deps: ActionsDeps): Actions {
     // its meshes misses it: found by its footprint under the pointer instead.
     const id = deps.buildingAt({ x: sx, y: sy });
     const b = id !== null ? doc.buildings.get(id as BuildingId)
-      : [...doc.buildings.all()].find((c) => rayOnBuilding(c, sx, sy, ground({ x: c.x, y: c.y })) !== null);
+      : buildingsUnderRay(sx, sy, ground(world)).find((c) => rayOnBuilding(c, sx, sy, ground({ x: c.x, y: c.y })) !== null);
     // Where the blow lands: the first point of the building along the
     // pointer's ray (its roof or the face under the pointer); else the ground.
     let target = world, z = ground(world);
@@ -249,7 +256,11 @@ export function createActions(deps: ActionsDeps): Actions {
     deps.mutate(() => {
       let changed = false;
       // Buildings: each struck at its nearest point, harder the nearer.
-      for (const c of [...doc.buildings.all()]) {
+      // Only a building whose outline comes within the reach can be struck, and
+      // its outline lies in its stored box (`BuildingStore.near`, in the order
+      // of `all()`). DO NOT walk `buildings.all()`: every blow outlined every
+      // building of the city.
+      for (const c of doc.buildings.near(world.x - radius, world.y - radius, world.x + radius, world.y + radius)) {
         let best = Infinity, px = world.x, py = world.y;
         // Its farthest corner from its own centre: past that and the reach,
         // nothing of it is struck.
@@ -307,16 +318,31 @@ export function createActions(deps: ActionsDeps): Actions {
       }
       // Poles: broken whole, snapped or to splinters; the wires torn off them
       // pull the next poles over, or hang from them.
+      // From the poles' index and each broken pole's own wires (`polesIn`,
+      // `spansAt`), not every pole and wire of the map, twice.
       const broken = new Set<PoleId>();
-      for (const pole of doc.poles.values()) if (near(pole.x, pole.y, radius)) broken.add(pole.id);
-      for (const span of doc.poleSpans.values()) {
-        for (const [from, to] of [[span.a, span.b], [span.b, span.a]] as const) {
-          if (!broken.has(to) || broken.has(from)) continue;
+      for (const pole of doc.polesIn([world.x - radius, world.y - radius, world.x + radius, world.y + radius])) {
+        if (near(pole.x, pole.y, radius)) broken.add(pole.id);
+      }
+      // Which neighbour a torn wire pulls over is drawn from a stream seeded by
+      // the document and the poles (`Rng`), not `Math.random`: the document's
+      // outcome is the same for the same blow, as every edit of it must be.
+      const pull = new Rng((doc.changes.version * 0x9e3779b1 + Math.round(world.x) * 73856093 + Math.round(world.y) * 19349663) >>> 0);
+      // Each broken pole's wires, the ones it pulls over in their turn (a queue in
+      // id order: the same blow tears the same wires).
+      const queue = [...broken].sort((p, q) => p - q);
+      for (let k = 0; k < queue.length; k++) {
+        for (const span of doc.spansAt(queue[k]!).sort((p, q) => p.id - q.id)) {
+          const from = span.a === queue[k] ? span.b : span.a;
+          if (broken.has(from)) continue;
           const p = doc.poles.get(from);
-          if (p && near(p.x, p.y, radius * 2.2) && Math.random() < 0.5) broken.add(from);
+          if (p && near(p.x, p.y, radius * 2.2) && pull.float() < 0.5) { broken.add(from); queue.push(from); }
         }
       }
-      for (const span of doc.poleSpans.values()) {
+      const wires = new Map<number, { a: PoleId; b: PoleId }>();
+      for (const id of broken) for (const span of doc.spansAt(id)) wires.set(span.id, span);
+      const spans = [...wires.entries()].sort((p, q) => p[0] - q[0]).map(([, span]) => span);
+      for (const span of spans) {
         const pa = doc.poles.get(span.a), pb = doc.poles.get(span.b);
         if (!pa || !pb) continue;
         if (broken.has(span.a) && !broken.has(span.b)) hit.wires.push({ fromX: pb.x, fromY: pb.y, toX: pa.x, toY: pa.y });
@@ -449,6 +475,20 @@ export function createActions(deps: ActionsDeps): Actions {
     }
     if (burning.size) deps.redraw();
   }, 500);
+
+  /**
+   * The buildings the screen ray through (sx, sy) can meet: those filed where
+   * the ray passes between a tallest building's top over the ground under the
+   * pointer and `RAY_BELOW` under it (`BuildingStore.near`, in the order of
+   * `all()`). DO NOT walk `buildings.all()`: a blow on open ground ray-marched
+   * every building of the city.
+   */
+  function buildingsUnderRay(sx: number, sy: number, groundZ: number): Building[] {
+    const { w, h } = deps.size();
+    const view = deps.view();
+    const high = view.toWorldAt(sx, sy, groundZ + RAY_ABOVE, w, h), low = view.toWorldAt(sx, sy, groundZ - RAY_BELOW, w, h);
+    return doc.buildings.near(Math.min(high.x, low.x), Math.min(high.y, low.y), Math.max(high.x, low.x), Math.max(high.y, low.y));
+  }
 
   /** The first point of building `b` along the screen ray through (sx, sy): marched down from its top. */
   function rayOnBuilding(b: Building, sx: number, sy: number, base: number): (Vec2 & { z: number }) | null {
