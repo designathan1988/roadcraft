@@ -60,7 +60,22 @@ export function createFaceCardAtlas(): FaceCardAtlas {
   /** Layers ever handed out: the next new one. */
   let used = 0;
   let canvas: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
-  const array = (): DataArrayTexture => uniform.value ??= newFaceCardArray(FACE_CARD_LAYERS);
+  /**
+   * Whether the array in use has not reached the GPU whole yet (made, or
+   * grown). Its first upload must send every layer: three allocates the
+   * storage and, with layer updates listed, sends ONLY those layers
+   * (`WebGLTextures` `texStorage3D` then `texSubImage3D` per layer). DO NOT
+   * list a layer on an array not yet uploaded: grown past 24 cards, every
+   * card copied into the new array was left blank on the GPU.
+   */
+  let whole = true;
+  const array = (): DataArrayTexture => uniform.value ??= fresh(newFaceCardArray(FACE_CARD_LAYERS));
+  /** A new array: sent whole on its first upload (three calls `onUpdate` once it has been). */
+  const fresh = (texture: DataArrayTexture): DataArrayTexture => {
+    whole = true;
+    texture.onUpdate = () => { if (uniform.value === texture) whole = false; };
+    return texture;
+  };
   /**
    * A free layer: one given back, else the next unused, the array doubled
    * when every layer is held (its pixels copied, the whole of it sent again
@@ -73,7 +88,7 @@ export function createFaceCardAtlas(): FaceCardAtlas {
     if (reused !== undefined) return reused;
     const current = array();
     if (used >= current.image.depth) {
-      const grown = newFaceCardArray(current.image.depth * 2);
+      const grown = fresh(newFaceCardArray(current.image.depth * 2));
       (grown.image.data as Uint8Array).set(current.image.data as Uint8Array);
       current.dispose();
       uniform.value = grown;
@@ -105,7 +120,7 @@ export function createFaceCardAtlas(): FaceCardAtlas {
       const layer = take();
       const target = array();
       (target.image.data as Uint8Array).set(ctx.getImageData(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE).data, layer * FACE_CARD_BYTES);
-      target.addLayerUpdate(layer);
+      if (!whole) target.addLayerUpdate(layer);
       target.needsUpdate = true;
       const release = (): void => {
         texture.removeEventListener('dispose', release);

@@ -97,4 +97,31 @@ describe('face cards', () => {
     for (const texture of live) texture.dispose();
     atlas.dispose();
   });
+
+  it('sends a grown array whole on its first upload, then only the layers written after', () => {
+    // three allocates a new array texture and, with layer updates listed,
+    // uploads only those layers: the cards copied into a grown array must
+    // not be listed, or they stay blank on the GPU.
+    const atlas = createFaceCardAtlas();
+    const live: Texture[] = [];
+    let array = atlas.uniform.value;
+    for (let person = 0; person < 13; person++) {
+      const brow = card(), lash = card();
+      live.push(brow, lash);
+      compile(atlas, appearance(brow, lash));
+      array = atlas.uniform.value;
+    }
+    // 26 cards: grown past 24 and never uploaded since.
+    expect(array!.image.depth).toBe(48);
+    expect(array!.layerUpdates.size).toBe(0);
+    // Uploaded (three calls `onUpdate`): the next card is sent as its own layer.
+    array!.onUpdate?.(array!);
+    const brow = card(), lash = card();
+    live.push(brow, lash);
+    compile(atlas, appearance(brow, lash));
+    expect(atlas.uniform.value).toBe(array);
+    expect(array!.layerUpdates.size).toBe(2);
+    for (const texture of live) texture.dispose();
+    atlas.dispose();
+  });
 });
