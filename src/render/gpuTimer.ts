@@ -43,7 +43,9 @@ interface TimerExtension {
 
 export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
   const gl = renderer.getContext() as WebGL2RenderingContext;
-  const ext = (typeof gl.getExtension === 'function' ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null) as TimerExtension | null;
+  const timerExtension = (): TimerExtension | null =>
+    (typeof gl.getExtension === 'function' ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null) as TimerExtension | null;
+  let ext = timerExtension();
   const info = typeof gl.getExtension === 'function' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
   const label = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown';
   const samples = new SampleRing(2400);
@@ -54,6 +56,21 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
   for (let i = 0; i < size; i++) queries.push(gl.createQuery()!);
   /** Issued queries waiting for their result: `first` the oldest, `waiting` how many. */
   let first = 0, waiting = 0, running = false;
+  /**
+   * A lost context takes every query with it; restored, the old ones belong to
+   * no context ("getQueryParameter: object does not belong to this context",
+   * every frame, seen 2026-10-14 after a forced loss): "resources ... created
+   * before the context was lost are no longer valid" (MDN, webglcontextrestored).
+   * DO NOT keep a query or the extension across a context loss.
+   */
+  let lost = false;
+  const canvas = renderer.domElement;
+  canvas.addEventListener('webglcontextlost', () => { lost = true; running = false; first = 0; waiting = 0; });
+  canvas.addEventListener('webglcontextrestored', () => {
+    ext = timerExtension();
+    for (let i = 0; i < size; i++) queries[i] = gl.createQuery()!;
+    lost = ext === null;
+  });
   const round = new Float64Array(size);
   const timer = {
     supported: true,
@@ -62,17 +79,19 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
     skipped: 0,
     disjoint: 0,
     begin(): void {
+      if (lost || !ext) return;
       if (running || waiting >= size) { timer.skipped++; return; }
       gl.beginQuery(ext.TIME_ELAPSED_EXT, queries[(first + waiting) % size]!);
       running = true;
     },
     end(): void {
-      if (!running) return;
+      if (!running || !ext) return;
       gl.endQuery(ext.TIME_ELAPSED_EXT);
       running = false;
       waiting++;
     },
     poll(): void {
+      if (lost || !ext) return;
       let n = 0;
       while (n < waiting) {
         const q = queries[(first + n) % size]!;
