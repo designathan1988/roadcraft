@@ -42,6 +42,9 @@ const HYSTERESIS = 0.85;
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
 
+/** A cell's key from its column and row (`layer.ts` `cellOf`). */
+const keyOf = (i: number, j: number): string => `${i},${j}`;
+
 interface Cell {
   /** The masses it was made from, in its buildings' order: kept while they are the same. */
   masses: readonly MassingChunk[];
@@ -75,11 +78,11 @@ export interface MassCells {
   /** Whether a cell is drawn near; a cell with no mass (lawns only) always is. */
   near(key: string): boolean;
   /**
-   * A near cell whose detail is not made yet (`layer.ts` streaming) keeps its
-   * mass shown (`held` true) until the detail lands: between the two the
-   * cell stood empty for the seconds its buildings took to come.
+   * Whether a cell's detail is shown (`layer.ts` streaming): a near cell
+   * keeps its mass shown until its detail lands - between the two the cell
+   * stood empty for the seconds its buildings took to come.
    */
-  holdMass(key: string, held: boolean): void;
+  setDetailed(key: string, detailed: boolean): void;
   dispose(): void;
 }
 
@@ -144,6 +147,25 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
   const cells = new Map<string, Cell>();
+  /**
+   * The cells drawn near now, and those whose detail is shown: what `choose`
+   * reads besides the cells round the eye. DO NOT walk every cell of the town
+   * each frame to choose: the cells that may change are those near now and
+   * those within reach of the eye (`choose`), a number set by the view.
+   */
+  const nearKeys = new Set<string>();
+  const detailed = new Set<string>();
+  /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
+  let overhang = 0;
+  /** A cell's mass shown: far, or near with no detail to stand in for it. */
+  const showMass = (key: string, cell: Cell): void => {
+    if (cell.mesh) cell.mesh.visible = !cell.near || !detailed.has(key);
+  };
+  const setNear = (key: string, cell: Cell, near: boolean): void => {
+    cell.near = near;
+    if (near) nearKeys.add(key); else nearKeys.delete(key);
+    showMass(key, cell);
+  };
   const drop = (cell: Cell): void => {
     if (!cell.mesh) return;
     group.remove(cell.mesh);
@@ -161,35 +183,41 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     const cell: Cell = {
       masses, mesh: made?.mesh ?? null,
       x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
-      top: made?.top ?? 0, near: known?.near ?? true,
+      // A cell with no mass is always near (its detail is all it has).
+      top: made?.top ?? 0, near: made ? known?.near ?? true : true,
     };
     // A building reaching past its cell's edge: the cell's box is its masses'.
     const box = made?.mesh.geometry.boundingBox;
-    if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
-    if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
+    if (box) {
+      cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z);
+      overhang = Math.max(overhang, i * cellSize - cell.x0, cell.x1 - (i + 1) * cellSize, j * cellSize - cell.y0, cell.y1 - (j + 1) * cellSize);
+    }
+    if (made) group.add(made.mesh);
     cells.set(key, cell);
+    setNear(key, cell, cell.near);
+  };
+  const forget = (key: string, cell: Cell): void => {
+    drop(cell);
+    cells.delete(key);
+    nearKeys.delete(key);
   };
   return {
     group,
     /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, the whole town). */
     update(byCell) {
       for (const [key, masses] of byCell) put(key, masses);
-      for (const [key, cell] of cells) {
-        if (byCell.has(key)) continue;
-        drop(cell);
-        cells.delete(key);
-      }
+      for (const [key, cell] of [...cells]) if (!byCell.has(key)) forget(key, cell);
     },
     /** @rebuild Called when some buildings changed (`layer.ts` `update`, their cells only). */
     patch(byCell) {
       for (const [key, masses] of byCell) {
         if (masses.length) { put(key, masses); continue; }
         const known = cells.get(key);
-        if (known) { drop(known); cells.delete(key); }
+        if (known) forget(key, known);
       }
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
-      for (const [key, cell] of cells) {
+      const decide = (key: string, cell: Cell): void => {
         let near: boolean;
         const forced = allNear === true || (allNear !== false && allNear.has(key));
         if (forced || !cell.mesh) near = true;
@@ -211,21 +239,48 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
           // Within reach, with a margin for a cell already near (hysteresis).
           near = pixels >= allowed * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
         }
-        if (near === cell.near) continue;
-        cell.near = near;
-        if (cell.mesh) cell.mesh.visible = !near;
+        if (near !== cell.near) setNear(key, cell, near);
+      };
+      // Those near now may go far; those named stay near.
+      for (const key of [...nearKeys]) decide(key, cells.get(key)!);
+      if (allNear !== true && allNear !== false) for (const key of allNear) { const cell = cells.get(key); if (cell && !cell.near) decide(key, cell); }
+      // A far cell comes near only within the farthest a near cell may be on the map: within
+      // `reach`, and where what the far level leaves out still spans `NEAR_PIXELS` (the error
+      // allowed only grows with the distance, `HORIZON_HALF`).
+      const within = allNear === true ? Infinity
+        : orthoPx !== null ? (FAR_ERROR * orthoPx >= NEAR_PIXELS ? reach : 0)
+          : Math.min(reach, (FAR_ERROR * pxAtMetre) / NEAR_PIXELS);
+      if (within <= 0) return;
+      const r = within + overhang;
+      const i0 = Math.floor((eyeX - r) / cellSize), i1 = Math.floor((eyeX + r) / cellSize);
+      const j0 = Math.floor((eyeY - r) / cellSize), j1 = Math.floor((eyeY + r) / cellSize);
+      const span = (i1 - i0 + 1) * (j1 - j0 + 1);
+      // Past the town's own cells (a view of the whole map): its cells, no more.
+      if (!Number.isFinite(span) || span > cells.size) {
+        for (const [key, cell] of cells) if (!cell.near) decide(key, cell);
+        return;
+      }
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const key = keyOf(i, j);
+          const cell = cells.get(key);
+          if (cell && !cell.near) decide(key, cell);
+        }
       }
     },
     near(key) {
       return cells.get(key)?.near ?? true;
     },
-    holdMass(key, held) {
+    setDetailed(key, on) {
+      if (on) detailed.add(key); else detailed.delete(key);
       const cell = cells.get(key);
-      if (cell?.mesh) cell.mesh.visible = held || !cell.near;
+      if (cell) showMass(key, cell);
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);
       cells.clear();
+      nearKeys.clear();
+      detailed.clear();
     },
   };
 }

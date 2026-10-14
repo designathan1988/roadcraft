@@ -177,8 +177,27 @@ export function createBuildingLayer(): BuildingLayer {
   let stored: BuildingMeshes | null = null;
   let ruined: ReadonlySet<number> = new Set();
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
-  /** Each cell's batch as shown, and the buildings it was made of. */
-  const cells: CellCache = new Map();
+  /**
+   * Each cell's batch as shown, and the buildings it was made of. A cell coming in or going tells the
+   * far level (`massCells.setDetailed`): its mass stands in while it is near with no detail. DO NOT
+   * set that for every cell of the town every frame (`levelOfDetail` did): it changes only here.
+   */
+  const cells: CellCache = new (class extends Map<string, CellCache extends Map<string, infer V> ? V : never> {
+    override set(key: string, value: CellCache extends Map<string, infer V> ? V : never): this {
+      super.set(key, value);
+      massCells.setDetailed(key, true);
+      return this;
+    }
+    override delete(key: string): boolean {
+      const had = super.delete(key);
+      if (had) massCells.setDetailed(key, false);
+      return had;
+    }
+    override clear(): void {
+      for (const key of this.keys()) massCells.setDetailed(key, false);
+      super.clear();
+    }
+  })();
   const detailCells: CellCache = new Map();
   /** The buildings faded ("hide the others"), a batch a cell. */
   const fadedCells: CellCache = new Map();
@@ -700,11 +719,9 @@ export function createBuildingLayer(): BuildingLayer {
       eyeNow.x = eyeX; eyeNow.y = eyeY; eyeNow.z = eyeZ; eyeNow.pxAtMetre = pxAtMetre; eyeNow.orthoPx = orthoPx; eyeNow.reach = reach;
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
+      // A cell near with no detail yet (coming by `landCells`) keeps its mass until the detail lands
+      // (`massCells.setDetailed`, told as the cells come and go).
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
-      for (const key of townCells.keys()) {
-        // A cell near with no detail yet (coming by `landCells`) keeps its mass until the detail lands.
-        massCells.holdMass(key, cellNear(key) && !cells.has(key));
-      }
       for (const [key, cell] of cells) {
         const isNear = cellNear(key);
         cell.part.setVisible(isNear);
