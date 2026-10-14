@@ -294,6 +294,7 @@ class RoadContacts {
 
 const CONTACTS = new WeakMap<Network, { revision: number; contacts: RoadContacts }>();
 
+/** @rebuild Called when the network moved (`net.revision`); otherwise returns the contacts it made. */
 function roadContacts(net: Network): RoadContacts {
   const known = CONTACTS.get(net);
   if (known && known.revision === net.revision) return known.contacts;

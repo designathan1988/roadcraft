@@ -57,19 +57,24 @@ export class Network {
   /** Each ribbon's place in `ribbons`, at a revision (`ribbonsMeeting`). */
   private ribbonOrderAt = { revision: -1, order: new Map<SegmentId, number>() };
 
-  /**
-   * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
-   * `ribbons`: what a loop over every ribbon would meet there, in the order it
-   * would meet them, so a search that keeps the first of equals finds the same.
-   */
-  ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
+  /** @rebuild Called when the network moved (`revision`); otherwise returns the order it made. */
+  private ribbonOrder(): ReadonlyMap<SegmentId, number> {
     if (this.ribbonOrderAt.revision !== this.revision) {
       const order = new Map<SegmentId, number>();
       let i = 0;
       for (const id of this.ribbons.keys()) order.set(id, i++);
       this.ribbonOrderAt = { revision: this.revision, order };
     }
-    const { order } = this.ribbonOrderAt;
+    return this.ribbonOrderAt.order;
+  }
+
+  /**
+   * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
+   * `ribbons`: what a loop over every ribbon would meet there, in the order it
+   * would meet them, so a search that keeps the first of equals finds the same.
+   */
+  ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
+    const order = this.ribbonOrder();
     const out: SegmentRibbon[] = [];
     for (const id of this.segmentCells.idsMeeting(rect)) {
       const ribbon = this.ribbons.get(id);

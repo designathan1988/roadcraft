@@ -216,6 +216,19 @@ const LANE_GRIDS = new WeakMap<object, { key: string; lanes: Lanelet[]; cells: M
  * measure every lane of the town.
  */
 function lanesNear(w: SimWorld, x: number, y: number, reach: number): Lanelet[] {
+  const grid = laneGrid(w);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return grid.lanes;
+  const picked = new Set<number>();
+  for (let gx = Math.floor((x - reach) / LANE_CELL); gx <= Math.floor((x + reach) / LANE_CELL); gx++) {
+    for (let gy = Math.floor((y - reach) / LANE_CELL); gy <= Math.floor((y + reach) / LANE_CELL); gy++) {
+      for (const i of grid.cells.get((gx + 32768) * 65536 + (gy + 32768)) ?? []) picked.add(i);
+    }
+  }
+  return [...picked].sort((a, b) => a - b).map((i) => grid.lanes[i]!);
+}
+
+/** The lanes' grid (`lanesNear`). @rebuild Called when the lane graph moved; otherwise returns the grid it made. */
+function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<number, number[]> } {
   const key = `${w.graph.revision}:${w.graph.lanelets.size}`;
   let grid = LANE_GRIDS.get(w.graph);
   // Rebuilt under the same revision, the lanes are new objects: read again.
@@ -234,14 +247,7 @@ function lanesNear(w: SimWorld, x: number, y: number, reach: number): Lanelet[] 
     });
     LANE_GRIDS.set(w.graph, grid = { key, lanes, cells });
   }
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return grid.lanes;
-  const picked = new Set<number>();
-  for (let gx = Math.floor((x - reach) / LANE_CELL); gx <= Math.floor((x + reach) / LANE_CELL); gx++) {
-    for (let gy = Math.floor((y - reach) / LANE_CELL); gy <= Math.floor((y + reach) / LANE_CELL); gy++) {
-      for (const i of grid.cells.get((gx + 32768) * 65536 + (gy + 32768)) ?? []) picked.add(i);
-    }
-  }
-  return [...picked].sort((a, b) => a - b).map((i) => grid.lanes[i]!);
+  return grid;
 }
 
 /**
@@ -304,6 +310,7 @@ function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
   // without reading anything (the diary's rectangles: `world/changes.ts`).
   const changed = buildingChangesSince(w, roads, first);
   let walls: Wall[] | null = null;
+  /** @rebuild Made once a call of `workOutBays`, at the first building that asks. */
   const wallsNow = (): Wall[] => (walls ??= wallsOf(w));
   const navCache = new Map<object, { exits: LotExit[]; grid: LotGrid }>();
   const known = LOT_BAYS.get(w) ?? new Map<BuildingId, { lot: string; key: number; bays: readonly Bay[] }>();

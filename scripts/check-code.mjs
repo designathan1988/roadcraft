@@ -19,10 +19,16 @@
 //   heavy-call-per-frame   JSON, structuredClone, a bounding volume computed, in per-frame code
 //   whole-map-per-frame    a loop over a collection as big as the map, in per-frame code
 //   window-key-listener    a key listener on the window or the document outside `main.ts` (one keyboard listener)
+//   whole-map-nested       a loop over a map-sized collection whose body - or anything it calls - loops over
+//                          one again: the redundant traversal of CLARITY (Olivo, Dillig and Lin, PLDI 2015),
+//                          O(map²) wherever it runs. A `@rebuild` callee is amortized and does not count.
+//   whole-map-per-item     a loop over the map reached from a function marked `@perItem` (it runs once a
+//                          building grown, a pole run, a pointer move, an edit of one thing): O(map) per item
 //
 // What is already there is listed in `code-rules.baseline.json`, which only
 // shrinks: the check fails on anything not in it and on any entry fixed.
-// node scripts/check-code.mjs [--update] [--why "<entry>"] [--project <dir> --list]
+// node scripts/check-code.mjs [--update [--seed <rule>,<rule>]] [--why "<entry>"] [--project <dir> --list]
+// (`--seed <rule>`: a NEW rule's findings as they stand enter the baseline once; never for an old rule.)
 // (`--project` and `--list`: another project, its findings printed as JSON; the
 // rules' own test, `tests/arch/checkCode.spec.ts`.)
 import ts from 'typescript';
@@ -248,6 +254,7 @@ for (const file of sources) {
 }
 for (const u of units) unitSet.add(u);
 
+
 // ------------------------------------------------------------ what a unit does
 /** Calls whose callbacks run later, not inside the call. */
 const DEFERRING = new Set(['setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback', 'queueMicrotask',
@@ -260,9 +267,37 @@ const ITERATING = new Set(['forEach', 'map', 'filter', 'some', 'every', 'reduce'
 const HEAVY = new Set(['JSON.parse', 'JSON.stringify', 'structuredClone']);
 const BOUNDS = new Set(['computeBoundingSphere', 'computeBoundingBox']);
 
+/**
+ * Locals holding a collection as big as the map (`const kept = doc.lots.filter(...)`,
+ * `[...net.ribbons.values()]`): a loop over one is a loop over the map, as
+ * CLARITY's traversal footprint follows a collection through assignments.
+ */
+const wideLocals = new Map();
+/** Methods that hand back a collection of the receiver's size (or near it). */
+const DERIVING = new Set(['filter', 'map', 'slice', 'sort', 'toSorted', 'concat', 'flatMap', 'reverse', 'values', 'keys', 'entries']);
+function wideSource(expr) {
+  const e = skipParens(expr);
+  const direct = mapWide(e);
+  if (direct) return direct;
+  if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+    const method = e.expression.name.text;
+    if (DERIVING.has(method)) return wideSource(e.expression.expression);
+    if (method === 'from' && ts.isIdentifier(e.expression.expression) && e.expression.expression.text === 'Array' && e.arguments[0]) return wideSource(e.arguments[0]);
+  }
+  if (ts.isArrayLiteralExpression(e)) {
+    for (const el of e.elements) if (ts.isSpreadElement(el)) { const w = wideSource(el.expression); if (w) return w; }
+  }
+  if (ts.isNewExpression(e) && e.arguments?.[0] && ts.isIdentifier(e.expression) && /^(Set|Map)$/.test(e.expression.text)) return wideSource(e.arguments[0]);
+  return null;
+}
+
 /** The member a collection expression reads, when that member is as big as the map: `Class.member`. */
 function mapWide(expr) {
   let e = skipParens(expr);
+  if (ts.isIdentifier(e)) {
+    const s = symbolOf(e);
+    return s ? wideLocals.get(s) ?? null : null;
+  }
   if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
     const method = e.expression.name.text;
     if (method === 'values' || method === 'keys' || method === 'entries') e = skipParens(e.expression.expression);
@@ -365,6 +400,20 @@ function invokesParameter(unit, index, depth) {
   return calls;
 }
 
+// The locals filled from a collection as big as the map, in source order (a later
+// one built from an earlier one is seen; `const`/`let` initialisers only).
+for (const file of sources) {
+  const visit = (n) => {
+    if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name)) {
+      const from = wideSource(n.initializer);
+      const s = from ? symbolOf(n.name) : null;
+      if (s) wideLocals.set(s, `${n.name.text}(${from.replace(/\(.*$/, '')})`);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(file);
+}
+
 /** Per unit: the units it runs, and what it does (the rules' raw facts). */
 const facts = new Map();
 let fieldBased = 0;
@@ -374,6 +423,15 @@ function factsOf(unit) {
   if (known) return known;
   const calls = new Set();
   const does = [];
+  /** Inside a loop over a map-sized collection: the loops it holds, the units it calls, the callbacks it hands one. */
+  const nested = [];
+  const insideWide = [];
+  const wideCallbacks = [];
+  const wideStack = [];
+  const wideLoop = (what) => {
+    does.push({ kind: 'loop', what });
+    if (wideStack.length) nested.push({ outer: wideStack[wideStack.length - 1], inner: what });
+  };
   const callTargets = (callee) => {
     const c = skipParens(callee);
     if (isFunction(c)) return [c];
@@ -406,18 +464,30 @@ function factsOf(unit) {
       // A function given to a call that runs it now (`forEach`, `advance`): part of this unit.
       const call = n.parent;
       if (isFunction(n) && call && (ts.isCallExpression(call) || ts.isNewExpression(call)) && call.arguments?.includes(n)
-        && runsNow(call, call.arguments.indexOf(n))) calls.add(n);
+        && runsNow(call, call.arguments.indexOf(n))) {
+        calls.add(n);
+        if (wideStack.length) insideWide.push({ target: n, outer: wideStack[wideStack.length - 1] });
+        // Handed to a loop over the map (`all.forEach((b) => ...)`): its body runs once an item.
+        const callee = ts.isCallExpression(call) ? skipParens(call.expression) : null;
+        if (callee && ts.isPropertyAccessExpression(callee) && ITERATING.has(callee.name.text)) {
+          const wide = mapWide(callee.expression);
+          if (wide) wideCallbacks.push({ target: n, outer: `${callee.name.text} ${wide}` });
+        }
+      }
       return;
     }
     if (ts.isCallExpression(n)) {
-      for (const t of callTargets(n.expression)) calls.add(t);
+      for (const t of callTargets(n.expression)) {
+        calls.add(t);
+        if (wideStack.length) insideWide.push({ target: t, outer: wideStack[wideStack.length - 1] });
+      }
       const callee = skipParens(n.expression);
       if (ts.isPropertyAccessExpression(callee)) {
         const method = callee.name.text;
-        if (ITERATING.has(method)) { const wide = mapWide(callee.expression); if (wide) does.push({ kind: 'loop', what: `${method} ${wide}` }); }
+        if (ITERATING.has(method)) { const wide = mapWide(callee.expression); if (wide) wideLoop(`${method} ${wide}`); }
         if (method === 'from' && ts.isIdentifier(callee.expression) && callee.expression.text === 'Array' && n.arguments[0]) {
           const wide = mapWide(n.arguments[0]);
-          if (wide) does.push({ kind: 'loop', what: `Array.from ${wide}` });
+          if (wide) wideLoop(`Array.from ${wide}`);
         }
       }
     } else if (ts.isNewExpression(n)) {
@@ -434,10 +504,19 @@ function factsOf(unit) {
       for (const d of s?.declarations ?? []) if (ts.isGetAccessorDeclaration(d) && d.body) calls.add(d);
     } else if (ts.isForOfStatement(n) || ts.isForInStatement(n)) {
       const wide = mapWide(n.expression);
-      if (wide) does.push({ kind: 'loop', what: `for ${wide}` });
+      if (wide) {
+        wideLoop(`for ${wide}`);
+        // The body runs once an item: what it does is done the map's size times.
+        visit(n.initializer);
+        visit(n.expression);
+        wideStack.push(`for ${wide}`);
+        visit(n.statement);
+        wideStack.pop();
+        return;
+      }
     } else if (ts.isSpreadElement(n)) {
       const wide = mapWide(n.expression);
-      if (wide) does.push({ kind: 'loop', what: `spread ${wide}` });
+      if (wide) wideLoop(`spread ${wide}`);
     }
     ts.forEachChild(n, visit);
   };
@@ -447,7 +526,7 @@ function factsOf(unit) {
     for (const p of unit.parameters ?? []) if (p.initializer) visit(p.initializer);
     visit(unit.body);
   }
-  const result = { calls: [...calls], does };
+  const result = { calls: [...calls], does, nested, insideWide, wideCallbacks };
   facts.set(unit, result);
   return result;
 }
@@ -494,8 +573,61 @@ for (const unit of inFrame.keys()) {
 for (const unit of perFrame.keys()) {
   for (const d of factsOf(unit).does) {
     if (d.kind === 'heavy') note('heavy-call-per-frame', unit, d.what, perFrame);
-    if (d.kind === 'loop') note('whole-map-per-frame', unit, d.what, perFrame);
+    // A loop over a local filled from the map (`kept(RoadDoc.lots)`) counts for the newer rules only:
+    // this rule's baseline was taken without them.
+    if (d.kind === 'loop' && !d.what.includes('(')) note('whole-map-per-frame', unit, d.what, perFrame);
   }
+}
+// A unit traverses the map when it, or anything it calls, loops over a
+// map-sized collection - a procedure summary, as CLARITY's. A `@rebuild` unit
+// says it does its work only when what it reads changed: amortized, not a
+// traversal for its callers.
+const traversal = new Map();
+function traversesMap(unit, stack = new Set()) {
+  if (traversal.has(unit)) return traversal.get(unit);
+  if (tagged(unit, 'rebuild') || stack.has(unit)) return null;
+  stack.add(unit);
+  const f = factsOf(unit);
+  const own = f.does.find((d) => d.kind === 'loop');
+  let found = own ? `${nameOf(unit).split(' ')[1]}: ${own.what}` : null;
+  for (const c of own ? [] : f.calls) {
+    const inner = traversesMap(c, stack);
+    if (inner) { found = `${nameOf(unit).split(' ')[1]} → ${inner}`; break; }
+  }
+  stack.delete(unit);
+  traversal.set(unit, found);
+  return found;
+}
+for (const unit of units) {
+  const f = factsOf(unit);
+  for (const n of f.nested) note('whole-map-nested', unit, `${n.outer} ⊃ ${n.inner}`, null);
+  for (const { target, outer } of f.insideWide) {
+    const inner = traversesMap(target);
+    if (inner) note('whole-map-nested', unit, `${outer} ⊃ ${inner}`, null);
+  }
+  for (const { target, outer } of f.wideCallbacks) {
+    const body = factsOf(target);
+    for (const d of body.does) if (d.kind === 'loop') note('whole-map-nested', unit, `${outer} ⊃ ${d.what}`, null);
+    for (const c of body.calls) {
+      const inner = traversesMap(c);
+      if (inner) note('whole-map-nested', unit, `${outer} ⊃ ${inner}`, null);
+    }
+  }
+}
+// What runs once an item, and what it reaches short of a `@rebuild`.
+const perItem = new Map(units.filter((u) => tagged(u, 'perItem')).map((r) => [r, null]));
+{
+  const queue = [...perItem.keys()];
+  for (let i = 0; i < queue.length; i++) {
+    for (const next of factsOf(queue[i]).calls) {
+      if (perItem.has(next) || tagged(next, 'rebuild')) continue;
+      perItem.set(next, queue[i]);
+      queue.push(next);
+    }
+  }
+}
+for (const unit of perItem.keys()) {
+  for (const d of factsOf(unit).does) if (d.kind === 'loop') note('whole-map-per-item', unit, d.what, perItem);
 }
 for (const [call, what] of keyListeners) {
   if (rel(call.getSourceFile().fileName) === 'src/main.ts') continue;
@@ -524,9 +656,15 @@ const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8'
 const added = Object.keys(issues).filter((key) => issues[key] > (baseline[key] ?? 0));
 const gone = Object.keys(baseline).filter((key) => (issues[key] ?? 0) < baseline[key]);
 if (process.argv.includes('--update')) {
-  if (added.length && existsSync(BASELINE)) {
-    for (const key of added) console.error(`novo: ${key}  ×${issues[key]}\n    ${found.get(key).path}`);
-    console.error(`código: ${added.length} achados novos; a linha de base só diminui.`);
+  const seedAt = process.argv.indexOf('--seed');
+  // New rules' findings enter once (`--seed a,b`), and only for a rule the baseline has none of yet.
+  const seeding = (seedAt >= 0 ? process.argv[seedAt + 1] ?? '' : '').split(',').filter(Boolean)
+    .filter((rule) => !Object.keys(baseline).some((key) => key.startsWith(`${rule}  `)));
+  const refused = added.filter((key) => !seeding.some((rule) => key.startsWith(`${rule}  `)));
+  if (refused.length && existsSync(BASELINE)) {
+    for (const key of refused) console.error(`novo: ${key}  ×${issues[key]}
+    ${found.get(key).path}`);
+    console.error(`código: ${refused.length} achados novos; a linha de base só diminui.`);
     process.exit(1);
   }
   writeFileSync(BASELINE, JSON.stringify(issues, null, 1) + '\n');

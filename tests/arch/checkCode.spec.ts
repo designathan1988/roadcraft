@@ -48,6 +48,64 @@ export function frame(doc: RoadDoc): void {
 }
 `;
 
+/**
+ * The traversal rules: a loop over the map inside a loop over the map, through
+ * a call or over a local filled from the map (CLARITY's redundant traversal),
+ * and a loop over the map reached from what runs once an item; a `@rebuild`
+ * callee is amortized, and code not marked per item is not held to it.
+ */
+const ITEMS = `
+export class RoadDoc { readonly nodes = new Map<number, { x: number }>(); readonly lots: { id: number }[] = []; }
+/** @perFrame */
+export function frame(): void {}
+function lotIndex(doc: RoadDoc, id: number): number { return doc.lots.findIndex((l) => l.id === id); }
+/** @rebuild Once a revision. */
+function summed(doc: RoadDoc): number { let n = 0; for (const l of doc.lots) n += l.id; return n; }
+export function quadratic(doc: RoadDoc): number {
+  let n = 0;
+  for (const node of doc.nodes.values()) n += lotIndex(doc, node.x);
+  const kept = doc.lots.filter((l) => l.id > 0);
+  for (const l of kept) n += doc.lots.indexOf(l);
+  for (const node of doc.nodes.values()) n += summed(doc) + node.x;
+  return n;
+}
+/** @perItem Once a thing grown. */
+export function grow(doc: RoadDoc): number { return lotIndex(doc, 1); }
+export function free(doc: RoadDoc): number { return lotIndex(doc, 2); }
+`;
+
+/** The rules' findings on a project of one file. */
+function findings(file: string, text: string): Record<string, number> {
+  const dir = mkdtempSync(join(tmpdir(), 'check-code-'));
+  try {
+    mkdirSync(join(dir, 'src'));
+    writeFileSync(join(dir, 'src', file), text);
+    writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022', lib: ['ES2022', 'DOM'], module: 'ESNext', moduleResolution: 'bundler',
+        strict: true, noEmit: true, skipLibCheck: true, types: [], paths: { three: [three] },
+      },
+      include: ['src'],
+    }));
+    const out = execFileSync(process.execPath, [join(root, 'scripts', 'check-code.mjs'), '--project', dir, '--list'], { encoding: 'utf8' });
+    return JSON.parse(out) as Record<string, number>;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('the traversal rules', () => {
+  it('fire on the map walked once an item, and spare what is amortized', () => {
+    const found = findings('items.ts', ITEMS);
+    const traversals = Object.fromEntries(Object.entries(found).filter(([key]) => key.startsWith('whole-map-nested') || key.startsWith('whole-map-per-item')));
+    expect(traversals).toEqual({
+      'whole-map-nested  src/items.ts quadratic  for RoadDoc.nodes ⊃ lotIndex: findIndex RoadDoc.lots': 1,
+      'whole-map-nested  src/items.ts quadratic  for kept(RoadDoc.lots) ⊃ indexOf RoadDoc.lots': 1,
+      'whole-map-per-item  src/items.ts lotIndex  findIndex RoadDoc.lots': 1,
+    });
+  });
+});
+
 describe('the code rules', () => {
   it('fire on what a frame reaches, and hold their escapes', () => {
     const dir = mkdtempSync(join(tmpdir(), 'check-code-'));

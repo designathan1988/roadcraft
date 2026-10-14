@@ -28,6 +28,7 @@ const indexes = new WeakMap<Network, CarriagewayIndex>();
 
 const cellKey = (ix: number, iy: number): number => ix * 100_003 + iy;
 
+/** @rebuild Called when the network moved (`net.revision`); otherwise returns the index it made. */
 function indexOf(net: Network): CarriagewayIndex {
   const known = indexes.get(net);
   if (known && known.revision === net.revision) return known;

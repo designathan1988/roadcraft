@@ -522,6 +522,7 @@ function lastGrown(doc: RoadDoc): Vec2 | null {
   return best ? { x: best.x, y: best.y } : null;
 }
 
+/** @perItem Runs once a building grown (`growSlice`, the 500 ms growth): nothing it reaches may walk the map. */
 export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number): number | null {
   const { doc } = ctx;
   const standing = (b: number | undefined): boolean => b !== undefined && doc.buildings.has(b as Parameters<typeof doc.buildings.has>[0]);
