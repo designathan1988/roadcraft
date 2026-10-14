@@ -515,14 +515,17 @@ export function createSceneRenderer(
   const anisotropy = Math.min(quality.anisotropy, maxAnisotropy);
 
   let gridWanted = false;
-  /** The blinks of cells under a road just laid (`flashGrid`), until each has faded. */
-  const gridFlashes: { mesh: Mesh; material: ShaderMaterial; start: number; end: number }[] = [];
-  /** A blink on the ground: triangles (three's x, height, -y) lighting up and fading, each by its ring's delay. */
-  const addBlink = (pos: readonly number[], ring: readonly number[]): void => {
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
-    geometry.setAttribute('aRing', new Float32BufferAttribute(ring, 1));
-    const material = new ShaderMaterial({
+  /** The blinks of cells under a road just laid (`flashGrid`), until each has faded; `time` seconds since each began. */
+  const gridFlashes: { mesh: Mesh; start: number; end: number; time: number }[] = [];
+  /**
+   * ONE material for every blink, made once: a material per road laid was an
+   * object made and disposed per edit (its program came from the cache, its
+   * uniforms and bindings did not). Each blink's own time goes into the
+   * shared uniform right before it is drawn (`onBeforeRender`, with
+   * `uniformsNeedUpdate` so three uploads it for that draw).
+   * NÃO voltar a criar um ShaderMaterial por lampejo.
+   */
+  const blinkMaterial = new ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `
         attribute float aRing; varying float vRing;
@@ -542,13 +545,23 @@ export function createSceneRenderer(
       // ground had at the click, the cut and fill that follows the road rose
       // through it and broke it into pieces (the player, 2026-10-06).
       transparent: true, depthWrite: false, depthTest: false, side: DoubleSide, blending: AdditiveBlending,
-    });
-    const mesh = new Mesh(geometry, material);
+  });
+  /** A blink on the ground: triangles (three's x, height, -y) lighting up and fading, each by its ring's delay. */
+  const addBlink = (pos: readonly number[], ring: readonly number[]): void => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    geometry.setAttribute('aRing', new Float32BufferAttribute(ring, 1));
+    const mesh = new Mesh(geometry, blinkMaterial);
     mesh.name = 'grid-flash';
     mesh.frustumCulled = false;
     mesh.renderOrder = 6;
+    const flash = { mesh, start: performance.now(), end: 0.8 + Math.max(0, ...ring) * 0.09, time: 0 };
+    mesh.onBeforeRender = () => {
+      blinkMaterial.uniforms['uTime']!.value = flash.time;
+      blinkMaterial.uniformsNeedUpdate = true;
+    };
     scene.add(mesh);
-    gridFlashes.push({ mesh, material, start: performance.now(), end: 0.8 + Math.max(0, ...ring) * 0.09 });
+    gridFlashes.push(flash);
   };
   /** Roads just laid, to blink once their heights are solved (`flashRoads`, `draw`). */
   const pendingRoadFlash: SegmentId[] = [];
@@ -3226,8 +3239,8 @@ export function createSceneRenderer(
       for (let i = gridFlashes.length - 1; i >= 0; i--) {
         const f = gridFlashes[i]!;
         const t = (performance.now() - f.start) / 1000;
-        f.material.uniforms['uTime']!.value = t;
-        if (t > f.end) { scene.remove(f.mesh); f.mesh.geometry.dispose(); f.material.dispose(); gridFlashes.splice(i, 1); }
+        f.time = t;
+        if (t > f.end) { scene.remove(f.mesh); f.mesh.geometry.dispose(); gridFlashes.splice(i, 1); }
         else onAssetsReady();
       }
       // The map stands on a plain dark blue: no sky and no land past its edge,
@@ -3588,6 +3601,7 @@ export function createSceneRenderer(
       agents.dispose();
       signals.dispose();
       buildings.dispose();
+      blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();
       disposeSurfaceReuse(surfaceReuse);
