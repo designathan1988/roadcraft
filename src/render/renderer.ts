@@ -64,7 +64,7 @@ import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
+import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { GRASS_MIN_ZOOM } from './grass';
 import { advanceWind, setWindWeather } from './wind';
@@ -3061,7 +3061,7 @@ export function createSceneRenderer(
           // (`uploads.ts` shadowStandIn).
           const shadows = new Group();
           for (const sample of compileSamples) {
-            const copy = sample.clone(false);
+            const copy = compileCopy(sample);
             copy.visible = true;
             warm.add(copy);
             const standIn = (sample as Mesh).isMesh ? shadowStandIn(sample as Mesh) : null;

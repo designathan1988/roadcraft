@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, MeshDepthMaterial, RGBADepthPacking, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Object3D, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
+import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshDepthMaterial, Object3D, RGBADepthPacking, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
 /**
  * Textures waiting to be sent to the GPU ahead of their first use.
@@ -77,9 +77,27 @@ export function shadowStandIn(mesh: Mesh): Mesh | null {
   depth.side = material.shadowSide ?? SHADOW_SIDE[material.side];
   depth.alphaTest = material.alphaToCoverage ? 0.5 : material.alphaTest;
   depth.map = material.map ?? null;
-  const copy = mesh.clone(false);
+  const copy = compileCopy(mesh) as Mesh;
   copy.material = depth;
   copy.visible = true;
+  return copy;
+}
+
+/**
+ * A copy of `object` to build its programs with: the same geometry, material
+ * and variant (instanced, with instance colours or not), where it stands.
+ * An instanced mesh's copy has ONE instance: NOT `clone`, which copies every
+ * instance's matrix and colour (`InstancedMesh.copy`) to compile a shader -
+ * thousands of a cell's parts copied for nothing, and nothing to copy at all
+ * once their arrays are let go on the GPU (`mesh/gpuOnly.ts`).
+ */
+export function compileCopy(object: Object3D): Object3D {
+  const instanced = object as InstancedMesh;
+  if (!instanced.isInstancedMesh) return object.clone(false);
+  const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
+  Object3D.prototype.copy.call(copy, instanced, false);
+  if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+  copy.morphTexture = instanced.morphTexture;
   return copy;
 }
 

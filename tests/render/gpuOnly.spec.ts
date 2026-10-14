@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type BufferAttribute, type Mesh, MeshBasicMaterial, type Object3D } from 'three';
+import { BoxGeometry, type BufferAttribute, Color, InstancedMesh, type Mesh, MeshBasicMaterial, type Object3D } from 'three';
+import { compileCopy, shadowStandIn } from '@render/uploads';
 
 import { createBuildingKit } from '@render/buildings/kit';
 import { createMassCells } from '@render/buildings/massCells';
@@ -48,6 +49,24 @@ function tile(dx: number): Tile {
 }
 
 describe('meshes that live on the GPU', () => {
+  it('are copied to build their programs without their instances (no array to copy)', () => {
+    const mesh = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 500);
+    mesh.setColorAt(0, new Color(1, 0, 0));
+    mesh.castShadow = true;
+    // Uploaded: its arrays let go (`gpuOnlyAttributes`).
+    (mesh.instanceMatrix as { array: ArrayLike<number> | null }).array = null;
+    (mesh.instanceColor as { array: ArrayLike<number> | null }).array = null;
+    expect(() => mesh.clone(false)).toThrow();
+    const copy = compileCopy(mesh) as InstancedMesh;
+    expect(copy.isInstancedMesh).toBe(true);
+    expect(copy.count).toBe(1);
+    expect(copy.geometry).toBe(mesh.geometry);
+    expect(copy.material).toBe(mesh.material);
+    expect(copy.instanceColor).not.toBeNull();
+    expect(copy.castShadow).toBe(true);
+    expect(shadowStandIn(mesh)).not.toBeNull();
+  });
+
   it('a road block lets its arrays go once uploaded, and takes them back the same', () => {
     const mesh = mergeTiles([tile(0), tile(2), tile(5)], { name: 'asphalt', material: new MeshBasicMaterial() })!;
     checks(mesh, mesh);
