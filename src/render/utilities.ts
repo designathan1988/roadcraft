@@ -77,6 +77,9 @@ import type { UtilityPole, UtilitySpan } from '@world/utilities';
  * `world/utilities.ts` for why the curve is a quadratic and not a `cosh`.
  */
 
+/** A pole's way to the kerb (`kerbward`), by pole, with where it stood and the roads' revision it was read at. */
+export type KerbCache = Map<PoleId, { x: number; y: number; revision: number; dir: { x: number; y: number } | null }>;
+
 export interface Utilities {
   readonly group: Group;
   readonly triangles: number;
@@ -153,6 +156,8 @@ export function buildUtilities(
   name = 'utilities',
   /** The built layer's spans kept from its last build (`WireChunk`); left out by the preview. */
   wireCache?: Map<string, WireChunk>,
+  /** The built layer's kerb directions kept from its last build (`KerbCache`); left out by the preview. */
+  kerbCache?: KerbCache,
 ): Utilities {
   const usedWires = wireCache ? new Set<string>() : null;
   const { poles, spans } = source;
@@ -199,11 +204,22 @@ export function buildUtilities(
    * footway belongs to: a corner's footway belongs to no one street, and a
    * corner pole used to fall back to its cross-arm and light the block.
    */
-  const roadward = (x: number, y: number): { x: number; y: number } | null => kerbward(net, { x, y }, m(6));
+  // Once a pole and kept from build to build while the pole and the roads
+  // stay: asked three times a pole of the whole map at every rebuild, it was
+  // most of the 66 rebuilds (9.5 s) a city of 1 280 m made as its power lines
+  // were laid (2026-10-14).
+  const kerbs: KerbCache = kerbCache ?? new Map();
+  const roadward = (pole: UtilityPole): { x: number; y: number } | null => {
+    const known = kerbs.get(pole.id);
+    if (known && known.x === pole.x && known.y === pole.y && known.revision === net.revision) return known.dir;
+    const dir = kerbward(net, { x: pole.x, y: pole.y }, m(6));
+    kerbs.set(pole.id, { x: pole.x, y: pole.y, revision: net.revision, dir });
+    return dir;
+  };
   // The arms, framed as a line crew frames them (`poleArms`): square to a
   // straight line, on the bisector of a bend, one per line at a corner. A
   // pole with no wire yet stands square to its street.
-  const framing = poleArms(poles, spans, (pole) => roadward(pole.x, pole.y) ?? { x: 0, y: 1 });
+  const framing = poleArms(poles, spans, (pole) => roadward(pole) ?? { x: 0, y: 1 });
 
   for (const pole of poles.values()) {
     const top = crown.get(pole.id);
@@ -252,7 +268,7 @@ export function buildUtilities(
     }
     // A pole-top transformer on some poles, hung on the side away from the street.
     if (pole.id % 5 === 3) {
-      const away = roadward(pole.x, pole.y) ?? frame?.arms[0] ?? { x: 0, y: 1 };
+      const away = roadward(pole) ?? frame?.arms[0] ?? { x: 0, y: 1 };
       cans.push({
         x: pole.x - away.x * (POLE_BASE_RADIUS + CAN_RADIUS),
         y: pole.y - away.y * (POLE_BASE_RADIUS + CAN_RADIUS),
@@ -264,7 +280,7 @@ export function buildUtilities(
     if (!pole.lamp) continue;
     // The light reaches out over the street, square to the kerb, whichever
     // way the wires run; off the streets, along the first arm.
-    const reach = roadward(pole.x, pole.y) ?? frame?.arms[0] ?? { x: 0, y: 1 };
+    const reach = roadward(pole) ?? frame?.arms[0] ?? { x: 0, y: 1 };
     const reachYaw = angleOf(reach);
     const headX = pole.x + reach.x * POLE_LAMP_REACH;
     const headY = pole.y + reach.y * POLE_LAMP_REACH;
@@ -333,6 +349,7 @@ export function buildUtilities(
     wireVertices += chunk.swing.length;
   }
   if (wireCache && usedWires) for (const key of wireCache.keys()) if (!usedWires.has(key)) wireCache.delete(key);
+  if (kerbCache) for (const id of kerbCache.keys()) if (!poles.has(id)) kerbCache.delete(id);
 
   const { metal, timber, housing, wireMaterial, porcelain, steel,
     mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = utilityParts();

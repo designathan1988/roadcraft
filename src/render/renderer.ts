@@ -78,7 +78,7 @@ import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { buildSigns, type SignLayer } from './signs';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
-import { buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, type Utilities, type WireChunk } from './utilities';
+import { type KerbCache, buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, type Utilities, type WireChunk } from './utilities';
 import { buildBarriers, type Barriers } from './barriers';
 import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
 import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
@@ -98,6 +98,8 @@ declare const __ROAD_TILES_HASH__: string | undefined;
 const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TILES_HASH__ ? __ROAD_TILES_HASH__ : null;
 /** How long the opening's roads wait for the kept tiles to be read, ms: past it they are built. */
 const KEPT_TILES_WAIT_MS = 3000;
+/** The pole layer built alone waits this many times what its last build cost (`utilitiesNextAt`): at most a quarter of the time. */
+const UTILITY_PACE = 3;
 /** The thinnest frame bars are 0.045 u wide: their shadows are subpixel below this zoom. */
 const FACADE_SHADOW_ZOOM = perM(27.5);
 /**
@@ -1586,6 +1588,18 @@ export function createSceneRenderer(
   let utilityRevision = -1;
   /** The built pole layer's span wires, kept from build to build: only the spans an edit moved are made again. */
   const utilityWires = new Map<string, WireChunk>();
+  /** And its poles' ways to the kerb (`KerbCache`), read again only for a pole or a road that moved. */
+  const utilityKerbs: KerbCache = new Map();
+  /**
+   * When the pole layer may be built again alone, ms (`rebuildWorld`): a
+   * build waits `UTILITY_PACE` times what the last one cost, as a brush dab
+   * waits on the last rebuild (`editor/terrainBrush.ts`). A city laying its
+   * power lines run by run moved the poles' revision every frame and rebuilt
+   * every pole of the map each time - 66 builds of up to 320 ms for a city
+   * of 1 280 m (2026-10-14), growing as the square of the map. A pole the
+   * player places is built at once: nothing was built just before.
+   */
+  let utilitiesNextAt = 0;
   /**
    * The pole layer alone, on its own revision: a pole edit moves only
    * `doc.utilityRevision` (see `RoadDoc`), so it rebuilds this and nothing else.
@@ -1601,7 +1615,7 @@ export function createSceneRenderer(
       utilities.dispose();
     }
     const atBuild = performance.now();
-    utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires);
+    utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires, utilityKerbs);
     world.add(utilities.group);
     builtTriangles += utilities.triangles;
     const atFurniture = performance.now();
@@ -1723,10 +1737,12 @@ export function createSceneRenderer(
       // A world being built builds the poles too (`worldSteps`): built here as
       // well, every road drawn made the poles and the furniture of the whole
       // map twice, the second time in one frame (52-63 ms on the player's map).
-      if (worldJob === null && utilityRevision !== net.doc.utilityRevision) {
+      if (worldJob === null && utilityRevision !== net.doc.utilityRevision && performance.now() >= utilitiesNextAt) {
         const atUtilities = performance.now();
         rebuildUtilities(net);
-        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end: performance.now() });
+        const end = performance.now();
+        utilitiesNextAt = end + (end - atUtilities) * UTILITY_PACE;
+        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end });
       }
       return;
     }
@@ -1874,7 +1890,7 @@ export function createSceneRenderer(
     const utilityBuilt = net.doc.utilityRevision;
     const keepUtilities = utilities !== null && utilityRevision === net.doc.utilityRevision
       && !blocksReach(blocks, [...net.doc.poles.values()].map((pole) => around(pole.x, pole.y, m(12))));
-    const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires);
+    const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires, utilityKerbs);
     performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
     // The placed things (benches, lamps, street trees) on the footways they stand on.
     const keepFurniture = furniture !== null && utilityRevision === net.doc.utilityRevision
