@@ -9,6 +9,19 @@ Atualizado: 2026-10-14 (noite). A versão longa anterior está no git (`git show
   começa com o commit "Herdado" (o trabalho dos agentes parados e o meu, não revisado). Eu leio
   cada diff, rodo o analisador no worktree e faço o merge. Ninguém edita a pasta principal.
 
+## Ramos antigos dos agentes (decididos em 2026-10-14 noite; os worktrees de .claude/worktrees saíram)
+- Removidos por inúteis ou já no main: a84faa1 (BufferAttribute = a08cb68), aa3046a (churrasqueiras =
+  05f8780), adf464a (um 4º diário sem leitor), a17828c (bancada com 2.568 arquivos copiados).
+- Guardados, eu reviso e junto DEPOIS das partes, conferindo no jogo: aece52d (lotes por grade
+  vetorial, sem LAY_SLICE_MS), a432aff (LOD dos prédios perto), a9b9ac5 (sombras em degrau),
+  a56be88 (câmera dentro do prédio; estado parado), a976623 (dono do estoque/vagas; parado),
+  ab4e4e8 (limite dos lotes e patamar das calçadas; parado).
+- Referência, não entram como estão (partem do origin/main e refazem "o tocado" à mão, fora do
+  Derived): a5fbde5 (zebras, calçadas, travessias) e a799a55 (grafo de faixas, conflitos, sinais).
+- Para a simulação em worker (depois): af5ce5d (tickInput, lockstep; tirar focus e populationShare).
+- Restam 4 pastas vazias em .claude/worktrees presas por algum processo; as junções já saíram.
+- Decisões do jogador mantidas: .githooks/pre-push e .claude/launch.json apagados ("deixe assim").
+
 ## Plano em vigor
 `docs/PLANO-ESPINHA-2026-10-14.md` (diretriz do jogador no topo: desempenho e qualidade em
 computadores diferentes, rumo à cidade sem limite; ler o código inteiro, identificar e corrigir;
