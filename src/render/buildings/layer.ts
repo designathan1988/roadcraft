@@ -7,7 +7,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
-import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk, signatureFloorOf } from './buildingMesh';
+import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk, fliesFlag, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_HYSTERESIS, DETAIL_PARTS, EMPTY_PARTS, FRAME_SIDE, FULL_DETAIL_PIXELS,
   HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, assembleByCell, chunkBytes, chunksByCell, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell, sameChunks,
@@ -16,7 +16,6 @@ import { createFlagLayer } from './flagLayer';
 import { buildSignature, disposeSignature, drawsSignature } from './signature';
 import { emitMassing, type MassingChunk } from './massing';
 import { createMassCells } from './massCells';
-import { createShellBatches } from './shellBatches';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 
 /**
@@ -154,9 +153,6 @@ export function createBuildingLayer(): BuildingLayer {
   /** The buildings from afar, a mesh a cell (`massCells.ts`). */
   const massCells = createMassCells(kit, BATCH_CELL);
   group.add(massCells.group);
-  /** The stored cells' shells, a `BatchedMesh` a finish (`shellBatches.ts`): one draw a finish for every cell near. */
-  const shellBatches = createShellBatches(kit);
-  group.add(shellBatches.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
@@ -411,13 +407,17 @@ export function createBuildingLayer(): BuildingLayer {
     const job = streaming;
     if (!job) {
       // Nothing to stream: the far buildings not made yet, while the cache has room.
-      if (backlog.length === 0 || fullBytes >= CHUNK_CACHE_BYTES) return changed;
+      if (backlog.length === 0) return changed;
       const until = workUntil(WARM_SLICE_MS);
       if (!until) return changed;
       let made = 0;
-      while (backlog.length && performance.now() < until && fullBytes < CHUNK_CACHE_BYTES) {
+      while (backlog.length && performance.now() < until) {
         const b = backlog.pop()!;
-        if (!chunks.has(b.id)) { drawn(b, groundAt, groundKey, pavedAt, naturalAt, true); made++; }
+        // Emitted for what the town reads of it (flags, lot ground), slimmed at
+        // once: a far building's arrays never sit in the heap. Kept whole, the
+        // town's far buildings filled the heap to its limit (4.4-5.1 GB,
+        // 2026-10-14) and the collector stalled every frame.
+        if (!chunks.has(b.id)) { drawn(b, groundAt, groundKey, pavedAt, naturalAt, true); slim(b.id); made++; }
       }
       if (made && (backlog.length === 0 || (backlog.length & 63) === 0)) flyFlags();
       return changed;
@@ -437,7 +437,7 @@ export function createBuildingLayer(): BuildingLayer {
       if (!job.assembling) {
         const next = job.todo.shift()!;
         job.assembling = { ...next, steps: assembleBuildingMeshesSteps(next.list, kit, false, false,
-          { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS, batches: shellBatches }) };
+          { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS }) };
       }
       const step = job.assembling.steps.next();
       if (!step.done) continue;
@@ -560,7 +560,7 @@ export function createBuildingLayer(): BuildingLayer {
             const old = next.stage.get(next.cell);
             if (old && sameChunks(old.chunks, next.list)) continue;
             warming.assembling = { ...next, steps: assembleBuildingMeshesSteps(next.list, kit, false, false,
-              { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS, batches: shellBatches }) };
+              { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS }) };
           }
           const job = warming.assembling;
           const step = job.steps.next();
@@ -604,7 +604,7 @@ export function createBuildingLayer(): BuildingLayer {
         // Only the cells drawn near have their detail; the rest stand as their
         // masses (`massCells`) and come in by `streamCells` when the eye nears.
         const nearSolid = solid.filter((b) => cellNear(cellOf(b)));
-        stored = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, cells, BATCH_CELL, COARSE_PARTS, stagedCells, shellBatches);
+        stored = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, cells, BATCH_CELL, COARSE_PARTS, stagedCells);
         details = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, detailCells, DETAIL_CELL, DETAIL_PARTS, stagedDetails);
         // Staged for a change overtaken by another: not used.
         for (const stage of [stagedCells, stagedDetails]) {
@@ -652,7 +652,8 @@ export function createBuildingLayer(): BuildingLayer {
         }
         cover.index(doc.buildings.all());
         lastShown = shown;
-        backlog = shown.filter((b) => !chunks.has(b.id));
+        // Far buildings flying a flag only (all: ~7 ms a frame for 40 s, 2026-10-14).
+        backlog = shown.filter((b) => !chunks.has(b.id) && fliesFlag(b));
         flyFlags();
         applyFacadeDetail();
         version++;
@@ -792,7 +793,6 @@ export function createBuildingLayer(): BuildingLayer {
       detailCells.clear();
       groundDigests.clear();
       ghost?.dispose();
-      shellBatches.dispose();
       kit.dispose();
       group.clear();
     },

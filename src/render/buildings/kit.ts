@@ -167,13 +167,6 @@ export interface BuildingKit {
   readonly material: Readonly<Record<PartKind, Material>>;
   /** The merged shell - walls, plinths, bands, roofs, steps - one material per finish, vertex coloured. */
   readonly shell: Readonly<Record<Finish, MeshStandardMaterial>>;
-  /**
-   * The same shells for the cells' lots (`shellBatches.ts`, a `BatchedMesh` a
-   * finish): their own materials, because three re-derives a material's
-   * program at every draw when a lot and a plain mesh share it
-   * (`WebGLRenderer` `setProgram`, `materialProperties.batching`).
-   */
-  readonly shellBatched: Readonly<Record<Finish, MeshStandardMaterial>>;
   /** Ghost materials for the placement / drag preview, tinted by validity. */
   readonly ghostShell: MeshStandardMaterial;
   readonly ghostParts: MeshStandardMaterial;
@@ -500,8 +493,6 @@ export function createBuildingKit(): BuildingKit {
   const tones = furnitureTones(furnitureGeometry);
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createFinishMaterials();
-  const shellBatched = createFinishMaterials();
-  for (const [finish, m] of Object.entries(shellBatched)) m.name = `building-${finish}-batched`;
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
     emissive: new Color(0x1d5a4a),
@@ -530,7 +521,7 @@ export function createBuildingKit(): BuildingKit {
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(shellBatched), ...Object.values(dimShell), ghostShell, ghostParts, dimParts, massing]);
+  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ghostShell, ghostParts, dimParts, massing]);
   const far: Partial<Record<PartKind, BufferGeometry>> = {
     frame: frameFarGeometry(),
     railing: railingFarGeometry(),
@@ -545,7 +536,6 @@ export function createBuildingKit(): BuildingKit {
     far,
     material,
     shell,
-    shellBatched,
     ghostShell,
     ghostParts,
     dimShell,

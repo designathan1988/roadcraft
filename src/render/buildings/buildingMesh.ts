@@ -97,7 +97,6 @@ import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, ma
 import type { FlagInstance } from './flagLayer';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
-import type { ShellBatches, ShellSlot } from './shellBatches';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
 let flagSink: FlagInstance[] | null = null;
@@ -117,7 +116,7 @@ const flagOf = (detail: RoofDetail): FlagDesign | null =>
 export interface BuildingMeshes {
   readonly group: Group;
   readonly triangles: number;
-  /** Shown or hidden as a whole: the group, and the shells in the finishes' lots when it has them (`shellBatches.ts`). */
+  /** Shown or hidden as a whole. */
   setVisible(visible: boolean): void;
   dispose(): void;
 }
@@ -127,8 +126,6 @@ export interface AssemblySelection {
   readonly parts: ReadonlySet<PartKind>;
   readonly shells: boolean;
   readonly furniture: boolean;
-  /** The finishes' lots the shells go into (a stored cell); without them, a `Mesh` a finish (a preview, a faded copy). */
-  readonly batches?: ShellBatches;
 }
 
 interface Placement {
@@ -3305,6 +3302,16 @@ function boundInstances(mesh: InstancedMesh): void {
 }
 
 /**
+ * Whether a building flies a flag: a spire or a lantern on its roof with a
+ * flag (`flagOf`). The buildings layer emits the far ones that do, for the
+ * flag layer; a far building with none is not emitted until its cell comes
+ * near (`layer.ts` backlog).
+ */
+export function fliesFlag(b: Building): boolean {
+  return b.volumes.some((v) => (v.roofDetails ?? []).some((d) => (d.kind === 'spire' || d.kind === 'lantern') && flagOf(d) !== null));
+}
+
+/**
  * A signature building's ground floor (`BuildingChunk.signatureFloor`) without
  * emitting it: what `signature.ts` draws the body at. The layer reads it for
  * the far buildings it has not emitted (`layer.ts`, the opening).
@@ -3473,9 +3480,6 @@ export function* assembleBuildingMeshesSteps(
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   const meshes: (Mesh | InstancedMesh)[] = [];
-  /** The shells in the finishes' lots (`batches`), one a finish. */
-  const slots: ShellSlot[] = [];
-  const batches = !ghost && !dim ? selection?.batches : undefined;
   let triangles = 0;
 
   for (const finish of selection?.shells === false ? [] : FINISHES) {
@@ -3489,15 +3493,10 @@ export function* assembleBuildingMeshesSteps(
     g.setAttribute('uv', new Float32BufferAttribute(shell.uv, 2));
     g.setAttribute('aDecay', new Float32BufferAttribute(shell.decay, 1));
     g.setIndex(new Uint32BufferAttribute(shell.index, 1));
-    if (batches) {
-      // Into its finish's lot: one draw for every cell's shells of this
-      // finish (`shellBatches.ts`). The lot copies the arrays and works out
-      // the bounds itself; this geometry is never drawn.
-      slots.push(batches.add(finish, g));
-      triangles += indices / 3;
-      yield;
-      continue;
-    }
+    // A Mesh a finish a cell, its arrays let go once on the GPU (below). NOT
+    // a BatchedMesh a finish for the town: three keeps a batch's whole
+    // capacity on the CPU (`BatchedMesh._initializeGeometry`), 1.1 GB of the
+    // heap for 8 M vertices (2026-10-14), and the game stalled on collection.
     g.computeBoundingSphere();
     // Here, in the sliced assembly, not in the frame that shows it: the
     // renderer reads every mesh's box for the tallest building (the shadows).
@@ -3630,7 +3629,6 @@ export function* assembleBuildingMeshesSteps(
     triangles,
     setVisible(visible) {
       group.visible = visible;
-      if (batches) for (const slot of slots) batches.setVisible(slot, visible);
     },
     dispose() {
       for (const mesh of meshes) {
@@ -3640,7 +3638,6 @@ export function* assembleBuildingMeshesSteps(
           mesh.dispose();
         } else mesh.geometry.dispose();
       }
-      if (batches) for (const slot of slots) batches.remove(slot);
       group.clear();
     },
   };
