@@ -234,3 +234,36 @@ export function createCoverIndex(): { index(buildings: Iterable<Building>): void
     },
   };
 }
+
+/** `list` grouped by cell key, each building mapped by `of` (nulls left out). */
+export function groupByCell<T>(list: readonly Building[], cellOf: (b: Building) => string, of: (b: Building) => T | null): Map<string, T[]> {
+  const byCell = new Map<string, T[]>();
+  for (const b of list) {
+    const value = of(b);
+    if (value === null) continue;
+    const cell = cellOf(b);
+    const out = byCell.get(cell);
+    if (out) out.push(value);
+    else byCell.set(cell, [value]);
+  }
+  return byCell;
+}
+
+/** The detail cells (`DETAIL_CELL`) inside a coarse cell (`BATCH_CELL`), by key. */
+export function detailKeysOf(coarseKey: string): string[] {
+  const comma = coarseKey.indexOf(',');
+  const i = Number(coarseKey.slice(0, comma)), j = Number(coarseKey.slice(comma + 1));
+  const per = Math.round(BATCH_CELL / DETAIL_CELL);
+  const out: string[] = [];
+  for (let di = 0; di < per; di++) for (let dj = 0; dj < per; dj++) out.push(`${i * per + di},${j * per + dj}`);
+  return out;
+}
+
+/** A cell's batch out of its cache and its group, disposed. */
+export function dropCell(cache: CellCache, key: string, owner: BuildingMeshes | null): void {
+  const known = cache.get(key);
+  if (!known) return;
+  owner?.group.remove(known.part.group);
+  known.part.dispose();
+  cache.delete(key);
+}

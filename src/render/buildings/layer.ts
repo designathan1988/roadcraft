@@ -7,10 +7,10 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
-import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk } from './buildingMesh';
+import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_HYSTERESIS, DETAIL_PARTS, EMPTY_PARTS, FRAME_SIDE, FULL_DETAIL_PIXELS,
-  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, assembleByCell, chunkBytes, chunksByCell, createCoverIndex, groundDigest, sameChunks,
+  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, assembleByCell, chunkBytes, chunksByCell, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell, sameChunks,
 } from './layerCells';
 import { createFlagLayer } from './flagLayer';
 import { buildSignature, disposeSignature, drawsSignature } from './signature';
@@ -31,12 +31,10 @@ import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
  *
  * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the
  * cell is drawn near by the error on the screen (`massCells.ts`); far, only its
- * masses stand. A cell coming near is emitted and put together a few ms a frame
- * and sent to the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES`
- * it lets meshes and arrays go (`slim`). Unreal's World Partition HLOD (detail
- * resident only within the loading range) and 3D Tiles' REPLACE refinement.
- * Every building's detail held was ~0.6 MB on the GPU and in the heap (R22):
- * 6 GB each for 10 000. NÃO voltar a montar o detalhe de todas as células.
+ * masses stand. A cell coming near is put together a few ms a frame and sent to
+ * the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES` its meshes
+ * go, its arrays as the cache allows (`slim`). Unreal's World Partition HLOD and
+ * 3D Tiles' REPLACE refinement. NÃO voltar a montar o detalhe de todas as células.
  */
 export interface BuildingPreviewInput {
   readonly building: Building;
@@ -309,12 +307,10 @@ export function createBuildingLayer(): BuildingLayer {
     if (known && !known.slim) fullBytes -= known.bytes;
   };
   /**
-   * A far building keeps only what the whole town reads of it - its flags, its
-   * lots' ground, its signature floor; the shell and part arrays, most of the
-   * heap of a town, go, to be emitted again if its cell comes near (`chunkFor`).
-   * Only past the cache budget (`trimChunkCache`), the cells least recently
-   * near first: slimmed at once, a far cell cost seconds of re-emission at
-   * every return of the camera.
+   * A far building keeps only what the whole town reads of it (flags, lots'
+   * ground, signature floor); the arrays go, emitted again if its cell comes
+   * near. Only past the cache budget (`trimChunkCache`), least recently near
+   * first: slimmed at once, a return of the camera cost seconds of re-emission.
    */
   const slim = (id: BuildingId): void => {
     const known = chunks.get(id);
@@ -323,8 +319,21 @@ export function createBuildingLayer(): BuildingLayer {
     const { shells: _shells, parts: _parts, furniture: _furniture, ...kept } = known.chunk;
     chunks.set(id, { ...known, chunk: { ...kept, shells: {}, parts: EMPTY_PARTS }, slim: true, bytes: 0 });
   };
-  /** The frame each cell of the town was last near (`levelOfDetail`): the order the cache lets cells go in. */
-  const cellSeen = new Map<string, number>();
+  /**
+   * The far buildings not emitted yet: emitted in the frames' spare slices
+   * (`streamCells`) while the cache has room, so a camera move finds them
+   * made and their flags fly; the opening emits only the cells near (the
+   * whole town emitted at the opening was most of its wait).
+   */
+  let backlog: Building[] = [];
+  /** The buildings shown, as last put together (`update`): the flags are read from their chunks. */
+  let lastShown: readonly Building[] = [];
+  const flyFlags = (): void => {
+    const flags = [];
+    for (const b of lastShown) { const f = chunks.get(b.id)?.chunk.flags; if (f) flags.push(...f); }
+    flagLayer.set(flags);
+  };
+  const cellSeen = new Map<string, number>(); // the frame each cell was last near: the cache's LRU order
   let frameNo = 0;
   /** Over the budget, the far cells' buildings are slimmed, least recently near first; the cells in detail are never. */
   const trimChunkCache = (): void => {
@@ -362,37 +371,15 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** The masses of these buildings by coarse cell, for `massCells.update`. */
   const massesByCell = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt,
-    naturalAt: GroundAt = groundAt): Map<string, MassingChunk[]> => {
-    const byCell = new Map<string, MassingChunk[]>();
-    for (const b of list) {
-      const mass = massFor(b, groundAt, groundKey, pavedAt, naturalAt);
-      const cell = cellOf(b);
-      let out = byCell.get(cell);
-      if (!out) byCell.set(cell, out = []);
-      if (mass) out.push(mass);
-    }
-    return byCell;
-  };
+    naturalAt: GroundAt = groundAt): Map<string, MassingChunk[]> =>
+    groupByCell(list, cellOf, (b) => massFor(b, groundAt, groundKey, pavedAt, naturalAt));
   /** The cells held near whatever the eye says: the building cut open (`near`), the one being edited (`dimmed`). */
-  const forcedCells = (shown: readonly Building[]): ReadonlySet<string> => {
-    const out = new Set<string>();
-    for (const b of shown) if ((dimmed !== undefined && b.id === dimmed) || (cutaway !== null && near(b))) out.add(cellOf(b));
-    return out;
-  };
-  /** A cell's detail let go: its batches, its detail cells' batches, its buildings' arrays. */
+  const forcedCells = (shown: readonly Building[]): ReadonlySet<string> =>
+    new Set(shown.filter((b) => (dimmed !== undefined && b.id === dimmed) || (cutaway !== null && near(b))).map(cellOf));
+  /** A cell's detail let go: its batches and its detail cells' batches (its buildings' arrays stay for the cache). */
   const releaseCell = (key: string): void => {
-    const known = cells.get(key);
-    if (known) { stored?.group.remove(known.part.group); known.part.dispose(); cells.delete(key); }
-    const comma = key.indexOf(',');
-    const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-    const per = Math.round(BATCH_CELL / DETAIL_CELL);
-    for (let di = 0; di < per; di++) {
-      for (let dj = 0; dj < per; dj++) {
-        const sub = `${i * per + di},${j * per + dj}`;
-        const d = detailCells.get(sub);
-        if (d) { details?.group.remove(d.part.group); d.part.dispose(); detailCells.delete(sub); }
-      }
-    }
+    dropCell(cells, key, stored);
+    for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
     farSince.delete(key);
   };
   /**
@@ -422,7 +409,19 @@ export function createBuildingLayer(): BuildingLayer {
       if (best !== null) streaming = { cell: best, queue: townCells.get(best)!, at: 0, uploads: 0, todo: null, assembling: null, made: [] };
     }
     const job = streaming;
-    if (!job) return changed;
+    if (!job) {
+      // Nothing to stream: the far buildings not made yet, while the cache has room.
+      if (backlog.length === 0 || fullBytes >= CHUNK_CACHE_BYTES) return changed;
+      const until = workUntil(WARM_SLICE_MS);
+      if (!until) return changed;
+      let made = 0;
+      while (backlog.length && performance.now() < until && fullBytes < CHUNK_CACHE_BYTES) {
+        const b = backlog.pop()!;
+        if (!chunks.has(b.id)) { drawn(b, groundAt, groundKey, pavedAt, naturalAt, true); made++; }
+      }
+      if (made && (backlog.length === 0 || (backlog.length & 63) === 0)) flyFlags();
+      return changed;
+    }
     const until = workUntil(WARM_SLICE_MS);
     if (!until) return changed;
     while (job.at < job.queue.length && performance.now() < until) drawn(job.queue[job.at++]!, groundAt, groundKey, pavedAt, naturalAt);
@@ -529,16 +528,16 @@ export function createBuildingLayer(): BuildingLayer {
         while (warming.at < warming.queue.length && performance.now() < until) {
           const b = warming.queue[warming.at++]!;
           if (!warming.massed) { massFor(b, groundAt, groundKey, pavedAt, naturalAt); continue; }
-          // Every building emitted (the whole town reads its flags, lot
-          // ground and signature floor); the far ones' arrays stay as long as
-          // the cache budget allows (`trimChunkCache`, after the swap).
-          drawn(b, groundAt, groundKey, pavedAt, naturalAt, !cellNear(cellOf(b)));
+          // The detail of the cells near; the far buildings wait in the
+          // backlog, emitted in the spare slices after the swap.
+          if (cellNear(cellOf(b))) drawn(b, groundAt, groundKey, pavedAt, naturalAt);
         }
         if (warming.at < warming.queue.length) return false;
         if (!warming.massed) {
           // The far level first, so the eye can say which cells need their detail.
           massCells.update(massesByCell(warming.queue, groundAt, groundKey, pavedAt, naturalAt));
           chooseNow();
+          townCells = groupByCell(warming.queue, cellOf, (b) => b); // the masses show at once (`holdMass`)
           warming.massed = true;
           warming.at = 0;
           return false;
@@ -635,7 +634,7 @@ export function createBuildingLayer(): BuildingLayer {
         // Signature buildings: their bodies, drawn with parts of their own (`signature.ts`).
         const keep = new Set<BuildingId>();
         for (const b of solid) {
-          const floor = drawn(b, groundAt, groundKey, pavedAt, naturalAt, true).signatureFloor;
+          const floor = chunks.get(b.id)?.chunk.signatureFloor ?? signatureFloorOf(b, naturalAt, pavedAt);
           if (floor === undefined) continue;
           keep.add(b.id);
           const sigKey = `${JSON.stringify(b)}|${floor}`;
@@ -652,7 +651,9 @@ export function createBuildingLayer(): BuildingLayer {
           signatures.delete(id);
         }
         cover.index(doc.buildings.all());
-        flagLayer.set(shown.flatMap((b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt, true).flags ?? []));
+        lastShown = shown;
+        backlog = shown.filter((b) => !chunks.has(b.id));
+        flyFlags();
         applyFacadeDetail();
         version++;
         rebuilt = true;

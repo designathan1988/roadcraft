@@ -2004,7 +2004,7 @@ mountAbout();
  * map replaced (one undo step), the planned streets laid, the lots cut and
  * zoned, then every lot built on, a slice of each frame until all stand.
  */
-let cityGrowth: { left: number; total: number; started: number } | null = null;
+let cityGrowth: { left: number; total: number; started: number; guard: number } | null = null;
 function generateCity(options: CityOptions): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
   const plan = planCity(options);
   const cityDoc = layCity(plan);
@@ -2021,7 +2021,7 @@ function generateCity(options: CityOptions): { roads: number; lots: number; zone
   const zoned = zoneCity(doc, plan);
   lotTool.refused.clear();
   lotTool.refusedFor(net.revision);
-  cityGrowth = { left: zoned, total: zoned, started: performance.now() };
+  cityGrowth = { left: zoned, total: zoned, started: performance.now(), guard: 0 };
   fitView();
   requestDraw();
   return { roads: doc.segments.size, lots: doc.lots.length, zoned, ...green };
@@ -2039,37 +2039,48 @@ cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:transla
 document.body.appendChild(cityProgress);
 function growCity(): void {
   if (!cityGrowth) return;
-  // The notice painted first, then every lot built in one go: between frames
-  // each new building set off the rebuilds that follow a building edit (the
-  // ground, the walkways, the bays, the lots), and the city grew at three
-  // buildings a second. Grown in one go, they follow once.
+  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame,
+  // the buildings held from the renderer until the last one (`holdBuildings`),
+  // so the page answers and the notice counts up. Built in one go, 1 348 lots
+  // froze the page for 3 s (2026-10-13); drawn one by one, each new building
+  // set off the rebuilds that follow a building edit, three buildings a second.
+  const growing = cityGrowth;
   if (cityProgress.style.display !== 'block') {
     cityProgress.style.display = 'block';
-    cityProgress.textContent = t('city.building', { done: 0, total: cityGrowth.total });
+    cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
+    scene.holdBuildings(true);
     requestDraw();
     return;
   }
-  const growing = cityGrowth;
-  cityGrowth = null;
-  setTimeout(() => caused('cidade gerada', () => {
-    for (let guard = 0; guard < growing.total * 3 + 50; guard++) {
+  const until = performance.now() + GROW_SLICE_MS;
+  let done = false;
+  caused('cidade gerada', () => {
+    while (performance.now() < until) {
+      if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
       const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
       if (id === null) {
         // A lot refused (nothing fits it) is set aside; done when none is left open.
         const open = doc.lots.some((l) => l.use && (l.building === undefined || !doc.buildings.has(l.building as BuildingId)) && !lotTool.refused.has(l.id));
-        if (!open) break;
+        if (!open) { done = true; break; }
         continue;
       }
       const fresh = doc.buildings.get(id as BuildingId);
       if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
+      growing.left--;
     }
-    cityBuiltIn = (performance.now() - growing.started) / 1000;
-    cityProgress.style.display = 'none';
-    persistence.saveSessionSoon(doc, sessionSettings);
-    updateStatus();
-    requestDraw();
-  }), 30);
+  });
+  cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
+  requestDraw();
+  if (!done) return;
+  cityGrowth = null;
+  cityBuiltIn = (performance.now() - growing.started) / 1000;
+  cityProgress.style.display = 'none';
+  scene.holdBuildings(false);
+  persistence.saveSessionSoon(doc, sessionSettings);
+  updateStatus();
 }
+/** Milliseconds a frame spent building the generated city's lots (`growCity`). */
+const GROW_SLICE_MS = 100;
 /** Seconds the last generated city took, from the call to its last building (probes). */
 let cityBuiltIn = 0;
 

@@ -3304,6 +3304,17 @@ function boundInstances(mesh: InstancedMesh): void {
   mesh.boundingSphere = mesh.boundingBox!.getBoundingSphere(new Sphere());
 }
 
+/**
+ * A signature building's ground floor (`BuildingChunk.signatureFloor`) without
+ * emitting it: what `signature.ts` draws the body at. The layer reads it for
+ * the far buildings it has not emitted (`layer.ts`, the opening).
+ */
+export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
+  if (!drawsSignature(b)) return undefined;
+  const resolved = resolveBlocks(b);
+  return resolved.volumes.some((v) => !v.open) ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+}
+
 export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
