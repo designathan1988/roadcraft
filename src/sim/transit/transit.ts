@@ -61,6 +61,13 @@ const KEEP_CLEAR = m(20);
 /** A level crossing closes when a train is this far from it. */
 const CROSSING_WARN = m(160);
 const NONE: number[] = [];
+
+/** Whether two loops run through the same points. */
+function samePoints(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i]!.x !== b[i]!.x || a[i]!.y !== b[i]!.y) return false;
+  return true;
+}
 /** Cars of a train, length of one. */
 const TRAIN_CARS = 4, METRO_CARS = 3, CAR_LENGTH = m(18);
 
@@ -158,19 +165,44 @@ export class TransitSim {
       const lane = laneBeside(w, s.x, s.y, s.segment);
       if (lane) this.stopLanes.set(s.id, lane);
     }
-    // Buses of lines gone come off the road.
+    // The buses of a line still running stay on the road, where they are,
+    // each sent on again to its next stop (its lane may be another now:
+    // `stepBus` sends a bus with no stop); only those of a line gone, or
+    // past its number of buses, come off. DO NOT take every bus off the road
+    // here: this runs at every edit of the roads, and every bus of the town
+    // vanished and was made again at its terminal for a road drawn anywhere.
+    const before = new Map<number, Bus[]>();
     for (const b of this.buses) {
-      if (b.id !== null) { const v = w.vehicles.get(b.id); if (v) w.removeVehicle(v); }
+      const list = before.get(b.line);
+      if (list) list.push(b); else before.set(b.line, [b]);
     }
     this.buses = [];
+    const kept = new Set<Bus>();
     for (const line of t.lines) {
       if (line.mode !== 'bus') continue;
       const served = line.stops.filter((id) => this.stopLanes.has(id));
       if (served.length < 2) continue;
       // From a terminal, if the line has one.
       const start = Math.max(0, line.stops.findIndex((id) => this.stops.get(id)?.terminal));
+      const was = before.get(line.id) ?? [];
       for (let k = 0; k < line.vehicles; k++) {
-        this.buses.push({ line: line.id, id: null, next: start, dir: 1, dwell: 0, wait: k * BUS_SPACING, riders: new Set(), staff: null });
+        const bus = was[k];
+        if (!bus) {
+          this.buses.push({ line: line.id, id: null, next: start, dir: 1, dwell: 0, wait: k * BUS_SPACING, riders: new Set(), staff: null });
+          continue;
+        }
+        if (bus.next >= line.stops.length) { bus.next = start; bus.dir = 1; }
+        const v = bus.id !== null ? w.vehicles.get(bus.id) : undefined;
+        if (v) v.commute = null;
+        kept.add(bus);
+        this.buses.push(bus);
+      }
+    }
+    for (const list of before.values()) {
+      for (const b of list) {
+        if (kept.has(b)) continue;
+        if (b.id !== null) { const v = w.vehicles.get(b.id); if (v) w.removeVehicle(v); }
+        for (const r of b.riders) this.dropRider(r);
       }
     }
     // Each train station's platform: beside its track, on the left of the track's way.
@@ -187,7 +219,9 @@ export class TransitSim {
       }
       this.platforms.set(st.id, { x: st.x - Math.sin(yaw) * PLATFORM, y: st.y + Math.cos(yaw) * PLATFORM });
     }
+    const railsBefore = new Map(this.rails.map((r) => [r.line.id, r]));
     this.rails = [];
+    this.crossingsByLane.clear();
     const graphs: Record<'train' | 'metro', RailGraph> = { train: railGraph(t, 'train'), metro: railGraph(t, 'metro') };
     for (const line of t.lines) {
       if (line.mode === 'bus') continue;
@@ -226,17 +260,36 @@ export class TransitSim {
       // The loop turns back at the first station and at the last one out.
       // A mark on the point the loop closed on (the one taken off above) is its first.
       const stationsOn = marks.map((mk, i) => ({ stop: mk.stop, s: at[mk.index % points.length]!, turn: i === 0 || i === stations.length - 1 }));
-      const trains: Train[] = [];
-      for (let k = 0; k < line.vehicles; k++) {
+      // The trains running on a loop that is the same keep running where they
+      // are. DO NOT put them back at their starts at every edit of the roads:
+      // a road drawn anywhere made every train of the town jump.
+      const was = railsBefore.get(line.id);
+      const same = was !== undefined && was.trains.length === line.vehicles && samePoints(was.points, points) &&
+        was.stations.length === stationsOn.length && was.stations.every((st, i) => st.stop === stationsOn[i]!.stop && st.s === stationsOn[i]!.s);
+      const trains: Train[] = same ? was.trains : [];
+      for (let k = 0; !same && k < line.vehicles; k++) {
         const s = (length * k) / line.vehicles;
         const next = stationsOn.findIndex((st) => st.s >= s);
         trains.push({ line: line.id, key: `${line.id}:${k}`, s, v: 0, next: next < 0 ? 0 : next, dwell: 0, riders: new Set() });
       }
       // Level crossings: where the loop crosses a lane of a road (the metro runs under them all).
       const crossings = line.mode === 'train' ? levelCrossings(w, points, at) : [];
-      this.rails.push({ line, crossings, points, at, length, stations: stationsOn, trains });
+      const rail: RailLine = { line, crossings, points, at, length, stations: stationsOn, trains };
+      this.rails.push(rail);
+      for (const c of crossings) {
+        const list = this.crossingsByLane.get(c.lanelet);
+        if (list) list.push({ rail, crossing: c }); else this.crossingsByLane.set(c.lanelet, [{ rail, crossing: c }]);
+      }
     }
   }
+
+  /**
+   * The level crossings by lane, in the order of the lines and of each line's
+   * crossings: what every vehicle asks of the lanes ahead of it, every tick
+   * (`crossingNearEnd`, `closedOn`). DO NOT walk every line's crossings for
+   * a lane: every crossing of the town, for each vehicle and each lane ahead.
+   */
+  private readonly crossingsByLane = new Map<string, { readonly rail: RailLine; readonly crossing: LevelCrossing }[]>();
 
   /** One tick of every line. */
   step(w: SimWorld): void {
@@ -407,17 +460,15 @@ export class TransitSim {
    */
   crossingNearEnd(lanelet: string, length: number): number | null {
     let out: number | null = null;
-    for (const rail of this.rails) {
-      for (const c of rail.crossings) {
-        if (c.lanelet === lanelet && length - c.at < KEEP_CLEAR && (out === null || c.at < out)) out = c.at;
-      }
+    for (const { crossing: c } of this.crossingsByLane.get(lanelet) ?? NO_CROSSINGS) {
+      if (length - c.at < KEEP_CLEAR && (out === null || c.at < out)) out = c.at;
     }
     return out;
   }
 
   /** True when a level crossing lies within `reach` of `at` along a lane (open or closed). */
   crossingNear(lanelet: string, at: number, reach: number): boolean {
-    for (const rail of this.rails) for (const c of rail.crossings) if (c.lanelet === lanelet && Math.abs(c.at - at) < reach) return true;
+    for (const { crossing: c } of this.crossingsByLane.get(lanelet) ?? NO_CROSSINGS) if (Math.abs(c.at - at) < reach) return true;
     return false;
   }
 
@@ -428,15 +479,12 @@ export class TransitSim {
    */
   closedOn(lanelet: string): number[] {
     let out: number[] | null = null;
-    for (const rail of this.rails) {
-      for (const c of rail.crossings) {
-        if (c.lanelet !== lanelet) continue;
-        const n = rail.line.mode === 'metro' ? METRO_CARS : TRAIN_CARS;
-        for (const train of rail.trains) {
-          // Ahead of the train, coming up; or under it, its cars still across.
-          const ahead = (c.loopS - train.s + rail.length) % rail.length;
-          if (ahead < CROSSING_WARN || ahead > rail.length - n * CAR_LENGTH - m(10)) { (out ??= []).push(c.at); break; }
-        }
+    for (const { rail, crossing: c } of this.crossingsByLane.get(lanelet) ?? NO_CROSSINGS) {
+      const n = rail.line.mode === 'metro' ? METRO_CARS : TRAIN_CARS;
+      for (const train of rail.trains) {
+        // Ahead of the train, coming up; or under it, its cars still across.
+        const ahead = (c.loopS - train.s + rail.length) % rail.length;
+        if (ahead < CROSSING_WARN || ahead > rail.length - n * CAR_LENGTH - m(10)) { (out ??= []).push(c.at); break; }
       }
     }
     return out ?? NONE;
@@ -611,7 +659,6 @@ export class TransitSim {
   busIds(): VehicleId[] { return this.buses.map((b) => b.id).filter((id): id is VehicleId => id !== null); }
 }
 
-/** Where segment a-b crosses segment p-q: the share along each, or null. */
 /**
  * Slack round a leg's box when the lanes are looked up by it: a crossing's
  * `u` and `v` are worked out in floating point, and one found at the very end
@@ -650,6 +697,9 @@ export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonl
   return found.map((f) => f.crossing);
 }
 
+const NO_CROSSINGS: readonly { readonly rail: RailLine; readonly crossing: LevelCrossing }[] = [];
+
+/** Where segment a-b crosses segment p-q: the share along each, or null. */
 function crossAt(a: Vec2, b: Vec2, p: Vec2, q: Vec2): { u: number; v: number } | null {
   const rx = b.x - a.x, ry = b.y - a.y, sx = q.x - p.x, sy = q.y - p.y;
   const den = rx * sy - ry * sx;
