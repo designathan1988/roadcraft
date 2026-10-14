@@ -169,11 +169,15 @@ function plateCanvas(type: SignType, text: string): HTMLCanvasElement {
 /** The segments a street's name runs along: the one under the point, carried straight on through its nodes. */
 function streetChain(net: Network, at: Vec2): SegmentId[] {
   let seed: SegmentId | null = null, best = Infinity;
-  for (const ribbon of net.ribbons.values()) {
+  // Only the ribbons within the reach a seed may be found at, filed by place,
+  // in the order of `ribbons` (the first of equals is the same one): NOT every
+  // ribbon of the map for every name sign (docs/AUDITORIA-2026-10-14.md C3).
+  const reach = m(30);
+  for (const ribbon of net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
     const d = ribbon.full.distanceTo(at);
     if (d < best) { best = d; seed = ribbon.id; }
   }
-  if (seed === null || best > m(30)) return [];
+  if (seed === null || best > reach) return [];
   const doc = net.doc;
   const chain = new Set<SegmentId>([seed]);
   const dirAt = (seg: SegmentId, node: NodeId): Vec2 | null => {
