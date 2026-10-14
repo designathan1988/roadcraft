@@ -298,6 +298,11 @@ export interface SceneHandle {
    * once, when it is let go.
    */
   holdBuildings(on: boolean): void;
+  /**
+   * While a generated city's lines are laid, run by run, the pole layer is
+   * not built: once, when it is let go (`utilitiesHeld`).
+   */
+  holdUtilities(on: boolean): void;
   /** A shot: a tracer from the muzzle to where it struck, and the muzzle's flash (world x, y, height). */
   shot(from: readonly [number, number, number], to: readonly [number, number, number]): void;
   /**
@@ -1602,6 +1607,16 @@ export function createSceneRenderer(
    */
   let utilitiesNextAt = 0;
   /**
+   * A generated city's lines being laid (`holdUtilities`): the pole layer is
+   * derived data whose source changes every frame while nothing needs it -
+   * the city is under its progress notice - so it is made once, at the
+   * checkpoint, when the lines are done (Nystrom, "Dirty Flag": clean "at
+   * defined checkpoints", as a loading screen). Laid run by run, the layer
+   * was rebuilt 24 s of 120 in a city of 2 560 m, and each rebuild sent its
+   * new meshes to the GPU again (19 s of `bufferData`, 2026-10-14).
+   */
+  let utilitiesHeld = false;
+  /**
    * The pole layer alone, on its own revision: a pole edit moves only
    * `doc.utilityRevision` (see `RoadDoc`), so it rebuilds this and nothing else.
    * @rebuild Called when the utility revision moved.
@@ -1738,7 +1753,7 @@ export function createSceneRenderer(
       // A world being built builds the poles too (`worldSteps`): built here as
       // well, every road drawn made the poles and the furniture of the whole
       // map twice, the second time in one frame (52-63 ms on the player's map).
-      if (worldJob === null && utilityRevision !== net.doc.utilityRevision && performance.now() >= utilitiesNextAt) {
+      if (worldJob === null && !utilitiesHeld && utilityRevision !== net.doc.utilityRevision && performance.now() >= utilitiesNextAt) {
         const atUtilities = performance.now();
         rebuildUtilities(net);
         const end = performance.now();
@@ -2617,6 +2632,9 @@ export function createSceneRenderer(
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
     holdBuildings(on) {
       buildingsHeld = on;
+    },
+    holdUtilities(on) {
+      utilitiesHeld = on;
     },
     flashGrid(cells) {
       if (!cells.length) return;
