@@ -368,7 +368,7 @@ export function buildSigns(net: Network, elevation: RoadElevation, items: Iterab
   /** The plates' quads, merged into one mesh at the end. */
   const position: number[] = [], normal: number[] = [];
   /** Each quad's cell on the sheet, its uv filled in at the end (`cellUv`). */
-  const quads: { readonly cell: number; readonly h: number }[] = [];
+  const quads: Placed[] = [];
   const corner = new Vector3();
   const matrix = new Matrix4();
   // `yaw` turns the plate (a quad facing three's +Z) so its face looks along world (sin yaw, -cos yaw).
@@ -436,40 +436,66 @@ export function buildSigns(net: Network, elevation: RoadElevation, items: Iterab
     posts.forEach((matrix, i) => poles.setMatrixAt(i, matrix));
     poles.castShadow = true;
     poles.computeBoundingSphere();
+    // Its instance matrices are a buffer of their own on the GPU, let go with the
+    // layer (`InstancedMesh.dispose`); the post's shape is the module's.
+    owned.push(poles);
     group.add(poles);
   }
-  if (position.length && atlas) {
+  if (position.length) {
+    // The quads sheet by sheet, so each sheet is one group (one draw) of the one mesh.
+    const rank = new Map(sheets.map((sheet, i) => [sheet, i]));
+    const order = quads.map((_, q) => q).sort((a, b) => rank.get(quads[a]!.sheet)! - rank.get(quads[b]!.sheet)!);
+    const positions = new Float32Array(quads.length * 18), normals = new Float32Array(quads.length * 18);
     const uv = new Float32Array(quads.length * 12);
-    quads.forEach(({ cell, h }, q) => {
-      const c = cellUv(cell, h);
-      QUAD_ORDER.forEach((i, k) => {
-        uv[q * 12 + k * 2] = QUAD[i]![0] < 0 ? c.u0 : c.u1;
-        uv[q * 12 + k * 2 + 1] = QUAD[i]![1] < 0 ? c.v0 : c.v1;
-      });
-    });
     const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(new Float32Array(position), 3));
-    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normal), 3));
+    const materials: MeshStandardMaterial[] = [];
+    order.forEach((q, slot) => {
+      for (let k = 0; k < 18; k++) {
+        positions[slot * 18 + k] = position[q * 18 + k]!;
+        normals[slot * 18 + k] = normal[q * 18 + k]!;
+      }
+      const c = cellUv(quads[q]!);
+      QUAD_ORDER.forEach((i, k) => {
+        uv[slot * 12 + k * 2] = QUAD[i]![0] < 0 ? c.u0 : c.u1;
+        uv[slot * 12 + k * 2 + 1] = QUAD[i]![1] < 0 ? c.v0 : c.v1;
+      });
+      const material = quads[q]!.sheet.material;
+      if (materials[materials.length - 1] !== material) {
+        materials.push(material);
+        geometry.addGroup(slot * 6, 0, materials.length - 1);
+      }
+      geometry.groups[geometry.groups.length - 1]!.count += 6;
+    });
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new BufferAttribute(uv, 2));
     geometry.computeBoundingSphere();
     owned.push(geometry);
-    const faces = new Mesh(geometry, atlas.material);
+    const faces = new Mesh(geometry, materials);
     faces.name = 'sign-plates';
     faces.castShadow = true;
     group.add(faces);
   }
-  // The cells no sign of this build reads: free for the next plate.
-  if (atlas) {
-    for (const [key, kept] of atlas.cells) {
-      if (kept.build === builds) continue;
-      atlas.cells.delete(key);
-      atlas.free.push(kept.cell);
-    }
+  // The cells no sign of this build reads: free for the next plate. A sheet left
+  // with none is let go (texture and material): the old build's mesh that drew it
+  // is taken out of the scene before this one is made (renderer.ts).
+  for (const [key, kept] of placed) {
+    if (kept.build === builds) continue;
+    placed.delete(key);
+    kept.sheet.free.push(kept.cell);
+    kept.sheet.used--;
+  }
+  for (let i = sheets.length - 1; i >= 0; i--) {
+    const sheet = sheets[i]!;
+    if (sheet.used > 0) continue;
+    sheet.texture.dispose();
+    sheet.material.dispose();
+    sheets.splice(i, 1);
   }
   return {
     group,
     dispose() {
-      // The plates' sheet stays for the next build (`atlas`).
+      // The plates' sheets stay for the next build (`sheets`).
       for (const o of owned) o.dispose();
       group.clear();
     },
