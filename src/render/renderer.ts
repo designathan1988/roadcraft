@@ -58,7 +58,8 @@ import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
-import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, buildGardens, buildScenery, buildStreetFurniture, createSceneryKit, plantSamples, type GardenPlant, type Scenery, type SceneryKit } from './scenery';
+import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, buildScenery, buildStreetFurniture, createSceneryKit, plantSamples, type Scenery, type SceneryKit } from './scenery';
+import { createGardens, type GardenPlant, type Gardens } from './gardens';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
@@ -1042,7 +1043,7 @@ export function createSceneRenderer(
   /** The scenery the building footprints were last cut out of. */
   let excludedFor: { scenery: Scenery | null; site: string | null } = { scenery: null, site: null };
   /** The buildings' garden plants, and the buildings and ground they were planted for. */
-  let gardens: Scenery | null = null;
+  let gardens: Gardens | null = null;
   /** The painted rocks and scrub and the stones of the rivers (`coverSweep`, `coverKeep`). */
   let cover: GroundCover | null = null;
   /** The ecosystem's stand-in trees, when the countryside's models could not be grown. */
@@ -2952,14 +2953,10 @@ export function createSceneRenderer(
       }
       const gardenKey = plantSignature(net.doc);
       if (groundSettled && onGround.gardens.stale(gardenKey, plantsArea)) {
-        if (gardens) {
-          for (const mesh of gardens.meshes) world.remove(mesh);
-          gardens.dispose();
-        }
         // Each building's plants sampled on the ground again only when they
         // changed or a change of the ground reached its bank.
         // Each building's list kept as it is: the gardens are packed per list
-        // (`scenery.ts` `gardenPack`), a list unchanged is not placed again.
+        // (`gardens.ts` `gardenPack`), a list unchanged is not placed again.
         const plants: (readonly GardenPlant[])[] = [];
         const seen = new Set<number>();
         for (const b of net.doc.buildings.all()) {
@@ -2976,8 +2973,11 @@ export function createSceneRenderer(
           plants.push(own);
         }
         for (const id of [...gardenCache.keys()]) if (!seen.has(id)) gardenCache.delete(id);
-        gardens = buildGardens(plants, sceneryKit);
-        for (const mesh of gardens.meshes) world.add(mesh);
+        // Kept building by building (`gardens.ts`): a list the same as before keeps its plants' slots.
+        gardens ??= createGardens(sceneryKit);
+        const swapped = gardens.update(plants);
+        for (const mesh of swapped.removed) world.remove(mesh);
+        for (const mesh of swapped.added) world.add(mesh);
       }
       // THE PLANTS AND STONES (`coverSweep`/`coverKeep`, `natureSweep`/
       // `natureKeep`, the planted trees): swept again when the land, the

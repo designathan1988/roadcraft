@@ -30,7 +30,6 @@
  "heavy-call-per-frame  src/render/people/proceduralCrowd.ts woundUnit  computeBoundingBox": 1,
  "heavy-call-per-frame  src/render/renderer.ts plantTextOf  JSON.stringify": 1,
  "heavy-call-per-frame  src/render/renderer.ts watchRoads  JSON.stringify": 1,
- "heavy-call-per-frame  src/render/scenery.ts buildPacked  computeBoundingSphere": 1,
  "heavy-call-per-frame  src/render/terrain.ts rebuildWater  computeBoundingBox": 1,
  "heavy-call-per-frame  src/render/terrain.ts shapeToRoads  computeBoundingSphere": 1,
  "heavy-call-per-frame  src/render/terrain.ts slabGeometry  computeBoundingSphere": 1,

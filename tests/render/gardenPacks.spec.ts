@@ -1,35 +1,76 @@
 import { describe, expect, it } from 'vitest';
-import type { InstancedMesh } from 'three';
-import { buildGardens, createSceneryKit, type GardenPlant } from '@render/scenery';
+import { Frustum, Matrix4, type InstancedMesh } from 'three';
+import { createSceneryKit } from '@render/scenery';
+import { buildGardens, createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { m } from '@world/units';
 
 /**
- * The gardens are packed building by building (`scenery.ts` `gardenPack`,
- * audit M3a): the town's meshes copied from the packs must be the very
- * instances one pass over every plant in the same order places.
+ * The gardens are packed building by building and kept so (`gardens.ts`,
+ * audit M3a): the town's plants drawn from the buildings' runs must be the
+ * very instances one pass over every plant places, and a garden that came,
+ * went or changed leaves the others where they were - the same plants a
+ * town built afresh draws.
  */
 const plant = (i: number, kind: GardenPlant['kind']): GardenPlant => ({
   kind, x: m(3) * i, y: m(2) * (i % 5), z: m(0.1) * (i % 3), w: m(2) + (i % 4) * m(0.5), d: m(1.5), h: m(2) + (i % 3), yaw: i * 0.7, seed: (i * 0.137) % 1,
 });
 const KINDS: GardenPlant['kind'][] = ['tree', 'shrub', 'hedge', 'flowers'];
+const garden = (g: number): GardenPlant[] => Array.from({ length: 9 }, (_, i) => plant(g * 9 + i, KINDS[(g + i) % 4]!));
+/** A view that sees everything. */
+const everything = new Frustum().setFromProjectionMatrix(new Matrix4().makeOrthographic(-1e7, 1e7, 1e7, -1e7, -1e7, 1e7));
+let views = 0;
+
+/** Each mesh's drawn instances, by name: matrix and tint of each, in their order. */
+function drawn(gardens: Gardens): Map<string, string[]> {
+  gardens.cull(everything, new Matrix4().makeTranslation(++views, 0, 0));
+  const out = new Map<string, string[]>();
+  for (const mesh of gardens.meshes as InstancedMesh[]) {
+    const rows: string[] = [];
+    const mats = mesh.instanceMatrix.array, tints = mesh.instanceColor?.array;
+    for (let i = 0; i < mesh.count; i++) rows.push(`${Array.from(mats.slice(i * 16, i * 16 + 16)).join(',')}|${tints ? Array.from(tints.slice(i * 3, i * 3 + 3)).join(',') : ''}`);
+    out.set(mesh.name, rows);
+  }
+  return out;
+}
+/** The meshes with something drawn (a store all of whose gardens went keeps its mesh, drawing nothing). */
+const drawing = (map: Map<string, string[]>): Map<string, string[]> => new Map([...map].filter(([, r]) => r.length));
+const sorted = (map: Map<string, string[]>): Map<string, string[]> => new Map([...drawing(map)].map(([k, r]) => [k, [...r].sort()]));
 
 describe('garden packs', () => {
+  const kit = createSceneryKit();
+
   it('per-building packs give the instances of one list of every plant', () => {
-    const kit = createSceneryKit();
-    const groups = [0, 1, 2, 3].map((g) => Array.from({ length: 9 }, (_, i) => plant(g * 9 + i, KINDS[(g + i) % 4]!)));
+    const groups = [0, 1, 2, 3].map(garden);
     const split = buildGardens(groups, kit);
     const whole = buildGardens([groups.flat()], kit);
     expect(split.meshes.map((x) => x.name)).toEqual(whole.meshes.map((x) => x.name));
-    split.meshes.forEach((mesh, i) => {
-      const other = whole.meshes[i] as InstancedMesh;
-      expect(mesh.count).toBe(other.count);
-      expect(Array.from(mesh.instanceMatrix.array)).toEqual(Array.from(other.instanceMatrix.array));
-      expect(mesh.instanceColor ? Array.from(mesh.instanceColor.array) : null).toEqual(other.instanceColor ? Array.from(other.instanceColor.array) : null);
-      expect(mesh.castShadow).toBe(other.castShadow);
-    });
-    // The same list again is not placed again: its pack is kept.
-    const again = buildGardens(groups, kit);
-    expect(again.meshes.length).toBe(split.meshes.length);
+    expect(drawn(split)).toEqual(drawn(whole));
+    split.meshes.forEach((mesh, i) => expect(mesh.castShadow).toBe(whole.meshes[i]!.castShadow));
     expect(split.triangles).toBeGreaterThan(0);
+  });
+
+  it('kept garden by garden, draw the plants of the town built afresh', () => {
+    const lists = Array.from({ length: 40 }, (_, g) => garden(g));
+    const gardens = createGardens(kit);
+    const shown = new Set<InstancedMesh>();
+    const apply = (groups: readonly (readonly GardenPlant[])[]): void => {
+      const { removed, added } = gardens.update(groups);
+      for (const mesh of removed) { expect(shown.has(mesh)).toBe(true); shown.delete(mesh); }
+      for (const mesh of added) shown.add(mesh);
+    };
+    // Grown a few at a time, as a city grows.
+    for (let n = 4; n <= 40; n += 4) apply(lists.slice(0, n));
+    expect(sorted(drawn(gardens))).toEqual(sorted(drawn(buildGardens(lists, kit))));
+    // Some gone, some changed (a new list for the same building), the rest kept.
+    const changed = lists.map((list, g) => (g % 3 === 0 ? garden(g + 100) : list)).filter((_, g) => g % 5 !== 1);
+    apply(changed);
+    expect(sorted(drawn(gardens))).toEqual(sorted(drawn(buildGardens(changed, kit))));
+    // Most gone: packed again in the town's order - the very order of a town built afresh.
+    const few = changed.slice(0, 6);
+    apply(few);
+    expect(drawing(drawn(gardens))).toEqual(drawing(drawn(buildGardens(few, kit))));
+    // The meshes in the scene are the ones it has.
+    expect(new Set(gardens.meshes)).toEqual(shown);
+    gardens.dispose();
   });
 });

@@ -8,7 +8,6 @@ import {
   DynamicDrawUsage,
   FrontSide,
   Frustum,
-  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Sphere,
@@ -254,6 +253,8 @@ export function createSceneryKit(): SceneryKit {
   const bushes = Object.fromEntries(bushModels.map(([k, p]) => [k, p.body])) as Record<BushKind, BufferGeometry>;
   const cards: Partial<Record<TreeSpecies | BushKind, BufferGeometry>> = {};
   for (const [kind, parts] of [...treeModels, ...bushModels]) if (parts.cards) cards[kind] = parts.cards;
+  // Each plant model's sphere, once: what the instances' culling grows (`gardens.ts`, `build`).
+  for (const g of [...Object.values(trees), ...Object.values(bushes), ...Object.values(cards)]) g?.computeBoundingSphere();
   const treeCardKit = leafCardMaterials(TREE_WIND, 'tree');
   const shrubCardKit = leafCardMaterials(BUSH_WIND, 'bush');
   const furniture = {
@@ -452,7 +453,7 @@ export interface Scenery {
  * How far outside the view an instance is still drawn, world units: the
  * longest shadow a tree can throw into the picture from beyond its edge.
  */
-const SHADOW_REACH = m(28);
+export const SHADOW_REACH = m(28);
 
 /**
  * Every instance of one mesh, kept apart from what is drawn.
@@ -575,7 +576,7 @@ function boundsOf(spheres: Float32Array, count: number): { x: number; y: number;
 }
 
 /** A near-white multiplier, so no two plants of one species are identical. */
-function foliageTint(rng: Rng): Color {
+export function foliageTint(rng: Rng): Color {
   const warm = rng.float();
   return new Color(0.9 + warm * 0.18, 0.93 + rng.float() * 0.12, 0.86 + (1 - warm) * 0.14);
 }
@@ -785,269 +786,6 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
     dispose() {
       for (const mesh of meshes) mesh.dispose();
       meadow.dispose();
-    },
-  };
-}
-
-/** A plant of a building's garden, in the world: a tree, a shrub, a run of hedge or a flower bed. */
-export interface GardenPlant {
-  readonly kind: 'tree' | 'shrub' | 'hedge' | 'flowers';
-  readonly x: number;
-  readonly y: number;
-  /** Ground height under it. */
-  readonly z: number;
-  /** Size, world units: along (w), across (d) and height (h); `yaw` the way `w` runs. */
-  readonly w: number;
-  readonly d: number;
-  readonly h: number;
-  readonly yaw: number;
-  readonly seed: number;
-  /** A tree's species, when it is not a garden's mix (a painted forest's). */
-  readonly species?: TreeSpecies;
-  /** A shrub that never flowers (a wood's understorey). */
-  readonly plain?: boolean;
-}
-
-/** A garden tree's species: mostly broadleaf, some conifers, now and then a flowering ipê. */
-function gardenSpecies(roll: number): TreeSpecies {
-  if (roll < 0.42) return 'broadleaf';
-  if (roll < 0.62) return 'broadleafTall';
-  if (roll < 0.8) return 'conifer';
-  return roll < 0.9 ? 'ipeYellow' : 'ipePink';
-}
-
-/** One building's garden placed, per plant kind: its instances' matrices, tints and largest scale. */
-interface GardenPack {
-  readonly matrices: Float32Array;
-  /** Tints, white where a plant has none; null when none has one. */
-  readonly colours: Float32Array | null;
-  readonly scales: Float32Array;
-  readonly count: number;
-}
-/**
- * Each building's garden placed once per list of its plants (`renderer.ts`
- * keeps a building's list while its plants and the ground under them stand):
- * a building grown placed every plant of every garden in town again, matrix
- * by matrix - 20 ms a building in a town of a thousand (audit M3a). The
- * town's meshes are now the buildings' packs copied end to end, in the same
- * order, so the instances are the very ones placed before.
- */
-const GARDEN_PACKS = new WeakMap<readonly GardenPlant[], ReadonlyMap<string, GardenPack>>();
-function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPack> {
-  const known = GARDEN_PACKS.get(list);
-  if (known) return known;
-  const trees = new Map<TreeSpecies, Placement[]>(TREE_SPECIES.map((s) => [s, []]));
-  const bushes = new Map<BushKind, Placement[]>(BUSH_KINDS.map((k) => [k, []]));
-  for (const p of list) {
-    const rng = new Rng(Math.floor(p.seed * 0xffffff) ^ 0x5eed);
-    switch (p.kind) {
-      case 'tree': {
-        const spread = 0.82 + rng.float() * 0.3;
-        const roll = rng.float();
-        (trees.get(p.species ?? gardenSpecies(roll)) as Placement[]).push({
-          x: p.x, y: p.y, z: p.z - m(0.05), yaw: rng.float() * Math.PI * 2,
-          sx: p.h * spread, sy: p.h, sz: p.h * spread * (0.9 + rng.float() * 0.2), tint: foliageTint(rng),
-        });
-        break;
-      }
-      case 'shrub': {
-        // The geometry is about 1.5 across for 1 tall.
-        // Kept in the bush's own proportions: a narrow, tall slot used to
-        // stretch it into a column of smeared leaves and flowers. The plant
-        // fills the slot's width and stands no taller than a bush that wide.
-        // A little under the slot: the leaf cards reach past the crown, and a
-        // bush by a wall must not show through it.
-        const across = (Math.min(p.w, p.d) / 1.5) * 0.8;
-        const tall = Math.min(p.h, across * 1.3);
-        const wide = Math.max(across, tall / 1.3);
-        (bushes.get(!p.plain && rng.float() < 0.25 ? 'bushFlowering' : 'bush') as Placement[]).push({
-          x: p.x, y: p.y, z: p.z - m(0.05), yaw: rng.float() * Math.PI * 2,
-          sx: wide, sy: tall, sz: wide * (0.9 + rng.float() * 0.2), tint: foliageTint(rng),
-        });
-        break;
-      }
-      case 'hedge': {
-        // Clipped pieces along its run, overlapping so it reads as one.
-        const n = Math.max(1, Math.round(p.w / Math.max(m(2.2), p.h * 1.5)));
-        const step = p.w / n;
-        const cx = Math.cos(p.yaw), cy = Math.sin(p.yaw);
-        const tint = foliageTint(rng);
-        for (let i = 0; i < n; i++) {
-          const t = (i + 0.5) * step - p.w / 2;
-          (bushes.get('hedge') as Placement[]).push({
-            x: p.x + cx * t, y: p.y + cy * t, z: p.z - m(0.05), yaw: p.yaw,
-            sx: (step / 1.9) * 1.25, sy: p.h, sz: p.d / 0.9, tint,
-          });
-        }
-        break;
-      }
-      case 'flowers': {
-        // A bed of low flowering clumps.
-        const n = Math.max(2, Math.round((p.w * p.d) / (m(0.7) * m(0.7))));
-        const cx = Math.cos(p.yaw), cy = Math.sin(p.yaw);
-        for (let i = 0; i < Math.min(n, 24); i++) {
-          const u = (rng.float() - 0.5) * p.w * 0.85, v = (rng.float() - 0.5) * p.d * 0.85;
-          const h = m(0.35) + rng.float() * m(0.25);
-          (bushes.get('bushFlowering') as Placement[]).push({
-            x: p.x + cx * u - cy * v, y: p.y + cy * u + cx * v, z: p.z + m(0.12), yaw: rng.float() * Math.PI * 2,
-            sx: h * 1.1, sy: h, sz: h * 1.1,
-          });
-        }
-        break;
-      }
-    }
-  }
-  const out = new Map<string, GardenPack>();
-  const object = new Object3D();
-  const pack = (key: string, placed: readonly Placement[]): void => {
-    if (!placed.length) return;
-    const matrices = new Float32Array(placed.length * 16);
-    const scales = new Float32Array(placed.length);
-    let colours: Float32Array | null = null;
-    placed.forEach((placement, index) => {
-      object.position.set(placement.x, placement.z, -placement.y);
-      object.rotation.set(0, placement.yaw, 0);
-      object.scale.set(placement.sx, placement.sy, placement.sz);
-      object.updateMatrix();
-      object.matrix.toArray(matrices, index * 16);
-      scales[index] = Math.max(placement.sx, placement.sy, placement.sz);
-      if (placement.tint) {
-        colours ??= new Float32Array(placed.length * 3).fill(1);
-        placement.tint.toArray(colours, index * 3);
-      }
-    });
-    out.set(key, { matrices, colours, scales, count: placed.length });
-  };
-  for (const [species, placed] of trees) pack(`tree:${species}`, placed);
-  for (const [kind, placed] of bushes) pack(`bush:${kind}`, placed);
-  GARDEN_PACKS.set(list, out);
-  return out;
-}
-
-/** `build` from the buildings' packs of one plant kind, copied end to end. */
-function buildPacked(name: string, geometry: BufferGeometry, material: Material, packs: readonly ReadonlyMap<string, GardenPack>[], key: string,
-  depth?: MeshDepthMaterial, near?: BufferGeometry): InstancedMesh | null {
-  let count = 0;
-  let tinted = false;
-  for (const p of packs) {
-    const one = p.get(key);
-    if (!one) continue;
-    count += one.count;
-    if (one.colours) tinted = true;
-  }
-  if (count === 0) return null;
-  const mesh = new InstancedMesh(geometry, material, count);
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.frustumCulled = false;
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-  if (depth) mesh.customDepthMaterial = depth;
-  const matrices = mesh.instanceMatrix.array as Float32Array;
-  const colours = tinted ? new Float32Array(count * 3).fill(1) : null;
-  const scales = new Float32Array(count);
-  let at = 0;
-  for (const p of packs) {
-    const one = p.get(key);
-    if (!one) continue;
-    matrices.set(one.matrices, at * 16);
-    if (colours && one.colours) colours.set(one.colours, at * 3);
-    scales.set(one.scales, at);
-    at += one.count;
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-  if (colours) {
-    mesh.instanceColor = new InstancedBufferAttribute(colours, 3);
-    mesh.instanceColor.setUsage(DynamicDrawUsage);
-    mesh.instanceColor.needsUpdate = true;
-  }
-  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-  const reach = Math.max(geometry.boundingSphere?.radius ?? 1, near?.boundingSphere?.radius ?? 0);
-  const centre = geometry.boundingSphere?.center ?? new Vector3();
-  const spheres = new Float32Array(count * 4);
-  const point = new Vector3();
-  const matrix = new Matrix4();
-  for (let i = 0; i < count; i++) {
-    matrix.fromArray(matrices, i * 16);
-    point.copy(centre).applyMatrix4(matrix);
-    spheres[i * 4] = point.x;
-    spheres[i * 4 + 1] = point.y;
-    spheres[i * 4 + 2] = point.z;
-    spheres[i * 4 + 3] = reach * scales[i]!;
-  }
-  const bounds = boundsOf(spheres, count);
-  // The sphere round every instance's own sphere: what `computeBoundingSphere`
-  // would find, a little roomier, without a pass over every vertex's place.
-  mesh.boundingSphere = new Sphere(new Vector3(bounds.x, bounds.y, bounds.z), bounds.r);
-  instances.set(mesh, {
-    matrices: Float32Array.from(matrices),
-    colours: colours ? Float32Array.from(colours) : null,
-    spheres,
-    count,
-    bounds,
-  });
-  return mesh;
-}
-
-/**
- * The trees, shrubs, hedges and flowers of the buildings' gardens, drawn with
- * the scenery's own plants (instanced, swaying, culled to the view) - not as
- * boxes and cones in the building's mesh.
- */
-export function buildGardens(groups: readonly (readonly GardenPlant[])[], kit: SceneryKit): Scenery {
-  const meshes: InstancedMesh[] = [];
-  const plants: [InstancedMesh, BufferGeometry, BufferGeometry][] = [];
-  const packs = groups.map(gardenPack);
-  const add = (mesh: InstancedMesh | null, model: BufferGeometry, cards = false): void => {
-    if (!mesh) return;
-    // As `plantMeshes`: the cards throw no shadow.
-    if (cards) mesh.castShadow = false;
-    meshes.push(mesh);
-    plants.push([mesh, model, model]);
-  };
-  // The same meshes, in the same order, as `plantMeshes` makes from placements.
-  for (const species of TREE_SPECIES) {
-    const key = `tree:${species}`;
-    add(buildPacked(`garden-trees-${species}`, kit.trees[species], kit.foliage, packs, key, kit.foliageDepth, kit.trees[species]), kit.trees[species]);
-    const cards = kit.cards[species];
-    if (cards) add(buildPacked(`garden-trees-${species}-cards`, cards, kit.treeCards, packs, key, kit.treeCardsDepth, cards), cards, true);
-  }
-  for (const kind of BUSH_KINDS) {
-    const key = `bush:${kind}`;
-    add(buildPacked(`garden-bushes-${kind}`, kit.bushes[kind], kit.shrubs, packs, key, kit.shrubsDepth, kit.bushes[kind]), kit.bushes[kind]);
-    const cards = kit.cards[kind];
-    if (cards) add(buildPacked(`garden-bushes-${kind}-cards`, cards, kit.shrubCards, packs, key, kit.shrubCardsDepth, cards), cards, true);
-  }
-  const leafMeshes = meshes.filter((mesh) => mesh.name.endsWith('-leaves'));
-  let triangles = 0;
-  for (const mesh of meshes) triangles += trianglesOf(mesh.geometry) * mesh.count;
-  let culledFor: Matrix4 | null = null;
-  let nearMode: boolean | null = null;
-  let mapMode: boolean | null = null;
-  const grass = new Group();
-  return {
-    meshes,
-    grass,
-    triangles,
-    setNear(near) {
-      if (nearMode === near) return;
-      nearMode = near;
-      for (const [mesh, close, far] of plants) mesh.geometry = near ? close : far;
-    },
-    setMap(map) {
-      if (mapMode === map) return;
-      mapMode = map;
-      culledFor = null;
-      for (const mesh of leafMeshes) mesh.visible = !map;
-    },
-    cull(frustum, view) {
-      if (culledFor && culledFor.equals(view)) return;
-      culledFor = (culledFor ?? new Matrix4()).copy(view);
-      cullInstances(meshes, null, frustum, mapMode === true);
-    },
-    exclude() { /* a garden's plants are the building's own */ },
-    dispose() {
-      for (const mesh of meshes) mesh.dispose();
     },
   };
 }
