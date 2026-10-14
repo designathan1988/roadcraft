@@ -26,7 +26,9 @@ dá a tabela medido × orçamento nas vistas rua, bairro e mapa; a vista do joga
 **2 Achar quem custa.** Memória: `__roadcraft.memory()` (`cpuByName`). Triângulos e chamadas por
 nível, CPU por etapa: [medir.md](medir.md).
 
-**3 Ler o código.** Use a ferramenta LSP (definição e referências pelo símbolo) para subir dos
+**3 Ler o código.** Comece por `node scripts/acusar.mjs --arquivo <arquivo suspeito>`: aponta,
+com a fonte oficial, os usos do three.js e os padrões conhecidos naquele arquivo (pistas, não
+provas). Use a ferramenta LSP (definição e referências pelo símbolo) para subir dos
 custos até quem os dispara; se a sessão não tiver LSP, Grep pelo nome exato do símbolo e confira
 cada resultado. Responda por escrito: o que dispara, com que frequência (quadro,
 item, edição), sobre quantos itens, e o que de fato mudou.

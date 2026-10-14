@@ -70,6 +70,10 @@ Quem muda o estado do trabalho atualiza `memory/ESTADO.md` e acrescenta uma linh
   (3DTilesRendererJS, InstancedMesh2, three-mesh-bvh, postprocessing). Índice no `README.md` de lá.
   Leia o exemplo oficial que faz a técnica antes de escrever a sua.
 - Outras bibliotecas: context7. Navegar no código: a ferramenta LSP (definição e referências).
+- `node scripts/acusar.mjs` (5 s, só aponta, não barra nada): arquivo e linha de cada uso do
+  three.js contrário ao manual oficial, de cada API obsoleta e dos padrões que já custaram caro,
+  com a frase da fonte; `--regra <id>`, `--arquivo <trecho>`. Leia cada acusação antes de mexer;
+  a que estiver certa ganha `// acusar-ok <regra>: motivo` na linha.
 
 ## Onde está o resto
 - Armadilhas por área: CLAUDE.md em `src/render`, `src/sim`, `src/world`, `src/editor`.
