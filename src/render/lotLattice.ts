@@ -31,11 +31,13 @@
  * (a count of 255 means the count is the stream's first texel); a stream is
  * its records in drawing order. A record: one header texel
  *   x fill RGBA8 (sRGB), y line RGBA8 (sRGB),
- *   z edges (11 bits) | flags (5 bits) | half width (half float, 16 bits),
+ *   z edges (10 bits) | flags (6 bits) | half width (half float, 16 bits),
  *   w the reference point (two half floats, cell-local metres)
- * then one texel per edge, (ax, ay, bx, by) as float bits, cell-local.
+ * then, with a level, one texel (x: the level's float bits), then one texel
+ * per edge, (ax, ay, bx, by) as float bits, cell-local.
  * Flags: 1 filled, 2 the reference is inside, 4 dashed, 8 stroked, 16 a
- * line with square ends (its one edge a ribbon, as the lines of before).
+ * line with square ends (its one edge a ribbon, as the lines of before), 32
+ * a level follows (a built lot: its yard's paving is coloured too).
  */
 
 /** Metres a side of a lattice cell: a few shapes each where lots are smallest. */
@@ -59,6 +61,7 @@ export const FLAG_INSIDE = 2;
 export const FLAG_DASHED = 4;
 export const FLAG_STROKE = 8;
 export const FLAG_BUTT = 16;
+export const FLAG_LEVEL = 32;
 
 /** One thing drawn on the ground. */
 export interface LatticeShape {
@@ -73,6 +76,13 @@ export interface LatticeShape {
   readonly dashed: boolean;
   /** A line with square ends (its one edge); otherwise round at its ends and corners (an outline, a dot). */
   readonly butt: boolean;
+  /**
+   * A built lot's ground level (world height, metres): the buildings'
+   * materials colour their level surfaces near it - the yard's paving, the
+   * paths - and nothing higher (`lotOverlay.ts` \`applyLotOverlay\`). Unset: only
+   * the ground's materials draw the shape.
+   */
+  readonly level?: number;
   /** Drawing order: later over earlier (fills all under the strokes). */
   order: number;
 }
@@ -310,13 +320,16 @@ export class LotLattice {
           [refX, refY] = ref;
           if (insideEdges(edges, mx + refX, my + refY)) flags |= FLAG_INSIDE;
         }
-        if (near.length > 2047) throw new Error('lot lattice: more than 2047 edges of one shape in a cell');
-        const record = new Uint32Array((1 + near.length) * 4);
+        if (near.length > 1023) throw new Error('lot lattice: more than 1023 edges of one shape in a cell');
+        const level = shape.level !== undefined;
+        if (level) flags |= FLAG_LEVEL;
+        const record = new Uint32Array((1 + (level ? 1 : 0) + near.length) * 4);
         record[0] = shape.fill >>> 0;
         record[1] = shape.line >>> 0;
-        record[2] = (near.length | (flags << 11) | (halfBits(shape.halfWidth) << 16)) >>> 0;
+        record[2] = (near.length | (flags << 10) | (halfBits(shape.halfWidth) << 16)) >>> 0;
         record[3] = (halfBits(refX) | (halfBits(refY) << 16)) >>> 0;
         let k = 4;
+        if (level) { record[4] = floatBits(shape.level!); k = 8; }
         for (const i of near) {
           record[k++] = floatBits(edges[i]! - mx);
           record[k++] = floatBits(edges[i + 1]! - my);

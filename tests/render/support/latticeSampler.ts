@@ -1,4 +1,4 @@
-import { FLAG_DASHED, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, DASH, GAP, TEXTURE_WIDTH, TILE_CELLS, type LotLattice } from '@render/lotLattice';
+import { FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, DASH, GAP, TEXTURE_WIDTH, TILE_CELLS, type LotLattice } from '@render/lotLattice';
 
 /**
  * The shader of `render/lotOverlay.ts` (`lotOver`) in TypeScript, for the
@@ -7,7 +7,7 @@ import { FLAG_DASHED, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, DASH, GAP, 
  */
 export interface LatticeHit {
   /** Per shape listed in the cell: its fill and stroke colours, whether the point is inside, the distance to its nearest edge. */
-  readonly records: { fill: number; line: number; inside: boolean; distance: number; halfWidth: number; flags: number }[];
+  readonly records: { fill: number; line: number; inside: boolean; distance: number; halfWidth: number; flags: number; level: number | null }[];
 }
 
 const u32 = new Uint32Array(1);
@@ -47,7 +47,9 @@ export function sampleLattice(lattice: LotLattice, x: number, y: number): Lattic
     const hz = texel(at, 2), hw = texel(at, 3);
     const fill = texel(at, 0), line = texel(at, 1);
     at += 1;
-    const n = hz & 2047, flags = (hz >>> 11) & 31;
+    const n = hz & 1023, flags = (hz >>> 10) & 63;
+    let level: number | null = null;
+    if (flags & FLAG_LEVEL) { level = bitsFloat(texel(at, 0)); at += 1; }
     const halfWidth = halfFloat(hz >>> 16);
     const rx = halfFloat(hw & 0xffff), ry = halfFloat(hw >>> 16);
     let inside = (flags & FLAG_INSIDE) !== 0;
@@ -76,7 +78,7 @@ export function sampleLattice(lattice: LotLattice, x: number, y: number): Lattic
       if (d < best) best = d;
     }
     at += n;
-    records.push({ fill: (flags & FLAG_FILL) ? fill : 0, line: (flags & FLAG_STROKE) ? line : 0, inside, distance: best, halfWidth, flags });
+    records.push({ fill: (flags & FLAG_FILL) ? fill : 0, line: (flags & FLAG_STROKE) ? line : 0, inside, distance: best, halfWidth, flags, level });
   }
   return { records };
 }

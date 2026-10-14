@@ -3,9 +3,10 @@ import {
   type Material, type WebGLProgramParametersWithUniforms,
 } from 'three';
 import type { Vec2 } from '@core/vec2';
+import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { MAP_HALF } from '@world/bounds';
 import {
-  DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
+  DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
 } from './lotLattice';
 
 /**
@@ -21,8 +22,10 @@ import {
  * to the nearest edge, and outlines of a constant width in metres.
  *
  * Only the shapes that changed are written again: each is keyed by what it
- * is, and the lattice rewrites the cells it touches. Nothing samples the
- * ground, so a road, a pad or a stroke of the terrain brush redraws no lot.
+ * is, and the lattice rewrites the cells it touches. The shapes never sample
+ * the ground, so a road, a pad or a stroke of the terrain brush redraws no
+ * lot; a built lot keeps one number read from it, its level, for its yard's
+ * paving drawn by the buildings' materials.
  *
  * DO NOT go back to geometry laid on the ground per lot (a triangulation
  * subdivided to 3 m with `groundAt` at every vertex): 3.5 million vertices
@@ -41,6 +44,11 @@ export interface LotOverlayInput {
     readonly lineAlpha: number;
     /** Line width, metres on the ground. */
     readonly width: number;
+    /**
+     * A lot with a building: its yard's paving and paths - the building's
+     * own parts, not the ground - are coloured too (`applyLotOverlay`, `building`).
+     */
+    readonly built?: boolean;
   }[];
   readonly lines: readonly { readonly a: Vec2; readonly b: Vec2; readonly colour: number; readonly dashed: boolean; readonly width: number }[];
   readonly points: readonly { readonly p: Vec2; readonly colour: number; readonly radius: number }[];
@@ -69,6 +77,15 @@ const UNIFORMS = {
   uLotsTiles: { value: Math.ceil(Math.ceil((2 * MAP_HALF) / LOT_CELL) / TILE_CELLS) },
 };
 
+/**
+ * How far above or below a built lot's ground level a building's level
+ * surface is still its yard (metres): paving, paths and a pool's coping lie
+ * at the lot's level, a flat roof or a terrace a storey up does not.
+ */
+const LEVEL_REACH = 0.75;
+/** A building's surface facing up at least this much (world normal's y): a wall's never is. */
+const FACING_UP = 0.9;
+
 const LOT_PARS = /* glsl */ `
   uniform highp usampler2D uLots;
   uniform vec4 uLotsGrid;
@@ -83,7 +100,10 @@ const LOT_PARS = /* glsl */ `
   // The lots over \`base\` at world point w (x, y), dw/dx and dw/dy the
   // pixel's footprint (Nehab & Hoppe 2008: parity for inside, the nearest
   // edge's distance scaled to pixels for the antialiased edge and the stroke).
-  vec3 lotOver(vec3 base, vec2 w, vec2 dx, vec2 dy) {
+  // \`building\`: a building's level surface at world height \`height\`: only
+  // the built lots whose ground level is within LEVEL_REACH of it draw there
+  // (the yard's paving, not a flat roof).
+  vec3 lotOver(vec3 base, vec2 w, vec2 dx, vec2 dy, float height, bool building) {
     vec2 g = (w + uLotsGrid.x) / uLotsGrid.y;
     if (any(lessThan(g, vec2(0.0))) || any(greaterThanEqual(g, vec2(uLotsGrid.z)))) return base;
     ivec2 c = ivec2(g);
@@ -104,9 +124,13 @@ const LOT_PARS = /* glsl */ `
     for (uint r = 0u; r < count; r++) {
       uvec4 h = lotTexel(at);
       at += 1u;
-      uint n = h.z & 2047u;
-      uint flags = (h.z >> 11u) & 31u;
+      uint n = h.z & 1023u;
+      uint flags = (h.z >> 10u) & 63u;
       float hw = unpackHalf2x16(h.z >> 16u).x;
+      bool levelled = (flags & ${FLAG_LEVEL}u) != 0u;
+      float level = 0.0;
+      if (levelled) { level = uintBitsToFloat(lotTexel(at).x); at += 1u; }
+      if (building && (!levelled || abs(height - level) > ${LEVEL_REACH.toFixed(3)})) { at += n; continue; }
       if ((flags & ${FLAG_BUTT}u) != 0u) {
         // A line with square ends, as a ribbon: across, the band of its
         // width; along, cut at its ends - or at its dash's (dashes of
@@ -176,42 +200,58 @@ const LOT_PARS = /* glsl */ `
 `;
 
 /**
- * Makes a ground material colour the lots into itself: chained after
- * whatever it already does to its shader, its colour blended right after
- * the lighting (`opaque_fragment`), so the lots are unlit paint over the lit
- * ground as the transparent sheets of before were, before tone mapping and
- * fog. `world`: a varying of the material already holding the world
- * position (the terrain's `vTerrainAtlas`), or a varying of its own.
+ * Makes a material colour the lots into itself: chained after whatever it
+ * already does to its shader, its colour blended right after the lighting
+ * (`opaque_fragment`), so the lots are unlit paint over the lit surface as
+ * the transparent sheets of before were, before tone mapping and fog.
+ * `world`: a varying of the material already holding the world position
+ * (the terrain's `vTerrainAtlas`), or a varying of its own. `building`: a
+ * building's material (its shell, its far massing), which draws only the
+ * built lots, on its surfaces facing up near their ground level (the yard's
+ * paving and paths; never a wall or a roof). The code is always in the
+ * shader, switched by the uniform: opening the Zoning tool compiles nothing.
  */
-export function applyLotOverlay(material: Material, key: string, world?: string): void {
+export function applyLotOverlay(material: Material, key: string, options: { readonly world?: string; readonly building?: boolean } = {}): void {
+  const { world, building = false } = options;
   const previous = material.onBeforeCompile.bind(material);
   const previousKey = material.customProgramCacheKey.bind(material);
   const varying = world ?? 'vLotWorld';
+  const declare = `${world ? '' : 'varying vec3 vLotWorld;'}\n${building ? 'varying float vLotUp;' : ''}`;
   material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms, renderer) => {
     previous(shader, renderer);
     Object.assign(shader.uniforms, UNIFORMS);
-    if (!world) {
+    if (!world || building) {
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vLotWorld;')
+        .replace('#include <common>', `#include <common>\n${declare}`)
         .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
           {
             vec4 lotWorld = vec4(transformed, 1.0);
+            vec3 lotNormal = objectNormal;
             #ifdef USE_BATCHING
               lotWorld = batchingMatrix * lotWorld;
+              lotNormal = mat3(batchingMatrix) * lotNormal;
             #endif
             #ifdef USE_INSTANCING
               lotWorld = instanceMatrix * lotWorld;
+              lotNormal = mat3(instanceMatrix) * lotNormal;
             #endif
-            vLotWorld = (modelMatrix * lotWorld).xyz;
+            ${world ? '' : 'vLotWorld = (modelMatrix * lotWorld).xyz;'}
+            // The surface's own normal in the world, not the normal map's:
+            // a wall is a wall however its bricks are bumped.
+            ${building ? 'vLotUp = normalize(mat3(modelMatrix) * lotNormal).y;' : ''}
           }`);
     }
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${world ? '' : 'varying vec3 vLotWorld;'}\n${LOT_PARS}`)
+      .replace('#include <common>', `#include <common>\n${declare}\n${LOT_PARS}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>
         if (uLotsGrid.w > 0.5) {
-          // World (x, y): three's z is the world's -y.
+          // World (x, y): three's z is the world's -y. The footprint taken
+          // here, before any branch a pixel's neighbours may not share.
           vec2 lotW = vec2(${varying}.x, -${varying}.z);
-          gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, dFdx(lotW), dFdy(lotW));
+          vec2 lotDx = dFdx(lotW), lotDy = dFdy(lotW);
+          ${building
+            ? `if (vLotUp > ${FACING_UP.toFixed(2)}) gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, lotDx, lotDy, ${varying}.y, true);`
+            : 'gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, lotDx, lotDy, 0.0, false);'}
         }`);
   };
   material.customProgramCacheKey = () => `${previousKey()}-lots-${key}`;
@@ -220,8 +260,12 @@ export function applyLotOverlay(material: Material, key: string, world?: string)
 /** What one shape of the input is, its key: the same key, the same shape. */
 type Keyed = { key: string; make(order: number): LatticeShape };
 
-/** The input's shapes, keyed, in drawing order: the polygons, then the lines, then the dots. */
-function shapesOf(input: LotOverlayInput): Keyed[] {
+/**
+ * The input's shapes, keyed, in drawing order: the polygons, then the lines,
+ * then the dots. A built lot, a line and a dot carry their ground level
+ * (`levelOf`, by where they are), in their key.
+ */
+function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: readonly Vec2[]) => number): Keyed[] {
   const out: Keyed[] = [];
   for (const poly of input.polygons) {
     const ring = poly.corners;
@@ -229,12 +273,14 @@ function shapesOf(input: LotOverlayInput): Keyed[] {
     const fill = poly.fill === null ? 0 : rgba(poly.fill, poly.fillAlpha);
     const line = rgba(poly.line, poly.lineAlpha);
     if (!fill && !line) continue;
+    const where = ring.map((q) => `${q.x},${q.y}`).join(';');
+    const level = poly.built ? levelOf(where, ring) : undefined;
     out.push({
-      key: `p|${fill}|${line}|${poly.width}|${ring.map((q) => `${q.x},${q.y}`).join(';')}`,
+      key: `p|${fill}|${line}|${poly.width}|${level ?? ''}|${where}`,
       make: (order) => {
         const edges = new Float64Array(ring.length * 4);
         ring.forEach((q, i) => { const r = ring[(i + 1) % ring.length]!; edges.set([q.x, q.y, r.x, r.y], i * 4); });
-        return { edges, fill, line, halfWidth: poly.width / 2, dashed: false, butt: false, order };
+        return { edges, fill, line, halfWidth: poly.width / 2, dashed: false, butt: false, order, ...(level === undefined ? {} : { level }) };
       },
     });
   }
@@ -242,27 +288,95 @@ function shapesOf(input: LotOverlayInput): Keyed[] {
     // A line of no length drew nothing as a ribbon, and draws nothing here.
     if (l.a.x === l.b.x && l.a.y === l.b.y) continue;
     const line = rgba(l.colour, 1);
+    // A line or a dot is drawn over a yard's paving too (a lot's front, its
+    // arrow): it carries the level of the ground under its middle.
+    const where = `${l.a.x},${l.a.y};${l.b.x},${l.b.y}`;
+    const level = levelOf(where, [l.a, l.b]);
     out.push({
-      key: `l|${line}|${l.width}|${l.dashed ? 1 : 0}|${l.a.x},${l.a.y};${l.b.x},${l.b.y}`,
-      make: (order) => ({ edges: Float64Array.of(l.a.x, l.a.y, l.b.x, l.b.y), fill: 0, line, halfWidth: l.width / 2, dashed: l.dashed, butt: true, order }),
+      key: `l|${line}|${l.width}|${l.dashed ? 1 : 0}|${level}|${where}`,
+      make: (order) => ({ edges: Float64Array.of(l.a.x, l.a.y, l.b.x, l.b.y), fill: 0, line, halfWidth: l.width / 2, dashed: l.dashed, butt: true, order, level }),
     });
   }
   for (const d of input.points) {
     const line = rgba(d.colour, 1);
+    const where = `${d.p.x},${d.p.y}`;
+    const level = levelOf(where, [d.p]);
     out.push({
-      key: `o|${line}|${d.radius}|${d.p.x},${d.p.y}`,
-      make: (order) => ({ edges: Float64Array.of(d.p.x, d.p.y, d.p.x, d.p.y), fill: 0, line, halfWidth: d.radius, dashed: false, butt: false, order }),
+      key: `o|${line}|${d.radius}|${level}|${where}`,
+      make: (order) => ({ edges: Float64Array.of(d.p.x, d.p.y, d.p.x, d.p.y), fill: 0, line, halfWidth: d.radius, dashed: false, butt: false, order, level }),
     });
   }
   return out;
 }
 
-export function createLotOverlay() {
+/**
+ * What moves the ground a built lot's level is read from (`surfaceHeightAt`):
+ * its level is read again there. Only the built lots' levels: the shapes
+ * themselves never ask the ground (`applyLotOverlay`).
+ */
+const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
+
+/** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle. */
+export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
   const lattice = new LotLattice(MAP_HALF);
   let texture: DataTexture | null = null;
   let key = '';
   /** The shapes in the lattice by key (a list: the same shape twice is two). */
   let held = new Map<string, LatticeShape[]>();
+  /** The diary's serial the levels were read at. */
+  let groundSeen = -1;
+  /**
+   * The ground levels read, by where the shape is: each read once, not on
+   * every pointer move of the Zoning tool (which makes the input again);
+   * forgotten where the ground moved.
+   */
+  const levels = new Map<string, number>();
+  /** The levels read, by the lattice cell of the point they were read at: those a ground change reaches, found by place. */
+  const levelsByCell = new Map<number, Set<string>>();
+  const cellOf = (x: number, y: number): number =>
+    Math.floor((y + MAP_HALF) / LOT_CELL) * lattice.cellsPerSide + Math.floor((x + MAP_HALF) / LOT_CELL);
+  /** A shape's ground level: the ground at its points' mean (a built lot's: under its building, its pad), to the centimetre. */
+  const levelOf = (where: string, points: readonly Vec2[]): number => {
+    const known = levels.get(where);
+    if (known !== undefined) return known;
+    let x = 0, y = 0;
+    for (const q of points) { x += q.x; y += q.y; }
+    x /= points.length; y /= points.length;
+    const level = Math.round(groundAt(x, y) * 100) / 100;
+    levels.set(where, level);
+    const cell = cellOf(x, y);
+    let set = levelsByCell.get(cell);
+    if (!set) levelsByCell.set(cell, set = new Set());
+    set.add(where);
+    return level;
+  };
+  /** The levels read where the ground moved, forgotten (all, with no rectangles); true when any was. */
+  const forgetLevels = (entries: readonly { readonly rects: readonly ChangeRect[] | null }[] | null): boolean => {
+    if (levels.size === 0) return false;
+    if (entries === null || entries.some((e) => e.rects === null)) {
+      levels.clear();
+      levelsByCell.clear();
+      return true;
+    }
+    let forgot = false;
+    for (const { rects } of entries) {
+      for (const [x0, y0, x1, y1] of rects!) {
+        const n = lattice.cellsPerSide;
+        const cx0 = Math.max(0, Math.floor((x0 + MAP_HALF) / LOT_CELL)), cx1 = Math.min(n - 1, Math.floor((x1 + MAP_HALF) / LOT_CELL));
+        const cy0 = Math.max(0, Math.floor((y0 + MAP_HALF) / LOT_CELL)), cy1 = Math.min(n - 1, Math.floor((y1 + MAP_HALF) / LOT_CELL));
+        for (let cy = cy0; cy <= cy1; cy++) {
+          for (let cx = cx0; cx <= cx1; cx++) {
+            const set = levelsByCell.get(cy * n + cx);
+            if (!set) continue;
+            for (const where of set) levels.delete(where);
+            levelsByCell.delete(cy * n + cx);
+            forgot = true;
+          }
+        }
+      }
+    }
+    return forgot;
+  };
 
   /** The lattice's writes sent to its texture: in place, or a texture of the new size. */
   const upload = (): void => {
@@ -290,10 +404,20 @@ export function createLotOverlay() {
   return {
     /** The lattice: for the tests, the work an edit cost. */
     lattice,
-    /** Draws `input` (null: no lots) into the ground from the next frame. */
-    set(input: LotOverlayInput | null): void {
+    /**
+     * Draws `input` (null: no lots) into the ground from the next frame.
+     * `changes`, the document's diary: where the ground moved, a built lot's
+     * level is read again (the only thing here read from the ground).
+     */
+    set(input: LotOverlayInput | null, changes?: ChangeJournal): void {
+      let moved = false;
+      if (changes && changes.version !== groundSeen) {
+        const entries = groundSeen < 0 ? null : changes.since(groundSeen, GROUND_KINDS);
+        groundSeen = changes.version;
+        moved = forgetLevels(entries);
+      }
       const next = input?.key ?? '';
-      if (next === key) return;
+      if (next === key && !moved) return;
       key = next;
       if (!input) {
         lattice.clear();
@@ -302,7 +426,7 @@ export function createLotOverlay() {
         upload();
         return;
       }
-      const shapes = shapesOf(input);
+      const shapes = shapesOf(input, levelOf);
       const kept = new Map<string, LatticeShape[]>();
       shapes.forEach((s, order) => {
         const old = held.get(s.key);

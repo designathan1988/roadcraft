@@ -1950,7 +1950,7 @@ function terrainMaterial(
   // any other standard material in the scene.
   material.customProgramCacheKey = () => 'terrain-splat-v33';
   // The lots coloured into the land (`lotOverlay.ts`), at its world position.
-  applyLotOverlay(material, 'terrain', 'vTerrainAtlas');
+  applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
   return material;
 }
 

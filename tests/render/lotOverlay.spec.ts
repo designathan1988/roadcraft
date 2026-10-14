@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLotOverlay, type LotOverlayInput } from '@render/lotOverlay';
+import { ChangeJournal } from '@world/changes';
 import { sampleLattice } from './support/latticeSampler';
 
 /**
@@ -54,6 +55,41 @@ describe('lot overlay', () => {
     // Nothing changed: nothing written.
     overlay.set(lots(400, 37, 120));
     expect(overlay.lattice.cellsWritten).toBe(0);
+    overlay.dispose();
+  });
+
+  it('keeps a built lot\'s ground level, read again only where the ground moved', () => {
+    let ground = 2;
+    let asked = 0;
+    const overlay = createLotOverlay(() => { asked++; return ground; });
+    const changes = new ChangeJournal();
+    const built = (input: LotOverlayInput): LotOverlayInput => ({ ...input, polygons: input.polygons.map((p, i) => (i === 5 ? { ...p, built: true } : p)) });
+    overlay.set(built(lots(40, 5)), changes);
+    // The built lot and the 40 front lines ask the ground, once each; of the lots, only the built one carries a level.
+    expect(asked).toBe(41);
+    // The pointer moved (a new input, the same shapes): nothing asked again.
+    asked = 0;
+    overlay.set({ ...built(lots(40, 5)), key: 'moved pointer' }, changes);
+    expect(asked).toBe(0);
+    const yard = sampleLattice(overlay.lattice, 5 * 24 + 11, 15);
+    expect(yard?.records.some((r) => r.level === 2)).toBe(true);
+    // On the edge of a lot with no building: its outline, with no level.
+    const plain = sampleLattice(overlay.lattice, 8 * 24 + 0.1, 15);
+    expect(plain?.records.length).toBeGreaterThan(0);
+    expect(plain?.records.filter((r) => r.distance < 1).every((r) => r.level === null)).toBe(true);
+    // A building elsewhere moves no ground: nothing read again.
+    asked = 0;
+    changes.record('buildings', [[0, 0, 10, 10]]);
+    overlay.set(built(lots(40, 5)), changes);
+    expect(asked).toBe(0);
+    // The ground levelled: the level read again, and redrawn.
+    ground = 3.5;
+    changes.record('ground', [[100, 0, 160, 40]]);
+    overlay.set(built(lots(40, 5)), changes);
+    // Only what lies where it moved: the built lot and the front lines near it, not the 40.
+    expect(asked).toBeGreaterThan(0);
+    expect(asked).toBeLessThan(8);
+    expect(sampleLattice(overlay.lattice, 5 * 24 + 11, 15)?.records.some((r) => r.level === 3.5)).toBe(true);
     overlay.dispose();
   });
 

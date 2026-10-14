@@ -240,9 +240,10 @@ export interface SceneHandle {
   setTransitPreview(preview: { mode: 'train' | 'metro'; points: readonly { x: number; y: number }[] } | null): void;
   /**
    * The lots of the Zoning tool coloured into the ground, all of them from
-   * the next frame (`lotOverlay.ts`); null removes them.
+   * the next frame (`lotOverlay.ts`); null removes them. `changes`, the
+   * document's diary: where the ground moved, a built lot's level is read again.
    */
-  setLotOverlay(input: LotOverlayInput | null): void;
+  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): void;
   /**
    * A blow on a building at world (x, y, z), `strength` 1..10: it breaks
    * (`destruction.ts`). Returns true when nothing of it is left standing.
@@ -2694,9 +2695,9 @@ export function createSceneRenderer(
         world.add(transitPreview.group);
       }
     },
-    setLotOverlay(input) {
-      lotOverlay ??= createLotOverlay();
-      lotOverlay.set(input);
+    setLotOverlay(input, changes) {
+      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y));
+      lotOverlay.set(input, changes);
     },
     setPolePreview(net, preview) {
       const key = preview && elevation
