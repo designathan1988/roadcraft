@@ -821,9 +821,6 @@
     }
   },
   "src/world/conflictPoints.ts": {
-    "max-lines": {
-      "count": 1
-    },
     "roadcraft/no-module-state": {
       "count": 4
     }
