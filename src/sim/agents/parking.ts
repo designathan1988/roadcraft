@@ -209,7 +209,12 @@ const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revis
 
 /** Cell of the lanes' grid, world units. */
 const LANE_CELL = m(30);
-const LANE_GRIDS = new WeakMap<object, { key: string; lanes: Lanelet[]; cells: Map<number, number[]> }>();
+/**
+ * The lanes of the graph by place, and each lane's digest (`laneDigest`),
+ * NaN until a lot asks for it.
+ */
+interface LaneGrid { key: string; lanes: Lanelet[]; cells: Map<number, number[]>; digests: Float64Array }
+const LANE_GRIDS = new WeakMap<object, LaneGrid>();
 /**
  * The lanes whose bounds come within `reach` of a point, in the graph's order
  * (the tie-break), from a grid of their bounds: every bay and every lot used to
@@ -218,17 +223,41 @@ const LANE_GRIDS = new WeakMap<object, { key: string; lanes: Lanelet[]; cells: M
 function lanesNear(w: SimWorld, x: number, y: number, reach: number): Lanelet[] {
   const grid = laneGrid(w);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return grid.lanes;
+  return laneIndicesNear(grid, x, y, reach).map((i) => grid.lanes[i]!);
+}
+
+/** `lanesNear`, as the lanes' places in the grid's list (all of them for a point that is not one). */
+function laneIndicesNear(grid: LaneGrid, x: number, y: number, reach: number): number[] {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return grid.lanes.map((_, i) => i);
   const picked = new Set<number>();
   for (let gx = Math.floor((x - reach) / LANE_CELL); gx <= Math.floor((x + reach) / LANE_CELL); gx++) {
     for (let gy = Math.floor((y - reach) / LANE_CELL); gy <= Math.floor((y + reach) / LANE_CELL); gy++) {
       for (const i of grid.cells.get((gx + 32768) * 65536 + (gy + 32768)) ?? []) picked.add(i);
     }
   }
-  return [...picked].sort((a, b) => a - b).map((i) => grid.lanes[i]!);
+  return [...picked].sort((a, b) => a - b);
+}
+
+/**
+ * A lane's part of a lot's key (`workOutBays`): its id, its length and its
+ * centre line, digested once per lane of the grid. A lane is never changed
+ * in place (`Lanelet` is read-only, its `Polyline` immutable) and the grid
+ * is made again with the lanes: a rebuilt lane is digested again, to the
+ * same number when it is the same lane, so a lot whose lanes were only
+ * rebuilt keeps its bays.
+ */
+function laneDigest(grid: LaneGrid, i: number): number {
+  let value = grid.digests[i]!;
+  if (Number.isNaN(value)) {
+    const lane = grid.lanes[i]!;
+    value = new Digest().addText(lane.id).add(lane.length).addAll(lane.centre.xy).value();
+    grid.digests[i] = value;
+  }
+  return value;
 }
 
 /** The lanes' grid (`lanesNear`). @rebuild Called when the lane graph moved; otherwise returns the grid it made. */
-function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<number, number[]> } {
+function laneGrid(w: SimWorld): LaneGrid {
   const key = `${w.graph.revision}:${w.graph.lanelets.size}`;
   let grid = LANE_GRIDS.get(w.graph);
   // Rebuilt under the same revision, the lanes are new objects: read again.
@@ -245,7 +274,7 @@ function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<numb
         }
       }
     });
-    LANE_GRIDS.set(w.graph, grid = { key, lanes, cells });
+    LANE_GRIDS.set(w.graph, grid = { key, lanes, cells, digests: new Float64Array(lanes.length).fill(NaN) });
   }
   return grid;
 }
@@ -265,16 +294,24 @@ const LOT_READS = LANE_REACH + m(12);
  * record less its age, its name and its lot plan's version. A record is
  * replaced on any change, and the town's ageing (a record every few seconds)
  * worked out those lots' exits, grids and aisles again for nothing.
+ *
+ * Beside it, the record's walls (`wallsOf`), each with its digest: a stored
+ * record is never changed in place (`world/buildings/store.ts`, OWNERSHIP),
+ * so what is read off it once stays true while it is stored.
  */
-const LOT_TEXT = new WeakMap<Building, string>();
+const RECORD_READS = new WeakMap<Building, { text?: string; walls?: readonly Wall[] }>();
+function recordReads(b: Building): { text?: string; walls?: readonly Wall[] } {
+  let reads = RECORD_READS.get(b);
+  if (!reads) RECORD_READS.set(b, reads = {});
+  return reads;
+}
 function lotText(b: Building): string {
-  let text = LOT_TEXT.get(b);
-  if (text === undefined) {
+  const reads = recordReads(b);
+  if (reads.text === undefined) {
     const { decay: _decay, builtAt: _builtAt, name: _name, lotPlan: _lotPlan, ...lot } = b;
-    text = JSON.stringify(lot);
-    LOT_TEXT.set(b, text);
+    reads.text = JSON.stringify(lot);
   }
-  return text;
+  return reads.text;
 }
 
 /**
@@ -328,14 +365,18 @@ function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
       continue;
     }
     const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
+    // The lot's key: each lane and wall within reach by its own digest
+    // (`laneDigest`, `Wall.digest`), made once per lane or wall, and
+    // whether the lane is a ghost now. DO NOT digest a lane's line or a
+    // wall's ring here: every lot near a long street digested its whole
+    // centre line again, at every building grown near it (2.7 s of a
+    // 2.5 km city's growth).
     const digest = new Digest();
-    for (const lane of lanesNear(w, cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
-      digest.addText(lane.id).add(lane.length).add(w.rt(lane.id).ghost ? 1 : 0).addAll(lane.centre.xy);
+    const grid = laneGrid(w);
+    for (const i of laneIndicesNear(grid, cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
+      digest.add(laneDigest(grid, i)).add(w.rt(grid.lanes[i]!.id).ghost ? 1 : 0);
     }
-    for (const wall of wallsInBox(wallsNow(), box.minX, box.minY, box.maxX, box.maxY)) {
-      digest.add(wall.building);
-      for (const q of wall.ring) digest.add(q.x).add(q.y);
-    }
+    for (const wall of wallsInBox(wallsNow(), box.minX, box.minY, box.maxX, box.maxY)) digest.add(wall.digest);
     const key = digest.value();
     if (was && was.lot === lot && was.key === key) {
       for (const bay of was.bays) out.push({ ...bay, id: out.length });
@@ -585,17 +626,33 @@ export interface Wall {
   readonly building: BuildingId;
   readonly ring: readonly { x: number; y: number }[];
   readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number;
+  /** Its building and its ring, digested: its part of a lot's key (`workOutBays`). */
+  readonly digest: number;
 }
 
-/** Every building's solid footprint, with its bounds. */
+/**
+ * Every building's solid footprint, with its bounds. Each record's walls are
+ * made once (`recordReads`): a stored record is never changed in place, so
+ * its walls - and their digests - stay what they were.
+ */
 export function wallsOf(w: SimWorld): Wall[] {
   const out: Wall[] = [];
   for (const b of w.doc.buildings.all()) {
-    for (const ring of solidFootprints(b)) {
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-      out.push({ building: b.id, ring, x0, y0, x1, y1 });
+    const reads = recordReads(b);
+    if (!reads.walls) {
+      const made: Wall[] = [];
+      for (const ring of solidFootprints(b)) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        const digest = new Digest().add(b.id);
+        for (const p of ring) {
+          x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+          digest.add(p.x).add(p.y);
+        }
+        made.push({ building: b.id, ring, x0, y0, x1, y1, digest: digest.value() });
+      }
+      reads.walls = made;
     }
+    out.push(...reads.walls);
   }
   return out;
 }
