@@ -274,11 +274,22 @@ export function createIsoRig(
         // roof, a grey screen; an eye merely beside a wall was lifted half the
         // tower's height, or left a hand from a window looking into the room
         // (2026-10-14). In turn:
-        // 1. The point looked at inside a building goes onto the roof over it,
-        //    the eye with it: the view turns round what is seen there (Cesium
-        //    picks its pivot on the scene's content); a building grown where
-        //    the view looked does the same.
-        if (within(1)) {
+        // 1. The point looked at and the eye both inside a building: the point
+        //    goes onto the roof over it, the eye with it, and the view looks
+        //    across the roof at its own tilt (a view set on a tower, a building
+        //    grown where the view looked).
+        //    ONLY with the eye inside too. DO NOT lift the point whenever it
+        //    falls in a building: with the eye outside nothing needs it, and
+        //    the view's height then jumped by a building's height wherever
+        //    its centre crossed a wall; a pan, holding the ground grabbed
+        //    under the hand, found the point elsewhere at the new height and
+        //    moved the centre back out - in, out, in on alternate frames, the
+        //    eye leaping 24-60 m (2026-10-14, the town of seed 1 at the
+        //    bairro zoom: the camera shook in every drag over buildings;
+        //    `tests/render/cameraPanBuildings.spec.ts`). A camera kept out of
+        //    obstacles moves the eye, not the point it looks at (Cinemachine's
+        //    Deoccluder).
+        if (within(1) && within(0)) {
           const lift = roof(target.x, -target.z) + eyeLift(halfHeight) - target.y;
           target.y += lift;
           camera.position.y += lift;

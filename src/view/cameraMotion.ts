@@ -59,6 +59,8 @@ export interface MotionHost {
 const AIM_CLOSE = 1e-3;
 const AIM_SNAP = 4e-3;
 const AIM_MAX_S = 3;
+/** The longest step the glide takes at once, s: the exact steps hold for any length; this only bounds a resume after the tab slept. */
+const MAX_STEP_S = 1;
 
 export class CameraMotion {
   private readonly held = new Map<string, readonly [Axis, 1 | -1]>();
@@ -81,13 +83,27 @@ export class CameraMotion {
   private aiming: (() => number) | null = null;
   /** Seconds the aim has been turning: given up after `AIM_MAX_S`, so a heading never reached cannot hold the frames going. */
   private aimedFor = 0;
+  /**
+   * The time the glide has been taken to, ms (`performance.now()`'s clock);
+   * null while nothing moves. A glide starts at the key, notch or turn that
+   * began it - DO NOT measure its first step from the last frame drawn: the
+   * frame loop stops while nothing moves, and the "frame time" of the first
+   * frame after an idle minute is that minute.
+   */
+  private at: number | null = null;
 
   constructor(private readonly host: MotionHost) {}
 
-  /** A key went down: true when it is one of the camera's. */
-  press(code: string, shift: boolean): boolean {
+  /** Something began moving at `time`, ms: the glide counts from it if it was still. */
+  private wake(time: number): void {
+    if (this.at === null) this.at = time;
+  }
+
+  /** A key went down (at `time`, ms): true when it is one of the camera's. */
+  press(code: string, shift: boolean, time = performance.now()): boolean {
     const binding = KEYS[code];
     if (!binding) return false;
+    this.wake(time);
     this.held.set(code, binding);
     this.shift = shift;
     return true;
@@ -111,7 +127,8 @@ export class CameraMotion {
   }
 
   /** A notch of the wheel: `logFactor` of zoom (positive: closer) about the screen point `at`. */
-  wheel(logFactor: number, at: { x: number; y: number }): void {
+  wheel(logFactor: number, at: { x: number; y: number }, time = performance.now()): void {
+    this.wake(time);
     // A new point: what is left of the last notch goes to the new one.
     if (this.pendingZoom === 0 || Math.hypot(at.x - this.zoomAt.x, at.y - this.zoomAt.y) > 2) {
       const ground = this.host.heightUnder(at);
@@ -122,7 +139,8 @@ export class CameraMotion {
   }
 
   /** A turn to spend smoothly (Shift+Q/E's quarter turn), rad. */
-  turn(angle: number): void {
+  turn(angle: number, time = performance.now()): void {
+    this.wake(time);
     this.pendingTurn += angle;
   }
 
@@ -133,7 +151,8 @@ export class CameraMotion {
    * misses where a step of the orbit does not turn the ground by just its
    * angle. Over when less than a milliradian is left.
    */
-  aim(left: () => number): void {
+  aim(left: () => number, time = performance.now()): void {
+    this.wake(time);
     this.aiming = left;
     this.aimedFor = 0;
   }
@@ -145,6 +164,7 @@ export class CameraMotion {
     this.pendingZoom = 0;
     this.pendingTurn = 0;
     this.aiming = null;
+    this.at = null;
   }
 
   /** Something is still moving (or held): the frame loop keeps going. */
@@ -153,27 +173,46 @@ export class CameraMotion {
       || AXES.some((axis) => this.velocity[axis] !== 0);
   }
 
-  /** Advances by `dt` seconds of wall time: true when the camera moved. */
-  step(dt: number): boolean {
-    if (!this.moving) return false;
-    const seconds = Math.min(0.1, Math.max(0, dt));
+  /**
+   * Takes the glide to `now` (ms, the frame's time on `performance.now()`'s
+   * clock): true when the camera moved. Each part is the exact solution over
+   * the time since the last step, so the path is the same whatever the frames
+   * in between (Rory Driscoll, "Frame Rate Independent Damping Using Lerp"):
+   * a held key's speed approaches its goal as g + (v - g) e^(-t/T) and the
+   * ground it covers is that integrated, g t + (v - g) T (1 - e^(-t/T)).
+   * DO NOT step a position by the speed at the end of the step times the
+   * step, nor cut the step to a tenth of a second: both made the glide go
+   * slower in wall time at a low frame rate, and the city runs at 5-15
+   * frames a second.
+   */
+  step(now: number): boolean {
+    if (!this.moving) {
+      this.at = null;
+      return false;
+    }
+    const since = this.at ?? now;
+    const seconds = Math.min(MAX_STEP_S, Math.max(0, (now - since) / 1000));
+    this.at = Math.max(since, now);
     const view = this.host.view();
     const { w, h } = this.host.size();
     const goal: Record<Axis, number> = { forward: 0, right: 0, turn: 0, tilt: 0, zoom: 0 };
     for (const [axis, sign] of this.held.values()) goal[axis] += sign;
-    const ease = 1 - Math.exp(-seconds / EASE_S);
+    const keep = Math.exp(-seconds / EASE_S);
+    /** How far each axis went over the step, in its speed times seconds. */
+    const travel: Record<Axis, number> = { forward: 0, right: 0, turn: 0, tilt: 0, zoom: 0 };
     for (const axis of AXES) {
       const g = Math.max(-1, Math.min(1, goal[axis])) * (this.shift ? SHIFT : 1);
-      let v = this.velocity[axis] + (g - this.velocity[axis]) * ease;
+      const v0 = this.velocity[axis];
+      travel[axis] = g * seconds + (v0 - g) * EASE_S * (1 - keep);
+      let v = g + (v0 - g) * keep;
       if (g === 0 && Math.abs(v) < 0.002) v = 0;
       this.velocity[axis] = v;
     }
-    const vel = this.velocity;
-    if (vel.forward !== 0 || vel.right !== 0) {
-      const units = (PAN_PX_PER_S / Math.max(1e-6, view.zoom)) * seconds;
-      view.slide(vel.right * units, vel.forward * units);
+    if (travel.forward !== 0 || travel.right !== 0) {
+      const units = PAN_PX_PER_S / Math.max(1e-6, view.zoom);
+      view.slide(travel.right * units, travel.forward * units);
     }
-    let turn = vel.turn * TURN_PER_S * seconds;
+    let turn = travel.turn * TURN_PER_S;
     if (this.pendingTurn !== 0) {
       const spend = Math.abs(this.pendingTurn) < 1e-4 ? this.pendingTurn : this.pendingTurn * (1 - Math.exp(-seconds / TURN_EASE_S));
       this.pendingTurn -= spend;
@@ -185,9 +224,9 @@ export class CameraMotion {
       if (!Number.isFinite(left) || Math.abs(left) < AIM_CLOSE || this.aimedFor > AIM_MAX_S) this.aiming = null;
       else turn += Math.abs(left) < AIM_SNAP ? left : left * (1 - Math.exp(-seconds / TURN_EASE_S));
     }
-    const tilt = vel.tilt * TILT_PER_S * seconds;
+    const tilt = travel.tilt * TILT_PER_S;
     if (turn !== 0 || tilt !== 0) view.orbit(turn, tilt);
-    if (vel.zoom !== 0) view.zoomAt(w / 2, h / 2, Math.exp(vel.zoom * ZOOM_PER_S * seconds), w, h, this.host.heightUnder({ x: w / 2, y: h / 2 }));
+    if (travel.zoom !== 0) view.zoomAt(w / 2, h / 2, Math.exp(travel.zoom * ZOOM_PER_S), w, h, this.host.heightUnder({ x: w / 2, y: h / 2 }));
     if (this.pendingZoom !== 0) {
       const spend = Math.abs(this.pendingZoom) < 1e-4 ? this.pendingZoom : this.pendingZoom * (1 - Math.exp(-seconds / ZOOM_EASE_S));
       this.pendingZoom -= spend;
@@ -195,6 +234,8 @@ export class CameraMotion {
       if (at.grabbed) view.zoomAt(at.x, at.y, Math.exp(spend), w, h, at.height, at.grabbed);
       else view.zoomAt(w / 2, h / 2, Math.exp(spend), w, h, this.host.heightUnder({ x: w / 2, y: h / 2 }));
     }
+    // Still: the next glide counts from what starts it, not from this frame.
+    if (!this.moving) this.at = null;
     return true;
   }
 }
