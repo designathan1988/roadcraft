@@ -12,8 +12,7 @@
  * pointer selects whenever nothing else is in hand.
  */
 
-const BUILDER_TABS = ['models', 'draw', 'mass', 'facade', 'parts', 'roof', 'paint', 'interior'] as const;
-export type BuilderCategoryId = (typeof BUILDER_TABS)[number];
+export type BuilderCategoryId = 'models' | 'draw' | 'mass' | 'facade' | 'parts' | 'roof' | 'paint' | 'interior';
 
 type BuilderToolKind = 'mode' | 'action';
 
@@ -147,8 +146,7 @@ export const BUILDER_GALLERIES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** The plans a closed outline can be recognised as, and drawn as. */
-const PLAN_SHAPES = ['rectangle', 'l', 'u', 'circle', 'hexagon', 'octagon', 'chamfered', 'cross', 'stepped'] as const;
-export type PlanShapeId = (typeof PLAN_SHAPES)[number];
+export type PlanShapeId = 'rectangle' | 'l' | 'u' | 'circle' | 'hexagon' | 'octagon' | 'chamfered' | 'cross' | 'stepped';
 
 /** The shape a draw tool draws. */
 export const DRAW_SHAPES: Readonly<Record<string, PlanShapeId>> = {
