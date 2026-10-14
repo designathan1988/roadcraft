@@ -8,7 +8,7 @@ import { SimWorld } from '@sim/world';
  * A seeded town for the index equivalence specs: a jittered grid of roads of
  * mixed classes, and seeded edits (roads taken away, roads drawn across).
  */
-export function seededTown(seed: number, n = 5, block = 120): RoadDoc {
+function seededTown(seed: number, n = 5, block = 120): RoadDoc {
   const rng = new Rng(seed);
   const doc = new RoadDoc();
   const ids: number[][] = [];
