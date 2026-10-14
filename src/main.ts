@@ -88,7 +88,7 @@ import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, exportToFile, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
-import { type BuildingId, decayOf } from '@world/buildings/types';
+import { type Building, type BuildingId, DECAY_GRACE, DECAY_SPAN, decayOf } from '@world/buildings/types';
 import { focusCameFromKeyboard, trackFocusModality } from '@ui/chrome';
 import { roadSwatch } from '@ui/roadSwatch';
 import { mountShell, type ShellHandle, type ShellRoadClass, type ShellSlider, type ShellStatus, type ShellZonePatch } from '@ui/v2/shell';
@@ -4093,18 +4093,58 @@ function refreshShell(): void {
   if (host) { const t = host.dataset['tool'] ?? ''; host.dataset['tool'] = ''; host.dataset['tool'] = t; }
 }
 
-// Buildings run down without maintenance (\`decayOf\`): checked every few
-// seconds, a record changes only when its decay moves a tenth.
-setInterval(() => {
-  const now = sim.city.minutes(sim);
-  let changed = false;
-  for (const b of [...doc.buildings.all()]) {
-    if (b.builtAt === undefined) continue;
+// Buildings run down without maintenance (`decayOf`): a record changes only
+// when its decay moves a tenth. Each building is looked at only when its next
+// tenth is due (`decayWatch`): every three seconds the whole town was read and
+// copied for the few whose tenth had come - cost by the map's area, on the
+// clock (CLAUDE.md: "Cost depends on what changes and what is seen, never on
+// the map's area"). New and changed records come in by the diary.
+/**
+ * The buildings' decay, each by the city minute its next tenth is due. The
+ * diary (`doc.changes.since`) tells which records came or changed since the
+ * last look; a diary that forgot, or a clock that went back, reads the town
+ * once more. NÃO voltar a percorrer todos os prédios a cada três segundos.
+ */
+const decayWatch = ((): (() => void) => {
+  /** Each built record's next tenth, city minutes (Infinity: fully run down). */
+  const due = new Map<BuildingId, number>();
+  let seen = -1;
+  let lastNow = -Infinity;
+  const nextTenth = (b: Building, now: number): number => {
+    if (b.builtAt === undefined) return Infinity;
     const decay = decayOf(b.builtAt, now);
-    if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.put({ ...b, decay })); changed = true; }
-  }
-  if (changed) requestDraw();
-}, 3000);
+    // `decayOf` rounds (now - builtAt - grace) / span to tenths: the next tenth at the half past this one.
+    return decay >= 1 ? Infinity : b.builtAt + DECAY_GRACE + (DECAY_SPAN * (decay * 10 + 0.5)) / 10;
+  };
+  const file = (b: Building | undefined, id: BuildingId, now: number): void => {
+    if (b) due.set(id, nextTenth(b, now));
+    else due.delete(id);
+  };
+  return (): void => {
+    const now = sim.city.minutes(sim);
+    const changes = seen < 0 || now < lastNow ? null : doc.changes.since(seen, ['buildings']);
+    seen = doc.changes.version;
+    lastNow = now;
+    if (changes === null) {
+      due.clear();
+      for (const b of doc.buildings.all()) file(b, b.id, now);
+    } else {
+      for (const change of changes) for (const id of change.ids ?? []) file(doc.buildings.get(id as BuildingId), id as BuildingId, now);
+    }
+    let changed = false;
+    for (const [id, at] of due) {
+      if (at > now) continue;
+      const b = doc.buildings.get(id);
+      if (!b) { due.delete(id); continue; }
+      const decay = decayOf(b.builtAt, now);
+      if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.put({ ...b, decay })); changed = true; }
+      // The record put is a new object: filed again by the diary at the next look; meanwhile its next tenth.
+      due.set(id, nextTenth(b, now));
+    }
+    if (changed) requestDraw();
+  };
+})();
+setInterval(decayWatch, 3000);
 
 /**
  * The Actions (`actionsWiring.ts`): the pistol, the bomb, the buildings it
