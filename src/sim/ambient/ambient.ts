@@ -99,8 +99,17 @@ export class AmbientWorld {
   enabled = false;
   /** Where people and cars come from: round the view (GTA's way) or the ends of the roads. */
   source: 'view' | 'edges' = 'edges';
-  /** The cars standing in bays near the view: drawn, solid to walkers, never stepped. */
+  /**
+   * The cars standing in bays near the view: drawn, solid to walkers, never
+   * stepped. Written by the scenery and, through `addParked`/`removeParked`,
+   * by the lots' traffic, so `isParked` can answer without a walk of it.
+   */
   readonly parked: Vehicle[] = [];
+  /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
+  private readonly standing = new Set<Vehicle>();
+  /** The scenery's own cars standing in bays, by the bay's place (`spotKey`), and each one's bay. */
+  private readonly sceneryAt = new Map<string, Vehicle>();
+  private readonly bayOf = new Map<Vehicle, number>();
 
   private readonly rng = new Rng(0xa3b1e7);
   private readonly walkers = new Set<number>();
@@ -148,6 +157,9 @@ export class AmbientWorld {
     this.sighted.clear();
     this.bays.clear();
     this.parked.length = 0;
+    this.standing.clear();
+    this.sceneryAt.clear();
+    this.bayOf.clear();
     this.baysFor = '';
     this.vacated.clear();
     // The lots' cars of the old map with it (`agents/lotTraffic.ts`).
@@ -833,10 +845,42 @@ export class AmbientWorld {
    * filled again when the bays are made again (a car would appear in it).
    */
   release(car: Vehicle): void {
-    for (const [id, c] of this.bays) if (c === car) { this.bays.delete(id); break; }
-    if (car.free) this.vacated.add(spotKey(car.free));
-    const at = this.parked.indexOf(car);
+    const bay = this.bayOf.get(car);
+    if (bay !== undefined) { this.bays.delete(bay); this.bayOf.delete(car); }
+    if (car.free) {
+      const spot = spotKey(car.free);
+      this.vacated.add(spot);
+      if (this.sceneryAt.get(spot) === car) this.sceneryAt.delete(spot);
+    }
+    this.removeParked(car);
+  }
+
+  /**
+   * Whether `body` is among the cars standing (`parked`), put there by the
+   * scenery or through `addParked`. DO NOT ask `parked.includes` per car per
+   * tick: the list holds every parked car of the map.
+   */
+  isParked(body: Vehicle): boolean {
+    return this.standing.has(body);
+  }
+
+  /** A car of the lots' (or anybody's) drawn with the cars standing in bays. */
+  addParked(body: Vehicle): void {
+    if (this.standing.has(body)) return;
+    this.standing.add(body);
+    this.parked.push(body);
+  }
+
+  /** A car taken out of the cars standing in bays (the order of the rest kept). */
+  removeParked(body: Vehicle): void {
+    this.standing.delete(body);
+    const at = this.parked.indexOf(body);
     if (at >= 0) this.parked.splice(at, 1);
+  }
+
+  /** The scenery's own car standing in the bay at `spot` (`spotKey` of the bay), if one stands there. */
+  sceneryCarAt(spot: string): Vehicle | undefined {
+    return this.sceneryAt.get(spot);
   }
 
   /**
@@ -855,8 +899,12 @@ export class AmbientWorld {
     const mine = new Set(kept.values());
     const others = this.parked.filter((car) => !mine.has(car));
     this.bays.clear();
+    this.sceneryAt.clear();
+    this.bayOf.clear();
     this.parked.length = 0;
     this.parked.push(...others);
+    this.standing.clear();
+    for (const car of others) this.standing.add(car);
     for (const bay of this.bayList) {
       // Left empty by a car the lots drove out (`release`), or held by one of theirs.
       if (this.vacated.has(spotKey(bay))) continue;
@@ -879,7 +927,10 @@ export class AmbientWorld {
       car.seats = 0;
       car.free = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
       this.bays.set(bay.id, car);
+      this.bayOf.set(car, bay.id);
+      this.sceneryAt.set(spotKey(bay), car);
       this.parked.push(car);
+      this.standing.add(car);
     }
   }
 
