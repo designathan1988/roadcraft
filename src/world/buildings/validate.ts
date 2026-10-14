@@ -3,7 +3,8 @@ import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
 import { insideMap } from '../bounds';
 import type { RoadDoc } from '../doc';
-import type { Network } from '../network';
+import type { Network, SegmentRibbon } from '../network';
+import type { Junction } from '../junction/build';
 import { Level, halfWidth } from '../roadTypes';
 import { m } from '../units';
 import { MAX_ELEMENT, MIN_ELEMENT, elementClash, groundElements } from './elements';
@@ -213,95 +214,62 @@ export function validateBuilding(
   return null;
 }
 
-/** Whether a footprint rectangle reaches any road's footway or junction plate. */
-export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
-  return roadContacts(net).touches(rect);
-}
-
-/** A road's reach, or a junction's carriageway, with its box (`RoadContacts`). */
-type Contact =
-  | { kind: 'road'; minX: number; minY: number; maxX: number; maxY: number; line: readonly Vec2[]; reach: number }
-  | { kind: 'junction'; minX: number; minY: number; maxX: number; maxY: number; ring: readonly Vec2[] };
-
-const CONTACT_CELL = m(25.6);
-
 /**
- * The roads and junction carriageways a building must keep off, binned in a
- * grid, built once per network revision. Every building tested every road and
- * junction of the map: the road-wins rule after each road drawn, and every
- * candidate a lot or a zone tries (docs/source/performance.md #25).
+ * Whether a footprint rectangle reaches any road's footway or junction plate.
+ *
+ * The roads and junctions near it are read from the network's own cells
+ * (`Network.segmentCells`, `junctionCells`, kept by its build): a ribbon is
+ * filed over its casing, which reaches past the footway this keeps off. Each
+ * road's line and each junction's ring are flattened once per ribbon and
+ * junction object (a new object when it is built again).
+ * DO NOT go back to a grid of every road and junction of the map made again
+ * at each network revision (`RoadContacts`): every building checked after a
+ * road edit, a lot tried or a weld paid for the whole map first.
  */
-class RoadContacts {
-  private readonly cells = new Map<number, Contact[]>();
-  private stamp = 0;
-  private readonly seen = new Map<Contact, number>();
-
-  constructor(net: Network) {
-    for (const ribbon of net.ribbons.values()) {
-      const segment = net.doc.segment(ribbon.id);
-      if (segment?.structure === 'tunnel') continue;
-      const reach = halfWidth(ribbon.road, Level.Sidewalk) + ROAD_CLEARANCE;
-      const bb = ribbon.full.bbox;
-      this.add({ kind: 'road', minX: bb.minX - reach, minY: bb.minY - reach, maxX: bb.maxX + reach, maxY: bb.maxY + reach,
-        line: ribbon.full.toPoints(), reach });
-    }
-    for (const levels of net.junctions.values()) {
-      // The carriageway and kerb of the junction, not its footway plate. The
-      // footways along each road are kept clear by the distance test above,
-      // carried through the junction (`ribbon.full` runs to the node); what
-      // lies beyond them at a corner is the plate's square reaching into the
-      // block, and buildings were held back off it, leaving an empty corner of
-      // paving at every crossroads (player, 2026-10-03). A building may stand
-      // on it now, flush with the two footways; the people's walkable ground
-      // has the building's footprint cut out of it (`nav.ts`, solids).
-      const junction = levels.get(Level.Curb);
-      if (!junction || junction.ring.isEmpty) continue;
-      const jb = junction.ring.bbox;
-      this.add({ kind: 'junction', minX: jb.minX, minY: jb.minY, maxX: jb.maxX, maxY: jb.maxY, ring: junction.ring.flatten() });
-    }
+export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
+  const box = boundsOf(rect);
+  const area: readonly [number, number, number, number] = [box.minX, box.minY, box.maxX, box.maxY];
+  for (const id of net.segmentCells.idsMeeting(area)) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon || net.doc.segment(id)?.structure === 'tunnel') continue;
+    const reach = halfWidth(ribbon.road, Level.Sidewalk) + ROAD_CLEARANCE;
+    const bb = ribbon.full.bbox;
+    if (bb.minX - reach > box.maxX || bb.maxX + reach < box.minX || bb.minY - reach > box.maxY || bb.maxY + reach < box.minY) continue;
+    if (polylineDistance(lineOf(ribbon), rect) < reach - ROAD_CONTACT_EPS) return true;
   }
-
-  private add(contact: Contact): void {
-    for (let i = Math.floor(contact.minX / CONTACT_CELL); i <= Math.floor(contact.maxX / CONTACT_CELL); i++) {
-      for (let j = Math.floor(contact.minY / CONTACT_CELL); j <= Math.floor(contact.maxY / CONTACT_CELL); j++) {
-        const key = i * 65_536 + j;
-        const list = this.cells.get(key);
-        if (list) list.push(contact);
-        else this.cells.set(key, [contact]);
-      }
-    }
+  for (const node of net.junctionCells.idsMeeting(area)) {
+    // The carriageway and kerb of the junction, not its footway plate. The
+    // footways along each road are kept clear by the distance test above,
+    // carried through the junction (`ribbon.full` runs to the node); what
+    // lies beyond them at a corner is the plate's square reaching into the
+    // block, and buildings were held back off it, leaving an empty corner of
+    // paving at every crossroads (player, 2026-10-03). A building may stand
+    // on it now, flush with the two footways; the people's walkable ground
+    // has the building's footprint cut out of it (`nav.ts`, solids).
+    const junction = net.junctions.get(node)?.get(Level.Curb);
+    if (!junction || junction.ring.isEmpty) continue;
+    const jb = junction.ring.bbox;
+    if (jb.minX > box.maxX || jb.maxX < box.minX || jb.minY > box.maxY || jb.maxY < box.minY) continue;
+    const ring = ringOf(junction);
+    if (polygonsOverlap(ring, rect) && overlapArea(ring, rect) > JUNCTION_TOUCH) return true;
   }
-
-  touches(rect: readonly Vec2[]): boolean {
-    const box = boundsOf(rect);
-    const stamp = ++this.stamp;
-    for (let i = Math.floor(box.minX / CONTACT_CELL); i <= Math.floor(box.maxX / CONTACT_CELL); i++) {
-      for (let j = Math.floor(box.minY / CONTACT_CELL); j <= Math.floor(box.maxY / CONTACT_CELL); j++) {
-        for (const c of this.cells.get(i * 65_536 + j) ?? []) {
-          if (this.seen.get(c) === stamp) continue;
-          this.seen.set(c, stamp);
-          if (c.minX > box.maxX || c.maxX < box.minX || c.minY > box.maxY || c.maxY < box.minY) continue;
-          if (c.kind === 'road') {
-            if (polylineDistance(c.line, rect) < c.reach - ROAD_CONTACT_EPS) return true;
-          } else if (polygonsOverlap(c.ring, rect) && overlapArea(c.ring, rect) > JUNCTION_TOUCH) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
+  return false;
 }
 
-const CONTACTS = new WeakMap<Network, { revision: number; contacts: RoadContacts }>();
+/** A road's full centreline as points, once per ribbon (ribbons are never changed, only replaced). */
+const LINES = new WeakMap<SegmentRibbon, readonly Vec2[]>();
+function lineOf(ribbon: SegmentRibbon): readonly Vec2[] {
+  let line = LINES.get(ribbon);
+  if (!line) LINES.set(ribbon, line = ribbon.full.toPoints());
+  return line;
+}
 
-/** @rebuild Called when the network moved (`net.revision`); otherwise returns the contacts it made. */
-function roadContacts(net: Network): RoadContacts {
-  const known = CONTACTS.get(net);
-  if (known && known.revision === net.revision) return known.contacts;
-  const contacts = new RoadContacts(net);
-  CONTACTS.set(net, { revision: net.revision, contacts });
-  return contacts;
+/** A junction's kerb ring as points, once per junction. */
+const RINGS = new WeakMap<Junction, readonly Vec2[]>();
+function ringOf(junction: Junction): readonly Vec2[] {
+  let ring = RINGS.get(junction);
+  if (!ring) RINGS.set(junction, ring = junction.ring.flatten());
+  return ring;
 }
 
 // ------------------------------------------------------------------ geometry
