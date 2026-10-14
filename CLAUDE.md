@@ -3,6 +3,12 @@
 Jogo de navegador de construir cidades (TypeScript, three.js, Vite). Meta: cidade no mapa inteiro
 de 10 km, bonita e rápida. Jogo: `npm run dev` (127.0.0.1:5300). Verificação: `npm run check`.
 
+## Idioma
+- O código é em inglês: identificadores, comentários, mensagens de teste e de erro no código.
+  Comentário contra a volta de um erro: "DO NOT …".
+- Em português do Brasil: a conversa, os relatórios, os docs (`docs/`, `memory/`, `OTIMIZACAO.md`)
+  e as mensagens de commit.
+
 ## Memória do trabalho (leia primeiro)
 Pasta `memory/`: ordens do jogador e estado atual entram sozinhos em toda sessão nova e depois de
 toda compactação; o feito (`memory/FEITO.md`) e o diário (`memory/DIARIO.md`) leia quando precisar.

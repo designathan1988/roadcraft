@@ -44,7 +44,8 @@ Escreva ao jogador o que achou, os links e a abordagem.
 - índice espacial em vez de varredura; o que mudou (diário) em vez de refazer tudo; trabalho pesado
   em worker; nível de detalhe e liberação da cópia na CPU para o que vai à GPU;
 - corrija todas as partes da mesma causa, não só a que apareceu primeiro.
-Comentário "NÃO …" onde a tentação de voltar existe.
+O código é em inglês (identificadores e comentários); comentário "DO NOT …" onde a
+tentação de voltar existe.
 
 **5 Provar.** A mesma saída: os testes existentes e, onde a forma mudou, um teste de equivalência
 (o novo contra o antigo ou contra o mapa inteiro). No perfil da cidade grande, a função sumiu do

@@ -7,9 +7,12 @@
   amortizar (fatiar, segurar, teto de cache, espaçar) nem remendo: corrigir tudo o que causa o
   problema, no código, alinhado com as fontes oficiais.
 - Otimizar sem perder gráfico nem função; cada correção com commit próprio (causa + técnica +
-  fonte), comentário "NÃO …" onde a tentação de voltar existe, `OTIMIZACAO.md` como lista viva.
+  fonte), comentário "DO NOT …" onde a tentação de voltar existe, `OTIMIZACAO.md` como lista viva.
+- O código é em inglês (identificadores, comentários, testes); conversa, relatórios, docs e
+  mensagens de commit em português do Brasil (2026-10-14).
 - Ir ao código, entender e corrigir; não empilhar testes nem ferramentas no lugar de corrigir.
-- Tudo em português do Brasil. Pesquisar (WebSearch + ler a fonte) antes de mudar arquivo.
+- Conversa em português do Brasil (o código em inglês, acima). Pesquisar (WebSearch + ler a
+  fonte) antes de mudar arquivo.
 - Testar no jogo como o jogador; toda foto tirada é examinada e o defeito visto é corrigido.
 - Agentes livres (2026-10-14): quantos forem úteis, em paralelo; revisar o que fizeram.
 
