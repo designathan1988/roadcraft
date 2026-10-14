@@ -275,9 +275,20 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
      sobreposição dos lotes segurados (`holdBuildings`, `LotTool.holdOverlay`), só as células
      perto emitidas na abertura, massas antes do detalhe, prédios longe num backlog nas sobras do
      quadro. Prédios na tela a 7,5 s do pedido (eram 11,8 s), sem travar a página.
-- Pendente, com o porquê em `OTIMIZACAO.md`: simulação em worker (#3, arquitetura), R27/R22 no
-  documento (#4 em andamento por agente supervisionado, #8), luzes pontuais (#5, decisão do
-  jogador), traçado inicial da cidade (#14, ~0,8 s síncrono).
+  4. **R27 (metade)**: `replaceWith` compara só os tipos que o diário da cópia diz que mudaram
+     (`forkedFrom`/`movedIn` em `world/doc.ts`); feito por agente supervisionado, diff revisado,
+     825 specs de `world`/`editor` verdes. Fica o `clone()` por edição.
+  14. **Traçado da cidade gerada em fatias**: `layPowerLinesSteps`, `greenCitySteps`,
+     `layoutSteps`; chamada síncrona 1.534 → 157 ms, cidade íntegra.
+- **R30 derrubado medindo** (2026-10-14): as oito luzes pontuais escondidas não mudam a GPU
+  (18,7 / 18,9 / 19,0 ms em A/B na mesma vista); a mudança foi desfeita e vai para os falsos
+  positivos. Células de 120 m (culling mais fino) também pioraram (19,1 ms, 1.266 chamadas).
+- Medido a 1920×1080 na rua, cidade de 1.348 prédios: GPU 14,6 ms (sombra 4,1); CPU p50 32 ms,
+  simulação 13,7 e desenho 18,5. **O maior custo de quadro é a simulação na thread principal.**
+- Pendente, com o porquê em `OTIMIZACAO.md`: simulação em worker (#3: o `SimWorld` lê documento e
+  rede por referência em todos os estágios e o renderer lê as estruturas da simulação; precisa de
+  um plano próprio com o jogador), o `clone()` por edição (resto do #4) e o registro compacto de
+  prédio (#8).
 - NÃO rodado: `npm run check` inteiro (o pedido desta rodada limitou a verificação a build e
   typecheck); por isso nada foi enviado ao GitHub.
 
