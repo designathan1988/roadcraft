@@ -407,7 +407,8 @@ export class LorryTraffic {
       const c = Math.cos(q.angle), sn = Math.sin(q.angle);
       for (let k = -2; k <= 2 && clear; k++) {
         const x = q.x + c * k * (a.length / 5), y = q.y + sn * k * (a.length / 5);
-        for (const p of w.pedViews) if (Math.hypot(p.x - x, p.y - y) < r) { clear = false; break; }
+        // The people near the point (`PeopleBridge.anyoneWithin`, the walkers' grid), not every person of the map.
+        if (w.pedEngine.bridge.anyoneWithin(w, x, y, r, null)) clear = false;
       }
     }
     if (clear) { lorry.waited = 0; return true; }

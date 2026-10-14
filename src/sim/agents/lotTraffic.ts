@@ -474,11 +474,12 @@ export class LotTraffic {
       for (const j of [-1, 0, 1]) discs.push({ x: q.x + cx * j, y: q.y + cy * j });
       if (s >= path.length) break;
     }
+    // Asked of the people near each disc (`PeopleBridge.anyoneWithin`, the
+    // walkers' grid). DO NOT walk `w.pedViews`: every person of the map, for
+    // each car off the road, every tick.
     let clear = true;
-    for (const p of w.pedViews) {
-      for (const d of discs) if (Math.hypot(p.x - d.x, p.y - d.y) < r) { clear = false; break; }
-      if (!clear) break;
-    }
+    const people = w.pedEngine.bridge;
+    for (const d of discs) if (people.anyoneWithin(w, d.x, d.y, r, null)) { clear = false; break; }
     if (clear || car.waited >= ASK_WAY) { car.reserved = true; return true; }
     car.waited += DT;
     return false;
