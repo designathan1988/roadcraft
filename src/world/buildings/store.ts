@@ -60,9 +60,14 @@ export class BuildingStore {
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
 
-  /** The serial of the latest change of the buildings in the diary. */
+  /** The serial of the latest change of the buildings in the diary (their shape, place or use; not their wear). */
   get revision(): number {
     return this.journal.serialOf('buildings');
+  }
+
+  /** The serial of the latest change of a building's wear (`wear`): what draws or saves a building reads it too. */
+  get wearRevision(): number {
+    return this.journal.serialOf('buildingWear');
   }
 
   /** Writes a change of these buildings (their rectangles, or the whole map when any has none). */
@@ -141,6 +146,24 @@ export class BuildingStore {
     this.grid?.update(now);
     // Where it stood and where it stands: a moved building changes both.
     this.changed([was, now], 'replaced');
+  }
+
+  /**
+   * Sets a building's wear (`Building.decay`), its volumes, place and use
+   * kept. Written in the diary as `buildingWear`, so `revision` does not move.
+   * DO NOT write a wear change with `put`: the town decays a tenth at a time,
+   * every few seconds somewhere, and as a `buildings` change each tenth made
+   * everything derived from the buildings' shape (walls, bays, yards, places,
+   * grading, the camera's solids) work the town out again.
+   */
+  wear(id: BuildingId, decay: number): void {
+    const was = this.items.get(id);
+    if (!was || (was.decay ?? 0) === decay) return;
+    const now = settleBuilding({ ...was, decay }, this.settled, was);
+    this.items.set(id, now);
+    this.grid?.update(now);
+    const rect = rectOf(now);
+    this.journal.record('buildingWear', rect ? [rect] : null, { ids: [id as number] });
   }
 
   /**

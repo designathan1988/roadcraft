@@ -41,7 +41,7 @@ const RECORDS: readonly { readonly part: RecordPart; readonly kinds: readonly Do
   { part: 'landscape', kinds: ['landscape'], entries: (d) => d.landscape, get: (d, id) => d.landscape.get(id) },
   { part: 'barriers', kinds: ['barriers'], entries: (d) => d.barriers, get: (d, id) => d.barriers.get(id) },
   // A building's record is replaced, never changed in place (`BuildingStore.put`): kept by reference.
-  { part: 'buildings', kinds: ['buildings'], entries: (d) => buildingEntries(d), get: (d, id) => d.buildings.get(id as never), immutable: true },
+  { part: 'buildings', kinds: ['buildings', 'buildingWear'], entries: (d) => buildingEntries(d), get: (d, id) => d.buildings.get(id as never), immutable: true },
 ];
 const LISTS = Object.keys(LIST_KINDS) as ListPart[];
 /** The values and the kind that moves each; null: compared at every commit (they are small). */

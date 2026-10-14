@@ -498,7 +498,8 @@ export function createBuildingLayer(): BuildingLayer {
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
       const rest = `${groundKey}|${hides}|${dimKey}|${cutKey}|${[...ruined].join(',')}`;
-      const key = `${doc.buildings.revision}|${rest}`;
+      // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
+      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}`;
       let rebuilt = false;
       // The buildings an edit changed (or whose ground it moved) are emitted a
       // few milliseconds a frame first, the town as it was staying drawn; the
@@ -515,7 +516,7 @@ export function createBuildingLayer(): BuildingLayer {
         // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key:
         // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
         const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined && cutaway === null
-          && (!warming || warming.dirty) && warming?.key !== key ? doc.changes.since(townSeen, ['buildings']) : null;
+          && (!warming || warming.dirty) && warming?.key !== key ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
         const changed = since?.every((e) => e.ids) ? since : null;
         if (changed || !warming || warming.key !== key) {
           let queue: Building[], loading = false;

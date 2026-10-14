@@ -2859,7 +2859,7 @@ const CHANGE_COLOURS: Record<ChangeKind, string> = {
   roads: '#ffd23f', traffic: '#fca311', clearings: '#95d5b2', terrain: '#c8823c', paint: '#9be564', buildings: '#ff8fab', zones: '#7bdff2', lots: '#b2f7ef',
   utilities: '#f7aef8', barriers: '#d0d0d0', landscape: '#6bd425', transit: '#4cc9f0', people: '#ffffff',
   trees: '#2d6a4f', elements: '#e0aaff', fog: '#e9ecef', clouds: '#f8f9fa', weather: '#adb5bd', nature: '#52b788',
-  gullies: '#8d5524', economy: '#2a9d8f', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',
+  gullies: '#8d5524', economy: '#2a9d8f', buildingWear: '#a26769', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',
 };
 
 /**
@@ -4268,8 +4268,8 @@ const decayWatch = ((): (() => void) => {
       const b = doc.buildings.get(id);
       if (!b) { due.delete(id); continue; }
       const decay = decayOf(b.builtAt, now);
-      if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.put({ ...b, decay })); changed = true; }
-      // The record put is a new object: filed again by the diary at the next look; meanwhile its next tenth.
+      // `wear`, not `put`: a wear change is no change of the building's shape (`BuildingStore.wear`).
+      if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)); changed = true; }
       due.set(id, nextTenth(b, now));
     }
     if (changed) requestDraw();

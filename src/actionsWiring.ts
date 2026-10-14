@@ -296,11 +296,13 @@ export function createActions(deps: ActionsDeps): Actions {
       }
       // Everything round it left filthy: the buildings within twice the reach
       // blackened with soot and dust (their weathering, `decay`).
-      for (const c of [...doc.buildings.all()]) {
+      // By place (`near`, the same order as the whole store), not the whole town; a wear change (`wear`), not a new shape.
+      const soot = radius * 2.2;
+      for (const c of doc.buildings.near(world.x - soot, world.y - soot, world.x + soot, world.y + soot)) {
         const d = Math.hypot(c.x - world.x, c.y - world.y);
-        if (d > radius * 2.2) continue;
-        const add = 0.35 * (1 - d / (radius * 2.2)) * Math.min(1, strength / 8);
-        if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.put({ ...c, decay: Math.min(1, (c.decay ?? 0) + add) })); changed = true; }
+        if (d > soot) continue;
+        const add = 0.35 * (1 - d / soot) * Math.min(1, strength / 8);
+        if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.wear(c.id, Math.min(1, (c.decay ?? 0) + add))); changed = true; }
       }
       // Poles: broken whole, snapped or to splinters; the wires torn off them
       // pull the next poles over, or hang from them.

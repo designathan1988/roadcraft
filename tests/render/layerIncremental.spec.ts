@@ -98,4 +98,33 @@ describe('the buildings layer, a change at a time', () => {
     expect(incremental).toBe(12);
     live.dispose();
   });
+
+  it("draws a building's new wear, by its id, without walking the town", () => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 9; i++) doc.buildings.add(body(i, (i % 3) * SPACING, Math.floor(i / 3) * SPACING));
+    const live = createBuildingLayer();
+    settle(live, doc);
+    const worn = (): number => {
+      let most = 0;
+      live.group.traverse((o: Object3D) => {
+        const decay = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute('aDecay') : undefined;
+        if (decay) for (let i = 0; i < decay.count; i++) most = Math.max(most, decay.getX(i));
+      });
+      return most;
+    };
+    expect(worn()).toBeLessThan(0.9);
+    const shape = doc.buildings.revision;
+    doc.buildings.wear([...doc.buildings.all()][4]!.id, 0.9);
+    expect(doc.buildings.revision).toBe(shape);
+    const all = doc.buildings.all.bind(doc.buildings);
+    let walked = 0;
+    doc.buildings.all = () => { walked++; return all(); };
+    const before = live.version;
+    settle(live, doc);
+    doc.buildings.all = all;
+    expect(live.version).toBeGreaterThan(before);
+    expect(walked).toBe(0);
+    expect(worn()).toBeCloseTo(0.9, 5);
+    live.dispose();
+  });
 });
