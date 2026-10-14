@@ -4090,6 +4090,23 @@ const healthPanel = mountHealthPanel({
     syncViewFromFlatCamera();
     requestDraw();
   },
+  /**
+   * The camera put at a centre, zoom, bearing and tilt (radians) exactly, as
+   * `view()` reads them (`scripts/look.mjs`): the same view on both sides of a
+   * change. A drag's turn depends on the frames it spans, so the same gestures
+   * gave a different view on every run (2026-10-14). The zoom first (it keeps
+   * the ground under the middle of the screen and moves the centre), then the
+   * bearing and the tilt asked (the zoom bounds the tilt), then the centre.
+   */
+  setView: (at: { x: number; y: number; zoom: number; azimuth: number; elevation: number }) => {
+    camera.x = at.x;
+    camera.y = at.y;
+    camera.zoom = at.zoom;
+    syncViewFromFlatCamera();
+    view.setOrbit(at.azimuth, at.elevation);
+    view.moveTo({ x: at.x, y: at.y });
+    requestDraw();
+  },
   /** Forces one frame. Used by the browser verification harness. */
   redraw: () => requestDraw(),
   /**
