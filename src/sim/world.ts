@@ -82,6 +82,10 @@ export interface SimStreams {
   /** The People engine's own stream (`people/people.ts`). */
   readonly people: Rng;
   readonly occupancy: Rng;
+  /** The lots' cars (`agents/lotTraffic.ts`), the lorries (`agents/lorryTraffic.ts`) and the scenery's life (`ambient/ambient.ts`). */
+  readonly lots: Rng;
+  readonly lorries: Rng;
+  readonly ambient: Rng;
 }
 
 /** The streams of a world seeded `seed`: what a new world starts with, and a reset starts again from. */
@@ -98,6 +102,13 @@ function forkStreams(seed: number): SimStreams {
     signalOffsets: root.fork('signalOffsets'),
     occupancy: root.fork('occupancy'),
     people: root.fork('people'),
+    // Forked last: each fork takes one draw of the root, so the streams above
+    // keep their numbers. DO NOT give the lots, the lorries or the scenery a
+    // fixed seed of their own again: every world drew the same lots and
+    // lorries whatever its seed.
+    lots: root.fork('lots'),
+    lorries: root.fork('lorries'),
+    ambient: root.fork('ambient'),
   };
 }
 

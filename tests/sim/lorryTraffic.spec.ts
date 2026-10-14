@@ -89,6 +89,8 @@ describe('the lorries to the docks', () => {
     }
     expect(sent).not.toBeNull();
     const before = driverOf(sent!.building);
+    // A map opened (`main.ts`): the world and its scenery reset; the lorries' draws are the world's.
+    w.reset();
     lorries.reset(w);
     expect(lorries.sendNow(w, sent!.building, sent!.dock)).toBe(true);
     expect(driverOf(sent!.building)).toEqual(before);

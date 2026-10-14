@@ -26,12 +26,10 @@ function reopen(sim: SimWorld): void {
   sim.ambient.reset(sim);
 }
 
-/** The next draw of every random stream the world and its scenery own. */
+/** The next draw of every random stream the world owns (the scenery's, the lots' and the lorries' among them). */
 function draws(sim: SimWorld): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [name, rng] of Object.entries(sim.rng)) out[name] = (rng as Rng).u32();
-  out['ambient'] = (sim.ambient as unknown as { rng: Rng }).rng.u32();
-  out['lots'] = (sim.city.lots as unknown as { rng: Rng }).rng.u32();
   return out;
 }
 

@@ -1,4 +1,3 @@
-import { Rng } from '@core/rng';
 import { m, stepsIn } from '@world/units';
 import { DRIVER_NOISE, DT, JAM_GAP } from '../params';
 import { vehiclePose } from '../pose';
@@ -95,15 +94,10 @@ interface LotCar {
   reserved: boolean;
 }
 
-/** The lots' own random stream's seed. */
-const LOTS_SEED = 0x10715;
-
 const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.x, 0.1))},${Math.round(stepsIn(b.y, 0.1))}`;
 
 export class LotTraffic {
   private readonly cars = new Map<VehicleId, LotCar>();
-  /** Seeded as every new world's; a reset seeds it again (`reset`). */
-  private rng = new Rng(LOTS_SEED);
   private clock = 0;
   private baysFor = '';
   private seenFor = '';
@@ -144,10 +138,8 @@ export class LotTraffic {
     this.baysFor = '';
     this.seenFor = '';
     this.bays = [];
-    // As a new map's: the stream from its seed and the counters from nought.
-    // DO NOT keep the stream going: the same map opened twice drew other
-    // bays, stays and departures.
-    this.rng = new Rng(LOTS_SEED);
+    // As a new map's: the counters from nought (the random stream is the
+    // world's, `SimWorld.rng.lots`, forked again by `SimWorld.reset`).
     this.called = 0;
     this.parkedIn = 0;
     this.leftBy = 0;
@@ -233,7 +225,7 @@ export class LotTraffic {
       let total = 0;
       for (const p of pool) total += p.weight;
       if (total <= 0) return;
-      let roll = this.rng.float() * total, at = pool.length - 1;
+      let roll = w.rng.lots.float() * total, at = pool.length - 1;
       for (let i = 0; i < pool.length; i++) { roll -= pool[i]!.weight; if (roll < 0) { at = i; break; } }
       const pick = pool.splice(at, 1)[0]!;
       if (pick.car) { pick.car.go = true; continue; }
@@ -269,7 +261,7 @@ export class LotTraffic {
     const free = this.freeBays(w);
     if (!free.length) return false;
     const focus = w.focus;
-    const near = focus && this.rng.float() < 0.5
+    const near = focus && w.rng.lots.float() < 0.5
       ? free.filter((b) => Math.hypot(b.x - focus.x, b.y - focus.y) < Math.max(focus.r * 1.2, m(120))) : free;
     const pool = near.length ? near : free;
     const hour = this.hour(w);
@@ -284,9 +276,9 @@ export class LotTraffic {
     });
     let total = 0;
     for (const x of weights) total += x;
-    let roll = this.rng.float() * total, at = pool.length - 1;
+    let roll = w.rng.lots.float() * total, at = pool.length - 1;
     if (total > 0) for (let i = 0; i < pool.length; i++) { roll -= weights[i]!; if (roll < 0) { at = i; break; } }
-    else at = Math.floor(this.rng.float() * pool.length);
+    else at = Math.floor(w.rng.lots.float() * pool.length);
     const bay = pool[at]!;
     const lane = bay.lane!;
     const stopAt = lane.entryAt ?? lane.at;
@@ -384,7 +376,7 @@ export class LotTraffic {
     if (!path.done) return;
     body.seats = 0;
     car.path = null;
-    car.stay = STAY_MIN + this.rng.float() * (STAY_MAX - STAY_MIN);
+    car.stay = STAY_MIN + w.rng.lots.float() * (STAY_MAX - STAY_MIN);
     this.parkedIn++;
     this.enter(car, 'parked');
   }

@@ -85,9 +85,6 @@ const OPEN_CARS = 2;
 const OPEN_PEOPLE = 2;
 const OPEN_TICKS = 600;
 
-/** The scenery's own random stream's seed. */
-const AMBIENT_SEED = 0xa3b1e7;
-
 /** Share of the bays with a car in them. */
 const PARKED = 0.62;
 
@@ -114,8 +111,6 @@ export class AmbientWorld {
   private readonly sceneryAt = new Map<string, Vehicle>();
   private readonly bayOf = new Map<Vehicle, number>();
 
-  /** Seeded as every new world's; a reset seeds it again (`reset`). */
-  private rng = new Rng(AMBIENT_SEED);
   private readonly walkers = new Set<number>();
   private readonly drivers = new Set<number>();
   /** The drivers made here that may be on screen now: never taken off the road at a dead end (`vehicles/spawn.ts` stepDespawn). */
@@ -171,11 +166,11 @@ export class AmbientWorld {
     this.opening = true;
     this.openTicks = OPEN_TICKS;
     this.openSpots.length = 0;
-    // As a new map's: the stream from its seed, the looks from the first, the
-    // counters from nought. DO NOT keep them going: the same map opened twice
+    // As a new map's: the looks from the first, the counters from nought (the
+    // random stream is the world's, `SimWorld.rng.ambient`, forked again by
+    // `SimWorld.reset`). DO NOT keep them going: the same map opened twice
     // filled other streets with other people at other ticks. The trip ids go
     // on (`nextTrip`), as the vehicles' (`SimWorld.reset`).
-    this.rng = new Rng(AMBIENT_SEED);
     this.clock = 0;
     this.nextEdgeLook = 0;
     this.gateWalks.made = 0;
@@ -318,7 +313,7 @@ export class AmbientWorld {
         this.walkers.delete(id);
       } else if (inSight) {
         // In sight on their last stretch: on to somewhere else, never ending where they are seen.
-        const b = this.rng.float() * Math.PI * 2, e = reach * (0.3 + this.rng.float() * 0.7);
+        const b = w.rng.ambient.float() * Math.PI * 2, e = reach * (0.3 + w.rng.ambient.float() * 0.7);
         walkOn(w, id, focus.x + Math.cos(b) * e, focus.y + Math.sin(b) * e, m(30));
       }
     }
@@ -326,19 +321,19 @@ export class AmbientWorld {
     if (!engine.walkTrip || !engine.walkableNear) return;
     const anywhere = !seen || this.fresh;
     for (let made = 0; made < MAKE_PER_LOOK * (anywhere ? 4 : 1) && this.walkers.size < want; made++) {
-      const a = this.rng.float() * Math.PI * 2;
-      const d = anywhere ? reach * Math.sqrt(this.rng.float()) : focus.r * 1.05 + (reach - focus.r * 1.05) * this.rng.float();
+      const a = w.rng.ambient.float() * Math.PI * 2;
+      const d = anywhere ? reach * Math.sqrt(w.rng.ambient.float()) : focus.r * 1.05 + (reach - focus.r * 1.05) * w.rng.ambient.float();
       const from = engine.walkableNear.call(engine, w, focus.x + Math.cos(a) * d, focus.y + Math.sin(a) * d, m(30));
       if (!from || (seen && !this.fresh && this.seen(w, focus, from.x, from.y, m(6)))) continue;
       // Somewhere across the view: the walk passes through what is seen.
-      const b = this.rng.float() * Math.PI * 2, e = reach * (0.3 + this.rng.float() * 0.9);
+      const b = w.rng.ambient.float() * Math.PI * 2, e = reach * (0.3 + w.rng.ambient.float() * 0.9);
       const to = engine.walkableNear.call(engine, w, focus.x + Math.cos(b) * e, focus.y + Math.sin(b) * e, m(30));
       if (!to || Math.hypot(to.x - from.x, to.y - from.y) < m(40)) continue;
-      const roll = this.rng.float();
+      const roll = w.rng.ambient.float();
       const ageClass: PersonAgeClass = roll < 0.12 ? 'child' : roll < 0.28 ? 'elder' : 'adult';
       const id = engine.walkTrip.call(engine, w, {
         trip: this.nextTrip++, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
-        seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30),
+        seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30),
       });
       if (id !== null) { this.walkers.add(id); this.company(w, id, ageClass, from, to, false); }
     }
@@ -456,10 +451,10 @@ export class AmbientWorld {
       // Out of a lot, into one, both (the other end in town as often as any end is), or neither.
       let fromLot: DoorWay | null = null;
       let toLot: DoorWay | null = null;
-      if (outW + inW > 0 && this.rng.float() < local) {
-        const out = !ends.length || this.rng.float() * (outW + inW) < outW;
+      if (outW + inW > 0 && w.rng.ambient.float() < local) {
+        const out = !ends.length || w.rng.ambient.float() * (outW + inW) < outW;
         const first = this.pickPlace(w, hour, out, null);
-        const second = first && this.rng.float() < local ? this.pickPlace(w, hour, !out, first) : null;
+        const second = first && w.rng.ambient.float() < local ? this.pickPlace(w, hour, !out, first) : null;
         if (out) { fromLot = first; toLot = second; } else { toLot = first; fromLot = second; }
       }
       let from: { node: number; x: number; y: number };
@@ -468,7 +463,7 @@ export class AmbientWorld {
         from = { node: -1, x: door.x, y: door.y };
       } else {
         if (!ends.length) continue;
-        from = ends[Math.floor(this.rng.float() * ends.length)]!;
+        from = ends[Math.floor(w.rng.ambient.float() * ends.length)]!;
         // Not onto somebody standing there (out of a door, they wait inside until it is clear).
         if (engine.bridge.anyoneWithin(w, from.x, from.y, m(1.5), null)) continue;
       }
@@ -499,13 +494,13 @@ export class AmbientWorld {
         roams = true;
       }
     }
-    const roll = this.rng.float();
+    const roll = w.rng.ambient.float();
     const ageClass: PersonAgeClass = roll < 0.12 ? 'child' : roll < 0.28 ? 'elder' : 'adult';
     const head = fromLot ? fromLot.out : NO_WAY;
     const tail = toLot ? reversed(toLot) : NO_WAY;
     const trip = {
       trip: this.nextTrip++, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
-      seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30),
+      seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30),
     };
     const id = fromLot || toLot ? walkThrough(w, trip, head, tail) : engine.walkTrip.call(engine, w, trip);
     if (id === null) return null;
@@ -522,7 +517,7 @@ export class AmbientWorld {
   private across(w: SimWorld, from: { x: number; y: number }): { x: number; y: number } | null {
     const engine = w.pedEngine;
     for (let k = 0; k < 4; k++) {
-      const a = this.rng.float() * Math.PI * 2, d = m(60) + this.rng.float() * m(200);
+      const a = w.rng.ambient.float() * Math.PI * 2, d = m(60) + w.rng.ambient.float() * m(200);
       const p = engine.walkableNear?.call(engine, w, from.x + Math.cos(a) * d, from.y + Math.sin(a) * d, m(30));
       if (p) return p;
     }
@@ -543,7 +538,7 @@ export class AmbientWorld {
       if (!onLastStretch(w, id)) continue;
       const at = walkerOf(w, id);
       if (!at) continue;
-      const lot = this.gates && this.placesReady(w) && this.rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
+      const lot = this.gates && this.placesReady(w) && w.rng.ambient.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       if (lot && walkOn(w, id, lot.out[0]!.x, lot.out[0]!.y, m(30), reversed(lot))) {
         this.roaming.delete(id);
         this.gateWalks.toGate++;
@@ -689,7 +684,7 @@ export class AmbientWorld {
       const share = outShare(kind, hour);
       return PEOPLE[kind] * busy(kind, hour) * (out ? share : 1 - share);
     });
-    return this.places.pick(this.rng, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
+    return this.places.pick(w.rng.ambient, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
   }
 
   /**
@@ -703,7 +698,7 @@ export class AmbientWorld {
     head: readonly { x: number; y: number }[] = NO_WAY, tail: readonly { x: number; y: number }[] = NO_WAY): void {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return;
-    const roll = this.rng.float();
+    const roll = w.rng.ambient.float();
     if (roll >= 0.4) return;
     const ageClass: PersonAgeClass = age === 'child' ? 'adult' : roll < 0.1 && age === 'adult' ? 'child' : age;
     // Out of the same door: after the first, when the spot is clear (`walk.ts`
@@ -712,7 +707,7 @@ export class AmbientWorld {
     // until the first had walked off, and a group was seen to step out apart.
     const trip = {
       trip: this.nextTrip++, fromX: from.x + (head.length ? 0 : m(0.9)), fromY: from.y, toX: to.x, toY: to.y,
-      seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30), with: leader,
+      seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30), with: leader,
     };
     const id = head.length || tail.length ? walkThrough(w, trip, head, tail) : engine.walkTrip.call(engine, w, trip);
     if (id === null) return;
@@ -723,7 +718,7 @@ export class AmbientWorld {
   /** A road end's footway point at another road end than `not`; null when there is none. */
   private pickEnd(w: SimWorld, not: number | null): { node: number; x: number; y: number } | null {
     const ends = this.roadEnds(w).filter((e) => e.node !== not);
-    return ends.length ? ends[Math.floor(this.rng.float() * ends.length)]! : null;
+    return ends.length ? ends[Math.floor(w.rng.ambient.float() * ends.length)]! : null;
   }
 
   // ------------------------------------------------------------ traffic
@@ -757,13 +752,13 @@ export class AmbientWorld {
     // Cars are drawn at every zoom: only past the edge of the view, but for a map just opened.
     const anywhere = this.fresh;
     for (let tries = 0, made = 0; tries < 48 && made < MAKE_PER_LOOK * (anywhere ? 4 : 1) && this.drivers.size < want; tries++) {
-      const pick = lanes[Math.floor(this.rng.float() * lanes.length)]!;
+      const pick = lanes[Math.floor(w.rng.ambient.float() * lanes.length)]!;
       // A lane wholly out of reach is not looked at further.
       if (Math.hypot(pick.x - focus.x, pick.y - focus.y) > reach + pick.length / 2) continue;
       const lane = w.lanelet(pick.id);
       if (!lane) continue;
-      const arch = this.rng.weighted(TRAFFIC);
-      const s = arch.length + m(0.4) + this.rng.float() * Math.max(0, lane.length - arch.length - m(0.8));
+      const arch = w.rng.ambient.weighted(TRAFFIC);
+      const s = arch.length + m(0.4) + w.rng.ambient.float() * Math.max(0, lane.length - arch.length - m(0.8));
       const at = lane.centre.sampleAt(s).p;
       const d = Math.hypot(at.x - focus.x, at.y - focus.y);
       const ok = anywhere ? d < reach : d < reach && !this.seen(w, focus, at.x, at.y, arch.length + m(4));
