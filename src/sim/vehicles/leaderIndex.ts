@@ -31,7 +31,7 @@ const LOOKAHEAD_HOPS = 3;
  */
 export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
   const rt = w.rt(v.lanelet);
-  const idx = rt.order.indexOf(v.id);
+  const idx = laneSlot(w, rt.order, v);
   let best: Obstacle | null = null;
   const consider = (o: Obstacle): void => {
     if (!best || o.gap < best.gap) best = o;
@@ -108,6 +108,31 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
   }
 
   return null;
+}
+
+/**
+ * Where a vehicle stands in its lane's occupancy list, found by bisection on
+ * the order the list is kept in: arc position, then id (`SimWorld.sortLane`).
+ * Every list is in that order whenever the leaders are looked for: sorted on
+ * every entry (`enterLanelet`), left in order by every exit, and sorted at the
+ * end of `integrateAll`, the only writer of `s` besides the joins that sort as
+ * they enter. A list found out of order (the bisection lands elsewhere) is
+ * searched instead: the answer is always the list's. DO NOT go back to
+ * `indexOf` for every vehicle: it read the lane up to itself for each car of a
+ * queue, quadratic in the queue.
+ */
+function laneSlot(w: SimWorld, order: readonly number[], v: Vehicle): number {
+  let lo = 0, hi = order.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const id = order[mid]!;
+    if (id === v.id) return mid;
+    const other = w.veh(id);
+    const before = ((other?.s ?? 0) - v.s || id - v.id) < 0;
+    if (before) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return order.indexOf(v.id);
 }
 
 /** Rears of bodies sliding out of a lane, ahead of `s` on it. */

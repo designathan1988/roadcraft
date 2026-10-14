@@ -69,6 +69,47 @@ export interface LaneletRuntime {
   ghostSince: number;
 }
 
+/** The world's random streams, one per consumer, forked by tag so a new consumer reshuffles no other (`core/rng.ts`). */
+export interface SimStreams {
+  readonly spawnVehicles: Rng;
+  readonly spawnPeds: Rng;
+  readonly driver: Rng;
+  readonly route: Rng;
+  readonly gap: Rng;
+  readonly pedParams: Rng;
+  readonly courtesy: Rng;
+  readonly signalOffsets: Rng;
+  /** The People engine's own stream (`people/people.ts`). */
+  readonly people: Rng;
+  readonly occupancy: Rng;
+}
+
+/** The streams of a world seeded `seed`: what a new world starts with, and a reset starts again from. */
+function forkStreams(seed: number): SimStreams {
+  const root = new Rng(seed);
+  return {
+    spawnVehicles: root.fork('spawnVehicles'),
+    spawnPeds: root.fork('spawnPeds'),
+    driver: root.fork('driver'),
+    route: root.fork('routeChoice'),
+    gap: root.fork('gapAcceptance'),
+    pedParams: root.fork('pedParams'),
+    courtesy: root.fork('courtesy'),
+    signalOffsets: root.fork('signalOffsets'),
+    occupancy: root.fork('occupancy'),
+    people: root.fork('people'),
+  };
+}
+
+/** What `SimWorld.rt` answers for a lane nobody has been on: empty, not a ghost, frozen against writes. */
+const NO_RUNTIME: LaneletRuntime = Object.freeze({
+  id: '' as LaneletId,
+  order: Object.freeze([]) as unknown as VehicleId[],
+  shadows: Object.freeze([]) as unknown as VehicleId[],
+  ghost: false,
+  ghostSince: 0,
+});
+
 /**
  * Everything the simulation owns.
  *
@@ -98,7 +139,7 @@ export class SimWorld {
    * that set it still read as they did.
    */
   driveModel = 'v2' as const;
-  /** @mapWide One per lanelet of the graph. */
+  /** @mapWide One per lanelet a vehicle (or its shadow) has been on; written only through `runtimeFor`. */
   readonly runtime = new Map<LaneletId, LaneletRuntime>();
   readonly controllers = new Map<NodeId, SignalController>();
   /**
@@ -158,23 +199,15 @@ export class SimWorld {
   /** Cumulative link entries since the current simulation session began. */
   readonly segmentVolume = new Map<number, number>();
   /** Vehicles an hour into each junction from each leg, as a trend (docs/VIAS.md V5). */
-  readonly flow = new FlowStats();
+  get flow(): FlowStats { return this.flowStats; }
+  private flowStats = new FlowStats();
   /** The control each junction left on "automatic" gets from its flows (docs/VIAS.md V5). */
-  readonly advisor = new ControlAdvisor();
+  get advisor(): ControlAdvisor { return this.controlAdvisor; }
+  private controlAdvisor = new ControlAdvisor();
 
-  readonly rng: {
-    readonly spawnVehicles: Rng;
-    readonly spawnPeds: Rng;
-    readonly driver: Rng;
-    readonly route: Rng;
-    readonly gap: Rng;
-    readonly pedParams: Rng;
-    readonly courtesy: Rng;
-    readonly signalOffsets: Rng;
-    /** The People engine's own stream (`people/people.ts`). */
-    readonly people: Rng;
-    readonly occupancy: Rng;
-  };
+  /** The world's random streams, forked from its seed (`reset` forks them again). */
+  get rng(): SimStreams { return this.streams; }
+  private streams: SimStreams;
 
   nextVehicleId = 1;
   /** Per-world population timer; simulations must never influence each other. */
@@ -268,33 +301,11 @@ export class SimWorld {
   constructor(
     readonly doc: RoadDoc,
     readonly net: Network,
-    seed = 0x5eed,
+    private readonly seed = 0x5eed,
   ) {
-    const root = new Rng(seed);
-    this.rng = {
-      spawnVehicles: root.fork('spawnVehicles'),
-      spawnPeds: root.fork('spawnPeds'),
-      driver: root.fork('driver'),
-      route: root.fork('routeChoice'),
-      gap: root.fork('gapAcceptance'),
-      pedParams: root.fork('pedParams'),
-      courtesy: root.fork('courtesy'),
-      signalOffsets: root.fork('signalOffsets'),
-      occupancy: root.fork('occupancy'),
-      people: root.fork('people'),
-    };
+    this.streams = forkStreams(seed);
   }
 
-  /**
-   * Forgets every agent and everything learned about the previous map.
-   *
-   * For loading a DIFFERENT document (open, import, new map). Lanelet and
-   * footway ids are built from small integers and coincide between maps, so
-   * rebinding after a load kept old vehicles - with their routes, claims and
-   * kerb stops - on unrelated roads of the new map, and carried issues,
-   * volumes and trip counts across. Undo and redo keep rebinding: they edit
-   * the same map. Seeds and settings are kept; the clock is not rewound.
-   */
   /**
    * Switches the model that moves the people. Everybody walking is dropped:
    * the two engines share no state, only what they publish.
@@ -307,6 +318,21 @@ export class SimWorld {
     engine.rebind(this);
   }
 
+  /**
+   * Forgets every agent and everything learned about the previous map.
+   *
+   * For loading a DIFFERENT document (open, import, new map). Lanelet and
+   * footway ids are built from small integers and coincide between maps, so
+   * rebinding after a load kept old vehicles - with their routes, claims and
+   * kerb stops - on unrelated roads of the new map, and carried issues,
+   * volumes and trip counts across. Undo and redo keep rebinding: they edit
+   * the same map. The world is then a new world with the same seed
+   * (`tests/sim/resetLikeNew.spec.ts`; the scenery's own reset is
+   * `AmbientWorld.reset`), but for three things kept on purpose: the
+   * settings, the clock (the city's hour, `City.minutes`) and the ids still
+   * to give (`nextVehicleId`: the renderer keeps a car's look by its id, and
+   * an id given again would dress a new car as an old one).
+   */
   reset(): void {
     this.vehicles.clear();
     this.runtime.clear();
@@ -329,6 +355,15 @@ export class SimWorld {
     this.issues.length = 0;
     this.topologyRevision = -1;
     this.vehicleTopologyRevision = -1;
+    // As a new world with the same seed: the junctions' flows and the
+    // controls chosen from them were the old map's (node ids coincide between
+    // maps), and the random streams start again from the seed. DO NOT keep
+    // them: the advisor turned the new map's junctions to signals it had
+    // measured on the old one, and the same map opened twice ran two
+    // different cities.
+    this.flowStats = new FlowStats();
+    this.controlAdvisor = new ControlAdvisor();
+    this.streams = forkStreams(this.seed);
     this.pedEngine.reset(this);
   }
 
@@ -348,7 +383,22 @@ export class SimWorld {
     return this.graph.connectors.get(id);
   }
 
+  /**
+   * A lane's occupants, to read. A lane nobody has been on answers the
+   * shared empty runtime (`NO_RUNTIME`, Nystrom's null service): frozen, so
+   * a write through it throws instead of being lost. DO NOT create the
+   * runtime here: routing, lane changes and the inspector read every lane
+   * they look at through this, and each read used to leave a runtime behind
+   * (a lane id gone from the graph a ghost candidate too) - the map grew to
+   * one per lane looked at, all of them walked by the full cleanup and audit.
+   * Writers go through `runtimeFor` (TC39 upsert: `get` reads, `getOrInsert` writes).
+   */
   rt(id: LaneletId): LaneletRuntime {
+    return this.runtime.get(id) ?? NO_RUNTIME;
+  }
+
+  /** A lane's runtime, made when a vehicle or its shadow first comes onto it: for `enterLanelet` and `addShadow` only. */
+  private runtimeFor(id: LaneletId): LaneletRuntime {
     let r = this.runtime.get(id);
     if (!r) {
       r = { id, order: [], shadows: [], ghost: false, ghostSince: 0 };
@@ -571,10 +621,20 @@ export class SimWorld {
       if (!this.doc.segment(segment as SegmentId)) this.segmentVolume.delete(segment);
     }
     this.vehicleTopologyRevision = this.net.trafficRevision;
-    // The lanes the edit took, kept while vehicles still drive on them (`collectGhosts`).
-    for (const id of this.runtime.keys()) {
+    // The lanes the edit took, kept while vehicles still drive on them
+    // (`collectGhosts`); and a ghost whose id is in the graph again (an undo
+    // gives the same road the same lane ids) is a lane again, before the
+    // vehicles are rebound and routed onto it. DO NOT leave this to stage 7:
+    // the mark only ever went on, and a lane given back would stay dead to
+    // routes, bays, lane changes, entry and spawning for good - and the
+    // rebind right after this plans every route round a lane still marked.
+    // (Today a vehicle on a lane gone is removed before stage 7 can mark it -
+    // `rebindVehicles`, `integrateAll`, `stepDespawn` - so this is the guard
+    // for the day one is kept, as the ghost's own comment intends.)
+    for (const [id, rt] of this.runtime) {
       rebuildWork.lanes++;
       if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
+      else if (rt.ghost) { rt.ghost = false; rt.ghostSince = 0; }
     }
     this.junctionsVersion++;
     // The controls the flows chose stay chosen across an edit (V5).
@@ -898,7 +958,7 @@ export class SimWorld {
 
   /** Inserts a vehicle into a lanelet's occupancy list, keeping it sorted. */
   enterLanelet(v: Vehicle, id: LaneletId, recordVolume = true): void {
-    const rt = this.rt(id);
+    const rt = this.runtimeFor(id);
     if (!rt.order.includes(v.id)) rt.order.push(v.id);
     this.occupied.add(id);
     this.sortLane(rt);
@@ -947,7 +1007,7 @@ export class SimWorld {
   addShadow(v: Vehicle, lanelet: LaneletId, offset: number, clearAt: number): void {
     this.clearShadow(v);
     v.shadow = { lanelet, offset, clearAt };
-    const rt = this.rt(lanelet);
+    const rt = this.runtimeFor(lanelet);
     if (!rt.shadows.includes(v.id)) rt.shadows.push(v.id);
   }
 

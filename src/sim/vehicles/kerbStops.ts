@@ -294,8 +294,10 @@ export function stepKerbStops(w: SimWorld): void {
           v.doors = [];
           const next = v.kerbQueue.shift();
           v.kerbStop = next ?? null;
-          // The next task of the same stop, the car still standing there.
-          if (next) enter(next, next.hold > 0 ? 'hold' : next.kind === 'pick' ? 'halt' : 'halt');
+          // The next task of the same stop, the car still standing there: a
+          // delivery's wait first, or the halt (a pick-up hails, a drop-off
+          // waits for room to open the door again, the doors being shut).
+          if (next) enter(next, next.hold > 0 ? 'hold' : 'halt');
           if (next && next.hold > 0) next.person = stop.person;
         }
         break;
@@ -610,15 +612,15 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
     if (!staysAboard) {
       v.seats &= ~(1 << stop.seat);
       if (!stop.keep) {
-        delete v.people[stop.seat];
-        delete v.peopleAge[stop.seat];
+        setSeat(v.people, stop.seat, undefined);
+        setSeat(v.peopleAge, stop.seat, undefined);
       }
     }
   } else {
     v.seats |= 1 << stop.seat;
     if (stop.person && !v.people[stop.seat] && stop.person.seed < PERSON_BASE) {
-      v.people[stop.seat] = stop.person.seed;
-      v.peopleAge[stop.seat] = stop.person.ageClass;
+      setSeat(v.people, stop.seat, stop.person.seed);
+      setSeat(v.peopleAge, stop.seat, stop.person.ageClass);
     }
   }
   // A bus's next passenger uses the doors already open; anything that waits
@@ -632,6 +634,20 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
   }
   if (!next && v.errand !== 'service') v.errand = null;
   enter(stop, 'close');
+}
+
+/**
+ * A seat's entry of `people` or `peopleAge` written, the seats before it
+ * filled with `undefined` (nobody picked up there, read as absent by
+ * `seatPerson` and the renderer). DO NOT `delete` an entry or write past the
+ * end: either leaves a hole, and V8 keeps a holey array holey for good,
+ * reading it through the prototype chain (v8.dev/blog/elements-kinds).
+ */
+function setSeat<T>(list: T[], seat: number, value: T | undefined): void {
+  const seats = list as (T | undefined)[];
+  while (seats.length < seat) seats.push(undefined);
+  if (seats.length === seat) seats.push(value);
+  else seats[seat] = value;
 }
 
 /**

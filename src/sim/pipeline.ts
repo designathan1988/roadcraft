@@ -49,7 +49,9 @@ export interface StepOptions {
  *   vehicle constraints (append only)          stages 4-5
  *   claims (grant)                             stage 5
  *   vehicle s, v, lanelet, lane order          stage 6
- *   claims (release), ghosts                   stages 6-7
+ *   claims (release), ghosts                   stages 6-7 (a ghost back in
+ *                                              the graph is unmarked by the
+ *                                              topology, stage 0)
  *
  * @perFrame Runs every tick: `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
  */

@@ -5,7 +5,8 @@ import type { Vehicle } from '../vehicles/state';
 import type { SidewalkEdge } from '../peds/sidewalk';
 import { pedestrianSignalState, signalStateFor } from '../signals/query';
 import type { SignalController } from '../signals/fsm';
-import { makeCrossingId } from '../signals/plan';
+import { type CrossingId, makeCrossingId } from '../signals/plan';
+import type { NodeId } from '@world/ids';
 import { reservationCoversCrossing } from '../intersections/crossingSpans';
 import { canStopComfortably } from '../vehicles/idm';
 import { vehiclePose } from '../pose';
@@ -34,7 +35,6 @@ export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: nu
   // have stopped partly on the zebra without holding a connector token.
   if (vehicleBodyOnCrossing(w, crossing)) return false;
 
-  const need = crossing.length / PED.designSpeed + PED.startLag;
   const controller = w.controller(node);
   const junction = w.graph.junctions.get(node);
   const id = makeCrossingId(node, segment);
@@ -42,12 +42,11 @@ export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: nu
   // Connector admission is also a crossing reservation.  This closes the
   // one-tick race where a car reserved a turn and a pedestrian stepped onto
   // its zebra later in the same simulation tick.
-  if (crossingReservedByVehicle(w, node, segment)) return false;
+  if (crossingReservedByVehicle(w, node, segment, id)) return false;
 
   if (controller && junction?.signalised) {
     const state = pedestrianSignalState(controller, id, crossing.length);
     if (state !== 'walk') return false;
-    void need;
     // A car turning over this zebra at its own green, that has waited its
     // share while people kept stepping off in front of it: its turn. The
     // people at the kerb wait for it; those already on the zebra go first.
@@ -60,15 +59,22 @@ export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: nu
 }
 
 /**
- * Every vehicle holding or clearing a connector, filed under each
- * `node:segment` that connector touches. Built once per pedestrian stage
- * (`indexReservations`): vehicles do not move while pedestrians step, and the
- * check used to walk the whole fleet - allocating a set per vehicle - for
- * every pedestrian asking to cross, about 0.76 ms of a 6.9 ms tick with 450
- * vehicles (measured then). Only the vehicles filed under the crossing asked
- * about are examined now, by exactly the same rules.
+ * Every vehicle holding or clearing a connector, filed under the node of that
+ * connector. Built once per pedestrian stage (`indexReservations`): vehicles
+ * do not move while pedestrians step, and the check used to walk the whole
+ * fleet - allocating a set per vehicle - for every pedestrian asking to
+ * cross, about 0.76 ms of a 6.9 ms tick with 450 vehicles (measured then).
+ * Only the vehicles filed under the crossing's node are examined now, by
+ * exactly the same rules.
+ *
+ * Keyed by the node's number. DO NOT key it by a `node:segment` text again:
+ * that spelt a new string for every road of the node of every reservation,
+ * and another one (two, with the span) for every pedestrian asking - all
+ * hashed afresh. A crossing's road is one of its node's roads, which the
+ * query checks (`incident`), as the text key filed it.
  */
-const RESERVATIONS = new WeakMap<SimWorld, Map<string, { v: Vehicle; connector: string }[]>>();
+type Reservation = { readonly v: Vehicle; readonly connector: string };
+const RESERVATIONS = new WeakMap<SimWorld, Map<NodeId, Reservation[]>>();
 /** The connectors one vehicle reserves, this tick: cleared and refilled, never reallocated. */
 const reservedIds: string[] = [];
 const alreadyReserved = (id: string): boolean => {
@@ -77,7 +83,7 @@ const alreadyReserved = (id: string): boolean => {
 };
 
 export function indexReservations(w: SimWorld): void {
-  const index = RESERVATIONS.get(w) ?? new Map<string, { v: Vehicle; connector: string }[]>();
+  const index = RESERVATIONS.get(w) ?? new Map<NodeId, Reservation[]>();
   index.clear();
   RESERVATIONS.set(w, index);
   for (const v of w.vehicles.values()) {
@@ -93,21 +99,20 @@ export function indexReservations(w: SimWorld): void {
     for (const connectorId of reservedIds) {
       const connector = w.connector(connectorId);
       if (!connector) continue;
-      for (const segment of w.doc.node(connector.node)?.incident ?? []) {
-        const key = `${connector.node}:${segment}`;
-        const list = index.get(key);
-        if (list) list.push({ v, connector: connectorId });
-        else index.set(key, [{ v, connector: connectorId }]);
-      }
+      const list = index.get(connector.node);
+      if (list) list.push({ v, connector: connectorId });
+      else index.set(connector.node, [{ v, connector: connectorId }]);
     }
   }
 }
 
-function crossingReservedByVehicle(w: SimWorld, node: number, segment: number): boolean {
-  for (const { v, connector: connectorId } of RESERVATIONS.get(w)?.get(`${node}:${segment}`) ?? []) {
+function crossingReservedByVehicle(w: SimWorld, node: NodeId, segment: number, crossing: CrossingId): boolean {
+  const filed = RESERVATIONS.get(w)?.get(node);
+  if (!filed || !((w.doc.node(node)?.incident as readonly number[] | undefined)?.includes(segment) ?? false)) return false;
+  for (const { v, connector: connectorId } of filed) {
     const connector = w.connector(connectorId);
     if (!connector || connector.node !== node) continue;
-    const span = w.crossingSpans.span(connector.id, `${node}:${segment}`);
+    const span = w.crossingSpans.span(connector.id, crossing);
     if (reservationCoversCrossing(w, v, connector, segment, span)) return true;
   }
   return false;

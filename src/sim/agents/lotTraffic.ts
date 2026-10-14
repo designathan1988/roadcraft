@@ -95,11 +95,15 @@ interface LotCar {
   reserved: boolean;
 }
 
+/** The lots' own random stream's seed. */
+const LOTS_SEED = 0x10715;
+
 const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.x, 0.1))},${Math.round(stepsIn(b.y, 0.1))}`;
 
 export class LotTraffic {
   private readonly cars = new Map<VehicleId, LotCar>();
-  private readonly rng = new Rng(0x10715);
+  /** Seeded as every new world's; a reset seeds it again (`reset`). */
+  private rng = new Rng(LOTS_SEED);
   private clock = 0;
   private baysFor = '';
   private seenFor = '';
@@ -140,6 +144,13 @@ export class LotTraffic {
     this.baysFor = '';
     this.seenFor = '';
     this.bays = [];
+    // As a new map's: the stream from its seed and the counters from nought.
+    // DO NOT keep the stream going: the same map opened twice drew other
+    // bays, stays and departures.
+    this.rng = new Rng(LOTS_SEED);
+    this.called = 0;
+    this.parkedIn = 0;
+    this.leftBy = 0;
   }
 
   /** Stage 2 (`sim/city/city.ts`): with the scenery on, cars go in and out of the lots. */

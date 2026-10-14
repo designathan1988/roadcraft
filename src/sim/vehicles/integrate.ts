@@ -166,18 +166,21 @@ export function integrateAll(w: SimWorld): void {
 
   for (const v of removed) w.removeVehicle(v);
 
-  // Occupancy lists must stay ordered for the leader search to be O(1): only
-  // the lanes that hold a vehicle (`SimWorld.occupied`; every lane of the map
-  // was walked each tick).
-  if (w.doLess) {
-    for (const id of w.occupied) {
-      const rt = w.runtime.get(id);
-      if (rt && rt.order.length > 1) w.sortLane(rt);
-    }
-  } else {
-    for (const rt of w.runtime.values()) {
-      if (rt.order.length > 1) w.sortLane(rt);
-    }
+  // Occupancy lists are kept in order of arc position: the leader search
+  // finds a vehicle in its list by bisection on that order (`laneSlot`), and
+  // reads the vehicle ahead at the next slot. A list is nearly in order
+  // already - nobody passes inside a lane but a bicycle in its cycle lane -
+  // and `sortLane` (Array.prototype.sort, TimSort, which finds the run and
+  // stops) costs a pass over it then.
+  //
+  // Only the lanes that hold a vehicle (`SimWorld.occupied`), in both worlds:
+  // a lane is in `occupied` exactly while its `order` is not empty (both are
+  // written only by `enterLanelet`/`exitLanelet`, and a runtime is dropped
+  // only empty), so the lanes `w.runtime` adds hold nobody to sort. DO NOT walk
+  // `w.runtime` here: it is every lane anybody has ever been on.
+  for (const id of w.occupied) {
+    const rt = w.runtime.get(id);
+    if (rt && rt.order.length > 1) w.sortLane(rt);
   }
 }
 

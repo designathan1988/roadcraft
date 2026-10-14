@@ -85,6 +85,9 @@ const OPEN_CARS = 2;
 const OPEN_PEOPLE = 2;
 const OPEN_TICKS = 600;
 
+/** The scenery's own random stream's seed. */
+const AMBIENT_SEED = 0xa3b1e7;
+
 /** Share of the bays with a car in them. */
 const PARKED = 0.62;
 
@@ -111,7 +114,8 @@ export class AmbientWorld {
   private readonly sceneryAt = new Map<string, Vehicle>();
   private readonly bayOf = new Map<Vehicle, number>();
 
-  private readonly rng = new Rng(0xa3b1e7);
+  /** Seeded as every new world's; a reset seeds it again (`reset`). */
+  private rng = new Rng(AMBIENT_SEED);
   private readonly walkers = new Set<number>();
   private readonly drivers = new Set<number>();
   /** The drivers made here that may be on screen now: never taken off the road at a dead end (`vehicles/spawn.ts` stepDespawn). */
@@ -167,6 +171,16 @@ export class AmbientWorld {
     this.opening = true;
     this.openTicks = OPEN_TICKS;
     this.openSpots.length = 0;
+    // As a new map's: the stream from its seed, the looks from the first, the
+    // counters from nought. DO NOT keep them going: the same map opened twice
+    // filled other streets with other people at other ticks. The trip ids go
+    // on (`nextTrip`), as the vehicles' (`SimWorld.reset`).
+    this.rng = new Rng(AMBIENT_SEED);
+    this.clock = 0;
+    this.nextEdgeLook = 0;
+    this.gateWalks.made = 0;
+    this.gateWalks.fromGate = 0;
+    this.gateWalks.toGate = 0;
   }
 
   step(w: SimWorld): void {
