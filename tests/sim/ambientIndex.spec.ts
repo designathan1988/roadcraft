@@ -1,0 +1,126 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import { Rng } from '@core/rng';
+import { RoadDoc } from '@world/doc';
+import { Network } from '@world/network';
+import { m } from '@world/units';
+import { applyLots, planLots, zoneLots } from '@world/lots';
+import { solidFootprints } from '@world/buildings/geometry';
+import type { Building } from '@world/buildings/types';
+import { growOnLot } from '@editor/zoning';
+import { SightWalls, ambientIndexWork, crosses } from '@sim/ambient/ambientIndex';
+
+/**
+ * The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks
+ * over the whole map they replace: each old walk is copied here as the
+ * oracle, asked the same random questions, with buildings removed, moved and
+ * put back between the questions.
+ */
+
+const ZONES = [
+  { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },
+  { use: 'residential', density: 'low' }, { use: 'industrial', density: 'medium' },
+  { use: 'commercial', density: 'high' }, { use: 'residential', density: 'high' },
+] as const;
+
+/** A grid of `n` x `n` blocks of `block` m, its lots grown. */
+function town(n: number, block: number): RoadDoc {
+  const doc = new RoadDoc();
+  const ids: number[][] = [];
+  for (let i = 0; i <= n; i++) {
+    ids.push([]);
+    for (let j = 0; j <= n; j++) ids[i]!.push(doc.addNode({ x: m(block) * (i - n / 2), y: m(block) * (j - n / 2) }).id);
+  }
+  for (let i = 0; i <= n; i++) {
+    for (let j = 0; j <= n; j++) {
+      if (i < n) doc.addSegment(ids[i]![j]! as never, ids[i + 1]![j]! as never, 1);
+      if (j < n) doc.addSegment(ids[i]![j]! as never, ids[i]![j + 1]! as never, 1);
+    }
+  }
+  const net = new Network(doc);
+  net.rebuild();
+  applyLots(doc, planLots(doc, net));
+  doc.lots.forEach((l, k) => zoneLots(doc, [l.id], ZONES[k % ZONES.length]!));
+  const refused = new Set<number>();
+  for (let k = 0; k < doc.lots.length * 3; k++) {
+    if (growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed) === null && refused.size >= doc.lots.length) break;
+  }
+  return doc;
+}
+
+/** A random edit of the buildings: one removed, one moved, one aged, or one removed put back. */
+function editBuildings(doc: RoadDoc, rng: Rng, removed: Building[]): void {
+  const all = [...doc.buildings.all()];
+  const roll = rng.float();
+  if (roll < 0.25 && all.length) {
+    const b = all[Math.floor(rng.float() * all.length)]!;
+    removed.push(b);
+    doc.buildings.remove(b.id);
+  } else if (roll < 0.5 && all.length) {
+    const b = all[Math.floor(rng.float() * all.length)]!;
+    doc.buildings.put({ ...b, x: b.x + m(rng.range(-20, 20)), y: b.y + m(rng.range(-20, 20)) });
+  } else if (roll < 0.75 && all.length) {
+    const b = all[Math.floor(rng.float() * all.length)]!;
+    doc.buildings.put({ ...b, decay: rng.float() });
+  } else if (removed.length) {
+    const b = removed.pop()!;
+    doc.buildings.restore(b.id, b);
+  }
+}
+
+let doc: RoadDoc;
+beforeAll(() => {
+  doc = town(2, 120);
+});
+
+describe('the walls between the eye and a point', () => {
+  /** The old `AmbientWorld.blocked`, over every wall of the map gathered again (the oracle). */
+  function oldBlocked(d: RoadDoc, ax: number, ay: number, bx: number, by: number): boolean {
+    const walls: { ring: readonly { x: number; y: number }[]; x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const b of d.buildings.all()) {
+      for (const ring of solidFootprints(b)) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+        walls.push({ ring, x0, y0, x1, y1 });
+      }
+    }
+    const lx = Math.min(ax, bx), ly = Math.min(ay, by), hx = Math.max(ax, bx), hy = Math.max(ay, by);
+    for (const wl of walls) {
+      if (wl.x1 < lx || wl.x0 > hx || wl.y1 < ly || wl.y0 > hy) continue;
+      const r = wl.ring;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        if (crosses(ax, ay, bx, by, r[j]!.x, r[j]!.y, r[i]!.x, r[i]!.y)) return true;
+      }
+    }
+    return false;
+  }
+
+  it('answers as the walk over every wall, through edits of the buildings', () => {
+    expect(doc.buildings.size).toBeGreaterThan(20);
+    const rng = new Rng(0x5167);
+    const walls = new SightWalls();
+    const removed: Building[] = [];
+    const full = ambientIndexWork.full;
+    let hits = 0, asked = 0;
+    for (let round = 0; round < 40; round++) {
+      if (round) for (let k = 0; k < 3; k++) editBuildings(doc, rng, removed);
+      walls.sync(doc.buildings, doc.changes);
+      for (let q = 0; q < 60; q++) {
+        // Lines of sight of every length and slope, some along a cell's edge (32 m).
+        const ax = m(rng.range(-160, 160)), ay = m(rng.range(-160, 160));
+        const along = rng.float() < 0.15;
+        const bx = along ? ax + m(rng.range(-200, 200)) : m(rng.range(-160, 160));
+        const by = along ? m(32) * Math.round(ay / m(32)) : m(rng.range(-160, 160));
+        const ay2 = along ? by : ay;
+        const want = oldBlocked(doc, ax, ay2, bx, by);
+        expect(walls.blocked(ax, ay2, bx, by), `${ax},${ay2} -> ${bx},${by}`).toBe(want);
+        if (want) hits++;
+        asked++;
+      }
+    }
+    // Read whole once; every edit after that taken in by the diary's ids.
+    expect(ambientIndexWork.full - full).toBe(1);
+    // Both answers were asked about, often.
+    expect(hits).toBeGreaterThan(asked * 0.2);
+    expect(hits).toBeLessThan(asked * 0.95);
+  });
+});

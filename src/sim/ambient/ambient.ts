@@ -1,7 +1,6 @@
 import { Rng } from '@core/rng';
 import { m, stepsIn } from '@world/units';
 import type { Building } from '@world/buildings/types';
-import { solidFootprints } from '@world/buildings/geometry';
 import { DT, FLEET_CEILING, PED_CEILING } from '../params';
 import type { SimWorld } from '../world';
 import { ARCHETYPES, bodyClassOfArchetype, type Archetype } from '../vehicles/archetypes';
@@ -17,6 +16,7 @@ import { collectBays, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
+import { SightWalls } from './ambientIndex';
 
 
 /**
@@ -263,38 +263,20 @@ export class AmbientWorld {
     return !this.behindWall(w, v.ex, v.ey, x, y, pad);
   }
 
-  /** The walls of the buildings, as rings with their boxes, for the line of sight. */
-  private walls: { ring: readonly { x: number; y: number }[]; x0: number; y0: number; x1: number; y1: number }[] = [];
-  private wallsFor = -1;
+  /**
+   * The walls of the buildings in a grid kept by the diary, for the line of
+   * sight (`ambientIndex.ts`). DO NOT make it again on `buildings.revision`:
+   * the town's ageing moves that every few seconds, and every wall of the
+   * map was gathered again, then walked twice a look per person and car.
+   */
+  private readonly walls = new SightWalls();
 
   /** True when a wall stands between the eye and (x, y), and between the eye and each side of it `pad` across. */
   private behindWall(w: SimWorld, ex: number, ey: number, x: number, y: number, pad: number): boolean {
-    if (this.wallsFor !== w.doc.buildings.revision) {
-      this.wallsFor = w.doc.buildings.revision;
-      this.walls = [];
-      for (const b of w.doc.buildings.all()) {
-        for (const ring of solidFootprints(b)) {
-          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-          for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-          this.walls.push({ ring, x0, y0, x1, y1 });
-        }
-      }
-    }
+    this.walls.sync(w.doc.buildings, w.doc.changes);
     const dx = x - ex, dy = y - ey, d = Math.hypot(dx, dy) || 1;
     const sx = (-dy / d) * pad, sy = (dx / d) * pad;
-    return this.blocked(ex, ey, x + sx, y + sy) && this.blocked(ex, ey, x - sx, y - sy);
-  }
-
-  private blocked(ax: number, ay: number, bx: number, by: number): boolean {
-    const lx = Math.min(ax, bx), ly = Math.min(ay, by), hx = Math.max(ax, bx), hy = Math.max(ay, by);
-    for (const wl of this.walls) {
-      if (wl.x1 < lx || wl.x0 > hx || wl.y1 < ly || wl.y0 > hy) continue;
-      const r = wl.ring;
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        if (crosses(ax, ay, bx, by, r[j]!.x, r[j]!.y, r[i]!.x, r[i]!.y)) return true;
-      }
-    }
-    return false;
+    return this.walls.blocked(ex, ey, x + sx, y + sy) && this.walls.blocked(ex, ey, x - sx, y - sy);
   }
 
   private people(w: SimWorld, focus: NonNullable<SimWorld['focus']>, reach: number, want: number): void {
@@ -959,13 +941,4 @@ function reversed(way: DoorWay): readonly { x: number; y: number }[] {
   let back = REVERSED.get(way);
   if (!back) REVERSED.set(way, back = [...way.out].reverse());
   return back;
-}
-
-/** Whether segment a-b crosses segment c-d (proper crossing). */
-function crosses(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
-  const d1 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
-  const d2 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
-  const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-  const d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
-  return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
 }
