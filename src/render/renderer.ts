@@ -63,6 +63,7 @@ import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/ge
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
+import { partWarmMeshes } from './buildings/partWarm';
 import { GRASS_MIN_ZOOM } from './grass';
 import { advanceWind, setWindWeather } from './wind';
 import { createRain } from './rain';
@@ -1986,6 +1987,20 @@ export function createSceneRenderer(
     group.visible = false;
     scene.add(group);
     void compileAhead(group).then(() => { scene.remove(group); tiny.dispose(); });
+    // And every part as the layer draws it, instanced, with its shadow
+    // (`partWarmMeshes`): made only when a near cell has some, each compiled
+    // in the frame it first showed - stalls in the middle of a pan.
+    const parts = new Group();
+    const partShadows = new Group();
+    for (const mesh of partWarmMeshes(kit)) {
+      parts.add(mesh);
+      const standIn = shadowStandIn(mesh);
+      if (standIn) partShadows.add(standIn);
+    }
+    parts.visible = false;
+    scene.add(parts);
+    void compileAhead(parts).then(() => { scene.remove(parts); parts.clear(); });
+    void compileAhead(partShadows, true).then(() => partShadows.clear());
   };
 
   /**

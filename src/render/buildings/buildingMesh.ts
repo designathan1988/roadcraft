@@ -169,7 +169,7 @@ const ROOF_PLANT: Paint = paint({ finish: 'concrete', colour: ROOF_COLOURS.plant
  * balcony railings in their building's trim (the materials are white). A
  * part placed with no colour takes the old fixed one.
  */
-const COLOURED_PARTS: ReadonlySet<PartKind> = new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS]);
+export const COLOURED_PARTS: ReadonlySet<PartKind> = new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS]);
 const WHITE_RGB: Rgb = [1, 1, 1];
 const PART_DEFAULT_COLOUR: Partial<Record<PartKind, Rgb>> = { frame: linear(0xe8e6df), railing: linear(0x33373a), fin: linear(0xe8e6df), brise: linear(0xe8e6df), louvre: linear(0x3d6b45) };
 /** The trim's colour as a three Color, one per paint. */
