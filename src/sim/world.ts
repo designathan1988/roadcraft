@@ -2,7 +2,7 @@ import { Rng } from '@core/rng';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { type Connector, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
+import { type Connector, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
 import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
@@ -349,6 +349,7 @@ export class SimWorld {
     this.runtime.clear();
     this.claims.clear();
     this.controllers.clear();
+    this.planInputs.clear();
     this.junctionsVersion++;
     this.occupied.clear();
     this.ghostCandidates.clear();
@@ -680,7 +681,8 @@ export class SimWorld {
   /**
    * Stage 0's measuring of the junctions (docs/VIAS.md V5): the flows aged,
    * and every so often each junction on "automatic" given the control its
-   * trend warrants. A change of signal rebuilds that junction's controller.
+   * trend warrants. A change of signal rebuilds that junction's controller
+   * alone (`syncControllers`).
    */
   stepControlAdvisor(dt: number): void {
     this.flow.step(dt);
@@ -935,19 +937,33 @@ export class SimWorld {
     return this.clock.tick;
   }
 
+  /**
+   * The controllers brought up to the junctions: a new junction gets one, a
+   * junction gone loses its own, and a junction whose plan's inputs changed
+   * (`PlanInputs`) has its controller rebuilt. A junction an edit did not
+   * reach keeps its controller as it runs - its stage, its timer, its
+   * history. DO NOT rebuild every controller here: `rebuildController` puts
+   * one caught between greens into ALL_RED from nought, so every road drawn
+   * anywhere, and every control the advisor switched, reset the lights of the
+   * whole city (and paid a plan per junction of the map).
+   */
   private syncControllers(): void {
     const deps = this.signalDeps();
 
     for (const [node, junction] of this.graph.junctions) {
-      rebuildWork.signals++;
       const crossings = this.crossingsAt(node);
       const existing = this.controllers.get(node);
       const settings = this.doc.node(node)?.signal;
+      const inputs = this.planInputsOf(junction, crossings, settings);
       if (existing) {
+        const was = this.planInputs.get(node);
+        if (was && samePlanInputs(was, inputs)) continue;
+        rebuildWork.signals++;
         rebuildController(existing, junction, crossings, deps);
         // A fixed-time signal back where the common clock says, with its offset (V5).
         if (settings?.mode === 'fixed') seekFixed(existing, settings, this.tickCount() * DT);
       } else {
+        rebuildWork.signals++;
         // A deterministic per-node offset so neighbouring junctions do not all
         // switch together.
         const offset = (node * 7.317) % 60;
@@ -955,14 +971,37 @@ export class SimWorld {
         if (settings?.mode === 'fixed') seekFixed(created, settings, this.tickCount() * DT);
         this.controllers.set(node, created);
       }
+      this.planInputs.set(node, inputs);
     }
 
     for (const node of [...this.controllers.keys()]) {
       if (!this.graph.junctions.has(node)) {
         this.controllers.delete(node);
+        this.planInputs.delete(node);
       }
     }
     this.junctionsVersion++;
+  }
+
+  /** What each controller's plan was made from (`syncControllers`). */
+  private readonly planInputs = new Map<NodeId, PlanInputs>();
+
+  /**
+   * What a junction's plan is made from (`signals/plan.ts` buildSignalPlan):
+   * its approach groups and connectors - kept as the very objects while the
+   * lanelet graph reuses the junction (`LaneletGraph.buildJunctions`, whose
+   * key holds the node's control, legs, lane links and every lane meeting
+   * there, so their speeds and the movements' conflicts with them) - whether
+   * it is signalised, its crossings and the player's settings.
+   */
+  private planInputsOf(junction: JunctionTopology, crossings: readonly CrossingId[], settings: unknown): PlanInputs {
+    return {
+      groups: junction.groups,
+      connectors: junction.connectors.map((id) => this.graph.connectors.get(id)),
+      signalised: junction.signalised,
+      crossings: crossings.join(','),
+      settings: settings === undefined ? '' : JSON.stringify(settings),
+    };
   }
 
   // ----------------------------------------------------------- lane order
@@ -1073,6 +1112,22 @@ export class SimWorld {
     this.issues.push(issue);
     if (this.issues.length > 512) this.issues.shift();
   }
+}
+
+/** What a controller's plan was made from (`SimWorld.planInputsOf`). */
+interface PlanInputs {
+  readonly groups: JunctionTopology['groups'];
+  readonly connectors: readonly (Connector | undefined)[];
+  readonly signalised: boolean;
+  readonly crossings: string;
+  readonly settings: string;
+}
+
+function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
+  if (a.groups !== b.groups || a.signalised !== b.signalised || a.crossings !== b.crossings || a.settings !== b.settings) return false;
+  if (a.connectors.length !== b.connectors.length) return false;
+  for (let i = 0; i < a.connectors.length; i++) if (a.connectors[i] !== b.connectors[i]) return false;
+  return true;
 }
 
 /** A Map that counts its changes of membership, for caches over it (`vehiclesInIdOrder`). */
