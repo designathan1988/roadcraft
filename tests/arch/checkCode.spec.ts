@@ -74,6 +74,82 @@ export function grow(doc: RoadDoc): number { return lotIndex(doc, 1); }
 export function free(doc: RoadDoc): number { return lotIndex(doc, 2); }
 `;
 
+/**
+ * The blind spots closed: a class field filled from the map and walked once a
+ * query (`Sight.blocked`, as `AmbientWorld.walls` was), a collection marked
+ * `@mapWide` walked inside a walk over itself, the map redone because a global
+ * revision moved (a `!==` branch, a key holding a revision with an early
+ * return, a `@rebuild` callee: not excused), and the map walked once a
+ * pointer move (`@perInput`). Spared: a loop over what `near(...)` hands
+ * back, and the diary read (`changes.since`) under a revision guard.
+ */
+const DERIVED = `
+export class RoadDoc {
+  readonly lots: { id: number; x: number }[] = [];
+  revision = 0;
+  readonly changes = { since(_from: number): { id: number }[] { return []; } };
+  near(_x: number): { id: number }[] { return []; }
+}
+export class Sight {
+  private walls: { x: number }[] = [];
+  private wallsFor = -1;
+  blocked(doc: RoadDoc, x: number): boolean {
+    if (this.wallsFor !== doc.revision) {
+      this.wallsFor = doc.revision;
+      this.walls = [];
+      for (const l of doc.lots) this.walls.push({ x: l.x });
+    }
+    for (const w of this.walls) if (w.x === x) return true;
+    return false;
+  }
+}
+export class Sim {
+  /** @mapWide Every vehicle. */
+  readonly vehicles = new Map<number, { lane: number }>();
+  step(): number { let n = 0; for (const v of this.vehicles.values()) n += this.laneClear(v.lane) ? 1 : 0; return n; }
+  laneClear(lane: number): boolean { for (const v of this.vehicles.values()) if (v.lane === lane) return false; return true; }
+}
+export class Keyed {
+  private key = '';
+  update(doc: RoadDoc, zoom: number): number {
+    const key = \`\${doc.revision}:\${zoom}\`;
+    if (key === this.key) return 0;
+    this.key = key;
+    let n = 0;
+    for (const l of doc.lots) n += l.id;
+    return n;
+  }
+}
+/** @rebuild Once a revision. */
+function rebuildAll(doc: RoadDoc): number { let n = 0; for (const l of doc.lots) n += l.id; return n; }
+export class Rebuilt {
+  private seen = -1;
+  tick(doc: RoadDoc): number {
+    if (doc.revision !== this.seen) { this.seen = doc.revision; return rebuildAll(doc); }
+    return 0;
+  }
+}
+export class Follower {
+  private seen = -1;
+  follow(doc: RoadDoc): number {
+    let n = 0;
+    if (this.seen !== doc.revision) {
+      for (const c of doc.changes.since(this.seen)) n += c.id;
+      this.seen = doc.revision;
+    }
+    return n;
+  }
+}
+/** @perInput Once a pointer move. */
+export function hover(doc: RoadDoc, x: number): number { let n = 0; for (const l of doc.near(x)) n += l.id; return n; }
+/** @perInput Once a pointer move. */
+export function pick(doc: RoadDoc, x: number): number { return doc.lots.find((l) => l.x === x)?.id ?? 0; }
+/** @perFrame */
+export function frame(doc: RoadDoc, sight: Sight, sim: Sim, keyed: Keyed, rebuilt: Rebuilt, follower: Follower): number {
+  return (sight.blocked(doc, 1) ? 1 : 0) + sim.step() + keyed.update(doc, 1) + rebuilt.tick(doc) + follower.follow(doc);
+}
+`;
+
 /** The rules' findings on a project of one file. */
 function findings(file: string, text: string): Record<string, number> {
   const dir = mkdtempSync(join(tmpdir(), 'check-code-'));
@@ -103,6 +179,25 @@ describe('the traversal rules', () => {
       'whole-map-nested  src/items.ts quadratic  for kept(RoadDoc.lots) ⊃ indexOf RoadDoc.lots': 1,
       'whole-map-per-item  src/items.ts lotIndex  findIndex RoadDoc.lots': 1,
     });
+  });
+});
+
+describe('the blind spots of the traversal rules', () => {
+  it('fire on a field filled from the map, a @mapWide collection, a revision guard and a pointer move; spare near() and the diary', () => {
+    const found = findings('derived.ts', DERIVED);
+    const fresh = Object.fromEntries(Object.entries(found).filter(([key]) => /^(derived-map|whole-map-on-revision|whole-map-per-input)/.test(key)));
+    expect(fresh).toEqual({
+      'derived-map-per-frame  src/derived.ts Sight.blocked  for Sight.walls': 1,
+      'derived-map-per-frame  src/derived.ts Sim.step  for Sim.vehicles': 1,
+      'derived-map-per-frame  src/derived.ts Sim.laneClear  for Sim.vehicles': 1,
+      'derived-map-nested  src/derived.ts Sim.step  for Sim.vehicles ⊃ Sim.laneClear: for Sim.vehicles': 1,
+      'whole-map-on-revision  src/derived.ts Sight.blocked  for RoadDoc.lots': 1,
+      'whole-map-on-revision  src/derived.ts Keyed.update  for RoadDoc.lots': 1,
+      'whole-map-on-revision  src/derived.ts Rebuilt.tick  rebuildAll: for RoadDoc.lots': 1,
+      'whole-map-per-input  src/derived.ts pick  find RoadDoc.lots': 1,
+    });
+    // The old rules keep their own findings: the field and the mark are counted under the new names only.
+    expect(Object.keys(found).filter((key) => /^whole-map-(per-frame|nested)/.test(key) && /Sight\.walls|Sim\.vehicles/.test(key))).toEqual([]);
   });
 });
 

@@ -46,6 +46,7 @@ function rectOf(b: Building): ChangeRect | null {
  * that keeps editing what it handed over copies it itself.
  */
 export class BuildingStore {
+  /** @mapWide Every building of the map. */
   private readonly items = new Map<BuildingId, Building>();
   private ids = new IdAllocator(1);
   /**
@@ -127,6 +128,7 @@ export class BuildingStore {
    * Stores a new building under a fresh id. The record becomes the store's
    * (see OWNERSHIP above): the stored one is it with the id set, its parts
    * not copied.
+   * @perItem Runs once a building added: nothing it reaches may walk the map.
    */
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.ids.take());
@@ -137,7 +139,10 @@ export class BuildingStore {
     return building;
   }
 
-  /** Replaces an existing building's record (same id). The record becomes the store's (OWNERSHIP above). */
+  /**
+   * Replaces an existing building's record (same id). The record becomes the store's (OWNERSHIP above).
+   * @perItem Runs once a building replaced: nothing it reaches may walk the map.
+   */
   put(building: Building): void {
     const was = this.items.get(building.id);
     if (!was) return;
@@ -155,6 +160,7 @@ export class BuildingStore {
    * every few seconds somewhere, and as a `buildings` change each tenth made
    * everything derived from the buildings' shape (walls, bays, yards, places,
    * grading, the camera's solids) work the town out again.
+   * @perItem Runs once a building's wear moved: nothing it reaches may walk the map.
    */
   wear(id: BuildingId, decay: number): void {
     const was = this.items.get(id);
@@ -194,6 +200,7 @@ export class BuildingStore {
     this.ids = new IdAllocator(next);
   }
 
+  /** @perItem Runs once a building removed: nothing it reaches may walk the map. */
   remove(id: BuildingId): boolean {
     const was = this.items.get(id);
     if (!was) return false;

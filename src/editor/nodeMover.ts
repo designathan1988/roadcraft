@@ -55,7 +55,10 @@ export class NodeMover {
     return true;
   }
 
-  /** The pointer moved: the node follows it, live. True when a node is being dragged. */
+  /**
+   * The pointer moved: the node follows it, live. True when a node is being dragged.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2): boolean {
     if (!this.drag) return false;
     this.host.doc.moveNode(this.drag.node, world);

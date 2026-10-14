@@ -234,6 +234,7 @@ export class TerrainBrush {
    * sample can jump a hundred units at speed, and dabbing only where the
    * samples landed left gaps a river ran straight through. With no stroke,
    * one dab where the pointer is.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
    */
   paint(at: Vec2, force = false): void {
     const { host } = this;

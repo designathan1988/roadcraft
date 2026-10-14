@@ -45,6 +45,7 @@ export class StreetscapeTool {
     return Math.max(m(1.5), 26 / this.host.zoom());
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   down(world: Vec2, shift: boolean): void {
     const { host } = this;
     const { doc } = host;
@@ -90,7 +91,10 @@ export class StreetscapeTool {
     host.redraw();
   }
 
-  /** `pressed`: the button still down, dragging a row out from the item just placed. */
+  /**
+   * `pressed`: the button still down, dragging a row out from the item just placed.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2, pressed = false): void {
     const { host } = this;
     if (this.row && pressed) {

@@ -53,7 +53,10 @@ export class Bulldozer {
     this.drag = { pointer, a: { ...screen }, b: { ...screen }, world: { ...world }, to: { ...world }, anchor };
   }
 
-  /** The pointer moved; true when it was this tool's drag. */
+  /**
+   * The pointer moved; true when it was this tool's drag.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(pointer: number, screen: Vec2, world: Vec2): boolean {
     if (this.drag?.pointer !== pointer) return false;
     this.drag.b = { ...screen };
@@ -81,7 +84,10 @@ export class Bulldozer {
     return { a: d.world, b: d.to };
   }
 
-  /** The bulldozer's click: the one thing under the pointer. */
+  /**
+   * The bulldozer's click: the one thing under the pointer.
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
+   */
   private click(screen: Vec2, world: Vec2, anchor: Anchor): void {
     const { host } = this;
     const { doc } = host;

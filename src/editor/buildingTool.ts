@@ -2053,6 +2053,7 @@ export class BuildingTool {
     return this.pick(screen)?.building ?? null;
   }
 
+  /** @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map. */
   private pick(screen: Vec2): BuildingHit | null {
     const doc = this.host.context().doc;
     const hides = this.preview?.hides ?? null;
@@ -2224,6 +2225,7 @@ export class BuildingTool {
     }
   }
 
+  /** @perInput Runs once a pointer move: nothing it reaches may walk the map. */
   pointerMove(screen: Vec2, world: Vec2, shift: boolean): void {
     this.lastScreen = screen;
     this.lastWorld = world;
@@ -2484,6 +2486,7 @@ export class BuildingTool {
       (this.activeModelTool === null || this.activeModelTool === 'select');
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   private click(hit: BuildingHit | null, shift = false): void {
     if (this.planPoints) {
       const point = this.planCursor ?? this.lastWorld;

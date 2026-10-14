@@ -44,6 +44,7 @@ const EDGE_SNAP = m(0.32);
 /** How far a building still lends its rotation to one being placed. */
 const BUILDING_REACH = m(12);
 
+/** @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map. */
 export function snapPlacement(
   doc: RoadDoc,
   net: Network | null,
