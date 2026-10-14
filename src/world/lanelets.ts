@@ -192,6 +192,12 @@ export class LaneletGraph {
   readonly inbound = new Map<NodeId, LaneletId[]>();
   /** Link lanelets leaving each node. */
   readonly outbound = new Map<NodeId, LaneletId[]>();
+  /**
+   * The link lanelets of each segment, both directions, in the order they were
+   * built (the order of `lanelets`). Kept by the one writer of links
+   * (`buildLinks`) and cleared with them (`buildSteps`).
+   */
+  private readonly bySegment = new Map<SegmentId, LaneletId[]>();
 
   revision = -1;
 
@@ -234,6 +240,7 @@ export class LaneletGraph {
     this.exits.clear();
     this.inbound.clear();
     this.outbound.clear();
+    this.bySegment.clear();
 
     const previousLinks = this.linkCache;
     const nextLinks = new Map<string, Lanelet[]>();
@@ -383,6 +390,7 @@ export class LaneletGraph {
           this.laneletKeys.set(lanelet.id, key);
           push(this.inbound, to, lanelet.id);
           push(this.outbound, from, lanelet.id);
+          push(this.bySegment, segId, lanelet.id);
         }
       }
     }
@@ -652,6 +660,16 @@ export class LaneletGraph {
         lanelets: connectorIds.map((id) => this.lanelets.get(id)!),
       });
     }
+  }
+
+  /**
+   * The link lanelets of one segment, both directions, in the order of
+   * `lanelets`: the same as filtering every lanelet for `kind === 'link' &&
+   * segment === id`, read off an index. DO NOT walk `lanelets` to find one
+   * road's lanes (the inspector did, every 0.4 s, for the whole map).
+   */
+  linksOfSegment(segment: SegmentId): readonly LaneletId[] {
+    return this.bySegment.get(segment) ?? [];
   }
 
   exitsOf(lane: LaneletId): readonly ConnectorId[] {
