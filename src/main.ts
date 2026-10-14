@@ -59,6 +59,7 @@ import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
 import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
 import { countMemory } from '@render/memoryCounters';
+import { cityBudgetTable, VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
 import { forgetOtherDerived, readDerivedAll, writeDerivedMany } from '@render/derivedCache';
 
@@ -2066,6 +2067,8 @@ function growCity(): void {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
     scene.holdBuildings(true);
+    // The pole layer too, while the lines are laid (let go with the layout).
+    scene.holdUtilities(true);
     lotTool.holdOverlay(true);
     requestDraw();
     return;
@@ -2081,7 +2084,7 @@ function growCity(): void {
         if (performance.now() >= until) break;
       }
     });
-    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
+    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; scene.holdUtilities(false); }
     cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
     requestDraw();
     return;
@@ -2094,6 +2097,7 @@ function growCity(): void {
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
   scene.holdBuildings(false);
+  scene.holdUtilities(false);
   lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
@@ -4105,6 +4109,29 @@ const healthPanel = mountHealthPanel({
       glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
       drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles,
     };
+  },
+  /**
+   * The running game against the city plan's budgets (`core/perfBudget.ts`
+   * `cityBudgetTable`), at the view now on screen, which the caller names:
+   * the rows furthest over first. Performance work starts here.
+   */
+  budget: (view: CityView) => {
+    if (!(view in VIEW_BUDGETS)) throw new Error(`vista: ${Object.keys(VIEW_BUDGETS).join(' | ')}`);
+    const c = countMemory(scene.scene);
+    const gpu = scene.gpu.supported ? scene.gpu.samples.toArray().slice(-120).sort((a, b) => a - b) : [];
+    const rows = cityBudgetTable({
+      view,
+      triangles: scene.gl.info.render.triangles,
+      drawCalls: scene.gl.info.render.calls,
+      gpuMs: gpu.length ? Math.round(gpu[Math.ceil(gpu.length * 0.95) - 1]! * 10) / 10 : null,
+      fps: scene.stats.fps,
+      bytesByName: c.bytesByName,
+      textureBytes: c.textureBytes,
+      geometryCpuBytes: c.geometryCpuBytes,
+      heapBytes: (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null,
+    });
+    console.table(rows);
+    return rows;
   },
   /**
    * Runs the simulation for `seconds` of SIMULATION time, immediately.

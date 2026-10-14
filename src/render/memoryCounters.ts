@@ -18,6 +18,8 @@ export interface MemoryCounters {
   readonly geometryCpuBytes: number;
   /** Who holds `geometryCpuBytes`: the objects' names (the type when unnamed), most first, the first `TOP` of them. */
   readonly cpuByName: readonly (readonly [name: string, bytes: number])[];
+  /** `geometryBytes` by every holder's name, for the plan's levels (`core/perfBudget.ts` `memoryGroup`). */
+  readonly bytesByName: ReadonlyMap<string, number>;
   /** Distinct textures reachable from the scene's objects and materials. */
   readonly textures: number;
   /** Their pixels, base level only (no mipmaps): data arrays by size, images at 4 bytes a texel. */
@@ -33,6 +35,7 @@ export function countMemory(root: Object3D): MemoryCounters {
   let geometryBytes = 0;
   let geometryCpuBytes = 0;
   const cpuByName = new Map<string, number>();
+  const bytesByName = new Map<string, number>();
   let holder = '';
 
   const addBuffer = (a: Attribute | null | undefined): void => {
@@ -42,15 +45,14 @@ export function countMemory(root: Object3D): MemoryCounters {
     if (buffers.has(owner)) return;
     buffers.add(owner);
     const array = owner.array as (ArrayLike<number> & { byteLength?: number }) | null;
+    // Let go after upload: `count` stays (a plain field in three r186). The
+    // arrays let go are the shells' Float32/Uint32, 4 bytes a value.
+    const bytes = array ? array.byteLength ?? array.length * 4 : owner.count * (owner.stride ?? owner.itemSize ?? 1) * 4;
+    geometryBytes += bytes;
+    bytesByName.set(holder, (bytesByName.get(holder) ?? 0) + bytes);
     if (array) {
-      const bytes = array.byteLength ?? array.length * 4;
-      geometryBytes += bytes;
       geometryCpuBytes += bytes;
       cpuByName.set(holder, (cpuByName.get(holder) ?? 0) + bytes);
-    } else {
-      // Let go after upload: `count` stays (a plain field in three r186). The
-      // arrays let go are the shells' Float32/Uint32, 4 bytes a value.
-      geometryBytes += owner.count * (owner.stride ?? owner.itemSize ?? 1) * 4;
     }
   };
   const addTexture = (value: unknown): void => {
@@ -84,7 +86,7 @@ export function countMemory(root: Object3D): MemoryCounters {
   let textureBytes = 0;
   for (const t of textures) textureBytes += texelBytes(t);
   const top = [...cpuByName].sort((a, b) => b[1] - a[1]).slice(0, TOP);
-  return { buffers: buffers.size, geometryBytes, geometryCpuBytes, cpuByName: top, textures: textures.size, textureBytes };
+  return { buffers: buffers.size, geometryBytes, geometryCpuBytes, cpuByName: top, bytesByName, textures: textures.size, textureBytes };
 }
 
 const TOP = 10;

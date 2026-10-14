@@ -76,3 +76,124 @@ export const COUNT_BUDGETS = {
 export function withinBudget(value: number, budget: Budget): boolean {
   return value <= budget.max && (budget.min === undefined || value >= budget.min);
 }
+
+/**
+ * THE CITY PLAN'S BUDGETS: what the whole-map city may cost, from the plan
+ * (`docs/PESQUISA-CIDADE-10KM.md` §8.6, `docs/CIDADE-10KM.md`), for an RTX
+ * 3060 at 1920×1080. `__roadcraft.budget(view)` measures the running game
+ * against them (`cityBudgetTable`): performance work starts from the row
+ * furthest over, and a change that mends one row by breaking another is
+ * wrong. Change a number here only with the plan, and the plan only with the
+ * player's yes.
+ */
+export type CityView = 'rua' | 'bairro' | 'mapa';
+
+/** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor). */
+export const VIEW_BUDGETS: Readonly<Record<CityView, { readonly triangles: number; readonly drawCalls: number; readonly gpuMs: number; readonly fps: number }>> = {
+  rua: { triangles: 10_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
+  bairro: { triangles: 8_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
+  mapa: { triangles: 4_000_000, drawCalls: 300 + 100, gpuMs: 12, fps: 50 },
+};
+
+/** What holds geometry on the GPU, by the plan's levels (§8.3); `null` budget: the plan sets none. */
+export type MemoryGroup = 'L0 cascas' | 'L0 peças dos prédios' | 'L1 massas' | 'L2 ladrilhos' | 'L3 placas' | 'vias' | 'postes e fios' | 'terreno' | 'vegetação' | 'pessoas e veículos' | 'outros';
+
+/** MB of GPU memory each group may hold (§8.6, a city of 80 000 buildings). */
+const MEMORY_BUDGETS_MB: Readonly<Record<MemoryGroup, number | null>> = {
+  'L0 cascas': 300,
+  'L0 peças dos prédios': 150,
+  'L1 massas': 120,
+  'L2 ladrilhos': 60,
+  'L3 placas': 15,
+  vias: null,
+  'postes e fios': null,
+  terreno: null,
+  vegetação: null,
+  'pessoas e veículos': null,
+  outros: null,
+};
+
+/** Textures (600 MB) and the live JavaScript heap (1.5 GB, `CIDADE-10KM.md`). */
+const TEXTURE_BUDGET_MB = 600;
+const HEAP_BUDGET_MB = 1500;
+
+/** The plan's group of a scene object, by its name (`mesh.name`, as `buildingMesh.ts` and the others set it). */
+export function memoryGroup(name: string): MemoryGroup {
+  if (name.startsWith('building-preview')) return 'outros';
+  if (name.startsWith('building-shell-')) return 'L0 cascas';
+  if (name.startsWith('building-massing')) return 'L1 massas';
+  if (name.startsWith('building-')) return 'L0 peças dos prédios';
+  if (/^(asphalt|footway|kerb|verge|curb-ramp|median-|markings-|road)/.test(name)) return 'vias';
+  if (name.startsWith('utility-')) return 'postes e fios';
+  if (/^(terrain-|flat-world)/.test(name)) return 'terreno';
+  if (/^(garden-|far-forest|forest|tree|grass|woods|far-woods)/.test(name)) return 'vegetação';
+  if (/^(citizen-|car-|bus-|truck-|vehicle|male-|female-)/.test(name)) return 'pessoas e veículos';
+  return 'outros';
+}
+
+/** What `__roadcraft.budget` measured in the running game. */
+export interface CityMeasure {
+  readonly view: CityView;
+  /** Of the last frame drawn, every pass (`renderer.info.render`). */
+  readonly triangles: number;
+  readonly drawCalls: number;
+  /** p95 of the last frames' GPU time; null when the GPU timer is not there. */
+  readonly gpuMs: number | null;
+  readonly fps: number;
+  /** GPU geometry bytes by object name (`render/memoryCounters.ts`). */
+  readonly bytesByName: ReadonlyMap<string, number>;
+  readonly textureBytes: number;
+  /** Geometry still held by JavaScript arrays: exact, part of the heap. */
+  readonly geometryCpuBytes: number;
+  /** Chromium's `performance.memory.usedJSHeapSize`: V8 heap PLUS external memory (the arrays), bucketed; null elsewhere. */
+  readonly heapBytes: number | null;
+}
+
+export interface BudgetRow {
+  readonly item: string;
+  readonly medido: string;
+  readonly orçamento: string;
+  /** `acima` first: what to work on. */
+  readonly situação: 'acima' | 'ok' | 'sem orçamento no plano' | 'não medido' | 'aproximado';
+  /** How far over (measured / budget); 0 when within, or not comparable. */
+  readonly vezes: number;
+}
+
+const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
+const fmt = (n: number): string => n.toLocaleString('pt-BR');
+
+/** The plan's budgets against a measure, the rows furthest over first. */
+export function cityBudgetTable(m: CityMeasure): BudgetRow[] {
+  const v = VIEW_BUDGETS[m.view];
+  const rows: BudgetRow[] = [];
+  const cap = (item: string, value: number | null, budget: number | null, unit: string): void => {
+    if (value === null) { rows.push({ item, medido: '—', orçamento: budget === null ? '—' : `≤ ${fmt(budget)} ${unit}`, situação: 'não medido', vezes: 0 }); return; }
+    if (budget === null) { rows.push({ item, medido: `${fmt(value)} ${unit}`, orçamento: '—', situação: 'sem orçamento no plano', vezes: 0 }); return; }
+    const over = value > budget;
+    rows.push({ item, medido: `${fmt(value)} ${unit}`, orçamento: `≤ ${fmt(budget)} ${unit}`, situação: over ? 'acima' : 'ok', vezes: over ? Math.round((value / budget) * 10) / 10 : 0 });
+  };
+  cap(`triângulos desenhados (${m.view})`, m.triangles, v.triangles, '');
+  cap(`draw calls, cor + sombra (${m.view})`, m.drawCalls, v.drawCalls, '');
+  cap(`GPU p95 (${m.view})`, m.gpuMs, v.gpuMs, 'ms');
+  const slow = m.fps < v.fps;
+  rows.push({ item: `fps (${m.view})`, medido: fmt(m.fps), orçamento: `≥ ${v.fps}`, situação: slow ? 'acima' : 'ok', vezes: slow && m.fps > 0 ? Math.round((v.fps / m.fps) * 10) / 10 : 0 });
+
+  const groups = new Map<MemoryGroup, number>();
+  for (const [name, bytes] of m.bytesByName) {
+    const g = memoryGroup(name);
+    groups.set(g, (groups.get(g) ?? 0) + bytes);
+  }
+  for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) cap(`memória de vídeo: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB');
+  cap('memória de vídeo: texturas (sem mipmaps)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
+  cap('memória de vídeo: alvos de render e sombras', null, 300, 'MB');
+  rows.push({ item: 'geometria presa na CPU (parte do heap)', medido: `${fmt(mb(m.geometryCpuBytes))} MB`, orçamento: '—', situação: 'sem orçamento no plano', vezes: 0 });
+  rows.push({
+    item: 'heap JS (performance.memory: heap + arrays, arredondado)',
+    medido: m.heapBytes === null ? '—' : `${fmt(mb(m.heapBytes))} MB`,
+    orçamento: `≤ ${fmt(HEAP_BUDGET_MB)} MB`,
+    situação: m.heapBytes === null ? 'não medido' : 'aproximado',
+    vezes: 0,
+  });
+  const order = { acima: 0, ok: 1, aproximado: 2, 'sem orçamento no plano': 3, 'não medido': 4 } as const;
+  return rows.sort((a, b) => order[a.situação] - order[b.situação] || b.vezes - a.vezes);
+}
