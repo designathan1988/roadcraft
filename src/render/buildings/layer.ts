@@ -418,7 +418,11 @@ export function createBuildingLayer(): BuildingLayer {
       }
       let done = true;
       for (const [kind, list, cache] of [['cell', townCells.get(cell) ?? [], cells], ['faded', othersByCell.get(cell) ?? [], fadedCells]] as const) {
+        // A cell whose shown batch is what the town is now (or that has no buildings left) wants nothing
+        // asked: a request still out for another state of it is dropped. DO NOT leave it: it landed and was
+        // never taken, its meshes sent to the GPU and kept until the cell was asked again (`cellRequests.ts`).
         if (list.length === 0) {
+          requests.drop(kind, cell);
           if (!cache.has(cell)) continue;
           if (kind === 'cell') patchCell(cell, null, shownAt()); else dropCell(cache, cell, faded);
           changed = true;
@@ -426,7 +430,7 @@ export function createBuildingLayer(): BuildingLayer {
         }
         const entries = entriesOf(list, groundAt, groundKey, pavedAt);
         const known = cache.get(cell);
-        if (known && sameEntries(known.entries, entries)) continue;
+        if (known && sameEntries(known.entries, entries)) { requests.drop(kind, cell); continue; }
         done = false;
         if (!requests.isAsked(kind, cell) && requests.asking >= STREAM_AHEAD) continue;
         const got = requests.want(kind, cell, entries, env, true);
