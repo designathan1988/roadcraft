@@ -19,7 +19,7 @@ import { m } from '@world/units';
 
 /** A car standing in its bay with nobody in it: what `sync` takes as parked. */
 function parkedCar(id: number, x: number, y: number, lot: number | null = 1): Vehicle {
-  const v = createVehicle(id, archetypeById('sedan'), {} as never, '#a83a2c', 0 as LaneletId, 0, 0);
+  const v = createVehicle(id, archetypeById('sedan'), {} as never, '#a83a2c', '' as LaneletId, 0, 0);
   v.free = { x, y, angle: 0.3, px: x, py: y, pangle: 0.3, lot };
   // Nobody aboard: its engine off and its instances copied from frame to frame (`sync` `still`).
   v.seats = 0;
