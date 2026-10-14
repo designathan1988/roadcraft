@@ -1096,8 +1096,16 @@ function syncGesture(): void {
 // After the event's own handlers: a task of its own, after the whole dispatch.
 // (A microtask would not do: the browser runs them after each listener, so one
 // queued from this capturing listener ran BEFORE the handlers it was to follow.)
+// One task for every event since the last one ran: a pointer reporting many
+// moves a frame queued a timer per move.
+let gestureSyncQueued = false;
+const syncGestureSoon = (): void => {
+  if (gestureSyncQueued) return;
+  gestureSyncQueued = true;
+  setTimeout(() => { gestureSyncQueued = false; syncGesture(); }, 0);
+};
 for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'] as const) {
-  window.addEventListener(type, () => setTimeout(syncGesture, 0), { capture: true, passive: true });
+  window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
 /**
  * What the diary says a change came from (`world/changes.ts` `causeNext`):
