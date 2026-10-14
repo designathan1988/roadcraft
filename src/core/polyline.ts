@@ -49,6 +49,7 @@ export class Polyline {
   private _tan: Float64Array | null = null;
   private _bbox: Aabb | null = null;
   private _chunks: Float64Array | null = null;
+  private _groups: Float64Array | null = null;
 
   private constructor(xy: Float64Array) {
     this.xy = xy;
@@ -219,6 +220,32 @@ export class Polyline {
     return new Polyline(xy);
   }
 
+  /**
+   * Bounding boxes of `GROUP` runs at a time (`chunks`), for the longest
+   * lines: the outer edge of a whole town's footways is one ring of
+   * thousands of points, and asking it for every verge vertex tested every
+   * run's box - 7.5 s of a four-times town's first minute (2026-10-14).
+   */
+  private get groups(): Float64Array {
+    if (this._groups) return this._groups;
+    const boxes = this.chunks;
+    const runs = boxes.length / 4;
+    const count = Math.ceil(runs / GROUP);
+    const out = new Float64Array(count * 4);
+    for (let g = 0; g < count; g++) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let c = g * GROUP; c < Math.min(runs, (g + 1) * GROUP); c++) {
+        minX = Math.min(minX, boxes[c * 4] as number);
+        minY = Math.min(minY, boxes[c * 4 + 1] as number);
+        maxX = Math.max(maxX, boxes[c * 4 + 2] as number);
+        maxY = Math.max(maxY, boxes[c * 4 + 3] as number);
+      }
+      out[g * 4] = minX; out[g * 4 + 1] = minY; out[g * 4 + 2] = maxX; out[g * 4 + 3] = maxY;
+    }
+    this._groups = out;
+    return out;
+  }
+
   /** Bounding boxes of runs of `CHUNK` segments: [minX, minY, maxX, maxY] each. */
   private get chunks(): Float64Array {
     if (this._chunks) return this._chunks;
@@ -263,10 +290,18 @@ export class Polyline {
     const xy = this.xy;
     const segments = this.n - 1;
     const boxes = segments > CHUNK ? this.chunks : null;
+    const groups = segments > CHUNK * GROUP ? this.groups : null;
     let best = -1;
     let bestSq = Infinity;
     let bestT = 0;
     for (let start = 0; start < segments; start += CHUNK) {
+      // A whole group of runs clearly farther: each of its runs would be skipped below (its box holds theirs).
+      if (groups && start % (CHUNK * GROUP) === 0) {
+        const g = (start / (CHUNK * GROUP)) * 4;
+        const dx = Math.max((groups[g] as number) - px, 0, px - (groups[g + 2] as number));
+        const dy = Math.max((groups[g + 1] as number) - py, 0, py - (groups[g + 3] as number));
+        if (dx * dx + dy * dy > bestSq * (1 + 1e-9) + 1e-12) { start += CHUNK * (GROUP - 1); continue; }
+      }
       if (boxes) {
         const c = (start / CHUNK) * 4;
         const dx = Math.max((boxes[c] as number) - px, 0, px - (boxes[c + 2] as number));
@@ -343,6 +378,8 @@ export class Polyline {
 
 /** Segments per bounding box in the nearest-point search. */
 const CHUNK = 16;
+/** Runs of `CHUNK` segments a group's box holds (`groups`). */
+const GROUP = 16;
 /** Scratch result of `Polyline.nearestSegment`. */
 const nearest = { t: 0, distSq: Infinity };
 
