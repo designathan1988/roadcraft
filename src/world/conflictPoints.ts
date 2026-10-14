@@ -8,8 +8,11 @@ import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
 import { rebuildWork } from './rebuildWork';
 import {
-  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, HEAVY, SWEEP_STEP, type SweepSamples, pairTable,
+  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, HEAVY, type PairMeasurer, SWEEP_STEP, type SweepSamples, pairTable,
 } from './conflictTable';
+
+/** Yielded by `ConflictIndex.prepare` while its pairs are measured off the page: nothing to do here until they come back. */
+export const WAITING = 'waiting' as const;
 
 export { BODY_CLASSES, BODY_CLASS_NAMES, BODY_ENVELOPE, type BodyClass, HEAVY } from './conflictTable';
 
@@ -188,8 +191,11 @@ export class ConflictIndex {
   /** Pairs measured (not read from the caches) by the last `build` and the last `prepare`: for the probes. */
   readonly measured = { build: 0, prepare: 0 };
 
-  *prepare(graph: LaneletGraph): Generator<void, void> {
+  *prepare(graph: LaneletGraph, measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     this.measured.prepare = 0;
+    /** The pairs to measure off the page (`measurer`), each key once. */
+    const wanted: { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[] = [];
+    const asked = new Set<string>();
     for (const junction of graph.junctions.values()) {
       rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
@@ -207,12 +213,37 @@ export class ConflictIndex {
           const known = this.pairCache.get(key);
           if (known && sameShape(known.a, a.shape) && sameShape(known.b, b.shape)) continue;
           const wasKept = this.store.kept.has(key);
+          if (!wasKept && measurer) {
+            if (!asked.has(key)) { asked.add(key); wanted.push({ key, a: a.sweep, shapeA: a.shape, b: b.sweep, shapeB: b.shape }); }
+            continue;
+          }
           this.pairCache.set(key, measurePair(key, a.sweep, a.shape, b.sweep, b.shape, this.store));
           if (wasKept) continue;
           this.measured.prepare++;
           yield;
         }
       }
+    }
+    if (!measurer || !wanted.length) return;
+    // OFF THE PAGE: every new pair at once, across the measurer's workers
+    // (`conflictPool.ts`), the same `pairTable` on the same samples, while
+    // this thread draws and builds the rest of the town. A pair at a time
+    // here, a generated city's 3.4 s of them held its opening (2026-10-14).
+    // While they work this yields `WAITING`: the frame's slice ends there.
+    const answer: { tables?: readonly (Float64Array | null)[]; failed?: boolean } = {};
+    measurer.measure(wanted.map((w) => ({ a: w.a, b: w.b }))).then(
+      (tables) => { answer.tables = tables; },
+      (error: unknown) => { console.warn('[traffic] the conflict workers failed; the pairs are measured on the page', error); answer.failed = true; },
+    );
+    while (!answer.tables && !answer.failed) yield WAITING;
+    for (let k = 0; k < wanted.length; k++) {
+      const w = wanted[k]!;
+      const table = answer.tables?.[k];
+      this.pairCache.set(w.key, table !== undefined
+        ? keepPair(w.key, w.shapeA, w.shapeB, table, this.store)
+        : measurePair(w.key, w.a, w.shapeA, w.b, w.shapeB, this.store));
+      this.measured.prepare++;
+      if (table === undefined) yield;
     }
   }
 
@@ -531,7 +562,11 @@ interface KeptZones {
 function measurePair(key: string, a: Sweep, shapeA: SweepShape, b: Sweep, shapeB: SweepShape, store: KeptZones): CachedPair {
   const kept = store.kept.get(key);
   if (kept !== undefined) return { a: shapeA, b: shapeB, zones: kept && zonesOf(kept) };
-  const table = pairTable(a, b);
+  return keepPair(key, shapeA, shapeB, pairTable(a, b), store);
+}
+
+/** A pair's table just measured (here or by a worker, `ConflictIndex.prepare`), kept for this session and the next. */
+function keepPair(key: string, shapeA: SweepShape, shapeB: SweepShape, table: Float64Array | null, store: KeptZones): CachedPair {
   pairsMeasured++;
   store.kept.set(key, table);
   store.fresh.set(key, table);

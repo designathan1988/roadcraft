@@ -6,6 +6,7 @@ import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
 import { FrameClock, Periodic, TopologyCatchUp } from './frameLoop';
+import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { FrameTimer, HealthLog, frameStats } from '@core/health';
@@ -2529,7 +2530,8 @@ let actionsWarm = false;
  */
 let topologyAfterDraw = false;
 /** The traffic's topology catching up with an edit, a slice a frame (`frameLoop.ts`). */
-const topology = new TopologyCatchUp();
+// The new junctions' conflict pairs measured on the other cores (`conflictPool.ts`).
+const topology = new TopologyCatchUp(new ConflictPool());
 
 function requestDraw(): void {
   frameClock.request();

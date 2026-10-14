@@ -3,7 +3,8 @@ import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { type Connector, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
-import { ConflictIndex, type BodyClass } from '@world/conflictPoints';
+import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
+import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
 import { ClaimTable } from './intersections/claims';
 import type { Vehicle, VehicleId } from './vehicles/state';
@@ -519,11 +520,12 @@ export class SimWorld {
    * frame of its rebuild about a tenth of a second.
    * @rebuild Run while the topology is behind the network (`frameLoop.ts` `TopologyCatchUp`).
    */
-  *prepareVehicleTopology(): Generator<void, void> {
+  *prepareVehicleTopology(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
     yield* graph.buildSteps(this.doc, this.net);
     yield;
-    yield* this.conflicts.prepare(graph);
+    // The new pairs measured by `measurer`'s workers when there are some (`conflictPool.ts`).
+    yield* this.conflicts.prepare(graph, measurer);
     yield;
     // The residents' walkways of the network (`walkways`), in a frame of their
     // own: built in the frame that rebinds the walkers, with the footway graph

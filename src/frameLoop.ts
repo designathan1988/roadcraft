@@ -1,6 +1,8 @@
 import { workUntil } from '@core/frameWork';
 import { rebindPeds, rebindVehicles } from '@sim/pipeline';
 import type { SimWorld } from '@sim/world';
+import { WAITING } from '@world/conflictPoints';
+import type { PairMeasurer } from '@world/conflictTable';
 
 /**
  * THE FRAME LOOP'S BOOKKEEPING, out of `main.ts`: what the loop keeps between
@@ -131,7 +133,10 @@ const LOADING_SLICE_MS = 250;
  * a stall of up to 240 ms after every edit (docs/performance.md #11).
  */
 export class TopologyCatchUp {
-  private vehicles: { revision: number; steps: Generator<void, void> } | null = null;
+  /** `measurer`: the workers the new junctions' conflict pairs are measured by (`conflictPool.ts`); none, on the page. */
+  constructor(private readonly measurer?: PairMeasurer) {}
+
+  private vehicles: { revision: number; steps: Generator<void | typeof WAITING, void> } | null = null;
   private walks: { revision: number; steps: Generator<void, void, void> } | null = null;
   private pedsToRebind = false;
 
@@ -156,11 +161,12 @@ export class TopologyCatchUp {
     if (worldBusy && !loading) return true;
     if (sim.vehicleTopologyRevision !== revision) {
       if (!this.vehicles || this.vehicles.revision !== revision) {
-        this.vehicles = { revision, steps: sim.prepareVehicleTopology() };
+        this.vehicles = { revision, steps: sim.prepareVehicleTopology(this.measurer) };
       }
       const until = slice();
       let prep = this.vehicles.steps.next();
-      while (!prep.done && performance.now() < until) prep = this.vehicles.steps.next();
+      // WAITING: the workers have the pairs; nothing to do here this frame.
+      while (!prep.done && prep.value !== WAITING && performance.now() < until) prep = this.vehicles.steps.next();
       if (prep.done) {
         this.vehicles = null;
         sim.rebuildVehicleTopology();

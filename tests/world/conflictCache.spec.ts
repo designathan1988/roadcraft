@@ -4,7 +4,8 @@ import { RoadDoc as Doc } from '@world/doc';
 import type { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
-import { BODY_CLASSES, ConflictIndex } from '@world/conflictPoints';
+import { BODY_CLASSES, ConflictIndex, WAITING } from '@world/conflictPoints';
+import { type PairMeasurer, type SweepSamples, pairTable } from '@world/conflictTable';
 import type { NodeId } from '@world/ids';
 import { fixtureDoc } from '../sim/support/bodies';
 
@@ -75,7 +76,39 @@ function addLeg(doc: RoadDoc): NodeId {
   return busiest.id;
 }
 
+/**
+ * What a worker of `conflictPool.ts` does, here: the sweeps rebuilt from
+ * their samples alone with empty caches, `pairTable` on them, the answer by
+ * promise and the tables' buffers copied as a transfer would hand them over.
+ */
+const offPage: PairMeasurer = {
+  measure(pairs) {
+    const fresh = (s: SweepSamples): SweepSamples => ({
+      c0: s.c0, count: s.count, length: s.length, frame: s.frame.slice(), frameLengthSq: s.frameLengthSq.slice(), bounds: null, grid: null, range: null,
+    });
+    return Promise.resolve(pairs.map((p) => pairTable(fresh(p.a), fresh(p.b))?.slice() ?? null));
+  },
+};
+
 describe('conflict zone cache', () => {
+  it('gives the same index when its pairs are measured off the page', async () => {
+    const graph = graphOf(fixtureDoc());
+    const index = new ConflictIndex();
+    const steps = index.prepare(graph, offPage);
+    let waited = 0;
+    for (let step = steps.next(); !step.done; step = steps.next()) {
+      if (step.value === WAITING) { waited++; await Promise.resolve(); }
+    }
+    expect(waited).toBeGreaterThan(0);
+    expect(index.measured.prepare).toBeGreaterThan(0);
+    index.build(graph);
+    // Every pair the build needs came back from the workers.
+    expect(index.measured.build).toBe(0);
+    const cold = new ConflictIndex();
+    cold.build(graph);
+    expect(snapshot(index)).toEqual(snapshot(cold));
+  });
+
   it('gives the same index as a cold build after an edit', () => {
     const doc = fixtureDoc();
     const warm = new ConflictIndex();

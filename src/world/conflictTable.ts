@@ -260,3 +260,13 @@ function widen(table: Float64Array, at: number, c: number): void {
   table[at] = Number.isNaN(lo) ? c : Math.min(lo, c);
   table[at + 1] = Number.isNaN(hi) ? c : Math.max(hi, c);
 }
+
+/**
+ * Measures many pairs' tables somewhere else - the browser's workers
+ * (`conflictPool.ts`) - each as `pairTable` would here, answered in the
+ * order asked; rejected when it cannot (`ConflictIndex.prepare` then
+ * measures them on the page).
+ */
+export interface PairMeasurer {
+  measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples }[]): Promise<readonly (Float64Array | null)[]>;
+}
