@@ -23,8 +23,6 @@ export interface Vec2 {
   readonly y: number;
 }
 
-export const ZERO: Vec2 = { x: 0, y: 0 };
-
 export const add = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x + b.x, y: a.y + b.y });
 export const sub = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x - b.x, y: a.y - b.y });
 export const scale = (a: Vec2, k: number): Vec2 => ({ x: a.x * k, y: a.y * k });
@@ -37,11 +35,6 @@ export const cross = (a: Vec2, b: Vec2): number => a.x * b.y - a.y * b.x;
 export const lenSq = (a: Vec2): number => a.x * a.x + a.y * a.y;
 export const len = (a: Vec2): number => Math.hypot(a.x, a.y);
 export const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
-export const distSq = (a: Vec2, b: Vec2): number => {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-};
 
 /** The left-hand normal: a quarter turn counter-clockwise. */
 export const perp = (a: Vec2): Vec2 => ({ x: -a.y, y: a.x });
@@ -63,17 +56,8 @@ export const fromAngle = (a: number, r = 1): Vec2 => ({
   y: Math.sin(a) * r,
 });
 
-export function rotate(a: Vec2, angle: number): Vec2 {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
-}
-
 /** `a + b * k` without an intermediate allocation at the call site. */
 export const addScaled = (a: Vec2, b: Vec2, k: number): Vec2 => ({
   x: a.x + b.x * k,
   y: a.y + b.y * k,
 });
-
-export const equals = (a: Vec2, b: Vec2, tol = EPS): boolean =>
-  Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;

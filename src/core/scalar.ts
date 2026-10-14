@@ -85,7 +85,7 @@ export const SEAM_OVERLAP = m(0.1);
  */
 export const SURFACE_END_STEP = m(0.00004);
 
-export const TAU = Math.PI * 2;
+const TAU = Math.PI * 2;
 
 /**
  * `a / b` read to a millionth, for a count rounded from it (bays along a

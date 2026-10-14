@@ -144,7 +144,7 @@ export function offsetPolyline(
  *
  * O(n^2), with n bounded by the flattening budget (<= ~64 points per segment).
  */
-export function pruneSelfIntersections(q: readonly Vec2[]): Vec2[] {
+function pruneSelfIntersections(q: readonly Vec2[]): Vec2[] {
   const m = q.length;
   if (m < 4) return q.slice();
 
