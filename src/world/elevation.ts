@@ -487,6 +487,8 @@ export function buildRoadElevation(
 ): RoadElevation {
   const started = performance.now();
   const profiles: Profile[] = [];
+  /** The structures among `profiles`, once they are all laid (`has`). */
+  let present: Set<RoadStructure> | null = null;
   const byId = new Map<SegmentId, Profile>();
   const prior = previous ? memos.get(previous) : terrainAt === FLAT_GROUND && lastFlat ? memos.get(lastFlat) : undefined;
   // Never level ground for real ground or the other way round, whatever the caller says.
@@ -1182,7 +1184,13 @@ export function buildRoadElevation(
     },
     has(structures) {
       if (!structures) return profiles.length > 0;
-      return profiles.some((profile) => structures.has(profile.structure));
+      // The structures the roads are built as, gathered once (the profiles
+      // never change after this build): asked at every point a lot's colour
+      // is laid on (`surfaceHeightAt`), a scan of every profile for a
+      // structure the town has none of was 0.4 s of an opening (2026-10-14).
+      present ??= new Set(profiles.map((profile) => profile.structure));
+      for (const structure of structures) if (present.has(structure)) return true;
+      return false;
     },
   };
   const settled = new Map<NodeId, { key: string; height: number }>();
