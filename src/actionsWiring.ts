@@ -17,6 +17,7 @@ import { levelElevation, solidFootprints, volumeElevation, worldToLocal } from '
 import { resolveBlocks } from '@world/buildings/blocks';
 import { signalPosts } from '@world/signalPosts';
 import { m, stepsIn } from '@world/units';
+import { landscapeAround } from '@editor/itemCells';
 
 /**
  * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
@@ -337,7 +338,8 @@ export function createActions(deps: ActionsDeps): Actions {
         if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }
       }
       // Trees, benches, bins, lamps, signs: thrown and gone.
-      for (const item of [...doc.landscape.values()]) {
+      // The items round the blast only (`editor/itemCells.ts`), not every one of the map.
+      for (const item of landscapeAround(doc, world, radius)) {
         if (!near(item.x, item.y, radius)) continue;
         hit.items.push({ kind: item.kind, x: item.x, y: item.y });
         if (item.kind === 'hydrant') scene.geyser(item.x, item.y, ground(item));
