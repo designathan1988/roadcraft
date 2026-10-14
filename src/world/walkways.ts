@@ -429,6 +429,9 @@ function resample(points: readonly Vec2[], count: number): Vec2[] {
   return out;
 }
 
+/** How far from a walking line two footway ends may lie, together, for a stretch of it to join them. */
+const STRETCH_REACH = m(0.8);
+
 /**
  * The stretch of a closed walking line from the point nearest `from` to the
  * point nearest `to`, going the way that passes none of `avoid` (the other
@@ -437,10 +440,18 @@ function resample(points: readonly Vec2[], count: number): Vec2[] {
 function stretch(lines: readonly Polyline[], from: Vec2, to: Vec2, avoid: readonly Vec2[]): Vec2[] | null {
   let line: Polyline | null = null, best = Infinity;
   for (const l of lines) {
+    // A line whose box is no nearer the two ends than the best found, or than
+    // a stretch takes, holds no nearer one: not walked (the box's MINDIST is
+    // a lower bound, Roussopoulos et al. 1995). Every corner of the town read
+    // every walking line of the town - 8.6 s of a 2 560 m town (2026-10-14).
+    const box = l.bbox;
+    const lower = Math.hypot(Math.max(box.minX - from.x, 0, from.x - box.maxX), Math.max(box.minY - from.y, 0, from.y - box.maxY))
+      + Math.hypot(Math.max(box.minX - to.x, 0, to.x - box.maxX), Math.max(box.minY - to.y, 0, to.y - box.maxY));
+    if (lower > Math.min(best, STRETCH_REACH) + 1e-9) continue;
     const a = l.closestPoint(from), b = l.closestPoint(to);
     if (a.distance + b.distance < best) { best = a.distance + b.distance; line = l; }
   }
-  if (!line || best > m(0.8)) return null;
+  if (!line || best > STRETCH_REACH) return null;
   const total = line.length;
   const sa = line.closestPoint(from).s, sb = line.closestPoint(to).s;
   const avoided = avoid.map((p) => line!.closestPoint(p)).filter((c) => c.distance < m(0.8)).map((c) => c.s);
