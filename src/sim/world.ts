@@ -350,6 +350,11 @@ export class SimWorld {
     this.claims.clear();
     this.controllers.clear();
     this.planInputs.clear();
+    // The kerbs and zebras of the old map: a new world has none until its
+    // topology is built, and the controllers made in its first half read them
+    // (`crossingsAt`). Kept, a reset world made its signals from the old
+    // map's crossings and ran otherwise than a new one.
+    this.sidewalks.clear();
     this.junctionsVersion++;
     this.occupied.clear();
     this.ghostCandidates.clear();

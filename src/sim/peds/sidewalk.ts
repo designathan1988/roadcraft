@@ -81,10 +81,7 @@ export class SidewalkGraph {
 
   /** `build` in steps, a road at a time; the simulation is held until the last (`sim/world.ts`). */
   *buildSteps(doc: RoadDoc, net: Network, graph: LaneletGraph): Generator<void, void, void> {
-    this.nodes.clear();
-    this.edges.clear();
-    this.crossings.clear();
-    this.walksBySegment.clear();
+    this.clear();
 
     // ---- kerb nodes, two per (junction node, leg) -------------------------
     for (const [nodeId, node] of doc.nodes) {
@@ -221,6 +218,14 @@ export class SidewalkGraph {
         });
       }
     }
+  }
+
+  /** Nothing: the graph of a world not built yet (`SimWorld.reset`). */
+  clear(): void {
+    this.nodes.clear();
+    this.edges.clear();
+    this.crossings.clear();
+    this.walksBySegment.clear();
   }
 
   crossingEdge(id: CrossingId): SidewalkEdge | undefined {
