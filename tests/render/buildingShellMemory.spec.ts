@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { BufferAttribute, Mesh } from 'three';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
-import { assembleBuildingMeshes, emitChunk, refillShells } from '@render/buildings/buildingMesh';
+import { assembleBuildingMeshes, emitChunk } from '@render/buildings/buildingMesh';
+import { refillArrays } from '@render/mesh/gpuOnly';
 import { createBuildingKit } from '@render/buildings/kit';
 
 /**
@@ -32,7 +33,7 @@ describe("the town's shells", () => {
       expect(m.geometry.boundingSphere).not.toBeNull();
       expect(m.geometry.boundingBox).not.toBeNull();
     }
-    refillShells(meshes.group);
+    refillArrays(meshes.group);
     shells.forEach((m, k) => {
       const after = [...Object.values(m.geometry.attributes), m.geometry.index!].map((a) => Array.from((a as BufferAttribute).array));
       expect(after).toEqual(before[k]);

@@ -1,4 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh, Uint32BufferAttribute } from 'three';
+import { gpuOnly } from '../mesh/gpuOnly';
 import { m } from '@world/units';
 import type { BuildingKit } from './kit';
 import type { MassingChunk } from './massing';
@@ -85,17 +86,20 @@ export interface MassCells {
 const sameMasses = (a: readonly MassingChunk[], b: readonly MassingChunk[]): boolean =>
   a.length === b.length && a.every((c, i) => c === b[i]);
 
-function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Mesh; top: number } | null {
+/** A cell's masses, in order, as one mesh's arrays (the indices shifted), and its highest point; null for none. */
+function massArrays(masses: readonly MassingChunk[]): {
+  position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; glazing: Float32Array; index: Uint32Array; top: number;
+} | null {
   let vertices = 0, indices = 0;
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), colour = new Float32Array(vertices * 3);
+  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
   const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = new Uint32Array(indices);
   let v = 0, n = 0, top = -Infinity;
   for (const c of masses) {
     position.set(c.position, v * 3);
     normal.set(c.normal, v * 3);
-    colour.set(c.colour, v * 3);
+    color.set(c.colour, v * 3);
     facade.set(c.facade, v * 4);
     glazing.set(c.glazing, v * 2);
     for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
@@ -103,16 +107,30 @@ function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Me
     v += c.position.length / 3;
     n += c.index.length;
   }
+  return { position, normal, color, facade, glazing, index, top };
+}
+
+/**
+ * A cell's mesh from its buildings' masses. The masses are what the layer
+ * keeps (`layer.ts` `masses`, a cell made again from them when one changes);
+ * the mesh is a copy for the GPU and keeps no arrays once there (`gpuOnly`):
+ * kept, the town's cells were 465 MB of the heap in a 2,560 m city.
+ */
+function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Mesh; top: number } | null {
+  const arrays = massArrays(masses);
+  if (!arrays) return null;
   const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(position, 3));
-  g.setAttribute('normal', new Float32BufferAttribute(normal, 3));
-  g.setAttribute('color', new Float32BufferAttribute(colour, 3));
-  g.setAttribute('facade', new Float32BufferAttribute(facade, 4));
-  g.setAttribute('glazing', new Float32BufferAttribute(glazing, 2));
-  g.setIndex(new Uint32BufferAttribute(index, 1));
+  g.setAttribute('position', new Float32BufferAttribute(arrays.position, 3));
+  g.setAttribute('normal', new Float32BufferAttribute(arrays.normal, 3));
+  g.setAttribute('color', new Float32BufferAttribute(arrays.color, 3));
+  g.setAttribute('facade', new Float32BufferAttribute(arrays.facade, 4));
+  g.setAttribute('glazing', new Float32BufferAttribute(arrays.glazing, 2));
+  g.setIndex(new Uint32BufferAttribute(arrays.index, 1));
   g.computeBoundingSphere();
   g.computeBoundingBox();
+  const top = arrays.top;
   const mesh = new Mesh(g, kit.massing);
+  gpuOnly(mesh, () => { const { top: _top, ...again } = massArrays(masses)!; return again; });
   mesh.name = 'building-massing';
   mesh.matrixAutoUpdate = false;
   mesh.castShadow = true;

@@ -15,26 +15,23 @@ import {
 import { createFlagLayer } from './flagLayer';
 import { drawsSignature } from './signature';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
+import { refillArrays } from '../mesh/gpuOnly';
 import { emitMassing, type MassingChunk } from './massing';
 import { createMassCells } from './massCells';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 
 /**
- * The buildings layer: the stored buildings and the editor's preview, each
- * rebuilt only when what it depends on moves (CLAUDE.md (Execution flow)).
+ * The buildings layer: the stored buildings and the editor's preview, each rebuilt only when what it
+ * depends on moves (CLAUDE.md (Execution flow)). The stored buildings depend on their changes in the
+ * diary (`townIndex.ts`), on the ground (`groundKey`, `render/groundChanges.ts`) and on which one the
+ * preview stands in for; a building samples its ground again only when `groundTouched` says a change
+ * reached it. The preview depends on its own serial.
  *
- * The stored buildings depend on `doc.buildings.revision`, on the ground
- * (`groundKey`: the serial of the last ground change that reached a building,
- * `render/groundChanges.ts`) and on which one the preview is standing in for.
- * A building samples its ground again only when `groundTouched` says a change
- * since its last sample reached it. The preview depends on its own serial.
- *
- * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the
- * cell is drawn near by the error on the screen (`massCells.ts`); far, only its
- * masses stand. A cell coming near is put together a few ms a frame and sent to
- * the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES` its meshes
- * go, its arrays as the cache allows (`slim`). Unreal's World Partition HLOD and
- * 3D Tiles' REPLACE refinement. NÃO voltar a montar o detalhe de todas as células.
+ * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the cell is drawn near by the
+ * error on the screen (`massCells.ts`); far, only its masses stand. A cell coming near is put together and
+ * sent to the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES` its meshes go, its arrays as
+ * the cache allows (`slim`). Unreal's World Partition HLOD, 3D Tiles' REPLACE refinement. DO NOT put the
+ * detail of every cell together again.
  */
 export interface BuildingPreviewInput {
   readonly building: Building;
@@ -114,6 +111,8 @@ export interface BuildingLayer {
   lotHeightAt(building: BuildingId, x: number, y: number): number;
   /** The drawn height of whichever building's lot is at a point, NaN off every lot. */
   anyLotHeightAt(x: number, y: number): number;
+  /** Every cell's meshes given their arrays again, drawn or kept off the scene (a WebGL context restored, `mesh/gpuOnly.ts`). */
+  refill(): void;
   dispose(): void;
 }
 
@@ -564,8 +563,7 @@ export function createBuildingLayer(): BuildingLayer {
           if (warming.dirty) for (const cell of warming.dirty) byCell.set(cell, byCell.get(cell) ?? []);
           if (warming.dirty) massCells.patch(byCell); else massCells.update(byCell);
           chooseNow();
-          // The masses show at once (`holdMass`).
-          townCells = warming.dirty ? town.byCell : groupByCell(warming.queue, cellOf, (b) => b);
+          townCells = warming.dirty ? town.byCell : groupByCell(warming.queue, cellOf, (b) => b); // the masses show at once (`holdMass`)
           warming.massed = true;
           warming.at = 0;
           return false;
@@ -772,6 +770,9 @@ export function createBuildingLayer(): BuildingLayer {
     },
     lotHeightAt(building, x, y) {
       return chunks.get(building)?.chunk.lotGround?.heightAt(x, y) ?? NaN;
+    },
+    refill() {
+      for (const { part } of [...[cells, detailCells, stagedCells, stagedDetails].flatMap((c) => [...c.values()]), ...(streaming?.made ?? [])]) refillArrays(part.group);
     },
     anyLotHeightAt(x, y) {
       for (const { chunk } of chunks.values()) {

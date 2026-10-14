@@ -120,7 +120,8 @@ const SHADOW_FAR_EVERY = 3;
  */
 const SHADOW_SAFETY_FRAMES = 30;
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
-import { buildBuildingMeshes, refillShells } from './buildings/buildingMesh';
+import { buildBuildingMeshes } from './buildings/buildingMesh';
+import { refillArrays } from './mesh/gpuOnly';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
@@ -1042,10 +1043,16 @@ export function createSceneRenderer(
   // `render/buildings/layer.ts`), so a building edit never re-solves the roads.
   const buildings = createBuildingLayer();
   scene.add(buildings.group);
-  // The town's shells keep their arrays only until they are on the GPU
-  // (`buildingMesh.ts` letGoOfArray): a restored WebGL context, whose buffers
-  // three uploads again, finds them filled again from their chunks first.
-  renderer.domElement.addEventListener('webglcontextrestored', () => refillShells(buildings.group));
+  // The town's meshes keep their arrays only until they are on the GPU
+  // (`mesh/gpuOnly.ts`): a restored WebGL context, whose buffers three
+  // uploads again, finds them filled again from their sources first - those
+  // drawn, the road blocks kept for the next build and the buildings' cells
+  // kept or put together ahead off the scene.
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    refillArrays(scene);
+    for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
+    buildings.refill();
+  });
   /** The scenery the building footprints were last cut out of. */
   let excludedFor: { scenery: Scenery | null; site: string | null } = { scenery: null, site: null };
   /** The buildings' garden plants, and the buildings and ground they were planted for. */

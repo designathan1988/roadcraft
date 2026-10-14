@@ -10,7 +10,6 @@ import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, ty
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type BufferAttribute,
   BufferGeometry,
   Color,
   Float32BufferAttribute,
@@ -20,7 +19,6 @@ import {
   InstancedMesh,
   InterleavedBufferAttribute,
   Mesh,
-  type Object3D,
   Sphere,
   Uint32BufferAttribute,
 } from 'three';
@@ -91,6 +89,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
+import { gpuOnly } from '../mesh/gpuOnly';
 import { FACADE_PROP_KINDS, facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
@@ -3418,13 +3417,6 @@ export function assembleBuildingMeshes(
  * as it was stays drawn (`layer.ts`); a whole cell at once was a frame of
  * over 100 ms in the default town (docs/performance.md #12).
  */
-/** Where a town shell keeps its way back to its arrays (`refillShells`). */
-const REFILL = 'refillShell';
-/** Lets an attribute's array go once the renderer has it on the GPU. */
-function letGoOfArray(this: BufferAttribute): void {
-  (this as { array: ArrayLike<number> | null }).array = null;
-}
-
 /** One finish's shells of every chunk in one set of arrays (the vertices concatenated, the indices shifted), or null when none has any. */
 function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): { position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; decay: Float32Array; index: Uint32Array } | null {
   let vertices = 0;
@@ -3457,15 +3449,6 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): { positi
     n += part.index.length;
   }
   return { position, normal, colour, uv, decay, index };
-}
-
-/**
- * After a lost WebGL context comes back, the town's shells take their arrays
- * again from their chunks, so the renderer can upload them anew (they had
- * been let go after the first upload, `letGoOfArray`).
- */
-export function refillShells(root: Object3D): void {
-  root.traverse((o) => { const refill = o.userData[REFILL] as (() => void) | undefined; refill?.(); });
 }
 
 export function* assembleBuildingMeshesSteps(
@@ -3508,20 +3491,12 @@ export function* assembleBuildingMeshesSteps(
     // upload when attribute data are not needed anymore on the CPU side") -
     // a third of the heap of a town of 1 348 buildings (2026-10-11). Nothing
     // reads them after (bounds worked out above; no raycast on the town);
-    // a lost and restored WebGL context fills them again (`refillShells`).
+    // a lost and restored WebGL context fills them again (`gpuOnly.ts` `refillArrays`).
     if (!ghost) {
-      for (const attribute of Object.values(g.attributes)) (attribute as BufferAttribute).onUpload(letGoOfArray);
-      g.index!.onUpload(letGoOfArray);
-      mesh.userData[REFILL] = (): void => {
+      gpuOnly(mesh, () => {
         const again = shellArrays(chunks, finish)!;
-        const set = (attribute: BufferAttribute, array: Float32Array | Uint32Array): void => { (attribute as { array: ArrayLike<number> }).array = array; attribute.needsUpdate = true; };
-        set(g.getAttribute('position') as BufferAttribute, again.position);
-        set(g.getAttribute('normal') as BufferAttribute, again.normal);
-        set(g.getAttribute('color') as BufferAttribute, again.colour);
-        set(g.getAttribute('uv') as BufferAttribute, again.uv);
-        set(g.getAttribute('aDecay') as BufferAttribute, again.decay);
-        set(g.index!, again.index);
-      };
+        return { position: again.position, normal: again.normal, color: again.colour, uv: again.uv, aDecay: again.decay, index: again.index };
+      });
     }
     mesh.name = ghost ? `building-preview-shell-${finish}` : `building-shell-${finish}`;
     mesh.castShadow = !ghost;
