@@ -5,8 +5,16 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
 import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 
-/** What moves the ground a lot is laid on (`surfaceHeightAt`): its laid pieces there are made again. */
-const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'buildings', 'ground', 'elevation', 'surfaces'];
+/**
+ * What moves the ground a lot is laid on (`surfaceHeightAt`: the terrain and
+ * the roads): its laid pieces there are made again. NOT 'buildings': a
+ * building moves no ground by being there - the pads it levels are written
+ * as 'ground' when they are cut (`renderer.ts` `shapeGround`). With it, a
+ * generated city re-laid 3 000 lots in 18 passes of 190 ms each, 3.4 s of
+ * its first 25 (2026-10-14).
+ * NÃO pôr 'buildings' de volta: o nivelamento já chega como 'ground'.
+ */
+const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
 
 /** One polygon laid on the ground: its fill and outline triangles, and where it is. */
 interface Piece { readonly fillPos: Float32Array; readonly fillCol: Float32Array; readonly linePos: Float32Array; readonly lineCol: Float32Array; readonly box: ChangeRect }

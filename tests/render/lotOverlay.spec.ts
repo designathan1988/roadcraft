@@ -52,10 +52,23 @@ describe('lot overlay', () => {
     overlay.set(lots(200), changes);
     const all = asked;
     asked = 0;
-    // The ground reshaped round one lot (a building grown there).
-    changes.record('buildings', [[0, 0, 50 * U, 70 * U]]);
+    // The ground reshaped round one lot: a building's pad levelled there
+    // (`renderer.ts` `shapeGround` writes it as 'ground').
+    changes.record('ground', [[0, 0, 50 * U, 70 * U]]);
     overlay.set(lots(200), changes);
     expect(asked).toBeGreaterThan(0);
     expect(asked).toBeLessThan(all / 50);
+  });
+
+  it('lays no lot again for a building that moved no ground', () => {
+    let asked = 0;
+    const overlay = createLotOverlay(new Scene(), () => { asked++; return 0; });
+    const changes = new ChangeJournal();
+    overlay.set(lots(200), changes);
+    asked = 0;
+    // A generated city wrote one of these a building: 3 000 lots laid again in 25 s (2026-10-14).
+    changes.record('buildings', [[0, 0, 50 * U, 70 * U]]);
+    overlay.set(lots(200), changes);
+    expect(asked).toBe(0);
   });
 });
