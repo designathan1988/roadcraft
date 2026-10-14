@@ -91,6 +91,22 @@ Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
 Clique em prédio (`f1405fa`), item 34 registrado, A2 (`e5ec4e5`), A7 (`cf0917d`), C3 (`de7588d`), D8/C1
 (`81c6ffb`), A1+A5+A16 (`c45806a`). Contadores fora da base: `building+1:ground`, `ground:idle`, `layer`.
 
+## Feito na raiz (Hook, 2026-10-14 tarde/noite; OTIMIZACAO 40-47)
+Postes inteiros: calçada pela volta dos anéis e contorno por índice (`9233238`), planejador por
+ladrilho na geração (`82c0239`), meio-fio pelos anéis (`8e65f88`), fios instanciados dobrados no
+shader (`bdda55a`), peças no carregamento (`a1dd21a`). Agentes revisados: recorte dos jardins
+(`90524a3`) e da mobília (`b5cc51d`), curvas sem trabalho jogado fora (`7c046a4`). Sonda no
+`look.mjs` (`profile`/`city`/`memory`, quadros longos com a função culpada e perfil de CPU).
+
+## Causas ainda abertas, achadas pela sonda na cidade de 2.560 m (Hook)
+- Postes: a camada inteira refeita a cada mudança, espaçada por `UTILITY_PACE` (amortização) no
+  renderer; o certo é a camada incremental (só os postes/vãos que o diário diz que mudaram).
+- Simulação na thread principal (31% do quadro explorando a cidade padrão): worker (OTIMIZACAO 3).
+- Matrizes da cena refeitas a cada quadro (`updateMatrixWorld` ~1 s em 42 s): objetos estáticos sem
+  `matrixWorldAutoUpdate`.
+- Programas de shader ligados no primeiro desenho (`getProgramInfoLog` 0,5-1,4 s): compilar antes.
+- Geração: `cloneBuilding` em `add`/`put`, `digest.word`, `landOn` das calçadas (D), `lotPlan.covered`.
+
 ## Próximos passos (em ordem)
 1. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
    `setView({x:11.5,y:-11.5,zoom:200,azimuth:0.785,elevation:0.1})` na cidade de semente 1 a tela

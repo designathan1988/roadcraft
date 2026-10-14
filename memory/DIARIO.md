@@ -53,3 +53,6 @@
   sessão com o sim do jogador), D8 `81c6ffb`, A1+A5+A16 `c45806a` (locais). No jogo, mesma sequência
   antes/depois do A1: fotos iguais; cascas L0 795 MB no bairro nos dois lados (anterior, acima do teto
   de 300 - virou o passo 2). Defeitos da outra sessão e meus anotados no ESTADO (passos 1 e 5).
+- 2026-10-14 noite (Hook): ordem do jogador "corrigir na raiz, não métrica"; postes inteiros corrigidos na causa
+  (9233238, 82c0239, 8e65f88, bdda55a, a1dd21a); agentes revisados: jardins 90524a3, mobília b5cc51d,
+  curvas 7c046a4; regras, skill e hook reescritos (5361eb8, ab455db). OTIMIZACAO 40-47.
