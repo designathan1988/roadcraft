@@ -36,3 +36,9 @@
 - 2026-10-14 (Hook de busca na internet): `b95f63b` contadores do sim no "um prédio a mais":
   `bays` (B10, 34 -> 130) e `yards` (B14, 17 -> 65), x3,82 na base; mutante da chave sem a revisão dos
   prédios morto (x1, pede para sair da base).
+- 2026-10-14 (Auditoria, nova conta): `f1405fa` clique em prédio. No jogo o rayAt sozinho não bastou:
+  medido pixel a pixel, todo raio entrava no quintal (`open`) do vizinho, testado como caixa de um
+  andar; virou placa do chão. Item 34 (lotes abertos, `6914c7d`) registrado no OTIMIZACAO. Vistos e
+  anotados, fora do clique: célula da câmera ainda em massa ao chegar (sem muros), olho dentro de
+  prédio recém-crescido (tela cinza; cameraSolids), pessoa da bomba atravessando poste de cerca,
+  sombra pontilhada no gramado. Próximo: D8 (anel por tipo do diário).
