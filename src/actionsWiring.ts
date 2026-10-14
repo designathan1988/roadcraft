@@ -25,6 +25,8 @@ import { MAX_STOREYS, MAX_STOREY_HEIGHT } from '@world/buildings/types';
 const RAY_ABOVE = MAX_STOREYS * MAX_STOREY_HEIGHT + m(40);
 /** How far under the ground under the pointer a building can stand (one in a valley seen over a ridge). */
 const RAY_BELOW = m(120);
+/** How often the fires flare on, seconds of the simulation's time. */
+const FIRE_STEP = 0.5;
 
 /**
  * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
@@ -57,8 +59,8 @@ export interface ActionsDeps {
   caused<T>(cause: string, fn: () => T): T;
   hint(key: string): void;
   redraw(): void;
-  /** Nothing grows on zoned lots before this wall-clock time (rubble lying). */
-  holdGrowth(until: number): void;
+  /** Nothing grows on zoned lots for this many seconds of the simulation's time (rubble lying). */
+  holdGrowth(seconds: number): void;
 }
 
 export interface Actions {
@@ -68,6 +70,12 @@ export interface Actions {
   shootAt(sx: number, sy: number): boolean;
   /** An explosion at `world`, height `z` (on building `b` when it landed on one). */
   explodeAt(world: Vec2, z: number, b: Building | null, strength: number, quiet?: boolean): void;
+  /**
+   * The fires, at the simulation's time `now` (seconds, `SimClock.time`): called
+   * by the frame loop after the simulation stepped. They stand still with the
+   * pause and follow the speed, as the city they burn in.
+   */
+  tick(now: number): void;
 }
 
 export function createActions(deps: ActionsDeps): Actions {
@@ -410,7 +418,7 @@ export function createActions(deps: ActionsDeps): Actions {
       scene.soot(x, y, ground({ x, y }), m(2 + Math.random() * 4) + radius * 0.08);
     }
     if (struck === 'road') scene.strikeGround(world.x, world.y, strength);
-    if (downs > 0 || hit.poles.length || hit.vehicles.length) deps.holdGrowth(performance.now() + 90_000);
+    if (downs > 0 || hit.poles.length || hit.vehicles.length) deps.holdGrowth(90);
     if (!quiet) deps.hint(downs > 0 ? 'hint.strike.down' : dead > 0 ? 'hint.strike.deaths' : b ? 'hint.strike.hit' : 'hint.strike.ground');
     if (b && doc.buildings.has(b.id)) ignite(b.id);
     deps.redraw();
@@ -450,11 +458,19 @@ export function createActions(deps: ActionsDeps): Actions {
    */
   function ignite(id: number): void {
     if (burning.has(id) || burning.size >= 3) return;
-    const now = performance.now() / 1000;
+    const now = sim.clock.time;
     burning.set(id, { since: now, nextFlame: now, until: now + 50 + Math.random() * 40 });
   }
-  setInterval(() => {
-    const now = performance.now() / 1000;
+  /**
+   * The fires burning on, every `FIRE_STEP` s of the simulation's time.
+   * DO NOT go back to a `setInterval` on the wall clock: the fires went on
+   * with the game paused and ignored its speed, and the timer never ended.
+   */
+  let fireLast: number | null = null;
+  function tick(now: number): void {
+    if (fireLast === null || now < fireLast) fireLast = now;
+    if (now - fireLast < FIRE_STEP) return;
+    fireLast = now;
     for (const [id, f] of [...burning]) {
       const b = doc.buildings.get(id as BuildingId);
       if (!b || now > f.until) { burning.delete(id); continue; }
@@ -474,7 +490,7 @@ export function createActions(deps: ActionsDeps): Actions {
       }
     }
     if (burning.size) deps.redraw();
-  }, 500);
+  }
 
   /**
    * The buildings the screen ray through (sx, sy) can meet: those filed where
@@ -509,5 +525,5 @@ export function createActions(deps: ActionsDeps): Actions {
     return null;
   }
 
-  return { strikeAt, shootAt, explodeAt };
+  return { strikeAt, shootAt, explodeAt, tick };
 }

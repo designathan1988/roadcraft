@@ -5,7 +5,7 @@ import { flipProfile, streetChain } from '@world/roads/streetChain';
 import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
-import { FrameClock, Periodic, TopologyCatchUp } from './frameLoop';
+import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp } from './frameLoop';
 import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
@@ -2562,34 +2562,38 @@ function requestDraw(): void {
 }
 
 /**
- * Buildings grow on zoned lots on their own, one at a time, twice a second:
- * the city fills in as the player watches, as in every city builder. Lots that
- * did not take a building are skipped until the land or the roads change.
+ * Buildings grow on zoned lots on their own, one at a time, twice a second of
+ * the city's time: the city fills in as the player watches, as in every city
+ * builder. Lots that did not take a building are skipped until the land or the
+ * roads change. Run by the frame loop on the simulation's clock (`SimPeriodic`):
+ * not while paused, faster at a higher speed, never with the tab hidden.
+ * DO NOT go back to a `setInterval` on the wall clock.
  */
-/** Wall-clock time before which nothing grows (rubble of a collapse lying, `strikeAt`). */
-let zoneGrowthHold = 0;
-setInterval(() => {
+const growthDue = new SimPeriodic(0.5);
+/** Nothing grows before this simulation time (rubble of a collapse lying, `strikeAt`); `at` the time it was set. */
+let zoneGrowthHold = { at: 0, until: 0 };
+function growZones(): void {
   // Buildings on zoned lots (`world/lots.ts`).
   // A road edit can make room on a lot refused before: try them again.
   const lotRefused = lotTool.refusedFor(net.revision);
-  // The city grows with its time: not while paused, nor with the tab hidden
-  // (the simulation stands still then too). It grew on regardless, each
-  // building bringing its grading, access and save work to a stopped game.
-  if (sim.clock.paused || document.hidden) return;
-  if (!mover.dragging && performance.now() >= zoneGrowthHold && doc.lots.some((l) => l.use)) {
-    const grown = caused('crescimento da zona', () => {
-      const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
-      const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
-      if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
-      return id;
-    });
-    if (grown !== null) {
-      persistence.saveSessionSoon(doc, sessionSettings);
-      updateStatus();
-      requestDraw();
-    }
+  const now = sim.clock.time;
+  // A hold set before the clock went back (a new map) holds nothing.
+  if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
+  // `growOnLot` finds the open lots by the document's own index (`doc.openLots`):
+  // none open, none grown. DO NOT read `doc.lots` here (`lots.some` walked
+  // every lot twice a second).
+  const grown = caused('crescimento da zona', () => {
+    const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
+    const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
+    if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
+    return id;
+  });
+  if (grown !== null) {
+    persistence.saveSessionSoon(doc, sessionSettings);
+    updateStatus();
+    requestDraw();
   }
-}, 500);
+}
 
 /**
  * The loading curtain: over the page while a town is put together unseen
@@ -2658,6 +2662,11 @@ function frame(now: number): void {
     ? 1
     : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }), SIM_FRAME_BUDGET_MS);
   if (!holdSim) sim.populationShare = populationGovernor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, now / 1000, sim.vehicles.size, sim.pedViews.length);
+  // The city's own periodic work, on its clock (`SimPeriodic`).
+  const simTime = sim.clock.time;
+  if (growthDue.due(simTime)) growZones();
+  if (decayDue.due(simTime)) decayWatch();
+  actions.tick(simTime);
   frameTimer.mark('simulação');
 
   if (net.revision !== doc.revision) {
@@ -4237,7 +4246,8 @@ function refreshShell(): void {
 // when its next tenth is due, the diary saying what came, changed or was replaced.
 const decayLook = createDecayWatch(doc, (id, decay) => caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)));
 const decayWatch = (): void => { if (decayLook(sim.city.minutes(sim))) requestDraw(); };
-setInterval(decayWatch, 3000);
+/** The buildings' decay looked at every 3 s of the city's time (`frame`), not on the wall clock. */
+const decayDue = new SimPeriodic(3);
 
 /**
  * The Actions (`actionsWiring.ts`): the pistol, the bomb, the buildings it
@@ -4257,7 +4267,7 @@ const actions = createActions({
   caused: (cause, fn) => caused(cause, fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
-  holdGrowth: (until) => { zoneGrowthHold = until; },
+  holdGrowth: (seconds) => { zoneGrowthHold = { at: sim.clock.time, until: sim.clock.time + seconds }; },
 });
 
 // Everything is set up: the first frame may be drawn.

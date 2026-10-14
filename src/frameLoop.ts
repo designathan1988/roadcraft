@@ -111,6 +111,32 @@ export class Periodic {
   }
 }
 
+/**
+ * Work done every `seconds` of the SIMULATION's time (`SimClock.time`), read by
+ * the frame loop after the simulation stepped: the city growing, the buildings
+ * running down, the fires. It stands still with the pause, follows the speed
+ * and is the same on every machine (Fiedler, "Fix Your Timestep!": the
+ * simulation consumes time in fixed steps; Nystrom, "Game Loop"). A clock gone
+ * back (a new map, the simulation reset) starts it over.
+ * DO NOT drive the game's own periodic work with `setInterval`.
+ */
+export class SimPeriodic {
+  private last: number | null = null;
+
+  constructor(private readonly seconds: number) {}
+
+  /** The simulation stands at `time` seconds: true when the work is due (and its clock starts over). */
+  due(time: number): boolean {
+    if (this.last === null || time < this.last) {
+      this.last = time;
+      return false;
+    }
+    if (time - this.last < this.seconds) return false;
+    this.last = time;
+    return true;
+  }
+}
+
 /** Milliseconds a frame spends bringing the traffic's topology up to date. */
 const TOPOLOGY_SLICE_MS = 6;
 /**
