@@ -27,6 +27,19 @@ const FAR_ERROR = m(1.5);
 const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 const HYSTERESIS = 0.85;
+/**
+ * STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along
+ * the streets, the cells far down the view were all in detail (a 1.5 m
+ * error at 800 m is still 2 px) though nearly all of them stand behind the
+ * nearer buildings - a street view drew 28 M triangles in 984 calls
+ * (2026-10-14). As Cesium's `dynamicScreenSpaceError` ("for street-level
+ * horizon views, use lower resolution tiles far from the camera"), the error
+ * a far cell may make grows with its distance while the eye is low: doubled
+ * at `HORIZON_HALF`, trebled at twice it. From above (`STREET_EYE` up) the
+ * rule is the plain one.
+ */
+const STREET_EYE = m(40);
+const HORIZON_HALF = m(150);
 
 interface Cell {
   /** The masses it was made from, in its buildings' order: kept while they are the same. */
@@ -150,14 +163,18 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
           const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1);
           const dy = Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1);
           let pixels: number;
+          let allowed = NEAR_PIXELS;
           if (orthoPx !== null) pixels = FAR_ERROR * orthoPx;
           else {
             const dz = Math.max(eyeZ - cell.top, 0);
             const d = Math.max(Math.hypot(dx, dy, dz), 1);
             pixels = (FAR_ERROR * pxAtMetre) / d;
+            // The eye low: the farther the cell, the more error it may make (`HORIZON_HALF`).
+            const street = Math.max(0, 1 - eyeZ / STREET_EYE);
+            allowed = NEAR_PIXELS * (1 + (street * d) / HORIZON_HALF);
           }
           // Within reach, with a margin for a cell already near (hysteresis).
-          near = pixels >= NEAR_PIXELS * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
+          near = pixels >= allowed * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
         }
         if (near === cell.near) continue;
         cell.near = near;

@@ -280,6 +280,10 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
      825 specs de `world`/`editor` verdes. Fica o `clone()` por edição.
   14. **Traçado da cidade gerada em fatias**: `layPowerLinesSteps`, `greenCitySteps`,
      `layoutSteps`; chamada síncrona 1.534 → 157 ms, cidade íntegra.
+  15. **Vistas de rua** (`massCells.ts`): com o olho baixo o erro permitido cresce com a
+     distância (Cesium `dynamicScreenSpaceError`): rua 984 → 660 chamadas, GPU 16,9 → 16,0 ms,
+     desenho CPU 8,9 → 7,4 ms. Medido ao vivo: um passo de simulação por quadro, 7,1 ms no quadro
+     (4,7 ms em laço apertado), desenho 7,4 ms.
 - **R30 derrubado medindo** (2026-10-14): as oito luzes pontuais escondidas não mudam a GPU
   (18,7 / 18,9 / 19,0 ms em A/B na mesma vista); a mudança foi desfeita e vai para os falsos
   positivos. Células de 120 m (culling mais fino) também pioraram (19,1 ms, 1.266 chamadas).
