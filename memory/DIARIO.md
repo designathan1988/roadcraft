@@ -47,3 +47,5 @@
   x14,02; check-code com as 4 entradas só renomeadas (173). `18c373a` `__roadcraft.setView`: os gestos
   davam vista diferente a cada rodada (A/A do HEAD), agora o antes/depois usa vistas fixas. No jogo:
   vistas iguais nos dois lados; câmera dentro de prédio é defeito antigo (passado à auditoria).
+- 2026-10-14 noite (Hook de busca na internet): com o sim do jogador, origin/main enviado de `a4725ff`
+  até `b8c63c3` (28 commits das duas sessões); `81c6ffb` (D8, auditoria) segue local.

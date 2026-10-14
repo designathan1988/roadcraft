@@ -26,34 +26,9 @@ Atualizado: 2026-10-14 (noite).
   (caminhos explícitos). Cada arquivo salvo recarrega o jogo na 5300.
 
 ## Repositório
-- No GitHub (`origin/main`): até `a4725ff` (jardins).
-- Local, não enviado:
-  - `247e770` memória (contadores da cena) — o jogador autorizou enviar.
-  - `49d12f3` orçamento + CLAUDE.md curto — **envio NÃO autorizado ainda**; não fazer push até a
-    outra sessão confirmar. Atenção: esse commit levou junto as linhas de `src/main.ts` que chamam
-    `scene.holdUtilities` (trabalho da sessão de auditoria); a outra metade (`renderer.ts`) ainda não
-    foi commitada, então o HEAD local não compila sozinho até ela entrar.
-  - `02a690b` contador "um prédio a mais" (`tests/scale/buildingEdit.spec.ts`, linha de base
-    `building+1:layer` 3,82) — **envio NÃO autorizado ainda** (perguntado ao jogador às ~13h40).
-  - `6940134`, `267b9f5` memória e auditoria (sessão de auditoria) — documentação.
-  - `6b487bb` (outra sessão) teste de escala sem limite de tempo próprio.
-  - `96d1d64` postes segurados durante o traçado (`holdUtilities`) — o HEAD volta a compilar.
-  - `6f22b1c` regras `whole-map-nested` / `whole-map-per-item` no check-code.
-  - `f01799a` índice de prédios por lugar (`BuildingStore.near`) no crescimento e na validação.
-  - `1ee7f37` (Hook) `scripts/look.mjs` e as skills `investigando-desempenho` e
-    `conferindo-no-jogo` — **envio NÃO autorizado ainda**.
-  - `cd4dc32` (Hook) `scripts/acusar.mjs` e `tests/arch/acusar.spec.ts` — **envio NÃO autorizado ainda**.
-  - `6914c7d` (auditoria) lotes abertos.
-  - `a17e808` (Hook) contador do leitor do chão pelo diário — **envio NÃO autorizado ainda**.
-  - `4c6b7f0` (Hook) regra do produto derivado no CLAUDE.md; `b95f63b` (Hook) contadores de baias e
-    pátios — **envio NÃO autorizado ainda**.
-  - `f1405fa` (auditoria) clique em prédio: Viewport.rayAt, olho dentro de volume ignorado, quintal
-    `open` picado como placa do chão (no jogo: casa, portão e bomba sob o cursor).
-  - `06f819d` (auditoria) item 34 no OTIMIZACAO + FEITO/DIARIO; `e5ec4e5`, `cf0917d` camada de
-    prédios; `de7588d` placas de rua.
-  - `4362867` (Hook) sólidos da câmera, plataformas e jardins fora do renderer + contadores;
-    `18c373a` (Hook) `__roadcraft.setView` (vista exata para fotos antes/depois) — **envio NÃO
-    autorizado ainda**.
+- No GitHub (`origin/main`): até `b8c63c3` (enviado em 2026-10-14 com o sim do jogador: os 28 commits
+  de `247e770` a `b8c63c3`, das duas sessões).
+- Local, não enviado: `81c6ffb` (auditoria) diário com um anel por tipo (D8) — envio depende do jogador.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
