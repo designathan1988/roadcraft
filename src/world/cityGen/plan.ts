@@ -52,11 +52,18 @@ function blockGrid(R: number): StreetGraph {
   const id = (i: number, j: number): number => j * (nx + 1) + i;
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) nodes.push({ x: x0 + i * along, y: y0 + j * across });
   // A line's class from its index: the edges and every AVENUE_EVERY-th line
-  // avenues, halfway between them collectors, the rest local streets.
+  // avenues, halfway between them collectors, the rest local streets. A grid
+  // too small for an inner avenue has its avenues at the edges and its
+  // collector on the middle line (the lower of the two when the count of
+  // blocks is odd). DO NOT halve an odd count of blocks to find the middle:
+  // `k % (n / 2)` is never 0 inside the grid then, and a city of 3, 5 or 7
+  // blocks across came out with no collector that way (no main street for
+  // the zoning, `editor/cityGenerator.ts` `zoneCity`).
   const levelOf = (k: number, n: number): number => {
-    const avenueEvery = n >= AVENUE_EVERY * 2 ? AVENUE_EVERY : n;
-    if (k % avenueEvery === 0 || k === n) return 0;
-    return k % (avenueEvery / 2) === 0 ? 1 : 2;
+    if (k === 0 || k === n) return 0;
+    if (n < AVENUE_EVERY * 2) return k === Math.floor(n / 2) ? 1 : 2;
+    if (k % AVENUE_EVERY === 0) return 0;
+    return k % (AVENUE_EVERY / 2) === 0 ? 1 : 2;
   };
   const edges: StreetEdge[] = [];
   for (let j = 0; j <= ny; j++) for (let i = 0; i < nx; i++) edges.push({ a: id(i, j), b: id(i + 1, j), points: [], level: levelOf(j, ny) });

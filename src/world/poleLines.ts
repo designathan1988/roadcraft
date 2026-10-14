@@ -246,7 +246,11 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
     return known.lines;
   }
   const lines = poleLinesOf(net, rect);
-  if (byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
+  // Only a new rectangle takes a place: one already kept (moved to the back
+  // above) is replaced where it is. DO NOT let go of the oldest when `key` is
+  // kept: it threw away a rectangle nothing had touched, made again on its
+  // next question.
+  if (!known && byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
   byRect.set(key, { segmentEpoch, junctionEpoch, stamp, lines });
   return lines;
 }

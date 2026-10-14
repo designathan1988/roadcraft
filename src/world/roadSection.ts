@@ -215,12 +215,26 @@ export function flipSection(s: RoadSection | undefined): RoadSection | undefined
   };
 }
 
+/** Every field of `SectionMaterials`: a field added there and left out here does not compile. */
+const MATERIAL_FIELDS: Record<keyof SectionMaterials, true> = { carriageway: true, footwayLeft: true, footwayRight: true, median: true };
+
+/**
+ * Whether two sets of materials pave alike, field by field (none set and an
+ * empty set alike). DO NOT compare them as JSON text: the text follows the
+ * order the keys were written in (`Object.keys`), and `flipSection` writes
+ * them in another order than `normalizeRoadSection`, so a road and the same
+ * road stored the other way round compared different and were never joined.
+ */
+function sameMaterials(a: SectionMaterials | undefined, b: SectionMaterials | undefined): boolean {
+  return (Object.keys(MATERIAL_FIELDS) as (keyof SectionMaterials)[]).every((key) => a?.[key] === b?.[key]);
+}
+
 export function sameRoadSection(a: RoadSection | undefined, b: RoadSection | undefined): boolean {
   if (!a || !b) return a === b;
   return (Object.keys(ROAD_SECTION_LIMITS) as (keyof typeof ROAD_SECTION_LIMITS)[]).every((key) => a[key] === b[key]) &&
     a.sidewalkLeft === b.sidewalkLeft && a.sidewalkRight === b.sidewalkRight && !a.flushLeft === !b.flushLeft &&
     !a.flushRight === !b.flushRight && !a.medianFlush === !b.medianFlush &&
-    JSON.stringify(a.materials ?? null) === JSON.stringify(b.materials ?? null) && a.centreLine === b.centreLine &&
+    sameMaterials(a.materials, b.materials) && a.centreLine === b.centreLine &&
     (['turnsForward', 'turnsBackward', ...LANE_LIST_KEYS] as const).every((key) => {
       const left: readonly string[] = a[key] ?? [], right: readonly string[] = b[key] ?? [];
       return left.length === right.length && left.every((rule, index) => rule === right[index]);
