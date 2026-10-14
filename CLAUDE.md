@@ -3,6 +3,11 @@
 Jogo de navegador de construir cidades (TypeScript, three.js, Vite). Meta: cidade no mapa inteiro
 de 10 km, bonita e rápida. Jogo: `npm run dev` (127.0.0.1:5300). Verificação: `npm run check`.
 
+## Memória do trabalho (leia primeiro)
+Estado, decisões do jogador, quem faz o quê, o que está pela metade e os próximos passos. Entra
+sozinho em toda sessão nova e depois de toda compactação. Atualize ao mudar o estado do trabalho.
+@MEMORIA.md
+
 ## Desempenho: o plano manda
 - Plano e orçamentos: `docs/CIDADE-10KM.md` e `docs/PESQUISA-CIDADE-10KM.md` §8. Os números estão
   em `src/core/perfBudget.ts` (`VIEW_BUDGETS`, `MEMORY_BUDGETS_MB`). Leia antes de propor.
