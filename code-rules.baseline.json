@@ -108,8 +108,6 @@
  "whole-map-per-frame  src/render/renderer.ts keepGrassInputs  for RoadDoc.lots": 1,
  "whole-map-per-frame  src/render/renderer.ts watchRoads  spread Network.ribbons": 1,
  "whole-map-per-frame  src/render/roomLamps.ts RoomLamps.lamps  spread BuildingStore.all": 1,
- "whole-map-per-frame  src/sim/agents/lorryTraffic.ts LorryTraffic.readYards  for BuildingStore.all": 1,
- "whole-map-per-frame  src/sim/agents/lorryTraffic.ts closures  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.behindWall  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.lanesNear  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.mixAround  for BuildingStore.all": 1,

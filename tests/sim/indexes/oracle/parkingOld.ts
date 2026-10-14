@@ -37,7 +37,7 @@ const LANE_REACH = m(45);
 /** Kept clear of the ends of a lane where a car joins or leaves it. */
 const LANE_END = m(20);
 
-interface BayLane {
+export interface BayLane {
   readonly lanelet: LaneletId;
   /** Arc position of the point where a car's body centre joins or leaves the lane. */
   readonly at: number;
@@ -461,7 +461,7 @@ function wallsNear(walls: readonly Wall[], b: Building, v: { x: number; y: numbe
 }
 
 /** A way out of a lot: a point inside its street edge, and the lane it joins, clear of every building. */
-interface LotExit {
+export interface LotExit {
   /** Local frame, a few metres inside the edge. */
   readonly inner: { readonly x: number; readonly y: number };
   /** Local frame, just inside the edge: the line from `inner` to it must be free of fences. */
@@ -487,7 +487,7 @@ const STOP_BEFORE_GATE = m(5);
 const GATE_LANE_END = m(1.5);
 
 /** A building's car gates: the `gate` elements a car fits through. */
-function carGates(b: Building): BuildingElement[] {
+export function carGates(b: Building): BuildingElement[] {
   return (b.elements ?? []).filter((el) => el.kind === 'gate' && el.w >= CAR_GATE);
 }
 
@@ -496,7 +496,7 @@ function carGates(b: Building): BuildingElement[] {
  * its open blocks (front, drive, yard, car park), in the local frame. Null
  * for a lot with no car gate, whose stalls are reached as before.
  */
-function gatedProperty(b: Building): { x: number; y: number; w: number; d: number } | null {
+export function gatedProperty(b: Building): { x: number; y: number; w: number; d: number } | null {
   if (!carGates(b).length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const v of b.volumes) {
@@ -516,7 +516,7 @@ function gatedProperty(b: Building): { x: number; y: number; w: number; d: numbe
  * before it, so a car crosses the footway square to the kerb and turns on
  * the carriageway (`manoeuvre.ts`).
  */
-function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
+export function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
   const out: LotExit[] = [];
   const cx = property.x + property.w / 2, cy = property.y + property.d / 2;
   for (const g of carGates(b)) {
@@ -585,7 +585,7 @@ interface Wall {
 }
 
 /** Every building's solid footprint, with its bounds. */
-function wallsOf(w: SimWorld): Wall[] {
+export function wallsOf(w: SimWorld): Wall[] {
   const out: Wall[] = [];
   for (const b of w.doc.buildings.all()) {
     for (const ring of solidFootprints(b)) {

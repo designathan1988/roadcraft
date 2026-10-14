@@ -281,33 +281,38 @@ const YARD_SLICE = 40_000;
 /** Cell of the grid the lots and buildings near a yard are found by (`yardNeighbours`). */
 const NEIGHBOUR_CELL = m(64);
 
-/** The lots and the buildings by cell of a coarse grid, and each building's lot: what a yard looks up, not the whole map. */
+/**
+ * The lots by cell of a coarse grid, and each building's lot: what a yard
+ * looks up, not the whole map. The buildings near a yard are asked of the
+ * store by place (`BuildingStore.near`).
+ */
 export interface YardNeighbours {
   readonly key: string;
   readonly lotOf: ReadonlyMap<number, Lot>;
-  readonly cells: ReadonlyMap<number, { readonly lots: Lot[]; readonly buildings: Building[] }>;
+  readonly cells: ReadonlyMap<number, { readonly lots: Lot[] }>;
 }
 
 const neighbourCell = (i: number, j: number): number => i * 100_003 + j;
 
 /**
- * The town's lots and buildings filed by cell, made again only when the
- * buildings or the lots change: a yard asks for the cells over its grid (it
- * went through every lot and every building of the map, each turned into
- * its frame).
- * @rebuild Its work runs when the buildings or the lots changed.
+ * The town's lots filed by cell, made again only when the lots change: a
+ * yard asks for the cells over its grid (it went through every lot and every
+ * building of the map, each turned into its frame).
+ * DO NOT file the buildings here again: keyed on the buildings' revision,
+ * the town's ageing filed every building of the map again every few seconds.
+ * @rebuild Its work runs when the lots changed.
  */
 export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardNeighbours {
-  const key = `${w.doc.buildings.revision}:${w.doc.lotRevision}`;
+  const key = `${w.doc.lotRevision}`;
   if (known && known.key === key) return known;
   const lotOf = new Map<number, Lot>();
-  const cells = new Map<number, { lots: Lot[]; buildings: Building[] }>();
-  const file = (x0: number, y0: number, x1: number, y1: number, put: (c: { lots: Lot[]; buildings: Building[] }) => void): void => {
+  const cells = new Map<number, { lots: Lot[] }>();
+  const file = (x0: number, y0: number, x1: number, y1: number, put: (c: { lots: Lot[] }) => void): void => {
     for (let i = Math.floor(x0 / NEIGHBOUR_CELL); i <= Math.floor(x1 / NEIGHBOUR_CELL); i++) {
       for (let j = Math.floor(y0 / NEIGHBOUR_CELL); j <= Math.floor(y1 / NEIGHBOUR_CELL); j++) {
         const k = neighbourCell(i, j);
         let c = cells.get(k);
-        if (!c) cells.set(k, c = { lots: [], buildings: [] });
+        if (!c) cells.set(k, c = { lots: [] });
         put(c);
       }
     }
@@ -318,31 +323,20 @@ export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardN
     for (const q of lot.corners) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
     file(x0, y0, x1, y1, (c) => c.lots.push(lot));
   }
-  for (const o of w.doc.buildings.all()) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const v of o.volumes) {
-      for (const [lx, ly] of [[v.x, v.y], [v.x + v.w, v.y], [v.x + v.w, v.y + v.d], [v.x, v.y + v.d]] as const) {
-        const q = localToWorld(o, lx, ly);
-        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
-      }
-    }
-    if (x0 <= x1) file(x0, y0, x1, y1, (c) => c.buildings.push(o));
-  }
   return { key, lotOf, cells };
 }
 
-/** The lots and the buildings filed in the cells over a box of the world, each once. */
-function near(index: YardNeighbours, x0: number, y0: number, x1: number, y1: number): { lots: Set<Lot>; buildings: Set<Building> } {
-  const lots = new Set<Lot>(), buildings = new Set<Building>();
+/** The lots filed in the cells over a box of the world, each once. */
+function lotsNear(index: YardNeighbours, x0: number, y0: number, x1: number, y1: number): Set<Lot> {
+  const lots = new Set<Lot>();
   for (let i = Math.floor(x0 / NEIGHBOUR_CELL); i <= Math.floor(x1 / NEIGHBOUR_CELL); i++) {
     for (let j = Math.floor(y0 / NEIGHBOUR_CELL); j <= Math.floor(y1 / NEIGHBOUR_CELL); j++) {
       const c = index.cells.get(neighbourCell(i, j));
       if (!c) continue;
       for (const lot of c.lots) lots.add(lot);
-      for (const o of c.buildings) buildings.add(o);
     }
   }
-  return { lots, buildings };
+  return lots;
 }
 
 /**
@@ -363,6 +357,9 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
   const corners = [localToWorld(b, box.x0, box.y0), localToWorld(b, box.x1, box.y0), localToWorld(b, box.x1, box.y1), localToWorld(b, box.x0, box.y1)];
   const wx0 = Math.min(...corners.map((q) => q.x)), wx1 = Math.max(...corners.map((q) => q.x));
   const wy0 = Math.min(...corners.map((q) => q.y)), wy1 = Math.max(...corners.map((q) => q.y));
+  // The buildings that may stand over the grid, as they stand when the yard
+  // is begun (a superset: a ring off the grid fills no cell).
+  const buildingsNear = w.doc.buildings.near(wx0, wy0, wx1, wy1);
   // Open: the lot, the carriageways round it and each gate's mouth across the footway.
   if (ring.length) fillRing(solid, ring, 0);
   for (const { rings: world, box: wb } of asphaltOf(w.net)) {
@@ -404,12 +401,11 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
     if ((work += nx) >= YARD_SLICE) { work = 0; yield; }
   }
   // Shut: every other lot near, every building's walls near, this lot's solid parts (and its car stalls).
-  const around = near(index, wx0, wy0, wx1, wy1);
-  for (const other of around.lots) {
+  for (const other of lotsNear(index, wx0, wy0, wx1, wy1)) {
     if (other === lot) continue;
     fillRing(solid, other.corners.map((q) => worldToLocal(b, q)), 1);
   }
-  for (const o of around.buildings) {
+  for (const o of buildingsNear) {
     for (const v of o.volumes) {
       if (v.open) continue;
       const vring = [localToWorld(o, v.x, v.y), localToWorld(o, v.x + v.w, v.y), localToWorld(o, v.x + v.w, v.y + v.d), localToWorld(o, v.x, v.y + v.d)]
