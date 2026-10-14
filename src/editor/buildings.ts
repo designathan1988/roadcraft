@@ -955,7 +955,13 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
   const absorbed: BuildingId[] = [];
   const fresh = new Set(draft.volumes.map((v) => v.id));
   const mine = buildingBounds(draft, 0.5);
-  for (const other of [...ctx.doc.buildings.all()]) {
+  // Only a building whose outlines, grown by 0.5, reach `mine` can weld (the
+  // box test below); its outlines lie in its stored box, which the store's
+  // grid files (`BuildingStore.near`, in the order of `all()`).
+  // DO NOT walk `buildings.all()` here: the ghost of a placement asks this on
+  // every pointer move (`BuildingTool.verdict`), and it built the outlines of
+  // every building of the city each time.
+  for (const other of ctx.doc.buildings.near(mine.minX - 0.5, mine.minY - 0.5, mine.maxX + 0.5, mine.maxY + 0.5)) {
     if (other.id === draft.id || skip.includes(other.id)) continue;
     const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
     const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
