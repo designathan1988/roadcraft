@@ -58,6 +58,7 @@ for (const r of rows) {
 }
 console.log(`diferenças: ${out}`);
 
+/* global Image, OffscreenCanvas, FileReader -- `compare` runs in the page (page.evaluate), not in node. */
 /** In the page: both pictures decoded on canvases, compared, and the difference drawn. */
 async function compare({ a, b, threshold }) {
   const load = (src) => new Promise((done, fail) => { const img = new Image(); img.onload = () => done(img); img.onerror = fail; img.src = src; });
