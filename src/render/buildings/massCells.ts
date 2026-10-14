@@ -54,6 +54,12 @@ export interface MassCells {
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only) always is. */
   near(key: string): boolean;
+  /**
+   * A near cell whose detail is not made yet (`layer.ts` streaming) keeps its
+   * mass shown (`held` true) until the detail lands: between the two the
+   * cell stood empty for the seconds its buildings took to come.
+   */
+  holdMass(key: string, held: boolean): void;
   dispose(): void;
 }
 
@@ -160,6 +166,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     },
     near(key) {
       return cells.get(key)?.near ?? true;
+    },
+    holdMass(key, held) {
+      const cell = cells.get(key);
+      if (cell?.mesh) cell.mesh.visible = held || !cell.near;
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);

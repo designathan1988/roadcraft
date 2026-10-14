@@ -9,13 +9,14 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk } from './buildingMesh';
 import {
-  BATCH_CELL, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_HYSTERESIS, DETAIL_PARTS, EMPTY_PARTS, FRAME_SIDE, FULL_DETAIL_PIXELS,
-  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, WARM_SLICE_MS, assembleByCell, chunksByCell, createCoverIndex, groundDigest, sameChunks,
+  BATCH_CELL, CHUNK_CACHE_BYTES, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_HYSTERESIS, DETAIL_PARTS, EMPTY_PARTS, FRAME_SIDE, FULL_DETAIL_PIXELS,
+  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, assembleByCell, chunkBytes, chunksByCell, createCoverIndex, groundDigest, sameChunks,
 } from './layerCells';
 import { createFlagLayer } from './flagLayer';
 import { buildSignature, disposeSignature, drawsSignature } from './signature';
 import { emitMassing, type MassingChunk } from './massing';
 import { createMassCells } from './massCells';
+import { createShellBatches } from './shellBatches';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 
 /**
@@ -155,6 +156,9 @@ export function createBuildingLayer(): BuildingLayer {
   /** The buildings from afar, a mesh a cell (`massCells.ts`). */
   const massCells = createMassCells(kit, BATCH_CELL);
   group.add(massCells.group);
+  /** The stored cells' shells, a `BatchedMesh` a finish (`shellBatches.ts`): one draw a finish for every cell near. */
+  const shellBatches = createShellBatches(kit);
+  group.add(shellBatches.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
@@ -297,17 +301,40 @@ export function createBuildingLayer(): BuildingLayer {
   // The record and the ground digest compared apart: the record text is the
   // same string object while the record is (`recordText`), compared by
   // reference; joined into one key, every lookup copied it whole.
-  const chunks = new Map<BuildingId, { record: string; digest: string; chunk: BuildingChunk; slim: boolean }>();
+  const chunks = new Map<BuildingId, { record: string; digest: string; chunk: BuildingChunk; slim: boolean; bytes: number }>();
+  /** Bytes of the full chunks held (`CHUNK_CACHE_BYTES`, `trimChunkCache`). */
+  let fullBytes = 0;
+  /** A chunk entry let go (replaced, slimmed, its building gone): its bytes out of the cache's count. */
+  const forget = (known: { slim: boolean; bytes: number } | undefined): void => {
+    if (known && !known.slim) fullBytes -= known.bytes;
+  };
   /**
    * A far building keeps only what the whole town reads of it - its flags, its
    * lots' ground, its signature floor; the shell and part arrays, most of the
    * heap of a town, go, to be emitted again if its cell comes near (`chunkFor`).
+   * Only past the cache budget (`trimChunkCache`), the cells least recently
+   * near first: slimmed at once, a far cell cost seconds of re-emission at
+   * every return of the camera.
    */
   const slim = (id: BuildingId): void => {
     const known = chunks.get(id);
     if (!known || known.slim) return;
+    forget(known);
     const { shells: _shells, parts: _parts, furniture: _furniture, ...kept } = known.chunk;
-    chunks.set(id, { ...known, chunk: { ...kept, shells: {}, parts: EMPTY_PARTS }, slim: true });
+    chunks.set(id, { ...known, chunk: { ...kept, shells: {}, parts: EMPTY_PARTS }, slim: true, bytes: 0 });
+  };
+  /** The frame each cell of the town was last near (`levelOfDetail`): the order the cache lets cells go in. */
+  const cellSeen = new Map<string, number>();
+  let frameNo = 0;
+  /** Over the budget, the far cells' buildings are slimmed, least recently near first; the cells in detail are never. */
+  const trimChunkCache = (): void => {
+    if (fullBytes <= CHUNK_CACHE_BYTES) return;
+    const far = [...townCells.keys()].filter((key) => !cells.has(key) && !cellNear(key));
+    far.sort((a, b) => (cellSeen.get(a) ?? -1) - (cellSeen.get(b) ?? -1));
+    for (const key of far) {
+      for (const b of townCells.get(key) ?? []) slim(b.id);
+      if (fullBytes <= CHUNK_CACHE_BYTES) return;
+    }
   };
   /** Each building's mass from afar (`massing.ts`), kept as its chunk is: by its record and the ground under it. */
   const masses = new Map<BuildingId, { record: string; digest: string; mass: MassingChunk | null }>();
@@ -327,7 +354,10 @@ export function createBuildingLayer(): BuildingLayer {
     const known = chunks.get(b.id);
     if (known && known.record === record && known.digest === digest && (allowSlim || !known.slim)) return known.chunk;
     const chunk = emitChunk(b, groundAt, pavedAt, naturalAt);
-    chunks.set(b.id, { record, digest, chunk, slim: false });
+    forget(known);
+    const bytes = chunkBytes(chunk);
+    fullBytes += bytes;
+    chunks.set(b.id, { record, digest, chunk, slim: false, bytes });
     return chunk;
   };
   /** The masses of these buildings by coarse cell, for `massCells.update`. */
@@ -363,7 +393,6 @@ export function createBuildingLayer(): BuildingLayer {
         if (d) { details?.group.remove(d.part.group); d.part.dispose(); detailCells.delete(sub); }
       }
     }
-    for (const b of townCells.get(key) ?? []) slim(b.id);
     farSince.delete(key);
   };
   /**
@@ -381,6 +410,7 @@ export function createBuildingLayer(): BuildingLayer {
         releaseCell(key);
         changed = true;
       }
+      if (changed) trimChunkCache();
       let best: string | null = null, bestDistance = Infinity;
       for (const key of townCells.keys()) {
         if (cells.has(key) || !cellNear(key)) continue;
@@ -408,7 +438,7 @@ export function createBuildingLayer(): BuildingLayer {
       if (!job.assembling) {
         const next = job.todo.shift()!;
         job.assembling = { ...next, steps: assembleBuildingMeshesSteps(next.list, kit, false, false,
-          { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS }) };
+          { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS, batches: shellBatches }) };
       }
       const step = job.assembling.steps.next();
       if (!step.done) continue;
@@ -428,7 +458,7 @@ export function createBuildingLayer(): BuildingLayer {
         stored?.group.add(made.part.group);
         lighterNow = far;
         made.part.group.traverse(applyDetail);
-        made.part.group.visible = cellNear(made.cell);
+        made.part.setVisible(cellNear(made.cell));
       } else details?.group.add(made.part.group);
     }
     streaming = null;
@@ -499,11 +529,10 @@ export function createBuildingLayer(): BuildingLayer {
         while (warming.at < warming.queue.length && performance.now() < until) {
           const b = warming.queue[warming.at++]!;
           if (!warming.massed) { massFor(b, groundAt, groundKey, pavedAt, naturalAt); continue; }
-          // The detail of the cells drawn near. A far building is emitted for
-          // what the whole town reads of it (flags, lot ground, signature
-          // floor) and slimmed at once: its arrays never sit in the heap.
-          if (cellNear(cellOf(b))) drawn(b, groundAt, groundKey, pavedAt, naturalAt);
-          else { drawn(b, groundAt, groundKey, pavedAt, naturalAt, true); slim(b.id); }
+          // Every building emitted (the whole town reads its flags, lot
+          // ground and signature floor); the far ones' arrays stay as long as
+          // the cache budget allows (`trimChunkCache`, after the swap).
+          drawn(b, groundAt, groundKey, pavedAt, naturalAt, !cellNear(cellOf(b)));
         }
         if (warming.at < warming.queue.length) return false;
         if (!warming.massed) {
@@ -532,7 +561,7 @@ export function createBuildingLayer(): BuildingLayer {
             const old = next.stage.get(next.cell);
             if (old && sameChunks(old.chunks, next.list)) continue;
             warming.assembling = { ...next, steps: assembleBuildingMeshesSteps(next.list, kit, false, false,
-              { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS }) };
+              { parts: next.kinds, shells: next.kinds === COARSE_PARTS, furniture: next.kinds === COARSE_PARTS, batches: shellBatches }) };
           }
           const job = warming.assembling;
           const step = job.steps.next();
@@ -564,7 +593,8 @@ export function createBuildingLayer(): BuildingLayer {
           batch.dispose();
         }
         const shown = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
-        for (const id of chunks.keys()) if (!doc.buildings.has(id)) {
+        for (const [id, known] of chunks) if (!doc.buildings.has(id)) {
+          forget(known);
           chunks.delete(id);
           groundDigests.delete(id);
         }
@@ -575,7 +605,7 @@ export function createBuildingLayer(): BuildingLayer {
         // Only the cells drawn near have their detail; the rest stand as their
         // masses (`massCells`) and come in by `streamCells` when the eye nears.
         const nearSolid = solid.filter((b) => cellNear(cellOf(b)));
-        stored = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, cells, BATCH_CELL, COARSE_PARTS, stagedCells);
+        stored = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, cells, BATCH_CELL, COARSE_PARTS, stagedCells, shellBatches);
         details = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, detailCells, DETAIL_CELL, DETAIL_PARTS, stagedDetails);
         // Staged for a change overtaken by another: not used.
         for (const stage of [stagedCells, stagedDetails]) {
@@ -593,6 +623,7 @@ export function createBuildingLayer(): BuildingLayer {
           else townCells.set(cell, [b]);
         }
         farSince.clear();
+        trimChunkCache();
         const nearOthers = others.filter((b) => cellNear(cellOf(b)));
         faded = nearOthers.length > 0
           ? assembleBuildingMeshes(nearOthers.map((b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt)), kit, false, true)
@@ -627,9 +658,11 @@ export function createBuildingLayer(): BuildingLayer {
         rebuilt = true;
       }
       // The cells the eye neared since, in; those long far, out (HLOD streaming).
-      if (!warming && stored && details && streamCells(groundAt, groundKey, pavedAt, naturalAt)) {
-        version++;
-        rebuilt = true;
+      if (!warming && stored && details) {
+        for (let landed = 0; landed < STREAM_CELLS_PER_FRAME && streamCells(groundAt, groundKey, pavedAt, naturalAt); landed++) {
+          version++;
+          rebuilt = true;
+        }
       }
       const wanted = preview ? `${preview.serial}|${groundKey}` : '';
       if (wanted !== ghostKey) {
@@ -672,9 +705,16 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
+      frameNo++;
+      for (const key of townCells.keys()) {
+        const isNear = cellNear(key);
+        // A cell near with no detail yet (coming by `streamCells`) keeps its mass until the detail lands.
+        massCells.holdMass(key, isNear && !cells.has(key));
+        if (isNear) cellSeen.set(key, frameNo);
+      }
       for (const [key, cell] of cells) {
         const isNear = cellNear(key);
-        cell.part.group.visible = isNear;
+        cell.part.setVisible(isNear);
         // How long a cell has been far: its detail is let go at `RELEASE_FRAMES` (`streamCells`).
         if (isNear) farSince.delete(key);
         else farSince.set(key, (farSince.get(key) ?? 0) + 1);
@@ -751,6 +791,7 @@ export function createBuildingLayer(): BuildingLayer {
       detailCells.clear();
       groundDigests.clear();
       ghost?.dispose();
+      shellBatches.dispose();
       kit.dispose();
       group.clear();
     },

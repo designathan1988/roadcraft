@@ -97,6 +97,7 @@ import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, ma
 import type { FlagInstance } from './flagLayer';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
+import type { ShellBatches, ShellSlot } from './shellBatches';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
 let flagSink: FlagInstance[] | null = null;
@@ -116,7 +117,18 @@ const flagOf = (detail: RoofDetail): FlagDesign | null =>
 export interface BuildingMeshes {
   readonly group: Group;
   readonly triangles: number;
+  /** Shown or hidden as a whole: the group, and the shells in the finishes' lots when it has them (`shellBatches.ts`). */
+  setVisible(visible: boolean): void;
   dispose(): void;
+}
+
+/** What `assembleBuildingMeshesSteps` puts together, and where the shells go. */
+export interface AssemblySelection {
+  readonly parts: ReadonlySet<PartKind>;
+  readonly shells: boolean;
+  readonly furniture: boolean;
+  /** The finishes' lots the shells go into (a stored cell); without them, a `Mesh` a finish (a preview, a faded copy). */
+  readonly batches?: ShellBatches;
 }
 
 interface Placement {
@@ -3374,7 +3386,7 @@ export function assembleBuildingMeshes(
   kit: BuildingKit,
   ghost = false,
   dim = false,
-  selection?: { readonly parts: ReadonlySet<PartKind>; readonly shells: boolean; readonly furniture: boolean },
+  selection?: AssemblySelection,
 ): BuildingMeshes {
   const steps = assembleBuildingMeshesSteps(chunks, kit, ghost, dim, selection);
   let step = steps.next();
@@ -3443,13 +3455,16 @@ export function* assembleBuildingMeshesSteps(
   kit: BuildingKit,
   ghost = false,
   dim = false,
-  selection?: { readonly parts: ReadonlySet<PartKind>; readonly shells: boolean; readonly furniture: boolean },
+  selection?: AssemblySelection,
 ): Generator<void, BuildingMeshes, void> {
   const group = new Group();
   group.name = ghost ? 'building-preview' : 'buildings';
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   const meshes: (Mesh | InstancedMesh)[] = [];
+  /** The shells in the finishes' lots (`batches`), one a finish. */
+  const slots: ShellSlot[] = [];
+  const batches = !ghost && !dim ? selection?.batches : undefined;
   let triangles = 0;
 
   for (const finish of selection?.shells === false ? [] : FINISHES) {
@@ -3463,6 +3478,15 @@ export function* assembleBuildingMeshesSteps(
     g.setAttribute('uv', new Float32BufferAttribute(shell.uv, 2));
     g.setAttribute('aDecay', new Float32BufferAttribute(shell.decay, 1));
     g.setIndex(new Uint32BufferAttribute(shell.index, 1));
+    if (batches) {
+      // Into its finish's lot: one draw for every cell's shells of this
+      // finish (`shellBatches.ts`). The lot copies the arrays and works out
+      // the bounds itself; this geometry is never drawn.
+      slots.push(batches.add(finish, g));
+      triangles += indices / 3;
+      yield;
+      continue;
+    }
     g.computeBoundingSphere();
     // Here, in the sliced assembly, not in the frame that shows it: the
     // renderer reads every mesh's box for the tallest building (the shadows).
@@ -3593,6 +3617,10 @@ export function* assembleBuildingMeshesSteps(
   return {
     group,
     triangles,
+    setVisible(visible) {
+      group.visible = visible;
+      if (batches) for (const slot of slots) batches.setVisible(slot, visible);
+    },
     dispose() {
       for (const mesh of meshes) {
         // The shell geometry is this build's own; the part geometries are the kit's.
@@ -3601,6 +3629,7 @@ export function* assembleBuildingMeshesSteps(
           mesh.dispose();
         } else mesh.geometry.dispose();
       }
+      if (batches) for (const slot of slots) batches.remove(slot);
       group.clear();
     },
   };

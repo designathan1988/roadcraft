@@ -8,6 +8,7 @@ import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 import { type BuildingChunk, type BuildingMeshes, type PartBatch, assembleBuildingMeshes } from './buildingMesh';
 import { type BuildingKit, PART_KINDS, type PartKind } from './kit';
+import type { ShellBatches } from './shellBatches';
 
 /**
  * THE CELLS OF THE BUILDINGS LAYER (`layer.ts`): the constants of the grid and
@@ -49,6 +50,24 @@ export const LOADING_COUNT = 100;
  * camera that comes back: made again at once it would thrash at the edge.
  */
 export const RELEASE_FRAMES = 600;
+/**
+ * Bytes of buildings' full chunks kept for the cells not drawn in detail
+ * (`layer.ts` `trimChunkCache`), so a camera coming back finds them made: a
+ * cache budget with the cells in view allowed over it, as Cesium's
+ * `cacheBytes` / `maximumCacheOverflowBytes`; past it the cells least
+ * recently near are slimmed first (LRU). Far cells slimmed at once were
+ * emitted again at every return of the camera - seconds of empty lots.
+ */
+export const CHUNK_CACHE_BYTES = 768 * 1024 * 1024;
+/** Cells streamed in at most in one frame (`streamCells`), each within the frame's slice. */
+export const STREAM_CELLS_PER_FRAME = 4;
+/** The bytes of a building's full chunk: its shells' and parts' arrays (what `slim` lets go). */
+export function chunkBytes(chunk: BuildingChunk): number {
+  let n = 0;
+  for (const shell of Object.values(chunk.shells)) if (shell) n += shell.position.byteLength + shell.normal.byteLength + shell.colour.byteLength + shell.uv.byteLength + shell.index.byteLength + shell.decay.byteLength;
+  for (const batch of Object.values(chunk.parts)) n += batch.matrices.byteLength + (batch.colours?.byteLength ?? 0) + (batch.slots?.byteLength ?? 0) + (batch.rooms?.byteLength ?? 0);
+  return n;
+}
 /** A slimmed building's parts: none (`layer.ts` `slim`). */
 export const EMPTY_PARTS: Readonly<Record<PartKind, PartBatch>> = Object.fromEntries(
   PART_KINDS.map((kind) => [kind, { matrices: new Float32Array(0), colours: null, count: 0 }]),
@@ -98,7 +117,7 @@ export const sameChunks = (a: readonly BuildingChunk[], b: readonly BuildingChun
   a.length === b.length && a.every((c, i) => c === b[i]);
 
 export function assembleByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk,
-  kit: BuildingKit, cache: CellCache, cellSize: number, partKinds: ReadonlySet<PartKind>, staged?: CellCache): BuildingMeshes {
+  kit: BuildingKit, cache: CellCache, cellSize: number, partKinds: ReadonlySet<PartKind>, staged?: CellCache, batches?: ShellBatches): BuildingMeshes {
   const byCell = chunksByCell(buildings, chunkOf, cellSize);
   const group = new Group();
   group.name = 'buildings';
@@ -119,7 +138,7 @@ export function assembleByCell(buildings: readonly Building[], chunkOf: (b: Buil
     } else {
       known?.part.dispose();
       part = assembleBuildingMeshes(chunks, kit, false, false,
-        { parts: partKinds, shells: partKinds === COARSE_PARTS, furniture: partKinds === COARSE_PARTS });
+        { parts: partKinds, shells: partKinds === COARSE_PARTS, furniture: partKinds === COARSE_PARTS, ...(batches ? { batches } : {}) });
       cache.set(key, { chunks, part });
     }
     group.add(part.group);
@@ -137,6 +156,9 @@ export function assembleByCell(buildings: readonly Building[], chunkOf: (b: Buil
       let sum = 0;
       for (const { part } of cache.values()) sum += part.triangles;
       return sum;
+    },
+    setVisible(visible) {
+      group.visible = visible;
     },
     // The cells' batches belong to the cache: only this group is let go.
     dispose() {

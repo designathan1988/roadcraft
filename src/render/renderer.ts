@@ -484,6 +484,8 @@ export function createSceneRenderer(
     plain: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
     instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
     tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
+    // The buildings' shells in their finishes' lots (`shellBatches.ts`): a BatchedMesh's program has the batching chunks.
+    batched: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
   };
   const ownDepth = new Set<MeshDepthMaterial>(Object.values(depthVariants));
   const plainOpaque = (material: Material): boolean => {
@@ -495,14 +497,14 @@ export function createSceneRenderer(
   let shadowDepthFrame = 0;
   const assignShadowDepth = (root: Object3D): void => {
     root.traverse((object) => {
-      const mesh = object as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown };
+      const mesh = object as Mesh & { isInstancedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown };
       if (!mesh.isMesh || !mesh.castShadow) return;
       const current = mesh.customDepthMaterial as MeshDepthMaterial | undefined;
       if (current && !ownDepth.has(current)) return;
       if (Array.isArray(mesh.material) || !plainOpaque(mesh.material)) return;
-      const wanted = !mesh.isInstancedMesh
-        ? depthVariants.plain
-        : mesh.instanceColor ? depthVariants.tinted : depthVariants.instanced;
+      const wanted = mesh.isBatchedMesh ? depthVariants.batched
+        : !mesh.isInstancedMesh ? depthVariants.plain
+          : mesh.instanceColor ? depthVariants.tinted : depthVariants.instanced;
       if (current !== wanted) mesh.customDepthMaterial = wanted;
     });
   };
