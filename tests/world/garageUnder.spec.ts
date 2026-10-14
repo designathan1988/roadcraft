@@ -19,7 +19,7 @@ import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
  * side, its drive a ramp from the street down the side of the house to an
  * apron before the door (`garageUnder`, `lotPlan.ts` `garageRamp`). Before,
  * the drive stayed at the street's floor to a retaining wall across its end
- * and the car never reached the lower floor (docs/ZONEAMENTO.md).
+ * and the car never reached the lower floor (docs/source/ZONEAMENTO.md).
  */
 
 /** Ground rising to the north (-y) at 18 %: the lots south of the street fall away from it. */

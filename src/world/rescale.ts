@@ -3,7 +3,7 @@ import { METERS_PER_UNIT } from './units';
 
 /**
  * A map saved under another world unit, brought to this build's
- * (docs/ESCALA.md). Until 2026-10-10 a world unit was 0.4 m and no map said
+ * (docs/source/ESCALA.md). Until 2026-10-10 a world unit was 0.4 m and no map said
  * so: a document without `unit` is a 0.4 m map.
  *
  * Every length is multiplied by `factor` (old metres per unit over the new):

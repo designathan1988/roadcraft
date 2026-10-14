@@ -22,7 +22,7 @@ import { m } from './units';
  * Built again only when the buildings, the drawn barriers or the footways'
  * furniture change (their revisions); looked up through a grid.
  */
-export type Solid =
+type Solid =
   | { readonly kind: 'ring'; readonly ring: readonly Vec2[]; readonly box: Box }
   | { readonly kind: 'capsule'; readonly a: Vec2; readonly b: Vec2; readonly r: number; readonly box: Box }
   | { readonly kind: 'disc'; readonly c: Vec2; readonly r: number; readonly box: Box };

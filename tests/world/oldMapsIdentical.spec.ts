@@ -8,7 +8,7 @@ import { generate } from '../fuzz/support/runner';
 import { derivedLines, laneletLines, networkLines } from './support/roadDigest';
 
 /**
- * OLD MAPS STAY IDENTICAL (docs/VIAS.md, acceptance of every stage): the
+ * OLD MAPS STAY IDENTICAL (docs/source/VIAS.md, acceptance of every stage): the
  * road system grows - profiles, asymmetry, materials, connectors, controls -
  * and a map saved before any of it must derive exactly what it derived
  * before: the same ribbons, junctions, lanelets, surface bands, walkways,

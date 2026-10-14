@@ -58,7 +58,7 @@ export const MAX_POLE_SPACING = ROAD_TUNING.poles.maxSpacing;
  * 1.5%. Below about 1% the wire reads as a taut wire rather than a hanging
  * one, and above about 4% it starts to look like washing line.
  */
-export const WIRE_SAG_RATIO = 0.018;
+const WIRE_SAG_RATIO = 0.018;
 /** However long the span, the sag stops growing past this. */
 export const WIRE_MAX_SAG = m(1.4);
 
@@ -182,7 +182,7 @@ export type PoleLampMode = (typeof POLE_LAMP_MODES)[number];
  * its own cross-arm, square to that line (the double dead-end, "buck arm"
  * corner of distribution standards), instead of one arm on the bisector.
  */
-export const CORNER_DEFLECTION = (60 * Math.PI) / 180;
+const CORNER_DEFLECTION = (60 * Math.PI) / 180;
 
 /** The cross-arms of one pole: every distinct arm, and the one each span hangs from. */
 export interface PoleArms {

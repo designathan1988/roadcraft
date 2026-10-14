@@ -63,7 +63,7 @@ export interface DraftResult {
    */
   readonly cost?: number;
   /**
-   * A dry run's road as it would be built (docs/VIAS.md V3): a station every
+   * A dry run's road as it would be built (docs/source/VIAS.md V3): a station every
    * couple of metres with the solved deck, the natural ground and the way it
    * is built, from the same network and the same height solve as the commit.
    * What the road tool's preview draws once the draft is judged.
@@ -92,7 +92,7 @@ export function commitRoadPath(
   /**
    * The ground as already sampled for the roads' heights (the renderer's
    * natural terrain); read analytically from the stamps without it, which
-   * cost 20 ms per road drawn in the default town (docs/performance.md #21).
+   * cost 20 ms per road drawn in the default town (docs/source/performance.md #21).
    */
   ground?: (x: number, y: number) => number,
   /**
@@ -105,7 +105,7 @@ export function commitRoadPath(
     /**
      * The roads' heights the game last solved on this same natural ground
      * (`ground`): the tunnel test solves only what the gesture changed
-     * (`buildRoadElevation` with `previous`, docs/VIAS.md V0).
+     * (`buildRoadElevation` with `previous`, docs/source/VIAS.md V0).
      */
     readonly groundSolve?: RoadElevation | null;
   } = {},
@@ -114,7 +114,7 @@ export function commitRoadPath(
     return { committed: false, reason: 'degenerate' };
   }
   pieces = joinShortPieces(pieces);
-  // Each step of a road drawn timed (`hitch:` entries, scripts/probe-hitches.mjs; docs/performance.md).
+  // Each step of a road drawn timed (`hitch:` entries; docs/source/performance.md).
   let lap = performance.now();
   const timed = (what: string): void => { const now = performance.now(); performance.measure(`hitch:commit/${what}`, { start: lap, end: now }); lap = now; };
   const work = doc.clone();
@@ -122,7 +122,7 @@ export function commitRoadPath(
   const workNet = new Network(work);
   // The copy is the document as the live network was built from: its
   // geometry is taken as it stands (`adopt`), not built again - a whole
-  // network rebuild in every road drawn (docs/performance.md #35).
+  // network rebuild in every road drawn (docs/source/performance.md #35).
   if (net.revision === doc.revision) workNet.adopt(net);
   else {
     workNet.seedJunctions(net);
@@ -214,7 +214,7 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   // A cut that deep needs relief under the new roads, and the land is flat
   // outside the stamps (the test just above): with no stamp reaching them,
   // the whole network's heights were solved for nothing, 20 ms of every road
-  // drawn in the default town (docs/performance.md #21).
+  // drawn in the default town (docs/source/performance.md #21).
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const seg of fresh) {
     const box = workNet.ribbons.get(seg.id)?.full.bbox;
@@ -836,7 +836,7 @@ export function joinSegments(doc: RoadDoc, nodeId: NodeId): boolean {
   const a = first.a === nodeId ? first.b : first.a;
   const b = second.a === nodeId ? second.b : second.a;
   // Sections read along a -> b on both pieces, as the parking below: a piece
-  // stored the other way round has its two sides swapped (docs/VIAS.md V1).
+  // stored the other way round has its two sides swapped (docs/source/VIAS.md V1).
   const sectionFirst = first.a === a ? first.section : flipSection(first.section);
   const sectionSecond = second.b === b ? second.section : flipSection(second.section);
   if (!sameRoadSectionIgnoringArrows(sectionFirst, sectionSecond)) return false;

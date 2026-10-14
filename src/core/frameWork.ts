@@ -2,12 +2,12 @@
  * One allowance per frame for all the work spread over frames: the
  * simulation's topology, the world of an edit, the buildings. Each took its
  * own slice (6, 10 and 6 ms); falling in the same frame they added up to
- * frames of 60-90 ms after every road drawn (docs/performance.md #28).
+ * frames of 60-90 ms after every road drawn (docs/source/performance.md #28).
  *
  * The first job of a frame opens the allowance; the others work only until
  * it closes, and wait for the next frame when nothing is left.
  */
-export const FRAME_WORK_MS = 10;
+const FRAME_WORK_MS = 10;
 let deadline = -1;
 
 /** A new frame: the allowance opens with the first job that asks (`main.ts` frame). */

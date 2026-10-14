@@ -215,7 +215,7 @@ describe('the document carries the network', () => {
   it('bumps the utility revision, and not the network revision', () => {
     const doc = new RoadDoc();
     // A pole moved `revision` and rebuilt the whole road network and the
-    // simulation topology, about 330 ms per pole on a large map (tests/bench).
+    // simulation topology, about 330 ms per pole on a large map.
     const before = doc.revision;
     const utilities = doc.utilityRevision;
     const a = doc.addPole({ x: 0, y: 0 }).id;

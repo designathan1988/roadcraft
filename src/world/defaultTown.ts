@@ -49,7 +49,7 @@ import { m } from './units';
 
 /**
  * The town was laid out in steps of 0.4 m (the world unit until 2026-10-10,
- * docs/ESCALA.md): every figure of the plan below - the street lines, the
+ * docs/source/ESCALA.md): every figure of the plan below - the street lines, the
  * landform's dabs, the hedges - is a number of these steps, and `plan` makes
  * it world units.
  */

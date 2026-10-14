@@ -20,7 +20,7 @@ void PARTY_GAP;
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 
-export function boxOf(b: Omit<Building, 'id'>): Box {
+function boxOf(b: Omit<Building, 'id'>): Box {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const ring of footprintRects(b as Building)) {
     for (const p of ring) {

@@ -7,7 +7,7 @@
  * Here it is re-evaluated whenever it actually changes, and because the camera
  * is a transform, a DPR change costs one matrix update and zero geometry.
  */
-export const MAX_DPR = 2;
+const MAX_DPR = 2;
 
 export class CanvasSurface {
   readonly ctx: CanvasRenderingContext2D;
@@ -89,7 +89,7 @@ export class CanvasSurface {
  * so this arms a one-shot media query at the current ratio and re-arms itself
  * after each hit.
  */
-export function watchDpr(cb: (dpr: number) => void): () => void {
+function watchDpr(cb: (dpr: number) => void): () => void {
   let mq: MediaQueryList | null = null;
   let disposed = false;
 

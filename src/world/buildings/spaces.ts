@@ -3,7 +3,7 @@ import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
 
 /**
- * Extension point for interiors and occupants (docs/buildings.md section 1).
+ * Extension point for interiors and occupants.
  *
  * A storey that stores its own `spaces` is authoritative. One that does not
  * gets the default subdivision below: one space per volume per storey, split
@@ -72,7 +72,7 @@ export function floorArea(b: Building): number {
 }
 
 /** One home on a residential floor, and how it lies. */
-export interface FlatCell {
+interface FlatCell {
   readonly x: number;
   readonly y: number;
   readonly w: number;

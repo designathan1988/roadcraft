@@ -373,7 +373,7 @@ function segCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): { t: number; u: number } 
 }
 
 /** Ramer-Douglas-Peucker. */
-export function simplify(points: readonly Vec2[], tol: number): Vec2[] {
+function simplify(points: readonly Vec2[], tol: number): Vec2[] {
   if (points.length < 3) return [...points];
   const keep = new Uint8Array(points.length);
   keep[0] = keep[points.length - 1] = 1;

@@ -17,7 +17,7 @@ import { m } from '@world/units';
 /** How far from the back of a footway a point is still put onto it, world units. */
 const FOOTWAY_REACH = m(3);
 /** Shortest length of a run worth building, world units. */
-export const MIN_BARRIER_RUN = m(0.5);
+const MIN_BARRIER_RUN = m(0.5);
 
 function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec2): Vec2 {
   if (!net) return at;

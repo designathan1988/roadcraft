@@ -43,7 +43,7 @@ export interface StrokeSpec {
 }
 
 /** Dash pattern used for every broken line, in world units. */
-export const DASH: readonly number[] = [m(3.2), m(3.2)];
+const DASH: readonly number[] = [m(3.2), m(3.2)];
 const DASH_PERIOD = m(6.4);
 
 /**
@@ -56,7 +56,7 @@ const DASH_PERIOD = m(6.4);
  */
 export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0, cutB = 0, styleId: MarkingStyleId = 'classic'): StrokeSpec[] {
   const rt = ribbon.road;
-  // The map's regional standard (docs/VIAS.md V6): colours, dash and gap by the speed.
+  // The map's regional standard (docs/source/VIAS.md V6): colours, dash and gap by the speed.
   const style = markingStyle(styleId);
   const speedKmh = rt.speedLimit / kmh(1);
   const dashPattern = style.id === 'classic' ? DASH : style.dash(speedKmh);
@@ -97,7 +97,7 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
   };
   if (ribbon.direction === 'both' && rt.markings === 'center') centreLine('dashed');
 
-  // The line between lane k and k + 1 of one direction (docs/VIAS.md V4):
+  // The line between lane k and k + 1 of one direction (docs/source/VIAS.md V4):
   // dashed where a lane change is allowed (MBST vol. IV, LMS-2), solid where
   // it is not (LMS-1), wide and solid beside a bus lane (MFE, 0.20-0.30 m).
   const divider = (forward: boolean, k: number): Pick<StrokeSpec, 'width' | 'dash' | 'dashOffset'> => {
@@ -141,7 +141,7 @@ const LEGEND_FIRST = m(12);
 const LEGEND_EVERY = m(70);
 
 /**
- * The legend along a bus lane (docs/VIAS.md V6; MBST vol. IV, 4.5.1 and 8.3:
+ * The legend along a bus lane (docs/source/VIAS.md V6; MBST vol. IV, 4.5.1 and 8.3:
  * a legend may be painted along the whole exclusive lane, white, letters
  * 1,60 m tall along the road where it runs at 80 km/h or less): the word,
  * read by the driver coming along the lane, a little after the start of the
@@ -194,7 +194,7 @@ function paintInLane(
 const LEGEND_GAP = m(1.5);
 
 /**
- * What a junction's rule paints on each leg before its stop line (docs/VIAS.md
+ * What a junction's rule paints on each leg before its stop line (docs/source/VIAS.md
  * V6, MBST vol. IV): "PARE" (the region's word) in every lane of a leg that
  * must stop, the give-way triangle ("SIP") in every lane of a leg that gives
  * way. From the same rule the posts' signs come from (`roads/rules.ts`).
@@ -234,7 +234,7 @@ export function approachLegends(net: Network, styleId: MarkingStyleId): StrokeSp
 }
 
 /** Painted turn arrows follow the same authored rule as the connector graph. */
-export function laneArrowMarkings(ribbon: SegmentRibbon): StrokeSpec[] {
+function laneArrowMarkings(ribbon: SegmentRibbon): StrokeSpec[] {
   const centre = ribbon.centre[Level.Asphalt];
   // Keep arrows behind the crossing/stop bar and suppress them on a short approach.
   if (!centre || centre.length < m(19.2)) return [];
@@ -295,7 +295,7 @@ const ZEBRA_EDGE = m(0.3);
  * The V6 monolith drew no stop bar anywhere, despite the simulation having a
  * stop position.
  */
-export function stopBar(
+function stopBar(
   origin: Vec2,
   dir: Vec2,
   nrm: Vec2,
@@ -582,7 +582,7 @@ export function transitionMarkings(net: Network, node: NodeId): StrokeSpec[] {
 }
 
 /**
- * A mini-roundabout's painted island (docs/VIAS.md V5): a white ring and its
+ * A mini-roundabout's painted island (docs/source/VIAS.md V5): a white ring and its
  * filled middle at the junction's centre, traversable (a mini-roundabout's
  * island is painted or a low dome a lorry may drive over). Sized from the
  * junction's nearest mouth, so it sits inside the box.

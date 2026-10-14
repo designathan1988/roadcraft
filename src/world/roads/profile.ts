@@ -8,7 +8,7 @@ import { type RoadType, laneWidth, roadProfile, roadType } from '../roadTypes';
 import { kmh } from '../units';
 
 /**
- * THE ROAD PROFILE (docs/VIAS.md V1): a road's cross-section as an ordered
+ * THE ROAD PROFILE (docs/source/VIAS.md V1): a road's cross-section as an ordered
  * list of elements from its left edge to its right edge, looking from `a` to
  * `b` - footway, parking or cycle lane, the lanes of each direction, the
  * central reservation - each with its width and what it is paved with, the
@@ -31,7 +31,7 @@ export type ProfileElement =
   | { readonly kind: 'parking' | 'cycle'; readonly width: number }
   | {
     readonly kind: 'lane'; readonly width: number; readonly dir: 'forward' | 'backward';
-    /** Buses only (docs/VIAS.md V4, `RoadSection.useForward`). */
+    /** Buses only (docs/source/VIAS.md V4, `RoadSection.useForward`). */
     readonly use?: 'bus';
     /** The line on its right, to the next lane of its direction: solid (no lane change) instead of dashed. */
     readonly line?: 'solid';
@@ -132,7 +132,7 @@ export interface ProfileIssue {
 
 /**
  * `profileProblems` with the elements each problem is about, so an editor can
- * name the problem on the element that has it (docs/VIAS.md V2).
+ * name the problem on the element that has it (docs/source/VIAS.md V2).
  */
 export function profileIssues(profile: RoadProfileSpec, typeIndex: number): ProfileIssue[] {
   const out: ProfileIssue[] = [];

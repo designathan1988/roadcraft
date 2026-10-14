@@ -1,5 +1,5 @@
 import { ACUTE_EPS, COARSE_EPS, EPS, SIN_EPS, clamp } from './scalar';
-import { type Vec2, add, addScaled, dot, normalize, scale, sub } from './vec2';
+import { type Vec2, add, addScaled, dot, normalize } from './vec2';
 import { m } from './units';
 
 export interface Fillet {
@@ -63,7 +63,7 @@ export function filletCorner(
  * back to a convex hull for what is in fact a valid shape. Nudging the mouths
  * apart makes the configuration robust.
  */
-export const ACUTE_CLEARANCE = 1.02;
+const ACUTE_CLEARANCE = 1.02;
 
 /**
  * Distance from the corner at which two rays separated by `psi`, carrying
@@ -96,7 +96,7 @@ export function acuteSetback(psi: number, hwA: number, hwB: number): number {
  * does not fit the available length, so a short block degrades smoothly instead
  * of being rejected.
  */
-export const CURB_R_MIN = m(2.8);
+const CURB_R_MIN = m(2.8);
 
 /**
  * Widest return we will hand out: 7.2 m.
@@ -111,10 +111,3 @@ export const CURB_R_MAX = m(7.2);
 export function curbRadius(hwA: number, hwB: number): number {
   return clamp(0.5 * Math.min(hwA, hwB), CURB_R_MIN, CURB_R_MAX);
 }
-
-/** Midpoint helper used by bevel/taper fallbacks. */
-export const midpoint = (a: Vec2, b: Vec2): Vec2 =>
-  scale(add(a, b), 0.5);
-
-export const towards = (from: Vec2, to: Vec2, d: number): Vec2 =>
-  addScaled(from, normalize(sub(to, from)), d);

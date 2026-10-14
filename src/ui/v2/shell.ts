@@ -18,7 +18,7 @@
  * are handed to it as they are computed (`onStatus`, `onHint`); and each
  * control calls the command `main.ts` hands it (`ShellDeps`), the Builder
  * through its actions. It once read and clicked a second, hidden interface
- * four times a second (docs/PLANO.md 5g).
+ * four times a second (docs/source/PLANO.md 5g).
  */
 import { furnitureChosen, setFurnitureChosen } from '../roads/furnitureChoice';
 import { FURNITURE_SETS } from '@world/roads/furnitureSets';
@@ -260,7 +260,7 @@ const ICON: Record<string, string> = {
   m_about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/>',
   m_quality: '<path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><path d="M12 12h9"/>',
   m_language: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
-  // A road's cross-section: the bands across it (the profile editor, docs/VIAS.md V2).
+  // A road's cross-section: the bands across it (the profile editor, docs/source/VIAS.md V2).
   profile: '<path d="M3 7h18M3 17h18"/><path d="M7 7v10M12 9v2m0 2v2M17 7v10"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M7 14h10"/>',
 };
@@ -305,7 +305,7 @@ interface ShellTransitTool {
  * The game's state as the shell reads it (`main.ts` `gameState`): the values
  * now, and `watch` to be told, once a frame, that some of them changed.
  */
-export interface ShellGameValues {
+interface ShellGameValues {
   readonly tool: string;
   readonly paused: boolean;
   readonly speed: number;
@@ -333,7 +333,7 @@ export interface ShellGameValues {
   readonly sky: string;
   readonly inspectorOpen: boolean;
 }
-export interface ShellGame {
+interface ShellGame {
   readonly values: Readonly<ShellGameValues>;
   watch(keys: readonly (keyof ShellGameValues)[], fn: () => void): () => void;
 }
@@ -366,7 +366,7 @@ export interface ShellStatus {
  * nodes, the zoom (pixels a unit, times 100) and the world point in the
  * middle of the view.
  */
-export interface ShellReadouts {
+interface ShellReadouts {
   readonly roads: number;
   readonly nodes: number;
   readonly zoom: number;
@@ -527,7 +527,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     impossibleN.textContent = String(n);
     impossibleB.title = plural('status.impossible', n);
   };
-  // The money in hand (docs/VIAS.md V0): roads are paid from it.
+  // The money in hand (docs/source/VIAS.md V0): roads are paid from it.
   const money = el('strong', 'v2-money');
   const moneyText = money.appendChild(document.createTextNode(''));
   let moneyShown = NaN;
@@ -1333,7 +1333,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       const heightRow = orow(t('v2.row.height'), stepper(t('palette.height'), heightText, (d) => deps.stepRoadHeight(d)));
       heightRow.title = `${t('palette.height')}: ${t(offset > 1e-6 ? 'palette.height.above' : offset < -1e-6 ? 'palette.height.below' : 'palette.height.ground')}`;
       options.appendChild(heightRow);
-      // The sides of a cutting: a batter, or retaining walls (docs/VIAS.md V3).
+      // The sides of a cutting: a batter, or retaining walls (docs/source/VIAS.md V3).
       const walls = cutWallsChosen();
       const cutRow = el('div', 'v2-seg');
       for (const on of [false, true]) {
@@ -1343,7 +1343,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         cutRow.appendChild(b);
       }
       options.appendChild(orow(t('cutSides.row'), cutRow));
-      // The furniture the new road is built with (docs/VIAS.md V7).
+      // The furniture the new road is built with (docs/source/VIAS.md V7).
       const furnitureNow = furnitureChosen();
       const furnitureRow = el('div', 'v2-seg rp-seg-tight');
       for (const set of FURNITURE_SETS) {
@@ -1355,7 +1355,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       const furnitureLine = orow(t('roadFurniture.row'), furnitureRow);
       furnitureLine.title = t('roadFurniture.tip');
       options.appendChild(furnitureLine);
-      // The tool's keys, rebindable (docs/VIAS.md V3).
+      // The tool's keys, rebindable (docs/source/VIAS.md V3).
       const keysB = button('v2-pill rp-open', `${keyLabel(roadKey('heightUp'), true)} · ${keyLabel(roadKey('heightDown'), true)} · ${keyLabel(roadKey('alignment'), true)}`,
         () => (roadKeysOpen() ? closeRoadKeys() : openRoadKeys(keysB)), svg('keyboard', 16));
       options.appendChild(orow(t('roadKeys.row'), keysB));
@@ -1508,7 +1508,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     const terrainCard = (m: string, icon: string): HTMLButtonElement => {
       const b = card(t(`terrain.${m}`), inTerrain && mode === m, () => { useTerrain(m); render(); }, undefined, svg(icon, 30));
-      // The brush it takes, for the probes (`scripts/probe-terrain-relief.mjs`).
+      // The brush it takes, for the probes.
       b.dataset['terrainMode'] = m;
       return b;
     };

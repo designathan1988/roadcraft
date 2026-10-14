@@ -1,5 +1,5 @@
 /**
- * THE ROAD TOOL'S KEYS, rebindable (docs/VIAS.md V3; read by `main.ts`): raise and lower the
+ * THE ROAD TOOL'S KEYS, rebindable (docs/source/VIAS.md V3; read by `main.ts`): raise and lower the
  * road being drawn, and cycle its plan (straight, curve, freehand). Kept in
  * the browser like the snap choice (`snap.ts`), not in any map. Network
  * Multitool keeps each mode's shortcut in its settings the same way
@@ -18,7 +18,7 @@ const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'D
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
 
 /** A key as stored: letters lower case, everything else as `KeyboardEvent.key` names it. */
-export function normaliseKey(key: string): string {
+function normaliseKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 

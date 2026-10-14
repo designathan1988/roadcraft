@@ -4,7 +4,7 @@ import { edgeFrame } from '@world/buildings/footprints';
 import { baysOn } from '@world/buildings/geometry';
 import { type BayComponent, type Building, type Volume, bayKey } from '@world/buildings/types';
 import { m } from '@world/units';
-import type { Point3, ReferenceSampler, Triangle } from '@world/buildings/reference';
+import type { ReferenceSampler, Triangle } from '@world/buildings/reference';
 
 /**
  * Builds a building from a reference model: the real building's 3D model,
@@ -27,7 +27,7 @@ import type { Point3, ReferenceSampler, Triangle } from '@world/buildings/refere
  */
 
 // The model's geometry types live below both readers (`world/buildings/reference.ts`).
-export type { Point3, ReferenceSampler, Triangle };
+export type { ReferenceSampler, Triangle };
 
 export interface ReferenceBlock {
   x0: number; x1: number; y0: number; y1: number;

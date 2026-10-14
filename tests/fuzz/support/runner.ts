@@ -21,7 +21,7 @@ export interface Profile {
   readonly sim: SimRun | null;
 }
 
-export const PROFILES: Record<string, Profile> = {
+const PROFILES: Record<string, Profile> = {
   smoke: { sequences: 6, ops: 24, sim: { seconds: 45, seed: 0x5eed, intensity: 1.5 } },
   deep: { sequences: 200, ops: 60, sim: { seconds: 240, seed: 0x5eed, intensity: 2 } },
 };
@@ -141,7 +141,7 @@ export function openCategories(): Set<string> {
   return new Set(loadFixtures().filter((f) => f.open && !f.gate).map((f) => f.category));
 }
 
-export const FIXTURE_DIR = join(process.cwd(), 'tests', 'fuzz', 'fixtures');
+const FIXTURE_DIR = join(process.cwd(), 'tests', 'fuzz', 'fixtures');
 
 export function loadFixtures(): Fixture[] {
   let names: string[];

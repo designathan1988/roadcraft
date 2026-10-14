@@ -12,12 +12,9 @@
  * pointer selects whenever nothing else is in hand.
  */
 
-import { FACADE_PATTERNS, type FacadePattern } from '@world/buildings/types';
+export type BuilderCategoryId = 'models' | 'draw' | 'mass' | 'facade' | 'parts' | 'roof' | 'paint' | 'interior';
 
-export const BUILDER_TABS = ['models', 'draw', 'mass', 'facade', 'parts', 'roof', 'paint', 'interior'] as const;
-export type BuilderCategoryId = (typeof BUILDER_TABS)[number];
-
-export type BuilderToolKind = 'mode' | 'action';
+type BuilderToolKind = 'mode' | 'action';
 
 export interface BuilderToolSpec {
   /** Stable id: the i18n key is `builder.tool.<id>` and the icon is looked up by it. */
@@ -27,7 +24,7 @@ export interface BuilderToolSpec {
 }
 
 /** What a section of a tab holds: tools, or one of the panel's own shelves. */
-export type BuilderShelf = 'models' | 'patterns' | 'scope' | 'roofParams' | 'finishes' | 'drawAction';
+type BuilderShelf = 'models' | 'patterns' | 'scope' | 'roofParams' | 'finishes' | 'drawAction';
 
 export interface BuilderSection {
   /** `builder.section.<title>`; none for a tab with one section. */
@@ -149,8 +146,7 @@ export const BUILDER_GALLERIES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** The plans a closed outline can be recognised as, and drawn as. */
-export const PLAN_SHAPES = ['rectangle', 'l', 'u', 'circle', 'hexagon', 'octagon', 'chamfered', 'cross', 'stepped'] as const;
-export type PlanShapeId = (typeof PLAN_SHAPES)[number];
+export type PlanShapeId = 'rectangle' | 'l' | 'u' | 'circle' | 'hexagon' | 'octagon' | 'chamfered' | 'cross' | 'stepped';
 
 /** The shape a draw tool draws. */
 export const DRAW_SHAPES: Readonly<Record<string, PlanShapeId>> = {
@@ -198,13 +194,9 @@ export const OPENING_COMPONENTS: Readonly<Record<string, string>> = {
 
 /** What a drawn shape does: a new building, a block joined beside the selection, one on its roof, or a cut out of it. */
 export const DRAW_ACTIONS = ['new', 'ground', 'top', 'cut'] as const;
-export type DrawActionId = (typeof DRAW_ACTIONS)[number];
 
 /** Where an opening or a pattern is applied. */
 export const FACADE_SCOPES = ['bay', 'zone', 'row', 'column', 'storey', 'side', 'volume'] as const;
-export type FacadeScopeId = (typeof FACADE_SCOPES)[number];
-
-export const PATTERNS: readonly FacadePattern[] = FACADE_PATTERNS;
 
 /**
  * One precise, editable number of the current selection, for the inspector.

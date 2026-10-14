@@ -93,7 +93,7 @@ export function importClosure(root: string, entry: string): string[] {
 const DIR = 'cooked';
 
 /** The fingerprint of a derived kind (`DERIVED`): its maker's import closure and the files it also reads. */
-export function derivedHash(root: string, entry: string, also: readonly string[] = []): string {
+function derivedHash(root: string, entry: string, also: readonly string[] = []): string {
   const hash = createHash('sha256');
   for (const file of importClosure(root, entry)) {
     hash.update(path.relative(root, file).replace(/\\/g, '/'));

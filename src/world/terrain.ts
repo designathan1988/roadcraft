@@ -90,7 +90,7 @@ export const isTerrainProfile = (value: unknown): value is TerrainProfile => val
  * share of the reach out from the centre: a crown that stays round over the
  * inner half, then sides steepening to a near wall (a bornhardt's).
  */
-export const sugarloafProfile = (d: number): number => Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.max(0, d)), 2.4)), 0.6);
+const sugarloafProfile = (d: number): number => Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.max(0, d)), 2.4)), 0.6);
 
 /**
  * How many brush dabs one map may hold.
@@ -137,12 +137,12 @@ export const RIVER_CARVE = 1.45;
 export const terrainInfluence = (unit: number): number => unit * unit * (3 - 2 * unit);
 
 /** The narrowest share of its radius a hard dab's edge falls over (`TerrainStamp.hardness`). */
-export const MIN_HARD_RIM = 0.08;
+const MIN_HARD_RIM = 0.08;
 /** The narrowest a hard dab's wall is: two cells of the drawn terrain grid (6.4 m). */
-export const MIN_HARD_WALL = m(12.8);
+const MIN_HARD_WALL = m(12.8);
 
 /** A natural river dab carves this share of the old canyon's depth. */
-export const RIVER_BED_DEPTH = 0.42;
+const RIVER_BED_DEPTH = 0.42;
 /** The share of a natural river dab's reach, from its edge, that is bank; inside it the bed is flat. */
 export const RIVER_BED_FLOOR = 0.72;
 

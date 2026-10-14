@@ -802,11 +802,6 @@
       "count": 1
     }
   },
-  "src/world/buildings/towerKit.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/world/buildings/validate.ts": {
     "roadcraft/no-module-state": {
       "count": 1

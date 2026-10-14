@@ -7,8 +7,8 @@ import { step, tickWork } from '@sim/pipeline';
 import { signalWork } from '@sim/signals/fsm';
 
 /**
- * THE SCALE OF A TICK, BY COUNTING (docs/relatorio-desempenho-mapas-enormes-2026-10-11.md
- * 9.4; docs/pesquisa/fase-0-medida.md 3.4): the same few cars on a small
+ * THE SCALE OF A TICK, BY COUNTING (docs/source/relatorio-desempenho-mapas-enormes-2026-10-11.md
+ * 9.4; docs/research/source/fase-0-medida.md 3.4): the same few cars on a small
  * closed grid and on one 36 times its area. What a tick does for the map's
  * size - lanes looked at by the cleanup, signals that decide - must not grow
  * with the map: counted, not timed, so it runs in `npm run check` and holds

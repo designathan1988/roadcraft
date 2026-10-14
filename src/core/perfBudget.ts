@@ -33,7 +33,7 @@ export interface Budget {
  * writes a warning with the step and its time. Measured 2026-10-11 on the
  * player's map and a generated town (CPU, headless).
  */
-export const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
+const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
   'mutate/edit+after': { max: 150, level: 'warn', why: 'o clique de uma edição: commit e texto do desfazer (65-112 ms)' },
   'mutate/after edit': { max: 150, level: 'warn', why: 'o clique de uma edição, com a rede refeita (65-112 ms)' },
   'road-edit/utilities': { max: 120, level: 'warn', why: 'postes e fios refeitos numa edição (68-86 ms)' },

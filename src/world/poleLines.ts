@@ -190,7 +190,7 @@ export function poleLines(net: Network): PoleLines {
  * lines made from every ribbon and junction within this of a rectangle are
  * the whole map's lines inside it.
  */
-export const LINES_HALO = m(32);
+const LINES_HALO = m(32);
 
 
 /** What the regional pole lines did: made, kept, and the streets made from. A count for the budgets (`core/perfBudget.ts`). */

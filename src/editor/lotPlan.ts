@@ -214,7 +214,7 @@ export function planLot(kind: LotKind, W: number, D: number, rng: Rng, corner?: 
  * Giant's dock design guide). Null when the lot's back is no yard reached by
  * a drive. Metres, the lot's frame (y back from the street).
  */
-export const RAMP_LANDING = 6;
+const RAMP_LANDING = 6;
 export function yardRamp(plan: LotPlan): { readonly start: number; readonly end: number; readonly grade: number } | null {
   if (plan.back.use !== 'parking' && plan.back.use !== 'loading') return null;
   const drive = [plan.left, plan.right].some((s) => s.use === 'drive' || s.use === 'drivePath');

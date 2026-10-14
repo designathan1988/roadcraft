@@ -2,15 +2,12 @@ import { type Blueprint } from '@world/buildings/blueprints';
 import { type Finish } from '@world/buildings/materials';
 import {
   type BuilderCategoryId,
-  type BuilderField,
   type BuilderSelectionInfo,
   tabSpec,
 } from './catalog';
 import { applyTranslations, formatDecimal, onLanguageChange, parseDecimal, t } from '../i18n';
 import { builderIconSvg } from './icons';
 import './workspace.css';
-
-export type { BuilderField, BuilderSelectionInfo };
 
 /**
  * The Builder's side of the interface: its state (`BuilderState`, published
@@ -19,13 +16,13 @@ export type { BuilderField, BuilderSelectionInfo };
  * the selection panel - the numbers of what is selected and the actions on it
  * (duplicate, mirror, join, save, demolish). It drew a whole interface of its
  * own once (a bar, a rail, a panel), hidden since the redesign and taken out
- * in docs/PLANO.md 5g.
+ * in docs/source/PLANO.md 5g.
  *
  * This module only renders state and reports clicks: `buildingsWiring.ts` and
  * `main.ts` turn every one of them into a command.
  */
 
-export type ChromeMode = 'road' | 'builder';
+type ChromeMode = 'road' | 'builder';
 
 export interface BuilderState {
   readonly category: BuilderCategoryId;

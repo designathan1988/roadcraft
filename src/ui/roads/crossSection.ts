@@ -3,7 +3,7 @@ import { METERS_PER_UNIT } from '@world/units';
 import { formatDecimal } from '../i18n';
 
 /**
- * A road's CROSS-SECTION drawn as a street section (docs/VIAS.md V2), the way
+ * A road's CROSS-SECTION drawn as a street section (docs/source/VIAS.md V2), the way
  * Streetmix illustrates a street (docs.streetmix.net, "Segments"): each
  * element as itself, at its width - asphalt with its lane lines and the
  * direction it runs, a car seen from behind in each lane, a raised footway

@@ -32,7 +32,7 @@ export class StreetscapeTool {
   /** Where the chosen item would go under the pointer: a ring, red where it cannot. */
   hover: LandscapeSnap | null = null;
   /**
-   * A row being dragged out from the item just placed (docs/VIAS.md V7,
+   * A row being dragged out from the item just placed (docs/source/VIAS.md V7,
    * placement in line): the pieces that would follow it along the footway,
    * one every `ROW_SPACING` of its kind, laid when the button is let go.
    */
@@ -60,7 +60,7 @@ export class StreetscapeTool {
     const kind = host.kind();
     const placed = snapLandscape(host.net, doc.landscape.values(), kind, world, this.reach());
     // A stop or give-way plate at a junction's approach IS that leg's rule
-    // (docs/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
+    // (docs/source/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
     const signType = kind === 'sign' ? host.extra(kind).signType : undefined;
     const approach = placed.ok && placed.hit && (signType === 'stop' || signType === 'yield')
       ? signApproach(host.net, placed.at, placed.hit.segment) : null;

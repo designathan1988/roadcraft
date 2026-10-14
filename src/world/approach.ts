@@ -20,7 +20,7 @@ import { m } from './units';
  */
 
 /** Clear space between the junction mouth and the near edge of the zebra. */
-export const CROSSWALK_SETBACK = m(1.2);
+const CROSSWALK_SETBACK = m(1.2);
 /**
  * Depth of the zebra along the direction of travel: 3 m, the Brazilian
  * minimum for an urban crossing (CONTRAN Res. 236/2007, MBST vol. IV, FTP-1:
@@ -43,7 +43,7 @@ export const stopLineDistance = (trim: number): number =>
   trim + CROSSWALK_SETBACK + CROSSWALK_DEPTH + STOP_BAR_SETBACK;
 
 /** How much further back than the junction mouth the approach zone reaches. */
-export const APPROACH_DEPTH =
+const APPROACH_DEPTH =
   CROSSWALK_SETBACK + CROSSWALK_DEPTH + STOP_BAR_SETBACK;
 
 /**

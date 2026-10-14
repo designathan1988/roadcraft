@@ -39,13 +39,13 @@ export interface FogSettings {
 
 export const DEFAULT_FOG: FogSettings = { density: 1 };
 /** A fog dab's height and speed when a saved one carries none. */
-export const DEFAULT_FOG_HEIGHT = m(24);
-export const DEFAULT_FOG_SPEED = m(6);
+const DEFAULT_FOG_HEIGHT = m(24);
+const DEFAULT_FOG_SPEED = m(6);
 
 /** A map keeps at most this many fog dabs; the oldest go first. */
 export const MAX_FOG_DABS = 20_000;
 
-export const FOG_LIMITS = {
+const FOG_LIMITS = {
   density: [0, 2],
   height: [m(2), m(160)],
   speed: [0, m(24)],

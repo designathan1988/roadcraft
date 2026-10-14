@@ -168,7 +168,7 @@ function structureSeam(doc: RoadDoc, nodeId: NodeId): boolean {
  * Whether two roads meeting at a node run on into each other at every level
  * with the same outline: each side of one along the matching side of the
  * other (one's left is the other's right when they are drawn the same way
- * through the node, docs/VIAS.md V1).
+ * through the node, docs/source/VIAS.md V1).
  */
 function outlinesMeet(nodeId: NodeId, sp: RoadSegment, wp: RoadType, sq: RoadSegment, wq: RoadType): boolean {
   if (symmetric(wp) && symmetric(wq)) {

@@ -13,7 +13,7 @@ import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
  * front is the street) has no people's gate - its front door IS the way in.
  * `streetDoors` gives that door, on the facade, opening onto the footway, so
  * the people's way to the lot (`sim/agents/lotDoors.ts`) can start there
- * (docs/ZONEAMENTO.md: "a porta dele não é usada pelas pessoas").
+ * (docs/source/ZONEAMENTO.md: "a porta dele não é usada pelas pessoas").
  */
 
 const flat = (): number => 0;

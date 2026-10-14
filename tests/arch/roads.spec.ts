@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The road system's own folders (docs/VIAS.md): `src/<layer>/roads/` is part
+ * The road system's own folders (docs/source/VIAS.md): `src/<layer>/roads/` is part
  * of its parent layer and obeys the same dependency order. The lint rule
  * (`eslint.config.js`) reports the aliases; this also follows RELATIVE
  * imports, which the rule cannot see (`../../render/x` from `world/roads/`).

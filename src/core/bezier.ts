@@ -17,8 +17,6 @@ export interface CurveShape {
   readonly h: number;
 }
 
-export const STRAIGHT: null = null;
-
 /** Reconstructs the quadratic control point from endpoints and shape. */
 export function controlPoint(a: Vec2, b: Vec2, shape: CurveShape): Vec2 {
   const chord = sub(b, a);
@@ -56,13 +54,13 @@ export const quadPoint = (a: Vec2, c: Vec2, b: Vec2, t: number): Vec2 => {
  * maximum chordal deviation over `n` uniform steps is exactly `|B''| / (8n^2)`.
  * Solving for `n` gives the closed form below — no recursive subdivision needed.
  */
-export function quadSegmentCount(a: Vec2, c: Vec2, b: Vec2, tol = FLATTEN_TOL): number {
+function quadSegmentCount(a: Vec2, c: Vec2, b: Vec2, tol = FLATTEN_TOL): number {
   const d = len(sub(add(a, b), scale(c, 2)));
   return clamp(Math.ceil(Math.sqrt(d / (4 * tol))), 1, 64);
 }
 
 /** Flattens a quadratic into a point list, endpoints included. */
-export function flattenQuad(
+function flattenQuad(
   a: Vec2,
   c: Vec2,
   b: Vec2,

@@ -8,7 +8,7 @@
  * units; the constant below exists so that *derived* constants can be written
  * from real-world figures and checked, not so that runtime code can convert.
  *
- * One unit is one metre (since 2026-10-11, docs/ESCALA.md; the 0.4 m build of
+ * One unit is one metre (since 2026-10-11, docs/source/ESCALA.md; the 0.4 m build of
  * before gone, the player, 2026-10-13): every length is written in metres
  * through `m()`, so the figures read as real carriageways (local 6.0 m,
  * street 8.8 m, avenue 13.6 m, boulevard 18.4 m). Maps saved at 0.4 m are

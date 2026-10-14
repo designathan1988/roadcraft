@@ -384,7 +384,7 @@ const GROUP = 16;
 const nearest = { t: 0, distSq: Infinity };
 
 /** Drops consecutive duplicate points. */
-export function dedupe(points: readonly Vec2[], eps = FINE_EPS): Vec2[] {
+function dedupe(points: readonly Vec2[], eps = FINE_EPS): Vec2[] {
   const out: Vec2[] = [];
   for (const p of points) {
     const last = out[out.length - 1];

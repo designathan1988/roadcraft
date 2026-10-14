@@ -57,7 +57,7 @@ export const CORNER_CLEAR = m(5);
 /** No bay within this distance of a pedestrian crossing. */
 export const CROSSING_CLEAR = m(2);
 
-export function isParkingKind(value: unknown): value is ParkingKind {
+function isParkingKind(value: unknown): value is ParkingKind {
   return typeof value === 'string' && (PARKING_KINDS as readonly string[]).includes(value);
 }
 

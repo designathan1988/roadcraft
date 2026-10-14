@@ -242,7 +242,7 @@ interface Profile {
   readonly median: number;
   /** Authored footway width, including the kerb: the wider side's. */
   readonly sidewalk: number;
-  /** Each side's footway, left and right of a -> b (docs/VIAS.md V1). */
+  /** Each side's footway, left and right of a -> b (docs/source/VIAS.md V1). */
   readonly sidewalkLeft: number;
   readonly sidewalkRight: number;
   /**
@@ -329,7 +329,7 @@ export interface RoadElevation {
     segment?: SegmentId,
     /**
      * Lay `along` at the true length of each line parallel to the road
-     * (docs/VIAS.md V1, no stretch on a curve), restarting every `panel`
+     * (docs/source/VIAS.md V1, no stretch on a curve), restarting every `panel`
      * units of road: a pattern keeps its size on the inside and the outside
      * of a bend, with a joint at each panel's edge, as paving is laid.
      */
@@ -371,7 +371,7 @@ export interface RoadElevation {
   summaries?(): ReadonlyMap<SegmentId, { digest: number; box: Aabb; oversized: boolean }>;
 }
 
-export interface RoadSample {
+interface RoadSample {
   /** Distance along the nearest road, in world units. */
   readonly along: number;
   /** Signed offset across it. */
@@ -856,7 +856,7 @@ export function buildRoadElevation(
    * d + 2r of c: that part, its stations and their neighbours are all a point
    * of the rectangle can read. The whole profile used to be digested, so a
    * junction made at one end of a street changed every block along it, and
-   * every road tile and the ground there were built again (docs/performance.md #10).
+   * every road tile and the ground there were built again (docs/source/performance.md #10).
    */
   const localDigest = (profile: Profile, minX: number, minY: number, maxX: number, maxY: number): number => {
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -873,7 +873,7 @@ export function buildRoadElevation(
       if (dx * dx + dy * dy > reach2) continue;
       // Heights to a thousandth of a unit (0.4 mm): a solve run again after a
       // street elsewhere moved them by rounding noise, and the noise marked
-      // blocks all over the town as changed (docs/performance.md #10).
+      // blocks all over the town as changed (docs/source/performance.md #10).
       digest.add(i).add(quantum(profile.h[i]!));
       if (i > 0) digest.add(quantum(profile.h[i - 1]!));
       if (i + 1 < profile.h.length) digest.add(quantum(profile.h[i + 1]!));
@@ -1643,7 +1643,7 @@ function rampRise(d: number): number {
 }
 
 /** Plate edge to deck, for a ramp that climbs `rise`: sag, straight and crest. */
-export function rampLength(rise: number): number {
+function rampLength(rise: number): number {
   return rise <= 0 ? 0 : rise / RAMP_GRADE + RAMP_CURVE;
 }
 
@@ -1915,7 +1915,7 @@ class SpatialIndex {
   digest(minX: number, minY: number, maxX: number, maxY: number, of: (profile: Profile) => number | null): number {
     // The same reading with or without buckets: a network with no bucketed
     // road (empty, or every road oversized) read differently, so its first
-    // bucketed road changed every block of the map (docs/performance.md #10).
+    // bucketed road changed every block of the map (docs/source/performance.md #10).
     const digest = new Digest();
     for (let x = Math.floor(minX / this.cell); x <= Math.floor(maxX / this.cell); x++) {
       for (let y = Math.floor(minY / this.cell); y <= Math.floor(maxY / this.cell); y++) {

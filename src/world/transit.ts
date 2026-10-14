@@ -38,7 +38,7 @@ export interface TransitStop {
   readonly name?: string;
 }
 
-export interface RailTrack {
+interface RailTrack {
   readonly id: number;
   /** A train's track at grade, or the metro's under the ground. */
   readonly mode: 'train' | 'metro';
@@ -65,7 +65,7 @@ export interface TransitData {
 
 export const emptyTransit = (): TransitData => ({ stops: [], tracks: [], lines: [], nextId: 1 });
 
-export const LINE_COLOURS = ['#e8443a', '#2f7de1', '#2fb36b', '#f2a33a', '#9b59d0', '#14a5b8', '#e85d9b', '#7a8a2a'];
+const LINE_COLOURS = ['#e8443a', '#2f7de1', '#2fb36b', '#f2a33a', '#9b59d0', '#14a5b8', '#e85d9b', '#7a8a2a'];
 
 const isMode = (v: unknown): v is TransitMode => v === 'bus' || v === 'train' || v === 'metro';
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

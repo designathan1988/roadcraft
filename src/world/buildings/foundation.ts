@@ -5,7 +5,7 @@ import { type FacadeBay, facadeBays, groundVolumes, localToWorld, volumeLift } f
 import type { BayComponent, Building, FaceId } from './types';
 
 /**
- * How a building meets the ground. See docs/buildings.md section 2.
+ * How a building meets the ground.
  *
  * The caller passes the ground: the renderer passes the height the terrain
  * TRIANGLES are drawn at (`renderedHeightAt`), because that is what a floor
@@ -445,7 +445,7 @@ function floorOver(highest: number, bays: readonly FacadeBay[], pavedAt: PavedAt
 }
 
 /** Steps needed to climb `rise`; a threshold under two risers needs none. */
-export function stepsFor(rise: number): number {
+function stepsFor(rise: number): number {
   if (!(rise > STEP_RISE * 1.5)) return 0;
   return Math.min(40, Math.ceil(rise / STEP_RISE));
 }

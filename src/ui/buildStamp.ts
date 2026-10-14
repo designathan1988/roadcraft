@@ -21,8 +21,6 @@ const BAKED: BuildStamp = typeof __BUILD_STAMP__ !== 'undefined' && __BUILD_STAM
 let stamp: BuildStamp = BAKED;
 const listeners = new Set<(value: BuildStamp) => void>();
 
-export const buildStamp = (): BuildStamp => stamp;
-
 export function formatBuildStamp(value: BuildStamp = stamp): string {
   return t('build.stamp', {
     branch: value.branch,

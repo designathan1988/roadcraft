@@ -142,7 +142,7 @@ export interface BuildingPreview {
   readonly solid?: boolean;
 }
 
-export interface BaySelection {
+interface BaySelection {
   readonly storey: number;
   readonly side: FaceId;
   readonly index: number;
@@ -2758,7 +2758,7 @@ export class BuildingTool {
 }
 
 /** Moves a building so its front-centre anchor is at `anchor`, at `rotation`. */
-export function placeAt(b: Building, anchor: Vec2, rotation: number): void {
+function placeAt(b: Building, anchor: Vec2, rotation: number): void {
   b.rotation = normaliseAngle(rotation);
   const f = footprintBox(b);
   const offset = localDirToWorld(b, (f.x0 + f.x1) / 2, f.y0);

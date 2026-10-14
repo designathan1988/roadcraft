@@ -51,7 +51,7 @@ export type FuzzOp =
   | { readonly op: 'removeNode'; readonly pick: number }
   | { readonly op: 'control'; readonly pick: number; readonly control: JunctionControl }
   /**
-   * A new cross-section on a road already built (docs/VIAS.md V1): each
+   * A new cross-section on a road already built (docs/source/VIAS.md V1): each
    * footway its own width in whole metres, either laid flush (no kerb).
    */
   | { readonly op: 'profile'; readonly pick: number; readonly left: number; readonly right: number;

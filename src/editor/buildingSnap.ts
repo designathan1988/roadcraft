@@ -10,8 +10,7 @@ import { normaliseAngle } from './buildings';
 import { m } from '@world/units';
 
 /**
- * Where a footprint goes when the pointer is at `cursor`. See
- * docs/buildings.md section 4, "Snapping": to a road first (facing it, its
+ * Where a footprint goes when the pointer is at `cursor`: to a road first (facing it, its
  * front along the back of the footway, flush with a neighbour on the same
  * frontage), then to a nearby building (its rotation, edges flush), then to
  * the module grid.

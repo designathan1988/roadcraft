@@ -7,7 +7,7 @@ import { METERS_PER_UNIT, m } from '../units';
 import { streetChain } from './streetChain';
 
 /**
- * STREET NAMES AND NUMBERING (docs/VIAS.md V8).
+ * STREET NAMES AND NUMBERING (docs/source/VIAS.md V8).
  *
  * A street's name is the `streetname` item placed on it (the landscaping
  * tool's, drawn as plates at its corners, `render/signs.ts`); a new street is

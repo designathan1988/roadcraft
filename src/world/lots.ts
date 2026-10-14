@@ -62,13 +62,13 @@ export interface Lot {
 }
 
 /** Depth of a lot along an open street. */
-export const LOT_DEPTH = m(32);
+const LOT_DEPTH = m(32);
 /**
  * The frontage a lot aims at: a block's rows and a street's strip are cut
  * into equal lots of about this width (the player, 2026-10-05: square lots of
  * 26-30 m were too big; 2026-10-06: 15 m too small).
  */
-export const LOT_FRONTAGE = m(22);
+const LOT_FRONTAGE = m(22);
 /** A block deeper than this is cut in two rows, back to back. */
 const TWO_ROWS = m(44);
 const MIN_LOT = m(10);
@@ -188,7 +188,7 @@ interface Candidate { key: string; corners: Vec2[] }
  * street. Given the other way round, the building stood back to front, its
  * yard over the footway, and was refused.
  */
-export function facingCorners<T extends readonly Vec2[]>(c: T): Vec2[] {
+function facingCorners<T extends readonly Vec2[]>(c: T): Vec2[] {
   // Counter-clockwise keeps the inside on the left of every side; reversed,
   // the front side keeps its two corners, swapped.
   if (lotArea({ corners: c }) >= 0) return [...c];

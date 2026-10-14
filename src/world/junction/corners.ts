@@ -4,7 +4,7 @@ import { lineLine } from '@core/intersect';
 import { CURB_R_MAX, acuteSetback, curbRadius, filletCorner, type Fillet } from '@core/fillet';
 import { type Leg } from './legs';
 
-export type CornerMode = 'fillet' | 'bevel' | 'collinear' | 'taper';
+type CornerMode = 'fillet' | 'bevel' | 'collinear' | 'taper';
 
 export interface Corner {
   /** Index of the leg whose LEFT boundary feeds this corner. */
@@ -61,7 +61,7 @@ function resolveCorner(
   const b = legs[j] as Leg;
 
   // Leg `a`'s left boundary and leg `b`'s right boundary, each at its own
-  // side's width (an asymmetric road, docs/VIAS.md V1).
+  // side's width (an asymmetric road, docs/source/VIAS.md V1).
   const aw = a.hwLeft, bw = b.hwRight;
   const a0 = addScaled(a.origin, a.nrm, aw);
   const b0 = addScaled(b.origin, b.nrm, -bw);
@@ -169,7 +169,7 @@ function resolveCorner(
     // widest radius this engine is willing to hand out.
     //
     // The floor is still honoured on every path, which is what
-    // .claude/rules/geometry.md requires: with `r >= rNeed` the tangency lands
+    // the geometry requires: with `r >= rNeed` the tangency lands
     // at or beyond `t`, and the chord fallback uses `t` exactly.
     const rNeed = (t - Math.min(project(x, a), project(x, b))) * Math.tan(psi / 2);
     if (rNeed <= CURB_R_MAX) {
@@ -269,5 +269,5 @@ const collinear = (i: number, j: number, psi: number, t: number): Corner => ({
 });
 
 /** Distance along `leg` at which `p` sits, measured from the leg's ray origin. */
-export const project = (p: Vec2, leg: Leg): number =>
+const project = (p: Vec2, leg: Leg): number =>
   dot(sub(p, leg.origin), leg.dir);

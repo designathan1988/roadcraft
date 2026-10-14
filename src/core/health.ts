@@ -143,7 +143,7 @@ export class HealthLog {
 }
 
 /** A frame at 60 frames a second, ms. */
-export const FRAME_BUDGET_MS = 1000 / 60;
+const FRAME_BUDGET_MS = 1000 / 60;
 /** A long frame: past this the player sees a hitch (MDN, Long Animation Frames: 50 ms). */
 export const LONG_FRAME_MS = 50;
 
@@ -152,7 +152,7 @@ export const LONG_FRAME_MS = 50;
  * its share is named in a long frame's entry; the shares add to more than a
  * frame because they are rarely all spent in the same one.
  */
-export const SYSTEM_BUDGET_MS: Readonly<Record<string, number>> = {
+const SYSTEM_BUDGET_MS: Readonly<Record<string, number>> = {
   'simulação': 4,
   'topologia': 6,
   'rede viária': 4,

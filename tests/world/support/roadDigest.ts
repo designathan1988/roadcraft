@@ -16,7 +16,7 @@ import { sectionOf } from '@world/section';
  * rings, plates, marks), the lanelets, the surface bands, the walkways, the
  * street furniture, the markings and each road's cross-section. Shared by
  * the incremental oracle and the "old maps identical" lock of the road system
- * (docs/VIAS.md).
+ * (docs/source/VIAS.md).
  */
 const ringDigest = (ring: Ring): number => {
   const d = new Digest();

@@ -7,7 +7,7 @@ import { openProfileEditor } from './profileEditor';
 import './roads.css';
 
 /**
- * THE ROAD'S PROFILE in the inspector (docs/VIAS.md V2): the cross-section in
+ * THE ROAD'S PROFILE in the inspector (docs/source/VIAS.md V2): the cross-section in
  * miniature, drawn as the editor draws it (`crossSection.ts`) with each
  * element's width under it, the road's total width, lanes, paving and speed
  * in one line, and the button that opens the profile editor. Every change is

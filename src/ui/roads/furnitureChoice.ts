@@ -1,7 +1,7 @@
 import { type FurnitureSet, isFurnitureSet } from '@world/roads/furnitureSets';
 
 /**
- * The furniture the road tool lays new roads with (docs/VIAS.md V7,
+ * The furniture the road tool lays new roads with (docs/source/VIAS.md V7,
  * `world/roads/furnitureSets.ts`): complete by default (the player's
  * decision), basic or none. A choice of the tool, kept in the browser.
  */

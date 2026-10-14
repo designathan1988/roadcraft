@@ -12,16 +12,10 @@ import type { CentreLine, RoadSection, LaneLine, LaneTurnRule, LaneUse, SectionM
  * which is why no kerb or footway existed around any junction (defect 1.2).
  */
 export enum Level {
-  Shadow = 0,
   Casing = 1,
   Sidewalk = 2,
   Curb = 3,
   Asphalt = 4,
-  Markings = 5,
-  JunctionInterior = 6,
-  JunctionDetail = 7,
-  Median = 8,
-  Overlay = 9,
 }
 
 /** Levels that carry a filled surface built from roads and junctions alike. */
@@ -34,7 +28,7 @@ export const SURFACE_LEVELS = [
 
 export type SurfaceLevel = (typeof SURFACE_LEVELS)[number];
 
-export type MarkingStyle = 'none' | 'center' | 'lanes';
+type MarkingStyle = 'none' | 'center' | 'lanes';
 
 export interface RoadType {
   readonly id: string;
@@ -64,7 +58,7 @@ export interface RoadType {
    * sides differ (`sidewalkLeft`/`sidewalkRight`, read through `footwayOn`).
    */
   readonly sidewalk: number;
-  /** The footways left and right of a -> b when they differ (docs/VIAS.md V1); absent: `sidewalk` both. */
+  /** The footways left and right of a -> b when they differ (docs/source/VIAS.md V1); absent: `sidewalk` both. */
   readonly sidewalkLeft?: number;
   readonly sidewalkRight?: number;
   /** A footway level with the carriageway, without a kerb (a shared surface). */
@@ -91,7 +85,7 @@ export interface RoadType {
   readonly priorityRank: number;
   readonly turnsForward?: readonly LaneTurnRule[];
   readonly turnsBackward?: readonly LaneTurnRule[];
-  /** Lane uses and lines from the section (docs/VIAS.md V4, `RoadSection.useForward`). */
+  /** Lane uses and lines from the section (docs/source/VIAS.md V4, `RoadSection.useForward`). */
   readonly useForward?: readonly LaneUse[];
   readonly useBackward?: readonly LaneUse[];
   readonly linesForward?: readonly LaneLine[];
@@ -289,8 +283,8 @@ export const roadType = (i: number): RoadType =>
   ROAD_TYPES[Math.max(0, Math.min(ROAD_TYPES.length - 1, i))] as RoadType;
 
 /** Supported physical lane-count range for an individually configured road. */
-export const MIN_TRAVEL_LANES = 1;
-export const MAX_TRAVEL_LANES = 8;
+const MIN_TRAVEL_LANES = 1;
+const MAX_TRAVEL_LANES = 8;
 
 /**
  * Resolves the physical road profile for a segment.
@@ -412,7 +406,7 @@ export const flushOn = (rt: RoadType, side: RoadSide): boolean =>
 
 /**
  * Whether the road's outline is the plain one: the same footway both sides,
- * each kerbed (every road before docs/VIAS.md V1).
+ * each kerbed (every road before docs/source/VIAS.md V1).
  */
 export const symmetric = (rt: RoadType): boolean =>
   rt.sidewalkLeft === undefined && !rt.flushLeft && !rt.flushRight;

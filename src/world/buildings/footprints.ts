@@ -34,7 +34,7 @@ export function edgeFrame(v: Volume, side: number): EdgeFrame {
 
 export const asPolygon = (ring: readonly Vec2[]): clipping.Polygon => [ring.map((p) => [p.x, p.y])];
 
-export function polygonArea(poly: clipping.MultiPolygon): number {
+function polygonArea(poly: clipping.MultiPolygon): number {
   return poly.reduce((total, rings) => total + rings.reduce((sum, ring, index) =>
     sum + (index === 0 ? 1 : -1) * Math.abs(signedArea(ring.map(([x, y]) => ({ x, y })))), 0), 0);
 }

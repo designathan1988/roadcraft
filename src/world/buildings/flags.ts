@@ -21,7 +21,7 @@ export const FLAG_PATTERNS = [
   'solid', 'bicolourH', 'bicolourV', 'tricolourH', 'tricolourV', 'cross', 'nordic',
   'diagonal', 'saltire', 'canton', 'stripes', 'border', 'disc', 'chevron',
 ] as const;
-export type FlagPattern = (typeof FLAG_PATTERNS)[number];
+type FlagPattern = (typeof FLAG_PATTERNS)[number];
 
 export interface FlagDesign {
   readonly pattern: FlagPattern;
@@ -29,7 +29,7 @@ export interface FlagDesign {
   readonly colours: readonly [number, number, number];
 }
 
-export const isFlagPattern = (v: unknown): v is FlagPattern => (FLAG_PATTERNS as readonly unknown[]).includes(v);
+const isFlagPattern = (v: unknown): v is FlagPattern => (FLAG_PATTERNS as readonly unknown[]).includes(v);
 
 /** The colours a flag's fields are picked from in the Builder. */
 export const FLAG_COLOURS: readonly number[] = [

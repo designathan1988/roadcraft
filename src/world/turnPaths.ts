@@ -542,10 +542,10 @@ export function bulbTurnPath(inCentre: Polyline, outCentre: Polyline, surface: J
  * a car 21 ft, a city bus 37.8 ft, a single-unit lorry 38 ft; a motorcycle
  * about 3 m.
  */
-export const CENTRE_TURN_RADIUS: readonly number[] = [m(3), m(6.4), m(11.6)];
+const CENTRE_TURN_RADIUS: readonly number[] = [m(3), m(6.4), m(11.6)];
 
 /**
- * A U-turn through an opening in the median (docs/VIAS.md V8, retorno): a
+ * A U-turn through an opening in the median (docs/source/VIAS.md V8, retorno): a
  * half circle from the end of the arriving lane round to the start of the
  * departing one, as wide as the two lanes are apart. A body takes it only if
  * it turns that tight (`CENTRE_TURN_RADIUS`) and stays on the road: a car

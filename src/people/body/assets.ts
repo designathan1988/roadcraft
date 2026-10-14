@@ -35,7 +35,7 @@ export interface PeopleAssets {
   };
 }
 
-export interface SkeletonMeta {
+interface SkeletonMeta {
   readonly bones: readonly {
     readonly name: string;
     readonly parent: string | null;

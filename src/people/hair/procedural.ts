@@ -190,7 +190,7 @@ function headOf(base: HairBase) {
  * vertices to some three thousand head vertices, and the search over all of
  * them stalled the game 70-225 ms on each new hairstyle. A uniform grid was
  * tried first: hair standing well off the scalp (an afro) made it sweep most
- * of its cells per point, and a NaN point never ended it (docs/performance.md #5).
+ * of its cells per point, and a NaN point never ended it (docs/source/performance.md #5).
  */
 export function nearestThree(P: ArrayLike<number>, anchors: readonly number[]): (p: V3) => [number, number][] {
   // The tree: anchors (as their order in the list) laid out in place, each

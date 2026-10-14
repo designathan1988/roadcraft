@@ -10,13 +10,13 @@
  * (`render/elements.ts`).
  */
 
-export const PROP_KINDS = ['stones', 'pebbles', 'gravel', 'leaves', 'grass', 'tallGrass', 'scrub', 'fern', 'clover', 'flowers', 'mushrooms'] as const;
+const PROP_KINDS = ['stones', 'pebbles', 'gravel', 'leaves', 'grass', 'tallGrass', 'scrub', 'fern', 'clover', 'flowers', 'mushrooms'] as const;
 export const EFFECT_KINDS = ['smoke', 'fire', 'steam', 'dust', 'soot', 'sparks', 'spray'] as const;
-export const ELEMENT_KINDS = [...PROP_KINDS, ...EFFECT_KINDS] as const;
+const ELEMENT_KINDS = [...PROP_KINDS, ...EFFECT_KINDS] as const;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 export type EffectKind = (typeof EFFECT_KINDS)[number];
 
-export const isElementKind = (v: unknown): v is ElementKind => typeof v === 'string' && (ELEMENT_KINDS as readonly string[]).includes(v);
+const isElementKind = (v: unknown): v is ElementKind => typeof v === 'string' && (ELEMENT_KINDS as readonly string[]).includes(v);
 export const isEffectKind = (k: ElementKind): k is EffectKind => (EFFECT_KINDS as readonly string[]).includes(k);
 
 export interface ElementItem {

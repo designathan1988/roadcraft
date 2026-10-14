@@ -27,7 +27,7 @@ export interface SimRun {
 }
 
 /** Ten times the longest a driver will hold out for a comfortable gap. */
-export const STALL_LIMIT = 10 * WAIT_CEILING;
+const STALL_LIMIT = 10 * WAIT_CEILING;
 
 /**
  * Audit codes that are congestion diagnostics rather than defects on their

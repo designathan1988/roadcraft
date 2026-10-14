@@ -12,7 +12,7 @@ import { buildLegs } from './legs';
 import type { Junction } from './build';
 
 /**
- * A TURNING CIRCLE AT A ROAD'S END (docs/VIAS.md V8, balão de retorno): the
+ * A TURNING CIRCLE AT A ROAD'S END (docs/source/VIAS.md V8, balão de retorno): the
  * player marks an end as one (`RoadNode.end`), and traffic turns round there
  * instead of leaving the map.
  *
@@ -39,7 +39,7 @@ export const BULB_TURN_RADIUS = BULB_RADIUS - m(3);
  * a 25 ft curb radius at a bulb's transition): without it the edge met the
  * circle in a notch a car keeping right swept out of.
  */
-export const BULB_RETURN = m(7.5);
+const BULB_RETURN = m(7.5);
 
 /** A bulb's outline at some lateral reach, in its leg's frame at the node. */
 interface Outline { readonly ring: Ring; readonly mouth: number }

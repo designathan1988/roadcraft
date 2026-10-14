@@ -5,7 +5,7 @@ import { buildDefaultTown } from '@world/defaultTown';
 /**
  * The undo and the autosave keep the document as text (`RoadDoc.toText`), with
  * each building's text written once per record; writing every building again
- * was most of the text taken on each road drawn (docs/performance.md #21). It
+ * was most of the text taken on each road drawn (docs/source/performance.md #21). It
  * must be the very text `JSON.stringify(toJSON())` writes.
  */
 describe('the document as text', () => {

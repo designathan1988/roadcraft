@@ -55,7 +55,7 @@ export function pickBuilding(
     // Cheap reject first, before the floor (which samples the ground and the
     // footways): the ray's footprint over any height. Every building in town
     // had its floor worked out for every click - 85 ms a click in the default
-    // town (docs/performance.md).
+    // town (docs/source/performance.md).
     // The box kept with the record (`storedBounds`): worked out again for
     // every building on every click it was 83 ms of a bomb's click (2026-10-09).
     const box = storedBounds(b, 1);

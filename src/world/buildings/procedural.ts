@@ -309,7 +309,7 @@ function finish(fn: BuildingFunction, form: string, body: BlueprintBody, env: En
  * lean-to rise 10 m from the gutter - a wedge "from the ground to the top"
  * (the player, 2026-10-09).
  */
-export const MAX_ROOF_RISE: Partial<Record<RoofKind, number>> = { gable: 3.2, hip: 3.2, shed: 1.2, sawtooth: 2 };
+const MAX_ROOF_RISE: Partial<Record<RoofKind, number>> = { gable: 3.2, hip: 3.2, shed: 1.2, sawtooth: 2 };
 /**
  * Pitches drawn, degrees, as built: clay tiles 20-35 (a tile roof needs about
  * 17 degrees or more to shed rain), a lean-to's metal or fibre-cement sheet

@@ -6,14 +6,16 @@
  * offset scaled by how big the body is along each axis, measured between two
  * named base vertices per axis. Whatever the sliders make of the body, the
  * garment follows it - that is its fit. This module reads the packed form the
- * importer writes (`scripts/import-makehuman-proxies.mjs`) and fits it; it is
+ * importer writes and fits it; it is
  * written from the file format, with no MakeHuman or MPFB code.
  */
+
+import type { CommunityKind } from '../wardrobe';
 
 /** One proxy as packed by the importer. */
 export interface ProxyPack {
   readonly name: string;
-  readonly kind: 'clothes' | 'hair' | 'eyebrows' | 'eyelashes' | 'eyes' | 'shoes' | import('../wardrobe').CommunityKind;
+  readonly kind: 'clothes' | 'hair' | 'eyebrows' | 'eyelashes' | 'eyes' | 'shoes' | CommunityKind;
   /** Base-mesh vertices the scale axes are measured between: [x0, x1, y0, y1, z0, z1]. */
   readonly scaleRefs: readonly number[];
   /** The axis lengths on the base mesh itself, decimetres. */
@@ -152,7 +154,7 @@ export interface ProxyItem {
 /**
  * The colour of a texture at (u, v), RGBA 0..1; null without a texture. The
  * packs' v runs down the image from its top row (the importer turns the
- * .obj's round: `scripts/import-makehuman-proxies.mjs`).
+ * .obj's round).
  */
 export function sampleTexture(t: ProxyTexture | null, u: number, v: number): [number, number, number, number] | null {
   if (!t) return null;

@@ -42,7 +42,7 @@ export interface Furniture {
 }
 
 /** A thin wall between rooms, from (x0,y0) to (x1,y1). */
-export interface Partition {
+interface Partition {
   readonly x0: number;
   readonly y0: number;
   readonly x1: number;

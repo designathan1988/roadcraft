@@ -29,7 +29,7 @@ import type { Polyline } from '@core/polyline';
 export const ZONE_CELL = GRID_CELL;
 export const ZONE_DEPTH = 4;
 /** The subgrid a cell is trimmed on where a whole cell does not fit (1 m). */
-export const SUB_CELL = m(1);
+const SUB_CELL = m(1);
 
 export interface ZoneCell {
   /** Stable while the road does not change: segment, side, column, row. */
@@ -162,7 +162,7 @@ export function buildZoneGrid(doc: RoadDoc, net: Network): ZoneGrid {
  * this is done) instead of in one stall after every road edit. The answer is
  * the same grid; the document and the network must not change meanwhile.
  */
-export function* zoneGridSteps(doc: RoadDoc, net: Network): Generator<void, ZoneGrid> {
+function* zoneGridSteps(doc: RoadDoc, net: Network): Generator<void, ZoneGrid> {
   const { onRoad, onPlate } = pavedTester(doc, net);
   const cells: ZoneCell[] = [];
   const byId = new Map<string, ZoneCell>();

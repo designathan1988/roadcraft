@@ -4,7 +4,7 @@ import { ROAD_TYPES } from '../roadTypes';
 import { type ProfileElement, type RoadProfileSpec, profileOf, profileProblems } from './profile';
 
 /**
- * ROAD TEMPLATES (docs/VIAS.md V1): a profile with a name, to lay or apply
+ * ROAD TEMPLATES (docs/source/VIAS.md V1): a profile with a name, to lay or apply
  * again. The classes of the road tool are the built-in templates (their
  * profile as a road is drawn with them); the player's own are saved by the
  * editor (`editor/roads/templates.ts`) and read back through
@@ -21,7 +21,7 @@ export interface RoadTemplate {
 }
 
 /** The direction a class is drawn in (`editor/commit.ts`): one-lane classes one way. */
-export const classDirection = (type: number): SegmentDirection => (ROAD_TYPES[type]?.lanes === 1 ? 'aToB' : 'both');
+const classDirection = (type: number): SegmentDirection => (ROAD_TYPES[type]?.lanes === 1 ? 'aToB' : 'both');
 
 /** The classes as templates, in the order of the road tool. */
 export function classTemplates(): RoadTemplate[] {

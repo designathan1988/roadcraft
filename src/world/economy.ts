@@ -6,7 +6,7 @@ import { METERS_PER_UNIT } from './units';
 import { ROAD_TUNING } from './roads/tuning';
 
 /**
- * THE MINIMAL ECONOMY (docs/VIAS.md V0, the player's decision of 2026-10-09):
+ * THE MINIMAL ECONOMY (docs/source/VIAS.md V0, the player's decision of 2026-10-09):
  * a balance, saved with the map, and what roads cost to build.
  *
  * A road's price is its cross-section - carriageway, central reservation,

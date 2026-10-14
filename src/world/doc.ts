@@ -60,14 +60,14 @@ export function fitRoadCurve(
 export type SegmentDirection = 'both' | 'aToB' | 'bToA';
 
 /** Explicit junction policy. `auto` retains the class-based default policy. */
-/** 'mini': a mini-roundabout (docs/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
+/** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
 export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' | 'none' | 'mini';
 
 /** Stable segment-pair key for a movement through a junction. */
 export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
 
 /** Whether a movement key names segment `id` as its entry or its exit. */
-export function movementMentions(key: string, id: SegmentId): boolean {
+function movementMentions(key: string, id: SegmentId): boolean {
   const cut = key.indexOf('>');
   const text = String(id);
   return key.slice(0, cut) === text || key.slice(cut + 1) === text;
@@ -100,25 +100,25 @@ export interface RoadNode {
    */
   crossing?: NodeCrossing;
   /**
-   * The player's own lane connections at this node (docs/VIAS.md V4,
+   * The player's own lane connections at this node (docs/source/VIAS.md V4,
    * `roads/connectors.ts`): for each arriving lane listed, exactly these.
    * Absent: every connection derived. A link to a lane that is gone is left
    * out of the build.
    */
   laneLinks?: readonly LaneLink[];
-  /** Each leg's rule under 'priority' control (docs/VIAS.md V5, `roads/rules.ts`); absent legs: derived. */
+  /** Each leg's rule under 'priority' control (docs/source/VIAS.md V5, `roads/rules.ts`); absent legs: derived. */
   approachRules?: readonly ApproachRuleEntry[];
   /** A signal's settings (V5): fixed time, greens, offset, bus priority; absent: adaptive. */
   signal?: SignalSettings;
   /**
-   * What a road's end is (docs/VIAS.md V8): absent, the map's edge, where
+   * What a road's end is (docs/source/VIAS.md V8): absent, the map's edge, where
    * traffic leaves and comes in; 'bulb', a turning circle where it turns
    * round (the player's choice per end, 2026-10-10). Read only while the
    * node is the end of one road.
    */
   end?: RoadEnd;
   /**
-   * A U-turn through an opening in the median (docs/VIAS.md V8, retorno): a
+   * A U-turn through an opening in the median (docs/source/VIAS.md V8, retorno): a
    * piece the player puts on a road with a median, on a node joining two
    * pieces of it - the piece whose traffic, arriving here, turns round. One
    * direction per opening: two facing ones, each waiting at its own lane's
@@ -163,7 +163,7 @@ export interface RoadSegment {
   structure: RoadStructure;
   /**
    * The sides of its cutting held by retaining walls instead of a batter
-   * (docs/VIAS.md V3): the ground is cut back only as far as a portal's
+   * (docs/source/VIAS.md V3): the ground is cut back only as far as a portal's
    * cutting (`elevation.ts` `CUT_SHOULDER`) and a concrete wall stands at
    * each edge up to the natural ground (`render/structures.ts`). Absent: the
    * batter, as every road before it.
@@ -252,7 +252,7 @@ export class RoadDoc {
    */
   terrainRelief: ReliefVersion = RELIEF_LEGACY;
   /**
-   * The regional standard of the map's road paint (docs/VIAS.md V6,
+   * The regional standard of the map's road paint (docs/source/VIAS.md V6,
    * `roads/markingStyle.ts`). 'classic' for every map saved before the
    * regions, so it opens identical; a new map from the game is Brazilian.
    */
@@ -276,7 +276,7 @@ export class RoadDoc {
   /** The map's weather (`weather.ts`). */
   weather: Weather = DEFAULT_WEATHER;
   /**
-   * The money the roads are paid from (`economy.ts`, docs/VIAS.md V0). Part
+   * The money the roads are paid from (`economy.ts`, docs/source/VIAS.md V0). Part
    * of the document, so undo gives back what an edit took; saved only when it
    * is not the starting balance, so a map from before it reads the same.
    */
@@ -306,7 +306,7 @@ export class RoadDoc {
   private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
 
   /**
-   * Modular buildings (docs/buildings.md). They keep their OWN revision,
+   * Modular buildings. They keep their OWN revision,
    * `buildings.revision` (the diary's `buildings` kind): a building edit must
    * not move `revision`, which would rebuild the road network and the
    * simulation for nothing.
@@ -613,7 +613,7 @@ export class RoadDoc {
   /**
    * Whether a node is the map's edge: the end of one road, where traffic and
    * people come in from outside and leave - not a turning circle the player
-   * made of it (`RoadNode.end`, docs/VIAS.md V8).
+   * made of it (`RoadNode.end`, docs/source/VIAS.md V8).
    */
   mapEdge(id: NodeId): boolean {
     const node = this.nodes.get(id);
@@ -907,7 +907,7 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /** The regional standard of the road paint (docs/VIAS.md V6): every road painted again. */
+  /** The regional standard of the road paint (docs/source/VIAS.md V6): every road painted again. */
   setMarkingStyle(style: MarkingStyleId): void {
     if (this.markingStyle === style) return;
     this.markingStyle = style;
@@ -1214,7 +1214,7 @@ export class RoadDoc {
    * the minimap — gates on a revision number. `Network.rebuild()` is
    * incremental, but it does NOT read `dirtyNodes` or `dirtySegments`: it
    * compares each segment's and node's sources with what its last rebuild
-   * recorded (docs/VIAS.md V0), because any other network built on this
+   * recorded (docs/source/VIAS.md V0), because any other network built on this
    * document clears these sets, and a set says "touched", not "changed".
    *
    * So the dirty sets are a correctly-maintained record nothing depends on
@@ -1288,7 +1288,7 @@ export class RoadDoc {
     // JSON and read back, with every check a loaded file needs, on every road
     // drawn - 18-20 ms of the edit on the player's map (docs/PROBLEMS.md R27).
     // The buildings are shared, not copied: their records are replaced, never
-    // changed in place (docs/performance.md #19).
+    // changed in place (docs/source/performance.md #19).
     // NÃO voltar a clonar por JSON.
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
@@ -1804,7 +1804,7 @@ export class RoadDoc {
    * the player could see the next time they drew, undid or reloaded.
    */
   static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore } = {}): RoadDoc {
-    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's (docs/ESCALA.md).
+    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's (docs/source/ESCALA.md).
     const data = rescaleSerializedDoc(saved);
     const repair = options.repair ?? true;
     const doc = new RoadDoc();
@@ -2070,9 +2070,9 @@ export interface SerializedDoc {
     id: number; x: number; y: number; heightOffset?: number; smooth?: boolean;
     control?: JunctionControl; blockedMovements?: readonly string[];
     crossing?: { kind: NodeCrossingKind; segment: number };
-    /** The player's lane connections (docs/VIAS.md V4); absent on every older map. */
+    /** The player's lane connections (docs/source/VIAS.md V4); absent on every older map. */
     laneLinks?: readonly { from: number; fromLane: number; to: number; toLane: number }[];
-    /** Each leg's rule (docs/VIAS.md V5); absent on every older map. */
+    /** Each leg's rule (docs/source/VIAS.md V5); absent on every older map. */
     approachRules?: readonly { segment: number; rule: string }[];
     /** A signal's settings (V5); absent on every older map. */
     signal?: unknown;
@@ -2094,13 +2094,13 @@ export interface SerializedDoc {
     parking?: SegmentParking;
     /** A current structure id, or a legacy one `migrateStructure` maps. */
     structure?: RoadStructure | 'viaduct';
-    /** Retaining walls in its cutting (docs/VIAS.md V3); absent on every older map. */
+    /** Retaining walls in its cutting (docs/source/VIAS.md V3); absent on every older map. */
     cutWalls?: boolean;
   }[];
   readonly terrain?: readonly TerrainStamp[];
   /** `ReliefVersion`; absent on maps made before the natural landform. */
   readonly relief?: number;
-  /** The regional standard of the road paint (docs/VIAS.md V6); absent: 'classic'. */
+  /** The regional standard of the road paint (docs/source/VIAS.md V6); absent: 'classic'. */
   readonly markingStyle?: string;
   /** The ecosystem (`NatureSettings`); absent on maps made before it. */
   readonly nature?: { readonly region: string; readonly seed: number };
@@ -2127,7 +2127,7 @@ export interface SerializedDoc {
   /** Walls, fences and hedges (`barriers.ts`); OPTIONAL like the poles. */
   readonly barriers?: readonly { id: number; kind: string; points: readonly { x: number; y: number }[] }[];
   /**
-   * Modular buildings (docs/buildings.md). OPTIONAL, for the same reason as
+   * Modular buildings. OPTIONAL, for the same reason as
    * the poles: every map saved before buildings existed has no such key.
    */
   readonly buildings?: readonly SerializedBuilding[];
