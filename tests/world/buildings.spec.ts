@@ -263,6 +263,37 @@ describe('picking', () => {
     const top = pickBuilding([b], { ox: 5, oy: 5, oz: 500, dx: 0, dy: 0, dz: -1 }, () => 0)!;
     expect(top.face).toBe('top');
   });
+
+  it('sees past a block the eye stands in (a street-level camera in a yard block)', () => {
+    const near = building({ x: 0, y: 0 });
+    const far = building({ id: asBuildingId(2), x: 0, y: 200 });
+    // The eye inside the near building's block, looking north at the far one's front.
+    const z = levelElevation(near, 1) + 2;
+    const ray = { ox: 2.5 * near.module, oy: 5, oz: z, dx: 0, dy: 1, dz: 0 };
+    expect(pickBuilding([near, far], ray, () => 0)?.building).toBe(far.id);
+    // Its walls are drawn from outside only: from inside, nothing of it is hit.
+    expect(pickBuilding([near], ray, () => 0)).toBeNull();
+  });
+
+  it('takes a yard for the ground it is drawn as, not a block a storey high', () => {
+    // A house with a lawn (an open block) in front of it and beside it, and
+    // another house further north, beyond the lawn's side.
+    const base = building({ x: 0, y: 0 });
+    const body = base.volumes[0]!;
+    const right = body.x + body.w;
+    const lawn = { ...body, id: 99, x: body.x, y: -40, w: right - body.x + 40, d: 40, open: 'grass' as const };
+    const near = { ...base, volumes: [...base.volumes, lawn] };
+    const far = building({ id: asBuildingId(2), x: right + 10, y: 200 });
+    // A pedestrian's eye on the pavement south of the lawn, looking north
+    // over it, beside the near house, at the far one's front.
+    const ray = { ox: right + 20, oy: -60, oz: 1.6, dx: 0, dy: 1, dz: 0 };
+    expect(pickBuilding([near, far], ray, () => 0)?.building).toBe(far.id);
+    // Looking down at the lawn: the lawn's top, at the ground.
+    const down = pickBuilding([near, far], { ox: right + 20, oy: -20, oz: 50, dx: 0, dy: 0, dz: -1 }, () => 0)!;
+    expect(down.building).toBe(near.id);
+    expect(down.face).toBe('top');
+    expect(down.z).toBeCloseTo(0, 6);
+  });
 });
 
 describe('serialisation', () => {

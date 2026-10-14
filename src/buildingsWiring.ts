@@ -100,8 +100,12 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     project: (x, y, z) => deps.view().toScreen({ x, y }, deps.size().w, deps.size().h, z),
     planeAt: (s, z) => deps.view().toWorldAt(s.x, s.y, z, deps.size().w, deps.size().h),
     ray(s) {
-      // Two points on the pixel's line of sight, at two heights, give it.
       const { w, h } = deps.size();
+      // The camera's own line of sight where the view has one (`Viewport.rayAt`):
+      // at street level a pixel over the horizon meets no plane under the eye.
+      const sight = deps.view().rayAt?.(s.x, s.y, w, h);
+      if (sight) return sight;
+      // Looking straight down: two points on the pixel's line of sight, at two heights, give it.
       const low = deps.view().toWorldAt(s.x, s.y, 0, w, h);
       const high = deps.view().toWorldAt(s.x, s.y, 100, w, h);
       const dx = low.x - high.x;

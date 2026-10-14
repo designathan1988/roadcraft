@@ -376,6 +376,13 @@ export function createIsoRig(
     kind: 'iso',
     toWorld: (px, py) => worldAt(px, py),
     toWorldAt: (px, py, atHeight) => worldAt(px, py, atHeight),
+    // The camera's own ray (three's `Raycaster.setFromCamera`), in the map's axes.
+    rayAt(px, py) {
+      ndc.set((px / Math.max(1, width)) * 2 - 1, 1 - (py / Math.max(1, height)) * 2);
+      raycaster.setFromCamera(ndc, camera);
+      const { origin: o, direction: d } = raycaster.ray;
+      return { ox: o.x, oy: -o.z, oz: o.y, dx: d.x, dy: -d.z, dz: d.y };
+    },
     toScreen(p, cssW, cssH, atHeight = 0) {
       projected.set(p.x, atHeight, -p.y).project(camera);
       return {

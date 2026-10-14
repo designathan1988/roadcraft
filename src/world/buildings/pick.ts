@@ -35,6 +35,9 @@ export interface BuildingHit {
   readonly z: number;
 }
 
+/** How thick an open block's plate is picked: its kerb and its edge, under its surface. */
+const OPEN_PLATE = m(0.3);
+
 /**
  * The nearest building face under a ray.
  *
@@ -67,9 +70,11 @@ export function pickBuilding(
     const dx = ray.dx * c + ray.dy * s;
     const dy = -ray.dx * s + ray.dy * c;
     for (const v of b.volumes) {
-      if (v.outline) {
+      if (v.outline && !v.open) {
         const z0 = floor + volumeElevation(b, v, v.base);
         const z1 = floor + volumeHeight(b, v) + roofRise(b, v);
+        // The eye inside it: not seen (as a block's, below).
+        if (ray.oz >= z0 && ray.oz <= z1 && containsPoint(v, o)) continue;
         const makeHit = (t: number, face: FaceId | 'top', along: number): BuildingHit => {
           const lx = o.x + dx * t, ly = o.y + dy * t;
           const z = ray.oz + ray.dz * t;
@@ -105,12 +110,22 @@ export function pickBuilding(
       }
       const [x0, y0, x1, y1] = volumeRectLocal(b, v);
       // The block's own heights: a block at a floor of its own (`Volume.lift`) is picked where it is drawn.
-      const z0 = floor + volumeElevation(b, v, v.base);
-      const z1 = floor + volumeHeight(b, v) + roofRise(b, v) * 0.5;
+      // An open block (a yard, a drive: `Volume.open`) is drawn as ground,
+      // its plate at the lot's level (`lots.ts`), so it is picked as that
+      // plate. NOT as a block a storey high: a ray from a street-level eye
+      // entered the neighbour's lawn a metre and a half off, under every
+      // pixel, and a click on a house demolished the house behind the camera
+      // (seen in the game, 2026-10-14).
+      const z0 = v.open ? floor + Math.min(v.terrace ?? 0, v.ramp ?? 0, 0) - OPEN_PLATE : floor + volumeElevation(b, v, v.base);
+      const z1 = v.open ? floor + Math.max(v.terrace ?? 0, v.ramp ?? 0, 0) : floor + volumeHeight(b, v) + roofRise(b, v) * 0.5;
       const hit = slab([o.x, o.y, ray.oz], [dx, dy, ray.dz], [x0, y0, z0], [x1, y1, z1]);
-      if (!hit || (best && hit.t >= best.t)) continue;
+      // A block the ray starts in (the eye at street level inside a porch or
+      // a yard's block) is not seen: its walls are drawn from outside only
+      // (`FrontSide`), and its exit was taken as a hit at the eye - every
+      // pixel picked it.
+      if (!hit || hit.inside || (best && hit.t >= best.t)) continue;
       let t = hit.t;
-      if (hit.axis === 2 && ray.dz !== 0) {
+      if (hit.axis === 2 && ray.dz !== 0 && !v.open) {
         for (let i = 0; i < 4; i++) {
           const p = { x: o.x + dx * t, y: o.y + dy * t };
           t = (floor + volumeHeight(b, v) + roofHeightAt(b, v, p) - ray.oz) / ray.dz;
@@ -150,7 +165,7 @@ export function pickBuilding(
     for (const el of b.elements ?? []) {
       const [x0, y0, x1, y1] = elementRect(el);
       const hit = slab([o.x, o.y, ray.oz], [dx, dy, ray.dz], [x0, y0, floor + el.z], [x1, y1, floor + el.z + el.h]);
-      if (!hit || (best && hit.t >= best.t)) continue;
+      if (!hit || hit.inside || (best && hit.t >= best.t)) continue;
       const lx = o.x + dx * hit.t;
       const ly = o.y + dy * hit.t;
       best = {
@@ -191,7 +206,7 @@ function slab(
   d: readonly [number, number, number],
   lo: readonly [number, number, number],
   hi: readonly [number, number, number],
-): { t: number; axis: number; negative: boolean } | null {
+): { t: number; axis: number; negative: boolean; inside: boolean } | null {
   let tNear = -Infinity;
   let tFar = Infinity;
   let axis = -1;
@@ -221,5 +236,5 @@ function slab(
     if (tNear > tFar) return null;
   }
   if (tFar < 0 || axis < 0) return null;
-  return { t: Math.max(0, tNear), axis, negative };
+  return { t: Math.max(0, tNear), axis, negative, inside: tNear < 0 };
 }

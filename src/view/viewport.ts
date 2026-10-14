@@ -75,6 +75,15 @@ export interface Viewport {
   slide(right: number, forward: number): void;
   /** Where the camera's eye is (x, y on the map, z its height), or null for a flat view. */
   readonly eye: { readonly x: number; readonly y: number; readonly z: number } | null;
+  /**
+   * The pointer's line of sight (x, y on the map, z up; a unit direction),
+   * from the camera into the scene: what is under a pixel is the first thing
+   * on it. Two points of `toWorldAt` do not give it where the line misses one
+   * of their planes (a pixel over the horizon, at street level): `toWorldAt`
+   * then answers the view's centre, and a click on a house picked its
+   * neighbour. Absent where the view looks straight down.
+   */
+  rayAt?(px: number, py: number, cssW: number, cssH: number): { readonly ox: number; readonly oy: number; readonly oz: number; readonly dx: number; readonly dy: number; readonly dz: number };
   /** Turns the view. A no-op where there is nothing to turn. */
   rotate(quarterTurns: number, px: number, py: number, cssW: number, cssH: number): void;
   /**
