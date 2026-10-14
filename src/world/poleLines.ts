@@ -217,7 +217,7 @@ function stateOf(net: Network): NetworkLines {
  * every cell, the lines and their route graphs were 190 MB of a city of
  * 5 400 buildings and would be gigabytes on the whole map (2026-10-14);
  * only the pole tool reads them, a few cells at a time.
- * NÃO voltar a guardar a cidade inteira: a memória cresce com o mapa.
+ * DO NOT keep the whole city again: the memory grows with the map.
  */
 const REGIONAL_KEPT = 64;
 
@@ -245,21 +245,31 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
     poleLinesWork.kept++;
     return known.lines;
   }
-  const segments = new Set<SegmentId>(), nodes = new Set<NodeId>();
-  for (const r of sources) {
-    for (const id of net.segmentCells.idsMeeting(r)) segments.add(id);
-    for (const id of net.junctionCells.idsMeeting(r)) nodes.add(id);
-  }
+  const lines = poleLinesOf(net, rect);
+  if (byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
+  byRect.set(key, { segmentEpoch, junctionEpoch, stamp, lines });
+  return lines;
+}
+
+/**
+ * The pole lines inside `rect`, made now and not kept (`poleLinesIn` keeps
+ * them): from the ribbons and junctions within `LINES_HALO` of it only.
+ * Whoever plans many runs over one place (a generated city's power lines,
+ * `editor/poles.ts` `poleRunPlanner`) makes them once and holds them.
+ */
+export function poleLinesOf(net: Network, rect: ChangeRect): PoleLines {
+  const around = grow(rect, LINES_HALO);
+  const segments = net.segmentCells.idsMeeting(around), nodes = net.junctionCells.idsMeeting(around);
   const ribbons: SegmentRibbon[] = [];
   const ends = new Set<NodeId>();
-  for (const id of [...segments].sort((a, b) => a - b)) {
+  for (const id of segments) {
     const ribbon = net.ribbons.get(id);
     if (ribbon) ribbons.push(ribbon);
     const segment = net.doc.segment(id);
     if (segment) { ends.add(segment.a); ends.add(segment.b); }
   }
   const junctions: [NodeId, ReadonlyMap<SurfaceLevel, Junction>][] = [];
-  for (const id of [...nodes].sort((a, b) => a - b)) {
+  for (const id of nodes) {
     const byLevel = net.junctions.get(id);
     if (byLevel) junctions.push([id, byLevel]);
   }
@@ -271,8 +281,6 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
     contours, paving, kerbed, edges: contourEdges(contours),
     accesses: crossingAccessesAt(net, [...ends].sort((a, b) => a - b)),
   };
-  if (byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
-  byRect.set(key, { segmentEpoch, junctionEpoch, stamp, lines });
   poleLinesWork.made++;
   poleLinesWork.segments += ribbons.length;
   return lines;

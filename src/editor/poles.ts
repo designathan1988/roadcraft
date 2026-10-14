@@ -4,10 +4,10 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import type { CrossingAccess } from '@world/landscape';
 import { CROSSWALK_DEPTH } from '@world/approach';
-import { POLE_KERB_INSET, nearestOnContour, onFootway, poleLinesAt, poleLinesIn, type OnContour, type PoleLines } from '@world/poleLines';
+import { nearestOnContour, onFootway, poleLinesAt, poleLinesIn, poleLinesOf, type OnContour, type PoleLines } from '@world/poleLines';
+import { type RouteGraph, buildRouteGraph, route } from './poleRoutes';
 import { CELL } from '@world/cells';
 import type { ChangeRect } from '@world/changes';
-import { CURB_BAND, Level } from '@world/roadTypes';
 import { DEFAULT_POLE_SPACING, MAX_POLE_SPACING, MIN_POLE_SPACING, poleCarriesLamp, type PoleLampMode } from '@world/utilities';
 import { m } from '@world/units';
 
@@ -86,11 +86,16 @@ export interface PoleSnap {
  * refused.
  */
 export function snapPole(doc: RoadDoc, net: Network, at: Vec2, reach: number): PoleSnap {
+  return snapOn(doc, net, poleLinesAt(net, at), at, reach);
+}
+
+/** `snapPole` onto the contours of `lines` (any set of lines holding the point's cell). */
+function snapOn(doc: RoadDoc, net: Network, lines: PoleLines, at: Vec2, reach: number): PoleSnap {
   const hit = doc.poleNear(at, reach);
   if (hit) return { at: hit, kind: 'pole', pole: hit.id };
   // Anywhere on the pavement takes its line; off it, only just beside the line.
   const footway = onFootway(net, at);
-  const on = nearestOnContour(poleLinesAt(net, at), at, footway ? m(12) : LINE_CATCH);
+  const on = nearestOnContour(lines, at, footway ? m(12) : LINE_CATCH);
   if (on && onFootway(net, on.at)) return { at: on.at, kind: 'footway' };
   return { at: { x: at.x, y: at.y }, kind: 'free' };
 }
@@ -134,216 +139,19 @@ function placeOf(lines: PoleLines, snap: PoleSnap): OnContour | null {
  * the street, round its end or into the next street and back (the player's
  * report of 2026-10-09: 176 units of line for 21.6 straight across).
  */
-interface RouteGraph {
-  /**
-   * Every vertex of every contour, and every point where an edge crosses a
-   * line of the fixed grid of `STATION_STEP` (x or y a whole number of
-   * steps): placed by the place alone, so the stations of a stretch of kerb
-   * line are the same whichever lines it was read from (the region's,
-   * `poleLinesIn`, cut at its border, or the whole map's). An even spacing
-   * along each edge moved them whenever the edge was cut elsewhere.
-   */
-  readonly stations: readonly { readonly contour: number; readonly s: number; readonly at: Vec2 }[];
-  /** Each contour's first station index and count; its stations run in order of `s`. */
-  readonly runs: readonly { readonly first: number; readonly count: number }[];
-  /** Spans over a street, by station: the station across and the length. */
-  readonly spans: ReadonlyMap<number, readonly { readonly to: number; readonly length: number }[]>;
-}
-
-/** Station spacing along a contour. */
-const STATION_STEP = m(2);
-/** A span over the street costs this much more than its length: the line keeps to one side unless crossing saves it. */
-const CROSSING_COST = m(8);
-/** A cast across the street must land this close to a contour to make a span there. */
-const SPAN_LANDING = m(1);
+/** A run's end off its contour: the pole it starts or ends at, put before or after the route. */
+const endOff = (snap: PoleSnap, on: OnContour): Vec2 | null => (snap.kind === 'pole' && on.distance > 1e-3 ? snap.at : null);
 
 /** The graph of one set of lines (`poleLinesIn`): made again only with them. */
 const graphs = new WeakMap<PoleLines, RouteGraph>();
 
-/** The stations of a run either side of a place on its contour: [before, after]. */
-function stationsAround(g: RouteGraph, hit: OnContour): [number, number] {
-  const run = g.runs[hit.contour]!;
-  // The last station at or before `s` (binary search on the run's arc lengths).
-  let lo = 0, hi = run.count - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (g.stations[run.first + mid]!.s <= hit.s) lo = mid; else hi = mid - 1;
-  }
-  return [run.first + lo, run.first + ((lo + 1) % run.count)];
-}
-
-/**
- * The route graph of the lines of `region` (`poleLinesIn`): their contours'
- * stations, and the spans over the streets that reach the region.
- */
+/** The route graph of the lines of `region` (`poleLinesIn`), made once per set of lines. */
 function routeGraph(net: Network, lines: PoleLines, region: ChangeRect): RouteGraph {
   const known = graphs.get(lines);
   if (known) return known;
-  const { contours } = lines;
-  const stations: { contour: number; s: number; at: Vec2 }[] = [];
-  const runs: { first: number; count: number }[] = [];
-  contours.forEach((line, contour) => {
-    const first = stations.length;
-    const xy = line.xy, cum = line.cum;
-    // A contour repeats its first point at the end: every edge, none of them twice.
-    for (let i = 0; i + 1 < line.n; i++) {
-      const x0 = xy[i * 2]!, y0 = xy[i * 2 + 1]!, x1 = xy[i * 2 + 2]!, y1 = xy[i * 2 + 3]!;
-      const len = cum[i + 1]! - cum[i]!;
-      if (len <= 0) continue;
-      stations.push({ contour, s: cum[i]!, at: { x: x0, y: y0 } });
-      const ts: number[] = [];
-      for (const [a, b] of [[x0, x1], [y0, y1]] as const) {
-        if (a === b) continue;
-        const k0 = Math.floor(Math.min(a, b) / STATION_STEP) + 1, k1 = Math.ceil(Math.max(a, b) / STATION_STEP) - 1;
-        for (let k = k0; k <= k1; k++) ts.push((k * STATION_STEP - a) / (b - a));
-      }
-      ts.sort((p, q) => p - q);
-      for (const t of ts) {
-        if (t <= 1e-9 || t >= 1 - 1e-9) continue;
-        stations.push({ contour, s: cum[i]! + len * t, at: { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t } });
-      }
-    }
-    runs.push({ first, count: stations.length - first });
-  });
-  const graphSoFar: RouteGraph = { stations, runs, spans: new Map() };
-  const stationAt = (hit: OnContour): number => {
-    const [before, after] = stationsAround(graphSoFar, hit);
-    return dist(stations[before]!.at, hit.at) <= dist(stations[after]!.at, hit.at) ? before : after;
-  };
-  const spans = new Map<number, { to: number; length: number }[]>();
-  const seen = new Set<string>();
-  for (const id of net.segmentCells.idsMeeting(region)) {
-    const ribbon = net.ribbons.get(id);
-    if (!ribbon || ribbon.road.sidewalk <= 0) continue;
-    const centre = ribbon.centre[Level.Asphalt];
-    if (!centre || centre.length <= 0) continue;
-    // The kerb line stands a kerb stone and the inset off the carriageway's edge.
-    const reach = ribbon.road.width / 2 + CURB_BAND + POLE_KERB_INSET;
-    for (let s = STATION_STEP / 2; s < centre.length; s += STATION_STEP) {
-      const f = centre.sampleAt(s);
-      const nx = -f.t.y, ny = f.t.x;
-      const left = nearestOnContour(lines, { x: f.p.x + nx * reach, y: f.p.y + ny * reach }, SPAN_LANDING);
-      const right = nearestOnContour(lines, { x: f.p.x - nx * reach, y: f.p.y - ny * reach }, SPAN_LANDING);
-      if (!left || !right || !onFootway(net, left.at) || !onFootway(net, right.at)) continue;
-      const a = stationAt(left), b = stationAt(right);
-      if (a === b) continue;
-      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const length = dist(stations[a]!.at, stations[b]!.at);
-      if (length > MAX_POLE_SPACING) continue;
-      for (const [from, to] of [[a, b], [b, a]] as const) {
-        const list = spans.get(from);
-        if (list) list.push({ to, length }); else spans.set(from, [{ to, length }]);
-      }
-    }
-  }
-  const graph = { stations, runs, spans };
+  const graph = buildRouteGraph(net, lines, region);
   graphs.set(lines, graph);
   return graph;
-}
-
-/**
- * The route of a run, as a list of points: the shortest way through the route
- * graph from where the run starts on a contour to where it ends - round the
- * kerb line, and over a street by a square span where that is shorter. Null
- * when no way joins them.
- */
-function route(g: RouteGraph, from: PoleSnap, a: OnContour, to: PoleSnap, b: OnContour): { readonly path: Vec2[]; readonly cost: number } | null {
-  const n = g.stations.length;
-  // Two extra nodes, the run's ends, each joined to the stations either side of it on its contour.
-  const START = n, END = n + 1;
-  const [a0, a1] = stationsAround(g, a);
-  const [b0, b1] = stationsAround(g, b);
-  const distTo = new Float64Array(n + 2).fill(Infinity);
-  const prev = new Int32Array(n + 2).fill(-1);
-  const done = new Uint8Array(n + 2);
-  distTo[START] = 0;
-  const at = (node: number): Vec2 => (node === START ? a.at : node === END ? b.at : g.stations[node]!.at);
-  /**
-   * Ties go by place, never by number: on a straight street, crossing it
-   * here or a few metres on costs the same, and the stations are numbered
-   * differently in a region's lines and in the whole map's - the route must
-   * not hang on that (`tests/world/poleLinesCells.spec.ts`).
-   */
-  const placedBefore = (i: number, j: number): boolean => {
-    if (i === START || j === END) return i !== j;
-    if (j === START || i === END) return false;
-    const p = at(i), q = at(j);
-    return p.x < q.x || (p.x === q.x && p.y < q.y);
-  };
-  // A binary heap of (cost, node), the lower cost first, then the node placed first.
-  const heap: number[] = [];
-  const lower = (u: number, v: number): boolean =>
-    heap[u * 2]! < heap[v * 2]! || (heap[u * 2] === heap[v * 2] && placedBefore(heap[u * 2 + 1]!, heap[v * 2 + 1]!));
-  const push = (cost: number, node: number): void => {
-    heap.push(cost, node);
-    let i = heap.length / 2 - 1;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (!lower(i, p)) break;
-      [heap[p * 2], heap[i * 2]] = [heap[i * 2]!, heap[p * 2]!];
-      [heap[p * 2 + 1], heap[i * 2 + 1]] = [heap[i * 2 + 1]!, heap[p * 2 + 1]!];
-      i = p;
-    }
-  };
-  const pop = (): number => {
-    const node = heap[1]!;
-    const lastNode = heap.pop()!, lastCost = heap.pop()!;
-    if (heap.length) {
-      heap[0] = lastCost; heap[1] = lastNode;
-      let i = 0;
-      for (;;) {
-        const l = i * 2 + 1, r = l + 1;
-        let m0 = i;
-        if (l < heap.length / 2 && lower(l, m0)) m0 = l;
-        if (r < heap.length / 2 && lower(r, m0)) m0 = r;
-        if (m0 === i) break;
-        [heap[m0 * 2], heap[i * 2]] = [heap[i * 2]!, heap[m0 * 2]!];
-        [heap[m0 * 2 + 1], heap[i * 2 + 1]] = [heap[i * 2 + 1]!, heap[m0 * 2 + 1]!];
-        i = m0;
-      }
-    }
-    return node;
-  };
-  /**
-   * Costs in whole micrometres: a sum of integers is exact whatever order it
-   * is added in, so two ways of the same length cost the same (in metres, the
-   * last digit hung on the order, and the tie fell differently in a region's
-   * lines and in the whole map's).
-   */
-  const relax = (from: number, to: number, metres: number): void => {
-    const next = distTo[from]! + Math.round(metres * 1e6);
-    if (next < distTo[to]!) { distTo[to] = next; prev[to] = from; push(next, to); }
-    // As cheap a way in: the one from the station placed first.
-    else if (next === distTo[to] && !done[to] && placedBefore(from, prev[to]!)) prev[to] = from;
-  };
-  push(0, START);
-  while (heap.length) {
-    const node = pop();
-    if (done[node]) continue;
-    done[node] = 1;
-    if (node === END) break;
-    const here = at(node);
-    if (node === START) {
-      for (const s of [a0, a1]) relax(START, s, dist(here, at(s)));
-      if (a.contour === b.contour && a0 === b0) relax(START, END, dist(here, b.at));
-      continue;
-    }
-    const st = g.stations[node]!;
-    const run = g.runs[st.contour]!;
-    const i = node - run.first;
-    for (const j of [run.first + ((i + 1) % run.count), run.first + ((i - 1 + run.count) % run.count)]) relax(node, j, dist(here, at(j)));
-    for (const span of g.spans.get(node) ?? []) relax(node, span.to, span.length + CROSSING_COST);
-    if (node === b0 || node === b1) relax(node, END, dist(here, b.at));
-  }
-  if (!done[END]) return null;
-  const nodes: number[] = [];
-  for (let k = END; k !== -1; k = prev[k]!) nodes.push(k);
-  nodes.reverse();
-  const head: Vec2[] = from.kind === 'pole' && a.distance > 1e-3 ? [from.at] : [];
-  const tail: Vec2[] = to.kind === 'pole' && b.distance > 1e-3 ? [to.at] : [];
-  return { path: [...head, ...nodes.map(at), ...tail], cost: distTo[END]! / 1e6 };
 }
 
 /** A route searched first this far round its two ends, then twice as far, and so on. */
@@ -375,13 +183,88 @@ function routeRun(net: Network, from: PoleSnap, to: PoleSnap, first = ROUTE_MARG
     const a = placeOf(lines, from);
     const b = placeOf(lines, to);
     if (!a || !b) return 'noPlace';
-    const found = route(routeGraph(net, lines, region), from, a, to, b);
+    const found = route(routeGraph(net, lines, region), a, b, endOff(from, a), endOff(to, b));
     // How far the region reaches past the ends, on its nearest side.
     const reach = Math.min(x0 - region[0], y0 - region[1], region[2] - x1, region[3] - y1);
     const last = margin >= ROUTE_MARGIN_MOST;
     if (found && (found.cost < 2 * reach || last)) return { path: found.path, lines };
     if (last) return 'noPath';
   }
+}
+
+/** How a run is planned: the lines its ends snap onto, and its route. */
+interface Routing {
+  linesAt(at: Vec2): PoleLines;
+  route(from: PoleSnap, to: PoleSnap): { readonly path: Vec2[]; readonly lines: PoleLines } | 'noPlace' | 'noPath';
+}
+
+/** The pole tool's planning: each end on its cell's lines, the route over a region round the run (`routeRun`). */
+const regional = (net: Network, first: number): Routing => ({
+  linesAt: (at) => poleLinesAt(net, at),
+  route: (from, to) => routeRun(net, from, to, first),
+});
+
+/** The side of a planner's tile, world units (whole cells). */
+const TILE = CELL * 4;
+
+/** Plans many runs over the same streets (`poleRunPlanner`). */
+export interface PoleRunPlanner {
+  plan(doc: RoadDoc, rawFrom: Vec2, rawTo: Vec2, reach: number, spacing?: number, lamps?: PoleLampMode): PoleRunPlan;
+}
+
+/**
+ * Plans the runs of a network that is not changing meanwhile - a generated
+ * city's power lines (`roads/powerLine.ts`) - over lines and route graphs made
+ * once per tile of the map and held until the planner is dropped. Planning
+ * each street on its own made the lines and the graph of a region round it
+ * again, street after street, over regions that mostly overlap: the same kerb
+ * lines were cut, offset and cast across many times over (the power lines of
+ * a city of radius 2,560 m were 39 s of its 170 s, growing faster than the
+ * city). A run is routed over the tile its start is in, whose lines reach a
+ * whole cell past it; one that could leave them (an end within `ROUTE_MARGIN`
+ * of their border, or a route longer than twice its distance to the border)
+ * is planned as the pole tool plans it, so every route is the whole map's.
+ * DO NOT plan a batch of runs one region each: the lines are the same.
+ */
+export function poleRunPlanner(net: Network): PoleRunPlanner {
+  const tiles = new Map<string, { readonly region: ChangeRect; readonly lines: PoleLines; readonly graph: RouteGraph }>();
+  const tileAt = (p: Vec2): { readonly region: ChangeRect; readonly lines: PoleLines; readonly graph: RouteGraph } => {
+    const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+    const key = `${tx},${ty}`;
+    let tile = tiles.get(key);
+    if (!tile) {
+      const region: ChangeRect = [tx * TILE - CELL, ty * TILE - CELL, (tx + 1) * TILE + CELL, (ty + 1) * TILE + CELL];
+      const lines = poleLinesOf(net, region);
+      tile = { region, lines, graph: buildRouteGraph(net, lines, region) };
+      tiles.set(key, tile);
+    }
+    return tile;
+  };
+  const inner = (r: ChangeRect, p: Vec2): boolean =>
+    p.x >= r[0] + ROUTE_MARGIN && p.x <= r[2] - ROUTE_MARGIN && p.y >= r[1] + ROUTE_MARGIN && p.y <= r[3] - ROUTE_MARGIN;
+  return {
+    plan(doc, rawFrom, rawTo, reach, spacing = DEFAULT_POLE_SPACING, lamps = 'alternate') {
+      const tile = tileAt(rawFrom);
+      if (!inner(tile.region, rawFrom) || !inner(tile.region, rawTo)) {
+        return computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, regional(net, ROUTE_MARGIN));
+      }
+      return computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, {
+        linesAt: () => tile.lines,
+        route: (from, to) => {
+          const a = placeOf(tile.lines, from);
+          const b = placeOf(tile.lines, to);
+          if (!a || !b) return 'noPlace';
+          const found = route(tile.graph, a, b, endOff(from, a), endOff(to, b));
+          const r = tile.region;
+          const x0 = Math.min(from.at.x, to.at.x), y0 = Math.min(from.at.y, to.at.y);
+          const x1 = Math.max(from.at.x, to.at.x), y1 = Math.max(from.at.y, to.at.y);
+          // As in `routeRun`: a way out of the lines and back is longer than twice the distance to their border.
+          if (found && found.cost < 2 * Math.min(x0 - r[0], y0 - r[1], r[2] - x1, r[3] - y1)) return { path: found.path, lines: tile.lines };
+          return routeRun(net, from, to, ROUTE_MARGIN);
+        },
+      });
+    },
+  };
 }
 
 /** Indices of the points Ramer-Douglas-Peucker keeps at `tolerance`. */
@@ -445,7 +328,7 @@ export function planPoleRun(
   if (k && k.doc === doc && k.net === net && k.revision === net.revision && k.poles === poles &&
       k.fx === rawFrom.x && k.fy === rawFrom.y && k.tx === rawTo.x && k.ty === rawTo.y &&
       k.reach === reach && k.spacing === spacing && k.lamps === lamps) return k.plan;
-  const plan = computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, ROUTE_MARGIN);
+  const plan = computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, regional(net, ROUTE_MARGIN));
   lastPlan = { doc, net, revision: net.revision, poles, fx: rawFrom.x, fy: rawFrom.y, tx: rawTo.x, ty: rawTo.y, reach, spacing, lamps, plan };
   return plan;
 }
@@ -466,7 +349,7 @@ export function planPoleRunWhole(
   doc: RoadDoc, net: Network, rawFrom: Vec2, rawTo: Vec2, reach: number,
   spacing = DEFAULT_POLE_SPACING, lamps: PoleLampMode = 'alternate',
 ): PoleRunPlan {
-  return computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, ROUTE_MARGIN_MOST);
+  return computePoleRun(doc, net, rawFrom, rawTo, reach, spacing, lamps, regional(net, ROUTE_MARGIN_MOST));
 }
 
 function computePoleRun(
@@ -477,15 +360,15 @@ function computePoleRun(
   reach: number,
   spacing: number,
   lamps: PoleLampMode,
-  margin: number,
+  routing: Routing,
 ): PoleRunPlan {
-  const from = snapPole(doc, net, rawFrom, reach);
-  const to = snapPole(doc, net, rawTo, reach);
+  const from = snapOn(doc, net, routing.linesAt(rawFrom), rawFrom, reach);
+  const to = snapOn(doc, net, routing.linesAt(rawTo), rawTo, reach);
   const refuse = (refused: PoleRunRefusal): PoleRunPlan => ({ from, to, poles: [], refused });
   if (from.kind === 'free' || to.kind === 'free') return refuse('offFootway');
   if (from.pole !== undefined && from.pole === to.pole) return { from, to, poles: [] };
   if (dist(from.at, to.at) < 1e-3) return { from, to, poles: [] };
-  const routed = routeRun(net, from, to, margin);
+  const routed = routing.route(from, to);
   if (routed === 'noPlace' || routed === 'noPath') return refuse('noPath');
   const { path, lines } = routed;
   if (path.length < 2) return refuse('noPath');
