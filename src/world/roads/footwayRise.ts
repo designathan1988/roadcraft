@@ -21,6 +21,7 @@ interface FlushIndex {
 
 const indexes = new WeakMap<Network, FlushIndex>();
 
+/** @rebuild Lists the flush roads once a network revision; every other question returns that list. */
 function flushIndex(net: Network): FlushIndex {
   const known = indexes.get(net);
   if (known && known.revision === net.revision) return known;

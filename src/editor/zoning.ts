@@ -419,6 +419,8 @@ function streetFloor(ctx: SiteContext, local: (lx: number, ly: number) => Vec2, 
 const CANDIDATES = 4;
 /** How far round a lot the buildings it should not look like are read: the 100 m of the rule it answers (`tests/world/variety.spec.ts`; at 90 m a twin 95 m off went unseen). */
 const LIKE_REACH = m(100);
+/** How far beyond a footway's edge a point still counts as on the street, for a corner lot (`cornerOf`). */
+const STREET_MARGIN = m(0.6);
 /** How near the last building grown an open lot must be to grow next (the street filling along). */
 const GROW_ON_REACH = m(70);
 
@@ -477,9 +479,13 @@ function neighbourStoreys(doc: RoadDoc, anchor: Vec2, width: number): number[] {
 function cornerOf(ctx: SiteContext, anchor: Vec2, u: Vec2, n: Vec2, width: number, depth: number): 'left' | 'right' | undefined {
   const net = ctx.net;
   if (!net) return undefined;
-  const ribbons = [...net.ribbons.values()].filter((r) => ctx.doc.segment(r.id)?.structure === 'ground');
-  const onStreet = (p: Vec2): boolean => ribbons.some((r) => {
-    const bb = r.full.bbox, reach = halfWidth(r.road, Level.Sidewalk) + m(0.6);
+  // The ribbons filed round the point (`Network.ribbonsMeeting`): a ribbon
+  // within its footway and the margin of it has its box, which holds the
+  // footway, within the margin of the point. Not every ribbon of the map,
+  // filtered for each lot grown.
+  const onStreet = (p: Vec2): boolean => net.ribbonsMeeting([p.x - STREET_MARGIN, p.y - STREET_MARGIN, p.x + STREET_MARGIN, p.y + STREET_MARGIN]).some((r) => {
+    if (ctx.doc.segment(r.id)?.structure !== 'ground') return false;
+    const bb = r.full.bbox, reach = halfWidth(r.road, Level.Sidewalk) + STREET_MARGIN;
     if (p.x < bb.minX - reach || p.x > bb.maxX + reach || p.y < bb.minY - reach || p.y > bb.maxY + reach) return false;
     return r.full.distanceTo(p) < reach;
   });
@@ -513,35 +519,26 @@ function quarterOf(anchor: Vec2, n: Vec2): { character: number; era: Era } {
   return { character, era };
 }
 
-/** Where the building grown last stands (the highest id grown on a lot), or null. */
-function lastGrown(doc: RoadDoc): Vec2 | null {
-  let best: Building | null = null;
-  for (const l of doc.lots) {
-    if (l.building === undefined) continue;
-    const b = doc.buildings.get(l.building as Parameters<typeof doc.buildings.get>[0]);
-    if (b && (!best || b.id > best.id)) best = b;
-  }
-  return best ? { x: best.x, y: best.y } : null;
-}
-
 /** @perItem Runs once a building grown (`growSlice`, the 500 ms growth): nothing it reaches may walk the map. */
 export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number): number | null {
   const { doc } = ctx;
-  const standing = (b: number | undefined): boolean => b !== undefined && doc.buildings.has(b as Parameters<typeof doc.buildings.has>[0]);
-  const open = doc.lots.filter((l) => l.use && !standing(l.building) && !refused.has(l.id));
-  if (!open.length) return null;
+  // The open lots kept by the document (`world/openLots.ts`): the lot drawn,
+  // the last grown and the ones round it without reading every lot.
+  const open = doc.openLots;
+  const count = open.count(refused);
+  if (!count) return null;
   const rng = new Rng((seed ^ Math.imul(doc.buildings.nextId, 0x9e3779b1)) >>> 0);
   // The street fills along: the open lot nearest the last building grown,
   // when one is near (the player sees the street they zoned fill in, one
   // house after the next); anywhere else, a lot at random.
-  let lot = open[rng.int(0, open.length - 1)]!;
-  const last = lastGrown(doc);
+  let lot = open.at(rng.int(0, count - 1));
+  const last = open.lastGrown();
   if (last) {
     let best = GROW_ON_REACH;
     // Nearer by a millimetre at least: two lots as near (a street's two
     // sides) are told apart by the list's order, not by rounding - which
     // took one at 0.4 m a unit and the other at 1.
-    for (const l of open) {
+    for (const l of open.near(last, GROW_ON_REACH)) {
       const d = apart(lotCentre(l), last);
       if (d < best - m(0.001)) { best = d; lot = l; }
     }
@@ -673,13 +670,11 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
       result = addPlaced(ctx, placed());
     }
     if (!result.ok || result.id === undefined) continue;
-    const at = doc.lots.findIndex((l) => l.id === lot.id);
-    doc.lots[at] = { ...lot, building: result.id as number };
     const where = rectAround(lot.corners);
-    doc.lotsChanged(where ? [where] : null, 'prédio cresceu no lote');
+    open.grew(lot, result.id as number, where ? [where] : null, 'prédio cresceu no lote');
     return result.id as number;
   }
-  refused.add(lot.id);
+  open.refuse(lot, refused);
   return null;
 }
 

@@ -59,3 +59,16 @@ export function orientedBox(h: readonly Vec2[]): { c: Vec2; u: Vec2; v: Vec2; L:
   if (best.D > best.L) best = { ...best, u: best.v, v: { x: -best.v.y, y: best.v.x }, L: best.D, D: best.L };
   return best;
 }
+
+/** The boundary's area centroid (the corners' mean for a degenerate one). */
+export function lotCentre(l: { readonly corners: readonly Vec2[] }): Vec2 {
+  const q = l.corners;
+  let a = 0, x = 0, y = 0;
+  for (let i = 0; i < q.length; i++) {
+    const p = q[i]!, r = q[(i + 1) % q.length]!;
+    const c = p.x * r.y - r.x * p.y;
+    a += c; x += (p.x + r.x) * c; y += (p.y + r.y) * c;
+  }
+  if (Math.abs(a) < 1e-9) return { x: q.reduce((s, p) => s + p.x, 0) / q.length, y: q.reduce((s, p) => s + p.y, 0) / q.length };
+  return { x: x / (3 * a), y: y / (3 * a) };
+}

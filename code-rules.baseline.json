@@ -150,7 +150,6 @@
  "whole-map-per-frame  src/world/lots.ts planLotsSteps  spread RoadDoc.segments": 1,
  "whole-map-per-frame  src/world/parkingLayout.ts lotEntrances  for BuildingStore.all": 1,
  "whole-map-per-frame  src/world/parkingLayout.ts parkingLayout  for Network.ribbons": 1,
- "whole-map-per-frame  src/world/roads/footwayRise.ts flushIndex  for Network.ribbons": 1,
  "whole-map-per-frame  src/world/roads/streetNames.ts nameItemSegment  for Network.ribbons": 1,
  "whole-map-per-frame  src/world/roads/streetNames.ts streetNameOf  for RoadDoc.landscape": 1,
  "whole-map-per-frame  src/world/solids.ts solidsOf  for BuildingStore.all": 1,
@@ -159,12 +158,5 @@
  "whole-map-per-frame  src/world/solids.ts solidsOf  for RoadDoc.poles": 1,
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/world/walkways.ts walkwaySteps  spread RoadDoc.segments": 1,
- "whole-map-per-frame  src/world/zoneGrid.ts pavedTester  spread Network.ribbons": 1,
- "whole-map-per-item  src/editor/zoning.ts cornerOf  spread Network.ribbons": 1,
- "whole-map-per-item  src/editor/zoning.ts growOnLot  filter RoadDoc.lots": 1,
- "whole-map-per-item  src/editor/zoning.ts growOnLot  findIndex RoadDoc.lots": 1,
- "whole-map-per-item  src/editor/zoning.ts growOnLot  for open(RoadDoc.lots)": 1,
- "whole-map-per-item  src/editor/zoning.ts lastGrown  for RoadDoc.lots": 1,
- "whole-map-per-item  src/editor/zoning.ts onStreet  some ribbons(Network.ribbons)": 1,
- "whole-map-per-item  src/world/roads/footwayRise.ts flushIndex  for Network.ribbons": 1
+ "whole-map-per-frame  src/world/zoneGrid.ts pavedTester  spread Network.ribbons": 1
 }

@@ -3,6 +3,7 @@ import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, no
 import { type LaneLink, linksDigest, normalizeLaneLinks } from './roads/connectors';
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
 import { isLot, type Lot } from './lots';
+import { OpenLots } from './openLots';
 import type { Vec2 } from '@core/vec2';
 import { type CurveShape, fitShapeToRadius } from '@core/bezier';
 import {
@@ -320,6 +321,19 @@ export class RoadDoc {
   /** The blocks and strips already cut into lots, so a lot deleted on purpose is not made again. */
   readonly lotKeys: string[] = [];
   nextLotId = 1;
+  /** The open lots in order and by place, for the growth (`openLots.ts`): made when first asked, checked against the diary at every question. */
+  private openLotsIndex: OpenLots<Lot> | null = null;
+  get openLots(): OpenLots<Lot> {
+    return this.openLotsIndex ??= new OpenLots<Lot>({
+      lots: this.lots,
+      lotRevision: () => this.lotRevision,
+      standing: (id) => this.buildings.has(id as BuildingId),
+      place: (id) => { const b = this.buildings.get(id as BuildingId); return b ? { x: b.x, y: b.y } : null; },
+      buildingsRevision: () => this.buildings.revision,
+      buildingsSince: (serial) => this.changes.since(serial, ['buildings']),
+      lotsChanged: (rects, cause) => this.lotsChanged(rects, cause),
+    });
+  }
 
   /**
    * The zoning or the lots changed there (`zoneRevision`, `lotRevision`):

@@ -6,7 +6,7 @@ import { Level, halfWidth } from './roadTypes';
 import { difference } from '@core/clipper';
 import { levelPolygons } from './surfaces';
 import { PavingIndex } from './pavingIndex';
-import { hull, orientedBox, simplifyRing } from './lotRings';
+import { hull, lotCentre, orientedBox, simplifyRing } from './lotRings';
 import { offsetRing } from './buildings/footprints';
 import { touchesRoad } from './buildings/validate';
 import { m, stepsIn } from './units';
@@ -74,18 +74,7 @@ const TWO_ROWS = m(44);
 const MIN_LOT = m(10);
 const RASTER = m(2);
 
-/** The boundary's area centroid (the corners' mean for a degenerate one). */
-export function lotCentre(l: Pick<Lot, 'corners'>): Vec2 {
-  const q = l.corners;
-  let a = 0, x = 0, y = 0;
-  for (let i = 0; i < q.length; i++) {
-    const p = q[i]!, r = q[(i + 1) % q.length]!;
-    const c = p.x * r.y - r.x * p.y;
-    a += c; x += (p.x + r.x) * c; y += (p.y + r.y) * c;
-  }
-  if (Math.abs(a) < 1e-9) return { x: q.reduce((s, p) => s + p.x, 0) / q.length, y: q.reduce((s, p) => s + p.y, 0) / q.length };
-  return { x: x / (3 * a), y: y / (3 * a) };
-}
+export { lotCentre } from './lotRings';
 
 export function lotArea(l: Pick<Lot, 'corners'>): number {
   let a = 0;
