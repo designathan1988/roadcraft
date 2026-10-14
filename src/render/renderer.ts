@@ -471,6 +471,10 @@ export function createSceneRenderer(
     alpha: false,
     powerPreference: 'high-performance',
     stencil: false,
+    // Reversed Z into a float depth buffer (`depthConvention.ts`): faces a
+    // few millimetres apart are told apart at any distance. DO NOT drop it
+    // for a near plane pushed out or offsets grown until the flicker hides.
+    reversedDepthBuffer: true,
   });
   // One game frame has the scene, shadows and several postprocess renders.
   // The default reset on each `render()` left stats showing only the last quad.
@@ -3206,7 +3210,7 @@ export function createSceneRenderer(
 
       const cullCamera = rig.camera;
       crowdProjection.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse);
-      crowdFrustum.setFromProjectionMatrix(crowdProjection);
+      crowdFrustum.setFromProjectionMatrix(crowdProjection, cullCamera.coordinateSystem, cullCamera.reversedDepth);
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask
       // `screenScale` (a box metric read forces layout - Paul Irish, "What

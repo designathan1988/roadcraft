@@ -4,6 +4,7 @@ import {
 import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
 import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
+import { pullTowardEye } from './depthConvention';
 
 /**
  * What moves the ground a lot is laid on (`surfaceHeightAt`: the terrain and
@@ -77,10 +78,11 @@ export function createLotOverlay(scene: Scene, groundAt: (x: number, y: number) 
   group.name = 'lot-overlay';
   group.renderOrder = 10;
   scene.add(group);
-  const material = (alpha: boolean): MeshBasicMaterial => new MeshBasicMaterial({
-    vertexColors: true, transparent: alpha, opacity: 1, depthWrite: false, side: DoubleSide,
-    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -16,
-  });
+  const material = (alpha: boolean): MeshBasicMaterial => {
+    const made = new MeshBasicMaterial({ vertexColors: true, transparent: alpha, opacity: 1, depthWrite: false, side: DoubleSide });
+    pullTowardEye(made, 4, 16);
+    return made;
+  };
   const fillMat = material(true), lineMat = material(true);
   fillMat.forceSinglePass = true;
   lineMat.forceSinglePass = true;

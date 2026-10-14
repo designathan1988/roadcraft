@@ -3,7 +3,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m, METERS_PER_UNIT } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
-import { PLINTH_MIN, floorHeight, foundationOf } from '@world/buildings/foundation';
+import { LANDING_RISE, PLINTH_MIN, floorHeight, foundationOf } from '@world/buildings/foundation';
 import {
   clashes, facadeBays, isSupported, levelHeight, localToWorld, volumeElevation, volumeHeight, volumeLift, worldToLocal,
 } from '@world/buildings/geometry';
@@ -142,7 +142,8 @@ describe('split-level buildings on a hillside', () => {
         if (volumeLift(v) === lowest && !h.volumes.some((o) => o.open === 'water')) expect(graded, `house ${h.id} block ${v.id}`).toBeCloseTo(floor + lowest - PLINTH_MIN, 4);
       }
       const byId = new Map(h.volumes.map((v) => [v.id, v]));
-      for (const x of foundationOf(h, hill, undefined, paved).entrances) expect(x.floor).toBeCloseTo(floor + volumeLift(byId.get(x.volume)!), 6);
+      // The landing a hair over the floor it opens from (`LANDING_RISE`), over the yard laid at that floor.
+      for (const x of foundationOf(h, hill, undefined, paved).entrances) expect(x.floor).toBeCloseTo(floor + volumeLift(byId.get(x.volume)!) + LANDING_RISE, 6);
     }
   });
 

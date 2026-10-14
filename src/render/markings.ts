@@ -17,6 +17,7 @@ import {
 import { STOP_BAR_WIDTH } from '@world/approach';
 import { parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
+import { pullTowardEye } from './depthConvention';
 
 /**
  * Painted road markings, as real geometry lifted just off the carriageway.
@@ -126,10 +127,8 @@ export function paintMaterial(color: string): Material {
     envMapIntensity: 0.25,
     transparent: true,
     depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
   });
+  pullTowardEye(material, 2, 2);
   // Worn paint (the player found the markings flat stickers on the road): the
   // asphalt's grain shows through, the paint thins in patches where wheels
   // run, flakes off at the edges, and is a little dirty.

@@ -34,6 +34,7 @@ import { createInstanceCull, spatialOrder, type CulledInstances } from './instan
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { leafCardMaterials } from './lowPolyTrees';
 import { lightPoolTexture } from './lightLevels';
+import { pullTowardEye } from './depthConvention';
 import {
   BUSH_KINDS,
   TREE_SPECIES,
@@ -290,8 +291,9 @@ export function createSceneryKit(): SceneryKit {
   pool.rotateX(-Math.PI / 2);
   const poolGlow = new MeshBasicMaterial({
     map: lightPoolTexture(), color: STREET_LED, transparent: true, opacity: 0, blending: AdditiveBlending,
-    depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    depthWrite: false, toneMapped: false,
   });
+  pullTowardEye(poolGlow, 4, 4);
   const beam = new CylinderGeometry(BEAM_SOURCE, 1, 1, BEAM_SIDES, BEAM_SEGMENTS, true);
   beam.translate(0, -0.5, 0);
   // Their bounds once, here: the layers that instance them read them (`render/poleLayer.ts`).

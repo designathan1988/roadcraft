@@ -29,6 +29,7 @@ import {
   type Foundation,
   type GroundAt,
   type PavedAt,
+  LANDING_RISE,
   PLINTH_BURY,
   STEP_RUN,
   flightRun,
@@ -194,8 +195,12 @@ const EAVES = m(0.45);
 const ROOF_THICK = m(0.18);
 const ARCADE = m(1.8);
 const PLINTH_GROW = m(0.12);
-/** How far a plinth's ledge stands over the floor: a yard at the floor's level met it in one plane and flickered. */
-const PLINTH_RISE = m(0.012);
+/**
+ * How far a plinth's ledge and a door's threshold stand over the floor: a yard
+ * at the floor's level met them in one plane and flickered. A flight's landing
+ * stands at the same height (`foundation.ts` `LANDING_RISE`, `Entrance.floor`).
+ */
+const PLINTH_RISE = LANDING_RISE;
 /** How deep a loggia is let into the wall. */
 const LOGGIA_DEPTH = m(1.4);
 /** How far a varanda gourmet's slab stands out of the wall. */
@@ -1785,8 +1790,22 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   // Only on a natural lawn: a terrace is a level platform (`Volume.terrace`),
   // and a flight, a ramp or a retaining wall between two platforms is an
   // earthwork held at the lot's levels, not a thing set down on the grass.
+  // The lot a point stands on: a paved one (a court, a drive) over the lawn
+  // laid round it, as it is drawn - the lawn is the terrain under the plates.
+  // Taken as the first lot listed, a planter on a sunken court was set on the
+  // garden's graded ground under the court, its top in the asphalt's plane
+  // (buried, and the two flickered). DO NOT take the first lot that holds it.
+  const hostAt = (x: number, y: number): Volume | undefined => {
+    let lawn: Volume | undefined;
+    for (const v of lots) {
+      if (x < v.x || x > v.x + v.w || y < v.y || y > v.y + v.d) continue;
+      if ((v.open ?? 'grass') !== 'grass') return v;
+      lawn ??= v;
+    }
+    return lawn;
+  };
   const onLawn = (x: number, y: number): boolean => {
-    const host = lots.find((v) => x >= v.x && x <= v.x + v.w && y >= v.y && y <= v.y + v.d);
+    const host = hostAt(x, y);
     return !host || ((host.open ?? 'grass') === 'grass' && host.terrace === undefined);
   };
   const groups = partGroups(b);
@@ -1840,7 +1859,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
     // A run on the land in steps, each on the lot's surface under it, or on
     // the ground where no lot is laid: nothing floats over a slope.
     for (const piece of followPieces(el)) {
-      const host = lots.find((v) => piece.x >= v.x && piece.x <= v.x + v.w && piece.y >= v.y && piece.y <= v.y + v.d);
+      const host = hostAt(piece.x, piece.y);
       // On a lawn the ground is the terrain as drawn (`pads.ts`), not the
       // lot's plane: a path laid at the plane's height stood over the grass
       // like a bridge from the gate to the door.

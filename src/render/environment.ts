@@ -124,7 +124,13 @@ const SKY_VERTEX = `
     vSkyDirection = normalize(position);
     vec4 world = modelMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * viewMatrix * world;
-    gl_Position.z = gl_Position.w;
+    // On the far plane: z = w (depth 1) in the standard buffer, z = 0 in the
+    // reversed one (depthConvention.ts), where z = w is the NEAR plane.
+    #ifdef USE_REVERSED_DEPTH_BUFFER
+      gl_Position.z = 0.0;
+    #else
+      gl_Position.z = gl_Position.w;
+    #endif
   }
 `;
 
@@ -672,6 +678,9 @@ export function slopeScaledShadowOffset(): void {
     throw new Error('three.js shadowmap_vertex changed: the slope-scaled sun offset no longer applies');
   }
   ShaderChunk.shadowmap_vertex = chunk.replace(plain, `{ vec3 sunAxis = normalize( vec3( directionalShadowMatrix[ i ][ 0 ][ 2 ], directionalShadowMatrix[ i ][ 1 ][ 2 ], directionalShadowMatrix[ i ][ 2 ][ 2 ] ) );
+			#ifdef USE_REVERSED_DEPTH_BUFFER
+				sunAxis = - sunAxis; // the shadow depth runs from the sun, not into it (three's LightShadow: the reversed projection, no z remap)
+			#endif
 			float grazing = 1.0 - clamp( - dot( shadowWorldNormal, sunAxis ), 0.0, 1.0 );
 			shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias * ( 0.4 + 2.6 * grazing ), 0 ); }`);
 }

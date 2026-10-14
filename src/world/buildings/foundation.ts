@@ -26,6 +26,16 @@ export const PLINTH_BURY = m(0.8);
  * building on one floor could not.
  */
 export const MAX_PLINTH = m(5.5);
+/**
+ * How far a door's landing - the top of its flight - stands over the floor
+ * it opens from, flush with the plinth's ledge and the threshold
+ * (`buildingMesh.ts` `PLINTH_RISE`, this same height). A building's yard is
+ * laid at its floor's level (`lots.ts`): a landing at the floor lay in the
+ * yard's plane, a paving of another stone over the same ground, and the two
+ * traded pixels in bands as the camera moved (the player, 2026-10-14, the
+ * doorstep). DO NOT lay the landing at the floor itself.
+ */
+export const LANDING_RISE = m(0.012);
 export const STEP_RISE = m(0.17);
 export const STEP_RUN = m(0.3);
 
@@ -85,9 +95,10 @@ export interface Entrance {
   /** Absolute height of the ground at the foot of the steps. */
   readonly ground: number;
   /**
-   * Absolute height of the floor it opens from: the ground floor, or the
-   * floor of its own block where that block stands at a level of its own
-   * (`Volume.lift`). The steps rise from `ground` to here.
+   * Absolute height of its landing, the top of its flight: `LANDING_RISE`
+   * over the floor it opens from (the ground floor, or the floor of its own
+   * block where that block stands at a level of its own, `Volume.lift`).
+   * The steps rise from `ground` to here.
    */
   readonly floor: number;
   /** Number of steps from the ground up to the floor; 0 = level access. */
@@ -309,7 +320,7 @@ export function foundationOf(
       width: bay.width,
       push: bay.push,
       ground,
-      floor,
+      floor: floor + LANDING_RISE,
       steps,
       recess,
       threshold,

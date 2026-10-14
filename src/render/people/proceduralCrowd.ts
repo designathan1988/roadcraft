@@ -14,6 +14,7 @@ import { FEMALE_HAIR, HAIR_STYLES, MALE_HAIR, generateHairStrands, generateHeadb
 import { hairStrandTexture } from './hairTexture';
 import { compileAhead } from '../uploads';
 import { forgetOtherDerived, readDerived, writeDerived } from '../derivedCache';
+import { pullTowardEye } from '../depthConvention';
 import { loadProcedural } from './proceduralCook';
 import { faceAt } from './faceExpression';
 import { itemTexture, personLighting, skinChoice, skinTextures } from './skinAppearance';
@@ -505,7 +506,7 @@ function pieceMaterial(cls: BodyClass, v: Variant, map: Texture | null, eyes: Te
   // stood off the face.
   else if (kind === 'face') {
     material.alphaTest = 0.08; material.alphaToCoverage = true;
-    material.polygonOffset = true; material.polygonOffsetFactor = -2; material.polygonOffsetUnits = -8;
+    pullTowardEye(material, 2, 8);
   }
   else if (kind === 'hair') { material.alphaTest = 0.35; material.alphaToCoverage = true; }
   if (kind === 'skin') material.alphaTest = 0.5;

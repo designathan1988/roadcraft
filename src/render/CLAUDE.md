@@ -58,7 +58,19 @@ folder imports `three`. This file lists what breaks far from where you edit here
   Instanced parts win over the shell by their polygon offset (`kit.ts`); shell
   against shell, keep faces apart by the layers of `buildingMesh.ts`
   (`PART_INSET`, `COVER_INSET`, `KERB_INSET`, `PLINTH_RISE`, pinwheel aprons and
-  bands), never two faces of different looks in one plane.
+  bands), never two faces of different looks in one plane. The test lays the
+  buildings on rolling land: on flat land no door has a flight, and every
+  flight's landing lay unseen in its yard's plane (`foundation.ts`
+  `LANDING_RISE`).
+- **The depth buffer is reversed Z in a float buffer** (`depthConvention.ts`,
+  `WebGLRenderer({ reversedDepthBuffer })`, the post chain's `FloatType` depth
+  texture): layers a few millimetres apart stay apart at any distance. A pass
+  that reads the scene's depth uses `DEPTH_GLSL` (never `depth * 2.0 - 1.0`,
+  `depth >= 0.9999` or `min` for the nearer depth); a material over a surface
+  in its plane uses `pullTowardEye` (three r186 turns the offset's factor for
+  the reversed buffer but not its units); a frustum built from a camera's
+  matrix passes `camera.reversedDepth`. A flicker at a distance is never fixed
+  by pushing the near plane out or growing an offset.
 - **The procedural people's skeletons are drawn on the GPU** (`people/
   crowdAnimation.ts`): `renderPalettes(renderer)` must run after the crowd's
   `update` and before the scene is drawn (`renderer.ts` before `post.render`,

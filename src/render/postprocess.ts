@@ -1,5 +1,5 @@
 import {
-  Color, DepthTexture, HalfFloatType, Matrix4, Mesh, NoBlending,
+  Color, DepthTexture, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
   RedFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -17,6 +17,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { QualityLevel, QualitySettings } from './quality';
 import { fullScreenTriangle } from './uploads';
 import { createCanyonLight } from './canyonLight';
+import { DEPTH_GLSL } from './depthConvention';
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 
 /**
@@ -158,7 +159,11 @@ export function createPostChain(
   const ratio = renderer.getPixelRatio();
   const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), {
     type: HalfFloatType,
-    depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio)),
+    // A float depth buffer: the reversed Z the renderer draws with keeps its
+    // precision only in floats (`depthConvention.ts`; three's example
+    // webgl_reversed_depth_buffer). Its multisampled buffer takes the same
+    // format (three's `setupRenderBufferStorage`: DEPTH_COMPONENT32F).
+    depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), FloatType),
     // Multisampled, its depth resolved into the texture the occlusion reads
     // (three's `resolveDepthBuffer`). With SMAA alone, on the resolved image, a
     // lane line or a road's edge narrower than a pixel at a distance broke into
@@ -777,8 +782,9 @@ const CLOUD_SHADOWS = {
     uniform vec3 uSkyHigh;
     uniform vec3 uAbyss;
     varying vec2 vUv;
+    ${DEPTH_GLSL}
     vec3 worldAt(vec2 uv, float depth) {
-      vec4 view = uProjectionInverse * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+      vec4 view = uProjectionInverse * vec4(uv * 2.0 - 1.0, depthToClipZ(depth), 1.0);
       return (uCameraWorld * vec4(view.xyz / view.w, 1.0)).xyz;
     }
     // Where a ray enters and leaves a sphere (both negative: it misses).
@@ -897,9 +903,9 @@ const CLOUD_SHADOWS = {
     void main() {
       vec4 src = texture2D(tDiffuse, vUv);
       float depth = texture2D(tDepth, vUv).r;
-      bool sky = depth >= 0.9999;
-      vec3 ro = worldAt(vUv, 0.0);
-      vec3 hit = worldAt(vUv, sky ? 0.99999 : depth);
+      bool sky = depthIsBackground(depth);
+      vec3 ro = worldAt(vUv, DEPTH_NEAR);
+      vec3 hit = worldAt(vUv, sky ? depthNearlyFar() : depth);
       vec3 rd = normalize(hit - ro);
       float tScene = sky ? 1e7 : length(hit - ro);
       vec3 colour = src.rgb;
@@ -1160,11 +1166,11 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
     void main() {
       ivec2 full = textureSize(tDepth, 0);
       ivec2 at = ivec2(gl_FragCoord.xy) * 2;
-      float depth = 1.0;
-      for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) depth = min(depth, texelFetch(tDepth, min(at + ivec2(i, j), full - 1), 0).r);
-      bool sky = depth >= 0.9999;
-      vec3 ro = worldAt(vUv, 0.0);
-      vec3 hit = worldAt(vUv, sky ? 0.99999 : depth);
+      float depth = DEPTH_FAR;
+      for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) depth = nearerDepth(depth, texelFetch(tDepth, min(at + ivec2(i, j), full - 1), 0).r);
+      bool sky = depthIsBackground(depth);
+      vec3 ro = worldAt(vUv, DEPTH_NEAR);
+      vec3 hit = worldAt(vUv, sky ? depthNearlyFar() : depth);
       vec3 rd = normalize(hit - ro);
       float tScene = sky ? 1e7 : length(hit - ro);
       float transmit = 1.0;
@@ -1172,7 +1178,7 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
       // The clouds, nearest first.
       if (uCloudCount > 0) {
         float focusDepth = texture2D(tDepth, vec2(0.5)).r;
-        float tFocus = focusDepth >= 0.9999 ? 1e5 : length(worldAt(vec2(0.5), focusDepth) - ro);
+        float tFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5), focusDepth) - ro);
         // Drawn from up close only: from far enough to take in the whole
         // diorama every cloud stands out against the empty space round it,
         // a ball hanging in the void (the player, 2026-10-07); there only
@@ -1180,7 +1186,7 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
         // How tall the view is there, in world units: the same measure in
         // the orthographic view and in perspective (both ends of the
         // screen's middle column at the depth of its centre).
-        float spanFocus = focusDepth >= 0.9999 ? 1e5 : length(worldAt(vec2(0.5, 1.0), focusDepth) - worldAt(vec2(0.5, 0.0), focusDepth));
+        float spanFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5, 1.0), focusDepth) - worldAt(vec2(0.5, 0.0), focusDepth));
         // Over the map only now (layClouds), so they show from every zoom
         // (the player, 2026-10-07: "quero que as nuvens apareçam"); only
         // past the whole map's width do they give way to their shadows.
@@ -1290,15 +1296,16 @@ const SHARP_MASK = {
     uniform mat4 uProjectionInverse;
     uniform vec2 uSharpSpan;
     varying vec2 vUv;
+    ${DEPTH_GLSL}
     vec3 viewAt(vec2 uv, float depth) {
-      vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+      vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depthToClipZ(depth), 1.0);
       return v.xyz / v.w;
     }
     void main() {
       float depth = texture2D(tDepth, vUv).r;
       float across = 1.0 / float(textureSize(tDepth, 0).x);
       float span = length(viewAt(vUv + vec2(across, 0.0), depth) - viewAt(vUv, depth));
-      gl_FragColor = vec4(depth < 1.0 ? 1.0 - smoothstep(uSharpSpan.x, uSharpSpan.y, span) : 0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = vec4(depth != DEPTH_FAR ? 1.0 - smoothstep(uSharpSpan.x, uSharpSpan.y, span) : 0.0, 0.0, 0.0, 1.0);
     }
   `,
 };

@@ -25,6 +25,7 @@ import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } fr
 import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { simplified } from '../mesh/simplify';
 import { m } from '@world/units';
+import { pullTowardEye } from '../depthConvention';
 
 /**
  * Share of people awake, by hour from midnight: 100 % less the share asleep in
@@ -475,7 +476,7 @@ export function createBuildingKit(): BuildingKit {
     dish: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.5, metalness: 0.2 }),
     wash: new MeshBasicMaterial({
       map: lightPoolTexture(), color: PORCH_LIGHT, transparent: true, opacity: 0, blending: AdditiveBlending,
-      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4, visible: false,
+      depthWrite: false, visible: false,
     }),
   };
   for (const [kind, m] of Object.entries(material)) m.name = `building-part-${kind}`;
@@ -486,11 +487,7 @@ export function createBuildingKit(): BuildingKit {
   // a decal is (OpenGL `glPolygonOffset`, three's `Material.polygonOffset`).
   // The source meant every part so (its `coplanar.spec`) and the parts here
   // had lost it.
-  for (const m of Object.values(material)) {
-    m.polygonOffset = true;
-    m.polygonOffsetFactor = -1;
-    m.polygonOffsetUnits = -4;
-  }
+  for (const m of Object.values(material)) pullTowardEye(m, 1, 4);
   prefilterThinParts(material, THIN_PROPS);
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
@@ -524,6 +521,8 @@ export function createBuildingKit(): BuildingKit {
   const dimShell = Object.fromEntries(Object.entries(shell).map(([finish, mat]) => [finish, dim(mat)])) as Record<Finish, MeshStandardMaterial>;
   const dimParts = dim(material['concrete'] as MeshStandardMaterial);
   dimParts.opacity = 0.16;
+  // A copy does not keep the pull towards the eye (`depthConvention.ts`).
+  pullTowardEye(dimParts, 1, 4);
 
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };

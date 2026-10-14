@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BufferGeometry } from 'three';
 import { emitChunk } from '@render/buildings/buildingMesh';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
+import { pulledTowardEye } from '@render/depthConvention';
 import { m } from '@world/units';
 import type { Building } from '@world/buildings/types';
 import { growCity } from '../world/cityAudit';
@@ -20,6 +21,15 @@ import { growCity } from '../world/cityAudit';
  * against part. The sum only shrinks: some 5,000 m² over 150 buildings before
  * the layers of `buildingMesh.ts` (kerbs, pavings, plinth ledges, pinwheel
  * aprons and bands, boundary walls), some 5 m² after.
+ *
+ * The town is grown on flat land but its buildings are laid on rolling
+ * ground (`ROLLING`): on flat land no door has a flight, and the landing of
+ * every flight lay in the plane of the yard round it unseen (the player,
+ * 2026-10-14, the doorstep: 2.6 m² over the sample). Faces are filed by
+ * plane to `PLANE_EPS` and each is held against its own file and the next,
+ * so two faces a hair apart are not missed for falling either side of a
+ * file's edge. Faces a few millimetres apart (the layers) are told apart by
+ * the reversed float depth buffer at any distance (`depthConvention.ts`).
  */
 type V3 = [number, number, number];
 type P2 = [number, number];
@@ -32,8 +42,19 @@ const COLOUR_APART = 0.07;
 const MIN_OVERLAP = m(0.02) * m(0.02);
 /** The buildings measured: the first of the town, with their lots, walls, gates and pavings. */
 const SAMPLE = 100;
-/** The overlapping area over the sample, m² (3.59 on 2026-10-13, 0.38 after the fences, gates, walls, bands, canopies and machine rooms were parted); it only shrinks. */
-const BUDGET = 0.39;
+/**
+ * The overlapping area over the sample, m²; it only shrinks. On flat land:
+ * 3.59 on 2026-10-13, 0.38 after the fences, gates, walls, bands, canopies
+ * and machine rooms were parted. On rolling land, files' edges counted
+ * (2026-10-14): about 81 with every flight's landing in its yard's plane, 2.09
+ * with the landing at `LANDING_RISE`, 0.66 with the lots' parts set on the
+ * paving over the lawn (`hostAt`). Left: lamp posts flush with a flight's
+ * cheek (metal x stone 0.23), the rest slivers under 0.11 each.
+ */
+const BUDGET = 0.67;
+
+/** The land the sample's buildings are laid on: rolling, a metre or so, so doors have flights. */
+const ROLLING = (x: number, y: number): number => m(0.6) * Math.sin(x * 0.05) + m(0.4) * Math.cos(y * 0.07);
 
 function face(a: V3, b: V3, c: V3, kind: string, look: string, rgb: V3, out: Face[]): void {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
@@ -89,25 +110,38 @@ function overlap(a: readonly P2[], b: readonly P2[]): number {
 /** Overlapping area of faces of different looks in one plane, facing the same way, by pair of looks. */
 function coplanarOverlaps(faces: readonly Face[], into: Map<string, number>): void {
   const planes = new Map<string, Face[]>();
+  const normalKey = (f: Face): string => `${Math.round(f.n[0] * 200)},${Math.round(f.n[1] * 200)},${Math.round(f.n[2] * 200)}`;
   for (const f of faces) {
-    const key = `${Math.round(f.n[0] * 200)},${Math.round(f.n[1] * 200)},${Math.round(f.n[2] * 200)},${Math.round(f.d / PLANE_EPS)}`;
+    const key = `${normalKey(f)},${Math.floor(f.d / PLANE_EPS)}`;
     let list = planes.get(key);
     if (!list) planes.set(key, list = []);
     list.push(f);
   }
-  for (const list of planes.values()) {
-    if (list.length < 2) continue;
-    const flats = list.map(flat);
-    const boxes = flats.map((t) => [Math.min(t[0]![0], t[1]![0], t[2]![0]), Math.min(t[0]![1], t[1]![1], t[2]![1]), Math.max(t[0]![0], t[1]![0], t[2]![0]), Math.max(t[0]![1], t[1]![1], t[2]![1])] as const);
+  const flatOf = new Map<Face, P2[]>();
+  const flatten = (f: Face): P2[] => {
+    let t = flatOf.get(f);
+    if (!t) flatOf.set(f, t = flat(f));
+    return t;
+  };
+  const box = (t: readonly P2[]): readonly [number, number, number, number] => [Math.min(t[0]![0], t[1]![0], t[2]![0]), Math.min(t[0]![1], t[1]![1], t[2]![1]), Math.max(t[0]![0], t[1]![0], t[2]![0]), Math.max(t[0]![1], t[1]![1], t[2]![1])];
+  for (const [key, list] of planes) {
+    // This file and the next one up: a pair a hair apart across a file's edge is one plane too.
+    const cut = key.lastIndexOf(',');
+    const next = planes.get(`${key.slice(0, cut)},${Number(key.slice(cut + 1)) + 1}`) ?? [];
+    const all = [...list, ...next];
+    if (all.length < 2) continue;
     for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i]!, b = list[j]!;
+      for (let j = i + 1; j < all.length; j++) {
+        const a = list[i]!, b = all[j]!;
+        if (Math.abs(a.d - b.d) >= PLANE_EPS) continue;
         if (a.kind !== b.kind) continue;
         // One paint in one plane is one picture whichever face wins; two read apart.
         if (a.look === b.look && Math.max(Math.abs(a.rgb[0] - b.rgb[0]), Math.abs(a.rgb[1] - b.rgb[1]), Math.abs(a.rgb[2] - b.rgb[2])) < COLOUR_APART) continue;
-        const ba = boxes[i]!, bb = boxes[j]!;
+        // Both in the first one's frame (one plane, one frame).
+        const fa = flatten(a), fb = flat({ ...b, n: a.n });
+        const ba = box(fa), bb = box(fb);
         if (ba[0] >= bb[2] || bb[0] >= ba[2] || ba[1] >= bb[3] || bb[1] >= ba[3]) continue;
-        const shared = overlap(flats[i]!, flats[j]!);
+        const shared = overlap(fa, fb);
         if (shared < MIN_OVERLAP) continue;
         const k = `${a.kind}: ${[a.look, b.look].sort().join(' x ')}`;
         into.set(k, (into.get(k) ?? 0) + shared);
@@ -130,7 +164,7 @@ function facesOfGeometry(g: BufferGeometry, look: string, e: Float32Array, out: 
 /** Every face of one building, in the world: its shells by finish and colour, its parts by kind. */
 function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[] {
   const faces: Face[] = [];
-  const chunk = emitChunk(b, () => 0);
+  const chunk = emitChunk(b, ROLLING);
   for (const [finish, shell] of Object.entries(chunk.shells)) {
     if (!shell) continue;
     const pos = shell.position, index = shell.index, colour = shell.colour;
@@ -153,13 +187,14 @@ describe('building surfaces', () => {
   it('draws every instanced part over the shell it is set on', () => {
     // The parts (frames, shutters, balcony slabs) lie on the shell's faces by
     // design; a polygon offset towards the camera makes them win the depth
-    // test there (glPolygonOffset: negative factor and units).
+    // test there - both terms towards the eye, in the standard buffer
+    // (negative) and in the reversed one the game draws with (positive; three
+    // r186 turns only the factor itself: `depthConvention.ts`).
     const kit = createBuildingKit();
-    const loose = PART_KINDS.filter((kind) => {
-      const material = kit.material[kind];
-      return !material.polygonOffset || material.polygonOffsetFactor >= 0 || material.polygonOffsetUnits >= 0;
-    });
-    expect(loose).toEqual([]);
+    for (const reversed of [false, true]) {
+      const loose = PART_KINDS.filter((kind) => !pulledTowardEye(kit.material[kind], reversed));
+      expect(loose, reversed ? 'reversed depth' : 'standard depth').toEqual([]);
+    }
   });
 
   it('draws no two surfaces of a generated town in one plane over each other', () => {
@@ -171,5 +206,5 @@ describe('building surfaces', () => {
     const total = [...pairs.values()].reduce((s, a) => s + a, 0) / unit;
     const report = [...pairs.entries()].sort((a, b) => b[1] - a[1]).map(([k, a]) => `${k}: ${(a / unit).toFixed(2)} m²`);
     expect(total, report.join('\n')).toBeLessThanOrEqual(BUDGET);
-  });
+  }, 10_000);
 });
