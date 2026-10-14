@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { plateCell, signSheets } from '@render/signs';
+import { SignSheets } from '@render/signs';
 
 /**
  * The street-name plates' pictures: every one on a sheet of a size every
@@ -23,17 +23,19 @@ describe('the sheets of the sign plates', () => {
   afterAll(() => { vi.unstubAllGlobals(); });
 
   it('hold any number of street names on sheets no larger than every card takes', () => {
+    const sheets = new SignSheets();
+    sheets.begin();
     const names = 1500;
     const places = new Set<string>();
     const sheetIds = new Map<unknown, number>();
     for (let i = 0; i < names; i++) {
-      const place = plateCell('street', `Rua ${i}`) as { readonly cell: number; readonly sheet?: unknown };
+      const place = sheets.plateCell('street', `Rua ${i}`) as { readonly cell: number; readonly sheet?: unknown };
       if (!sheetIds.has(place.sheet)) sheetIds.set(place.sheet, sheetIds.size);
       places.add(`${sheetIds.get(place.sheet)}:${place.cell}`);
     }
     // Each name in a cell of its own.
     expect(places.size).toBe(names);
-    for (const sheet of signSheets()) {
+    for (const sheet of sheets.sizes()) {
       expect(sheet.width).toBeLessThanOrEqual(LIMIT);
       expect(sheet.height).toBeLessThanOrEqual(LIMIT);
     }

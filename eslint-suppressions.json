@@ -407,11 +407,6 @@
       "count": 1
     }
   },
-  "src/render/signs.ts": {
-    "roadcraft/no-module-state": {
-      "count": 2
-    }
-  },
   "src/render/structures.ts": {
     "max-lines": {
       "count": 1
