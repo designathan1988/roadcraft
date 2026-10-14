@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
-import type { Building } from '@world/buildings/types';
+import type { Building, BuildingElement } from '@world/buildings/types';
 import { createBuildingLayer } from '@render/buildings/layer';
 import { beginFrameWork } from '@core/frameWork';
 import { m } from '@world/units';
@@ -13,6 +13,9 @@ import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
 import { yardNeighbours } from '@sim/agents/lorryDocks';
+import { cameraSolidsKeeper } from '@world/buildings/cameraSolids';
+import { siteGrading } from '@world/buildings/siteGrading';
+import { gardenLists } from '@render/gardenLists';
 
 /**
  * ONE MORE BUILDING COSTS THE SAME IN A SMALL TOWN AND A LARGE ONE (the same
@@ -29,18 +32,22 @@ import { yardNeighbours } from '@sim/agents/lorryDocks';
  */
 const SPACING = m(60);
 
-function placed(index: number, column: number, row: number): Omit<Building, 'id'> {
+/** A blueprint's building at a place of the grid; `planted`: with a tree in its garden. */
+function placed(index: number, column: number, row: number, planted = false): Omit<Building, 'id'> {
   const bp = BLUEPRINTS[index % BLUEPRINTS.length]!;
-  return { ...JSON.parse(JSON.stringify(bp.body)), x: column * SPACING, y: row * SPACING, rotation: 0 } as Omit<Building, 'id'>;
+  const body = { ...JSON.parse(JSON.stringify(bp.body)), x: column * SPACING, y: row * SPACING, rotation: 0 } as Omit<Building, 'id'>;
+  if (!planted) return body;
+  const tree: BuildingElement = { id: 9_999, kind: 'tree', x: 0, y: 0, facing: 0, w: m(1), d: m(1), z: 0, h: m(6) };
+  return { ...body, elements: [...(body.elements ?? []), tree] };
 }
 
 /** A square town of `n` buildings, and the reads of its buildings counted from now on. */
-function town(n: number): { doc: RoadDoc; reads: { count: number } } {
+function town(n: number, planted = false): { doc: RoadDoc; reads: { count: number } } {
   const doc = new RoadDoc();
   // The ground cut and filled before the town grew on it (the opening's world).
   doc.changes.record('ground', null, { cause: 'test: the opening' });
   const side = Math.round(Math.sqrt(n));
-  for (let i = 0; i < n; i++) doc.buildings.add(placed(i, i % side, Math.floor(i / side)));
+  for (let i = 0; i < n; i++) doc.buildings.add(placed(i, i % side, Math.floor(i / side), planted));
   const reads = { count: 0 };
   const store = doc.buildings;
   const all = store.all.bind(store);
@@ -67,6 +74,17 @@ function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): vo
 /** The kinds of change the things on the ground read (`renderer.ts` `GROUND_KINDS`). */
 const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
 
+/** The drawn ground's changes as the renderer reads them from the diary (`renderer.ts` `groundChanges`). */
+function groundRecord(doc: RoadDoc): GroundRecord {
+  return {
+    get version() { return doc.changes.serialOf(...GROUND_KINDS); },
+    touches: (since, at) => doc.changes.touches(since, at, GROUND_KINDS),
+  };
+}
+
+/** The box a building's bank reaches, as the renderer's `bankBox` (a square round it here). */
+const bankBox = (b: Building): Rect => [b.x - m(40), b.y - m(40), b.x + m(40), b.y + m(40)];
+
 /**
  * A thing standing on the ground under the whole town (the walls, the
  * transport, the gardens: `renderer.ts` `onGround`), reading the diary as the
@@ -75,11 +93,7 @@ const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
  * diary looked at, and the whole town when it is built again.
  */
 function groundReader(doc: RoadDoc, area: Rect): () => number {
-  const record: GroundRecord = {
-    get version() { return doc.changes.serialOf(...GROUND_KINDS); },
-    touches: (since, at) => doc.changes.touches(since, at, GROUND_KINDS),
-  };
-  const dependant = new GroundDependant(record);
+  const dependant = new GroundDependant(groundRecord(doc));
   return () => {
     const before = journalWork.entries;
     const rebuilt = dependant.stale('', area) ? doc.buildings.size : 0;
@@ -104,19 +118,43 @@ function addWork(n: number): Record<string, number> {
   const w = new SimWorld(doc, net, 0x5ca1e);
   collectBays(w);
   const yards = yardNeighbours(w, null);
+  // The renderer's products of the buildings, out of it in modules of their
+  // own: the camera's solids (`cameraSolids.ts`), the sites graded and the
+  // town's platforms (`siteGrading.ts`), the gardens' plants (`gardenLists.ts`).
+  const solids = cameraSolidsKeeper(() => 0);
+  solids.follow(doc.buildings, 'g');
+  solids.solids();
+  const sites = siteGrading(flat, undefined, m(9.6), bankBox);
+  sites.changedSites(doc.buildings);
+  sites.rebuild(doc.buildings);
+  // The gardens on a town of the same buildings with a tree in each garden:
+  // with none, nothing is ever planted and the gardens read only their key.
+  const garden = town(n, true);
+  const plants = gardenLists(groundRecord(garden.doc), bankBox, () => []);
+  plants.update(garden.doc.buildings, true);
+  /** What a product read of the buildings, and of the diary, to take the building in. */
+  const workOf = (counted: { count: number }, take: () => void): number => {
+    counted.count = 0;
+    const entries = journalWork.entries;
+    take();
+    return counted.count + journalWork.entries - entries;
+  };
+  const work = (take: () => void): number => workOf(reads, take);
   reads.count = 0;
   doc.buildings.add(placed(n, side + 1, 0));
   settle(layer, doc);
   const layerReads = reads.count;
-  reads.count = 0;
-  collectBays(w);
-  const bays = reads.count;
-  reads.count = 0;
-  yardNeighbours(w, yards);
+  garden.doc.buildings.add(placed(n, side + 1, 0, true));
   const out = {
     layer: layerReads,
-    bays,
-    yards: reads.count,
+    bays: work(() => collectBays(w)),
+    yards: work(() => yardNeighbours(w, yards)),
+    // As the renderer asks them a frame (`draw`): the solids filed again when
+    // the camera asks; the sites that changed graded, the town's platforms
+    // put together again for the ground's shaping (`shapeGround`, sites).
+    solids: work(() => { if (solids.follow(doc.buildings, 'g')) solids.solids(); }),
+    pads: work(() => { if (sites.changedSites(doc.buildings)) sites.rebuild(doc.buildings); }),
+    gardens: workOf(garden.reads, () => plants.update(garden.doc.buildings, true)),
     // The frame after it, and the next one with nothing new: a building is
     // no change of the ground, and neither should cost more in a larger town.
     ground: ground(),

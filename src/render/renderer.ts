@@ -60,6 +60,7 @@ import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany
 import { disposeMesh } from './mesh/surfaceMesh';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, buildScenery, buildStreetFurniture, createSceneryKit, plantSamples, type Scenery, type SceneryKit } from './scenery';
 import { createGardens, type GardenPlant, type Gardens } from './gardens';
+import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
@@ -87,8 +88,8 @@ import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { GRASS_NEAR_REACH, type MaskRect, createGrass, createGrassMask } from './grassField';
 import { surfaces as roadSurfacesOf } from '@world/surfaces';
-import { buildingPads, type Pad } from '@world/buildings/pads';
-import { type CameraSolids, cameraSolids } from '@world/buildings/cameraSolids';
+import { siteGrading } from '@world/buildings/siteGrading';
+import { type CameraSolids, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { floorHeight } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
 import { TUNED_UNIT, m, perM } from '@world/units';
@@ -1243,10 +1244,11 @@ export function createSceneRenderer(
     buildings: new GroundDependant(groundChanges),
     barriers: new GroundDependant(groundChanges),
     transit: new GroundDependant(groundChanges),
-    gardens: new GroundDependant(groundChanges),
   };
+  /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
+  const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
   /** The buildings' floor for the camera's eye (`world/buildings/cameraSolids.ts`), by building, land and road revision. */
-  let cameraSolidsFor = '';
+  const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt));
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
    * a few seconds after a bomb the streets showed as grass, then came back;
@@ -1289,8 +1291,6 @@ export function createSceneRenderer(
       }));
     } else if (!missing && !buried) roadsReported = false;
   };
-  /** Each building record's ground-floor height, with the ground it was read on. */
-  const solidFloors = new WeakMap<Building, { key: string; floor: number }>();
   /** Each building's bank, by building revision: what the buildings stand on, building by building. */
   let buildingsAreaFor = -1;
   let buildingsArea: Rect[] = [];
@@ -1301,60 +1301,12 @@ export function createSceneRenderer(
     return buildingsArea;
   };
   /**
-   * The plants of the buildings' gardens, as `gardenPlants` reads them: each
-   * building's plant elements and where it stands, as text, once per record
-   * (a record is replaced on any change, its age included). The whole town's
-   * plants were written out as one text at every change of any building.
-   */
-  const plantText = new WeakMap<Building, string>();
-  const plantTextOf = (b: Building): string => {
-    let text = plantText.get(b);
-    if (text === undefined) {
-      const plants = (b.elements ?? []).filter((el: { kind: string }) => el.kind === 'tree' || el.kind === 'shrub' || el.kind === 'hedge' || el.kind === 'flowers');
-      text = plants.length ? JSON.stringify([b.x, b.y, b.rotation, plants]) : '';
-      plantText.set(b, text);
-    }
-    return text;
-  };
-  /** Each planted building's plants on the drawn ground, the text they were read from and the ground change they follow. */
-  const gardenCache = new Map<number, { readonly text: string; readonly seen: number; readonly plants: readonly GardenPlant[] }>();
-  /** The gardens as last read: each planted building's text and bank; a serial moved when one changed. */
-  const plantedSites = new Map<number, { readonly text: string; readonly box: Rect }>();
-  let plantsFor = -1;
-  let plantsSerial = 0;
-  /** Where the gardens' plants stand, building by building. */
-  let plantsArea: Rect[] = [];
-  const plantSignature = (doc: RoadDoc): string => {
-    if (plantsFor === doc.buildings.revision) return String(plantsSerial);
-    plantsFor = doc.buildings.revision;
-    let changed = false;
-    const seen = new Set<number>();
-    for (const b of doc.buildings.all()) {
-      const text = plantTextOf(b);
-      if (!text) continue;
-      seen.add(b.id);
-      if (plantedSites.get(b.id)?.text === text) continue;
-      plantedSites.set(b.id, { text, box: bankBox(b) });
-      changed = true;
-    }
-    for (const id of [...plantedSites.keys()]) if (!seen.has(id)) { plantedSites.delete(id); changed = true; }
-    if (changed) {
-      plantsSerial++;
-      plantsArea = [...plantedSites.values()].map((site) => site.box);
-    }
-    return String(plantsSerial);
-  };
-  /**
    * Cuts and fills the ground to the roads AND to the buildings: a level
    * platform under each building and a grassed bank round it. A road keeps the
    * ground it has claimed; a platform takes the rest.
    */
-  /** The buildings' platforms as last worked out, reused while a stroke is held. */
-  let padsCache: ReturnType<typeof buildingPads> | null = null;
-  /** Each building's platform by record, while the roads and the land stand (`buildingPads`). */
-  let padsKnown = new WeakMap<Building, Pad | null>();
-  /** The buildings the ground was last graded for, by id: their record then, its site as text, and the box their bank reaches. */
-  const graded = new Map<number, { ref: Building; site: string; box: readonly [number, number, number, number] }>();
+  /** Each building's platform, the town's, and the sites as last graded (`world/buildings/siteGrading.ts`). */
+  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b));
   /**
    * The box a building's bank reaches, once per record (records are never
    * changed in place): asked for every building in town by the layer's
@@ -1368,61 +1320,6 @@ export function createSceneRenderer(
       const r = storedBounds(b, TERRAIN_CELL * 1.5 + m(40) + TERRAIN_CELL);
       bankBoxes.set(b, box = [r.minX, r.minY, r.maxX, r.maxY]);
     }
-    return box;
-  };
-  /**
-   * What a building's site is graded from, as text, once per record: the
-   * platform the grading reads (`buildingPads`, kept in `padsKnown` for the
-   * grading itself) - each ring's corners, the platform's height at each,
-   * water, paving, its solid blocks and split levels - and nothing else of
-   * the record. A result is reused while the inputs its build reads are the
-   * same (Bazel's action cache). The whole record (less its age and name)
-   * was compared before: a storey added, a facade or a roof changed, the
-   * town's ageing - a record every few seconds - re-graded the lot and set
-   * off everything that stands on the ground round it.
-   */
-  const siteText = new WeakMap<Building, string>();
-  const siteTextOf = (b: Building): string => {
-    let text = siteText.get(b);
-    if (text === undefined) {
-      if (!padsKnown.has(b)) buildingPads([b], builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, padsKnown);
-      const pad = padsKnown.get(b);
-      text = '';
-      if (pad) {
-        text = `${pad.solidCount}|${pad.stepped ? 1 : 0}`;
-        pad.rings.forEach((ring, i) => {
-          const level = pad.levels[i]!;
-          text += `|${pad.water[i] ? 'w' : ''}${pad.paved[i] ? 'p' : ''}`;
-          for (const p of ring) text += `;${p.x.toFixed(3)},${p.y.toFixed(3)},${level(p.x, p.y).toFixed(3)}`;
-        });
-      }
-      siteText.set(b, text);
-    }
-    return text;
-  };
-  /**
-   * What changed among the buildings since the ground was graded: the box
-   * of every site added, removed or changed, or null when none did.
-   */
-  const changedSites = (doc: RoadDoc): [number, number, number, number] | null => {
-    let box: [number, number, number, number] | null = null;
-    const take = (q: readonly [number, number, number, number]): void => {
-      box = box ? [Math.min(box[0], q[0]), Math.min(box[1], q[1]), Math.max(box[2], q[2]), Math.max(box[3], q[3])] : [...q];
-    };
-    const seen = new Set<number>();
-    for (const b of doc.buildings.all()) {
-      seen.add(b.id);
-      const was = graded.get(b.id);
-      if (was?.ref === b) continue;
-      const site = siteTextOf(b);
-      // A new record of the same site (aged, renamed): nothing to grade.
-      if (was && was.site === site) { graded.set(b.id, { ref: b, site, box: was.box }); continue; }
-      if (was) take(was.box);
-      const now = bankBox(b);
-      take(now);
-      graded.set(b.id, { ref: b, site, box: now });
-    }
-    for (const [id, was] of graded) if (!seen.has(id)) { take(was.box); graded.delete(id); }
     return box;
   };
   /**
@@ -1510,24 +1407,20 @@ export function createSceneRenderer(
       blocks.some((b) => q[0] <= b[2] && q[2] >= b[0] && q[1] <= b[3] && q[3] >= b[1]);
     for (const b of net.doc.buildings.all()) {
       if (!touches(bankBox(b))) continue;
-      padsKnown.delete(b);
-      buildingPads([b], builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, padsKnown);
+      sitesGraded.refresh(b);
       yield;
     }
     gradedFor = net.doc.buildings.revision;
     // The sites that changed with the edit (a building the road razed) are
     // graded here too, in the slices, not in the edit's own frame.
-    const sites = changedSites(net.doc);
+    const sites = sitesGraded.changedSites(net.doc.buildings);
     // Every platform not known yet, one building a step: all of them in one
     // step was a frame of 50 ms after the memory of them was dropped.
     for (const b of net.doc.buildings.all()) {
-      if (padsKnown.has(b)) continue;
-      buildingPads([b], builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, padsKnown);
+      if (!sitesGraded.ensure(b)) continue;
       yield;
     }
-    padsCache = net.doc.buildings.size > 0
-      ? buildingPads(net.doc.buildings.all(), builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, padsKnown)
-      : null;
+    sitesGraded.rebuild(net.doc.buildings);
     yield;
     // Each block in quarters, a quarter a step: a whole block was 18 ms of
     // terrain in one step, past the frame's allowance (`core/frameWork.ts`).
@@ -1561,19 +1454,13 @@ export function createSceneRenderer(
     // written together when the last is shaped (`shapeBlocksSteps`).
     if (!padsReady) derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', net.doc.changes.version);
     const roads = net.doc.segments.size > 0 ? elevation : null;
-    if (!padsReady && (!region || !padsCache || sites)) {
+    if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
-      if (!sites) {
-        // The roads or the land moved: every platform is worked out afresh.
-        padsKnown = new WeakMap();
-        graded.clear();
-        changedSites(net.doc);
-      }
-      padsCache = net.doc.buildings.size > 0
-        ? buildingPads(net.doc.buildings.all(), builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, padsKnown)
-        : null;
+      // The roads or the land moved: every platform is worked out afresh.
+      if (!sites) sitesGraded.forget(net.doc.buildings);
+      sitesGraded.rebuild(net.doc.buildings);
     }
-    const pads = net.doc.buildings.size > 0 ? padsCache : null;
+    const pads = net.doc.buildings.size > 0 ? sitesGraded.pads : null;
     if (!pads) {
       terrain.shapeToRoads(roads, region);
       return;
@@ -2893,7 +2780,7 @@ export function createSceneRenderer(
       // While a road edit is prepared in slices its steps grade the sites (`shapeBlocksSteps`).
       if (!buildingsHeld && !worldJob && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
-        const changed = changedSites(net.doc);
+        const changed = sitesGraded.changedSites(net.doc.buildings);
         if (changed) shapeGround(net, terrainRegion(changed), true);
       }
       // What stands on the ground - the buildings, the walls, the transport,
@@ -2969,28 +2856,9 @@ export function createSceneRenderer(
         world.add(transit.group);
         builtTriangles += transit.triangles;
       }
-      const gardenKey = plantSignature(net.doc);
-      if (groundSettled && onGround.gardens.stale(gardenKey, plantsArea)) {
-        // Each building's plants sampled on the ground again only when they
-        // changed or a change of the ground reached its bank.
-        // Each building's list kept as it is: the gardens are packed per list
-        // (`gardens.ts` `gardenPack`), a list unchanged is not placed again.
-        const plants: (readonly GardenPlant[])[] = [];
-        const seen = new Set<number>();
-        for (const b of net.doc.buildings.all()) {
-          const text = plantTextOf(b);
-          if (!text) continue;
-          seen.add(b.id);
-          const was = gardenCache.get(b.id);
-          if (was && was.text === text && !groundChanges.touches(was.seen, bankBox(b))) {
-            plants.push(was.plants);
-            continue;
-          }
-          const own = gardenPlants([b], terrain.renderedHeightAt);
-          gardenCache.set(b.id, { text, seen: groundChanges.version, plants: own });
-          plants.push(own);
-        }
-        for (const id of [...gardenCache.keys()]) if (!seen.has(id)) gardenCache.delete(id);
+      // Each building's plants (`gardenLists.ts`), placed again only when some changed.
+      const plants = plantLists.update(net.doc.buildings, groundSettled);
+      if (plants) {
         // Kept building by building (`gardens.ts`): a list the same as before keeps its plants' slots.
         gardens ??= createGardens(sceneryKit);
         const swapped = gardens.update(plants);
@@ -3212,32 +3080,13 @@ export function createSceneRenderer(
       // the camera asks (it reads them in the street, never from above): a
       // bomb moves the buildings' revision, and filing the whole town in the
       // frame of the blast was 440 ms of it (2026-10-09). Each record's floor
-      // is kept while the record and the ground are the same.
-      const solidsKey = `${net.doc.buildings.revision}:${net.doc.terrainRevision}:${net.revision}`;
-      if (cameraSolidsFor !== solidsKey) {
-        cameraSolidsFor = solidsKey;
-        const groundKey = `${net.doc.terrainRevision}:${net.revision}`;
-        const floorOf = (b: Building): number => {
-          const known = solidFloors.get(b);
-          if (known && known.key === groundKey) return known.floor;
-          const floor = floorHeight(b, builtGroundAt, pavedHeightAt);
-          solidFloors.set(b, { key: groundKey, floor });
-          return floor;
-        };
-        let solids: CameraSolids | null = null;
-        const filed = (): CameraSolids => {
-          if (!solids) {
-            const t0 = performance.now();
-            solids = cameraSolids(net.doc.buildings.all(), floorOf);
-            performance.measure('camera:solids', { start: t0 });
-          }
-          return solids;
-        };
-        rig.setSolids((x, y) => filed().floorAt(x, y));
-        townSolids = filed;
+      // is kept while the record and the ground are the same (`cameraSolidsKeeper`).
+      if (cameraSolidsKept.follow(net.doc.buildings, `${net.doc.terrainRevision}:${net.revision}`)) {
+        rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y));
+        townSolids = () => cameraSolidsKept.solids();
       }
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
-      post.followTown(rig.target.x, -rig.target.z, townSolids, cameraSolidsFor);
+      post.followTown(rig.target.x, -rig.target.z, townSolids, cameraSolidsKept.key);
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
       const plantMap = rig.viewport.zoom < PLANT_MAP_ZOOM;
       // Keep the full facade at street zoom: the planar far mesh loses frames

@@ -1,5 +1,6 @@
 import { m } from '@world/units';
 import { isMass, roofRise, volumeHeight } from './geometry';
+import type { BuildingStore } from './store';
 import type { Building } from './types';
 
 /**
@@ -57,6 +58,59 @@ export interface CameraSolids {
 }
 
 const smoothstep = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+
+/**
+ * The town's solids as filed for the camera, kept while the buildings and the
+ * ground stand (`render/renderer.ts` asks it every frame, `canyonLight.ts`
+ * reads the same filing). `follow` says whether the filing is new; it is made
+ * only when first asked (`solids`), and each record's floor is kept while the
+ * record and the ground are the same. Out of the renderer so the work of one
+ * building more can be counted (`tests/scale/buildingEdit.spec.ts`).
+ */
+export interface CameraSolidsKeeper {
+  /** What the filing stands for: the buildings' revision and the ground's. */
+  readonly key: string;
+  /** Takes in the buildings and the ground (`groundKey`); true when the filing is no longer the one handed out. */
+  follow(buildings: BuildingStore, groundKey: string): boolean;
+  /** The filing for the last `follow`, made on the first ask. */
+  solids(): CameraSolids;
+}
+
+/** A keeper of the camera's solids; `floorAt` is a building's ground-floor world height on the ground as it stands. */
+export function cameraSolidsKeeper(floorAt: (b: Building) => number): CameraSolidsKeeper {
+  const floors = new WeakMap<Building, { key: string; floor: number }>();
+  let key = '';
+  let groundKey = '';
+  let buildings: BuildingStore | null = null;
+  let filed: CameraSolids | null = null;
+  const floorOf = (b: Building): number => {
+    const known = floors.get(b);
+    if (known && known.key === groundKey) return known.floor;
+    const floor = floorAt(b);
+    floors.set(b, { key: groundKey, floor });
+    return floor;
+  };
+  return {
+    get key() { return key; },
+    follow(town, ground) {
+      buildings = town;
+      const next = `${town.revision}:${ground}`;
+      if (next === key) return false;
+      key = next;
+      groundKey = ground;
+      filed = null;
+      return true;
+    },
+    solids() {
+      if (!filed) {
+        const t0 = performance.now();
+        filed = cameraSolids(buildings?.all() ?? [], floorOf);
+        performance.measure('camera:solids', { start: t0 });
+      }
+      return filed;
+    },
+  };
+}
 
 /** Files every solid volume of `buildings`; `floorOf` gives each one's ground-floor world height. */
 export function cameraSolids(buildings: Iterable<Building>, floorOf: (b: Building) => number): CameraSolids {

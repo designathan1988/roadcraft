@@ -11,5 +11,8 @@
   "building+1:ground": 3.82,
   "building+1:ground:idle": 3.82,
   "building+1:bays": 3.82,
-  "building+1:yards": 3.82
+  "building+1:yards": 3.82,
+  "building+1:solids": 3.82,
+  "building+1:pads": 3.82,
+  "building+1:gardens": 14.02
 }
