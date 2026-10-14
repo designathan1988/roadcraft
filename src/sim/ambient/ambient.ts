@@ -1,6 +1,5 @@
 import { Rng } from '@core/rng';
 import { m, stepsIn } from '@world/units';
-import type { Building } from '@world/buildings/types';
 import { DT, FLEET_CEILING, PED_CEILING } from '../params';
 import type { SimWorld } from '../world';
 import { ARCHETYPES, bodyClassOfArchetype, type Archetype } from '../vehicles/archetypes';
@@ -13,10 +12,11 @@ import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
 import { collectBays, stallFits, type Bay } from '../agents/parking';
-import { type DoorWay, doorWay } from '../agents/lotDoors';
+import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
-import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
+import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
 import { BuildingMix, SightWalls, StreetLength, atRoll } from './ambientIndex';
+import { LotPlaces, PLACE_KINDS } from './lotPlaces';
 
 
 /**
@@ -150,9 +150,7 @@ export class AmbientWorld {
     for (const id of this.drivers) { const v = w.vehicles.get(id); if (v) w.removeVehicle(v); }
     this.walkers.clear();
     this.roaming.clear();
-    this.places = [];
-    this.placesFor = -1;
-    this.placesRoads = -1;
+    this.places = newPlaces();
     this.drivers.clear();
     this.sighted.clear();
     this.bays.clear();
@@ -341,14 +339,12 @@ export class AmbientWorld {
   private readonly roaming = new Set<number>();
   private nextEdgeLook = 0;
   /**
-   * The lots with a people's gate (`agents/lotDoors.ts`), with what kind of
-   * place each is and its way from the door to the footway: undefined until
-   * worked out (a few a look), null when it has none that can be walked.
+   * The buildings people walk into, by id, kept by the diary, each with
+   * what kind of place it is and its way from the door to the footway
+   * (`agents/lotDoors.ts`), worked out when the lot is first drawn
+   * (`lotPlaces.ts`).
    */
-  /** `footless`: a street door with no footway at its foot (`joinsFootway`), looked at again when the roads change. */
-  private places: { b: Building; kind: keyof Mix; way: DoorWay | null | undefined; footless?: boolean }[] = [];
-  private placesFor = -1;
-  private placesRoads = -1;
+  private places = newPlaces();
   /** Walks made from the road ends, and how many of them came out of a lot's gate or went in at one. */
   readonly gateWalks = { made: 0, fromGate: 0, toGate: 0 };
   /** People come out of and go in at the lots' gates (off: everybody passes from road end to road end, for a measure). */
@@ -422,15 +418,16 @@ export class AmbientWorld {
     // lot's frontage); that share of the walkers comes out of a lot's gate or
     // goes in at one, the rest pass through from road end to road end.
     let outW = 0, inW = 0;
-    // Only once most lots' ways are worked out: the first few would take everybody.
-    if (this.gates && (this.placesReady() || !ends.length)) {
-      for (const p of this.places) {
-        if (!p.way) continue;
-        const people = PEOPLE[p.kind] * busy(p.kind, hour) * (p.way.frontage / m(100));
-        const out = outShare(p.kind, hour);
+    if (this.gates && (this.placesReady(w) || !ends.length)) {
+      // By kind: the frontage of the lots of that kind that may be walked to
+      // (a lot not yet worked out by the most its way can have).
+      const frontage = this.places.frontages();
+      PLACE_KINDS.forEach((kind, k) => {
+        const people = PEOPLE[kind] * busy(kind, hour) * (frontage[k]! / m(100));
+        const out = outShare(kind, hour);
         outW += people * out;
         inW += people * (1 - out);
-      }
+      });
     }
     if (!ends.length && outW <= 0) return;
     this.nextEdgeLook -= LOOK_EVERY;
@@ -447,8 +444,8 @@ export class AmbientWorld {
       let toLot: DoorWay | null = null;
       if (outW + inW > 0 && this.rng.float() < local) {
         const out = !ends.length || this.rng.float() * (outW + inW) < outW;
-        const first = this.pickPlace(hour, out, null);
-        const second = first && this.rng.float() < local ? this.pickPlace(hour, !out, first) : null;
+        const first = this.pickPlace(w, hour, out, null);
+        const second = first && this.rng.float() < local ? this.pickPlace(w, hour, !out, first) : null;
         if (out) { fromLot = first; toLot = second; } else { toLot = first; fromLot = second; }
       }
       let from: { node: number; x: number; y: number };
@@ -532,7 +529,7 @@ export class AmbientWorld {
       if (!onLastStretch(w, id)) continue;
       const at = walkerOf(w, id);
       if (!at) continue;
-      const lot = this.gates && this.placesReady() && this.rng.float() < 0.6 ? this.pickPlace(hour, false, null) : null;
+      const lot = this.gates && this.placesReady(w) && this.rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       if (lot && walkOn(w, id, lot.out[0]!.x, lot.out[0]!.y, m(30), reversed(lot))) {
         this.roaming.delete(id);
         this.gateWalks.toGate++;
@@ -639,7 +636,7 @@ export class AmbientWorld {
       if (this.openSpots.some((q) => Math.hypot(q.x - x, q.y - y) < SPACE)) continue;
       if (engine.bridge.anyoneWithin(w, x, y, SPACE, null)) continue;
       // Into a lot by the hour's tables, as the walkers from the road ends.
-      const toLot = this.gates && this.placesReady() && rng.float() < 0.6 ? this.pickPlace(hour, false, null) : null;
+      const toLot = this.gates && this.placesReady(w) && rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       const id = this.walkFrom(w, { node: -1, x, y }, null, toLot);
       if (id === null) continue;
       this.openSpots.push({ x, y });
@@ -648,88 +645,37 @@ export class AmbientWorld {
   }
 
   /**
-   * The buildings people walk into, kept with the buildings: a lot whose
-   * record is the same keeps its way; a few new ones are worked out each look
-   * (`lotDoors.ts`: a person's grid round the gate and the door, a
-   * millisecond or so each; a shop on the footway, its street door), so a
-   * town grown at once never costs a frame. Every building is a candidate:
-   * one with no people's gate may open its door onto the street, which only
-   * its way tells (null: nobody walks to it).
+   * The buildings people walk into, taken in from the diary: the buildings
+   * changed, and the street doors near the roads changed (a street door's
+   * way holds while a footway is at its foot). Every building is a
+   * candidate: one with no people's gate may open its door onto the street,
+   * which only its way tells (null: nobody walks to it).
    */
   private refreshPlaces(w: SimWorld): void {
-    const rev = w.doc.buildings.revision;
-    if (rev !== this.placesFor) {
-      this.placesFor = rev;
-      const known = new Map(this.places.map((p) => [p.b, p] as const));
-      this.places = [];
-      for (const b of w.doc.buildings.all()) {
-        const was = known.get(b);
-        this.places.push({ b, kind: kindOf(b), way: was?.way, footless: was?.footless ?? false });
-      }
-    }
-    // A street door's way holds while a footway is at its foot: the roads
-    // changed, those are looked at again.
-    if (w.doc.revision !== this.placesRoads) {
-      this.placesRoads = w.doc.revision;
-      for (const p of this.places) if (p.way?.street || p.footless) { p.way = undefined; p.footless = false; }
-    }
-    const start = performance.now();
-    for (const p of this.places) {
-      if (p.way !== undefined) continue;
-      const way = doorWay(p.b);
-      p.footless = !!way?.street && !joinsFootway(w, way.out[way.out.length - 1]!);
-      p.way = p.footless ? null : way;
-      if (performance.now() - start >= WAYS_MS) break;
-    }
+    this.places.sync(w.doc.buildings, w.doc.changes);
   }
 
-  /**
-   * Whether most lots' ways to their doors are worked out (`refreshPlaces`
-   * does a few a look): before, the few known would draw every walk sent to
-   * a lot, and a town grown at once sent its walks to the first lots done.
-   * And one of them a way to walk: every building is looked at, and a map of
-   * buildings with no way in (no gate, no door on a footway) has no lot to
-   * send anybody to.
-   */
-  private placesReady(): boolean {
-    let known = 0, ways = 0;
-    for (const p of this.places) {
-      if (p.way !== undefined) known++;
-      if (p.way) ways++;
-    }
-    return ways > 0 && known >= this.places.length / 2;
+  /** Whether a lot may be walked to: one whose way is known to be walkable, or not yet worked out. */
+  private placesReady(w: SimWorld): boolean {
+    this.refreshPlaces(w);
+    return this.places.ready();
   }
 
   /**
    * A lot with a way to its door, at random by the people it has on its
    * street now coming out (`out`) or going in: `PEOPLE` x `busy` x frontage x
    * the share that way at this hour (`outShare`). Not `not`, nor one too near
-   * it to be worth the walk.
+   * it to be worth the walk; the other end of a walk from `not` nearer is
+   * likelier, by the gravity model's negative exponential (`WALK_DECAY`).
+   * Drawn in O(log n) (`LotPlaces.pick`), the lot drawn worked out then.
    */
-  private pickPlace(hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
-    let total = 0;
-    const weight = (p: AmbientWorld['places'][number]): number => {
-      if (!p.way || p.way === not) return 0;
-      // The other end of a walk from `not`: nearer is likelier, by the
-      // gravity model's negative exponential (`WALK_DECAY`).
-      let near = 1;
-      if (not) {
-        const a = p.way.out[p.way.out.length - 1]!, b = not.out[not.out.length - 1]!;
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d < m(40)) return 0;
-        near = Math.exp(-d / WALK_DECAY);
-      }
-      const share = outShare(p.kind, hour);
-      return PEOPLE[p.kind] * busy(p.kind, hour) * p.way.frontage * (out ? share : 1 - share) * near;
-    };
-    for (const p of this.places) total += weight(p);
-    if (total <= 0) return null;
-    let roll = this.rng.float() * total;
-    for (const p of this.places) {
-      roll -= weight(p);
-      if (roll < 0 && p.way) return p.way;
-    }
-    return null;
+  private pickPlace(w: SimWorld, hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
+    this.refreshPlaces(w);
+    const coef = PLACE_KINDS.map((kind) => {
+      const share = outShare(kind, hour);
+      return PEOPLE[kind] * busy(kind, hour) * (out ? share : 1 - share);
+    });
+    return this.places.pick(this.rng, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
   }
 
   /**
@@ -973,12 +919,8 @@ export class AmbientWorld {
  * 940 m at 1.3 m/s).
  */
 const WALK_DECAY = m(470);
-/**
- * Time given to working out lots' ways in one look of the budget, ms
- * (`refreshPlaces`): one way cost 0.65 ms on average and 4 ms at most over
- * 32 lots in `lotDoors.spec` (node), so a look works out one to three.
- */
-const WAYS_MS = 1.5;
+/** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
+const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
 /** A bay's place as a key (a quarter of a unit), as the lots' traffic keys its bays. */
 const spotKey = (p: { x: number; y: number }): string => `${Math.round(stepsIn(p.x, 0.1))},${Math.round(stepsIn(p.y, 0.1))}`;
 const NO_WAY: readonly { x: number; y: number }[] = [];

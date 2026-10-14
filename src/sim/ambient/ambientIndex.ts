@@ -28,8 +28,12 @@ import { kindOf, type Mix } from './demand';
  * Pure: no three, no DOM.
  */
 
-/** Work done by the indexes, for the scale tests: buildings filed, cells read, rings tested. */
-export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0 };
+/**
+ * Work done by the indexes, for the tests: buildings filed, cells read, rings
+ * tested, whole reads; lots' ways worked out, lots proposed by a draw, and
+ * bounds a worked-out lot broke (always 0: a draw is exact only then).
+ */
+export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0, verified: 0, proposals: 0, boundBroken: 0 };
 
 /**
  * The buildings the diary names as changed after `serial`; null when they
@@ -49,7 +53,7 @@ export function buildingsChangedSince(journal: ChangeJournal, serial: number): S
 }
 
 /** A cell's key from its column and row (both within ±32 767), as `world/cells.ts`. */
-const key = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
+export const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
 
 // ------------------------------------------------------------ the walls
 
@@ -113,7 +117,7 @@ export class SightWalls {
       const cy0 = Math.floor((y0 - WALL_SLACK) / WALL_CELL), cy1 = Math.floor((y1 + WALL_SLACK) / WALL_CELL);
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let cy = cy0; cy <= cy1; cy++) {
-          const k = key(cx, cy);
+          const k = cellKey(cx, cy);
           let set = this.cells.get(k);
           if (!set) this.cells.set(k, set = new Set());
           set.add(wall);
@@ -132,7 +136,7 @@ export class SightWalls {
       const cy0 = Math.floor((wall.y0 - WALL_SLACK) / WALL_CELL), cy1 = Math.floor((wall.y1 + WALL_SLACK) / WALL_CELL);
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let cy = cy0; cy <= cy1; cy++) {
-          const k = key(cx, cy);
+          const k = cellKey(cx, cy);
           const set = this.cells.get(k);
           if (!set) continue;
           set.delete(wall);
@@ -160,7 +164,7 @@ export class SightWalls {
     let maxY = stepY > 0 ? ((cy + 1) * WALL_CELL - ay) / dy : stepY < 0 ? (cy * WALL_CELL - ay) / dy : Infinity;
     for (;;) {
       ambientIndexWork.cells++;
-      const set = this.cells.get(key(cx, cy));
+      const set = this.cells.get(cellKey(cx, cy));
       if (set) {
         for (const wl of set) {
           if (wl.mark === mark) continue;
@@ -192,7 +196,7 @@ export function crosses(ax: number, ay: number, bx: number, by: number, cx: numb
 
 // ------------------------------------------------------------ the mix of the buildings
 
-type Kind = keyof Mix;
+export type Kind = keyof Mix;
 interface Counts { home: number; shop: number; work: number; civic: number; total: number }
 const noCounts = (): Counts => ({ home: 0, shop: 0, work: 0, civic: 0, total: 0 });
 interface Filed { readonly x: number; readonly y: number; readonly kind: Kind; readonly cell: number | null }
@@ -242,7 +246,7 @@ export class BuildingMix {
   private file(b: Building): void {
     ambientIndexWork.filed++;
     const placed = Number.isFinite(b.x) && Number.isFinite(b.y);
-    const cell = placed ? key(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL)) : null;
+    const cell = placed ? cellKey(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL)) : null;
     const f: Filed = { x: b.x, y: b.y, kind: kindOf(b), cell };
     this.byBuilding.set(b.id, f);
     this.all[f.kind]++; this.all.total++;
@@ -310,7 +314,7 @@ export class BuildingMix {
     } else {
       for (let gx = cx0; gx <= cx1; gx++) {
         for (let gy = cy0; gy <= cy1; gy++) {
-          const k = key(gx, gy);
+          const k = cellKey(gx, gy);
           const c = this.cells.get(k);
           if (c) visit(k, c);
         }
