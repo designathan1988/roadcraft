@@ -10,14 +10,13 @@ Atualizado: 2026-10-14 ~15h30.
   (`scripts/look.mjs`), o acusador (`scripts/acusar.mjs`), as skills `.claude/skills/`, o
   `CLAUDE.md` da raiz, contadores de trabalho por evento (testes de escala). Pendente dela, para
   quem continuar (2026-10-14 ~16h40, o jogador vai trocar de conta):
-  - contadores por evento que faltam em `tests/scale/buildingEdit.spec.ts`: anel de 2.048 do
-    diário (C1/D8), jardins (C2), `cameraSolids` (A8/C5), pads (C8) — a auditoria corrige, este
-    lado faz o contador que impede a volta;
+  - contadores por evento: o do diário está feito (`a17e808`, `building+1:ground` e `ground:idle`
+    x3,82 na base; o conserto D8 os leva a 0 e tira da base). Jardins (C2), `cameraSolids` (A8/C5)
+    e pads (C8) esperam a auditoria extrair a parte incremental do renderer num módulo puro
+    (combinado 2026-10-14); então este lado escreve o contador contra ele;
   - a regra "como adicionar um produto derivado" no CLAUDE.md: **só com o sim do jogador**
-    (pedido da auditoria, ainda sem resposta dele);
-  - plugins no usuário: `typescript-lsp` instalado, `%APPDATA%\npm` já no PATH, mas o app precisa
-    ser fechado e reaberto para a ferramenta LSP achar o `typescript-language-server`;
-    `context7` instalado, precisa ser autorizado pelo jogador (`/mcp` num terminal `claude`);
+    (perguntado de novo em 2026-10-14, nova conta);
+  - LSP (`workspaceSymbol`) e context7 conferidos e funcionando (2026-10-14);
   - referência offline: `C:/Codex-Shared/referencia/` (three.js r186 inteiro e 4 projetos;
     índice no `README.md` de lá).
 - Combinado: uma não edita arquivo que a outra está mexendo; commit só dos próprios arquivos
@@ -42,6 +41,7 @@ Atualizado: 2026-10-14 ~15h30.
     `conferindo-no-jogo` — **envio NÃO autorizado ainda**.
   - `cd4dc32` (Hook) `scripts/acusar.mjs` e `tests/arch/acusar.spec.ts` — **envio NÃO autorizado ainda**.
   - `6914c7d` (auditoria) lotes abertos.
+  - `a17e808` (Hook) contador do leitor do chão pelo diário — **envio NÃO autorizado ainda**.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas

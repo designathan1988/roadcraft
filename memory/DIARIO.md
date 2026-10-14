@@ -25,3 +25,8 @@
   C:/Codex-Shared/referencia. Plugins typescript-lsp e context7 instalados no usuário. Defeito
   visto e passado à auditoria: fresta preta e textura borrada numa fachada (15-rua-arrastada.png).
   Próximo: o "acusador" (script só de leitura) de usos do three.js contra o manual e dos padrões.
+- 2026-10-14 (Hook de busca na internet, nova conta): LSP e context7 funcionando. `a17e808` contador
+  `journalWork.entries` em `world/changes.ts` e produtos `building+1:ground` / `ground:idle` (17 -> 65,
+  x3,82, na base); mutante do conserto D8 morto (vai a 0, pede para sair da base). Jardins, cameraSolids
+  e pads: decididos dentro do `createSceneRenderer`, que o vitest não monta; a auditoria extrai a parte
+  incremental num módulo puro ao consertar e avisa. Acusador rodado, pistas passadas à auditoria.
