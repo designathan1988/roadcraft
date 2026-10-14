@@ -75,10 +75,6 @@ export interface SavedSession {
   readonly settings: SavedSettings;
 }
 
-interface SerializedSession extends SavedSession {
-  readonly version: 2;
-}
-
 /**
  * Autosave and file export.
  *
@@ -525,27 +521,8 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
     typeof settings.congestionOverlay === 'boolean';
 }
 
-/** Offers the current map as a downloadable JSON file. */
-export function exportToFile(
-  doc: RoadDoc,
-  settings?: SavedSettings,
-  filename = 'roadcraft-map.json',
-): void {
-  const saved: SerializedSession | SerializedDoc = settings
-    ? { version: 2, document: doc.toJSON(), settings: withUnit(settings) }
-    : doc.toJSON();
-  const blob = new Blob([JSON.stringify(saved, null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  // Revoked a moment later: revoking synchronously can cancel the download
-  // before Firefox or Safari has started it.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
+/** Save map: the map as a file (`mapExport.ts`). */
+export { exportToFile } from './mapExport';
 
 /** What a file pick came to: a map, nothing chosen, or a file that is not one. */
 export type ImportResult =

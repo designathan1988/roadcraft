@@ -96,8 +96,9 @@ export class BarrierTool {
 
   constructor(private readonly host: BarrierToolHost) {}
 
+  /** The gesture in progress, as a dictionary key (the interface translates it), or null. */
   gesture(): string | null {
-    return this.points ? 'cerca: traçando' : null;
+    return this.points ? 'gesture.barrier.tracing' : null;
   }
 
   cancel(): void {
@@ -110,9 +111,11 @@ export class BarrierTool {
    */
   down(world: Vec2, shift: boolean, screenX: number, screenY: number, detail: number): void {
     const { host } = this;
-    // Shift-click removes a run; a click puts a point down.
-    if (shift && host.removeAt(world)) {
-      host.hint('hint.barrier.removed');
+    // Shift-click removes a run; a click puts a point down. DO NOT let a
+    // Shift-click with no run under it fall through to a point: it began a
+    // fence the player never asked for.
+    if (shift) {
+      host.hint(host.removeAt(world) ? 'hint.barrier.removed' : 'hint.barrier.nothing');
       return;
     }
     const point = snapBarrierPoint(host.net(), host.kind(), world);
