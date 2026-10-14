@@ -10,9 +10,8 @@ import { step } from '@sim/pipeline';
 import { createAgentWalkEngine, inspectAgentWalkers, ParkedZoneIndex, route, walkWork } from '@sim/agents/walk';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { makeDriver } from '@sim/vehicles/driver';
-import { createVehicle, type Vehicle } from '@sim/vehicles/state';
+import { createVehicle, type Vehicle, type VehicleId } from '@sim/vehicles/state';
 import { seatPerson, stepKerbStops, type KerbStop } from '@sim/vehicles/kerbStops';
-import type { VehicleId } from '@world/ids';
 
 /**
  * The walkers' derived products cost what is near, not what the map holds
@@ -57,7 +56,7 @@ function populate(w: SimWorld): number {
   for (const way of graphOf(w).ways) {
     if (way.kind !== 'footway' || way.path.length < m(6)) continue;
     const a = way.path.sampleAt(way.path.length * 0.25).p, b = way.path.sampleAt(way.path.length * 0.75).p;
-    if (w.pedEngine.walkTrip(w, { trip: n, fromX: a.x, fromY: a.y, toX: b.x, toY: b.y, seed: n * 7 + 1, ageClass: 'adult' }) !== null) n++;
+    if (w.pedEngine.walkTrip!(w, { trip: n, fromX: a.x, fromY: a.y, toX: b.x, toY: b.y, seed: n * 7 + 1, ageClass: 'adult' }) !== null) n++;
   }
   return n;
 }
