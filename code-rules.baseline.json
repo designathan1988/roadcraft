@@ -150,7 +150,6 @@
  "material-in-frame  src/render/buildings/furnitureKit.ts createFurnitureMaterial  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/buildings/signature.ts std  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/lightning.ts make  new LineMaterial": 1,
- "material-in-frame  src/render/lotOverlay.ts material  new MeshBasicMaterial": 1,
  "material-in-frame  src/render/lowPolyTrees.ts leafCardMaterials  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/markings.ts paintMaterial  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/natureTrees.ts loadNatureTrees  new MeshStandardMaterial": 1,
