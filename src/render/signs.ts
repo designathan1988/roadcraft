@@ -287,6 +287,9 @@ function cellUv(cell: number, h: number): { u0: number; v0: number; u1: number; 
   return { u0: x / W, u1: (x + CELL) / W, v0: 1 - (y + h) / H, v1: 1 - y / H };
 }
 
+/** The signs' post, one shape and one material for every sign of every build (NÃO criar por reconstrução). */
+const POST = { geometry: new CylinderGeometry(POST_RADIUS, m(0.045), 1, 8), material: new MeshStandardMaterial({ color: 0x8e979b, roughness: 0.45, metalness: 0.6 }) };
+
 /** The corners of three's plane of 1 x 1 (`PlaneGeometry`), and its two triangles. */
 const QUAD = [[-0.5, 0.5], [0.5, 0.5], [-0.5, -0.5], [0.5, -0.5]] as const;
 const QUAD_ORDER = [0, 2, 1, 2, 3, 1] as const;
@@ -296,9 +299,11 @@ export function buildSigns(net: Network, elevation: RoadElevation, items: Iterab
   group.name = 'signs';
   if (typeof document === 'undefined') return { group, dispose() {} };
   builds++;
-  const post = new CylinderGeometry(POST_RADIUS, m(0.045), 1, 8);
-  const postMaterial = new MeshStandardMaterial({ color: 0x8e979b, roughness: 0.45, metalness: 0.6 });
-  const owned: { dispose(): void }[] = [post, postMaterial];
+  // The post's shape and material are the module's (`POST`), made once: a
+  // rebuild of the signs (every road, ground or landscaping change) made and
+  // disposed a material (CLAUDE.md: "Never create a material inside a rebuild").
+  const { geometry: post, material: postMaterial } = POST;
+  const owned: { dispose(): void }[] = [];
   /** The posts, one instance each (`setPosts` at the end): a mesh and a draw each before. */
   const posts: Matrix4[] = [];
   /** The plates' quads, merged into one mesh at the end. */

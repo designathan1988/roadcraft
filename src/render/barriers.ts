@@ -38,13 +38,7 @@ export function buildBarriers(doc: RoadDoc, groundAt: (x: number, y: number) => 
     placeBarrier(barrier, groundAt, { walls, copings, posts, rails, hedges, steelPosts, beams, railPosts, railBars });
   }
 
-  const unit = new BoxGeometry(1, 1, 1);
-  const materials: Material[] = [];
-  const material = (colour: number, roughness: number, metalness = 0): MeshStandardMaterial => {
-    const mat = new MeshStandardMaterial({ color: colour, roughness, metalness });
-    materials.push(mat);
-    return mat;
-  };
+  const { unit, material } = PARTS;
   let triangles = 0;
   const add = (name: string, boxes: readonly Box[], mat: Material): void => {
     if (boxes.length === 0) return;
@@ -66,23 +60,51 @@ export function buildBarriers(doc: RoadDoc, groundAt: (x: number, y: number) => 
     group.add(mesh);
     triangles += boxes.length * 12;
   };
-  add('barrier-wall', walls, material(0xd8d0bf, 0.92));
-  add('barrier-coping', copings, material(0xb9b2a4, 0.85));
-  add('barrier-post', posts, material(0x4b5153, 0.55, 0.5));
-  add('barrier-rail', rails, material(0x4b5153, 0.55, 0.5));
-  add('barrier-hedge', hedges, material(0x3d6532, 1));
-  // Galvanised steel for the road guardrail; painted steel for the railing.
-  add('barrier-guardrail-post', steelPosts, material(0x9aa3a6, 0.4, 0.75));
-  add('barrier-guardrail-beam', beams, material(0xb4bcbf, 0.32, 0.8));
-  add('barrier-railing-post', railPosts, material(0x2e3a34, 0.5, 0.45));
-  add('barrier-railing-bar', railBars, material(0x2e3a34, 0.5, 0.45));
+  add('barrier-wall', walls, material.wall);
+  add('barrier-coping', copings, material.coping);
+  add('barrier-post', posts, material.post);
+  add('barrier-rail', rails, material.rail);
+  add('barrier-hedge', hedges, material.hedge);
+  add('barrier-guardrail-post', steelPosts, material.guardrailPost);
+  add('barrier-guardrail-beam', beams, material.guardrailBeam);
+  add('barrier-railing-post', railPosts, material.railingPost);
+  add('barrier-railing-bar', railBars, material.railingBar);
   return {
     group,
     triangles,
+    // The box and the materials are the module's (`PARTS`): only the instances are this build's.
     dispose() {
-      unit.dispose();
-      for (const mat of materials) mat.dispose();
+      for (const mesh of group.children) (mesh as InstancedMesh).dispose();
       group.clear();
+    },
+  };
+}
+
+/**
+ * The unit box and the materials, made ONCE for the module: every rebuild of
+ * the barriers (each placed fence, each ground change under one) made nine
+ * materials and disposed nine, each new one paying its program lookup and its
+ * uniforms (CLAUDE.md: "Never create a material inside a rebuild"; as
+ * `utilities.ts` `utilityParts` and `transit.ts` `sharedMaterial`).
+ * NÃO criar material dentro de `buildBarriers`.
+ */
+const PARTS = barrierParts();
+function barrierParts(): { unit: BoxGeometry; material: Record<'wall' | 'coping' | 'post' | 'rail' | 'hedge' | 'guardrailPost' | 'guardrailBeam' | 'railingPost' | 'railingBar', Material> } {
+  const material = (colour: number, roughness: number, metalness = 0): MeshStandardMaterial =>
+    new MeshStandardMaterial({ color: colour, roughness, metalness });
+  return {
+    unit: new BoxGeometry(1, 1, 1),
+    material: {
+      wall: material(0xd8d0bf, 0.92),
+      coping: material(0xb9b2a4, 0.85),
+      post: material(0x4b5153, 0.55, 0.5),
+      rail: material(0x4b5153, 0.55, 0.5),
+      hedge: material(0x3d6532, 1),
+      // Galvanised steel for the road guardrail; painted steel for the railing.
+      guardrailPost: material(0x9aa3a6, 0.4, 0.75),
+      guardrailBeam: material(0xb4bcbf, 0.32, 0.8),
+      railingPost: material(0x2e3a34, 0.5, 0.45),
+      railingBar: material(0x2e3a34, 0.5, 0.45),
     },
   };
 }
