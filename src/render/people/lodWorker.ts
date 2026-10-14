@@ -76,15 +76,21 @@ export function simplifyIndex(source: Uint32Array, positions: Float32Array, tria
 const scope = globalThis as unknown as { onmessage: ((e: MessageEvent<LodRequest | IndexRequest>) => void) | null; postMessage?: (m: unknown, t: Transferable[]) => void; document?: unknown };
 if (typeof scope.document === 'undefined' && typeof scope.postMessage === 'function' && typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== 'undefined') {
   scope.onmessage = async (e) => {
-    await MeshoptSimplifier.ready;
     const req = e.data;
-    if ('kind' in req) {
-      const index = simplifyIndex(req.index, req.positions, req.triangles);
-      // The source comes back when it was kept whole: transferred, not copied.
-      scope.postMessage!({ id: req.id, index }, index ? [index.buffer] : []);
-      return;
+    // Every request answered, a failure too (`lodPool.ts` rejects it): DO NOT
+    // let an error leave the page waiting for an answer that never comes.
+    try {
+      await MeshoptSimplifier.ready;
+      if ('kind' in req) {
+        const index = simplifyIndex(req.index, req.positions, req.triangles);
+        // The source comes back when it was kept whole: transferred, not copied.
+        scope.postMessage!({ id: req.id, index }, index ? [index.buffer] : []);
+        return;
+      }
+      const levels = simplifyLevels(req);
+      scope.postMessage!({ id: req.id, levels }, levels.map((l) => l.index.buffer));
+    } catch (error) {
+      scope.postMessage!({ id: req.id, error: String(error) }, []);
     }
-    const levels = simplifyLevels(req);
-    scope.postMessage!({ id: req.id, levels }, levels.map((l) => l.index.buffer));
   };
 }
