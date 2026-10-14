@@ -291,6 +291,12 @@ export class RoadDoc {
    * the diary knowing where and why.
    */
   readonly changes = new ChangeJournal();
+  /**
+   * The document this one was copied from (`clone`) and that document's
+   * diary serial then: `replaceWith` trusts the copy's diary for what moved
+   * only while the original still stands at that serial.
+   */
+  private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
 
   /**
    * Modular buildings (docs/buildings.md). They keep their OWN revision,
@@ -1239,6 +1245,7 @@ export class RoadDoc {
     // diary goes on from this one's (what loading the copy wrote is not a
     // change), so the live network is taken over as it stands (`adopt`).
     copy.changes.continueFrom(this.changes);
+    copy.forkedFrom = { doc: this, version: this.changes.version };
     return copy;
   }
 
@@ -1256,10 +1263,12 @@ export class RoadDoc {
    * stand, and every other kind whose content moved.
    */
   replaceWith(source: RoadDoc): void {
-    const roads = roadDifferences(this, source);
-    const stamps = this.terrainRelief !== source.terrainRelief ? null : stampDifferences(this.terrainStamps, source.terrainStamps);
-    const items = itemDifferences(this, source);
-    const changed = this.replaceContents(source);
+    const moved = this.movedIn(source);
+    const roads = moved('roads', 'traffic') ? roadDifferences(this, source) : { rects: [], ids: [] };
+    const stamps = !moved('terrain') ? { rects: [], ids: [] }
+      : this.terrainRelief !== source.terrainRelief ? null : stampDifferences(this.terrainStamps, source.terrainStamps);
+    const items = itemDifferences(this, source, moved);
+    const changed = this.replaceContents(source, moved);
     const where = (rects: readonly ChangeRect[] | undefined): readonly ChangeRect[] | null => rects && rects.length ? rects : null;
     if (changed.roads || roads.rects.length) this.roadsChanged(where(roads.rects), changed.roads, { ids: roads.ids });
     if (changed.land || (stamps !== null && stamps.rects.length)) {
@@ -1270,6 +1279,23 @@ export class RoadDoc {
     if (changed.barriers || items.barriers.length) this.changes.record('barriers', where(items.barriers));
     // The buildings write their own (`BuildingStore.replaceWith`), each where it stands.
     for (const kind of changed.others) this.changes.record(kind, null);
+  }
+
+  /**
+   * Whether `source` changed any of these kinds since it was copied from
+   * this document, read from its diary instead of comparing the contents.
+   * A working copy's diary goes on from this one's (`clone`,
+   * `ChangeJournal.continueFrom`) and every method that changes the copy
+   * writes an entry, so a kind whose serial did not move in the copy holds
+   * the same content as here, and comparing it text by text (docs/PROBLEMS.md
+   * R27: the whole map on every road drawn) finds nothing. Any other source
+   * - a map loaded from JSON, a copy of a copy, a copy of this document as
+   * it stood before a later edit - is compared in full, as before.
+   */
+  private movedIn(source: RoadDoc): MovedKinds {
+    const fork = source.forkedFrom;
+    if (!fork || fork.doc !== this || fork.version !== this.changes.version) return () => true;
+    return (...kinds) => source.changes.serialOf(...kinds) > this.changes.serialOf(...kinds);
   }
 
   // --------------------------------------------------- undo by records
@@ -1413,9 +1439,11 @@ export class RoadDoc {
   /**
    * Takes `source`'s contents and says what differed: the roads, the land,
    * the poles and the barriers (written with their places by `replaceWith`),
-   * and every other kind whose content moved.
+   * and every other kind whose content moved. A kind `moved` says the
+   * source did not change (`movedIn`) is neither compared nor copied: it
+   * holds what this document holds.
    */
-  private replaceContents(source: RoadDoc): {
+  private replaceContents(source: RoadDoc, moved: MovedKinds): {
     roads: boolean; land: boolean; utilities: boolean; barriers: boolean; others: DocChangeKind[];
   } {
     const others: DocChangeKind[] = [];
@@ -1424,46 +1452,54 @@ export class RoadDoc {
     // document with an edited clone (`commitDraft`), and moving the terrain
     // for it rewrote all 90 601 terrain corners, their normals and
     // the rivers on every road drawn, for ground that had not changed.
-    const landMoved = !sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief;
+    const landMoved = moved('terrain') && (!sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief);
     // Likewise the roads and the utility network: undoing a storey or a
     // brush dab replaced the whole document and moved both revisions, which
     // rebuilt every road mesh, the lanelets and the simulation topology for a
     // network that had not changed (CLAUDE.md: a building edit never moves
     // `doc.revision`).
-    const roadsChanged = !sameRoads(this, source);
-    const utilitiesChanged = !samePoles(this, source);
+    const roadsMoved = moved('roads', 'traffic');
+    const roadsChanged = roadsMoved && !sameRoads(this, source);
+    // `samePoles` reads the landscaping too: a kind moved of either compares both.
+    const utilitiesChanged = moved('utilities', 'landscape') && !samePoles(this, source);
 
-    this.nodes.clear();
-    this.segments.clear();
-    for (const [id, node] of source.nodes) {
-      this.nodes.set(id, {
-        id, x: node.x, y: node.y, heightOffset: node.heightOffset, smooth: node.smooth,
-        incident: [...node.incident], control: node.control,
-        blockedMovements: [...node.blockedMovements],
-        ...(node.crossing ? { crossing: { ...node.crossing } } : {}),
-        // The player's settings at the junction (V4, V5): dropped here, every
-        // road drawn anywhere wiped them all (`replaceWith` of the edited clone).
-        ...(node.laneLinks ? { laneLinks: node.laneLinks.map((l) => ({ ...l })) } : {}),
-        ...(node.approachRules ? { approachRules: node.approachRules.map((e) => ({ ...e })) } : {}),
-        ...(node.signal ? { signal: { ...node.signal, ...(node.signal.greens ? { greens: [...node.signal.greens] } : {}) } } : {}),
-        ...(node.end ? { end: node.end } : {}),
-        ...(node.uturn !== undefined ? { uturn: node.uturn } : {}),
-      });
+    if (roadsMoved) {
+      this.nodes.clear();
+      this.segments.clear();
+      for (const [id, node] of source.nodes) {
+        this.nodes.set(id, {
+          id, x: node.x, y: node.y, heightOffset: node.heightOffset, smooth: node.smooth,
+          incident: [...node.incident], control: node.control,
+          blockedMovements: [...node.blockedMovements],
+          ...(node.crossing ? { crossing: { ...node.crossing } } : {}),
+          // The player's settings at the junction (V4, V5): dropped here, every
+          // road drawn anywhere wiped them all (`replaceWith` of the edited clone).
+          ...(node.laneLinks ? { laneLinks: node.laneLinks.map((l) => ({ ...l })) } : {}),
+          ...(node.approachRules ? { approachRules: node.approachRules.map((e) => ({ ...e })) } : {}),
+          ...(node.signal ? { signal: { ...node.signal, ...(node.signal.greens ? { greens: [...node.signal.greens] } : {}) } } : {}),
+          ...(node.end ? { end: node.end } : {}),
+          ...(node.uturn !== undefined ? { uturn: node.uturn } : {}),
+        });
+      }
+      for (const [id, segment] of source.segments) {
+        this.segments.set(id, {
+          ...segment,
+          curve: segment.curve ? { ...segment.curve } : null,
+          ...(segment.section ? { section: cloneRoadSection(segment.section) } : {}),
+        });
+      }
     }
-    for (const [id, segment] of source.segments) {
-      this.segments.set(id, {
-        ...segment,
-        curve: segment.curve ? { ...segment.curve } : null,
-        ...(segment.section ? { section: cloneRoadSection(segment.section) } : {}),
-      });
+    if (moved('utilities')) {
+      this.poles.clear();
+      this.poleSpans.clear();
+      for (const [id, pole] of source.poles) this.poles.set(id, { ...pole });
+      for (const [id, span] of source.poleSpans) this.poleSpans.set(id, { ...span });
     }
-    this.poles.clear();
-    this.poleSpans.clear();
-    for (const [id, pole] of source.poles) this.poles.set(id, { ...pole });
-    for (const [id, span] of source.poleSpans) this.poleSpans.set(id, { ...span });
-    this.landscape.clear();
-    for (const [id, item] of source.landscape) this.landscape.set(id, { ...item });
-    if (!sameBarriers(this, source)) {
+    if (moved('landscape')) {
+      this.landscape.clear();
+      for (const [id, item] of source.landscape) this.landscape.set(id, { ...item });
+    }
+    if (moved('barriers') && !sameBarriers(this, source)) {
       this.barriers.clear();
       for (const [id, barrier] of source.barriers) this.barriers.set(id, { ...barrier, points: barrier.points.map((p) => ({ ...p })) });
       barriersChanged = true;
@@ -1475,7 +1511,7 @@ export class RoadDoc {
     // every reader of them redo its work for nothing (the dirty flag set
     // only when the primary data changes).
     this.nextZoneId = source.nextZoneId;
-    if (JSON.stringify(this.zones) !== JSON.stringify(source.zones) || JSON.stringify(this.zoneMarks) !== JSON.stringify(source.zoneMarks)) {
+    if (moved('zones') && (JSON.stringify(this.zones) !== JSON.stringify(source.zones) || JSON.stringify(this.zoneMarks) !== JSON.stringify(source.zoneMarks))) {
       this.zones.length = 0;
       this.zones.push(...source.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
       this.zoneMarks.length = 0;
@@ -1483,24 +1519,24 @@ export class RoadDoc {
       others.push('zones');
     }
     this.nextLotId = source.nextLotId;
-    if (JSON.stringify(this.lots) !== JSON.stringify(source.lots) || this.lotKeys.join('\n') !== source.lotKeys.join('\n')) {
+    if (moved('lots') && (JSON.stringify(this.lots) !== JSON.stringify(source.lots) || this.lotKeys.join('\n') !== source.lotKeys.join('\n'))) {
       this.lots.length = 0;
       this.lots.push(...source.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ ...q })) as unknown as Lot['corners'] })));
       this.lotKeys.length = 0;
       this.lotKeys.push(...source.lotKeys);
       others.push('lots');
     }
-    if (JSON.stringify(this.transit) !== JSON.stringify(source.transit)) {
+    if (moved('transit') && JSON.stringify(this.transit) !== JSON.stringify(source.transit)) {
       this.transit = JSON.parse(JSON.stringify(source.transit)) as TransitData;
       others.push('transit');
     }
-    if (JSON.stringify(this.people) !== JSON.stringify(source.people)) {
+    if (moved('people') && JSON.stringify(this.people) !== JSON.stringify(source.people)) {
       this.people.length = 0;
       this.people.push(...source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
       others.push('people');
     }
 
-    if (JSON.stringify(this.nature) !== JSON.stringify(source.nature)) {
+    if (moved('nature') && JSON.stringify(this.nature) !== JSON.stringify(source.nature)) {
       this.nature = source.nature ? { ...source.nature } : null;
       others.push('nature');
     }
@@ -1509,48 +1545,48 @@ export class RoadDoc {
       this.economy = { ...source.economy };
       others.push('economy');
     }
-    if (JSON.stringify(this.weather) !== JSON.stringify(source.weather)) {
+    if (moved('weather') && JSON.stringify(this.weather) !== JSON.stringify(source.weather)) {
       this.weather = { ...source.weather };
       others.push('weather');
     }
-    if (JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
+    if (moved('trees') && JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
       this.trees.length = 0;
       this.trees.push(...source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
-    if (JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
+    if (moved('clearings') && JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
       this.treeClearings.length = 0;
       this.treeClearings.push(...source.treeClearings.map((c) => ({ ...c })));
       others.push('clearings');
     }
 
-    if (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements)) {
+    if (moved('elements') && (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements))) {
       this.elements.length = 0;
       this.elements.push(...source.elements);
       others.push('elements');
     }
 
-    if (JSON.stringify(this.clouds) !== JSON.stringify(source.clouds)) {
+    if (moved('clouds') && JSON.stringify(this.clouds) !== JSON.stringify(source.clouds)) {
       this.clouds.length = 0;
       this.clouds.push(...source.clouds.map((c) => ({ ...c })));
       others.push('clouds');
     }
 
-    if (this.gullyAuto !== source.gullyAuto || JSON.stringify(this.gullyDabs) !== JSON.stringify(source.gullyDabs)) {
+    if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || JSON.stringify(this.gullyDabs) !== JSON.stringify(source.gullyDabs))) {
       this.gullyDabs.length = 0;
       this.gullyDabs.push(...source.gullyDabs.map((dab) => ({ ...dab })));
       this.gullyAuto = source.gullyAuto;
       others.push('gullies');
     }
 
-    if (JSON.stringify(this.fogDabs) !== JSON.stringify(source.fogDabs) || JSON.stringify(this.fogSettings) !== JSON.stringify(source.fogSettings)) {
+    if (moved('fog') && (JSON.stringify(this.fogDabs) !== JSON.stringify(source.fogDabs) || JSON.stringify(this.fogSettings) !== JSON.stringify(source.fogSettings))) {
       this.fogDabs.length = 0;
       this.fogDabs.push(...source.fogDabs.map((dab) => ({ ...dab })));
       this.fogSettings = { ...source.fogSettings };
       others.push('fog');
     }
 
-    if (!samePaint(this.terrainPaint, source.terrainPaint)) {
+    if (moved('paint') && !samePaint(this.terrainPaint, source.terrainPaint)) {
       this.terrainPaint.length = 0;
       this.terrainPaint.push(...source.terrainPaint.map((dab) => ({ ...dab })));
       others.push('paint');
@@ -2084,6 +2120,9 @@ const ITEM_PAD = 6;
 const circleRect = (c: { readonly x: number; readonly y: number; readonly radius: number }): ChangeRect =>
   [c.x - c.radius, c.y - c.radius, c.x + c.radius, c.y + c.radius];
 
+/** Whether a source document changed any of these kinds since it was copied (`RoadDoc.movedIn`). */
+type MovedKinds = (...kinds: readonly DocChangeKind[]) => boolean;
+
 /**
  * Where two documents' roads differ: every segment and node that is new,
  * gone or changed (a segment whose end moved counts as changed), as it was
@@ -2140,31 +2179,37 @@ function stampDifferences(a: readonly TerrainStamp[], b: readonly TerrainStamp[]
 }
 
 /** Where two documents' poles and wires, landscaping and barriers differ. */
-function itemDifferences(a: RoadDoc, b: RoadDoc): { utilities: ChangeRect[]; landscape: ChangeRect[]; barriers: ChangeRect[] } {
+function itemDifferences(a: RoadDoc, b: RoadDoc, moved: MovedKinds): { utilities: ChangeRect[]; landscape: ChangeRect[]; barriers: ChangeRect[] } {
   const utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [];
   const at = (p: { x: number; y: number }): ChangeRect => rectAround([p], ITEM_PAD)!;
-  for (const [id, p] of a.poles) { const q = b.poles.get(id); if (!q || p.x !== q.x || p.y !== q.y || p.lamp !== q.lamp) { utilities.push(at(p)); if (q) utilities.push(at(q)); } }
-  for (const [id, q] of b.poles) if (!a.poles.has(id)) utilities.push(at(q));
-  const spanRect = (doc: RoadDoc, s: UtilitySpan): ChangeRect | null => {
-    const p = doc.poles.get(s.a), q = doc.poles.get(s.b);
-    return p && q ? rectAround([p, q], ITEM_PAD) : null;
-  };
-  for (const [id, s] of a.poleSpans) { const t = b.poleSpans.get(id); if (!t || t.a !== s.a || t.b !== s.b) { const r = spanRect(a, s); if (r) utilities.push(r); } }
-  for (const [id, t] of b.poleSpans) if (!a.poleSpans.has(id)) { const r = spanRect(b, t); if (r) utilities.push(r); }
-  for (const [id, p] of a.landscape) {
-    const q = b.landscape.get(id);
-    if (q && p.kind === q.kind && p.x === q.x && p.y === q.y && p.signType === q.signType && p.text === q.text && p.planted === q.planted) continue;
-    landscape.push(at(p));
-    if (q) landscape.push(at(q));
+  if (moved('utilities')) {
+    for (const [id, p] of a.poles) { const q = b.poles.get(id); if (!q || p.x !== q.x || p.y !== q.y || p.lamp !== q.lamp) { utilities.push(at(p)); if (q) utilities.push(at(q)); } }
+    for (const [id, q] of b.poles) if (!a.poles.has(id)) utilities.push(at(q));
+    const spanRect = (doc: RoadDoc, s: UtilitySpan): ChangeRect | null => {
+      const p = doc.poles.get(s.a), q = doc.poles.get(s.b);
+      return p && q ? rectAround([p, q], ITEM_PAD) : null;
+    };
+    for (const [id, s] of a.poleSpans) { const t = b.poleSpans.get(id); if (!t || t.a !== s.a || t.b !== s.b) { const r = spanRect(a, s); if (r) utilities.push(r); } }
+    for (const [id, t] of b.poleSpans) if (!a.poleSpans.has(id)) { const r = spanRect(b, t); if (r) utilities.push(r); }
   }
-  for (const [id, q] of b.landscape) if (!a.landscape.has(id)) landscape.push(at(q));
-  for (const [id, p] of a.barriers) {
-    const q = b.barriers.get(id);
-    if (q && JSON.stringify(p) === JSON.stringify(q)) continue;
-    barriers.push(rectAround(p.points, ITEM_PAD)!);
-    if (q) barriers.push(rectAround(q.points, ITEM_PAD)!);
+  if (moved('landscape')) {
+    for (const [id, p] of a.landscape) {
+      const q = b.landscape.get(id);
+      if (q && p.kind === q.kind && p.x === q.x && p.y === q.y && p.signType === q.signType && p.text === q.text && p.planted === q.planted) continue;
+      landscape.push(at(p));
+      if (q) landscape.push(at(q));
+    }
+    for (const [id, q] of b.landscape) if (!a.landscape.has(id)) landscape.push(at(q));
   }
-  for (const [id, q] of b.barriers) if (!a.barriers.has(id)) barriers.push(rectAround(q.points, ITEM_PAD)!);
+  if (moved('barriers')) {
+    for (const [id, p] of a.barriers) {
+      const q = b.barriers.get(id);
+      if (q && JSON.stringify(p) === JSON.stringify(q)) continue;
+      barriers.push(rectAround(p.points, ITEM_PAD)!);
+      if (q) barriers.push(rectAround(q.points, ITEM_PAD)!);
+    }
+    for (const [id, q] of b.barriers) if (!a.barriers.has(id)) barriers.push(rectAround(q.points, ITEM_PAD)!);
+  }
   return { utilities, landscape, barriers };
 }
 
