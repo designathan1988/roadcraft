@@ -155,9 +155,9 @@ export class LotTraffic {
       car.t += DT;
     }
     // Drawn with the cars standing in bays: the scenery makes that list again
-    // when the bays change, without these.
-    const list = w.ambient.parked;
-    for (const car of this.cars.values()) if (car.body && !list.includes(car.body)) list.push(car.body);
+    // when the bays change, keeping these. DO NOT ask `parked.includes` here:
+    // that walked every parked car of the map for each car of the lots, each tick.
+    for (const car of this.cars.values()) if (car.body && !w.ambient.isParked(car.body)) w.ambient.addParked(car.body);
     // The lorries, one in a yard at a time, and never while the lot's own cars are moving there.
     this.lorries.step(w, (building) => this.carsMoving(building));
     this.clock += DT;
@@ -204,7 +204,6 @@ export class LotTraffic {
     const short = Math.min(DEPART_PER_LOOK, target - w.vehicles.size - leaving);
     if (short <= 0) return;
     const hour = this.hour(w);
-    const byKey = new Map(this.bays.map((b) => [bayKey(b), b] as const));
     const outOf = new Map<number, number>();
     const weight = (bay: Bay): number => {
       let f = outOf.get(bay.building);
@@ -218,11 +217,7 @@ export class LotTraffic {
     for (const car of this.cars.values()) {
       if (car.phase === 'parked' && !car.go && car.stay <= 0 && car.body) pool.push({ bay: car.bay, car, body: car.body, weight: weight(car.bay) });
     }
-    for (const body of w.ambient.parked) {
-      if (!body.free || this.cars.has(body.id)) continue;
-      const bay = byKey.get(bayKey(body.free));
-      if (bay) pool.push({ bay, car: null, body, weight: weight(bay) });
-    }
+    for (const { bay, body } of this.sceneryInBays(w)) pool.push({ bay, car: null, body, weight: weight(bay) });
     for (let k = 0; k < short && pool.length; k++) {
       let total = 0;
       for (const p of pool) total += p.weight;
@@ -260,10 +255,7 @@ export class LotTraffic {
    * and go), and the nearest passing car sent to it. False when none was.
    */
   private call(w: SimWorld): boolean {
-    const taken = new Set<string>();
-    for (const car of w.ambient.parked) if (car.free) taken.add(bayKey(car.free));
-    for (const car of this.cars.values()) taken.add(bayKey(car.bay));
-    const free = this.bays.filter((b) => !taken.has(bayKey(b)));
+    const free = this.freeBays(w);
     if (!free.length) return false;
     const focus = w.focus;
     const near = focus && this.rng.float() < 0.5
@@ -315,6 +307,40 @@ export class LotTraffic {
     this.cars.set(v.id, { id: v.id, bay, phase: 'coming', body: null, path: null, t: 0, stay: 0, go: false, waited: 0, reserved: false });
     this.called++;
     return true;
+  }
+
+  /**
+   * The scenery's cars standing in the gated bays, by the bay
+   * (`AmbientWorld.sceneryCarAt`), in the order of the bays - the order the
+   * scenery stood them in. DO NOT walk `ambient.parked` for them: every
+   * parked car of the map, each look.
+   */
+  private sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[] {
+    const out: { bay: Bay; body: Vehicle }[] = [];
+    const pooled = new Set<Vehicle>();
+    for (const bay of this.bays) {
+      const body = w.ambient.sceneryCarAt(bayKey(bay));
+      if (!body || this.cars.has(body.id) || pooled.has(body)) continue;
+      pooled.add(body);
+      out.push({ bay, body });
+    }
+    return out;
+  }
+
+  /**
+   * The gated bays nobody stands in nor is on the way to: not where a car of
+   * the lots is bound or stands, nor where a lorry's body is, nor one the
+   * scenery has a car in (asked of the scenery by place). DO NOT walk
+   * `ambient.parked` for it: every parked car of the map, each call.
+   */
+  private freeBays(w: SimWorld): Bay[] {
+    const taken = new Set<string>();
+    for (const car of this.cars.values()) {
+      taken.add(bayKey(car.bay));
+      if (car.body?.free) taken.add(bayKey(car.body.free));
+    }
+    for (const lorry of this.lorries.view()) if (Number.isFinite(lorry.x)) taken.add(bayKey(lorry));
+    return this.bays.filter((b) => !taken.has(bayKey(b)) && !w.ambient.sceneryCarAt(bayKey(b)));
   }
 
   // ------------------------------------------------------------ the phases
@@ -421,10 +447,7 @@ export class LotTraffic {
   /** A car off the road taken out of the lots' list and of the drawn ones. */
   private drop(w: SimWorld, car: LotCar): void {
     this.cars.delete(car.id);
-    if (!car.body) return;
-    const list = w.ambient.parked;
-    const at = list.indexOf(car.body);
-    if (at >= 0) list.splice(at, 1);
+    if (car.body) w.ambient.removeParked(car.body);
   }
 
   /**
