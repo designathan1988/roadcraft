@@ -85,7 +85,7 @@ export function stepAdmission(w: SimWorld): void {
       const list = admittedBy.get(v.admittedConnector);
       if (list) list.push(v); else admittedBy.set(v.admittedConnector, [v]);
     }
-    if (holdingOf(w, v).allocation.size) holders.add(v);
+    if (holdsAnything(w, v)) holders.add(v);
   }
   try {
     admit(w);
@@ -814,6 +814,24 @@ function connectorResources(
     CONNECTOR_RESOURCES.set(refs, known);
   }
   return known;
+}
+
+/**
+ * Whether a vehicle holds anything at all, without building its sets.
+ *
+ * The pass used to ask every vehicle in the fleet for its allocation, which
+ * builds three sets each (`actualAllocation`, its maximum, and the movements),
+ * on every tick, for the great majority that hold nothing and therefore cannot
+ * be part of any deadlock. This is the same answer as `actualAllocation(...)
+ * .size > 0` - the four ways a resource is ever put in it - at a claims-table
+ * lookup and a few comparisons.
+ */
+function holdsAnything(w: SimWorld, v: Vehicle): boolean {
+  if (w.claims.points(v.id).length > 0) return true;
+  if (v.admittedConnector && w.conflicts.refs(v.admittedConnector).length === 0) return true;
+  for (const token of v.clearingConnectors) if (w.conflicts.refs(token.connector).length === 0) return true;
+  const lane = w.lanelet(v.lanelet);
+  return !!lane && lane.kind === 'connector' && w.conflicts.refs(lane.id).length === 0;
 }
 
 function actualAllocation(w: SimWorld, v: Vehicle): Set<ResourceKey> {

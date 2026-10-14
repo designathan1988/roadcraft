@@ -129,7 +129,9 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   high: {
     pixelRatio: 1.5,
     shadows: true,
-    shadowMapSize: 2048,
+    // Half the texel of 2048: a balcony's shadow stepped in squares of a
+    // hand's width at the middle distance (the player, 2026-10-13).
+    shadowMapSize: 4096,
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,

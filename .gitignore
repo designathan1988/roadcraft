@@ -3,6 +3,8 @@ dist/
 coverage/
 test-results/
 playwright-report/
+# The playwright-cli session (snapshots, console logs, its own browser profile)
+.playwright-cli/
 .vite/
 .cache/
 *.local

@@ -86,8 +86,14 @@ export interface EnvironmentQuality {
 export interface SceneEnvironment {
   readonly sun: DirectionalLight;
   readonly skyColor: Color;
-  /** Points the shadow frustum at what the camera is looking at. */
-  follow(target: Vector3, halfWidth: number, halfHeight: number, view?: Vector3, rise?: number): void;
+  /**
+   * Points the shadow frustum at what the camera is looking at. Returns
+   * whether the light moved - the sun stepped, the grid was hung on another
+   * point, or the frustum changed size. Nothing else in a frame changes what
+   * a shadow map of this scene would hold, so the caller redraws it only when
+   * this is true (`renderer.ts`, the shadow pass).
+   */
+  follow(target: Vector3, halfWidth: number, halfHeight: number, view?: Vector3, rise?: number): boolean;
   setQuality(quality: EnvironmentQuality): void;
   /**
    * The time of day, minutes after midnight: the sun's path, the sky, the
@@ -384,6 +390,11 @@ export function createEnvironment(
   sun.name = 'sun';
   sun.castShadow = quality.shadows;
   sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
+  // The edge of a shadow filtered over two texels (three's PCF: a Vogel disc
+  // of `radius` texels): at one, a shadow's edge stepped texel by texel over
+  // every balcony floor (the player, 2026-10-13: "pixeliado"); three's docs:
+  // a larger map lets a larger radius be used before it bands.
+  sun.shadow.radius = 2;
   // Shadow bias: enough to kill acne on the terrain, not enough to detach a
   // shadow from the thing casting it.
   //
@@ -448,6 +459,11 @@ export function createEnvironment(
   const lightRight = new Vector3();
   const lightUp = new Vector3();
   const snapped = new Vector3();
+  /** Where the light and the grid stood when `follow` was last called, so it
+   * can say whether they moved (`GroundShadowGrid` holds both until they do). */
+  const wasSnapped = new Vector3();
+  const wasSun = new Vector3();
+  let placed = false;
   /** The sun the light falls from: the true one, moved in steps (`GroundShadowGrid`). */
   const castSun = new Vector3();
   const grid = new GroundShadowGrid();
@@ -498,6 +514,7 @@ export function createEnvironment(
       // dissolved into smoke. It now follows the view down to close zoom.
       const want = Math.max(SHADOW_SPAN_MIN, Math.max(halfWidth, halfHeight) * 1.25) +
         Math.max(Math.abs(du), Math.abs(dv)) / 2;
+      let resized = false;
       if (Math.abs(want - span) > span * 0.08 || Math.abs(rise - depthRise) > 20) {
         span = want;
         depthRise = rise;
@@ -507,6 +524,7 @@ export function createEnvironment(
         sun.shadow.camera.bottom = -span;
         fitDepth(span);
         sun.shadow.camera.updateProjectionMatrix();
+        resized = true;
       }
       // Snap the frustum to whole shadow texels of the ground (`GroundShadowGrid`).
       // Following the view continuously slid every texel under the scene each
@@ -520,6 +538,17 @@ export function createEnvironment(
       // The shadow camera's axes are the grid's (three's `LightShadow`
       // looks at the target with the camera's `up`).
       sun.shadow.camera.up.copy(lightUp);
+      // The light moved if any of the three things the shadow map hangs on
+      // did: the frustum's size, the ground texel it is rounded to, or the
+      // sun the depth is cast from. Everything else leaves the map's content
+      // as it was, and the pass that would put back the same texels is the
+      // 3-5 ms of GPU the renderer no longer spends.
+      const moved = resized || !placed
+        || !wasSnapped.equals(snapped) || !wasSun.equals(castSun);
+      wasSnapped.copy(snapped);
+      wasSun.copy(castSun);
+      placed = true;
+      return moved;
     },
     setTimeOfDay(minutes) {
       const hour = (((minutes / 60) % 24) + 24) % 24;

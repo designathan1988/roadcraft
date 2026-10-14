@@ -163,7 +163,11 @@ export function createPostChain(
     // (three's `resolveDepthBuffer`). With SMAA alone, on the resolved image, a
     // lane line or a road's edge narrower than a pixel at a distance broke into
     // dots (the player, 2026-10-06): what was never sampled cannot be smoothed.
-    samples: Math.min(4, renderer.capabilities.maxSamples),
+    // As many samples as the GPU offers (8 on the RTX 3060): every extra sample
+    // is a coverage test at a geometry edge, which is what a railing, a wire and
+    // a window frame are made of, and the resolve of 4 extra samples is cheap
+    // next to a pass of the town.
+    samples: Math.min(8, renderer.capabilities.maxSamples),
   });
   const composer = new EffectComposer(renderer, target);
   /**
@@ -410,7 +414,39 @@ export function createPostChain(
     }
   }
   const smaa = quality.smaa ? new SMAAPass() : null;
-  if (smaa) composer.addPass(smaa);
+  if (smaa) {
+    // three ships SMAA at its *Medium* preset (`SMAAShader.js`: "Preset: SMAA
+    // 1x Medium", `SMAA_MAX_SEARCH_STEPS` 8), which only traces an edge eight
+    // texels out: a kerb, a parapet or a lane line running diagonally - the
+    // edges the player names as serrated - is longer than that, so the part
+    // beyond the search is left as it was found. High is 16 and needs nothing
+    // else of the area texture (`SMAA_AREATEX_MAX_DISTANCE` stays 16), so the
+    // only cost is the longer loop.
+    //
+    // The threshold needs the same correction for a different reason. SMAA
+    // measures an edge as the largest channel difference between neighbouring
+    // texels and compares it to `SMAA_THRESHOLD` (three's shader,
+    // `SMAAColorEdgeDetectionPS`: `step(threshold, delta)`). The reference
+    // implementation runs on the finished sRGB image, where 0.1 is a tenth of
+    // the display range; three runs the pass before `OutputPass`, on the
+    // composer's LINEAR half-float image, where the same 0.1 is a tenth of a
+    // range that the shadows only occupy the bottom of. Every crease in the
+    // shade - a kerb against a footway, a wall against its own shadow - then
+    // differs by less than 0.1 and is not seen as an edge at all. 0.04 is
+    // about the tenth of the sRGB range the reference meant, read in linear
+    // light.
+    const tune = (material: ShaderMaterial, defines: Record<string, string>): void => {
+      Object.assign(material.defines as Record<string, string>, defines);
+      material.needsUpdate = true;
+    };
+    const pass = smaa as unknown as {
+      _materialEdges: ShaderMaterial;
+      _materialWeights: ShaderMaterial;
+    };
+    tune(pass._materialEdges, { SMAA_THRESHOLD: '0.04' });
+    tune(pass._materialWeights, { SMAA_MAX_SEARCH_STEPS: '16' });
+    composer.addPass(smaa);
+  }
   const output = new OutputPass();
   composer.addPass(output);
   // The grade, on the finished image: a film's contrast and colour.

@@ -99,6 +99,21 @@ const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TIL
 const KEPT_TILES_WAIT_MS = 3000;
 /** The thinnest frame bars are 0.045 u wide: their shadows are subpixel below this zoom. */
 const FACADE_SHADOW_ZOOM = perM(27.5);
+/**
+ * The zoom above which the shadow map is drawn every frame (px per metre).
+ * Close up a caster's shadow is metres wide on the screen and a frame of lag
+ * is a pixel or two; further out the whole shadow is a texel or less and a
+ * frame of it cannot be seen, so the pass is skipped (`SHADOW_FAR_EVERY`).
+ */
+const SHADOW_FULL_ZOOM = perM(12);
+/** Frames between shadow passes where a shadow is smaller than a texel. */
+const SHADOW_FAR_EVERY = 3;
+/**
+ * Longest a caster that arrived without saying so can be absent from the map,
+ * in frames: the same cadence as `assignShadowDepth`, which is what gives a
+ * mesh added by any path its depth material.
+ */
+const SHADOW_SAFETY_FRAMES = 30;
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes, refillShells } from './buildings/buildingMesh';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
@@ -404,6 +419,15 @@ export function createSceneRenderer(
 ): SceneHandle {
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
+  /**
+   * The shadow map is drawn only when it can have changed. Set by anything
+   * that puts a new caster in the scene or moves one the simulation does not
+   * drive (a rebuild, an asset arriving, a quality tier change); the sun and
+   * the traffic answer for themselves in the frame.
+   */
+  let shadowMoved = true;
+  /** Frames since the shadow map was last drawn (`SHADOW_FAR_EVERY`). */
+  let shadowFrame = 0;
   const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
@@ -861,7 +885,7 @@ export function createSceneRenderer(
       at = now;
       step = worldJob.next();
     }
-    if (step.done) { worldJob = null; stepCosts.fill(0); }
+    if (step.done) { worldJob = null; stepCosts.fill(0); shadowMoved = true; }
     else onAssetsReady();
   };
   let networkRevision = -1;
@@ -1545,6 +1569,14 @@ export function createSceneRenderer(
 
   /** The landscaping's diary serial the street furniture was last built at. */
   let furnitureLandscape = -1;
+  /**
+   * What the signs were last made from: the roads (their names and their
+   * junctions), the landscaping (the placed signs) and the land (what they
+   * stand on). Below it they are put together again - a furniture rebuild the
+   * growing hour started rebuilt them too, and building them walks every
+   * ribbon of the map for every street name it draws (`signs.ts` `streetChain`).
+   */
+  let signsFor = '';
   /** The landscaping layer: on the same revision as the poles, rebuilt when the landscaping moved. */
   /** The city hour the plants were last sized at (`plantGrowth`). */
   let growthHour = Number.NaN;
@@ -1587,9 +1619,13 @@ export function createSceneRenderer(
       world.add(furniture.grass);
       builtTriangles += furniture.triangles;
     }
-    if (signs) { world.remove(signs.group); signs.dispose(); }
-    signs = buildSigns(net, elevation, net.doc.landscape.values());
-    world.add(signs.group);
+    const signsKey = `${net.doc.changes.serialOf('roads', 'terrain', 'landscape')}`;
+    if (signsKey !== signsFor || !signs) {
+      signsFor = signsKey;
+      if (signs) { world.remove(signs.group); signs.dispose(); }
+      signs = buildSigns(net, elevation, net.doc.landscape.values());
+      world.add(signs.group);
+    }
   };
   /** Whether a change in `blocks` (`null`: everywhere) reaches any of these boxes. */
   const blocksReach = (blocks: readonly (readonly [number, number, number, number])[] | null,
@@ -1999,6 +2035,8 @@ export function createSceneRenderer(
     // Vegetation density is baked into the instanced meshes, so it only takes
     // effect on the next rebuild. Forcing one here keeps the tier honest.
     networkRevision = -1;
+    // A new tier redraws the shadow map whatever the frame would have said.
+    shadowMoved = true;
   };
 
   let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
@@ -3335,8 +3373,11 @@ export function createSceneRenderer(
         GRASS_FIELD.value = [target.x, -target.z, GRASS_NEAR_REACH * 3, show ? 1 : 0];
         grassFar.update(target.x, target.z, show, windClock);
       }
-      // The shadows round the ground looked at.
-      environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
+      // The shadows round the ground looked at. It answers whether the light
+      // itself moved: the shadow map is drawn again only when it did, when a
+      // caster moved, or when this view is close enough for a frame of a
+      // caster's movement to be seen.
+      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
       // What the simulation must show in full: people step round each other
       // only where they are seen, and big enough to see it (`SimWorld.focus`).
       {
@@ -3369,7 +3410,24 @@ export function createSceneRenderer(
         };
       }
 
-      renderer.shadowMap.needsUpdate = true;
+      // The shadow pass, drawn when the map can have changed. Nothing in it
+      // moves but the things standing on the ground, and those move only when
+      // the simulation advances or the wind bends them: a paused, still day
+      // draws the texels that are already there. Redrawing every frame cost
+      // 3-5 ms of the GPU (measured 2026-10-13, 4096 texels, city of 1 348
+      // buildings) - the single largest item in the frame after the town
+      // itself, and one the brief already asked not to pay ("the shadow map
+      // is redrawn only when a caster moved").
+      if (renderer.shadowMap.enabled) {
+        shadowFrame++;
+        const moving = !sim.clock.paused || net.doc.weather.wind > 0;
+        const every = rig.viewport.zoom >= SHADOW_FULL_ZOOM ? 1 : SHADOW_FAR_EVERY;
+        if (shadowMoved || sunMoved || (moving && shadowFrame >= every) || shadowFrame >= SHADOW_SAFETY_FRAMES) {
+          renderer.shadowMap.needsUpdate = true;
+          shadowMoved = false;
+          shadowFrame = 0;
+        }
+      }
       // It follows meshes a rebuild or an asset load adds, and instance
       // colours created on first use - twice a second: the scene is some
       // 1 900 objects with the crowd's pieces (0.2-0.3 ms a frame walked every

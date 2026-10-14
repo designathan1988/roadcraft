@@ -117,6 +117,20 @@ export class SidewalkGraph {
     }
 
     // ---- crossing edges, one per leg --------------------------------------
+    // The link lanelets of each segment, once: asked per leg, a crossing's
+    // lanes were found by copying every lanelet of the map and filtering it,
+    // for every leg of every junction. That made this one loop quadratic in the
+    // size of the network - x196 between a small map and a large one, the
+    // largest single term in `tests/scale/edit.spec.ts` - where a crossing only
+    // ever needs the lanes of its own segment.
+    const linkLanes = new Map<SegmentId, LaneletId[]>();
+    for (const lanelet of graph.lanelets.values()) {
+      rebuildWork.sidewalks++;
+      if (lanelet.kind !== 'link' || lanelet.segment === undefined) continue;
+      const lanes = linkLanes.get(lanelet.segment);
+      if (lanes) lanes.push(lanelet.id);
+      else linkLanes.set(lanelet.segment, [lanelet.id]);
+    }
     for (const [nodeId, node] of doc.nodes) {
       rebuildWork.sidewalks++;
       if (node.incident.length < 2) continue;
@@ -130,9 +144,8 @@ export class SidewalkGraph {
 
         const crossing = makeCrossingId(nodeId, segId);
         const path = Polyline.fromPoints([right.at, left.at]);
-        const lanes = [...graph.lanelets.values()]
-          .filter((l) => { rebuildWork.sidewalks++; return l.kind === 'link' && l.segment === segId; })
-          .map((l) => l.id);
+        // Its own array: the edge owns the lanes it crosses over.
+        const lanes = (linkLanes.get(segId) ?? []).slice();
 
         this.addEdge({
           id: `X:${crossing}`,

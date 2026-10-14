@@ -206,6 +206,46 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
 - Ainda não: o detalhe continua montado para todas as células (S1b: só perto), e o nível
   intermediário com relevo (POM) e *Interior Mapping* de verdade.
 
+### Auditoria de desempenho e de imagem, e as correções medidas (2026-10-13)
+- Sete investigações somente-leitura em paralelo (render, simulação, documento/edição, thread
+  principal e interface, pessoas, edição de via, qualidade de imagem), cada achado com arquivo,
+  linha, frequência e classe de custo. Os achados abertos viraram R26–R30 em `docs/PROBLEMS.md`.
+- **Medido no jogo (RTX 3060, 1920×1080, dpr 1, cidade de 1.348 prédios, 615 veículos, 443
+  pessoas):** GPU p50 16,9 ms e CPU p50 12 ms na rua; 1.408 chamadas de desenho e 44,2 M de
+  triângulos de perto; 42,1 ms de GPU na vista do mapa inteiro. Por passe: **sombras 4,8 ms**
+  (28% da GPU), GTAO 0,87, SMAA 0,21, nuvens e luz do cânion ~0 (ruído).
+- **Sombras (R24/S/F8):** o custo é o REDESENHO do mapa, não a amostragem — com o mapa de sombra
+  congelado a GPU cai os mesmos 3,15 ms que desligando a sombra por inteiro, e o tamanho do mapa
+  quase não pesa (1024 → 30,19 ms, 2048 → 30,55, 4096 → 30,68: 0,5 ms entre um quarto e o dobro
+  dos texels). O passe passa a ser desenhado só quando pode ter mudado: o sol ou a grade andaram
+  (`environment.follow` responde), um caster novo apareceu (reconstrução, carga de asset, troca de
+  nível), a simulação avança ou o vento sopra (a cada quadro de perto, a cada 3 onde a sombra é
+  menor que um texel). Vista do mapa inteiro: o custo da sombra caiu de 4,8 para **2,25 ms**.
+- **Contornos (serrilhado/nitidez):** o `SMAAPass` do three vem no preset *1x Medium* — oito passos
+  de busca e limiar 0,1 — e é executado antes do `OutputPass`, sobre a imagem LINEAR HDR, onde 0,1
+  não é um décimo da faixa de exibição: as arestas de baixo contraste de todas as sombras ficavam
+  abaixo do limiar e não eram detectadas. Passa a 16 passos (preset *High*, mesma textura de área) e
+  limiar 0,04. O alvo multi-amostrado sobe de 4 para 8 amostras (o máximo da GPU), com custo neutro.
+- **Caminhada (R28):** a travessia de cada perna de cada cruzamento refazia uma cópia e um filtro de
+  TODAS as faixas do mapa — o termo quadrático do `tests/scale/edit.spec.ts`, x196,84. As faixas
+  passam a ser baldeadas por segmento uma vez: **x13,98**, e a linha de base fica no valor medido.
+- **Admissão (R23):** a passagem pedia a alocação de TODOS os veículos, três conjuntos cada, a cada
+  tick, para os que não seguram nada (a maioria). Uma checagem sem alocação responde o mesmo.
+- **Placas de rua:** eram refeitas em toda reconstrução de mobiliário, inclusive a da hora do
+  crescimento, e construir uma placa percorre todas as faixas do mapa por nome de rua. Só são
+  refeitas quando as vias, o terreno ou o paisagismo andaram.
+- **Escapamento (R29):** os seis atributos do conjunto de 4.000 partículas iam inteiros (128 KB) à
+  GPU em todo quadro com qualquer motor fumegando; agora sobe só a faixa do slot escrito.
+- **Medido e NÃO mexido, para não refazer o que já está certo:** `performance.measure` custa
+  1,15 µs por chamada (sete por quadro = 7 µs, 0,04% do quadro) e é o que o monitor F9 lê para
+  explicar um quadro longo — fica. O `keepGrassInputs` (147 mil amostras de terreno e quatro
+  uniões) está MORTO: só é chamado atrás de `const show = false`, a grama de lâminas saiu por
+  decisão do jogador em 2026-10-06.
+- **Aberto e gravado:** R26 (o conjunto de armadilhas de rota fica velho depois de uma edição; a
+  correção é de uma linha mas exige acrescentar `routing` à linha de base — aguardando o jogador,
+  A2), R27 (cada edição recopia e re-difere o documento inteiro, ~18–20 ms só o clone) e R30
+  (oito luzes pontuais fixas, ~1 ms de GPU).
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs

@@ -200,12 +200,14 @@ export function createExhaust(): Exhaust {
   points.frustumCulled = false;
   points.renderOrder = 5;
 
+  const pools = ['position', 'aBorn', 'aKind', 'aSeed', 'aSize', 'aLife']
+    .map((name) => geometry.getAttribute(name) as BufferAttribute);
+
   let next = 0;
   let now = 0;
   let owed = 0;
   let frameDt = 1 / 60;
   let lastWall = -1;
-  let dirty = false;
   const spawn = (x: number, y: number, z: number, k: PuffKind, s: number, l: number): void => {
     const i = next;
     next = (next + 1) % POOL;
@@ -218,7 +220,15 @@ export function createExhaust(): Exhaust {
     size[i] = s;
     life[i] = l;
     seed[i] = Math.random();
-    dirty = true;
+    // Only the slot written goes to the graphics card: flagged with no range,
+    // the whole pool - six attributes of four thousand puffs, 128 KB - was
+    // re-sent every frame that any engine anywhere puffed (`BufferAttribute
+    // .needsUpdate` alone means the whole buffer; three uploads the update
+    // ranges and clears them, `WebGLAttributes.updateBuffer`).
+    for (const pool of pools) {
+      pool.addUpdateRange(i * pool.itemSize, pool.itemSize);
+      pool.needsUpdate = true;
+    }
   };
   return {
     points,
@@ -255,10 +265,6 @@ export function createExhaust(): Exhaust {
       lastWall = wall;
       material.uniforms['uHalfH']!.value = halfHeight;
       material.uniforms['uTime']!.value = seconds;
-      if (dirty) {
-        dirty = false;
-        for (const name of ['position', 'aBorn', 'aKind', 'aSeed', 'aSize', 'aLife']) geometry.getAttribute(name).needsUpdate = true;
-      }
     },
     dispose() {
       geometry.dispose();
