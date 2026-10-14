@@ -401,6 +401,9 @@ export interface SceneHandle {
 /** Roads at grade, and the decks above them, as `surfaceHeightAt` asks them. */
 const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Set<RoadStructure>(['elevated', 'bridge'])];
 
+/** A plant's leaf cards (`scenery.ts` `plantMeshes`, `gardens.ts`): `...-trees-<species>-cards`, `...-bushes-<kind>-cards`. */
+const isLeafCards = (mesh: Object3D): boolean => mesh.name.endsWith('-cards');
+
 /** The plants of every building's garden, in the world, on the ground they stand on. */
 function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
   const out: GardenPlant[] = [];
@@ -2072,6 +2075,9 @@ export function createSceneRenderer(
   let transitPreviewKey = '';
 
   let buildingsHeld = false;
+  /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
+  let plantMapFor: { map: boolean | null; gardens: Gardens | null; scenery: Scenery | null; furniture: Scenery | null } =
+    { map: null, gardens: null, scenery: null, furniture: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
@@ -3145,20 +3151,30 @@ export function createSceneRenderer(
       if (roads) roads.group.visible = true;
       if (details) details.group.visible = true;
       watchRoads(net);
-      gardens?.setMap(plantMap);
-      scenery?.setMap(plantMap);
-      furniture?.setMap(plantMap);
+      // The plants' leaf cards (`scenery.ts`/`gardens.ts` name them `...-cards`)
+      // are left out at the map zoom. DO NOT test `-leaves`: no mesh is named
+      // so, and the cards were drawn at every zoom.
       for (const mesh of furniture?.meshes ?? []) {
-        mesh.visible = quality.detailProps && detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
       }
       furniture?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
       for (const mesh of scenery?.meshes ?? []) {
-        mesh.visible = quality.detailProps && detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
       }
       for (const mesh of gardens?.meshes ?? []) {
-        mesh.visible = detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = detailed && (!plantMap || !isLeafCards(mesh));
       }
       gardens?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
+      // After `visible` is set (the contract of `Scenery.setMap`), and only
+      // when the map zoom is crossed or the layer is new: `gardens.setMap`
+      // throws its cull away, and called every frame it culled every garden
+      // of the town again on every frame with the camera still.
+      if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens || scenery !== plantMapFor.scenery || furniture !== plantMapFor.furniture) {
+        plantMapFor = { map: plantMap, gardens, scenery, furniture };
+        gardens?.setMap(plantMap);
+        scenery?.setMap(plantMap);
+        furniture?.setMap(plantMap);
+      }
       // The roads just laid: a strip over their whole width, on their own deck.
       if (pendingRoadFlash.length && elevation) {
         const pos: number[] = [], ring: number[] = [];
