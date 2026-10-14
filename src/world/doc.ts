@@ -1220,10 +1220,46 @@ export class RoadDoc {
    * clone so a failed operation never mutates the live document.
    */
   clone(): RoadDoc {
+    // Field by field, each record copied as `replaceContents` copies it. It
+    // was `fromJSON(this.serialized(false))`: the whole document written to
+    // JSON and read back, with every check a loaded file needs, on every road
+    // drawn - 18-20 ms of the edit on the player's map (docs/PROBLEMS.md R27).
     // The buildings are shared, not copied: their records are replaced, never
-    // changed in place. Copied through JSON, every road drawn copied every
-    // building in town twice (docs/performance.md #19).
-    const copy = RoadDoc.fromJSON(this.serialized(false), { repair: false, shareBuildings: this.buildings });
+    // changed in place (docs/performance.md #19).
+    // NÃO voltar a clonar por JSON.
+    const copy = new RoadDoc();
+    for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
+    for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
+    for (const [id, pole] of this.poles) copy.poles.set(id, { ...pole });
+    for (const [id, span] of this.poleSpans) copy.poleSpans.set(id, { ...span });
+    for (const [id, item] of this.landscape) copy.landscape.set(id, { ...item });
+    for (const [id, barrier] of this.barriers) copy.barriers.set(id, { ...barrier, points: barrier.points.map((q) => ({ ...q })) });
+    copy.buildings.shareFrom(this.buildings);
+    copy.buildings.copyAllocator(this.buildings);
+    copy.terrainStamps.push(...this.terrainStamps.map((stamp) => ({ ...stamp })));
+    copy.terrainRelief = this.terrainRelief;
+    copy.markingStyle = this.markingStyle;
+    copy.nature = this.nature ? { ...this.nature } : null;
+    copy.terrainPaint.push(...this.terrainPaint.map((dab) => ({ ...dab })));
+    copy.fogDabs.push(...this.fogDabs.map((dab) => ({ ...dab })));
+    copy.fogSettings = { ...this.fogSettings };
+    copy.gullyDabs.push(...this.gullyDabs.map((dab) => ({ ...dab })));
+    copy.gullyAuto = this.gullyAuto;
+    copy.clouds.push(...this.clouds.map((c) => ({ ...c })));
+    copy.elements.push(...this.elements.map((e) => ({ ...e })));
+    copy.trees.push(...this.trees.map((t) => ({ ...t })));
+    copy.treeClearings.push(...this.treeClearings.map((c) => ({ ...c })));
+    copy.weather = { ...this.weather };
+    copy.economy = { ...this.economy };
+    copy.zones.push(...this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
+    copy.zoneMarks.push(...this.zoneMarks.map((mark) => ({ ...mark })));
+    copy.lots.push(...this.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) as unknown as Lot['corners'] })));
+    copy.lotKeys.push(...this.lotKeys);
+    copy.nextZoneId = this.nextZoneId;
+    copy.nextLotId = this.nextLotId;
+    // Deep, as the file writes them (`serialized`): nested specs, never aliased.
+    copy.people.push(...this.people.map((person) => JSON.parse(JSON.stringify(person)) as PersonSpec));
+    copy.transit = JSON.parse(JSON.stringify(this.transit)) as TransitData;
     copy.nodeIds = new IdAllocator(this.nodeIds.peek);
     copy.segIds = new IdAllocator(this.segIds.peek);
     copy.poleIds = new IdAllocator(this.poleIds.peek);
@@ -1231,16 +1267,8 @@ export class RoadDoc {
     copy.barrierIds = new IdAllocator(this.barrierIds.peek);
     copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
     copy.nextTerrainId = this.nextTerrainId;
-    copy.clearDirty();
     for (const id of this.dirtyNodes) copy.dirtyNodes.add(id);
     for (const id of this.dirtySegments) copy.dirtySegments.add(id);
-    copy.terrainStamps.length = 0;
-    copy.terrainStamps.push(...this.terrainStamps.map((stamp) => ({ ...stamp })));
-    copy.terrainRelief = this.terrainRelief;
-    copy.markingStyle = this.markingStyle;
-    copy.nature = this.nature ? { ...this.nature } : null;
-    copy.buildings.copyAllocator(this.buildings);
-    copy.nextZoneId = this.nextZoneId;
     // At the same revisions as this document, every one of them: the copy's
     // diary goes on from this one's (what loading the copy wrote is not a
     // change), so the live network is taken over as it stands (`adopt`).
@@ -1466,28 +1494,8 @@ export class RoadDoc {
     if (roadsMoved) {
       this.nodes.clear();
       this.segments.clear();
-      for (const [id, node] of source.nodes) {
-        this.nodes.set(id, {
-          id, x: node.x, y: node.y, heightOffset: node.heightOffset, smooth: node.smooth,
-          incident: [...node.incident], control: node.control,
-          blockedMovements: [...node.blockedMovements],
-          ...(node.crossing ? { crossing: { ...node.crossing } } : {}),
-          // The player's settings at the junction (V4, V5): dropped here, every
-          // road drawn anywhere wiped them all (`replaceWith` of the edited clone).
-          ...(node.laneLinks ? { laneLinks: node.laneLinks.map((l) => ({ ...l })) } : {}),
-          ...(node.approachRules ? { approachRules: node.approachRules.map((e) => ({ ...e })) } : {}),
-          ...(node.signal ? { signal: { ...node.signal, ...(node.signal.greens ? { greens: [...node.signal.greens] } : {}) } } : {}),
-          ...(node.end ? { end: node.end } : {}),
-          ...(node.uturn !== undefined ? { uturn: node.uturn } : {}),
-        });
-      }
-      for (const [id, segment] of source.segments) {
-        this.segments.set(id, {
-          ...segment,
-          curve: segment.curve ? { ...segment.curve } : null,
-          ...(segment.section ? { section: cloneRoadSection(segment.section) } : {}),
-        });
-      }
+      for (const [id, node] of source.nodes) this.nodes.set(id, copyNode(node));
+      for (const [id, segment] of source.segments) this.segments.set(id, copySegment(segment));
     }
     if (moved('utilities')) {
       this.poles.clear();
@@ -2099,6 +2107,35 @@ function sameSegment(p: RoadSegment, q: RoadSegment): boolean {
 }
 
 /** Whether two documents hold the same nodes and segments, field for field. */
+/**
+ * A node's record copied whole, nothing aliased (`clone`, `replaceContents`).
+ * The player's settings at the junction (V4, V5) come along: dropped once,
+ * every road drawn anywhere wiped them all (`replaceWith` of the edited clone).
+ */
+function copyNode(node: RoadNode): RoadNode {
+  return {
+    id: node.id, x: node.x, y: node.y, heightOffset: node.heightOffset, smooth: node.smooth,
+    incident: [...node.incident], control: node.control,
+    blockedMovements: [...node.blockedMovements],
+    ...(node.crossing ? { crossing: { ...node.crossing } } : {}),
+    ...(node.laneLinks ? { laneLinks: node.laneLinks.map((l) => ({ ...l })) } : {}),
+    ...(node.approachRules ? { approachRules: node.approachRules.map((e) => ({ ...e })) } : {}),
+    ...(node.signal ? { signal: { ...node.signal, ...(node.signal.greens ? { greens: [...node.signal.greens] } : {}) } } : {}),
+    ...(node.end ? { end: node.end } : {}),
+    ...(node.uturn !== undefined ? { uturn: node.uturn } : {}),
+  };
+}
+
+/** A segment's record copied whole (`clone`, `replaceContents`). */
+function copySegment(segment: RoadSegment): RoadSegment {
+  return {
+    ...segment,
+    curve: segment.curve ? { ...segment.curve } : null,
+    ...(segment.section ? { section: cloneRoadSection(segment.section) } : {}),
+    ...(segment.parking ? { parking: { ...segment.parking } } : {}),
+  };
+}
+
 function sameRoads(a: RoadDoc, b: RoadDoc): boolean {
   if (a.nodes.size !== b.nodes.size || a.segments.size !== b.segments.size) return false;
   for (const [id, p] of a.nodes) {
