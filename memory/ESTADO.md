@@ -28,7 +28,9 @@ Atualizado: 2026-10-14 (noite).
 ## Repositório
 - No GitHub (`origin/main`): até `b8c63c3` (enviado em 2026-10-14 com o sim do jogador: os 28 commits
   de `247e770` a `b8c63c3`, das duas sessões).
-- Local, não enviado: `81c6ffb` (auditoria) diário com um anel por tipo (D8) — envio depende do jogador.
+- Local, não enviado (envio depende do jogador): `81c6ffb` (auditoria) diário com um anel por tipo
+  (D8/C1); `c45806a` (auditoria) camada de prédios incremental pelo diário (A1, com A5 e A16); o
+  commit de memória que vier depois deles.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
@@ -73,32 +75,40 @@ Google Benchmark BigO, Epic "Min Screen Radius for Cascaded Shadow Maps", ESLint
 
 ## Auditoria por padrão
 Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
-- Prédios: `layer.update` percorre a cidade ~12× a cada mudança de prédio (layer.ts:495-657);
-  `replaceWith` clona a cidade por edição de rua; vazamento de GPU ao cancelar streaming; desgaste
-  refaz massas que não dependem dele; validação e clique varrem todos os prédios.
+- Prédios: `replaceWith` clona a cidade por edição de rua (A3); desgaste refaz massas que não
+  dependem dele (A6); validação e clique varrem todos os prédios (A9/A10). (A1, A2, A5, A7, A16 feitos.)
 - Editor/sim/ui: geração quadrática (`growOnLot` com `neighbourStoreys`/`nearSignatures` dentro de 18
   tentativas, `doc.lots.filter` por prédio, `addPlaced`, `cornerOf`); sim refaz carros parados, lugares,
   pátios a cada prédio; overlay de lotes em JSON por quadro; snap varre tudo por movimento. Decisão do
   jogador pendente: um cruzamento trocando de controle reinicia os semáforos do mapa (achado 15).
-- Render: dependentes do chão "sujos para sempre" depois de 2.048 entradas do diário sem mudança de
-  chão (refeitos a cada quadro); placas de rua × todas as faixas; superfícies unem a calçada do mapa
-  por edição; cânion, plataformas, atlas do chão, mobília, semáforos refeitos inteiros.
+- Render: superfícies unem a calçada do mapa por edição; cânion, plataformas, atlas do chão, mobília,
+  semáforos refeitos inteiros. (C1 e C3 feitos.)
 - World/core: `landOn` das calçadas varre todos os caminhos por ponta de travessia (~4×10⁹ na meta);
   `onPaving` testa todos os furos; calçadas e `crosswalkDistanceAt` refeitos por edição; LRU dos postes
-  (64) mistura células e regiões (origem provável de 17 s + 35 s); **o anel único de 2.048 do diário
-  faz leitores de um tipo verem `null` depois de enxurrada de outro e refazerem o mapa** (conserto
-  central: `serialOf(kinds) <= since → []`).
+  (64) mistura células e regiões (origem provável de 17 s + 35 s). (D8, anel do diário, feito.)
+
+## Feito hoje à noite (auditoria, nova conta)
+Clique em prédio (`f1405fa`), item 34 registrado, A2 (`e5ec4e5`), A7 (`cf0917d`), C3 (`de7588d`), D8/C1
+(`81c6ffb`), A1+A5+A16 (`c45806a`). Contadores fora da base: `building+1:ground`, `ground:idle`, `layer`.
 
 ## Próximos passos (em ordem)
-1. Diário de mudanças: anel único de 2.048 (D8/C1) — conserto central, beneficia todos os leitores
-   (ao commitar, tirar `building+1:ground` e `ground:idle` de `tests/scale/baseline.json`).
-2. `layer.update` incremental pelo diário (A1, o maior estrutural; contador `building+1:layer` 3,82).
-3. Correções de uma linha da auditoria (A2, A7, C3) e os achados `whole-map-nested` da linha de base.
-4. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
-5. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item).
-6. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
+1. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
    `setView({x:11.5,y:-11.5,zoom:200,azimuth:0.785,elevation:0.1})` na cidade de semente 1 a tela
    fica cinza (olho dentro do volume); com `{x:20,y:-20,zoom:80,azimuth:4.0,elevation:0.25}` o olho
-   atravessa a fachada e vê a sala. O afastamento da câmera (`cameraSolidsKeeper` + rig) não age.
+   atravessa a fachada e vê a sala. Também: prédio recém-crescido no lote onde está o olho (tela
+   cinza). O afastamento da câmera (`cameraSolidsKeeper` + rig) não age; os muros dos lotes não contam.
+2. Cascas L0 na placa: 795,1 MB no bairro (teto 300) depois de passar pela rua (cidade padrão,
+   `setView` bairro → rua → bairro); igual antes e depois do A1, então é anterior.
+3. Contadores ainda na base: jardins (C2, x14,02, `render/gardenLists.ts`), sólidos da câmera (A8/C5,
+   `cameraSolidsKeeper`), plataformas (C8, `siteGrading`), baias (B10) e pátios (B14) do sim.
+4. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
+5. Defeitos vistos (fotos em `%TEMP%`): fresta preta comprida entre volumes de um prédio de perto
+   (`roadcraft-look/2026-10-14T16-03-43-146Z/15-rua-arrastada.png`); triângulo azul-escuro no piso
+   atrás de um banco (`rc2-hook/triangulo.png`); retângulo claro translúcido junto ao poste da cerca
+   (`setView({x:60,y:10,zoom:120,azimuth:5.5,elevation:0.2})`, `rc2-hook/fixo-antes/27-h-jardins.png`);
+   pessoa atingida pela bomba atravessando o poste de uma cerca; sombra pontilhada de copa no gramado;
+   clique entre as barras de grade/portão pega a grade (caixa cheia).
+6. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item);
+   o clique (`buildingTool.pick`) ainda copia o estoque inteiro por movimento (A9).
 
 Detalhe do que já foi feito: `memory/FEITO.md`. Histórico: `memory/DIARIO.md`.

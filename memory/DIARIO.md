@@ -49,3 +49,7 @@
   vistas iguais nos dois lados; câmera dentro de prédio é defeito antigo (passado à auditoria).
 - 2026-10-14 noite (Hook de busca na internet): com o sim do jogador, origin/main enviado de `a4725ff`
   até `b8c63c3` (28 commits das duas sessões); `81c6ffb` (D8, auditoria) segue local.
+- 2026-10-14 (Auditoria, noite): A2 `e5ec4e5`, A7 `cf0917d`, C3 `de7588d` (os três enviados pela outra
+  sessão com o sim do jogador), D8 `81c6ffb`, A1+A5+A16 `c45806a` (locais). No jogo, mesma sequência
+  antes/depois do A1: fotos iguais; cascas L0 795 MB no bairro nos dois lados (anterior, acima do teto
+  de 300 - virou o passo 2). Defeitos da outra sessão e meus anotados no ESTADO (passos 1 e 5).
