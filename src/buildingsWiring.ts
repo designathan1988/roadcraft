@@ -94,6 +94,8 @@ export interface BuildingWiring {
 export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   const { doc, net, history, scene } = deps;
   const library = new BlueprintLibrary();
+  /** The network's state at the last road-wins look (`afterRoadEdit`); the buildings standing then were clear of it. */
+  let roadsSeen: object | null = net.state;
   let userBlueprints = library.list();
 
   const view: ToolView = {
@@ -1260,7 +1262,12 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       host.changed();
     },
     afterRoadEdit() {
-      const razed = clearBuildingsOnRoads({ doc, net, groundAt: null });
+      // Where the roads changed since the last look (`Network.changesSince`):
+      // only the buildings there can have started touching one. Nothing moved:
+      // nothing to look at.
+      const delta = net.changesSince(roadsSeen);
+      roadsSeen = net.state;
+      const razed = clearBuildingsOnRoads({ doc, net, groundAt: null }, delta === null ? null : delta.rects);
       if (razed > 0) {
         tool.sync();
         notify(razed === 1 ? 'building.demolished.one' : 'building.demolished.other', { count: razed });

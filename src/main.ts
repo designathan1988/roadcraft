@@ -824,6 +824,20 @@ function mutateBuilt(fn: () => boolean): boolean {
   // What the diary says this edit came from (`world/changes.ts`).
   doc.changes.causeNext(`ferramenta ${game.tool}`);
   const changed = fn();
+  if (changed) {
+    // What the edit brings with it, INSIDE its undo step (before `history.end`):
+    // run after the step was closed, the buildings a road demolished were taken
+    // into the history with no step of their own, and undoing the road did not
+    // give them back. DO NOT move these below `history.end`.
+    // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
+    // network is unchanged, and rebuilding it (and, behind it, the simulation
+    // topology) cost about 330 ms per pole on a large map.
+    if (net.revision !== doc.revision) net.rebuild();
+    // A road over a building demolishes it (where the network changed only).
+    buildings.afterRoadEdit();
+    // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
+    clearBulbs(doc, net);
+  }
   doc.changes.causeNext('jogo');
   // An edit that reports success without changing anything - the same lane
   // count, a split on an existing endpoint, a pole line traced over itself -
@@ -832,14 +846,6 @@ function mutateBuilt(fn: () => boolean): boolean {
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
   performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
-  // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
-  // network is unchanged, and rebuilding it (and, behind it, the simulation
-  // topology) cost about 330 ms per pole on a large map.
-  if (net.revision !== doc.revision) net.rebuild();
-  // A road over a building demolishes it, in this same undo step.
-  buildings.afterRoadEdit();
-  // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
-  clearBulbs(doc, net);
   // The simulation catches up in the frame AFTER the one that draws the edit
   // (see `topologyAfterDraw`), so the player sees the road first.
   topologyAfterDraw = topologyAfterDraw || sim.topologyRevision !== net.trafficRevision;
