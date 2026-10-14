@@ -294,6 +294,9 @@ export function createSceneryKit(): SceneryKit {
   });
   const beam = new CylinderGeometry(BEAM_SOURCE, 1, 1, BEAM_SIDES, BEAM_SEGMENTS, true);
   beam.translate(0, -0.5, 0);
+  // Their bounds once, here: the layers that instance them read them (`render/poleLayer.ts`).
+  pool.computeBoundingSphere();
+  beam.computeBoundingSphere();
   const beamGlow = beamMaterial();
   let night = 0;
   let haze = 0;

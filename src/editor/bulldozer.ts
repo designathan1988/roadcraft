@@ -134,7 +134,7 @@ export class Bulldozer {
     });
     const builtIds = [...doc.buildings.all()].filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
-    const poles = [...doc.poles.values()].filter((p) => inside(p)).map((p) => p.id);
+    const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
     const items = [...doc.landscape.values()].filter((it) => inside(it)).map((it) => it.id);
     const walls = [...doc.barriers.values()].filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
     if (!segments.length && !builtIds.length && !lots.length && !poles.length && !items.length && !walls.length) return;

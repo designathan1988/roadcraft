@@ -2067,8 +2067,6 @@ function growCity(): void {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
     scene.holdBuildings(true);
-    // The pole layer too, while the lines are laid (let go with the layout).
-    scene.holdUtilities(true);
     lotTool.holdOverlay(true);
     requestDraw();
     return;
@@ -2084,7 +2082,7 @@ function growCity(): void {
         if (performance.now() >= until) break;
       }
     });
-    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; scene.holdUtilities(false); }
+    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
     cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
     requestDraw();
     return;
@@ -2097,7 +2095,6 @@ function growCity(): void {
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
   scene.holdBuildings(false);
-  scene.holdUtilities(false);
   lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();

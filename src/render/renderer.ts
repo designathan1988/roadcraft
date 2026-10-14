@@ -38,7 +38,7 @@ import {
 } from 'three';
 
 import { Digest } from '@core/digest';
-import type { ChangeJournal, ChangeRect, DerivedChangeKind } from '@world/changes';
+import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network } from '@world/network';
@@ -80,7 +80,8 @@ import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { buildSigns, type SignLayer } from './signs';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
-import { type KerbCache, buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, type Utilities } from './utilities';
+import { poleGroundAt, type Utilities } from './utilities';
+import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { buildBarriers, type Barriers } from './barriers';
 import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
 import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
@@ -100,8 +101,7 @@ declare const __ROAD_TILES_HASH__: string | undefined;
 const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TILES_HASH__ ? __ROAD_TILES_HASH__ : null;
 /** How long the opening's roads wait for the kept tiles to be read, ms: past it they are built. */
 const KEPT_TILES_WAIT_MS = 3000;
-/** The pole layer built alone waits this many times what its last build cost (`utilitiesNextAt`): at most a quarter of the time. */
-const UTILITY_PACE = 3;
+
 /** The thinnest frame bars are 0.045 u wide: their shadows are subpixel below this zoom. */
 const FACADE_SHADOW_ZOOM = perM(27.5);
 /**
@@ -300,11 +300,6 @@ export interface SceneHandle {
    * once, when it is let go.
    */
   holdBuildings(on: boolean): void;
-  /**
-   * While a generated city's lines are laid, run by run, the pole layer is
-   * not built: once, when it is let go (`utilitiesHeld`).
-   */
-  holdUtilities(on: boolean): void;
   /** A shot: a tracer from the muzzle to where it struck, and the muzzle's flash (world x, y, height). */
   shot(from: readonly [number, number, number], to: readonly [number, number, number]): void;
   /**
@@ -725,7 +720,7 @@ export function createSceneRenderer(
   let scenery: Scenery | null = null;
   /** What the player placed on the footways; on `doc.utilityRevision` like the poles. */
   let furniture: Scenery | null = null;
-  let utilities: Utilities | null = null;
+  let utilities: PoleLayer | null = null;
   /** The pole tool's planned run, and the plan it was built for (rebuilt only when that changes). */
   /** Vehicle exhaust and dust (`exhaust.ts`): one particle cloud for the map. */
   const exhaust = createExhaust();
@@ -1484,55 +1479,51 @@ export function createSceneRenderer(
     }, region);
   };
 
-  /** `doc.utilityRevision` the pole layer was last built at. */
+  /** `doc.utilityRevision` the poles and the furniture were last brought up to. */
   let utilityRevision = -1;
-  /** And its poles' ways to the kerb (`KerbCache`), read again only for a pole or a road that moved. */
-  const utilityKerbs: KerbCache = new Map();
+  /** What moves a pole or its parts: the poles and wires, the roads (its kerb), the roads' heights and the ground under it. */
+  const POLE_KINDS: readonly ChangeKind[] = ['utilities', 'roads', 'elevation', 'ground', 'terrain'];
+  /** The diary's serial of `POLE_KINDS` the pole layer was brought up to. */
+  let poleSerial = -1;
   /**
-   * When the pole layer may be built again alone, ms (`rebuildWorld`): a
-   * build waits `UTILITY_PACE` times what the last one cost, as a brush dab
-   * waits on the last rebuild (`editor/terrainBrush.ts`). A city laying its
-   * power lines run by run moved the poles' revision every frame and rebuilt
-   * every pole of the map each time - 66 builds of up to 320 ms for a city
-   * of 1 280 m (2026-10-14), growing as the square of the map. A pole the
-   * player places is built at once: nothing was built just before.
+   * The pole layer brought up to the diary (`poleLayer.ts`): the poles in
+   * the rectangles of the utilities written since, and those a road, its
+   * heights or the ground moved within `POLE_REACH` of, placed again with
+   * their neighbours and wires; nothing else is touched. A change of the
+   * whole map (a load, the whole ground shaped) builds the layer whole.
+   * `groundAt` is the ground the world is being put in place on.
    */
-  let utilitiesNextAt = 0;
+  const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
+    const serial = net.doc.changes.serialOf(...POLE_KINDS);
+    if (utilities && serial === poleSerial) return;
+    const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
+    const before = utilities?.triangles ?? 0;
+    if (!utilities || entries === null || entries.some((e) => e.rects === null)) {
+      if (utilities) { world.remove(utilities.group); utilities.dispose(); }
+      utilities = buildUtilities(net, groundAt, sceneryKit, docPoles(net.doc));
+      world.add(utilities.group);
+    } else {
+      utilities.follow(net, groundAt, net.doc, entries);
+    }
+    builtTriangles += utilities.triangles - before;
+    poleSerial = serial;
+  };
   /**
-   * A generated city's lines being laid (`holdUtilities`): the pole layer is
-   * derived data whose source changes every frame while nothing needs it -
-   * the city is under its progress notice - so it is made once, at the
-   * checkpoint, when the lines are done (Nystrom, "Dirty Flag": clean "at
-   * defined checkpoints", as a loading screen). Laid run by run, the layer
-   * was rebuilt 24 s of 120 in a city of 2 560 m, and each rebuild sent its
-   * new meshes to the GPU again (19 s of `bufferData`, 2026-10-14).
-   */
-  let utilitiesHeld = false;
-  /**
-   * The pole layer alone, on its own revision: a pole edit moves only
-   * `doc.utilityRevision` (see `RoadDoc`), so it rebuilds this and nothing else.
-   * @rebuild Called when the utility revision moved.
+   * The poles and the placed things, outside a world being built: a pole
+   * edit moves only `doc.utilityRevision` (see `RoadDoc`), the ground the
+   * buildings are graded on only the diary's `ground`.
    */
   const rebuildUtilities = (net: Network): void => {
     if (!elevation) return;
     utilityRevision = net.doc.utilityRevision;
     const at = performance.now();
-    if (utilities) {
-      builtTriangles -= utilities.triangles;
-      world.remove(utilities.group);
-      utilities.dispose();
-    }
-    const atBuild = performance.now();
-    utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityKerbs);
-    world.add(utilities.group);
-    builtTriangles += utilities.triangles;
+    syncUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net));
     const atFurniture = performance.now();
     // The placed things and the signs read the landscaping and the roads, not
     // the poles (`world/streetFurniture.ts`): a pole edit made them all again
     // (~20 ms each time, the profile of a road's power line, 2026-10-11).
     if (furnitureLandscape !== net.doc.changes.serialOf('landscape')) rebuildFurniture(net);
-    performance.measure('hitch:utilities/dispose', { start: at, end: atBuild });
-    performance.measure('hitch:utilities/build', { start: atBuild, end: atFurniture });
+    performance.measure('hitch:utilities/poles', { start: at, end: atFurniture });
     performance.measure('hitch:utilities/furniture', { start: atFurniture, end: performance.now() });
   };
 
@@ -1645,12 +1636,10 @@ export function createSceneRenderer(
       // A world being built builds the poles too (`worldSteps`): built here as
       // well, every road drawn made the poles and the furniture of the whole
       // map twice, the second time in one frame (52-63 ms on the player's map).
-      if (worldJob === null && !utilitiesHeld && utilityRevision !== net.doc.utilityRevision && performance.now() >= utilitiesNextAt) {
+      if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
         const atUtilities = performance.now();
         rebuildUtilities(net);
-        const end = performance.now();
-        utilitiesNextAt = end + (end - atUtilities) * UTILITY_PACE;
-        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end });
+        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end: performance.now() });
       }
       return;
     }
@@ -1792,14 +1781,9 @@ export function createSceneRenderer(
     // meant to stand on is exactly the "poles do not sit on the footway"
     // complaint. The lamp columns in `scenery.ts` already do this; the poles
     // were the one piece of street furniture reading the bare ground.
-    const atutilities = performance.now();
     // The poles' revision this world is built at: one that moves after this
-    // step is built when the world is in place.
+    // step is brought up when the world is in place.
     const utilityBuilt = net.doc.utilityRevision;
-    const keepUtilities = utilities !== null && utilityRevision === net.doc.utilityRevision
-      && !blocksReach(blocks, [...net.doc.poles.values()].map((pole) => around(pole.x, pole.y, m(12))));
-    const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityKerbs);
-    performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
     // The placed things (benches, lamps, street trees) on the footways they stand on.
     const keepFurniture = furniture !== null && utilityRevision === net.doc.utilityRevision
       && !blocksReach(blocks, [...net.doc.landscape.values()].map((item) => around(item.x, item.y, m(15))));
@@ -1812,7 +1796,7 @@ export function createSceneRenderer(
     // stopped its frame while the driver built it.
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, freshDetails.group, freshUtilities.group, freshScenery.grass, ...freshScenery.meshes]) {
+      for (const piece of [freshRoads.group, freshDetails.group, freshScenery.grass, ...freshScenery.meshes]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1835,7 +1819,6 @@ export function createSceneRenderer(
       world.remove(scenery.grass);
       scenery.dispose();
     }
-    if (utilities) { triangles -= utilities.triangles; world.remove(utilities.group); if (utilities !== freshUtilities) utilities.dispose(); }
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
@@ -1845,10 +1828,12 @@ export function createSceneRenderer(
     scenery = freshScenery;
     for (const mesh of scenery.meshes) world.add(mesh);
     world.add(scenery.grass);
-    utilities = freshUtilities;
-    world.add(utilities.group);
     utilityRevision = utilityBuilt;
-    builtTriangles = triangles + roads.triangles + details.triangles + scenery.triangles + utilities.triangles;
+    builtTriangles = triangles + roads.triangles + details.triangles + scenery.triangles;
+    // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
+    const atutilities = performance.now();
+    syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
+    performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
     // The street furniture and signs: `rebuildFurniture` takes the old ones out itself.
     const atfurniture = performance.now();
     rebuildFurniture(net, keepFurniture);
@@ -2524,9 +2509,6 @@ export function createSceneRenderer(
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
     holdBuildings(on) {
       buildingsHeld = on;
-    },
-    holdUtilities(on) {
-      utilitiesHeld = on;
     },
     flashGrid(cells) {
       if (!cells.length) return;

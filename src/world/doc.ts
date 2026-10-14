@@ -43,6 +43,7 @@ import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { PoleIndex } from './poleIndex';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT } from './units';
 
@@ -196,8 +197,13 @@ export class RoadDoc {
    * junction, no trim, no elevation solve. It stands on whatever the ground
    * under it turns out to be.
    */
-  readonly poles = new Map<PoleId, UtilityPole>();
-  readonly poleSpans = new Map<SpanId, UtilitySpan>();
+  // Written only through `putPoleRecord`/`deletePoleRecord`/`putSpanRecord`/`deleteSpanRecord`/`clearPoleRecords`,
+  // which keep `poleIndex` in step. DO NOT write these maps directly.
+  private readonly poleMap = new Map<PoleId, UtilityPole>();
+  private readonly spanMap = new Map<SpanId, UtilitySpan>();
+  private readonly poleIndex = new PoleIndex();
+  readonly poles: ReadonlyMap<PoleId, UtilityPole> = this.poleMap;
+  readonly poleSpans: ReadonlyMap<SpanId, UtilitySpan> = this.spanMap;
 
   /**
    * Walls, fences and hedges drawn along paths (`barriers.ts`). Like the poles
@@ -460,22 +466,64 @@ export class RoadDoc {
     const on = clampToMap(at);
     const id = asPoleId(this.poleIds.take());
     const pole: UtilityPole = { id, x: on.x, y: on.y, lamp };
-    this.poles.set(id, pole);    this.changes.record('utilities', [rectAround([pole], ITEM_PAD)!], { ids: [id] });
+    this.putPoleRecord(pole);
+    this.changes.record('utilities', [rectAround([pole], ITEM_PAD)!], { ids: [id] });
     return pole;
+  }
+
+  /** The poles standing in the cells a rectangle reaches (`PoleIndex.near`): a superset, test each. */
+  polesIn(rect: ChangeRect): UtilityPole[] {
+    return this.poleIndex.near(rect).map((id) => this.poleMap.get(id)!);
+  }
+
+  /** The spans reaching a pole, in the order they were strung. */
+  spansAt(id: PoleId): UtilitySpan[] {
+    return [...this.poleIndex.spansAt(id)].map((sid) => this.spanMap.get(sid)!);
+  }
+
+  private putPoleRecord(pole: UtilityPole): void {
+    this.poleMap.set(pole.id, pole);
+    this.poleIndex.putPole(pole);
+  }
+
+  private deletePoleRecord(id: PoleId): void {
+    this.poleMap.delete(id);
+    this.poleIndex.deletePole(id);
+  }
+
+  private putSpanRecord(span: UtilitySpan): void {
+    const was = this.spanMap.get(span.id);
+    this.spanMap.set(span.id, span);
+    // The same ends: the span keeps its place in each pole's order, as in the map.
+    if (was && was.a === span.a && was.b === span.b) return;
+    if (was) this.poleIndex.deleteSpan(was);
+    this.poleIndex.putSpan(span);
+  }
+
+  private deleteSpanRecord(id: SpanId): void {
+    const was = this.spanMap.get(id);
+    if (!was) return;
+    this.spanMap.delete(id);
+    this.poleIndex.deleteSpan(was);
+  }
+
+  private clearPoleRecords(): void {
+    this.poleMap.clear();
+    this.spanMap.clear();
+    this.poleIndex.clear();
   }
 
   /** Strings wire between two existing poles. Returns null for a degenerate run. */
   addPoleSpan(a: PoleId, b: PoleId): UtilitySpan | null {
     if (a === b) return null;
     if (!this.poles.has(a) || !this.poles.has(b)) return null;
-    for (const existing of this.poleSpans.values()) {
-      const same = existing.a === a && existing.b === b;
-      const reversed = existing.a === b && existing.b === a;
-      if (same || reversed) return existing;
+    for (const existing of this.spansAt(a)) {
+      if (existing.a === b || existing.b === b) return existing;
     }
     const id = asSpanId(this.spanIds.take());
     const span: UtilitySpan = { id, a, b };
-    this.poleSpans.set(id, span);    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b] });
+    this.putSpanRecord(span);
+    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b] });
     return span;
   }
 
@@ -531,21 +579,22 @@ export class RoadDoc {
   /** Removes a pole and every wire that reached it. */
   removePole(id: PoleId): void {
     const pole = this.poles.get(id);
-    if (!pole || !this.poles.delete(id)) return;
+    if (!pole) return;
     const reached: { x: number; y: number }[] = [pole];
-    for (const [spanId, span] of [...this.poleSpans]) {
-      if (span.a !== id && span.b !== id) continue;
+    for (const span of this.spansAt(id)) {
       const other = this.poles.get(span.a === id ? span.b : span.a);
       if (other) reached.push(other);
-      this.poleSpans.delete(spanId);
-    }    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids: [id] });
+      this.deleteSpanRecord(span.id);
+    }
+    this.deletePoleRecord(id);
+    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids: [id] });
   }
 
   /** The pole nearest a point, within `radius`, or null. */
   poleNear(at: { x: number; y: number }, radius: number): UtilityPole | null {
     let best: UtilityPole | null = null;
     let bestSq = radius * radius;
-    for (const pole of this.poles.values()) {
+    for (const pole of this.polesIn([at.x - radius, at.y - radius, at.x + radius, at.y + radius])) {
       const dx = pole.x - at.x;
       const dy = pole.y - at.y;
       const d = dx * dx + dy * dy;
@@ -1244,8 +1293,8 @@ export class RoadDoc {
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
     for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
-    for (const [id, pole] of this.poles) copy.poles.set(id, { ...pole });
-    for (const [id, span] of this.poleSpans) copy.poleSpans.set(id, { ...span });
+    for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
+    for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
     for (const [id, item] of this.landscape) copy.landscape.set(id, { ...item });
     for (const [id, barrier] of this.barriers) copy.barriers.set(id, { ...barrier, points: barrier.points.map((q) => ({ ...q })) });
     copy.buildings.shareFrom(this.buildings);
@@ -1388,8 +1437,8 @@ export class RoadDoc {
       switch (part) {
         case 'nodes': put(this.nodes as Map<number, RoadNode>); this.dirtyNodes.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
         case 'segments': put(this.segments as Map<number, RoadSegment>); this.dirtySegments.add(id as SegmentId); roadsTouched = true; roadIds.push(id); break;
-        case 'poles': put(this.poles as Map<number, UtilityPole>); kinds.add('utilities'); break;
-        case 'poleSpans': put(this.poleSpans as Map<number, UtilitySpan>); kinds.add('utilities'); break;
+        case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
+        case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); break;
         case 'landscape': put(this.landscape); kinds.add('landscape'); break;
         case 'barriers': put(this.barriers); kinds.add('barriers'); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
@@ -1512,10 +1561,9 @@ export class RoadDoc {
       for (const [id, segment] of source.segments) this.segments.set(id, copySegment(segment));
     }
     if (moved('utilities')) {
-      this.poles.clear();
-      this.poleSpans.clear();
-      for (const [id, pole] of source.poles) this.poles.set(id, { ...pole });
-      for (const [id, span] of source.poleSpans) this.poleSpans.set(id, { ...span });
+      this.clearPoleRecords();
+      for (const pole of source.poles.values()) this.putPoleRecord({ ...pole });
+      for (const span of source.poleSpans.values()) this.putSpanRecord({ ...span });
     }
     if (moved('landscape')) {
       this.landscape.clear();
@@ -1911,7 +1959,7 @@ export class RoadDoc {
     for (const p of data.poles ?? []) {
       const id = asPoleId(p.id);
       const at = repair ? clampToMap(p) : p;
-      doc.poles.set(id, { id, x: at.x, y: at.y, lamp: p.lamp ?? false });
+      doc.putPoleRecord({ id, x: at.x, y: at.y, lamp: p.lamp ?? false });
       doc.poleIds.reserve(p.id);
     }
     for (const s of data.poleSpans ?? []) {
@@ -1921,7 +1969,7 @@ export class RoadDoc {
       // a wire hanging off nothing.
       if (!doc.poles.has(a) || !doc.poles.has(b)) continue;
       const id = asSpanId(s.id);
-      doc.poleSpans.set(id, { id, a, b });
+      doc.putSpanRecord({ id, a, b });
       doc.spanIds.reserve(s.id);
     }
     // Public transport, if the map has any; anything malformed is dropped.

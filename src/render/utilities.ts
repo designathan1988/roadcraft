@@ -5,10 +5,6 @@ import {
   BufferAttribute,
   Group,
   InstancedBufferGeometry,
-  InstancedInterleavedBuffer,
-  InstancedMesh,
-  InterleavedBufferAttribute,
-  Mesh,
   DoubleSide,
   Material,
   MeshDepthMaterial,
@@ -19,12 +15,9 @@ import {
   CanvasTexture,
   SRGBColorSpace,
   RepeatWrapping,
-  Sphere,
-  Vector3,
 } from 'three';
 
 import type { Network } from '@world/network';
-import { kerbward } from '@world/poleLines';
 import { m } from '@world/units';
 import { LAMP_BEAM_RADIUS, LAMP_POOL_RADIUS, type SceneryKit } from './scenery';
 import { GROUND_ONLY, type RoadElevation } from '@world/elevation';
@@ -45,7 +38,7 @@ import {
   WIRE_COURSES,
   WIRE_OFFSETS,
   WIRE_SEGMENTS,
-  poleArms,
+  type PoleArms,
   spanSag,
 } from '@world/utilities';
 import { angleOf } from '@core/vec2';
@@ -65,7 +58,6 @@ const LAMP_TILT = (8 * Math.PI) / 180;
 const WIRE_SWING = m(0.35);
 /** Half-width of a drawn cable: thicker than life so it reads at play zoom. */
 const WIRE_RADIUS = m(0.035);
-import type { PoleId, SpanId } from '@world/ids';
 import type { UtilityPole, UtilitySpan } from '@world/utilities';
 
 /**
@@ -83,16 +75,13 @@ import type { UtilityPole, UtilitySpan } from '@world/utilities';
  * `world/utilities.ts` for why the curve is a quadratic and not a `cosh`.
  */
 
-/** A pole's way to the kerb (`kerbward`), by pole, with where it stood and the roads' revision it was read at. */
-export type KerbCache = Map<PoleId, { x: number; y: number; revision: number; dir: { x: number; y: number } | null }>;
-
 export interface Utilities {
   readonly group: Group;
   readonly triangles: number;
   dispose(): void;
 }
 
-interface Placement {
+export interface Placement {
   x: number;
   y: number;
   /** Height above the ground, in world units. */
@@ -105,328 +94,199 @@ interface Placement {
   sz: number;
 }
 
-function instanced(
-  name: string,
-  geometry: BufferGeometry,
-  material: Material,
-  placements: readonly Placement[],
-): InstancedMesh | null {
-  if (placements.length === 0) return null;
-  const mesh = new InstancedMesh(geometry, material, placements.length);
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  const object = new Object3D();
-  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity, scale = 0;
-  placements.forEach((placement, index) => {
-    // World y is mirrored into three's z, as everywhere else in this layer.
-    object.position.set(placement.x, placement.z, -placement.y);
-    object.rotation.set(0, placement.yaw, placement.roll ?? 0);
-    object.scale.set(placement.sx, placement.sy, placement.sz);
-    object.updateMatrix();
-    mesh.setMatrixAt(index, object.matrix);
-    const p = object.position;
-    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); z0 = Math.min(z0, p.z);
-    x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); z1 = Math.max(z1, p.z);
-    scale = Math.max(scale, Math.abs(placement.sx), Math.abs(placement.sy), Math.abs(placement.sz));
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  // The sphere round the instances' places, grown by the part's own reach at
-  // its largest scale: what `computeBoundingSphere` finds, a little roomier,
-  // without its pass over every instance (6 ms of each road drawn on the
-  // player's map, the profile of 2026-10-12; `scenery.ts` does the same).
-  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-  const part = geometry.boundingSphere!;
-  const centre = new Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-  mesh.boundingSphere = new Sphere(centre, Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + (part.center.length() + part.radius) * scale);
-  return mesh;
+/** The instanced parts of a pole, by index into `polePartSpecs` and `placePole`'s lists. */
+export const POLE_PART = {
+  mast: 0, arm: 1, cap: 2, brace: 3, insulator: 4, can: 5, lampArm: 6, lampHead: 7, lens: 8, pool: 9, beam: 10,
+} as const;
+export const POLE_PART_COUNT = 11;
+
+/** One instanced part: its mesh's name, shape and material, and how it takes light and shadow. */
+export interface PolePartSpec {
+  readonly name: string;
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly renderOrder: number;
+}
+
+/** The parts in `POLE_PART` order: the catalogue's shapes and materials, the lamps' light from the scenery's kit. */
+export function polePartSpecs(kit: SceneryKit): readonly PolePartSpec[] {
+  const { metal, timber, housing, porcelain, steel, mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = PARTS;
+  const solid = (name: string, geometry: BufferGeometry, material: Material): PolePartSpec =>
+    ({ name, geometry, material, castShadow: true, receiveShadow: true, renderOrder: 0 });
+  return [
+    solid('utility-poles', mastGeometry, timber),
+    solid('utility-arms', boxGeometry, timber),
+    solid('utility-caps', capGeometry, steel),
+    solid('utility-braces', boxGeometry, steel),
+    solid('utility-insulators', insulatorGeometry, porcelain),
+    solid('utility-transformers', canGeometry, steel),
+    solid('utility-lamp-arms', boxGeometry, metal),
+    solid('utility-lamp-heads', boxGeometry, housing),
+    { name: 'utility-lamp-lenses', geometry: lensGeometry, material: kit.glow, castShadow: false, receiveShadow: true, renderOrder: 0 },
+    { name: 'utility-lamp-pools', geometry: kit.pool, material: kit.poolGlow, castShadow: false, receiveShadow: false, renderOrder: 3 },
+    { name: 'utility-lamp-beams', geometry: kit.beam, material: kit.beamGlow, castShadow: false, receiveShadow: false, renderOrder: 4 },
+  ];
+}
+
+/** The wires' materials, from the catalogue made at load. */
+export function wireParts(): { readonly material: MeshStandardMaterial; readonly depth: MeshDepthMaterial } {
+  return { material: PARTS.wireMaterial, depth: PARTS.wireDepth };
 }
 
 /**
- * What a pole layer is built from: the document's poles and spans, or a
- * planned run (`buildPolePreview`). `draws` says which poles get a mast, arms
- * and lamp of their own here; a pole a preview only ties into is already
- * standing in the built layer.
+ * One pole's parts, pushed onto `out` by `POLE_PART`: the mast and its cap,
+ * the cross-arms framed as a line crew frames them (`poleArmsAt`: square to a
+ * straight line, on the bisector of a bend, one per line at a corner) with
+ * their insulators and braces, a transformer on some poles, and the street
+ * light. `top` is the pole's crown; `kerb` its way to the carriageway
+ * (`kerbward`), null off the streets.
  */
-export interface PoleSource {
-  readonly poles: ReadonlyMap<PoleId, UtilityPole>;
-  readonly spans: ReadonlyMap<SpanId, UtilitySpan>;
-  readonly draws?: (pole: UtilityPole) => boolean;
-}
-
-export function buildUtilities(
-  net: Network,
+export function placePole(
+  pole: UtilityPole,
+  top: number,
+  frame: PoleArms,
+  kerb: { x: number; y: number } | null,
   groundAt: (x: number, y: number) => number,
-  kit: SceneryKit,
-  source: PoleSource = { poles: net.doc.poles, spans: net.doc.poleSpans },
-  name = 'utilities',
-  /** The built layer's kerb directions kept from its last build (`KerbCache`); left out by the preview. */
-  kerbCache?: KerbCache,
-): Utilities {
-  const { poles, spans } = source;
-  const draws = source.draws ?? (() => true);
-  const group = new Group();
-  group.name = name;
+  out: Placement[][],
+): void {
+  const base = top - POLE_HEIGHT;
+  out[POLE_PART.mast]!.push({ x: pole.x, y: pole.y, z: base + POLE_HEIGHT / 2, yaw: 0, sx: 1, sy: 1, sz: 1 });
+  // A pole cap: the weathering cap on the crown of a timber pole.
+  out[POLE_PART.cap]!.push({ x: pole.x, y: pole.y, z: base + POLE_HEIGHT + m(0.03), yaw: 0, sx: 1, sy: 1, sz: 1 });
 
-  const masts: Placement[] = [];
-  const arms: Placement[] = [];
-  const lampArms: Placement[] = [];
-  const insulators: Placement[] = [];
-  const braces: Placement[] = [];
-  const caps: Placement[] = [];
-  const cans: Placement[] = [];
-  const lampHeads: Placement[] = [];
-  const lenses: Placement[] = [];
-  const pools: Placement[] = [];
-  const beams: Placement[] = [];
-
-  /** Crown height of each pole, so the wires and the arms agree on it. */
-  const crown = new Map<number, number>();
-
-  for (const pole of poles.values()) {
-    const base = groundAt(pole.x, pole.y);
-    crown.set(pole.id, base + POLE_HEIGHT);
-    if (!draws(pole)) continue;
-
-    masts.push({
-      x: pole.x,
-      y: pole.y,
-      z: base + POLE_HEIGHT / 2,
-      yaw: 0,
-      sx: 1,
-      sy: 1,
-      sz: 1,
+  // An instanced box is scaled on its LOCAL X and then rotated about Y, so
+  // the length goes on sx and the yaw is the direction that length points
+  // in. Putting the length on sz instead - which is what this did - turns
+  // every arm ninety degrees, and a row of poles comes out looking twisted.
+  for (const arm of frame.arms) {
+    const armZ = top - POLE_ARM_DROP;
+    out[POLE_PART.arm]!.push({
+      x: pole.x, y: pole.y, z: armZ, yaw: angleOf(arm),
+      sx: POLE_ARM_HALF * 2, sy: POLE_ARM_THICK, sz: POLE_ARM_THICK,
     });
-    // A pole cap: the weathering cap on the crown of a timber pole.
-    caps.push({ x: pole.x, y: pole.y, z: base + POLE_HEIGHT + m(0.03), yaw: 0, sx: 1, sy: 1, sz: 1 });
-  }
-
-  /**
-   * Towards the carriageway from a pole: the nearest kerb, or null off the
-   * streets. Read from the kerb itself rather than from the street the
-   * footway belongs to: a corner's footway belongs to no one street, and a
-   * corner pole used to fall back to its cross-arm and light the block.
-   */
-  // Once a pole and kept from build to build while the pole and the roads
-  // stay: asked three times a pole of the whole map at every rebuild, it was
-  // most of the 66 rebuilds (9.5 s) a city of 1 280 m made as its power lines
-  // were laid (2026-10-14).
-  const kerbs: KerbCache = kerbCache ?? new Map();
-  const roadward = (pole: UtilityPole): { x: number; y: number } | null => {
-    const known = kerbs.get(pole.id);
-    if (known && known.x === pole.x && known.y === pole.y && known.revision === net.revision) return known.dir;
-    const dir = kerbward(net, { x: pole.x, y: pole.y }, m(6));
-    kerbs.set(pole.id, { x: pole.x, y: pole.y, revision: net.revision, dir });
-    return dir;
-  };
-  // The arms, framed as a line crew frames them (`poleArms`): square to a
-  // straight line, on the bisector of a bend, one per line at a corner. A
-  // pole with no wire yet stands square to its street.
-  const framing = poleArms(poles, spans, (pole) => roadward(pole) ?? { x: 0, y: 1 });
-
-  for (const pole of poles.values()) {
-    const top = crown.get(pole.id);
-    if (top === undefined || !draws(pole)) continue;
-    const frame = framing.get(pole.id);
-
-    // An instanced box is scaled on its LOCAL X and then rotated about Y, so
-    // the length goes on sx and the yaw is the direction that length points
-    // in. Putting the length on sz instead - which is what this did - turns
-    // every arm ninety degrees, and a row of poles comes out looking twisted.
-    for (const arm of frame?.arms ?? []) {
-      const armZ = top - POLE_ARM_DROP;
-      arms.push({
-        x: pole.x,
-        y: pole.y,
-        z: armZ,
-        yaw: angleOf(arm),
-        sx: POLE_ARM_HALF * 2,
-        sy: POLE_ARM_THICK,
-        sz: POLE_ARM_THICK,
-      });
-      // Pin insulators on the arm, one under each wire of the top course.
-      for (const offset of WIRE_OFFSETS) {
-        insulators.push({
-          x: pole.x + arm.x * POLE_ARM_HALF * offset,
-          y: pole.y + arm.y * POLE_ARM_HALF * offset,
-          z: armZ + POLE_ARM_THICK / 2 + INSULATOR_TALL / 2,
-          yaw: 0, sx: 1, sy: 1, sz: 1,
-        });
-      }
-      // Two flat braces from the mast up to the arm, one each side.
-      for (const side of [1, -1]) {
-        const reach = POLE_ARM_HALF * 0.6;
-        const drop = BRACE_DROP;
-        braces.push({
-          x: pole.x + arm.x * side * reach / 2,
-          y: pole.y + arm.y * side * reach / 2,
-          z: armZ - drop / 2,
-          yaw: angleOf({ x: arm.x * side, y: arm.y * side }),
-          roll: Math.atan2(drop, reach),
-          sx: Math.hypot(reach, drop),
-          sy: BRACE_THICK,
-          sz: BRACE_THICK * 0.5,
-        });
-      }
-    }
-    // A pole-top transformer on some poles, hung on the side away from the street.
-    if (pole.id % 5 === 3) {
-      const away = roadward(pole) ?? frame?.arms[0] ?? { x: 0, y: 1 };
-      cans.push({
-        x: pole.x - away.x * (POLE_BASE_RADIUS + CAN_RADIUS),
-        y: pole.y - away.y * (POLE_BASE_RADIUS + CAN_RADIUS),
-        z: top - POLE_ARM_DROP - m(1.6),
+    // Pin insulators on the arm, one under each wire of the top course.
+    for (const offset of WIRE_OFFSETS) {
+      out[POLE_PART.insulator]!.push({
+        x: pole.x + arm.x * POLE_ARM_HALF * offset,
+        y: pole.y + arm.y * POLE_ARM_HALF * offset,
+        z: armZ + POLE_ARM_THICK / 2 + INSULATOR_TALL / 2,
         yaw: 0, sx: 1, sy: 1, sz: 1,
       });
     }
-
-    if (!pole.lamp) continue;
-    // The light reaches out over the street, square to the kerb, whichever
-    // way the wires run; off the streets, along the first arm.
-    const reach = roadward(pole) ?? frame?.arms[0] ?? { x: 0, y: 1 };
-    const reachYaw = angleOf(reach);
-    const headX = pole.x + reach.x * POLE_LAMP_REACH;
-    const headY = pole.y + reach.y * POLE_LAMP_REACH;
-    const headZ = top - POLE_LAMP_DROP;
-    lampArms.push({
-      x: pole.x + reach.x * (POLE_LAMP_REACH / 2),
-      y: pole.y + reach.y * (POLE_LAMP_REACH / 2),
-      z: headZ - Math.tan(LAMP_TILT) * POLE_LAMP_REACH / 2,
-      yaw: reachYaw,
-      // The bracket rises gently from the pole to the head, as a davit does.
-      roll: LAMP_TILT,
-      sx: POLE_LAMP_REACH / Math.cos(LAMP_TILT),
-      sy: POLE_ARM_THICK * 0.8,
-      sz: POLE_ARM_THICK * 0.8,
-    });
-    lampHeads.push({
-      x: headX,
-      y: headY,
-      z: headZ - POLE_LAMP_TALL / 2,
-      yaw: reachYaw,
-      sx: POLE_LAMP_LONG,
-      sy: POLE_LAMP_TALL,
-      sz: POLE_LAMP_WIDE,
-    });
-    // The lens under the head and the pool of light on the street, lit with
-    // the street lights' own materials, so they come on at dusk with them.
-    const lensZ = headZ - POLE_LAMP_TALL - m(0.004);
-    const below = groundAt(headX, headY);
-    lenses.push({ x: headX, y: headY, z: lensZ, yaw: reachYaw, sx: POLE_LAMP_LONG * 0.8, sy: 1, sz: POLE_LAMP_WIDE * 0.8 });
-    pools.push({ x: headX, y: headY, z: below + m(0.012), yaw: 0, sx: LAMP_POOL_RADIUS, sy: 1, sz: LAMP_POOL_RADIUS });
-    // And the cone of light between them.
-    beams.push({ x: headX, y: headY, z: lensZ, yaw: 0, sx: LAMP_BEAM_RADIUS, sy: Math.max(m(0.004), lensZ - below), sz: LAMP_BEAM_RADIUS });
-  }
-
-  // ------------------------------------------------------------------ wires
-  // Each wire is one instance of a tube the GPU bends along its sag
-  // (`wireParts`): eight numbers a wire - its two ends in three's axes, its
-  // sag and its phase in the wind - not the tube's vertices. Built on the
-  // CPU, a wire was 8 segments x 24 vertices of position, normal, swing and
-  // phase, kept three times (a cache by span, the merged buffer three keeps
-  // after the upload, the GPU): the wires of a city of radius 2,560 m held
-  // 426 MB of the heap (2026-10-14), and every edit near a pole merged and
-  // sent the whole map's again.
-  // DO NOT build the wires' vertices on the CPU again.
-  const ends: number[] = [];
-  for (const span of spans.values()) {
-    const a = poles.get(span.a);
-    const b = poles.get(span.b);
-    if (!a || !b) continue;
-    const topA = crown.get(a.id);
-    const topB = crown.get(b.id);
-    if (topA === undefined || topB === undefined) continue;
-
-    // Each wire leaves its own insulator on the arm the span hangs from. Both
-    // ends' arms are turned to the left of the span, so the wire at offset k
-    // on one pole meets the wire at offset k on the next and none cross over.
-    const armA = framing.get(a.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
-    const armB = framing.get(b.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
-
-    const phase = (span.id * 2.399) % (Math.PI * 2);
-    // Every course and offset of the arms, as `sampleWire` lays them: its ends, and its sag from their distance.
-    for (const course of WIRE_COURSES) {
-      for (const offset of WIRE_OFFSETS) {
-        const ax = a.x + armA.x * POLE_ARM_HALF * offset, ay = a.y + armA.y * POLE_ARM_HALF * offset, az = topA - POLE_ARM_DROP + course;
-        const bx = b.x + armB.x * POLE_ARM_HALF * offset, by = b.y + armB.y * POLE_ARM_HALF * offset, bz = topB - POLE_ARM_DROP + course;
-        // In three's axes: x, height, -y.
-        ends.push(ax, az, -ay, bx, bz, -by, spanSag(Math.hypot(bx - ax, by - ay)), phase);
-      }
+    // Two flat braces from the mast up to the arm, one each side.
+    for (const side of [1, -1]) {
+      const reach = POLE_ARM_HALF * 0.6;
+      const drop = BRACE_DROP;
+      out[POLE_PART.brace]!.push({
+        x: pole.x + arm.x * side * reach / 2,
+        y: pole.y + arm.y * side * reach / 2,
+        z: armZ - drop / 2,
+        yaw: angleOf({ x: arm.x * side, y: arm.y * side }),
+        roll: Math.atan2(drop, reach),
+        sx: Math.hypot(reach, drop),
+        sy: BRACE_THICK,
+        sz: BRACE_THICK * 0.5,
+      });
     }
   }
-  if (kerbCache) for (const id of kerbCache.keys()) if (!poles.has(id)) kerbCache.delete(id);
-
-  const { metal, timber, housing, wireMaterial, wireDepth, porcelain, steel,
-    mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = PARTS;
-
-  const meshes = [
-    instanced('utility-poles', mastGeometry, timber, masts),
-    instanced('utility-arms', boxGeometry, timber, arms),
-    instanced('utility-caps', capGeometry, steel, caps),
-    instanced('utility-braces', boxGeometry, steel, braces),
-    instanced('utility-insulators', insulatorGeometry, porcelain, insulators),
-    instanced('utility-transformers', canGeometry, steel, cans),
-    instanced('utility-lamp-arms', boxGeometry, metal, lampArms),
-    instanced('utility-lamp-heads', boxGeometry, housing, lampHeads),
-    instanced('utility-lamp-lenses', lensGeometry, kit.glow, lenses),
-    instanced('utility-lamp-pools', kit.pool, kit.poolGlow, pools),
-    instanced('utility-lamp-beams', kit.beam, kit.beamGlow, beams),
-  ].filter((mesh): mesh is InstancedMesh => mesh !== null);
-
-  for (const mesh of meshes) {
-    if (mesh.name === 'utility-lamp-lenses' || mesh.name === 'utility-lamp-pools' || mesh.name === 'utility-lamp-beams') mesh.castShadow = false;
-    if (mesh.name === 'utility-lamp-pools') { mesh.receiveShadow = false; mesh.renderOrder = 3; }
-    if (mesh.name === 'utility-lamp-beams') { mesh.receiveShadow = false; mesh.renderOrder = 4; }
-  }
-  let triangles = 0;
-  for (const mesh of meshes) {
-    group.add(mesh);
-    const index = mesh.geometry.index;
-    const position = mesh.geometry.getAttribute('position');
-    const perInstance = (index ? index.count : position.count) / 3;
-    triangles += perInstance * mesh.count;
+  // A pole-top transformer on some poles, hung on the side away from the street.
+  if (pole.id % 5 === 3) {
+    const away = kerb ?? frame.arms[0] ?? { x: 0, y: 1 };
+    out[POLE_PART.can]!.push({
+      x: pole.x - away.x * (POLE_BASE_RADIUS + CAN_RADIUS),
+      y: pole.y - away.y * (POLE_BASE_RADIUS + CAN_RADIUS),
+      z: top - POLE_ARM_DROP - m(1.6),
+      yaw: 0, sx: 1, sy: 1, sz: 1,
+    });
   }
 
-  let wires: Mesh | null = null;
-  if (ends.length > 0) {
-    // One draw for every wire: the tube's template, and each wire's eight numbers as instances
-    // (threejs.org InstancedBufferGeometry, example webgl_buffergeometry_instancing_interleaved).
-    const data = new Float32Array(ends);
-    const geometry = wireTemplate();
-    const instances = new InstancedInterleavedBuffer(data, 8, 1);
-    geometry.setAttribute('aStart', new InterleavedBufferAttribute(instances, 3, 0));
-    geometry.setAttribute('aEnd', new InterleavedBufferAttribute(instances, 3, 3));
-    geometry.setAttribute('aSagPhase', new InterleavedBufferAttribute(instances, 2, 6));
-    geometry.instanceCount = data.length / 8;
-    // Bounds from the wires' ends, their sag and the tube's radius: three would read the template's.
-    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity, sag = 0;
-    for (let i = 0; i < data.length; i += 8) {
-      for (const k of [i, i + 3]) {
-        x0 = Math.min(x0, data[k]!); y0 = Math.min(y0, data[k + 1]!); z0 = Math.min(z0, data[k + 2]!);
-        x1 = Math.max(x1, data[k]!); y1 = Math.max(y1, data[k + 1]!); z1 = Math.max(z1, data[k + 2]!);
-      }
-      sag = Math.max(sag, data[i + 6]!);
-    }
-    geometry.boundingSphere = new Sphere(new Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + sag + WIRE_RADIUS);
-    wires = new Mesh(geometry, wireMaterial);
-    // The shadow drawn from the same bent tube (three draws a caster's shadow with its depth material).
-    wires.customDepthMaterial = wireDepth;
-    wires.castShadow = true;
-    wires.name = 'utility-wires';
-    group.add(wires);
-  }
-
-  return {
-    group,
-    triangles,
-    dispose() {
-      // The instances and the wires are this layer's; the parts are shared (`utilityParts`).
-      for (const mesh of meshes) mesh.dispose();
-      if (wires) wires.geometry.dispose();
-      group.clear();
-    },
-  };
+  if (!pole.lamp) return;
+  // The light reaches out over the street, square to the kerb, whichever
+  // way the wires run; off the streets, along the first arm.
+  const reach = kerb ?? frame.arms[0] ?? { x: 0, y: 1 };
+  const reachYaw = angleOf(reach);
+  const headX = pole.x + reach.x * POLE_LAMP_REACH;
+  const headY = pole.y + reach.y * POLE_LAMP_REACH;
+  const headZ = top - POLE_LAMP_DROP;
+  out[POLE_PART.lampArm]!.push({
+    x: pole.x + reach.x * (POLE_LAMP_REACH / 2),
+    y: pole.y + reach.y * (POLE_LAMP_REACH / 2),
+    z: headZ - Math.tan(LAMP_TILT) * POLE_LAMP_REACH / 2,
+    yaw: reachYaw,
+    // The bracket rises gently from the pole to the head, as a davit does.
+    roll: LAMP_TILT,
+    sx: POLE_LAMP_REACH / Math.cos(LAMP_TILT),
+    sy: POLE_ARM_THICK * 0.8,
+    sz: POLE_ARM_THICK * 0.8,
+  });
+  out[POLE_PART.lampHead]!.push({ x: headX, y: headY, z: headZ - POLE_LAMP_TALL / 2, yaw: reachYaw, sx: POLE_LAMP_LONG, sy: POLE_LAMP_TALL, sz: POLE_LAMP_WIDE });
+  // The lens under the head and the pool of light on the street, lit with
+  // the street lights' own materials, so they come on at dusk with them.
+  const lensZ = headZ - POLE_LAMP_TALL - m(0.004);
+  const below = groundAt(headX, headY);
+  out[POLE_PART.lens]!.push({ x: headX, y: headY, z: lensZ, yaw: reachYaw, sx: POLE_LAMP_LONG * 0.8, sy: 1, sz: POLE_LAMP_WIDE * 0.8 });
+  out[POLE_PART.pool]!.push({ x: headX, y: headY, z: below + m(0.012), yaw: 0, sx: LAMP_POOL_RADIUS, sy: 1, sz: LAMP_POOL_RADIUS });
+  // And the cone of light between them.
+  out[POLE_PART.beam]!.push({ x: headX, y: headY, z: lensZ, yaw: 0, sx: LAMP_BEAM_RADIUS, sy: Math.max(m(0.004), lensZ - below), sz: LAMP_BEAM_RADIUS });
 }
+
+const placing = new Object3D();
+/** A part's matrix into `array` at `offset`, as `InstancedMesh.setMatrixAt` writes it. World y is mirrored into three's z. */
+export function writePlacement(placement: Placement, array: Float32Array, offset: number): void {
+  placing.position.set(placement.x, placement.z, -placement.y);
+  placing.rotation.set(0, placement.yaw, placement.roll ?? 0);
+  placing.scale.set(placement.sx, placement.sy, placement.sz);
+  placing.updateMatrix();
+  placing.matrix.toArray(array, offset);
+}
+
+/** Wires a span carries: every course and offset of the arms. */
+export const SPAN_WIRES = WIRE_COURSES.length * WIRE_OFFSETS.length;
+/** Numbers a wire's instance holds: its two ends in three's axes, its sag, its phase in the wind. */
+export const WIRE_STRIDE = 8;
+
+/**
+ * Each wire is one instance of a tube the GPU bends along its sag
+ * (`WIRE_GLSL`): eight numbers a wire - its two ends in three's axes, its
+ * sag and its phase in the wind - not the tube's vertices. Built on the
+ * CPU, a wire was 8 segments x 24 vertices of position, normal, swing and
+ * phase, kept three times (a cache by span, the merged buffer three keeps
+ * after the upload, the GPU): the wires of a city of radius 2,560 m held
+ * 426 MB of the heap (2026-10-14).
+ * DO NOT build the wires' vertices on the CPU again.
+ *
+ * Writes the `SPAN_WIRES` wires of one span into `out` from `at`. Each wire
+ * leaves its own insulator on the arm the span hangs from; both ends' arms
+ * are turned to the left of the span (`poleArmsAt`), so the wire at offset k
+ * on one pole meets the wire at offset k on the next and none cross over.
+ */
+export function spanWires(
+  span: UtilitySpan,
+  a: { readonly x: number; readonly y: number; readonly top: number; readonly arm: { x: number; y: number } },
+  b: { readonly x: number; readonly y: number; readonly top: number; readonly arm: { x: number; y: number } },
+  out: Float32Array,
+  at: number,
+): void {
+  const phase = (span.id * 2.399) % (Math.PI * 2);
+  let o = at;
+  // Every course and offset of the arms, as `sampleWire` lays them: its ends, and its sag from their distance.
+  for (const course of WIRE_COURSES) {
+    for (const offset of WIRE_OFFSETS) {
+      const ax = a.x + a.arm.x * POLE_ARM_HALF * offset, ay = a.y + a.arm.y * POLE_ARM_HALF * offset, az = a.top - POLE_ARM_DROP + course;
+      const bx = b.x + b.arm.x * POLE_ARM_HALF * offset, by = b.y + b.arm.y * POLE_ARM_HALF * offset, bz = b.top - POLE_ARM_DROP + course;
+      // In three's axes: x, height, -y.
+      out[o] = ax; out[o + 1] = az; out[o + 2] = -ay;
+      out[o + 3] = bx; out[o + 4] = bz; out[o + 5] = -by;
+      out[o + 6] = spanSag(Math.hypot(bx - ax, by - ay)); out[o + 7] = phase;
+      o += WIRE_STRIDE;
+    }
+  }
+}
+
+/** Half-width of a drawn cable (`WIRE_GLSL`), for the wires' bounds. */
+export const WIRE_HALF_WIDTH = WIRE_RADIUS;
 
 /**
  * The tube every wire is drawn from: for each of the `WIRE_SEGMENTS`
@@ -436,7 +296,7 @@ export function buildUtilities(
  * corner of the section 0-3), `normal.x` = the face (its normal is the sum of
  * its two corners). The wire's ends, sag and phase are its instance's.
  */
-function wireTemplate(): InstancedBufferGeometry {
+export function wireTemplate(): InstancedBufferGeometry {
   const vertices = WIRE_SEGMENTS * 24;
   const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
   let v = 0;
@@ -553,6 +413,13 @@ interface UtilityParts {
  * material-in-frame: the catalogue is made at load).
  */
 function makeUtilityParts(): UtilityParts {
+  const parts = madeUtilityParts();
+  // Each shape's bounds once, at load: the pole layer grows its meshes' bounds from them.
+  for (const geometry of [parts.mastGeometry, parts.capGeometry, parts.insulatorGeometry, parts.canGeometry, parts.boxGeometry, parts.lensGeometry]) geometry.computeBoundingSphere();
+  return parts;
+}
+
+function madeUtilityParts(): UtilityParts {
   const metal = new MeshStandardMaterial({
     color: 0x4a4a46,
     roughness: 0.68,
@@ -613,35 +480,6 @@ export function poleGroundAt(
     if (!onFootway) return terrainAt(x, y);
     return elevation.at(x, y, GROUND_ONLY) + (net ? footwayRiseAt(net, x, y) : FOOTWAY_RISE);
   };
-}
-
-/** A planned pole run, as the editor would build it: in order, each pole new or already standing. */
-export interface PolePreviewInput {
-  readonly poles: readonly { readonly x: number; readonly y: number; readonly lamp: boolean; readonly standing: boolean }[];
-}
-
-/**
- * The run under the pointer, drawn as it will stand: masts, cross-arms framed
- * as built, lamps and the sagging wires, from the same builder as the built
- * layer. A pole the run only ties into is standing already and is not drawn
- * twice; the wires to it are.
- */
-export function buildPolePreview(
-  net: Network,
-  groundAt: (x: number, y: number) => number,
-  kit: SceneryKit,
-  input: PolePreviewInput,
-): Utilities {
-  const poles = new Map<PoleId, UtilityPole>();
-  const spans = new Map<SpanId, UtilitySpan>();
-  const standing = new Set<PoleId>();
-  input.poles.forEach((pole, index) => {
-    const id = (index + 1) as PoleId;
-    poles.set(id, { id, x: pole.x, y: pole.y, lamp: pole.lamp });
-    if (pole.standing) standing.add(id);
-    if (index > 0) spans.set(index as SpanId, { id: index as SpanId, a: index as PoleId, b: id });
-  });
-  return buildUtilities(net, groundAt, kit, { poles, spans, draws: (pole) => !standing.has(pole.id) }, 'utility-preview');
 }
 
 let woodCache: CanvasTexture | null = null;

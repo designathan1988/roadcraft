@@ -214,7 +214,7 @@ describe('street furniture cull', () => {
     }
     expect(cameras).toBe(320);
     expect(compared).toBeGreaterThan(100_000);
-  }, 60_000);
+  }, 10_000);
 
   it('sends nothing to the GPU again when the same instances are in view', () => {
     const rng = new Rng(5);
@@ -312,5 +312,5 @@ describe('street furniture cull', () => {
     }
     expect(seen).toBeGreaterThan(0);
     furniture.dispose();
-  }, 60_000);
+  }, 10_000);
 });
