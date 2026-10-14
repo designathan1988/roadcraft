@@ -223,6 +223,15 @@ function defaultFunction(b: Building): BuildingFunction {
   return 'office';
 }
 
+/** The side of the cells the pieces of a floor are filed by (`Plan.free`). */
+const ITEM_CELL = m(2);
+const itemCell = (x: number, y: number): number => (x + 32768) * 65536 + (y + 32768);
+/** A piece's half extents across the floor, with the gap kept round it (`Plan.free`). */
+function paddedHalf(it: Furniture): [number, number] {
+  const turned = Math.abs(Math.sin(it.angle)) > 0.5;
+  return [(turned ? it.d : it.w) / 2 + m(0.15), (turned ? it.w : it.d) / 2 + m(0.15)];
+}
+
 /** One block's floor, being furnished: where things may stand, and what stands. */
 class Plan {
   readonly items: Furniture[] = [];
@@ -233,6 +242,15 @@ class Plan {
   readonly x1: number;
   readonly y1: number;
   private readonly cores: [number, number, number, number][];
+  /**
+   * The pieces standing, filed by the `ITEM_CELL` cells their padded boxes
+   * cover (`free`, `put`): a new piece is asked only against those near it.
+   * Asked against every piece before it, an office floor of desks was a
+   * square of tests, 0.12 s of the buildings made in one pan (2026-10-14).
+   */
+  private readonly filed = new Map<number, Furniture[]>();
+  /** A corner asked inside the walls (`free`), the same object each time. */
+  private readonly corner = { x: 0, y: 0 };
 
   constructor(readonly b: Building, readonly v: Volume, readonly level: number) {
     this.ring = localFootprint(v);
@@ -254,15 +272,23 @@ class Plan {
     const turned = Math.abs(Math.sin(angle)) > 0.5;
     const hw = (turned ? d : w) / 2;
     const hd = (turned ? w : d) / 2;
-    for (const [cx, cy] of [[x - hw, y - hd], [x + hw, y - hd], [x + hw, y + hd], [x - hw, y + hd]] as const) {
-      if (!pointInPolygon({ x: cx, y: cy }, this.ring)) return false;
+    const corner = this.corner;
+    for (let k = 0; k < 4; k++) {
+      corner.x = k === 0 || k === 3 ? x - hw : x + hw;
+      corner.y = k < 2 ? y - hd : y + hd;
+      if (!pointInPolygon(corner, this.ring)) return false;
     }
     for (const [a0, b0, a1, b1] of this.cores) if (x + hw > a0 && x - hw < a1 && y + hd > b0 && y - hd < b1) return false;
-    for (const it of this.items) {
-      const t2 = Math.abs(Math.sin(it.angle)) > 0.5;
-      const iw = (t2 ? it.d : it.w) / 2 + m(0.15);
-      const id = (t2 ? it.w : it.d) / 2 + m(0.15);
-      if (Math.abs(it.x - x) < hw + iw && Math.abs(it.y - y) < hd + id) return false;
+    // Two boxes that overlap share a cell: only the pieces filed in this box's cells can be in its way.
+    for (let gx = Math.floor((x - hw) / ITEM_CELL); gx <= Math.floor((x + hw) / ITEM_CELL); gx++) {
+      for (let gy = Math.floor((y - hd) / ITEM_CELL); gy <= Math.floor((y + hd) / ITEM_CELL); gy++) {
+        for (const it of this.filed.get(itemCell(gx, gy)) ?? []) {
+          const t2 = Math.abs(Math.sin(it.angle)) > 0.5;
+          const iw = (t2 ? it.d : it.w) / 2 + m(0.15);
+          const id = (t2 ? it.w : it.d) / 2 + m(0.15);
+          if (Math.abs(it.x - x) < hw + iw && Math.abs(it.y - y) < hd + id) return false;
+        }
+      }
     }
     return true;
   }
@@ -271,7 +297,16 @@ class Plan {
     const [w, d, h] = FURNITURE_SIZE[kind];
     const fw = m(w) * scale, fd = m(d) * scale, fh = m(h);
     if (!this.free(x, y, fw, fd, angle)) return false;
-    this.items.push({ kind, x, y, w: fw, d: fd, h: fh, angle });
+    const item: Furniture = { kind, x, y, w: fw, d: fd, h: fh, angle };
+    this.items.push(item);
+    const [iw, id] = paddedHalf(item);
+    for (let gx = Math.floor((x - iw) / ITEM_CELL); gx <= Math.floor((x + iw) / ITEM_CELL); gx++) {
+      for (let gy = Math.floor((y - id) / ITEM_CELL); gy <= Math.floor((y + id) / ITEM_CELL); gy++) {
+        const key = itemCell(gx, gy);
+        const list = this.filed.get(key);
+        if (list) list.push(item); else this.filed.set(key, [item]);
+      }
+    }
     return true;
   }
 
