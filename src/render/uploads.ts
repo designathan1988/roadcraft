@@ -182,6 +182,11 @@ export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene,
   do warmOne(renderer, camera, scene, target);
   while (toWarm.length > 0 && toWarm[0]!.loose && performance.now() < until);
 }
+/** Whether `object` hangs under `scene` (what three's render walks). */
+function reaches(scene: Scene, object: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) if (o === scene) return true;
+  return false;
+}
 /** Milliseconds a frame for loose meshes (`drainWarm`). */
 const WARM_SLICE_MS = 6;
 function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
@@ -189,9 +194,15 @@ function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: 
   if (!job) return;
   const { mesh, geometries, done, loose } = job;
   // A loose mesh is put in the scene for the moment, where it stands, never culled.
+  // One whose group is not in the scene (a cell's batch, `buildings/cellRequests.ts`)
+  // is loose too: DO NOT test only `mesh.parent` - three draws what it reaches
+  // from the scene (`WebGLRenderer.projectObject`), the cells' meshes were never
+  // drawn here, went up in the frame they were first seen, and the arrays of every
+  // cell not yet in view stayed on the CPU (`mesh/gpuOnly.ts`).
   const parent = mesh.parent;
   const culled = mesh.frustumCulled;
-  if (loose && !parent) { scene.add(mesh); mesh.updateMatrixWorld(true); mesh.frustumCulled = false; }
+  const detached = loose === true && !reaches(scene, mesh);
+  if (detached) { scene.add(mesh); mesh.updateMatrixWorld(true); mesh.frustumCulled = false; }
   let lights = lightsOf.get(scene);
   if (!lights) {
     lights = [];
@@ -221,7 +232,11 @@ function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: 
   } finally {
     mesh.geometry = original;
     mesh.visible = visible;
-    if (loose && !parent) { scene.remove(mesh); mesh.frustumCulled = culled; }
+    if (detached) {
+      // Back in its own group (`add` takes it out of the scene); its matrix is its group's again next frame.
+      if (parent) parent.add(mesh); else scene.remove(mesh);
+      mesh.frustumCulled = culled;
+    }
     mesh.layers.disable(WARM_LAYER);
     for (const light of lights) light.layers.disable(WARM_LAYER);
     camera.layers.mask = mask;
