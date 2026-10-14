@@ -24,6 +24,11 @@ import { foliageAtlas } from './lowPolyTrees';
 
 /** Pictures along each side of a model's square. */
 export const FRAMES = 8;
+/**
+ * Pixels of one picture on the atlas: a power of two, so every mip level's
+ * texels lie each within one picture down to a texel a picture (`atlasUv`).
+ */
+export const FRAME_PX = 64;
 
 /** The direction of the picture at (u, v), each 0..1, on the hemi-octahedron (y up). */
 export function hemiOctaDirection(u: number, v: number, out: Vector3): Vector3 {
@@ -148,6 +153,7 @@ export const IMPOSTOR_VERTEX = /* glsl */ `
 
 export const IMPOSTOR_FRAGMENT_PARS = /* glsl */ `
   #define FRAMES ${FRAMES.toFixed(1)}
+  #define FRAME_PX ${FRAME_PX.toFixed(1)}
   uniform sampler2D uAlbedo;
   uniform sampler2D uNormals;
   uniform vec4 uThin;
@@ -162,20 +168,40 @@ export const IMPOSTOR_FRAGMENT_PARS = /* glsl */ `
   flat varying vec2 vYaw;
   flat varying float vFade;
   flat varying float vTint;
-  vec2 atlasUv(vec2 uv, vec2 frame) {
-    return (vBlock * FRAMES + frame + clamp(uv, 0.0, 1.0)) / (FRAMES * uThin.zw);
+  /**
+   * A picture's place on the atlas, held half a texel of mip level \`level\` inside its frame: the
+   * filter never reads the next picture's texels (the pictures sit edge to edge with no margin; read
+   * up to the frame's edge, the mips blended the neighbours' leaves into the tree's outline).
+   */
+  vec2 atlasUv(vec2 uv, vec2 frame, float level) {
+    float h = min(0.5 * exp2(level) / FRAME_PX, 0.5);
+    return (vBlock * FRAMES + frame + clamp(uv, h, 1.0 - h)) / (FRAMES * uThin.zw);
+  }
+  /**
+   * A picture read with the raw uv's change across the pixel (\`dx\`, \`dy\`, on the atlas): the level is
+   * the picture's scale on the screen, the uv held inside its frame at the coarser of the two levels
+   * the filter blends.
+   */
+  vec4 impostorRead(sampler2D atlas, vec2 uv, vec2 frame, vec2 dx, vec2 dy) {
+    vec2 texels = vec2(textureSize(atlas, 0));
+    float lod = 0.5 * log2(max(max(dot(dx * texels, dx * texels), dot(dy * texels, dy * texels)), 1e-8));
+    return textureGrad(atlas, atlasUv(uv, frame, clamp(ceil(lod), 0.0, log2(FRAME_PX))), dx, dy);
   }
 `;
 
 /** In place of three's \`map_fragment\`: the three pictures' colour, blended; the cover kept; the fade dissolved by alpha to coverage. */
 export const IMPOSTOR_FRAGMENT_MAP = /* glsl */ `
-  vec2 impostorUv1 = atlasUv(vFrameUv1, vFrame1);
-  vec2 impostorUv2 = atlasUv(vFrameUv2, vFrame2);
-  vec2 impostorUv3 = atlasUv(vFrameUv3, vFrame3);
-  vec4 impostorColour = texture2D(uAlbedo, impostorUv1) * vWeights.x + texture2D(uAlbedo, impostorUv2) * vWeights.y + texture2D(uAlbedo, impostorUv3) * vWeights.z;
+  // Each picture's uv change across the pixel, on the atlas, taken before anything is discarded.
+  vec2 impostorAtlas = FRAMES * uThin.zw;
+  vec2 impostorDx1 = dFdx(vFrameUv1) / impostorAtlas, impostorDy1 = dFdy(vFrameUv1) / impostorAtlas;
+  vec2 impostorDx2 = dFdx(vFrameUv2) / impostorAtlas, impostorDy2 = dFdy(vFrameUv2) / impostorAtlas;
+  vec2 impostorDx3 = dFdx(vFrameUv3) / impostorAtlas, impostorDy3 = dFdy(vFrameUv3) / impostorAtlas;
+  vec4 impostorColour = impostorRead(uAlbedo, vFrameUv1, vFrame1, impostorDx1, impostorDy1) * vWeights.x
+    + impostorRead(uAlbedo, vFrameUv2, vFrame2, impostorDx2, impostorDy2) * vWeights.y
+    + impostorRead(uAlbedo, vFrameUv3, vFrame3, impostorDx3, impostorDy3) * vWeights.z;
   {
-    vec2 texel = impostorUv1 * vec2(textureSize(uAlbedo, 0));
-    float lod = max(0.0, 0.5 * log2(max(dot(dFdx(texel), dFdx(texel)), dot(dFdy(texel), dFdy(texel)))));
+    vec2 texel = vec2(textureSize(uAlbedo, 0));
+    float lod = max(0.0, 0.5 * log2(max(dot(impostorDx1 * texel, impostorDx1 * texel), dot(impostorDy1 * texel, impostorDy1 * texel))));
     float cover = impostorColour.a * (1.0 + lod * 0.3);
     cover = clamp((cover - 0.5) / max(fwidth(cover), 1e-4) + 0.5, 0.0, 1.0) * vFade;
     if (cover < 0.01) discard;
@@ -188,7 +214,9 @@ export const IMPOSTOR_FRAGMENT_MAP = /* glsl */ `
 /** After three's \`normal_fragment_begin\`: the pictures' normal, from the model's frame to the view's. */
 export const IMPOSTOR_FRAGMENT_NORMAL = /* glsl */ `
   {
-    vec4 packed = texture2D(uNormals, impostorUv1) * vWeights.x + texture2D(uNormals, impostorUv2) * vWeights.y + texture2D(uNormals, impostorUv3) * vWeights.z;
+    vec4 packed = impostorRead(uNormals, vFrameUv1, vFrame1, impostorDx1, impostorDy1) * vWeights.x
+      + impostorRead(uNormals, vFrameUv2, vFrame2, impostorDx2, impostorDy2) * vWeights.y
+      + impostorRead(uNormals, vFrameUv3, vFrame3, impostorDx3, impostorDy3) * vWeights.z;
     vec3 n = normalize(packed.rgb / max(packed.a, 1e-4) * 2.0 - 1.0);
     vec3 world = vec3(vYaw.x * n.x + vYaw.y * n.z, n.y, -vYaw.y * n.x + vYaw.x * n.z);
     normal = normalize(mat3(viewMatrix) * world);

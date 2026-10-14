@@ -1,7 +1,7 @@
 import {
+  Box3,
   BufferAttribute,
   Color,
-  DynamicDrawUsage,
   Group,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
@@ -11,6 +11,7 @@ import {
   MeshStandardMaterial,
   OrthographicCamera,
   Scene,
+  Sphere,
   Vector3,
   Vector4,
   WebGLRenderTarget,
@@ -22,7 +23,8 @@ import type { ReliefVersion } from '@world/terrain';
 import { lowPolyTreeParts } from './lowPolyTrees';
 import { TREE_MODELS } from './natureTrees';
 import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
-import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, hemiOctaDirection, frameBasis } from './impostorShaders';
+import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, FRAME_PX, hemiOctaDirection, frameBasis } from './impostorShaders';
+import { gpuOnlyAttributes } from './mesh/gpuOnly';
 
 /**
  * THE WOODS OF THE WHOLE MAP FROM AFAR: on every plate not drawn in full
@@ -38,9 +40,13 @@ import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTO
  * hold the model's colours and its normals, so the far trees are lit by the
  * scene's own sun as the near ones are, the same greens.
  *
- * One mesh for the map, instanced: a fixed slot of `SLOT` trees per plate,
- * so a plate's woods coming in write only their own slot (`addUpdateRange`)
- * and nothing is drawn twice. Per plate a fade: a plate brought in full keeps
+ * A mesh a plate, instanced, its trees and no empty slot, with the plate's
+ * woods' bounds: a plate out of the view, or drawn in full with its far trees
+ * faded out, is not drawn at all (three's frustum test of a mesh's sphere).
+ * DO NOT go back to one mesh of the map: its 102,400 instances (25 plates of
+ * 4,096 slots) went through the vertex shader every frame, empty slots and
+ * plates behind the eye included (`frustumCulled = false`). Per plate a
+ * fade: a plate brought in full keeps
  * its far trees until its own (the near ones, the same trees at the same
  * places) have had time to grow, then dissolves them (alpha to coverage, no
  * pop); a plate let go shows them again at once. The woods thin with the
@@ -54,7 +60,7 @@ import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTO
  * materials made with the rest at load; nothing is made or compiled in play.
  */
 
-/** Trees a plate's slot holds: its budget at the map's scale with room (`farWoods.ts` HEADROOM). */
+/** Most trees a plate draws: its budget at the map's scale with room (`farWoods.ts` HEADROOM). */
 const SLOT = 4_096;
 /** How long after a plate's own trees could grow its far ones start to go, and how long they take, seconds. */
 const NEAR_GROWS = 0.7;
@@ -65,8 +71,6 @@ const DISSOLVE = 0.6;
  */
 const THIN_SHARE = 0.006;
 const THIN_LEAST = 0.3;
-/** Pixels of one picture of the atlas. */
-const FRAME_PX = 64;
 
 export interface FarForestStats {
   /** Plates whose woods were asked of the worker, and how many times (each land and ecosystem once). */
@@ -245,22 +249,14 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   const bake = bakeMaterials();
 
   const plates = regions.length;
-  const capacity = plates * SLOT;
-  const geometry = new InstancedBufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), 3));
-  geometry.setAttribute('normal', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
-  geometry.setIndex([0, 1, 2, 0, 2, 3]);
-  // x, height, three's z, size; the model and the plate, the pick, the yaw, the tint.
-  const spot = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-  const look = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-  spot.setUsage(DynamicDrawUsage);
-  look.setUsage(DynamicDrawUsage);
-  // Every slot empty to begin with: a pick of 2 is never under the scale.
-  for (let i = 0; i < capacity; i++) { look.array[i * 4] = Math.floor(i / SLOT) * 8; look.array[i * 4 + 1] = 2; }
-  geometry.setAttribute('aSpot', spot);
-  geometry.setAttribute('aLook', look);
-  geometry.instanceCount = capacity;
-
+  /**
+   * How far a tree's picture reaches from its foot, over its height: the model's
+   * sphere (its centre and the quad's corner, `IMPOSTOR_VERTEX`) grown as the
+   * thinned woods grow each survivor (at most by 1 / sqrt(THIN_LEAST)).
+   */
+  let reachPerSize = 0;
+  for (const v of models) reachPerSize = Math.max(reachPerSize, v.centre.length() + 2 * Math.SQRT2 * v.radius);
+  reachPerSize /= Math.sqrt(THIN_LEAST);
   const uniforms = {
     uAlbedo: { value: atlas.textures[0]! },
     uNormals: { value: atlas.textures[1]! },
@@ -283,14 +279,30 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>\n${IMPOSTOR_FRAGMENT_NORMAL}`);
   };
   material.customProgramCacheKey = () => 'far-forest-impostor';
-  const mesh = new Mesh(geometry, material);
-  mesh.name = 'far-forest';
-  mesh.frustumCulled = false;
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
   const object = new Group();
   object.name = 'far-forest-group';
-  object.add(mesh);
+  /** Each plate's mesh of its trees; null while it has none. */
+  const meshes: (Mesh<InstancedBufferGeometry> | null)[] = regions.map(() => null);
+  /** A quad drawn once a tree: the instances' corners. */
+  const quadOf = (spot: InstancedBufferAttribute, look: InstancedBufferAttribute): InstancedBufferGeometry => {
+    const geometry = new InstancedBufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), 3));
+    geometry.setAttribute('normal', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.setAttribute('aSpot', spot);
+    geometry.setAttribute('aLook', look);
+    geometry.instanceCount = spot.count;
+    return geometry;
+  };
+  // One empty tree (a pick of 2 is never under the scale: no triangle) always in the group, so the
+  // program is there to be compiled with the scene at load (`renderer.ts`), before any plate's woods
+  // come in: made with them, it was built in the frame they were first drawn.
+  const program = new Mesh(quadOf(new InstancedBufferAttribute(new Float32Array(4), 4), new InstancedBufferAttribute(Float32Array.of(0, 2, 0, 1), 4)), material);
+  program.name = 'far-forest-program';
+  program.frustumCulled = false;
+  program.castShadow = false;
+  program.receiveShadow = false;
+  object.add(program);
 
   let baked = false;
   const takePictures = (renderer: WebGLRenderer): void => {
@@ -306,13 +318,19 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     };
     atlas.scissorTest = false;
     atlas.viewport.set(0, 0, atlas.width, atlas.height);
+    // Made with every mip level (three allocates them by `generateMipmaps` when the target is first
+    // set), the mipmaps then made only after the last picture: three makes a target's mipmaps at the
+    // end of every render into it, and each of the pictures made the whole atlas' mipmaps again.
     renderer.setRenderTarget(atlas);
+    for (const t of atlas.textures) t.generateMipmaps = false;
     renderer.setClearColor(0x000000, 0);
     renderer.clear(true, true, true);
     renderer.autoClear = false;
     renderer.shadowMap.autoUpdate = false;
     atlas.scissorTest = true;
     const direction = new Vector3(), tangent = new Vector3(), bitangent = new Vector3();
+    const last = models.length * FRAMES * FRAMES - 1;
+    let taken = 0;
     models.forEach((v, k) => {
       scene.clear();
       scene.add(new Mesh(v.body, bake.body));
@@ -334,12 +352,12 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
           atlas.viewport.set(x, y, FRAME_PX, FRAME_PX);
           atlas.scissor.set(x, y, FRAME_PX, FRAME_PX);
           renderer.setRenderTarget(atlas);
+          if (taken++ === last) for (const t of atlas.textures) t.generateMipmaps = true;
           renderer.render(scene, camera);
         }
       }
     });
     scene.clear();
-    // (Three makes the atlas' mipmaps after each picture drawn into it: the last one holds them all.)
     renderer.setRenderTarget(was.target);
     renderer.setClearColor(was.colour, was.alpha);
     renderer.autoClear = was.autoClear;
@@ -347,32 +365,57 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     for (const v of models) { v.body.dispose(); v.cards?.dispose(); }
   };
 
-  /** Writes plate `index`'s woods into its slot (or empties it). */
-  const write = (index: number): void => {
+  /** A plate's trees as its instances: x, height, three's z, size; the model and the plate, the pick, the yaw, the tint. */
+  const arraysOf = (index: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
     const woods = book.plates[index]!.woods;
-    const s = spot.array as Float32Array, l = look.array as Float32Array;
-    const start = index * SLOT;
-    let n = 0;
-    if (woods) {
-      // More than a slot holds: the lowest picks, the trees that stand first.
-      let order: number[] | null = null;
-      if (woods.count > SLOT) order = Array.from({ length: woods.count }, (_, i) => i).sort((a, b) => woods.pick[a]! - woods.pick[b]!).slice(0, SLOT);
-      const count = Math.min(SLOT, woods.count);
-      for (; n < count; n++) {
-        const i = order ? order[n]! : n;
-        const o = (start + n) * 4;
-        s[o] = woods.x[i]!; s[o + 1] = woods.z[i]!; s[o + 2] = -woods.y[i]!; s[o + 3] = woods.size[i]!;
-        const seed = woods.seed[i]!;
-        const variety = Math.min(models.length - 1, Math.floor(seed * models.length));
-        // The near trees' own tint (`natureTrees.ts`): a little lighter or darker per tree.
-        l[o] = index * 8 + variety; l[o + 1] = woods.pick[i]!; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
-      }
+    if (!woods || woods.count === 0 || models.length === 0) return null;
+    // More than a plate draws: the lowest picks, the trees that stand first.
+    let order: number[] | null = null;
+    if (woods.count > SLOT) order = Array.from({ length: woods.count }, (_, i) => i).sort((a, b) => woods.pick[a]! - woods.pick[b]!).slice(0, SLOT);
+    const count = Math.min(SLOT, woods.count);
+    const s = new Float32Array(count * 4), l = new Float32Array(count * 4);
+    for (let n = 0; n < count; n++) {
+      const i = order ? order[n]! : n;
+      const o = n * 4;
+      s[o] = woods.x[i]!; s[o + 1] = woods.z[i]!; s[o + 2] = -woods.y[i]!; s[o + 3] = woods.size[i]!;
+      const seed = woods.seed[i]!;
+      const variety = Math.min(models.length - 1, Math.floor(seed * models.length));
+      // The near trees' own tint (`natureTrees.ts`): a little lighter or darker per tree.
+      l[o] = index * 8 + variety; l[o + 1] = woods.pick[i]!; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
     }
-    for (let k = n; k < SLOT; k++) { const o = (start + k) * 4; l[o] = index * 8; l[o + 1] = 2; }
-    spot.addUpdateRange(start * 4, SLOT * 4);
-    look.addUpdateRange(start * 4, SLOT * 4);
-    spot.needsUpdate = true;
-    look.needsUpdate = true;
+    return { aSpot: s, aLook: l };
+  };
+
+  /** Plate `index`'s mesh made again from its woods (or let go). */
+  const write = (index: number): void => {
+    const was = meshes[index];
+    if (was) { object.remove(was); was.geometry.dispose(); meshes[index] = null; }
+    const arrays = arraysOf(index);
+    if (!arrays) return;
+    const count = arrays.aSpot.length / 4;
+    const spot = new InstancedBufferAttribute(arrays.aSpot, 4), look = new InstancedBufferAttribute(arrays.aLook, 4);
+    const geometry = quadOf(spot, look);
+    // The woods' bounds: every foot, grown by the farthest a picture reaches (`reachPerSize`).
+    const box = new Box3();
+    const foot = new Vector3();
+    let tallest = 0;
+    for (let n = 0; n < count; n++) {
+      box.expandByPoint(foot.fromArray(arrays.aSpot, n * 4));
+      tallest = Math.max(tallest, arrays.aSpot[n * 4 + 3]!);
+    }
+    box.expandByScalar(tallest * reachPerSize);
+    geometry.boundingBox = box;
+    geometry.boundingSphere = box.getBoundingSphere(new Sphere());
+    const mesh = new Mesh(geometry, material);
+    mesh.name = 'far-forest';
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.visible = book.plates[index]!.fade > 0;
+    // The instances live on the GPU only, made again from the plate's woods (`mesh/gpuOnly.ts`).
+    gpuOnlyAttributes(mesh, { aSpot: spot, aLook: look }, () => arraysOf(index) ?? {});
+    meshes[index] = mesh;
+    object.add(mesh);
   };
 
   return {
@@ -381,16 +424,23 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     update(renderer, now) {
       if (!baked) takePictures(renderer);
       if (book.arrived.length) {
-        spot.clearUpdateRanges();
-        look.clearUpdateRanges();
         for (const index of book.arrived) write(index);
         book.arrived = [];
       }
       uniforms.uScale.value = book.scale;
-      if (book.step(now)) for (const p of book.plates) uniforms.uFade.value[p.index] = p.fade;
+      if (book.step(now)) {
+        for (const p of book.plates) {
+          uniforms.uFade.value[p.index] = p.fade;
+          // Faded out (drawn in full, its own trees grown): not drawn at all.
+          const mesh = meshes[p.index];
+          if (mesh) mesh.visible = p.fade > 0;
+        }
+      }
     },
     dispose() {
-      geometry.dispose();
+      for (const mesh of meshes) mesh?.geometry.dispose();
+      program.geometry.dispose();
+      object.clear();
       material.dispose();
       atlas.dispose();
       bake.body.dispose();
