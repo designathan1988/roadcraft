@@ -453,16 +453,21 @@ interface FootRings { readonly paving: WindingRing[]; readonly kerbed: WindingRi
  * DO NOT answer a point from a region's union again: the answer is local.
  */
 function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readonly kerbed: boolean } {
-  const include = polesInclude(net);
-  const at: ChangeRect = [p.x, p.y, p.x, p.y];
   const x = p.x * CLIPPER_SCALE, y = p.y * CLIPPER_SCALE;
-  const footRings = stateOf(net).rings;
   let paving = 0, kerbed = 0;
-  const add = (rings: FootRings): void => {
+  for (const rings of localRings(net, [p.x, p.y, p.x, p.y])) {
     for (const r of rings.paving) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) paving += windingOf(r, x, y);
     for (const r of rings.kerbed) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) kerbed += windingOf(r, x, y);
-  };
-  for (const id of net.segmentCells.idsMeeting(at)) {
+  }
+  return { paving: paving !== 0, kerbed: kerbed !== 0 };
+}
+
+/** The footway and kerb rings of the streets with footways and their junctions filed over `rect`, each made once per object the network built. */
+function localRings(net: Network, rect: ChangeRect): FootRings[] {
+  const include = polesInclude(net);
+  const footRings = stateOf(net).rings;
+  const out: FootRings[] = [];
+  for (const id of net.segmentCells.idsMeeting(rect)) {
     const ribbon = net.ribbons.get(id);
     if (!ribbon) continue;
     let rings = footRings.get(ribbon);
@@ -473,9 +478,9 @@ function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readon
       };
       footRings.set(ribbon, rings);
     }
-    add(rings);
+    out.push(rings);
   }
-  for (const id of net.junctionCells.idsMeeting(at)) {
+  for (const id of net.junctionCells.idsMeeting(rect)) {
     const byLevel = net.junctions.get(id);
     if (!byLevel) continue;
     let rings = footRings.get(byLevel);
@@ -486,9 +491,9 @@ function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readon
       };
       footRings.set(byLevel, rings);
     }
-    add(rings);
+    out.push(rings);
   }
-  return { paving: paving !== 0, kerbed: kerbed !== 0 };
+  return out;
 }
 
 /** Whether a point is on a footway: on the paving, outside every kerbed carriageway. */
@@ -525,6 +530,54 @@ function ringBoxes(polys: MultiPoly): readonly (readonly [number, number, number
  * side), or null when no kerbed street is within `reach`.
  */
 export function kerbward(net: Network, p: Vec2, reach: number): Vec2 | null {
+  let best: Vec2 | null = null;
+  // As far as the cell's lines would answer (`poleLinesAt`, within their halo).
+  let bestD = Math.min(reach, LINES_HALO - POLE_KERB_INSET);
+  const rings = localRings(net, [p.x - bestD, p.y - bestD, p.x + bestD, p.y + bestD]);
+  const x = p.x * CLIPPER_SCALE, y = p.y * CLIPPER_SCALE;
+  let winding = 0;
+  for (const set of rings) for (const r of set.kerbed) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) winding += windingOf(r, x, y);
+  // Inside the carriageway the union has no edge where two kerbs overlap, so the rings' nearest edge is not its: asked of the union there.
+  if (winding !== 0) return kerbwardOfUnion(net, p, reach);
+  /**
+   * Outside every kerb (where a pole stands), the nearest point of the
+   * kerbs' union is the nearest point of the nearest ring: a nearer one would
+   * lie inside another ring, whose edge would be nearer still. So the
+   * kerbs are read from the rings of the streets round the point, with the
+   * union's arithmetic (Clipper's grid) and its tie rule. Every pole of the
+   * map asked its cell's union (Clipper) after any road edit, through a
+   * cache of 64 cells: on a city each edit made the cells again one after
+   * another.
+   * DO NOT ask a pole's kerb of a region's union again: the answer is local.
+   */
+  const reachSq = (bestD * CLIPPER_SCALE) ** 2;
+  for (const set of rings) {
+    for (const r of set.kerbed) {
+      const bx = Math.max(r.x0 - x, 0, x - r.x1), by = Math.max(r.y0 - y, 0, y - r.y1);
+      if (bx * bx + by * by > reachSq * (1 + 1e-9) + 1) continue;
+      const xy = r.xy;
+      kerbWork.edges += xy.length / 2;
+      for (let i = 0; i < xy.length; i += 2) {
+        const j = (i + 2) % xy.length;
+        const ax = xy[i]! / CLIPPER_SCALE, ay = xy[i + 1]! / CLIPPER_SCALE;
+        const dx = xy[j]! / CLIPPER_SCALE - ax, dy = xy[j + 1]! / CLIPPER_SCALE - ay;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.y - ay) * dy) / len2)) : 0;
+        const qx = ax + dx * t - p.x, qy = ay + dy * t - p.y;
+        const d = Math.hypot(qx, qy);
+        if (d <= 1e-9 || d > bestD + 1e-9) continue;
+        const ux = qx / d, uy = qy / d;
+        if (best && d >= bestD - 1e-9 && (ux < best.x || (ux === best.x && uy <= best.y))) continue;
+        bestD = Math.min(bestD, d);
+        best = { x: ux, y: uy };
+      }
+    }
+  }
+  return best;
+}
+
+/** `kerbward` over the cell's union (`poleLinesAt`): for a point inside a kerb, where the union and the rings differ. */
+function kerbwardOfUnion(net: Network, p: Vec2, reach: number): Vec2 | null {
   let best: Vec2 | null = null;
   // The cell's lines answer within their halo (`poleLinesAt`).
   let bestD = Math.min(reach, LINES_HALO - POLE_KERB_INSET);
