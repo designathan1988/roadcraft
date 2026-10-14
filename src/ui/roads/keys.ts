@@ -18,7 +18,7 @@ const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'D
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
 
 /** A key as stored: letters lower case, everything else as `KeyboardEvent.key` names it. */
-export function normaliseKey(key: string): string {
+function normaliseKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 

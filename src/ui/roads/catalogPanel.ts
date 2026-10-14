@@ -39,7 +39,7 @@ const sameRoad = (a: { type: number; profile: unknown }, b: { type: number; prof
   a.type === b.type && JSON.stringify(a.profile) === JSON.stringify(b.profile);
 
 /** Every road the catalogue offers, the player's own under "mine". */
-export function allCatalogRoads(): CatalogRoad[] {
+function allCatalogRoads(): CatalogRoad[] {
   return [...catalogRoads(), ...savedTemplates().map((r) => ({ ...r, category: 'mine' as const }))];
 }
 
@@ -52,7 +52,7 @@ export function pickedRoad(host: Pick<CatalogHost, 'classIndex'>): CatalogRoad |
 }
 
 /** Picks a road: the class first (colours, rules), then its profile, unless it is the class's own. */
-export function pickRoad(road: RoadTemplate, host: CatalogHost): void {
+function pickRoad(road: RoadTemplate, host: CatalogHost): void {
   host.pickClass(road.type);
   const profile: DrawProfile | null = road.id.startsWith('class:') ? null : { name: nameOf(road), type: road.type, profile: road.profile };
   setDrawProfile(profile);

@@ -2,15 +2,12 @@ import { type Blueprint } from '@world/buildings/blueprints';
 import { type Finish } from '@world/buildings/materials';
 import {
   type BuilderCategoryId,
-  type BuilderField,
   type BuilderSelectionInfo,
   tabSpec,
 } from './catalog';
 import { applyTranslations, formatDecimal, onLanguageChange, parseDecimal, t } from '../i18n';
 import { builderIconSvg } from './icons';
 import './workspace.css';
-
-export type { BuilderField, BuilderSelectionInfo };
 
 /**
  * The Builder's side of the interface: its state (`BuilderState`, published
@@ -25,7 +22,7 @@ export type { BuilderField, BuilderSelectionInfo };
  * `main.ts` turn every one of them into a command.
  */
 
-export type ChromeMode = 'road' | 'builder';
+type ChromeMode = 'road' | 'builder';
 
 export interface BuilderState {
   readonly category: BuilderCategoryId;

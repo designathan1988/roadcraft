@@ -208,7 +208,7 @@ export function setPaintKind(next: PaintKind): void {
 
 /** Total width of the roads the road tool lays, whole metres (the 1 m subgrid), or null for the class's own. */
 let width: number | null = null;
-export const ROAD_WIDTH_RANGE = [6, 60] as const;
+const ROAD_WIDTH_RANGE = [6, 60] as const;
 
 export function roadWidth(): number | null {
   return width;

@@ -305,7 +305,7 @@ interface ShellTransitTool {
  * The game's state as the shell reads it (`main.ts` `gameState`): the values
  * now, and `watch` to be told, once a frame, that some of them changed.
  */
-export interface ShellGameValues {
+interface ShellGameValues {
   readonly tool: string;
   readonly paused: boolean;
   readonly speed: number;
@@ -333,7 +333,7 @@ export interface ShellGameValues {
   readonly sky: string;
   readonly inspectorOpen: boolean;
 }
-export interface ShellGame {
+interface ShellGame {
   readonly values: Readonly<ShellGameValues>;
   watch(keys: readonly (keyof ShellGameValues)[], fn: () => void): () => void;
 }
@@ -366,7 +366,7 @@ export interface ShellStatus {
  * nodes, the zoom (pixels a unit, times 100) and the world point in the
  * middle of the view.
  */
-export interface ShellReadouts {
+interface ShellReadouts {
   readonly roads: number;
   readonly nodes: number;
   readonly zoom: number;

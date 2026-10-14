@@ -228,7 +228,7 @@ const P = {
   caret: '<path d="m6 9 6 6 6-6"/>',
 };
 
-export type BuilderIconId = keyof typeof P;
+type BuilderIconId = keyof typeof P;
 
 const FALLBACK = '<path d="M4 4h16v16H4Z"/>';
 

@@ -43,7 +43,7 @@ const RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
  * photos).
  */
 let screenOf: ((x: number, y: number) => { readonly x: number; readonly y: number }) | undefined;
-export function compassOf(doc: RoadDoc, nodeId: NodeId, seg: { a: NodeId; b: NodeId }): string {
+function compassOf(doc: RoadDoc, nodeId: NodeId, seg: { a: NodeId; b: NodeId }): string {
   const here = doc.node(nodeId);
   const there = doc.node(seg.a === nodeId ? seg.b : seg.a);
   if (!here || !there) return '?';
