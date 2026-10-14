@@ -16,7 +16,7 @@ import { collectBays, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
-import { BuildingMix, SightWalls } from './ambientIndex';
+import { BuildingMix, SightWalls, StreetLength } from './ambientIndex';
 
 
 /**
@@ -110,8 +110,6 @@ export class AmbientWorld {
   private readonly bays = new Map<number, Vehicle>();
   private clock = 0;
   private nextTrip = 1 << 26;
-  private roadFor = '';
-  private road = 0;
   private lanesFor = '';
   private lanes: { id: string; length: number; x: number; y: number }[] = [];
   private baysFor = '';
@@ -892,24 +890,17 @@ export class AmbientWorld {
     return this.buildingMix.around(x, y, r);
   }
 
-  /** Street length inside the view, world units: what the population is sized by. */
+  /**
+   * Street length inside the view, world units: what the population is sized
+   * by (`ambientIndex.ts` streetLength). DO NOT put a one-slot cache back in
+   * front of it: three questions a look (the view's people, its cars, the
+   * whole map's) each threw the other's answer out, and every ribbon of the
+   * map was walked again for each.
+   */
+  private readonly street = new StreetLength();
+
   private roadAround(w: SimWorld, x: number, y: number, r: number): number {
-    const key = `${w.net.revision}:${Math.round(stepsIn(x, 40))}:${Math.round(stepsIn(y, 40))}:${Math.round(stepsIn(r, 40))}`;
-    if (key === this.roadFor) return this.road;
-    this.roadFor = key;
-    let total = 0;
-    for (const ribbon of w.net.ribbons.values()) {
-      const bb = ribbon.full.bbox;
-      if (bb.maxX < x - r || bb.minX > x + r || bb.maxY < y - r || bb.minY > y + r) continue;
-      const pts = ribbon.full.toPoints();
-      for (let i = 1; i < pts.length; i++) {
-        const a = pts[i - 1]!, b = pts[i]!;
-        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        if (Math.hypot(mx - x, my - y) <= r) total += Math.hypot(b.x - a.x, b.y - a.y);
-      }
-    }
-    this.road = total;
-    return total;
+    return this.street.around(w.net, x, y, r);
   }
 }
 

@@ -1,6 +1,7 @@
 import type { ChangeJournal } from '@world/changes';
 import type { BuildingStore } from '@world/buildings/store';
 import type { Building } from '@world/buildings/types';
+import type { Network, SegmentRibbon } from '@world/network';
 import { solidFootprints } from '@world/buildings/geometry';
 import { m } from '@world/units';
 import { kindOf, type Mix } from './demand';
@@ -316,5 +317,63 @@ export class BuildingMix {
       }
     }
     return out;
+  }
+}
+
+// ------------------------------------------------------------ the street length
+
+/**
+ * Street length within `r` of (x, y), world units: the length of every
+ * straight piece of a ribbon whose middle is that near, summed in the order
+ * of `Network.ribbons` - the same sum, to the last bit, as the walk over every
+ * ribbon it replaces (`AmbientWorld.roadAround`). Only the ribbons filed in
+ * the cells round the place are read (`Network.ribbonsMeeting`); the whole
+ * map (r = Infinity) is summed once per network.
+ */
+export class StreetLength {
+  /** Each ribbon's straight pieces as the walk reads them: middle x, middle y, length. Ribbons are never changed in place. */
+  private readonly pieces = new WeakMap<SegmentRibbon, Float64Array>();
+  /** The street length of the whole map, by the network it was summed for. */
+  private readonly whole = new WeakMap<Network, { revision: number; epoch: number; total: number }>();
+
+  around(net: Network, x: number, y: number, r: number): number {
+    if (r === Infinity) return Number.isNaN(x) || Number.isNaN(y) ? 0 : this.wholeMap(net);
+    // A NaN or a point at infinity is within no finite reach (nor is anything within a negative one).
+    if (!(r >= 0) || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+    let total = 0;
+    for (const ribbon of net.ribbonsMeeting([x - r, y - r, x + r, y + r])) {
+      const bb = ribbon.full.bbox;
+      if (bb.maxX < x - r || bb.minX > x + r || bb.maxY < y - r || bb.minY > y + r) continue;
+      total = this.add(total, ribbon, x, y, r);
+    }
+    return total;
+  }
+
+  /** @rebuild Summed again only when the network moved (an edit of the roads), never per question. */
+  private wholeMap(net: Network): number {
+    const known = this.whole.get(net);
+    if (known && known.revision === net.revision && known.epoch === net.segmentCells.epoch) return known.total;
+    let total = 0;
+    for (const ribbon of net.ribbons.values()) total = this.add(total, ribbon, 0, 0, Infinity);
+    this.whole.set(net, { revision: net.revision, epoch: net.segmentCells.epoch, total });
+    return total;
+  }
+
+  /** The pieces of `ribbon` whose middle is within `r` of (x, y), added to `total` in order. */
+  private add(total: number, ribbon: SegmentRibbon, x: number, y: number, r: number): number {
+    let p = this.pieces.get(ribbon);
+    if (!p) {
+      const pts = ribbon.full.toPoints();
+      p = new Float64Array(Math.max(0, pts.length - 1) * 3);
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1]!, b = pts[i]!;
+        p[(i - 1) * 3] = (a.x + b.x) / 2;
+        p[(i - 1) * 3 + 1] = (a.y + b.y) / 2;
+        p[(i - 1) * 3 + 2] = Math.hypot(b.x - a.x, b.y - a.y);
+      }
+      this.pieces.set(ribbon, p);
+    }
+    for (let i = 0; i < p.length; i += 3) if (Math.hypot(p[i]! - x, p[i + 1]! - y) <= r) total += p[i + 2]!;
+    return total;
   }
 }

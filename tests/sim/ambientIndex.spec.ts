@@ -7,7 +7,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
-import { BuildingMix, SightWalls, ambientIndexWork, crosses } from '@sim/ambient/ambientIndex';
+import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
 
 /**
@@ -157,5 +157,68 @@ describe('the mix of the buildings round a place', () => {
       }
     }
     expect(ambientIndexWork.full - full).toBe(1);
+  });
+});
+
+describe('the street length round a place', () => {
+  /** The old `AmbientWorld.roadAround` without its one-slot cache: every ribbon of the map walked (the oracle). */
+  function oldRoad(net: Network, x: number, y: number, r: number): number {
+    let total = 0;
+    for (const ribbon of net.ribbons.values()) {
+      const bb = ribbon.full.bbox;
+      if (bb.maxX < x - r || bb.minX > x + r || bb.maxY < y - r || bb.minY > y + r) continue;
+      const pts = ribbon.full.toPoints();
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1]!, b = pts[i]!;
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if (Math.hypot(mx - x, my - y) <= r) total += Math.hypot(b.x - a.x, b.y - a.y);
+      }
+    }
+    return total;
+  }
+
+  it('sums to the last bit as the walk over every ribbon, through edits of the roads', () => {
+    const roads = new RoadDoc();
+    const rng = new Rng(0x40ad);
+    const nodes: number[] = [];
+    for (let k = 0; k < 12; k++) nodes.push(roads.addNode({ x: m(rng.range(-400, 400)), y: m(rng.range(-400, 400)) }).id);
+    const segments: number[] = [];
+    const join = (): void => {
+      const a = nodes[Math.floor(rng.float() * nodes.length)]!, b = nodes[Math.floor(rng.float() * nodes.length)]!;
+      if (a === b) return;
+      const made = roads.addSegment(a as never, b as never, 1);
+      if (made) segments.push(made.id);
+    };
+    for (let k = 0; k < 14; k++) join();
+    const net = new Network(roads);
+    net.rebuild();
+    const street = new StreetLength();
+    const streetLength = (n: Network, x: number, y: number, r: number): number => street.around(n, x, y, r);
+    const wholes = new Set<number>();
+    for (let round = 0; round < 30; round++) {
+      if (round) {
+        // A road added, one taken away, or a node moved; the network rebuilt as the game does.
+        const roll = rng.float();
+        if (roll < 0.35) join();
+        else if (roll < 0.6 && segments.length) {
+          const id = segments.splice(Math.floor(rng.float() * segments.length), 1)[0]!;
+          if (roads.segment(id as never)) roads.removeSegment(id as never);
+        } else {
+          const id = nodes[Math.floor(rng.float() * nodes.length)]!;
+          if (roads.node(id as never)) roads.moveNode(id as never, { x: m(rng.range(-400, 400)), y: m(rng.range(-400, 400)) });
+        }
+        net.rebuild();
+      }
+      expect(net.ribbons.size).toBeGreaterThan(0);
+      expect(streetLength(net, 0, 0, Infinity)).toBe(oldRoad(net, 0, 0, Infinity));
+      wholes.add(streetLength(net, 0, 0, Infinity));
+      for (let q = 0; q < 40; q++) {
+        const x = m(rng.range(-500, 500)), y = m(rng.range(-500, 500));
+        const r = m(rng.float() < 0.5 ? rng.range(0, 80) : rng.range(80, 900));
+        expect(streetLength(net, x, y, r), `${x},${y} r ${r}`).toBe(oldRoad(net, x, y, r));
+      }
+    }
+    // The roads did change between the questions.
+    expect(wholes.size).toBeGreaterThan(10);
   });
 });
