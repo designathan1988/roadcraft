@@ -48,6 +48,20 @@ export class BuildingStore {
     this.journal.record('buildings', known, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
   }
 
+  /**
+   * The ids of the buildings changed after `serial` (a `revision` read
+   * before), from the diary; null when it cannot say which (a whole-store
+   * change: loaded, cleared, shared; or entries forgotten): then read them
+   * all. What a product derived from some buildings asks to take in a change
+   * by its ids, never the whole store again (root CLAUDE.md, "Como adicionar
+   * um produto derivado").
+   */
+  changedSince(serial: number): BuildingId[] | null {
+    const entries = this.journal.since(serial, ['buildings']);
+    if (!entries || entries.some((e) => !e.ids)) return null;
+    return entries.flatMap((e) => e.ids!) as BuildingId[];
+  }
+
   get size(): number {
     return this.items.size;
   }
