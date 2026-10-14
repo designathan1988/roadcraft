@@ -15,7 +15,6 @@ import {
   InstancedMesh,
   LineBasicMaterial,
   LineSegments,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -105,7 +104,7 @@ export interface Blast {
   burn(x: number, y: number, z: number, size: number, seconds: number): void;
   /** Soot and ash laid on the ground at world (x, y): the street left dirty by the blast, for good. */
   soot(x: number, y: number, z: number, radius: number): void;
-  /** A broken hydrant at world (x, y): a jet of water that keeps going. */
+  /** A broken hydrant at world (x, y): a jet of water for `seconds` (`GEYSER_SECONDS` if not given), dying down at its end. */
   geyser(x: number, y: number, z: number, seconds?: number): void;
   /** A burst pipe: a thin spurt of water for a moment, not a hydrant's jet. */
   leak(x: number, y: number, z: number, seconds: number): void;
@@ -124,6 +123,9 @@ const MAX_SOOT = 600;
 const MAX_WIRES = 40;
 const WIRE_POINTS = 12;
 const GRAVITY = m(9.8);
+/** A hydrant's jet when no length is given (the blast wiring gives none), and its dying down, seconds. DO NOT make it
+ * endless: it sprayed 110 particles a second and kept `active()` - every frame drawn - true for the rest of the game. */
+const GEYSER_SECONDS = 45, GEYSER_FADE = 6;
 
 interface Piece {
   readonly mesh: 'box' | 'cylinder' | 'car' | 'slab' | 'mesh';
@@ -331,7 +333,6 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
   let clock = 0;
   let drawnPieces = -1;
   const o = new Object3D();
-  const mtx = new Matrix4();
 
   /**
    * A burnt-out vehicle (as GTA leaves them): the paint gone to grey-brown
@@ -622,8 +623,9 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
     leak(x, y, z, seconds) {
       geysers.push({ x, y, z, carry: 0, until: time + seconds, weak: true });
     },
-    geyser(x, y, z, seconds = Infinity) {
-      geysers.push({ x, y, z, carry: 0, until: time + seconds });
+    geyser(x, y, z, seconds) {
+      const life = seconds !== undefined && Number.isFinite(seconds) && seconds > 0 ? seconds : GEYSER_SECONDS;
+      geysers.push({ x, y, z, carry: 0, until: time + life });
       if (geysers.length > 40) geysers.shift();
     },
     burn(x, y, z, size, seconds) {
@@ -666,12 +668,13 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
           if (Math.random() < 0.6) exhaust.burst(at.x, -at.z, at.y + m(0.6), 1, 0, big * 0.4, m(1.5), 3.5);
         }
       }
-      // Hydrants: a jet of water each, for good, and its puddle of spray.
+      // Hydrants: a jet of water each, dying down at its end, then let go; and its puddle of spray.
       for (let i = geysers.length - 1; i >= 0; i--) {
         const g = geysers[i]!;
         if (time > g.until) { geysers.splice(i, 1); continue; }
-        g.carry += (g.weak ? 14 : 110) * wall;
-        while (g.carry >= 1) { g.carry -= 1; exhaust.burst(g.x, g.y, g.z + m(0.4), 1, 8, m(0.1), g.weak ? m(0.25) : m(0.8), g.weak ? 1.2 : 4.2); }
+        const strength = g.weak ? 1 : Math.min(1, (g.until - time) / GEYSER_FADE);
+        g.carry += (g.weak ? 14 : 110) * strength * wall;
+        while (g.carry >= 1) { g.carry -= 1; exhaust.burst(g.x, g.y, g.z + m(0.4), 1, 8, m(0.1), g.weak ? m(0.25) : m(0.8) * Math.max(0.25, strength), g.weak ? 1.2 : 4.2); }
       }
       for (let i = arcs.length - 1; i >= 0; i--) {
         const a = arcs[i]!;
@@ -783,7 +786,6 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
         attribute.addUpdateRange(0, w);
         attribute.needsUpdate = true;
       }
-      void mtx;
     },
     dispose() {
       for (const p of pieces) if (p.object) dropObject(p.object);

@@ -23,7 +23,7 @@ import { HELD, createHeldProps } from './people/heldProps';
 import { attachFacialMorphs } from './people/facialMorphs';
 import { applyFace, channelShapes, faceAt, type FaceWeights } from './people/faceExpression';
 import { expressionShapes } from '@people/body/expressions';
-import { applySkinAppearance, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
+import { applySkinAppearance, createFaceCardAtlas, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
 import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems } from '@people/spec';
 import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
@@ -110,9 +110,6 @@ export function citizenBandAt(zoom: number): number {
 export function citizenLevelFor(zoom: number): number {
   return citizenBandAt(zoom) === 0 ? 0 : citizenLevelAt(zoom);
 }
-
-/** Frames undrawn after which a person's body is forgotten: about a minute. */
-const CAST_FORGET = 3600;
 
 /** Who a figure drawn by `drawClip` is and with whom: the casting context without the place. */
 export interface ClipIdentity {
@@ -240,6 +237,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   let visualFrame = 0;
   let activeLoads = 0;
   const resources = new Set<{ dispose(): void }>();
+  // The brows and lashes of every body's materials, in one array of layers (`FaceCardAtlas`).
+  const faceCards = createFaceCardAtlas();
+  resources.add(faceCards);
   const disposeOwned = (owned: Set<{ dispose(): void }>): void => {
     cancelUploads([...owned].filter((resource): resource is Texture => resource instanceof Texture));
     for (const resource of owned) resource.dispose();
@@ -531,7 +531,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           material.metalness = 0;
           skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0);
           const skin = o.geometry.userData['skinAppearance'] as SkinAppearance | undefined;
-          if (skin) applySkinAppearance(material, o.geometry, skin);
+          if (skin) applySkinAppearance(material, o.geometry, skin, faceCards);
           owned.add(material);
           return material;
         });
@@ -709,8 +709,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     };
   }
 
+  // A person keeps their body for good (`CastingRegistry`): DO NOT give the
+  // registry a limit on how many it remembers - 3600 here re-dressed people.
   const registry = new CastingRegistry(CROWD.filter((m) => models.includes(m.id))
-    .sort((p, q) => models.indexOf(p.id) - models.indexOf(q.id)), CAST_FORGET);
+    .sort((p, q) => models.indexOf(p.id) - models.indexOf(q.id)));
   const helmetFits = (id: string): boolean => !NO_HELMET.has(id);
   function bodyFor(ctx: CastingContext): { index: number; size: number } | null {
     return registry.pickCitizenModel(ctx, helmetFits);
