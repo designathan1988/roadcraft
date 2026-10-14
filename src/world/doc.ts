@@ -1301,10 +1301,21 @@ export class RoadDoc {
     this.roadsChanged(rects.length ? rects : null, traffic, { ids: [id] });
   }
 
-  /** `before`: the segment's rectangle before the change, written with the one after (a road narrowed or moved leaves ground). */
+  /**
+   * `before`: the segment's rectangle before the change, written with the one
+   * after (a road narrowed or moved leaves ground). With them, the junctions
+   * at its two ends (`nodeRect`): a road added, taken away, widened or bent
+   * changes the mouth of every other road there, out to the widest of them -
+   * further than its own rectangle reaches. DO NOT write only the segment's
+   * rectangle: what is derived round a junction would keep the old mouths.
+   */
   markSegment(id: SegmentId, before: ChangeRect | null = null): void {
+    const rects: ChangeRect[] = [];
     const rect = this.segmentRect(id);
-    const rects = [rect, before].filter((r): r is ChangeRect => r !== null);
+    if (rect) rects.push(rect);
+    if (before) rects.push(before);
+    const s = this.segments.get(id);
+    if (s) for (const end of [s.a, s.b]) { const r = this.nodeRect(end); if (r) rects.push(r); }
     this.roadsChanged(rects.length ? rects : null, true, { ids: [id] });
   }
 
