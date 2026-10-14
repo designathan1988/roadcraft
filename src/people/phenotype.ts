@@ -11,7 +11,7 @@ const mix = (a: number, b: number, t: number): number => {
 };
 
 /** Continuous authored skin palette, stored as sRGB for the material colour. */
-export function skinColour(melanin: number, undertone: number): number {
+function skinColour(melanin: number, undertone: number): number {
   return mix(mix(0xe6c6ae, 0xd8b59c, undertone), mix(0x604638, 0x755342, undertone), melanin);
 }
 

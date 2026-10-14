@@ -7,8 +7,8 @@ import { CLOTH_COLOURS, WARDROBE, randomPerson, type BottomStyle, type PersonSpe
  * for a wardrobe - a set of clothes that go together - so a party can be
  * dressed to one code, as the casting asks.
  */
-export type RosterWardrobe = 'casual' | 'smart-casual' | 'business' | 'sport-casual' | 'traditional';
-export type RosterAge = 'child' | 'young' | 'adult' | 'senior';
+type RosterWardrobe = 'casual' | 'smart-casual' | 'business' | 'sport-casual' | 'traditional';
+type RosterAge = 'child' | 'young' | 'adult' | 'senior';
 
 export interface RosterEntry {
   readonly id: string;

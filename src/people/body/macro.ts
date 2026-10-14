@@ -58,7 +58,7 @@ const RACES = ['african', 'asian', 'caucasian'] as const;
  * height and proportions) takes its share with it: at the neutral the slider
  * moves nothing.
  */
-export function stateWeights(parts: readonly MacroPart[], value: number): Map<string, number> {
+function stateWeights(parts: readonly MacroPart[], value: number): Map<string, number> {
   const out = new Map<string, number>();
   const x = Math.min(1, Math.max(0, value));
   const part = parts.find((p) => x >= p.lowest && x <= p.highest)

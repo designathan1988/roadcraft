@@ -10,10 +10,12 @@
  * written from the file format, with no MakeHuman or MPFB code.
  */
 
+import type { CommunityKind } from '../wardrobe';
+
 /** One proxy as packed by the importer. */
 export interface ProxyPack {
   readonly name: string;
-  readonly kind: 'clothes' | 'hair' | 'eyebrows' | 'eyelashes' | 'eyes' | 'shoes' | import('../wardrobe').CommunityKind;
+  readonly kind: 'clothes' | 'hair' | 'eyebrows' | 'eyelashes' | 'eyes' | 'shoes' | CommunityKind;
   /** Base-mesh vertices the scale axes are measured between: [x0, x1, y0, y1, z0, z1]. */
   readonly scaleRefs: readonly number[];
   /** The axis lengths on the base mesh itself, decimetres. */
