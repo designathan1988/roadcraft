@@ -98,10 +98,18 @@ function solidsOfItem(doc: RoadDoc, key: SourceKey): Solid[] | undefined {
   return out.length ? out : undefined;
 }
 
+/**
+ * Whether two lists hold the same solids, shape for shape: the ends of a
+ * capsule and the centre of a disc, not their box alone - a wall redrawn on
+ * the other diagonal of the same box has the same box (Salsa's backdating
+ * must never keep a value that differs).
+ */
 const sameSolids = (a: readonly Solid[], b: readonly Solid[]): boolean =>
   a.length === b.length && a.every((s, i) => {
     const t = b[i]!;
-    return s.kind === t.kind && s.r === t.r && s.box.every((v, k) => v === t.box[k]);
+    if (s.kind !== t.kind || s.r !== t.r) return false;
+    if (s.kind === 'disc') return t.kind === 'disc' && s.c.x === t.c.x && s.c.y === t.c.y;
+    return t.kind === 'capsule' && s.a.x === t.a.x && s.a.y === t.a.y && s.b.x === t.b.x && s.b.y === t.b.y;
   });
 
 const PREFIX = { buildings: 'b', barriers: 'r', utilities: 'p', landscape: 'l' } as const;
