@@ -39,7 +39,8 @@ import { LorryTraffic } from './lorryTraffic';
  * or those parked here - drive out, drawn by how many come out of each kind
  * of place now. A town with no road leading off the map keeps its traffic
  * this way; the road ends bring theirs in and take it away as before.
- * Half the lots called are near the view, so the player sees them.
+ * Where the camera is plays no part (the same map runs the same with the
+ * camera anywhere).
  */
 
 /** Seconds between two looks for a car to send in. */
@@ -253,17 +254,16 @@ export class LotTraffic {
   }
 
   /**
-   * A free bay, drawn by how many go in at its kind of place at this hour
-   * (half the time among those near the view, so the player sees them come
-   * and go), and the nearest passing car sent to it. False when none was.
+   * A free bay, drawn by how many go in at its kind of place at this hour,
+   * and the nearest passing car sent to it. False when none was. DO NOT
+   * draw among the bays near the view (`SimWorld.focus`): the camera is no
+   * input of the simulation, and the same map ran otherwise with the camera
+   * elsewhere.
    */
   private call(w: SimWorld): boolean {
     const free = this.freeBays(w);
     if (!free.length) return false;
-    const focus = w.focus;
-    const near = focus && w.rng.lots.float() < 0.5
-      ? free.filter((b) => Math.hypot(b.x - focus.x, b.y - focus.y) < Math.max(focus.r * 1.2, m(120))) : free;
-    const pool = near.length ? near : free;
+    const pool = free;
     const hour = this.hour(w);
     const into = new Map<number, number>();
     const weights = pool.map((bay) => {
