@@ -618,7 +618,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           const centre = { x: building.x, y: building.y };
           let best: Building | null = null;
           let bestDistance = 60;
-          for (const other of doc.buildings.all()) {
+          // Only one whose anchor is within reach can win: the store's grid
+          // files every anchor (`BuildingStore.near`, in the order of `all()`).
+          for (const other of doc.buildings.near(centre.x - bestDistance, centre.y - bestDistance, centre.x + bestDistance, centre.y + bestDistance)) {
             if (other.id === building.id) continue;
             const d = Math.hypot(other.x - centre.x, other.y - centre.y);
             if (d < bestDistance) {
