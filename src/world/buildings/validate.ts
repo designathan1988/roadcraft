@@ -145,6 +145,16 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   return null;
 }
 
+/** The box round several rings. */
+function ringsBox(rings: readonly (readonly Vec2[])[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const ring of rings) {
+    const r = ringBox(ring);
+    minX = Math.min(minX, r.minX); minY = Math.min(minY, r.minY); maxX = Math.max(maxX, r.maxX); maxY = Math.max(maxY, r.maxY);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 /** A ring's box. */
 function ringBox(ring: readonly Vec2[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -182,10 +192,17 @@ export function validateBuilding(
   if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as Network, rect))) return 'road';
 
   // The buildings by place (`BuildingStore.near`): this walked the town, up to 18 times a building grown.
-  for (const other of ctx.doc.buildings.near(box.minX, box.minY, box.maxX, box.maxY)) {
+  // Asked over everything this building puts on the ground - its projections
+  // reach past its volumes' box - and grown by the deepest a projection may be,
+  // for the neighbours' own (the store files a building by its volumes' box,
+  // `storedBounds`). DO NOT ask over `buildingBounds` alone: a bay window run
+  // into the neighbour's wall, or the neighbour's into this one, went unseen.
+  const reach = ringsBox(party.concat(rects));
+  for (const other of ctx.doc.buildings.near(reach.minX - MAX_PROJECTION, reach.minY - MAX_PROJECTION,
+    reach.maxX + MAX_PROJECTION, reach.maxY + MAX_PROJECTION)) {
     if (other.id === b.id || ignored?.has(other.id)) continue;
-    const ob = storedBounds(other);
-    if (ob.minX > box.maxX || ob.maxX < box.minX || ob.minY > box.maxY || ob.maxY < box.minY) continue;
+    const ob = storedBounds(other, MAX_PROJECTION);
+    if (ob.minX > reach.maxX || ob.maxX < reach.minX || ob.minY > reach.maxY || ob.maxY < reach.minY) continue;
     const others = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
     // Two buildings may share a party wall: their volumes meet, and may run a
     // few centimetres into each other, as terraced houses and a row of shops
