@@ -108,8 +108,15 @@ interface Regional {
   readonly lines: PoleLines;
 }
 const regional = new WeakMap<Network, Map<string, Regional>>();
-/** Rectangles kept per network: a town's cells with streets, and the runs being planned. */
-const REGIONAL_KEPT = 4096;
+/**
+ * Rectangles kept per network, the least recently asked let go first: the
+ * runs being planned and the cell under the pointer. Kept up to a town's
+ * every cell, the lines and their route graphs were 190 MB of a city of
+ * 5 400 buildings and would be gigabytes on the whole map (2026-10-14);
+ * only the pole tool reads them, a few cells at a time.
+ * NÃO voltar a guardar a cidade inteira: a memória cresce com o mapa.
+ */
+const REGIONAL_KEPT = 64;
 
 /**
  * The pole lines inside `rect`: the same lines `poleLines` has there, made
@@ -124,6 +131,8 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
   const key = `${rect[0]},${rect[1]},${rect[2]},${rect[3]}`;
   const known = byRect.get(key);
   const segmentEpoch = net.segmentCells.epoch, junctionEpoch = net.junctionCells.epoch;
+  // Asked again: to the back of the line, the last to be let go.
+  if (known) { byRect.delete(key); byRect.set(key, known); }
   if (known && known.segmentEpoch === segmentEpoch && known.junctionEpoch === junctionEpoch) { poleLinesWork.kept++; return known.lines; }
   const sources = [grow(rect, LINES_HALO)];
   let stamp = '';

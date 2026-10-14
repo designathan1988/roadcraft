@@ -568,12 +568,22 @@ export interface FacadeBay {
  * #18). Checked against the record's text, in case one is changed in place.
  * The list handed out is shared: read it, never change it.
  */
-const BAYS = new WeakMap<Building, { text: string; bays: FacadeBay[] }>();
+/**
+ * The bays of the buildings worked out last, the least recently asked let go
+ * first. Kept for every building, with each one's whole record as text, they
+ * were 150 MB of a city of 5 400 (2026-10-14): a building's bays are asked
+ * while it is emitted, graded or walked into, a few hundred at a time.
+ * NÃO voltar ao WeakMap sem teto: os prédios vivem enquanto o documento vive.
+ */
+const BAYS = new Map<Building, { text: string; bays: FacadeBay[] }>();
+const BAYS_KEPT = 1024;
 export function facadeBays(b: Building): FacadeBay[] {
   const text = JSON.stringify(b);
   const known = BAYS.get(b);
-  if (known && known.text === text) return known.bays;
+  if (known) BAYS.delete(b);
+  if (known && known.text === text) { BAYS.set(b, known); return known.bays; }
   const bays = workOutFacadeBays(b);
+  if (BAYS.size >= BAYS_KEPT) BAYS.delete(BAYS.keys().next().value!);
   BAYS.set(b, { text, bays });
   return bays;
 }
