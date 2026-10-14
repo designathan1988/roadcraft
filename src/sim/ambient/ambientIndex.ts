@@ -3,6 +3,7 @@ import type { BuildingStore } from '@world/buildings/store';
 import type { Building } from '@world/buildings/types';
 import { solidFootprints } from '@world/buildings/geometry';
 import { m } from '@world/units';
+import { kindOf, type Mix } from './demand';
 
 /**
  * The scenery's questions about the map (`ambient.ts`), answered from indexes
@@ -186,4 +187,134 @@ export function crosses(ax: number, ay: number, bx: number, by: number, cx: numb
   const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
   const d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
   return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
+}
+
+// ------------------------------------------------------------ the mix of the buildings
+
+type Kind = keyof Mix;
+interface Counts { home: number; shop: number; work: number; civic: number; total: number }
+const noCounts = (): Counts => ({ home: 0, shop: 0, work: 0, civic: 0, total: 0 });
+interface Filed { readonly x: number; readonly y: number; readonly kind: Kind; readonly cell: number | null }
+
+/** The side of a mix cell. */
+const MIX_CELL = m(128);
+/** Rounding room in the test of a whole cell inside or outside the circle: the cells near the edge are counted building by building. */
+const MIX_SLACK = m(0.001);
+
+/**
+ * How many buildings of each kind (`demand.ts` kindOf) stand where: counts
+ * per cell of a fixed grid and for the whole map, kept by the diary. A
+ * circle reads the whole cells inside it by their counts and the buildings
+ * of the cells its edge crosses one by one, by the same test as the walk
+ * over every building it replaces (`AmbientWorld.mixAround`).
+ */
+export class BuildingMix {
+  private serial = -1;
+  private readonly byBuilding = new Map<number, Filed>();
+  private readonly cells = new Map<number, { counts: Counts; members: Set<Filed> }>();
+  /** Buildings whose place is not a number: within every circle, as `hypot(NaN) > r` is false. */
+  private readonly nowhere = new Set<Filed>();
+  private readonly all = noCounts();
+
+  /** Takes in what the diary says changed since the last call. */
+  sync(store: BuildingStore, journal: ChangeJournal): void {
+    const changed = buildingsChangedSince(journal, this.serial);
+    this.serial = journal.version;
+    if (changed === null) { this.fileAll(store); return; }
+    for (const id of changed) {
+      this.unfile(id);
+      const b = store.get(id as never);
+      if (b) this.file(b);
+    }
+  }
+
+  /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
+  private fileAll(store: BuildingStore): void {
+    ambientIndexWork.full++;
+    this.byBuilding.clear();
+    this.cells.clear();
+    this.nowhere.clear();
+    Object.assign(this.all, noCounts());
+    for (const b of store.all()) this.file(b);
+  }
+
+  private file(b: Building): void {
+    ambientIndexWork.filed++;
+    const placed = Number.isFinite(b.x) && Number.isFinite(b.y);
+    const cell = placed ? key(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL)) : null;
+    const f: Filed = { x: b.x, y: b.y, kind: kindOf(b), cell };
+    this.byBuilding.set(b.id, f);
+    this.all[f.kind]++; this.all.total++;
+    if (cell === null) { this.nowhere.add(f); return; }
+    let c = this.cells.get(cell);
+    if (!c) this.cells.set(cell, c = { counts: noCounts(), members: new Set() });
+    c.counts[f.kind]++; c.counts.total++;
+    c.members.add(f);
+  }
+
+  private unfile(id: number): void {
+    const f = this.byBuilding.get(id);
+    if (!f) return;
+    this.byBuilding.delete(id);
+    this.all[f.kind]--; this.all.total--;
+    if (f.cell === null) { this.nowhere.delete(f); return; }
+    const c = this.cells.get(f.cell)!;
+    c.counts[f.kind]--; c.counts.total--;
+    c.members.delete(f);
+    if (!c.counts.total) this.cells.delete(f.cell);
+  }
+
+  /** The share of each kind among the buildings within `r * 1.2` of (x, y); r = Infinity, the whole map. */
+  around(x: number, y: number, r: number): Mix {
+    const reach = r * 1.2;
+    // As the walk's test, `hypot(b - p) > reach` leaves a building out:
+    // nothing is beyond an endless reach or a NaN, and a point at infinity
+    // is beyond every building that has a place.
+    const count = reach === Infinity || Number.isNaN(reach) || Number.isNaN(x) || Number.isNaN(y) ? this.all
+      : !Number.isFinite(x) || !Number.isFinite(y) ? this.inCircle(0, 0, -1)
+        : this.inCircle(x, y, reach);
+    const total = count.total;
+    return total === 0 ? { home: 0.6, shop: 0.2, work: 0.1, civic: 0.1 }
+      : { home: count.home / total, shop: count.shop / total, work: count.work / total, civic: count.civic / total };
+  }
+
+  private inCircle(x: number, y: number, reach: number): Counts {
+    const out = noCounts();
+    for (const f of this.nowhere) { out[f.kind]++; out.total++; }
+    const cx0 = Math.floor((x - reach) / MIX_CELL), cx1 = Math.floor((x + reach) / MIX_CELL);
+    const cy0 = Math.floor((y - reach) / MIX_CELL), cy1 = Math.floor((y + reach) / MIX_CELL);
+    const visit = (cell: number, c: { counts: Counts; members: Set<Filed> }): void => {
+      ambientIndexWork.cells++;
+      const gx = Math.floor(cell / 65536) - 32768, gy = (cell % 65536) - 32768;
+      const x0 = gx * MIX_CELL - x, x1 = (gx + 1) * MIX_CELL - x, y0 = gy * MIX_CELL - y, y1 = (gy + 1) * MIX_CELL - y;
+      const far = Math.hypot(Math.max(-x0, x1), Math.max(-y0, y1));
+      if (far + MIX_SLACK < reach) {
+        out.home += c.counts.home; out.shop += c.counts.shop; out.work += c.counts.work; out.civic += c.counts.civic;
+        out.total += c.counts.total;
+        return;
+      }
+      const near = Math.hypot(Math.max(0, x0, -x1), Math.max(0, y0, -y1));
+      if (near - MIX_SLACK > reach) return;
+      // The edge of the circle: each building by the walk's own test.
+      for (const f of c.members) {
+        if (Math.hypot(f.x - x, f.y - y) > reach) continue;
+        out[f.kind]++; out.total++;
+      }
+    };
+    if ((cx1 - cx0 + 1) * (cy1 - cy0 + 1) > this.cells.size) {
+      for (const [cell, c] of this.cells) {
+        const gx = Math.floor(cell / 65536) - 32768, gy = (cell % 65536) - 32768;
+        if (gx >= cx0 && gx <= cx1 && gy >= cy0 && gy <= cy1) visit(cell, c);
+      }
+    } else {
+      for (let gx = cx0; gx <= cx1; gx++) {
+        for (let gy = cy0; gy <= cy1; gy++) {
+          const k = key(gx, gy);
+          const c = this.cells.get(k);
+          if (c) visit(k, c);
+        }
+      }
+    }
+    return out;
+  }
 }

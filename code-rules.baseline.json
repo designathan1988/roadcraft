@@ -113,7 +113,6 @@
  "whole-map-per-frame  src/sim/agents/parking.ts wallsOf  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/agents/parking.ts workOutBays  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.lanesNear  for LaneletGraph.lanelets": 1,
- "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.mixAround  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.refreshPlaces  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.roadAround  for Network.ribbons": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.roadEnds  for RoadDoc.nodes": 1,

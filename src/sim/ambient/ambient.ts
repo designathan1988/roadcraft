@@ -16,7 +16,7 @@ import { collectBays, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
-import { SightWalls } from './ambientIndex';
+import { BuildingMix, SightWalls } from './ambientIndex';
 
 
 /**
@@ -110,8 +110,6 @@ export class AmbientWorld {
   private readonly bays = new Map<number, Vehicle>();
   private clock = 0;
   private nextTrip = 1 << 26;
-  private mixFor = '';
-  private mix: Mix = { home: 1, shop: 0, work: 0, civic: 0 };
   private roadFor = '';
   private road = 0;
   private lanesFor = '';
@@ -880,20 +878,18 @@ export class AmbientWorld {
 
   // ------------------------------------------------------------ the place
 
+  /**
+   * The mix of the buildings round a place: counts by kind per cell and for
+   * the whole map, kept by the diary (`ambientIndex.ts` BuildingMix). DO NOT
+   * count every building again under a key with `buildings.revision`: the
+   * town's ageing moves it every few seconds, and the whole map was counted
+   * again that often (and on every look of the view's life).
+   */
+  private readonly buildingMix = new BuildingMix();
+
   private mixAround(w: SimWorld, x: number, y: number, r: number): Mix {
-    const key = `${w.doc.buildings.revision}:${Math.round(stepsIn(x, 40))}:${Math.round(stepsIn(y, 40))}:${Math.round(stepsIn(r, 40))}`;
-    if (key === this.mixFor) return this.mix;
-    this.mixFor = key;
-    const count: Record<keyof Mix, number> = { home: 0, shop: 0, work: 0, civic: 0 };
-    let total = 0;
-    for (const b of w.doc.buildings.all()) {
-      if (Math.hypot(b.x - x, b.y - y) > r * 1.2) continue;
-      count[kindOf(b)]++;
-      total++;
-    }
-    this.mix = total === 0 ? { home: 0.6, shop: 0.2, work: 0.1, civic: 0.1 }
-      : { home: count.home / total, shop: count.shop / total, work: count.work / total, civic: count.civic / total };
-    return this.mix;
+    this.buildingMix.sync(w.doc.buildings, w.doc.changes);
+    return this.buildingMix.around(x, y, r);
   }
 
   /** Street length inside the view, world units: what the population is sized by. */

@@ -7,7 +7,8 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
-import { SightWalls, ambientIndexWork, crosses } from '@sim/ambient/ambientIndex';
+import { BuildingMix, SightWalls, ambientIndexWork, crosses } from '@sim/ambient/ambientIndex';
+import { kindOf, type Mix } from '@sim/ambient/demand';
 
 /**
  * The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks
@@ -122,5 +123,39 @@ describe('the walls between the eye and a point', () => {
     // Both answers were asked about, often.
     expect(hits).toBeGreaterThan(asked * 0.2);
     expect(hits).toBeLessThan(asked * 0.95);
+  });
+});
+
+describe('the mix of the buildings round a place', () => {
+  /** The old `AmbientWorld.mixAround` without its one-slot cache: every building of the map counted (the oracle). */
+  function oldMix(d: RoadDoc, x: number, y: number, r: number): Mix {
+    const count: Record<keyof Mix, number> = { home: 0, shop: 0, work: 0, civic: 0 };
+    let total = 0;
+    for (const b of d.buildings.all()) {
+      if (Math.hypot(b.x - x, b.y - y) > r * 1.2) continue;
+      count[kindOf(b)]++;
+      total++;
+    }
+    return total === 0 ? { home: 0.6, shop: 0.2, work: 0.1, civic: 0.1 }
+      : { home: count.home / total, shop: count.shop / total, work: count.work / total, civic: count.civic / total };
+  }
+
+  it('counts as the walk over every building, through edits, round any place and over the whole map', () => {
+    const rng = new Rng(0x313);
+    const mix = new BuildingMix();
+    const removed: Building[] = [];
+    const full = ambientIndexWork.full;
+    for (let round = 0; round < 40; round++) {
+      if (round) for (let k = 0; k < 3; k++) editBuildings(doc, rng, removed);
+      mix.sync(doc.buildings, doc.changes);
+      expect(mix.around(0, 0, Infinity)).toEqual(oldMix(doc, 0, 0, Infinity));
+      for (let q = 0; q < 40; q++) {
+        const x = m(rng.range(-250, 250)), y = m(rng.range(-250, 250));
+        // Radii from inside one cell to past the map.
+        const r = m(rng.float() < 0.5 ? rng.range(0, 60) : rng.range(60, 600));
+        expect(mix.around(x, y, r), `${x},${y} r ${r}`).toEqual(oldMix(doc, x, y, r));
+      }
+    }
+    expect(ambientIndexWork.full - full).toBe(1);
   });
 });
