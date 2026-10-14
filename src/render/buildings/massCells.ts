@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, Group, Mesh, Uint32BufferAttribute } from 'three';
+import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
 import { m } from '@world/units';
 import type { BuildingKit } from './kit';
@@ -120,12 +120,13 @@ function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Me
   const arrays = massArrays(masses);
   if (!arrays) return null;
   const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(arrays.position, 3));
-  g.setAttribute('normal', new Float32BufferAttribute(arrays.normal, 3));
-  g.setAttribute('color', new Float32BufferAttribute(arrays.color, 3));
-  g.setAttribute('facade', new Float32BufferAttribute(arrays.facade, 4));
-  g.setAttribute('glazing', new Float32BufferAttribute(arrays.glazing, 2));
-  g.setIndex(new Uint32BufferAttribute(arrays.index, 1));
+  // Taken as made: DO NOT wrap them in a Float32BufferAttribute, which copies them (`buildingMesh.ts` assembly).
+  g.setAttribute('position', new BufferAttribute(arrays.position, 3));
+  g.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
+  g.setAttribute('color', new BufferAttribute(arrays.color, 3));
+  g.setAttribute('facade', new BufferAttribute(arrays.facade, 4));
+  g.setAttribute('glazing', new BufferAttribute(arrays.glazing, 2));
+  g.setIndex(new BufferAttribute(arrays.index, 1));
   g.computeBoundingSphere();
   g.computeBoundingBox();
   const top = arrays.top;

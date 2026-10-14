@@ -10,10 +10,9 @@ import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, ty
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type BufferAttribute,
+  BufferAttribute,
   BufferGeometry,
   Color,
-  Float32BufferAttribute,
   Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
@@ -21,7 +20,6 @@ import {
   InterleavedBufferAttribute,
   Mesh,
   Sphere,
-  Uint32BufferAttribute,
 } from 'three';
 
 import type { Vec2 } from '@core/vec2';
@@ -2150,8 +2148,8 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     const along = x1 - x0 >= y1 - y0;
     const lip = m(0.04);
     const cap = m(0.07);
-    // And walls that cross in plan (a churrasqueira's counter and the sink
-    // set against it, 2026-10-13) each at a course of their own, by the
+    // And walls that cross in plan (a sink set against another of the yard's
+    // walls, 2026-10-13) each at a course of their own, by the
     // element: two plinths at one height laid their tops in one plane.
     const foot = z0 + (along ? m(0.22) : m(0.23)) + m(0.02) * (el.id % 3);
     // Past the ends by `PART_INSET`; the plinth and the coping proud of both faces by `lip`.
@@ -3499,12 +3497,17 @@ export function* assembleBuildingMeshesSteps(
     if (!shell) continue;
     const indices = shell.index.length;
     const g = new BufferGeometry();
-    g.setAttribute('position', new Float32BufferAttribute(shell.position, 3));
-    g.setAttribute('normal', new Float32BufferAttribute(shell.normal, 3));
-    g.setAttribute('color', new Float32BufferAttribute(shell.colour, 3));
-    g.setAttribute('uv', new Float32BufferAttribute(shell.uv, 2));
-    g.setAttribute('aDecay', new Float32BufferAttribute(shell.decay, 1));
-    g.setIndex(new Uint32BufferAttribute(shell.index, 1));
+    // The arrays just made, taken as they are. DO NOT wrap them in a
+    // Float32BufferAttribute or Uint32BufferAttribute: those copy the array
+    // they are given (`super(new Float32Array(array), ...)`, three's
+    // BufferAttribute.js), every vertex of the cell copied twice in the frame
+    // that put it together (1.3 of 20 s streaming a city, 2026-10-14).
+    g.setAttribute('position', new BufferAttribute(shell.position, 3));
+    g.setAttribute('normal', new BufferAttribute(shell.normal, 3));
+    g.setAttribute('color', new BufferAttribute(shell.colour, 3));
+    g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
+    g.setAttribute('aDecay', new BufferAttribute(shell.decay, 1));
+    g.setIndex(new BufferAttribute(shell.index, 1));
     // A Mesh a finish a cell, its arrays let go once on the GPU (below). NOT
     // a BatchedMesh a finish for the town: three keeps a batch's whole
     // capacity on the CPU (`BatchedMesh._initializeGeometry`), 1.1 GB of the
