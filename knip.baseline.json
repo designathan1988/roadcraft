@@ -268,8 +268,6 @@
  "exports src/world/buildings/towerKit.ts SECOND_SET",
  "exports src/world/buildings/towerKit.ts makeTower",
  "exports src/world/buildings/types.ts BUILDING_USES",
- "exports src/world/buildings/types.ts DECAY_GRACE",
- "exports src/world/buildings/types.ts DECAY_SPAN",
  "exports src/world/buildings/types.ts ROOF_DETAIL_KINDS",
  "exports src/world/buildings/validate.ts BUILDING_MAP_MARGIN",
  "exports src/world/buildings/validate.ts boundsOf",
