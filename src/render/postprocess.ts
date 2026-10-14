@@ -1,5 +1,5 @@
 import {
-  Color, DepthTexture, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
+  Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
   RedFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -280,7 +280,10 @@ export function createPostChain(
 
   // The light the town shuts out of its streets, and the sun's contact
   // shadows (`canyonLight.ts`): after the small occlusion, before the bloom.
-  const canyon = quality.ambientOcclusion ? createCanyonLight(camera, () => sceneDepth) : null;
+  let sunLight: DirectionalLight | null = null;
+  const canyon = quality.ambientOcclusion
+    ? createCanyonLight(camera, () => sceneDepth, () => (sunLight ??= (scene.getObjectByName('sun') as DirectionalLight | undefined) ?? null))
+    : null;
   if (canyon) {
     composer.addPass(canyon.pass);
     const quad = fullScreenTriangle();

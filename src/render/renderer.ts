@@ -3348,7 +3348,7 @@ export function createSceneRenderer(
       // itself moved: the shadow map is drawn again only when it did, when a
       // caster moved, or when this view is close enough for a frame of a
       // caster's movement to be seen.
-      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
+      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y), rig.camera.position.distanceTo(target));
       // What the simulation must show in full: people step round each other
       // only where they are seen, and big enough to see it (`SimWorld.focus`).
       {
