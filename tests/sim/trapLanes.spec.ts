@@ -41,4 +41,31 @@ describe('lanes a car can never leave', () => {
       }
     }
   });
+
+  it('are worked out again when an edit rebuilds the graph in place', () => {
+    // The world's graph is one object, built again in place by every road
+    // edit (`SimWorld.rebuildVehicleTopology`): traps remembered by that
+    // object alone outlived the edit, and the router kept avoiding lanes that
+    // were no longer traps, or sent cars into new ones.
+    const raw = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'player-city.json'), 'utf8')) as { document: unknown };
+    const doc = RoadDoc.fromJSON(raw.document as never);
+    const net = new Network(doc);
+    net.rebuild();
+    const sim = new SimWorld(doc, net, 1);
+    sim.rebuildTopology();
+    const graph = sim.graph;
+    expect(trapLanes(sim, HEAVY).has('32:38>37:0')).toBe(true);
+    // The street of the trap taken away: its lanes are gone, and so are its traps.
+    doc.removeSegment(32 as never);
+    net.rebuild();
+    sim.rebuildTopology();
+    expect(sim.graph).toBe(graph);
+    const fresh = new SimWorld(doc, net, 1);
+    fresh.rebuildTopology();
+    const want = [...trapLanes(fresh, HEAVY)].sort();
+    expect(want).not.toContain('32:38>37:0');
+    expect([...trapLanes(sim, HEAVY)].sort()).toEqual(want);
+    // And asked again with nothing changed, the same set (worked out once).
+    expect(trapLanes(sim, HEAVY)).toBe(trapLanes(sim, HEAVY));
+  });
 });

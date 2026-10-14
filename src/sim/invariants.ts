@@ -72,6 +72,11 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
   }
 
   // ---- vehicles ---------------------------------------------------------
+  // A wedge is held for two of the town's longest signal cycles. Worked out
+  // once an audit: the controllers do not change during one, and every car
+  // stopped at a light went through every controller of the town for it.
+  // DO NOT move this back into the loop.
+  const wedgeLimit = 2 * maxCycle(w);
   for (const v of w.vehicles.values()) {
     const lane = w.lanelet(v.lanelet);
     if (!lane) {
@@ -129,7 +134,6 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
 
     if (lane.kind === 'link' && lane.controlled && v.v < m(0.04)) {
       const stalled = w.clock.since(v.lastMovedTick);
-      const wedgeLimit = 2 * maxCycle(w);
 
       // Being held out of a full lane is correct behaviour — it is what stops
       // the network gridlocking — and under heavy demand a queue can hold a

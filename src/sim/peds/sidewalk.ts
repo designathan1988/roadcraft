@@ -66,6 +66,12 @@ export class SidewalkGraph {
   readonly nodes = new Map<SidewalkNodeId, SidewalkNode>();
   readonly edges = new Map<SidewalkEdgeId, SidewalkEdge>();
   readonly crossings = new Map<CrossingId, SidewalkEdgeId>();
+  /**
+   * The footway lines (`kind: 'walk'`) of each road, in the order they were
+   * added to `edges`. A kerb stop asks for the footway beside one lane; it
+   * walked every edge of the map for each car with an errand, every tick.
+   */
+  private readonly walksBySegment = new Map<SegmentId, SidewalkEdge[]>();
 
   build(doc: RoadDoc, net: Network, graph: LaneletGraph): void {
     const steps = this.buildSteps(doc, net, graph);
@@ -78,6 +84,7 @@ export class SidewalkGraph {
     this.nodes.clear();
     this.edges.clear();
     this.crossings.clear();
+    this.walksBySegment.clear();
 
     // ---- kerb nodes, two per (junction node, leg) -------------------------
     for (const [nodeId, node] of doc.nodes) {
@@ -221,9 +228,21 @@ export class SidewalkGraph {
     return eid ? this.edges.get(eid) : undefined;
   }
 
+  /** The footway lines running beside road `segment`, in `edges` order. */
+  walksBeside(segment: SegmentId): readonly SidewalkEdge[] {
+    return this.walksBySegment.get(segment) ?? [];
+  }
+
   private addEdge(edge: SidewalkEdge): void {
     if (edge.length < COARSE_EPS) return;
     this.edges.set(edge.id, edge);
+    // A footway's id (`W:<segment>:<side>`) is set once per build, so each
+    // list below holds exactly the walk edges of `edges`, in the same order.
+    if (edge.kind === 'walk' && edge.segment !== undefined) {
+      const list = this.walksBySegment.get(edge.segment);
+      if (list) list.push(edge);
+      else this.walksBySegment.set(edge.segment, [edge]);
+    }
   }
 }
 

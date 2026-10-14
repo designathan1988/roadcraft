@@ -9,7 +9,7 @@ import { planTrip } from '../drive/tactical';
 import { makeDriver } from '../vehicles/driver';
 import { createVehicle, snapshot, type Vehicle, type VehicleId } from '../vehicles/state';
 import { planFrom } from '../routing/router';
-import { laneBeside } from '../agents/parking';
+import { laneBeside, laneRank, lanesInBox } from '../agents/parking';
 import type { BayLane } from '../agents/parking';
 
 /**
@@ -220,22 +220,7 @@ export class TransitSim {
         trains.push({ line: line.id, key: `${line.id}:${k}`, s, v: 0, next: next < 0 ? 0 : next, dwell: 0, riders: new Set() });
       }
       // Level crossings: where the loop crosses a lane of a road (the metro runs under them all).
-      const crossings: LevelCrossing[] = [];
-      if (line.mode === 'train') {
-        for (const lane of w.graph.lanelets.values()) {
-          const c = lane.centre;
-          for (let j = 1; j < c.n; j++) {
-            const p = c.point(j - 1), q = c.point(j);
-            for (let i = 0; i < points.length; i++) {
-              const a = points[i]!, b = points[(i + 1) % points.length]!;
-              const hit = crossAt(a, b, p, q);
-              if (!hit) continue;
-              const laneS = c.closestPoint({ x: p.x + (q.x - p.x) * hit.v, y: p.y + (q.y - p.y) * hit.v }).s;
-              crossings.push({ lanelet: lane.id, at: laneS, loopS: at[i]! + Math.hypot(b.x - a.x, b.y - a.y) * hit.u });
-            }
-          }
-        }
-      }
+      const crossings = line.mode === 'train' ? levelCrossings(w, points, at) : [];
       this.rails.push({ line, crossings, points, at, length, stations: stationsOn, trains });
     }
   }
@@ -614,6 +599,44 @@ export class TransitSim {
 }
 
 /** Where segment a-b crosses segment p-q: the share along each, or null. */
+/**
+ * Slack round a leg's box when the lanes are looked up by it: a crossing's
+ * `u` and `v` are worked out in floating point, and one found at the very end
+ * of a leg must not be lost to rounding (a superset; `crossAt` decides).
+ */
+const CROSS_SLACK = 1e-3;
+
+/**
+ * Where a train's loop crosses a lane of a road: each leg of the loop meets
+ * the lanes near it (the lanes' grid, `parking.ts` `lanesInBox`) and the
+ * segments of those lanes whose box reaches the leg's. Every lane of the map
+ * was met with every leg of every line, segment by segment, on each road edit.
+ * DO NOT go back to the loop over every lane: in the order that loop met them
+ * (the graph's lanes, their segments, then the legs), which the sort below keeps.
+ */
+export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonly number[]): LevelCrossing[] {
+  const rank = laneRank(w);
+  const found: { rank: number; j: number; i: number; crossing: LevelCrossing }[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!, b = points[(i + 1) % points.length]!;
+    const x0 = Math.min(a.x, b.x) - CROSS_SLACK, x1 = Math.max(a.x, b.x) + CROSS_SLACK;
+    const y0 = Math.min(a.y, b.y) - CROSS_SLACK, y1 = Math.max(a.y, b.y) + CROSS_SLACK;
+    for (const lane of lanesInBox(w, x0, y0, x1, y1)) {
+      const c = lane.centre;
+      for (let j = 1; j < c.n; j++) {
+        const p = c.point(j - 1), q = c.point(j);
+        if (Math.max(p.x, q.x) < x0 || Math.min(p.x, q.x) > x1 || Math.max(p.y, q.y) < y0 || Math.min(p.y, q.y) > y1) continue;
+        const hit = crossAt(a, b, p, q);
+        if (!hit) continue;
+        const laneS = c.closestPoint({ x: p.x + (q.x - p.x) * hit.v, y: p.y + (q.y - p.y) * hit.v }).s;
+        found.push({ rank: rank(lane.id), j, i, crossing: { lanelet: lane.id, at: laneS, loopS: at[i]! + Math.hypot(b.x - a.x, b.y - a.y) * hit.u } });
+      }
+    }
+  }
+  found.sort((u, v) => u.rank - v.rank || u.j - v.j || u.i - v.i);
+  return found.map((f) => f.crossing);
+}
+
 function crossAt(a: Vec2, b: Vec2, p: Vec2, q: Vec2): { u: number; v: number } | null {
   const rx = b.x - a.x, ry = b.y - a.y, sx = q.x - p.x, sy = q.y - p.y;
   const den = rx * sy - ry * sx;

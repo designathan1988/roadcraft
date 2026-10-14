@@ -9,8 +9,9 @@ import type { ChangeRect } from '@world/changes';
 import type { SimWorld } from '../world';
 import type { VehicleId } from '../vehicles/state';
 import type { SegmentId } from '@world/ids';
-import { parkingLayout } from '@world/parkingLayout';
-import { PARKING_PITCH } from '@world/parking';
+import type { BuildingStore } from '@world/buildings/store';
+import { BuildingsInOrder } from './buildingOrder';
+import { CAR_GATE, type KerbBook, followKerbs, newKerbBook } from './kerbBays';
 
 /**
  * The parking bays of the city: where a resident's car stands when it is not
@@ -188,21 +189,18 @@ const EDGE_INSET = m(3);
 /** Farthest a lot's street edge may be from the lane it opens onto. */
 const EDGE_REACH = m(22);
 
-/** Every stall of every parking element, with the way out of its lot and the lane it is reached from. */
 /**
- * The bays as last worked out, by world: the ambient traffic and the
- * residents' cars both asked for them on every edit, and each worked out every
- * lot, exit and aisle of the town again (docs/performance.md #15). Handed out
- * as fresh copies (a holder sets `car` on its own).
+ * Every stall of every parking element, with the way out of its lot and the
+ * lane it is reached from, then every bay along the kerbs: handed out as
+ * fresh copies (a holder sets `car` on its own).
+ *
+ * Kept from the diary (`baysNow`): a building changed works out again only
+ * the lots within its reach and the streets whose kerbs its gates face. The
+ * town's ageing replaces a record every few seconds, and each time every
+ * lot, wall and lot entrance of the town was read again (audit M3a).
  */
-const BAYS = new WeakMap<SimWorld, { key: string; first: unknown; bays: readonly Bay[] }>();
 export function collectBays(w: SimWorld): Bay[] {
-  const roads = roadsKey(w);
-  const key = `${w.doc.buildings.revision}:${roads}`;
-  const first = w.graph.lanelets.values().next().value;
-  let known = BAYS.get(w);
-  if (!known || known.key !== key || known.first !== first) BAYS.set(w, known = { key, first, bays: workOutBays(w, roads, first) });
-  return known.bays.map((bay) => ({ ...bay, car: null }));
+  return baysNow(w).map((bay) => ({ ...bay, car: null }));
 }
 /** What the bays read of the roads: the traffic's topology and the lanes. */
 const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.graph.lanelets.size}`;
@@ -210,10 +208,11 @@ const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revis
 /** Cell of the lanes' grid, world units. */
 const LANE_CELL = m(30);
 /**
- * The lanes of the graph by place, and each lane's digest (`laneDigest`),
- * NaN until a lot asks for it.
+ * The lanes of the graph by place, each lane's digest (`laneDigest`), NaN
+ * until a lot asks for it, and each lane's place in the graph's order
+ * (`laneRank`), made when first asked.
  */
-interface LaneGrid { key: string; lanes: Lanelet[]; cells: Map<number, number[]>; digests: Float64Array }
+interface LaneGrid { key: string; lanes: Lanelet[]; cells: Map<number, number[]>; digests: Float64Array; rank?: Map<LaneletId, number> }
 const LANE_GRIDS = new WeakMap<object, LaneGrid>();
 /**
  * The lanes whose bounds come within `reach` of a point, in the graph's order
@@ -239,7 +238,7 @@ function laneIndicesNear(grid: LaneGrid, x: number, y: number, reach: number): n
 }
 
 /**
- * A lane's part of a lot's key (`workOutBays`): its id, its length and its
+ * A lane's part of a lot's key (`lotBaysOf`): its id, its length and its
  * centre line, digested once per lane of the grid. A lane is never changed
  * in place (`Lanelet` is read-only, its `Polyline` immutable) and the grid
  * is made again with the lanes: a rebuilt lane is digested again, to the
@@ -279,16 +278,43 @@ function laneGrid(w: SimWorld): LaneGrid {
   return grid;
 }
 
+/** Each lane's place in the graph's order (`lanesInBox`'s order), to sort what was found by it. */
+export function laneRank(w: SimWorld): (id: LaneletId) => number {
+  const grid = laneGrid(w);
+  const rank = grid.rank ??= new Map(grid.lanes.map((lane, i) => [lane.id, i]));
+  return (id) => rank.get(id) ?? Infinity;
+}
+
 /**
- * Each building's bays as last worked out, with what they were worked out
- * from: its record, the lanes within reach (their lines and whether they are
- * ghosts) and the walls within reach. A road edit worked out the exits and
- * aisles of every lot in town again; a lot whose surroundings are the same
- * keeps its bays (docs/performance.md #15).
+ * The lanes whose bounds meet a box, in the graph's order, from the lanes'
+ * grid: what a loop over every lane with the same bounds test keeps, in the
+ * order it keeps them.
  */
-const LOT_BAYS = new WeakMap<SimWorld, Map<BuildingId, { lot: string; key: number; bays: readonly Bay[] }>>();
+export function lanesInBox(w: SimWorld, x0: number, y0: number, x1: number, y1: number): Lanelet[] {
+  const grid = laneGrid(w);
+  const picked = new Set<number>();
+  for (let gx = Math.floor(x0 / LANE_CELL); gx <= Math.floor(x1 / LANE_CELL); gx++) {
+    for (let gy = Math.floor(y0 / LANE_CELL); gy <= Math.floor(y1 / LANE_CELL); gy++) {
+      for (const i of grid.cells.get((gx + 32768) * 65536 + (gy + 32768)) ?? []) picked.add(i);
+    }
+  }
+  const out: Lanelet[] = [];
+  for (const i of [...picked].sort((a, b) => a - b)) {
+    const lane = grid.lanes[i]!, box = lane.centre.bbox;
+    if (box.maxX < x0 || box.minX > x1 || box.maxY < y0 || box.minY > y1) continue;
+    out.push(lane);
+  }
+  return out;
+}
+
 /** How far a lot's bays read lanes and walls (`LANE_REACH`, the exits' reach), with a margin. */
 const LOT_READS = LANE_REACH + m(12);
+/**
+ * How far round a change a lot's box grown by `LOT_READS` may reach: a
+ * volume or an element grown by `g` in its own frame moves its corners by up
+ * to `g` times root two in the world's.
+ */
+const LOT_REACHED = LOT_READS * 2;
 /**
  * What a building's bays are worked out from, as text, once per record: the
  * record less its age, its name and its lot plan's version. A record is
@@ -314,194 +340,203 @@ function lotText(b: Building): string {
   return reads.text;
 }
 
+const hasParking = (b: Building): boolean => (b.elements ?? []).some((el) => el.kind === 'parking');
+
 /**
- * Where the bays were last worked out from: the roads (`roadsKey`, the first
- * lane object) and the diary's serial. With the roads the same, only the lots
- * whose reach a building change since then touched can see anything new.
+ * A lot's bays as last worked out, with what they were worked out from: its
+ * record (`lotText`), and a digest of the lanes within reach (their lines and
+ * whether they are ghosts) and of the walls within reach. A lot whose
+ * surroundings are the same keeps its bays (docs/performance.md #15). The
+ * bays' ids are set when the town's list is put together.
  */
-const LAST_PASS = new WeakMap<SimWorld, { roads: string; first: unknown; serial: number }>();
+interface LotBays { readonly lot: string; readonly key: number; readonly bays: readonly Bay[] }
+
+/** The bays of a world as last worked out, and what they were worked out from. */
+interface BayBook {
+  /** The lots (buildings with a `parking` element), in the store's order. */
+  readonly lots: BuildingsInOrder;
+  readonly known: Map<BuildingId, LotBays>;
+  readonly kerb: KerbBook;
+  /** The roads the lots were last worked out on (`roadsKey`, the first lane object). */
+  roads: string | null;
+  first: unknown;
+  /** The town's list, ids in order. */
+  out: readonly Bay[];
+}
+const BOOKS = new WeakMap<SimWorld, BayBook>();
+
 /**
- * The building changes since the last pass, as rectangles, when the roads are
- * the same; null when the lots must be digested again (the roads changed, or
- * the diary forgot, or a change covered the whole map).
+ * The bays now, from the diary: the lots a building change reaches worked
+ * out again, the others kept; every lot digested again when the roads moved.
+ * Nothing of the town is walked unless the diary cannot say what changed.
  */
-function buildingChangesSince(w: SimWorld, roads: string, first: unknown): ChangeRect[] | null {
-  const last = LAST_PASS.get(w);
-  LAST_PASS.set(w, { roads, first, serial: w.doc.changes.version });
-  if (!last || last.roads !== roads || last.first !== first) return null;
-  const entries = w.doc.changes.since(last.serial, ['buildings']);
-  if (!entries) return null;
-  const rects: ChangeRect[] = [];
-  for (const entry of entries) {
-    if (!entry.rects) return null;
-    rects.push(...entry.rects);
+function baysNow(w: SimWorld): readonly Bay[] {
+  let book = BOOKS.get(w);
+  if (!book) {
+    book = { lots: new BuildingsInOrder(hasParking), known: new Map(), kerb: newKerbBook(), roads: null, first: undefined, out: [] };
+    BOOKS.set(w, book);
   }
-  return rects;
+  const roads = roadsKey(w);
+  const first = w.graph.lanelets.values().next().value;
+  const roadsMoved = book.roads !== roads || book.first !== first;
+  book.roads = roads;
+  book.first = first;
+  const delta = book.lots.update(w.doc);
+  const kerbMoved = followKerbs(w, book.kerb, roadsMoved, delta, (id) => book.lots.rank(id), (x, y, segment) => laneFor(w, x, y, undefined, segment));
+  if (!roadsMoved && delta !== null && delta.ids.length === 0 && !kerbMoved) return book.out;
+
+  // With the roads as they were, a lot whose reach no building change
+  // touched keeps its bays without reading anything (the diary's rectangles).
+  const rects = roadsMoved || delta === null ? null : delta.rects;
+  let changed = roadsMoved || delta === null || kerbMoved;
+  if (delta === null) {
+    for (const id of [...book.known.keys()]) if (!book.lots.has(id)) book.known.delete(id);
+  } else {
+    for (const id of delta.ids) if (!book.lots.has(id) && book.known.delete(id)) changed = true;
+  }
+  const walls = wallsOf(w);
+  const look = rects === null ? book.lots.ids : lotsReached(w, book.lots, rects, delta!.ids);
+  for (const id of look) {
+    const b = w.doc.buildings.get(id)!;
+    const was = book.known.get(id);
+    const now = lotBaysOf(w, b, was, rects, walls);
+    if (now !== was) { book.known.set(id, now); changed = true; }
+  }
+  if (!changed) return book.out;
+  const out: Bay[] = [];
+  for (const id of book.lots.ids) for (const bay of book.known.get(id)!.bays) out.push({ ...bay, id: out.length });
+  for (const id of book.kerb.order) for (const bay of book.kerb.bays.get(id) ?? []) out.push({ ...bay, id: out.length });
+  book.out = out;
+  return out;
 }
 
-function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
-  const out: Bay[] = [];
-  // A building grown in a town of a thousand: every parking lot's lanes and
-  // walls digested again, 60 ms a building (audit M3a). With the roads as
-  // they were, a lot whose reach no building change touched keeps its bays
-  // without reading anything (the diary's rectangles: `world/changes.ts`).
-  const changed = buildingChangesSince(w, roads, first);
-  let walls: Wall[] | null = null;
-  /** @rebuild Made once a call of `workOutBays`, at the first building that asks. */
-  const wallsNow = (): Wall[] => (walls ??= wallsOf(w));
-  const navCache = new Map<object, { exits: LotExit[]; grid: LotGrid }>();
-  const known = LOT_BAYS.get(w) ?? new Map<BuildingId, { lot: string; key: number; bays: readonly Bay[] }>();
-  const kept = new Map<BuildingId, { lot: string; key: number; bays: readonly Bay[] }>();
-  LOT_BAYS.set(w, kept);
-  for (const b of w.doc.buildings.all()) {
-    if (!(b.elements ?? []).some((el) => el.kind === 'parking')) continue;
-    const box = storedBounds(b, LOT_READS);
-    const was = known.get(b.id);
-    const lot = lotText(b);
-    if (changed && was && was.lot === lot
-      && !changed.some((r) => r[0] <= box.maxX && r[2] >= box.minX && r[1] <= box.maxY && r[3] >= box.minY)) {
-      for (const bay of was.bays) out.push({ ...bay, id: out.length });
-      kept.set(b.id, was);
-      continue;
+/** The lots whose reach (`LOT_READS`) meets one of the rectangles, and the lots named; found by place. */
+function lotsReached(w: SimWorld, lots: BuildingsInOrder, rects: readonly ChangeRect[], named: readonly BuildingId[]): Set<BuildingId> {
+  const out = new Set<BuildingId>();
+  for (const id of named) if (lots.has(id)) out.add(id);
+  for (const r of rects) {
+    for (const b of w.doc.buildings.near(r[0] - LOT_REACHED, r[1] - LOT_REACHED, r[2] + LOT_REACHED, r[3] + LOT_REACHED)) {
+      if (!lots.has(b.id) || out.has(b.id)) continue;
+      if (meets(r, storedBounds(b, LOT_READS))) out.add(b.id);
     }
-    const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
-    // The lot's key: each lane and wall within reach by its own digest
-    // (`laneDigest`, `Wall.digest`), made once per lane or wall, and
-    // whether the lane is a ghost now. DO NOT digest a lane's line or a
-    // wall's ring here: every lot near a long street digested its whole
-    // centre line again, at every building grown near it (2.7 s of a
-    // 2.5 km city's growth).
-    const digest = new Digest();
-    const grid = laneGrid(w);
-    for (const i of laneIndicesNear(grid, cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
-      digest.add(laneDigest(grid, i)).add(w.rt(grid.lanes[i]!.id).ghost ? 1 : 0);
-    }
-    for (const wall of wallsInBox(wallsNow(), box.minX, box.minY, box.maxX, box.maxY)) digest.add(wall.digest);
-    const key = digest.value();
-    if (was && was.lot === lot && was.key === key) {
-      for (const bay of was.bays) out.push({ ...bay, id: out.length });
-      kept.set(b.id, was);
-      continue;
-    }
-    const first = out.length;
-    bayRows(b);
-    kept.set(b.id, { lot, key, bays: out.slice(first) });
   }
-  out.push(...kerbBays(w, out.length));
   return out;
+}
 
-  function bayRows(b: Building): void {
-    // A lot closed by a boundary with car gates (`editor/lotPlan.ts`): the
-    // whole property is driven, and its only ways out are its car gates.
-    const property = gatedProperty(b);
-    for (const el of b.elements ?? []) {
-      if (el.kind !== 'parking') continue;
-      const stalls = Math.max(1, Math.floor(el.w / STALL));
-      // A lorry's dock at a works' loading doors (3.6 m), not a car's bay.
-      if (el.w / stalls > LORRY_DOCK) continue;
-      const alongY = el.facing === 0 || el.facing === 2;
-      // `w` runs across the facing (the row of stalls), `d` along it (a stall's depth).
-      let ax = alongY ? 0 : 1, ay = alongY ? 1 : 0;
-      let cx = alongY ? 1 : 0, cy = alongY ? 0 : 1;
-      if (el.angle) {
-        const c = Math.cos(el.angle), s = Math.sin(el.angle);
-        [ax, ay] = [ax * c - ay * s, ax * s + ay * c];
-        [cx, cy] = [cx * c - cy * s, cx * s + cy * c];
-      }
-      const lot = property ?? b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
-      let nav = lot ? navCache.get(lot) : undefined;
-      if (lot && !nav) {
-        const exits = property ? gateExits(w, b, property, wallsNow()) : exitsOf(w, b, lot, wallsNow());
-        const local = wallsNear(wallsNow(), b, lot).map((wl) => wl.ring.map((q) => worldToLocal(b, q)));
-        nav = { exits, grid: buildLotGrid(b, lot, local, exits) };
-        navCache.set(lot, nav);
-      }
-      for (let k = 0; k < stalls; k++) {
-        const u = -el.w / 2 + (el.w * (k + 0.5)) / stalls;
-        const lx = el.x + cx * u, ly = el.y + cy * u;
-        const p = localToWorld(b, lx, ly);
-        if (lot && nav) {
-          // The stall opens on whichever side has an aisle that leads out of
-          // the lot, down the aisles to the nearest way out onto a street.
-          const reach = el.d / 2 + m(2.8);
-          let pick: { sign: number; points: { x: number; y: number }[]; exit: number; cost: number } | null = null;
-          for (const sign of [1, -1]) {
-            const aisle = { x: lx + ax * sign * reach, y: ly + ay * sign * reach };
-            const way = wayOut(nav.grid, aisle.x, aisle.y);
-            if (!way) continue;
-            let cost = 0;
-            for (let i = 1; i < way.points.length; i++) cost += Math.hypot(way.points[i]!.x - way.points[i - 1]!.x, way.points[i]!.y - way.points[i - 1]!.y);
-            if (!pick || cost < pick.cost) pick = { sign, points: way.points, exit: way.exit, cost };
-          }
-          const exit = pick ? nav.exits[pick.exit] : undefined;
-          const axis = localDirToWorld(b, ax * (pick?.sign ?? 1), ay * (pick?.sign ?? 1));
-          const room = stallRoom(b, lx, ly, ax, ay, el.d / 2);
-          if (!pick || !exit) {
-            // No aisle from this stall leads out to a street: it is not used.
-            out.push({ id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x, oy: axis.y, depth: el.d, lane: null, via: [], room, car: null });
-            continue;
-          }
-          // Through a gate, the way runs on out of it to the footway's back.
-          const local = [...pick.points, exit.inner, ...(exit.outer ? [exit.outer] : [])];
-          const via = local.filter((q, i) => i === 0 || Math.hypot(q.x - local[i - 1]!.x, q.y - local[i - 1]!.y) > m(1))
-            .map((q) => localToWorld(b, q.x, q.y));
-          out.push({
-            id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x, oy: axis.y,
-            depth: el.d, lane: exit.lane, via, room, car: null,
-          });
+const meets = (r: ChangeRect, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean =>
+  r[0] <= box.maxX && r[2] >= box.minX && r[1] <= box.maxY && r[3] >= box.minY;
+
+/**
+ * A lot's bays: as they were when its record and its reach are untouched
+ * (`rects`, null: the roads moved), or when the lanes and walls within reach
+ * digest the same; else worked out again.
+ */
+function lotBaysOf(w: SimWorld, b: Building, was: LotBays | undefined, rects: readonly ChangeRect[] | null, walls: Walls): LotBays {
+  const box = storedBounds(b, LOT_READS);
+  const lot = lotText(b);
+  if (rects && was && was.lot === lot && !rects.some((r) => meets(r, box))) return was;
+  const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
+  // The lot's key: each lane and wall within reach by its own digest
+  // (`laneDigest`, `Wall.digest`), made once per lane or wall, and
+  // whether the lane is a ghost now. DO NOT digest a lane's line or a
+  // wall's ring here: every lot near a long street digested its whole
+  // centre line again, at every building grown near it (2.7 s of a
+  // 2.5 km city's growth).
+  const digest = new Digest();
+  const grid = laneGrid(w);
+  for (const i of laneIndicesNear(grid, cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
+    digest.add(laneDigest(grid, i)).add(w.rt(grid.lanes[i]!.id).ghost ? 1 : 0);
+  }
+  for (const wall of walls.inBox(box.minX, box.minY, box.maxX, box.maxY)) digest.add(wall.digest);
+  const key = digest.value();
+  if (was && was.lot === lot && was.key === key) return was;
+  return { lot, key, bays: bayRows(w, b, walls) };
+}
+
+/** A lot's stalls, each with the way out of its lot and the lane it is reached from (ids from 0). */
+function bayRows(w: SimWorld, b: Building, walls: Walls): Bay[] {
+  const out: Bay[] = [];
+  const navCache = new Map<object, { exits: LotExit[]; grid: LotGrid }>();
+  // A lot closed by a boundary with car gates (`editor/lotPlan.ts`): the
+  // whole property is driven, and its only ways out are its car gates.
+  const property = gatedProperty(b);
+  for (const el of b.elements ?? []) {
+    if (el.kind !== 'parking') continue;
+    const stalls = Math.max(1, Math.floor(el.w / STALL));
+    // A lorry's dock at a works' loading doors (3.6 m), not a car's bay.
+    if (el.w / stalls > LORRY_DOCK) continue;
+    const alongY = el.facing === 0 || el.facing === 2;
+    // `w` runs across the facing (the row of stalls), `d` along it (a stall's depth).
+    let ax = alongY ? 0 : 1, ay = alongY ? 1 : 0;
+    let cx = alongY ? 1 : 0, cy = alongY ? 0 : 1;
+    if (el.angle) {
+      const c = Math.cos(el.angle), s = Math.sin(el.angle);
+      [ax, ay] = [ax * c - ay * s, ax * s + ay * c];
+      [cx, cy] = [cx * c - cy * s, cx * s + cy * c];
+    }
+    const lot = property ?? b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
+    let nav = lot ? navCache.get(lot) : undefined;
+    if (lot && !nav) {
+      const exits = property ? gateExits(w, b, property, walls) : exitsOf(w, b, lot, walls);
+      const local = wallsNear(walls, b, lot).map((wl) => wl.ring.map((q) => worldToLocal(b, q)));
+      nav = { exits, grid: buildLotGrid(b, lot, local, exits) };
+      navCache.set(lot, nav);
+    }
+    for (let k = 0; k < stalls; k++) {
+      const u = -el.w / 2 + (el.w * (k + 0.5)) / stalls;
+      const lx = el.x + cx * u, ly = el.y + cy * u;
+      const p = localToWorld(b, lx, ly);
+      if (lot && nav) {
+        // The stall opens on whichever side has an aisle that leads out of
+        // the lot, down the aisles to the nearest way out onto a street.
+        const reach = el.d / 2 + m(2.8);
+        let pick: { sign: number; points: { x: number; y: number }[]; exit: number; cost: number } | null = null;
+        for (const sign of [1, -1]) {
+          const aisle = { x: lx + ax * sign * reach, y: ly + ay * sign * reach };
+          const way = wayOut(nav.grid, aisle.x, aisle.y);
+          if (!way) continue;
+          let cost = 0;
+          for (let i = 1; i < way.points.length; i++) cost += Math.hypot(way.points[i]!.x - way.points[i - 1]!.x, way.points[i]!.y - way.points[i - 1]!.y);
+          if (!pick || cost < pick.cost) pick = { sign, points: way.points, exit: way.exit, cost };
+        }
+        const exit = pick ? nav.exits[pick.exit] : undefined;
+        const axis = localDirToWorld(b, ax * (pick?.sign ?? 1), ay * (pick?.sign ?? 1));
+        const room = stallRoom(b, lx, ly, ax, ay, el.d / 2);
+        if (!pick || !exit) {
+          // No aisle from this stall leads out to a street: it is not used.
+          out.push({ id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x, oy: axis.y, depth: el.d, lane: null, via: [], room, car: null });
           continue;
         }
-        const lane = laneFor(w, p.x, p.y);
-        const axis = localDirToWorld(b, ax, ay);
-        // Outside any lot: the stall opens towards the road it is reached from.
-        const sign = lane && (lane.x - p.x) * axis.x + (lane.y - p.y) * axis.y < 0 ? -1 : 1;
+        // Through a gate, the way runs on out of it to the footway's back.
+        const local = [...pick.points, exit.inner, ...(exit.outer ? [exit.outer] : [])];
+        const via = local.filter((q, i) => i === 0 || Math.hypot(q.x - local[i - 1]!.x, q.y - local[i - 1]!.y) > m(1))
+          .map((q) => localToWorld(b, q.x, q.y));
         out.push({
-          id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x * sign, oy: axis.y * sign,
-          depth: el.d, lane, via: [], room: stallRoom(b, lx, ly, ax, ay, el.d / 2), car: null,
+          id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x, oy: axis.y,
+          depth: el.d, lane: exit.lane, via, room, car: null,
         });
+        continue;
       }
+      const lane = laneFor(w, p.x, p.y);
+      const axis = localDirToWorld(b, ax, ay);
+      // Outside any lot: the stall opens towards the road it is reached from.
+      const sign = lane && (lane.x - p.x) * axis.x + (lane.y - p.y) * axis.y < 0 ? -1 : 1;
+      out.push({
+        id: out.length, building: b.id, x: p.x, y: p.y, ox: axis.x * sign, oy: axis.y * sign,
+        depth: el.d, lane, via: [], room: stallRoom(b, lx, ly, ax, ay, el.d / 2), car: null,
+      });
     }
-  }
-}
-
-/** Ahead of a kerb bay, the place on the lane a car stops at to back in, and leaves for. */
-const KERB_AHEAD = m(7);
-/** The least a kerb bay's joining point may lie ahead of it, u. */
-const KERB_MIN_AHEAD = m(4);
-/** No lot: the bay stands on the street. */
-const NO_LOT = -1 as BuildingId;
-
-/** Every bay along the kerbs of the streets that park (`RoadSegment.parking`). */
-function kerbBays(w: SimWorld, first: number): Bay[] {
-  const out: Bay[] = [];
-  for (const bay of parkingLayout(w.net).bays) {
-    const f = bay.facing;
-    const ahead = { x: bay.centre.x + f.x * KERB_AHEAD, y: bay.centre.y + f.y * KERB_AHEAD };
-    const lane = laneFor(w, ahead.x, ahead.y, undefined, bay.segment);
-    // The lane has to run the way the car faces: the traffic beside the bay;
-    // and its joining point (kept `LANE_END` clear of the junctions) must lie
-    // ahead of the bay. Near the end of a street it falls behind it, and the
-    // car would turn round on the spot, its tail sweeping the footway.
-    const aligned = lane !== null && lane.tx * f.x + lane.ty * f.y > 0.7
-      && (lane.x - bay.centre.x) * f.x + (lane.y - bay.centre.y) * f.y >= KERB_MIN_AHEAD;
-    out.push({
-      id: first + out.length, building: NO_LOT, x: bay.centre.x, y: bay.centre.y,
-      // The car stands nose along the kerb: `o` points out of its tail.
-      ox: -f.x, oy: -f.y, depth: PARKING_PITCH.parallel,
-      lane: aligned ? lane : null, via: [], room: PARKING_PITCH.parallel / 2, car: null, kerb: true,
-    });
   }
   return out;
 }
 
 /** The walls whose bounds come within a few metres of a lot, in list order. */
-function wallsNear(walls: readonly Wall[], b: Building, v: { x: number; y: number; w: number; d: number }): Wall[] {
+function wallsNear(walls: Walls, b: Building, v: { x: number; y: number; w: number; d: number }): Wall[] {
   const corners = [localToWorld(b, v.x, v.y), localToWorld(b, v.x + v.w, v.y), localToWorld(b, v.x + v.w, v.y + v.d), localToWorld(b, v.x, v.y + v.d)];
   const pad = m(3);
   const x0 = Math.min(...corners.map((c) => c.x)) - pad, x1 = Math.max(...corners.map((c) => c.x)) + pad;
   const y0 = Math.min(...corners.map((c) => c.y)) - pad, y1 = Math.max(...corners.map((c) => c.y)) + pad;
-  const hits = new Set(wallsInBox(walls, x0, y0, x1, y1));
-  return walls.filter((wl) => hits.has(wl));
+  return walls.inBox(x0, y0, x1, y1);
 }
 
 /** A way out of a lot: a point inside its street edge, and the lane it joins, clear of every building. */
@@ -517,8 +552,6 @@ export interface LotExit {
   readonly outer?: { readonly x: number; readonly y: number };
 }
 
-/** The narrowest gate a car is driven through (a person's gate is 1.2 m). */
-const CAR_GATE = m(2.2);
 /** Where a car leaving through a gate joins its lane, past the gate; where one arriving stops, before it. */
 const JOIN_PAST_GATE = m(6);
 const STOP_BEFORE_GATE = m(5);
@@ -560,7 +593,7 @@ export function gatedProperty(b: Building): { x: number; y: number; w: number; d
  * before it, so a car crosses the footway square to the kerb and turns on
  * the carriageway (`manoeuvre.ts`).
  */
-export function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
+export function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
   const out: LotExit[] = [];
   const cx = property.x + property.w / 2, cy = property.y + property.d / 2;
   for (const g of carGates(b)) {
@@ -626,80 +659,67 @@ export interface Wall {
   readonly building: BuildingId;
   readonly ring: readonly { x: number; y: number }[];
   readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number;
-  /** Its building and its ring, digested: its part of a lot's key (`workOutBays`). */
+  /** Its building and its ring, digested: its part of a lot's key (`lotBaysOf`). */
   readonly digest: number;
 }
 
 /**
- * Every building's solid footprint, with its bounds. Each record's walls are
- * made once (`recordReads`): a stored record is never changed in place, so
- * its walls - and their digests - stay what they were.
+ * A record's solid footprints, with their bounds and digests, made once
+ * (`recordReads`): a stored record is never changed in place, so its walls -
+ * and their digests - stay what they were.
  */
-export function wallsOf(w: SimWorld): Wall[] {
-  const out: Wall[] = [];
-  for (const b of w.doc.buildings.all()) {
-    const reads = recordReads(b);
-    if (!reads.walls) {
-      const made: Wall[] = [];
-      for (const ring of solidFootprints(b)) {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        const digest = new Digest().add(b.id);
-        for (const p of ring) {
-          x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-          digest.add(p.x).add(p.y);
-        }
-        made.push({ building: b.id, ring, x0, y0, x1, y1, digest: digest.value() });
+function recordWalls(b: Building): readonly Wall[] {
+  const reads = recordReads(b);
+  if (!reads.walls) {
+    const made: Wall[] = [];
+    for (const ring of solidFootprints(b)) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const digest = new Digest().add(b.id);
+      for (const p of ring) {
+        x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+        digest.add(p.x).add(p.y);
       }
-      reads.walls = made;
+      made.push({ building: b.id, ring, x0, y0, x1, y1, digest: digest.value() });
     }
-    out.push(...reads.walls);
+    reads.walls = made;
   }
-  return out;
+  return reads.walls;
 }
 
-/** Cell of the walls' grid, world units. */
-const WALL_CELL = m(30);
-const WALL_GRIDS = new WeakMap<readonly Wall[], Map<number, Wall[]>>();
 /**
- * The walls whose bounds meet a box, read from a grid of them: every exit
- * tried from every lot filtered every building in town.
+ * Every building's solid footprints, found by place: the buildings whose box
+ * reaches a box (`BuildingStore.near`, in the store's order), each one's
+ * footprints in order. Every building of the town was turned into walls and
+ * filed in a grid each time the bays were worked out, and again for each
+ * yard made (audit M3a).
+ * DO NOT go back to a list of every building's walls: one change of one
+ * building made it again.
  */
-function wallsInBox(walls: readonly Wall[], x0: number, y0: number, x1: number, y1: number): Wall[] {
-  let cells = WALL_GRIDS.get(walls);
-  if (!cells) {
-    cells = new Map();
-    for (const wl of walls) {
-      for (let gx = Math.floor(wl.x0 / WALL_CELL); gx <= Math.floor(wl.x1 / WALL_CELL); gx++) {
-        for (let gy = Math.floor(wl.y0 / WALL_CELL); gy <= Math.floor(wl.y1 / WALL_CELL); gy++) {
-          const k = gx * 65536 + gy;
-          const list = cells.get(k);
-          if (list) list.push(wl); else cells.set(k, [wl]);
-        }
-      }
+export class Walls {
+  constructor(private readonly store: BuildingStore) {}
+
+  /** The walls whose bounds meet a box, in the store's order. */
+  inBox(x0: number, y0: number, x1: number, y1: number): Wall[] {
+    const out: Wall[] = [];
+    for (const b of this.store.near(x0, y0, x1, y1)) {
+      for (const wl of recordWalls(b)) if (wl.x1 >= x0 && wl.x0 <= x1 && wl.y1 >= y0 && wl.y0 <= y1) out.push(wl);
     }
-    WALL_GRIDS.set(walls, cells);
+    return out;
   }
-  const seen = new Set<Wall>();
-  const out: Wall[] = [];
-  for (let gx = Math.floor(x0 / WALL_CELL); gx <= Math.floor(x1 / WALL_CELL); gx++) {
-    for (let gy = Math.floor(y0 / WALL_CELL); gy <= Math.floor(y1 / WALL_CELL); gy++) {
-      for (const wl of cells.get(gx * 65536 + gy) ?? []) {
-        if (seen.has(wl)) continue;
-        seen.add(wl);
-        if (wl.x1 >= x0 && wl.x0 <= x1 && wl.y1 >= y0 && wl.y0 <= y1) out.push(wl);
-      }
-    }
-  }
-  return out;
+}
+
+/** The town's walls, by place. */
+export function wallsOf(w: SimWorld): Walls {
+  return new Walls(w.doc.buildings);
 }
 
 /** Whether a car can be driven straight from `a` to `b` without its body touching a building. */
-export function clearOfWalls(walls: readonly Wall[], a: { x: number; y: number }, b: { x: number; y: number },
+export function clearOfWalls(walls: Walls, a: { x: number; y: number }, b: { x: number; y: number },
   sweep = SWEEP, except: BuildingId | null = null): boolean {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < 1e-6) return true;
   const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
-  const near = wallsInBox(walls, Math.min(a.x, b.x) - sweep, Math.min(a.y, b.y) - sweep, Math.max(a.x, b.x) + sweep, Math.max(a.y, b.y) + sweep)
+  const near = walls.inBox(Math.min(a.x, b.x) - sweep, Math.min(a.y, b.y) - sweep, Math.max(a.x, b.x) + sweep, Math.max(a.y, b.y) + sweep)
     .filter((wl) => wl.building !== except);
   if (near.length === 0) return true;
   const steps = Math.ceil(stepsIn(len, 0.8));
@@ -719,7 +739,7 @@ export function clearOfWalls(walls: readonly Wall[], a: { x: number; y: number }
  * building. In a town of perimeter blocks, a car park in the middle of a block
  * is left by the passage between the buildings, not through them.
  */
-function exitsOf(w: SimWorld, b: Building, v: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
+function exitsOf(w: SimWorld, b: Building, v: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
   const sides = [
     { ax: v.x, ay: v.y, dx: 1, dy: 0, nx: 0, ny: -1, length: v.w },
     { ax: v.x + v.w, ay: v.y, dx: 0, dy: 1, nx: 1, ny: 0, length: v.d },

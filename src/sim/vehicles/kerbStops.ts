@@ -481,8 +481,11 @@ function footwayBeside(w: SimWorld, lanelet: LaneletId, s: number): { x: number;
   if (!lane || !side) return null;
   let best: { x: number; y: number; t: { x: number; y: number } } | null = null;
   let bestDistance = m(9);
-  for (const edge of w.sidewalks.edges.values()) {
-    if (edge.kind !== 'walk' || edge.segment !== lane.segment) continue;
+  if (lane.segment === undefined) return null;
+  // DO NOT walk `sidewalks.edges` here: this runs for every car with an errand
+  // every tick, and the map's edges are thousands. The footways of the lane's
+  // own road, indexed when the graph is built.
+  for (const edge of w.sidewalks.walksBeside(lane.segment)) {
     const hit = edge.path.closestPoint(side.p);
     const dx = hit.point.x - side.p.x;
     const dy = hit.point.y - side.p.y;

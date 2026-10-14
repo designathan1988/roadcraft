@@ -14,7 +14,9 @@ import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneC
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
 import { buildYard, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
-import { gatedProperty } from './parking';
+import { gatedProperty, lanesInBox } from './parking';
+import { BuildingsInOrder } from './buildingOrder';
+import type { RoadDoc } from '@world/doc';
 import { lorryDocks } from '@world/buildings/docks';
 import type { Waypoint } from './hybridAStar';
 
@@ -135,8 +137,8 @@ export class LorryTraffic {
       }
       lorry.t += DT;
     }
-    const list = w.ambient.parked;
-    for (const lorry of this.lorries.values()) if (lorry.body && !list.includes(lorry.body)) list.push(lorry.body);
+    // Drawn with the cars standing in bays, asked by set (`isParked`), not by a walk of every parked car.
+    for (const lorry of this.lorries.values()) if (lorry.body && !w.ambient.isParked(lorry.body)) w.ambient.addParked(lorry.body);
     this.plan(w);
     this.clock += DT;
     if (this.clock < LOOK) return;
@@ -171,21 +173,16 @@ export class LorryTraffic {
 
   // ------------------------------------------------------------ planning and calling
 
-  /** The yards of the town and their docks, as last read. */
-  private yards: { building: BuildingId; docks: number }[] = [];
-  private yardsFor = '';
+  /** The yards of the town and their docks, kept from the diary. */
+  private readonly yardList = new YardList();
+  private yards: readonly { building: BuildingId; docks: number }[] = [];
 
+  /**
+   * Only which buildings have docks: a yard is worked out (tens of
+   * milliseconds) when one of its docks is drawn, not all at once.
+   */
   private readYards(w: SimWorld): void {
-    const key = `${w.doc.buildings.revision}:${w.topologyRevision}`;
-    if (key === this.yardsFor) return;
-    this.yardsFor = key;
-    // Only which buildings have docks: a yard is worked out (tens of
-    // milliseconds) when one of its docks is drawn, not all at once.
-    this.yards = [];
-    for (const b of w.doc.buildings.all()) {
-      const docks = gatedProperty(b) ? lorryDocks(b).length : 0;
-      if (docks) this.yards.push({ building: b.id, docks });
-    }
+    this.yards = this.yardList.read(w.doc);
   }
 
   /**
@@ -409,10 +406,7 @@ export class LorryTraffic {
 
   private drop(w: SimWorld, lorry: Lorry): void {
     this.lorries.delete(lorry.id);
-    if (!lorry.body) return;
-    const list = w.ambient.parked;
-    const at = list.indexOf(lorry.body);
-    if (at >= 0) list.splice(at, 1);
+    if (lorry.body) w.ambient.removeParked(lorry.body);
   }
 
   private offRoad(w: SimWorld, v: Vehicle, axle: Waypoint, lot: number): Vehicle {
@@ -437,15 +431,15 @@ function setFree(body: Vehicle, p: { x: number; y: number; angle: number }): voi
  * comes within `LANE_HALF` of, from the first to the last arc position it
  * covers there, and a margin each side.
  */
-function closures(w: SimWorld, poses: readonly Waypoint[], owner: number, rear: number, length: number, width: number): Closure[] {
+export function closures(w: SimWorld, poses: readonly Waypoint[], owner: number, rear: number, length: number, width: number): Closure[] {
   if (!poses.length) return [];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of poses) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const pad = length + LANE_HALF;
   const spans = new Map<LaneletId, { from: number; to: number }>();
-  for (const lane of w.graph.lanelets.values()) {
-    const box = lane.centre.bbox;
-    if (box.maxX < x0 - pad || box.minX > x1 + pad || box.maxY < y0 - pad || box.minY > y1 + pad) continue;
+  // The lanes whose box comes within `pad` of the poses, in the graph's order,
+  // from the lanes' grid. DO NOT walk every lane of the map here.
+  for (const lane of lanesInBox(w, x0 - pad, y0 - pad, x1 + pad, y1 + pad)) {
     for (let i = 0; i < poses.length; i += 2) {
       const p = poses[i]!;
       const c = Math.cos(p.angle), s = Math.sin(p.angle);
@@ -461,4 +455,31 @@ function closures(w: SimWorld, poses: readonly Waypoint[], owner: number, rear: 
     }
   }
   return [...spans].map(([lanelet, span]) => ({ lanelet, from: Math.max(0, span.from - CLOSURE_MARGIN), to: span.to + CLOSURE_MARGIN, owner }));
+}
+
+/** A building with a yard a lorry is sent to: a car-gated property with loading docks. */
+const hasYard = (b: Building): boolean => gatedProperty(b) !== null && lorryDocks(b).length > 0;
+
+/**
+ * The town's yards and their docks, in the store's order (the lorries' draw
+ * follows it), kept from the diary: only the buildings it names are read
+ * again. Every building of the town was read whenever any changed, and the
+ * town's ageing changes one every few seconds.
+ */
+export class YardList {
+  private readonly kept = new BuildingsInOrder(hasYard);
+  private readonly docks = new Map<BuildingId, number>();
+  private list: { building: BuildingId; docks: number }[] = [];
+
+  read(doc: RoadDoc): readonly { building: BuildingId; docks: number }[] {
+    const delta = this.kept.update(doc);
+    if (delta !== null && delta.ids.length === 0) return this.list;
+    if (delta === null) this.docks.clear();
+    for (const id of delta === null ? this.kept.ids : delta.ids) {
+      const b = doc.buildings.get(id);
+      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length); else this.docks.delete(id);
+    }
+    this.list = this.kept.ids.map((building) => ({ building, docks: this.docks.get(building)! }));
+    return this.list;
+  }
 }
