@@ -144,6 +144,18 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   return null;
 }
 
+/** A ring's box. */
+function ringBox(ring: readonly Vec2[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 /**
  * The first reason `b` cannot stand, or null. `ignore` is the building being
  * edited, which must not collide with its own previous self.
@@ -177,7 +189,16 @@ export function validateBuilding(
     // few centimetres into each other, as terraced houses and a row of shops
     // do. Measured with each volume shrunk by `PARTY_WALL`, so a joint is
     // never a gap (the player's order of 2026-10-05).
-    for (const a of party) for (const c of others) if (overlapArea(a, c) > AREA_EPS) return 'building';
+    // Clipped only where the two rectangles' boxes meet: apart, they share no
+    // area. Clipped every pair, it was 0.5 s of a generated city's growth (2026-10-14).
+    for (const a of party) {
+      const pa = ringBox(a);
+      for (const c of others) {
+        const pc = ringBox(c);
+        if (pa.minX > pc.maxX || pa.maxX < pc.minX || pa.minY > pc.maxY || pa.maxY < pc.minY) continue;
+        if (overlapArea(a, c) > AREA_EPS) return 'building';
+      }
+    }
   }
 
   if (ctx.groundAt) {
