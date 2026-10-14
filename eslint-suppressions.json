@@ -503,7 +503,7 @@
   },
   "src/sim/agents/parking.ts": {
     "roadcraft/no-module-state": {
-      "count": 7
+      "count": 5
     }
   },
   "src/sim/agents/reedsShepp.ts": {

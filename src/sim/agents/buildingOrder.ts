@@ -22,9 +22,11 @@ import type { Building, BuildingId } from '@world/buildings/types';
  * again, whole.
  */
 
-/** The store's order as ranks, kept from the diary. One per document. */
+/** The store's order as ranks, kept from the diary. */
 class StoreOrder {
   private serial = -1;
+  /** The document followed: another one is read whole. */
+  private doc: RoadDoc | null = null;
   private readonly ranks = new Map<BuildingId, number>();
   private next = 0;
   /** Moves each time the order is read whole: ranks of before and after are not comparable. */
@@ -37,8 +39,9 @@ class StoreOrder {
   /** Brought up to the diary's latest entry. */
   follow(doc: RoadDoc): void {
     const journal = doc.changes;
-    if (this.serial >= 0 && journal.serialOf('buildings') <= this.serial) { this.serial = journal.version; return; }
-    const entries = this.serial >= 0 ? journal.since(this.serial, ['buildings']) : null;
+    if (this.doc === doc && journal.serialOf('buildings') <= this.serial) { this.serial = journal.version; return; }
+    const entries = this.doc === doc ? journal.since(this.serial, ['buildings']) : null;
+    this.doc = doc;
     this.serial = journal.version;
     if (entries && entries.every((entry) => this.apply(entry.detail, entry.ids as readonly BuildingId[] | undefined))) return;
     this.reread(doc);
@@ -82,20 +85,6 @@ class StoreOrder {
   }
 }
 
-const ORDERS = new WeakMap<RoadDoc, StoreOrder>();
-function storeOrder(doc: RoadDoc): StoreOrder {
-  let order = ORDERS.get(doc);
-  if (!order) ORDERS.set(doc, order = new StoreOrder());
-  order.follow(doc);
-  return order;
-}
-
-/** Each building's place in the store's order, as it stands now (to sort some buildings by it). */
-export function storeRanks(doc: RoadDoc): (id: BuildingId) => number {
-  const order = storeOrder(doc);
-  return (id) => order.rank(id) ?? Infinity;
-}
-
 /** What changed among the buildings since a reader last looked. */
 export interface BuildingDelta {
   /** The ids the diary names, each once. */
@@ -111,6 +100,9 @@ const NOTHING: BuildingDelta = { ids: [], rects: [] };
  * `update` brings them up to date and says what changed since the last call.
  */
 export class BuildingsInOrder {
+  /** The store's order, this reader's own (it follows the diary with it). */
+  private readonly order = new StoreOrder();
+  private doc: RoadDoc | null = null;
   private serial = -1;
   private readonly members = new Set<BuildingId>();
   private list: BuildingId[] = [];
@@ -127,19 +119,26 @@ export class BuildingsInOrder {
     return this.members.has(id);
   }
 
+  /** A building's place in the store's order as of the last `update` (to sort other buildings by it). */
+  rank(id: BuildingId): number {
+    return this.order.rank(id) ?? Infinity;
+  }
+
   /**
    * Up to date with the store. Returns the ids and rectangles the diary named
    * since the last call (nothing: none), or null when the store was read whole
    * (the first call, or the diary could not say what changed).
    */
   update(doc: RoadDoc): BuildingDelta | null {
-    const order = storeOrder(doc);
+    const order = this.order;
+    order.follow(doc);
     const journal = doc.changes;
-    if (this.serial >= 0 && journal.serialOf('buildings') <= this.serial && order.epoch === this.epoch) {
+    if (this.doc === doc && journal.serialOf('buildings') <= this.serial && order.epoch === this.epoch) {
       this.serial = journal.version;
       return NOTHING;
     }
-    const entries = this.serial >= 0 ? journal.since(this.serial, ['buildings']) : null;
+    const entries = this.doc === doc ? journal.since(this.serial, ['buildings']) : null;
+    this.doc = doc;
     this.serial = journal.version;
     const ids = new Set<BuildingId>();
     const rects: ChangeRect[] = [];

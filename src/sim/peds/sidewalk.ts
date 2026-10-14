@@ -43,8 +43,6 @@ export interface SidewalkEdge {
   readonly lanes?: readonly LaneletId[];
 }
 
-const NO_EDGES: readonly SidewalkEdge[] = [];
-
 /**
  * The kerbs, zebras and footway lines the vehicles and signals read, derived
  * from the SAME junction geometry that trims the vehicle lanelets.
@@ -232,7 +230,7 @@ export class SidewalkGraph {
 
   /** The footway lines running beside road `segment`, in `edges` order. */
   walksBeside(segment: SegmentId): readonly SidewalkEdge[] {
-    return this.walksBySegment.get(segment) ?? NO_EDGES;
+    return this.walksBySegment.get(segment) ?? [];
   }
 
   private addEdge(edge: SidewalkEdge): void {
