@@ -2049,6 +2049,7 @@ function growCity(): void {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
     scene.holdBuildings(true);
+    lotTool.holdOverlay(true);
     requestDraw();
     return;
   }
@@ -2076,6 +2077,7 @@ function growCity(): void {
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
   scene.holdBuildings(false);
+  lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
 }

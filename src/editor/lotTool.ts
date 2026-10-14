@@ -132,7 +132,12 @@ export class LotTool {
     const gesture = this.polygon.length > 0 || this.drawn !== null || this.cutLine !== null || this.curve !== null;
     if (!editing && !gesture) {
       const key = `lots ${this.doc.lotRevision} ${this.doc.buildings.revision}`;
-      return this.quiet?.key === key ? this.quiet.overlay : this.remakeQuiet(key);
+      if (this.quiet?.key === key) return this.quiet.overlay;
+      // A faint hint, not the tool: held while a city grows lot by lot
+      // (`holdOverlay`), it was laid again for all the town's lots on every
+      // frame of the growth - a tenth of the frame in the profile (2026-10-13).
+      if (this.quiet && this.held) return this.quiet.overlay;
+      return this.remakeQuiet(key);
     }
     // In the tool, what is under the pointer changes the drawing: compared whole.
     const drawn = this.overlay(editing);
@@ -144,6 +149,12 @@ export class LotTool {
     const overlay = { ...this.overlay(false), key };
     this.quiet = { key, overlay };
     return overlay;
+  }
+  /** Whether the quiet overlay is held as it is while lots keep changing (`holdOverlay`). */
+  private held = false;
+  /** Holds the quiet overlay as it is (a city growing, a lot a slice); released, the next frame lays it again. */
+  holdOverlay(on: boolean): void {
+    this.held = on;
   }
 
   private get doc(): RoadDoc { return this.host.doc; }
