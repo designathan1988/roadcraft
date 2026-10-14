@@ -76,6 +76,8 @@ export interface CityOptions {
   /** Share of blocks made parks, 0 to 0.2. */
   readonly parks: number;
   readonly industry: boolean;
+  /** The city's radius in world units, over the size's (probes and the whole map). */
+  readonly radius?: number;
 }
 
 export const DEFAULT_CITY: CityOptions = { seed: 1, size: 'medium', style: 'blocks', centres: 2, density: 0.6, parks: 0, industry: true };
@@ -97,7 +99,7 @@ const RADIUS: Record<CitySize, number> = { small: m(420), medium: m(640), large:
 
 export function planCity(options: CityOptions): CityPlan {
   const rng = new Rng((options.seed * 2_654_435_761) >>> 0 || 1);
-  const R = Math.min(RADIUS[options.size], MAP_HALF - m(60));
+  const R = Math.min(options.radius ?? RADIUS[options.size], MAP_HALF - m(60));
   // ---- the centres
   const centres: Vec2[] = [{ x: rng.range(-R, R) * 0.08, y: rng.range(-R, R) * 0.08 }];
   for (let i = 1; i < Math.max(1, Math.min(4, options.centres)); i++) {
