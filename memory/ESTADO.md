@@ -1,6 +1,6 @@
 # Estado do trabalho — reescrever a cada mudança (não acumular)
 
-Atualizado: 2026-10-14 ~15h30.
+Atualizado: 2026-10-14 (noite).
 
 ## Quem está trabalhando
 - **"Auditoria de desempenho three.js"**: otimização, correções no código (prédios, renderer,
@@ -10,12 +10,13 @@ Atualizado: 2026-10-14 ~15h30.
   (`scripts/look.mjs`), o acusador (`scripts/acusar.mjs`), as skills `.claude/skills/`, o
   `CLAUDE.md` da raiz, contadores de trabalho por evento (testes de escala). Pendente dela, para
   quem continuar (2026-10-14 ~16h40, o jogador vai trocar de conta):
-  - contadores por evento: o do diário está feito (`a17e808`, `building+1:ground` e `ground:idle`
-    x3,82 na base; o conserto D8 os leva a 0 e tira da base). Jardins (C2), `cameraSolids` (A8/C5)
-    e pads (C8) esperam a auditoria extrair a parte incremental do renderer num módulo puro
-    (combinado 2026-10-14); então este lado escreve o contador contra ele. Feitos também os do sim:
-    `building+1:bays` (B10, `collectBays`) e `building+1:yards` (B14, `yardNeighbours`), x3,82 na
-    base (`b95f63b`);
+  - contadores por evento todos feitos no "um prédio a mais" (`tests/scale/buildingEdit.spec.ts`):
+    diário `ground`/`ground:idle` (C1/D8), `bays` (B10), `yards` (B14), `solids` (A8/C5), `pads`
+    (C8), x3,82; `gardens` (C2, numa cidade com árvore em cada jardim) x14,02, quadrático. Para os
+    três do renderer, a parte que decide refazer saiu dele, sem mudar comportamento:
+    `cameraSolidsKeeper` (`world/buildings/cameraSolids.ts`), `siteGrading`
+    (`world/buildings/siteGrading.ts`), `gardenLists` (`render/gardenLists.ts`). O conserto de cada
+    um (auditoria) é nesses módulos; ao consertar, tirar a linha de `baseline.json` no mesmo commit;
   - a regra "como adicionar um produto derivado" está no CLAUDE.md da raiz (sim do jogador,
     2026-10-14);
   - LSP (`workspaceSymbol`) e context7 conferidos e funcionando (2026-10-14);
@@ -46,6 +47,13 @@ Atualizado: 2026-10-14 ~15h30.
   - `a17e808` (Hook) contador do leitor do chão pelo diário — **envio NÃO autorizado ainda**.
   - `4c6b7f0` (Hook) regra do produto derivado no CLAUDE.md; `b95f63b` (Hook) contadores de baias e
     pátios — **envio NÃO autorizado ainda**.
+  - `f1405fa` (auditoria) clique em prédio: Viewport.rayAt, olho dentro de volume ignorado, quintal
+    `open` picado como placa do chão (no jogo: casa, portão e bomba sob o cursor).
+  - `06f819d` (auditoria) item 34 no OTIMIZACAO + FEITO/DIARIO; `e5ec4e5`, `cf0917d` camada de
+    prédios; `de7588d` placas de rua.
+  - `4362867` (Hook) sólidos da câmera, plataformas e jardins fora do renderer + contadores;
+    `18c373a` (Hook) `__roadcraft.setView` (vista exata para fotos antes/depois) — **envio NÃO
+    autorizado ainda**.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
@@ -107,12 +115,15 @@ Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
   central: `serialOf(kinds) <= since → []`).
 
 ## Próximos passos (em ordem)
-1. Resto do quadrático da geração que a regra `whole-map-per-item` ainda lista: `growOnLot` (lotes
-   abertos, `lastGrown`, `findIndex`), `cornerOf`/`onStreet` (ribbons), `footwayRise.flushIndex`.
-2. Diário de mudanças: anel único de 2.048 (D8/C1) — conserto central, beneficia todos os leitores.
-3. `layer.update` incremental pelo diário (A1, o maior estrutural; contador `building+1:layer` 3,82).
-4. Correções de uma linha da auditoria (A2, A7, C3) e os achados `whole-map-nested` da linha de base.
-5. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
-6. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item).
+1. Diário de mudanças: anel único de 2.048 (D8/C1) — conserto central, beneficia todos os leitores
+   (ao commitar, tirar `building+1:ground` e `ground:idle` de `tests/scale/baseline.json`).
+2. `layer.update` incremental pelo diário (A1, o maior estrutural; contador `building+1:layer` 3,82).
+3. Correções de uma linha da auditoria (A2, A7, C3) e os achados `whole-map-nested` da linha de base.
+4. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
+5. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item).
+6. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
+   `setView({x:11.5,y:-11.5,zoom:200,azimuth:0.785,elevation:0.1})` na cidade de semente 1 a tela
+   fica cinza (olho dentro do volume); com `{x:20,y:-20,zoom:80,azimuth:4.0,elevation:0.25}` o olho
+   atravessa a fachada e vê a sala. O afastamento da câmera (`cameraSolidsKeeper` + rig) não age.
 
 Detalhe do que já foi feito: `memory/FEITO.md`. Histórico: `memory/DIARIO.md`.

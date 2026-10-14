@@ -42,3 +42,8 @@
   anotados, fora do clique: célula da câmera ainda em massa ao chegar (sem muros), olho dentro de
   prédio recém-crescido (tela cinza; cameraSolids), pessoa da bomba atravessando poste de cerca,
   sombra pontilhada no gramado. Próximo: D8 (anel por tipo do diário).
+- 2026-10-14 noite (Hook de busca na internet): `4362867` sólidos da câmera, plataformas e jardins fora
+  do renderer (Extract Class, sem mudar comportamento) e contadores `solids`/`pads` x3,82 e `gardens`
+  x14,02; check-code com as 4 entradas só renomeadas (173). `18c373a` `__roadcraft.setView`: os gestos
+  davam vista diferente a cada rodada (A/A do HEAD), agora o antes/depois usa vistas fixas. No jogo:
+  vistas iguais nos dois lados; câmera dentro de prédio é defeito antigo (passado à auditoria).
