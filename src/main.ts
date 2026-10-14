@@ -2053,6 +2053,25 @@ function growCity(): void {
     requestDraw();
     return;
   }
+  const done = growSlice(growing);
+  cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
+  requestDraw();
+  if (!done) return;
+  cityGrowth = null;
+  cityBuiltIn = (performance.now() - growing.started) / 1000;
+  cityProgress.style.display = 'none';
+  scene.holdBuildings(false);
+  lotTool.holdOverlay(false);
+  persistence.saveSessionSoon(doc, sessionSettings);
+  updateStatus();
+}
+/**
+ * One slice of the generated city's growth: lots built until `GROW_SLICE_MS`
+ * is spent; true when none is left. Its work is the city's zoned lots, each
+ * built once; a frame of play never reaches it.
+ * @rebuild Run only while a generated city is being built (`cityGrowth`), a slice a frame.
+ */
+function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
   const until = performance.now() + GROW_SLICE_MS;
   let done = false;
   caused('cidade gerada', () => {
@@ -2070,16 +2089,7 @@ function growCity(): void {
       growing.left--;
     }
   });
-  cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
-  requestDraw();
-  if (!done) return;
-  cityGrowth = null;
-  cityBuiltIn = (performance.now() - growing.started) / 1000;
-  cityProgress.style.display = 'none';
-  scene.holdBuildings(false);
-  lotTool.holdOverlay(false);
-  persistence.saveSessionSoon(doc, sessionSettings);
-  updateStatus();
+  return done;
 }
 /** Milliseconds a frame spent building the generated city's lots (`growCity`). */
 const GROW_SLICE_MS = 100;
