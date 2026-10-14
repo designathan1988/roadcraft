@@ -17,6 +17,7 @@ import { Rng } from '@core/rng';
 import { m } from '@world/units';
 import { BUSH_KINDS, TREE_SPECIES, trianglesOf, type BushKind, type TreeSpecies } from './propGeometry';
 import { SHADOW_REACH, foliageTint, type Scenery, type SceneryKit } from './scenery';
+import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
 
 /**
  * THE BUILDINGS' GARDENS, KEPT BUILDING BY BUILDING: the trees, shrubs,
@@ -160,17 +161,7 @@ function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPac
   return out;
 }
 
-type Bounds = { x: number; y: number; z: number; r: number };
 
-/** The smallest sphere round two spheres. */
-function enclose(a: Bounds | null, b: Bounds): Bounds {
-  if (!a || a.r < 0) return b;
-  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz);
-  if (d + b.r <= a.r) return a;
-  if (d + a.r <= b.r) return b;
-  const r = (d + a.r + b.r) / 2, k = d > 0 ? (r - a.r) / d : 0;
-  return { x: a.x + dx * k, y: a.y + dy * k, z: a.z + dz * k, r };
-}
 
 /** One plant kind's instances: every garden's run of slots, the dead ones with a radius of -Infinity. */
 interface Store {
@@ -235,42 +226,9 @@ const LEVELS = 10;
 const PAD = m(0.001);
 /** Every frustum plane still to test. */
 const ALL_PLANES = 0b111111;
-/**
- * A changed run of an attribute to upload, kept as ONE pending range: three
- * clears the ranges only when it uploads (`WebGLAttributes.updateBuffer`),
- * and a hidden mesh would pile one up per cull.
- */
-function markRange(attribute: InstancedBufferAttribute, start: number, count: number): void {
-  const pending = attribute.updateRanges[0];
-  if (!pending) attribute.addUpdateRange(start, count);
-  else {
-    const end = Math.max(pending.start + pending.count, start + count);
-    pending.start = Math.min(pending.start, start);
-    pending.count = end - pending.start;
-  }
-  attribute.needsUpdate = true;
-}
 /** Integer cell coordinates as one key (exact while |cell| < 2^24). */
 const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
 
-/**
- * The planes of `mask` (bit p: plane p not yet known to hold the sphere
- * inside) against the sphere: -1 when it lies wholly outside one of them,
- * else the planes it straddles - 0 when it is wholly inside every one. The
- * same sum as three's `Plane.distanceToPoint` in `Frustum.intersectsSphere`.
- */
-function planeMask(frustum: Frustum, x: number, y: number, z: number, r: number, mask: number): number {
-  let out = 0;
-  for (let p = 0; p < 6; p++) {
-    const bit = 1 << p;
-    if ((mask & bit) === 0) continue;
-    const plane = frustum.planes[p]!, n = plane.normal;
-    const d = n.x * x + n.y * y + n.z * z + plane.constant;
-    if (d < -r) return -1;
-    if (d < r) out |= bit;
-  }
-  return out;
-}
 
 export interface Gardens extends Scenery {
   /**
