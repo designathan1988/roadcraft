@@ -718,11 +718,15 @@ function textureSampler(texture: Texture | null): ((u: number, v: number) => rea
     const image = texture.image as (CanvasImageSource & { width?: number; height?: number }) | null;
     const W = 128, H = 128;
     let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
-    if (typeof OffscreenCanvas !== 'undefined') ctx = new OffscreenCanvas(W, H).getContext('2d');
+    // A canvas drawn in software (MDN `willReadFrequently`): on the GPU's,
+    // each `getImageData` waited for the card to hand the pixels back -
+    // 1.3 to 2.2 s of a generated city's first 25 s (2026-10-14).
+    // NÃO tirar willReadFrequently: a leitura volta a parar a thread na GPU.
+    if (typeof OffscreenCanvas !== 'undefined') ctx = new OffscreenCanvas(W, H).getContext('2d', { willReadFrequently: true });
     else if (typeof document !== 'undefined') {
       const canvas = document.createElement('canvas');
       canvas.width = W; canvas.height = H;
-      ctx = canvas.getContext('2d');
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
     }
     if (ctx && image && (image.width ?? 0) > 0) {
       ctx.drawImage(image, 0, 0, W, H);
