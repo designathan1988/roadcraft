@@ -14,8 +14,8 @@ Atualizado: 2026-10-14 ~15h30.
     x3,82 na base; o conserto D8 os leva a 0 e tira da base). Jardins (C2), `cameraSolids` (A8/C5)
     e pads (C8) esperam a auditoria extrair a parte incremental do renderer num módulo puro
     (combinado 2026-10-14); então este lado escreve o contador contra ele;
-  - a regra "como adicionar um produto derivado" no CLAUDE.md: **só com o sim do jogador**
-    (perguntado de novo em 2026-10-14, nova conta);
+  - a regra "como adicionar um produto derivado" está no CLAUDE.md da raiz (sim do jogador,
+    2026-10-14);
   - LSP (`workspaceSymbol`) e context7 conferidos e funcionando (2026-10-14);
   - referência offline: `C:/Codex-Shared/referencia/` (three.js r186 inteiro e 4 projetos;
     índice no `README.md` de lá).

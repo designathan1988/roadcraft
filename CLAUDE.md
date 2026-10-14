@@ -31,6 +31,15 @@ Quem muda o estado do trabalho atualiza `memory/ESTADO.md` e acrescenta uma linh
   que nunca são soltas, caches sem teto.
 - Esperar a GPU no meio do quadro (`getImageData`) ou compilar shader durante o jogo.
 
+## Como adicionar um produto derivado
+(Tudo que se calcula a partir do documento: malha, cache, índice, camada.)
+- Leia o que mudou no diário (`doc.changes.since`/`touches` com os tipos que ele lê), nunca uma
+  chave com revisão global (`${...revision}`).
+- Ache itens por lugar com `buildings.near(caixa)`, não com `all()`.
+- Ponha a parte incremental num módulo puro (sem three), para o teste alcançar; o renderer só liga.
+- Crie um contador de trabalho exportado e uma linha no teste de escala (`tests/scale/`): um item a
+  mais custa o mesmo numa cidade de N e numa de 4N.
+
 ## Limites do jogador
 - Nenhuma perda de qualidade gráfica sem o sim dele: fotos antes e depois, nas mesmas vistas.
 - Nada mais lento: números antes e depois no relatório.

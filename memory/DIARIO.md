@@ -30,3 +30,6 @@
   x3,82, na base); mutante do conserto D8 morto (vai a 0, pede para sair da base). Jardins, cameraSolids
   e pads: decididos dentro do `createSceneRenderer`, que o vitest não monta; a auditoria extrai a parte
   incremental num módulo puro ao consertar e avisa. Acusador rodado, pistas passadas à auditoria.
+- 2026-10-14 (Hook de busca na internet): com o sim do jogador, seção "Como adicionar um produto
+  derivado" no CLAUDE.md da raiz (diário em vez de revisão global, `near`, módulo puro, contador +
+  teste de escala).
