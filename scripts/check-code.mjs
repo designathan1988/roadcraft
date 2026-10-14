@@ -1001,5 +1001,7 @@ if (process.argv.includes('--update')) {
 }
 for (const key of added) console.error(`novo: ${key}  ×${issues[key]} (linha de base ${baseline[key] ?? 0})\n    ${found.get(key).path}`);
 if (gone.length) console.error(`código: ${gone.length} itens da linha de base resolvidos ou reduzidos; atualize (node scripts/check-code.mjs --update):\n${gone.join('\n')}`);
-console.log(`código: ${added.length} novos, linha de base ${total(baseline)} ocorrências (${stats})`);
+// The baseline is the list of known defects to fix (docs/PLANO-ESPINHA-2026-10-14.md), not an
+// acceptance: "0 new" proves nothing about the code. DO NOT word this line as a pass.
+console.log(`código: ${added.length} novos; ${Object.keys(baseline).length} defeitos conhecidos ainda no código (${total(baseline)} ocorrências na linha de base, a corrigir) (${stats})`);
 process.exit(added.length || gone.length ? 1 : 0);

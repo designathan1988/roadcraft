@@ -12,9 +12,9 @@ breaks far from where you edit in `sim/`.
   is installed - the specs install it themselves.
 - The People (navmesh/ORCA), Detour crowd and sidewalk-graph engines were
   deleted on 2026-10-08 (the player's decision). What is left in `sim/peds/`
-  (`sidewalk.ts`, `state.ts`, `publish.ts`, `behaviour.ts`, `corridor.ts`) and
-  `sim/people/` (`engine.ts`, `view.ts`, `casualties.ts`) is read by live code
-  (the footway graph, the crossings, the views the renderer draws).
+  (`sidewalk.ts`, the only file there) and `sim/people/` (`engine.ts`,
+  `view.ts`, `casualties.ts`) is read by live code (the footway graph, the
+  crossings, the views the renderer draws).
 
 ## The people and the city (`sim/agents/`, `sim/ambient/`, `sim/city/`)
 
@@ -61,10 +61,11 @@ breaks far from where you edit in `sim/`.
 
 ## Traps that have already caught someone
 
-- **`clock.tick` and `clock.time` do not advance under test.** They move only inside
-  `SimClock.advance` and `SimClock.run`, and the specs drive `step` directly.
-  Behaviour keyed on the clock silently never happens in the suite (that is how
-  the lane-change cooldown blocked every overtake). Use the agent's own `age`.
+- **`clock.tick` is written ONLY at the end of `pipeline.step`** (`clock.ts`), so a
+  spec that drives `step` directly advances time as the game does. It used to
+  move inside `SimClock.advance` and `run`, and behaviour keyed on the clock
+  silently never happened in the suite (that is how the lane-change cooldown
+  blocked every overtake). Do not move the tick back into `advance`.
 - **`archetype` is the machine; `driver` is the person.** Size, mass and palette
   read the archetype; acceleration, braking, headway, gap acceptance and patience
   read the driver. `driver.bEmergency` is almost constant on purpose: the

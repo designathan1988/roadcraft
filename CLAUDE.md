@@ -24,9 +24,14 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
   contador e linha de base não são meta: servem só para achar onde está a causa.
 - NÃO amortizar: fatiar em quadros, segurar uma camada, pôr teto num cache que refaz ou espaçar as
   refeituras esconde o custo, que volta com a cidade maior. Corrija a causa, em todas as partes.
-- Método na skill `investigando-desempenho`: perfilar a cidade grande (`scripts/look.mjs`,
-  `profile`/`city`), ler o código até o algoritmo ou a estrutura de dados culpada, pesquisar a
-  técnica correta na fonte oficial e em motores maduros, reescrever, provar a mesma saída.
+- Método na skill `lendo-o-codigo` (ordem do jogador, 2026-10-14): ler o código inteiro, arquivo
+  por arquivo, conferir cada achado na linha, seguir o chamador até o quadro, a edição ou o
+  ponteiro, achar os irmãos e corrigir pela classe. Teste, perfil e contador não acham a causa:
+  servem para provar a correção e medir. Depois, a skill `investigando-desempenho` (pesquisar a
+  técnica na fonte oficial e em motores maduros, reescrever, provar a mesma saída).
+- Plano aprovado pelo jogador em 2026-10-14, o plano em vigor (a espinha: motor central, célula,
+  derivado incremental, roteamento obrigatório, classes de causa C1-C10, fases 0-8, inventário
+  conferido): `docs/PLANO-ESPINHA-2026-10-14.md`. Ele substitui a ordem do `docs/PLAN.md`.
 - Plano e tetos: `docs/CIDADE-10KM.md` (o que a cidade inteira precisa ser).
 
 ## Causas que já custaram caro
@@ -48,7 +53,29 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
 ## Limites do jogador
 - Nenhuma perda de qualidade gráfica sem o sim dele: fotos antes e depois, nas mesmas vistas.
 - Nada de processo longo como barreira, e nada de teste atrás de teste no lugar de corrigir.
-- Agentes livres: use quantos forem úteis, em paralelo, e revise o que fizeram.
+- Uma conversa só (ordem do jogador, 2026-10-14): "eu sigo sozinho, com os meus agentes; sem mais
+  conversas em sessões". Agentes só para ler em paralelo, no protocolo da skill `lendo-o-codigo`;
+  todo achado deles é conferido na linha antes de usar. Agente que edita trabalha nesta pasta, em
+  arquivos que só ele toca, nunca num worktree (o worktree nasce do ramo padrão, `origin/main`,
+  não do HEAD); todo diff de agente é lido inteiro antes do commit.
+
+## Antes de dizer feito, existe ou funciona (ordem do jogador, 2026-10-14)
+- **Nada existe por nome.** "Já existe", "já usa", "já tem", "funciona", "está conforme" só depois
+  de ler o código que USA a coisa (o chamador e o caminho em que ela roda), nunca por um nome
+  achado numa busca. O `BatchedMesh` "existia" só num comentário que explica a retirada dele.
+- **Feito** é: a forma errada saiu do código em todos os lugares da mesma classe, no caminho real
+  de chamada (quadro, edição, ponteiro), e a barreira da classe acusa a volta. Prova de um cenário
+  não vale pelo caso geral; entrada nova em linha de base é "pendente", nunca feito.
+- **Linha de base é lista de defeitos, não aceite** (contadas em 2026-10-14: 485 entradas em
+  `code-rules.baseline.json`, 452 supressões em `eslint-suppressions.json` em 158 arquivos, 217 em
+  `knip.baseline.json`, 322 em `refs.baseline.json`). "Checagem sem achado novo" não prova nada.
+  Entrada nova só com "pendente" escrito no commit e na mensagem ao jogador; ao fim de cada classe
+  do plano, as entradas dela saem e a regra fica dura.
+- **Relato de agente, de outra sessão ou do resumo da compactação não é fato** até a linha ser
+  aberta. Número só com o comando que mediu à vista; número herdado é refeito.
+- O verificador de "feito" (`~/.claude/hooks/verificador-feito.md`, hook `agent` no `Stop` e no
+  `SubagentStop`) confere cada afirmação no código e no transcrito e barra o turno com a razão.
+  Quando ele barra, corrija o código ou diga com todas as letras o que não está feito.
 
 ## Antes de dizer que funciona
 - Use o jogo como o jogador, na cidade grande; diga foto por foto o que conferiu.
@@ -74,12 +101,13 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
   num job do Windows com teto rígido de 25% da CPU e 8 GB por conversa. Jogo que não roda na fatia
   está lento: corrija o jogo, não levante o teto. Um jogo sem janela por conversa.
 
-## Várias sessões
-- Outras sessões podem estar editando. Rode `git status` antes; não mexa em arquivo de outra
-  sessão; faça commit só dos seus. Cada arquivo salvo recarrega o jogo na 5300.
+## Commits
+- Rode `git status` antes; commit só dos seus caminhos, com `git commit --only <caminhos>`, depois
+  de ler o `git diff` deles. Cada arquivo salvo recarrega o jogo na 5300.
 
 ## Como fazer (antes de inventar)
-- Skills do projeto: `investigando-desempenho` (lento, memória, otimização) e `conferindo-no-jogo`
+- Skills do projeto: `lendo-o-codigo` (achar os erros lendo o código inteiro; antes de corrigir
+  qualquer coisa), `investigando-desempenho` (lento, memória, otimização) e `conferindo-no-jogo`
   (fotos e gestos antes de dizer que funciona).
 - three.js inteiro da versão do jogo, offline: `C:/Codex-Shared/referencia/` (documentação em
   Markdown, manual, 608 exemplos oficiais, código-fonte) e o código de projetos maduros

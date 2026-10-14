@@ -105,5 +105,6 @@ if (process.argv.includes('--update')) {
 }
 for (const key of added) console.error(`new: ${key}  x${issues[key]} (baseline ${baseline[key] ?? 0})\n    ${where(key)}`);
 if (gone.length) console.error(`refs: ${gone.length} baseline entries fixed or reduced; take them out (node scripts/check-refs.mjs --update):\n${gone.join('\n')}`);
-console.log(`refs: ${added.length} new, baseline ${total(baseline)} occurrences (${stats})`);
+// The baseline is the list of known defects to fix, not an acceptance. DO NOT word this as a pass.
+console.log(`refs: ${added.length} novos; ${Object.keys(baseline).length} defeitos conhecidos ainda no código (${total(baseline)} ocorrências na linha de base, a corrigir) (${stats})`);
 process.exit(added.length || gone.length ? 1 : 0);

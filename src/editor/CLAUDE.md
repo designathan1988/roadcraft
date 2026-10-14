@@ -23,9 +23,12 @@ owner in docs/STATUS.md before changing them.
 
 ## Traps that have already caught someone
 
-- **Every dab of the terrain brush re-solves the whole road network.** Painting is
-  rate-limited by what the last rebuild cost (`terrainPaintInterval` in
-  `main.ts`), not by a fixed interval.
+- **The terrain brush is paced by what the last rebuild cost**
+  (`TerrainBrushHost.interval`, `editor/terrainBrush.ts`, wired in `main.ts`):
+  a dab that moves the land rebuilds the ground (and, after the stroke, the
+  roads on it), and dabbing on every pointer sample queued rebuilds. The pacing
+  is an amortization (class C8 of `docs/PLANO-ESPINHA-2026-10-14.md`): it goes
+  when a dab rebuilds only the cells it touched.
 - **A missing hint key shows a blank hint bar, not an error.** `hintKey` derives
   the key from the tool.
 - **A brush stroke covers the whole way between two pointer reports.** The
@@ -34,10 +37,11 @@ owner in docs/STATUS.md before changing them.
   Testing only the reported point zoned one lot in three along a street.
   `tests/editor/zoneStroke.spec.ts`.
 - **Heavy commands go through `scripts/run-limited.mjs`** (vitest, tsc, probes,
-  builds): one at a time on the machine (a lock file), started only with CPU
-  ≤ 70% and ≥ 6 GB free, the whole process tree kept on 4 cores below normal
-  priority (Chrome does not inherit it), stopped after 8 minutes. Call node,
-  not npx: `node scripts/run-limited.mjs node node_modules/vitest/vitest.mjs run …`.
+  builds): at once, inside the conversation's Windows job (`scripts/sessionJob.mjs`,
+  a hard cap of 25% of the CPU and 8 GB, the children inside), below normal
+  priority, stopped after `RUN_LIMITED_TIMEOUT_S` (480 s). There is no machine
+  lock and no wait for the CPU (removed in 03c2647). Call node, not npx:
+  `node scripts/run-limited.mjs node node_modules/vitest/vitest.mjs run …`.
 
 - **The load boundary validates with the document's own predicates**
   (`persistence.ts` isSerializedDoc: `readRelief` from `world/terrain.ts`).

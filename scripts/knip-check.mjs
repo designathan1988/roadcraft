@@ -38,5 +38,6 @@ const added = issues.filter((i) => !known.has(i));
 const gone = baseline.filter((i) => !now.has(i));
 if (added.length) console.error(`knip: ${added.length} novos (sem uso):\n${added.join('\n')}`);
 if (gone.length) console.error(`knip: ${gone.length} itens da linha de base já resolvidos; tire-os (node scripts/knip-check.mjs --update):\n${gone.join('\n')}`);
-if (!added.length && !gone.length) console.log(`knip: nada novo; linha de base ${baseline.length}`);
+// The baseline is the list of known defects to fix, not an acceptance. DO NOT word this as a pass.
+if (!added.length && !gone.length) console.log(`knip: nada novo; ${baseline.length} defeitos conhecidos ainda no código (linha de base, a corrigir)`);
 process.exit(added.length || gone.length ? 1 : 0);

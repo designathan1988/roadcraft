@@ -15,8 +15,7 @@ breaks far from where you edit in `world/`, and how to add the common things.
 3. **`RoadSample`** (`elevation.roadAt`) feeds the road UV frame and the asphalt's
    `roadEdge` attribute; the asphalt shader (`render/materials.ts`,
    `ROAD_SPACE_FRAGMENT`) assumes `uv.x * ASPHALT_TILE` is the across direction.
-4. **Street furniture** (`world/streetFurniture.ts`) is both what the renderer
-   draws and what pedestrians walk round (`sim/peds/clearance.ts`).
+4. **Street furniture** (`world/streetFurniture.ts`) is what the renderer draws.
 5. **Junction legs are framed at the trim they are cut at** (`junction/legs.ts`,
    `build.ts`): a trim changed after framing (the slab bump) must re-frame.
 6. **Signal stages come from the conflict matrix** (`sim/signals/plan.ts` over
