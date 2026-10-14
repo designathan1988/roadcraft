@@ -1,15 +1,17 @@
 # Ordens e regras do jogador (com data)
 
-- Meta: cidade no mapa inteiro de 10 km, bonita e rápida. "Faça engenharia de verdade" (2026-10-14).
-- Otimizar sem perder gráfico nem função; cada correção com commit próprio (problema + técnica +
-  medida), comentário "NÃO …" onde a tentação de voltar existe, `OTIMIZACAO.md` como lista viva.
-- Ir ao código, entender e corrigir por padrão; não empilhar testes (2026-10-14).
-- Criar mecanismos que impeçam os padrões de voltar e que as próximas implementações não os repitam
-  (2026-10-14). Pesquisar a fundo antes.
+- Meta: cidade no mapa inteiro de 10 km e maiores, bonita e rápida, em computadores diferentes
+  (o jogo vai ser vendido). "Faça engenharia de verdade" (2026-10-14).
+- **Corrigido é quando o código não tem mais o problema na base** (2026-10-14): a causa reescrita
+  no algoritmo e nos dados, não um tempo que caiu. "Não estou nem aí para métrica." Nada de
+  amortizar (fatiar, segurar, teto de cache, espaçar) nem remendo: corrigir tudo o que causa o
+  problema, no código, alinhado com as fontes oficiais.
+- Otimizar sem perder gráfico nem função; cada correção com commit próprio (causa + técnica +
+  fonte), comentário "NÃO …" onde a tentação de voltar existe, `OTIMIZACAO.md` como lista viva.
+- Ir ao código, entender e corrigir; não empilhar testes nem ferramentas no lugar de corrigir.
 - Tudo em português do Brasil. Pesquisar (WebSearch + ler a fonte) antes de mudar arquivo.
 - Testar no jogo como o jogador; toda foto tirada é examinada e o defeito visto é corrigido.
-- Agentes liberados para trabalho útil, com instrução fechada e revisão do que fizeram.
-- Não ficar parado esperando agente: trabalhar em paralelo.
+- Agentes livres (2026-10-14): quantos forem úteis, em paralelo; revisar o que fizeram.
 
 ## Regras entre as sessões (2026-10-14)
 - As duas sessões dividem o MESMO índice do git: `git add` de uma entra no `git commit` da outra.

@@ -1,87 +1,70 @@
 ---
 name: investigando-desempenho
-description: Investiga e corrige lentidão, travadas, memória alta e custo de desenho do Roadcraft 2 pelo plano da cidade de 10 km. Mede com __roadcraft.budget, acha a causa no código pelos padrões que já custaram caro, pesquisa a técnica na documentação oficial, corrige sem mudar a imagem e prova com números, contador de escala e fotos. Use quando o jogo estiver lento, travando, com fps baixo ou memória alta, quando o jogador pedir otimização, ou antes de mexer por desempenho em renderer, prédios, vias, terreno, simulação ou geração.
+description: Acha e corrige NA RAIZ, no código, o que deixa o Roadcraft 2 lento, travando, com memória alta ou desenho caro, para a cidade de 10 km ou maior em qualquer computador. Perfila o jogo na cidade grande, lê o código até o algoritmo ou a estrutura de dados que causa o custo, pesquisa a técnica correta na fonte oficial e em motores maduros, reescreve a causa e prova que a saída é a mesma. Use quando o jogo estiver lento, travando ou com memória alta, quando o jogador pedir otimização, ou antes de mexer por desempenho em qualquer parte.
 ---
 
 # Investigando desempenho
 
+O jogo vai ser vendido e rodar em computadores diferentes: o código tem de estar escrito
+corretamente, de ponta a ponta. **Corrigido é quando o código não tem mais o problema**: o
+algoritmo e os dados estão certos para a cidade de qualquer tamanho. Tempo que caiu numa cidade
+de teste não é correção; quando a cidade cresce, ele volta.
+
 Copie e marque:
 
 ```
-- [ ] 1 Medir: a linha mais acima do orçamento
-- [ ] 2 Achar quem custa: malha, etapa ou função
-- [ ] 3 Ler o caminho no código até a causa
-- [ ] 4 Nomear o padrão e conferir o plano
-- [ ] 5 Pesquisar a técnica
-- [ ] 6 Corrigir sem mudar a imagem
-- [ ] 7 Provar: números, barreira, fotos
-- [ ] 8 Registrar
+- [ ] 1 Perfilar o jogo na cidade grande
+- [ ] 2 Ler o código até a causa
+- [ ] 3 Pesquisar a técnica correta
+- [ ] 4 Reescrever a causa
+- [ ] 5 Provar a mesma saída e conferir no jogo
+- [ ] 6 Registrar
 ```
 
-**1 Medir.** Siga "Antes de rodar o jogo" abaixo. `node scripts/look.mjs scripts/look/views.json`
-dá a tabela medido × orçamento nas vistas rua, bairro e mapa; a vista do jogador, em
-[medir.md](medir.md). Guarde os números "antes". Ataque a linha com maior `vezes`. Linha grande
-"sem orçamento no plano": diga ao jogador.
+**1 Perfilar.** A sonda do `scripts/look.mjs` na cidade de raio 2.560 m (ou maior): passos
+`profile`/`profileEnd` em volta de `city` (a geração) e da exploração. Ela dá os quadros longos com
+a função que os segurou e o perfil de CPU (`.cpuprofile`, abre no DevTools). O perfil serve para
+achar ONDE está a causa, não é a meta.
 
-**2 Achar quem custa.** Memória: `__roadcraft.memory()` (`cpuByName`). Triângulos e chamadas por
-nível, CPU por etapa: [medir.md](medir.md).
+**2 Ler o código até a causa.** Com o perfil na mão, a ferramenta LSP (definição e referências) e o
+`scripts/acusar.mjs --arquivo <arquivo>` como pistas. Responda por escrito, com arquivo e linha:
+- que algoritmo é, e como cresce com a cidade (O(n), O(n²), O(n·contorno)...);
+- que trabalho é refeito sem ter mudado (refazer tudo quando uma parte muda, cache que expulsa e
+  refaz, cópia na CPU que nunca é solta);
+- que estrutura de dados falta (índice espacial, diário de mudanças, worker, nível de detalhe).
 
-**3 Ler o código.** Comece por `node scripts/acusar.mjs --arquivo <arquivo suspeito>`: aponta,
-com a fonte oficial, os usos do three.js e os padrões conhecidos naquele arquivo (pistas, não
-provas). Use a ferramenta LSP (definição e referências pelo símbolo) para subir dos
-custos até quem os dispara; se a sessão não tiver LSP, Grep pelo nome exato do símbolo e confira
-cada resultado. Responda por escrito: o que dispara, com que frequência (quadro,
-item, edição), sobre quantos itens, e o que de fato mudou.
+**3 Pesquisar.** A técnica que resolve a causa: a referência local `C:/Codex-Shared/referencia/`
+(three.js r186 inteiro, exemplos oficiais, 3DTilesRendererJS, InstancedMesh2, three-mesh-bvh),
+context7 para outras bibliotecas, a documentação oficial (WebFetch) e como motores maduros fazem.
+Escreva ao jogador o que achou, os links e a abordagem.
 
-**4 Padrão e plano.** Encaixe a causa em [padroes.md](padroes.md): forma no código, correção e
-barreira contra a volta. Ache a etapa em `docs/CIDADE-10KM.md` e os tetos em
-`docs/PESQUISA-CIDADE-10KM.md` §8.6. Recuse a correção que estoura outra linha (ex.: soltar a
-CPU jogando a geometria na GPU acima do teto de memória de vídeo).
+**4 Reescrever a causa.** A forma certa no código, não um remendo:
+- NÃO amortizar: fatiar o trabalho em quadros, segurar uma camada, pôr teto num cache que refaz ou
+  esperar mais entre refeituras só esconde o custo, que volta com a cidade maior;
+- índice espacial em vez de varredura; o que mudou (diário) em vez de refazer tudo; trabalho pesado
+  em worker; nível de detalhe e liberação da cópia na CPU para o que vai à GPU;
+- corrija todas as partes da mesma causa, não só a que apareceu primeiro.
+Comentário "NÃO …" onde a tentação de voltar existe.
 
-**5 Pesquisar.** Nesta ordem:
-1. `docs/research/` e `docs/PESQUISA-CIDADE-10KM.md` (o que já foi pesquisado).
-2. A referência local `C:/Codex-Shared/referencia/` (índice no `README.md` de lá): documentação
-   inteira do three.js r186 em Markdown, manual, os 608 exemplos oficiais e o código-fonte; e o
-   código de projetos maduros (3DTilesRendererJS, InstancedMesh2, three-mesh-bvh,
-   postprocessing). Busque com Grep; leia o exemplo oficial que faz a técnica antes de escrever a
-   sua.
-3. context7 (`resolve-library-id`, depois `query-docs` com a versão do `package.json`) para
-   outras bibliotecas.
-4. WebFetch da página oficial (o hook do jogador exige um WebFetch antes de editar) e como
-   motores maduros resolvem (Unreal, Cesium, Cities: Skylines).
+**5 Provar.** A mesma saída: os testes existentes e, onde a forma mudou, um teste de equivalência
+(o novo contra o antigo ou contra o mapa inteiro). No perfil da cidade grande, a função sumiu do
+topo. No jogo, com a skill `conferindo-no-jogo`: a imagem igual. Qualidade gráfica não cai sem o
+sim do jogador.
 
-Escreva ao jogador: o que achou, os links ou arquivos, a abordagem.
-
-**6 Corrigir.** Mesmo resultado (digest, byte a byte ou foto). Se a técnica muda pixels, mesmo
-pouco (sombra cortada abaixo de 1 texel, nível de longe mais cedo), é decisão do jogador: mostre
-as fotos antes e depois lado a lado e espere o sim. Comentário "NÃO …" onde a
-tentação de voltar existe. Commit só dos seus caminhos: `git commit --only <caminhos>`, depois
-`git show --stat HEAD`.
-
-**7 Provar.** O mesmo roteiro depois: tabela antes → depois. A barreira da linha de
-[padroes.md](padroes.md) verde (`npm run check`; "novo:" é regressão). Fotos antes e depois com a
-skill `conferindo-no-jogo`. Se qualquer linha piorou, desfaça e volte ao passo 3.
-
-**8 Registrar.** `OTIMIZACAO.md` (problema, técnica, fonte, antes → depois), sua parte de
-`memory/ESTADO.md` reescrita, uma linha em `memory/DIARIO.md`.
+**6 Registrar.** `OTIMIZACAO.md` (causa, técnica, fonte), `memory/ESTADO.md`, uma linha em
+`memory/DIARIO.md`. Commit só dos seus caminhos: `git commit --only <caminhos>`.
 
 ## Antes de rodar o jogo
 
-- O jogo no ar: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5300/` dá 200; senão
-  `npm run dev` em segundo plano.
-- Outra sessão rodando check ou teste pesado? No PowerShell:
-  `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object CommandLine -match 'check\.mjs|vitest'`.
-  Havendo, espere.
-- Avise: `ListAgents` mostra as sessões; `SendMessage` para a que trabalha no projeto ("vou rodar
-  o jogo por ~2 min").
+- Rodar o jogo pesa na máquina: avise a outra sessão (`ListAgents`, `SendMessage`) e não rode
+  junto com o check completo dela.
 
 ## Armadilhas já vistas
 
-- Ler documentação não substitui medir: 21 páginas lidas não evitaram o `BatchedMesh` guardando
-  1 GB na CPU. Só a medida pegou.
+- 37 de 39 itens do `OTIMIZACAO.md` estavam "feitos" e a cidade de 2.560 m rodava a 9-11 fps com
+  9 GB de heap (2026-10-14): cada um tinha melhorado um número local e ninguém tinha corrigido a
+  causa. Os postes foram "feitos" segurando a camada e fatiando a chamada; o roteamento, que é a
+  causa, nunca foi aberto.
+- Contador e linha de base mostram a forma de um produto, não que o custo grande caiu, e não
+  substituem o conserto.
 - `performance.memory` soma heap e arrays e, no Chrome normal, só muda a cada 20 min.
-- Teste que imita o three à mão (`onUploadCallback` em tudo) não prova o jogo: o three só envia
-  à GPU o que a câmera enquadra.
-- Contador que passa rápido demais: imprima os números; um passou com o documento vazio
-  (`put` em vez de `add`).
-- Check completo da outra sessão rodando: não rode o jogo nem testes pesados.
