@@ -6,5 +6,6 @@
   "signals": 10.56,
   "sidewalks": 13.98,
   "spans": 15.78,
-  "sim.lanes": 10.56
+  "sim.lanes": 10.56,
+  "building+1:layer": 3.82
 }
