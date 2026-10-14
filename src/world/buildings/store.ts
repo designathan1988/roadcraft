@@ -8,10 +8,14 @@ import { type Building, type BuildingId, asBuildingId, cloneBuilding, settleBuil
 /** Each stored record's text (`BuildingStore.toText`). */
 const RECORD_TEXT = new WeakMap<Building, string>();
 
-/** Where a building stands, for the diary. */
-function rectOf(b: Building): ChangeRect | null {
+/**
+ * Where a building stands, for the diary: its box, or - a record with no
+ * volume to measure - its anchor. DO NOT answer null for it: one such record
+ * made the whole entry (every building of an edit) the whole map.
+ */
+function rectOf(b: Building): ChangeRect {
   const box = storedBounds(b);
-  return Number.isFinite(box.minX) ? [box.minX, box.minY, box.maxX, box.maxY] : null;
+  return Number.isFinite(box.minX) ? [box.minX, box.minY, box.maxX, box.maxY] : [b.x, b.y, b.x, b.y];
 }
 
 /**
@@ -74,9 +78,8 @@ export class BuildingStore {
   /** Writes a change of these buildings (their rectangles, or the whole map when any has none). */
   private changed(buildings: readonly Building[] | null, detail?: string): void {
     const rects = buildings?.map(rectOf) ?? null;
-    const known = rects && rects.every((r): r is ChangeRect => r !== null) ? rects : null;
     const ids = buildings?.map((b) => b.id as number);
-    this.journal.record('buildings', known, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
+    this.journal.record('buildings', rects, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
   }
 
   /**
@@ -168,8 +171,7 @@ export class BuildingStore {
     const now = settleBuilding({ ...was, decay }, this.settled, was);
     this.items.set(id, now);
     this.grid?.update(now);
-    const rect = rectOf(now);
-    this.journal.record('buildingWear', rect ? [rect] : null, { ids: [id as number] });
+    this.journal.record('buildingWear', [rectOf(now)], { ids: [id as number] });
   }
 
   /**
