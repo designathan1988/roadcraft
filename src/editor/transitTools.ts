@@ -104,7 +104,10 @@ export class TransitTool {
     return best;
   }
 
-  /** A track point (an end or a corner) within joining reach, or the point itself. */
+  /**
+   * A track point (an end or a corner) within joining reach, or the point itself.
+   * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
+   */
   private snapTrack(p: Vec2): Vec2 {
     for (const t of this.data.tracks) {
       if (t.mode !== this.rail) continue;
@@ -116,6 +119,7 @@ export class TransitTool {
     return on ? { x: on.x, y: on.y } : p;
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   click(p: Vec2, shift: boolean, double: boolean): void {
     const data = this.data;
     if (shift) {

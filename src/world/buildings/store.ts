@@ -27,6 +27,7 @@ function rectOf(b: Building): ChangeRect | null {
  * of the latest one: a building cannot change without the diary knowing.
  */
 export class BuildingStore {
+  /** @mapWide Every building of the map. */
   private readonly items = new Map<BuildingId, Building>();
   private ids = new IdAllocator(1);
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
@@ -79,7 +80,10 @@ export class BuildingStore {
     return asBuildingId(this.ids.peek);
   }
 
-  /** Stores a new building under a fresh id. The record is copied. */
+  /**
+   * Stores a new building under a fresh id. The record is copied.
+   * @perItem Runs once a building added: nothing it reaches may walk the map.
+   */
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.ids.take());
     const building = { ...cloneBuilding(value as Building), id } as Building;
@@ -89,7 +93,10 @@ export class BuildingStore {
     return building;
   }
 
-  /** Replaces an existing building's record (same id). */
+  /**
+   * Replaces an existing building's record (same id).
+   * @perItem Runs once a building replaced: nothing it reaches may walk the map.
+   */
   put(building: Building): void {
     const was = this.items.get(building.id);
     if (!was) return;
@@ -127,6 +134,7 @@ export class BuildingStore {
     this.ids = new IdAllocator(next);
   }
 
+  /** @perItem Runs once a building removed: nothing it reaches may walk the map. */
   remove(id: BuildingId): boolean {
     const was = this.items.get(id);
     if (!was) return false;

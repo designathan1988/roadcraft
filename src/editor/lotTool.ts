@@ -405,6 +405,7 @@ export class LotTool {
     this.host.mutate(() => applyLots(this.doc, { add, keys: [...prop.keys], drop: [] }));
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   down(pointer: number, world: Vec2, shift: boolean, detail: number): void {
     const { doc, host } = this;
     const settings = host.settings();
@@ -478,7 +479,10 @@ export class LotTool {
     host.redraw();
   }
 
-  /** The pointer moved; true when one of this tool's gestures took it. */
+  /**
+   * The pointer moved; true when one of this tool's gestures took it.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(pointer: number, world: Vec2): boolean {
     const { host } = this;
     if (this.stroke?.pointer === pointer) {
@@ -521,7 +525,10 @@ export class LotTool {
     return false;
   }
 
-  /** The pointer let go: the gesture it held is committed (`commit`), or dropped. */
+  /**
+   * The pointer let go: the gesture it held is committed (`commit`), or dropped.
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
+   */
   up(pointer: number, commit: boolean): void {
     const { doc, host } = this;
     const settings = host.settings();

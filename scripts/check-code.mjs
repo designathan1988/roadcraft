@@ -23,7 +23,21 @@
 //                          one again: the redundant traversal of CLARITY (Olivo, Dillig and Lin, PLDI 2015),
 //                          O(map²) wherever it runs. A `@rebuild` callee is amortized and does not count.
 //   whole-map-per-item     a loop over the map reached from a function marked `@perItem` (it runs once a
-//                          building grown, a pole run, a pointer move, an edit of one thing): O(map) per item
+//                          building grown, a pole run, an edit of one thing): O(map) per item
+//   whole-map-per-input    a loop over the map (any collection below) reached from a function marked
+//                          `@perInput` (a pointer move, a hover, a snap, a click on one thing): O(map) per event
+//   whole-map-on-revision  a loop over the map run because a GLOBAL revision moved (`if (x.revision !==
+//                          this.for) { ... }`, `if (key === this.key) return;` with a key holding a revision):
+//                          the whole map redone for any one change. Read the diary (`doc.changes.since`).
+//                          `@rebuild` does not excuse it: it is the rebuild done the wrong way.
+//   derived-map-per-frame, derived-map-nested, derived-map-per-item
+//                          the three rules above, over the collections their lists did not see: a class
+//                          field filled from the map (`this.walls = []` then `this.walls.push(...)` in a
+//                          loop over the map, `this.kept = doc.lots.filter(...)`), followed as CLARITY's
+//                          traversal footprint follows a data structure through fields and assignments;
+//                          a local filled the same way; a member marked `@mapWide` (the simulation's
+//                          vehicles and people, an index as big as the map). The old rules keep their
+//                          own findings exactly; these are where the new ones are counted.
 //
 // What is already there is listed in `code-rules.baseline.json`, which only
 // shrinks: the check fails on anything not in it and on any entry fixed.
@@ -69,7 +83,13 @@ const checker = program.getTypeChecker();
 
 // ------------------------------------------------------------ the functions
 const sources = program.getSourceFiles().filter((f) => !f.isDeclarationFile && rel(f.fileName).startsWith('src/'));
-const inSrc = (node) => rel(node.getSourceFile().fileName).startsWith('src/');
+const srcFiles = new Map();
+const inSrc = (node) => {
+  const file = node.getSourceFile();
+  let yes = srcFiles.get(file);
+  if (yes === undefined) srcFiles.set(file, yes = rel(file.fileName).startsWith('src/'));
+  return yes;
+};
 const fromThree = (node) => /node_modules[\\/](three|@types[\\/]three)[\\/]/.test(node.getSourceFile().fileName);
 
 const isFunction = (n) => (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isFunctionExpression(n)
@@ -316,6 +336,71 @@ function mapWide(expr) {
   return named.list.includes(named.member) ? named.label : null;
 }
 
+/**
+ * The collections the fixed list does not name, as big as the map: fields and
+ * locals followed from it (`derivedWide`, filled below) and members marked
+ * `@mapWide`. Symbol → label.
+ */
+const derivedWide = new Map();
+const markedMemo = new Map();
+function markedLabel(access) {
+  const s = symbolOf(access.name);
+  if (!s) return null;
+  if (markedMemo.has(s)) return markedMemo.get(s);
+  let label = null;
+  for (const d of s.declarations ?? []) {
+    if (!inSrc(d) || !ts.getJSDocTags(d).some((t) => t.tagName.text === 'mapWide')) continue;
+    const owner = d.parent;
+    const holder = owner && (ts.isClassLike(owner) || ts.isInterfaceDeclaration(owner)) && owner.name ? `${owner.name.text}.` : '';
+    label = `${holder}${access.name.text}`;
+    break;
+  }
+  markedMemo.set(s, label);
+  return label;
+}
+
+/** What `mapWide` does not see: a followed field or local, a `@mapWide` member, one read through `values()`. */
+function derivedOf(expr) {
+  const e = skipParens(expr);
+  if (ts.isIdentifier(e)) {
+    const s = symbolOf(e);
+    return s ? derivedWide.get(s) ?? null : null;
+  }
+  if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+    const method = e.expression.name.text;
+    if (method === 'values' || method === 'keys' || method === 'entries') return wideOf(e.expression.expression)?.label ?? null;
+    return e.arguments.length === 0 ? markedLabel(e.expression) : null;
+  }
+  if (!ts.isPropertyAccessExpression(e)) return null;
+  const s = symbolOf(e.name);
+  return (s && derivedWide.get(s)) ?? markedLabel(e);
+}
+
+/** A collection as big as the map, and whether only the new sources see it (`derived`). */
+function wideOf(expr) {
+  const fixed = mapWide(expr);
+  if (fixed) return { label: fixed, derived: false };
+  const label = derivedOf(expr);
+  return label ? { label, derived: true } : null;
+}
+
+/** As `wideSource`, over every source. */
+function wideSourceAny(expr) {
+  const e = skipParens(expr);
+  const direct = wideOf(e);
+  if (direct) return direct.label;
+  if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+    const method = e.expression.name.text;
+    if (DERIVING.has(method)) return wideSourceAny(e.expression.expression);
+    if (method === 'from' && ts.isIdentifier(e.expression.expression) && e.expression.expression.text === 'Array' && e.arguments[0]) return wideSourceAny(e.arguments[0]);
+  }
+  if (ts.isArrayLiteralExpression(e)) {
+    for (const el of e.elements) if (ts.isSpreadElement(el)) { const w = wideSourceAny(el.expression); if (w) return w; }
+  }
+  if (ts.isNewExpression(e) && e.arguments?.[0] && ts.isIdentifier(e.expression) && /^(Set|Map)$/.test(e.expression.text)) return wideSourceAny(e.arguments[0]);
+  return null;
+}
+
 function memberOf(access) {
   const s = symbolOf(access.name);
   for (const d of s?.declarations ?? []) {
@@ -414,6 +499,117 @@ for (const file of sources) {
   visit(file);
 }
 
+// The fields and locals filled from the map, which `wideLocals` does not follow:
+// one assigned a collection as big as the map (`this.kept = doc.lots.filter(...)`,
+// `this.ws = this.walls`), one a loop over the map pushes, sets or adds into
+// (`for (const b of doc.buildings.all()) this.walls.push(...)`), and a local so
+// filled. Repeated until nothing new is found, as one field is built from another.
+const FILLING = new Set(['push', 'unshift', 'set', 'add']);
+/** The class field or the local a collection expression names, with its label. */
+function holderOf(expr) {
+  const e = skipParens(expr);
+  const nameNode = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
+  const s = nameNode && symbolOf(nameNode);
+  const d = s?.declarations?.[0];
+  if (!d || !inSrc(d)) return null;
+  if (ts.isPropertyDeclaration(d) && ts.isClassLike(d.parent)) return { s, label: `${d.parent.name?.text ?? '(class)'}.${nameNode.text}` };
+  if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) return { s, label: null };
+  return null;
+}
+function follow(holder, from) {
+  if (!holder || derivedWide.has(holder.s) || wideLocals.has(holder.s)) return false;
+  derivedWide.set(holder.s, holder.label ?? `${holder.s.name}(${from.replace(/\(.*$/, '')})`);
+  return true;
+}
+for (let round = 0, grew = true; grew && round < 4; round++) {
+  grew = false;
+  for (const file of sources) {
+    /** The loops over the map we are inside, innermost last (their labels). */
+    const inside = [];
+    const visit = (n) => {
+      if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name)) {
+        const from = wideSourceAny(n.initializer);
+        if (from) grew = follow(holderOf(n.name), from) || grew;
+      } else if (ts.isPropertyDeclaration(n) && n.initializer && ts.isIdentifier(n.name)) {
+        const from = wideSourceAny(n.initializer);
+        if (from) grew = follow(holderOf(n.name), from) || grew;
+      } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        const from = wideSourceAny(n.right);
+        if (from) grew = follow(holderOf(n.left), from) || grew;
+      } else if (inside.length && ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && FILLING.has(n.expression.name.text)) {
+        const holder = holderOf(n.expression.expression);
+        if (holder && COLLECTION.test(checker.typeToString(checker.getTypeAtLocation(n.expression.expression)))) grew = follow(holder, inside[inside.length - 1]) || grew;
+      }
+      if (ts.isForOfStatement(n)) {
+        const wide = wideOf(n.expression);
+        if (wide) {
+          visit(n.expression);
+          inside.push(wide.label);
+          visit(n.statement);
+          inside.pop();
+          return;
+        }
+      }
+      if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && ts.isCallExpression(n.parent) && n.parent.arguments.includes(n)
+        && ts.isPropertyAccessExpression(n.parent.expression) && ITERATING.has(n.parent.expression.name.text)) {
+        const wide = wideOf(n.parent.expression.expression);
+        if (wide) {
+          inside.push(wide.label);
+          ts.forEachChild(n, visit);
+          inside.pop();
+          return;
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(file);
+  }
+}
+
+// A global revision: a member or a name ending in `revision` (`doc.revision`,
+// `lotRevision`, `topologyRevision`), or a local whose value holds one (a key
+// `${doc.revision}:${zoom}`). The diary (`doc.changes.since(...)`) is what to read instead.
+const REVISION = /revision$/i;
+function mentionsRevision(expr, depth = 0) {
+  let found = false;
+  const visit = (n) => {
+    if (found || isFunction(n)) return;
+    if (ts.isPropertyAccessExpression(n) && REVISION.test(n.name.text)) { found = true; return; }
+    if (ts.isIdentifier(n)) {
+      if (REVISION.test(n.text)) { found = true; return; }
+      if (depth < 2) {
+        const d = symbolOf(n)?.declarations?.[0];
+        if (d && ts.isVariableDeclaration(d) && d.initializer && inSrc(d) && mentionsRevision(d.initializer, depth + 1)) { found = true; return; }
+      }
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(expr);
+  return found;
+}
+/** 'changed' when a condition holds once a revision moved (`!==`), 'same' when it holds while it did not (`===`). */
+function revisionTest(condition) {
+  let test = null;
+  const visit = (n) => {
+    if (test || isFunction(n)) return;
+    if (ts.isBinaryExpression(n)) {
+      const op = n.operatorToken.kind;
+      const changed = op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsToken;
+      const same = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.EqualsEqualsToken;
+      if ((changed || same) && (mentionsRevision(n.left) || mentionsRevision(n.right))) { test = changed ? 'changed' : 'same'; return; }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(condition);
+  return test;
+}
+/** A statement that leaves what follows it: `return`, `throw`, `continue`, or a block ending in one. */
+function exits(s) {
+  if (ts.isReturnStatement(s) || ts.isThrowStatement(s) || ts.isContinueStatement(s)) return true;
+  return ts.isBlock(s) && s.statements.length > 0 && exits(s.statements[s.statements.length - 1]);
+}
+
 /** Per unit: the units it runs, and what it does (the rules' raw facts). */
 const facts = new Map();
 let fieldBased = 0;
@@ -427,10 +623,35 @@ function factsOf(unit) {
   const nested = [];
   const insideWide = [];
   const wideCallbacks = [];
-  const wideStack = [];
-  const wideLoop = (what) => {
-    does.push({ kind: 'loop', what });
-    if (wideStack.length) nested.push({ outer: wideStack[wideStack.length - 1], inner: what });
+  // Two stacks of the loops we are inside: over the fixed list only (the old
+  // rules' view, kept exactly) and over every collection as big as the map.
+  const fixedStack = [];
+  const anyStack = [];
+  const top = (stack) => stack[stack.length - 1] ?? null;
+  /** Inside a branch run because a global revision moved: the loops it holds, the units it calls. */
+  let guard = 0;
+  const revisionLoops = [];
+  const revisionCalls = [];
+  const wideLoop = (how, wide) => {
+    const what = `${how} ${wide.label}`;
+    does.push({ kind: 'loop', what, derived: wide.derived });
+    if (guard) revisionLoops.push(what);
+    if (!wide.derived && fixedStack.length) nested.push({ outer: top(fixedStack), inner: what, derived: false });
+    const outer = top(anyStack);
+    if (outer && (outer.derived || wide.derived)) nested.push({ outer: outer.what, inner: what, derived: true });
+  };
+  const pushLoop = (what, derived) => {
+    if (!derived) fixedStack.push(what);
+    anyStack.push({ what, derived });
+  };
+  const popLoop = (derived) => {
+    if (!derived) fixedStack.pop();
+    anyStack.pop();
+  };
+  const ran = (target) => {
+    calls.add(target);
+    if (anyStack.length) insideWide.push({ target, fixed: top(fixedStack), any: top(anyStack) });
+    if (guard) revisionCalls.push(target);
   };
   const callTargets = (callee) => {
     const c = skipParens(callee);
@@ -465,31 +686,50 @@ function factsOf(unit) {
       const call = n.parent;
       if (isFunction(n) && call && (ts.isCallExpression(call) || ts.isNewExpression(call)) && call.arguments?.includes(n)
         && runsNow(call, call.arguments.indexOf(n))) {
-        calls.add(n);
-        if (wideStack.length) insideWide.push({ target: n, outer: wideStack[wideStack.length - 1] });
+        ran(n);
         // Handed to a loop over the map (`all.forEach((b) => ...)`): its body runs once an item.
         const callee = ts.isCallExpression(call) ? skipParens(call.expression) : null;
         if (callee && ts.isPropertyAccessExpression(callee) && ITERATING.has(callee.name.text)) {
-          const wide = mapWide(callee.expression);
-          if (wide) wideCallbacks.push({ target: n, outer: `${callee.name.text} ${wide}` });
+          const wide = wideOf(callee.expression);
+          if (wide) wideCallbacks.push({ target: n, outer: `${callee.name.text} ${wide.label}`, derived: wide.derived });
         }
       }
       return;
     }
     if (ts.isCallExpression(n)) {
-      for (const t of callTargets(n.expression)) {
-        calls.add(t);
-        if (wideStack.length) insideWide.push({ target: t, outer: wideStack[wideStack.length - 1] });
-      }
+      for (const t of callTargets(n.expression)) ran(t);
       const callee = skipParens(n.expression);
       if (ts.isPropertyAccessExpression(callee)) {
         const method = callee.name.text;
-        if (ITERATING.has(method)) { const wide = mapWide(callee.expression); if (wide) wideLoop(`${method} ${wide}`); }
+        if (ITERATING.has(method)) { const wide = wideOf(callee.expression); if (wide) wideLoop(method, wide); }
         if (method === 'from' && ts.isIdentifier(callee.expression) && callee.expression.text === 'Array' && n.arguments[0]) {
-          const wide = mapWide(n.arguments[0]);
-          if (wide) wideLoop(`Array.from ${wide}`);
+          const wide = wideOf(n.arguments[0]);
+          if (wide) wideLoop('Array.from', wide);
         }
       }
+    } else if (ts.isIfStatement(n)) {
+      const test = revisionTest(n.expression);
+      if (test) {
+        visit(n.expression);
+        if (test === 'changed') guard++;
+        visit(n.thenStatement);
+        if (test === 'changed') guard--;
+        if (n.elseStatement) {
+          if (test === 'same') guard++;
+          visit(n.elseStatement);
+          if (test === 'same') guard--;
+        }
+        return;
+      }
+    } else if (ts.isBlock(n)) {
+      // `if (key === this.key) return;` guards what follows it in the block.
+      let opened = 0;
+      for (const s of n.statements) {
+        visit(s);
+        if (ts.isIfStatement(s) && !s.elseStatement && exits(s.thenStatement) && revisionTest(s.expression) === 'same') { guard++; opened++; }
+      }
+      guard -= opened;
+      return;
     } else if (ts.isNewExpression(n)) {
       if (isThreeMaterial(checker.getTypeAtLocation(n))) does.push({ kind: 'material', what: `new ${n.expression.getText()}` });
       const s = symbolOf(n.expression);
@@ -503,20 +743,20 @@ function factsOf(unit) {
       const s = symbolOf(n.name);
       for (const d of s?.declarations ?? []) if (ts.isGetAccessorDeclaration(d) && d.body) calls.add(d);
     } else if (ts.isForOfStatement(n) || ts.isForInStatement(n)) {
-      const wide = mapWide(n.expression);
+      const wide = wideOf(n.expression);
       if (wide) {
-        wideLoop(`for ${wide}`);
+        wideLoop('for', wide);
         // The body runs once an item: what it does is done the map's size times.
         visit(n.initializer);
         visit(n.expression);
-        wideStack.push(`for ${wide}`);
+        pushLoop(`for ${wide.label}`, wide.derived);
         visit(n.statement);
-        wideStack.pop();
+        popLoop(wide.derived);
         return;
       }
     } else if (ts.isSpreadElement(n)) {
-      const wide = mapWide(n.expression);
-      if (wide) wideLoop(`spread ${wide}`);
+      const wide = wideOf(n.expression);
+      if (wide) wideLoop('spread', wide);
     }
     ts.forEachChild(n, visit);
   };
@@ -526,7 +766,7 @@ function factsOf(unit) {
     for (const p of unit.parameters ?? []) if (p.initializer) visit(p.initializer);
     visit(unit.body);
   }
-  const result = { calls: [...calls], does, nested, insideWide, wideCallbacks };
+  const result = { calls: [...calls], does, nested, insideWide, wideCallbacks, revisionLoops, revisionCalls };
   facts.set(unit, result);
   return result;
 }
@@ -570,28 +810,35 @@ for (const unit of inFrame.keys()) {
     if (d.kind === 'compile') note('compile-in-frame', unit, d.what, inFrame);
   }
 }
+const perFrameDerived = (d) => d.derived || d.what.includes('(');
 for (const unit of perFrame.keys()) {
   for (const d of factsOf(unit).does) {
     if (d.kind === 'heavy') note('heavy-call-per-frame', unit, d.what, perFrame);
     // A loop over a local filled from the map (`kept(RoadDoc.lots)`) counts for the newer rules only:
     // this rule's baseline was taken without them.
-    if (d.kind === 'loop' && !d.what.includes('(')) note('whole-map-per-frame', unit, d.what, perFrame);
+    if (d.kind === 'loop' && !d.derived && !d.what.includes('(')) note('whole-map-per-frame', unit, d.what, perFrame);
+    else if (d.kind === 'loop' && perFrameDerived(d)) note('derived-map-per-frame', unit, d.what, perFrame);
   }
 }
 // A unit traverses the map when it, or anything it calls, loops over a
 // map-sized collection - a procedure summary, as CLARITY's. A `@rebuild` unit
 // says it does its work only when what it reads changed: amortized, not a
-// traversal for its callers.
-const traversal = new Map();
-function traversesMap(unit, stack = new Set()) {
+// traversal for its callers (but it is for `whole-map-on-revision`: `amortized`
+// false). `kind`: the loops counted, 'fixed' (the old rules' list), 'derived'
+// (only the new sources) or 'any'.
+const traversals = new Map();
+function traversesMap(unit, kind = 'fixed', amortized = true, stack = new Set()) {
+  const memoKey = `${kind} ${amortized}`;
+  let traversal = traversals.get(memoKey);
+  if (!traversal) traversals.set(memoKey, traversal = new Map());
   if (traversal.has(unit)) return traversal.get(unit);
-  if (tagged(unit, 'rebuild') || stack.has(unit)) return null;
+  if ((amortized && tagged(unit, 'rebuild')) || stack.has(unit)) return null;
   stack.add(unit);
   const f = factsOf(unit);
-  const own = f.does.find((d) => d.kind === 'loop');
+  const own = f.does.find((d) => d.kind === 'loop' && (kind === 'any' || (kind === 'derived') === d.derived));
   let found = own ? `${nameOf(unit).split(' ')[1]}: ${own.what}` : null;
   for (const c of own ? [] : f.calls) {
-    const inner = traversesMap(c, stack);
+    const inner = traversesMap(c, kind, amortized, stack);
     if (inner) { found = `${nameOf(unit).split(' ')[1]} → ${inner}`; break; }
   }
   stack.delete(unit);
@@ -600,34 +847,58 @@ function traversesMap(unit, stack = new Set()) {
 }
 for (const unit of units) {
   const f = factsOf(unit);
-  for (const n of f.nested) note('whole-map-nested', unit, `${n.outer} ⊃ ${n.inner}`, null);
-  for (const { target, outer } of f.insideWide) {
-    const inner = traversesMap(target);
-    if (inner) note('whole-map-nested', unit, `${outer} ⊃ ${inner}`, null);
+  for (const n of f.nested) note(n.derived ? 'derived-map-nested' : 'whole-map-nested', unit, `${n.outer} ⊃ ${n.inner}`, null);
+  for (const { target, fixed, any } of f.insideWide) {
+    if (fixed) {
+      const inner = traversesMap(target);
+      if (inner) note('whole-map-nested', unit, `${fixed} ⊃ ${inner}`, null);
+    }
+    // The new rule: an outer loop only the new sources see, with any traversal inside it; a fixed one, with a new traversal.
+    const inner = traversesMap(target, any.derived ? 'any' : 'derived');
+    if (inner) note('derived-map-nested', unit, `${any.what} ⊃ ${inner}`, null);
   }
-  for (const { target, outer } of f.wideCallbacks) {
+  for (const { target, outer, derived } of f.wideCallbacks) {
     const body = factsOf(target);
-    for (const d of body.does) if (d.kind === 'loop') note('whole-map-nested', unit, `${outer} ⊃ ${d.what}`, null);
+    for (const d of body.does) {
+      if (d.kind !== 'loop') continue;
+      note(derived || d.derived ? 'derived-map-nested' : 'whole-map-nested', unit, `${outer} ⊃ ${d.what}`, null);
+    }
     for (const c of body.calls) {
-      const inner = traversesMap(c);
-      if (inner) note('whole-map-nested', unit, `${outer} ⊃ ${inner}`, null);
+      if (!derived) {
+        const inner = traversesMap(c);
+        if (inner) note('whole-map-nested', unit, `${outer} ⊃ ${inner}`, null);
+      }
+      const inner = traversesMap(c, derived ? 'any' : 'derived');
+      if (inner) note('derived-map-nested', unit, `${outer} ⊃ ${inner}`, null);
     }
   }
+  // The map redone because a global revision moved, `@rebuild` or not.
+  for (const what of f.revisionLoops) note('whole-map-on-revision', unit, what, null);
+  for (const target of f.revisionCalls) {
+    const inner = traversesMap(target, 'any', false);
+    if (inner) note('whole-map-on-revision', unit, inner, null);
+  }
 }
-// What runs once an item, and what it reaches short of a `@rebuild`.
-const perItem = new Map(units.filter((u) => tagged(u, 'perItem')).map((r) => [r, null]));
-{
-  const queue = [...perItem.keys()];
+/** What runs once a thing marked `tag`, and what it reaches short of a `@rebuild`. */
+function reachFrom(tag) {
+  const reached = new Map(units.filter((u) => tagged(u, tag)).map((r) => [r, null]));
+  const queue = [...reached.keys()];
   for (let i = 0; i < queue.length; i++) {
     for (const next of factsOf(queue[i]).calls) {
-      if (perItem.has(next) || tagged(next, 'rebuild')) continue;
-      perItem.set(next, queue[i]);
+      if (reached.has(next) || tagged(next, 'rebuild')) continue;
+      reached.set(next, queue[i]);
       queue.push(next);
     }
   }
+  return reached;
 }
+const perItem = reachFrom('perItem');
 for (const unit of perItem.keys()) {
-  for (const d of factsOf(unit).does) if (d.kind === 'loop') note('whole-map-per-item', unit, d.what, perItem);
+  for (const d of factsOf(unit).does) if (d.kind === 'loop') note(d.derived ? 'derived-map-per-item' : 'whole-map-per-item', unit, d.what, perItem);
+}
+const perInput = reachFrom('perInput');
+for (const unit of perInput.keys()) {
+  for (const d of factsOf(unit).does) if (d.kind === 'loop') note('whole-map-per-input', unit, d.what, perInput);
 }
 for (const [call, what] of keyListeners) {
   if (rel(call.getSourceFile().fileName) === 'src/main.ts') continue;

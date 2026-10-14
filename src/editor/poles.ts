@@ -708,7 +708,10 @@ export class PoleTool {
     }
   }
 
-  /** The pointer moved; true when a stretch being dragged took it. */
+  /**
+   * The pointer moved; true when a stretch being dragged took it.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2): boolean {
     if (this.draft) {
       this.draft.to = world;
@@ -724,7 +727,10 @@ export class PoleTool {
     return false;
   }
 
-  /** The pointer let go: the stretch is built (`commit`), or dropped. */
+  /**
+   * The pointer let go: the stretch is built (`commit`), or dropped.
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
+   */
   up(commit: boolean): void {
     const { host } = this;
     const run = this.draft;

@@ -96,6 +96,7 @@ export function setRoadSnap(patch: Partial<RoadSnap>): void {
  * Radii are divided by zoom so that pick tolerance is constant in screen
  * pixels, and node candidates are biased so a junction wins over attaching
  * mid-segment — the same behaviour the V6 monolith had, kept deliberately.
+ * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
  */
 export function findAnchor(
   doc: RoadDoc,
@@ -183,7 +184,10 @@ export function snapRoadStart(anchor: Anchor): Anchor {
   return { kind: 'free', at: snapToGrid(anchor.at, gridSnapStep, gridSnapOffset) };
 }
 
-/** Free road drawing follows the pointer exactly, snapping only to compatible networks. */
+/**
+ * Free road drawing follows the pointer exactly, snapping only to compatible networks.
+ * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
+ */
 export function snapRoadEndpoint(
   doc: RoadDoc, net: Network, start: Anchor, raw: Vec2, zoom: number, heightOffset: number,
 ): SnapResult {
@@ -333,6 +337,7 @@ export interface SnapOptions {
   readonly grid?: boolean;
 }
 
+/** @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map. */
 export function snapEndpoint(
   doc: RoadDoc,
   net: Network,

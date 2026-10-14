@@ -250,7 +250,10 @@ export class RoadTool {
     };
   }
 
-  /** The pointer moved; true when the curve's bend or the drag took it. */
+  /**
+   * The pointer moved; true when the curve's bend or the drag took it.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2): boolean {
     const { host } = this;
     if (this.curvePending) {
@@ -268,7 +271,10 @@ export class RoadTool {
     return false;
   }
 
-  /** The pointer over the map with no drag: the next stretch of a chain, previewed. */
+  /**
+   * The pointer over the map with no drag: the next stretch of a chain, previewed.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   hover(world: Vec2): void {
     if (!this.chain) return;
     const { host } = this;
@@ -289,6 +295,7 @@ export class RoadTool {
    * a drag is laid (`commit` false: dropped). `released` is where it was let
    * go, read once the drag is over (on the plane of a chain or a curve in
    * hand, otherwise the ground's).
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
    */
   up(released: () => Vec2, commit: boolean): void {
     const d = this.draft;
