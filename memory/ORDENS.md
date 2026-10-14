@@ -21,8 +21,13 @@
   fonte) antes de mudar arquivo.
 - Testar no jogo como o jogador; toda foto tirada é examinada e o defeito visto é corrigido.
 - Uma conversa só (2026-10-14, noite): "eu sigo sozinho, com os meus agentes; sem mais conversas
-  em sessões". As sessões Auditoria e Hook foram encerradas. Agentes só para ler em paralelo, no
-  protocolo `lendo-o-codigo`, com os achados conferidos na linha; diff de agente lido inteiro.
+  em sessões". As sessões Auditoria e Hook foram encerradas.
+- Agentes (2026-10-14, noite): no máximo 5; cada um lê integralmente uma parte do código,
+  identifica os problemas e CORRIGE, no seu worktree (do `main` local), entregando o ramo; eu leio
+  o diff e junto no `main`. "Não tem como um agente ficar esperando o outro."
+- Objetivo (2026-10-14, noite): desempenho e qualidade em computadores diferentes, rumo à cidade
+  sem limite: o mapa de 10 km × 10 km, depois maior e maior. "Feito" é o código sem o problema, o
+  algoritmo escalando com a cidade; nada de meta de número. Teste no fim de cada bloco, uma vez.
 
 ## Commits e máquina (2026-10-14)
 - Commit sempre com `git commit --only <meus caminhos>` (registra só esses arquivos e ignora o resto

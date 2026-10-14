@@ -18,7 +18,7 @@ Copie e marque:
 - [ ] 3 Seguir o chamador de cada custo
 - [ ] 4 Conferir cada achado na linha (✔/✘)
 - [ ] 5 Irmãos: a mesma forma no projeto inteiro
-- [ ] 6 Corrigir pela classe; teste depois, para provar
+- [ ] 6 Corrigir pela classe; teste no fim do bloco, uma vez
 ```
 
 **1 Escopo.** A lista dos arquivos com `wc -l`. Cada arquivo é lido da primeira à última linha e
@@ -73,8 +73,9 @@ herdado de relato ou de resumo é falso até ser medido de novo.
 
 ## Agentes
 
-Só para ler em paralelo, com ferramentas de leitura, neste mesmo protocolo e com entrega por
-arquivo ("lido 1-N", os três blocos). Todo achado de agente é conferido na linha (passo 4) antes de
-ser usado. Agente que edita trabalha nesta pasta, em arquivos que só ele toca, nunca num worktree
-(o worktree nasce do ramo padrão, não do HEAD). Todo diff de agente é lido inteiro antes do commit.
+No máximo 5 ao mesmo tempo, cada um numa parte do código: lê a parte INTEIRA neste protocolo,
+identifica os problemas e CORRIGE, no SEU worktree criado do `main` local (`git worktree add -b
+fix/<parte> C:/Codex-Shared/rc2-wt/<parte> main`, `node_modules` e `cooked` por junção), um commit
+por problema no ramo. Teste só no fim do bloco, uma vez. Entrega: o ramo, "lido 1-N" por arquivo,
+o corrigido e o que ficou. Eu leio o diff inteiro, rodo o analisador no worktree e faço o merge.
 Pedido ao agente: "relatório em português, código em inglês".

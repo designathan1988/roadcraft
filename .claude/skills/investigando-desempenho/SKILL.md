@@ -1,6 +1,6 @@
 ---
 name: investigando-desempenho
-description: Acha e corrige NA RAIZ, no código, o que deixa o Roadcraft 2 lento, travando, com memória alta ou desenho caro, para a cidade de 10 km ou maior em qualquer computador. Perfila o jogo na cidade grande, lê o código até o algoritmo ou a estrutura de dados que causa o custo, pesquisa a técnica correta na fonte oficial e em motores maduros, reescreve a causa e prova que a saída é a mesma. Use quando o jogo estiver lento, travando ou com memória alta, quando o jogador pedir otimização, ou antes de mexer por desempenho em qualquer parte.
+description: Acha e corrige NA RAIZ, no código, o que deixa o Roadcraft 2 lento, travando, com memória alta ou desenho caro, para a cidade de 10 km ou maior em qualquer computador. Lê o código inteiro da parte (skill lendo-o-codigo) até o algoritmo ou a estrutura de dados que causa o custo, pesquisa a técnica correta na fonte oficial e em motores maduros, reescreve a causa e prova que a saída é a mesma. Use quando o jogo estiver lento, travando ou com memória alta, quando o jogador pedir otimização, ou antes de mexer por desempenho em qualquer parte.
 ---
 
 # Investigando desempenho
@@ -13,20 +13,19 @@ de teste não é correção; quando a cidade cresce, ele volta.
 Copie e marque:
 
 ```
-- [ ] 1 Perfilar o jogo na cidade grande
-- [ ] 2 Ler o código até a causa
+- [ ] 1 Ler o código inteiro da parte (skill lendo-o-codigo)
+- [ ] 2 Responder por escrito a causa, com arquivo e linha
 - [ ] 3 Pesquisar a técnica correta
 - [ ] 4 Reescrever a causa
-- [ ] 5 Provar a mesma saída e conferir no jogo
+- [ ] 5 No fim do bloco: provar a mesma saída e conferir no jogo, uma vez
 - [ ] 6 Registrar
 ```
 
-**1 Perfilar.** A sonda do `scripts/look.mjs` na cidade de raio 2.560 m (ou maior): passos
-`profile`/`profileEnd` em volta de `city` (a geração) e da exploração. Ela dá os quadros longos com
-a função que os segurou e o perfil de CPU (`.cpuprofile`, abre no DevTools). O perfil serve para
-achar ONDE está a causa, não é a meta.
+**1 Ler o código inteiro da parte** (skill `lendo-o-codigo`). O perfil (`scripts/look.mjs`, passos
+`profile`/`profileEnd`) só aponta ONDE começar a ler quando o jogo na cidade grande mostra um
+problema; ele não acha a causa e não é meta.
 
-**2 Ler o código até a causa.** Com o perfil na mão, a ferramenta LSP (definição e referências) e o
+**2 A causa, por escrito.** A ferramenta LSP (definição e referências) e o
 `scripts/acusar.mjs --arquivo <arquivo>` como pistas. Responda por escrito, com arquivo e linha:
 - que algoritmo é, e como cresce com a cidade (O(n), O(n²), O(n·contorno)...);
 - que trabalho é refeito sem ter mudado (refazer tudo quando uma parte muda, cache que expulsa e

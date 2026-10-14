@@ -1,7 +1,9 @@
 # Roadcraft 2
 
-Jogo de navegador de construir cidades (TypeScript, three.js, Vite). Meta: cidade no mapa inteiro
-de 10 km, bonita e rápida. Jogo: `npm run dev` (127.0.0.1:5300). Verificação: `npm run check`.
+Jogo de navegador de construir cidades (TypeScript, three.js, Vite; vendido na Steam). Meta
+(ordem do jogador, 2026-10-14): desempenho e qualidade em computadores diferentes, rumo à cidade
+sem limite: primeiro o mapa de 10 km × 10 km, depois maior e maior. Jogo: `npm run dev`
+(127.0.0.1:5300). Verificação: `npm run check`.
 
 ## Idioma
 - O código é em inglês: identificadores, comentários, mensagens de teste e de erro no código.
@@ -24,15 +26,15 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
   contador e linha de base não são meta: servem só para achar onde está a causa.
 - NÃO amortizar: fatiar em quadros, segurar uma camada, pôr teto num cache que refaz ou espaçar as
   refeituras esconde o custo, que volta com a cidade maior. Corrija a causa, em todas as partes.
-- Método na skill `lendo-o-codigo` (ordem do jogador, 2026-10-14): ler o código inteiro, arquivo
-  por arquivo, conferir cada achado na linha, seguir o chamador até o quadro, a edição ou o
-  ponteiro, achar os irmãos e corrigir pela classe. Teste, perfil e contador não acham a causa:
-  servem para provar a correção e medir. Depois, a skill `investigando-desempenho` (pesquisar a
-  técnica na fonte oficial e em motores maduros, reescrever, provar a mesma saída).
-- Plano aprovado pelo jogador em 2026-10-14, o plano em vigor (a espinha: motor central, célula,
-  derivado incremental, roteamento obrigatório, classes de causa C1-C10, fases 0-8, inventário
-  conferido): `docs/PLANO-ESPINHA-2026-10-14.md`. Ele substitui a ordem do `docs/PLAN.md`.
-- Plano e tetos: `docs/CIDADE-10KM.md` (o que a cidade inteira precisa ser).
+- **O método (ordem do jogador, 2026-10-14):** ler o código INTEGRALMENTE, identificar os
+  problemas nele e corrigir (skill `lendo-o-codigo`: arquivo por arquivo, cada achado conferido na
+  linha, o chamador seguido até o quadro, a edição ou o ponteiro, os irmãos achados, a correção
+  pela causa). Teste é no FIM DE CADA BLOCO, uma vez: nada de suíte completa nem processo
+  interminável durante o trabalho. Teste, perfil e contador não acham a causa.
+- Plano em vigor, aprovado pelo jogador em 2026-10-14 (a diretriz no topo manda em tudo; a
+  espinha, as classes de causa C1-C10, o inventário conferido, as 5 partes do código):
+  `docs/PLANO-ESPINHA-2026-10-14.md`. Ele substitui a ordem do `docs/PLAN.md`.
+- `docs/CIDADE-10KM.md`: o que a cidade inteira precisa ser. Os números de lá não são meta.
 
 ## Causas que já custaram caro
 - Refazer tudo quando uma parte muda. Certo: o diário (`world/changes.ts`) diz o que mudou.
@@ -54,10 +56,13 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
 - Nenhuma perda de qualidade gráfica sem o sim dele: fotos antes e depois, nas mesmas vistas.
 - Nada de processo longo como barreira, e nada de teste atrás de teste no lugar de corrigir.
 - Uma conversa só (ordem do jogador, 2026-10-14): "eu sigo sozinho, com os meus agentes; sem mais
-  conversas em sessões". Agentes só para ler em paralelo, no protocolo da skill `lendo-o-codigo`;
-  todo achado deles é conferido na linha antes de usar. Agente que edita trabalha nesta pasta, em
-  arquivos que só ele toca, nunca num worktree (o worktree nasce do ramo padrão, `origin/main`,
-  não do HEAD); todo diff de agente é lido inteiro antes do commit.
+  conversas em sessões".
+- **Agentes (ordem do jogador, 2026-10-14 noite):** no máximo 5 ao mesmo tempo; cada um lê
+  integralmente uma parte do código, identifica os problemas e CORRIGE; cada um no SEU worktree,
+  criado do `main` local (`git worktree add -b fix/<parte> C:/Codex-Shared/rc2-wt/<parte> main`,
+  `node_modules` e `cooked` por junção; não o isolamento do Agent, que parte de `origin/main`),
+  com commit no próprio ramo. Ninguém edita a pasta principal nem espera outro. Eu leio o diff
+  inteiro de cada entrega, rodo o analisador no worktree dela e faço o merge no `main`.
 
 ## Antes de dizer feito, existe ou funciona (ordem do jogador, 2026-10-14)
 - **Nada existe por nome.** "Já existe", "já usa", "já tem", "funciona", "está conforme" só depois
@@ -103,7 +108,10 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
 
 ## Commits
 - Rode `git status` antes; commit só dos seus caminhos, com `git commit --only <caminhos>`, depois
-  de ler o `git diff` deles. Cada arquivo salvo recarrega o jogo na 5300.
+  de ler o `git diff` deles. Cada arquivo salvo na pasta principal recarrega o jogo na 5300.
+- O trabalho de um worktree entra no `main` por merge do ramo `fix/<parte>`, depois do diff lido e
+  do analisador rodado no worktree; o worktree sai com as junções desfeitas antes (`rmdir` na
+  junção, nunca `rm -rf`: apagaria o `node_modules` da pasta principal).
 
 ## Como fazer (antes de inventar)
 - Skills do projeto: `lendo-o-codigo` (achar os erros lendo o código inteiro; antes de corrigir

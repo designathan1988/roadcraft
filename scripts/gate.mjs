@@ -61,8 +61,8 @@ function input() {
 }
 
 /**
- * The fast check (`scripts/check.mjs --fast`: the changed files linted, types and code rules, the specs
- * the change reaches, the counting suites) under the machine's lock, ending before the hook's own timeout
+ * The fast check (`scripts/check.mjs --fast`: the changed files linted, types and code rules - the
+ * barrier; the tests run at the end of a block, `npm run check`) in the conversation's share of the machine, ending before the hook's own timeout
  * (`.claude/settings.json`). DO NOT run the whole `npm run check` here: a turn held for minutes is what
  * the player removed (2026-10-14); the bundle and the unused-export sweep stay in `npm run check`.
  */

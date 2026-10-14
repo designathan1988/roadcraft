@@ -74,12 +74,12 @@ describe('the steps of the check', () => {
     expect(stepsFor(null)).toEqual(all);
   });
 
-  it("keeps the turn's check fast: no bundle, no unused-export sweep, the specs written about the file", async () => {
+  it("keeps the turn's check to the barrier: lint and code rules; the tests run at the end of a block", async () => {
     const { stepsFor, directSpecsFor } = (await load('check.mjs')) as {
       stepsFor: (files: string[] | null, fast?: boolean) => string[];
       directSpecsFor: (files: string[]) => string[];
     };
-    expect(stepsFor(['src/sim/pipeline.ts'], true)).toEqual(['lint', 'code', 'unit', 'scale']);
+    expect(stepsFor(['src/sim/pipeline.ts'], true)).toEqual(['lint', 'code']);
     expect(stepsFor(['docs/PLAN.md'], true)).toEqual([]);
     // A file the whole game imports: the specs of its own area that import it, not every spec it reaches.
     const doc = directSpecsFor(['src/world/doc.ts']).filter((s) => !s.startsWith('tests/arch/') && !s.startsWith('tests/tooling/'));

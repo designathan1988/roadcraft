@@ -1,5 +1,20 @@
 # Plano: construir a espinha que falta (célula + derivado incremental) e acabar com a regeneração indevida
 
+## Diretriz do jogador (manda em tudo abaixo; 2026-10-14 noite)
+- **O objetivo:** otimizar o jogo para ter desempenho e qualidade e rodar em computadores
+  diferentes do dele, rumo à cidade sem limite: **primeiro a cidade no mapa de 10 km × 10 km,
+  depois maior e maior**, com desempenho e qualidade.
+- **"Feito"** é o código não ter mais o problema: o algoritmo escala corretamente com a cidade, em
+  qualquer computador. **Não é número nenhum:** nada de meta de fps, ms, contagem ou linha de base.
+  Número só serve para achar onde está o problema.
+- **O método:** ler o código INTEGRALMENTE, identificar os problemas nele e corrigir. Teste é no
+  FIM DE CADA BLOCO, uma vez, não suíte completa nem processo interminável durante o trabalho.
+- **Como:** os cinco agentes do bloco "A TAREFA", cada um numa parte do código e no seu worktree;
+  eu leio cada diff e junto no `main`. Bloco = uma parte lida e corrigida inteira; no fim do bloco,
+  os testes daquela parte rodam uma vez e o merge entra. Depois que as partes entram: a cidade de
+  10 km gerada e usada no jogo; o que ela mostrar de errado volta a ser lido no código e corrigido;
+  então 20 km, e assim por diante.
+
 ## Contexto
 Roadcraft 2 é lento e pesado porque dezenas de produtos derivados do documento (malhas, índices,
 listas da simulação, camadas) cobrem o mapa inteiro e se refazem por inteiro quando uma revisão
@@ -322,12 +337,106 @@ sessões.** Na aprovação, aviso as conversas Auditoria e Hook para pararem de 
   `layerCells.ts`, `buildingMesh.ts`, `townIndex.ts`), com os dois defeitos já achados nela
   (`disposeLanded` × fila de aquecimento; pedidos não cancelados no caminho inteiro); os ramos do
   Hook (sobreposição dos lotes, LOD, sombras em degrau); o desenho F2 da Auditoria, que eu executo.
-- Os meus agentes (doc oficial de subagentes): só para ler em paralelo, no protocolo
-  `lendo-o-codigo`, com ferramentas de leitura; eu confiro todos os achados no código antes de
-  usar. Agente que edita trabalha nesta mesma pasta, em arquivos que só ele toca, nunca num
-  worktree (o worktree nasce do ramo padrão, não do HEAD, e o `origin/main` está 80 commits atrás).
-  Eu leio inteiro todo diff de agente antes do commit; commit com `git commit --only`.
+- **A TAREFA (ordem do jogador, 2026-10-14 noite): LER O CÓDIGO INTEIRO, IDENTIFICAR OS ERROS E
+  CORRIGIR.** Nada além disso: nenhum desenho meu na frente, nenhuma suíte, nenhum processo longo,
+  nenhum jogo. O inventário deste plano é só a lista inicial de cada parte; cada agente confirma
+  cada erro na linha, acha os outros lendo, e corrige.
+- **Cinco agentes, cinco partes do código, cada um no SEU worktree** (`git worktree add -b
+  fix/<parte> C:/Codex-Shared/rc2-wt/<parte> main`, do `main` local; `node_modules` e `cooked`
+  por junção):
+  1. `sim`: src/sim inteiro;
+  2. `world`: src/world inteiro;
+  3. `render-cidade`: src/render/buildings, terrain, roadSurfaces, flatAtlas, structures, signs,
+     scenery, gardens, gardenLists e os demais arquivos de cenário de src/render;
+  4. `render-vivos`: src/render: agents.ts, people, signals, efeitos (gore, casualties, blast, rain,
+     playEffects), postprocess, renderer.ts e o resto de src/render;
+  5. `editor-ui`: src/editor, src/ui, src/core, src/view, main.ts, buildingsWiring e os wirings.
+  Cada agente lista os arquivos da parte com `wc -l`, lê cada um da primeira à última linha, e
+  para cada erro (do inventário da parte e os que achar) confirma a linha e corrige a causa no
+  próprio worktree, um commit por erro no ramo `fix/<parte>` (português: causa, linha, o que
+  mudou). Erro que exige mexer em outra parte vai para o relatório, sem editar. Entrega: o ramo, a
+  lista "lido 1-N" por arquivo, os erros corrigidos e os que ficaram.
+- **Eu:** leio cada diff, rodo o analisador (`check-code`) no worktree da parte, faço o merge no
+  `main`, resolvo conflito e junto os erros entre partes.
+- **Na aprovação, primeiro:** o trabalho que os 8 agentes parados deixaram na pasta principal
+  (lista no estado abaixo) é copiado para o worktree da parte a que pertence, com o relatório de
+  cada um (o que fez, o que falta: signs.ts pela metade e sem compilar; testes do diário e dos
+  cruzamentos não rodados; kerbStops.ts com CRLF); a pasta principal volta ao `main` nesses
+  arquivos. O meu trabalho em andamento vai junto: a espinha (`world/derived.ts`,
+  `world/solids.ts`, linha de `render/playEffects.ts`) para `world`, e a célula em worker
+  (`render/uploads.ts`, `render/buildings/*`) para `render-cidade`.
+- **Regras antigas que este bloco substitui** (mantidas abaixo só como histórico):
+  - no máximo 5 ao mesmo tempo; cada um CORRIGE CÓDIGO (lê o arquivo inteiro, confirma a linha,
+    conserta a causa); nada de suíte, tsc do projeto ou jogo: só o teste do próprio defeito, uma
+    vez, no fim;
+  - cada um no SEU worktree, criado por mim do `main` local (não pelo isolamento do Agent, que
+    parte de `origin/main`, 80+ commits atrás): `git worktree add -b fix/<nome>
+    C:/Codex-Shared/rc2-wt/<nome> main`, com `node_modules` e `cooked` ligados por junção
+    (scratchpad `wt-new.sh`; remoção por `wt-done.sh`, que desfaz as junções antes). Ele faz o
+    commit no próprio ramo e entrega o ramo. Ninguém espera ninguém; o código pela metade de um
+    não quebra o dos outros nem recarrega o jogo da 5300;
+  - entrega → eu leio o diff inteiro, rodo o analisador (`check-code`) no worktree dele, faço o
+    merge no `main` (eu resolvo conflito) e removo o worktree. Nada entra no `main` sem a barreira
+    da classe acusando a volta (abaixo);
+  - agente que só lê (protocolo `lendo-o-codigo`) não precisa de worktree; todo achado conferido
+    na linha antes de usar.
+- **Barreira antes da correção (ordem do jogador: "como você manda corrigir se não tem mecanismo
+  que bloqueia?"):** nenhuma correção de uma classe entra sem a barreira dela já valendo:
+  - C2 (varredura): a regra do `check-code` daquela forma existe; a entrada da função some da
+    linha de base no mesmo merge e a volta reprova a checagem do fim do turno;
+  - C1 (refazer por revisão global): só pelo `Derived` (`world/derived.ts`, fase 2), com
+    `allKeys` marcado `@rebuild` como o ÚNICO lugar que percorre o mapa, o contador embutido
+    (quadro parado = 0) e a prova genérica (`tests/support/derivedEquivalence.ts`); remendo de C1
+    fora do `Derived` não é feito;
+  - C7 (comportamento): o teste do defeito, que falha antes;
+  - roteamento (lint duro sem supressão, vista pública do documento sem `all()`/revisão) entra na
+    fase 2, antes das conversões em massa da fase 4.
 - O verificador de "feito" vale para mim e para os agentes (`Stop` e `SubagentStop`).
+
+**Estado da execução (2026-10-14 noite) e o que vem já:**
+- No `main`: c18494b, 5b26e81 (fase 0); 9408243 (innerHTML), 647c1d4 (`core/keptList.ts`:
+  projetos e modelos de via), ad4db62 (via invertida, coletora, cache de postes), b46d6c4 (trilhos
+  e caminhões), 8ed679b (desgaste por heap e diário certo).
+- **Primeiro passo, na aprovação (ordem do jogador: worktree para cada agente, já):** cada agente
+  que ainda roda na pasta principal é movido para o próprio worktree, sem perder o que fez:
+  `wt-new.sh <nome>` (do `main` local), os arquivos dele copiados da pasta principal para o
+  worktree (só os da lista dele), e uma mensagem (`SendMessage`) mandando continuar ali, com o
+  caminho absoluto, editando só lá e fazendo commit no ramo `fix/<nome>`. Na pasta principal os
+  arquivos dele voltam ao `main` (`git checkout -- <arquivos dele>`, e apagar os novos dele), para
+  a pasta principal ficar só com o meu trabalho. Os mesmo para o que já foi entregue (snap,
+  jardins): vai cada um para o seu ramo, e eu junto pelo merge. Nomes: `sim`, `efeitos`, `editor`,
+  `parados`, `cruzamentos`, `pedestres`, `diario`, `snap`, `jardins`; o meu trabalho: `espinha`
+  (já criado) e `celula`.
+- Na pasta principal, não commitado, a revisar e juntar (antes do passo acima):
+  - meu: espinha (`world/derived.ts`: `JournalCursor`, `Derived`; `world/solids.ts` convertido;
+    `tests/support/derivedEquivalence.ts`, `tests/world/solids.spec.ts`; linha morta em
+    `render/playEffects.ts`) — no worktree `fix/espinha` o analisador mostrou as 10 entradas de
+    `solids.ts` resolvidas; resta 1 achado que estava escondido: `playEffects.frame` → por pedestre
+    → `pavedHeightAt` → `profiles(Network.ribbons)` (C2, corrigir antes do merge);
+  - meu: defeitos da célula em worker (`uploads.ts` `cancelWarm`; `cellPool` cancelamento real;
+    `cellRequests` resumos rastreados; `cellWork` resumo não tira de `released`; `layer.ts` largar
+    pedidos no caminho inteiro; comentários `streamCells`); falta medir a memória com a máquina
+    livre antes do commit;
+  - agentes entregues, a revisar: snap (`editor/snap.ts`, `buildingSnap.ts`, `snapNear.spec.ts`;
+    12 entradas resolvidas), jardins (`render/gardens.ts`, `gardenFrame.spec.ts`);
+  - agentes PARADOS pelo jogador, trabalho deixado na pasta principal sem commit: simulação
+    (world.ts, pipeline.ts, lotTraffic.ts, ambient.ts, os testes ghostLane e resetLikeNew; não
+    terminou), pessoas e efeitos (skinAppearance, riggedCitizens, citizenCasting, blast, rain e 4
+    testes; terminou, não visto no jogo), editor e interface (persistence, roads/keys, barriers,
+    i18n, healthWatch, cameraGestures, exportMap.spec; não terminou), parados/pilares/placas
+    (agents.ts, structures.ts, signs.ts pela metade, 3 testes), cruzamentos (intersections/cycles,
+    admission, crossings/permission, vehicles/obstacles, leaderIndex, integrate; sem teste),
+    pedestres (walk.ts, kerbStops.ts, walkSpine.spec), diário (doc.ts, lots.ts, buildings/store.ts,
+    diaryPlaces.spec não rodado).
+- Achados dos agentes que viram trabalho (cada um conferido na linha antes): `validate.ts`
+  `RoadContacts` varre as fitas por movimento do ponteiro (C2); `Network.ribbonOrder` refaz com
+  todas as fitas por revisão (C1, vai para o `Derived`); `catalogPanel.ts:39` `sameRoad` por JSON;
+  `renderer.ts:3152-3160` e `scenery.ts:740` filtram `-leaves` e as malhas são `-cards`;
+  `LotTraffic` Rng sem reinício; `gardens.update` O(N) pela API.
+- Próximo, nesta ordem: (1) revisar e juntar o que foi entregue, cada um com o analisador no
+  worktree; (2) terminar a fase 2 (cursor único em todos os 14 leitores do diário, `CellFiling`
+  único, `Aggregate`/`OrderedIds`/`Fenwick`, motor `engine.ts` com o livro-razão, lint de
+  roteamento); (3) só então as conversões C1/C2 da fase 4, por agentes em worktrees, no máximo 5.
 
 **0. Ambiente e barreiras (primeiro, eu):**
 - O verificador de "feito" (hook `agent` no Stop e SubagentStop) instalado e provado com os quatro
@@ -349,11 +458,6 @@ sessões.** Na aprovação, aviso as conversas Auditoria e Hook para pararem de 
 **1. Bugs de comportamento independentes (C7), cada um com o teste que falha antes e passa depois:**
 os da lista C7 que não dependem de outra classe (segurança do innerHTML primeiro). Os que nascem de
 outra classe (semáforos reiniciados, ônibus removidos) saem na conversão daquela classe.
-Andamento: SEGURANÇA innerHTML corrigida em 2026-10-14 (nome e cor da linha de transporte: cor só
-`#rrggbb` na carga, `world/transit.ts`; a linha do painel por `textContent`, `ui/v2/transitLine.ts`;
-`tests/ui/transitLine.spec.ts` falhou antes e passa depois; conferido no jogo). Os outros 40 pontos
-que escrevem HTML foram rastreados: nenhum recebe texto do arquivo. PENDENTE a barreira da classe
-(todo HTML por um caminho só que escapa por padrão, e a regra de lint), na fase do roteamento.
 
 **2. Diário e espinha (eu):** entrada com operação e tipo por id e retângulo antes ∪ depois
 (corrige moveNode, pruneOrphanNodes, tetos gravando null, utilities null, restore 'traffic',
@@ -1004,9 +1108,10 @@ quatro arquivos do editor e os de impostores, `gpuTimer` e `farForest` eu li int
 | src/ui, src/people, src/core, src/view | 80 | completo (Hook; core e view lidos por ela pessoalmente) |
 
 ## Verificação
-- Cada conversão: teste genérico de equivalência verde; entradas somem de `whole-map-on-revision`
-  (`node scripts/check-code.mjs`); contadores do `Derived` iguais em N e 4N; zero computação em
-  quadro parado.
-- Fim de cada família: o jogo na fatia de 25% (`node scripts/look.mjs`), quadro e passo do sim,
-  fotos examinadas uma a uma.
-- Critério final: governador removido com a população cheia, 60 fps no bairro na fatia.
+- Só no FIM DE CADA BLOCO (uma parte do código lida e corrigida inteira): os testes daquela parte,
+  uma vez; o analisador (`check-code`) no worktree da parte, para a forma errada que saiu não
+  voltar; o diff lido inteiro por mim; o merge.
+- Depois dos blocos: a cidade de 10 km × 10 km gerada e jogada como o jogador (`scripts/look.mjs`,
+  fotos examinadas uma a uma). O critério é o algoritmo, não um número: o custo de uma edição e
+  de um quadro parado não cresce com a cidade, e a imagem não perde qualidade. O que o jogo
+  mostrar de errado vira leitura do código e correção; então a cidade maior.

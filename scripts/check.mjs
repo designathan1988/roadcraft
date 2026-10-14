@@ -42,13 +42,13 @@ export const isTest = (f) => f.startsWith('tests/');
 
 /**
  * The steps a set of changed files calls for (`null`: every step). `fast` (`--fast`, the end of a
- * conversation's turn, `scripts/gate.mjs`): what can catch a regression in seconds - the files changed
- * linted, the types and the code rules, the specs the change reaches, the counting suites - without
- * the bundle and the unused-export sweep, which `npm run check` keeps. DO NOT put the build back in the
- * turn's check: the player took away the check that held every turn for minutes (2026-10-14).
+ * conversation's turn, `scripts/gate.mjs`): the barrier only - the files changed linted, the types and
+ * the code rules, so a wrong form that left the code cannot come back. The specs, the counting suites,
+ * the unused-export sweep and the bundle run at the END OF A BLOCK (`npm run check`, before a merge),
+ * once (the player, 2026-10-14: "teste é no final dos blocos"). DO NOT put tests back in the turn's check.
  */
 export function stepsFor(files, fast = false) {
-  const all = fast ? ['lint', 'code', 'unit', 'scale'] : ['lint', 'code', 'knip', 'unit', 'scale', 'build'];
+  const all = fast ? ['lint', 'code'] : ['lint', 'code', 'knip', 'unit', 'scale', 'build'];
   if (!files) return all;
   const relevant = files.filter((f) => !isDoc(f));
   if (!relevant.length) return [];
