@@ -89,5 +89,5 @@ describe('the cost of one building added', () => {
       }
     }
     expect(report).toEqual([]);
-  }, 120_000);
+  });
 });
