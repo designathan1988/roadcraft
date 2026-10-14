@@ -118,6 +118,14 @@ const BUS_FETCH = m(45);
 
 /** First id of the people who ride in vehicles, clear of any pedestrian id. */
 const PERSON_BASE = 1 << 24;
+/**
+ * Seat ids per vehicle: a vehicle's seats are `PERSON_BASE + id * SEAT_STRIDE
+ * + seat`, so the stride must be at least the most seats any body has. DO NOT
+ * go back to a bare 8: a body of nine seats or more gave its last seats the
+ * ids of the next vehicle's first ones (two people with one identity, one
+ * look). Never under 8, so the people of the bodies there are keep their ids.
+ */
+const SEAT_STRIDE = Math.max(8, ...ARCHETYPES.map((a) => a.seats));
 
 /**
  * Who sits in a seat. A passenger keeps one identity from spawn to wherever
@@ -127,7 +135,7 @@ const PERSON_BASE = 1 << 24;
  */
 export function seatPerson(v: Vehicle, seat: number): { seed: number; gender: PersonGender; ageClass: PersonAgeClass } {
   const picked = v.people[seat];
-  const seed = picked ?? PERSON_BASE + v.id * 8 + seat;
+  const seed = picked ?? PERSON_BASE + v.id * SEAT_STRIDE + seat;
   const hash = personHash(seed);
   const gender: PersonGender = (hash >>> 3) & 1 ? 'f' : 'm';
   if (picked !== undefined) return { seed, gender, ageClass: v.peopleAge[seat] ?? 'adult' };
