@@ -145,6 +145,7 @@ const recordText = (b: Building): string => {
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
+  void kit.farReady.then(() => applyFacadeDetail()); // every batch takes its geometry and shadow detail again
   const group = new Group();
   group.name = 'buildings-layer';
   // Every flag in the city, waving: one instanced draw (`flagLayer.ts`).
@@ -227,9 +228,8 @@ export function createBuildingLayer(): BuildingLayer {
     const lighter = kind ? kit.far[kind] : undefined;
     if (!kind || !lighter) return;
     mesh.geometry = lighterNow ? lighter : kit.geometry[kind];
-    mesh.castShadow = !shadowFar && kit.castsShadow.has(kind);
+    if (kit.farShadows.has(kind)) mesh.castShadow = !shadowFar && kit.castsShadow.has(kind);
   };
-  /** Applies geometry and shadow detail to every stored facade batch. */
   const applyFacadeDetail = (): void => {
     for (const batch of [stored, faded]) {
       lighterNow = far;

@@ -23,6 +23,7 @@ import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
 import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
+import { simplified } from '../mesh/simplify';
 import { m } from '@world/units';
 
 /**
@@ -164,6 +165,10 @@ export interface BuildingKit {
   readonly geometry: Readonly<Record<PartKind, BufferGeometry>>;
   /** Lighter geometry for the parts whose depth is lost from afar (`FAR_KINDS`). */
   readonly far: Readonly<Partial<Record<PartKind, BufferGeometry>>>;
+  /** The thin parts drawn by their far versions whose shadow goes too when it is under a pixel (`setShadowFar`). */
+  readonly farShadows: ReadonlySet<PartKind>;
+  /** Settles when the simplified far versions of the small props are in `far` (`SIMPLIFIED_FAR`). */
+  readonly farReady: Promise<void>;
   readonly material: Readonly<Record<PartKind, Material>>;
   /** The merged shell - walls, plinths, bands, roofs, steps - one material per finish, vertex coloured. */
   readonly shell: Readonly<Record<Finish, MeshStandardMaterial>>;
@@ -189,6 +194,10 @@ export interface BuildingKit {
   setNight(dark: number, hour?: number): void;
   dispose(): void;
 }
+
+/** The props drawn from afar by a simplified copy (`createBuildingKit` `farReady`): the heaviest, their detail under a pixel there. */
+// Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured).
+const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'kettle', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'grill', 'lounger'];
 
 /** A box of the given size whose centre is at (x, y, z). */
 function box(w: number, h: number, d: number, x: number, y: number, z: number): BufferGeometry {
@@ -529,11 +538,26 @@ export function createBuildingKit(): BuildingKit {
     acUnit: acFarGeometry(),
   };
   const geometries = new Set<BufferGeometry>([...Object.values(geometry), ...Object.values(far)]);
+  const farShadows = new Set(Object.keys(far) as PartKind[]);
+  // LOD OF THE SMALL PROPS: the balconies' life is 80-240 triangles a piece
+  // with no far version, a pixel or two each from the overview (2026-10-14).
+  // Simplified once by meshoptimizer (`mesh/simplify.ts`, error 4 % of the
+  // prop's size: 2 cm on a 0.5 m pot, 0.15 px at the far zoom of 7.5 px/m),
+  // drawn from afar as the hand-made far frames are (`layer.ts` `applyDetail`).
+  // NÃO trocar por cortar as peças de longe: a versão simplificada é a mesma peça.
+  const farReady = Promise.all(SIMPLIFIED_FAR.map(async (kind) => {
+    const lighter = await simplified(geometry[kind], 0.3, 0.04);
+    if (lighter === geometry[kind]) return;
+    far[kind] = lighter;
+    geometries.add(lighter);
+  })).then(() => {}, (error: unknown) => { console.error('Simplified far props failed', error); });
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
 
   return {
     geometry,
     far,
+    farShadows,
+    farReady,
     material,
     shell,
     ghostShell,
