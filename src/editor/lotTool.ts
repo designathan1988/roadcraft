@@ -383,7 +383,10 @@ export class LotTool {
       this.erase.lots.add(lot.id);
       if (lot.building !== undefined) this.erase.buildings.add(lot.building as BuildingId);
     }
-    for (const b of this.doc.buildings.all()) {
+    // A building over the point has the point in its stored box: the store's
+    // grid hands those (`BuildingStore.near`). DO NOT walk `buildings.all()`:
+    // this runs for each of up to 400 steps of a pointer move.
+    for (const b of this.doc.buildings.near(world.x, world.y, world.x, world.y)) {
       if (Math.hypot(b.x - world.x, b.y - world.y) > m(80)) continue;
       if (solidFootprints(b).some((ring) => insideLot(world, { corners: ring }))) this.erase.buildings.add(b.id as BuildingId);
     }
