@@ -129,7 +129,6 @@
  "whole-map-per-frame  src/sim/world.ts SimWorld.syncControllers  for LaneletGraph.junctions": 1,
  "whole-map-per-frame  src/sim/world.ts SimWorld.syncControllers  spread SimWorld.controllers": 1,
  "whole-map-per-frame  src/ui/inspector.ts segmentStats  for LaneletGraph.lanelets": 1,
- "whole-map-per-frame  src/world/buildings/siteGrading.ts changedSites  for BuildingStore.all": 1,
  "whole-map-per-frame  src/world/curbRamps.ts rampSet  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/world/doc.ts RoadDoc.poleNear  for RoadDoc.poles": 1,
  "whole-map-per-frame  src/world/doc.ts RoadDoc.removePole  spread RoadDoc.poleSpans": 1,
