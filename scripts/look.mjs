@@ -17,7 +17,8 @@
 // told otherwise (chromium headless_mode_switches.h); the run stops if the
 // renderer is still a software one - its pictures and timings would lie.
 //
-// steps.json: { "url"?, "viewport"?: [w, h], "dpr"?: 1|2, "city"?: false |
+// Two runs of one script compared picture by picture: scripts/look-compare.mjs.
+// steps.json: { "url"?, "viewport"?: [w, h], "dpr"?: 1|2, "cpu"?: N (CPU N times slower), "city"?: false |
 //   true | { CityOptions }, "out"?: dir, "steps": [ ... ] } where each step is
 //   { "lookAt": [x, y, zoom] }           the camera on a world point (__roadcraft.lookAt)
 //   { "wait": ms }                       real time, the game running
@@ -97,6 +98,13 @@ console.log(`relatório: ${join(out, 'relatorio.json')}${report.console.length ?
 /** One run of the steps on a fresh page; throws `RELOADED` if the page reloads under it. */
 async function runOnce(report) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: plan.dpr ?? 1 });
+  // A slower computer: the page's CPU N times slower (DevTools protocol
+  // `Emulation.setCPUThrottlingRate`, rate 1 = none). The GPU is not slowed.
+  if (plan.cpu && plan.cpu > 1) {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setCPUThrottlingRate', { rate: plan.cpu });
+    console.log(`CPU ${plan.cpu}x mais lenta (emulada)`);
+  }
   try {
     await steps(page, report);
   } catch (err) {
