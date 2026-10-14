@@ -33,7 +33,7 @@ export function layCity(plan: CityPlan): RoadDoc {
 }
 
 /**
- * The generated city's footways, 3 m (docs/VIAS.md V7): wide enough for a
+ * The generated city's footways, 3 m (docs/source/VIAS.md V7): wide enough for a
  * street tree's pit beside the kerb with the 1,20 m clear walk of NBR 9050
  * behind it (a 2 m footway takes no tree under that rule), and the avenues a
  * 2 m planted median. Before the lots

@@ -6,7 +6,7 @@ import { profileOf } from '@world/roads/profile';
 import { flipProfile, streetChain } from '@world/roads/streetChain';
 
 /**
- * THE WHOLE STREET (docs/VIAS.md V8, bulk edit): straight on through the
+ * THE WHOLE STREET (docs/source/VIAS.md V8, bulk edit): straight on through the
  * junctions, a stretch drawn the other way known as such, and a profile
  * copied along it keeps its sides in the world (the parking stays on the
  * same kerb), never mirrored on a stretch drawn backwards.

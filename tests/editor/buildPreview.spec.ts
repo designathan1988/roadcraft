@@ -12,7 +12,7 @@ import type { RoadPathPiece } from '@editor/roadPath';
 import { m } from '@world/units';
 
 /**
- * THE PREVIEW IS THE BUILD (docs/VIAS.md V3): the road tool's preview draws
+ * THE PREVIEW IS THE BUILD (docs/source/VIAS.md V3): the road tool's preview draws
  * the stations of the dry run (`DraftResult.stations`); the same road
  * committed and solved afresh stands at the same heights and is built the
  * same way at every station.

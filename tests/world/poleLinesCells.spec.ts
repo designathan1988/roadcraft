@@ -11,7 +11,7 @@ import { planPoleRun, planPoleRunWhole } from '@editor/poles';
 import { m } from '@world/units';
 
 /**
- * THE POLE LINES BY CELL (docs/PROBLEMAS.md P7.7): what is asked about a
+ * THE POLE LINES BY CELL (docs/source/PROBLEMAS.md P7.7): what is asked about a
  * place is answered from the ribbons and junctions of the cells round it
  * (`poleLinesIn`), and must be exactly what the whole map's lines say there
  * (`poleLines`, the oracle) - before an edit, and after one, when only the

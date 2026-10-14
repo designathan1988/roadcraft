@@ -152,7 +152,7 @@ export function watchHealth(options: {
   // 57 000 entries after 4.5 minutes, an hour's worth 14 MB and 133 ms to
   // read. Each entry reaches this observer when it is queued, before the
   // buffer (User Timing), so the buffer is emptied every few thousand; the
-  // probes reading it (`scripts/probe-hitches.mjs`) still find the recent ones.
+  // probes reading it still find the recent ones.
   let buffered = 0;
   try {
     new PerformanceObserver((list) => {

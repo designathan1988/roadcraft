@@ -7,7 +7,7 @@ import { RAISED_LIFT, TUNNEL_BORE, isRaised, type RoadStructure } from '../struc
 import { ROAD_TUNING } from './tuning';
 
 /**
- * HOW A ROAD IS BUILT at each point along it (docs/VIAS.md V3): on the
+ * HOW A ROAD IS BUILT at each point along it (docs/source/VIAS.md V3): on the
  * ground, on an embankment, in a cutting, on piers, in a tunnel. Read from
  * the solved deck against the natural ground and the road's structure, with
  * the thresholds the renderer builds with: piers past `RAISED_LIFT`

@@ -31,7 +31,7 @@ import { MAP_HALF } from '@world/bounds';
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
 /**
- * The modular building model (docs/buildings.md): a building is data, and
+ * The modular building model: a building is data, and
  * every question about it - what is an outside wall, where the floor is on a
  * slope, whether it may stand here - is answered from that data.
  */

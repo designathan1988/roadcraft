@@ -16,7 +16,7 @@ import './workspace.css';
  * the selection panel - the numbers of what is selected and the actions on it
  * (duplicate, mirror, join, save, demolish). It drew a whole interface of its
  * own once (a bar, a rail, a panel), hidden since the redesign and taken out
- * in docs/PLANO.md 5g.
+ * in docs/source/PLANO.md 5g.
  *
  * This module only renders state and reports clicks: `buildingsWiring.ts` and
  * `main.ts` turn every one of them into a command.

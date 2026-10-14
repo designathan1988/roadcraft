@@ -7,7 +7,7 @@ import { kmh, m } from '../units';
 import { approachSign, arrivesAt } from './rules';
 
 /**
- * THE SIGNS THE RULES PUT UP (docs/VIAS.md V6): the rule is the source and the
+ * THE SIGNS THE RULES PUT UP (docs/source/VIAS.md V6): the rule is the source and the
  * sign derived from it, so a sign never says what the traffic does not do.
  *
  * - At a junction with signs, a stop (R-1) or give-way (R-2) plate on the
@@ -77,7 +77,7 @@ const APPROACH_REACH = m(25);
 
 /**
  * The junction approach a stop or give-way plate put at `at` would govern
- * (docs/VIAS.md V7, "placa = regra"): the leg under it, arriving at a
+ * (docs/source/VIAS.md V7, "placa = regra"): the leg under it, arriving at a
  * junction of three legs or more within reach of its mouth, the nearer end
  * when both qualify. Null where a plate is only a plate.
  */

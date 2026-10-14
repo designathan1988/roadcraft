@@ -6,7 +6,7 @@ import type { NodeId, PoleId, SegmentId } from '@world/ids';
 import { commitPoleRunPoles, planPoleRun } from '../poles';
 
 /**
- * THE POWER LINE OF A NEW STREET (docs/VIAS.md V7): the distribution line
+ * THE POWER LINE OF A NEW STREET (docs/source/VIAS.md V7): the distribution line
  * down one side of each street laid with the complete set, a pole every span
  * (`ROAD_TUNING.poles.spacing`) carrying a street light, as Brazilian streets
  * are lit from the utility poles. Laid by the pole tool's own planner

@@ -38,7 +38,7 @@ import {
   MIN_STOREY_HEIGHT,
 } from './types';
 
-/** Why a building cannot stand where it is. See docs/buildings.md section 3. */
+/** Why a building cannot stand where it is. */
 export type BuildingProblem =
   | 'cut'
   | 'setback'
@@ -229,7 +229,7 @@ const CONTACT_CELL = m(25.6);
  * The roads and junction carriageways a building must keep off, binned in a
  * grid, built once per network revision. Every building tested every road and
  * junction of the map: the road-wins rule after each road drawn, and every
- * candidate a lot or a zone tries (docs/performance.md #25).
+ * candidate a lot or a zone tries (docs/source/performance.md #25).
  */
 class RoadContacts {
   private readonly cells = new Map<number, Contact[]>();

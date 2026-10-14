@@ -78,7 +78,7 @@ export type UturnResult =
 
 /**
  * Puts a U-turn through the median at the selected arc distance (the middle
- * by default; docs/VIAS.md V8, retorno): the road split there, its node
+ * by default; docs/source/VIAS.md V8, retorno): the road split there, its node
  * marked, the median opened round it (`medianNose`). Refused where the road
  * has no median, is too short to keep a whole link each side, or is too
  * narrow for a car to turn round in (`medianUturnPath`: 12.8 m lane to

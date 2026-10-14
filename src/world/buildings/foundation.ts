@@ -5,7 +5,7 @@ import { type FacadeBay, facadeBays, groundVolumes, localToWorld, volumeLift } f
 import type { BayComponent, Building, FaceId } from './types';
 
 /**
- * How a building meets the ground. See docs/buildings.md section 2.
+ * How a building meets the ground.
  *
  * The caller passes the ground: the renderer passes the height the terrain
  * TRIANGLES are drawn at (`renderedHeightAt`), because that is what a floor

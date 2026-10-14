@@ -98,7 +98,7 @@ export function streetFurniture(net: Network): FurnitureItem[] {
     if (!kind) continue;
     const hit = footwayAt(net, placed, STAND_REACH);
     if (!hit) {
-      // A tree or shrub in a planted median (docs/VIAS.md V7): nobody walks there.
+      // A tree or shrub in a planted median (docs/source/VIAS.md V7): nobody walks there.
       const median = kind === 'streetTree' || kind === 'shrub' ? medianAt(net, placed, m(0.3)) : null;
       if (median) {
         items.push({ kind, x: placed.x, y: placed.y, segment: median.segment,

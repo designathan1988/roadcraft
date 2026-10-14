@@ -58,7 +58,7 @@ export interface RoadType {
    * sides differ (`sidewalkLeft`/`sidewalkRight`, read through `footwayOn`).
    */
   readonly sidewalk: number;
-  /** The footways left and right of a -> b when they differ (docs/VIAS.md V1); absent: `sidewalk` both. */
+  /** The footways left and right of a -> b when they differ (docs/source/VIAS.md V1); absent: `sidewalk` both. */
   readonly sidewalkLeft?: number;
   readonly sidewalkRight?: number;
   /** A footway level with the carriageway, without a kerb (a shared surface). */
@@ -85,7 +85,7 @@ export interface RoadType {
   readonly priorityRank: number;
   readonly turnsForward?: readonly LaneTurnRule[];
   readonly turnsBackward?: readonly LaneTurnRule[];
-  /** Lane uses and lines from the section (docs/VIAS.md V4, `RoadSection.useForward`). */
+  /** Lane uses and lines from the section (docs/source/VIAS.md V4, `RoadSection.useForward`). */
   readonly useForward?: readonly LaneUse[];
   readonly useBackward?: readonly LaneUse[];
   readonly linesForward?: readonly LaneLine[];
@@ -406,7 +406,7 @@ export const flushOn = (rt: RoadType, side: RoadSide): boolean =>
 
 /**
  * Whether the road's outline is the plain one: the same footway both sides,
- * each kerbed (every road before docs/VIAS.md V1).
+ * each kerbed (every road before docs/source/VIAS.md V1).
  */
 export const symmetric = (rt: RoadType): boolean =>
   rt.sidewalkLeft === undefined && !rt.flushLeft && !rt.flushRight;

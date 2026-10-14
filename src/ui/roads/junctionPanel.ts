@@ -8,7 +8,7 @@ import { formatDecimal, t } from '../i18n';
 import './roads.css';
 
 /**
- * THE JUNCTION PANEL (docs/VIAS.md V5), in the inspector: the junction's
+ * THE JUNCTION PANEL (docs/source/VIAS.md V5), in the inspector: the junction's
  * height, its control as buttons (automatic, signal, signs on each leg, a
  * stop on every leg, mini-roundabout, nothing signed - the CTB's own rule),
  * what "automatic" chose from the measured flows and the flows themselves, the

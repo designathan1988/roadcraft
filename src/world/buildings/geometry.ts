@@ -564,7 +564,7 @@ export interface FacadeBay {
 /**
  * Each building's bays as last worked out, with the record they came from:
  * the platforms, the door links, the access signature and the meshes each
- * worked them out again for every building on every edit (docs/performance.md
+ * worked them out again for every building on every edit (docs/source/performance.md
  * #18). Checked against the record's text, in case one is changed in place.
  * The list handed out is shared: read it, never change it.
  */

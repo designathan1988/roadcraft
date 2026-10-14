@@ -73,7 +73,7 @@ import {
 } from '@world/buildings/types';
 
 /**
- * The building commands. See docs/buildings.md section 4.
+ * The building commands.
  *
  * Two halves. The OPERATIONS (`op*`) change a draft building in place and say
  * whether they changed anything; they know nothing about the document, so the
@@ -647,7 +647,7 @@ export function duplicateBuilding(ctx: BuildingContext, id: BuildingId): EditRes
 }
 
 /**
- * The road-wins rule (docs/buildings.md section 3): every building a road now
+ * The road-wins rule: every building a road now
  * overlaps is removed. Returns how many were. Run after a road edit, inside
  * the same undo step.
  */

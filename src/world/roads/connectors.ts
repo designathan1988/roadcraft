@@ -1,7 +1,7 @@
 import type { NodeId, SegmentId } from '../ids';
 
 /**
- * LANE CONNECTORS BY HAND (docs/VIAS.md V4): which lane of a road arriving
+ * LANE CONNECTORS BY HAND (docs/source/VIAS.md V4): which lane of a road arriving
  * at a node may continue into which lane of a road leaving it. The game
  * derives the connections itself (`lanelets.ts` `buildJunctions`: lane
  * arrows, plausible lane pairs, a fallback so no lane is left without an
@@ -70,7 +70,7 @@ export interface NodeLanes {
 }
 
 /**
- * The node's links after the player toggles one connection (docs/VIAS.md V4):
+ * The node's links after the player toggles one connection (docs/source/VIAS.md V4):
  * the first edit of an arriving lane starts from the connections the game
  * built for it, so taking one away leaves the rest; a lane is never left
  * without a way on (the toggle that would is refused: null). Links to lanes

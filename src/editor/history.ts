@@ -115,7 +115,7 @@ export class History {
     return true;
   }
 
-  /** `work`, timed in the page's measures (`hitch:` entries, docs/performance.md). */
+  /** `work`, timed in the page's measures (`hitch:` entries, docs/source/performance.md). */
   private timed<T>(what: string, work: () => T): T {
     const start = performance.now();
     const out = work();
@@ -151,7 +151,7 @@ export function serialize(doc: RoadDoc): string {
 export function restoreInto(target: RoadDoc, data: SerializedDoc, net: Network): void {
   target.replaceFromJSON(data);
   // A map opened is built whole, nothing taken from the map before it
-  // (`Network.rebuild`, docs/VIAS.md V0); edits after it are incremental.
+  // (`Network.rebuild`, docs/source/VIAS.md V0); edits after it are incremental.
   net.rebuild({ full: true });
   repairNearConnections(target, net);
 }

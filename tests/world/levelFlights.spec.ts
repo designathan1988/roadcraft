@@ -16,7 +16,7 @@ import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
  * in the lower block, square to the line the blocks meet at, from the lower
  * floor up to the higher (`interior.ts` `levelFlights`). Before, the step
  * between them showed only as the higher block's plinth - a wall of stone
- * in the middle of the house with no way up it (docs/ZONEAMENTO.md).
+ * in the middle of the house with no way up it (docs/source/ZONEAMENTO.md).
  */
 
 const hill = (_x: number, y: number): number => -y * 0.18;

@@ -3,7 +3,7 @@ import { BENCH_ZONE, LAMP_ZONE, TREE_KERB_SETBACK, TREE_PIT } from '../section';
 import { m } from '../units';
 
 /**
- * THE STREET FURNITURE CATALOGUE (docs/VIAS.md V7), by data: one entry per
+ * THE STREET FURNITURE CATALOGUE (docs/source/VIAS.md V7), by data: one entry per
  * piece the road system lays, with everything the sets, the rows dragged out
  * and the clear-walk rule read about it. The Etapa 5f catalogue of the main
  * session does not exist yet; when it does, these entries move into it.

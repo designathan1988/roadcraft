@@ -13,7 +13,7 @@ owner in docs/STATUS.md before changing them.
    `doc.revision`; utilities move `utilityRevision`. The wrong one rebuilds
    everything or nothing.
 3. **Every road edit is paid for in one place** (`roads/economy.ts`,
-   docs/VIAS.md V0): take `roadsBefore(doc)` before the edit and
+   docs/source/VIAS.md V0): take `roadsBefore(doc)` before the edit and
    `settleRoadEdit` after it; refuse with `funds` when it is not affordable.
    `commitRoadPath`, `commitDraft`, `guardRoadEdit`, `moveNodeChecked` and the
    bulldozer do; a new tool that changes roads without them builds for free.

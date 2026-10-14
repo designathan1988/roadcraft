@@ -135,7 +135,7 @@ export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null 
     if (at.x < box.minX - pad || at.x > box.maxX + pad || at.y < box.minY - pad || at.y > box.maxY + pad) continue;
     ribbon.full.closestInto(at.x, at.y, hit);
     // The side the point is on, and that side's own footway (an asymmetric
-    // road, docs/VIAS.md V1).
+    // road, docs/source/VIAS.md V1).
     const atFrame = ribbon.full.sampleAt(hit.s);
     const onLeft = (at.x - atFrame.p.x) * atFrame.n.x + (at.y - atFrame.p.y) * atFrame.n.y >= 0;
     const zones = zonesOn(sectionOf(road, segment.direction), onLeft ? 'left' : 'right');
@@ -154,7 +154,7 @@ export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null 
   return best;
 }
 
-/** A planted median a point stands on (docs/VIAS.md V7): trees and shrubs go there too. */
+/** A planted median a point stands on (docs/source/VIAS.md V7): trees and shrubs go there too. */
 export interface MedianHit {
   readonly segment: SegmentId;
   readonly s: number;
@@ -186,7 +186,7 @@ const MEDIAN_NOSE_GAP = m(0.5);
 export function medianNose(net: Network, segment: SegmentId, node: NodeId): number {
   const crossing = net.crosswalkDistanceAt(segment, node);
   const behindCrossing = crossing > 0 ? crossing + CROSSWALK_DEPTH / 2 + MEDIAN_NOSE_GAP : 0;
-  // A U-turn's opening (docs/VIAS.md V8, retorno): the half circle reaches its
+  // A U-turn's opening (docs/source/VIAS.md V8, retorno): the half circle reaches its
   // radius past the node, on the road beyond the one it serves, and the body
   // half its length further (`medianUturnPath`); on the road it serves only a
   // nose's gap, its turners waiting beside the island.

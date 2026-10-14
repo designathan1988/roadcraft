@@ -4,7 +4,7 @@ export const LANE_TURN_RULES = ['all', 'left', 'through', 'right', 'leftThrough'
 export type LaneTurnRule = (typeof LANE_TURN_RULES)[number];
 
 /**
- * What an element of the cross-section is paved with (docs/VIAS.md V1). The
+ * What an element of the cross-section is paved with (docs/source/VIAS.md V1). The
  * class's own look when absent.
  */
 export const CARRIAGEWAY_MATERIALS = ['asphalt', 'concrete', 'cobble'] as const;
@@ -31,7 +31,7 @@ export interface SectionMaterials {
 export interface RoadSection {
   readonly laneWidth: number;
   readonly sidewalk: number;
-  /** The footway left of a -> b, when it differs from the right one (docs/VIAS.md V1). */
+  /** The footway left of a -> b, when it differs from the right one (docs/source/VIAS.md V1). */
   readonly sidewalkLeft?: number;
   readonly sidewalkRight?: number;
   /**
@@ -52,7 +52,7 @@ export interface RoadSection {
   readonly turnsBackward?: readonly LaneTurnRule[];
   /**
    * Who may drive each lane, by laneIndex (inner to outer) in each direction
-   * (docs/VIAS.md V4): every vehicle, or buses only (a "faixa exclusiva",
+   * (docs/source/VIAS.md V4): every vehicle, or buses only (a "faixa exclusiva",
    * MBST vol. IV, MFE). Absent or short: every vehicle.
    */
   readonly useForward?: readonly LaneUse[];
@@ -65,7 +65,7 @@ export interface RoadSection {
   readonly linesForward?: readonly LaneLine[];
   readonly linesBackward?: readonly LaneLine[];
   /**
-   * The line between the two directions (docs/VIAS.md V6, MBST vol. IV):
+   * The line between the two directions (docs/source/VIAS.md V6, MBST vol. IV):
    * dashed (LFO-2, overtaking allowed), solid (LFO-1) or double solid
    * (LFO-3). Absent: the road's own rule (dashed on a street, solid between
    * lanes of a wider road).

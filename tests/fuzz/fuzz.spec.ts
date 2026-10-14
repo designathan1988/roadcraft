@@ -9,7 +9,7 @@ import { generate, openCategories, profile, replay, saveFixture, shrink } from '
  * split, join, move, retype, lanes, one-way, structure, curve, bulldoze,
  * junction control), checks every world invariant after every gesture, then
  * drives traffic on the result and checks the bodies. See
- * `support/runner.ts` for the profiles and docs/fuzzing.md for how to use it.
+ * `support/runner.ts` for the profiles.
  *
  * A failure prints the SHRUNK sequence. `FUZZ_RECORD=1` also writes it to
  * tests/fuzz/fixtures/, where `regressions.spec.ts` replays it for ever.

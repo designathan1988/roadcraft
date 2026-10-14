@@ -8,7 +8,7 @@ import { PT_BR } from '@ui/i18n/pt-BR';
 
 /**
  * THE OLD INTERFACE IS GONE, AND EVERYTHING IT DID IS IN THE NEW ONE
- * (docs/PLANO.md 5g, "interface v2 sem a antiga").
+ * (docs/source/PLANO.md 5g, "interface v2 sem a antiga").
  *
  * The old interface's markup and code left in 5g (a268a2ff); what it left
  * behind was its styling (rules for a top bar, a toolbar, palettes, a status

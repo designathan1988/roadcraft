@@ -2,7 +2,7 @@ import type { Building, RoofKind, FaceId, Volume } from './types';
 import { volumeSides } from './footprints';
 
 /**
- * What a building is made of. See docs/buildings.md, "Materials".
+ * What a building is made of.
  *
  * A material is a FINISH - the surface a wall or a roof is built in, which the
  * renderer draws with its own baked texture - and a COLOUR that tints it. Any

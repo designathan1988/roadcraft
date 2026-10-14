@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The road tool's rebindable keys (docs/VIAS.md V3).
+// The road tool's rebindable keys (docs/source/VIAS.md V3).
 import { afterEach, describe, expect, it } from 'vitest';
 import { bindableKey, resetRoadKeys, roadKey, roadKeyAction, roadKeyParams, setRoadKey } from '@ui/roads/keys';
 import { closeRoadKeys, openRoadKeys } from '@ui/roads/keysPanel';

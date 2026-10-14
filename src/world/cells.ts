@@ -4,7 +4,7 @@ import { m } from './units';
 /**
  * THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the
  * partition an edit's cost is
- * measured in (docs/relatorio-desempenho-mapas-enormes-2026-10-11.md 6.2).
+ * measured in (docs/source/relatorio-desempenho-mapas-enormes-2026-10-11.md 6.2).
  *
  * A fixed grid, not a tree: the cheapest structure to keep in step with
  * edits, and a thing is filed in the cells its bounds reach, so a question

@@ -25,7 +25,7 @@ export interface Leg {
   /** Half-width of this leg at the level being built: the wider of its two sides. */
   readonly hw: number;
   /**
-   * Half-width on the `+nrm` side and on the `-nrm` side of the leg (docs/VIAS.md
+   * Half-width on the `+nrm` side and on the `-nrm` side of the leg (docs/source/VIAS.md
    * V1): the two sides of an asymmetric road. Both `hw` on every other road.
    */
   readonly hwLeft: number;

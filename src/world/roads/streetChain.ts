@@ -5,7 +5,7 @@ import type { RoadProfileSpec } from './profile';
 import { m } from '../units';
 
 /**
- * THE WHOLE STREET a segment belongs to (docs/VIAS.md V8, bulk edit): the
+ * THE WHOLE STREET a segment belongs to (docs/source/VIAS.md V8, bulk edit): the
  * segments carried straight on through each node (within `STRAIGHT` of
  * straight ahead, the straightest when several are), as a player sees one
  * street running through its junctions. Each with whether it runs against

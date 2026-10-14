@@ -8,7 +8,7 @@ import { treeSeed } from '../trees';
 import { UNITS_PER_METER, m } from '../units';
 
 /**
- * THE SQUARES OF A GENERATED CITY (docs/VIAS.md V7; the coordinator's order
+ * THE SQUARES OF A GENERATED CITY (docs/source/VIAS.md V7; the coordinator's order
  * of 2026-10-09: one square per neighbourhood, on a corner block or on an
  * avenue's axis, never loose grass in the middle of a block).
  *

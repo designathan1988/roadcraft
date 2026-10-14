@@ -12,7 +12,7 @@ import { buildLegs } from './legs';
 import type { Junction } from './build';
 
 /**
- * A TURNING CIRCLE AT A ROAD'S END (docs/VIAS.md V8, balão de retorno): the
+ * A TURNING CIRCLE AT A ROAD'S END (docs/source/VIAS.md V8, balão de retorno): the
  * player marks an end as one (`RoadNode.end`), and traffic turns round there
  * instead of leaving the map.
  *

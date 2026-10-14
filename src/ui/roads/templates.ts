@@ -4,7 +4,7 @@ import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT } from '@world/units';
 
 /**
- * The player's own road templates (docs/VIAS.md V1), kept in this browser for
+ * The player's own road templates (docs/source/VIAS.md V1), kept in this browser for
  * every map, as Cities: Skylines keeps a player's roads apart from any one
  * city. Read back through `normalizeTemplate`: a damaged entry is dropped,
  * never built. Storage can be refused (a private window): then nothing is
@@ -44,7 +44,7 @@ export function deleteTemplate(id: string): void {
   }
 }
 
-/** A template as stored: with the world unit its widths are in (docs/ESCALA.md). */
+/** A template as stored: with the world unit its widths are in (docs/source/ESCALA.md). */
 const withUnit = (t: RoadTemplate): RoadTemplate & { unit: number } => ({ ...t, unit: METERS_PER_UNIT });
 
 /** A stored template's widths in this build's unit; absent `unit`: 0.4 m, every template before 2026-10-10. */

@@ -64,7 +64,7 @@ export interface CrossSection {
   readonly lanes: readonly TravelLane[];
   /**
    * The zones of a side when both sides are the same; on an asymmetric road
-   * (docs/VIAS.md V1) the right one. Read `left`/`right`, or `zonesOn`.
+   * (docs/source/VIAS.md V1) the right one. Read `left`/`right`, or `zonesOn`.
    */
   readonly side: SideZones;
   /** The footway zones left and right of a -> b. */

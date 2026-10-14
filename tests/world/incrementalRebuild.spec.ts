@@ -14,7 +14,7 @@ import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
 /**
- * THE ORACLE of the incremental rebuild (docs/VIAS.md V0): after every edit,
+ * THE ORACLE of the incremental rebuild (docs/source/VIAS.md V0): after every edit,
  * the network the game keeps (rebuilt incrementally, `Network.rebuild`) and
  * the roads' heights solved from the previous solve (`buildRoadElevation`
  * with `previous`) must be EXACTLY what a network and a solve built from

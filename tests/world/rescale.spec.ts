@@ -8,7 +8,7 @@ import { normalizeSettings, type SavedSettings } from '@editor/persistence';
 
 /**
  * A map saved in another world unit opens at the same size in metres
- * (docs/ESCALA.md): every map before 2026-10-10 was saved at 0.4 m a unit and
+ * (docs/source/ESCALA.md): every map before 2026-10-10 was saved at 0.4 m a unit and
  * says nothing; a map saved now says its unit.
  */
 describe('a map saved in another world unit', () => {

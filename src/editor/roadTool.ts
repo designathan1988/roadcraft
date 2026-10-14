@@ -69,9 +69,9 @@ export interface RoadToolHost {
   settings(): {
     readonly typeIndex: number; readonly lanes: number | null; readonly alignment: 'straight' | 'curve' | 'free';
     readonly heightOffset: number; readonly parking: SegmentParking | undefined; readonly width: number | null; readonly grid: boolean;
-    /** A profile new roads are laid with (docs/VIAS.md V2), over the class, lanes, width and parking; null for those. */
+    /** A profile new roads are laid with (docs/source/VIAS.md V2), over the class, lanes, width and parking; null for those. */
     readonly profile?: { readonly profile: RoadProfileSpec; readonly type: number } | null;
-    /** Retaining walls in the cuttings of new roads instead of a batter (docs/VIAS.md V3). */
+    /** Retaining walls in the cuttings of new roads instead of a batter (docs/source/VIAS.md V3). */
     readonly cutWalls?: boolean;
     /** The furniture the new roads are built with (V7, `world/roads/furnitureSets.ts`); absent: none. */
     readonly furniture?: FurnitureSet;
@@ -403,7 +403,7 @@ export class RoadTool {
     { key: null, reason: null, cost: null, stations: null };
 
   /**
-   * The road in hand as it would be built (docs/VIAS.md V3): the dry run's
+   * The road in hand as it would be built (docs/source/VIAS.md V3): the dry run's
    * stations - solved deck, natural ground, way of building - once the draft
    * is judged, or null until then (the preview estimates meanwhile).
    */

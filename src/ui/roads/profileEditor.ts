@@ -15,7 +15,7 @@ import { deleteTemplate, saveTemplate, savedTemplates } from './templates';
 import './roads.css';
 
 /**
- * THE PROFILE EDITOR (docs/VIAS.md V2): the road's cross-section drawn as a
+ * THE PROFILE EDITOR (docs/source/VIAS.md V2): the road's cross-section drawn as a
  * street section (`crossSection.ts`), edited the way Streetmix edits a street
  * and Road Builder for Cities: Skylines II builds a road in one panel -
  * templates as cards with the section in miniature, elements added from an

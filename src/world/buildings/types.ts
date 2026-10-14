@@ -3,7 +3,7 @@ import type { Vec2 } from '@core/vec2';
 import type { BuildingMaterials, MaterialSpec, VolumeMaterials } from './materials';
 
 /**
- * The modular building model. See docs/buildings.md.
+ * The modular building model.
  *
  * A building is DATA: volumes of whole grid cells, storeys on levels, facades
  * of bays, each bay a replaceable component. Nothing here is a mesh, and
@@ -25,7 +25,7 @@ export const BUILDING_SCHEMA = 2;
 const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
 export type BuildingUse = (typeof BUILDING_USES)[number];
 
-/** Replaceable facade components, one per bay. See docs/buildings.md. */
+/** Replaceable facade components, one per bay. */
 export const BAY_COMPONENTS = [
   'wall',
   'window',
@@ -283,7 +283,7 @@ export type LotSurface = (typeof LOT_SURFACES)[number];
  * What a building is FOR, in the city: where people live, work, study, buy,
  * eat, are treated, are buried. It picks the building's first form (a model
  * of blocks, then edited freely), its inside, and its part in the residents'
- * days. See docs/city-life-plan.md.
+ * days.
  */
 export const BUILDING_FUNCTIONS = [
   // homes
@@ -312,7 +312,7 @@ export interface PlacedFurniture {
 
 export type BlockMode = 'void' | 'intersect' | 'xor';
 
-/** Free parts a building can be given besides its volumes. See docs/buildings.md, "Elements". */
+/** Free parts a building can be given besides its volumes. */
 export const ELEMENT_KINDS = [
   'stair',
   'ramp',

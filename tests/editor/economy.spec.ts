@@ -12,7 +12,7 @@ import { isSerializedDoc } from '@editor/persistence';
 import { roadsBefore, settleRoadEdit } from '@editor/roads/economy';
 
 /**
- * The minimal economy in the editor (docs/VIAS.md V0): a road drawn is paid
+ * The minimal economy in the editor (docs/source/VIAS.md V0): a road drawn is paid
  * for when it is committed, priced in the preview's dry run, refused when the
  * balance cannot cover it; undo gives the money back (the balance is part of
  * the document); a demolition gives back a share; old maps load as they were.

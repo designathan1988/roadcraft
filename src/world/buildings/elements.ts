@@ -26,7 +26,7 @@ import {
 } from './types';
 
 /**
- * Free parts of a building. See docs/buildings.md, "Elements".
+ * Free parts of a building.
  *
  * Every element is a box of the building's local frame (`BuildingElement`),
  * so collisions with the volumes are exact box tests, and it snaps to what it

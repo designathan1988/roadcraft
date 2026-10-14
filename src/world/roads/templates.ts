@@ -4,7 +4,7 @@ import { ROAD_TYPES } from '../roadTypes';
 import { type ProfileElement, type RoadProfileSpec, profileOf, profileProblems } from './profile';
 
 /**
- * ROAD TEMPLATES (docs/VIAS.md V1): a profile with a name, to lay or apply
+ * ROAD TEMPLATES (docs/source/VIAS.md V1): a profile with a name, to lay or apply
  * again. The classes of the road tool are the built-in templates (their
  * profile as a road is drawn with them); the player's own are saved by the
  * editor (`editor/roads/templates.ts`) and read back through

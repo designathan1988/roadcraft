@@ -3,7 +3,7 @@ import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
 
 /**
- * Extension point for interiors and occupants (docs/buildings.md section 1).
+ * Extension point for interiors and occupants.
  *
  * A storey that stores its own `spaces` is authoritative. One that does not
  * gets the default subdivision below: one space per volume per storey, split

@@ -1,7 +1,7 @@
 /**
  * THE WARDROBE: every MakeHuman item a person can wear, the system pack
  * (`spec.ts` WARDROBE) and the community packs
- * (`scripts/import-makehuman-community.mjs` -> `proxies/community.json`),
+ * (`proxies/community.json`),
  * sorted by what it is and who it suits.
  *
  * The street draws only items light enough for a crowd (STREET_TRIANGLES)

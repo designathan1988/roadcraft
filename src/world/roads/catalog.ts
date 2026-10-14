@@ -6,7 +6,7 @@ import type { ProfileElement, RoadProfileSpec } from './profile';
 import { type RoadTemplate, classTemplates } from './templates';
 
 /**
- * THE ROAD CATALOGUE (docs/VIAS.md, the player's order of 2026-10-09): ready
+ * THE ROAD CATALOGUE (docs/source/VIAS.md, the player's order of 2026-10-09): ready
  * roads to pick and draw with at once, by category, as Cities: Skylines
  * offers them (its roads menu: small, medium, large roads and highways, each
  * road with its lanes, speed and price per cell; Cities: Skylines II the same

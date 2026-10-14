@@ -8,7 +8,7 @@
  * something of a kind changed somewhere, and every system found out what by
  * digesting the whole map again; one of those findings was wrong for months
  * (the natural ground moved whenever a road shaped the drawn one, and every
- * road was solved and paved again: docs/PROBLEMAS.md P12) and nothing showed
+ * road was solved and paved again: docs/source/PROBLEMAS.md P12) and nothing showed
  * it.
  *
  * An entry is an EVENT - what already happened, its data captured when it is

@@ -5,7 +5,7 @@ import { sameRoadSection } from '@world/roadSection';
 import { type ProfileProblem, type RoadProfileSpec, applyProfile, profileProblems } from '@world/roads/profile';
 
 /**
- * Applying a profile to roads already built (docs/VIAS.md V1: "aplicar sem
+ * Applying a profile to roads already built (docs/source/VIAS.md V1: "aplicar sem
  * demolir"): the segment keeps its id, its nodes, its curve and everything
  * placed beside it; only its cross-section changes, through the document's
  * own setters, so the network, the lanelets and the markings rebuild from it

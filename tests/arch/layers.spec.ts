@@ -56,18 +56,11 @@ describe('determinism', () => {
     // The other rule CLAUDE.md states in bold: nothing outside `src/render/`
     // may import three. A lint rule covers the project's own aliases; this
     // covers the one bare package name that matters.
-    //
-    // `src/sandbox/` is the second view: the agents' laboratory, a stand-alone
-    // page (`sandbox.html`) with its own scene, camera and controls, no part of
-    // the game's simulation. It is as much a render layer as `src/render/` is,
-    // and the rule is about three never reaching `world/` or `sim/`.
-    // `src/studios/` is the same: six offline editors, each a page of its own
-    // (`*-system.html`, `src/studios/README.md`), none of them part of the game.
     const offenders: string[] = [];
 
     for (const file of tsFilesUnder(SRC)) {
       const rel = relative(SRC, file).split(sep).join('/');
-      if (rel.startsWith('render/') || rel.startsWith('sandbox/') || rel.startsWith('studios/')) continue;
+      if (rel.startsWith('render/')) continue;
       const body = code(readFileSync(file, 'utf8'));
       if (/from '(three|three\/[^']*)'/.test(body)) offenders.push(rel);
     }

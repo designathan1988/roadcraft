@@ -1,5 +1,5 @@
 /**
- * THE ROAD TOOL'S KEYS, rebindable (docs/VIAS.md V3; read by `main.ts`): raise and lower the
+ * THE ROAD TOOL'S KEYS, rebindable (docs/source/VIAS.md V3; read by `main.ts`): raise and lower the
  * road being drawn, and cycle its plan (straight, curve, freehand). Kept in
  * the browser like the snap choice (`snap.ts`), not in any map. Network
  * Multitool keeps each mode's shortcut in its settings the same way

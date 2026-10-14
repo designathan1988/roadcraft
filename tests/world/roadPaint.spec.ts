@@ -12,7 +12,7 @@ import { LANE_LINE, sectionFromProfile, travelWidth } from '@world/roadTypes';
 import { m } from '@world/units';
 
 /**
- * THE ROAD PAINT AND THE SIGNS (docs/VIAS.md V6): the map's regional standard
+ * THE ROAD PAINT AND THE SIGNS (docs/source/VIAS.md V6): the map's regional standard
  * (MBST vol. IV for Brazil), the bus lane's legend, the junction rule's floor
  * legends and its plates, and the speed plates. A map saved before keeps its
  * paint ('classic').

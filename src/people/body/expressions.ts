@@ -6,7 +6,7 @@ import type { MacroParams } from './macro';
  * The face's blendshapes: the 52 of Apple's ARKit face tracking (the
  * industry's common set - Rocketbox/HeadBox, MetaHuman Live Link, VRM and
  * Ready Player Me all speak it), sculpted on the MakeHuman base mesh by the
- * MakeHuman community (faceunits01, CC0; `scripts/import-faceunits.mjs`).
+ * MakeHuman community (faceunits01, CC0).
  * They share the body's stable vertex numbering.
  */
 interface FaceunitMeta {

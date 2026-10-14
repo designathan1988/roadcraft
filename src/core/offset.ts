@@ -65,8 +65,7 @@ function pushArc(
  * feature is the source *vertex*, at `|d| / cos(theta/2)`. The invariants the
  * tests actually pin are the miter distance itself, and that every offset
  * vertex sits exactly `d` from the supporting lines of both adjacent source
- * segments — which is what "parallel at distance d" means. See the note at the
- * top of `tests/core/offset.spec.ts`.
+ * segments — which is what "parallel at distance d" means.
  */
 export function offsetPolyline(
   pts: readonly Vec2[],

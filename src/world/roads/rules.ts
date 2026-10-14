@@ -5,7 +5,7 @@ import { roadType } from '../roadTypes';
 import { m } from '../units';
 
 /**
- * THE RULES OF A JUNCTION (docs/VIAS.md V5): who goes first, as the source;
+ * THE RULES OF A JUNCTION (docs/source/VIAS.md V5): who goes first, as the source;
  * the signs are derived from it (V6). Brazilian practice (CTB art. 29, III):
  * where nothing is signed, a road ("rodovia") goes before the road it meets,
  * whoever circulates in a roundabout goes before whoever enters it, and
@@ -21,7 +21,7 @@ export interface ApproachRuleEntry {
   readonly rule: ApproachRule;
 }
 
-/** A signal's settings (docs/VIAS.md V5); absent: adaptive, the game's own timings. */
+/** A signal's settings (docs/source/VIAS.md V5); absent: adaptive, the game's own timings. */
 export interface SignalSettings {
   /** 'fixed': each stage its green, in order, every cycle (needed for a green wave); absent: adaptive. */
   readonly mode?: 'fixed';
@@ -134,7 +134,7 @@ export const isHighwayClass = (doc: RoadDoc, segment: SegmentId): boolean => {
 };
 
 /**
- * The sign a leg's driver meets at a junction (docs/VIAS.md V6), derived from
+ * The sign a leg's driver meets at a junction (docs/source/VIAS.md V6), derived from
  * the junction's control as the simulation reads it (`admission.ts`
  * `rightOfWay`): "Pare em todas" a stop on every leg; "Dê a preferência" and
  * a mini-roundabout a give-way on every leg (R-2 at each entry); "Placas"

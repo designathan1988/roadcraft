@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The profile editor and its drawn cross-section (docs/VIAS.md V2).
+// The profile editor and its drawn cross-section (docs/source/VIAS.md V2).
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { drawSection, metresText } from '@ui/roads/crossSection';
