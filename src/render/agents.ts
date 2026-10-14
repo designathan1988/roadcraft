@@ -1628,10 +1628,36 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     for (let i = 0; i < seats; i++) if ((vehicle.seats & (1 << i)) !== 0 && seatPerson(vehicle, i).ageClass === 'child') return true;
     return false;
   };
+  /**
+   * The vehicles whose people were cast (`seatIdentity`), by id: when one is
+   * gone from the world its people are forgotten by the casting (`forgetCast`).
+   */
+  const castVehicles = new Map<number, SimVehicle>();
+  /** The fleet's version `forgetCast` last looked at. */
+  let castFleet = -1;
+  /**
+   * The people of the vehicles gone from the world let go by the casting,
+   * when the fleet changed: their end is the simulation's (`CastingRegistry`).
+   * O(vehicles whose people were drawn), never the whole registry. A car
+   * standing in a bay (`ambient.isParked`) is still about.
+   */
+  const forgetCast = (world: SimWorld): void => {
+    const fleet = world.vehicles.version;
+    if (fleet === castFleet) return;
+    castFleet = fleet;
+    for (const [id, vehicle] of castVehicles) {
+      if (world.vehicles.get(id) === vehicle || world.ambient.isParked(vehicle)) continue;
+      castVehicles.delete(id);
+      pedestrians.forgetCompany(vehicleCompany(vehicle), id);
+    }
+  };
   /** Who sits in (or steps out of) a seat: the seat's person, cast with the vehicle's company. */
   const seatIdentity = (vehicle: SimVehicle, person: { seed: number; gender: 'f' | 'm'; ageClass: 'child' | 'adult' | 'elder' },
-    hasChild: boolean): ClipIdentity => ({ seed: person.seed, gender: person.gender, ageClass: person.ageClass,
-    company: vehicleCompany(vehicle), companyId: vehicle.id, hasChild });
+    hasChild: boolean): ClipIdentity => {
+    castVehicles.set(vehicle.id, vehicle);
+    return { seed: person.seed, gender: person.gender, ageClass: person.ageClass,
+      company: vehicleCompany(vehicle), companyId: vehicle.id, hasChild };
+  };
 
   /** The whole person in a seat: its world point, written without allocating. */
   const seatPoint: { x: number; y: number; h?: number } = { x: 0, y: 0, h: 0 };
@@ -2051,6 +2077,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         for (const [id, ride] of suspension) if (suspensionFrame - ride.seen > 120) suspension.delete(id);
         for (const [id, entry] of looks) if (suspensionFrame - entry.seen > 120) looks.delete(id);
       }
+      forgetCast(world);
       pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
       procPixels = options.personPixels ?? null;
       for (const part of allParts) part.n = 0;

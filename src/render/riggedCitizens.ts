@@ -1131,6 +1131,14 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     indexFor(identity: ClipIdentity, helmet: boolean, x: number, y: number): number | null {
       return bodyFor({ ...identity, helmet, x, y })?.index ?? null;
     },
+    /** The people cast in a company forgotten: its vehicle is gone from the world (`CastingRegistry.forgetCompany`). */
+    forgetCompany(company: Company, companyId: number): void {
+      registry.forgetCompany(company, companyId);
+    },
+    /** How many people the casting remembers (tests). */
+    get remembered(): number {
+      return registry.remembered;
+    },
     drawPalette(index: number, palette: Float32Array, instance: Matrix4, charred = false): void {
       const batch = batches.get(index);
       if (!batch || batch.count >= CAPACITY || palette.length !== batch.width) return;

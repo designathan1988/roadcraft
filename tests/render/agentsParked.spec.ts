@@ -31,7 +31,8 @@ function worldWith(parked: readonly Vehicle[], changes = new ChangeJournal()): S
   return {
     clock: { time: 0 },
     vehiclesInIdOrder: () => [],
-    ambient: { parked },
+    vehicles: new Map(),
+    ambient: { parked, isParked: (v: Vehicle) => parked.includes(v) },
     pedViews: [],
     lanelet: () => undefined,
     connector: () => undefined,

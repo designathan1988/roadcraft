@@ -56,4 +56,24 @@ describe('casting memory', () => {
     expect(citizens.indexFor(who(walker), false, -1e6, -1e6)).toBe(first);
     citizens.dispose();
   });
+
+  it('lets the people of a vehicle gone from the world go, and nobody else', async () => {
+    const { createRiggedCitizens } = await import('@render/riggedCitizens');
+    const citizens = createRiggedCitizens();
+    citizens.begin();
+    const seat = (seed: number, car: number): ClipIdentity => ({ seed, gender: 'm', ageClass: 'adult', company: 'car', companyId: car });
+    // A thousand cars of two people each, then a walker.
+    for (let car = 1; car <= 1000; car++) {
+      citizens.indexFor(seat(car * 8, car), false, car, 0);
+      citizens.indexFor(seat(car * 8 + 1, car), false, car, 0);
+    }
+    const walker = citizens.indexFor(who(5), false, 0, 0);
+    expect(citizens.remembered).toBe(2001);
+    // Every car but the first leaves the world.
+    for (let car = 2; car <= 1000; car++) citizens.forgetCompany('car', car);
+    expect(citizens.remembered).toBe(3);
+    // Those still about keep their bodies.
+    expect(citizens.indexFor(who(5), false, 0, 0)).toBe(walker);
+    citizens.dispose();
+  });
 });
