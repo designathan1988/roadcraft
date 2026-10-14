@@ -296,6 +296,32 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
 - NÃO rodado: `npm run check` inteiro (o pedido desta rodada limitou a verificação a build e
   typecheck); por isso nada foi enviado ao GitHub.
 
+### Carregamento e travadas, oito correções medidas (2026-10-14)
+- Perfil de CPU e Long Animation Frames da geração de uma cidade e de um movimento de câmera por
+  ela; itens 17 a 24 de `OTIMIZACAO.md`, cada um com arquivo:linha, técnica, fonte e medida, um
+  commit por correção, `check:all` verde em cada um, todos enviados.
+  - **Cor dos lotes**: deixou de ser redeitada a cada prédio colocado (`lotOverlay.ts`
+    `GROUND_KINDS` sem 'buildings'; 3,7 → 1,3 s) e é deitada em fatias de 12 ms, mostrada em
+    pedaços (o quadro de 1,27 s sumiu; pior quadro visível 550 → 133 ms).
+  - **Pessoas**: a cor média das texturas lida num canvas em software (`willReadFrequently`):
+    1.307 → 31 ms.
+  - **Tráfego**: os pares de conflito medidos em até 4 workers (`conflictPool.ts`,
+    `conflictTable.worker.ts`, `world/conflictTable.ts` puro): thread principal 3.563 → 1.021 ms,
+    primeiro quadro visível 6,6 → 5,0 s, mesmos 6.180 pontos.
+  - **Elevação** memoizada (`has`), **validação de prédio** por caixa antes do recorte
+    (740 → 237 ms), **peças instanciadas compiladas na abertura** (`partWarm.ts`: nenhuma
+    compilação num movimento), **interiores** numa grade de 2 m (192 → 73 ms, mobília idêntica).
+- Tentado e desfeito: dar à massa as cores do detalhe para usá-la mais cedo no mapa inteiro
+  (a diferença medida piorou; detalhes no `OTIMIZACAO.md`).
+- Medido no painel (1688×922, cidade padrão): prédios na tela ~9 s após o pedido; bairro e rua a
+  60 fps (GPU 12,4 / 11,1 ms); mapa inteiro 46 fps, limitado pela GPU (~20 ms: cascas 6,5 M de
+  triângulos, peças 7,0 M, sombra 2,6 ms); movimento de câmera ~59 fps com a cidade aquecida e
+  ~33 fps no primeiro minuto de uma cidade nova (montagem dos prédios que chegam, #16).
+- Pendente: nível intermediário de detalhe para o mapa inteiro (cascas e peças simplificadas
+  abaixo de um pixel, meshoptimizer, e peças do mesmo tipo de células vizinhas numa só malha),
+  montagem de prédio num worker (#16), simulação em worker (#3), registro compacto (#8, decisão do
+  jogador).
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs
