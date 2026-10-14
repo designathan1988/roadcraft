@@ -6,6 +6,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
+import { CellFiling } from '@world/cells';
 import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells,
@@ -308,6 +309,23 @@ export function createBuildingLayer(): BuildingLayer {
    * ground it was made for; its lots' ground made again when first read.
    */
   const kept = new Map<BuildingId, Kept>();
+  /**
+   * The kept buildings that have lots or bays, filed by their bounds in the world's cells
+   * (`world/cells.ts`): what a walker stands on is asked of the buildings round it. DO NOT walk
+   * `kept` for a point: `anyLotHeightAt` is asked for every walker every frame, and every building
+   * of the town was walked for each (O(walkers x buildings) a frame).
+   */
+  const lotFiling = new CellFiling<BuildingId, Kept>();
+  const putKept = (id: BuildingId, k: Kept): void => {
+    kept.set(id, k);
+    if (!k.summary.lot) { lotFiling.remove(id); return; }
+    const box = buildingBounds(k.b);
+    lotFiling.file(id, k, [box.minX, box.minY, box.maxX, box.maxY]);
+  };
+  const dropKept = (id: BuildingId): void => {
+    kept.delete(id);
+    lotFiling.remove(id);
+  };
   let flagsMoved = false;
   const keep = (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv): void => {
     const byKey = new Map(entries.map((e) => [e.key, e]));
@@ -316,7 +334,7 @@ export function createBuildingLayer(): BuildingLayer {
       const entry = byKey.get(s.key);
       // A building cut open: its flags and lots are those of the whole one.
       if (!b || !entry || s.key.includes('|')) continue;
-      kept.set(b.id, { record: entry.record, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
+      putKept(b.id, { record: entry.record, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
       if (s.flags) flagsMoved = true;
     }
   };
@@ -554,7 +572,7 @@ export function createBuildingLayer(): BuildingLayer {
           for (const id of done.ids!) {
             const b = doc.buildings.get(id);
             if (b) cover.set(b);
-            else { cover.remove(id); kept.delete(id); sent.delete(String(id)); groundDigests.delete(id); masses.delete(id); }
+            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); masses.delete(id); }
             const shown = b && town.has(id) ? b : undefined;
             if (!shown) { lastShown.delete(id); signatures.remove(id); continue; }
             lastShown.set(id, shown);
@@ -572,7 +590,7 @@ export function createBuildingLayer(): BuildingLayer {
             batch.dispose();
           }
           const shown = done.queue;
-          for (const id of kept.keys()) if (!doc.buildings.has(id)) kept.delete(id);
+          for (const id of [...kept.keys()]) if (!doc.buildings.has(id)) dropKept(id);
           for (const [k, b] of sent) if (!doc.buildings.has(b.id)) sent.delete(k);
           for (const id of groundDigests.keys()) if (!doc.buildings.has(id)) groundDigests.delete(id);
           for (const id of masses.keys()) if (!doc.buildings.has(id)) masses.delete(id);
@@ -704,9 +722,11 @@ export function createBuildingLayer(): BuildingLayer {
       return k.lot?.heightAt(x, y) ?? NaN;
     },
     anyLotHeightAt(x, y) {
-      for (const k of kept.values()) {
-        if (!k.summary.lot) continue;
-        if (k.lot === undefined) k.lot = lotGroundAgain(k.b, k.summary.lot, k.pavedAt) ?? null;
+      // The buildings filed round the point, in increasing id (`CellFiling.idsMeeting`).
+      for (const id of lotFiling.idsMeeting([x, y, x, y])) {
+        const k = kept.get(id)!;
+        // Filed only with a lot (`putKept`).
+        if (k.lot === undefined) k.lot = lotGroundAgain(k.b, k.summary.lot!, k.pavedAt) ?? null;
         const h = k.lot?.heightAt(x, y);
         if (h !== undefined && Number.isFinite(h)) return h;
       }
