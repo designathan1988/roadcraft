@@ -1182,14 +1182,16 @@ export function createAgentWalkEngine(): PedestrianEngine {
     },
     publish(w) { publish(w); },
     audit(_w: SimWorld, _out: AuditIssue[]) {},
+    // Everybody gone and everything the walkers' step keeps made new - the
+    // clock, the grids, the parked cars' zones, the cars' ways, the shocks -
+    // as a new world's (`SimWorld.reset`): kept, the clock and the filed
+    // grids of the old map made a reset world walk otherwise than a new one.
+    // The ids still to give go on, as the vehicles' (`nextVehicleId`): the
+    // renderer knows a person by id.
     reset(w) {
-      const s = stateOf(w);
-      s.walkers.length = 0;
-      s.byId.clear();
-      s.arrivals.length = 0;
-      s.graph = null;
-      s.builtFor = '';
-      s.shocks.length = 0;
+      const next = stateOf(w).nextId;
+      STATES.delete(w);
+      stateOf(w).nextId = next;
     },
     walkTrip(w, trip) { return startWalk(w, trip); },
     takeArrivals(w) {
