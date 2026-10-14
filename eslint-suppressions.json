@@ -35,11 +35,6 @@
       "count": 1
     }
   },
-  "src/editor/blueprintLibrary.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 4
-    }
-  },
   "src/editor/buildingTool.ts": {
     "max-lines": {
       "count": 1
@@ -723,11 +718,6 @@
   "src/ui/roads/profileSwatch.ts": {
     "roadcraft/no-module-state": {
       "count": 1
-    }
-  },
-  "src/ui/roads/templates.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 3
     }
   },
   "src/ui/thunder.ts": {

@@ -634,9 +634,12 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         case 'save': {
           if (!building) break;
           const name = window.prompt(t('building.blueprintName'), '');
-          if (name !== null && name.trim() !== '' && library.save(name, bodyOf(building))) {
-            userBlueprints = library.list();
-            notify('building.blueprintSaved');
+          if (name !== null && name.trim() !== '') {
+            // A save that did not happen is told, not left for the player to find missing later.
+            if (library.save(name, bodyOf(building))) {
+              userBlueprints = library.list();
+              notify('building.blueprintSaved');
+            } else notify('building.blueprintNotSaved');
           }
           break;
         }
@@ -676,7 +679,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       host.changed();
     },
     removeUserBlueprint(key) {
-      library.remove(key);
+      if (!library.remove(key)) notify('building.blueprintNotRemoved');
       userBlueprints = library.list();
       host.changed();
     },

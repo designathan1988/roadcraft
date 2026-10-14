@@ -449,7 +449,7 @@ export function openProfileEditor(options: ProfileEditorOptions): void {
         selected = Math.min(1, profile.elements.length - 1);
         status = '';
         renderAll();
-      }, template.id.startsWith('user:') ? () => { deleteTemplate(template.id); renderCards(); } : undefined, template.id);
+      }, template.id.startsWith('user:') ? () => { if (!deleteTemplate(template.id)) { status = t('profile.notRemoved'); renderFoot(); } renderCards(); } : undefined, template.id);
     }
     card(t('profileEditor.blank'), profile.elements.length === 0, `<span class="rp-card-blank">${icon('plus')}</span>`, () => {
       profile = { ...profile, elements: [] };
@@ -624,7 +624,8 @@ export function openProfileEditor(options: ProfileEditorOptions): void {
     const name = nameField.value.trim();
     const saved = name && !issues().length ? saveTemplate(name, type, profile) : null;
     // Saved, the new card is the answer (picked, at the end of the row); only a refusal is written.
-    status = saved ? '' : t('profile.notSaved');
+    // A refusal says why: no name or a profile with issues, or storage that would not keep it.
+    status = saved ? '' : name && !issues().length ? t('profile.notStored') : t('profile.notSaved');
     if (saved) {
       saving = false;
       nameField.value = '';

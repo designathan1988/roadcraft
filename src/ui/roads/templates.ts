@@ -1,3 +1,4 @@
+import { KeptList } from '@core/keptList';
 import type { RoadProfileSpec } from '@world/roads/profile';
 import { type RoadTemplate, normalizeTemplate } from '@world/roads/templates';
 import { unitFactor } from '@world/rescale';
@@ -6,41 +7,41 @@ import { METERS_PER_UNIT } from '@world/units';
 /**
  * The player's own road templates (docs/source/VIAS.md V1), kept in this browser for
  * every map, as Cities: Skylines keeps a player's roads apart from any one
- * city. Read back through `normalizeTemplate`: a damaged entry is dropped,
- * never built. Storage can be refused (a private window): then nothing is
- * kept and the game goes on.
+ * city. Read back through `normalizeTemplate`: a damaged entry is not built.
+ * Stored as a `KeptList` (`core/keptList.ts`): saving or deleting one template
+ * writes every other back as it was, one this build cannot read included, and a
+ * change that was not written says so. Storage can be refused (a private
+ * window): then nothing is kept, the player is told, and the game goes on.
  */
-const STORE = 'roadcraft.roadTemplates';
+const kept = new KeptList('roadcraft.roadTemplates', 'road template');
+
+/** A stored entry as a template in this build's unit, or null when this build cannot read it (it stays stored). */
+const readTemplate = (raw: unknown): RoadTemplate | null => normalizeTemplate(inThisUnit(raw));
 
 export function savedTemplates(): RoadTemplate[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORE) ?? '[]') as unknown;
-    if (!Array.isArray(raw)) return [];
-    return raw.map((t) => normalizeTemplate(inThisUnit(t))).filter((t): t is RoadTemplate => t !== null);
-  } catch {
-    return [];
-  }
+  return kept.read(readTemplate);
 }
 
-/** Saves a template under a name, replacing one of the same name; null when it cannot be built or kept. */
+/** Saves a template under a name, replacing one of the same name; null when it cannot be built or was not kept. */
 export function saveTemplate(name: string, type: number, profile: RoadProfileSpec): RoadTemplate | null {
   const template = normalizeTemplate({ id: `user:${Date.now().toString(36)}`, name, type, profile });
   if (!template) return null;
-  const list = savedTemplates().filter((t) => t.name !== template.name);
-  list.push(template);
-  try {
-    localStorage.setItem(STORE, JSON.stringify(list.map(withUnit)));
-  } catch {
-    return null;
-  }
-  return template;
+  const written = kept.update((entries) => [...entries.filter((e) => readable(e)?.name !== template.name), withUnit(template)]);
+  return written ? template : null;
 }
 
-export function deleteTemplate(id: string): void {
+/** Deletes one template, the rest as they were; false when nothing could be written. */
+export function deleteTemplate(id: string): boolean {
+  return kept.update((entries) => entries.filter((e) => readable(e)?.id !== id));
+}
+
+/** An entry as read, for matching it by name or id; an entry that cannot be read matches nothing and stays. */
+function readable(entry: unknown): RoadTemplate | null {
   try {
-    localStorage.setItem(STORE, JSON.stringify(savedTemplates().filter((t) => t.id !== id).map(withUnit)));
-  } catch {
-    // Storage refused: there was nothing kept to remove.
+    return readTemplate(entry);
+  } catch (error) {
+    console.warn('[templates] a road template this build cannot read; kept as it is', error);
+    return null;
   }
 }
 

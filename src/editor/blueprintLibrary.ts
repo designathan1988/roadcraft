@@ -1,3 +1,4 @@
+import { KeptList } from '@core/keptList';
 import type { Blueprint, BlueprintBody } from '@world/buildings/blueprints';
 import { migrateBuilding } from '@world/buildings/serialize';
 import { rescaleBuilding, unitFactor } from '@world/rescale';
@@ -9,11 +10,13 @@ import { METERS_PER_UNIT } from '@world/units';
  * `migrateBuilding` door as every stored building, so a blueprint written by
  * an older build loads repaired rather than not at all.
  *
- * Every storage call is guarded: a private window or blocked storage makes the
- * library empty and read-only, never a crash.
+ * Stored as a `KeptList` (`core/keptList.ts`): saving or removing one blueprint
+ * writes every other back as it was, one this build cannot read included, and a
+ * save or removal that did not happen says so (null/false). DO NOT drop the
+ * oldest past a count: the 49th save erased the first without a word; the
+ * browser's quota is the limit, and a save past it is told.
  */
 const KEY = 'roadcraft.blueprints.v1';
-const LIMIT = 48;
 
 interface StoredBlueprint {
   readonly key: string;
@@ -23,56 +26,44 @@ interface StoredBlueprint {
   readonly unit?: number;
 }
 
+const isStored = (entry: unknown): entry is StoredBlueprint =>
+  !!entry && typeof entry === 'object' && typeof (entry as StoredBlueprint).key === 'string' && typeof (entry as StoredBlueprint).name === 'string';
+
 export class BlueprintLibrary {
-  constructor(private readonly storageKey = KEY) {}
+  private readonly kept: KeptList;
+
+  constructor(storageKey = KEY) {
+    this.kept = new KeptList(storageKey, 'blueprint');
+  }
 
   list(): Blueprint[] {
-    let raw: string | null;
-    try {
-      raw = localStorage.getItem(this.storageKey);
-    } catch {
-      return [];
-    }
-    if (!raw) return [];
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      const out: Blueprint[] = [];
-      for (const entry of parsed as StoredBlueprint[]) {
-        if (!entry || typeof entry.key !== 'string' || typeof entry.name !== 'string') continue;
-        const body = readBody(rescaleBuilding(entry.body, unitFactor(entry.unit), null));
-        if (body) out.push({ key: entry.key, name: entry.name, body });
-      }
-      return out;
-    } catch {
-      return [];
-    }
+    return this.kept.read(readEntry);
   }
 
-  /** Saves a body under a name; returns the stored blueprint, or null. */
+  /** Saves a body under a name (the one of that name replaced); returns the stored blueprint, or null when it was not saved. */
   save(name: string, body: BlueprintBody): Blueprint | null {
-    const list = this.list();
     const title = name.trim().slice(0, 40) || 'Blueprint';
-    const existing = list.find((item) => item.name?.toLocaleLowerCase() === title.toLocaleLowerCase());
-    const key = existing?.key ?? `user-${Date.now().toString(36)}-${list.length}`;
-    const entry: Blueprint = { key, name: title, body };
-    const next = [entry, ...list.filter((item) => item.key !== key)].slice(0, LIMIT);
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(next.map((b) => ({ key: b.key, name: b.name, body: b.body, unit: METERS_PER_UNIT }))));
-      return entry;
-    } catch {
-      return null;
-    }
+    let key = '';
+    const written = this.kept.update((entries) => {
+      const existing = entries.find((e): e is StoredBlueprint => isStored(e) && e.name.toLocaleLowerCase() === title.toLocaleLowerCase());
+      key = existing?.key ?? `user-${Date.now().toString(36)}-${entries.length}`;
+      const entry: StoredBlueprint = { key, name: title, body, unit: METERS_PER_UNIT };
+      return [entry, ...entries.filter((e) => !(isStored(e) && e.key === key))];
+    });
+    return written ? { key, name: title, body } : null;
   }
 
-  remove(key: string): void {
-    const next = this.list().filter((b) => b.key !== key);
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(next.map((b) => ({ key: b.key, name: b.name, body: b.body, unit: METERS_PER_UNIT }))));
-    } catch {
-      /* read-only storage: nothing to remove from */
-    }
+  /** Removes one blueprint, the rest as they were; false when nothing could be written. */
+  remove(key: string): boolean {
+    return this.kept.update((entries) => entries.filter((e) => !(isStored(e) && e.key === key)));
   }
+}
+
+/** One stored entry as a blueprint, or null when this build cannot read it (it stays stored). */
+function readEntry(entry: unknown): Blueprint | null {
+  if (!isStored(entry)) return null;
+  const body = readBody(rescaleBuilding(entry.body, unitFactor(entry.unit), null));
+  return body ? { key: entry.key, name: entry.name, body } : null;
 }
 
 /** A stored body, repaired through `migrateBuilding` (placement fields are dummies). */
