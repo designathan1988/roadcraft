@@ -265,9 +265,19 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   9. **Desgaste dos prédios por prazo** (`main.ts` `decayWatch`): só os prédios vencidos, pelo
      diário, não o mapa inteiro a cada 3 s.
   10. **Um material para os lampejos de via** (`render/renderer.ts`).
-- Pendente, com o porquê em `OTIMIZACAO.md`: BatchedMesh por acabamento (#2, depois do #1
-  assentar), simulação em worker (#3, arquitetura), R27/R22 no documento (#4, #8), luzes pontuais
-  (#5, decisão do jogador).
+  2. **Cascas dos prédios num `BatchedMesh` por acabamento** (`render/buildings/shellBatches.ts`,
+     materiais próprios dos lotes em `kit.shellBatched`, variante de profundidade na sombra):
+     bairro 916 → 498 chamadas, rua 654 → 528, mapa inteiro 1.111 → 847.
+  12. **Lacuna do streaming** (foto do jogador: lotes vazios): a massa fica até o detalhe chegar
+     (`massCells.holdMass`); os chunks completos ficam num cache por bytes (768 MB) com LRU por
+     célula (Cesium `cacheBytes`); até 4 células por quadro.
+  13. **Abertura da cidade gerada**: crescimento 100 ms por quadro com os prédios e a
+     sobreposição dos lotes segurados (`holdBuildings`, `LotTool.holdOverlay`), só as células
+     perto emitidas na abertura, massas antes do detalhe, prédios longe num backlog nas sobras do
+     quadro. Prédios na tela a 7,5 s do pedido (eram 11,8 s), sem travar a página.
+- Pendente, com o porquê em `OTIMIZACAO.md`: simulação em worker (#3, arquitetura), R27/R22 no
+  documento (#4 em andamento por agente supervisionado, #8), luzes pontuais (#5, decisão do
+  jogador), traçado inicial da cidade (#14, ~0,8 s síncrono).
 - NÃO rodado: `npm run check` inteiro (o pedido desta rodada limitou a verificação a build e
   typecheck); por isso nada foi enviado ao GitHub.
 
