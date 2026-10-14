@@ -16,3 +16,6 @@
 - 2026-10-14 ~14h40 (auditoria): `96d1d64` postes segurados durante o traçado, com `--only`; o
   `777b12a` da outra sessão tinha levado o renderer.ts do índice (ela desfez e refez como 6b487bb).
   Regra nova em ORDENS: `git commit --only <caminhos>`. Portador e regras do check-code em stash.
+- 2026-10-14 ~15h30 (auditoria): `6f22b1c` regras novas no check-code (CLARITY); `f01799a` índice de
+  prédios por lugar (cidade idêntica; 12,0 → 7,8 s em 5.400 prédios). Timeouts do check completo de
+  novo por carga (passam sozinhos).

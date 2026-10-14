@@ -1,6 +1,6 @@
 # Estado do trabalho — reescrever a cada mudança (não acumular)
 
-Atualizado: 2026-10-14 ~14h40.
+Atualizado: 2026-10-14 ~15h30.
 
 ## Quem está trabalhando
 - **"Auditoria de desempenho three.js"**: otimização, correções no código (prédios, renderer,
@@ -24,14 +24,15 @@ Atualizado: 2026-10-14 ~14h40.
   - `6940134`, `267b9f5` memória e auditoria (sessão de auditoria) — documentação.
   - `6b487bb` (outra sessão) teste de escala sem limite de tempo próprio.
   - `96d1d64` postes segurados durante o traçado (`holdUtilities`) — o HEAD volta a compilar.
+  - `6f22b1c` regras `whole-map-nested` / `whole-map-per-item` no check-code.
+  - `f01799a` índice de prédios por lugar (`BuildingStore.near`) no crescimento e na validação.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
     presas na CPU não se reproduziram; pode jogar até 583 MB na placa (teto do plano 300). Decidir com
     medição na sequência exata da outra sessão (cidade salva, recarregar, vista salva zoom 11,44,
     medir entre 70 e 92 s), com e sem o portador, olhando `budget('rua')`.
-  - Em `git stash` ("regras check-code (em andamento)"): `scripts/check-code.mjs`, começo das regras novas.
-  - `OTIMIZACAO.md`: itens 26-30.
+  - (nada além do stash do portador)
 - Não mexer (de outros): `docs/RELATORIO-DESEMPENHO-2026-10-14.md`, `tests/scale/buildingEdit.spec.ts`,
   os apagados `.claude/*`, `.githooks/pre-push` (o jogador apagou; nunca commitar a deleção nem restaurar).
 - Stashes: `stash@{0}` emitTileMass (L2/L3 de massa, WIP); `stash@{1}` emissão de prédios em worker
@@ -86,11 +87,12 @@ Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
   central: `serialOf(kinds) <= since → []`).
 
 ## Próximos passos (em ordem)
-2. Terminar as regras do check-code (§6.1), semear a linha de base, commit.
-3. Índice espacial de prédios no store + corrigir a geração quadrática (zoning, validate, addPlaced)
-   com digest de cidade idêntica.
-4. Correções de uma linha da auditoria (prédios 2 e 7; render 1, 2, 3).
-5. `layer.update` incremental pelo diário (o maior estrutural).
-6. Etapa 1 do desenho: sombra por tamanho na tela.
+1. Resto do quadrático da geração que a regra `whole-map-per-item` ainda lista: `growOnLot` (lotes
+   abertos, `lastGrown`, `findIndex`), `cornerOf`/`onStreet` (ribbons), `footwayRise.flushIndex`.
+2. Diário de mudanças: anel único de 2.048 (D8/C1) — conserto central, beneficia todos os leitores.
+3. `layer.update` incremental pelo diário (A1, o maior estrutural; contador `building+1:layer` 3,82).
+4. Correções de uma linha da auditoria (A2, A7, C3) e os achados `whole-map-nested` da linha de base.
+5. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
+6. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item).
 
 Detalhe do que já foi feito: `memory/FEITO.md`. Histórico: `memory/DIARIO.md`.
