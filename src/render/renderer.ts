@@ -68,6 +68,7 @@ import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shad
 import { partWarmMeshes } from './buildings/partWarm';
 import { GRASS_MIN_ZOOM } from './grass';
 import { advanceWind, setWindWeather } from './wind';
+import { holdStill } from './stillTree';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -717,6 +718,8 @@ export function createSceneRenderer(
 
   const world = new Group();
   world.name = 'world';
+  // Roads, plants, poles, furniture, forests: placed once, never moved (`stillTree.ts`).
+  holdStill(world);
   scene.add(world);
 
   let roads: RoadSurfaces | null = null;
