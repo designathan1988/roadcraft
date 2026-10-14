@@ -85,11 +85,9 @@ import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { buildBarriers, type Barriers } from './barriers';
 import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
-import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
+import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
-import { GRASS_NEAR_REACH, type MaskRect, createGrass, createGrassMask } from './grassField';
-import { surfaces as roadSurfacesOf } from '@world/surfaces';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';
@@ -646,76 +644,13 @@ export function createSceneRenderer(
   const builtGroundAt = (x: number, y: number): number => terrain.naturalRenderedHeightAt(x, y);
   // The perspective view looks at the ground and stays over it (`IsoRig.setGround`).
   rig.setGround((x, y) => terrain.renderedHeightAt(x, y));
-  // The grass field round the camera (`grass.ts`): its ground heights and the
-  // mask that keeps it off paving and buildings, rebuilt when those change.
-  // One mask for both rings, drawn again only where the roads or the buildings changed (`grassField.ts`).
-  const grassMask = createGrassMask();
-  const grass = createGrass(quality, undefined, grassMask);
-  // The far ring: three times the spacing, out to three times the reach, where the near one fades.
-  const grassFar = createGrass(quality, { scale: 3, inner: GRASS_NEAR_REACH * 0.85 }, grassMask);
-  scene.add(grass.mesh, grassFar.mesh);
-  stillRoots.add(grass.mesh).add(grassFar.mesh);
-  // The blades follow the ecosystem's ground and the season.
-  grass.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
-  grassFar.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
-  if (import.meta.env.DEV) (window as unknown as { __grass?: unknown; __scene?: unknown }).__grass = grass;
+  // NO GPU grass field (`grassField.ts`): the player had it taken off
+  // (2026-10-06, "melhor tirar e usar uma textura"), and it was still made -
+  // its blades, its mask over the whole map, 384 x 384 heights - and updated
+  // every frame, hidden; its mask walked every building and lot of the town
+  // at each of their revisions. The ground's own grass texture covers the map
+  // (`GRASS_FIELD` stays at its default, off). DO NOT make it again unseen.
   if (import.meta.env.DEV) Object.assign(window, { __scene: scene, __gl: renderer });
-  let grassGroundFor = '';
-  let grassMaskFor = '';
-  /** Where the grass mask must be drawn again: a rectangle, the whole map, or nowhere. */
-  let grassDirty: MaskRect | 'all' | null = 'all';
-  const markGrass = (box: MaskRect | null): void => {
-    if (box === null) { grassDirty = 'all'; return; }
-    if (grassDirty === 'all') return;
-    grassDirty = grassDirty === null ? box
-      : [Math.min(grassDirty[0], box[0]), Math.min(grassDirty[1], box[1]), Math.max(grassDirty[2], box[2]), Math.max(grassDirty[3], box[3])];
-  };
-  /** Each building footprint and lot the mask was drawn with, by key: what it was, and its box. */
-  const grassBlockers = new Map<string, { ref: unknown; box: MaskRect }>();
-  let grassCheckedAt = 0;
-  const GRASS_SAMPLES = 384;
-  const keepGrassInputs = (net: Network): void => {
-    if (performance.now() - grassCheckedAt < 300) return;
-    grassCheckedAt = performance.now();
-    const groundKey = `${net.doc.terrainRevision}:${net.revision}`;
-    if (groundKey !== grassGroundFor) {
-      grassGroundFor = groundKey;
-      const n = GRASS_SAMPLES, size = TERRAIN_HALF * 2;
-      const heights = new Float32Array(n * n);
-      for (let r = 0; r < n; r++) {
-        const y = -TERRAIN_HALF + ((r + 0.5) / n) * size;
-        for (let c = 0; c < n; c++) heights[r * n + c] = terrain.renderedHeightAt(-TERRAIN_HALF + ((c + 0.5) / n) * size, y);
-      }
-      grass.setHeights(heights, n, size);
-      grassFar.setHeights(heights, n, size);
-    }
-    const maskKey = `${net.revision}:${net.doc.buildings.revision}:${net.doc.lotRevision}`;
-    if (maskKey !== grassMaskFor) {
-      grassMaskFor = maskKey;
-      const rings: { x: number; y: number }[][] = [];
-      // What blocks grass, by building and by lot: the box of each one that
-      // came, went or changed joins the area drawn again.
-      const seen = new Set<string>();
-      const blocker = (key: string, ref: unknown, ring: readonly { x: number; y: number }[]): void => {
-        rings.push(ring as { x: number; y: number }[]);
-        seen.add(key);
-        const was = grassBlockers.get(key);
-        if (was?.ref === ref) return;
-        let box: MaskRect = [Infinity, Infinity, -Infinity, -Infinity];
-        for (const p of ring) box = [Math.min(box[0], p.x), Math.min(box[1], p.y), Math.max(box[2], p.x), Math.max(box[3], p.y)];
-        if (was) markGrass(was.box);
-        markGrass(box);
-        grassBlockers.set(key, { ref, box });
-      };
-      for (const b of net.doc.buildings.all()) solidFootprints(b).forEach((ring, i) => blocker(`b${b.id}:${i}`, b, ring));
-      for (const lot of net.doc.lots) if (lot.building !== undefined) blocker(`l${lot.id}`, `${lot.building}:${lot.corners.map((q) => `${q.x},${q.y}`).join(';')}`, [...lot.corners]);
-      for (const [key, was] of grassBlockers) if (!seen.has(key)) { markGrass(was.box); grassBlockers.delete(key); }
-      const roads = net.doc.segments.size ? [roadSurfacesOf(net).sidewalk] : [];
-      const rect = grassDirty === 'all' ? null : grassDirty;
-      if (grassDirty !== null) grassMask.draw(roads, rings, TERRAIN_HALF * 2, rect);
-      grassDirty = null;
-    }
-  };
   scene.add(...terrain.meshes);
   for (const mesh of terrain.meshes) stillRoots.add(mesh);
 
@@ -1744,11 +1679,6 @@ export function createSceneRenderer(
     // The roads' own heights (the footway, the carriageway) moved where the
     // solve did: the 'elevation' entry just written is what the things on the
     // ground read (`groundChanges`).
-    // The footways moved where the solve did: the grass mask is drawn again there.
-    const atGrass = performance.now();
-    if (changed === null) markGrass(null);
-    else for (const block of changed) markGrass(block);
-    performance.measure('hitch:road-edit/grass marked', { start: atGrass, end: performance.now() });
     const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25;
     pendingBlocks = local ? blocks : null;
     // The land itself changed: at once. After a road edit, and for the first
@@ -3351,19 +3281,6 @@ export function createSceneRenderer(
       // uniform's value, read at the next upload, no program change.
       buildings.setNight(lastDark, clock / 60);
       rig.camera.getWorldDirection(viewDirection);
-      // The grass blades are off: grown only round the camera, the field ended
-      // in a line a little way off and the land beyond was bare (the player,
-      // 2026-10-06: "melhor tirar e usar uma textura"). The ground's own
-      // grass texture covers the whole map.
-      {
-        const show = false;
-        const atGrass = performance.now();
-        if (show) keepGrassInputs(net);
-        performance.measure('hitch:draw/Grass', { start: atGrass, end: performance.now() });
-        grass.update(target.x, target.z, show, windClock);
-        GRASS_FIELD.value = [target.x, -target.z, GRASS_NEAR_REACH * 3, show ? 1 : 0];
-        grassFar.update(target.x, target.z, show, windClock);
-      }
       // The shadows round the ground looked at. It answers whether the light
       // itself moved: the shadow map is drawn again only when it did, when a
       // caster moved, or when this view is close enough for a frame of a
