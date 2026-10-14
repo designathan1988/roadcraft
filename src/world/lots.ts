@@ -943,7 +943,9 @@ export function curveLotSide(doc: RoadDoc, a: Vec2, b: Vec2, through: Vec2): boo
       break;
     }
   }
-  if (changed) doc.lotsChanged(lotRects([{ corners: [a, b, through] }]), 'lado do lote curvado');
+  // The curve lies within the triangle of its ends and its control point, and
+  // can bulge past `through` along the side: the control point is written too.
+  if (changed) doc.lotsChanged(lotRects([{ corners: [a, b, through, control] }]), 'lado do lote curvado');
   return changed;
 }
 
