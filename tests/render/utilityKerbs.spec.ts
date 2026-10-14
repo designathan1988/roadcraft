@@ -5,7 +5,7 @@ import { applyLots, planLots } from '@world/lots';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { greenCity, layCity, widenCityFootways } from '@editor/cityGenerator';
 import { createSceneryKit } from '@render/scenery';
-import { type KerbCache, buildUtilities, type WireChunk } from '@render/utilities';
+import { type KerbCache, buildUtilities } from '@render/utilities';
 import { m } from '@world/units';
 
 /**
@@ -42,9 +42,8 @@ describe('the poles\' ways to the kerb kept', () => {
       return out;
     };
     const kerbs: KerbCache = new Map();
-    const wires = new Map<string, WireChunk>();
     const kept = (): Map<string, number[]> => {
-      const layer = buildUtilities(net, ground, kit, undefined, 'utilities', wires, kerbs);
+      const layer = buildUtilities(net, ground, kit, undefined, 'utilities', kerbs);
       const out = matrices(layer);
       layer.dispose();
       return out;

@@ -1,98 +1,80 @@
 import { describe, expect, it } from 'vitest';
-import { BufferAttribute, Vector3 } from 'three';
+import type { InstancedBufferGeometry, InterleavedBufferAttribute, Mesh } from 'three';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { POLE_ARM_DROP, POLE_ARM_HALF, WIRE_COURSES, WIRE_OFFSETS, poleArms, sampleWire, POLE_HEIGHT } from '@world/utilities';
+import { POLE_ARM_DROP, POLE_ARM_HALF, POLE_HEIGHT, WIRE_COURSES, WIRE_OFFSETS, WIRE_SEGMENTS, poleArms, sampleWire } from '@world/utilities';
 import { createSceneryKit } from '@render/scenery';
-import { buildUtilities, type WireChunk } from '@render/utilities';
+import { buildUtilities } from '@render/utilities';
 import { m } from '@world/units';
 
 /**
- * THE POLE LAYER'S WIRES KEPT BY SPAN (docs/PROBLEMAS.md PL45): each span's
- * tubes are made once and kept while its ends stand as they did; the layer
- * is the same picture as the one made whole every time, and an edit makes
- * again only the spans it moved.
+ * THE POLE LAYER'S WIRES AS INSTANCES: each wire is eight numbers - its ends
+ * in three's axes, its sag and its phase - drawn from one tube template the
+ * vertex shader bends along the wire (`render/utilities.ts` `WIRE_GLSL`). The
+ * instances must lay every wire where `sampleWire` lays it, the way the tubes
+ * were built on the CPU before; the tube round each point is the shader's
+ * (seen in the game).
  */
-const WIRE_RADIUS = m(0.035);
-
-/** The wires as the layer made them before the spans were kept: the same tubes, by Vector3. */
-function wiresWhole(doc: RoadDoc, ground: number): number[] {
-  const crown = new Map([...doc.poles.values()].map((p) => [p.id, ground + POLE_HEIGHT] as const));
-  const framing = poleArms(doc.poles, doc.poleSpans, () => ({ x: 0, y: 1 }));
-  const pos: number[] = [];
-  const a = new Vector3(), b2 = new Vector3(), d = new Vector3(), u = new Vector3(), w = new Vector3(), up = new Vector3(0, 1, 0);
-  for (const span of doc.poleSpans.values()) {
-    const pa = doc.poles.get(span.a)!, pb = doc.poles.get(span.b)!;
-    const armA = framing.get(pa.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
-    const armB = framing.get(pb.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
-    for (const course of WIRE_COURSES) {
-      for (const offset of WIRE_OFFSETS) {
-        const points = sampleWire(
-          pa.x + armA.x * POLE_ARM_HALF * offset, pa.y + armA.y * POLE_ARM_HALF * offset, crown.get(pa.id)! - POLE_ARM_DROP + course,
-          pb.x + armB.x * POLE_ARM_HALF * offset, pb.y + armB.y * POLE_ARM_HALF * offset, crown.get(pb.id)! - POLE_ARM_DROP + course,
-        );
-        for (let i = 0; i + 1 < points.length; i++) {
-          const p = points[i]!, q = points[i + 1]!;
-          a.set(p.x, p.z, -p.y);
-          b2.set(q.x, q.z, -q.y);
-          d.copy(b2).sub(a).normalize();
-          u.crossVectors(d, up).normalize().multiplyScalar(WIRE_RADIUS);
-          w.crossVectors(u, d).normalize().multiplyScalar(WIRE_RADIUS);
-          const corners = [u.clone(), w.clone(), u.clone().negate(), w.clone().negate()];
-          for (let k = 0; k < 4; k++) {
-            const c0 = corners[k]!, c1 = corners[(k + 1) % 4]!;
-            for (const [p0, c] of [[a, c0], [b2, c0], [b2, c1], [a, c0], [b2, c1], [a, c1]] as const) pos.push(p0.x + c.x, p0.y + c.y, p0.z + c.z);
-          }
-        }
-      }
-    }
-  }
-  return pos;
-}
-
 function line(doc: RoadDoc, n: number, y: number): void {
   const ids = Array.from({ length: n }, (_, i) => doc.addPole({ x: i * m(30), y: y + (i % 2) * m(2) }, i % 2 === 0).id);
   for (let i = 1; i < n; i++) doc.addPoleSpan(ids[i - 1]!, ids[i]!);
 }
 
-describe('the pole layer\'s wires kept by span', () => {
-  it('draw the same tubes as the layer made whole', () => {
+/** The wire's point at t from its instance, as the shader takes it (`wireAt`). */
+function wireAt(data: ArrayLike<number>, w: number, t: number): [number, number, number] {
+  const o = w * 8, u = t * 2 - 1, drop = data[o + 6]! * (1 - u * u);
+  return [data[o]! + (data[o + 3]! - data[o]!) * t, data[o + 1]! + (data[o + 4]! - data[o + 1]!) * t - drop, data[o + 2]! + (data[o + 5]! - data[o + 2]!) * t];
+}
+
+describe('the pole layer\'s wires as instances', () => {
+  it('lay every wire where sampleWire lays it, eight numbers a wire', () => {
     const doc = new RoadDoc();
     line(doc, 6, 0);
     line(doc, 4, m(80));
     const net = new Network(doc);
     net.rebuild();
-    const layer = buildUtilities(net, () => 0, createSceneryKit(), undefined, 'utilities', new Map());
-    const wires = layer.group.getObjectByName('utility-wires')!;
-    const got = ((wires as unknown as { geometry: { getAttribute(n: string): BufferAttribute } }).geometry.getAttribute('position').array);
-    const want = wiresWhole(doc, 0);
-    expect(got.length).toBe(want.length);
-    let worst = 0;
-    for (let i = 0; i < want.length; i++) worst = Math.max(worst, Math.abs(got[i]! - want[i]!));
+    const layer = buildUtilities(net, () => 0, createSceneryKit());
+    const wires = layer.group.getObjectByName('utility-wires') as Mesh;
+    const geometry = wires.geometry as InstancedBufferGeometry;
+    // The template: one wire's tube, whatever the number of wires.
+    expect(geometry.getAttribute('position').count).toBe(WIRE_SEGMENTS * 24);
+    const start = geometry.getAttribute('aStart') as InterleavedBufferAttribute;
+    const data = start.data.array as Float32Array;
+    expect(start.data.stride).toBe(8);
+    const crown = POLE_HEIGHT;
+    const framing = poleArms(doc.poles, doc.poleSpans, () => ({ x: 0, y: 1 }));
+    let w = 0, worst = 0;
+    for (const span of doc.poleSpans.values()) {
+      const pa = doc.poles.get(span.a)!, pb = doc.poles.get(span.b)!;
+      const armA = framing.get(pa.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
+      const armB = framing.get(pb.id)?.bySpan.get(span.id) ?? { x: 0, y: 1 };
+      for (const course of WIRE_COURSES) {
+        for (const offset of WIRE_OFFSETS) {
+          const points = sampleWire(
+            pa.x + armA.x * POLE_ARM_HALF * offset, pa.y + armA.y * POLE_ARM_HALF * offset, crown - POLE_ARM_DROP + course,
+            pb.x + armB.x * POLE_ARM_HALF * offset, pb.y + armB.y * POLE_ARM_HALF * offset, crown - POLE_ARM_DROP + course,
+          );
+          points.forEach((p, i) => {
+            const [x, y, z] = wireAt(data, w, i / WIRE_SEGMENTS);
+            worst = Math.max(worst, Math.abs(x - p.x), Math.abs(y - p.z), Math.abs(z + p.y));
+          });
+          expect(data[w * 8 + 7]).toBeCloseTo((span.id * 2.399) % (Math.PI * 2), 5);
+          w++;
+        }
+      }
+    }
+    expect(geometry.instanceCount).toBe(w);
+    expect(w).toBe(doc.poleSpans.size * WIRE_COURSES.length * WIRE_OFFSETS.length);
     // Float32 storage of the same numbers.
     expect(worst).toBeLessThan(1e-4);
+    // The bounds hold every wire, sag and all.
+    const sphere = geometry.boundingSphere!;
+    for (let k = 0; k < w; k++) {
+      for (const t of [0, 0.5, 1]) {
+        const [x, y, z] = wireAt(data, k, t);
+        expect(Math.hypot(x - sphere.center.x, y - sphere.center.y, z - sphere.center.z)).toBeLessThanOrEqual(sphere.radius);
+      }
+    }
     layer.dispose();
-  });
-
-  it('make again only the spans an edit moved', () => {
-    const doc = new RoadDoc();
-    line(doc, 8, 0);
-    const net = new Network(doc);
-    net.rebuild();
-    const cache = new Map<string, WireChunk>();
-    const kit = createSceneryKit();
-    buildUtilities(net, () => 0, kit, undefined, 'utilities', cache).dispose();
-    const before = new Set(cache.values());
-    expect(before.size).toBe(7);
-    // A pole added at the end, strung to the last: one span more, the others kept.
-    const last = [...doc.poles.values()].at(-1)!;
-    const extra = doc.addPole({ x: last.x + m(30), y: last.y }, false);
-    doc.addPoleSpan(last.id, extra.id);
-    buildUtilities(net, () => 0, kit, undefined, 'utilities', cache).dispose();
-    const after = [...cache.values()];
-    const kept = after.filter((c) => before.has(c)).length;
-    // The last old span's far arm turns (its pole now carries two spans): it is made again; the other six are kept.
-    expect(after.length).toBe(8);
-    expect(kept).toBe(6);
   });
 });

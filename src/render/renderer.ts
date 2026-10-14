@@ -80,7 +80,7 @@ import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { buildSigns, type SignLayer } from './signs';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
-import { type KerbCache, buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, type Utilities, type WireChunk } from './utilities';
+import { type KerbCache, buildPolePreview, buildUtilities, poleGroundAt, type PolePreviewInput, type Utilities } from './utilities';
 import { buildBarriers, type Barriers } from './barriers';
 import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
 import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
@@ -1486,8 +1486,6 @@ export function createSceneRenderer(
 
   /** `doc.utilityRevision` the pole layer was last built at. */
   let utilityRevision = -1;
-  /** The built pole layer's span wires, kept from build to build: only the spans an edit moved are made again. */
-  const utilityWires = new Map<string, WireChunk>();
   /** And its poles' ways to the kerb (`KerbCache`), read again only for a pole or a road that moved. */
   const utilityKerbs: KerbCache = new Map();
   /**
@@ -1525,7 +1523,7 @@ export function createSceneRenderer(
       utilities.dispose();
     }
     const atBuild = performance.now();
-    utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires, utilityKerbs);
+    utilities = buildUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityKerbs);
     world.add(utilities.group);
     builtTriangles += utilities.triangles;
     const atFurniture = performance.now();
@@ -1800,7 +1798,7 @@ export function createSceneRenderer(
     const utilityBuilt = net.doc.utilityRevision;
     const keepUtilities = utilities !== null && utilityRevision === net.doc.utilityRevision
       && !blocksReach(blocks, [...net.doc.poles.values()].map((pole) => around(pole.x, pole.y, m(12))));
-    const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityWires, utilityKerbs);
+    const freshUtilities = keepUtilities ? utilities! : buildUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net), sceneryKit, undefined, 'utilities', utilityKerbs);
     performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
     // The placed things (benches, lamps, street trees) on the footways they stand on.
     const keepFurniture = furniture !== null && utilityRevision === net.doc.utilityRevision
