@@ -21,12 +21,18 @@ const LOOKAHEAD = 5;
  * on through a bend no car fits, and stood at the end of its route for good,
  * the street queued behind it (defects.spec, player-city, 75 s at a junction).
  *
- * Per graph and body class, worked out once.
+ * Per graph build and body class, worked out once. The world's graph is one
+ * object built again in place by every road edit (`LaneletGraph.buildSteps`
+ * clears it and sets `revision` to the network's): the traps are kept with
+ * the revision they were worked out at.
+ * DO NOT key them by the graph object alone: kept by it, the traps of the
+ * first build outlived every edit (`tests/sim/trapLanes.spec.ts`).
  */
-const trapMemo = new WeakMap<object, Map<number, ReadonlySet<LaneletId>>>();
+const trapMemo = new WeakMap<object, { revision: number; byBody: Map<number, ReadonlySet<LaneletId>> }>();
 export function trapLanes(w: SimWorld, body: number): ReadonlySet<LaneletId> {
-  let byBody = trapMemo.get(w.graph);
-  if (!byBody) trapMemo.set(w.graph, byBody = new Map());
+  let memo = trapMemo.get(w.graph);
+  if (!memo || memo.revision !== w.graph.revision) trapMemo.set(w.graph, memo = { revision: w.graph.revision, byBody: new Map() });
+  const byBody = memo.byBody;
   const known = byBody.get(body);
   if (known) return known;
   // Reverse edges over the movements this body fits.
