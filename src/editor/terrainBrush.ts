@@ -20,14 +20,14 @@ import { UNITS_PER_METER, m } from '@world/units';
  */
 
 /** Spacing between dabs along a stroke, a fraction of the radius. */
-export const TERRAIN_SPACING = 0.2;
+const TERRAIN_SPACING = 0.2;
 /** The shortest time between dabs, ms. */
 export const TERRAIN_MIN_MS = 45;
 /** How often a held flatten levels a little further, ms. */
-export const TERRAIN_REPEAT_MS = 110;
+const TERRAIN_REPEAT_MS = 110;
 
 /** A landform: a shape and its rock in one tool (`main.ts` LANDFORMS). */
-export interface Landform {
+interface Landform {
   readonly mode: 'raise' | 'lower';
   readonly rock: GeologyKind;
   readonly profile?: 'dome';
@@ -73,7 +73,7 @@ function noiseOrigin(stroke: { origin: Vec2 } | null, at: Vec2): Vec2 | null {
  * flatten's target, `stroke` the stroke's id, `origin` its noise origin on
  * `at`'s map (`TerrainStamp.ox`; null: a dab of its own).
  */
-export function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | null, s: DabSettings, origin: Vec2 | null = null): void {
+function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | null, s: DabSettings, origin: Vec2 | null = null): void {
   if (s.mode === 'elements') {
     // Elements move no height: a dab lays instances (or takes them away).
     if (s.element.mode !== 'lay') {

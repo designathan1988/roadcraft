@@ -39,9 +39,9 @@ export function layCity(plan: CityPlan): RoadDoc {
  * 2 m planted median. Before the lots
  * are cut, so they are cut against the wider street.
  */
-export const CITY_FOOTWAY = m(3);
+const CITY_FOOTWAY = m(3);
 /** The generated avenues' median, planted (a canteiro of 2 m: a tree pit with a kerb each side). */
-export const CITY_MEDIAN = m(2);
+const CITY_MEDIAN = m(2);
 export function widenCityFootways(doc: RoadDoc): void {
   for (const s of [...doc.segments.values()]) {
     const rt = roadProfile(s.type, s.lanes, s.direction, s.section, s.parking);

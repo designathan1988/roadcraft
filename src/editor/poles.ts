@@ -92,7 +92,7 @@ function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnContour 
   return best;
 }
 
-export type PoleSnapKind = 'pole' | 'footway' | 'free';
+type PoleSnapKind = 'pole' | 'footway' | 'free';
 
 export interface PoleSnap {
   readonly at: Vec2;
@@ -117,14 +117,14 @@ export function snapPole(doc: RoadDoc, net: Network, at: Vec2, reach: number): P
   return { at: { x: at.x, y: at.y }, kind: 'free' };
 }
 
-export interface PlannedPole {
+interface PlannedPole {
   readonly at: Vec2;
   /** The pole already standing here, which the run will reuse. */
   readonly existing: PoleId | null;
   readonly lamp: boolean;
 }
 
-export type PoleRunRefusal = 'offFootway' | 'noPath';
+type PoleRunRefusal = 'offFootway' | 'noPath';
 
 export interface PoleRunPlan {
   readonly from: PoleSnap;
@@ -373,7 +373,7 @@ const ROUTE_MARGIN = m(96);
 /** Past this margin a route is taken as found (a run is never planned across a whole city). */
 const ROUTE_MARGIN_MOST = m(4096);
 /** What the route search did: regions read. A count for the budgets (`core/perfBudget.ts`). */
-export const poleRouteWork = { regions: 0 };
+const poleRouteWork = { regions: 0 };
 
 /**
  * The run's route, read from the lines of a region round its ends only

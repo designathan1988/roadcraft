@@ -10,7 +10,6 @@ import { m } from '@world/units';
 import { volumeCorners } from '@world/buildings/geometry';
 import { pointInPolygon } from '@core/polygon';
 
-export { onCarriageway } from '@world/carriageway';
 import { onCarriageway } from '@world/carriageway';
 
 /**

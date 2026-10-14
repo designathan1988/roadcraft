@@ -110,7 +110,7 @@ function storeyTemplate(v: Volume): Storey {
 }
 
 /** A length snapped to the editor's grid. */
-export const snapLength = (v: number): number => Math.round(v / GRID) * GRID;
+const snapLength = (v: number): number => Math.round(v / GRID) * GRID;
 
 /** Moves every volume standing on `v`'s old roof by `delta` levels, recursively. */
 function rideWith(b: Building, v: Volume, oldTop: number, delta: number, seen = new Set<number>()): void {
@@ -881,7 +881,7 @@ export function opUnionVolumes(b: Building, volumeId: number, sameLookOnly = fal
  * keeping the original's storeys, base and roof. Faces pushed in or out go
  * with the cut - they are measured in bays that no longer exist.
  */
-export function opSubtractRect(b: Building, volumeId: number, cut: { x: number; y: number; w: number; d: number }): boolean {
+function opSubtractRect(b: Building, volumeId: number, cut: { x: number; y: number; w: number; d: number }): boolean {
   const v = volumeById(b, volumeId);
   if (!v) return false;
   const x0 = Math.max(v.x, cut.x);
@@ -1107,7 +1107,7 @@ export interface FaceRegion {
 }
 
 /** Depths a relief snaps to: five centimetres. */
-export const RELIEF_STEP = m(0.05);
+const RELIEF_STEP = m(0.05);
 
 /**
  * What is left of a relief once `region` is cut out of it: up to four

@@ -10,7 +10,7 @@ import { roadStructure } from '@world/structures';
 import { GRID_STEP, onGrid, snapToGrid } from '@world/grid';
 import { m } from '@world/units';
 
-export type AnchorKind = 'node' | 'segment' | 'free';
+type AnchorKind = 'node' | 'segment' | 'free';
 
 export interface Anchor {
   readonly kind: AnchorKind;
