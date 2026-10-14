@@ -188,6 +188,12 @@ function rectsAlong(points: readonly { readonly x: number; readonly y: number }[
 export class RoadDoc {
   readonly nodes = new Map<NodeId, RoadNode>();
   readonly segments = new Map<SegmentId, RoadSegment>();
+  /**
+   * The nodes that may have been left with no road (`pruneOrphanNodes`): a
+   * node made, a road's end taken away, a node put back by undo. A superset,
+   * kept by the writers of `incident` here; each is tested when pruned.
+   */
+  private loose = new Set<NodeId>();
 
   /**
    * The overhead utility network: poles and the wire runs between them.
@@ -634,6 +640,7 @@ export class RoadDoc {
     const n: RoadNode = { id, x: at.x, y: at.y, heightOffset, smooth,
       incident: [], control: 'auto', blockedMovements: [] };
     this.nodes.set(id, n);
+    this.loose.add(id);
     this.markNode(id);
     return n;
   }
@@ -688,6 +695,8 @@ export class RoadDoc {
     this.markSegment(id);
     detach(this.nodes.get(s.a), id);
     detach(this.nodes.get(s.b), id);
+    this.loose.add(s.a);
+    this.loose.add(s.b);
     // A turn ban naming a road that is gone bans nothing - until the id is
     // handed out again and it silently bans a movement onto an unrelated road.
     for (const end of [s.a, s.b]) {
@@ -1240,21 +1249,28 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /** Drops nodes with no incident segment. Returns how many were removed. */
+  /**
+   * Drops nodes with no incident segment. Returns how many were removed.
+   * Only the nodes that may have lost their last road are looked at
+   * (`loose`). DO NOT walk every node of the map for it: every road taken
+   * away ends here.
+   */
   pruneOrphanNodes(): number {
     const rects: ChangeRect[] = [];
     const ids: number[] = [];
-    for (const [id, n] of this.nodes) {
-      if (n.incident.length === 0) {
-        // Its rectangle before it goes: DO NOT write `null` (the whole map)
-        // for a few loose nodes - every road removed ends here, and the whole
-        // network, its paving and the ground were worked out again for it.
-        const rect = this.nodeRect(id);
-        if (rect) rects.push(rect);
-        ids.push(id);
-        this.nodes.delete(id);
-      }
+    // In id order, as the walk over the map met them.
+    for (const id of [...this.loose].sort((p, q) => p - q)) {
+      const n = this.nodes.get(id);
+      if (!n || n.incident.length !== 0) continue;
+      // Its rectangle before it goes: DO NOT write `null` (the whole map)
+      // for a few loose nodes - every road removed ends here, and the whole
+      // network, its paving and the ground were worked out again for it.
+      const rect = this.nodeRect(id);
+      if (rect) rects.push(rect);
+      ids.push(id);
+      this.nodes.delete(id);
     }
+    this.loose.clear();
     if (ids.length) this.roadsChanged(rects, true, { ids, detail: `${ids.length} loose nodes dropped` });
     return ids.length;
   }
@@ -1325,6 +1341,7 @@ export class RoadDoc {
     // NÃO voltar a clonar por JSON.
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
+    copy.loose = new Set(this.loose);
     for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
     for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
     for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
@@ -1496,7 +1513,7 @@ export class RoadDoc {
         case 'nodes': {
           const was = this.nodes.get(id as NodeId);
           if ((was || value !== undefined) && nodeMovesTraffic(was, value as RoadNode | undefined)) traffic = true;
-          put(this.nodes as Map<number, RoadNode>); roadsTouched = true; roadIds.push(id); break;
+          put(this.nodes as Map<number, RoadNode>); this.loose.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
         }
         case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; roadIds.push(id); break;
         case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
@@ -1630,7 +1647,11 @@ export class RoadDoc {
     if (roadsMoved) {
       this.nodes.clear();
       this.segments.clear();
-      for (const [id, node] of source.nodes) this.nodes.set(id, copyNode(node));
+      this.loose.clear();
+      for (const [id, node] of source.nodes) {
+        this.nodes.set(id, copyNode(node));
+        if (node.incident.length === 0) this.loose.add(id);
+      }
       for (const [id, segment] of source.segments) this.segments.set(id, copySegment(segment));
     }
     if (moved('utilities')) {
@@ -1939,6 +1960,7 @@ export class RoadDoc {
       doc.requireNode(b).incident.push(id);
       doc.segIds.reserve(s.id);
     }
+    for (const [id, node] of doc.nodes) if (node.incident.length === 0) doc.loose.add(id);
     // Crossings last: they name a segment, and only a two-road node that still
     // holds that segment may carry one. A merged (repaired) record has none.
     for (const n of data.nodes) {
