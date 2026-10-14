@@ -106,7 +106,7 @@ function build(graph: LaneletGraph): Map<LaneletId, RoadCycle[]> {
     // Dijkstra over links from the start's exits back to the start.
     const best = new Map<LaneletId, number>();
     const parent = new Map<LaneletId, LaneletId>();
-    const open: { id: LaneletId; cost: number }[] = [];
+    const open = new OpenSet();
     for (const n of next(start)) {
       const cost = length(start) + length(n);
       if (n === start) continue;
@@ -118,9 +118,8 @@ function build(graph: LaneletGraph): Map<LaneletId, RoadCycle[]> {
     }
     let closing: LaneletId | null = null;
     let closingCost = Infinity;
-    while (open.length) {
-      open.sort((a, b) => a.cost - b.cost || (a.id < b.id ? -1 : 1));
-      const { id, cost } = open.shift()!;
+    while (open.size) {
+      const { id, cost } = open.pop();
       if (cost > (best.get(id) ?? Infinity) || cost >= closingCost) continue;
       for (const n of next(id)) {
         if (n === start) {
@@ -163,3 +162,55 @@ function build(graph: LaneletGraph): Map<LaneletId, RoadCycle[]> {
   }
   return byLanelet;
 }
+
+/**
+ * The search's open links as a binary min-heap (Wikipedia, "Binary heap":
+ * sift-up on insert, sift-down on extract, O(log n) each), ordered by cost,
+ * then by id: the order the open list was sorted in before every pop, which
+ * made each pop O(n log n). A link is pushed again only at a strictly lower
+ * cost, so no two entries tie on both and the pops come in the same order.
+ * DO NOT go back to sorting the open list for every pop.
+ */
+class OpenSet {
+  private readonly items: { id: LaneletId; cost: number }[] = [];
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  push(item: { id: LaneletId; cost: number }): void {
+    const items = this.items;
+    items.push(item);
+    let i = items.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!before(items[i]!, items[p]!)) break;
+      const t = items[i]!; items[i] = items[p]!; items[p] = t;
+      i = p;
+    }
+  }
+
+  pop(): { id: LaneletId; cost: number } {
+    const items = this.items;
+    const top = items[0]!;
+    const last = items.pop()!;
+    if (items.length) {
+      items[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i;
+        if (l < items.length && before(items[l]!, items[m]!)) m = l;
+        if (r < items.length && before(items[r]!, items[m]!)) m = r;
+        if (m === i) break;
+        const t = items[i]!; items[i] = items[m]!; items[m] = t;
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
+/** Cheaper first, then the lower id. */
+const before = (a: { id: LaneletId; cost: number }, b: { id: LaneletId; cost: number }): boolean =>
+  a.cost < b.cost || (a.cost === b.cost && a.id < b.id);
