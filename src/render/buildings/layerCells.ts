@@ -46,11 +46,6 @@ export const HIDDEN_SLICE_MS = 250;
 /** More buildings than this not made yet: a load, not an edit. */
 export const LOADING_COUNT = 100;
 /**
- * Frames a cell stays made after it went far (ten seconds at sixty), for the
- * camera that comes back: made again at once it would thrash at the edge.
- */
-export const RELEASE_FRAMES = 600;
-/**
  * Bytes of buildings' chunks the cell workers keep, all of them (`cellWork.ts`),
  * so a camera coming back finds them made: the cells in view are kept whatever
  * it costs, and past it the cells let go longest ago give theirs up first, as

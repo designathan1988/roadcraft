@@ -10,7 +10,7 @@ import { CellFiling } from '@world/cells';
 import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells,
-  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_AHEAD, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
+  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, STREAM_AHEAD, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { drawsSignature } from './signature';
@@ -31,9 +31,13 @@ import type { CellEntry, ChunkSummary } from './cellWork';
  *
  * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the cell is drawn near by the
  * error on the screen (`massCells.ts`); far, only its masses stand. A cell coming near is asked of the
- * cell workers (`cellRequests.ts`), sent to the GPU when it lands and only then shown, whole; far for
- * `RELEASE_FRAMES` its meshes go, its chunks as the workers' cache allows. Unreal's World Partition HLOD,
- * 3D Tiles' REPLACE refinement. DO NOT put the detail of every cell together again.
+ * cell workers (`cellRequests.ts`), sent to the GPU when it lands and only then shown, whole; drawn far,
+ * its meshes go at once, its chunks as the workers' cache allows (the far level's own margin,
+ * `massCells.ts` HYSTERESIS, keeps a cell at the edge from going and coming; Cesium unloads the tiles
+ * not selected the frame before, `trimLoadedTiles`). Unreal's World Partition HLOD, 3D Tiles' REPLACE
+ * refinement. DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail
+ * for a while (it was ten seconds, `RELEASE_FRAMES`): every view the camera passed through stayed on
+ * the GPU with the one it looked at (two close views of a street, GL_OUT_OF_MEMORY, 2026-10-14).
  *
  * THE CELLS ARE MADE IN WORKERS (`cellWork.ts`): the page sends each building's record and ground and gets
  * the cell's batches back as arrays. DO NOT emit or join buildings here: it was most of a big city's lost
@@ -219,8 +223,8 @@ export function createBuildingLayer(): BuildingLayer {
   let othersByCell = new Map<string, Building[]>();
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
-  /** Frames each assembled cell has been far (`levelOfDetail`); let go at `RELEASE_FRAMES`. */
-  const farSince = new Map<string, number>();
+  /** The cells with their detail made that are drawn far now (`levelOfDetail`): let go by `landCells`. */
+  const goneFar = new Set<string>();
   /**
    * Each detail cell's centre (map x/y) and whether it is drawn by the far
    * versions of its parts (`cullDetails`): kept per batch, so the key is read
@@ -394,7 +398,7 @@ export function createBuildingLayer(): BuildingLayer {
   const releaseCell = (key: string): void => {
     dropCell(cells, key, stored);
     for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
-    farSince.delete(key);
+    goneFar.delete(key);
     requests.release(key);
   };
   /** Where the batches are shown, for `patchCell`. */
@@ -409,8 +413,7 @@ export function createBuildingLayer(): BuildingLayer {
     part.setVisible(cellNear(key));
   };
   /**
-   * One frame's share of the cells: those far for `RELEASE_FRAMES` let their
-   * detail go; those drawn near with no detail become pending (HLOD
+   * One frame's share of the cells: those drawn far let their detail go; those drawn near with no detail become pending (HLOD
    * streaming); the pending ones are asked of the workers nearest first, a few
    * at once (a far one asked first would keep a near one waiting behind it in
    * its worker), and each is shown whole, once on the GPU, as it lands - its old
@@ -420,8 +423,7 @@ export function createBuildingLayer(): BuildingLayer {
   const landCells = (env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): boolean => {
     let changed = false;
     if (eye) {
-      for (const [key, frames] of farSince) {
-        if (frames < RELEASE_FRAMES) continue;
+      for (const key of goneFar) {
         releaseCell(key);
         changed = true;
       }
@@ -615,7 +617,7 @@ export function createBuildingLayer(): BuildingLayer {
           townCells = town.byCell;
           othersByCell = groupByCell(others, cellOf, (b) => b);
           [townSeen, townDoc, storedRest] = [doc.changes.version, doc, rest];
-          farSince.clear();
+          goneFar.clear();
           // Only the cells drawn near have their detail; the rest stand as their masses (`massCells`) and come in
           // by `landCells` when the eye nears.
           for (const cell of [...cells.keys()]) {
@@ -706,9 +708,9 @@ export function createBuildingLayer(): BuildingLayer {
       for (const [key, cell] of cells) {
         const isNear = cellNear(key);
         cell.part.setVisible(isNear);
-        // How long a cell has been far: its detail is let go at `RELEASE_FRAMES` (`landCells`).
-        if (isNear) farSince.delete(key);
-        else farSince.set(key, (farSince.get(key) ?? 0) + 1);
+        // A cell drawn far lets its detail go (`landCells`).
+        if (isNear) goneFar.delete(key);
+        else goneFar.add(key);
       }
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
