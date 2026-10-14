@@ -56,3 +56,4 @@
 - 2026-10-14 noite (Hook): ordem do jogador "corrigir na raiz, não métrica"; postes inteiros corrigidos na causa
   (9233238, 82c0239, 8e65f88, bdda55a, a1dd21a); agentes revisados: jardins 90524a3, mobília b5cc51d,
   curvas 7c046a4; regras, skill e hook reescritos (5361eb8, ab455db). OTIMIZACAO 40-47.
+- 2026-10-14 ~16h30 (Auditoria): 9ad73e0 cascas e massas sem a cópia dupla de Float32BufferAttribute (OTIMIZACAO 51); a emissão por prédio em worker medida e NÃO commitada (mensagens comem o ganho; próximo: lote da célula pronto no worker). Divisão aprovada pelo jogador: esta sessão fica com montagem dos prédios em worker, shaders pré-compilados e matrizes paradas.
