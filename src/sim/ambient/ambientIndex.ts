@@ -377,3 +377,19 @@ export class StreetLength {
     return total;
   }
 }
+
+// ------------------------------------------------------------ drawing by length
+
+/**
+ * The item a roll falls on, items laid end to end: the first `k` with
+ * `roll < runningSum[k]` (the last when none), by a binary search - what a
+ * walk subtracting each item's length until the roll goes below zero picks.
+ */
+export function atRoll(runningSum: Float64Array, roll: number): number {
+  let lo = 0, hi = runningSum.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (roll < runningSum[mid]!) hi = mid; else lo = mid + 1;
+  }
+  return lo;
+}

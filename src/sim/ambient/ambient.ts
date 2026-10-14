@@ -16,7 +16,7 @@ import { collectBays, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
-import { BuildingMix, SightWalls, StreetLength } from './ambientIndex';
+import { BuildingMix, SightWalls, StreetLength, atRoll } from './ambientIndex';
 
 
 /**
@@ -112,6 +112,8 @@ export class AmbientWorld {
   private nextTrip = 1 << 26;
   private lanesFor = '';
   private lanes: { id: string; length: number; x: number; y: number }[] = [];
+  /** Each lane's end along all of them laid end to end, in the order of `lanes`: `lanesAt[k]` is the lengths of lanes 0..k summed. */
+  private lanesAt = new Float64Array(0);
   private baysFor = '';
   private bayList: Bay[] = [];
   /** A map just opened: the first fill may use the view (`reset`). */
@@ -573,13 +575,14 @@ export class AmbientWorld {
    */
   private openCars(w: SimWorld, n: number): void {
     const lanes = this.lanesNear(w);
-    let total = 0;
-    for (const l of lanes) total += l.length;
+    const at = this.lanesAt;
+    const total = at.length ? at[at.length - 1]! : 0;
     const rng = w.rng.spawnVehicles;
     for (let made = 0, tries = 0; made < n && tries < n * 6; tries++) {
-      let roll = rng.float() * total;
-      let pick = lanes[lanes.length - 1]!;
-      for (const l of lanes) { roll -= l.length; if (roll < 0) { pick = l; break; } }
+      // The lane whose stretch of the lanes laid end to end the roll falls in:
+      // a binary search over their running sum. DO NOT walk the lanes
+      // subtracting lengths: that was every lane of the map per car made.
+      const pick = lanes[atRoll(at, rng.float() * total)]!;
       const arch = rng.weighted(TRAFFIC);
       if (pick.length < arch.length + m(3)) continue;
       const s = arch.length + m(0.4) + rng.float() * (pick.length - arch.length - m(0.8));
@@ -801,16 +804,22 @@ export class AmbientWorld {
   /** The link lanes of the map, each with its middle: where cars can join. */
   private lanesNear(w: SimWorld): { id: string; length: number; x: number; y: number }[] {
     const key = `${w.topologyRevision}:${w.vehicleTopologyRevision}`;
-    if (key !== this.lanesFor) {
-      this.lanesFor = key;
-      this.lanes = [];
-      for (const lane of w.graph.lanelets.values()) {
-        if (lane.kind !== 'link' || lane.length < m(12)) continue;
-        const mid = lane.centre.sampleAt(lane.length / 2).p;
-        this.lanes.push({ id: lane.id, length: lane.length, x: mid.x, y: mid.y });
-      }
-    }
+    if (key !== this.lanesFor) this.listLanes(w, key);
     return this.lanes;
+  }
+
+  /** @rebuild Listed again only when the lanes changed (an edit of the roads), with their running sum. */
+  private listLanes(w: SimWorld, key: string): void {
+    this.lanesFor = key;
+    this.lanes = [];
+    for (const lane of w.graph.lanelets.values()) {
+      if (lane.kind !== 'link' || lane.length < m(12)) continue;
+      const mid = lane.centre.sampleAt(lane.length / 2).p;
+      this.lanes.push({ id: lane.id, length: lane.length, x: mid.x, y: mid.y });
+    }
+    this.lanesAt = new Float64Array(this.lanes.length);
+    let sum = 0;
+    this.lanes.forEach((l, k) => { sum += l.length; this.lanesAt[k] = sum; });
   }
 
   // ------------------------------------------------------------ parked cars

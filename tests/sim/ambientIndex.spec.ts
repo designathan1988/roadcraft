@@ -7,7 +7,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
-import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength } from '@sim/ambient/ambientIndex';
+import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength, atRoll } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
 
 /**
@@ -220,5 +220,34 @@ describe('the street length round a place', () => {
     }
     // The roads did change between the questions.
     expect(wholes.size).toBeGreaterThan(10);
+  });
+});
+
+describe('a lane drawn by its length', () => {
+  it('is the lane the walk subtracting lengths picked, for every roll', () => {
+    const rng = new Rng(0x1a7e);
+    let rolls = 0;
+    for (let list = 0; list < 200; list++) {
+      // Lane lengths as the map's: 12 m to 400 m, some lists of one lane.
+      const lengths = Array.from({ length: 1 + Math.floor(rng.float() * 300) }, () => m(rng.range(12, 400)));
+      let total = 0;
+      for (const l of lengths) total += l;
+      const at = new Float64Array(lengths.length);
+      let sum = 0;
+      lengths.forEach((l, k) => { sum += l; at[k] = sum; });
+      expect(at[at.length - 1]).toBe(total);
+      for (let q = 0; q < 500; q++) {
+        const roll = rng.float() * total;
+        // The old `openCars` walk (the oracle).
+        let left = roll, want = lengths.length - 1;
+        for (let k = 0; k < lengths.length; k++) { left -= lengths[k]!; if (left < 0) { want = k; break; } }
+        expect(atRoll(at, roll)).toBe(want);
+        rolls++;
+      }
+      // The ends: nothing, and the whole length.
+      expect(atRoll(at, 0)).toBe(0);
+      expect(atRoll(at, total)).toBe(lengths.length - 1);
+    }
+    expect(rolls).toBe(100_000);
   });
 });

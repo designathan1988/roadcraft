@@ -112,7 +112,6 @@
  "whole-map-per-frame  src/sim/agents/lorryTraffic.ts closures  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/agents/parking.ts wallsOf  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/agents/parking.ts workOutBays  for BuildingStore.all": 1,
- "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.lanesNear  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.refreshPlaces  for BuildingStore.all": 1,
  "whole-map-per-frame  src/sim/ambient/ambient.ts AmbientWorld.roadEnds  for RoadDoc.nodes": 1,
  "whole-map-per-frame  src/sim/intersections/cycles.ts build  spread LaneletGraph.lanelets": 1,
