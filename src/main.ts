@@ -58,6 +58,7 @@ import { type Viewport, flatViewport } from '@view/viewport';
 import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
 import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
+import { countMemory } from '@render/memoryCounters';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
 import { forgetOtherDerived, readDerivedAll, writeDerivedMany } from '@render/derivedCache';
 
@@ -4087,6 +4088,24 @@ const healthPanel = mountHealthPanel({
   },
   /** Forces one frame. Used by the browser verification harness. */
   redraw: () => requestDraw(),
+  /**
+   * What the scene holds in memory, in MB (`render/memoryCounters.ts`): read
+   * at the same view before and after a performance change. `heap` is
+   * Chromium's `performance.memory`, rough and non-standard; null elsewhere.
+   */
+  memory: () => {
+    const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
+    const c = countMemory(scene.scene);
+    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
+    return {
+      geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes),
+      heapMB: heap === undefined ? null : mb(heap),
+      cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
+      buffers: c.buffers, textures: c.textures,
+      glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
+      drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles,
+    };
+  },
   /**
    * Runs the simulation for `seconds` of SIMULATION time, immediately.
    *
