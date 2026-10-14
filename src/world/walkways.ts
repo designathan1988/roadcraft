@@ -132,6 +132,9 @@ export class WalkGraph {
   readonly ways: Walkway[] = [];
   /** The walkways meeting at each node. */
   readonly at = new Map<number, number[]>();
+  /** Footway ids by road, corner ids by node, ascending; kept on every `add` (a split adds its second half). */
+  private readonly footwaysOf = new Map<SegmentId, number[]>();
+  private readonly cornersOf = new Map<NodeId, number[]>();
 
   node(p: Vec2): number {
     const id = this.nodes.length;
@@ -144,14 +147,32 @@ export class WalkGraph {
     this.ways.push(w);
     this.link(w.a, w.id);
     this.link(w.b, w.id);
+    if (w.kind === 'footway' && w.segment !== undefined) fileUnder(this.footwaysOf, w.segment, w.id);
+    else if (w.kind === 'corner' && w.node !== undefined) fileUnder(this.cornersOf, w.node, w.id);
     return w;
   }
 
-  private link(node: number, way: number): void {
-    const list = this.at.get(node);
-    if (list) list.push(way);
-    else this.at.set(node, [way]);
+  /**
+   * The point nearest `p` on this road's footways and this node's corners
+   * (the earliest wins a tie), read off the lists they are filed under, as an
+   * index serves a lookup by key. DO NOT go back to scanning `ways`: every
+   * crossing end measured every walkway of the town, quadratic, 2.2 s of a
+   * 2 560 m one (2026-10-14). The lists, merged in id order, are that scan.
+   */
+  nearestOwn(p: Vec2, seg: SegmentId, node: NodeId): { way: Walkway; s: number; distance: number } | null {
+    const roads = this.footwaysOf.get(seg) ?? [], corners = this.cornersOf.get(node) ?? [];
+    let best: { way: Walkway; s: number; distance: number } | null = null;
+    // Both lists ascend (ids only grow); merged, they are the scan's order.
+    for (let i = 0, j = 0; i < roads.length || j < corners.length;) {
+      const id = j >= corners.length || (i < roads.length && roads[i]! < corners[j]!) ? roads[i++]! : corners[j++]!;
+      const way = this.ways[id]!;
+      const c = way.path.closestPoint(p);
+      if (!best || c.distance < best.distance) best = { way, s: c.s, distance: c.distance };
+    }
+    return best;
   }
+
+  private link(node: number, way: number): void { fileUnder(this.at, node, way); }
 
   /** Cuts a walkway in two at arc length `s`; returns the node there (an end's node when `s` is at an end). */
   split(way: Walkway, s: number): number {
@@ -167,6 +188,12 @@ export class WalkGraph {
     this.add({ ...rest, path: second, a: mid });
     return mid;
   }
+}
+
+function fileUnder<K>(lists: Map<K, number[]>, key: K, id: number): void {
+  const list = lists.get(key);
+  if (list) list.push(id);
+  else lists.set(key, [id]);
 }
 
 /** A cubic curve from `p0` heading `d0` to `p1` arriving heading `d1`, as a polyline. */
@@ -766,13 +793,7 @@ function sideOf(ends: readonly FootwayEnd[], seg: SegmentId, node: Vec2, nrm: Ve
  * node's corners - split there - or null when none is near.
  */
 function landOn(g: WalkGraph, p: Vec2, seg: SegmentId, node: NodeId): number | null {
-  let best: { way: Walkway; s: number; distance: number } | null = null;
-  for (const way of g.ways) {
-    const mine = (way.kind === 'footway' && way.segment === seg) || (way.kind === 'corner' && way.node === node);
-    if (!mine) continue;
-    const c = way.path.closestPoint(p);
-    if (!best || c.distance < best.distance) best = { way, s: c.s, distance: c.distance };
-  }
+  const best = g.nearestOwn(p, seg, node);
   if (!best || best.distance > best.way.width / 2 + LAND_REACH) return null;
   return g.split(best.way, best.s);
 }

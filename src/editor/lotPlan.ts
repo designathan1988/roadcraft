@@ -8,6 +8,7 @@ import { type Building, type BuildingElement, type ElementKind, type LotSurface,
 import { bayWidth, baysOn } from '@world/buildings/geometry';
 import { m } from '@world/units';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
+import { type CoverBox, openRunsAlong } from './lotBoundaryRuns';
 
 /**
  * A grown lot, composed the way a plot in a real street is: street, footway,
@@ -1223,41 +1224,38 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   // street or to the neighbour (measured on the grown town before this).
   {
     const U = m(1);
-    const covered = (px: number, py: number): boolean => {
+    /**
+     * What closes the edge now: each boundary part grown by 0.3 m, the
+     * building's ground floor by 0.45 m (lot metres). Read afresh for each
+     * side: the runs laid on one side close the next.
+     */
+    const covers = (): CoverBox[] => {
+      const boxes: CoverBox[] = [];
       for (const e of elements) {
         if (!BOUNDARY_SET.has(e.kind)) continue;
         const across = e.facing === 1 || e.facing === 3;
         const hw = (across ? e.d : e.w) / U / 2 + 0.3, hd = (across ? e.w : e.d) / U / 2 + 0.3;
-        if (Math.abs(px - (e.x / U + W / 2)) <= hw && Math.abs(py - e.y / U) <= hd) return true;
+        boxes.push({ kind: 'centre', cx: e.x / U + W / 2, cy: e.y / U, hw, hd });
       }
       for (const v of body.volumes) {
         if (v.open || v.base !== 0) continue;
         const x0 = v.x / U + W / 2, y0 = v.y / U;
-        if (px >= x0 - 0.45 && px <= x0 + v.w / U + 0.45 && py >= y0 - 0.45 && py <= y0 + v.d / U + 0.45) return true;
+        boxes.push({ kind: 'span', x0: x0 - 0.45, x1: x0 + v.w / U + 0.45, y0: y0 - 0.45, y1: y0 + v.d / U + 0.45 });
       }
-      return false;
+      return boxes;
     };
-    /** The open stretches along an edge from 0 to `len`, `at(t)` the point on it. */
-    const openRuns = (len: number, at: (t: number) => [number, number]): [number, number][] => {
-      const runs: [number, number][] = [];
-      let from = -1;
-      for (let t = 0.3; t <= len - 0.3 + 1e-6; t += 0.25) {
-        const open = !covered(...at(t));
-        if (open && from < 0) from = t;
-        if ((!open || t + 0.25 > len - 0.3) && from >= 0) { const to = open ? t : t - 0.25; if (to - from >= 0.4) runs.push([Math.max(0, from - 0.25), Math.min(len, to + 0.25)]); from = -1; }
-      }
-      return runs;
-    };
+    /** The open stretches along an edge from 0 to `len` (`lotBoundaryRuns.ts`). */
+    const openRuns = (len: number, along: 'x' | 'y', fixed: number): [number, number][] => openRunsAlong(len, along, fixed, covers());
     const frontKind = boundary.front ?? 'wall';
-    for (const [a, b] of openRuns(W, (t) => [t, 0.15])) {
+    for (const [a, b] of openRuns(W, 'x', 0.15)) {
       if (boundary.front && boundary.frontBase > 0) lot.runX('wall', frontAt('wall'), a, b, boundary.frontBase);
       lot.runX(frontKind, boundary.front && boundary.frontBase > 0 ? frontAt('wall') : frontAt(frontKind), a, b,
         boundary.front ? boundary.frontH : 1.6, [], boundary.front ? boundary.frontBase : 0);
     }
-    for (const [a, b] of openRuns(W, (t) => [t, D - 0.15])) lot.runX(boundary.sides, D - sideHalf, a, b, boundary.sidesH);
+    for (const [a, b] of openRuns(W, 'x', D - 0.15)) lot.runX(boundary.sides, D - sideHalf, a, b, boundary.sidesH);
     const lowFront = plan.kind === 'house' || plan.kind === 'flats' ? Math.min(boundary.sidesH, 1.3) : boundary.sidesH;
     for (const x of [0.15, W - 0.15]) {
-      for (const [a, b] of openRuns(D, (t) => [x, t])) {
+      for (const [a, b] of openRuns(D, 'y', x)) {
         const at = x < W / 2 ? sideHalf : W - sideHalf;
         if (isCorner(x)) { streetSide(at, Math.max(a, inset), Math.min(b, D - inset)); continue; }
         // Low beside the front garden, full height behind it.
