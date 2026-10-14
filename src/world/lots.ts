@@ -229,7 +229,8 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
   }
   if (!ribbons.length) return { add: [], keys: [], drop };
   const known = new Set(doc.lotKeys);
-  const kept = doc.lots.filter((l) => !drop.includes(l.id));
+  const dropping = new Set(drop);
+  const kept = doc.lots.filter((l) => !dropping.has(l.id));
   const add: Candidate[] = [];
   const keys: string[] = [];
   /**
@@ -562,13 +563,25 @@ function cutSpans(spans: readonly (readonly [number, number])[], target: number)
 
 /** Stores a plan: the covered lots removed, the new ones added, the land's keys kept. */
 export function applyLots(doc: RoadDoc, plan: LotPlan): boolean {
-  if (!plan.add.length && !plan.drop.length && plan.keys.every((k) => doc.lotKeys.includes(k))) return false;
-  const dropped = new Set(plan.drop);
-  const gone = doc.lots.filter((l) => dropped.has(l.id));
-  const kept = doc.lots.filter((l) => !dropped.has(l.id));
-  doc.lots.splice(0, doc.lots.length, ...kept);
+  const known = new Set(doc.lotKeys);
+  if (!plan.add.length && !plan.drop.length && plan.keys.every((k) => known.has(k))) return false;
+  // The covered lots taken out in place, in one pass. DO NOT go back to
+  // `doc.lots.splice(0, n, ...kept)`: every lot of the town spread into
+  // arguments passes the engine's limit (MDN, `Function.prototype.apply`),
+  // after two more copies of the list; and nothing to drop walks nothing.
+  const gone: Lot[] = [];
+  if (plan.drop.length) {
+    const dropped = new Set(plan.drop);
+    let at = 0;
+    for (const lot of doc.lots) {
+      if (dropped.has(lot.id)) gone.push(lot);
+      else doc.lots[at++] = lot;
+    }
+    doc.lots.length = at;
+  }
   for (const c of plan.add) doc.lots.push({ id: doc.nextLotId++, corners: c.corners });
-  for (const k of plan.keys) if (!doc.lotKeys.includes(k)) doc.lotKeys.push(k);
+  // By a set, not `lotKeys.includes` per key (keys × keys).
+  for (const k of plan.keys) if (!known.has(k)) { known.add(k); doc.lotKeys.push(k); }
   doc.lotsChanged(lotRects([...gone, ...plan.add]), 'lotes planejados');
   return true;
 }

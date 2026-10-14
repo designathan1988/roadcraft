@@ -271,26 +271,51 @@ export class BuildingStore {
    * the buildings actually differ, and only of those that do (where they
    * stood and where they stand). Drawing a road replaces the whole document
    * with an edited clone; that must not rebuild every building.
+   *
+   * `changed`: the ids the source changed since it shared this store's
+   * records (`RoadDoc.clone`, read from the copy's diary by
+   * `RoadDoc.buildingsMovedIn`); only those are read. Null: any source (a map
+   * loaded, an undo through JSON), every id compared, record by record.
+   *
+   * Only the records that differ are taken, each through the grid's own
+   * writers (`insert`, `update`, `delete`), so the grid stays (a record kept
+   * keeps its place in the order, a new one goes last, as `restore` does).
+   * DO NOT go back to clearing the store and the grid and writing every
+   * record again, nor to comparing the whole store as text (`toText` twice):
+   * that was the whole town, twice over, on every road drawn.
    */
-  replaceWith(source: BuildingStore): void {
+  replaceWith(source: BuildingStore, changed: readonly BuildingId[] | null = null): void {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
-    // The same records (a clone shares them, `shareFrom`): nothing to compare.
-    if (this.items.size === source.items.size && [...source.items].every(([id, b]) => this.items.get(id) === b)) return;
-    if (this.toText() === source.toText()) return;
     const touched: Building[] = [];
-    for (const [id, was] of this.items) {
-      const now = source.items.get(id);
-      if (!now || (now !== was && this.textOf(now) !== this.textOf(was))) touched.push(was);
-    }
-    for (const [id, now] of source.items) {
+    const take = (id: BuildingId): void => {
       const was = this.items.get(id);
-      if (!was || (now !== was && this.textOf(now) !== this.textOf(was))) touched.push(now);
+      const now = source.items.get(id);
+      if (was === now) return;
+      if (!now) {
+        this.items.delete(id);
+        this.grid?.delete(id);
+        touched.push(was!);
+        return;
+      }
+      // The source's record itself, as `shareFrom` does: read-only once stored (OWNERSHIP above).
+      const kept = settleBuilding(now, this.settled);
+      this.items.set(id, kept);
+      if (!was) {
+        this.grid?.insert(kept);
+        touched.push(kept);
+      } else if (this.textOf(kept) !== this.textOf(was)) {
+        this.grid?.update(kept);
+        touched.push(was, kept);
+      }
+    };
+    if (changed) {
+      for (const id of new Set(changed)) take(id);
+    } else {
+      // Deleting the entry being visited is safe: a Map iteration skips only entries deleted before their visit (MDN, Map.prototype.forEach).
+      for (const id of this.items.keys()) if (!source.items.has(id)) take(id);
+      for (const id of source.items.keys()) take(id);
     }
-    this.items.clear();
-    this.grid = null;
-    // The source's records themselves, as `shareFrom` does: read-only once stored (OWNERSHIP above).
-    for (const b of source.items.values()) this.items.set(b.id, settleBuilding(b, this.settled));
-    this.changed(touched, 'replaced by an edit or an undo');
+    if (touched.length) this.changed(touched, 'replaced by an edit or an undo');
   }
 
   /**

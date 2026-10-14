@@ -312,7 +312,6 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       const doc = ragdollSim?.doc;
       if (doc) {
         for (const s of solidsOf(doc).near(x, y, reach)) {
-          if (s.kind === 'ring') continue;
           const ground = ctx.renderedHeightAt(s.kind === 'disc' ? s.c.x : s.a.x, s.kind === 'disc' ? s.c.y : s.a.y);
           if (s.kind === 'disc') {
             const ring = Array.from({ length: 8 }, (_, i) => ({ x: s.c.x + Math.cos(i * Math.PI / 4) * s.r, y: s.c.y + Math.sin(i * Math.PI / 4) * s.r }));
