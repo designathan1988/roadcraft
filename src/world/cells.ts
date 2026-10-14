@@ -33,10 +33,10 @@ export function cellRect(key: number): ChangeRect {
 /** The key of the cell holding a point. */
 export const cellAt = (x: number, y: number): number => cellKey(Math.floor(x / CELL), Math.floor(y / CELL));
 
-/** Calls `visit` with every cell a rectangle reaches. */
-function forCellsOver(rect: ChangeRect, visit: (key: number) => void): void {
-  const cx0 = Math.floor(rect[0] / CELL), cx1 = Math.floor(rect[2] / CELL);
-  const cy0 = Math.floor(rect[1] / CELL), cy1 = Math.floor(rect[3] / CELL);
+/** Calls `visit` with every cell (of side `side`) a rectangle reaches. */
+function forCellsOver(rect: ChangeRect, visit: (key: number) => void, side = CELL): void {
+  const cx0 = Math.floor(rect[0] / side), cx1 = Math.floor(rect[2] / side);
+  const cy0 = Math.floor(rect[1] / side), cy1 = Math.floor(rect[3] / side);
   for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) visit(cellKey(cx, cy));
 }
 
@@ -57,6 +57,13 @@ export const cellWork = { filed: 0, cellsRead: 0 };
  * result made from a set of cells is still good while their versions stand.
  */
 export class CellFiling<Id extends number, T extends object> {
+  /**
+   * `side`: the side of its cells, world units - the world's cell by default;
+   * smaller for small things asked about at a point (the street furniture), so
+   * a question reads a few of them, not a city block's.
+   */
+  constructor(private readonly side = CELL) {}
+
   private readonly entries = new Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }>();
   private readonly byCell = new Map<number, Set<Id>>();
   private readonly versions = new Map<number, number>();
@@ -80,7 +87,7 @@ export class CellFiling<Id extends number, T extends object> {
       if (!set) this.byCell.set(key, set = new Set());
       set.add(id);
       this.bump(key);
-    });
+    }, this.side);
     this.entries.set(id, { item, rect, cells });
   }
 
@@ -116,19 +123,20 @@ export class CellFiling<Id extends number, T extends object> {
         if (out.has(id)) continue;
         if (rectsMeet(this.entries.get(id)!.rect, rect)) out.add(id);
       }
-    });
+    }, this.side);
     return [...out].sort((a, b) => a - b);
   }
 
   /** The versions of the cells `rect` reaches, as one string: equal strings, nothing filed there moved. */
   stamp(rect: ChangeRect): string {
     let text = '';
-    forCellsOver(rect, (key) => { text += `${this.versions.get(key) ?? 0},`; });
+    forCellsOver(rect, (key) => { text += `${this.versions.get(key) ?? 0},`; }, this.side);
     return text;
   }
 
   /** A copy filing the same things (`Network.adopt`). */
   copyFrom(other: CellFiling<Id, T>): void {
+    if (other.side !== this.side) throw new Error(`CellFiling: cells of ${other.side} copied into cells of ${this.side}`);
     this.entries.clear();
     this.byCell.clear();
     this.versions.clear();

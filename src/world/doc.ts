@@ -44,8 +44,9 @@ import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from '
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { PoleIndex } from './poleIndex';
+import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
-import { METERS_PER_UNIT } from './units';
+import { METERS_PER_UNIT, m } from './units';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
 export function fitRoadCurve(
@@ -226,7 +227,15 @@ export class RoadDoc {
    * `utilityRevision`, the gate of everything standing on a footway (the
    * renderer's furniture and the pedestrians' obstacles), never `revision`.
    */
-  readonly landscape = new Map<number, LandscapeItem>();
+  // Written only through `putLandscapeRecord`/`deleteLandscapeRecord`/`clearLandscapeRecords`,
+  // which keep `landscapeCells` in step. DO NOT write this map directly.
+  private readonly landscapeMap = new Map<number, LandscapeItem>();
+  readonly landscape: ReadonlyMap<number, LandscapeItem> = this.landscapeMap;
+  /** The street furniture by place (`landscapeIn`), in cells a few items wide. */
+  private readonly landscapeCells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
+  /** How many street name plates carry each name (`roads/streetNames.ts` gives a new street a name none has). */
+  private readonly streetNameCount = new Map<string, number>();
+  readonly streetNamesInUse: ReadonlyMap<string, number> = this.streetNameCount;
   private landscapeIds = new IdAllocator(1);
 
   /**
@@ -569,14 +578,55 @@ export class RoadDoc {
     const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
       ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
       ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
-    this.landscape.set(item.id, item);    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [item.id] });
+    this.putLandscapeRecord(item);
+    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [item.id] });
     return item;
   }
 
   removeLandscape(id: number): boolean {
     const item = this.landscape.get(id);
-    if (!item || !this.landscape.delete(id)) return false;    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [id] });
+    if (!item) return false;
+    this.deleteLandscapeRecord(id);
+    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [id] });
     return true;
+  }
+
+  /**
+   * The street furniture standing in the cells a rectangle reaches (a
+   * superset: test each), in increasing id order. What asks about one place
+   * asks this, never `landscape.values()`.
+   */
+  landscapeIn(rect: ChangeRect): LandscapeItem[] {
+    return this.landscapeCells.idsMeeting(rect).map((id) => this.landscapeMap.get(id)!);
+  }
+
+  /** A record put (new, or replacing the one of its id, which keeps its place in the map's order). */
+  private putLandscapeRecord(item: LandscapeItem): void {
+    const was = this.landscapeMap.get(item.id);
+    if (was) this.countStreetName(was, -1);
+    this.landscapeMap.set(item.id, item);
+    this.landscapeCells.file(item.id, item, [item.x, item.y, item.x, item.y]);
+    this.countStreetName(item, 1);
+  }
+
+  private deleteLandscapeRecord(id: number): void {
+    const was = this.landscapeMap.get(id);
+    if (!was) return;
+    this.landscapeMap.delete(id);
+    this.landscapeCells.remove(id);
+    this.countStreetName(was, -1);
+  }
+
+  private countStreetName(item: LandscapeItem, by: 1 | -1): void {
+    if (item.kind !== 'streetname' || !item.text) return;
+    const n = (this.streetNameCount.get(item.text) ?? 0) + by;
+    if (n > 0) this.streetNameCount.set(item.text, n); else this.streetNameCount.delete(item.text);
+  }
+
+  private clearLandscapeRecords(): void {
+    this.landscapeMap.clear();
+    this.landscapeCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
+    this.streetNameCount.clear();
   }
 
   /** Removes a pole and every wire that reached it. */
@@ -1356,7 +1406,7 @@ export class RoadDoc {
     for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
     for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
     for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
-    for (const [id, item] of this.landscape) copy.landscape.set(id, { ...item });
+    for (const item of this.landscape.values()) copy.putLandscapeRecord({ ...item });
     for (const [id, barrier] of this.barriers) copy.barriers.set(id, { ...barrier, points: barrier.points.map((q) => ({ ...q })) });
     copy.buildings.shareFrom(this.buildings);
     copy.buildings.copyAllocator(this.buildings);
@@ -1529,7 +1579,9 @@ export class RoadDoc {
         case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; roadIds.push(id); break;
         case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
         case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); break;
-        case 'landscape': put(this.landscape); kinds.add('landscape'); break;
+        case 'landscape':
+          if (value === undefined) this.deleteLandscapeRecord(id); else this.putLandscapeRecord(structuredClone(value) as LandscapeItem);
+          kinds.add('landscape'); break;
         case 'barriers': put(this.barriers); kinds.add('barriers'); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
       }
@@ -1671,8 +1723,8 @@ export class RoadDoc {
       for (const span of source.poleSpans.values()) this.putSpanRecord({ ...span });
     }
     if (moved('landscape')) {
-      this.landscape.clear();
-      for (const [id, item] of source.landscape) this.landscape.set(id, { ...item });
+      this.clearLandscapeRecords();
+      for (const item of source.landscape.values()) this.putLandscapeRecord({ ...item });
     }
     if (moved('barriers') && !sameBarriers(this, source)) {
       this.barriers.clear();
@@ -2086,7 +2138,7 @@ export class RoadDoc {
     for (const raw of data.landscape ?? []) {
       if (!isLandscapeKind(raw?.kind) || !Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isInteger(raw.id)) continue;
       const at = repair ? clampToMap(raw) : { x: raw.x, y: raw.y };
-      doc.landscape.set(raw.id, { id: raw.id, kind: raw.kind, x: at.x, y: at.y,
+      doc.putLandscapeRecord({ id: raw.id, kind: raw.kind, x: at.x, y: at.y,
         ...(isSignType(raw.signType) ? { signType: raw.signType } : {}),
         ...(typeof raw.text === 'string' && raw.text ? { text: raw.text.slice(0, SIGN_TEXT_MAX) } : {}),
         ...(Number.isFinite(raw.planted) ? { planted: raw.planted } : {}) });
@@ -2327,6 +2379,8 @@ function sameRoads(a: RoadDoc, b: RoadDoc): boolean {
 
 /** Around a junction with no road yet, world units. */
 const NODE_PAD = 30;
+/** Side of the cells the street furniture is filed in (`RoadDoc.landscapeIn`), world units. */
+const LANDSCAPE_CELL = m(32);
 /** Around a pole, a bench, a tree, a fence: what stands round it. */
 const ITEM_PAD = 6;
 
