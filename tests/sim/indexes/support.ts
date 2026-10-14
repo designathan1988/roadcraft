@@ -26,6 +26,10 @@ function seededTown(seed: number, n = 5, block = 120): RoadDoc {
       if (j < n) doc.addSegment(ids[i]![j]! as never, ids[i]![j + 1]! as never, classes[rng.int(0, 2)]!);
     }
   }
+  // A road off the map at two corners: traffic comes in and leaves.
+  const half = m(block) * (n / 2);
+  doc.addSegment(ids[0]![0]! as never, doc.addNode({ x: -half - m(150), y: -half }).id as never, 1);
+  doc.addSegment(ids[n]![n]! as never, doc.addNode({ x: half + m(150), y: half }).id as never, 1);
   return doc;
 }
 
