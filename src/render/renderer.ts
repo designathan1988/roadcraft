@@ -2820,8 +2820,10 @@ export function createSceneRenderer(
       // the ground going and then on the one coming.
       if (!buildingsHeld && roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
-        buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (b, since) => groundChanges.touches(Number(since), bankBox(b)));
+        // Buildings put together or streamed in (HLOD, `layer.ts`) are new
+        // casters: the shadow map is drawn again.
+        if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
+          (b, since) => groundChanges.touches(Number(since), bankBox(b)))) shadowMoved = true;
         if (buildings.pending) onAssetsReady();
       }
       // The countryside's trees are grown once the first world is in, not
@@ -3163,7 +3165,17 @@ export function createSceneRenderer(
         // The far level of the buildings by the error on the screen, in CSS
         // pixels (Cesium's screen-space error divides by the pixel ratio).
         const pxAtMetre = canvas.clientHeight / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
-        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
+        // In the view from above a metre spans the same pixels wherever it
+        // stands, so the error alone would keep every cell of the town in
+        // detail: only the cells within the ground the screen takes in (and
+        // a margin) are, the rest stand as their masses (HLOD, `layer.ts`).
+        let reach = Infinity;
+        if (!rig.perspective) {
+          const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
+          const halfW = (halfH * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+          reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
+        }
+        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
         buildings.cullDetails(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
       }
       buildings.setShadowFar(rig.viewport.zoom < FACADE_SHADOW_ZOOM);

@@ -188,7 +188,7 @@
   },
   "src/render/buildings/layer.ts": {
     "roadcraft/no-module-state": {
-      "count": 4
+      "count": 1
     }
   },
   "src/render/buildings/lightSlots.ts": {

@@ -46,9 +46,12 @@ export interface MassCells {
    * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
    * metre spans at a metre's distance in a perspective view, or `orthoPx`
    * the pixels a metre spans in an orthographic one. `allNear` draws every
-   * cell near (a building cut open, the others faded).
+   * cell near (true) or the cells named (a set of keys: the building cut
+   * open, the one being edited) whatever the eye says. `reach`: a cell
+   * farther than this from the eye on the map is far whatever its error (the
+   * ground an orthographic view takes in; Infinity for no limit).
    */
-  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean): void;
+  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only) always is. */
   near(key: string): boolean;
   dispose(): void;
@@ -131,22 +134,24 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         cells.delete(key);
       }
     },
-    choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear) {
-      for (const cell of cells.values()) {
+    choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
+      for (const [key, cell] of cells) {
         let near: boolean;
-        if (allNear || !cell.mesh) near = true;
+        const forced = allNear === true || (allNear !== false && allNear.has(key));
+        if (forced || !cell.mesh) near = true;
         else {
+          // To the cell's nearest point (Cesium measures to the tile's bounding volume).
+          const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1);
+          const dy = Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1);
           let pixels: number;
           if (orthoPx !== null) pixels = FAR_ERROR * orthoPx;
           else {
-            // To the cell's nearest point (Cesium measures to the tile's bounding volume).
-            const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1);
-            const dy = Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1);
             const dz = Math.max(eyeZ - cell.top, 0);
             const d = Math.max(Math.hypot(dx, dy, dz), 1);
             pixels = (FAR_ERROR * pxAtMetre) / d;
           }
-          near = pixels >= NEAR_PIXELS * (cell.near ? HYSTERESIS : 1);
+          // Within reach, with a margin for a cell already near (hysteresis).
+          near = pixels >= NEAR_PIXELS * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
         }
         if (near === cell.near) continue;
         cell.near = near;
