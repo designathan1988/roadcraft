@@ -403,6 +403,16 @@ export function createGardens(kit: SceneryKit): Gardens {
   /** The gardens placed, as the last `update` had them. */
   let placed = new Set<readonly GardenPlant[]>();
   let culledFor: Matrix4 | null = null;
+  /**
+   * The map zoom as the last `setMap` gave it (null: never told). At the map
+   * zoom the leaf cards are left out (`Scenery.setMap`): their stores are
+   * neither culled nor drawn (count 0; three draws nothing for no instance,
+   * `WebGLBufferRenderer.renderInstances`), and their GPU buffers are kept as
+   * they are, so coming back costs only the positions whose plant changed.
+   */
+  let mapMode: boolean | null = null;
+  /** Whether a store is drawn at all in the current mode. */
+  const drawnNow = (s: Store): boolean => !(s.cards && mapMode === true);
   const probe = new Sphere();
   /** The frustum of the cull in progress. */
   let cullFrustum: Frustum | null = null;
@@ -427,7 +437,7 @@ export function createGardens(kit: SceneryKit): Gardens {
     for (const s of stores) {
       const slots = node.slots![s.index]!;
       const mesh = s.mesh;
-      if (!mesh || slots.length === 0) continue;
+      if (!mesh || slots.length === 0 || !drawnNow(s)) continue;
       const sp = s.spheres, shown = s.shown, matrices = s.matrices, colours = s.colours;
       const target = mesh.instanceMatrix.array as Float32Array, tints = mesh.instanceColor!.array as Float32Array;
       let n = s.drawn;
@@ -468,21 +478,29 @@ export function createGardens(kit: SceneryKit): Gardens {
       const gone = [...placed].filter((list) => !now.has(list));
       const fresh = groups.filter((list) => !placed.has(list));
       placed = now;
+      let touched = false;
       for (const s of stores) {
+        let left = 0;
         // A garden changed or gone: its run is never drawn again.
         for (const list of gone) {
           const run = s.runs.get(list);
           if (!run) continue;
           for (let i = run.start; i < run.start + run.count; i++) s.spheres[i * 4 + 3] = -Infinity;
           s.dead += run.count;
+          left += run.count;
           s.runs.delete(list);
         }
         let coming = 0;
         for (const list of fresh) coming += packOf(list).get(s.key)?.count ?? 0;
+        // A store none of whose gardens came or went: nothing of it is touched.
+        if (left === 0 && coming === 0) continue;
+        touched = true;
         const was = s.mesh;
+        let moved = false;
         if (s.dead > 0 && s.dead * 2 >= s.used + coming) {
           // Half the store dead: packed again in the town's order, the new ones after.
           repack(s, Math.max(s.capacity, MIN_CAPACITY), groups);
+          moved = true;
         }
         if (s.used + coming > s.capacity) {
           repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), null);
@@ -498,19 +516,41 @@ export function createGardens(kit: SceneryKit): Gardens {
           if (was) { removed.push(was); was.dispose(); }
           if (s.mesh) added.push(s.mesh);
         }
+        // What the GPU buffer holds is unknown only where the slots moved (a
+        // repack gives an index another plant) or the buffer is new (a new
+        // mesh): there the next cull writes every position it draws. A run
+        // gone leaves its slots dead, never drawn again until a repack, and a
+        // run come takes slots no position showed: the positions of every
+        // other store, and of this one, still say what the GPU holds.
+        // DO NOT forget every store's positions at every building: one
+        // garden more sent every plant in view of the town to the GPU again.
+        if (moved || was !== s.mesh) {
+          if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
+          s.shown.fill(-1);
+        }
       }
       growAncestors();
-      // Slots moved, came or went and meshes changed: the next cull writes every position it draws.
-      for (const s of stores) {
-        if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
-        s.shown.fill(-1);
-      }
-      culledFor = null;
+      // Slots came or went: the next cull draws them.
+      if (touched) culledFor = null;
       return { removed, added };
     },
     // A garden plant has one model at every zoom.
     setNear() {},
-    setMap() { culledFor = null; },
+    /**
+     * Called every frame (`renderer.ts`): only a change of mode culls again.
+     * DO NOT drop the cull here unconditionally: with the camera still, the
+     * whole tree of the town's gardens was walked again every frame.
+     */
+    setMap(map) {
+      if (mapMode === map) return;
+      mapMode = map;
+      culledFor = null;
+      for (const s of stores) {
+        if (!s.cards || !s.mesh) continue;
+        s.mesh.visible = !map;
+        if (map) s.mesh.count = 0;
+      }
+    },
     cull(frustum: Frustum, view: Matrix4) {
       if (culledFor && culledFor.equals(view)) return;
       culledFor = (culledFor ?? new Matrix4()).copy(view);
@@ -521,6 +561,8 @@ export function createGardens(kit: SceneryKit): Gardens {
       for (const s of stores) {
         const mesh = s.mesh;
         if (!mesh) continue;
+        // Left out at the map zoom: nothing drawn, its buffer as it was.
+        if (!drawnNow(s)) { mesh.count = 0; continue; }
         // Only the positions whose plant changed go to the GPU; the same
         // plants in view (a small turn, a forced recull) upload nothing.
         if (s.firstChanged < s.drawn) {

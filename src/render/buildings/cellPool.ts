@@ -1,0 +1,230 @@
+import type { GroundAt, PavedAt } from '@world/buildings/foundation';
+import type { SlotAllocator } from './buildingMesh';
+import type { KitBoxes } from './cellArrays';
+import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
+import { slotFor } from './lightSlots';
+
+/**
+ * THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`,
+ * `cell.worker.ts`): a cell always goes to the same worker, which keeps its
+ * buildings' chunks; the page answers the readings of the ground and the light
+ * slots a job asks for, and is handed the cell's batches as arrays. Cesium's
+ * `TaskProcessor`: a worker made on the first task, the result handed back
+ * with its buffers transferred. The workers are as many as the cores the
+ * browser reports, one left to the page, at most `MOST_LANES`.
+ *
+ * Where no worker runs (a test, a browser without them) the same work is done
+ * on the page, and a job is done before `run` returns: what the layer waits for
+ * is the same either way. A worker that fails hands its jobs to the page.
+ */
+
+/** What a job reads on the page: the ground as drawn and as it was, the paving, and who gives the light slots. */
+export interface CellEnv {
+  readonly groundAt: GroundAt;
+  readonly naturalAt: GroundAt;
+  readonly pavedAt?: PavedAt;
+  /** The page's light slots (`lightSlots.ts`); a test may give its own. */
+  readonly slots?: SlotAllocator;
+}
+
+interface Running { readonly job: CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null }
+
+/** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
+interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; readonly queue: Running[] }
+
+/** Most workers the pool opens. */
+const MOST_LANES = 4;
+/**
+ * Jobs a worker works on at once; the rest wait on the page (Cesium's
+ * `TaskProcessor` `maximumActiveTasks`). DO NOT post every job at once: a
+ * worker reads its messages in order, so the readings a job waited for queued
+ * behind every other job's first round, and no cell landed until the worker had
+ * been through them all (36 cells asked, none landed in 8 s, 2026-10-14).
+ */
+const ACTIVE_PER_LANE = 1;
+
+export class CellPool {
+  private lanes: Lane[] | null = null;
+  private broken = false;
+  private local: CellWork | null = null;
+  private nextId = 1;
+
+  /** `workers`: false does every job on the page (tests). */
+  constructor(private readonly boxes: () => KitBoxes, private readonly budget: number, private readonly workers = true) {}
+
+  /** Jobs handed out or waiting their turn, not done yet. */
+  get running(): number {
+    let n = 0;
+    for (const lane of this.lanes ?? []) n += lane.jobs.size + lane.queue.length;
+    return n;
+  }
+
+  /**
+   * A cell's job: its batches ('cell', 'faded') or its buildings' summaries
+   * ('summary'), `done` called with the result - at once where no worker runs.
+   * The id it returns cancels it.
+   */
+  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void): number {
+    const job: CellJob = { id: this.nextId++, kind, cell, entries, paved: env.pavedAt !== undefined };
+    const lanes = this.start();
+    const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
+    const running: Running = { job, env, done, lane };
+    if (!lane) { this.onPage(running); return job.id; }
+    lane.queue.push(running);
+    this.pump(lane);
+    return job.id;
+  }
+
+  /** The lane's next jobs begun while it has room. */
+  private pump(lane: Lane): void {
+    while (lane.jobs.size < ACTIVE_PER_LANE && lane.queue.length) {
+      const next = lane.queue.shift()!;
+      lane.jobs.set(next.job.id, next);
+      lane.worker.postMessage({ type: 'start', job: next.job });
+    }
+  }
+
+  /**
+   * The workers made now, ahead of the first job: each loads its code while the
+   * town is being laid out, not when the first cell is asked for.
+   */
+  warm(): void {
+    this.start();
+  }
+
+  /**
+   * A job whose result is no longer wanted (a newer one for its cell, the layer gone): out of its
+   * lane's queue, or, begun, dropped by its worker, which takes the next. DO NOT only mark it: the
+   * worker went through every round of a cell nobody wanted, and the cells behind it waited.
+   */
+  cancel(id: number): void {
+    for (const lane of this.lanes ?? []) {
+      const waiting = lane.queue.findIndex((r) => r.job.id === id);
+      if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
+      if (lane.jobs.delete(id)) {
+        lane.worker.postMessage({ type: 'cancel', job: id });
+        this.pump(lane);
+        return;
+      }
+    }
+  }
+
+  /** Whether a job is still waiting or being worked on (one done on the page never is). */
+  isRunning(id: number): boolean {
+    return (this.lanes ?? []).some((lane) => lane.jobs.has(id) || lane.queue.some((r) => r.job.id === id));
+  }
+
+  /** A cell drawn far: its worker may give its chunks up first. */
+  release(cell: string): void {
+    const lanes = this.start();
+    if (lanes) lanes[laneOf(cell, lanes.length)]!.worker.postMessage({ type: 'release', cell });
+    else this.local?.release(cell);
+  }
+
+  dispose(): void {
+    for (const lane of this.lanes ?? []) lane.worker.terminate();
+    this.lanes = null;
+    this.local = null;
+  }
+
+  /** The job done here, every round answered at once. */
+  private onPage(running: Running): void {
+    this.local ??= new CellWork(this.boxes(), this.budget);
+    const work = this.local;
+    let reply = work.start(running.job);
+    while (reply.kind !== 'done') {
+      reply = reply.kind === 'need' ? work.readings(reply.job, readingsOf(reply.points, running.env))
+        : work.slots(reply.job, slotsOf(reply.requests, running.env));
+    }
+    this.finish(running, reply.result);
+  }
+
+  private finish(running: Running, result: CellResult): void {
+    running.done(result);
+  }
+
+  private start(): Lane[] | null {
+    if (this.lanes || this.broken || !this.workers) return this.lanes;
+    if (typeof Worker === 'undefined') { this.broken = true; return null; }
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+    const count = Math.max(1, Math.min(MOST_LANES, cores - 1));
+    try {
+      const boxes = this.boxes();
+      const lanes: Lane[] = [];
+      for (let k = 0; k < count; k++) {
+        const worker = new Worker(new URL('./cell.worker.ts', import.meta.url), { type: 'module' });
+        const lane: Lane = { worker, jobs: new Map(), queue: [] };
+        worker.onmessage = (event: MessageEvent<WorkReply | { kind: 'error'; job: number; message: string }>) => this.answer(lane, event.data);
+        worker.onerror = (event) => {
+          // A worker that cannot run: its jobs, and every one from now on, are done on the page.
+          console.warn('[buildings] the cell workers failed; cells are put together on the page', event.message);
+          this.giveUp();
+        };
+        worker.postMessage({ type: 'init', boxes, budget: this.budget / count });
+        lanes.push(lane);
+      }
+      this.lanes = lanes;
+    } catch (error) {
+      console.warn('[buildings] no cell workers; cells are put together on the page', error);
+      this.broken = true;
+    }
+    return this.lanes;
+  }
+
+  /** A worker's reply: the readings or slots it asks answered, or its result handed on. */
+  private answer(lane: Lane, reply: WorkReply | { kind: 'error'; job: number; message: string }): void {
+    const running = lane.jobs.get(reply.job);
+    if (!running) return;
+    if (reply.kind === 'error') {
+      console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
+      lane.jobs.delete(reply.job);
+      this.onPage({ ...running, lane: null });
+      this.pump(lane);
+      return;
+    }
+    if (reply.kind === 'done') {
+      lane.jobs.delete(reply.job);
+      this.finish(running, reply.result);
+      this.pump(lane);
+      return;
+    }
+    // The readings answered on the page, the buffer handed back (MDN, transfer).
+    const values = reply.kind === 'need' ? readingsOf(reply.points, running.env) : slotsOf(reply.requests, running.env);
+    lane.worker.postMessage({ type: reply.kind === 'need' ? 'readings' : 'slots', job: reply.job, values }, [values.buffer]);
+  }
+
+  private giveUp(): void {
+    const waiting = (this.lanes ?? []).flatMap((lane) => [...lane.jobs.values(), ...lane.queue]);
+    this.broken = true;
+    this.dispose();
+    for (const running of waiting) this.onPage({ ...running, lane: null });
+  }
+}
+
+/** A cell's worker: the same one each time, by a hash of its key. */
+function laneOf(cell: string, lanes: number): number {
+  let h = 0;
+  for (let i = 0; i < cell.length; i++) h = (h * 31 + cell.charCodeAt(i)) | 0;
+  return Math.abs(h) % lanes;
+}
+
+/** The page's readings of kind, x, y threes. */
+function readingsOf(points: Float64Array, env: CellEnv): Float64Array {
+  const out = new Float64Array(points.length / 3);
+  for (let i = 0, at = 0; i < points.length; i += 3, at++) {
+    const kind = points[i]!, x = points[i + 1]!, y = points[i + 2]!;
+    out[at] = kind === GROUND ? env.groundAt(x, y) : kind === NATURAL ? env.naturalAt(x, y) : kind === PAVED ? env.pavedAt!(x, y) : NaN;
+  }
+  return out;
+}
+
+/** The page's light slots of building, level, volume, x, y fives, given in order. */
+function slotsOf(requests: Float64Array, env: CellEnv): Float64Array {
+  const slots = env.slots ?? slotFor;
+  const out = new Float64Array(requests.length / 5);
+  for (let i = 0; i < out.length; i++) {
+    const r = i * 5;
+    out[i] = slots(requests[r]!, requests[r + 1]!, requests[r + 2]!, requests[r + 3]!, requests[r + 4]!);
+  }
+  return out;
+}

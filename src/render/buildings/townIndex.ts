@@ -1,9 +1,9 @@
 import type { Group } from 'three';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes } from './buildingMesh';
+import type { BuildingMeshes } from './buildingMesh';
+import type { LandedCell } from './cellRequests';
 import { buildSignature, disposeSignature } from './signature';
-import { COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_PARTS, chunksByCell, detailKeysOf, dropCell, sameChunks } from './layerCells';
-import type { BuildingKit, PartKind } from './kit';
+import { type CellCache, detailKeysOf, dropCell } from './layerCells';
 
 /**
  * The buildings the layer shows, by id and by coarse cell, kept from one
@@ -106,46 +106,26 @@ export function signatureBodies(root: Group, textOf: (b: Building) => string): {
   };
 }
 
-/** Where a cell's batches are kept, staged ahead and shown. */
+/** Where a cell's batches are kept and shown. */
 export interface CellBatches {
   readonly cells: CellCache;
   readonly details: CellCache;
-  readonly stagedCells: CellCache;
-  readonly stagedDetails: CellCache;
   readonly stored: BuildingMeshes;
   readonly detailed: BuildingMeshes;
 }
 
 /**
- * One coarse cell put together again from `list` (its shown buildings; empty
- * or far: its detail goes), with the detail cells inside it: the batches
- * staged ahead for it taken (`update` puts them together a slice a frame), the
- * rest assembled here. What `assembleByCell` does for the whole town, for the
- * cells one change touched.
+ * One coarse cell's batches swapped for those landed for it (`cellRequests.ts`),
+ * its detail cells with it; none: its detail goes (a cell emptied, or drawn far).
  */
-export function patchCell(key: string, list: readonly Building[], near: boolean, chunkOf: (b: Building) => BuildingChunk,
-  kit: BuildingKit, at: CellBatches): void {
-  const shown = near ? list : [];
-  const swap = (cache: CellCache, staged: CellCache, owner: BuildingMeshes, cell: string, chunks: BuildingChunk[], kinds: ReadonlySet<PartKind>): void => {
-    const known = cache.get(cell);
-    if (known && sameChunks(known.chunks, chunks)) return;
-    const ready = staged.get(cell);
-    const part = ready && sameChunks(ready.chunks, chunks)
-      ? ready.part
-      : assembleBuildingMeshes(chunks, kit, false, false, { parts: kinds, shells: kinds === COARSE_PARTS, furniture: kinds === COARSE_PARTS });
-    if (ready?.part === part) staged.delete(cell);
-    dropCell(cache, cell, owner);
-    cache.set(cell, { chunks, part });
-    owner.group.add(part.group);
-  };
-  // The cell's buildings in its order: the list `chunksByCell` makes for it over the town.
-  const coarse = shown.map(chunkOf);
-  if (coarse.length) swap(at.cells, at.stagedCells, at.stored, key, coarse, COARSE_PARTS);
-  else dropCell(at.cells, key, at.stored);
-  const fine = chunksByCell(shown, chunkOf, DETAIL_CELL);
-  for (const sub of detailKeysOf(key)) {
-    const chunks = fine.get(sub);
-    if (chunks) swap(at.details, at.stagedDetails, at.detailed, sub, chunks, DETAIL_PARTS);
-    else dropCell(at.details, sub, at.detailed);
+export function patchCell(key: string, landed: LandedCell | null, at: CellBatches): void {
+  dropCell(at.cells, key, at.stored);
+  for (const sub of detailKeysOf(key)) dropCell(at.details, sub, at.detailed);
+  if (!landed?.batch) return;
+  at.cells.set(key, { entries: landed.entries, part: landed.batch });
+  at.stored.group.add(landed.batch.group);
+  for (const [sub, part] of landed.details) {
+    at.details.set(sub, { entries: landed.entries, part });
+    at.detailed.group.add(part.group);
   }
 }

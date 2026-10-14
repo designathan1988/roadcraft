@@ -6,8 +6,9 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingBounds, footprintRects, solidFootprints } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
-import { type BuildingChunk, type BuildingMeshes, type PartBatch, assembleBuildingMeshes } from './buildingMesh';
-import { type BuildingKit, PART_KINDS, type PartKind } from './kit';
+import type { BuildingChunk, BuildingMeshes } from './buildingMesh';
+import type { CellEntry } from './chunk';
+import { PART_KINDS, type PartKind } from './kit';
 
 /**
  * THE CELLS OF THE BUILDINGS LAYER (`layer.ts`): the constants of the grid and
@@ -50,29 +51,19 @@ export const LOADING_COUNT = 100;
  */
 export const RELEASE_FRAMES = 600;
 /**
- * Bytes of buildings' full chunks kept for the cells not drawn in detail
- * (`layer.ts` `trimChunkCache`), so a camera coming back finds them made: a
- * cache budget with the cells in view allowed over it, as Cesium's
- * `cacheBytes` / `maximumCacheOverflowBytes`; past it the cells least
- * recently near are slimmed first (LRU). Far cells slimmed at once were
- * emitted again at every return of the camera - seconds of empty lots.
- * Small on purpose: at 768 MB, with the shells' lots, the heap reached the
- * browser's limit and the collector stalled the game (2026-10-14).
+ * Bytes of buildings' chunks the cell workers keep, all of them (`cellWork.ts`),
+ * so a camera coming back finds them made: the cells in view are kept whatever
+ * it costs, and past it the cells let go longest ago give theirs up first, as
+ * Cesium's `cacheBytes` / `maximumCacheOverflowBytes`. Far cells given up at
+ * once were emitted again at every return of the camera - seconds of empty
+ * lots. Small on purpose: at 768 MB, with the shells' lots, the heap reached
+ * the browser's limit and the collector stalled the game (2026-10-14).
  */
 export const CHUNK_CACHE_BYTES = 128 * 1024 * 1024;
-/** Cells streamed in at most in one frame (`streamCells`), each within the frame's slice. */
+/** Cells landed into the scene at most in one frame (`landCells`, `layer.ts`). */
 export const STREAM_CELLS_PER_FRAME = 4;
-/** The bytes of a building's full chunk: its shells' and parts' arrays (what `slim` lets go). */
-export function chunkBytes(chunk: BuildingChunk): number {
-  let n = 0;
-  for (const shell of Object.values(chunk.shells)) if (shell) n += shell.position.byteLength + shell.normal.byteLength + shell.colour.byteLength + shell.uv.byteLength + shell.index.byteLength + shell.decay.byteLength;
-  for (const batch of Object.values(chunk.parts)) n += batch.matrices.byteLength + (batch.colours?.byteLength ?? 0) + (batch.slots?.byteLength ?? 0) + (batch.rooms?.byteLength ?? 0);
-  return n;
-}
-/** A slimmed building's parts: none (`layer.ts` `slim`). */
-export const EMPTY_PARTS: Readonly<Record<PartKind, PartBatch>> = Object.fromEntries(
-  PART_KINDS.map((kind) => [kind, { matrices: new Float32Array(0), colours: null, count: 0 }]),
-) as Record<PartKind, PartBatch>;
+/** Cells asked of the workers at once while the eye streams the town in (`landCells`, `layer.ts`), nearest first. */
+export const STREAM_AHEAD = 8;
 /** Side of the cells the buildings are batched in, world units. */
 export const BATCH_CELL = m(240);
 export const DETAIL_CELL = m(120);
@@ -91,17 +82,9 @@ export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KI
  * whole town sent every window frame and railing in it to the GPU, twice a
  * frame (picture and shadow), wherever the camera looked.
  */
-/** A cell's batch and the buildings' meshes it was assembled from. */
-export type CellCache = Map<string, { chunks: readonly BuildingChunk[]; part: BuildingMeshes }>;
+/** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
+export type CellCache = Map<string, { entries: readonly CellEntry[]; part: BuildingMeshes }>;
 
-/**
- * The buildings batched by cell of the map. A cell whose buildings' meshes
- * are the very ones it was assembled from (each building's are kept while it
- * is unchanged, `chunkFor`) keeps its batch; only the cells an edit touched
- * are assembled and sent to the GPU again. Every cell of the town was, for a
- * storey added to one building - as voxel and tile engines rebuild only the
- * chunks an edit made dirty.
- */
 /** The buildings' chunks by cell, in list order. */
 export function chunksByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk, cellSize: number): Map<string, BuildingChunk[]> {
   const byCell = new Map<string, BuildingChunk[]>();
@@ -114,45 +97,16 @@ export function chunksByCell(buildings: readonly Building[], chunkOf: (b: Buildi
   return byCell;
 }
 
-export const sameChunks = (a: readonly BuildingChunk[], b: readonly BuildingChunk[]): boolean =>
-  a.length === b.length && a.every((c, i) => c === b[i]);
-
-export function assembleByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk,
-  kit: BuildingKit, cache: CellCache, cellSize: number, partKinds: ReadonlySet<PartKind>, staged?: CellCache): BuildingMeshes {
-  const byCell = chunksByCell(buildings, chunkOf, cellSize);
+/** A group of the cells in `cache` (the coarse batches, or the detail ones): its triangles theirs, disposing it lets go of the group only. */
+export function cellGroup(cache: CellCache): BuildingMeshes {
   const group = new Group();
   group.name = 'buildings';
   group.matrixAutoUpdate = false;
   group.updateMatrix();
-  for (const [key, chunks] of byCell) {
-    const known = cache.get(key);
-    let part: BuildingMeshes;
-    const ready = staged?.get(key);
-    if (known && sameChunks(known.chunks, chunks)) {
-      part = known.part;
-    } else if (ready && sameChunks(ready.chunks, chunks)) {
-      // Put together ahead, a cell a frame (`update`).
-      known?.part.dispose();
-      part = ready.part;
-      staged!.delete(key);
-      cache.set(key, { chunks, part });
-    } else {
-      known?.part.dispose();
-      part = assembleBuildingMeshes(chunks, kit, false, false,
-        { parts: partKinds, shells: partKinds === COARSE_PARTS, furniture: partKinds === COARSE_PARTS });
-      cache.set(key, { chunks, part });
-    }
-    group.add(part.group);
-  }
-  // Cells left with no building, or drawn far (their detail is not made).
-  for (const [key, known] of cache) {
-    if (byCell.has(key)) continue;
-    known.part.dispose();
-    cache.delete(key);
-  }
+  for (const { part } of cache.values()) group.add(part.group);
   return {
     group,
-    // The cells in the cache are the ones in this group: streamed in and out after this (`streamCells`).
+    // The cells in the cache are the ones in this group: streamed in and out after this (`landCells`, `layer.ts`).
     get triangles() {
       let sum = 0;
       for (const { part } of cache.values()) sum += part.triangles;

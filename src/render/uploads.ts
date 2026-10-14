@@ -158,6 +158,21 @@ export function warmLooseAhead(meshes: readonly Mesh[]): Promise<void> | null {
   if (!warmer || meshes.length === 0) return null;
   return Promise.all(meshes.map((mesh) => new Promise<void>((done) => toWarm.push({ mesh, geometries: [mesh.geometry], done, loose: true })))).then(() => {});
 }
+/**
+ * Meshes let go before their turn in the queue: taken out, their promises
+ * settled. DO NOT dispose a mesh still waiting here without this: `warmOne`
+ * drew it anyway and its geometry went back to the GPU with no owner left to
+ * free it (`buildings/cellRequests.ts`, a cell dropped before it landed).
+ */
+export function cancelWarm(meshes: Iterable<Mesh>): void {
+  const gone = new Set(meshes);
+  for (let i = toWarm.length - 1; i >= 0; i--) {
+    const job = toWarm[i]!;
+    if (!gone.has(job.mesh)) continue;
+    toWarm.splice(i, 1);
+    job.done();
+  }
+}
 /** Sends one waiting mesh's geometry to the GPU, after the frame (`renderer.ts`). */
 export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   warmer = true;

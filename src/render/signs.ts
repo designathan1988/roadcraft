@@ -215,78 +215,133 @@ function streetChain(net: Network, at: Vec2): SegmentId[] {
 }
 
 /**
- * The plates' pictures, all on one sheet (a texture atlas: the three.js
- * manual's "Optimize Lots of Objects" merges what shares a material), each
- * plate in a cell of its own, painted once and kept from one build of the
- * signs to the next. Every plate was its own mesh and material, transparent
- * and two-sided: two draws for the picture and one for the shadow, about 2
- * draws a plate (audit S1: +237 draws for 113 plates). The plates are now one
- * mesh: opaque, cut by `alphaTest` as before (a two-sided transparent
+ * The plates' pictures on sheets (a texture atlas: the three.js manual's
+ * "Optimize Lots of Objects" merges what shares a material), each plate in a
+ * cell of its own, painted once and kept from one build of the signs to the
+ * next. Every plate was its own mesh and material, transparent and two-sided:
+ * two draws for the picture and one for the shadow, about 2 draws a plate
+ * (audit S1: +237 draws for 113 plates). The plates are now one mesh, a group
+ * a sheet: opaque, cut by `alphaTest` as before (a two-sided transparent
  * material is drawn twice by three, back faces then front; an opaque one
  * once: `Material.forceSinglePass`, `WebGLRenderer.renderObject`).
+ *
+ * A sheet is at most `PAGE` pixels on a side, and a full one is followed by
+ * another: one sheet whose rows only doubled was 16,384 px tall past 256 names
+ * and 32,768 past 512, more than a graphics card or a canvas takes, and every
+ * plate went blank. WebGL 2 guarantees textures of 2,048 and every device
+ * reports at least 4,096 (web3dsurvey.com, MAX_TEXTURE_SIZE); a canvas past its
+ * browser's limit is unusable (MDN, `<canvas>`, "Maximum canvas size").
+ * DO NOT let a sheet grow past `PAGE`: add a sheet.
  */
-/** A cell of the sheet: a plate canvas is 256 wide and up to 256 tall, with a gutter so the mipmaps do not bleed into the neighbours. */
+/** A cell is 256 wide (a plate canvas's width), with a gutter so the mipmaps do not bleed into the neighbours. */
 const CELL = 256;
 const GUTTER = 8;
 const PITCH = CELL + 2 * GUTTER;
 const COLUMNS = 8;
-interface Atlas {
-  readonly canvas: HTMLCanvasElement;
-  readonly texture: CanvasTexture;
+/** A sheet's largest side: eight cells across, as many rows as fit down (2,176 px, under 4,096). */
+const PAGE = COLUMNS * PITCH;
+/**
+ * The heights a cell comes in: a street's or a direction's name plate (72 to 80
+ * px tall, most of the plates) on sheets of low cells, the rest on cells of
+ * 256 - a name in a 256 px cell left two thirds of the sheet empty.
+ */
+const CELL_HEIGHTS = [80, CELL] as const;
+/** Rows a new sheet starts with; it doubles up to the rows `PAGE` holds. */
+const FIRST_ROWS = 4;
+interface Sheet {
+  canvas: HTMLCanvasElement;
+  texture: CanvasTexture;
+  /** One material per sheet, made with the sheet and kept while it is (never per build of the signs). */
   readonly material: MeshStandardMaterial;
-  /** Each plate's cell and the height its picture takes in it, by type and words. */
-  readonly cells: Map<string, { cell: number; h: number; build: number }>;
-  readonly free: number[];
+  readonly cellHeight: number;
   rows: number;
+  readonly free: number[];
+  /** Cells holding a plate. */
+  used: number;
 }
-let atlas: Atlas | null = null;
+/** A plate on a sheet: its cell, the height its picture takes in it, and the last build that read it. */
+interface Placed { readonly sheet: Sheet; readonly cell: number; readonly h: number; build: number }
+const sheets: Sheet[] = [];
+/** Each plate on its sheet, by type and words. */
+const placed = new Map<string, Placed>();
 let builds = 0;
-function newAtlas(rows: number, from: Atlas | null): Atlas {
+const pitchOf = (sheet: Sheet): number => sheet.cellHeight + 2 * GUTTER;
+const maxRows = (cellHeight: number): number => Math.floor(PAGE / (cellHeight + 2 * GUTTER));
+const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
+function sheetCanvas(rows: number, cellHeight: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = COLUMNS * PITCH;
-  canvas.height = rows * PITCH;
-  if (from) canvas.getContext('2d')!.drawImage(from.canvas, 0, 0);
+  canvas.height = rows * (cellHeight + 2 * GUTTER);
+  return canvas;
+}
+function sheetTexture(canvas: HTMLCanvasElement): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 4;
-  if (from) {
-    // Grown: the same material on the larger sheet (no new program).
-    from.texture.dispose();
-    from.material.map = texture;
-    from.material.needsUpdate = true;
-    return { canvas, texture, material: from.material, cells: from.cells, free: [...from.free, ...range(from.rows * COLUMNS, rows * COLUMNS)], rows };
-  }
-  const material = new MeshStandardMaterial({ map: texture, alphaTest: 0.5, side: DoubleSide, roughness: 0.5, metalness: 0.1 });
-  return { canvas, texture, material, cells: new Map(), free: range(0, rows * COLUMNS), rows };
+  return texture;
 }
-const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
-/** The cell of a plate on the sheet (painted there the first time), and the height its picture takes. */
-function plateCell(type: SignType, text: string): { readonly cell: number; readonly h: number } {
-  atlas ??= newAtlas(4, null);
+function newSheet(cellHeight: number): Sheet {
+  const rows = Math.min(FIRST_ROWS, maxRows(cellHeight));
+  const canvas = sheetCanvas(rows, cellHeight);
+  const texture = sheetTexture(canvas);
+  // The same parameters on every sheet: the same program (three keys it by them, not by the texture).
+  const material = new MeshStandardMaterial({ map: texture, alphaTest: 0.5, side: DoubleSide, roughness: 0.5, metalness: 0.1 });
+  const sheet: Sheet = { canvas, texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0 };
+  sheets.push(sheet);
+  return sheet;
+}
+/** The sheet twice as tall, up to `PAGE`: the same material on the larger canvas (no new program). */
+function growSheet(sheet: Sheet): void {
+  const rows = Math.min(maxRows(sheet.cellHeight), sheet.rows * 2);
+  const canvas = sheetCanvas(rows, sheet.cellHeight);
+  canvas.getContext('2d')!.drawImage(sheet.canvas, 0, 0);
+  sheet.texture.dispose();
+  sheet.texture = sheetTexture(canvas);
+  sheet.canvas = canvas;
+  sheet.material.map = sheet.texture;
+  sheet.material.needsUpdate = true;
+  sheet.free.push(...range(sheet.rows * COLUMNS, rows * COLUMNS));
+  sheet.rows = rows;
+}
+/** A sheet of cells `cellHeight` tall with a free cell: one with room, grown, or a new one. */
+function sheetWithRoom(cellHeight: number): Sheet {
+  for (const sheet of sheets) if (sheet.cellHeight === cellHeight && sheet.free.length) return sheet;
+  for (const sheet of sheets) {
+    if (sheet.cellHeight === cellHeight && sheet.rows < maxRows(cellHeight)) { growSheet(sheet); return sheet; }
+  }
+  return newSheet(cellHeight);
+}
+/** The cell of a plate on its sheet (painted there the first time), and the height its picture takes. */
+export function plateCell(type: SignType, text: string): Placed {
   const key = `${type}|${text}`;
-  let known = atlas.cells.get(key);
+  let known = placed.get(key);
   if (!known) {
-    if (!atlas.free.length) atlas = newAtlas(atlas.rows * 2, atlas);
-    const cell = atlas.free.shift()!;
     const picture = plateCanvas(type, text);
-    const g = atlas.canvas.getContext('2d')!;
-    const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * PITCH + GUTTER;
-    g.clearRect(x - GUTTER, y - GUTTER, PITCH, PITCH);
+    const sheet = sheetWithRoom(CELL_HEIGHTS.find((c) => c >= picture.height) ?? CELL);
+    const cell = sheet.free.shift()!;
+    const pitch = pitchOf(sheet);
+    const g = sheet.canvas.getContext('2d')!;
+    const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * pitch + GUTTER;
+    g.clearRect(x - GUTTER, y - GUTTER, PITCH, pitch);
     g.drawImage(picture, x, y);
-    atlas.texture.needsUpdate = true;
-    known = { cell, h: picture.height, build: builds };
-    atlas.cells.set(key, known);
+    sheet.texture.needsUpdate = true;
+    sheet.used++;
+    known = { sheet, cell, h: Math.min(picture.height, sheet.cellHeight), build: builds };
+    placed.set(key, known);
   }
   known.build = builds;
   return known;
 }
+/** The size of each sheet now (a check that none passes what a card takes). */
+export const signSheets = (): { width: number; height: number }[] =>
+  sheets.map((sheet) => ({ width: sheet.canvas.width, height: sheet.canvas.height }));
 /**
- * A cell's corners on the sheet as it stands, uv. Read once every plate of a
+ * A cell's corners on its sheet as it stands, uv. Read once every plate of a
  * build is on it: the sheet may grow while they are painted.
  */
-function cellUv(cell: number, h: number): { u0: number; v0: number; u1: number; v1: number } {
-  const W = atlas!.canvas.width, H = atlas!.canvas.height;
-  const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * PITCH + GUTTER;
+function cellUv({ sheet, cell, h }: Placed): { u0: number; v0: number; u1: number; v1: number } {
+  const W = sheet.canvas.width, H = sheet.canvas.height;
+  const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * pitchOf(sheet) + GUTTER;
   // A canvas texture is flipped (`flipY`): v runs up from the sheet's bottom.
   return { u0: x / W, u1: (x + CELL) / W, v0: 1 - (y + h) / H, v1: 1 - y / H };
 }
