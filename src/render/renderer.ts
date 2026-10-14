@@ -433,6 +433,33 @@ export function createSceneRenderer(
   let shadowMoved = true;
   /** Frames since the shadow map was last drawn (`SHADOW_FAR_EVERY`). */
   let shadowFrame = 0;
+  /**
+   * Whether anything that moves is drawn into the shadow map: a visible
+   * caster with instances outside what stands still - the town's world (but
+   * its trains), the buildings, the ground and its grass, the signals.
+   * Traffic, people, trains and a blow's debris are the rest. An object the
+   * renderer adds later counts as moving until it is listed here.
+   */
+  const castsInto = (root: Object3D): boolean => {
+    const stack: Object3D[] = [root];
+    while (stack.length) {
+      const o = stack.pop()!;
+      if (!o.visible) continue;
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number };
+      if (mesh.isMesh && mesh.castShadow && (!mesh.isInstancedMesh || (mesh.count ?? 0) > 0)) return true;
+      for (const child of o.children) stack.push(child);
+    }
+    return false;
+  };
+  const movingCasters = (): boolean => {
+    for (const root of scene.children) {
+      if (root === world || root === buildings.group || root.name === 'traffic-signals' || stillRoots.has(root)) continue;
+      if (castsInto(root)) return true;
+    }
+    return transit !== null && castsInto(transit.group);
+  };
+  /** The ground and its grass, which never move (`movingCasters`). */
+  const stillRoots = new Set<Object3D>();
   const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
@@ -614,6 +641,7 @@ export function createSceneRenderer(
   // The far ring: three times the spacing, out to three times the reach, where the near one fades.
   const grassFar = createGrass(quality, { scale: 3, inner: GRASS_NEAR_REACH * 0.85 }, grassMask);
   scene.add(grass.mesh, grassFar.mesh);
+  stillRoots.add(grass.mesh).add(grassFar.mesh);
   // The blades follow the ecosystem's ground and the season.
   grass.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
   grassFar.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
@@ -676,6 +704,7 @@ export function createSceneRenderer(
     }
   };
   scene.add(...terrain.meshes);
+  for (const mesh of terrain.meshes) stillRoots.add(mesh);
 
   const world = new Group();
   world.name = 'world';
@@ -3464,7 +3493,12 @@ export function createSceneRenderer(
       // is redrawn only when a caster moved").
       if (renderer.shadowMap.enabled) {
         shadowFrame++;
-        const moving = !sim.clock.paused || net.doc.weather.wind > 0;
+        // The two-wheelers changed between casting and a soft disc: their shadows come or go now.
+        if (agents.castersChanged) shadowMoved = true;
+        // Moving only when something that moves is in the pass (`movingCasters`) or the wind
+        // bends the trees: from the map the town stood still under its traffic's soft discs and
+        // was drawn again every third frame all the same (2026-10-14).
+        const moving = net.doc.weather.wind > 0 || (!sim.clock.paused && movingCasters());
         const every = rig.viewport.zoom >= SHADOW_FULL_ZOOM ? 1 : SHADOW_FAR_EVERY;
         if (shadowMoved || sunMoved || (moving && shadowFrame >= every) || shadowFrame >= SHADOW_SAFETY_FRAMES) {
           renderer.shadowMap.needsUpdate = true;

@@ -183,6 +183,11 @@ export interface AgentRenderOptions {
 export interface AgentMeshes {
   readonly meshes: readonly Object3D[];
   /**
+   * Whether the last `sync` switched the two-wheelers between casting into
+   * the shadow map and a soft disc under them: the map is drawn again then.
+   */
+  readonly castersChanged: boolean;
+  /**
    * @param zoom Viewport zoom, used only to pick the closest detail band. It
    *   defaults to fully zoomed in, so a caller that does not pass it gets the
    *   richest look rather than a silently stripped one.
@@ -1339,6 +1344,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** This frame's whole-level candidates' lengths on the screen, and the least one may have (last frame's cap). */
   const nearCandidates: number[] = [];
   let nearFloor = 0;
+  /**
+   * Whether a two-wheeler was drawn whole last frame: then they all cast into
+   * the shadow map; else each has a soft disc under it, as a car below the
+   * whole level has. From the map a bike was the only thing moving in the
+   * shadow pass, which then drew the whole town again every third frame for
+   * shadows of two or three pixels (2026-10-14).
+   * NÃO voltar a projetar sempre: o mapa de sombras volta a ser redesenhado a cada 3 quadros.
+   */
+  let bikesWhole = false;
+  let castersChanged = false;
   let suspensionClock = typeof performance !== 'undefined' ? performance.now() : 0;
   let suspensionDt = 0;
   /**
@@ -1824,6 +1839,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   return {
     meshes,
+    get castersChanged() { return castersChanged; },
     census: () => pedestrians.census(),
     meshProbe() {
       const out: { id: number; stretch: number; stretchBone: string; scale: number; scaleBone: string; held: boolean; clip: string }[] = [];
@@ -1983,6 +1999,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const softShadows = options.shadows !== false;
       let whole = 0;
       nearCandidates.length = 0;
+      // Last frame's answer: this frame's discs and casting agree with each other.
+      const bikesCast = bikesWhole;
+      let bikesWholeNow = false, carsWheeled = false;
       vehicleBlobs.begin();
       if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot.
@@ -2019,6 +2038,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           else whole++;
         }
         const level = Math.min(vehicleBand, own);
+        if (twoWheeled && level === 2) bikesWholeNow = true;
+        if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         // Standing where it stood, drawn as it was: its instances copied, none of the sums.
         const still = parked && !twoWheeled && vehicle.doors.length === 0;
@@ -2137,14 +2158,22 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           parkedDraws.set(vehicle.id, { x: pose.p.x, y: pose.p.y, angle: pose.angle, deck, band: level, paint: paintHex, writes: recording, seen: suspensionFrame, blob: null });
           recording = null;
         }
-        // Below the whole level, its shadow is a soft disc (the body casts none).
-        if (!twoWheeled && level < 2 && softShadows) {
+        // Below the whole level, its shadow is a soft disc (the body casts none);
+        // a two-wheeler's too while none is drawn whole (`bikesWhole`).
+        if ((twoWheeled ? !bikesCast : level < 2) && softShadows) {
           blobMatrix.makeRotationY(pose.angle).setPosition(pose.p.x, ride.deck, -pose.p.y);
           vehicleBlobs.add(blobMatrix, plan.length * 0.55, plan.width * 0.62);
         }
         drawn++;
       }
       vehicleBlobs.finish();
+      // The two-wheelers cast only while one is drawn whole; the shared tyres
+      // also while a car is drawn with its wheels.
+      castersChanged = thinWheels.mesh.castShadow !== bikesCast;
+      for (const t of twoWheelerParts.values()) { t.body.mesh.castShadow = bikesCast; t.trim.mesh.castShadow = bikesCast; }
+      thinWheels.mesh.castShadow = bikesCast;
+      wheels.mesh.castShadow = bikesCast || carsWheeled;
+      bikesWhole = bikesWholeNow;
       // Next frame's floor for the whole level: the cap's smallest of this frame.
       if (nearCandidates.length > VEHICLE_NEAR_CAP) {
         nearCandidates.sort((a, b) => b - a);
