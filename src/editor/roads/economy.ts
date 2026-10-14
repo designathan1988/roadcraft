@@ -2,7 +2,7 @@ import type { RoadDoc } from '@world/doc';
 import { type RoadCharge, chargeFor, roadValue } from '@world/economy';
 
 /**
- * Paying for a road edit (`world/economy.ts`, docs/VIAS.md V0): every tool
+ * Paying for a road edit (`world/economy.ts`, docs/source/VIAS.md V0): every tool
  * that changes the roads takes what they are worth before it, makes the
  * edit, and settles here. What a road edit costs is decided in one place
  * and the same for all of them - drawing, splitting, retyping, widening,

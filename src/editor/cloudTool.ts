@@ -76,7 +76,10 @@ export class CloudTool {
     host.changed();
   }
 
-  /** The pointer moved to (px, py): the cloud being dragged follows it. */
+  /**
+   * The pointer moved to (px, py): the cloud being dragged follows it.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(px: number, py: number): void {
     const { host } = this;
     const drag = this.drag;

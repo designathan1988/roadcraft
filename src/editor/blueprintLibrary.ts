@@ -19,7 +19,7 @@ interface StoredBlueprint {
   readonly key: string;
   readonly name: string;
   readonly body: unknown;
-  /** Metres per world unit it was saved in; absent: 0.4, before 2026-10-10 (docs/ESCALA.md). */
+  /** Metres per world unit it was saved in; absent: 0.4, before 2026-10-10 (docs/source/ESCALA.md). */
   readonly unit?: number;
 }
 

@@ -4,7 +4,7 @@ import './roads.css';
 
 /**
  * THE ROAD TOOL'S KEYS, in a small panel beside the tool's options
- * (docs/VIAS.md V3): each action with its key as a chip; a chip clicked
+ * (docs/source/VIAS.md V3): each action with its key as a chip; a chip clicked
  * waits for the next key pressed and takes it (Esc gives up), a key the
  * game keeps for itself is refused with the reason, and "Restore" puts the
  * defaults back. The keys live in `editor/roads/keys.ts`.

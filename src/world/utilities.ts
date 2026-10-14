@@ -58,7 +58,7 @@ export const MAX_POLE_SPACING = ROAD_TUNING.poles.maxSpacing;
  * 1.5%. Below about 1% the wire reads as a taut wire rather than a hanging
  * one, and above about 4% it starts to look like washing line.
  */
-export const WIRE_SAG_RATIO = 0.018;
+const WIRE_SAG_RATIO = 0.018;
 /** However long the span, the sag stops growing past this. */
 export const WIRE_MAX_SAG = m(1.4);
 
@@ -182,7 +182,7 @@ export type PoleLampMode = (typeof POLE_LAMP_MODES)[number];
  * its own cross-arm, square to that line (the double dead-end, "buck arm"
  * corner of distribution standards), instead of one arm on the bisector.
  */
-export const CORNER_DEFLECTION = (60 * Math.PI) / 180;
+const CORNER_DEFLECTION = (60 * Math.PI) / 180;
 
 /** The cross-arms of one pole: every distinct arm, and the one each span hangs from. */
 export interface PoleArms {
@@ -219,61 +219,71 @@ export function poleArms(
   spans: ReadonlyMap<SpanId, UtilitySpan>,
   idle: (pole: UtilityPole) => Vec2 = () => ({ x: 0, y: 1 }),
 ): Map<PoleId, PoleArms> {
-  const leaving = new Map<PoleId, { span: UtilitySpan; d: Vec2 }[]>();
+  const reaching = new Map<PoleId, UtilitySpan[]>();
   for (const span of spans.values()) {
+    if (!poles.has(span.a) || !poles.has(span.b)) continue;
+    for (const end of [span.a, span.b]) {
+      const list = reaching.get(end);
+      if (list) list.push(span);
+      else reaching.set(end, [span]);
+    }
+  }
+  const out = new Map<PoleId, PoleArms>();
+  for (const pole of poles.values()) out.set(pole.id, poleArmsAt(pole, reaching.get(pole.id) ?? [], poles, idle));
+  return out;
+}
+
+/**
+ * One pole's arms (`poleArms`), from the spans reaching it in the order they
+ * were strung: all it depends on is those spans and the poles at their other
+ * ends, so a pole layer frames again only the poles an edit reached.
+ */
+export function poleArmsAt(
+  pole: UtilityPole,
+  reaching: Iterable<UtilitySpan>,
+  poles: ReadonlyMap<PoleId, UtilityPole>,
+  idle: (pole: UtilityPole) => Vec2 = () => ({ x: 0, y: 1 }),
+): PoleArms {
+  const lines: { span: UtilitySpan; d: Vec2 }[] = [];
+  for (const span of reaching) {
     const a = poles.get(span.a);
     const b = poles.get(span.b);
     if (!a || !b) continue;
-    const at = (id: PoleId, dir: Vec2): void => {
-      const list = leaving.get(id);
-      if (list) list.push({ span, d: dir });
-      else leaving.set(id, [{ span, d: dir }]);
-    };
-    at(span.a, unit({ x: b.x - a.x, y: b.y - a.y }));
-    at(span.b, unit({ x: a.x - b.x, y: a.y - b.y }));
+    if (span.a === pole.id) lines.push({ span, d: unit({ x: b.x - a.x, y: b.y - a.y }) });
+    if (span.b === pole.id) lines.push({ span, d: unit({ x: a.x - b.x, y: a.y - b.y }) });
   }
-  const out = new Map<PoleId, PoleArms>();
-  for (const pole of poles.values()) {
-    const lines = leaving.get(pole.id) ?? [];
-    const bySpan = new Map<SpanId, Vec2>();
-    /** The arm for a span, turned to lie left of the span's own a -> b. */
-    const oriented = (arm: Vec2, span: UtilitySpan): Vec2 => {
-      const a = poles.get(span.a)!;
-      const b = poles.get(span.b)!;
-      const along = { x: b.x - a.x, y: b.y - a.y };
-      return along.x * arm.y - along.y * arm.x >= 0 ? arm : { x: -arm.x, y: -arm.y };
-    };
-    if (lines.length === 0) {
-      out.set(pole.id, { arms: [unit(idle(pole))], bySpan });
-      continue;
-    }
-    if (lines.length === 1) {
-      const arm = perp(lines[0]!.d);
-      bySpan.set(lines[0]!.span.id, oriented(arm, lines[0]!.span));
-      out.set(pole.id, { arms: [arm], bySpan });
-      continue;
-    }
-    if (lines.length === 2) {
-      const [p, q] = lines as [{ span: UtilitySpan; d: Vec2 }, { span: UtilitySpan; d: Vec2 }];
-      // Deflection: how far the line turns here (0 on a straight run).
-      const cos = Math.max(-1, Math.min(1, -(p.d.x * q.d.x + p.d.y * q.d.y)));
-      if (Math.acos(cos) < CORNER_DEFLECTION) {
-        // The line's direction through the pole; the arm square to it lies on the bisector.
-        const arm = perp(unit({ x: p.d.x - q.d.x, y: p.d.y - q.d.y }));
-        bySpan.set(p.span.id, oriented(arm, p.span));
-        bySpan.set(q.span.id, oriented(arm, q.span));
-        out.set(pole.id, { arms: [arm], bySpan });
-        continue;
-      }
-    }
-    const arms: Vec2[] = [];
-    for (const line of lines) {
-      const arm = perp(line.d);
-      bySpan.set(line.span.id, oriented(arm, line.span));
-      // Two lines leaving straight through each other share one arm.
-      if (!arms.some((other) => Math.abs(other.x * arm.y - other.y * arm.x) < 0.09)) arms.push(arm);
-    }
-    out.set(pole.id, { arms, bySpan });
+  const bySpan = new Map<SpanId, Vec2>();
+  /** The arm for a span, turned to lie left of the span's own a -> b. */
+  const oriented = (arm: Vec2, span: UtilitySpan): Vec2 => {
+    const a = poles.get(span.a)!;
+    const b = poles.get(span.b)!;
+    const along = { x: b.x - a.x, y: b.y - a.y };
+    return along.x * arm.y - along.y * arm.x >= 0 ? arm : { x: -arm.x, y: -arm.y };
+  };
+  if (lines.length === 0) return { arms: [unit(idle(pole))], bySpan };
+  if (lines.length === 1) {
+    const arm = perp(lines[0]!.d);
+    bySpan.set(lines[0]!.span.id, oriented(arm, lines[0]!.span));
+    return { arms: [arm], bySpan };
   }
-  return out;
+  if (lines.length === 2) {
+    const [p, q] = lines as [{ span: UtilitySpan; d: Vec2 }, { span: UtilitySpan; d: Vec2 }];
+    // Deflection: how far the line turns here (0 on a straight run).
+    const cos = Math.max(-1, Math.min(1, -(p.d.x * q.d.x + p.d.y * q.d.y)));
+    if (Math.acos(cos) < CORNER_DEFLECTION) {
+      // The line's direction through the pole; the arm square to it lies on the bisector.
+      const arm = perp(unit({ x: p.d.x - q.d.x, y: p.d.y - q.d.y }));
+      bySpan.set(p.span.id, oriented(arm, p.span));
+      bySpan.set(q.span.id, oriented(arm, q.span));
+      return { arms: [arm], bySpan };
+    }
+  }
+  const arms: Vec2[] = [];
+  for (const line of lines) {
+    const arm = perp(line.d);
+    bySpan.set(line.span.id, oriented(arm, line.span));
+    // Two lines leaving straight through each other share one arm.
+    if (!arms.some((other) => Math.abs(other.x * arm.y - other.y * arm.x) < 0.09)) arms.push(arm);
+  }
+  return { arms, bySpan };
 }

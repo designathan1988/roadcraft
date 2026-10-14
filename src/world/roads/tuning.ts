@@ -2,7 +2,7 @@ import { m } from '../units';
 
 /**
  * THE ROAD TUNING: every figure the road system is tuned by, in one place
- * (docs/VIAS.md, stage V0). Grades are rise over run; lengths and heights
+ * (docs/source/VIAS.md, stage V0). Grades are rise over run; lengths and heights
  * are world units (`m()` turns a metre figure into them, one metre a unit).
  *
  * Two kinds of entry, never mixed up:
@@ -52,7 +52,7 @@ export const ROAD_TUNING = {
     /**
      * LIVE. Steepest grade the road tool lays between two authored heights
      * before the height is cut short (`commit.ts`, the preview in `main.ts`):
-     * the "12 % short ramp" of docs/VIAS.md, inside TxDOT's 15 % for very
+     * the "12 % short ramp" of docs/source/VIAS.md, inside TxDOT's 15 % for very
      * constrained conditions.
      */
     authored: 0.12,
@@ -184,5 +184,3 @@ export const ROAD_TUNING = {
     demolitionRefund: 0.25,
   },
 } as const;
-
-export type RoadTuning = typeof ROAD_TUNING;

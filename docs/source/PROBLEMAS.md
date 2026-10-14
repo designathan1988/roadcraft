@@ -1,5 +1,7 @@
 # Problemas de desempenho e soluções
 
+> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+
 Registro vivo. Uma linha por problema relatado pelo jogador. Uma linha só fecha
 com a medida "depois", tirada do mesmo jeito que a "antes": na página aberta,
 pelos registros que o próprio jogo grava (`performance.measure('hitch:…')`).

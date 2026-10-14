@@ -90,7 +90,7 @@ export function topLevel(b: Building): number {
 }
 
 /** Whether a volume has a storey on `level`. */
-export const occupiesLevel = (v: Volume, level: number): boolean => v.base <= level && level < volumeTop(v);
+const occupiesLevel = (v: Volume, level: number): boolean => v.base <= level && level < volumeTop(v);
 
 /** How far a block's own floor stands from the building's ground floor (`Volume.lift`). */
 export const volumeLift = (v: Volume): number => v.lift ?? 0;
@@ -308,7 +308,7 @@ export function isSupported(b: Building, v: Volume): boolean {
 }
 
 /** The share of a block's plan that must bear on the blocks under it. */
-export const MIN_BEARING = 0.3;
+const MIN_BEARING = 0.3;
 
 // ------------------------------------------------------------------ facades
 
@@ -348,7 +348,7 @@ export function coveredSpans(b: Building, v: Volume, side: FaceId, level: number
  * into the neighbour (CityEngine's `touches` occlusion makes such a tile a
  * wall; `inside` drops it, as `coveredSpans` does).
  */
-export function partlyCoveredSpans(b: Building, v: Volume, side: FaceId, level: number): [number, number][] {
+function partlyCoveredSpans(b: Building, v: Volume, side: FaceId, level: number): [number, number][] {
   if (!b.volumes.some((o) => Math.abs(volumeLift(o) - volumeLift(v)) > EPS)) return [];
   return spansAgainst(b, v, side, level, 1);
 }
@@ -564,7 +564,7 @@ export interface FacadeBay {
 /**
  * Each building's bays as last worked out, with the record they came from:
  * the platforms, the door links, the access signature and the meshes each
- * worked them out again for every building on every edit (docs/performance.md
+ * worked them out again for every building on every edit (docs/source/performance.md
  * #18). Checked against the record's text, in case one is changed in place.
  * The list handed out is shared: read it, never change it.
  */

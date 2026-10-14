@@ -38,7 +38,7 @@ export const isCoverKind = (kind: PaintKind): kind is CoverKind => (COVER_KINDS 
  * Painting one moves no ground and paints no surface: it sets which rock the
  * cliffs, outcrops and soil of that area are (`render/terrain.ts`).
  */
-export const GEOLOGY_KINDS = ['granite', 'sandstone', 'basalt'] as const;
+const GEOLOGY_KINDS = ['granite', 'sandstone', 'basalt'] as const;
 export type GeologyKind = (typeof GEOLOGY_KINDS)[number];
 export const isGeologyKind = (kind: PaintKind): kind is GeologyKind => (GEOLOGY_KINDS as readonly string[]).includes(kind);
 

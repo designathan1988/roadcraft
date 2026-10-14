@@ -408,9 +408,6 @@
     }
   },
   "src/render/scenery.ts": {
-    "max-lines": {
-      "count": 1
-    },
     "roadcraft/no-module-state": {
       "count": 1
     }
@@ -468,7 +465,7 @@
   },
   "src/render/utilities.ts": {
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/render/vehicleModels.ts": {
@@ -801,11 +798,6 @@
     }
   },
   "src/world/buildings/streetDoors.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/world/buildings/towerKit.ts": {
     "roadcraft/no-module-state": {
       "count": 1
     }

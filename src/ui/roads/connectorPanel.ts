@@ -5,7 +5,7 @@ import { t } from '../i18n';
 import './roads.css';
 
 /**
- * THE LANE CONNECTOR EDITOR of a junction (docs/VIAS.md V4), in the
+ * THE LANE CONNECTOR EDITOR of a junction (docs/source/VIAS.md V4), in the
  * inspector: the node drawn as a plan, every arriving lane as a blue dot at
  * its stop line and every leaving lane as a green dot where it starts, the
  * connections the game built as curves between them. Click an arriving lane

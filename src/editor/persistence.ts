@@ -66,7 +66,7 @@ export interface SavedSettings {
   readonly people?: number;
   readonly demandMultiplier?: number;
   readonly congestionOverlay: boolean;
-  /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10 (docs/ESCALA.md). */
+  /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10 (docs/source/ESCALA.md). */
   readonly unit?: number;
 }
 
@@ -145,7 +145,7 @@ export class Persistence {
    * The document as text, when the editor already has it (its undo keeps the
    * same `JSON.stringify(doc.toJSON())` of the document as it is now): the
    * autosave wrote it out again, 700 ms after every edit, an 80 ms stall in
-   * the default town (docs/performance.md #22).
+   * the default town (docs/source/performance.md #22).
    */
   documentText: ((doc: RoadDoc) => string | null) | null = null;
 

@@ -32,7 +32,7 @@ export class StreetscapeTool {
   /** Where the chosen item would go under the pointer: a ring, red where it cannot. */
   hover: LandscapeSnap | null = null;
   /**
-   * A row being dragged out from the item just placed (docs/VIAS.md V7,
+   * A row being dragged out from the item just placed (docs/source/VIAS.md V7,
    * placement in line): the pieces that would follow it along the footway,
    * one every `ROW_SPACING` of its kind, laid when the button is let go.
    */
@@ -45,6 +45,7 @@ export class StreetscapeTool {
     return Math.max(m(1.5), 26 / this.host.zoom());
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   down(world: Vec2, shift: boolean): void {
     const { host } = this;
     const { doc } = host;
@@ -59,7 +60,7 @@ export class StreetscapeTool {
     const kind = host.kind();
     const placed = snapLandscape(host.net, doc.landscape.values(), kind, world, this.reach());
     // A stop or give-way plate at a junction's approach IS that leg's rule
-    // (docs/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
+    // (docs/source/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
     const signType = kind === 'sign' ? host.extra(kind).signType : undefined;
     const approach = placed.ok && placed.hit && (signType === 'stop' || signType === 'yield')
       ? signApproach(host.net, placed.at, placed.hit.segment) : null;
@@ -90,7 +91,10 @@ export class StreetscapeTool {
     host.redraw();
   }
 
-  /** `pressed`: the button still down, dragging a row out from the item just placed. */
+  /**
+   * `pressed`: the button still down, dragging a row out from the item just placed.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2, pressed = false): void {
     const { host } = this;
     if (this.row && pressed) {

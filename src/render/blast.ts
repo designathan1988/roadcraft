@@ -28,6 +28,7 @@ import {
 } from 'three';
 
 import { TUNED_UNIT, m } from '@world/units';
+import { pullTowardEye } from './depthConvention';
 import type { Exhaust } from './exhaust';
 
 /**
@@ -263,8 +264,9 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
   }
   const craterGeometry = new CircleGeometry(0.5, 28).rotateX(-Math.PI / 2);
   const craterMaterials = [craterTexture(true), craterTexture(false)].map((map) => new MeshStandardMaterial({
-    map, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    map, transparent: true, depthWrite: false, roughness: 1,
   }));
+  for (const material of craterMaterials) pullTowardEye(material, 4, 4);
   // Soot: a soft dark blot, many of them, kept (the street stays dirty).
   const sootMap = (() => {
     const c = document.createElement('canvas'); c.width = c.height = 128;
@@ -277,7 +279,9 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
     }
     const t = new CanvasTexture(c); t.colorSpace = SRGBColorSpace; return t;
   })();
-  craterMaterials.push(new MeshStandardMaterial({ map: sootMap, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+  const soot = new MeshStandardMaterial({ map: sootMap, transparent: true, depthWrite: false, roughness: 1 });
+  pullTowardEye(soot, 3, 3);
+  craterMaterials.push(soot);
   const craterMeshes = craterMaterials.map((material, i) => {
     if (i === 2) {
       const mesh = new InstancedMesh(craterGeometry, material, MAX_SOOT);

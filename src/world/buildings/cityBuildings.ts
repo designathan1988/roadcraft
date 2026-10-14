@@ -31,7 +31,7 @@ import {
  * are open blocks (lots) with trees, benches, paths and fences on them.
  */
 
-export type CityCategory = 'homes' | 'public' | 'commerce' | 'leisure' | 'work';
+type CityCategory = 'homes' | 'public' | 'commerce' | 'leisure' | 'work';
 
 export interface CityBuilding {
   readonly fn: BuildingFunction;

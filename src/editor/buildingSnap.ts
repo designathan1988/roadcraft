@@ -10,8 +10,7 @@ import { normaliseAngle } from './buildings';
 import { m } from '@world/units';
 
 /**
- * Where a footprint goes when the pointer is at `cursor`. See
- * docs/buildings.md section 4, "Snapping": to a road first (facing it, its
+ * Where a footprint goes when the pointer is at `cursor`: to a road first (facing it, its
  * front along the back of the footway, flush with a neighbour on the same
  * frontage), then to a nearby building (its rotation, edges flush), then to
  * the module grid.
@@ -44,6 +43,7 @@ const EDGE_SNAP = m(0.32);
 /** How far a building still lends its rotation to one being placed. */
 const BUILDING_REACH = m(12);
 
+/** @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map. */
 export function snapPlacement(
   doc: RoadDoc,
   net: Network | null,

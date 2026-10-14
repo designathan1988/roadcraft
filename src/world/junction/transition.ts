@@ -39,7 +39,7 @@ import { m } from '../units';
  */
 export const TAPER_RATIO = 8;
 /** Shortest taper worth drawing, end to end, in world units. */
-export const TAPER_MIN = m(9.6);
+const TAPER_MIN = m(9.6);
 /**
  * Largest bend at a node of two legs that is still one road running on: a
  * taper (when the widths differ), no zebra and no stop line. Past it the node
@@ -63,7 +63,7 @@ export function isTransition(legs: readonly Leg[]): boolean {
  * SIDE: a road running on keeps its left side along the other's right side
  * (`+nrm` of one leg is `-nrm` of the other). The same as `widthStep` for
  * two symmetric roads; an asymmetric road turned round is a step on both
- * sides though its widest half-width is unchanged (docs/VIAS.md V1).
+ * sides though its widest half-width is unchanged (docs/source/VIAS.md V1).
  */
 export function legWidthStep(a: Leg, b: Leg): number {
   if (symmetric(a.road) && symmetric(b.road)) return widthStep(a.road, b.road);
@@ -89,12 +89,8 @@ export function widthStep(a: RoadType, b: RoadType): number {
  *
  * One number for every surface level, so the kerb band keeps its width and the
  * footway grows smoothly: levels tapered over different lengths would cross.
+ * `step` is the width step already measured (`widthStep`, `legWidthStep`).
  */
-export function transitionRun(a: RoadType, b: RoadType): number {
-  return transitionRunFor(widthStep(a, b));
-}
-
-/** `transitionRun` for a width step already measured (`legWidthStep`). */
 export function transitionRunFor(step: number): number {
   return Math.max(TAPER_MIN, step * TAPER_RATIO) / 2;
 }
@@ -169,7 +165,7 @@ export function transitionRing(legs: readonly Leg[], trims: readonly number[]): 
   const axis = new TransitionAxis(a, trims[0] as number, b, trims[1] as number);
   // The axis runs from leg a into leg b: its left is a's `-nrm` side and
   // b's `+nrm` side, its right a's `+nrm` side and b's `-nrm` side. Each
-  // side tapers from its own width to its own width (docs/VIAS.md V1).
+  // side tapers from its own width to its own width (docs/source/VIAS.md V1).
   const halfLeft = (u: number): number => a.hwRight + (b.hwLeft - a.hwRight) * taperEase(u);
   const halfRight = (u: number): number => a.hwLeft + (b.hwRight - a.hwLeft) * taperEase(u);
   const left = axis.offset(halfLeft);

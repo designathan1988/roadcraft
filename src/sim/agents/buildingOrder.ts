@@ -104,7 +104,8 @@ export class BuildingsInOrder {
   private readonly order = new StoreOrder();
   private doc: RoadDoc | null = null;
   private serial = -1;
-  private readonly members = new Set<BuildingId>();
+  /** Each kept building and the rank it was filed in the list at. */
+  private readonly filedAt = new Map<BuildingId, number>();
   private list: BuildingId[] = [];
   private epoch = -1;
 
@@ -116,7 +117,7 @@ export class BuildingsInOrder {
   }
 
   has(id: BuildingId): boolean {
-    return this.members.has(id);
+    return this.filedAt.has(id);
   }
 
   /** A building's place in the store's order as of the last `update` (to sort other buildings by it). */
@@ -154,40 +155,54 @@ export class BuildingsInOrder {
       return null;
     }
     // Each building named: out, and back in at its rank if it is kept (a
-    // building taken away and put back since stands last now).
-    const moved = [...ids].filter((id) => this.members.has(id));
-    if (moved.length) {
-      const gone = new Set(moved);
-      this.list = this.list.filter((id) => !gone.has(id));
-      for (const id of moved) this.members.delete(id);
-    }
-    const resorted = order.epoch !== this.epoch;
-    if (resorted) {
-      this.list.sort((a, b) => order.rank(a)! - order.rank(b)!);
-      this.epoch = order.epoch;
-    }
+    // building taken away and put back since stands last now). Found in the
+    // list by the rank it was filed at, by halving: DO NOT walk the list.
+    for (const id of ids) this.unfile(id);
+    if (order.epoch !== this.epoch) this.resort();
     for (const id of ids) {
       const b = doc.buildings.get(id);
-      if (!b || !this.keep(b)) continue;
-      const rank = order.rank(id)!;
-      let lo = 0, hi = this.list.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (order.rank(this.list[mid]!)! < rank) lo = mid + 1; else hi = mid;
-      }
-      this.list.splice(lo, 0, id);
-      this.members.add(id);
+      if (b && this.keep(b)) this.file(id, order.rank(id)!);
     }
     return { ids: [...ids], rects };
   }
 
+  /** Where a rank stands, or would stand, in the list (the list is in the order of the ranks it was filed at). */
+  private slot(rank: number): number {
+    let lo = 0, hi = this.list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.filedAt.get(this.list[mid]!)! < rank) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  private file(id: BuildingId, rank: number): void {
+    this.list.splice(this.slot(rank), 0, id);
+    this.filedAt.set(id, rank);
+  }
+
+  private unfile(id: BuildingId): void {
+    const rank = this.filedAt.get(id);
+    if (rank === undefined) return;
+    this.list.splice(this.slot(rank), 1);
+    this.filedAt.delete(id);
+  }
+
+  /** @rebuild The kept buildings in the store's order read again whole: its ranks were (`StoreOrder.reread`). */
+  private resort(): void {
+    const order = this.order;
+    this.list.sort((a, b) => order.rank(a)! - order.rank(b)!);
+    for (const id of this.list) this.filedAt.set(id, order.rank(id)!);
+    this.epoch = order.epoch;
+  }
+
   /** @rebuild The kept buildings read whole from the store. */
   private reread(doc: RoadDoc): void {
-    this.members.clear();
+    this.filedAt.clear();
     this.list = [];
     for (const b of doc.buildings.all()) {
       if (!this.keep(b)) continue;
-      this.members.add(b.id);
+      this.filedAt.set(b.id, this.order.rank(b.id)!);
       this.list.push(b.id);
     }
   }

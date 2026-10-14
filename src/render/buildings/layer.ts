@@ -9,31 +9,29 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { type BuildingChunk, type BuildingMeshes, assembleBuildingMeshes, assembleBuildingMeshesSteps, buildBuildingMeshes, emitChunk, fliesFlag, signatureFloorOf } from './buildingMesh';
 import {
-  BATCH_CELL, CHUNK_CACHE_BYTES, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_HYSTERESIS, DETAIL_PARTS, EMPTY_PARTS, FRAME_SIDE, FULL_DETAIL_PIXELS,
+  BATCH_CELL, CHUNK_CACHE_BYTES, COARSE_PARTS, type CellCache, DETAIL_CELL, DETAIL_PARTS, type DetailState, EMPTY_PARTS, cullDetailCells,
   HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, assembleByCell, chunkBytes, chunksByCell, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell, sameChunks,
 } from './layerCells';
 import { createFlagLayer } from './flagLayer';
-import { buildSignature, disposeSignature, drawsSignature } from './signature';
+import { drawsSignature } from './signature';
+import { TownIndex, patchCell, signatureBodies } from './townIndex';
+import { refillArrays } from '../mesh/gpuOnly';
 import { emitMassing, type MassingChunk } from './massing';
 import { createMassCells } from './massCells';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 
 /**
- * The buildings layer: the stored buildings and the editor's preview, each
- * rebuilt only when what it depends on moves (CLAUDE.md (Execution flow)).
+ * The buildings layer: the stored buildings and the editor's preview, each rebuilt only when what it
+ * depends on moves (CLAUDE.md (Execution flow)). The stored buildings depend on their changes in the
+ * diary (`townIndex.ts`), on the ground (`groundKey`, `render/groundChanges.ts`) and on which one the
+ * preview stands in for; a building samples its ground again only when `groundTouched` says a change
+ * reached it. The preview depends on its own serial.
  *
- * The stored buildings depend on `doc.buildings.revision`, on the ground
- * (`groundKey`: the serial of the last ground change that reached a building,
- * `render/groundChanges.ts`) and on which one the preview is standing in for.
- * A building samples its ground again only when `groundTouched` says a change
- * since its last sample reached it. The preview depends on its own serial.
- *
- * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the
- * cell is drawn near by the error on the screen (`massCells.ts`); far, only its
- * masses stand. A cell coming near is put together a few ms a frame and sent to
- * the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES` its meshes
- * go, its arrays as the cache allows (`slim`). Unreal's World Partition HLOD and
- * 3D Tiles' REPLACE refinement. NÃO voltar a montar o detalhe de todas as células.
+ * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the cell is drawn near by the
+ * error on the screen (`massCells.ts`); far, only its masses stand. A cell coming near is put together and
+ * sent to the GPU before it shows (`streamCells`); far for `RELEASE_FRAMES` its meshes go, its arrays as
+ * the cache allows (`slim`). Unreal's World Partition HLOD, 3D Tiles' REPLACE refinement. DO NOT put the
+ * detail of every cell together again.
  */
 export interface BuildingPreviewInput {
   readonly building: Building;
@@ -113,6 +111,8 @@ export interface BuildingLayer {
   lotHeightAt(building: BuildingId, x: number, y: number): number;
   /** The drawn height of whichever building's lot is at a point, NaN off every lot. */
   anyLotHeightAt(x: number, y: number): number;
+  /** Every cell's meshes given their arrays again, drawn or kept off the scene (a WebGL context restored, `mesh/gpuOnly.ts`). */
+  refill(): void;
   dispose(): void;
 }
 
@@ -157,7 +157,7 @@ export function createBuildingLayer(): BuildingLayer {
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
-  const signatures = new Map<BuildingId, { key: string; group: Group }>();
+  const signatures = signatureBodies(signatureRoot, recordText);
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   let stored: BuildingMeshes | null = null;
@@ -177,6 +177,8 @@ export function createBuildingLayer(): BuildingLayer {
     loading: boolean;
     /** The masses of the queue are made and the far level chosen: the detail of the near cells comes next. */
     massed: boolean;
+    /** A change of some buildings only (`townIndex.ts`): the cells it touched and the buildings, by id. */
+    dirty?: Set<string>; ids?: Set<BuildingId>;
     cells?: { stage: CellCache; cell: string; list: BuildingChunk[]; kinds: ReadonlySet<PartKind> }[];
     /** The cell being put together, a part kind a step. */
     assembling?: { stage: CellCache; cell: string; list: BuildingChunk[]; steps: Generator<void, BuildingMeshes, void> } | null } | null = null;
@@ -196,6 +198,9 @@ export function createBuildingLayer(): BuildingLayer {
   const eyeNow = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, reach: Infinity };
   let eye: typeof eyeNow | null = null;
   const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
+  /** The shown town by cell, kept between changes, as of the diary's `townSeen` in `townDoc`; `storedRest`: the key but the buildings. */
+  const town = new TownIndex(cellOf);
+  let townSeen = -1, townDoc: RoadDoc | null = null, storedRest = '';
   /** Cells held near whatever the eye says: the building cut open, the one being edited. */
   let forcedNear: ReadonlySet<string> = new Set();
   const cellNear = (key: string): boolean => eye === null || forcedNear.has(key) || massCells.near(key);
@@ -218,7 +223,7 @@ export function createBuildingLayer(): BuildingLayer {
    * versions of its parts (`cullDetails`): kept per batch, so the key is read
    * once, not every frame.
    */
-  const detailState = new WeakMap<BuildingMeshes, { x: number; y: number; far: boolean; parent: string }>();
+  const detailState = new WeakMap<BuildingMeshes, DetailState>();
   /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
   let lighterNow = false;
   const applyDetail = (o: Object3D): void => {
@@ -323,10 +328,10 @@ export function createBuildingLayer(): BuildingLayer {
    */
   let backlog: Building[] = [];
   /** The buildings shown, as last put together (`update`): the flags are read from their chunks. */
-  let lastShown: readonly Building[] = [];
+  const lastShown = new Map<BuildingId, Building>();
   const flyFlags = (): void => {
     const flags = [];
-    for (const b of lastShown) { const f = chunks.get(b.id)?.chunk.flags; if (f) flags.push(...f); }
+    for (const b of lastShown.values()) { const f = chunks.get(b.id)?.chunk.flags; if (f) flags.push(...f); }
     flagLayer.set(flags);
   };
   const cellSeen = new Map<string, number>(); // the frame each cell was last near: the cache's LRU order
@@ -492,7 +497,9 @@ export function createBuildingLayer(): BuildingLayer {
       const cutKey = cutaway
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
-      const key = `${doc.buildings.revision}|${groundKey}|${hides}|${dimKey}|${cutKey}|${[...ruined].join(',')}`;
+      const rest = `${groundKey}|${hides}|${dimKey}|${cutKey}|${[...ruined].join(',')}`;
+      // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
+      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}`;
       let rebuilt = false;
       // The buildings an edit changed (or whose ground it moved) are emitted a
       // few milliseconds a frame first, the town as it was staying drawn; the
@@ -506,15 +513,32 @@ export function createBuildingLayer(): BuildingLayer {
       // are held near, `forcedCells`): put together whole in the frame, the
       // town's every cell was emitted and assembled at once for it.
       if (key !== storedKey) {
-        if (!warming || warming.key !== key) {
-          const queue = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
-          // A town none of whose buildings is made yet - the opening, a map opened - is a load, not an edit of
-          // a running game: it takes the loading budget (Unity's backgroundLoadingPriority High, 50 ms a frame)
-          // instead of the 6 ms an edit may take. At 6 ms a frame the 761 buildings of the default town came
-          // 10-20 s after its roads. Made = has its mass; NOT its chunk, which a far one never keeps (every
-          // edit was a load: AUDITORIA A2).
-          const unmade = stored === null ? queue.length : queue.reduce((n, b) => n + (masses.has(b.id) ? 0 : 1), 0);
-          warming = { key, queue, at: 0, loading: unmade > LOADING_COUNT, massed: false };
+        // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key:
+        // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
+        const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined && cutaway === null
+          && (!warming || warming.dirty) && warming?.key !== key ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
+        const changed = since?.every((e) => e.ids) ? since : null;
+        if (changed || !warming || warming.key !== key) {
+          let queue: Building[], loading = false;
+          const dirty = warming?.dirty ?? new Set<string>(), ids = warming?.ids ?? new Set<BuildingId>();
+          if (changed) {
+            for (const id of changed.flatMap((e) => e.ids!) as BuildingId[]) {
+              const b = doc.buildings.get(id);
+              town.take(id, b && b.id !== hides && !ruined.has(b.id) ? b : undefined, dirty);
+              ids.add(id);
+            }
+            townSeen = doc.changes.version;
+            queue = [...dirty].flatMap((cell) => town.byCell.get(cell) ?? []);
+          } else {
+            queue = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
+            // A town none of whose buildings is made yet - the opening, a map opened - is a load, not an edit of
+            // a running game: it takes the loading budget (Unity's backgroundLoadingPriority High, 50 ms a frame)
+            // instead of the 6 ms an edit may take. At 6 ms a frame the 761 buildings of the default town came
+            // 10-20 s after its roads. Made = has its mass; NOT its chunk, which a far one never keeps (every
+            // edit was a load: AUDITORIA A2).
+            loading = (stored === null ? queue.length : queue.reduce((n, b) => n + (masses.has(b.id) ? 0 : 1), 0)) > LOADING_COUNT;
+          }
+          warming = { key, queue, at: 0, loading, massed: false, ...(changed ? { dirty, ids } : {}) };
           // A change overtakes the cell being streamed in: made again from the new records; what it made is on the GPU, in no scene (AUDITORIA A7).
           for (const made of streaming?.made ?? []) made.part.dispose();
           streaming = null;
@@ -523,6 +547,7 @@ export function createBuildingLayer(): BuildingLayer {
         // A load's time is its own (Unity: the most loading may take in a frame), not what the frame's other work
         // left: shared, it got nothing while the traffic's topology took every frame's allowance, and the town
         // stood without buildings for over 20 s.
+        warming = warming!;
         const until = warming.loading ? performance.now() + (this.hidden ? HIDDEN_SLICE_MS : LOADING_SLICE_MS) : workUntil(WARM_SLICE_MS);
         if (!until) return false;
         while (warming.at < warming.queue.length && performance.now() < until) {
@@ -535,9 +560,11 @@ export function createBuildingLayer(): BuildingLayer {
         if (warming.at < warming.queue.length) return false;
         if (!warming.massed) {
           // The far level first, so the eye can say which cells need their detail.
-          massCells.update(massesByCell(warming.queue, groundAt, groundKey, pavedAt, naturalAt));
+          const byCell = massesByCell(warming.queue, groundAt, groundKey, pavedAt, naturalAt);
+          if (warming.dirty) for (const cell of warming.dirty) byCell.set(cell, byCell.get(cell) ?? []);
+          if (warming.dirty) massCells.patch(byCell); else massCells.update(byCell);
           chooseNow();
-          townCells = groupByCell(warming.queue, cellOf, (b) => b); // the masses show at once (`holdMass`)
+          townCells = warming.dirty ? town.byCell : groupByCell(warming.queue, cellOf, (b) => b); // the masses show at once (`holdMass`)
           warming.massed = true;
           warming.at = 0;
           return false;
@@ -583,9 +610,25 @@ export function createBuildingLayer(): BuildingLayer {
         }
         if (warming.cells.length || warming.assembling || (warming.uploads ?? 0) > 0) return false;
       }
+      const changedOnly = warming?.dirty ? warming : null;
       warming = null;
-      if (key !== storedKey) {
-        storedKey = key;
+      if (key !== storedKey && changedOnly && stored && details) {
+        // Some buildings changed: their cells' batches swapped, the rest of the town as it is (AUDITORIA A1).
+        const chunkOf = (b: Building): BuildingChunk => drawn(b, groundAt, groundKey, pavedAt, naturalAt);
+        const at = { cells, details: detailCells, stagedCells, stagedDetails, stored, detailed: details };
+        for (const cell of changedOnly.dirty!) patchCell(cell, town.byCell.get(cell) ?? [], cellNear(cell), chunkOf, kit, at);
+        for (const id of changedOnly.ids!) {
+          const b = doc.buildings.get(id);
+          if (b) cover.set(b);
+          else { cover.remove(id); forget(chunks.get(id)); chunks.delete(id); groundDigests.delete(id); masses.delete(id); }
+          const shown = b && town.has(id) ? b : undefined;
+          if (!shown) { lastShown.delete(id); signatures.remove(id); continue; }
+          lastShown.set(id, shown);
+          if (!chunks.has(id) && fliesFlag(shown)) backlog.push(shown);
+          signatures.set(shown, chunks.get(id)?.chunk.signatureFloor ?? signatureFloorOf(shown, naturalAt, pavedAt));
+        }
+        trimChunkCache();
+      } else if (key !== storedKey) {
         for (const batch of [stored, details, faded]) {
           if (!batch) continue;
           group.remove(batch.group);
@@ -606,21 +649,12 @@ export function createBuildingLayer(): BuildingLayer {
         const nearSolid = solid.filter((b) => cellNear(cellOf(b)));
         stored = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, cells, BATCH_CELL, COARSE_PARTS, stagedCells);
         details = assembleByCell(nearSolid, (b) => drawn(b, groundAt, groundKey, pavedAt, naturalAt), kit, detailCells, DETAIL_CELL, DETAIL_PARTS, stagedDetails);
-        // Staged for a change overtaken by another: not used.
-        for (const stage of [stagedCells, stagedDetails]) {
-          for (const { part } of stage.values()) part.dispose();
-          stage.clear();
-        }
         group.add(stored.group, details.group);
         // The far level of every cell, from the masses of its buildings.
         massCells.update(massesByCell(shown, groundAt, groundKey, pavedAt, naturalAt));
-        townCells = new Map();
-        for (const b of solid) {
-          const cell = cellOf(b);
-          const list = townCells.get(cell);
-          if (list) list.push(b);
-          else townCells.set(cell, [b]);
-        }
+        town.reset(solid);
+        townCells = town.byCell;
+        [townSeen, townDoc, storedRest] = [doc.changes.version, doc, rest];
         farSince.clear();
         trimChunkCache();
         const nearOthers = others.filter((b) => cellNear(cellOf(b)));
@@ -632,28 +666,21 @@ export function createBuildingLayer(): BuildingLayer {
           group.add(faded.group);
         }
         // Signature buildings: their bodies, drawn with parts of their own (`signature.ts`).
-        const keep = new Set<BuildingId>();
-        for (const b of solid) {
-          const floor = chunks.get(b.id)?.chunk.signatureFloor ?? signatureFloorOf(b, naturalAt, pavedAt);
-          if (floor === undefined) continue;
-          keep.add(b.id);
-          const sigKey = `${JSON.stringify(b)}|${floor}`;
-          const known = signatures.get(b.id);
-          if (known?.key === sigKey) continue;
-          if (known) { signatureRoot.remove(known.group); disposeSignature(known.group); }
-          const built = buildSignature(b, floor);
-          if (built) { signatureRoot.add(built); signatures.set(b.id, { key: sigKey, group: built }); } else signatures.delete(b.id);
-        }
-        for (const [id, known] of signatures) {
-          if (keep.has(id)) continue;
-          signatureRoot.remove(known.group);
-          disposeSignature(known.group);
-          signatures.delete(id);
-        }
+        for (const b of solid) signatures.set(b, chunks.get(b.id)?.chunk.signatureFloor ?? signatureFloorOf(b, naturalAt, pavedAt));
+        signatures.keepOnly(new Set(solid.map((b) => b.id)));
         cover.index(doc.buildings.all());
-        lastShown = shown;
+        lastShown.clear();
+        for (const b of shown) lastShown.set(b.id, b);
         // Far buildings flying a flag only (all: ~7 ms a frame for 40 s, 2026-10-14).
         backlog = shown.filter((b) => !chunks.has(b.id) && fliesFlag(b));
+      }
+      if (key !== storedKey) {
+        storedKey = key;
+        // Staged for a change overtaken by another: not used.
+        for (const stage of [stagedCells, stagedDetails]) {
+          for (const { part } of stage.values()) part.dispose();
+          stage.clear();
+        }
         flyFlags();
         applyFacadeDetail();
         version++;
@@ -723,39 +750,10 @@ export function createBuildingLayer(): BuildingLayer {
       }
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
-      for (const [key, cell] of detailCells) {
-        let state = detailState.get(cell.part);
-        // A cell new since the last frame is put to its detail whatever it is.
-        const fresh = !state;
-        if (!state) {
-          const comma = key.indexOf(',');
-          const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-          // Its cell of the coarse grid (two of these a side), read once.
-          const parent = `${Math.floor((i * DETAIL_CELL) / BATCH_CELL)},${Math.floor((j * DETAIL_CELL) / BATCH_CELL)}`;
-          state = { x: (i + 0.5) * DETAIL_CELL, y: (j + 0.5) * DETAIL_CELL, far: false, parent };
-          detailState.set(cell.part, state);
-        }
-        const cx = state.x - eyeX, cy = state.y - eyeY;
-        // Drawn while its coarse cell is drawn in detail: the far level takes
-        // over by the error on the screen (\`massCells.ts\`). A fixed reach of
-        // 500 m from the eye, its height counted, took every frame, railing and
-        // shutter off the town in any overview - windows as dark holes, the
-        // detail only with the camera at the wall (the player, 2026-10-13).
-        cell.part.group.visible = massCells.near(state.parent);
-        // Its frames and railings whole while a frame's side spans
-        // \`FULL_DETAIL_PIXELS\` or more, by their street faces (\`kit.far\`)
-        // beyond - the projected size, as the far level is chosen, and back
-        // nearer by \`DETAIL_HYSTERESIS\` (three's \`LOD.update\`).
-        const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
-        const near = Math.max(Math.hypot(nx, ny, eyeZ), 1);
-        const pixels = orthoPx !== null ? FRAME_SIDE * orthoPx : (FRAME_SIDE * pxAtMetre) / near;
-        const nextFar = pixels < FULL_DETAIL_PIXELS * (state.far ? 1 : 1 - DETAIL_HYSTERESIS);
-        if (fresh || nextFar !== state.far) {
-          state.far = nextFar;
-          lighterNow = far || nextFar;
-          cell.part.group.traverse(applyDetail);
-        }
-      }
+      cullDetailCells(detailCells, detailState, (key) => massCells.near(key), eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, (part, cellFar) => {
+        lighterNow = far || cellFar;
+        part.group.traverse(applyDetail);
+      });
     },
     setShadowFar(next) {
       if (next === shadowFar) return;
@@ -773,6 +771,9 @@ export function createBuildingLayer(): BuildingLayer {
     },
     lotHeightAt(building, x, y) {
       return chunks.get(building)?.chunk.lotGround?.heightAt(x, y) ?? NaN;
+    },
+    refill() {
+      for (const { part } of [...[cells, detailCells, stagedCells, stagedDetails].flatMap((c) => [...c.values()]), ...(streaming?.made ?? [])]) refillArrays(part.group);
     },
     anyLotHeightAt(x, y) {
       for (const { chunk } of chunks.values()) {

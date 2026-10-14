@@ -3,6 +3,12 @@
 Jogo de navegador de construir cidades (TypeScript, three.js, Vite). Meta: cidade no mapa inteiro
 de 10 km, bonita e rápida. Jogo: `npm run dev` (127.0.0.1:5300). Verificação: `npm run check`.
 
+## Idioma
+- O código é em inglês: identificadores, comentários, mensagens de teste e de erro no código.
+  Comentário contra a volta de um erro: "DO NOT …".
+- Em português do Brasil: a conversa, os relatórios, os docs (`docs/`, `memory/`, `OTIMIZACAO.md`)
+  e as mensagens de commit.
+
 ## Memória do trabalho (leia primeiro)
 Pasta `memory/`: ordens do jogador e estado atual entram sozinhos em toda sessão nova e depois de
 toda compactação; o feito (`memory/FEITO.md`) e o diário (`memory/DIARIO.md`) leia quando precisar.
@@ -10,40 +16,39 @@ Quem muda o estado do trabalho atualiza `memory/ESTADO.md` e acrescenta uma linh
 @memory/ORDENS.md
 @memory/ESTADO.md
 
-## Desempenho: o plano manda
-- Plano e orçamentos: `docs/CIDADE-10KM.md` e `docs/PESQUISA-CIDADE-10KM.md` §8. Os números estão
-  em `src/core/perfBudget.ts` (`VIEW_BUDGETS`, `MEMORY_BUDGETS_MB`). Leia antes de propor.
-- Todo trabalho de desempenho começa por `__roadcraft.budget('rua' | 'bairro' | 'mapa')` no
-  console, com a câmera na vista nomeada: a tabela medido × orçamento, o mais acima primeiro.
-  Ataque essa linha. Diga quanto passa e em que etapa do plano a correção entra.
-- Correção que melhora uma linha e piora outra está errada, mesmo que resolva o sintoma.
-- `__roadcraft.memory()`: geometria, quanto está preso na CPU e quem segura, pelo nome da malha.
-  `performance.memory` soma o heap e os arrays e, no Chrome normal, só muda a cada 20 min: não
-  serve para antes e depois.
-- Se o plano estiver errado ou um orçamento for impossível, pare e diga ao jogador, com números.
+## Desempenho: corrigir a causa no código (ordem do jogador, 2026-10-14)
+O jogo vai ser vendido e rodar em computadores diferentes: tem de estar escrito corretamente, de
+ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 km e maiores.
+- **Corrigido é quando o código não tem mais o problema**: o algoritmo e os dados estão certos para
+  a cidade de qualquer tamanho. Tempo que caiu numa cidade de teste não é correção. Número,
+  contador e linha de base não são meta: servem só para achar onde está a causa.
+- NÃO amortizar: fatiar em quadros, segurar uma camada, pôr teto num cache que refaz ou espaçar as
+  refeituras esconde o custo, que volta com a cidade maior. Corrija a causa, em todas as partes.
+- Método na skill `investigando-desempenho`: perfilar a cidade grande (`scripts/look.mjs`,
+  `profile`/`city`), ler o código até o algoritmo ou a estrutura de dados culpada, pesquisar a
+  técnica correta na fonte oficial e em motores maduros, reescrever, provar a mesma saída.
+- Plano e tetos: `docs/CIDADE-10KM.md` (o que a cidade inteira precisa ser).
 
-## Padrões que já custaram caro (`OTIMIZACAO.md`)
-- Refazer tudo quando uma parte muda: jardins, postes e cor dos lotes refeitos a cada prédio.
-  Refaça só o que o diário (`world/changes.ts`) diz que mudou.
-- Comparar cada item com todos (O(n²)) sem índice espacial: lotes, calçadas, esquinas, mobília.
-- Fazer tudo num quadro ou na thread principal: fatie por tempo ou mande para um worker.
-- Desenhar ou guardar o que não se vê: detalhe e sombra sem nível de distância, cópias na CPU
-  que nunca são soltas, caches sem teto.
+## Causas que já custaram caro
+- Refazer tudo quando uma parte muda. Certo: o diário (`world/changes.ts`) diz o que mudou.
+- Varrer tudo para achar o que está perto (O(n²), O(n·contorno)). Certo: índice espacial.
+- Cache com teto que expulsa e refaz o mesmo trabalho: a causa continua lá, só escondida.
+- Trabalho pesado na thread principal. Certo: worker.
+- Desenhar ou guardar o que não se vê: detalhe e sombra sem nível de distância, cópia na CPU do
+  que já foi à GPU que nunca é solta.
 - Esperar a GPU no meio do quadro (`getImageData`) ou compilar shader durante o jogo.
 
 ## Como adicionar um produto derivado
 (Tudo que se calcula a partir do documento: malha, cache, índice, camada.)
 - Leia o que mudou no diário (`doc.changes.since`/`touches` com os tipos que ele lê), nunca uma
   chave com revisão global (`${...revision}`).
-- Ache itens por lugar com `buildings.near(caixa)`, não com `all()`.
-- Ponha a parte incremental num módulo puro (sem three), para o teste alcançar; o renderer só liga.
-- Crie um contador de trabalho exportado e uma linha no teste de escala (`tests/scale/`): um item a
-  mais custa o mesmo numa cidade de N e numa de 4N.
+- Ache itens por lugar com índice espacial (`buildings.near(caixa)`), não com `all()`.
+- O que vai à GPU não fica copiado na CPU; o que é pesado roda em worker.
 
 ## Limites do jogador
 - Nenhuma perda de qualidade gráfica sem o sim dele: fotos antes e depois, nas mesmas vistas.
-- Nada mais lento: números antes e depois no relatório.
-- Nada de processo longo como barreira.
+- Nada de processo longo como barreira, e nada de teste atrás de teste no lugar de corrigir.
+- Agentes livres: use quantos forem úteis, em paralelo, e revise o que fizeram.
 
 ## Antes de dizer que funciona
 - Use o jogo como o jogador, na cidade grande; diga foto por foto o que conferiu.

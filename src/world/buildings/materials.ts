@@ -2,7 +2,7 @@ import type { Building, RoofKind, FaceId, Volume } from './types';
 import { volumeSides } from './footprints';
 
 /**
- * What a building is made of. See docs/buildings.md, "Materials".
+ * What a building is made of.
  *
  * A material is a FINISH - the surface a wall or a roof is built in, which the
  * renderer draws with its own baked texture - and a COLOUR that tints it. Any
@@ -27,8 +27,8 @@ export interface MaterialSpec {
 }
 
 /** Surfaces a building-wide material can be set for. */
-export const MATERIAL_SLOTS = ['wall', 'trim', 'roof', 'plinth'] as const;
-export type MaterialSlot = (typeof MATERIAL_SLOTS)[number];
+const MATERIAL_SLOTS = ['wall', 'trim', 'roof', 'plinth'] as const;
+type MaterialSlot = (typeof MATERIAL_SLOTS)[number];
 
 export type BuildingMaterials = Partial<Record<MaterialSlot, MaterialSpec>>;
 
@@ -61,9 +61,9 @@ export const FINISH_COLOUR: Readonly<Record<Finish, number>> = {
   roofing: 0x7b4a37,
 };
 
-export const isFinish = (v: unknown): v is Finish => (FINISHES as readonly unknown[]).includes(v);
+const isFinish = (v: unknown): v is Finish => (FINISHES as readonly unknown[]).includes(v);
 
-export function isMaterialSpec(v: unknown): v is MaterialSpec {
+function isMaterialSpec(v: unknown): v is MaterialSpec {
   if (typeof v !== 'object' || v === null) return false;
   const r = v as Record<string, unknown>;
   return isFinish(r['finish']) && typeof r['colour'] === 'number' && Number.isInteger(r['colour']) &&
@@ -97,7 +97,7 @@ export const PALETTE_MATERIALS: readonly PaletteMaterials[] = [
 
 /** A flat roof's default: a smooth membrane, whatever the palette (a panel grid read as a floor). */
 export const FLAT_ROOF_MATERIAL = spec('roofing', 0x74716a);
-export const PLINTH_MATERIAL = spec('stone', 0x7f786d);
+const PLINTH_MATERIAL = spec('stone', 0x7f786d);
 
 export const paletteOf = (b: Building): PaletteMaterials =>
   PALETTE_MATERIALS[((b.palette % PALETTE_MATERIALS.length) + PALETTE_MATERIALS.length) % PALETTE_MATERIALS.length] as PaletteMaterials;

@@ -92,7 +92,7 @@ export function makeRibbon(doc: RoadDoc, polylines: PolylineCache, id: SegmentId
     // bend, half the width times the tangent of half the bend (audit
     // P2-26). `centre` keeps the honest length: it carries the dash phase.
     const base = SEAM_OVERLAP + (level - Level.Casing) * SURFACE_END_STEP;
-    // Each side to its own width (docs/VIAS.md V1).
+    // Each side to its own width (docs/source/VIAS.md V1).
     const hw = halfWidth(rt, level);
     rings[level] = ribbonRing(
       overlapUntrimmedEnds(trimmed, s0 <= 0, s1 >= length, base + hw * Math.tan(bendA / 2), base + hw * Math.tan(bendB / 2)),

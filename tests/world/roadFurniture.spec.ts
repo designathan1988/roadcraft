@@ -10,7 +10,7 @@ import { sectionOf, zonesOn } from '@world/section';
 import { m } from '@world/units';
 
 /**
- * THE FURNITURE OF A NEW ROAD (docs/VIAS.md V7): placed as the landscaping
+ * THE FURNITURE OF A NEW ROAD (docs/source/VIAS.md V7): placed as the landscaping
  * tool places, on the footway's service strip, never in the clear walk of
  * NBR 9050 (1,20 m), never two pieces in one place, nothing on a footway too
  * narrow to keep the clear walk.

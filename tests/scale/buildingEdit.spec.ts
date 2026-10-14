@@ -13,7 +13,7 @@ import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
 import { yardNeighbours } from '@sim/agents/lorryDocks';
-import { cameraSolidsKeeper } from '@world/buildings/cameraSolids';
+import { type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { gardenLists } from '@render/gardenLists';
 
@@ -82,6 +82,18 @@ function groundRecord(doc: RoadDoc): GroundRecord {
   };
 }
 
+/** Where the drawn ground changed since a serial, as the renderer reads it for the camera's solids (`renderer.ts` `groundSince`). */
+function groundSince(doc: RoadDoc): GroundSince {
+  return {
+    get version() { return doc.changes.serialOf(...GROUND_KINDS); },
+    rectsSince(since) {
+      const entries = doc.changes.since(since, GROUND_KINDS);
+      if (!entries || entries.some((e) => e.rects === null)) return null;
+      return entries.flatMap((e) => e.rects!);
+    },
+  };
+}
+
 /** The box a building's bank reaches, as the renderer's `bankBox` (a square round it here). */
 const bankBox = (b: Building): Rect => [b.x - m(40), b.y - m(40), b.x + m(40), b.y + m(40)];
 
@@ -121,8 +133,9 @@ function addWork(n: number): Record<string, number> {
   // The renderer's products of the buildings, out of it in modules of their
   // own: the camera's solids (`cameraSolids.ts`), the sites graded and the
   // town's platforms (`siteGrading.ts`), the gardens' plants (`gardenLists.ts`).
-  const solids = cameraSolidsKeeper(() => 0);
-  solids.follow(doc.buildings, 'g');
+  const solids = cameraSolidsKeeper(() => 0, bankBox, m(40));
+  const solidsGround = groundSince(doc);
+  solids.follow(doc.buildings, solidsGround);
   solids.solids();
   const sites = siteGrading(flat, undefined, m(9.6), bankBox);
   sites.changedSites(doc.buildings);
@@ -152,7 +165,7 @@ function addWork(n: number): Record<string, number> {
     // As the renderer asks them a frame (`draw`): the solids filed again when
     // the camera asks; the sites that changed graded, the town's platforms
     // put together again for the ground's shaping (`shapeGround`, sites).
-    solids: work(() => { if (solids.follow(doc.buildings, 'g')) solids.solids(); }),
+    solids: work(() => { if (solids.follow(doc.buildings, solidsGround)) solids.solids(); }),
     pads: work(() => { if (sites.changedSites(doc.buildings)) sites.rebuild(doc.buildings); }),
     gardens: workOf(garden.reads, () => plants.update(garden.doc.buildings, true)),
     // The frame after it, and the next one with nothing new: a building is

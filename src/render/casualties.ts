@@ -9,6 +9,7 @@ import {
   SRGBColorSpace,
 } from 'three';
 import { m } from '@world/units';
+import { pullTowardEye } from './depthConvention';
 
 /** A patch of blood on the ground: where, how big at full spread, and how long it takes to spread. */
 export interface BloodDecal {
@@ -118,8 +119,8 @@ export function createCasualties(): CasualtyLayer {
     // Wet: a sheen (low roughness) over a colour near black.
     const material = new MeshStandardMaterial({
       map: bloodTexture(variant), transparent: true, depthWrite: false, roughness: 0.18, metalness: 0,
-      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
     });
+    pullTowardEye(material, 3, 3);
     const mesh = new InstancedMesh(geometry, material, MAX);
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.count = 0;

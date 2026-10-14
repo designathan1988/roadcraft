@@ -1,7 +1,5 @@
 import { Rng } from '@core/rng';
 import { m, stepsIn } from '@world/units';
-import type { Building } from '@world/buildings/types';
-import { solidFootprints } from '@world/buildings/geometry';
 import { DT, FLEET_CEILING, PED_CEILING } from '../params';
 import type { SimWorld } from '../world';
 import { ARCHETYPES, bodyClassOfArchetype, type Archetype } from '../vehicles/archetypes';
@@ -14,9 +12,11 @@ import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
 import { collectBays, stallFits, type Bay } from '../agents/parking';
-import { type DoorWay, doorWay } from '../agents/lotDoors';
+import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
-import { busy, CARS, kindOf, outShare, PEOPLE, type Mix } from './demand';
+import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
+import { BuildingMix, SightWalls, StreetLength, atRoll } from './ambientIndex';
+import { LotPlaces, PLACE_KINDS } from './lotPlaces';
 
 
 /**
@@ -99,8 +99,17 @@ export class AmbientWorld {
   enabled = false;
   /** Where people and cars come from: round the view (GTA's way) or the ends of the roads. */
   source: 'view' | 'edges' = 'edges';
-  /** The cars standing in bays near the view: drawn, solid to walkers, never stepped. */
+  /**
+   * The cars standing in bays near the view: drawn, solid to walkers, never
+   * stepped. Written by the scenery and, through `addParked`/`removeParked`,
+   * by the lots' traffic, so `isParked` can answer without a walk of it.
+   */
   readonly parked: Vehicle[] = [];
+  /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
+  private readonly standing = new Set<Vehicle>();
+  /** The scenery's own cars standing in bays, by the bay's place (`spotKey`), and each one's bay. */
+  private readonly sceneryAt = new Map<string, Vehicle>();
+  private readonly bayOf = new Map<Vehicle, number>();
 
   private readonly rng = new Rng(0xa3b1e7);
   private readonly walkers = new Set<number>();
@@ -110,12 +119,10 @@ export class AmbientWorld {
   private readonly bays = new Map<number, Vehicle>();
   private clock = 0;
   private nextTrip = 1 << 26;
-  private mixFor = '';
-  private mix: Mix = { home: 1, shop: 0, work: 0, civic: 0 };
-  private roadFor = '';
-  private road = 0;
   private lanesFor = '';
   private lanes: { id: string; length: number; x: number; y: number }[] = [];
+  /** Each lane's end along all of them laid end to end, in the order of `lanes`: `lanesAt[k]` is the lengths of lanes 0..k summed. */
+  private lanesAt = new Float64Array(0);
   private baysFor = '';
   private bayList: Bay[] = [];
   /** A map just opened: the first fill may use the view (`reset`). */
@@ -143,13 +150,14 @@ export class AmbientWorld {
     for (const id of this.drivers) { const v = w.vehicles.get(id); if (v) w.removeVehicle(v); }
     this.walkers.clear();
     this.roaming.clear();
-    this.places = [];
-    this.placesFor = -1;
-    this.placesRoads = -1;
+    this.places = newPlaces();
     this.drivers.clear();
     this.sighted.clear();
     this.bays.clear();
     this.parked.length = 0;
+    this.standing.clear();
+    this.sceneryAt.clear();
+    this.bayOf.clear();
     this.baysFor = '';
     this.vacated.clear();
     // The lots' cars of the old map with it (`agents/lotTraffic.ts`).
@@ -263,38 +271,20 @@ export class AmbientWorld {
     return !this.behindWall(w, v.ex, v.ey, x, y, pad);
   }
 
-  /** The walls of the buildings, as rings with their boxes, for the line of sight. */
-  private walls: { ring: readonly { x: number; y: number }[]; x0: number; y0: number; x1: number; y1: number }[] = [];
-  private wallsFor = -1;
+  /**
+   * The walls of the buildings in a grid kept by the diary, for the line of
+   * sight (`ambientIndex.ts`). DO NOT make it again on `buildings.revision`:
+   * the town's ageing moves that every few seconds, and every wall of the
+   * map was gathered again, then walked twice a look per person and car.
+   */
+  private readonly walls = new SightWalls();
 
   /** True when a wall stands between the eye and (x, y), and between the eye and each side of it `pad` across. */
   private behindWall(w: SimWorld, ex: number, ey: number, x: number, y: number, pad: number): boolean {
-    if (this.wallsFor !== w.doc.buildings.revision) {
-      this.wallsFor = w.doc.buildings.revision;
-      this.walls = [];
-      for (const b of w.doc.buildings.all()) {
-        for (const ring of solidFootprints(b)) {
-          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-          for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-          this.walls.push({ ring, x0, y0, x1, y1 });
-        }
-      }
-    }
+    this.walls.sync(w.doc.buildings, w.doc.changes);
     const dx = x - ex, dy = y - ey, d = Math.hypot(dx, dy) || 1;
     const sx = (-dy / d) * pad, sy = (dx / d) * pad;
-    return this.blocked(ex, ey, x + sx, y + sy) && this.blocked(ex, ey, x - sx, y - sy);
-  }
-
-  private blocked(ax: number, ay: number, bx: number, by: number): boolean {
-    const lx = Math.min(ax, bx), ly = Math.min(ay, by), hx = Math.max(ax, bx), hy = Math.max(ay, by);
-    for (const wl of this.walls) {
-      if (wl.x1 < lx || wl.x0 > hx || wl.y1 < ly || wl.y0 > hy) continue;
-      const r = wl.ring;
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        if (crosses(ax, ay, bx, by, r[j]!.x, r[j]!.y, r[i]!.x, r[i]!.y)) return true;
-      }
-    }
-    return false;
+    return this.walls.blocked(ex, ey, x + sx, y + sy) && this.walls.blocked(ex, ey, x - sx, y - sy);
   }
 
   private people(w: SimWorld, focus: NonNullable<SimWorld['focus']>, reach: number, want: number): void {
@@ -349,14 +339,12 @@ export class AmbientWorld {
   private readonly roaming = new Set<number>();
   private nextEdgeLook = 0;
   /**
-   * The lots with a people's gate (`agents/lotDoors.ts`), with what kind of
-   * place each is and its way from the door to the footway: undefined until
-   * worked out (a few a look), null when it has none that can be walked.
+   * The buildings people walk into, by id, kept by the diary, each with
+   * what kind of place it is and its way from the door to the footway
+   * (`agents/lotDoors.ts`), worked out when the lot is first drawn
+   * (`lotPlaces.ts`).
    */
-  /** `footless`: a street door with no footway at its foot (`joinsFootway`), looked at again when the roads change. */
-  private places: { b: Building; kind: keyof Mix; way: DoorWay | null | undefined; footless?: boolean }[] = [];
-  private placesFor = -1;
-  private placesRoads = -1;
+  private places = newPlaces();
   /** Walks made from the road ends, and how many of them came out of a lot's gate or went in at one. */
   readonly gateWalks = { made: 0, fromGate: 0, toGate: 0 };
   /** People come out of and go in at the lots' gates (off: everybody passes from road end to road end, for a measure). */
@@ -430,15 +418,16 @@ export class AmbientWorld {
     // lot's frontage); that share of the walkers comes out of a lot's gate or
     // goes in at one, the rest pass through from road end to road end.
     let outW = 0, inW = 0;
-    // Only once most lots' ways are worked out: the first few would take everybody.
-    if (this.gates && (this.placesReady() || !ends.length)) {
-      for (const p of this.places) {
-        if (!p.way) continue;
-        const people = PEOPLE[p.kind] * busy(p.kind, hour) * (p.way.frontage / m(100));
-        const out = outShare(p.kind, hour);
+    if (this.gates && (this.placesReady(w) || !ends.length)) {
+      // By kind: the frontage of the lots of that kind that may be walked to
+      // (a lot not yet worked out by the most its way can have).
+      const frontage = this.places.frontages();
+      PLACE_KINDS.forEach((kind, k) => {
+        const people = PEOPLE[kind] * busy(kind, hour) * (frontage[k]! / m(100));
+        const out = outShare(kind, hour);
         outW += people * out;
         inW += people * (1 - out);
-      }
+      });
     }
     if (!ends.length && outW <= 0) return;
     this.nextEdgeLook -= LOOK_EVERY;
@@ -455,8 +444,8 @@ export class AmbientWorld {
       let toLot: DoorWay | null = null;
       if (outW + inW > 0 && this.rng.float() < local) {
         const out = !ends.length || this.rng.float() * (outW + inW) < outW;
-        const first = this.pickPlace(hour, out, null);
-        const second = first && this.rng.float() < local ? this.pickPlace(hour, !out, first) : null;
+        const first = this.pickPlace(w, hour, out, null);
+        const second = first && this.rng.float() < local ? this.pickPlace(w, hour, !out, first) : null;
         if (out) { fromLot = first; toLot = second; } else { toLot = first; fromLot = second; }
       }
       let from: { node: number; x: number; y: number };
@@ -540,7 +529,7 @@ export class AmbientWorld {
       if (!onLastStretch(w, id)) continue;
       const at = walkerOf(w, id);
       if (!at) continue;
-      const lot = this.gates && this.placesReady() && this.rng.float() < 0.6 ? this.pickPlace(hour, false, null) : null;
+      const lot = this.gates && this.placesReady(w) && this.rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       if (lot && walkOn(w, id, lot.out[0]!.x, lot.out[0]!.y, m(30), reversed(lot))) {
         this.roaming.delete(id);
         this.gateWalks.toGate++;
@@ -595,13 +584,14 @@ export class AmbientWorld {
    */
   private openCars(w: SimWorld, n: number): void {
     const lanes = this.lanesNear(w);
-    let total = 0;
-    for (const l of lanes) total += l.length;
+    const at = this.lanesAt;
+    const total = at.length ? at[at.length - 1]! : 0;
     const rng = w.rng.spawnVehicles;
     for (let made = 0, tries = 0; made < n && tries < n * 6; tries++) {
-      let roll = rng.float() * total;
-      let pick = lanes[lanes.length - 1]!;
-      for (const l of lanes) { roll -= l.length; if (roll < 0) { pick = l; break; } }
+      // The lane whose stretch of the lanes laid end to end the roll falls in:
+      // a binary search over their running sum. DO NOT walk the lanes
+      // subtracting lengths: that was every lane of the map per car made.
+      const pick = lanes[atRoll(at, rng.float() * total)]!;
       const arch = rng.weighted(TRAFFIC);
       if (pick.length < arch.length + m(3)) continue;
       const s = arch.length + m(0.4) + rng.float() * (pick.length - arch.length - m(0.8));
@@ -646,7 +636,7 @@ export class AmbientWorld {
       if (this.openSpots.some((q) => Math.hypot(q.x - x, q.y - y) < SPACE)) continue;
       if (engine.bridge.anyoneWithin(w, x, y, SPACE, null)) continue;
       // Into a lot by the hour's tables, as the walkers from the road ends.
-      const toLot = this.gates && this.placesReady() && rng.float() < 0.6 ? this.pickPlace(hour, false, null) : null;
+      const toLot = this.gates && this.placesReady(w) && rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       const id = this.walkFrom(w, { node: -1, x, y }, null, toLot);
       if (id === null) continue;
       this.openSpots.push({ x, y });
@@ -655,88 +645,37 @@ export class AmbientWorld {
   }
 
   /**
-   * The buildings people walk into, kept with the buildings: a lot whose
-   * record is the same keeps its way; a few new ones are worked out each look
-   * (`lotDoors.ts`: a person's grid round the gate and the door, a
-   * millisecond or so each; a shop on the footway, its street door), so a
-   * town grown at once never costs a frame. Every building is a candidate:
-   * one with no people's gate may open its door onto the street, which only
-   * its way tells (null: nobody walks to it).
+   * The buildings people walk into, taken in from the diary: the buildings
+   * changed, and the street doors near the roads changed (a street door's
+   * way holds while a footway is at its foot). Every building is a
+   * candidate: one with no people's gate may open its door onto the street,
+   * which only its way tells (null: nobody walks to it).
    */
   private refreshPlaces(w: SimWorld): void {
-    const rev = w.doc.buildings.revision;
-    if (rev !== this.placesFor) {
-      this.placesFor = rev;
-      const known = new Map(this.places.map((p) => [p.b, p] as const));
-      this.places = [];
-      for (const b of w.doc.buildings.all()) {
-        const was = known.get(b);
-        this.places.push({ b, kind: kindOf(b), way: was?.way, footless: was?.footless ?? false });
-      }
-    }
-    // A street door's way holds while a footway is at its foot: the roads
-    // changed, those are looked at again.
-    if (w.doc.revision !== this.placesRoads) {
-      this.placesRoads = w.doc.revision;
-      for (const p of this.places) if (p.way?.street || p.footless) { p.way = undefined; p.footless = false; }
-    }
-    const start = performance.now();
-    for (const p of this.places) {
-      if (p.way !== undefined) continue;
-      const way = doorWay(p.b);
-      p.footless = !!way?.street && !joinsFootway(w, way.out[way.out.length - 1]!);
-      p.way = p.footless ? null : way;
-      if (performance.now() - start >= WAYS_MS) break;
-    }
+    this.places.sync(w.doc.buildings, w.doc.changes);
   }
 
-  /**
-   * Whether most lots' ways to their doors are worked out (`refreshPlaces`
-   * does a few a look): before, the few known would draw every walk sent to
-   * a lot, and a town grown at once sent its walks to the first lots done.
-   * And one of them a way to walk: every building is looked at, and a map of
-   * buildings with no way in (no gate, no door on a footway) has no lot to
-   * send anybody to.
-   */
-  private placesReady(): boolean {
-    let known = 0, ways = 0;
-    for (const p of this.places) {
-      if (p.way !== undefined) known++;
-      if (p.way) ways++;
-    }
-    return ways > 0 && known >= this.places.length / 2;
+  /** Whether a lot may be walked to: one whose way is known to be walkable, or not yet worked out. */
+  private placesReady(w: SimWorld): boolean {
+    this.refreshPlaces(w);
+    return this.places.ready();
   }
 
   /**
    * A lot with a way to its door, at random by the people it has on its
    * street now coming out (`out`) or going in: `PEOPLE` x `busy` x frontage x
    * the share that way at this hour (`outShare`). Not `not`, nor one too near
-   * it to be worth the walk.
+   * it to be worth the walk; the other end of a walk from `not` nearer is
+   * likelier, by the gravity model's negative exponential (`WALK_DECAY`).
+   * Drawn in O(log n) (`LotPlaces.pick`), the lot drawn worked out then.
    */
-  private pickPlace(hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
-    let total = 0;
-    const weight = (p: AmbientWorld['places'][number]): number => {
-      if (!p.way || p.way === not) return 0;
-      // The other end of a walk from `not`: nearer is likelier, by the
-      // gravity model's negative exponential (`WALK_DECAY`).
-      let near = 1;
-      if (not) {
-        const a = p.way.out[p.way.out.length - 1]!, b = not.out[not.out.length - 1]!;
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d < m(40)) return 0;
-        near = Math.exp(-d / WALK_DECAY);
-      }
-      const share = outShare(p.kind, hour);
-      return PEOPLE[p.kind] * busy(p.kind, hour) * p.way.frontage * (out ? share : 1 - share) * near;
-    };
-    for (const p of this.places) total += weight(p);
-    if (total <= 0) return null;
-    let roll = this.rng.float() * total;
-    for (const p of this.places) {
-      roll -= weight(p);
-      if (roll < 0 && p.way) return p.way;
-    }
-    return null;
+  private pickPlace(w: SimWorld, hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
+    this.refreshPlaces(w);
+    const coef = PLACE_KINDS.map((kind) => {
+      const share = outShare(kind, hour);
+      return PEOPLE[kind] * busy(kind, hour) * (out ? share : 1 - share);
+    });
+    return this.places.pick(this.rng, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
   }
 
   /**
@@ -823,16 +762,22 @@ export class AmbientWorld {
   /** The link lanes of the map, each with its middle: where cars can join. */
   private lanesNear(w: SimWorld): { id: string; length: number; x: number; y: number }[] {
     const key = `${w.topologyRevision}:${w.vehicleTopologyRevision}`;
-    if (key !== this.lanesFor) {
-      this.lanesFor = key;
-      this.lanes = [];
-      for (const lane of w.graph.lanelets.values()) {
-        if (lane.kind !== 'link' || lane.length < m(12)) continue;
-        const mid = lane.centre.sampleAt(lane.length / 2).p;
-        this.lanes.push({ id: lane.id, length: lane.length, x: mid.x, y: mid.y });
-      }
-    }
+    if (key !== this.lanesFor) this.listLanes(w, key);
     return this.lanes;
+  }
+
+  /** @rebuild Listed again only when the lanes changed (an edit of the roads), with their running sum. */
+  private listLanes(w: SimWorld, key: string): void {
+    this.lanesFor = key;
+    this.lanes = [];
+    for (const lane of w.graph.lanelets.values()) {
+      if (lane.kind !== 'link' || lane.length < m(12)) continue;
+      const mid = lane.centre.sampleAt(lane.length / 2).p;
+      this.lanes.push({ id: lane.id, length: lane.length, x: mid.x, y: mid.y });
+    }
+    this.lanesAt = new Float64Array(this.lanes.length);
+    let sum = 0;
+    this.lanes.forEach((l, k) => { sum += l.length; this.lanesAt[k] = sum; });
   }
 
   // ------------------------------------------------------------ parked cars
@@ -846,10 +791,42 @@ export class AmbientWorld {
    * filled again when the bays are made again (a car would appear in it).
    */
   release(car: Vehicle): void {
-    for (const [id, c] of this.bays) if (c === car) { this.bays.delete(id); break; }
-    if (car.free) this.vacated.add(spotKey(car.free));
-    const at = this.parked.indexOf(car);
+    const bay = this.bayOf.get(car);
+    if (bay !== undefined) { this.bays.delete(bay); this.bayOf.delete(car); }
+    if (car.free) {
+      const spot = spotKey(car.free);
+      this.vacated.add(spot);
+      if (this.sceneryAt.get(spot) === car) this.sceneryAt.delete(spot);
+    }
+    this.removeParked(car);
+  }
+
+  /**
+   * Whether `body` is among the cars standing (`parked`), put there by the
+   * scenery or through `addParked`. DO NOT ask `parked.includes` per car per
+   * tick: the list holds every parked car of the map.
+   */
+  isParked(body: Vehicle): boolean {
+    return this.standing.has(body);
+  }
+
+  /** A car of the lots' (or anybody's) drawn with the cars standing in bays. */
+  addParked(body: Vehicle): void {
+    if (this.standing.has(body)) return;
+    this.standing.add(body);
+    this.parked.push(body);
+  }
+
+  /** A car taken out of the cars standing in bays (the order of the rest kept). */
+  removeParked(body: Vehicle): void {
+    this.standing.delete(body);
+    const at = this.parked.indexOf(body);
     if (at >= 0) this.parked.splice(at, 1);
+  }
+
+  /** The scenery's own car standing in the bay at `spot` (`spotKey` of the bay), if one stands there. */
+  sceneryCarAt(spot: string): Vehicle | undefined {
+    return this.sceneryAt.get(spot);
   }
 
   /**
@@ -868,8 +845,12 @@ export class AmbientWorld {
     const mine = new Set(kept.values());
     const others = this.parked.filter((car) => !mine.has(car));
     this.bays.clear();
+    this.sceneryAt.clear();
+    this.bayOf.clear();
     this.parked.length = 0;
     this.parked.push(...others);
+    this.standing.clear();
+    for (const car of others) this.standing.add(car);
     for (const bay of this.bayList) {
       // Left empty by a car the lots drove out (`release`), or held by one of theirs.
       if (this.vacated.has(spotKey(bay))) continue;
@@ -892,46 +873,40 @@ export class AmbientWorld {
       car.seats = 0;
       car.free = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
       this.bays.set(bay.id, car);
+      this.bayOf.set(car, bay.id);
+      this.sceneryAt.set(spotKey(bay), car);
       this.parked.push(car);
+      this.standing.add(car);
     }
   }
 
   // ------------------------------------------------------------ the place
 
+  /**
+   * The mix of the buildings round a place: counts by kind per cell and for
+   * the whole map, kept by the diary (`ambientIndex.ts` BuildingMix). DO NOT
+   * count every building again under a key with `buildings.revision`: the
+   * town's ageing moves it every few seconds, and the whole map was counted
+   * again that often (and on every look of the view's life).
+   */
+  private readonly buildingMix = new BuildingMix();
+
   private mixAround(w: SimWorld, x: number, y: number, r: number): Mix {
-    const key = `${w.doc.buildings.revision}:${Math.round(stepsIn(x, 40))}:${Math.round(stepsIn(y, 40))}:${Math.round(stepsIn(r, 40))}`;
-    if (key === this.mixFor) return this.mix;
-    this.mixFor = key;
-    const count: Record<keyof Mix, number> = { home: 0, shop: 0, work: 0, civic: 0 };
-    let total = 0;
-    for (const b of w.doc.buildings.all()) {
-      if (Math.hypot(b.x - x, b.y - y) > r * 1.2) continue;
-      count[kindOf(b)]++;
-      total++;
-    }
-    this.mix = total === 0 ? { home: 0.6, shop: 0.2, work: 0.1, civic: 0.1 }
-      : { home: count.home / total, shop: count.shop / total, work: count.work / total, civic: count.civic / total };
-    return this.mix;
+    this.buildingMix.sync(w.doc.buildings, w.doc.changes);
+    return this.buildingMix.around(x, y, r);
   }
 
-  /** Street length inside the view, world units: what the population is sized by. */
+  /**
+   * Street length inside the view, world units: what the population is sized
+   * by (`ambientIndex.ts` streetLength). DO NOT put a one-slot cache back in
+   * front of it: three questions a look (the view's people, its cars, the
+   * whole map's) each threw the other's answer out, and every ribbon of the
+   * map was walked again for each.
+   */
+  private readonly street = new StreetLength();
+
   private roadAround(w: SimWorld, x: number, y: number, r: number): number {
-    const key = `${w.net.revision}:${Math.round(stepsIn(x, 40))}:${Math.round(stepsIn(y, 40))}:${Math.round(stepsIn(r, 40))}`;
-    if (key === this.roadFor) return this.road;
-    this.roadFor = key;
-    let total = 0;
-    for (const ribbon of w.net.ribbons.values()) {
-      const bb = ribbon.full.bbox;
-      if (bb.maxX < x - r || bb.minX > x + r || bb.maxY < y - r || bb.minY > y + r) continue;
-      const pts = ribbon.full.toPoints();
-      for (let i = 1; i < pts.length; i++) {
-        const a = pts[i - 1]!, b = pts[i]!;
-        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        if (Math.hypot(mx - x, my - y) <= r) total += Math.hypot(b.x - a.x, b.y - a.y);
-      }
-    }
-    this.road = total;
-    return total;
+    return this.street.around(w.net, x, y, r);
   }
 }
 
@@ -944,12 +919,8 @@ export class AmbientWorld {
  * 940 m at 1.3 m/s).
  */
 const WALK_DECAY = m(470);
-/**
- * Time given to working out lots' ways in one look of the budget, ms
- * (`refreshPlaces`): one way cost 0.65 ms on average and 4 ms at most over
- * 32 lots in `lotDoors.spec` (node), so a look works out one to three.
- */
-const WAYS_MS = 1.5;
+/** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
+const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
 /** A bay's place as a key (a quarter of a unit), as the lots' traffic keys its bays. */
 const spotKey = (p: { x: number; y: number }): string => `${Math.round(stepsIn(p.x, 0.1))},${Math.round(stepsIn(p.y, 0.1))}`;
 const NO_WAY: readonly { x: number; y: number }[] = [];
@@ -959,13 +930,4 @@ function reversed(way: DoorWay): readonly { x: number; y: number }[] {
   let back = REVERSED.get(way);
   if (!back) REVERSED.set(way, back = [...way.out].reverse());
   return back;
-}
-
-/** Whether segment a-b crosses segment c-d (proper crossing). */
-function crosses(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
-  const d1 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
-  const d2 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
-  const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-  const d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
-  return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
 }

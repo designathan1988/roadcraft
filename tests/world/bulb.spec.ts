@@ -11,7 +11,7 @@ import { buildWalkways } from '@world/walkways';
 import { junctionDetail } from '@world/markings';
 
 /**
- * A ROAD'S END CAN BE A TURNING CIRCLE (docs/VIAS.md V8, the player's choice
+ * A ROAD'S END CAN BE A TURNING CIRCLE (docs/source/VIAS.md V8, the player's choice
  * per end, 2026-10-10): a circle of carriageway round the end, every outer
  * surface carried out round it, the road cut where its edge meets it.
  */

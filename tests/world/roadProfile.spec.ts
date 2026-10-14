@@ -16,7 +16,7 @@ import { checkWorld } from '../fuzz/support/invariants';
 import { openCategories } from '../fuzz/support/runner';
 
 /**
- * THE ROAD PROFILE (docs/VIAS.md V1): an ordered cross-section that turns into
+ * THE ROAD PROFILE (docs/source/VIAS.md V1): an ordered cross-section that turns into
  * the segment's own fields, read back the same; asymmetric footways cut into
  * the outline, the junctions, the walking lines and the furniture zones of
  * each side; problems named before anything is built.

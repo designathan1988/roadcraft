@@ -60,14 +60,19 @@ function input() {
   return text.trim() ? JSON.parse(text) : {};
 }
 
-/** `npm run check` under the machine's lock, with a wait and a run that end before the hook's own timeout. */
+/**
+ * The fast check (`scripts/check.mjs --fast`: the changed files linted, types and code rules, the specs
+ * the change reaches, the counting suites) under the machine's lock, ending before the hook's own timeout
+ * (`.claude/settings.json`). DO NOT run the whole `npm run check` here: a turn held for minutes is what
+ * the player removed (2026-10-14); the bundle and the unused-export sweep stay in `npm run check`.
+ */
 function check() {
-  return spawnSync(process.execPath, ['scripts/run-limited.mjs', 'node', 'scripts/check.mjs'], {
+  return spawnSync(process.execPath, ['scripts/run-limited.mjs', 'node', 'scripts/check.mjs', '--fast'], {
     cwd: ROOT,
     encoding: 'utf8',
-    timeout: 880_000,
+    timeout: 170_000,
     maxBuffer: 64 << 20,
-    env: { ...process.env, RUN_LIMITED_WAIT_S: '240', RUN_LIMITED_TIMEOUT_S: '620' },
+    env: { ...process.env, RUN_LIMITED_WAIT_S: '30', RUN_LIMITED_TIMEOUT_S: '130' },
   });
 }
 
@@ -95,6 +100,12 @@ function main(mode) {
   let reason = failed?.reason;
   if (what === 'run' || what === 'warn') {
     const r = check();
+    // The machine busy with another session's heavy job (`run-limited.mjs`): the check did not run, which is
+    // no red. The turn ends, and says so.
+    if (/\[run-limited\] gave up/.test(r.stderr ?? '')) {
+      process.stdout.write(JSON.stringify({ systemMessage: 'Checagem rápida não rodou: a máquina estava ocupada com outra sessão (scripts/gate.mjs).' }));
+      return 0;
+    }
     if (r.status === 0) {
       rmSync(mark, { force: true });
       rmSync(fail, { force: true });

@@ -6,7 +6,7 @@ import { planPoleRun } from '@editor/poles';
 import type { Vec2 } from '@core/vec2';
 
 /**
- * A POLE LINE CROSSES A STREET BY ONE SQUARE SPAN (docs/PLANO.md, 5h).
+ * A POLE LINE CROSSES A STREET BY ONE SQUARE SPAN (docs/source/PLANO.md, 5h).
  *
  * The player's report of 2026-10-09: drawing a line from one footway to the
  * one across the road, it went down the street, into the next one and back.

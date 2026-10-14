@@ -1,5 +1,5 @@
 import type { BuildingStore } from '@world/buildings/store';
-import type { Building } from '@world/buildings/types';
+import type { Building, BuildingId } from '@world/buildings/types';
 import type { GardenPlant } from './gardens';
 import { GroundDependant, type GroundRecord, type Rect } from './groundChanges';
 
@@ -21,6 +21,9 @@ export interface GardenLists {
    */
   update(buildings: BuildingStore, settled: boolean): (readonly GardenPlant[])[] | null;
 }
+
+/** A planted building: its record, its plants as text, its bank, and its plants on the ground with the ground change they follow. */
+interface Site { b: Building; text: string; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
 
 /**
  * `ground`: where and when the drawn ground changed; `bankBox`: the box a
@@ -47,60 +50,62 @@ export function gardenLists(
     }
     return text;
   };
-  /** Each planted building's plants on the drawn ground, the text they were read from and the ground change they follow. */
-  const gardenCache = new Map<number, { readonly text: string; readonly seen: number; readonly plants: readonly GardenPlant[] }>();
-  /** The gardens as last read: each planted building's text and bank; a serial moved when one changed. */
-  const plantedSites = new Map<number, { readonly text: string; readonly box: Rect }>();
-  let plantsFor = -1;
-  let plantsSerial = 0;
-  /** Where the gardens' plants stand, building by building. */
-  let plantsArea: Rect[] = [];
-  const plantSignature = (buildings: BuildingStore): string => {
-    if (plantsFor === buildings.revision) return String(plantsSerial);
-    plantsFor = buildings.revision;
+  /**
+   * The planted buildings, kept from one change to the next and taken in by
+   * the ids the diary gives (`BuildingStore.changedSince`): one building more
+   * costs that building. NOT the whole store read at every change of one
+   * building, twice, with every bank tested against the ground's changes
+   * (docs/AUDITORIA-2026-10-14.md C2; `building+1:gardens` x14,02).
+   */
+  const sites = new Map<BuildingId, Site>();
+  let read = -1;
+  let serial = 0;
+  /** Where the gardens' plants stand, building by building; null until asked after a change. */
+  let area: Rect[] | null = [];
+  /** A building's record taken in; true when its garden changed. */
+  const take = (id: BuildingId, b: Building | undefined): boolean => {
+    const text = b ? plantTextOf(b) : '';
+    const site = sites.get(id);
+    if (!text) return sites.delete(id);
+    if (site?.text === text) { site.b = b!; return false; }
+    if (site) Object.assign(site, { b, text, box: bankBox(b!), plants: null });
+    else sites.set(id, { b: b!, text, box: bankBox(b!), plants: null, seen: -1 });
+    return true;
+  };
+  /** @rebuild The whole store read only the first time or when the diary cannot say which buildings changed (a map loaded or cleared). */
+  const follow = (buildings: BuildingStore): void => {
+    if (read === buildings.revision) return;
+    const ids = read < 0 ? null : buildings.changedSince(read);
     let changed = false;
-    const seen = new Set<number>();
-    for (const b of buildings.all()) {
-      const text = plantTextOf(b);
-      if (!text) continue;
-      seen.add(b.id);
-      if (plantedSites.get(b.id)?.text === text) continue;
-      plantedSites.set(b.id, { text, box: bankBox(b) });
-      changed = true;
+    if (ids) for (const id of ids) changed = take(id, buildings.get(id)) || changed;
+    else {
+      const seen = new Set<BuildingId>();
+      for (const b of buildings.all()) { seen.add(b.id); changed = take(b.id, b) || changed; }
+      for (const id of [...sites.keys()]) if (!seen.has(id)) changed = sites.delete(id) || changed;
     }
-    for (const id of [...plantedSites.keys()]) if (!seen.has(id)) { plantedSites.delete(id); changed = true; }
-    if (changed) {
-      plantsSerial++;
-      plantsArea = [...plantedSites.values()].map((site) => site.box);
-    }
-    return String(plantsSerial);
+    read = buildings.revision;
+    if (changed) { serial++; area = null; }
   };
   const onGround = new GroundDependant(ground);
 
   return {
     update(buildings, settled) {
-      const gardenKey = plantSignature(buildings);
-      if (!settled || !onGround.stale(gardenKey, plantsArea)) return null;
+      follow(buildings);
+      area ??= [...sites.values()].map((site) => site.box);
+      if (!settled || !onGround.stale(String(serial), area)) return null;
       // Each building's plants sampled on the ground again only when they
-      // changed or a change of the ground reached its bank.
-      // Each building's list kept as it is: the gardens are packed per list
-      // (`gardens.ts` `gardenPack`), a list unchanged is not placed again.
+      // changed or a change of the ground reached its bank (none since: the
+      // diary answers at once, `changes.ts`). Each building's list kept as it
+      // is: the gardens are packed per list (`gardens.ts` `gardenPack`), a
+      // list unchanged is not placed again.
       const plants: (readonly GardenPlant[])[] = [];
-      const seen = new Set<number>();
-      for (const b of buildings.all()) {
-        const text = plantTextOf(b);
-        if (!text) continue;
-        seen.add(b.id);
-        const was = gardenCache.get(b.id);
-        if (was && was.text === text && !ground.touches(was.seen, bankBox(b))) {
-          plants.push(was.plants);
-          continue;
+      for (const site of sites.values()) {
+        if (!site.plants || ground.touches(site.seen, site.box)) {
+          site.plants = plantsOf(site.b);
+          site.seen = ground.version;
         }
-        const own = plantsOf(b);
-        gardenCache.set(b.id, { text, seen: ground.version, plants: own });
-        plants.push(own);
+        plants.push(site.plants);
       }
-      for (const id of [...gardenCache.keys()]) if (!seen.has(id)) gardenCache.delete(id);
       return plants;
     },
   };

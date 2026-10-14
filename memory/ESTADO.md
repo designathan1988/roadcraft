@@ -5,7 +5,12 @@ Atualizado: 2026-10-14 (noite).
 ## Quem está trabalhando
 - **"Auditoria de desempenho three.js"**: otimização, correções no código (prédios, renderer,
   world, editor, sim), regras estáticas em `scripts/check-code.mjs`.
-- **"Hook de busca na internet"**: ferramentas de medida (`__roadcraft.memory()`,
+- **"Análise de otimização e desempenho do jogo"**: monta com o jogador um plano em duas frentes
+  (mecanismos automáticos; causas grandes) dividido entre as sessões; nada dividido sem o sim dele.
+- **"Hook de busca na internet"**: agentes em worktrees (2026-10-14 noite): pisca-pisca/faces
+  coplanares e profundidade invertida, LOD de prédio perto + pontilhado/embaçado, câmera tremendo
+  (gesto que depende do tempo dos quadros; olho dentro de copa de árvore), sobreposição dos lotes
+  na GPU. Ferramentas de medida (`__roadcraft.memory()`,
   `__roadcraft.budget('rua'|'bairro'|'mapa')`, `src/core/perfBudget.ts`), fotos e gestos
   (`scripts/look.mjs`), o acusador (`scripts/acusar.mjs`), as skills `.claude/skills/`, o
   `CLAUDE.md` da raiz, contadores de trabalho por evento (testes de escala). Pendente dela, para
@@ -26,34 +31,11 @@ Atualizado: 2026-10-14 (noite).
   (caminhos explícitos). Cada arquivo salvo recarrega o jogo na 5300.
 
 ## Repositório
-- No GitHub (`origin/main`): até `a4725ff` (jardins).
-- Local, não enviado:
-  - `247e770` memória (contadores da cena) — o jogador autorizou enviar.
-  - `49d12f3` orçamento + CLAUDE.md curto — **envio NÃO autorizado ainda**; não fazer push até a
-    outra sessão confirmar. Atenção: esse commit levou junto as linhas de `src/main.ts` que chamam
-    `scene.holdUtilities` (trabalho da sessão de auditoria); a outra metade (`renderer.ts`) ainda não
-    foi commitada, então o HEAD local não compila sozinho até ela entrar.
-  - `02a690b` contador "um prédio a mais" (`tests/scale/buildingEdit.spec.ts`, linha de base
-    `building+1:layer` 3,82) — **envio NÃO autorizado ainda** (perguntado ao jogador às ~13h40).
-  - `6940134`, `267b9f5` memória e auditoria (sessão de auditoria) — documentação.
-  - `6b487bb` (outra sessão) teste de escala sem limite de tempo próprio.
-  - `96d1d64` postes segurados durante o traçado (`holdUtilities`) — o HEAD volta a compilar.
-  - `6f22b1c` regras `whole-map-nested` / `whole-map-per-item` no check-code.
-  - `f01799a` índice de prédios por lugar (`BuildingStore.near`) no crescimento e na validação.
-  - `1ee7f37` (Hook) `scripts/look.mjs` e as skills `investigando-desempenho` e
-    `conferindo-no-jogo` — **envio NÃO autorizado ainda**.
-  - `cd4dc32` (Hook) `scripts/acusar.mjs` e `tests/arch/acusar.spec.ts` — **envio NÃO autorizado ainda**.
-  - `6914c7d` (auditoria) lotes abertos.
-  - `a17e808` (Hook) contador do leitor do chão pelo diário — **envio NÃO autorizado ainda**.
-  - `4c6b7f0` (Hook) regra do produto derivado no CLAUDE.md; `b95f63b` (Hook) contadores de baias e
-    pátios — **envio NÃO autorizado ainda**.
-  - `f1405fa` (auditoria) clique em prédio: Viewport.rayAt, olho dentro de volume ignorado, quintal
-    `open` picado como placa do chão (no jogo: casa, portão e bomba sob o cursor).
-  - `06f819d` (auditoria) item 34 no OTIMIZACAO + FEITO/DIARIO; `e5ec4e5`, `cf0917d` camada de
-    prédios; `de7588d` placas de rua.
-  - `4362867` (Hook) sólidos da câmera, plataformas e jardins fora do renderer + contadores;
-    `18c373a` (Hook) `__roadcraft.setView` (vista exata para fotos antes/depois) — **envio NÃO
-    autorizado ainda**.
+- No GitHub (`origin/main`): até `b8c63c3` (enviado em 2026-10-14 com o sim do jogador: os 28 commits
+  de `247e770` a `b8c63c3`, das duas sessões).
+- Local, não enviado (envio depende do jogador): `81c6ffb` (auditoria) diário com um anel por tipo
+  (D8/C1); `c45806a` (auditoria) camada de prédios incremental pelo diário (A1, com A5 e A16); o
+  commit de memória que vier depois deles.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
@@ -98,32 +80,102 @@ Google Benchmark BigO, Epic "Min Screen Radius for Cascaded Shadow Maps", ESLint
 
 ## Auditoria por padrão
 Relatórios completos em `docs/AUDITORIA-2026-10-14.md`. Maiores, por área:
-- Prédios: `layer.update` percorre a cidade ~12× a cada mudança de prédio (layer.ts:495-657);
-  `replaceWith` clona a cidade por edição de rua; vazamento de GPU ao cancelar streaming; desgaste
-  refaz massas que não dependem dele; validação e clique varrem todos os prédios.
+- Prédios: `replaceWith` clona a cidade por edição de rua (A3); desgaste refaz massas que não
+  dependem dele (A6); validação e clique varrem todos os prédios (A9/A10). (A1, A2, A5, A7, A16 feitos.)
 - Editor/sim/ui: geração quadrática (`growOnLot` com `neighbourStoreys`/`nearSignatures` dentro de 18
   tentativas, `doc.lots.filter` por prédio, `addPlaced`, `cornerOf`); sim refaz carros parados, lugares,
   pátios a cada prédio; overlay de lotes em JSON por quadro; snap varre tudo por movimento. Decisão do
   jogador pendente: um cruzamento trocando de controle reinicia os semáforos do mapa (achado 15).
-- Render: dependentes do chão "sujos para sempre" depois de 2.048 entradas do diário sem mudança de
-  chão (refeitos a cada quadro); placas de rua × todas as faixas; superfícies unem a calçada do mapa
-  por edição; cânion, plataformas, atlas do chão, mobília, semáforos refeitos inteiros.
+- Render: superfícies unem a calçada do mapa por edição; cânion, plataformas, atlas do chão, mobília,
+  semáforos refeitos inteiros. (C1 e C3 feitos.)
 - World/core: `landOn` das calçadas varre todos os caminhos por ponta de travessia (~4×10⁹ na meta);
   `onPaving` testa todos os furos; calçadas e `crosswalkDistanceAt` refeitos por edição; LRU dos postes
-  (64) mistura células e regiões (origem provável de 17 s + 35 s); **o anel único de 2.048 do diário
-  faz leitores de um tipo verem `null` depois de enxurrada de outro e refazerem o mapa** (conserto
-  central: `serialOf(kinds) <= since → []`).
+  (64) mistura células e regiões (origem provável de 17 s + 35 s). (D8, anel do diário, feito.)
+
+## Feito hoje à noite (auditoria, nova conta)
+Clique em prédio (`f1405fa`), item 34 registrado, A2 (`e5ec4e5`), A7 (`cf0917d`), C3 (`de7588d`), D8/C1
+(`81c6ffb`), A1+A5+A16 (`c45806a`). Contadores fora da base: `building+1:ground`, `ground:idle`, `layer`.
+
+## Feito na raiz (Hook, 2026-10-14 tarde/noite; OTIMIZACAO 40-47)
+Postes inteiros: calçada pela volta dos anéis e contorno por índice (`9233238`), planejador por
+ladrilho na geração (`82c0239`), meio-fio pelos anéis (`8e65f88`), fios instanciados dobrados no
+shader (`bdda55a`), peças no carregamento (`a1dd21a`). Agentes revisados: recorte dos jardins
+(`90524a3`) e da mobília (`b5cc51d`), curvas sem trabalho jogado fora (`7c046a4`). Sonda no
+`look.mjs` (`profile`/`city`/`memory`, quadros longos com a função culpada e perfil de CPU).
+
+## Feito na raiz (Hook, 2026-10-14 noite; OTIMIZACAO 48-50)
+Camada de postes incremental lida do diário, índice de postes no documento (`5f52364`; saíram
+`UTILITY_PACE` e `holdUtilities`); travessias e limite dos lotes por chave (`73d3536`); estoque de
+prédios sem cópia por JSON e digests das vagas (commit seguinte); churrasqueiras removidas
+(`05f8780`, pedido do jogador); OTIMIZACAO com a regra "amortização nunca é feito" e 12, 13, 20
+remarcados (`beffd63`); `look-compare.mjs` e `"cpu": N` no `look.mjs` (`834b75c`). Hook de pesquisa
+(`~/.claude/hooks/research-gate.mjs`): pega cp/mv/rm, git merge/stash pop/reset --hard,
+--fix/--write/--update, scripts avulsos que escrevem; `>=` e `git merge-base` não dão falso bloqueio;
+mensagem do jogador no meio do turno (attachment `queued_command`) reabre a exigência. A mensagem
+com links NÃO é exigida pelo hook: o transcript não guarda o texto escrito junto de várias chamadas.
+
+Depois, na mesma noite: câmera sem trepidar (`aaa7b85`: o ponto olhado só sobe ao telhado com olho
+e ponto dentro; velocidade da mão pelo tempo dos eventos e `getCoalescedEvents`; deslizamento que
+continua o gesto, decaimento exato no tempo); profundidade invertida em float e patamar da escada fora
+do plano do pátio (commit "Z-fighting…", `depthConvention.ts`); `look.mjs` com arrasto no ritmo da mão
+(`"ms"`, `"hold"`, `6c73fbe`: soltar parado dá a mesma câmera em duas rodadas); acusador com a regra
+`copia-tipada` (`5531d6c`, 38 pistas; agente trocando por `BufferAttribute`).
+
+## Divisão aprovada pelo jogador (2026-10-14, plano da sessão "Análise")
+- Hook: look.mjs/look-compare, acusar, perfBudget, hook de pesquisa, documentos (OTIMIZACAO
+  "Conferido e correto" sem proteger revisão global/cutChunks/"sem alocação"; STATUS/RELATORIO/
+  PROBLEMS como históricos), `lotOverlay` (LAY_SLICE_MS) e os agentes de render (z-fighting, LOD,
+  câmera).
+- Análise: simulação inteira (inclusive `sim/agents/parking.ts` workOutBays/wallsOf e o worker),
+  check-code, contadores do passo, catálogo de referências, limpeza (knip/check-refs).
+- Auditoria: prédios (montagem da célula em worker: layer.ts, layerCells.ts, townIndex.ts,
+  buildingMesh.ts), sólidos da câmera.
+- Checagem rápida no fim do turno religada (`eff6d94`, `.claude/settings.json`); `.githooks/pre-push`
+  continua apagado.
+
+## Sonda de ponta a ponta, cidade de 2.560 m (2026-10-14 noite, HEAD 2ee8af5)
+Sumiram do perfil da geração: poleLinesIn, insideRing, routeGraph, cloneBuilding, landOn, covered,
+word, curvas. Tempos absolutos NÃO valem: a máquina estava ~2× mais lenta (agentes rodando o jogo;
+meshTile/sampleAtInto, código igual, dobraram) — geração 170 → 282 s. Achado: `cameraSolids` 16 s
+(corrigido pela auditoria em `eb31083`). Mapa: 36 M → 5,5 M triângulos, 2.780 → 420 chamadas, GPU p95
+63 → 22 ms; geometria presa na CPU 2,1 GB → 113 MB. Repetir com a máquina livre.
+
+## Causas ainda abertas, achadas pela sonda na cidade de 2.560 m (Hook)
+- Amortizações ainda no código: `LAY_SLICE_MS` (sobreposição dos lotes; agente da Hook trabalhando
+  na textura vista de cima), cache LRU dos prédios (auditoria), crescimento e traçado em fatias com
+  `holdBuildings`, simulação com teto `SIM_FRAME_BUDGET_MS`.
+- Vagas: `workOutBays`/`wallsOf` O(N) por passada (O(N²) no crescimento): frente da sessão Análise.
+- LOD: depois de mover a câmera, 3-4 s com todos os prédios da tela no nível simplificado (fotos
+  `%TEMP%/rc2-hook/maos-1/09-02-giro-parado.png`); com o agente do LOD.
+- Sombras: serrilhado em degrau no rodapé e nos degraus, tracejado no batente da porta, caminho do lote
+  atravessando o degrau de baixo; com o agente do z-fighting.
+- Câmera: olho dentro de algo em `setView({x:20,y:-20,zoom:80,azimuth:4.0,elevation:0.25})` e rente a
+  parede em `{x:11.5,y:-11.5,zoom:200,azimuth:0.785,elevation:0.1}` (cidade padrão); com o agente
+  da câmera. Olho dentro de copa de árvore: decisão do jogador (sólido macio x pontilhado da folhagem).
+- Simulação na thread principal (31% do quadro explorando a cidade padrão): worker (OTIMIZACAO 3).
+- Matrizes da cena refeitas a cada quadro (`updateMatrixWorld` ~1 s em 42 s): objetos estáticos sem
+  `matrixWorldAutoUpdate`.
+- Programas de shader ligados no primeiro desenho (`getProgramInfoLog` 0,5-1,4 s): compilar antes.
+- Geração: `cloneBuilding` em `add`/`put`, `digest.word`, `landOn` das calçadas (D), `lotPlan.covered`.
 
 ## Próximos passos (em ordem)
-1. Diário de mudanças: anel único de 2.048 (D8/C1) — conserto central, beneficia todos os leitores
-   (ao commitar, tirar `building+1:ground` e `ground:idle` de `tests/scale/baseline.json`).
-2. `layer.update` incremental pelo diário (A1, o maior estrutural; contador `building+1:layer` 3,82).
-3. Correções de uma linha da auditoria (A2, A7, C3) e os achados `whole-map-nested` da linha de base.
-4. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
-5. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item).
-6. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
+1. Câmera dentro de prédio (defeito antigo, visto 2026-10-14 nas duas versões): com
    `setView({x:11.5,y:-11.5,zoom:200,azimuth:0.785,elevation:0.1})` na cidade de semente 1 a tela
    fica cinza (olho dentro do volume); com `{x:20,y:-20,zoom:80,azimuth:4.0,elevation:0.25}` o olho
-   atravessa a fachada e vê a sala. O afastamento da câmera (`cameraSolidsKeeper` + rig) não age.
+   atravessa a fachada e vê a sala. Também: prédio recém-crescido no lote onde está o olho (tela
+   cinza). O afastamento da câmera (`cameraSolidsKeeper` + rig) não age; os muros dos lotes não contam.
+2. Cascas L0 na placa: 795,1 MB no bairro (teto 300) depois de passar pela rua (cidade padrão,
+   `setView` bairro → rua → bairro); igual antes e depois do A1, então é anterior.
+3. Contadores ainda na base: jardins (C2, x14,02, `render/gardenLists.ts`), sólidos da câmera (A8/C5,
+   `cameraSolidsKeeper`), plataformas (C8, `siteGrading`), baias (B10) e pátios (B14) do sim.
+4. Etapa 1 do desenho: sombra por tamanho na tela (peças e cascas).
+5. Defeitos vistos (fotos em `%TEMP%`): fresta preta comprida entre volumes de um prédio de perto
+   (`roadcraft-look/2026-10-14T16-03-43-146Z/15-rua-arrastada.png`); triângulo azul-escuro no piso
+   atrás de um banco (`rc2-hook/triangulo.png`); retângulo claro translúcido junto ao poste da cerca
+   (`setView({x:60,y:10,zoom:120,azimuth:5.5,elevation:0.2})`, `rc2-hook/fixo-antes/27-h-jardins.png`);
+   pessoa atingida pela bomba atravessando o poste de uma cerca; sombra pontilhada de copa no gramado;
+   clique entre as barras de grade/portão pega a grade (caixa cheia).
+6. Marcar `@perItem` nos outros pontos de entrada por item (movimento do ponteiro, edição de um item);
+   o clique (`buildingTool.pick`) ainda copia o estoque inteiro por movimento (A9).
 
 Detalhe do que já foi feito: `memory/FEITO.md`. Histórico: `memory/DIARIO.md`.

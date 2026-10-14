@@ -14,7 +14,7 @@ export interface MemoryCounters {
   readonly buffers: number;
   /** Size of those buffers: what the GPU holds for them once drawn. */
   readonly geometryBytes: number;
-  /** The part still held by a JavaScript array (not let go after upload, `buildingMesh.ts` `letGoOfArray`). */
+  /** The part still held by a JavaScript array (not let go after upload, `mesh/gpuOnly.ts`). */
   readonly geometryCpuBytes: number;
   /** Who holds `geometryCpuBytes`: the objects' names (the type when unnamed), most first, the first `TOP` of them. */
   readonly cpuByName: readonly (readonly [name: string, bytes: number])[];

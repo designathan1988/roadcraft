@@ -1,7 +1,7 @@
 import { m } from '../units';
 
 /**
- * THE REGIONAL STANDARD OF ROAD PAINT (docs/VIAS.md V6), chosen for the map:
+ * THE REGIONAL STANDARD OF ROAD PAINT (docs/source/VIAS.md V6), chosen for the map:
  *
  * - 'br', Brasil/CONTRAN (MBST vol. IV, Sinalização Horizontal, 2007, lido em
  *   texto): opposing flows split by YELLOW lines (LFO), same-direction flows
@@ -18,7 +18,6 @@ import { m } from '../units';
  *   8-unit dashes and gaps.
  */
 export type MarkingStyleId = 'classic' | 'br' | 'us' | 'eu';
-export const MARKING_STYLES: readonly MarkingStyleId[] = ['br', 'us', 'eu', 'classic'];
 
 const YELLOW = '#e1c45a';
 const WHITE = '#eee8d7';

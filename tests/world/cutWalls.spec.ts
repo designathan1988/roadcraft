@@ -11,7 +11,7 @@ import { TUNNEL_ARCH, TUNNEL_BORE, TUNNEL_HEADROOM } from '@world/structures';
 import type { SceneMaterials } from '@render/materials';
 
 /**
- * A CUTTING HELD BY RETAINING WALLS (docs/VIAS.md V3, `RoadSegment.cutWalls`):
+ * A CUTTING HELD BY RETAINING WALLS (docs/source/VIAS.md V3, `RoadSegment.cutWalls`):
  * saved with the map and absent from every older one; the ground is cut back
  * no wider than the band the wall's backfill covers; the wall stands from
  * under the road to just over the natural ground, and the backfill meets the

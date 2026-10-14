@@ -48,7 +48,7 @@ export interface SideZones {
   readonly frontage: Band;
 }
 
-export interface TravelLane {
+interface TravelLane {
   /** Signed offset of the lane's centreline (negative: right of the forward direction). */
   readonly offset: number;
   readonly width: number;
@@ -64,7 +64,7 @@ export interface CrossSection {
   readonly lanes: readonly TravelLane[];
   /**
    * The zones of a side when both sides are the same; on an asymmetric road
-   * (docs/VIAS.md V1) the right one. Read `left`/`right`, or `zonesOn`.
+   * (docs/source/VIAS.md V1) the right one. Read `left`/`right`, or `zonesOn`.
    */
   readonly side: SideZones;
   /** The footway zones left and right of a -> b. */
@@ -78,19 +78,19 @@ export interface CrossSection {
 export const TREE_PIT = m(0.8);
 export const TREE_KERB_SETBACK = m(0.15);
 /** A footway at least this wide (`RoadType.sidewalk`, kerb included) has street trees. */
-export const TREE_MIN_FOOTWAY = m(2.4);
+const TREE_MIN_FOOTWAY = m(2.4);
 /** Depth a lamp column (and a hydrant) takes beside the kerb. */
 export const LAMP_ZONE = m(0.35);
 /** Depth a bench (0.52 m seat) or a bin (0.66 m across) takes beside the kerb. */
 export const BENCH_ZONE = m(0.7);
 /** Depth of the edge zone from the kerb face, kerb stone included (36 cm). */
-export const EDGE_ZONE = m(0.36);
+const EDGE_ZONE = m(0.36);
 /** Narrowest through zone a footway keeps, whatever else it holds. */
 export const MIN_THROUGH = m(0.9);
 /** Through zone a footway is given before any of it goes to a frontage zone (NACTO: 1.5-2.5 m). */
-export const THROUGH_GOAL = m(1.5);
+const THROUGH_GOAL = m(1.5);
 /** A frontage zone narrower than this is no use to anything: it is given to the through zone. */
-export const MIN_FRONTAGE = m(0.6);
+const MIN_FRONTAGE = m(0.6);
 
 /** The cross-section of a resolved road profile (`roadProfile`). */
 export function sectionOf(rt: RoadType, direction: SegmentDirection = 'both'): CrossSection {

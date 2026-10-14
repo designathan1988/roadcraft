@@ -64,7 +64,7 @@ breaks far from where you edit in `world/`, and how to add the common things.
   plate): the grading of lots on a hillside was tuned at it, and at 6.25 or
   6.67 m earth rose over a terrace's paving (`tests/world/steppedYards.spec.ts`).
 - **Scenes in specs written in steps of 0.4 m** (`TUNED_UNIT`, the unit of
-  before 2026-10-11) are multiplied by U: the same metres (`docs/ESCALA.md`).
+  before 2026-10-11) are multiplied by U: the same metres (`docs/source/ESCALA.md`).
   A raw number in such a scene is a scene 2.5 times smaller.
 
 ## How to add

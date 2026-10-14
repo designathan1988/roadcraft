@@ -8,7 +8,7 @@ import { applyLots, insideLot, planLots, type Lot } from '@world/lots';
 import { Network } from '@world/network';
 
 /**
- * THE GENERATED CITY'S GREEN (docs/VIAS.md V7): no street trees (the
+ * THE GENERATED CITY'S GREEN (docs/source/VIAS.md V7): no street trees (the
  * player, 2026-10-09), the streets' furniture, one square per neighbourhood made
  * of a whole block (no loose lawn inside a block), its trees inside it.
  */

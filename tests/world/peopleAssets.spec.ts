@@ -1,5 +1,4 @@
-// Structure of the MakeHuman CC0 packs written by scripts/import-makehuman.mjs
-// (docs/people-assets.md). Reads the files from public/models/people/.
+// Structure of the MakeHuman CC0 packs. Reads the files from public/models/people/.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';

@@ -10,7 +10,7 @@ import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /**
- * ONE WALL IS BUILT ONCE (docs/PLANO.md, 5e).
+ * ONE WALL IS BUILT ONCE (docs/source/PLANO.md, 5e).
  *
  * A wing overlapping the main block shared its wall face with it: both built
  * a facade there, with their own bays, and every window got two panes in one

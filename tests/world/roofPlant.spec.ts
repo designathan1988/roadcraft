@@ -4,7 +4,7 @@ import { planRoofPlant, type RoofSite } from '@world/buildings/roofPlant';
 import type { BuildingUse } from '@world/buildings/types';
 
 /**
- * Roof plant (docs/PLANO.md 5f; the player, 2026-10-09: "placas solares e
+ * Roof plant (docs/source/PLANO.md 5f; the player, 2026-10-09: "placas solares e
  * caixa d'água azul em TODOS"): every flat roof carried one set of plant
  * whatever the building. Now a catalogue by use, size and age, seeded per
  * building and packed so no two pieces cross.

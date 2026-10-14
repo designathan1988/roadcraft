@@ -2,7 +2,7 @@ import type { MultiPoly } from '@core/clipper';
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import type { NodeId, SegmentId } from '@world/ids';
+import type { NodeId } from '@world/ids';
 import { CROSSWALK_DEPTH } from '@world/approach';
 import { buildRoadElevation } from '@world/elevation';
 import { LaneletGraph, type Lanelet } from '@world/lanelets';
@@ -21,17 +21,6 @@ import { SidewalkGraph } from '@sim/peds/sidewalk';
  * the shrinker can ask "does this sequence still produce THAT defect" and a
  * run can be tallied by kind.
  */
-export type WorldCategory =
-  | 'exception'
-  | 'nonFinite'
-  | 'surfaceGap'
-  | 'elevationStep'
-  | 'nodeHeightMismatch'
-  | 'trimOrder'
-  | 'deadLanelet'
-  | 'turnOffSurface'
-  | 'crossingMismatch';
-
 export interface Defect {
   readonly category: string;
   readonly subject: string;
@@ -48,7 +37,7 @@ interface Indexed {
 }
 
 /** A merged surface, with a bounding box per polygon so containment stays cheap. */
-export class Surface {
+class Surface {
   private readonly polys: Indexed[];
 
   constructor(multi: MultiPoly) {
@@ -275,7 +264,7 @@ export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
  * How far a body corner may leave the kerb's outer edge, in world units. A
  * corner a few centimetres over the kerb line is paint, not a crash.
  */
-export const TURN_TOLERANCE = Number(process.env['FUZZ_TURN_TOLERANCE'] ?? 0.25);
+const TURN_TOLERANCE = Number(process.env['FUZZ_TURN_TOLERANCE'] ?? 0.25);
 
 /** The body corner furthest outside asphalt and kerb over one movement, if any. */
 function worstOffSurface(
@@ -336,4 +325,3 @@ function crossingMismatch(graph: SidewalkGraph, net: Network, node: NodeId): str
   return null;
 }
 
-export type { SegmentId };

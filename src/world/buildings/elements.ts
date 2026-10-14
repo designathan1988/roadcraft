@@ -26,7 +26,7 @@ import {
 } from './types';
 
 /**
- * Free parts of a building. See docs/buildings.md, "Elements".
+ * Free parts of a building.
  *
  * Every element is a box of the building's local frame (`BuildingElement`),
  * so collisions with the volumes are exact box tests, and it snaps to what it
@@ -36,7 +36,7 @@ import {
  */
 
 /** A ramp's slope: one in twelve, the usual limit for a wheelchair ramp. */
-export const RAMP_RUN_PER_RISE = 12;
+const RAMP_RUN_PER_RISE = 12;
 export const MIN_ELEMENT = m(0.1);
 export const MAX_ELEMENT = m(40);
 
@@ -79,7 +79,7 @@ export const ON_FACADE: ReadonlySet<ElementKind> = new Set<ElementKind>(['canopy
  * on the pavement - so they are not footprint: the road tests ignore them and
  * a road drawn over one does not condemn the building.
  */
-export const GROUND_DRESSING: ReadonlySet<ElementKind> = new Set<ElementKind>([
+const GROUND_DRESSING: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'pavement',
   'fence',
   'tree',
@@ -109,7 +109,7 @@ export const FOLLOWS_GROUND: ReadonlySet<ElementKind> = new Set<ElementKind>([
 ]);
 
 /** The longest step of a run that follows the ground. */
-export const FOLLOW_STEP = m(2);
+const FOLLOW_STEP = m(2);
 
 /** A long run that follows the ground in steps of at most `FOLLOW_STEP`; anything else whole. */
 export function followPieces(el: BuildingElement): BuildingElement[] {
@@ -484,7 +484,7 @@ const CROWN_FROM = 0.35;
  * shaped with the land, they meet each other and the boundary by design (a
  * flight through its retaining wall), and dressing gives way to them.
  */
-export function isEarthwork(e: BuildingElement): boolean {
+function isEarthwork(e: BuildingElement): boolean {
   return e.kind === 'stair' || e.kind === 'ramp' || (e.kind === 'slab' && isRetainingStone(e.material));
 }
 /** Laid with the lot's structure (its boundary, its earthworks): dressing in its way is cleared. */

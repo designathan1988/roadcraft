@@ -1,4 +1,5 @@
-import { BufferGeometry, Float32BufferAttribute, Group, Mesh, Uint32BufferAttribute } from 'three';
+import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
+import { gpuOnly } from '../mesh/gpuOnly';
 import { m } from '@world/units';
 import type { BuildingKit } from './kit';
 import type { MassingChunk } from './massing';
@@ -55,6 +56,12 @@ export interface MassCells {
   /** The cells made again from their buildings' masses (by cell key); a cell whose masses are the same objects is kept. */
   update(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
   /**
+   * Only the cells given made again (a cell given no masses goes), the others
+   * left as they are: what one building changed costs its cell, not the town
+   * (docs/AUDITORIA-2026-10-14.md A1).
+   */
+  patch(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
+  /**
    * Which cells are drawn near (their detail) and which far (their masses),
    * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
    * metre spans at a metre's distance in a perspective view, or `orthoPx`
@@ -79,17 +86,20 @@ export interface MassCells {
 const sameMasses = (a: readonly MassingChunk[], b: readonly MassingChunk[]): boolean =>
   a.length === b.length && a.every((c, i) => c === b[i]);
 
-function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Mesh; top: number } | null {
+/** A cell's masses, in order, as one mesh's arrays (the indices shifted), and its highest point; null for none. */
+function massArrays(masses: readonly MassingChunk[]): {
+  position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; glazing: Float32Array; index: Uint32Array; top: number;
+} | null {
   let vertices = 0, indices = 0;
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), colour = new Float32Array(vertices * 3);
+  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
   const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = new Uint32Array(indices);
   let v = 0, n = 0, top = -Infinity;
   for (const c of masses) {
     position.set(c.position, v * 3);
     normal.set(c.normal, v * 3);
-    colour.set(c.colour, v * 3);
+    color.set(c.colour, v * 3);
     facade.set(c.facade, v * 4);
     glazing.set(c.glazing, v * 2);
     for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
@@ -97,16 +107,31 @@ function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Me
     v += c.position.length / 3;
     n += c.index.length;
   }
+  return { position, normal, color, facade, glazing, index, top };
+}
+
+/**
+ * A cell's mesh from its buildings' masses. The masses are what the layer
+ * keeps (`layer.ts` `masses`, a cell made again from them when one changes);
+ * the mesh is a copy for the GPU and keeps no arrays once there (`gpuOnly`):
+ * kept, the town's cells were 465 MB of the heap in a 2,560 m city.
+ */
+function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Mesh; top: number } | null {
+  const arrays = massArrays(masses);
+  if (!arrays) return null;
   const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(position, 3));
-  g.setAttribute('normal', new Float32BufferAttribute(normal, 3));
-  g.setAttribute('color', new Float32BufferAttribute(colour, 3));
-  g.setAttribute('facade', new Float32BufferAttribute(facade, 4));
-  g.setAttribute('glazing', new Float32BufferAttribute(glazing, 2));
-  g.setIndex(new Uint32BufferAttribute(index, 1));
+  // Taken as made: DO NOT wrap them in a Float32BufferAttribute, which copies them (`buildingMesh.ts` assembly).
+  g.setAttribute('position', new BufferAttribute(arrays.position, 3));
+  g.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
+  g.setAttribute('color', new BufferAttribute(arrays.color, 3));
+  g.setAttribute('facade', new BufferAttribute(arrays.facade, 4));
+  g.setAttribute('glazing', new BufferAttribute(arrays.glazing, 2));
+  g.setIndex(new BufferAttribute(arrays.index, 1));
   g.computeBoundingSphere();
   g.computeBoundingBox();
+  const top = arrays.top;
   const mesh = new Mesh(g, kit.massing);
+  gpuOnly(mesh, () => { const { top: _top, ...again } = massArrays(masses)!; return again; });
   mesh.name = 'building-massing';
   mesh.matrixAutoUpdate = false;
   mesh.castShadow = true;
@@ -125,32 +150,42 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     cell.mesh.geometry.dispose();
     cell.mesh = null;
   };
+  /** A cell made again from its buildings' masses, unless they are the same objects. */
+  const put = (key: string, masses: readonly MassingChunk[]): void => {
+    const known = cells.get(key);
+    if (known && sameMasses(known.masses, masses)) return;
+    if (known) drop(known);
+    const comma = key.indexOf(',');
+    const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+    const made = cellMesh(masses, kit);
+    const cell: Cell = {
+      masses, mesh: made?.mesh ?? null,
+      x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
+      top: made?.top ?? 0, near: known?.near ?? true,
+    };
+    // A building reaching past its cell's edge: the cell's box is its masses'.
+    const box = made?.mesh.geometry.boundingBox;
+    if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
+    if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
+    cells.set(key, cell);
+  };
   return {
     group,
-    /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, on a new buildings key). */
+    /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, the whole town). */
     update(byCell) {
-      for (const [key, masses] of byCell) {
-        const known = cells.get(key);
-        if (known && sameMasses(known.masses, masses)) continue;
-        if (known) drop(known);
-        const comma = key.indexOf(',');
-        const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-        const made = cellMesh(masses, kit);
-        const cell: Cell = {
-          masses, mesh: made?.mesh ?? null,
-          x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
-          top: made?.top ?? 0, near: known?.near ?? true,
-        };
-        // A building reaching past its cell's edge: the cell's box is its masses'.
-        const box = made?.mesh.geometry.boundingBox;
-        if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
-        if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
-        cells.set(key, cell);
-      }
+      for (const [key, masses] of byCell) put(key, masses);
       for (const [key, cell] of cells) {
         if (byCell.has(key)) continue;
         drop(cell);
         cells.delete(key);
+      }
+    },
+    /** @rebuild Called when some buildings changed (`layer.ts` `update`, their cells only). */
+    patch(byCell) {
+      for (const [key, masses] of byCell) {
+        if (masses.length) { put(key, masses); continue; }
+        const known = cells.get(key);
+        if (known) { drop(known); cells.delete(key); }
       }
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {

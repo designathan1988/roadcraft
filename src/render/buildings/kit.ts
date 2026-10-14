@@ -25,6 +25,7 @@ import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } fr
 import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { simplified } from '../mesh/simplify';
 import { m } from '@world/units';
+import { pullTowardEye } from '../depthConvention';
 
 /**
  * Share of people awake, by hour from midnight: 100 % less the share asleep in
@@ -197,7 +198,7 @@ export interface BuildingKit {
 
 /** The props drawn from afar by a simplified copy (`createBuildingKit` `farReady`): the heaviest, their detail under a pixel there. */
 // Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured).
-const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'kettle', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'grill', 'lounger'];
+const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'lounger'];
 
 /** A box of the given size whose centre is at (x, y, z). */
 function box(w: number, h: number, d: number, x: number, y: number, z: number): BufferGeometry {
@@ -466,8 +467,6 @@ export function createBuildingKit(): BuildingKit {
     pot: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 }),
     foliage: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
     bush: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
-    grill: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0 }),
-    kettle: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.35, metalness: 0.3 }),
     lounger: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0 }),
     // The wheels are rings seen from both sides.
     bike: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.4, metalness: 0.3, side: DoubleSide }),
@@ -477,7 +476,7 @@ export function createBuildingKit(): BuildingKit {
     dish: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.5, metalness: 0.2 }),
     wash: new MeshBasicMaterial({
       map: lightPoolTexture(), color: PORCH_LIGHT, transparent: true, opacity: 0, blending: AdditiveBlending,
-      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4, visible: false,
+      depthWrite: false, visible: false,
     }),
   };
   for (const [kind, m] of Object.entries(material)) m.name = `building-part-${kind}`;
@@ -488,11 +487,7 @@ export function createBuildingKit(): BuildingKit {
   // a decal is (OpenGL `glPolygonOffset`, three's `Material.polygonOffset`).
   // The source meant every part so (its `coplanar.spec`) and the parts here
   // had lost it.
-  for (const m of Object.values(material)) {
-    m.polygonOffset = true;
-    m.polygonOffsetFactor = -1;
-    m.polygonOffsetUnits = -4;
-  }
+  for (const m of Object.values(material)) pullTowardEye(m, 1, 4);
   prefilterThinParts(material, THIN_PROPS);
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
@@ -526,6 +521,8 @@ export function createBuildingKit(): BuildingKit {
   const dimShell = Object.fromEntries(Object.entries(shell).map(([finish, mat]) => [finish, dim(mat)])) as Record<Finish, MeshStandardMaterial>;
   const dimParts = dim(material['concrete'] as MeshStandardMaterial);
   dimParts.opacity = 0.16;
+  // A copy does not keep the pull towards the eye (`depthConvention.ts`).
+  pullTowardEye(dimParts, 1, 4);
 
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };

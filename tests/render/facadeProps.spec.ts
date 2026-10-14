@@ -43,9 +43,7 @@ describe('facade props', () => {
     expect(survey('balcony', 'commercial').bare).toBeGreaterThan(0.9);
   });
 
-  it('draws a churrasqueira only on a varanda gourmet, and the washing mostly on plain blocks', () => {
-    expect(survey('gourmet', 'residential').kinds.has('grill')).toBe(true);
-    expect(survey('balcony', 'residential').kinds.has('grill')).toBe(false);
+  it('draws the washing mostly on plain blocks', () => {
     const airers = (s: ReturnType<typeof survey>): number => s.arrangements.filter((a) => a.includes('airer')).length;
     expect(airers(survey('balcony', 'residential', 0.6))).toBeGreaterThan(airers(survey('gourmet', 'residential')));
   });

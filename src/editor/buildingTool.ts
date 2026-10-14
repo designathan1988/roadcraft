@@ -142,7 +142,7 @@ export interface BuildingPreview {
   readonly solid?: boolean;
 }
 
-export interface BaySelection {
+interface BaySelection {
   readonly storey: number;
   readonly side: FaceId;
   readonly index: number;
@@ -2053,6 +2053,7 @@ export class BuildingTool {
     return this.pick(screen)?.building ?? null;
   }
 
+  /** @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map. */
   private pick(screen: Vec2): BuildingHit | null {
     const doc = this.host.context().doc;
     const hides = this.preview?.hides ?? null;
@@ -2224,6 +2225,7 @@ export class BuildingTool {
     }
   }
 
+  /** @perInput Runs once a pointer move: nothing it reaches may walk the map. */
   pointerMove(screen: Vec2, world: Vec2, shift: boolean): void {
     this.lastScreen = screen;
     this.lastWorld = world;
@@ -2484,6 +2486,7 @@ export class BuildingTool {
       (this.activeModelTool === null || this.activeModelTool === 'select');
   }
 
+  /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
   private click(hit: BuildingHit | null, shift = false): void {
     if (this.planPoints) {
       const point = this.planCursor ?? this.lastWorld;
@@ -2755,7 +2758,7 @@ export class BuildingTool {
 }
 
 /** Moves a building so its front-centre anchor is at `anchor`, at `rotation`. */
-export function placeAt(b: Building, anchor: Vec2, rotation: number): void {
+function placeAt(b: Building, anchor: Vec2, rotation: number): void {
   b.rotation = normaliseAngle(rotation);
   const f = footprintBox(b);
   const offset = localDirToWorld(b, (f.x0 + f.x1) / 2, f.y0);

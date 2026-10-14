@@ -2,7 +2,7 @@ import type { Network, SegmentRibbon } from '../network';
 import { CASING_BAND, FOOTWAY_RISE, flushOn, footwayOn } from '../roadTypes';
 
 /**
- * How high the footway stands over the carriageway at a point (docs/VIAS.md
+ * How high the footway stands over the carriageway at a point (docs/source/VIAS.md
  * V1, "the kerb is where the heights differ"): `FOOTWAY_RISE` on a kerbed
  * footway, nothing on one laid flush with the carriageway (a shared
  * surface, OpenDRIVE's lane `height` of zero). One answer for everything

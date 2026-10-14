@@ -54,8 +54,8 @@ const U = TUNED_UNIT;
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
 /**
- * The building commands and the tool that drives them (docs/buildings.md
- * section 4). Every command is validated before it is stored, every one is a
+ * The building commands and the tool that drives them. Every command is
+ * validated before it is stored, every one is a
  * single undo step, and a road drawn over a building demolishes it.
  */
 

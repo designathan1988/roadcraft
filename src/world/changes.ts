@@ -8,7 +8,7 @@
  * something of a kind changed somewhere, and every system found out what by
  * digesting the whole map again; one of those findings was wrong for months
  * (the natural ground moved whenever a road shaped the drawn one, and every
- * road was solved and paved again: docs/PROBLEMAS.md P12) and nothing showed
+ * road was solved and paved again: docs/source/PROBLEMAS.md P12) and nothing showed
  * it.
  *
  * An entry is an EVENT - what already happened, its data captured when it is
@@ -39,7 +39,13 @@ export type DocChangeKind =
   | 'roads' | 'traffic' | 'terrain' | 'paint' | 'buildings' | 'zones' | 'lots' | 'utilities' | 'barriers' | 'landscape'
   | 'transit' | 'people' | 'trees' | 'clearings' | 'elements' | 'fog' | 'clouds' | 'weather' | 'nature' | 'gullies'
   /** The balance (`economy.ts`): an edit paid for, or a demolition paid back. */
-  | 'economy';
+  | 'economy'
+  /**
+   * A building's wear (`Building.decay`: age, soot) and nothing else of it
+   * (`BuildingStore.wear`). Only what draws or saves a building reads it; what
+   * reads a building's shape, place or use reads `buildings`.
+   */
+  | 'buildingWear';
 /**
  * Every kind of change to the document, listed once (checked complete by the
  * type): what a reader of "anything the player changed" asks the diary for,
@@ -48,6 +54,7 @@ export type DocChangeKind =
 const DOC_KINDS = {
   roads: 1, traffic: 1, terrain: 1, paint: 1, buildings: 1, zones: 1, lots: 1, utilities: 1, barriers: 1, landscape: 1,
   transit: 1, people: 1, trees: 1, clearings: 1, elements: 1, fog: 1, clouds: 1, weather: 1, nature: 1, gullies: 1, economy: 1,
+  buildingWear: 1,
 } as const satisfies Record<DocChangeKind, 1>;
 export const DOC_CHANGE_KINDS = Object.keys(DOC_KINDS) as DocChangeKind[];
 /** What the game works out from it. */
@@ -76,8 +83,44 @@ export interface Change {
 /** What a reader stands on: one rectangle, its items' rectangles, or nothing. */
 export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 
-/** How many entries are kept; a reader older than that takes everything as changed. */
+/**
+ * How many entries are kept, in all and of each kind: a reader older than
+ * that takes everything as changed. Of EACH kind: in one ring for all, a
+ * burst of one kind (2.048 buildings of a growing city) forgot the others,
+ * and a reader of the ground that had missed nothing was told "everything
+ * changed" and laid the whole map again (docs/AUDITORIA-2026-10-14.md D8/C1).
+ * NO single ring for a reader of some kinds: a kind is forgotten only by
+ * entries of its own.
+ */
 const KEPT = 2048;
+
+/**
+ * The entries of one kind, newest last, in a ring of `KEPT`, and the serial
+ * up to which they may be missing (one overwritten, or the copy's start).
+ */
+class KindLog {
+  private readonly ring: Change[] = [];
+  private written = 0;
+  constructor(public missingUpTo: number) {}
+
+  push(entry: Change): void {
+    const at = this.written % KEPT;
+    const old = this.ring[at];
+    if (old) this.missingUpTo = Math.max(this.missingUpTo, old.serial);
+    this.ring[at] = entry;
+    this.written++;
+  }
+
+  /** Its entries after `since`, newest first, into `out`; each one looked at counted. */
+  after(since: number, out: Change[]): void {
+    for (let i = this.written - 1; i >= Math.max(0, this.written - KEPT); i--) {
+      const entry = this.ring[i % KEPT]!;
+      journalWork.entries++;
+      if (entry.serial <= since) return;
+      out.push(entry);
+    }
+  }
+}
 
 /**
  * The work of the diary's readers: entries looked at to answer `since` and
@@ -109,6 +152,10 @@ export class ChangeJournal {
   private pendingCause = 'edit';
   /** The serial of the latest entry of each kind, kept after the entry itself is forgotten. */
   private readonly lastOf = new Map<ChangeKind, number>();
+  /** The entries of each kind (`since` with kinds reads these, never the others'). */
+  private readonly byKind = new Map<ChangeKind, KindLog>();
+  /** Up to where every kind may be missing entries: a copy starts with none (`continueFrom`). */
+  private startedAt = 0;
 
   /** The serial of the latest entry: what a reader that has seen everything holds. */
   get version(): number {
@@ -141,6 +188,8 @@ export class ChangeJournal {
     this.ring.fill(undefined);
     this.lastOf.clear();
     for (const [kind, serial] of other.lastOf) this.lastOf.set(kind, serial);
+    this.byKind.clear();
+    this.startedAt = other.serial;
     this.pendingCause = other.pendingCause;
   }
 
@@ -174,17 +223,38 @@ export class ChangeJournal {
     this.ring[serial % KEPT] = entry;
     if (this.count < KEPT) this.count++;
     this.lastOf.set(kind, serial);
+    let log = this.byKind.get(kind);
+    if (!log) this.byKind.set(kind, (log = new KindLog(this.startedAt)));
+    log.push(entry);
     return serial;
   }
 
-  /** The entries after `since` (oldest first), of these kinds only when given; `null` if some were forgotten. */
+  /**
+   * The entries after `since` (oldest first), of these kinds only when given;
+   * `null` if some were forgotten. With kinds, only their own entries are
+   * read, and none when none was written since (`serialOf`): the revision a
+   * reader holds tells it at once - Salsa's last-changed revision per
+   * durability, `runtime.rs` `revisions`. NOT the whole diary walked for a
+   * kind that did not move: one building more was one entry more for every
+   * reader of the ground.
+   */
   since(since: number, kinds?: readonly ChangeKind[]): Change[] | null {
+    if (kinds) {
+      if (since >= this.serialOf(...kinds)) return [];
+      const out: Change[] = [];
+      for (const kind of new Set(kinds)) {
+        const log = this.byKind.get(kind);
+        if (since < (log ? log.missingUpTo : this.startedAt)) return null;
+        log?.after(since, out);
+      }
+      return out.sort((a, b) => a.serial - b.serial);
+    }
     if (since < this.forgotten) return null;
     const out: Change[] = [];
     for (let s = since + 1; s <= this.serial; s++) {
       const entry = this.ring[s % KEPT];
       journalWork.entries++;
-      if (entry && entry.serial === s && (!kinds || kinds.includes(entry.kind))) out.push(entry);
+      if (entry && entry.serial === s) out.push(entry);
     }
     return out;
   }

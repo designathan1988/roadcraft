@@ -69,9 +69,9 @@ export interface RoadToolHost {
   settings(): {
     readonly typeIndex: number; readonly lanes: number | null; readonly alignment: 'straight' | 'curve' | 'free';
     readonly heightOffset: number; readonly parking: SegmentParking | undefined; readonly width: number | null; readonly grid: boolean;
-    /** A profile new roads are laid with (docs/VIAS.md V2), over the class, lanes, width and parking; null for those. */
+    /** A profile new roads are laid with (docs/source/VIAS.md V2), over the class, lanes, width and parking; null for those. */
     readonly profile?: { readonly profile: RoadProfileSpec; readonly type: number } | null;
-    /** Retaining walls in the cuttings of new roads instead of a batter (docs/VIAS.md V3). */
+    /** Retaining walls in the cuttings of new roads instead of a batter (docs/source/VIAS.md V3). */
     readonly cutWalls?: boolean;
     /** The furniture the new roads are built with (V7, `world/roads/furnitureSets.ts`); absent: none. */
     readonly furniture?: FurnitureSet;
@@ -250,7 +250,10 @@ export class RoadTool {
     };
   }
 
-  /** The pointer moved; true when the curve's bend or the drag took it. */
+  /**
+   * The pointer moved; true when the curve's bend or the drag took it.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(world: Vec2): boolean {
     const { host } = this;
     if (this.curvePending) {
@@ -268,7 +271,10 @@ export class RoadTool {
     return false;
   }
 
-  /** The pointer over the map with no drag: the next stretch of a chain, previewed. */
+  /**
+   * The pointer over the map with no drag: the next stretch of a chain, previewed.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   hover(world: Vec2): void {
     if (!this.chain) return;
     const { host } = this;
@@ -289,6 +295,7 @@ export class RoadTool {
    * a drag is laid (`commit` false: dropped). `released` is where it was let
    * go, read once the drag is over (on the plane of a chain or a curve in
    * hand, otherwise the ground's).
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
    */
   up(released: () => Vec2, commit: boolean): void {
     const d = this.draft;
@@ -403,7 +410,7 @@ export class RoadTool {
     { key: null, reason: null, cost: null, stations: null };
 
   /**
-   * The road in hand as it would be built (docs/VIAS.md V3): the dry run's
+   * The road in hand as it would be built (docs/source/VIAS.md V3): the dry run's
    * stations - solved deck, natural ground, way of building - once the draft
    * is judged, or null until then (the preview estimates meanwhile).
    */

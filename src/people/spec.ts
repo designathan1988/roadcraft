@@ -18,7 +18,7 @@ export interface PersonSpec {
   readonly look: PersonLook;
 }
 
-export type HairStyle = 'none' | 'short' | 'long';
+type HairStyle = 'none' | 'short' | 'long';
 export type TopStyle = 'none' | 'tank' | 'tshirt' | 'longsleeve';
 export type BottomStyle = 'trousers' | 'shorts' | 'skirt';
 
@@ -85,13 +85,13 @@ const BROW_PROFILES = {
 } as const;
 
 /** Every outfit, either sex's. */
-export const ALL_OUTFITS: readonly string[] = [...WARDROBE.outfits.male, ...WARDROBE.outfits.female,
+const ALL_OUTFITS: readonly string[] = [...WARDROBE.outfits.male, ...WARDROBE.outfits.female,
   ...itemsOf('top'), ...itemsOf('dress'), ...itemsOf('suit')];
-export const ALL_HAIR: readonly string[] = [...WARDROBE.hair.short, ...WARDROBE.hair.long, ...itemsOf('hair')];
-export const ALL_FOOTWEAR: readonly string[] = [...WARDROBE.footwear, ...itemsOf('shoes')];
-export const ALL_BROWS: readonly string[] = [...WARDROBE.brows, ...itemsOf('eyebrows')];
-export const ALL_LASHES: readonly string[] = [...WARDROBE.lashes, ...itemsOf('eyelashes')];
-export const ALL_HATS: readonly string[] = [...WARDROBE.hats, ...itemsOf('hat'), ...itemsOf('helmet')];
+const ALL_HAIR: readonly string[] = [...WARDROBE.hair.short, ...WARDROBE.hair.long, ...itemsOf('hair')];
+const ALL_FOOTWEAR: readonly string[] = [...WARDROBE.footwear, ...itemsOf('shoes')];
+const ALL_BROWS: readonly string[] = [...WARDROBE.brows, ...itemsOf('eyebrows')];
+const ALL_LASHES: readonly string[] = [...WARDROBE.lashes, ...itemsOf('eyelashes')];
+const ALL_HATS: readonly string[] = [...WARDROBE.hats, ...itemsOf('hat'), ...itemsOf('helmet')];
 const EXTRA_NAMES = new Set(COMMUNITY.filter((i) => ['bottom', 'skirt', 'beard', 'glasses', 'gloves', 'jewelry', 'mask', 'horns', 'underwear', 'socks', 'equipment'].includes(i.kind)).map((i) => i.name));
 
 /** The items a look wears, by name: what has to be loaded to draw it. */
@@ -115,10 +115,10 @@ export function wornItems(look: PersonLook): string[] {
 }
 
 /** Skin tones from very light to very dark, a deliberately wide range. */
-export const SKIN_TONES: readonly number[] = [
+const SKIN_TONES: readonly number[] = [
   0xf6dccb, 0xf0cdb2, 0xe5b898, 0xd9a47f, 0xc68b62, 0xb07349, 0x8f5b3a, 0x6f452b, 0x553220, 0x3d2417,
 ];
-export const HAIR_COLOURS: readonly number[] = [
+const HAIR_COLOURS: readonly number[] = [
   0x1a1410, 0x2e2018, 0x4a3022, 0x6b4428, 0x8c5a2e, 0xa8743c, 0xc9a165, 0xe0c58f, 0x9a9a98, 0xdedcd8, 0x8a2f1f,
 ];
 /** Children's clothes: clear colours, none near any skin tone. */

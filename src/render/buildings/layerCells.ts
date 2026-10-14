@@ -4,7 +4,7 @@ import { pointInPolygon } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingBounds, footprintRects, solidFootprints } from '@world/buildings/geometry';
-import type { Building } from '@world/buildings/types';
+import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
 import { type BuildingChunk, type BuildingMeshes, type PartBatch, assembleBuildingMeshes } from './buildingMesh';
 import { type BuildingKit, PART_KINDS, type PartKind } from './kit';
@@ -183,45 +183,88 @@ const COVER_CELL = m(25.6);
  * one building. `version` moves only when what `covers` answers changes: a
  * building drawn again for its paint or its age leaves the plants round it alone.
  */
-export function createCoverIndex(): { index(buildings: Iterable<Building>): void; covers(x: number, y: number): boolean; readonly version: number } {
+export interface CoverIndex {
+  /** The whole town filed again (the opening, a map opened). */
+  index(buildings: Iterable<Building>): void;
+  /** One building filed again (added or changed): an edit pays for it, not for the town. */
+  set(b: Building): void;
+  remove(id: BuildingId): void;
+  covers(x: number, y: number): boolean;
+  readonly version: number;
+}
+
+export function createCoverIndex(): CoverIndex {
   const footprints = new WeakMap<Building, Vec2[][]>();
-  let buckets = new Map<number, Vec2[][]>();
+  /**
+   * Each building's rectangles, the buckets they are filed in and their
+   * digest: taken out and filed again by id (Nystrom, "Spatial Partition":
+   * an object that moves is removed from its cell and added to the new one).
+   * NOT the town filed again for one building (docs/AUDITORIA-2026-10-14.md A5).
+   */
+  const filed = new Map<BuildingId, { digest: number; at: [number, Vec2[]][] }>();
+  const buckets = new Map<number, Set<Vec2[]>>();
   const bucketKey = (i: number, j: number): number => i * 100_003 + j;
   let digestWas = -1;
   let version = 0;
-  return {
-    index(buildings) {
-      buckets = new Map();
-      const digest = new Digest();
-      for (const b of buildings) {
-        let rects = footprints.get(b);
-        if (!rects) {
-          rects = [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
-          footprints.set(b, rects);
-        }
-        for (const rect of rects) {
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const p of rect) {
-            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-            maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
-            digest.add(p.x).add(p.y);
-          }
-          digest.add(rect.length);
-          for (let i = Math.floor(minX / COVER_CELL); i <= Math.floor(maxX / COVER_CELL); i++) {
-            for (let j = Math.floor(minY / COVER_CELL); j <= Math.floor(maxY / COVER_CELL); j++) {
-              const key = bucketKey(i, j);
-              const list = buckets.get(key);
-              if (list) list.push(rect);
-              else buckets.set(key, [rect]);
-            }
-          }
+  const unfile = (id: BuildingId): number | undefined => {
+    const known = filed.get(id);
+    if (!known) return undefined;
+    for (const [key, rect] of known.at) {
+      const set = buckets.get(key)!;
+      set.delete(rect);
+      if (set.size === 0) buckets.delete(key);
+    }
+    filed.delete(id);
+    return known.digest;
+  };
+  const file = (b: Building): number => {
+    let rects = footprints.get(b);
+    if (!rects) {
+      rects = [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
+      footprints.set(b, rects);
+    }
+    const digest = new Digest();
+    const at: [number, Vec2[]][] = [];
+    for (const rect of rects) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of rect) {
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+        digest.add(p.x).add(p.y);
+      }
+      digest.add(rect.length);
+      for (let i = Math.floor(minX / COVER_CELL); i <= Math.floor(maxX / COVER_CELL); i++) {
+        for (let j = Math.floor(minY / COVER_CELL); j <= Math.floor(maxY / COVER_CELL); j++) {
+          const key = bucketKey(i, j);
+          const set = buckets.get(key);
+          if (set) set.add(rect);
+          else buckets.set(key, new Set([rect]));
+          at.push([key, rect]);
         }
       }
+    }
+    const value = digest.value();
+    filed.set(b.id, { digest: value, at });
+    return value;
+  };
+  return {
+    index(buildings) {
+      filed.clear();
+      buckets.clear();
+      const digest = new Digest();
+      for (const b of buildings) digest.add(file(b));
       const value = digest.value();
       if (value !== digestWas) {
         digestWas = value;
         version++;
       }
+    },
+    set(b) {
+      const was = unfile(b.id);
+      if (file(b) !== was) version++;
+    },
+    remove(id) {
+      if (unfile(id) !== undefined) version++;
     },
     covers(x, y) {
       const list = buckets.get(bucketKey(Math.floor(x / COVER_CELL), Math.floor(y / COVER_CELL)));
@@ -248,6 +291,50 @@ export function groupByCell<T>(list: readonly Building[], cellOf: (b: Building) 
     else byCell.set(cell, [value]);
   }
   return byCell;
+}
+
+/** A detail cell's centre (map x/y), whether it is drawn by the far versions of its parts, and its coarse cell. */
+export interface DetailState { x: number; y: number; far: boolean; parent: string }
+
+/**
+ * Each detail cell shown with its coarse cell, and its frames and railings
+ * whole or by their street faces (`applyFar`) by their size on the screen
+ * (`layer.ts` `cullDetails`).
+ */
+export function cullDetailCells(detailCells: CellCache, states: WeakMap<BuildingMeshes, DetailState>, coarseNear: (key: string) => boolean,
+  eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, applyFar: (part: BuildingMeshes, far: boolean) => void): void {
+  for (const [key, cell] of detailCells) {
+    let state = states.get(cell.part);
+    // A cell new since the last frame is put to its detail whatever it is.
+    const fresh = !state;
+    if (!state) {
+      const comma = key.indexOf(',');
+      const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+      // Its cell of the coarse grid (two of these a side), read once.
+      const parent = `${Math.floor((i * DETAIL_CELL) / BATCH_CELL)},${Math.floor((j * DETAIL_CELL) / BATCH_CELL)}`;
+      state = { x: (i + 0.5) * DETAIL_CELL, y: (j + 0.5) * DETAIL_CELL, far: false, parent };
+      states.set(cell.part, state);
+    }
+    const cx = state.x - eyeX, cy = state.y - eyeY;
+    // Drawn while its coarse cell is drawn in detail: the far level takes
+    // over by the error on the screen (`massCells.ts`). A fixed reach of
+    // 500 m from the eye, its height counted, took every frame, railing and
+    // shutter off the town in any overview - windows as dark holes, the
+    // detail only with the camera at the wall (the player, 2026-10-13).
+    cell.part.group.visible = coarseNear(state.parent);
+    // Its frames and railings whole while a frame's side spans
+    // `FULL_DETAIL_PIXELS` or more, by their street faces (`kit.far`)
+    // beyond - the projected size, as the far level is chosen, and back
+    // nearer by `DETAIL_HYSTERESIS` (three's `LOD.update`).
+    const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
+    const near = Math.max(Math.hypot(nx, ny, eyeZ), 1);
+    const pixels = orthoPx !== null ? FRAME_SIDE * orthoPx : (FRAME_SIDE * pxAtMetre) / near;
+    const nextFar = pixels < FULL_DETAIL_PIXELS * (state.far ? 1 : 1 - DETAIL_HYSTERESIS);
+    if (fresh || nextFar !== state.far) {
+      state.far = nextFar;
+      applyFar(cell.part, nextFar);
+    }
+  }
 }
 
 /** The detail cells (`DETAIL_CELL`) inside a coarse cell (`BATCH_CELL`), by key. */

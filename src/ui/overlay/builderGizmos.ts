@@ -21,7 +21,7 @@ const DANGER = '#ef625c';
 const INK = 'rgba(8,20,18,0.86)';
 
 /** A handle is the tool's own record (`world/buildings/handles.ts`): this layer only draws it. */
-export type GizmoHandle = Handle;
+type GizmoHandle = Handle;
 
 export interface GizmoInput {
   readonly project: (x: number, y: number, z: number) => Vec2;

@@ -84,6 +84,11 @@ const RULES = {
     porque: 'Vai sumir numa versão próxima; costuma ter substituta mais rápida ou correta.',
     fonte: null,
   },
+  'copia-tipada': {
+    titulo: 'new Float32BufferAttribute(array tipado) e irmãos (o three copia o array)',
+    porque: 'O construtor faz new Float32Array(array): um array tipado recém-feito é copiado inteiro. Use new BufferAttribute(array, n), que guarda o próprio array (215 ms a cada 20 s de caminhada na montagem das cascas, auditoria 2026-10-14).',
+    fonte: { arquivo: 'repo-r186/src/core/BufferAttribute.js', trecho: 'super( new Float32Array( array ), itemSize, normalized );' },
+  },
   'compara-json': {
     titulo: 'comparação por JSON.stringify',
     porque: 'Serializa tudo para comparar; compare o que o diário diz que mudou.',
@@ -205,6 +210,12 @@ for (const sf of program.getSourceFiles()) {
       if ((name === 'remove' || name === 'clear') && isA(recv, 'Object3D') && !body.includes('.dispose(')) accuse('remove-sem-dispose', sf, node, fn);
       if (name === 'readPixels' || name === 'readRenderTargetPixels') accuse('leitura-da-gpu', sf, node, fn);
       if (name === 'getImageData' && !fileText.includes('willReadFrequently')) accuse('leitura-da-gpu', sf, node, fn, 'sem willReadFrequently no arquivo');
+    }
+
+    // new Float32BufferAttribute(aTypedArray): the typed subclasses copy what they are given
+    if (ts.isNewExpression(node) && /^(Float32|Float16|Uint32|Int32|Uint16|Int16|Uint8|Int8|Uint8Clamped)BufferAttribute$/.test(node.expression.getText(sf))
+      && node.arguments?.[0] && /^(Float32|Float64|Uint32|Int32|Uint16|Int16|Uint8|Int8|Uint8Clamped)Array$/.test(checker.typeToString(checker.getTypeAtLocation(node.arguments[0])).replace(/<.*$/, ''))) {
+      accuse('copia-tipada', sf, node, fn);
     }
 
     // new Material / Texture / render target inside a loop (geometry built piece by piece to be merged is ordinary)

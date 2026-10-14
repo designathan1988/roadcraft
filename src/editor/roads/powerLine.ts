@@ -3,10 +3,11 @@ import type { Network } from '@world/network';
 import { carriesPedestrians } from '@world/pedestrianAccess';
 import { m } from '@world/units';
 import type { NodeId, PoleId, SegmentId } from '@world/ids';
-import { commitPoleRunPoles, planPoleRun } from '../poles';
+import type { Vec2 } from '@core/vec2';
+import { type PoleRunPlan, commitPoleRunPoles, planPoleRun, poleRunPlanner } from '../poles';
 
 /**
- * THE POWER LINE OF A NEW STREET (docs/VIAS.md V7): the distribution line
+ * THE POWER LINE OF A NEW STREET (docs/source/VIAS.md V7): the distribution line
  * down one side of each street laid with the complete set, a pole every span
  * (`ROAD_TUNING.poles.spacing`) carrying a street light, as Brazilian streets
  * are lit from the utility poles. Laid by the pole tool's own planner
@@ -21,8 +22,8 @@ const END_SETBACK = m(4);
 const MIN_RUN = m(24);
 const SNAP_REACH = m(8);
 
-export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>): number {
-  const steps = layPowerLinesSteps(doc, net, segments);
+export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>, plan?: PlanRun): number {
+  const steps = layPowerLinesSteps(doc, net, segments, plan);
   for (;;) {
     const step = steps.next();
     if (step.done) return step.value;
@@ -35,9 +36,11 @@ export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<Seg
  * (half its layout) are strung a slice a frame (`main.ts`), the joins
  * between consecutive runs kept across the yields.
  */
-export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>): Generator<void, number> {
+export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>, plan?: PlanRun): Generator<void, number> {
   let built = 0;
   let seen = 0;
+  const ids = [...segments].sort((a, b) => a - b);
+  const planRun = plan ?? runPlanner(net, ids.length);
   /**
    * The pole ending a run at a node, and whether the run left from it (its
    * segment's a) or came to it (its b). A street of several segments was
@@ -54,7 +57,7 @@ export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterab
     // One coming in and one going out: the same side of the street.
     if (other.leaving !== leaving && other.pole !== pole && doc.node(node)?.incident.length === 2) doc.addPoleSpan(other.pole, pole);
   };
-  for (const id of [...segments].sort((a, b) => a - b)) {
+  for (const id of ids) {
     if (++seen % STREETS_A_STEP === 0) yield;
     const segment = doc.segment(id), ribbon = net.ribbons.get(id);
     if (!segment || !ribbon || !carriesPedestrians(ribbon.road) || ribbon.road.sidewalk <= 0) continue;
@@ -73,14 +76,36 @@ export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterab
     const coming = ends.get(segment.a);
     const start = coming && !coming.leaving && doc.node(segment.a)?.incident.length === 2 ? doc.poles.get(coming.pole) : undefined;
     const from = start ?? at(s0);
-    const plan = planPoleRun(doc, net, from, at(s1), SNAP_REACH, undefined, 'all');
-    const poles = commitPoleRunPoles(doc, plan);
+    const poles = commitPoleRunPoles(doc, planRun(doc, from, at(s1)));
     if (!poles) continue;
     built++;
     join(segment.a, poles[0]!, true);
     join(segment.b, poles[poles.length - 1]!, false);
   }
   return built;
+}
+
+/** How one street's run is planned: its two ends, with the generator's reach, spacing and lamps. */
+export type PlanRun = (doc: RoadDoc, from: Vec2, to: Vec2) => PoleRunPlan;
+
+/** Streets in one call past which they are planned over shared tiles (`poleRunPlanner`). */
+const BATCH = 24;
+
+/**
+ * The planning of a call's runs. A batch of streets - a generated city - is
+ * planned over lines and route graphs made once per tile of the map and
+ * shared by every run in it (`poleRunPlanner`): each street planned on its
+ * own made the lines and the graph of a region round it again, street after
+ * street, though the regions mostly overlap. A few streets - a road drawn -
+ * are planned as the pole tool plans them, over a region round each run: a
+ * whole tile would be more than the street needs.
+ */
+function runPlanner(net: Network, streets: number): PlanRun {
+  if (streets > BATCH) {
+    const planner = poleRunPlanner(net);
+    return (doc, from, to) => planner.plan(doc, from, to, SNAP_REACH, undefined, 'all');
+  }
+  return (doc, from, to) => planPoleRun(doc, net, from, to, SNAP_REACH, undefined, 'all');
 }
 
 /** Segments strung between two yields of `layPowerLinesSteps`. */

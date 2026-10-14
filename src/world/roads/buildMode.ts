@@ -7,7 +7,7 @@ import { RAISED_LIFT, TUNNEL_BORE, isRaised, type RoadStructure } from '../struc
 import { ROAD_TUNING } from './tuning';
 
 /**
- * HOW A ROAD IS BUILT at each point along it (docs/VIAS.md V3): on the
+ * HOW A ROAD IS BUILT at each point along it (docs/source/VIAS.md V3): on the
  * ground, on an embankment, in a cutting, on piers, in a tunnel. Read from
  * the solved deck against the natural ground and the road's structure, with
  * the thresholds the renderer builds with: piers past `RAISED_LIFT`
@@ -16,7 +16,6 @@ import { ROAD_TUNING } from './tuning';
  * the preview names what the game will build.
  */
 export type BuildMode = 'ground' | 'embankment' | 'cutting' | 'bridge' | 'tunnel';
-export const BUILD_MODES: readonly BuildMode[] = ['ground', 'embankment', 'cutting', 'bridge', 'tunnel'];
 
 /** The way of building at one point: `lift` is the deck over the natural ground (world units). */
 export function buildModeAt(structure: RoadStructure, lift: number): BuildMode {

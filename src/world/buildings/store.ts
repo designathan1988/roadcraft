@@ -3,7 +3,7 @@ import { ChangeJournal, type ChangeRect } from '../changes';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
-import { type Building, type BuildingId, asBuildingId, cloneBuilding } from './types';
+import { type Building, type BuildingId, asBuildingId, cloneBuilding, settleBuilding } from './types';
 
 /** Each stored record's text (`BuildingStore.toText`). */
 const RECORD_TEXT = new WeakMap<Building, string>();
@@ -25,19 +25,50 @@ function rectOf(b: Building): ChangeRect | null {
  * Every change is written in the document's diary (`changes.ts`, kind
  * `buildings`) with where the building stands, and `revision` is the serial
  * of the latest one: a building cannot change without the diary knowing.
+ *
+ * OWNERSHIP. A record handed to `add`, `put`, `restore` or `replaceWith`
+ * becomes the store's: it is kept, not copied - only made the plain JSON
+ * data a copy would have been, in place (`settleBuilding`: -0 is 0, no
+ * `undefined` member) - and from then on NOBODY changes it or any object
+ * inside it, the caller included. A change is a new record
+ * (`cloneBuilding` the stored one, edit the draft, `put` the draft, as
+ * `editor/buildings.ts` `editBuilding` does). Records may share parts with
+ * each other (`put({ ...stored, decay })` keeps the stored volumes): they are
+ * values, read-only once stored. The rest of the game counts on this: the
+ * undo image keeps records by reference (`docImage.ts`), a cloned document
+ * shares them (`shareFrom`), and each record's text, its bays' text
+ * (`sim/agents/parking.ts`) and its walls are worked out once per record.
+ *
+ * DO NOT copy a record on the way in again "to be safe": the deep copy of
+ * every record added or replaced (`cloneBuilding`, a JSON round trip) was
+ * the largest cost of growing a generated city (2.2 s of a 2.5 km one), for
+ * records their callers had just built and never touched again. A caller
+ * that keeps editing what it handed over copies it itself.
  */
 export class BuildingStore {
+  /** @mapWide Every building of the map. */
   private readonly items = new Map<BuildingId, Building>();
   private ids = new IdAllocator(1);
+  /**
+   * The records made plain JSON data when they were adopted (`settleBuilding`,
+   * OWNERSHIP above): one handed back - an undo, a clone's records - is not
+   * walked again. Shared with the stores that share the records (`shareFrom`).
+   */
+  private settled = new WeakSet<object>();
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
   private grid: BuildingGrid | null = null;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
 
-  /** The serial of the latest change of the buildings in the diary. */
+  /** The serial of the latest change of the buildings in the diary (their shape, place or use; not their wear). */
   get revision(): number {
     return this.journal.serialOf('buildings');
+  }
+
+  /** The serial of the latest change of a building's wear (`wear`): what draws or saves a building reads it too. */
+  get wearRevision(): number {
+    return this.journal.serialOf('buildingWear');
   }
 
   /** Writes a change of these buildings (their rectangles, or the whole map when any has none). */
@@ -46,6 +77,20 @@ export class BuildingStore {
     const known = rects && rects.every((r): r is ChangeRect => r !== null) ? rects : null;
     const ids = buildings?.map((b) => b.id as number);
     this.journal.record('buildings', known, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
+  }
+
+  /**
+   * The ids of the buildings changed after `serial` (a `revision` read
+   * before), from the diary; null when it cannot say which (a whole-store
+   * change: loaded, cleared, shared; or entries forgotten): then read them
+   * all. What a product derived from some buildings asks to take in a change
+   * by its ids, never the whole store again (root CLAUDE.md, "Como adicionar
+   * um produto derivado").
+   */
+  changedSince(serial: number): BuildingId[] | null {
+    const entries = this.journal.since(serial, ['buildings']);
+    if (!entries || entries.some((e) => !e.ids)) return null;
+    return entries.flatMap((e) => e.ids!) as BuildingId[];
   }
 
   get size(): number {
@@ -79,21 +124,29 @@ export class BuildingStore {
     return asBuildingId(this.ids.peek);
   }
 
-  /** Stores a new building under a fresh id. The record is copied. */
+  /**
+   * Stores a new building under a fresh id. The record becomes the store's
+   * (see OWNERSHIP above): the stored one is it with the id set, its parts
+   * not copied.
+   * @perItem Runs once a building added: nothing it reaches may walk the map.
+   */
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.ids.take());
-    const building = { ...cloneBuilding(value as Building), id } as Building;
+    const building = settleBuilding({ ...value, id } as Building, this.settled);
     this.items.set(id, building);
     this.grid?.insert(building);
     this.changed([building], 'added');
     return building;
   }
 
-  /** Replaces an existing building's record (same id). */
+  /**
+   * Replaces an existing building's record (same id). The record becomes the store's (OWNERSHIP above).
+   * @perItem Runs once a building replaced: nothing it reaches may walk the map.
+   */
   put(building: Building): void {
     const was = this.items.get(building.id);
     if (!was) return;
-    const now = cloneBuilding(building);
+    const now = settleBuilding(building, this.settled, was);
     this.items.set(building.id, now);
     this.grid?.update(now);
     // Where it stood and where it stands: a moved building changes both.
@@ -101,9 +154,29 @@ export class BuildingStore {
   }
 
   /**
+   * Sets a building's wear (`Building.decay`), its volumes, place and use
+   * kept. Written in the diary as `buildingWear`, so `revision` does not move.
+   * DO NOT write a wear change with `put`: the town decays a tenth at a time,
+   * every few seconds somewhere, and as a `buildings` change each tenth made
+   * everything derived from the buildings' shape (walls, bays, yards, places,
+   * grading, the camera's solids) work the town out again.
+   * @perItem Runs once a building's wear moved: nothing it reaches may walk the map.
+   */
+  wear(id: BuildingId, decay: number): void {
+    const was = this.items.get(id);
+    if (!was || (was.decay ?? 0) === decay) return;
+    const now = settleBuilding({ ...was, decay }, this.settled, was);
+    this.items.set(id, now);
+    this.grid?.update(now);
+    const rect = rectOf(now);
+    this.journal.record('buildingWear', rect ? [rect] : null, { ids: [id as number] });
+  }
+
+  /**
    * Puts back a building as it was, or takes it away (`undefined`): undo and
-   * redo (`world/docImage.ts`). The record is copied; the diary is told where
-   * it stood and where it stands.
+   * redo (`world/docImage.ts`). The record is kept, not copied (a record the
+   * undo image holds is a stored one, read-only: OWNERSHIP above); the diary
+   * is told where it stood and where it stands.
    */
   restore(id: BuildingId, value: Building | undefined): void {
     const was = this.items.get(id);
@@ -114,7 +187,7 @@ export class BuildingStore {
       this.changed([was], 'restored');
       return;
     }
-    const now = cloneBuilding(value);
+    const now = settleBuilding(value, this.settled, was);
     this.items.set(id, now);
     // A record put back where one stood keeps its place in the order; a new one goes last, as in `items`.
     if (was) this.grid?.update(now); else this.grid?.insert(now);
@@ -127,6 +200,7 @@ export class BuildingStore {
     this.ids = new IdAllocator(next);
   }
 
+  /** @perItem Runs once a building removed: nothing it reaches may walk the map. */
   remove(id: BuildingId): boolean {
     const was = this.items.get(id);
     if (!was) return false;
@@ -149,20 +223,13 @@ export class BuildingStore {
 
   /**
    * `JSON.stringify(this.toJSON())`, each record's text written once: records
-   * are never changed in place (`put` stores a copy), and writing every
+   * are never changed in place (OWNERSHIP above), and writing every
    * furnished building again was most of the text the undo took on each road
    * drawn (docs/performance.md #21).
    */
   toText(): string {
     const parts: string[] = [];
-    for (const b of this.items.values()) {
-      let text = RECORD_TEXT.get(b);
-      if (text === undefined) {
-        text = JSON.stringify(cloneBuilding(b));
-        RECORD_TEXT.set(b, text);
-      }
-      parts.push(text);
-    }
+    for (const b of this.items.values()) parts.push(this.textOf(b));
     return `[${parts.join(',')}]`;
   }
 
@@ -188,6 +255,8 @@ export class BuildingStore {
     this.items.clear();
     this.grid = null;
     for (const [id, b] of source.items) this.items.set(id, b);
+    // The same records, known plain to both (`settleBuilding`).
+    this.settled = source.settled;
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     this.changed(null, 'shared');
   }
@@ -219,15 +288,20 @@ export class BuildingStore {
     }
     this.items.clear();
     this.grid = null;
-    for (const b of source.items.values()) this.items.set(b.id, cloneBuilding(b));
+    // The source's records themselves, as `shareFrom` does: read-only once stored (OWNERSHIP above).
+    for (const b of source.items.values()) this.items.set(b.id, settleBuilding(b, this.settled));
     this.changed(touched, 'replaced by an edit or an undo');
   }
 
-  /** One record's text, written once (`toText`). */
+  /**
+   * One record's text, written once (`toText`): the record's own text, which
+   * is its copy's (`cloneBuilding` is a JSON round trip, and what JSON read
+   * back is written as the same text).
+   */
   private textOf(b: Building): string {
     let text = RECORD_TEXT.get(b);
     if (text === undefined) {
-      text = JSON.stringify(cloneBuilding(b));
+      text = JSON.stringify(b);
       RECORD_TEXT.set(b, text);
     }
     return text;

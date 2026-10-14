@@ -1,5 +1,7 @@
 # Problemas — Roadcraft 2
 
+> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+
 Registro vivo dos problemas abertos. Uma linha só fecha com a medida "depois",
 tirada do mesmo jeito que a "antes" (portão ou registro do próprio jogo), e com
 o jogo visto. O histórico completo da FONTE está em `docs/source/PROBLEMAS.md`

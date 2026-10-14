@@ -104,76 +104,116 @@ export function buildingPads(
    * worked out again. The caller drops it when the ground or the roads move.
    */
   known?: WeakMap<Building, Pad | null>,
-): BuildingPads {
-  const pads: Pad[] = [];
+): TownPads {
+  const town = townPads(apron);
   for (const b of buildings) {
-    if (known?.has(b)) { const pad = known.get(b); if (pad) pads.push(pad); continue; }
-    const before = pads.length;
-    padOf(b);
-    known?.set(b, pads.length > before ? pads[pads.length - 1]! : null);
-  }
-  function padOf(b: Building): void {
-    const built = solidFootprints(b);
-    // Each block's own platform: a block at a floor of its own (a split
-    // level, `Volume.lift`) has its own, as CityEngine aligns the terrain to
-    // each shape at that shape's height.
-    const lifts = groundVolumes(b).filter((v) => !v.open).map(volumeLift);
-    const floor = floorHeight(b, naturalGround, pavedAt);
-    // Under the building, level at the floor less the plinth; under its open
-    // lots, the lot's own surface (`lots.ts`), which falls with the street.
-    const lots = lotSurfaces(b, floor, pavedAt);
-    const rings: (readonly Vec2[])[] = [...built, ...lots.map((l) => l.ring)];
-    const water = [...built.map(() => false), ...lots.map((l) => l.volume.open === 'water')];
-    if (rings.length === 0) return;
-    const flat = floor - PLINTH_MIN;
-    // A lawn IS the ground, graded to the lot's surface (it is drawn as the
-    // terrain's own grass, and people walk on it at that height); paving,
-    // gravel, sand and water are laid as a thin plate just over it.
-    const levels = [...built.map((_, i) => { const level = flat + (lifts[i] ?? 0); return () => level; }), ...lots.map((l) => {
-      const open = l.volume.open ?? 'grass';
-      // A lawn is graded a little under the paving beside it, so a terrain
-      // triangle reaching from the lawn into a car park never pokes up
-      // through the asphalt (grass showing through the bays).
-      const under = open === 'grass' ? LOT_PLATE * 3 : open === 'water'
-        ? POOL_SINK + LOT_PLATE + POOL_TERRAIN_CLEARANCE : LOT_PLATE;
-      return (x: number, y: number) => l.heightAt(x, y) - under;
-    })];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const boxes: Aabb[] = [];
-    for (const ring of rings) {
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const p of ring) {
-        x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
-        x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
-      }
-      boxes.push({ minX: x0, minY: y0, maxX: x1, maxY: y1 });
-      minX = Math.min(minX, x0); minY = Math.min(minY, y0);
-      maxX = Math.max(maxX, x1); maxY = Math.max(maxY, y1);
+    let pad: Pad | null;
+    if (known?.has(b)) pad = known.get(b) ?? null;
+    else {
+      pad = padOf(b, naturalGround, pavedAt, apron);
+      known?.set(b, pad);
     }
-    const grow = apron + PAD_REACH;
-    const paved = [...built.map(() => false), ...lots.map((l) => (l.volume.open ?? 'grass') !== 'grass' && l.volume.open !== 'water')];
-    const stepped = lifts.some((l) => Math.abs(l) > 1e-6);
-    pads.push({ rings, levels, water, paved, solidCount: built.length, stepped, boxes,
-      box: { minX: minX - grow, minY: minY - grow, maxX: maxX + grow, maxY: maxY + grow } });
+    town.put(b.id, pad);
   }
-  // The platforms filed under every grid cell their box reaches: a corner of
-  // the ground asks only the ones over it. Every corner asked every platform
-  // in the town, which on a town of six hundred buildings was seconds a pass.
+  return town;
+}
+
+/** One building's platform (its blocks' and its open lots' rings, levels and bounds); null for one with none. */
+export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | undefined, apron: number): Pad | null {
+  const built = solidFootprints(b);
+  // Each block's own platform: a block at a floor of its own (a split
+  // level, `Volume.lift`) has its own, as CityEngine aligns the terrain to
+  // each shape at that shape's height.
+  const lifts = groundVolumes(b).filter((v) => !v.open).map(volumeLift);
+  const floor = floorHeight(b, naturalGround, pavedAt);
+  // Under the building, level at the floor less the plinth; under its open
+  // lots, the lot's own surface (`lots.ts`), which falls with the street.
+  const lots = lotSurfaces(b, floor, pavedAt);
+  const rings: (readonly Vec2[])[] = [...built, ...lots.map((l) => l.ring)];
+  const water = [...built.map(() => false), ...lots.map((l) => l.volume.open === 'water')];
+  if (rings.length === 0) return null;
+  const flat = floor - PLINTH_MIN;
+  // A lawn IS the ground, graded to the lot's surface (it is drawn as the
+  // terrain's own grass, and people walk on it at that height); paving,
+  // gravel, sand and water are laid as a thin plate just over it.
+  const levels = [...built.map((_, i) => { const level = flat + (lifts[i] ?? 0); return () => level; }), ...lots.map((l) => {
+    const open = l.volume.open ?? 'grass';
+    // A lawn is graded a little under the paving beside it, so a terrain
+    // triangle reaching from the lawn into a car park never pokes up
+    // through the asphalt (grass showing through the bays).
+    const under = open === 'grass' ? LOT_PLATE * 3 : open === 'water'
+      ? POOL_SINK + LOT_PLATE + POOL_TERRAIN_CLEARANCE : LOT_PLATE;
+    return (x: number, y: number) => l.heightAt(x, y) - under;
+  })];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const boxes: Aabb[] = [];
+  for (const ring of rings) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of ring) {
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    }
+    boxes.push({ minX: x0, minY: y0, maxX: x1, maxY: y1 });
+    minX = Math.min(minX, x0); minY = Math.min(minY, y0);
+    maxX = Math.max(maxX, x1); maxY = Math.max(maxY, y1);
+  }
+  const grow = apron + PAD_REACH;
+  const paved = [...built.map(() => false), ...lots.map((l) => (l.volume.open ?? 'grass') !== 'grass' && l.volume.open !== 'water')];
+  const stepped = lifts.some((l) => Math.abs(l) > 1e-6);
+  return { rings, levels, water, paved, solidCount: built.length, stepped, boxes,
+    box: { minX: minX - grow, minY: minY - grow, maxX: maxX + grow, maxY: maxY + grow } };
+}
+
+/** The town's platforms, one put in, changed or taken out by its building's id (`put`). */
+export interface TownPads extends BuildingPads {
+  /** A building's platform now (null: it has none, or is gone). */
+  put(id: number, pad: Pad | null): void;
+}
+
+/**
+ * The platforms filed under every grid cell their box reaches: a corner of
+ * the ground asks only the ones over it. Every corner asked every platform
+ * in the town, which on a town of six hundred buildings was seconds a pass.
+ * A building's platform is put in, changed or taken out by its id, in place
+ * in each cell's list (the order of the town's buildings, a new one last: the
+ * first of equals in `shapeAt` stays the one it was). NOT the town's
+ * platforms filed again for one building (docs/AUDITORIA-2026-10-14.md C8).
+ */
+export function townPads(apron: number): TownPads {
   const CELL = m(25.6);
   const cells = new Map<number, Pad[]>();
   const cellKey = (cx: number, cy: number): number => cx * 100_003 + cy;
-  for (const pad of pads) {
+  const placed = new Map<number, { pad: Pad; keys: number[] }>();
+  let bounds: Aabb[] | null = null;
+  const keysOf = (pad: Pad): number[] => {
+    const keys: number[] = [];
     for (let cx = Math.floor(pad.box.minX / CELL); cx <= Math.floor(pad.box.maxX / CELL); cx++) {
-      for (let cy = Math.floor(pad.box.minY / CELL); cy <= Math.floor(pad.box.maxY / CELL); cy++) {
-        const key = cellKey(cx, cy);
-        const list = cells.get(key);
-        if (list) list.push(pad); else cells.set(key, [pad]);
-      }
+      for (let cy = Math.floor(pad.box.minY / CELL); cy <= Math.floor(pad.box.maxY / CELL); cy++) keys.push(cellKey(cx, cy));
     }
-  }
+    return keys;
+  };
   return {
-    count: pads.length,
-    shapeBounds: () => pads.map((p) => p.box),
+    get count() { return placed.size; },
+    shapeBounds: () => (bounds ??= [...placed.values()].map((p) => p.pad.box)),
+    put(id, pad) {
+      const was = placed.get(id);
+      if (!was && !pad) return;
+      bounds = null;
+      const keys = pad ? keysOf(pad) : [];
+      const now = new Set(keys);
+      for (const key of was?.keys ?? []) {
+        const list = cells.get(key)!;
+        const at = list.indexOf(was!.pad);
+        if (pad && now.has(key)) { list[at] = pad; now.delete(key); continue; }
+        list.splice(at, 1);
+        if (list.length === 0) cells.delete(key);
+      }
+      for (const key of now) {
+        const list = cells.get(key);
+        if (list) list.push(pad!); else cells.set(key, [pad!]);
+      }
+      if (pad) placed.set(id, { pad, keys }); else placed.delete(id);
+    },
     shapeAt(x, y, ground) {
       // The nearest platform decides: two buildings side by side share the
       // strip between them as each one's own apron, split down the middle.

@@ -24,7 +24,7 @@ import { type Building, type FaceId, volumeById } from './types';
  * Pure geometry, shared by the tool (which hit-tests them) and the overlay
  * (which draws them), so the two can never disagree about where a handle is.
  */
-export type HandleKind = 'storeys' | 'side' | 'move' | 'rotate' | 'scale' | 'relief' | 'vertex' | 'lift';
+type HandleKind = 'storeys' | 'side' | 'move' | 'rotate' | 'scale' | 'relief' | 'vertex' | 'lift';
 
 /** A rectangle of bays and storeys of one face (see `editor/buildings.ts`, `FaceRegion`). */
 export interface HandleRegion {

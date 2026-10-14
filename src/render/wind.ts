@@ -162,31 +162,28 @@ export function advanceWind(seconds: number): void {
 /** How much faster than real time the wind's clock runs. */
 const WIND_PACE = 1.6;
 
-/**
- * Wires in the wind: a span swings sideways downwind and bobs a little,
- * most at mid-span and not at all at the insulators, each span at its own
- * phase, under the same travelling gust as the trees. `aSwing` is the weight
- * along the span (4 t (1 - t)), `aPhase` the span's phase.
- */
-export function applyWireWind(material: Material, amplitude: number): void {
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, windUniforms, { uWireAmp: { value: amplitude } });
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>
+/** The uniforms a wire in the wind reads (`wireWindGlsl`), declared once in the vertex shader. */
+export const WIRE_WIND_UNIFORMS_GLSL = `
         uniform float uWindTime;
         uniform vec2 uWindDir;
         uniform float uWindStrength;
-        uniform float uWireAmp;
-        attribute float aSwing;
-        attribute float aPhase;`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        uniform float uWireAmp;`;
+
+/**
+ * Wires in the wind: a span swings sideways downwind and bobs a little,
+ * most at mid-span and not at all at the insulators, each span at its own
+ * phase, under the same travelling gust as the trees. GLSL moving
+ * `transformed`: `swing` is the weight along the span (4 t (1 - t)),
+ * `phase` the span's phase (expressions of the shader that uses it,
+ * `render/utilities.ts`); the uniforms are `windUniforms` and `uWireAmp`.
+ */
+export function wireWindGlsl(swing: string, phase: string): string {
+  return `
         float front = dot(transformed.xz, uWindDir) * ${perM(0.03).toFixed(6)} - uWindTime * 0.42;
         float gust = 0.45 + 0.55 * smoothstep(-0.6, 1.0, sin(front) + 0.35 * sin(front * 2.3 + 1.7));
-        float swing = sin(uWindTime * 1.9 + aPhase) + 0.35 * sin(uWindTime * 3.7 + aPhase * 2.3);
-        transformed.xz += uWindDir * (0.55 + 0.45 * swing) * gust * aSwing * uWireAmp * uWindStrength;
-        transformed.y += 0.25 * cos(uWindTime * 1.9 + aPhase) * gust * aSwing * uWireAmp * uWindStrength;`);
-  };
-  material.customProgramCacheKey = () => 'wire-wind';
+        float swing = sin(uWindTime * 1.9 + ${phase}) + 0.35 * sin(uWindTime * 3.7 + ${phase} * 2.3);
+        transformed.xz += uWindDir * (0.55 + 0.45 * swing) * gust * ${swing} * uWireAmp * uWindStrength;
+        transformed.y += 0.25 * cos(uWindTime * 1.9 + ${phase}) * gust * ${swing} * uWireAmp * uWindStrength;`;
 }
 
 /**

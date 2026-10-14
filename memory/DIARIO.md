@@ -47,3 +47,14 @@
   x14,02; check-code com as 4 entradas só renomeadas (173). `18c373a` `__roadcraft.setView`: os gestos
   davam vista diferente a cada rodada (A/A do HEAD), agora o antes/depois usa vistas fixas. No jogo:
   vistas iguais nos dois lados; câmera dentro de prédio é defeito antigo (passado à auditoria).
+- 2026-10-14 noite (Hook de busca na internet): com o sim do jogador, origin/main enviado de `a4725ff`
+  até `b8c63c3` (28 commits das duas sessões); `81c6ffb` (D8, auditoria) segue local.
+- 2026-10-14 (Auditoria, noite): A2 `e5ec4e5`, A7 `cf0917d`, C3 `de7588d` (os três enviados pela outra
+  sessão com o sim do jogador), D8 `81c6ffb`, A1+A5+A16 `c45806a` (locais). No jogo, mesma sequência
+  antes/depois do A1: fotos iguais; cascas L0 795 MB no bairro nos dois lados (anterior, acima do teto
+  de 300 - virou o passo 2). Defeitos da outra sessão e meus anotados no ESTADO (passos 1 e 5).
+- 2026-10-14 noite (Hook): ordem do jogador "corrigir na raiz, não métrica"; postes inteiros corrigidos na causa
+  (9233238, 82c0239, 8e65f88, bdda55a, a1dd21a); agentes revisados: jardins 90524a3, mobília b5cc51d,
+  curvas 7c046a4; regras, skill e hook reescritos (5361eb8, ab455db). OTIMIZACAO 40-47.
+- 2026-10-14 ~16h30 (Auditoria): 9ad73e0 cascas e massas sem a cópia dupla de Float32BufferAttribute (OTIMIZACAO 51); a emissão por prédio em worker medida e NÃO commitada (mensagens comem o ganho; próximo: lote da célula pronto no worker). Divisão aprovada pelo jogador: esta sessão fica com montagem dos prédios em worker, shaders pré-compilados e matrizes paradas.
+- 2026-10-14 ~17h (Auditoria): eb31083 sólidos da câmera mantidos pelo diário (OTIMIZACAO 52; regressão de b0674dd achada pela sonda da Hook, 16 s na geração de 2.560 m). Vista olho B ainda escura antes e depois (passado à sessão da câmera).

@@ -10,7 +10,6 @@ import {
   Frustum,
   InstancedMesh,
   Matrix4,
-  Sphere,
   Vector3,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -31,9 +30,11 @@ import { FOOTWAY_RISE } from '@world/roadTypes';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { m, perM } from '@world/units';
 import { buildGrass, type GrassField } from './grass';
+import { createInstanceCull, spatialOrder, type CulledInstances } from './instanceCull';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { leafCardMaterials } from './lowPolyTrees';
 import { lightPoolTexture } from './lightLevels';
+import { pullTowardEye } from './depthConvention';
 import {
   BUSH_KINDS,
   TREE_SPECIES,
@@ -290,10 +291,14 @@ export function createSceneryKit(): SceneryKit {
   pool.rotateX(-Math.PI / 2);
   const poolGlow = new MeshBasicMaterial({
     map: lightPoolTexture(), color: STREET_LED, transparent: true, opacity: 0, blending: AdditiveBlending,
-    depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    depthWrite: false, toneMapped: false,
   });
+  pullTowardEye(poolGlow, 4, 4);
   const beam = new CylinderGeometry(BEAM_SOURCE, 1, 1, BEAM_SIDES, BEAM_SEGMENTS, true);
   beam.translate(0, -0.5, 0);
+  // Their bounds once, here: the layers that instance them read them (`render/poleLayer.ts`).
+  pool.computeBoundingSphere();
+  beam.computeBoundingSphere();
   const beamGlow = beamMaterial();
   let night = 0;
   let haze = 0;
@@ -437,7 +442,8 @@ export interface Scenery {
   /**
    * Keeps only the instances the camera can see, or whose shadow it can.
    * `view` is the camera's projection times its inverse world matrix; nothing
-   * is done while it is unchanged.
+   * is done while it is unchanged. Call it after setting the meshes'
+   * `visible`: a hidden mesh may be left as it was until it is shown.
    */
   cull(frustum: Frustum, view: Matrix4): void;
   /**
@@ -455,25 +461,18 @@ export interface Scenery {
  */
 export const SHADOW_REACH = m(28);
 
-/**
- * Every instance of one mesh, kept apart from what is drawn.
+/*
+ * Every instance of one mesh is kept apart from what is drawn (`instances`,
+ * `CulledInstances`).
  *
  * Each species used to be ONE instanced mesh spread over the whole map, so
  * its bounding sphere was the map and nothing was ever off screen: zoomed in
  * on a crossroads, every bush on the map went to the GPU in close-up detail,
  * three times over (picture, shadow map, occlusion) - four million triangles
  * a frame, most of them outside the window. The instances in view are copied
- * to the front of the buffer when the camera moves, and only those are drawn.
+ * to the front of the buffer when the camera moves, and only those are drawn;
+ * they are found cell by cell down a quadtree of the ground (`instanceCull.ts`).
  */
-interface Instances {
-  readonly matrices: Float32Array;
-  readonly colours: Float32Array | null;
-  /** Per instance: centre x, y, z and radius, in the scene's frame. */
-  readonly spheres: Float32Array;
-  readonly count: number;
-  /** One sphere round every instance, so a mesh wholly out of view is skipped at once. */
-  readonly bounds: { x: number; y: number; z: number; r: number };
-}
 
 /** Zoom at and above which plants are drawn with their close-up models. */
 export const PLANT_NEAR_ZOOM = perM(3.5);
@@ -495,11 +494,42 @@ function build(
   name: string,
   geometry: BufferGeometry,
   material: Material,
-  placements: readonly Placement[],
+  given: readonly Placement[],
   depth?: MeshDepthMaterial,
   near?: BufferGeometry,
 ): InstancedMesh | null {
-  if (placements.length === 0) return null;
+  if (given.length === 0) return null;
+  const object = new Object3D();
+  // Every instance's bounding sphere, from the larger of the model's reach
+  // and the plant's close-up model's (`setNear` swaps them), round the
+  // matrix as the instance buffer holds it (float32).
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  const reach = Math.max(geometry.boundingSphere?.radius ?? 1, near?.boundingSphere?.radius ?? 0);
+  const centre = geometry.boundingSphere?.center ?? new Vector3();
+  const given4 = new Float32Array(given.length * 4);
+  {
+    const point = new Vector3();
+    const matrix = new Matrix4();
+    const held = new Float32Array(16);
+    given.forEach((p, i) => {
+      object.position.set(p.x, p.z, -p.y);
+      object.rotation.set(0, p.yaw, 0);
+      object.scale.set(p.sx, p.sy, p.sz);
+      object.updateMatrix();
+      object.matrix.toArray(held);
+      point.copy(centre).applyMatrix4(matrix.fromArray(held));
+      given4[i * 4] = point.x;
+      given4[i * 4 + 1] = point.y;
+      given4[i * 4 + 2] = point.z;
+      given4[i * 4 + 3] = reach * Math.max(p.sx, p.sy, p.sz);
+    });
+  }
+  // Stored in the order the cull walks the ground's cells (`instanceCull.ts`):
+  // what one cell holds is one run of the buffer.
+  const order = spatialOrder(given4, given.length);
+  const placements = Array.from(order, (i) => given[i]!);
+  const spheres = new Float32Array(given.length * 4);
+  order.forEach((from, to) => spheres.set(given4.subarray(from * 4, from * 4 + 4), to * 4));
   const mesh = new InstancedMesh(geometry, material, placements.length);
   mesh.name = name;
   mesh.castShadow = true;
@@ -511,7 +541,6 @@ function build(
   // The shadow pass bends with the wind too, or the shadows would lie still
   // under moving trees.
   if (depth) mesh.customDepthMaterial = depth;
-  const object = new Object3D();
   let tinted = false;
   placements.forEach((placement, index) => {
     object.position.set(placement.x, placement.z, -placement.y);
@@ -530,50 +559,16 @@ function build(
     mesh.instanceColor.needsUpdate = true;
   }
   mesh.computeBoundingSphere();
-
-  // Every instance's bounding sphere, from the larger of the model's reach
-  // and the plant's close-up model's (`setNear` swaps them).
-  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-  const reach = Math.max(geometry.boundingSphere?.radius ?? 1, near?.boundingSphere?.radius ?? 0);
-  const centre = geometry.boundingSphere?.center ?? new Vector3();
-  const spheres = new Float32Array(placements.length * 4);
-  const point = new Vector3();
-  const matrix = new Matrix4();
-  for (let i = 0; i < placements.length; i++) {
-    mesh.getMatrixAt(i, matrix);
-    point.copy(centre).applyMatrix4(matrix);
-    const p = placements[i] as Placement;
-    spheres[i * 4] = point.x;
-    spheres[i * 4 + 1] = point.y;
-    spheres[i * 4 + 2] = point.z;
-    spheres[i * 4 + 3] = reach * Math.max(p.sx, p.sy, p.sz);
-  }
   instances.set(mesh, {
     matrices: Float32Array.from(mesh.instanceMatrix.array as Float32Array),
     colours: tinted && mesh.instanceColor ? Float32Array.from(mesh.instanceColor.array as Float32Array) : null,
     spheres,
     count: placements.length,
-    bounds: boundsOf(spheres, placements.length),
   });
   return mesh;
 }
 
-const instances = new WeakMap<InstancedMesh, Instances>();
-const probe = new Sphere();
-
-/** One sphere round every instance's own sphere: the centre of them, and the reach to the farthest. */
-function boundsOf(spheres: Float32Array, count: number): { x: number; y: number; z: number; r: number } {
-  if (count === 0) return { x: 0, y: 0, z: 0, r: 0 };
-  let x = 0, y = 0, z = 0;
-  for (let i = 0; i < count; i++) { x += spheres[i * 4]!; y += spheres[i * 4 + 1]!; z += spheres[i * 4 + 2]!; }
-  x /= count; y /= count; z /= count;
-  let r = 0;
-  for (let i = 0; i < count; i++) {
-    const dx = spheres[i * 4]! - x, dy = spheres[i * 4 + 1]! - y, dz = spheres[i * 4 + 2]! - z;
-    r = Math.max(r, Math.hypot(dx, dy, dz) + spheres[i * 4 + 3]!);
-  }
-  return { x, y, z, r };
-}
+const instances = new WeakMap<InstancedMesh, CulledInstances>();
 
 /** A near-white multiplier, so no two plants of one species are identical. */
 export function foliageTint(rng: Rng): Color {
@@ -752,6 +747,9 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
 
   let triangles = 0;
   for (const mesh of meshes) triangles += trianglesOf(mesh.geometry) * mesh.count;
+  // Every mesh's instances filed by the ground's cells, once per build: a
+  // camera move costs the cells at the view's edge and the instances in view.
+  const cells = createInstanceCull(meshes.map((mesh) => ({ mesh, instances: instances.get(mesh)! })), SHADOW_REACH);
   let culledFor: Matrix4 | null = null;
   let nearMode: boolean | null = null;
   let mapMode: boolean | null = null;
@@ -777,10 +775,20 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
       for (const mesh of leafMeshes) mesh.visible = !map;
     },
     cull(frustum, view) {
-      if (culledFor && culledFor.equals(view)) return;
-      culledFor = (culledFor ?? new Matrix4()).copy(view);
-      cullInstances(meshes, null, frustum, mapMode === true);
-      meadow.cull(frustum, view);
+      if (!culledFor || !culledFor.equals(view)) {
+        culledFor = (culledFor ?? new Matrix4()).copy(view);
+        cells.invalidate();
+        meadow.cull(frustum, view);
+      }
+      // Only the meshes drawn this frame: one hidden (zoomed out past the
+      // props, the leaves at map zoom) is culled when it is shown again, for
+      // the view of that frame. Culling the hidden ones over a town seen
+      // whole cost every instance of the town per move, for nothing drawn.
+      // DO NOT cull every mesh of the town at every move whatever is shown.
+      cells.cull(frustum, (k) => {
+        const mesh = meshes[k]!;
+        return mesh.visible && !(mapMode === true && mesh.name.endsWith('-leaves'));
+      });
     },
     exclude() {},
     dispose() {
@@ -788,65 +796,4 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
       meadow.dispose();
     },
   };
-}
-
-/** Copies the instances of each mesh the frustum can see (or see the shadow of) to the front, skipping `excluded`. */
-function cullInstances(meshes: readonly InstancedMesh[], excluded: Map<InstancedMesh, Uint8Array> | null, frustum: Frustum, mapMode: boolean): void {
-  for (const mesh of meshes) {
-    if (mapMode && mesh.name.endsWith('-leaves')) continue;
-    const all = instances.get(mesh);
-    if (!all) continue;
-    const matrices = mesh.instanceMatrix.array as Float32Array;
-    const colours = all.colours && mesh.instanceColor ? mesh.instanceColor.array as Float32Array : null;
-    // The whole mesh, before its instances one by one: a mesh entirely out of
-    // view - most of them, most frames - used to have every instance tested
-    // and its buffers rewritten to hold nothing. The sphere is the one built
-    // over every instance (`build`), grown by the shadow reach the per-instance
-    // test allows, so a miss here cannot hide an instance that test would keep.
-    if (all.bounds) {
-      probe.center.set(all.bounds.x, all.bounds.y, all.bounds.z);
-      probe.radius = all.bounds.r + SHADOW_REACH;
-      if (!frustum.intersectsSphere(probe)) {
-        if (mesh.count !== 0) {
-          mesh.count = 0;
-          mesh.instanceMatrix.clearUpdateRanges();
-          mesh.instanceMatrix.needsUpdate = true;
-          if (colours && mesh.instanceColor) {
-            mesh.instanceColor.clearUpdateRanges();
-            mesh.instanceColor.needsUpdate = true;
-          }
-        }
-        continue;
-      }
-    }
-    let n = 0;
-    const hidden = excluded?.get(mesh);
-    for (let i = 0; i < all.count; i++) {
-      if (hidden && hidden[i]) continue;
-      const s = all.spheres;
-      probe.center.set(s[i * 4] as number, s[i * 4 + 1] as number, s[i * 4 + 2] as number);
-      probe.radius = (s[i * 4 + 3] as number) + SHADOW_REACH;
-      if (!frustum.intersectsSphere(probe)) continue;
-      const source = i * 16;
-      const target = n * 16;
-      for (let j = 0; j < 16; j++) matrices[target + j] = all.matrices[source + j]!;
-      if (colours && all.colours) {
-        const sourceColour = i * 3;
-        const targetColour = n * 3;
-        colours[targetColour] = all.colours[sourceColour]!;
-        colours[targetColour + 1] = all.colours[sourceColour + 1]!;
-        colours[targetColour + 2] = all.colours[sourceColour + 2]!;
-      }
-      n++;
-    }
-    mesh.count = n;
-    mesh.instanceMatrix.clearUpdateRanges();
-    if (n > 0) mesh.instanceMatrix.addUpdateRange(0, n * 16);
-    mesh.instanceMatrix.needsUpdate = true;
-    if (colours && mesh.instanceColor) {
-      mesh.instanceColor.clearUpdateRanges();
-      if (n > 0) mesh.instanceColor.addUpdateRange(0, n * 3);
-      mesh.instanceColor.needsUpdate = true;
-    }
-  }
 }

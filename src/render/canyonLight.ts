@@ -14,6 +14,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 import { m } from '@world/units';
+import { DEPTH_GLSL } from './depthConvention';
 
 /**
  * THE LIGHT A TOWN SHUTS OUT, at two scales the shadow map and the small
@@ -80,9 +81,10 @@ const FRAGMENT = /* glsl */ `
   uniform float uContact;
   uniform float uContactLength;
   varying vec2 vUv;
+  ${DEPTH_GLSL}
 
   vec3 worldAt(vec2 uv, float depth) {
-    vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depthToClipZ(depth), 1.0);
     return (uCameraWorld * vec4(v.xyz / v.w, 1.0)).xyz;
   }
   float heightAt(vec2 p) {
@@ -96,7 +98,7 @@ const FRAGMENT = /* glsl */ `
   void main() {
     vec4 src = texture2D(tDiffuse, vUv);
     float depth = texture2D(tDepth, vUv).r;
-    if (depth >= 0.9999) { gl_FragColor = src; return; }
+    if (depthIsBackground(depth)) { gl_FragColor = src; return; }
     vec3 P = worldAt(vUv, depth);
     vec3 N = normalize(cross(dFdx(P), dFdy(P)));
     if (dot(N, uCameraPos - P) < 0.0) N = -N;

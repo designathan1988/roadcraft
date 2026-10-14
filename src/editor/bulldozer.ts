@@ -53,7 +53,10 @@ export class Bulldozer {
     this.drag = { pointer, a: { ...screen }, b: { ...screen }, world: { ...world }, to: { ...world }, anchor };
   }
 
-  /** The pointer moved; true when it was this tool's drag. */
+  /**
+   * The pointer moved; true when it was this tool's drag.
+   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
+   */
   move(pointer: number, screen: Vec2, world: Vec2): boolean {
     if (this.drag?.pointer !== pointer) return false;
     this.drag.b = { ...screen };
@@ -81,7 +84,10 @@ export class Bulldozer {
     return { a: d.world, b: d.to };
   }
 
-  /** The bulldozer's click: the one thing under the pointer. */
+  /**
+   * The bulldozer's click: the one thing under the pointer.
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
+   */
   private click(screen: Vec2, world: Vec2, anchor: Anchor): void {
     const { host } = this;
     const { doc } = host;
@@ -134,7 +140,7 @@ export class Bulldozer {
     });
     const builtIds = [...doc.buildings.all()].filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
-    const poles = [...doc.poles.values()].filter((p) => inside(p)).map((p) => p.id);
+    const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
     const items = [...doc.landscape.values()].filter((it) => inside(it)).map((it) => it.id);
     const walls = [...doc.barriers.values()].filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
     if (!segments.length && !builtIds.length && !lots.length && !poles.length && !items.length && !walls.length) return;

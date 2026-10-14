@@ -39,6 +39,10 @@ decisão do jogador, mostre a foto a ele.
 
 **5 Comparar.** Rode o mesmo roteiro antes e depois da mudança e abra as fotos de mesmo nome lado
 a lado. Numa otimização a imagem tem de ficar igual; diferença é defeito até prova em contrário.
+`node scripts/look-compare.mjs <pasta antes> <pasta depois>` conta os pixels mudados de cada par
+e grava a foto da diferença (vermelho sobre o "antes" esmaecido): abra cada uma. Folhas ao vento,
+carros, pessoas e o relógio do HUD mudam entre rodadas; qualquer outra mancha vermelha é defeito.
+Computador mais fraco: `"cpu": 4` no roteiro deixa a CPU 4 vezes mais lenta (a GPU não).
 
 **6 Relatar.** Ao jogador, foto por foto: o que mostra e o que foi conferido. Nunca "sem defeito"
 sem dizer o que foi olhado.

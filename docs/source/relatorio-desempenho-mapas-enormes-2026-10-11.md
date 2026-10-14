@@ -1,5 +1,7 @@
 # Desempenho para mapas enormes nos modos planeta e plano — pesquisa, diagnóstico e arquitetura
 
+> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+
 Relatório de 2026-10-11. Só pesquisa e investigação: nenhuma linha do jogo foi
 alterada. As sondas de medida rodaram numa cópia do código fora do repositório
 (anexo B).

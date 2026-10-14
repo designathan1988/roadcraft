@@ -83,6 +83,7 @@ export class SimWorld {
   readonly sidewalks = new SidewalkGraph();
   readonly claims = new ClaimTable();
 
+  /** @mapWide Every vehicle on the map. */
   readonly vehicles = new VersionedMap<VehicleId, Vehicle>();
   /**
    * What moves the people (`people/engine.ts`); everything else reaches them
@@ -97,6 +98,7 @@ export class SimWorld {
    * that set it still read as they did.
    */
   driveModel = 'v2' as const;
+  /** @mapWide One per lanelet of the graph. */
   readonly runtime = new Map<LaneletId, LaneletRuntime>();
   readonly controllers = new Map<NodeId, SignalController>();
   /**
@@ -124,14 +126,17 @@ export class SimWorld {
    * What vehicles, signals and the audit may know about the people at each
    * crossing (`crossings/state.ts`). Published by the pedestrian engine at the
    * end of its stage; the only pedestrian state read outside it.
+   * @mapWide One per crossing of the map.
    */
   readonly crossingStates: CrossingStates = new Map();
   /**
    * Every person as the renderer and the counters see them (`people/view.ts`),
    * in id order, published at the end of each tick. The object for an id lives
    * as long as the person.
+   * @mapWide Every person on the map.
    */
   readonly pedViews: PedView[] = [];
+  /** @mapWide Every person on the map, by id. */
   readonly pedViewById = new Map<number, PedView>();
   /** Stretch of each zebra that each movement drives over. */
   readonly crossingSpans = new CrossingSpans();

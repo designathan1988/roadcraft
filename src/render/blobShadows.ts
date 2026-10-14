@@ -1,4 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
+import { pullTowardEye } from './depthConvention';
 
 /**
  * Fake shadows, as the three.js manual's "Shadows" article draws them: a flat
@@ -41,9 +42,9 @@ export function createBlobShadows(name: string, capacity: number, opacity = 0.34
   geometry.setIndex(index);
   const material = new MeshBasicMaterial({
     color: 0xffffff, vertexColors: true, transparent: true, depthWrite: false,
-    // Over the ground it lies on, never into it.
-    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
   });
+  // Over the ground it lies on, never into it.
+  pullTowardEye(material, 2, 4);
   const mesh = new InstancedMesh(geometry, material, capacity);
   mesh.name = name;
   mesh.count = 0;

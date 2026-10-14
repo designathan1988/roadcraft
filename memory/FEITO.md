@@ -3,6 +3,11 @@
 Lista completa com arquivo:linha e fonte: `OTIMIZACAO.md`.
 
 ## 2026-10-14
+- Camada de prédios incremental pelo diário (`c45806a`, OTIMIZACAO 36): `building+1:layer` x3,82 → x1;
+  desenho igual ao montado do zero; fotos iguais antes/depois; crescimento da cidade padrão 8,79/8,89 s.
+- Diário com um anel por tipo (`81c6ffb`, 35): `building+1:ground`/`ground:idle` x3,82 → x1.
+- A2 edição não é carga (`e5ec4e5`), A7 streaming cancelado solta a GPU (`cf0917d`), C3 placas por
+  lugar (`de7588d`): OTIMIZACAO 37-39.
 - Clique em prédio ao nível da rua (`f1405fa`): raio da câmera (`Viewport.rayAt`), olho dentro de
   volume ignorado, quintal (`open`) como placa do chão. No jogo: casa, portão e bomba a 79 m sob o
   cursor. Fica: grade/portão como caixa cheia; célula ainda em massa não mostra os muros que o clique vê.

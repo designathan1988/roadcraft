@@ -3,7 +3,7 @@ import type { Vec2 } from '@core/vec2';
 import type { BuildingMaterials, MaterialSpec, VolumeMaterials } from './materials';
 
 /**
- * The modular building model. See docs/buildings.md.
+ * The modular building model.
  *
  * A building is DATA: volumes of whole grid cells, storeys on levels, facades
  * of bays, each bay a replaceable component. Nothing here is a mesh, and
@@ -22,10 +22,10 @@ export const asBuildingId = (n: number): BuildingId => n as BuildingId;
  */
 export const BUILDING_SCHEMA = 2;
 
-export const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
+const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
 export type BuildingUse = (typeof BUILDING_USES)[number];
 
-/** Replaceable facade components, one per bay. See docs/buildings.md. */
+/** Replaceable facade components, one per bay. */
 export const BAY_COMPONENTS = [
   'wall',
   'window',
@@ -62,7 +62,7 @@ export type RoofKind = (typeof ROOF_KINDS)[number];
 
 import type { FlagDesign } from './flags';
 
-export const ROOF_DETAIL_KINDS = ['solar', 'skylight', 'vent', 'chimney', 'waterTank', 'spire', 'lantern'] as const;
+const ROOF_DETAIL_KINDS = ['solar', 'skylight', 'vent', 'chimney', 'waterTank', 'spire', 'lantern'] as const;
 export type RoofDetailKind = (typeof ROOF_DETAIL_KINDS)[number];
 export const isRoofDetailKind = (value: unknown): value is RoofDetailKind =>
   (ROOF_DETAIL_KINDS as readonly unknown[]).includes(value);
@@ -283,7 +283,7 @@ export type LotSurface = (typeof LOT_SURFACES)[number];
  * What a building is FOR, in the city: where people live, work, study, buy,
  * eat, are treated, are buried. It picks the building's first form (a model
  * of blocks, then edited freely), its inside, and its part in the residents'
- * days. See docs/city-life-plan.md.
+ * days.
  */
 export const BUILDING_FUNCTIONS = [
   // homes
@@ -312,7 +312,7 @@ export interface PlacedFurniture {
 
 export type BlockMode = 'void' | 'intersect' | 'xor';
 
-/** Free parts a building can be given besides its volumes. See docs/buildings.md, "Elements". */
+/** Free parts a building can be given besides its volumes. */
 export const ELEMENT_KINDS = [
   'stair',
   'ramp',
@@ -481,6 +481,72 @@ export function componentAt(facade: Facade, side: FaceId, index: number): BayCom
 /** A deep, independent copy. Buildings are small; JSON is the honest clone. */
 export function cloneBuilding<T extends Building>(b: T): T {
   return JSON.parse(JSON.stringify(b)) as T;
+}
+
+/**
+ * Makes a record the plain JSON data `cloneBuilding` would have made of it,
+ * IN PLACE, without copying it: -0 becomes 0, NaN and the infinities null,
+ * an `undefined` (or function) member is taken out and an `undefined` item
+ * of a list becomes null - exactly what `JSON.parse(JSON.stringify(b))`
+ * reads back, the same members in the same order. The store keeps the
+ * records it is handed (`store.ts`, OWNERSHIP) and they stay what they were
+ * when it copied them.
+ *
+ * `settled`: the records made plain before (the store's, shared with its
+ * clones: `BuildingStore.shareFrom`); one of them handed back (an undo, a
+ * clone's records) is returned at once, and this one joins them. `was`: the
+ * record this one replaces; a member that is the very object the old record
+ * had (`put({ ...stored, decay })`), when that record was settled itself,
+ * is plain already and is not walked again. Both lean on stored records
+ * never being changed in place (`store.ts`, OWNERSHIP).
+ *
+ * DO NOT turn this back into a copy (`cloneBuilding`): writing every record
+ * out as text and parsing it again was the largest cost of growing a
+ * generated city (2.2 s of a 2.5 km one), for records nobody else held.
+ */
+export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>, was?: object): T {
+  if (settled.has(b)) return b;
+  const record = b as Record<string, unknown>;
+  // Only a record settled itself vouches for its members (one loaded from a file was never walked).
+  const old = was !== undefined && settled.has(was) ? was as Record<string, unknown> : undefined;
+  for (const key of Object.keys(record)) {
+    const value = record[key];
+    if (old !== undefined && typeof value === 'object' && value !== null && old[key] === value) continue;
+    settleMember(record, key, value);
+  }
+  settled.add(b);
+  return b;
+}
+
+function settleMember(owner: Record<string, unknown>, key: string, value: unknown): void {
+  if (typeof value === 'number') {
+    if (Object.is(value, -0)) owner[key] = 0;
+    else if (!Number.isFinite(value)) owner[key] = null;
+  } else if (value === undefined || typeof value === 'function' || typeof value === 'symbol') {
+    delete owner[key];
+  } else if (typeof value === 'object' && value !== null) {
+    settleValue(value);
+  }
+}
+
+function settleValue(value: object): void {
+  if (Array.isArray(value)) {
+    const list = value as unknown[];
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (typeof item === 'number') {
+        if (Object.is(item, -0)) list[i] = 0;
+        else if (!Number.isFinite(item)) list[i] = null;
+      } else if (item === undefined || typeof item === 'function' || typeof item === 'symbol') {
+        list[i] = null;
+      } else if (typeof item === 'object' && item !== null) {
+        settleValue(item);
+      }
+    }
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) settleMember(record, key, record[key]);
 }
 
 /** The level a volume's roof sits on (one past its top storey). */

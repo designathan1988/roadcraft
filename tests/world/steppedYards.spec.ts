@@ -20,7 +20,7 @@ import type { ZoneDensity, ZoneUse } from '@world/zones';
 
 /**
  * Shops, blocks of flats, offices and works with a car park or a loading
- * yard behind them follow their hillside (`docs/ZONEAMENTO.md`): the yard is
+ * yard behind them follow their hillside (`docs/source/ZONEAMENTO.md`): the yard is
  * a platform of its own nearer the natural ground, at the level of the
  * building's back, reached by its drive as a ramp no steeper than its
  * traffic takes - where before the whole lot was cut or filled to the
@@ -207,7 +207,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
             }
           }
           worst = Math.max(worst, over);
-          // Open (docs/PROBLEMAS.md AC7): a drive's ramp beside a neighbour's
+          // Open (docs/source/PROBLEMAS.md AC7): a drive's ramp beside a neighbour's
           // floor keeps up to half a metre of earth on its outer edge, behind
           // its retaining wall - the cell corner under the neighbour is not dug.
           const allowed = s.volume.ramp !== undefined ? m(0.5) : m(0.02);

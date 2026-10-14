@@ -18,7 +18,7 @@ export interface ApproachGroup {
  * their left and right turns look protected while the intersection admission
  * code has to serialize them against each other.
  */
-export const GROUP_MERGE_DEG = 35;
+const GROUP_MERGE_DEG = 35;
 
 /**
  * Clusters approach legs into signal groups.

@@ -189,7 +189,8 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       canvas = document.createElement('canvas');
       canvas.width = SIZE;
       canvas.height = SIZE;
-      renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+      // The depth convention of the game's renderer (`depthConvention.ts`): the kit's offsets are written for it.
+      renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true, reversedDepthBuffer: true });
       renderer.setPixelRatio(1);
       renderer.setSize(SIZE, SIZE, false);
       renderer.setClearColor(0x000000, 0);

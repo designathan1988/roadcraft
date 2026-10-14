@@ -10,7 +10,7 @@ import { FURNITURE_CATALOG, furnitureEntry } from './furnitureCatalog';
 import { m } from '../units';
 
 /**
- * THE FURNITURE A NEW ROAD IS BUILT WITH (docs/VIAS.md V7; the player's
+ * THE FURNITURE A NEW ROAD IS BUILT WITH (docs/source/VIAS.md V7; the player's
  * decision: automatic by default on new roads, the set chosen in the road
  * tool; roads already built never change by themselves).
  *

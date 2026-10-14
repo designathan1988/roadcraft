@@ -10,19 +10,16 @@ import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, ty
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type BufferAttribute,
+  BufferAttribute,
   BufferGeometry,
   Color,
-  Float32BufferAttribute,
   Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
   InstancedMesh,
   InterleavedBufferAttribute,
   Mesh,
-  type Object3D,
   Sphere,
-  Uint32BufferAttribute,
 } from 'three';
 
 import type { Vec2 } from '@core/vec2';
@@ -32,6 +29,7 @@ import {
   type Foundation,
   type GroundAt,
   type PavedAt,
+  LANDING_RISE,
   PLINTH_BURY,
   STEP_RUN,
   flightRun,
@@ -91,6 +89,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
+import { gpuOnly, gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { FACADE_PROP_KINDS, facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
@@ -196,8 +195,12 @@ const EAVES = m(0.45);
 const ROOF_THICK = m(0.18);
 const ARCADE = m(1.8);
 const PLINTH_GROW = m(0.12);
-/** How far a plinth's ledge stands over the floor: a yard at the floor's level met it in one plane and flickered. */
-const PLINTH_RISE = m(0.012);
+/**
+ * How far a plinth's ledge and a door's threshold stand over the floor: a yard
+ * at the floor's level met them in one plane and flickered. A flight's landing
+ * stands at the same height (`foundation.ts` `LANDING_RISE`, `Entrance.floor`).
+ */
+const PLINTH_RISE = LANDING_RISE;
 /** How deep a loggia is let into the wall. */
 const LOGGIA_DEPTH = m(1.4);
 /** How far a varanda gourmet's slab stands out of the wall. */
@@ -1787,8 +1790,22 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   // Only on a natural lawn: a terrace is a level platform (`Volume.terrace`),
   // and a flight, a ramp or a retaining wall between two platforms is an
   // earthwork held at the lot's levels, not a thing set down on the grass.
+  // The lot a point stands on: a paved one (a court, a drive) over the lawn
+  // laid round it, as it is drawn - the lawn is the terrain under the plates.
+  // Taken as the first lot listed, a planter on a sunken court was set on the
+  // garden's graded ground under the court, its top in the asphalt's plane
+  // (buried, and the two flickered). DO NOT take the first lot that holds it.
+  const hostAt = (x: number, y: number): Volume | undefined => {
+    let lawn: Volume | undefined;
+    for (const v of lots) {
+      if (x < v.x || x > v.x + v.w || y < v.y || y > v.y + v.d) continue;
+      if ((v.open ?? 'grass') !== 'grass') return v;
+      lawn ??= v;
+    }
+    return lawn;
+  };
   const onLawn = (x: number, y: number): boolean => {
-    const host = lots.find((v) => x >= v.x && x <= v.x + v.w && y >= v.y && y <= v.y + v.d);
+    const host = hostAt(x, y);
     return !host || ((host.open ?? 'grass') === 'grass' && host.terrace === undefined);
   };
   const groups = partGroups(b);
@@ -1842,7 +1859,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
     // A run on the land in steps, each on the lot's surface under it, or on
     // the ground where no lot is laid: nothing floats over a slope.
     for (const piece of followPieces(el)) {
-      const host = lots.find((v) => piece.x >= v.x && piece.x <= v.x + v.w && piece.y >= v.y && piece.y <= v.y + v.d);
+      const host = hostAt(piece.x, piece.y);
       // On a lawn the ground is the terrain as drawn (`pads.ts`), not the
       // lot's plane: a path laid at the plane's height stood over the grass
       // like a bridge from the gate to the door.
@@ -2150,8 +2167,8 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     const along = x1 - x0 >= y1 - y0;
     const lip = m(0.04);
     const cap = m(0.07);
-    // And walls that cross in plan (a churrasqueira's counter and the sink
-    // set against it, 2026-10-13) each at a course of their own, by the
+    // And walls that cross in plan (a sink set against another of the yard's
+    // walls, 2026-10-13) each at a course of their own, by the
     // element: two plinths at one height laid their tops in one plane.
     const foot = z0 + (along ? m(0.22) : m(0.23)) + m(0.02) * (el.id % 3);
     // Past the ends by `PART_INSET`; the plinth and the coping proud of both faces by `lip`.
@@ -3296,6 +3313,34 @@ function writeMatrix(out: Float32Array, offset: number, p: Placement): void {
  * frame the batch first showed (`Box3.setFromObject` for the tallest
  * building, docs/performance.md #26), walking every window of a cell.
  */
+/**
+ * A batch's own instance arrays from its chunks, in order: the matrices, the
+ * colours of a coloured kind (white where a chunk has none), and a pane's
+ * light slot (-1: none) and the room behind it.
+ */
+function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean): {
+  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array;
+} {
+  const instanceMatrix = new Float32Array(count * 16);
+  const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
+  const litSlot = glassy ? new Float32Array(count) : undefined;
+  const rooms = glassy ? new Float32Array(count * ROOM_FLOATS) : undefined;
+  let at = 0;
+  for (const chunk of chunks) {
+    const batch = chunk.parts[kind];
+    if (batch.count === 0) continue;
+    instanceMatrix.set(batch.matrices, at * 16);
+    if (instanceColor && batch.colours) instanceColor.set(batch.colours, at * 3);
+    if (litSlot) {
+      if (batch.slots) litSlot.set(batch.slots, at);
+      else litSlot.fill(-1, at, at + batch.count);
+    }
+    if (rooms && batch.rooms) rooms.set(batch.rooms, at * ROOM_FLOATS);
+    at += batch.count;
+  }
+  return { instanceMatrix, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}) };
+}
+
 function boundInstances(mesh: InstancedMesh): void {
   mesh.computeBoundingBox();
   mesh.boundingSphere = mesh.boundingBox!.getBoundingSphere(new Sphere());
@@ -3418,13 +3463,6 @@ export function assembleBuildingMeshes(
  * as it was stays drawn (`layer.ts`); a whole cell at once was a frame of
  * over 100 ms in the default town (docs/performance.md #12).
  */
-/** Where a town shell keeps its way back to its arrays (`refillShells`). */
-const REFILL = 'refillShell';
-/** Lets an attribute's array go once the renderer has it on the GPU. */
-function letGoOfArray(this: BufferAttribute): void {
-  (this as { array: ArrayLike<number> | null }).array = null;
-}
-
 /** One finish's shells of every chunk in one set of arrays (the vertices concatenated, the indices shifted), or null when none has any. */
 function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): { position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; decay: Float32Array; index: Uint32Array } | null {
   let vertices = 0;
@@ -3459,15 +3497,6 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): { positi
   return { position, normal, colour, uv, decay, index };
 }
 
-/**
- * After a lost WebGL context comes back, the town's shells take their arrays
- * again from their chunks, so the renderer can upload them anew (they had
- * been let go after the first upload, `letGoOfArray`).
- */
-export function refillShells(root: Object3D): void {
-  root.traverse((o) => { const refill = o.userData[REFILL] as (() => void) | undefined; refill?.(); });
-}
-
 export function* assembleBuildingMeshesSteps(
   chunks: readonly BuildingChunk[],
   kit: BuildingKit,
@@ -3487,12 +3516,17 @@ export function* assembleBuildingMeshesSteps(
     if (!shell) continue;
     const indices = shell.index.length;
     const g = new BufferGeometry();
-    g.setAttribute('position', new Float32BufferAttribute(shell.position, 3));
-    g.setAttribute('normal', new Float32BufferAttribute(shell.normal, 3));
-    g.setAttribute('color', new Float32BufferAttribute(shell.colour, 3));
-    g.setAttribute('uv', new Float32BufferAttribute(shell.uv, 2));
-    g.setAttribute('aDecay', new Float32BufferAttribute(shell.decay, 1));
-    g.setIndex(new Uint32BufferAttribute(shell.index, 1));
+    // The arrays just made, taken as they are. DO NOT wrap them in a
+    // Float32BufferAttribute or Uint32BufferAttribute: those copy the array
+    // they are given (`super(new Float32Array(array), ...)`, three's
+    // BufferAttribute.js), every vertex of the cell copied twice in the frame
+    // that put it together (1.3 of 20 s streaming a city, 2026-10-14).
+    g.setAttribute('position', new BufferAttribute(shell.position, 3));
+    g.setAttribute('normal', new BufferAttribute(shell.normal, 3));
+    g.setAttribute('color', new BufferAttribute(shell.colour, 3));
+    g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
+    g.setAttribute('aDecay', new BufferAttribute(shell.decay, 1));
+    g.setIndex(new BufferAttribute(shell.index, 1));
     // A Mesh a finish a cell, its arrays let go once on the GPU (below). NOT
     // a BatchedMesh a finish for the town: three keeps a batch's whole
     // capacity on the CPU (`BatchedMesh._initializeGeometry`), 1.1 GB of the
@@ -3508,20 +3542,12 @@ export function* assembleBuildingMeshesSteps(
     // upload when attribute data are not needed anymore on the CPU side") -
     // a third of the heap of a town of 1 348 buildings (2026-10-11). Nothing
     // reads them after (bounds worked out above; no raycast on the town);
-    // a lost and restored WebGL context fills them again (`refillShells`).
+    // a lost and restored WebGL context fills them again (`gpuOnly.ts` `refillArrays`).
     if (!ghost) {
-      for (const attribute of Object.values(g.attributes)) (attribute as BufferAttribute).onUpload(letGoOfArray);
-      g.index!.onUpload(letGoOfArray);
-      mesh.userData[REFILL] = (): void => {
+      gpuOnly(mesh, () => {
         const again = shellArrays(chunks, finish)!;
-        const set = (attribute: BufferAttribute, array: Float32Array | Uint32Array): void => { (attribute as { array: ArrayLike<number> }).array = array; attribute.needsUpdate = true; };
-        set(g.getAttribute('position') as BufferAttribute, again.position);
-        set(g.getAttribute('normal') as BufferAttribute, again.normal);
-        set(g.getAttribute('color') as BufferAttribute, again.colour);
-        set(g.getAttribute('uv') as BufferAttribute, again.uv);
-        set(g.getAttribute('aDecay') as BufferAttribute, again.decay);
-        set(g.index!, again.index);
-      };
+        return { position: again.position, normal: again.normal, color: again.colour, uv: again.uv, aDecay: again.decay, index: again.index };
+      });
     }
     mesh.name = ghost ? `building-preview-shell-${finish}` : `building-shell-${finish}`;
     mesh.castShadow = !ghost;
@@ -3540,26 +3566,14 @@ export function* assembleBuildingMeshesSteps(
     // Window panes carry their room's light slot, per instance, on their own
     // copy of the pane geometry (the kit's is shared by every batch).
     const glassy = !ghost && (kind === 'glass' || kind === 'glassDark');
+    const coloured = !ghost && COLOURED_PARTS.has(kind);
+    const arrays = partArrays(chunks, kind, count, glassy, coloured);
     const geometry = glassy ? kit.geometry[kind].clone() : kit.geometry[kind];
+    let roomBuffer: InstancedInterleavedBuffer | null = null;
     if (glassy) {
-      const slots = new Float32Array(count);
-      let k = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.parts[kind];
-        if (batch.slots) slots.set(batch.slots, k);
-        else slots.fill(-1, k, k + batch.count);
-        k += batch.count;
-      }
-      geometry.setAttribute('litSlot', new InstancedBufferAttribute(slots, 1));
+      geometry.setAttribute('litSlot', new InstancedBufferAttribute(arrays.litSlot!, 1));
       // And the room behind each, for the interior drawn through it (`kit.ts`).
-      const rooms = new Float32Array(count * ROOM_FLOATS);
-      k = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.parts[kind];
-        if (batch.rooms) rooms.set(batch.rooms, k * ROOM_FLOATS);
-        k += batch.count;
-      }
-      const roomBuffer = new InstancedInterleavedBuffer(rooms, ROOM_FLOATS);
+      roomBuffer = new InstancedInterleavedBuffer(arrays.rooms!, ROOM_FLOATS);
       geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
@@ -3569,21 +3583,30 @@ export function* assembleBuildingMeshesSteps(
     mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
     mesh.receiveShadow = !ghost;
-    const matrices = mesh.instanceMatrix.array as Float32Array;
-    const coloured = !ghost && COLOURED_PARTS.has(kind);
-    if (coloured) mesh.setColorAt(0, new Color(1, 1, 1));
-    const colours = coloured && mesh.instanceColor ? (mesh.instanceColor.array as Float32Array) : null;
-    let at = 0;
-    for (const chunk of chunks) {
-      const batch = chunk.parts[kind];
-      if (batch.count === 0) continue;
-      matrices.set(batch.matrices, at * 16);
-      if (colours && batch.colours) colours.set(batch.colours, at * 3);
-      at += batch.count;
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.instanceMatrix = new InstancedBufferAttribute(arrays.instanceMatrix, 16);
+    if (arrays.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(arrays.instanceColor, 3);
     boundInstances(mesh);
+    // Its own arrays live on the GPU only (`mesh/gpuOnly.ts`), made again
+    // from the chunks. DO NOT let go of the kit's geometry it draws: it is
+    // shared by every batch of the kind.
+    if (!ghost) {
+      const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { instanceMatrix: mesh.instanceMatrix };
+      if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
+      if (glassy) {
+        for (const name of ['position', 'normal', 'uv', 'litSlot'] as const) own[name] = geometry.getAttribute(name) as BufferAttribute;
+        if (geometry.index) own.index = geometry.index;
+        own.rooms = roomBuffer!;
+      }
+      const base = kit.geometry[kind];
+      gpuOnlyAttributes(mesh, own, () => {
+        const again: Record<string, ArrayLike<number>> = { ...partArrays(chunks, kind, count, glassy, coloured) };
+        if (glassy) {
+          for (const name of ['position', 'normal', 'uv'] as const) again[name] = (base.getAttribute(name) as BufferAttribute).array.slice();
+          if (base.index) again.index = base.index.array.slice();
+        }
+        return again;
+      });
+    }
     meshes.push(mesh);
     const g = kit.geometry[kind];
     triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;
@@ -3600,16 +3623,21 @@ export function* assembleBuildingMeshesSteps(
       mesh.name = `building-furniture-${kind}`;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      const matrices = mesh.instanceMatrix.array as Float32Array;
-      let at = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.furniture?.[kind];
-        if (!batch) continue;
-        matrices.set(batch.matrices, at * 16);
-        at += batch.count;
-      }
-      mesh.instanceMatrix.needsUpdate = true;
+      const furnitureMatrices = (): Float32Array => {
+        const matrices = new Float32Array(count * 16);
+        let at = 0;
+        for (const chunk of chunks) {
+          const batch = chunk.furniture?.[kind];
+          if (!batch) continue;
+          matrices.set(batch.matrices, at * 16);
+          at += batch.count;
+        }
+        return matrices;
+      };
+      mesh.instanceMatrix = new InstancedBufferAttribute(furnitureMatrices(), 16);
       boundInstances(mesh);
+      // On the GPU only, made again from the chunks (`mesh/gpuOnly.ts`).
+      gpuOnlyAttributes(mesh, { instanceMatrix: mesh.instanceMatrix }, () => ({ instanceMatrix: furnitureMatrices() }));
       meshes.push(mesh);
       const g = furniture.geometry[kind];
       triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;

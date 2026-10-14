@@ -7,9 +7,9 @@ import { Network } from '@world/network';
 import { casingHalf, ROAD_TYPES, roadProfile } from '@world/roadTypes';
 import { m } from '@world/units';
 
-export const ROUNDABOUT_MIN_RADIUS = m(32);
-export const ROUNDABOUT_MAX_RADIUS = m(128);
-export const ROUNDABOUT_APPROACH_LENGTH = m(40);
+const ROUNDABOUT_MIN_RADIUS = m(32);
+const ROUNDABOUT_MAX_RADIUS = m(128);
+const ROUNDABOUT_APPROACH_LENGTH = m(40);
 
 export type RoundaboutResult =
   | { readonly committed: true; readonly ring: readonly SegmentId[]; readonly entrances: readonly SegmentId[] }

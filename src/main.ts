@@ -79,7 +79,7 @@ import { commitRoundabout } from '@editor/roundabout';
 import { RoadTool, type RoadDraft } from '@editor/roadTool';
 import { Bulldozer } from '@editor/bulldozer';
 import { NodeMover } from '@editor/nodeMover';
-import { CameraGestures } from '@view/cameraGestures';
+import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { CameraMotion } from '@view/cameraMotion';
 import { freeRoadsEnabled } from '@ui/roadSectionEditor';
 import { applyProfileTo } from '@editor/roads/profile';
@@ -1017,6 +1017,16 @@ function pointerWorld(e: PointerEvent, rect?: DOMRect): Vec2 {
   return worldAtScreen(e.clientX - r.left, e.clientY - r.top, authoredHeight);
 }
 
+/**
+ * Every position a move went through since the last event, CSS px of the
+ * canvas, at its own time stamp (Pointer Events 3 `getCoalescedEvents`, in
+ * time order); undefined where the browser does not give them.
+ */
+function coalescedPath(e: PointerEvent, r: DOMRect): PointerSample[] | undefined {
+  const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+  return list.length > 0 ? list.map((c) => ({ x: c.clientX - r.left, y: c.clientY - r.top, t: c.timeStamp })) : undefined;
+}
+
 
 /**
  * Ends every gesture in progress without committing it: a road being drawn or
@@ -1187,7 +1197,8 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button > 2) return;
   canvas.setPointerCapture(e.pointerId);
   const r = canvas.getBoundingClientRect();
-  cameraHand.press(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+  // The event's own time, as every time the camera's hand reads (`cameraGestures.ts`).
+  cameraHand.press(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top }, e.timeStamp);
 
   // A second finger promotes the gesture to pinch and cancels any draft. A
   // third finger is part of the pinch too: at size 3 it used to fall through to
@@ -1395,8 +1406,10 @@ canvas.addEventListener('pointermove', (e) => {
   // The pointer's look (`app.css`): a closed hand while it turns or drags the camera.
   const held = cameraHand.active ? 'held' : '';
   if (canvas.dataset['camera'] !== held) canvas.dataset['camera'] = held;
-  // A pinch, an orbit or a pan takes the move first.
-  if (cameraHand.move(e.pointerId, screen)) return;
+  // A pinch, an orbit or a pan takes the move first; the hand's speed is read
+  // from every position the pointer went through since the last event, at
+  // their own times (`getCoalescedEvents`: Chrome sends one move a frame).
+  if (cameraHand.move(e.pointerId, screen, e.timeStamp, cameraHand.active ? coalescedPath(e, r) : undefined)) return;
 
   const world = pointerWorld(e, r);
 
@@ -1472,7 +1485,7 @@ function poleReach(): number {
 
 function endPointer(e: PointerEvent): void {
   const cancelled = e.type === 'pointercancel';
-  const { wasPinching, clickCancels } = cameraHand.release(e.pointerId);
+  const { wasPinching, clickCancels } = cameraHand.release(e.pointerId, e.timeStamp);
   // A right click that stayed a click cancels whatever is in progress.
   if (clickCancels && !cancelled) {
     cancelGestures();
@@ -2067,8 +2080,6 @@ function growCity(): void {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
     scene.holdBuildings(true);
-    // The pole layer too, while the lines are laid (let go with the layout).
-    scene.holdUtilities(true);
     lotTool.holdOverlay(true);
     requestDraw();
     return;
@@ -2084,7 +2095,7 @@ function growCity(): void {
         if (performance.now() >= until) break;
       }
     });
-    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; scene.holdUtilities(false); }
+    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
     cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
     requestDraw();
     return;
@@ -2097,7 +2108,6 @@ function growCity(): void {
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
   scene.holdBuildings(false);
-  scene.holdUtilities(false);
   lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
@@ -2605,9 +2615,10 @@ function frame(now: number): void {
   frameTimer.mark('painéis');
   const wall = frameClock.tick(now);
   // The camera's glide: keys held, the wheel's notches being spent.
-  if (cameraMotion.step(wall)) persistence.saveSettingsSoon(sessionSettings);
-  // The coast of a drag let go (`cameraGestures.ts`).
-  cameraHand.step(wall);
+  if (cameraMotion.step(now)) persistence.saveSettingsSoon(sessionSettings);
+  // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's
+  // time on the events' clock: it starts at the release itself.
+  cameraHand.advance(now);
   frameTimer.mark('câmera');
 
   // The opening puts the town together in parts (`SceneHandle.worldBusy`):
@@ -2848,7 +2859,7 @@ const CHANGE_COLOURS: Record<ChangeKind, string> = {
   roads: '#ffd23f', traffic: '#fca311', clearings: '#95d5b2', terrain: '#c8823c', paint: '#9be564', buildings: '#ff8fab', zones: '#7bdff2', lots: '#b2f7ef',
   utilities: '#f7aef8', barriers: '#d0d0d0', landscape: '#6bd425', transit: '#4cc9f0', people: '#ffffff',
   trees: '#2d6a4f', elements: '#e0aaff', fog: '#e9ecef', clouds: '#f8f9fa', weather: '#adb5bd', nature: '#52b788',
-  gullies: '#8d5524', economy: '#2a9d8f', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',
+  gullies: '#8d5524', economy: '#2a9d8f', buildingWear: '#a26769', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',
 };
 
 /**
@@ -4257,8 +4268,8 @@ const decayWatch = ((): (() => void) => {
       const b = doc.buildings.get(id);
       if (!b) { due.delete(id); continue; }
       const decay = decayOf(b.builtAt, now);
-      if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.put({ ...b, decay })); changed = true; }
-      // The record put is a new object: filed again by the diary at the next look; meanwhile its next tenth.
+      // `wear`, not `put`: a wear change is no change of the building's shape (`BuildingStore.wear`).
+      if (decay !== (b.decay ?? 0)) { caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)); changed = true; }
       due.set(id, nextTenth(b, now));
     }
     if (changed) requestDraw();

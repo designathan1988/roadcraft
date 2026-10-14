@@ -30,7 +30,7 @@ export interface InspectorActions {
   readonly onSetType: (id: SegmentId, type: number) => void;
   readonly onSetLanes?: (id: SegmentId, lanes: number | null) => void;
   readonly onSetSection?: (id: SegmentId, section: RoadSection | undefined) => void;
-  /** A whole cross-section applied to the road, with its class when it comes from a template (docs/VIAS.md V1). */
+  /** A whole cross-section applied to the road, with its class when it comes from a template (docs/source/VIAS.md V1). */
   readonly onApplyProfile?: (id: SegmentId, profile: RoadProfileSpec, type?: number) => void;
   /** V8: this road's profile copied to the whole street (`world/roads/streetChain.ts`); how many segments that is. */
   readonly onProfileToStreet?: (id: SegmentId) => void;
@@ -54,9 +54,9 @@ export interface InspectorActions {
   readonly onDuplicate?: (id: SegmentId) => void;
   readonly onSetControl?: (id: NodeId, control: JunctionControl) => void;
   readonly onSetMovementBlocked?: (node: NodeId, from: SegmentId, to: SegmentId, blocked: boolean) => void;
-  /** The player's lane connections at a node (docs/VIAS.md V4); undefined: all derived. */
+  /** The player's lane connections at a node (docs/source/VIAS.md V4); undefined: all derived. */
   readonly onSetLaneLinks?: (node: NodeId, links: LaneLink[] | undefined) => void;
-  /** Each leg's rule at a junction (docs/VIAS.md V5); undefined: derived. */
+  /** Each leg's rule at a junction (docs/source/VIAS.md V5); undefined: derived. */
   readonly onSetApproachRules?: (node: NodeId, rules: ApproachRuleEntry[] | undefined) => void;
   /** A junction's signal settings (V5); and several at once (a green wave). */
   readonly onSetSignal?: (node: NodeId, settings: SignalSettings | undefined) => void;
@@ -283,7 +283,7 @@ function renderSegment(
   // is for and not what "reverse" says.
   const oneWay = seg.direction !== 'both';
 
-  // With the profile editor (docs/VIAS.md V2) the class, direction, lanes and
+  // With the profile editor (docs/source/VIAS.md V2) the class, direction, lanes and
   // parking are the profile's, edited there; the inspector shows the profile
   // in miniature instead of a select for each.
   const profiled = actions.onApplyProfile !== undefined;
@@ -510,7 +510,7 @@ function renderNode(
   const impossible = gap === undefined ? ''
     : `<div class="inspect-warning" role="alert"><strong>${t('inspector.impossible')}</strong> · ${t('inspector.impossibleGap', { angle: Math.round((gap * 180) / Math.PI) })}<br>${t('inspector.impossibleBody')}</div>`;
   // Height, control, flows, legs, signal and movements in the junction panel
-  // (docs/VIAS.md V5): the interface's own controls, no select or number box.
+  // (docs/source/VIAS.md V5): the interface's own controls, no select or number box.
   body.innerHTML = impossible + `<div id="inspectStats">${stats}</div>` + crossingOffer +
     '<div id="inspectJunction"></div>' + joinOffer +
     '<div id="inspectConnectors"></div>' + `<p class="inspect-note">${t('inspector.mouths')}: ${mouths || '—'}</p>`;

@@ -137,8 +137,8 @@ export class LorryTraffic {
       }
       lorry.t += DT;
     }
-    const list = w.ambient.parked;
-    for (const lorry of this.lorries.values()) if (lorry.body && !list.includes(lorry.body)) list.push(lorry.body);
+    // Drawn with the cars standing in bays, asked by set (`isParked`), not by a walk of every parked car.
+    for (const lorry of this.lorries.values()) if (lorry.body && !w.ambient.isParked(lorry.body)) w.ambient.addParked(lorry.body);
     this.plan(w);
     this.clock += DT;
     if (this.clock < LOOK) return;
@@ -406,10 +406,7 @@ export class LorryTraffic {
 
   private drop(w: SimWorld, lorry: Lorry): void {
     this.lorries.delete(lorry.id);
-    if (!lorry.body) return;
-    const list = w.ambient.parked;
-    const at = list.indexOf(lorry.body);
-    if (at >= 0) list.splice(at, 1);
+    if (lorry.body) w.ambient.removeParked(lorry.body);
   }
 
   private offRoad(w: SimWorld, v: Vehicle, axle: Waypoint, lot: number): Vehicle {

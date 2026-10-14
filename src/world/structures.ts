@@ -70,7 +70,7 @@ export const TUNNEL_ARCH = m(0.6);
  * margin the hill closes over the bore only just, and the slightest dip in the
  * terrain reopens it halfway along.
  */
-export const TUNNEL_DEPTH = TUNNEL_HEADROOM + TUNNEL_ARCH + m(2);
+const TUNNEL_DEPTH = TUNNEL_HEADROOM + TUNNEL_ARCH + m(2);
 /**
  * Cover at which the ground closes over the road: the mouth of the bore.
  *

@@ -4,7 +4,7 @@ import { mat } from './cityBuildings';
 import { volumeSides } from './footprints';
 import { sideLength } from './geometry';
 import type { MaterialSpec } from './materials';
-import { type BayComponent, type FaceId, type FacadeGeometry, type Volume, type VolumeDress, DEFAULT_MODULE, bayKey } from './types';
+import { type BayComponent, type FaceId, type FacadeGeometry, type Volume, type VolumeDress, bayKey } from './types';
 
 /**
  * ARCHITECTURAL STYLES for the grown buildings, as a facade grammar.
@@ -389,6 +389,3 @@ export function stoneBaseOf(wall: MaterialSpec): MaterialSpec {
   const ch = (s: number): number => Math.round(((wall.colour >> s) & 255) * k);
   return mat('stone', (ch(16) << 16) | (ch(8) << 8) | ch(0));
 }
-
-/** The default module of the model, metres, for code that shares a face itself. */
-export const MODULE_METRES = DEFAULT_MODULE;

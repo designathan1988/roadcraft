@@ -17,7 +17,7 @@ import { m } from '@world/units';
 /** How far from the back of a footway a point is still put onto it, world units. */
 const FOOTWAY_REACH = m(3);
 /** Shortest length of a run worth building, world units. */
-export const MIN_BARRIER_RUN = m(0.5);
+const MIN_BARRIER_RUN = m(0.5);
 
 function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec2): Vec2 {
   if (!net) return at;
@@ -104,7 +104,10 @@ export class BarrierTool {
     this.points = null;
   }
 
-  /** A press at `world` (screen position `screenX/Y`, `detail` the click count the browser reports). */
+  /**
+   * A press at `world` (screen position `screenX/Y`, `detail` the click count the browser reports).
+   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
+   */
   down(world: Vec2, shift: boolean, screenX: number, screenY: number, detail: number): void {
     const { host } = this;
     // Shift-click removes a run; a click puts a point down.
@@ -127,6 +130,7 @@ export class BarrierTool {
     host.redraw();
   }
 
+  /** @perInput Runs once a pointer move: nothing it reaches may walk the map. */
   move(world: Vec2): void {
     this.cursor = world;
     this.host.redraw();

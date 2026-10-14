@@ -43,6 +43,7 @@ import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { PoleIndex } from './poleIndex';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT } from './units';
 
@@ -59,14 +60,14 @@ export function fitRoadCurve(
 export type SegmentDirection = 'both' | 'aToB' | 'bToA';
 
 /** Explicit junction policy. `auto` retains the class-based default policy. */
-/** 'mini': a mini-roundabout (docs/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
+/** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
 export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' | 'none' | 'mini';
 
 /** Stable segment-pair key for a movement through a junction. */
 export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
 
 /** Whether a movement key names segment `id` as its entry or its exit. */
-export function movementMentions(key: string, id: SegmentId): boolean {
+function movementMentions(key: string, id: SegmentId): boolean {
   const cut = key.indexOf('>');
   const text = String(id);
   return key.slice(0, cut) === text || key.slice(cut + 1) === text;
@@ -99,25 +100,25 @@ export interface RoadNode {
    */
   crossing?: NodeCrossing;
   /**
-   * The player's own lane connections at this node (docs/VIAS.md V4,
+   * The player's own lane connections at this node (docs/source/VIAS.md V4,
    * `roads/connectors.ts`): for each arriving lane listed, exactly these.
    * Absent: every connection derived. A link to a lane that is gone is left
    * out of the build.
    */
   laneLinks?: readonly LaneLink[];
-  /** Each leg's rule under 'priority' control (docs/VIAS.md V5, `roads/rules.ts`); absent legs: derived. */
+  /** Each leg's rule under 'priority' control (docs/source/VIAS.md V5, `roads/rules.ts`); absent legs: derived. */
   approachRules?: readonly ApproachRuleEntry[];
   /** A signal's settings (V5): fixed time, greens, offset, bus priority; absent: adaptive. */
   signal?: SignalSettings;
   /**
-   * What a road's end is (docs/VIAS.md V8): absent, the map's edge, where
+   * What a road's end is (docs/source/VIAS.md V8): absent, the map's edge, where
    * traffic leaves and comes in; 'bulb', a turning circle where it turns
    * round (the player's choice per end, 2026-10-10). Read only while the
    * node is the end of one road.
    */
   end?: RoadEnd;
   /**
-   * A U-turn through an opening in the median (docs/VIAS.md V8, retorno): a
+   * A U-turn through an opening in the median (docs/source/VIAS.md V8, retorno): a
    * piece the player puts on a road with a median, on a node joining two
    * pieces of it - the piece whose traffic, arriving here, turns round. One
    * direction per opening: two facing ones, each waiting at its own lane's
@@ -162,7 +163,7 @@ export interface RoadSegment {
   structure: RoadStructure;
   /**
    * The sides of its cutting held by retaining walls instead of a batter
-   * (docs/VIAS.md V3): the ground is cut back only as far as a portal's
+   * (docs/source/VIAS.md V3): the ground is cut back only as far as a portal's
    * cutting (`elevation.ts` `CUT_SHOULDER`) and a concrete wall stands at
    * each edge up to the natural ground (`render/structures.ts`). Absent: the
    * batter, as every road before it.
@@ -196,8 +197,13 @@ export class RoadDoc {
    * junction, no trim, no elevation solve. It stands on whatever the ground
    * under it turns out to be.
    */
-  readonly poles = new Map<PoleId, UtilityPole>();
-  readonly poleSpans = new Map<SpanId, UtilitySpan>();
+  // Written only through `putPoleRecord`/`deletePoleRecord`/`putSpanRecord`/`deleteSpanRecord`/`clearPoleRecords`,
+  // which keep `poleIndex` in step. DO NOT write these maps directly.
+  private readonly poleMap = new Map<PoleId, UtilityPole>();
+  private readonly spanMap = new Map<SpanId, UtilitySpan>();
+  private readonly poleIndex = new PoleIndex();
+  readonly poles: ReadonlyMap<PoleId, UtilityPole> = this.poleMap;
+  readonly poleSpans: ReadonlyMap<SpanId, UtilitySpan> = this.spanMap;
 
   /**
    * Walls, fences and hedges drawn along paths (`barriers.ts`). Like the poles
@@ -246,7 +252,7 @@ export class RoadDoc {
    */
   terrainRelief: ReliefVersion = RELIEF_LEGACY;
   /**
-   * The regional standard of the map's road paint (docs/VIAS.md V6,
+   * The regional standard of the map's road paint (docs/source/VIAS.md V6,
    * `roads/markingStyle.ts`). 'classic' for every map saved before the
    * regions, so it opens identical; a new map from the game is Brazilian.
    */
@@ -270,7 +276,7 @@ export class RoadDoc {
   /** The map's weather (`weather.ts`). */
   weather: Weather = DEFAULT_WEATHER;
   /**
-   * The money the roads are paid from (`economy.ts`, docs/VIAS.md V0). Part
+   * The money the roads are paid from (`economy.ts`, docs/source/VIAS.md V0). Part
    * of the document, so undo gives back what an edit took; saved only when it
    * is not the starting balance, so a map from before it reads the same.
    */
@@ -300,7 +306,7 @@ export class RoadDoc {
   private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
 
   /**
-   * Modular buildings (docs/buildings.md). They keep their OWN revision,
+   * Modular buildings. They keep their OWN revision,
    * `buildings.revision` (the diary's `buildings` kind): a building edit must
    * not move `revision`, which would rebuild the road network and the
    * simulation for nothing.
@@ -460,22 +466,64 @@ export class RoadDoc {
     const on = clampToMap(at);
     const id = asPoleId(this.poleIds.take());
     const pole: UtilityPole = { id, x: on.x, y: on.y, lamp };
-    this.poles.set(id, pole);    this.changes.record('utilities', [rectAround([pole], ITEM_PAD)!], { ids: [id] });
+    this.putPoleRecord(pole);
+    this.changes.record('utilities', [rectAround([pole], ITEM_PAD)!], { ids: [id] });
     return pole;
+  }
+
+  /** The poles standing in the cells a rectangle reaches (`PoleIndex.near`): a superset, test each. */
+  polesIn(rect: ChangeRect): UtilityPole[] {
+    return this.poleIndex.near(rect).map((id) => this.poleMap.get(id)!);
+  }
+
+  /** The spans reaching a pole, in the order they were strung. */
+  spansAt(id: PoleId): UtilitySpan[] {
+    return [...this.poleIndex.spansAt(id)].map((sid) => this.spanMap.get(sid)!);
+  }
+
+  private putPoleRecord(pole: UtilityPole): void {
+    this.poleMap.set(pole.id, pole);
+    this.poleIndex.putPole(pole);
+  }
+
+  private deletePoleRecord(id: PoleId): void {
+    this.poleMap.delete(id);
+    this.poleIndex.deletePole(id);
+  }
+
+  private putSpanRecord(span: UtilitySpan): void {
+    const was = this.spanMap.get(span.id);
+    this.spanMap.set(span.id, span);
+    // The same ends: the span keeps its place in each pole's order, as in the map.
+    if (was && was.a === span.a && was.b === span.b) return;
+    if (was) this.poleIndex.deleteSpan(was);
+    this.poleIndex.putSpan(span);
+  }
+
+  private deleteSpanRecord(id: SpanId): void {
+    const was = this.spanMap.get(id);
+    if (!was) return;
+    this.spanMap.delete(id);
+    this.poleIndex.deleteSpan(was);
+  }
+
+  private clearPoleRecords(): void {
+    this.poleMap.clear();
+    this.spanMap.clear();
+    this.poleIndex.clear();
   }
 
   /** Strings wire between two existing poles. Returns null for a degenerate run. */
   addPoleSpan(a: PoleId, b: PoleId): UtilitySpan | null {
     if (a === b) return null;
     if (!this.poles.has(a) || !this.poles.has(b)) return null;
-    for (const existing of this.poleSpans.values()) {
-      const same = existing.a === a && existing.b === b;
-      const reversed = existing.a === b && existing.b === a;
-      if (same || reversed) return existing;
+    for (const existing of this.spansAt(a)) {
+      if (existing.a === b || existing.b === b) return existing;
     }
     const id = asSpanId(this.spanIds.take());
     const span: UtilitySpan = { id, a, b };
-    this.poleSpans.set(id, span);    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b] });
+    this.putSpanRecord(span);
+    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b] });
     return span;
   }
 
@@ -531,21 +579,22 @@ export class RoadDoc {
   /** Removes a pole and every wire that reached it. */
   removePole(id: PoleId): void {
     const pole = this.poles.get(id);
-    if (!pole || !this.poles.delete(id)) return;
+    if (!pole) return;
     const reached: { x: number; y: number }[] = [pole];
-    for (const [spanId, span] of [...this.poleSpans]) {
-      if (span.a !== id && span.b !== id) continue;
+    for (const span of this.spansAt(id)) {
       const other = this.poles.get(span.a === id ? span.b : span.a);
       if (other) reached.push(other);
-      this.poleSpans.delete(spanId);
-    }    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids: [id] });
+      this.deleteSpanRecord(span.id);
+    }
+    this.deletePoleRecord(id);
+    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids: [id] });
   }
 
   /** The pole nearest a point, within `radius`, or null. */
   poleNear(at: { x: number; y: number }, radius: number): UtilityPole | null {
     let best: UtilityPole | null = null;
     let bestSq = radius * radius;
-    for (const pole of this.poles.values()) {
+    for (const pole of this.polesIn([at.x - radius, at.y - radius, at.x + radius, at.y + radius])) {
       const dx = pole.x - at.x;
       const dy = pole.y - at.y;
       const d = dx * dx + dy * dy;
@@ -564,7 +613,7 @@ export class RoadDoc {
   /**
    * Whether a node is the map's edge: the end of one road, where traffic and
    * people come in from outside and leave - not a turning circle the player
-   * made of it (`RoadNode.end`, docs/VIAS.md V8).
+   * made of it (`RoadNode.end`, docs/source/VIAS.md V8).
    */
   mapEdge(id: NodeId): boolean {
     const node = this.nodes.get(id);
@@ -858,7 +907,7 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /** The regional standard of the road paint (docs/VIAS.md V6): every road painted again. */
+  /** The regional standard of the road paint (docs/source/VIAS.md V6): every road painted again. */
   setMarkingStyle(style: MarkingStyleId): void {
     if (this.markingStyle === style) return;
     this.markingStyle = style;
@@ -1165,7 +1214,7 @@ export class RoadDoc {
    * the minimap — gates on a revision number. `Network.rebuild()` is
    * incremental, but it does NOT read `dirtyNodes` or `dirtySegments`: it
    * compares each segment's and node's sources with what its last rebuild
-   * recorded (docs/VIAS.md V0), because any other network built on this
+   * recorded (docs/source/VIAS.md V0), because any other network built on this
    * document clears these sets, and a set says "touched", not "changed".
    *
    * So the dirty sets are a correctly-maintained record nothing depends on
@@ -1239,13 +1288,13 @@ export class RoadDoc {
     // JSON and read back, with every check a loaded file needs, on every road
     // drawn - 18-20 ms of the edit on the player's map (docs/PROBLEMS.md R27).
     // The buildings are shared, not copied: their records are replaced, never
-    // changed in place (docs/performance.md #19).
+    // changed in place (docs/source/performance.md #19).
     // NÃO voltar a clonar por JSON.
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
     for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
-    for (const [id, pole] of this.poles) copy.poles.set(id, { ...pole });
-    for (const [id, span] of this.poleSpans) copy.poleSpans.set(id, { ...span });
+    for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
+    for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
     for (const [id, item] of this.landscape) copy.landscape.set(id, { ...item });
     for (const [id, barrier] of this.barriers) copy.barriers.set(id, { ...barrier, points: barrier.points.map((q) => ({ ...q })) });
     copy.buildings.shareFrom(this.buildings);
@@ -1388,8 +1437,8 @@ export class RoadDoc {
       switch (part) {
         case 'nodes': put(this.nodes as Map<number, RoadNode>); this.dirtyNodes.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
         case 'segments': put(this.segments as Map<number, RoadSegment>); this.dirtySegments.add(id as SegmentId); roadsTouched = true; roadIds.push(id); break;
-        case 'poles': put(this.poles as Map<number, UtilityPole>); kinds.add('utilities'); break;
-        case 'poleSpans': put(this.poleSpans as Map<number, UtilitySpan>); kinds.add('utilities'); break;
+        case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
+        case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); break;
         case 'landscape': put(this.landscape); kinds.add('landscape'); break;
         case 'barriers': put(this.barriers); kinds.add('barriers'); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
@@ -1512,10 +1561,9 @@ export class RoadDoc {
       for (const [id, segment] of source.segments) this.segments.set(id, copySegment(segment));
     }
     if (moved('utilities')) {
-      this.poles.clear();
-      this.poleSpans.clear();
-      for (const [id, pole] of source.poles) this.poles.set(id, { ...pole });
-      for (const [id, span] of source.poleSpans) this.poleSpans.set(id, { ...span });
+      this.clearPoleRecords();
+      for (const pole of source.poles.values()) this.putPoleRecord({ ...pole });
+      for (const span of source.poleSpans.values()) this.putSpanRecord({ ...span });
     }
     if (moved('landscape')) {
       this.landscape.clear();
@@ -1756,7 +1804,7 @@ export class RoadDoc {
    * the player could see the next time they drew, undid or reloaded.
    */
   static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore } = {}): RoadDoc {
-    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's (docs/ESCALA.md).
+    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's (docs/source/ESCALA.md).
     const data = rescaleSerializedDoc(saved);
     const repair = options.repair ?? true;
     const doc = new RoadDoc();
@@ -1911,7 +1959,7 @@ export class RoadDoc {
     for (const p of data.poles ?? []) {
       const id = asPoleId(p.id);
       const at = repair ? clampToMap(p) : p;
-      doc.poles.set(id, { id, x: at.x, y: at.y, lamp: p.lamp ?? false });
+      doc.putPoleRecord({ id, x: at.x, y: at.y, lamp: p.lamp ?? false });
       doc.poleIds.reserve(p.id);
     }
     for (const s of data.poleSpans ?? []) {
@@ -1921,7 +1969,7 @@ export class RoadDoc {
       // a wire hanging off nothing.
       if (!doc.poles.has(a) || !doc.poles.has(b)) continue;
       const id = asSpanId(s.id);
-      doc.poleSpans.set(id, { id, a, b });
+      doc.putSpanRecord({ id, a, b });
       doc.spanIds.reserve(s.id);
     }
     // Public transport, if the map has any; anything malformed is dropped.
@@ -2022,9 +2070,9 @@ export interface SerializedDoc {
     id: number; x: number; y: number; heightOffset?: number; smooth?: boolean;
     control?: JunctionControl; blockedMovements?: readonly string[];
     crossing?: { kind: NodeCrossingKind; segment: number };
-    /** The player's lane connections (docs/VIAS.md V4); absent on every older map. */
+    /** The player's lane connections (docs/source/VIAS.md V4); absent on every older map. */
     laneLinks?: readonly { from: number; fromLane: number; to: number; toLane: number }[];
-    /** Each leg's rule (docs/VIAS.md V5); absent on every older map. */
+    /** Each leg's rule (docs/source/VIAS.md V5); absent on every older map. */
     approachRules?: readonly { segment: number; rule: string }[];
     /** A signal's settings (V5); absent on every older map. */
     signal?: unknown;
@@ -2046,13 +2094,13 @@ export interface SerializedDoc {
     parking?: SegmentParking;
     /** A current structure id, or a legacy one `migrateStructure` maps. */
     structure?: RoadStructure | 'viaduct';
-    /** Retaining walls in its cutting (docs/VIAS.md V3); absent on every older map. */
+    /** Retaining walls in its cutting (docs/source/VIAS.md V3); absent on every older map. */
     cutWalls?: boolean;
   }[];
   readonly terrain?: readonly TerrainStamp[];
   /** `ReliefVersion`; absent on maps made before the natural landform. */
   readonly relief?: number;
-  /** The regional standard of the road paint (docs/VIAS.md V6); absent: 'classic'. */
+  /** The regional standard of the road paint (docs/source/VIAS.md V6); absent: 'classic'. */
   readonly markingStyle?: string;
   /** The ecosystem (`NatureSettings`); absent on maps made before it. */
   readonly nature?: { readonly region: string; readonly seed: number };
@@ -2079,7 +2127,7 @@ export interface SerializedDoc {
   /** Walls, fences and hedges (`barriers.ts`); OPTIONAL like the poles. */
   readonly barriers?: readonly { id: number; kind: string; points: readonly { x: number; y: number }[] }[];
   /**
-   * Modular buildings (docs/buildings.md). OPTIONAL, for the same reason as
+   * Modular buildings. OPTIONAL, for the same reason as
    * the poles: every map saved before buildings existed has no such key.
    */
   readonly buildings?: readonly SerializedBuilding[];

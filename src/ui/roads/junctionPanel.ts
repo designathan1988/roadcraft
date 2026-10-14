@@ -8,7 +8,7 @@ import { formatDecimal, t } from '../i18n';
 import './roads.css';
 
 /**
- * THE JUNCTION PANEL (docs/VIAS.md V5), in the inspector: the junction's
+ * THE JUNCTION PANEL (docs/source/VIAS.md V5), in the inspector: the junction's
  * height, its control as buttons (automatic, signal, signs on each leg, a
  * stop on every leg, mini-roundabout, nothing signed - the CTB's own rule),
  * what "automatic" chose from the measured flows and the flows themselves, the
@@ -43,7 +43,7 @@ const RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
  * photos).
  */
 let screenOf: ((x: number, y: number) => { readonly x: number; readonly y: number }) | undefined;
-export function compassOf(doc: RoadDoc, nodeId: NodeId, seg: { a: NodeId; b: NodeId }): string {
+function compassOf(doc: RoadDoc, nodeId: NodeId, seg: { a: NodeId; b: NodeId }): string {
   const here = doc.node(nodeId);
   const there = doc.node(seg.a === nodeId ? seg.b : seg.a);
   if (!here || !there) return '?';
