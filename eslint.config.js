@@ -145,6 +145,7 @@ export default tseslint.config(
     // Playwright; the callback bodies are browser code by construction.
     files: [
       'scripts/cook-people.mjs',
+      'scripts/look.mjs',
     ],
     languageOptions: {
       globals: {

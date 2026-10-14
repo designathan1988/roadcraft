@@ -1,0 +1,18 @@
+{
+  "city": true,
+  "steps": [
+    { "lookAt": [0, 0, 0.17] }, { "wait": 4000 },
+    { "shot": "mapa" }, { "budget": "mapa" },
+    { "lookAt": [0, 0, 2.5] }, { "wait": 6000 },
+    { "shot": "bairro" }, { "budget": "bairro" },
+    { "lookAt": [0, 0, 28] }, { "wait": 6000 },
+    { "shot": "rua" }, { "budget": "rua" },
+    { "shot": "rua-detalhe", "clip": [640, 300, 640, 480] },
+    { "drag": [[960, 540], [660, 540]], "button": "middle", "steps": 40 }, { "wait": 1500 },
+    { "shot": "rua-arrastada" },
+    { "drag": [[960, 540], [1260, 540]], "button": "right", "steps": 40 }, { "wait": 1500 },
+    { "shot": "rua-girada" },
+    { "wheel": [0, -600], "at": [960, 540] }, { "wait": 1500 },
+    { "shot": "rua-zoom" }
+  ]
+}
