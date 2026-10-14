@@ -47,6 +47,12 @@ export interface CameraSolids {
   /** The lowest the eye may stand at (x, y), world height; -Infinity away from every building. */
   floorAt(x: number, y: number): number;
   /**
+   * The roof over (x, y) when the point is inside a solid volume's plan (its
+   * highest, no margin round it), world height; -Infinity outside every one:
+   * where the point the camera looks at goes when it falls inside a building.
+   */
+  roofAt(x: number, y: number): number;
+  /**
    * Every solid volume filed in the cells over a map rectangle, as its
    * building's frame (origin, cos, sin), its box in that frame and its roof's
    * world height (no clearance): for the light the town shuts out of its
@@ -154,21 +160,28 @@ export function cameraSolids(buildings: Iterable<Building>, floorOf: (b: Buildin
       }
     },
     floorAt(x, y) {
-      const list = cells.get(key(Math.floor(x / CELL), Math.floor(y / CELL)));
-      if (!list) return -Infinity;
-      let floor = -Infinity;
-      for (const s of list) {
-        if (s.top <= floor) continue;
-        const dx = x - s.bx, dy = y - s.by;
-        const lx = dx * s.cos + dy * s.sin;
-        const ly = -dx * s.sin + dy * s.cos;
-        const ox = Math.max(s.x0 - lx, 0, lx - s.x1);
-        const oy = Math.max(s.y0 - ly, 0, ly - s.y1);
-        const d = Math.hypot(ox, oy);
-        if (d >= REACH) continue;
-        floor = Math.max(floor, s.top - (s.top - s.foot) * smoothstep(d / REACH));
-      }
-      return floor;
+      return lowestEye(cells.get(key(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, REACH);
+    },
+    roofAt(x, y) {
+      const eye = lowestEye(cells.get(key(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, 0);
+      return eye === -Infinity ? eye : eye - CLEARANCE;
     },
   };
+}
+
+/** The lowest the eye may stand at (x, y) over `list`, its floor easing down over `reach` round each volume. */
+function lowestEye(list: readonly Solid[] | undefined, x: number, y: number, reach: number): number {
+  let floor = -Infinity;
+  for (const s of list ?? []) {
+    if (s.top <= floor) continue;
+    const dx = x - s.bx, dy = y - s.by;
+    const lx = dx * s.cos + dy * s.sin;
+    const ly = -dx * s.sin + dy * s.cos;
+    const ox = Math.max(s.x0 - lx, 0, lx - s.x1);
+    const oy = Math.max(s.y0 - ly, 0, ly - s.y1);
+    const d = Math.hypot(ox, oy);
+    if (reach === 0 ? d > 0 : d >= reach) continue;
+    floor = Math.max(floor, reach === 0 ? s.top : s.top - (s.top - s.foot) * smoothstep(d / reach));
+  }
+  return floor;
 }

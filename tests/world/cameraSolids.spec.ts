@@ -36,4 +36,15 @@ describe('camera solids', () => {
     }
     expect(biggest).toBeLessThan(0.5);
   });
+
+  it('gives the roof over a point inside the footprint only, with no margin round it', () => {
+    const roof = solids.roofAt(c.x, c.y);
+    expect(roof).toBeGreaterThan(10 + buildingHeight(b) - m(0.01));
+    expect(roof).toBeLessThan(solids.floorAt(c.x, c.y));
+    // Walking out: the roof stops at the wall, where the eye's floor still eases down.
+    let d = 0;
+    while (Number.isFinite(solids.roofAt(c.x + d, c.y))) d += m(0.05);
+    expect(solids.roofAt(c.x + d + m(0.5), c.y)).toBe(-Infinity);
+    expect(Number.isFinite(solids.floorAt(c.x + d + m(0.5), c.y))).toBe(true);
+  });
 });

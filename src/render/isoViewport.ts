@@ -95,7 +95,7 @@ export interface IsoRig {
    * A continuous function of position, so the camera is lifted out of a
    * building without a jump and never blocked.
    */
-  setSolids(floorAt: ((x: number, y: number) => number) | null): void;
+  setSolids(floorAt: ((x: number, y: number) => number) | null, roofAt?: ((x: number, y: number) => number) | null): void;
   /**
    * One frame of the pull's own time, `dt` seconds, as Cinemachine's
    * Deoccluder times it: nothing until a building has stood in the way
@@ -116,6 +116,8 @@ const PULL_HOLD = 0.4;
 const PULL_OUT = 0.6;
 /** How far over the ground under it the perspective camera keeps, units. */
 const GROUND_CLEARANCE = m(1.6);
+/** How far the eye steps back out of the margin round a wall (`apply`), units. */
+const BACK = m(4);
 
 export function createIsoRig(
   initial: Vec2,
@@ -258,7 +260,60 @@ export function createIsoRig(
         const y = camera.position.y + (target.y - camera.position.y) * t;
         return y < floorAt(camera.position.x + (target.x - camera.position.x) * t, -(camera.position.z + (target.z - camera.position.z) * t));
       };
-      if (inside(0)) {
+      // Inside a building's walls, not merely in the margin round them that
+      // the floor above eases down over (`cameraSolids.ts` `roofAt`, no margin).
+      const roof = roofAt;
+      const within = (t: number): boolean => {
+        const y = camera.position.y + (target.y - camera.position.y) * t;
+        return y < roof!(camera.position.x + (target.x - camera.position.x) * t, -(camera.position.z + (target.z - camera.position.z) * t));
+      };
+      if (roof) {
+        // Decided by the walls, NOT by the margin round them alone: the point
+        // looked at in a podium by a tower, the eye in the tower, took the eye
+        // up to the eased floor over it - 58 m up, looking down into its own
+        // roof, a grey screen; an eye merely beside a wall was lifted half the
+        // tower's height, or left a hand from a window looking into the room
+        // (2026-10-14). In turn:
+        // 1. The point looked at inside a building goes onto the roof over it,
+        //    the eye with it: the view turns round what is seen there (Cesium
+        //    picks its pivot on the scene's content); a building grown where
+        //    the view looked does the same.
+        if (within(1)) {
+          const lift = roof(target.x, -target.z) + eyeLift(halfHeight) - target.y;
+          target.y += lift;
+          camera.position.y += lift;
+        }
+        if (within(0) && !within(1)) {
+          // 2. The eye inside a building, the point outside it: the eye brought
+          //    along the line of sight to where it leaves the walls
+          //    (Cinemachine's Deoccluder, "Pull Camera Forward"), past them.
+          let lo = 0, hi = 1;
+          for (let i = 0; i < 20; i++) {
+            const mid = (lo + hi) / 2;
+            if (within(mid)) lo = mid; else hi = mid;
+          }
+          camera.position.lerp(target, hi);
+        } else if (within(0)) {
+          // 4. Both still inside (a point on a roof the eye's tower overhangs): over the roof.
+          camera.position.y = Math.max(camera.position.y, floorAt(camera.position.x, -camera.position.z));
+        }
+        if (!within(0) && inside(0)) {
+          // 3. The eye outside the walls but nearer one than the camera's
+          //    radius (the margin, Cinemachine's "Camera Radius": "distance to
+          //    maintain from any obstacle"): a step back along the line of
+          //    sight, away from the wall, as far as the margin, at most `BACK`.
+          const length = Math.max(camera.position.distanceTo(target), 1e-6);
+          const back = -BACK / length;
+          if (!inside(back)) {
+            let lo = back, hi = 0;
+            for (let i = 0; i < 20; i++) {
+              const mid = (lo + hi) / 2;
+              if (inside(mid)) hi = mid; else lo = mid;
+            }
+            camera.position.lerp(target, lo);
+          }
+        }
+      } else if (inside(0)) {
         if (inside(1)) camera.position.y = floorAt(camera.position.x, -camera.position.z);
         else {
           let lo = 0, hi = 1;
@@ -301,6 +356,8 @@ export function createIsoRig(
   let groundAt: ((x: number, y: number) => number) | null = null;
   /** The lowest the eye may stand over buildings (`setSolids`). */
   let solidsAt: ((x: number, y: number) => number) | null = null;
+  /** The roof over a point inside a building, -Infinity outside (`setSolids`). */
+  let roofAt: ((x: number, y: number) => number) | null = null;
   const projected = new Vector3();
 
   /**
@@ -525,8 +582,9 @@ export function createIsoRig(
       apply();
       return true;
     },
-    setSolids(next) {
+    setSolids(next, roof = null) {
       solidsAt = next;
+      roofAt = roof;
       apply();
     },
     resize(nextWidth, nextHeight) {

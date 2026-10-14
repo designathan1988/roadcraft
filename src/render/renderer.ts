@@ -3087,7 +3087,7 @@ export function createSceneRenderer(
       // frame of the blast was 440 ms of it (2026-10-09). Each record's floor
       // is kept while the record and the ground are the same (`cameraSolidsKeeper`).
       if (cameraSolidsKept.follow(net.doc.buildings, `${net.doc.terrainRevision}:${net.revision}`)) {
-        rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y));
+        rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
         townSolids = () => cameraSolidsKept.solids();
       }
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
