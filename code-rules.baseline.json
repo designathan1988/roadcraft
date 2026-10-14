@@ -12,7 +12,6 @@
  "heavy-call-per-frame  src/render/buildings/buildingMesh.ts assembleBuildingMeshesSteps  computeBoundingSphere": 1,
  "heavy-call-per-frame  src/render/buildings/buildingMesh.ts boundInstances  computeBoundingBox": 1,
  "heavy-call-per-frame  src/render/buildings/layer.ts recordText  JSON.stringify": 1,
- "heavy-call-per-frame  src/render/buildings/layer.ts update  JSON.stringify": 1,
  "heavy-call-per-frame  src/render/buildings/signature.ts buildSignature  computeBoundingSphere": 1,
  "heavy-call-per-frame  src/render/elements.ts buildElementLayer  computeBoundingSphere": 1,
  "heavy-call-per-frame  src/render/flatAtlas.ts buildFlatFar  computeBoundingSphere": 1,

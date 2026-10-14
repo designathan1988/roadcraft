@@ -55,6 +55,12 @@ export interface MassCells {
   /** The cells made again from their buildings' masses (by cell key); a cell whose masses are the same objects is kept. */
   update(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
   /**
+   * Only the cells given made again (a cell given no masses goes), the others
+   * left as they are: what one building changed costs its cell, not the town
+   * (docs/AUDITORIA-2026-10-14.md A1).
+   */
+  patch(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
+  /**
    * Which cells are drawn near (their detail) and which far (their masses),
    * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
    * metre spans at a metre's distance in a perspective view, or `orthoPx`
@@ -125,32 +131,42 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     cell.mesh.geometry.dispose();
     cell.mesh = null;
   };
+  /** A cell made again from its buildings' masses, unless they are the same objects. */
+  const put = (key: string, masses: readonly MassingChunk[]): void => {
+    const known = cells.get(key);
+    if (known && sameMasses(known.masses, masses)) return;
+    if (known) drop(known);
+    const comma = key.indexOf(',');
+    const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+    const made = cellMesh(masses, kit);
+    const cell: Cell = {
+      masses, mesh: made?.mesh ?? null,
+      x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
+      top: made?.top ?? 0, near: known?.near ?? true,
+    };
+    // A building reaching past its cell's edge: the cell's box is its masses'.
+    const box = made?.mesh.geometry.boundingBox;
+    if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
+    if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
+    cells.set(key, cell);
+  };
   return {
     group,
-    /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, on a new buildings key). */
+    /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, the whole town). */
     update(byCell) {
-      for (const [key, masses] of byCell) {
-        const known = cells.get(key);
-        if (known && sameMasses(known.masses, masses)) continue;
-        if (known) drop(known);
-        const comma = key.indexOf(',');
-        const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-        const made = cellMesh(masses, kit);
-        const cell: Cell = {
-          masses, mesh: made?.mesh ?? null,
-          x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
-          top: made?.top ?? 0, near: known?.near ?? true,
-        };
-        // A building reaching past its cell's edge: the cell's box is its masses'.
-        const box = made?.mesh.geometry.boundingBox;
-        if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
-        if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
-        cells.set(key, cell);
-      }
+      for (const [key, masses] of byCell) put(key, masses);
       for (const [key, cell] of cells) {
         if (byCell.has(key)) continue;
         drop(cell);
         cells.delete(key);
+      }
+    },
+    /** @rebuild Called when some buildings changed (`layer.ts` `update`, their cells only). */
+    patch(byCell) {
+      for (const [key, masses] of byCell) {
+        if (masses.length) { put(key, masses); continue; }
+        const known = cells.get(key);
+        if (known) { drop(known); cells.delete(key); }
       }
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
