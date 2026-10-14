@@ -508,21 +508,20 @@ export function createBuildingLayer(): BuildingLayer {
       if (key !== storedKey) {
         if (!warming || warming.key !== key) {
           const queue = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
-          // A town none of whose buildings is made yet - the opening, a map
-          // opened - is a load, not an edit of a running game: it takes the
-          // loading budget (Unity's backgroundLoadingPriority High, 50 ms a
-          // frame) instead of the 6 ms an edit may take. At 6 ms a frame the
-          // 761 buildings of the default town came 10-20 s after its roads.
-          const unmade = stored === null ? queue.length : queue.reduce((n, b) => n + (chunks.has(b.id) ? 0 : 1), 0);
+          // A town none of whose buildings is made yet - the opening, a map opened - is a load, not an edit of
+          // a running game: it takes the loading budget (Unity's backgroundLoadingPriority High, 50 ms a frame)
+          // instead of the 6 ms an edit may take. At 6 ms a frame the 761 buildings of the default town came
+          // 10-20 s after its roads. Made = has its mass; NOT its chunk, which a far one never keeps (every
+          // edit was a load: AUDITORIA A2).
+          const unmade = stored === null ? queue.length : queue.reduce((n, b) => n + (masses.has(b.id) ? 0 : 1), 0);
           warming = { key, queue, at: 0, loading: unmade > LOADING_COUNT, massed: false };
           // A change overtakes the cell being streamed in: made again from the new records.
           streaming = null;
           forcedNear = forcedCells(queue);
         }
-        // A load's time is its own (Unity: the most loading may take in a
-        // frame), not what the frame's other work left: shared, it got
-        // nothing while the traffic's topology took every frame's allowance,
-        // and the town stood without buildings for over 20 s.
+        // A load's time is its own (Unity: the most loading may take in a frame), not what the frame's other work
+        // left: shared, it got nothing while the traffic's topology took every frame's allowance, and the town
+        // stood without buildings for over 20 s.
         const until = warming.loading ? performance.now() + (this.hidden ? HIDDEN_SLICE_MS : LOADING_SLICE_MS) : workUntil(WARM_SLICE_MS);
         if (!until) return false;
         while (warming.at < warming.queue.length && performance.now() < until) {
