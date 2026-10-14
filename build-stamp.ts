@@ -14,7 +14,7 @@ import type { Plugin } from 'vite';
  * `/__build` afresh on every request, so the stamp stays right after a
  * fast-forward without a restart; a production build bakes it in.
  */
-export interface BuildStamp {
+interface BuildStamp {
   readonly branch: string;
   readonly hash: string;
   readonly date: string;
@@ -71,7 +71,7 @@ function readGitFiles(start = process.cwd()): { branch: string; hash: string } |
   }
 }
 
-export function readBuildStamp(): BuildStamp {
+function readBuildStamp(): BuildStamp {
   const files = readGitFiles();
   return {
     branch: git(['rev-parse', '--abbrev-ref', 'HEAD']) || files?.branch || 'unknown',

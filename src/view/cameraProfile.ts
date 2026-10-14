@@ -25,13 +25,13 @@ const NEAR_HALF = m(1.2);
 /** The tilt the camera keeps at a far zoom: the angle the game was drawn for. */
 export const FAR_TILT = (48 * Math.PI) / 180;
 /** The tilt the camera eases to at the closest zoom: nearly level, a pedestrian's view. */
-export const NEAR_TILT = (6 * Math.PI) / 180;
+const NEAR_TILT = (6 * Math.PI) / 180;
 /** The lowest tilt allowed far away (an overview never looks at the horizon) and close up (looking up at a facade). */
-export const FAR_MIN_TILT = (20 * Math.PI) / 180;
+const FAR_MIN_TILT = (20 * Math.PI) / 180;
 export const NEAR_MIN_TILT = (-30 * Math.PI) / 180;
 /** The lens, vertical field of view in degrees: long far away, wider in the street. */
-export const FAR_FOV = 35;
-export const NEAR_FOV = 55;
+const FAR_FOV = 35;
+const NEAR_FOV = 55;
 /** A standing person's eyes, world units. */
 export const EYE_HEIGHT = m(1.7);
 
