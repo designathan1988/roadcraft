@@ -238,13 +238,11 @@ export interface SceneHandle {
   setTransitXray(on: boolean): void;
   /** The track being laid, built as it will be (`buildTrackPreview`); null removes it. */
   setTransitPreview(preview: { mode: 'train' | 'metro'; points: readonly { x: number; y: number }[] } | null): void;
-  /** The lots of the Zoning tool laid on the ground (`lotOverlay.ts`); null removes them. */
   /**
-   * The lots on the ground; `changes`, the document's diary: what the ground
-   * moved under is laid again. True while lots are left to lay in the next
-   * frames (`lotOverlay.ts` `LAY_SLICE_MS`): a frame is wanted.
+   * The lots of the Zoning tool coloured into the ground, all of them from
+   * the next frame (`lotOverlay.ts`); null removes them.
    */
-  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): boolean;
+  setLotOverlay(input: LotOverlayInput | null): void;
   /**
    * A blow on a building at world (x, y, z), `strength` 1..10: it breaks
    * (`destruction.ts`). Returns true when nothing of it is left standing.
@@ -2015,10 +2013,7 @@ export function createSceneRenderer(
         group.add(track.group);
         done.push(() => track.dispose());
       }
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      const lots = lotOverlay.warm();
-      group.add(lots.group);
-      done.push(() => lots.dispose());
+      // The lots need no program of their own: the ground's materials draw them (`lotOverlay.ts`).
       void compileAhead(group).then(() => { for (const finish of done) finish(); });
     } catch (error) {
       console.warn('preview shader warm-up skipped', error);
@@ -2699,9 +2694,9 @@ export function createSceneRenderer(
         world.add(transitPreview.group);
       }
     },
-    setLotOverlay(input, changes) {
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      return lotOverlay.set(input, changes);
+    setLotOverlay(input) {
+      lotOverlay ??= createLotOverlay();
+      lotOverlay.set(input);
     },
     setPolePreview(net, preview) {
       const key = preview && elevation

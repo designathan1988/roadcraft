@@ -3,6 +3,7 @@ import { CanvasTexture, Color, DoubleSide, FrontSide, MeshStandardMaterial, Repe
 import { bakedTexture, bakeSurface, disposeBakedTextures, fbm, makeNoise, rememberBakedTexture, type SurfaceBake } from './mesh/textureBaker';
 import { applyDetail, detailSwitch, disposeDetailTextures } from './mesh/detailLayer';
 import { applyRoadEdges } from './mesh/roadEdges';
+import { applyLotOverlay } from './lotOverlay';
 import { m } from '@world/units';
 
 /**
@@ -442,6 +443,15 @@ export function createMaterials(anisotropy: number): SceneMaterials {
   applyDetail(vergeMaterial, { kind: 'grass', macroTile: VERGE_TILE, albedo: 1, normal: 1.2, macroBlur: 2 }, anisotropy);
   applyDetail(deckMaterial, { kind: 'concrete', macroTile: DECK_TILE, albedo: 0.6, normal: 0.8, macroBlur: 1 }, anisotropy);
   applyDetail(parapetMaterial, { kind: 'concrete', macroTile: DECK_TILE, albedo: 0.6, normal: 0.8, macroBlur: 1 }, anisotropy);
+  // The lots coloured into the street's own surfaces (`lotOverlay.ts`): a
+  // lot's front line lies on the footway's edge, and a lot drawn point by
+  // point can cross a carriageway. The terrain does the same (`terrain.ts`).
+  applyLotOverlay(asphalt, 'asphalt');
+  applyLotOverlay(asphaltRaised, 'asphalt-raised');
+  applyLotOverlay(footwayMaterial, 'footway');
+  applyLotOverlay(kerbMaterial, 'kerb');
+  applyLotOverlay(vergeMaterial, 'verge');
+  applyLotOverlay(deckMaterial, 'deck');
 
   return {
     asphalt,
