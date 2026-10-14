@@ -2135,9 +2135,11 @@ function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
       if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
       const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
       if (id === null) {
-        // A lot refused (nothing fits it) is set aside; done when none is left open.
-        const open = doc.lots.some((l) => l.use && (l.building === undefined || !doc.buildings.has(l.building as BuildingId)) && !lotTool.refused.has(l.id));
-        if (!open) { done = true; break; }
+        // A lot refused (nothing fits it) is set aside; done when none is left
+        // open, as the document's index of open lots counts them (zoned, no
+        // building standing, not set aside). DO NOT filter `doc.lots` here: it
+        // ran once per lot refused, every lot each time.
+        if (doc.openLots.count(lotTool.refused) === 0) { done = true; break; }
         continue;
       }
       const fresh = doc.buildings.get(id as BuildingId);
