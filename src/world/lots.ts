@@ -199,7 +199,17 @@ function facingCorners<T extends readonly Vec2[]>(c: T): Vec2[] {
  * New lots for land with none yet, and the lots the paving now covers. Pure:
  * the caller stores the result (`applyLots`).
  */
-export interface LotPlan { add: Candidate[]; keys: string[]; drop: number[] }
+export interface LotPlan {
+  add: Candidate[];
+  keys: string[];
+  drop: number[];
+  /**
+   * Where the land of each key lies (`keys[i]`'s at `keyRects[i]`): a key new
+   * to the document is written in the diary there (`applyLots`). Absent (a
+   * plan made by hand): a key with no place is the whole map.
+   */
+  keyRects?: ChangeRect[];
+}
 
 export function planLots(doc: RoadDoc, net: Network): LotPlan {
   const steps = planLotsSteps(doc, net);
@@ -227,12 +237,13 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       l.corners.some((q) => paved({ x: q.x + (lotCentre(l).x - q.x) * 0.15, y: q.y + (lotCentre(l).y - q.y) * 0.15 }))) drop.push(l.id);
     if (i % 64 === 63) yield;
   }
-  if (!ribbons.length) return { add: [], keys: [], drop };
+  if (!ribbons.length) return { add: [], keys: [], drop, keyRects: [] };
   const known = new Set(doc.lotKeys);
   const dropping = new Set(drop);
   const kept = doc.lots.filter((l) => !dropping.has(l.id));
   const add: Candidate[] = [];
   const keys: string[] = [];
+  const keyRects: ChangeRect[] = [];
   /**
    * A new lot made to fit round the lots already there: what of it lies on
    * one is cut away (a boolean difference - the separating-axis test was only
@@ -374,15 +385,16 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       const pts = piece.cells.map((c) => ({ x: minX + ((c % W) + 0.5) * RASTER, y: minY + (Math.floor(c / W) + 0.5) * RASTER }));
       const box = orientedBox(hull(pts));
       const key = `b:${Math.round(stepsIn(box.c.x, 4))},${Math.round(stepsIn(box.c.y, 4))},${Math.round(stepsIn(box.L, 4))},${Math.round(stepsIn(box.D, 4))}`;
-      keys.push(key);
-      if (known.has(key)) continue;
       // Grow the raster box by half a raster cell: its points are cell centres.
       const L = box.L + RASTER, D = box.D + RASTER;
+      const at = (s: number, t: number): Vec2 => ({ x: box.c.x + box.u.x * s + box.v.x * t, y: box.c.y + box.u.y * s + box.v.y * t });
+      keys.push(key);
+      keyRects.push(rectAround([at(-L / 2, -D / 2), at(L / 2, -D / 2), at(L / 2, D / 2), at(-L / 2, D / 2)])!);
+      if (known.has(key)) continue;
       const rows = D >= TWO_ROWS ? 2 : 1;
       const depth = D / rows;
       const columns = Math.max(1, Math.round(L / Math.max(MIN_LOT, Math.min(depth, LOT_FRONTAGE))));
       const width = L / columns;
-      const at = (s: number, t: number): Vec2 => ({ x: box.c.x + box.u.x * s + box.v.x * t, y: box.c.y + box.u.y * s + box.v.y * t });
       // The block's frame for a point: along its length (s) and across it (t).
       const frame = (q: Vec2): { s: number; t: number } => {
         const dx = q.x - box.c.x, dy = q.y - box.c.y;
@@ -468,6 +480,13 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
         const mid = point((s0 + s1) / 2, face);
         const key = `s:${Math.round(stepsIn(mid.x, 4))},${Math.round(stepsIn(mid.y, 4))},${Math.round(stepsIn(len, 4))}`;
         keys.push(key);
+        // The strip's land: its two edges sampled along it (a bent street bulges).
+        const edge: Vec2[] = [];
+        for (let k = 0, n = Math.max(1, Math.ceil(len / LOT_FRONTAGE)); k <= n; k++) {
+          const s = s0 + (len * k) / n;
+          edge.push(point(s, face - m(1)), point(s, face + LOT_DEPTH));
+        }
+        keyRects.push(rectAround(edge)!);
         if (known.has(key)) continue;
         // Cut in equal lots, round the lots already there: a corner lot of a
         // cross street's strip, or a stored lot. Each proposed lot touching
@@ -507,7 +526,7 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
   // No snap afterwards: every lot is cut to the land, flush with its footways
   // (a hair back, `LAND_CLEARANCE`); a snap put the corners back onto the
   // footway's edge, and what grew there touched the street.
-  return { add, keys, drop };
+  return { add, keys, drop, keyRects };
 }
 
 /**
@@ -580,9 +599,22 @@ export function applyLots(doc: RoadDoc, plan: LotPlan): boolean {
     doc.lots.length = at;
   }
   for (const c of plan.add) doc.lots.push({ id: doc.nextLotId++, corners: c.corners });
+  // Where the lots went and came, and the land of each key new to the
+  // document. DO NOT write `null` (the whole map) when only keys are new:
+  // every reader of the lots worked the town out again for land that has no
+  // lot more or less. A key with no place (a plan made by hand) is the whole map.
+  const rects: ChangeRect[] = [];
+  for (const lot of [...gone, ...plan.add]) { const r = rectAround(lot.corners); if (r) rects.push(r); }
+  let placeless = false;
   // By a set, not `lotKeys.includes` per key (keys × keys).
-  for (const k of plan.keys) if (!known.has(k)) { known.add(k); doc.lotKeys.push(k); }
-  doc.lotsChanged(lotRects([...gone, ...plan.add]), 'lotes planejados');
+  plan.keys.forEach((k, i) => {
+    if (known.has(k)) return;
+    known.add(k);
+    doc.lotKeys.push(k);
+    const r = plan.keyRects?.[i];
+    if (r) rects.push(r); else placeless = true;
+  });
+  doc.lotsChanged(placeless ? null : rects, 'lotes planejados');
   return true;
 }
 
