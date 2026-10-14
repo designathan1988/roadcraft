@@ -21,8 +21,10 @@
   Commit sempre com `git commit --only <meus caminhos>` (registra só esses arquivos e ignora o resto
   do índice; git-scm.com/docs/git-commit, `--only`), depois de ler `git diff` dos próprios arquivos.
   Duas vezes no mesmo dia um commit levou o trabalho da outra sessão (49d12f3, 777b12a).
-- Antes de rodada pesada (check completo, sonda no Chrome), avisar a outra sessão: rodar junto dá
-  falso tempo esgotado nos testes (citySpin a 10 s).
+- Cada conversa usa a sua fatia da máquina (i9-12900K, 32 GB, RTX 3060) e roda na hora, sem esperar a
+  outra (2026-10-14): "não tem cabimento usar 100% da cpu em um processo". `scripts/sessionJob.mjs`
+  (job do Windows: 25% da CPU e 8 GB por conversa, os agentes dentro). Se o jogo não roda na fatia, o
+  jogo está lento e é isso que se corrige.
 
 Como usar a pasta `memory/`: `ESTADO.md` e `ORDENS.md` entram sozinhos em toda sessão (importados
 pelo `CLAUDE.md` da raiz; doc oficial, code.claude.com/docs/en/memory, seção "Instructions seem lost

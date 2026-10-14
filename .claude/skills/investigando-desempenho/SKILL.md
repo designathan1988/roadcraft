@@ -57,8 +57,10 @@ sim do jogador.
 
 ## Antes de rodar o jogo
 
-- Rodar o jogo pesa na máquina: avise a outra sessão (`ListAgents`, `SendMessage`) e não rode
-  junto com o check completo dela.
+- Cada conversa roda na própria fatia da máquina (`scripts/sessionJob.mjs`: 25% da CPU, 8 GB),
+  na hora, sem esperar a outra. Se o jogo não aguenta a fatia, essa é a causa a corrigir.
+- Tempo medido com a máquina dividida vale para comparar antes e depois no mesmo momento
+  (alternando), não como número absoluto.
 
 ## Armadilhas já vistas
 

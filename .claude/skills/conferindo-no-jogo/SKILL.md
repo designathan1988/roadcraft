@@ -21,8 +21,8 @@ dois lados (`"city": { "seed": 1 }`). Passos no topo de `scripts/look.mjs`. Câm
 arrasta, direito gira, roda aproxima; o esquerdo é da ferramenta. Detalhe pequeno (texto, junta,
 borda de sombra): `"dpr": 2` e `{ "shot": "nome", "clip": [x, y, w, h] }`.
 
-**2 Rodar.** Siga "Antes de rodar o jogo" da skill `investigando-desempenho` (jogo no ar, nenhum
-check pesado de outra sessão rodando, aviso por `SendMessage`).
+**2 Rodar.** Jogo no ar na 5300. Roda na hora, na fatia da conversa (`scripts/sessionJob.mjs`),
+sem esperar outra sessão.
 `node scripts/look.mjs <roteiro.json>`. A primeira linha tem de ser a placa de vídeo (RTX); o
 script para se cair em renderizador de software. Leia os erros do console em `relatorio.json`.
 

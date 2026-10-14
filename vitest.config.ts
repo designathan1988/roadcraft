@@ -1,9 +1,21 @@
 import { defineConfig } from 'vitest/config';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
+import { cpus } from 'node:os';
 import { modelUrlsPlugin } from './model-urls-plugin';
+import { joinSessionJob, share } from './scripts/sessionJob.mjs';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+// Every run of the specs inside the conversation's share of the machine (`scripts/sessionJob.mjs`), also a
+// bare `npx vitest` an agent starts: its workers are this process's children, in the same job.
+if (process.env['ROADCRAFT_IN_JOB'] !== '1') {
+  const joined = joinSessionJob();
+  if (joined.joined) process.env['ROADCRAFT_IN_JOB'] = '1';
+  else if (process.platform === 'win32') console.error(`vitest: not in the conversation's job (${joined.why})`);
+}
+/** As many workers as the share has processors (6 of 24 at 25 %). */
+const SHARE_WORKERS = Math.max(1, Math.floor((cpus().length * share().percent) / 100));
 
 /**
  * The specs that took 10 s or more (`tests/slow.json`): left out of every run
@@ -63,8 +75,8 @@ export default defineConfig({
     // A CAP on the workers, not the default of one per hardware thread. Each
     // worker can be simulating a whole map; on a 24-thread machine the default
     // started 23 of them per run, and a few runs side by side froze the
-    // computer the game is played on. Raise it with VITEST_MAX_WORKERS.
-    maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 6),
+    // computer the game is played on. At most the conversation's share (VITEST_MAX_WORKERS asks for fewer).
+    maxWorkers: Math.min(SHARE_WORKERS, Number(process.env.VITEST_MAX_WORKERS ?? SHARE_WORKERS)),
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

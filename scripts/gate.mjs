@@ -72,7 +72,7 @@ function check() {
     encoding: 'utf8',
     timeout: 170_000,
     maxBuffer: 64 << 20,
-    env: { ...process.env, RUN_LIMITED_WAIT_S: '30', RUN_LIMITED_TIMEOUT_S: '130' },
+    env: { ...process.env, RUN_LIMITED_TIMEOUT_S: '130' },
   });
 }
 

@@ -53,6 +53,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from '@playwright/test';
+import { joinSessionJob } from './sessionJob.mjs';
 
 const file = process.argv[2];
 if (!file) {
@@ -77,6 +78,11 @@ const [width, height] = plan.viewport ?? [1920, 1080];
 const ATTEMPTS = 3;
 const RELOADED = 'a página recarregou no meio (um arquivo foi salvo e o Vite recarregou o jogo)';
 
+// The headless game inside the conversation's share of the machine (`sessionJob.mjs`): this process joins
+// the job, and the Chrome it starts - browser, GPU and renderer processes - is in it too. If the game cannot
+// run within the share, the game is too slow: make it faster, DO NOT lift the cap.
+const job = joinSessionJob();
+console.log(job.joined ? `share: ${job.percent}% CPU, ${job.memoryGb} GB (${job.name})` : `share: not applied (${job.why})`);
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist'] });
 let report;
 try {

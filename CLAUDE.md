@@ -69,8 +69,10 @@ ponta a ponta, com desempenho e qualidade gráfica excelentes, na cidade de 10 k
 - O Chromium que o Playwright baixa não abre nesta máquina ("configuração lado a lado incorreta");
   por isso o roteiro usa `channel: 'chrome'`, o Chrome instalado (playwright.dev/docs/browsers).
 - Com a janela do Claude minimizada, o navegador embutido não desenha. O roteiro não depende disso.
-- Rodar o jogo no roteiro pesa na máquina: avise a outra sessão antes, e não rode durante o check
-  completo dela.
+- Cada conversa tem a sua fatia da máquina e roda na hora, sem esperar a outra (ordem do jogador,
+  2026-10-14): `scripts/sessionJob.mjs` põe o `run-limited`, o vitest e o `look.mjs` (com o Chrome)
+  num job do Windows com teto rígido de 25% da CPU e 8 GB por conversa. Jogo que não roda na fatia
+  está lento: corrija o jogo, não levante o teto. Um jogo sem janela por conversa.
 
 ## Várias sessões
 - Outras sessões podem estar editando. Rode `git status` antes; não mexa em arquivo de outra

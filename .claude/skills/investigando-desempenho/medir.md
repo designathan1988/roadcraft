@@ -1,7 +1,7 @@
 # Medir
 
 Antes: o jogo no ar (`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5300/` dá 200; senão
-`npm run dev`), e a outra sessão avisada (ver SKILL.md, "Antes de rodar o jogo").
+`npm run dev`). Roda na fatia da conversa, sem esperar outra sessão (ver SKILL.md, "Antes de rodar o jogo").
 
 ## Tabela do plano
 
