@@ -196,23 +196,36 @@ export class TransitSim {
       if (stations.length < 2) continue;
       // Out along the stations and back: one loop.
       const order = [...stations, ...stations.slice(1, -1).reverse()];
+      // Each leg starts at the point the one before it ended on (the same
+      // station met on the track, `railPath`), and the last one ends on the
+      // loop's first point: every point is kept once, as polylines are joined
+      // at a shared end (shapely `line_merge`, `remove_repeated_points` with
+      // tolerance 0), and the loop closes by its `length`. DO NOT push whole
+      // legs: every joint was a stretch of length zero on the loop, and so
+      // was its closing stretch.
       const points: Vec2[] = [];
       const marks: { stop: number; index: number }[] = [];
+      const repeats = (p: Vec2): boolean => {
+        const last = points[points.length - 1];
+        return last !== undefined && last.x === p.x && last.y === p.y;
+      };
       let ok = true;
       for (let i = 0; i < order.length; i++) {
         const a = order[i]!, b = order[(i + 1) % order.length]!;
         const leg = railPath(g, a, b);
         if (!leg) { ok = false; break; }
-        marks.push({ stop: a.id, index: points.length });
-        points.push(...(points.length ? leg.slice(0) : leg));
+        marks.push({ stop: a.id, index: repeats(leg[0]!) ? points.length - 1 : points.length });
+        for (const p of leg) if (!repeats(p)) points.push(p);
       }
+      if (points.length > 1 && points[0]!.x === points[points.length - 1]!.x && points[0]!.y === points[points.length - 1]!.y) points.pop();
       if (!ok || points.length < 2) continue;
       const at: number[] = [0];
       const stretch = (a: Vec2, b: Vec2): number => Math.hypot(b.x - a.x, b.y - a.y);
       for (let i = 1; i < points.length; i++) at.push(at[i - 1]! + stretch(points[i - 1]!, points[i]!));
       const length = at[at.length - 1]! + stretch(points[points.length - 1]!, points[0]!);
       // The loop turns back at the first station and at the last one out.
-      const stationsOn = marks.map((mk, i) => ({ stop: mk.stop, s: at[mk.index]!, turn: i === 0 || i === stations.length - 1 }));
+      // A mark on the point the loop closed on (the one taken off above) is its first.
+      const stationsOn = marks.map((mk, i) => ({ stop: mk.stop, s: at[mk.index % points.length]!, turn: i === 0 || i === stations.length - 1 }));
       const trains: Train[] = [];
       for (let k = 0; k < line.vehicles; k++) {
         const s = (length * k) / line.vehicles;

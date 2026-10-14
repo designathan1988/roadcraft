@@ -81,9 +81,12 @@ interface Lorry {
   waited: number;
 }
 
+/** The seed of the lorries' own draws: which yard, which dock, the driver, the time at the dock. */
+const LORRY_SEED = 0x10221;
+
 export class LorryTraffic {
   private readonly lorries = new Map<VehicleId, Lorry>();
-  private readonly rng = new Rng(0x10221);
+  private rng = new Rng(LORRY_SEED);
   private clock = 0;
   /** The dock being planned now. */
   private planning: { building: BuildingId; dock: number } | null = null;
@@ -95,11 +98,21 @@ export class LorryTraffic {
   /** The world last stepped: a reset opens the lanes its lorries closed there. */
   private world: SimWorld | null = null;
 
+  /**
+   * A different map (`LotTraffic.reset`, from `AmbientWorld.reset`): the
+   * lorries of the old one gone, the yard in hand dropped, and the draws
+   * started from the seed again, as a new `LorryTraffic` would. DO NOT keep
+   * the stream running across maps: what the lorries did on a map depended
+   * on how many draws the map opened before it took.
+   */
   reset(w: SimWorld | null = this.world): void {
     for (const lorry of this.lorries.values()) if (w) openLanes(w, lorry.id);
     this.lorries.clear();
     this.planning = null;
+    this.making = null;
+    this.neighbours = null;
     this.clock = 0;
+    this.rng = new Rng(LORRY_SEED);
   }
 
   /** Lorries driving off the road now. */
@@ -194,12 +207,17 @@ export class LorryTraffic {
   /** The lots and buildings near each yard (`yardNeighbours`), kept while they stand. */
   private neighbours: YardNeighbours | null = null;
 
-  /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
-  private yardFor(w: SimWorld, building: BuildingId): Yard | null | undefined {
+  /**
+   * A building's yard, made a slice a call (`buildYard`): undefined while it
+   * is being made. `begin` false: only a yard already made, or the one in
+   * hand carried on; another is not begun in its place.
+   */
+  private yardFor(w: SimWorld, building: BuildingId, begin = true): Yard | null | undefined {
     const b = w.doc.buildings.get(building);
     if (!b) return null;
     const known = knownYard(w, b);
     if (known !== undefined) return known;
+    if (!begin && this.making?.building !== b) return undefined;
     const key = yardKey(w);
     if (!this.making || this.making.building !== b || this.making.key !== key) {
       this.neighbours = yardNeighbours(w, this.neighbours);
@@ -230,7 +248,13 @@ export class LorryTraffic {
     if (!free.length) return;
     const pick = free[Math.floor(this.rng.float() * free.length)]!;
     const dock = Math.floor(this.rng.float() * pick.docks);
-    const yard = this.yardFor(w, pick.building);
+    // With a dock of another yard in hand, only a yard already made is taken:
+    // the yard in hand is not thrown away (its grid and clearance, many
+    // slices) to begin this one. DO NOT call `yardFor` to begin a yard here
+    // while `planning` names another building: it took the place of the one
+    // being made, which `plan` began again from nothing the next tick, back
+    // and forth.
+    const yard = this.yardFor(w, pick.building, this.planning === null || this.planning.building === pick.building);
     if (yard === null) return;
     if (yard === undefined || !yard.planned(dock)) { this.planning ??= { building: pick.building, dock }; return; }
     const ways = yard.ways(dock);
