@@ -12,7 +12,7 @@ import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells,
   HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, RELEASE_FRAMES, STREAM_AHEAD, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
-import { createFlagLayer } from './flagLayer';
+import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { drawsSignature } from './signature';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { emitMassing, type MassingChunk } from './massing';
@@ -318,15 +318,29 @@ export function createBuildingLayer(): BuildingLayer {
   const lotFiling = new CellFiling<BuildingId, Kept>();
   const putKept = (id: BuildingId, k: Kept): void => {
     kept.set(id, k);
+    flagsFor(id);
     if (!k.summary.lot) { lotFiling.remove(id); return; }
     const box = buildingBounds(k.b);
     lotFiling.file(id, k, [box.minX, box.minY, box.maxX, box.maxY]);
   };
   const dropKept = (id: BuildingId): void => {
     kept.delete(id);
+    flagsFor(id);
     lotFiling.remove(id);
   };
   let flagsMoved = false;
+  /**
+   * The flags of the shown buildings, by id, kept as what is kept of them and what is shown changes
+   * (`flagsFor`): the flag layer is given these. DO NOT walk every shown building for its flags at
+   * each summary that lands: the town was walked once a landing while it streamed in.
+   */
+  const flagsOf = new Map<BuildingId, readonly FlagInstance[]>();
+  const flagsFor = (id: BuildingId): void => {
+    const flags = lastShown.has(id) ? kept.get(id)?.summary.flags : undefined;
+    if (flags === flagsOf.get(id)) return;
+    if (flags) flagsOf.set(id, flags); else flagsOf.delete(id);
+    flagsMoved = true;
+  };
   const keep = (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv): void => {
     const byKey = new Map(entries.map((e) => [e.key, e]));
     for (const s of summaries) {
@@ -335,7 +349,6 @@ export function createBuildingLayer(): BuildingLayer {
       // A building cut open: its flags and lots are those of the whole one.
       if (!b || !entry || s.key.includes('|')) continue;
       putKept(b.id, { record: entry.record, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
-      if (s.flags) flagsMoved = true;
     }
   };
   const keptFor = (b: Building): Kept | undefined => {
@@ -354,8 +367,8 @@ export function createBuildingLayer(): BuildingLayer {
   /** The buildings shown, as last put together (`update`): the flags are read from what is kept of them. */
   const lastShown = new Map<BuildingId, Building>();
   const flyFlags = (): void => {
-    const flags = [];
-    for (const b of lastShown.values()) { const f = kept.get(b.id)?.summary.flags; if (f) flags.push(...f); }
+    const flags: FlagInstance[] = [];
+    for (const list of flagsOf.values()) flags.push(...list);
     flagLayer.set(flags);
     flagsMoved = false;
   };
@@ -574,8 +587,9 @@ export function createBuildingLayer(): BuildingLayer {
             if (b) cover.set(b);
             else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); masses.delete(id); }
             const shown = b && town.has(id) ? b : undefined;
-            if (!shown) { lastShown.delete(id); signatures.remove(id); continue; }
+            if (!shown) { lastShown.delete(id); flagsFor(id); signatures.remove(id); continue; }
             lastShown.set(id, shown);
+            flagsFor(id);
             const k = keptFor(shown);
             if (!k && fliesFlag(shown)) backlog.push(shown);
             signatures.set(shown, k?.summary.signatureFloor ?? signatureFloorOf(shown, naturalAt, pavedAt));
@@ -628,6 +642,8 @@ export function createBuildingLayer(): BuildingLayer {
           cover.index(doc.buildings.all());
           lastShown.clear();
           for (const b of shown) lastShown.set(b.id, b);
+          for (const id of [...flagsOf.keys()]) flagsFor(id);
+          for (const b of shown) flagsFor(b.id);
           // Far buildings flying a flag only (all: ~7 ms a frame for 40 s, 2026-10-14).
           backlog = shown.filter((b) => !keptFor(b) && fliesFlag(b));
         }
