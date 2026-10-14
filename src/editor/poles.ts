@@ -1,11 +1,10 @@
-import type { Polyline } from '@core/polyline';
 import { type Vec2, dist } from '@core/vec2';
 import type { PoleId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import type { CrossingAccess } from '@world/landscape';
 import { CROSSWALK_DEPTH } from '@world/approach';
-import { POLE_KERB_INSET, onFootway, poleLinesAt, poleLinesIn, type PoleLines } from '@world/poleLines';
+import { POLE_KERB_INSET, nearestOnContour, onFootway, poleLinesAt, poleLinesIn, type OnContour, type PoleLines } from '@world/poleLines';
 import { CELL } from '@world/cells';
 import type { ChangeRect } from '@world/changes';
 import { CURB_BAND, Level } from '@world/roadTypes';
@@ -69,27 +68,6 @@ export { onFootway };
 
 function lampFor(index: number, mode: PoleLampMode): boolean {
   return mode === 'all' ? true : mode === 'none' ? false : poleCarriesLamp(index);
-}
-
-/** A place on a contour. */
-interface OnContour {
-  readonly contour: number;
-  readonly s: number;
-  readonly at: Vec2;
-  readonly distance: number;
-}
-
-function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnContour | null {
-  let best: OnContour | null = null;
-  lines.contours.forEach((line: Polyline, contour: number) => {
-    const box = line.bbox;
-    if (at.x < box.minX - reach || at.x > box.maxX + reach || at.y < box.minY - reach || at.y > box.maxY + reach) return;
-    const hit = line.closestPoint(at);
-    if (hit.distance <= reach && (!best || hit.distance < best.distance)) {
-      best = { contour, s: hit.s, at: hit.point, distance: hit.distance };
-    }
-  });
-  return best;
 }
 
 export type PoleSnapKind = 'pole' | 'footway' | 'free';

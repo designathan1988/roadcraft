@@ -1,6 +1,7 @@
 import { EndType, FillRule, JoinType, inflatePathsD, unionD, type PathsD } from 'clipper2-ts';
 
 import { Polyline } from '@core/polyline';
+import { EPS } from '@core/scalar';
 import type { MultiPoly } from '@core/clipper';
 import type { Vec2 } from '@core/vec2';
 import type { Network } from './network';
@@ -8,7 +9,7 @@ import { carriesPedestrians } from './pedestrianAccess';
 import { LAMP_ZONE } from './section';
 import { crossingAccesses, crossingAccessesAt, type CrossingAccess } from './landscape';
 import { levelPolygons, levelRingsOf } from './surfaces';
-import { union } from '@core/clipper';
+import { CLIPPER_SCALE, union } from '@core/clipper';
 import { Level, type SurfaceLevel } from './roadTypes';
 import type { NodeId, SegmentId } from './ids';
 import { deckOf } from './walkways';
@@ -42,6 +43,100 @@ export interface PoleLines {
   readonly paving: MultiPoly;
   readonly kerbed: MultiPoly;
   readonly accesses: readonly CrossingAccess[];
+  /** The contours' edges filed by place (`nearestOnContour`). */
+  readonly edges: ContourEdges;
+}
+
+/** The edges of a set of contours filed by place: each edge (contour, index) in every bucket its bounds reach. */
+export interface ContourEdges { readonly buckets: ReadonlyMap<number, readonly number[]> }
+/** Bucket edge of the contour index, world units: about the reach of the questions asked of it. */
+const EDGE_BUCKET = m(8);
+const edgeBucket = (bx: number, by: number): number => (bx + 1048576) * 2097152 + (by + 1048576);
+
+function contourEdges(contours: readonly Polyline[]): ContourEdges {
+  const buckets = new Map<number, number[]>();
+  contours.forEach((line, contour) => {
+    const xy = line.xy;
+    for (let i = 0; i + 1 < line.n; i++) {
+      const ax = xy[i * 2]!, ay = xy[i * 2 + 1]!, bx = xy[i * 2 + 2]!, by = xy[i * 2 + 3]!;
+      for (let cx = Math.floor(Math.min(ax, bx) / EDGE_BUCKET); cx <= Math.floor(Math.max(ax, bx) / EDGE_BUCKET); cx++) {
+        for (let cy = Math.floor(Math.min(ay, by) / EDGE_BUCKET); cy <= Math.floor(Math.max(ay, by) / EDGE_BUCKET); cy++) {
+          const key = edgeBucket(cx, cy);
+          const list = buckets.get(key);
+          if (list) list.push(contour, i); else buckets.set(key, [contour, i]);
+        }
+      }
+    }
+  });
+  return { buckets };
+}
+
+/** A place on a contour. */
+export interface OnContour {
+  readonly contour: number;
+  readonly s: number;
+  readonly at: Vec2;
+  readonly distance: number;
+}
+
+/**
+ * The nearest place on the lines' contours within `reach`, exactly as walking
+ * every contour with `Polyline.closestPoint` answers it: per contour the first
+ * edge at the least squared distance, then the first contour strictly nearer
+ * than the ones before it. Only the edges filed near the point are measured
+ * (`PoleLines.edges`): an edge within `reach` is always among them, and one
+ * farther could never be the answer. Walking every edge of every contour was
+ * the cost of the pole route graph's casts across the streets and grew with
+ * the city (in a network of open streets the kerb line is one contour round
+ * the whole town): 11.4 s of the generation of a city of radius 2,560 m.
+ * DO NOT go back to scanning the contours: the question is local.
+ */
+export function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnContour | null {
+  const { buckets } = lines.edges;
+  const px = at.x, py = at.y;
+  // Per contour: the least squared distance found, the first edge giving it, and its parameter.
+  const bestOf = new Map<number, { distSq: number; edge: number; t: number }>();
+  for (let cx = Math.floor((px - reach) / EDGE_BUCKET); cx <= Math.floor((px + reach) / EDGE_BUCKET); cx++) {
+    for (let cy = Math.floor((py - reach) / EDGE_BUCKET); cy <= Math.floor((py + reach) / EDGE_BUCKET); cy++) {
+      const list = buckets.get(edgeBucket(cx, cy));
+      if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) {
+        const contour = list[k]!, i = list[k + 1]!;
+        const xy = lines.contours[contour]!.xy;
+        // The arithmetic of `Polyline.nearestSegment`, in its order, so the answer is the same bit for bit.
+        const ax = xy[i * 2]!, ay = xy[i * 2 + 1]!;
+        const abx = xy[i * 2 + 2]! - ax, aby = xy[i * 2 + 3]! - ay;
+        const l2 = abx * abx + aby * aby;
+        let t = 0, qx = ax, qy = ay;
+        if (l2 >= EPS) {
+          t = ((px - ax) * abx + (py - ay) * aby) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          qx = ax + abx * t;
+          qy = ay + aby * t;
+        }
+        const ex = px - qx, ey = py - qy;
+        const distSq = ex * ex + ey * ey;
+        const was = bestOf.get(contour);
+        if (!was || distSq < was.distSq || (distSq === was.distSq && i < was.edge)) bestOf.set(contour, { distSq, edge: i, t });
+      }
+    }
+  }
+  let best: OnContour | null = null;
+  for (const contour of [...bestOf.keys()].sort((a, b) => a - b)) {
+    const { distSq, edge, t } = bestOf.get(contour)!;
+    const distance = Math.sqrt(distSq);
+    if (distance > reach || (best && !(distance < best.distance))) continue;
+    const line = lines.contours[contour]!;
+    const xy = line.xy, cum = line.cum;
+    const ax = xy[edge * 2]!, ay = xy[edge * 2 + 1]!;
+    best = {
+      contour,
+      s: cum[edge]! + t * (cum[edge + 1]! - cum[edge]!),
+      at: { x: ax + (xy[edge * 2 + 2]! - ax) * t, y: ay + (xy[edge * 2 + 3]! - ay) * t },
+      distance,
+    };
+  }
+  return best;
 }
 
 const cache = new WeakMap<Network, { revision: number; lines: PoleLines }>();
@@ -81,7 +176,8 @@ export function poleLines(net: Network): PoleLines {
   const include = polesInclude(net);
   const kerbed = levelPolygons(net, Level.Curb, include);
   const paving = levelPolygons(net, Level.Sidewalk, include);
-  const lines = { contours: contoursOf(kerbed), paving, kerbed, accesses: crossingAccesses(net) };
+  const contours = contoursOf(kerbed);
+  const lines = { contours, paving, kerbed, accesses: crossingAccesses(net), edges: contourEdges(contours) };
   cache.set(net, { revision: net.revision, lines });
   return lines;
 }
@@ -107,7 +203,14 @@ interface Regional {
   readonly stamp: string;
   readonly lines: PoleLines;
 }
-const regional = new WeakMap<Network, Map<string, Regional>>();
+/** What is kept per network: the regional lines by rectangle, and each street's and junction's footway rings by the object the network built for it. */
+interface NetworkLines { readonly regions: Map<string, Regional>; readonly rings: WeakMap<object, FootRings> }
+const perNetwork = new WeakMap<Network, NetworkLines>();
+function stateOf(net: Network): NetworkLines {
+  let state = perNetwork.get(net);
+  if (!state) perNetwork.set(net, state = { regions: new Map(), rings: new WeakMap() });
+  return state;
+}
 /**
  * Rectangles kept per network, the least recently asked let go first: the
  * runs being planned and the cell under the pointer. Kept up to a town's
@@ -126,8 +229,7 @@ const REGIONAL_KEPT = 64;
  * not read. Its crossing landings are those of the nodes of its streets.
  */
 export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
-  let byRect = regional.get(net);
-  if (!byRect) regional.set(net, byRect = new Map());
+  const byRect = stateOf(net).regions;
   const key = `${rect[0]},${rect[1]},${rect[2]},${rect[3]}`;
   const known = byRect.get(key);
   const segmentEpoch = net.segmentCells.epoch, junctionEpoch = net.junctionCells.epoch;
@@ -164,8 +266,9 @@ export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
   const include = polesInclude(net);
   const kerbed = union(levelRingsOf(net, Level.Curb, ribbons, junctions, include));
   const paving = union(levelRingsOf(net, Level.Sidewalk, ribbons, junctions, include));
+  const contours = contoursOf(kerbed);
   const lines: PoleLines = {
-    contours: contoursOf(kerbed), paving, kerbed,
+    contours, paving, kerbed, edges: contourEdges(contours),
     accesses: crossingAccessesAt(net, [...ends].sort((a, b) => a - b)),
   };
   if (byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
@@ -271,15 +374,124 @@ export function insideMulti(p: Vec2, polys: MultiPoly): boolean {
   return false;
 }
 
+/**
+ * A ring as Clipper takes it in (`core/clipper.ts` `input`): its vertices on
+ * Clipper's grid (in grid steps), a vertex repeating the one before dropped and
+ * the closing repeat too, an outer ring turned to positive winding and a hole
+ * to negative; with its bounds, in grid steps.
+ */
+interface WindingRing { readonly xy: Float64Array; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
+
+function windingRings(polys: MultiPoly): WindingRing[] {
+  const out: WindingRing[] = [];
+  for (const poly of polys) {
+    for (let k = 0; k < poly.length; k++) {
+      const ring = poly[k]!;
+      const pts: number[] = [];
+      for (const pt of ring) {
+        const x = Math.round(pt[0]! * CLIPPER_SCALE), y = Math.round(pt[1]! * CLIPPER_SCALE);
+        const n = pts.length;
+        if (n && pts[n - 2] === x && pts[n - 1] === y) continue;
+        pts.push(x, y);
+      }
+      if (pts.length > 2 && pts[0] === pts[pts.length - 2] && pts[1] === pts[pts.length - 1]) pts.length -= 2;
+      if (pts.length < 6) continue;
+      let area = 0;
+      for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) area += pts[j]! * pts[i + 1]! - pts[i]! * pts[j + 1]!;
+      // Positive for the outer ring, negative for a hole, whatever the order it was authored in.
+      if ((area > 0) !== (k === 0)) {
+        for (let a = 0, b = pts.length - 2; a < b; a += 2, b -= 2) {
+          [pts[a], pts[b]] = [pts[b]!, pts[a]!];
+          [pts[a + 1], pts[b + 1]] = [pts[b + 1]!, pts[a + 1]!];
+        }
+      }
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < pts.length; i += 2) {
+        x0 = Math.min(x0, pts[i]!); x1 = Math.max(x1, pts[i]!);
+        y0 = Math.min(y0, pts[i + 1]!); y1 = Math.max(y1, pts[i + 1]!);
+      }
+      out.push({ xy: Float64Array.from(pts), x0, y0, x1, y1 });
+    }
+  }
+  return out;
+}
+
+/** The winding number of a ring round a point, both in grid steps (Sunday's crossing rule: upward edges with the point on their left count +1, downward ones with it on their right -1). */
+function windingOf(ring: WindingRing, x: number, y: number): number {
+  const xy = ring.xy;
+  let wn = 0;
+  for (let i = 0, j = xy.length - 2; i < xy.length; j = i, i += 2) {
+    const ax = xy[j]!, ay = xy[j + 1]!, bx = xy[i]!, by = xy[i + 1]!;
+    if (ay <= y) {
+      if (by > y && (bx - ax) * (y - ay) - (x - ax) * (by - ay) > 0) wn++;
+    } else if (by <= y && (bx - ax) * (y - ay) - (x - ax) * (by - ay) < 0) wn--;
+  }
+  return wn;
+}
+
+/** The footway and kerb rings of a street or a junction (`NetworkLines.rings`): made again with the object the network builds for it. */
+interface FootRings { readonly paving: WindingRing[]; readonly kerbed: WindingRing[] }
+
+/**
+ * Whether a point is inside the union of a level's rings of the streets with
+ * footways round it: the union is NonZero (`core/clipper.ts`), so the point is
+ * in it exactly when the windings of the rings round it add up to anything
+ * but 0 - asked of the rings of the streets and junctions filed over the
+ * point, with no union made. The question used to make the union and the
+ * kerb-line offset of every street round the point's cell (Clipper) just to
+ * answer it, and to throw that away again from a cache of 64 regions shared
+ * with the pole runs: on a city of radius 2,560 m it was 17.6 s of the
+ * generation, growing faster than the city.
+ * DO NOT answer a point from a region's union again: the answer is local.
+ */
+function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readonly kerbed: boolean } {
+  const include = polesInclude(net);
+  const at: ChangeRect = [p.x, p.y, p.x, p.y];
+  const x = p.x * CLIPPER_SCALE, y = p.y * CLIPPER_SCALE;
+  const footRings = stateOf(net).rings;
+  let paving = 0, kerbed = 0;
+  const add = (rings: FootRings): void => {
+    for (const r of rings.paving) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) paving += windingOf(r, x, y);
+    for (const r of rings.kerbed) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) kerbed += windingOf(r, x, y);
+  };
+  for (const id of net.segmentCells.idsMeeting(at)) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon) continue;
+    let rings = footRings.get(ribbon);
+    if (!rings) {
+      rings = {
+        paving: windingRings(levelRingsOf(net, Level.Sidewalk, [ribbon], [], include)),
+        kerbed: windingRings(levelRingsOf(net, Level.Curb, [ribbon], [], include)),
+      };
+      footRings.set(ribbon, rings);
+    }
+    add(rings);
+  }
+  for (const id of net.junctionCells.idsMeeting(at)) {
+    const byLevel = net.junctions.get(id);
+    if (!byLevel) continue;
+    let rings = footRings.get(byLevel);
+    if (!rings) {
+      rings = {
+        paving: windingRings(levelRingsOf(net, Level.Sidewalk, [], [[id, byLevel]], include)),
+        kerbed: windingRings(levelRingsOf(net, Level.Curb, [], [[id, byLevel]], include)),
+      };
+      footRings.set(byLevel, rings);
+    }
+    add(rings);
+  }
+  return { paving: paving !== 0, kerbed: kerbed !== 0 };
+}
+
 /** Whether a point is on a footway: on the paving, outside every kerbed carriageway. */
 export function onFootway(net: Network, p: Vec2): boolean {
-  const lines = poleLinesAt(net, p);
-  return insideMulti(p, lines.paving) && !insideMulti(p, lines.kerbed);
+  const inside = insideLevels(net, p);
+  return inside.paving && !inside.kerbed;
 }
 
 /** Whether a point is on a kerbed carriageway (inside a kerb). */
 export function onKerbed(net: Network, p: Vec2): boolean {
-  return insideMulti(p, poleLinesAt(net, p).kerbed);
+  return insideLevels(net, p).kerbed;
 }
 
 /** The work `kerbward` did: kerb edges walked. A count for the performance budgets (`core/perfBudget.ts`). */

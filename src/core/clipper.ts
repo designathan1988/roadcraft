@@ -10,6 +10,8 @@ export type MultiPoly = Poly[];
 
 /** Shared integer grid: one step is 0.04 mm. */
 const SCALE = Math.round(perM(25_000));
+/** The grid Clipper's input is rounded to, steps per world unit (`input`): what a test against its result must round to too. */
+export const CLIPPER_SCALE = SCALE;
 type KernelMultiPoly = ReturnType<typeof clipping.union>;
 
 function signedDoubleArea(path: Path64): number {
