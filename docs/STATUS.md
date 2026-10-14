@@ -246,6 +246,31 @@ reproduzido; aguardando o jogador dizer onde viu (PROBLEMS, Aguardando o jogador
   A2), R27 (cada edição recopia e re-difere o documento inteiro, ~18–20 ms só o clone) e R30
   (oito luzes pontuais fixas, ~1 ms de GPU).
 
+### Auditoria de desempenho pelo código, e cinco correções (2026-10-13, noite)
+- Varredura do repositório inteiro (render, shaders, workers, simulação, documento, editor,
+  interface, configs de build), sem agentes (decisão do jogador), com pesquisa por item. A lista
+  completa, com arquivo:linha, técnica e fonte, está em `OTIMIZACAO.md` (raiz), que passa a ser
+  a lista de trabalho desta frente; o que foi conferido e está certo está lá para não ser reaberto.
+- Feito, um commit por correção, build e typecheck verdes em cada um:
+  1. **Detalhe dos prédios só nas células perto, com streaming (HLOD de verdade)** —
+     `render/buildings/layer.ts`, `massCells.ts`, novo `layerCells.ts`, `renderer.ts`. O detalhe
+     de uma célula só existe enquanto ela é perto pelo erro de tela e dentro do alcance da vista;
+     longe, só a massa; célula que fica perto chega em fatias por quadro (aquecida na GPU antes
+     de aparecer), célula longe há 10 s solta malhas e arrays. Visto no painel: rua, bairro e canto
+     em detalhe, mapa inteiro em massa; geometrias 920 → 712 ao afastar, 518 no canto a zoom 9.
+  6. **Um passe de saída**: tone mapping, sRGB e o grade (CAS, contraste, vibrância, vinheta) no
+     mesmo fragmento (`render/postprocess.ts`); um passe de tela cheia a menos por quadro. Visto
+     de dia e de noite.
+  7. **Materiais compartilhados** nas cercas e nas placas (`render/barriers.ts`, `signs.ts`).
+  9. **Desgaste dos prédios por prazo** (`main.ts` `decayWatch`): só os prédios vencidos, pelo
+     diário, não o mapa inteiro a cada 3 s.
+  10. **Um material para os lampejos de via** (`render/renderer.ts`).
+- Pendente, com o porquê em `OTIMIZACAO.md`: BatchedMesh por acabamento (#2, depois do #1
+  assentar), simulação em worker (#3, arquitetura), R27/R22 no documento (#4, #8), luzes pontuais
+  (#5, decisão do jogador).
+- NÃO rodado: `npm run check` inteiro (o pedido desta rodada limitou a verificação a build e
+  typecheck); por isso nada foi enviado ao GitHub.
+
 ## Próxima etapa
 - Corrigir a lista do analisador pelos achados por quadro (sobreposição dos lotes, cercas,
   tela de sobreposição, AmbientWorld), contadores em todos os produtos derivados, e os specs
