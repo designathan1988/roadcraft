@@ -515,7 +515,8 @@ export function createBuildingLayer(): BuildingLayer {
           // edit was a load: AUDITORIA A2).
           const unmade = stored === null ? queue.length : queue.reduce((n, b) => n + (masses.has(b.id) ? 0 : 1), 0);
           warming = { key, queue, at: 0, loading: unmade > LOADING_COUNT, massed: false };
-          // A change overtakes the cell being streamed in: made again from the new records.
+          // A change overtakes the cell being streamed in: made again from the new records; what it made is on the GPU, in no scene (AUDITORIA A7).
+          for (const made of streaming?.made ?? []) made.part.dispose();
           streaming = null;
           forcedNear = forcedCells(queue);
         }
