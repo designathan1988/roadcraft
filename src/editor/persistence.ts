@@ -8,6 +8,7 @@ import { readEconomy } from '@world/economy';
 import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
+import { PARTS_FROM_BUILDINGS, type PartStore, PartedSaves, indexedDbParts } from './chunkedSave';
 
 /** Where the map is kept. */
 const KEY = 'roadcraft.world.v7';
@@ -98,7 +99,12 @@ export class Persistence {
    */
   onSaveFailed: (() => void) | null = null;
 
-  constructor(private readonly storageKey = KEY, private readonly store: LargeStore = indexedDbStore) {}
+  /** A large map's parts (`chunkedSave.ts`): never one text of the whole map. */
+  private readonly parted: PartedSaves;
+
+  constructor(private readonly storageKey = KEY, private readonly store: LargeStore = indexedDbStore, parts: PartStore = indexedDbParts(openSaves, SAVES_STORE)) {
+    this.parted = new PartedSaves(parts, storageKey);
+  }
 
   /**
    * Set once this instance has rejected the stored entry.
@@ -144,6 +150,17 @@ export class Persistence {
   documentText: ((doc: RoadDoc) => string | null) | null = null;
 
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
+    if (doc.buildings.size >= PARTS_FROM_BUILDINGS) {
+      // A large map in parts, the parts its edit reached (`chunkedSave.ts`); the small key points there.
+      this.writeSettings(settings);
+      const key = this.storageKey, savedAt = Date.now();
+      this.partsKept = true;
+      void this.parted.save(doc, withUnit(settings), savedAt).then((ok) => {
+        if (!ok) { this.onSaveFailed?.(); return; }
+        try { localStorage.setItem(key, `{"version":2,"stored":"parts","savedAt":${savedAt}}`); } catch (error) { console.error('[save] the pointer to the parts was not written; the parts stand', error); }
+      });
+      return true;
+    }
     let session: string;
     try {
       const text = this.documentText?.(doc) ?? JSON.stringify(doc.toJSON());
@@ -156,6 +173,7 @@ export class Persistence {
       try {
         localStorage.setItem(this.storageKey, session);
         this.writeSettings(settings);
+        this.dropParts();
         return true;
       } catch {
         // Full: the large store below.
@@ -168,9 +186,24 @@ export class Persistence {
     const savedAt = Date.now();
     void this.store.put(key, session).then((ok) => {
       if (!ok) { this.onSaveFailed?.(); return; }
+      this.dropParts();
       try { localStorage.setItem(key, `{"version":2,"stored":"indexeddb","savedAt":${savedAt}}`); } catch { /* the stored copy stands */ }
     });
     return true;
+  }
+
+  /** Whether parts of a large map may still be stored (`dropParts`). */
+  private partsKept = true;
+
+  /**
+   * The parts of a large map removed once the map is saved whole again (it
+   * shrank, or another map was opened): they would only hold space, the
+   * whole copy being newer (`loadSessionAsync`). Once, until parts are written again.
+   */
+  private dropParts(): void {
+    if (!this.partsKept) return;
+    this.partsKept = false;
+    void this.parted.clear();
   }
 
   /**
@@ -185,16 +218,26 @@ export class Persistence {
       const at = raw ? /"savedAt":(\d+)/.exec(raw.slice(0, 64)) : null;
       if (at && local) localAt = Number(at[1]);
     } catch { /* storage blocked */ }
+    // The newest of the three copies: the small key, a large map in parts, the large store.
+    let best = local, bestAt = localAt;
+    const parted = await this.parted.read().catch((error: unknown) => { console.warn('[save] the parts of the map could not be read', error); return null; });
+    if (parted && parted.savedAt > bestAt) {
+      const session = { version: 2, document: parted.document, settings: parted.settings };
+      if (isSavedSession(session)) {
+        best = { document: session.document, settings: this.readSettings() ?? normalizeSettings(session.settings) };
+        bestAt = parted.savedAt;
+      }
+    }
     const stored = await this.store.get(this.storageKey);
-    if (!stored) return local;
+    if (!stored) return best;
     try {
       const parsed: unknown = JSON.parse(stored);
       if (isRecord(parsed) && isSavedSession(parsed)) {
         const storedAt = isFiniteNumber(parsed.savedAt) ? parsed.savedAt : 0;
-        if (storedAt > localAt) return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
+        if (storedAt > bestAt) return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
       }
-    } catch { /* unreadable: the small key's map */ }
-    return local;
+    } catch { /* unreadable: the newest other copy */ }
+    return best;
   }
 
   saveSessionSoon(doc: RoadDoc, settings: () => SavedSettings): void {
@@ -316,7 +359,7 @@ export class Persistence {
     try {
       const parsed: unknown = JSON.parse(raw);
       // A pointer to the large store (`saveSession`): read by `loadSessionAsync`.
-      if (isRecord(parsed) && parsed.stored === 'indexeddb') return null;
+      if (isRecord(parsed) && (parsed.stored === 'indexeddb' || parsed.stored === 'parts')) return null;
       if (isSerializedDoc(parsed)) return { document: parsed, settings: defaultSettings() };
       if (isSavedSession(parsed)) {
         return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
@@ -346,6 +389,8 @@ export class Persistence {
     void this.store.get(key).then(async (text) => {
       if (text !== null && await this.store.put(`${key}.unreadable.${Date.now()}`, text)) await this.store.delete(key);
     });
+    // And a large map in parts, copied aside and then removed in one transaction.
+    void this.parted.setAside(Date.now());
     let raw: string | null;
     try {
       raw = localStorage.getItem(this.storageKey);

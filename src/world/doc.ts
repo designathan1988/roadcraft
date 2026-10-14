@@ -1648,6 +1648,11 @@ export class RoadDoc {
     return `${JSON.stringify(head).slice(0, -1)},"buildings":${this.buildings.toText()}${after === '{}' ? '' : `,${after.slice(1, -1)}`}}`;
   }
 
+  /** `toJSON` without the buildings: the head of a map saved in parts (`editor/chunkedSave.ts`). */
+  withoutBuildings(): SerializedDoc {
+    return this.serialized(false);
+  }
+
   /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
   private serialized(withBuildings: boolean): SerializedDoc {
     return {
