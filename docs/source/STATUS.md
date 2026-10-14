@@ -1,5 +1,7 @@
 # Roadcraft — status
 
+> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+
 O que está ativo no jogo hoje, o que está aberto e as decisões do jogador.
 Só o estado atual: o histórico fica no git (`git log -p docs/STATUS.md`; a
 versão longa anterior está em `557c5384`).

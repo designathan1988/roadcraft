@@ -9,8 +9,8 @@ num cache é AMORTIZAÇÃO: fica marcado assim, nunca "feito" (o jogador, 2026-1
 
 Contexto medido antes desta auditoria (docs/STATUS.md, cidade de 1.348 prédios, RTX 3060,
 1920×1080): GPU p50 16,9 ms na rua, 1.408 chamadas de desenho, 44 M de triângulos; vista do
-mapa inteiro 11 ms depois do HLOD (S1a). O que já estava certo e NÃO deve ser reaberto está na
-seção "Conferido e correto".
+mapa inteiro 11 ms depois do HLOD (S1a). O que foi conferido, e quando reabrir, está na seção
+"Conferido".
 
 Regra desta lista: otimizar é manter ou melhorar a imagem com menos tempo de quadro. Nenhum
 item corta prédio, distância, sombra, resolução, textura ou efeito.
@@ -70,22 +70,49 @@ item corta prédio, distância, sombra, resolução, textura ou efeito.
 | 52 | ALTO | **Sólidos da câmera arquivados de novo para a cidade inteira a cada prédio crescido** (a chave seguia `buildings.revision` e a revisão do chão; o renderer pede os sólidos todo quadro), com o piso de todos os prédios recalculado: 16,1 s na geração de 2.560 m. Regressão de b0674dd. | `src/world/buildings/cameraSolids.ts` (`cameraSolidsKeeper`, `SolidFiling`), `src/render/renderer.ts` (`groundSince`, `floorBox`), `src/world/buildings/foundation.ts` (`FLOOR_READ_REACH`) | Arquivamento persistente: o prédio que o diário nomeia sai e entra de novo nas células; na mudança de chão, só os prédios cuja área de leitura do piso o retângulo do diário toca (`BuildingStore.near`). | [Nystrom, Spatial Partition](https://gameprogrammingpatterns.com/spatial-partition.html) | **feito** (eb31083): `building+1:solids` x3,82 → x1,00 (fora da base); fotos das vistas da câmera iguais antes e depois |
 | 11 | BAIXO | Nível **cutaway/dimmed ("ver dentro", "ocultar outros") montava a cidade inteira em detalhe**, de uma vez e no quadro. | `src/render/buildings/layer.ts:453-480` | Só as células perto e as do prédio aberto/editado; o resto fica na massa (de longe é igual). Resolvido pelo item 1. | item 1 | **feito** (junto com o 1) |
 
-## Conferido e correto (não reabrir)
+## Conferido (o que foi medido; reabrir quando a medida, a foto ou o código mostrar o contrário)
 
-- **Prédios por célula e por instância** (`buildingMesh.ts`): cascas concatenadas por acabamento, peças em `InstancedMesh` por tipo, `polygonOffset` nas peças, arrays soltos após o upload (`onUpload`). Culling por célula (bounding sphere). Nível de longe por erro de tela com histerese (`massCells.ts`).
-- **Faixas de upload**: `agents.ts:2222-2250`, `transit.ts:331-340`, `grass.ts:325-340`, `blobShadows.ts:66-73`, `casualties.ts:156-158`, `gore.ts:228-234`, `exhaust.ts:229`, `natureTrees.ts:250-255`, `farForest.ts:374-375`: só o prefixo escrito sobe (`addUpdateRange`). O campo de desgaste (`wear.ts`) sobe por linhas tocadas a cada 2 s.
-- **Sombras**: redesenho só quando o sol, a grade ou um caster se mexeu (`renderer.ts:3421-3433`); frustum ajustado à vista e preso em texels do chão (`environment.ts:500-553`); bias proporcional ao texel. Cascatas (CSM) NÃO são ganho aqui: o CSM do three cria N luzes direcionais e N passes de sombra e injeta shader em todo material; o frustum ajustado à vista com um só mapa de 4096 é a 1ª cascata e o jogo olha de cima.
-- **Compilação de shaders antes do uso** (`uploads.ts`, `compileAhead`, varredura de variantes a cada 2 s, `renderer.debug.checkShaderErrors` só em dev); texturas enviadas uma por quadro (`drainUploads`), geometrias aquecidas uma por quadro (`drainWarm`).
-- **Texturas**: cozidas uma vez em canvas (`mesh/textureBaker.ts`) com mipmaps e anisotropia por nível; não há textura de arquivo que KTX2 ajudasse (os modelos GLTF são poucos e carregados uma vez).
-- **Cor**: `outputColorSpace` sRGB, ACES, exposição 1 (pré-exposição do three já aplicada), ambiente PMREM do próprio céu, sem fog por decisão do jogador.
-- **Pós**: alvo HalfFloat multiamostrado (8×), GTAO em meia resolução lendo a profundidade da cena (sem segundo desenho da cidade), bloom só à noite, SMAA 16 passos com limiar corrigido para o espaço linear.
+Nada aqui é intocável: é o que foi conferido, com a data. Um item contradito por uma sonda, uma
+foto ou uma leitura do código volta para "Problemas" na hora (o jogador, 2026-10-14: "feito" é a
+causa fora do código, não um número da cidade de teste).
+
+- **Faixas de upload**: `agents.ts`, `transit.ts`, `grass.ts`, `blobShadows.ts`, `casualties.ts`,
+  `gore.ts`, `exhaust.ts`, `natureTrees.ts`, `farForest.ts`, `poleLayer.ts`: só o trecho escrito sobe
+  (`addUpdateRange`). O campo de desgaste (`wear.ts`) sobe por linhas tocadas.
 - **Picking**: plano do chão e alturas por consulta (`isoViewport.ts`), nenhum `Raycaster` contra malhas.
 - **Laço de quadro sob demanda** (`frameLoop.ts`): parado quando nada se mexe; nuvens a 20 Hz.
-- **Sem alocação relevante por quadro no desenho**: chaves por revisão, `WeakMap` por registro, vetores reutilizados; os `whole-map-per-frame` do analisador (`code-rules.baseline.json`) são guardados por revisão (`buildingsAreaOf`, `plantSignature`, `changedSites`, `watchRoads` 1/s).
-- **Workers**: cozimento de pessoas, fratura, ecologia, placas do chão, luz do terreno, acolchoado de roupa, LOD — todos com transferência de buffers.
-- **Descarte**: `dispose` em geometria, material e textura em toda camada; caches limitados (`cutChunks` 64, `suspension`/`looks` por idade).
-- **R30, as oito luzes pontuais (~1 ms)**: não reproduzido em 2026-10-14 (A/B na mesma vista, três medidas, diferença dentro do ruído). Não gastar tempo de novo.
-- **Falsos positivos já pagos** (docs/PROMPT-AUDITORIA.md §8): `performance.measure`, `keepGrassInputs` (morto), nuvens/luz do cânion (~0), anisotropia, tamanho do mapa de sombra.
+- **Cor**: `outputColorSpace` sRGB, ACES, exposição 1, ambiente PMREM do próprio céu, sem fog por
+  decisão do jogador.
+- **Workers**: cozimento de pessoas, fratura, ecologia, placas do chão, luz do terreno, acolchoado de
+  roupa, LOD de pessoas, pares de conflito — todos com transferência de buffers.
+- **Profundidade**: invertida em float (2026-10-14, `depthConvention.ts`); quem lê profundidade usa
+  `DEPTH_GLSL`, quem desenha sobre uma superfície usa `pullTowardEye`.
+- **R30, as oito luzes pontuais (~1 ms)**: não reproduzido em 2026-10-14 (A/B na mesma vista, três
+  medidas, diferença dentro do ruído).
+- **Falsos positivos já pagos** (docs/PROMPT-AUDITORIA.md §8): `performance.measure`,
+  `keepGrassInputs` (morto), nuvens/luz do cânion (~0), anisotropia, tamanho do mapa de sombra.
+
+### Em revisão (estava aqui como "correto"; o que mostrou o contrário)
+
+- **Prédios: nível de longe por erro de tela com histerese** (`massCells.ts`): o jogador vê prédios
+  simplificados de perto, e depois de mover a câmera a tela fica 3-4 s toda no nível simplificado
+  (2026-10-14). Agente do LOD trabalhando.
+- **Compilação de shaders antes do uso** (`compileAhead`, varredura a cada 2 s): a sonda da cidade de
+  2.560 m mostra programas ligados no primeiro desenho (`getProgramInfoLog` 0,5-1,4 s).
+- **Sombras com um só mapa de 4096 ajustado à vista**: serrilhado em degrau nos rodapés e degraus e
+  tracejado nos frisos de porta vistos de perto (2026-10-14). A recusa às cascatas (CSM) era pelo custo
+  do CSM do three; a pergunta certa é a resolução na tela de perto.
+- **"Sem alocação relevante por quadro"**: as chaves por revisão GLOBAL (`${...revision}`) invalidam
+  tudo a cada mudança de qualquer coisa — é o padrão `chave-revisao-global` do acusador, não uma
+  proteção; os `whole-map-per-frame` guardados por revisão (`buildingsAreaOf`, `plantSignature`,
+  `changedSites`, `watchRoads`) varrem o mapa inteiro sempre que a revisão anda. A chave certa é o que
+  a saída lê (o diário por tipo e lugar).
+- **Caches com teto** (`cutChunks` 64, cache LRU por bytes dos prédios): teto num cache é amortização;
+  a causa é o custo de refazer o que sai do cache.
+- **Pós: SMAA e GTAO em meia resolução**: o jogador cobra "nada de embaçado"; conferir se a meia
+  resolução e o filtro borram detalhe de perto (agente do LOD/detalhe).
+- **Texturas cozidas uma vez com mipmaps e anisotropia**: conferir nas fotos de perto (pontilhado de
+  folhagem perto do olho, 2026-10-14).
 
 ## Feito
 
