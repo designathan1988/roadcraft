@@ -13,7 +13,7 @@ import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
 import { mountHealthPanel } from '@ui/healthPanel';
 import { METERS_PER_UNIT } from '@world/units';
-import { applyLots, planLots } from '@world/lots';
+import { applyLots, planLotsSteps } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
@@ -22,8 +22,8 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { DEFAULT_CITY, planCity, type CityOptions } from '@world/cityGen/plan';
-import { greenCity, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
+import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan } from '@world/cityGen/plan';
+import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -2004,7 +2004,9 @@ mountAbout();
  * map replaced (one undo step), the planned streets laid, the lots cut and
  * zoned, then every lot built on, a slice of each frame until all stand.
  */
-let cityGrowth: { left: number; total: number; started: number; guard: number } | null = null;
+let cityGrowth: { left: number; total: number; started: number; guard: number;
+  /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
+  layout?: Generator<void, { zoned: number; squares: number; pieces: number }> } | null = null;
 function generateCity(options: CityOptions): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
   const plan = planCity(options);
   const cityDoc = layCity(plan);
@@ -2015,16 +2017,29 @@ function generateCity(options: CityOptions): { roads: number; lots: number; zone
   // relief of the maps of before, and the town stood on its lumps).
   applySnapshot({ ...cityDoc.toJSON(), relief: NEW_RELIEF }, 'import');
   if (net.revision !== doc.revision) net.rebuild();
-  applyLots(doc, planLots(doc, net));
+  // The lots, the squares, the power lines, the furniture and the zones a
+  // slice a frame (`growCity`), then the buildings: done in the call, they
+  // froze the page 0.8-1.5 s (2026-10-14; the power lines were half of it).
+  cityGrowth = { left: 0, total: 0, started: performance.now(), guard: 0, layout: layoutSteps(plan, options.seed) };
+  fitView();
+  requestDraw();
+  return { roads: doc.segments.size, lots: 0, zoned: 0, squares: 0, pieces: 0 };
+}
+/**
+ * The generated city's layout after its roads: lots cut, squares and
+ * streets dressed (`greenCitySteps`), lots zoned. Yields between slices;
+ * returns what it laid and how many lots the growth will build on.
+ */
+function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: number; squares: number; pieces: number }> {
+  applyLots(doc, yield* planLotsSteps(doc, net));
+  yield;
   // A square in each neighbourhood and the streets' trees and furniture (V7).
-  const green = greenCity(doc, net, options.seed);
+  const green = yield* greenCitySteps(doc, net, seed);
+  yield;
   const zoned = zoneCity(doc, plan);
   lotTool.refused.clear();
   lotTool.refusedFor(net.revision);
-  cityGrowth = { left: zoned, total: zoned, started: performance.now(), guard: 0 };
-  fitView();
-  requestDraw();
-  return { roads: doc.segments.size, lots: doc.lots.length, zoned, ...green };
+  return { zoned, ...green };
 }
 /**
  * Builds on the generated city's lots, forty milliseconds a frame, the
@@ -2050,6 +2065,22 @@ function growCity(): void {
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
     scene.holdBuildings(true);
     lotTool.holdOverlay(true);
+    requestDraw();
+    return;
+  }
+  if (growing.layout) {
+    // The layout first, within the slice; the lots counted as they are cut.
+    const until = performance.now() + GROW_SLICE_MS;
+    let laid: { zoned: number } | null = null;
+    caused('cidade gerada', () => {
+      for (;;) {
+        const step = growing.layout!.next();
+        if (step.done) { laid = step.value; break; }
+        if (performance.now() >= until) break;
+      }
+    });
+    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
+    cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
     requestDraw();
     return;
   }

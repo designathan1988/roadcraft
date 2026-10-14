@@ -22,7 +22,22 @@ const MIN_RUN = m(24);
 const SNAP_REACH = m(8);
 
 export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>): number {
+  const steps = layPowerLinesSteps(doc, net, segments);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * `layPowerLines` a few streets at a time: yields every `STREETS_A_STEP`
+ * segments and returns how many runs were built. A generated city's lines
+ * (half its layout) are strung a slice a frame (`main.ts`), the joins
+ * between consecutive runs kept across the yields.
+ */
+export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>): Generator<void, number> {
   let built = 0;
+  let seen = 0;
   /**
    * The pole ending a run at a node, and whether the run left from it (its
    * segment's a) or came to it (its b). A street of several segments was
@@ -40,6 +55,7 @@ export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<Seg
     if (other.leaving !== leaving && other.pole !== pole && doc.node(node)?.incident.length === 2) doc.addPoleSpan(other.pole, pole);
   };
   for (const id of [...segments].sort((a, b) => a - b)) {
+    if (++seen % STREETS_A_STEP === 0) yield;
     const segment = doc.segment(id), ribbon = net.ribbons.get(id);
     if (!segment || !ribbon || !carriesPedestrians(ribbon.road) || ribbon.road.sidewalk <= 0) continue;
     const line = ribbon.full;
@@ -66,3 +82,6 @@ export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<Seg
   }
   return built;
 }
+
+/** Segments strung between two yields of `layPowerLinesSteps`. */
+const STREETS_A_STEP = 6;

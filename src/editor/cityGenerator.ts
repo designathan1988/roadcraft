@@ -1,5 +1,5 @@
 import { nameFor } from '@world/roads/streetNames';
-import { layPowerLines } from './roads/powerLine';
+import { layPowerLinesSteps } from './roads/powerLine';
 import type { Vec2 } from '@core/vec2';
 import { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
@@ -62,6 +62,19 @@ export function widenCityFootways(doc: RoadDoc): void {
  * and pieces were laid.
  */
 export function greenCity(doc: RoadDoc, net: Network, seed: number): { squares: number; pieces: number } {
+  const steps = greenCitySteps(doc, net, seed);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * `greenCity` a slice at a time: the squares, then the power lines a few
+ * streets a step (`layPowerLinesSteps`), then the furniture and the names.
+ * Run whole it was half the frame a generated city's layout froze (2026-10-14).
+ */
+export function* greenCitySteps(doc: RoadDoc, net: Network, seed: number): Generator<void, { squares: number; pieces: number }> {
   const squares = planSquares(doc, seed);
   for (const square of squares) {
     for (const id of square.lots) deleteLot(doc, id);
@@ -69,8 +82,10 @@ export function greenCity(doc: RoadDoc, net: Network, seed: number): { squares: 
     doc.plantTrees(square.trees);
   }
   if (net.revision !== doc.revision) net.rebuild();
+  yield;
   // The power lines first (their poles lit), the furniture round them.
-  const power = layPowerLines(doc, net, doc.segments.keys()) > 0;
+  const power = (yield* layPowerLinesSteps(doc, net, doc.segments.keys())) > 0;
+  yield;
   const pieces = furnitureFor(net, doc.segments.keys(), 'complete', doc.landscape.values(), power, false);
   for (const piece of pieces) doc.addLandscape(piece.kind, piece.at);
   // Every street named (V8).
