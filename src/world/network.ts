@@ -55,6 +55,13 @@ export class Network {
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
   readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
   /**
+   * The ribbons with a footway laid flush on a side (docs/source/VIAS.md V1),
+   * filed like `segmentCells`: what asks how high the footway stands at a
+   * point (`roads/footwayRise.ts`, for every walker and every lamp) reads the
+   * cells round it, and none where nothing is flush.
+   */
+  readonly flushCells = new CellFiling<SegmentId, SegmentRibbon>();
+  /**
    * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
    * `ribbons`: what a loop over every ribbon would meet there, in the order it
    * would meet them, so a search that keeps the first of equals finds the same.
@@ -195,6 +202,7 @@ export class Network {
     this.squeezed.clear();
     this.segmentCells.copyFrom(new CellFiling());
     this.junctionCells.copyFrom(new CellFiling());
+    this.flushCells.copyFrom(new CellFiling());
   }
 
   /**
@@ -236,6 +244,7 @@ export class Network {
     for (const [seg, ribbon] of other.ribbons) this.ribbons.set(seg, ribbon);
     this.segmentCells.copyFrom(other.segmentCells);
     this.junctionCells.copyFrom(other.junctionCells);
+    this.flushCells.copyFrom(other.flushCells);
     this.trims.clear();
     for (const [seg, t] of other.trims) this.trims.set(seg, t);
     this.plateReach.clear();
