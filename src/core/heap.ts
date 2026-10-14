@@ -5,6 +5,8 @@ export class Heap {
   private order: number[] = [];
   private seq = 0;
   get size(): number { return this.items.length; }
+  /** The smallest priority waiting (Infinity when empty), without taking it. */
+  peekKey(): number { return this.items.length ? this.keys[0]! : Infinity; }
   clear(): void { this.items.length = 0; this.keys.length = 0; this.order.length = 0; this.seq = 0; }
   push(item: number, key: number): void {
     this.items.push(item); this.keys.push(key); this.order.push(this.seq++);
