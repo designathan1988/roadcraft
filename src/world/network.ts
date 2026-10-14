@@ -173,9 +173,6 @@ export class Network {
     this.log.advance(delta);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    // Every authoring invalidation is consumed. Leaving ids in these sets made
-    // subsequent edits to the same node look unchanged.
-    this.doc.clearDirty();
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
@@ -239,7 +236,6 @@ export class Network {
     this.build.copyFrom(other.build, true);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    this.doc.clearDirty();
   }
 
   private copyState(other: Network): void {

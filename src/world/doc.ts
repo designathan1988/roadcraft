@@ -174,9 +174,9 @@ export interface RoadSegment {
 /**
  * The authoring document: what the user drew, before any derived geometry.
  *
- * Mutations are applied here, mark entities dirty and move a revision;
+ * Mutations are applied here and written in the diary (`changes`);
  * `Network.rebuild()` then rebuilds what is derived from what changed (see
- * `markNode` for why not from the dirty sets). Nothing in this file knows about lanes,
+ * `markNode`). Nothing in this file knows about lanes,
  * vehicles or rendering.
  */
 /** The place a run of points (a wall, a span of wire) covers, for the diary of changes: one box round them all. */
@@ -434,9 +434,6 @@ export class RoadDoc {
     }
     return rectAround([n], pad);
   }
-
-  readonly dirtyNodes = new Set<NodeId>();
-  readonly dirtySegments = new Set<SegmentId>();
 
   node(id: NodeId): RoadNode | undefined {
     return this.nodes.get(id);
@@ -719,7 +716,6 @@ export class RoadDoc {
       const moved = `${a === String(from) ? to : a}>${b === String(from) ? to : b}`;
       if (!n.blockedMovements.includes(moved)) n.blockedMovements.push(moved);
     }
-    this.dirtyNodes.add(node);
     // The geometry is the same; what moves is the plan the traffic runs on.
     this.changes.record('traffic', this.rectsOrMap(this.nodeRect(node)), { ids: [node], detail: 'turn bans carried' });
   }
@@ -743,7 +739,6 @@ export class RoadDoc {
     const where = this.rectsOrMap(this.nodeRect(id));
     for (const sid of n.incident.slice()) this.removeSegment(sid);
     this.nodes.delete(id);
-    this.dirtyNodes.add(id);
     this.roadsChanged(where, true, { ids: [id], detail: 'node removed' });
   }
 
@@ -785,7 +780,6 @@ export class RoadDoc {
       this.markSegment(id, before);
     }
     this.nodes.delete(source);
-    this.dirtyNodes.add(source);
     dropStaleCrossing(keep);
     this.markNode(target, true, gone ? [gone] : []);
     return true;
@@ -1259,79 +1253,43 @@ export class RoadDoc {
         if (rect) rects.push(rect);
         ids.push(id);
         this.nodes.delete(id);
-        this.dirtyNodes.add(id);
       }
     }
     if (ids.length) this.roadsChanged(rects, true, { ids, detail: `${ids.length} loose nodes dropped` });
     return ids.length;
   }
 
-  // ------------------------------------------------------------ dirty marking
+  // ------------------------------------------------------------ change marking
 
   /**
-   * Marking a node dirty also marks every incident segment, and marking a
-   * segment dirty marks both of its endpoints.
+   * Writes a node's change in the diary (`roads`, and `traffic` unless only
+   * its height moved without crossing the tunnel line). The diary is the
+   * document's only clock: `revision` is its latest `roads` entry, and every
+   * consumer - `Network`, `LaneletGraph`, `SimWorld`, the renderer - reads what
+   * changed from it. `Network.rebuild()` takes the ids and rectangles written
+   * here as its candidates and compares each one's sources with what its last
+   * rebuild recorded (docs/source/VIAS.md V0).
    *
-   * That second edge matters more than it looks: adding a third leg at node A
-   * changes the trim of segment S even though S itself did not change, and
-   * moving node A changes S's *length*, which changes the trim clamp at node B.
-   *
-   * Read this next part before relying on any of it.
-   *
-   * The load-bearing effect of these methods today is `revision++`. Every
-   * consumer — `Network`, `LaneletGraph`, `SimWorld`, the renderer's path cache,
-   * the minimap — gates on a revision number. `Network.rebuild()` is
-   * incremental, but it does NOT read `dirtyNodes` or `dirtySegments`: it
-   * compares each segment's and node's sources with what its last rebuild
-   * recorded (docs/source/VIAS.md V0), because any other network built on this
-   * document clears these sets, and a set says "touched", not "changed".
-   *
-   * So the dirty sets are a correctly-maintained record nothing depends on
-   * for correctness; do not delete a `markNode`/`markSegment` call on the
-   * grounds that "nothing reads it" — the revision bump is what keeps every
-   * cache in the engine honest.
+   * There were also two "dirty" sets here (`dirtyNodes`, `dirtySegments`):
+   * nothing read them, and every road drawn and every map loaded filled them
+   * with every node and segment of the map. DO NOT bring them back: what
+   * changed is the diary's to say.
    */
   markNode(id: NodeId, traffic = true, also: readonly ChangeRect[] = []): void {
-    // A node may already be dirty when it is edited again before a rebuild.
-    // The dirty set is an invalidation *set*, while revision is a mutation
-    // clock: every real edit must advance it even when the same id is present.
-    this.dirtyNodes.add(id);
-    // Every real edit is written, even of a node already dirty: the diary is
+    // Every real edit is written, even of a node edited before: the diary is
     // the mutation clock (`revision` is its latest `roads` entry). `also`:
     // where the change reached besides the node as it stands (where it stood,
     // its roads). A node gone with nothing else known: the whole map.
     const rect = this.nodeRect(id);
     const rects = rect ? [rect, ...also] : also;
     this.roadsChanged(rects.length ? rects : null, traffic, { ids: [id] });
-    const n = this.nodes.get(id);
-    if (!n) return;
-    for (const sid of n.incident) {
-      if (!this.dirtySegments.has(sid)) {
-        this.dirtySegments.add(sid);
-        const s = this.segments.get(sid);
-        if (s) {
-          this.dirtyNodes.add(s.a);
-          this.dirtyNodes.add(s.b);
-        }
-      }
-    }
   }
 
   /** `before`: the segment's rectangle before the change, written with the one after (a road narrowed or moved leaves ground). */
   markSegment(id: SegmentId, before: ChangeRect | null = null): void {
-    this.dirtySegments.add(id);
     const rect = this.segmentRect(id);
     const rects = [rect, before].filter((r): r is ChangeRect => r !== null);
     this.roadsChanged(rects.length ? rects : null, true, { ids: [id] });
-    const s = this.segments.get(id);
-    if (!s) return;
-    this.dirtyNodes.add(s.a);
-    this.dirtyNodes.add(s.b);
-  }
-
-  clearDirty(): void {
-    this.dirtyNodes.clear();
-    this.dirtySegments.clear();
   }
 
   /** A rectangle as the diary takes it: itself, or the whole map when there is none. */
@@ -1405,8 +1363,6 @@ export class RoadDoc {
     copy.barrierIds = new IdAllocator(this.barrierIds.peek);
     copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
     copy.nextTerrainId = this.nextTerrainId;
-    for (const id of this.dirtyNodes) copy.dirtyNodes.add(id);
-    for (const id of this.dirtySegments) copy.dirtySegments.add(id);
     // At the same revisions as this document, every one of them: the copy's
     // diary goes on from this one's (what loading the copy wrote is not a
     // change), so the live network is taken over as it stands (`adopt`).
@@ -1540,9 +1496,9 @@ export class RoadDoc {
         case 'nodes': {
           const was = this.nodes.get(id as NodeId);
           if ((was || value !== undefined) && nodeMovesTraffic(was, value as RoadNode | undefined)) traffic = true;
-          put(this.nodes as Map<number, RoadNode>); this.dirtyNodes.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
+          put(this.nodes as Map<number, RoadNode>); roadsTouched = true; roadIds.push(id); break;
         }
-        case 'segments': put(this.segments as Map<number, RoadSegment>); this.dirtySegments.add(id as SegmentId); roadsTouched = true; traffic = true; roadIds.push(id); break;
+        case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; roadIds.push(id); break;
         case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
         case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); break;
         case 'landscape': put(this.landscape); kinds.add('landscape'); break;
@@ -1797,12 +1753,7 @@ export class RoadDoc {
     this.barrierIds = new IdAllocator(source.barrierIds.peek);
     this.landscapeIds = new IdAllocator(source.landscapeIds.peek);
     this.nextTerrainId = source.nextTerrainId;
-    const changed = { roads: roadsChanged, land: landMoved, barriers: barriersChanged, others };
-    if (!roadsChanged) return changed;
-    this.clearDirty();
-    for (const id of this.nodes.keys()) this.dirtyNodes.add(id);
-    for (const id of this.segments.keys()) this.dirtySegments.add(id);
-    return changed;
+    return { roads: roadsChanged, land: landMoved, barriers: barriersChanged, others };
   }
 
   // ------------------------------------------------------------ serialization
@@ -2156,8 +2107,6 @@ export class RoadDoc {
       seen.add(person.id);
       doc.people.push(person);
     }
-    for (const id of doc.nodes.keys()) doc.dirtyNodes.add(id);
-    for (const id of doc.segments.keys()) doc.dirtySegments.add(id);
     doc.roadsChanged(null, true, { detail: 'mapa carregado' });
     if (data.terrain?.length) doc.changes.record('terrain', null, { cause: 'mapa carregado' });
     return doc;
