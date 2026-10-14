@@ -33,3 +33,6 @@
 - 2026-10-14 (Hook de busca na internet): com o sim do jogador, seção "Como adicionar um produto
   derivado" no CLAUDE.md da raiz (diário em vez de revisão global, `near`, módulo puro, contador +
   teste de escala).
+- 2026-10-14 (Hook de busca na internet): `b95f63b` contadores do sim no "um prédio a mais":
+  `bays` (B10, 34 -> 130) e `yards` (B14, 17 -> 65), x3,82 na base; mutante da chave sem a revisão dos
+  prédios morto (x1, pede para sair da base).

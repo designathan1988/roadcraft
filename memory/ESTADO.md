@@ -13,7 +13,9 @@ Atualizado: 2026-10-14 ~15h30.
   - contadores por evento: o do diário está feito (`a17e808`, `building+1:ground` e `ground:idle`
     x3,82 na base; o conserto D8 os leva a 0 e tira da base). Jardins (C2), `cameraSolids` (A8/C5)
     e pads (C8) esperam a auditoria extrair a parte incremental do renderer num módulo puro
-    (combinado 2026-10-14); então este lado escreve o contador contra ele;
+    (combinado 2026-10-14); então este lado escreve o contador contra ele. Feitos também os do sim:
+    `building+1:bays` (B10, `collectBays`) e `building+1:yards` (B14, `yardNeighbours`), x3,82 na
+    base (`b95f63b`);
   - a regra "como adicionar um produto derivado" está no CLAUDE.md da raiz (sim do jogador,
     2026-10-14);
   - LSP (`workspaceSymbol`) e context7 conferidos e funcionando (2026-10-14);
@@ -42,6 +44,8 @@ Atualizado: 2026-10-14 ~15h30.
   - `cd4dc32` (Hook) `scripts/acusar.mjs` e `tests/arch/acusar.spec.ts` — **envio NÃO autorizado ainda**.
   - `6914c7d` (auditoria) lotes abertos.
   - `a17e808` (Hook) contador do leitor do chão pelo diário — **envio NÃO autorizado ainda**.
+  - `4c6b7f0` (Hook) regra do produto derivado no CLAUDE.md; `b95f63b` (Hook) contadores de baias e
+    pátios — **envio NÃO autorizado ainda**.
 - Não commitado (sessão de auditoria):
   - Em `git stash` ("portador das cascas (em espera)"): `buildingMesh.ts` + `kit.ts`, "portador de envio" das cascas (malha invisível
     que força o envio da geometria à GPU para soltar os arrays). **Em espera**: os 1,8 GB de cascas
