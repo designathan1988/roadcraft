@@ -149,6 +149,8 @@ export interface TerrainSurface {
    * window this ground holds is kept for the view coming back.
    */
   bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null, keepWindow?: boolean): void;
+  /** The fine relief let go on the graphics card while the ground is hidden; baked again by the next \`bakeRelief\`. */
+  releaseRelief?(): void;
   /** How the rivers and lakes look and move: waves, foam, current (`render/water.ts` WaterLook). */
   setWaterLook(look: WaterLook): void;
   /** The gullies the player cut or wiped, and how much of the steep land carries them of itself (`world/gullies.ts`). */
@@ -3105,6 +3107,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     bakeRelief(renderer, focus, keepWindow = false) {
       if (!waterStale) relief.bake(renderer, grid, focus, keepWindow);
     },
+    releaseRelief() { relief.release(); },
     vergeMaterial,
     updatePaint,
     get ecologyPending() { return ecologyStale && !waterStale; },

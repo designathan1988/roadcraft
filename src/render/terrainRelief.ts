@@ -268,6 +268,11 @@ export interface ReliefBake {
    * plate twice.
    */
   bake(renderer: WebGLRenderer, heights: Float64Array, focus: { readonly x: number; readonly z: number } | null, keepWindow?: boolean): void;
+  /**
+   * The bake let go on the graphics card while its ground is not drawn (a plate
+   * kept made, hidden): baked again at the next \`bake\`, the flat relief read till then.
+   */
+  release(): void;
   dispose(): void;
 }
 
@@ -446,6 +451,14 @@ export function createReliefBake(gridN: number, cell: number, half: number, macr
       layer(renderer, 1, x0, z0, WINDOW_SPAN, OCTAVES_CLOSE);
       window.set(x0, z0, WINDOW_SPAN, 1);
       performance.measure('hitch:terrain-relief-close', { start: startedAt, end: performance.now() });
+    },
+    release() {
+      // three makes a disposed target again when it is next drawn into (manual, "How to dispose of objects").
+      target.dispose();
+      textureUniform.value = RELIEF_TEXTURE.value;
+      window.w = 0;
+      dirty = true;
+      closeDirty = true;
     },
     dispose() {
       target.dispose();

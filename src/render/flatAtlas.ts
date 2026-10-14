@@ -287,6 +287,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.shown = on;
     const s = p.surface!;
     if (on) root.add(...s.meshes); else root.remove(...s.meshes);
+    // A plate kept made but not drawn holds no relief on the graphics card (a 2048-texel layer of
+    // half floats with its mips, ~43 MB, on each of the six kept): baked again when it is shown.
+    if (!on) s.releaseRelief?.();
   };
   const letGo = (p: Plate): void => {
     if (!p.surface) return;
