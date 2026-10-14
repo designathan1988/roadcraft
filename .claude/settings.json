@@ -15,8 +15,8 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PROJECT_DIR}/scripts/gate.mjs", "stop"],
-            "timeout": 900,
-            "statusMessage": "npm run check (scripts/gate.mjs)"
+            "timeout": 180,
+            "statusMessage": "checagem rápida (scripts/gate.mjs)"
           }
         ]
       }
