@@ -1,5 +1,6 @@
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
+import { JournalCursor } from '../derived';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
@@ -94,6 +95,24 @@ export class BuildingStore {
     const entries = this.journal.since(serial, ['buildings']);
     if (!entries || entries.some((e) => !e.ids)) return null;
     return entries.flatMap((e) => e.ids!) as BuildingId[];
+  }
+
+  /** A reader's place in the buildings' diary, for `changedFor`. */
+  static cursor(): JournalCursor {
+    return new JournalCursor(['buildings'], true);
+  }
+
+  /**
+   * The ids of the buildings changed since `cursor` last read this store
+   * (`BuildingStore.cursor()`); null: read them all - the first read, another
+   * store (a map opened), entries forgotten or without ids. What a product kept
+   * from the buildings reads instead of holding a serial of its own: a serial
+   * read against another document's diary answers "nothing changed" in silence
+   * (`derived.ts` `JournalCursor`).
+   */
+  changedFor(cursor: JournalCursor): BuildingId[] | null {
+    const entries = cursor.read(this.journal);
+    return entries === null ? null : entries.flatMap((e) => e.ids!) as BuildingId[];
   }
 
   get size(): number {
