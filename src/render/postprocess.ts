@@ -447,13 +447,25 @@ export function createPostChain(
     tune(pass._materialWeights, { SMAA_MAX_SEARCH_STEPS: '16' });
     composer.addPass(smaa);
   }
+  // The output and the grade in ONE pass: tone mapping, the sRGB transfer and
+  // the film grade (sharpening, contrast, vibrance, vignette) in the same
+  // fragment. Two passes - three's OutputPass then a ShaderPass - each read
+  // and wrote the whole screen (1920 x 1080 x 1.5^2 pixels on the high tier);
+  // "almost every pass performs at least one expensive fullscreen render
+  // operation" is why pmndrs/postprocessing merges its effects into one
+  // EffectPass (issue #82). The pass is three's own OutputPass, keeping its
+  // defines for the renderer's tone mapping and colour space, with the grade
+  // appended to its fragment (`GRADED_OUTPUT_FRAGMENT`).
+  // NÃO voltar a separar o grade num ShaderPass: é um passe de tela cheia a mais.
   const output = new OutputPass();
+  output.material.fragmentShader = GRADED_OUTPUT_FRAGMENT;
+  output.uniforms['uSharpen'] = { value: quality.sharpen };
+  output.uniforms['tSharpMask'] = { value: sharpMask?.texture ?? null };
+  // The OutputPass's material is raw GLSL ES 1.00 (no `textureSize`): the
+  // texel is a uniform, set with the size (`setSize`).
+  output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
+  output.material.needsUpdate = true;
   composer.addPass(output);
-  // The grade, on the finished image: a film's contrast and colour.
-  const grade = new ShaderPass(GRADE);
-  (grade.uniforms['uSharpen'] as { value: number }).value = quality.sharpen;
-  grade.uniforms['tSharpMask']!.value = sharpMask?.texture ?? null;
-  composer.addPass(grade);
 
   // A cloud's shadow takes the sun's direct light and leaves the sky's
   // (global = diffuse + direct * cos(zenith)): its strength is the direct
@@ -541,6 +553,7 @@ export function createPostChain(
       bloom.setSize(width, height);
       for (const t of bodiesTargets) t.setSize(bodiesSize(width * pixelRatio), bodiesSize(height * pixelRatio));
       sharpMask?.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
+      (output.uniforms['uTexel']!.value as Vector2).set(1 / Math.max(1, width * pixelRatio), 1 / Math.max(1, height * pixelRatio));
       historyValid = false;
     },
     dispose() {
@@ -559,7 +572,6 @@ export function createPostChain(
     sharpMaskQuad?.dispose();
     sharpMaskQuad?.material.dispose();
     output.dispose();
-    grade.dispose();
     clouds?.dispose();
     (bodiesQuad?.material as ShaderMaterial | undefined)?.dispose();
     for (const t of bodiesTargets) t.dispose();
@@ -1297,68 +1309,93 @@ const SHARP_MASK = {
  * strong), warm light and cool shade (split toning), a vignette that holds
  * the eye in the frame. No film grain: noise added to every pixel is noise
  * in the picture (the player, 2026-10-09: "ruído na imagem").
+ *
+ * The fragment of three's OutputPass (`OutputShader.js`: tone mapping by the
+ * renderer's define, then the sRGB transfer) with the grade after it, in the
+ * same pass. `display` is what the OutputPass alone wrote to the screen; the
+ * sharpening taps go through it too, so the grade sees the display image it
+ * was tuned on.
  */
-const GRADE = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uSharpen: { value: 0 },
-    /** How much each pixel may be sharpened, 0..1 (`SHARP_MASK`). */
-    tSharpMask: { value: null as Texture | null },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
-    uniform float uSharpen;
-    uniform sampler2D tSharpMask;
-    varying vec2 vUv;
-    void main() {
-      vec4 src = texture2D(tDiffuse, vUv);
-      vec3 c = src.rgb;
-      // SHARPENING, AMD FidelityFX CAS (ffx_cas.h, the sharpen-only path):
-      // each pixel against the cross of its neighbours, weighted down where
-      // the local contrast is already high, so detail comes out crisp
-      // without halos or noise.
-      // On LINEAR colour, as CAS requires ("needs linear input color to
-      // perform correctly", AMD FidelityFX SDK, Contrast Adaptive
-      // Sharpening): the image here is display sRGB, so the five taps are
-      // taken to linear (gamma 2.2) and the result back. Run on the sRGB
-      // values it over-sharpened the dark side of every edge - the jaggies
-      // and the brick moire it was switched off for (2026-10-08).
-      // Only where a pixel sees real detail (SHARP_MASK).
-      float sharpen = uSharpen > 0.0 ? uSharpen * texture2D(tSharpMask, vUv).r : 0.0;
-      if (sharpen > 0.0) {
-        vec2 texel = 1.0 / vec2(textureSize(tDiffuse, 0));
-        vec3 cl = pow(c, vec3(2.2));
-        vec3 b = pow(texture2D(tDiffuse, vUv + vec2(0.0, -texel.y)).rgb, vec3(2.2));
-        vec3 d = pow(texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0)).rgb, vec3(2.2));
-        vec3 f = pow(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb, vec3(2.2));
-        vec3 h = pow(texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb, vec3(2.2));
-        vec3 mn = min(min(min(d, cl), min(f, b)), h);
-        vec3 mx = max(max(max(d, cl), max(f, b)), h);
-        vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
-        float w = amp.g * (-1.0 / mix(8.0, 5.0, uSharpen));
-        cl = clamp(((b + d + f + h) * w + cl) / (1.0 + 4.0 * w), 0.0, 1.0);
-        c = mix(c, pow(cl, vec3(1.0 / 2.2)), sharpen / max(uSharpen, 1e-4));
-      }
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      // Contrast, an S round the middle grey.
-      c = mix(c, smoothstep(0.0, 1.0, c), 0.25);
-      // Vibrance: the dull colours gain more than the vivid. Held back to
-      // 0.93 it left the town grey and dark (the player, 2026-10-09).
-      float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
-      float sat = mx - mn;
-      c = mix(vec3(l), c, 1.0 + 0.3 * (1.0 - sat));
-      // Split toning: warm highlights, cool shadows.
-      // Warm light, shadows left neutral: a blue push in them read as a
-      // teal cast over every shaded slope.
-      c += mix(vec3(0.0), vec3(0.02, 0.008, -0.014), smoothstep(0.15, 0.85, l));
-      // Vignette.
-      vec2 d = vUv - 0.5;
-      c *= mix(1.0, 0.78, smoothstep(0.3, 0.85, dot(d, d) * 2.4));
-      gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
+const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
+  precision highp float;
+
+  uniform sampler2D tDiffuse;
+  uniform float uSharpen;
+  uniform sampler2D tSharpMask;
+  uniform vec2 uTexel;
+
+  #include <tonemapping_pars_fragment>
+  #include <colorspace_pars_fragment>
+
+  varying vec2 vUv;
+
+  // The OutputPass's own work: tone mapping and colour space, by its defines.
+  vec4 display(vec4 c) {
+    #ifdef LINEAR_TONE_MAPPING
+      c.rgb = LinearToneMapping( c.rgb );
+    #elif defined( REINHARD_TONE_MAPPING )
+      c.rgb = ReinhardToneMapping( c.rgb );
+    #elif defined( CINEON_TONE_MAPPING )
+      c.rgb = CineonToneMapping( c.rgb );
+    #elif defined( ACES_FILMIC_TONE_MAPPING )
+      c.rgb = ACESFilmicToneMapping( c.rgb );
+    #elif defined( AGX_TONE_MAPPING )
+      c.rgb = AgXToneMapping( c.rgb );
+    #elif defined( NEUTRAL_TONE_MAPPING )
+      c.rgb = NeutralToneMapping( c.rgb );
+    #elif defined( CUSTOM_TONE_MAPPING )
+      c.rgb = CustomToneMapping( c.rgb );
+    #endif
+    #ifdef SRGB_TRANSFER
+      c = sRGBTransferOETF( c );
+    #endif
+    return c;
+  }
+
+  void main() {
+    vec4 src = display(texture2D(tDiffuse, vUv));
+    vec3 c = src.rgb;
+    // SHARPENING, AMD FidelityFX CAS (ffx_cas.h, the sharpen-only path):
+    // each pixel against the cross of its neighbours, weighted down where
+    // the local contrast is already high, so detail comes out crisp
+    // without halos or noise.
+    // On LINEAR colour, as CAS requires ("needs linear input color to
+    // perform correctly", AMD FidelityFX SDK, Contrast Adaptive
+    // Sharpening): the image here is display sRGB, so the five taps are
+    // taken to linear (gamma 2.2) and the result back. Run on the sRGB
+    // values it over-sharpened the dark side of every edge - the jaggies
+    // and the brick moire it was switched off for (2026-10-08).
+    // Only where a pixel sees real detail (SHARP_MASK).
+    float sharpen = uSharpen > 0.0 ? uSharpen * texture2D(tSharpMask, vUv).r : 0.0;
+    if (sharpen > 0.0) {
+      vec2 texel = uTexel;
+      vec3 cl = pow(c, vec3(2.2));
+      vec3 b = pow(display(texture2D(tDiffuse, vUv + vec2(0.0, -texel.y))).rgb, vec3(2.2));
+      vec3 d = pow(display(texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0))).rgb, vec3(2.2));
+      vec3 f = pow(display(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0))).rgb, vec3(2.2));
+      vec3 h = pow(display(texture2D(tDiffuse, vUv + vec2(0.0, texel.y))).rgb, vec3(2.2));
+      vec3 mn = min(min(min(d, cl), min(f, b)), h);
+      vec3 mx = max(max(max(d, cl), max(f, b)), h);
+      vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
+      float w = amp.g * (-1.0 / mix(8.0, 5.0, uSharpen));
+      cl = clamp(((b + d + f + h) * w + cl) / (1.0 + 4.0 * w), 0.0, 1.0);
+      c = mix(c, pow(cl, vec3(1.0 / 2.2)), sharpen / max(uSharpen, 1e-4));
     }
-  `,
-};
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    // Contrast, an S round the middle grey.
+    c = mix(c, smoothstep(0.0, 1.0, c), 0.25);
+    // Vibrance: the dull colours gain more than the vivid. Held back to
+    // 0.93 it left the town grey and dark (the player, 2026-10-09).
+    float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+    float sat = mx - mn;
+    c = mix(vec3(l), c, 1.0 + 0.3 * (1.0 - sat));
+    // Split toning: warm highlights, cool shadows.
+    // Warm light, shadows left neutral: a blue push in them read as a
+    // teal cast over every shaded slope.
+    c += mix(vec3(0.0), vec3(0.02, 0.008, -0.014), smoothstep(0.15, 0.85, l));
+    // Vignette.
+    vec2 d = vUv - 0.5;
+    c *= mix(1.0, 0.78, smoothstep(0.3, 0.85, dot(d, d) * 2.4));
+    gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
+  }
+`;
