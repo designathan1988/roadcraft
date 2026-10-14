@@ -1,5 +1,4 @@
 [
- "exports src/editor/poleRoutes.ts stationsAround",
  "exports src/render/buildings/facadeKit.ts SIDES",
  "exports src/render/buildings/facadeKit.ts faceOf",
  "exports src/render/buildings/facadeKit.ts mansard",
@@ -99,7 +98,6 @@
  "exports src/render/people/proceduralCrowd.ts classBase",
  "exports src/render/people/proceduralCrowd.ts proceduralLook",
  "exports src/render/people/skinAppearance.ts paddedItemTexture",
- "exports src/render/poleLayer.ts POLE_REACH",
  "exports src/render/ragdollAxes.ts perpendicular",
  "exports src/render/ragdollJolt.ts MAX_PARTS",
  "exports src/render/riderPoses.ts rimPoint",
@@ -120,7 +118,6 @@
  "exports src/render/terrainRelief.ts RELIEF_WINDOW",
  "exports src/render/transit.ts METRO_DEPTH",
  "exports src/render/transit.ts trackBoxes",
- "exports src/render/utilities.ts POLE_PART",
  "exports src/render/vehicleFrame.ts MAX_FRAME_PITCH",
  "exports src/render/vehicleFrame.ts MAX_FRAME_ROLL",
  "exports src/render/vehicleModels.ts closedBody",
@@ -218,6 +215,5 @@
  "types src/sim/vehicles/state.ts ConnectorClearance",
  "types src/world/buildings/pads.ts BuildingPads",
  "types src/world/conflictPoints.ts Zone",
- "types src/world/poleLines.ts ContourEdges",
  "types src/world/walkways.ts WalkwayKind"
 ]

@@ -53,7 +53,7 @@ const CROSSING_COST = m(8);
 const SPAN_LANDING = m(1);
 
 /** The stations of a run either side of a place on its contour: [before, after]. */
-export function stationsAround(g: Pick<RouteGraph, 's' | 'runFirst' | 'runCount'>, hit: OnContour): [number, number] {
+function stationsAround(g: Pick<RouteGraph, 's' | 'runFirst' | 'runCount'>, hit: OnContour): [number, number] {
   const first = g.runFirst[hit.contour]!, count = g.runCount[hit.contour]!;
   // The last station at or before `s` (binary search on the run's arc lengths).
   let lo = 0, hi = count - 1;

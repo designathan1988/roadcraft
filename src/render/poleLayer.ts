@@ -72,7 +72,7 @@ export interface PoleSource {
 export const docPoles = (doc: RoadDoc): PoleSource => ({ poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) });
 
 /** How far from a pole a change of the roads or the ground can move it: its kerb (`kerbward`), its lamp's pool. */
-export const POLE_REACH = m(12);
+const POLE_REACH = m(12);
 
 interface PoleState {
   readonly x: number;

@@ -95,7 +95,7 @@ export interface Placement {
 }
 
 /** The instanced parts of a pole, by index into `polePartSpecs` and `placePole`'s lists. */
-export const POLE_PART = {
+const POLE_PART = {
   mast: 0, arm: 1, cap: 2, brace: 3, insulator: 4, can: 5, lampArm: 6, lampHead: 7, lens: 8, pool: 9, beam: 10,
 } as const;
 export const POLE_PART_COUNT = 11;
