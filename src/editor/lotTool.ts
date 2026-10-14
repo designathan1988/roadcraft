@@ -168,14 +168,14 @@ export class LotTool {
 
   /** What the player is in the middle of doing with it, named (`main.ts` `currentGesture`). */
   gesture(): string | null {
-    if (this.erase) return 'zona: apagando';
-    if (this.stroke) return this.stroke.remove ? 'lote: tirando zona' : 'lote: pintando zona';
-    if (this.corner) return 'lote: movendo um canto';
-    if (this.drawn) return 'lote: desenhando';
-    if (this.cutLine) return 'lote: cortando';
-    if (this.curve) return 'lote: curvando um lado';
-    if (this.polygon.length > 0) return 'lote: polígono';
-    if (this.joinFirst !== null) return 'lote: unindo';
+    if (this.erase) return 'gesture.zone.erasing';
+    if (this.stroke) return this.stroke.remove ? 'gesture.zone.unzoning' : 'gesture.zone.zoning';
+    if (this.corner) return 'gesture.lot.corner';
+    if (this.drawn) return 'gesture.lot.drawing';
+    if (this.cutLine) return 'gesture.lot.cutting';
+    if (this.curve) return 'gesture.lot.curving';
+    if (this.polygon.length > 0) return 'gesture.lot.polygon';
+    if (this.joinFirst !== null) return 'gesture.lot.joining';
     return null;
   }
 

@@ -38,7 +38,7 @@ export class Bulldozer {
   constructor(private readonly host: BulldozerHost) {}
 
   gesture(): string | null {
-    return this.drag ? 'demolir: retângulo' : null;
+    return this.drag ? 'gesture.bulldoze.box' : null;
   }
 
   inProgress(): boolean {

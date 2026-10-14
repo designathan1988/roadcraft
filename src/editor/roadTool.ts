@@ -134,10 +134,10 @@ export class RoadTool {
   constructor(private readonly host: RoadToolHost) {}
 
   gesture(): string | null {
-    if (this.draft) return 'via: desenhando';
-    if (this.curvePending) return 'via: curvando';
-    if (this.chain) return 'via: encadeando';
-    if (this.settling) return 'via: assentando';
+    if (this.draft) return 'gesture.road.drawing';
+    if (this.curvePending) return 'gesture.road.curving';
+    if (this.chain) return 'gesture.road.chaining';
+    if (this.settling) return 'gesture.road.settling';
     return null;
   }
 

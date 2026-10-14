@@ -145,11 +145,13 @@ const healthWatch = watchHealth({
   canvas,
   context: () => {
     const last = doc.changes.latest(1)[0];
+    // Shown to the player in the F9 monitor: every word from the dictionaries;
+    // the gestures are dictionary keys (`currentGesture`).
     return [
-      `ferramenta ${game.tool}`,
-      game.gesture ?? '',
-      last ? `última mudança #${last.serial} ${last.kind} (${last.cause})` : '',
-      booted ? '' : 'abrindo o jogo',
+      t('health.context.tool', { tool: game.tool }),
+      game.gesture ? t(game.gesture) : '',
+      last ? t('health.context.lastChange', { serial: last.serial, kind: last.kind, cause: last.cause }) : '',
+      booted ? '' : t('health.context.opening'),
     ].filter(Boolean).join(' · ');
   },
 });
@@ -1060,7 +1062,8 @@ function cancelGestures(): void {
 }
 
 /**
- * The gesture in progress, named: what the player is in the middle of
+ * The gesture in progress, named by its dictionary key (`gesture.*`, translated
+ * where it is shown, the F9 monitor's context): what the player is in the middle of
  * doing, read from the same variables `cancelGestures` ends. Written to the
  * game's state after every pointer and key event (`syncGesture`): since a
  * value set to what it already is writes nothing, the record holds where
@@ -1074,7 +1077,7 @@ function currentGesture(): string | null {
   if (movingNode) return movingNode;
   const road = roadTool.gesture();
   if (road) return road;
-  if (terrainBrush.stroking) return 'terreno: pincelando';
+  if (terrainBrush.stroking) return 'gesture.terrain.stroke';
   const pole = poleTool.gesture();
   if (pole) return pole;
   const barrier = barrierTool.gesture();
