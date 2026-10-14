@@ -10,6 +10,7 @@ import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, ty
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
+  type BufferAttribute,
   BufferGeometry,
   Color,
   Float32BufferAttribute,
@@ -89,7 +90,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
-import { gpuOnly } from '../mesh/gpuOnly';
+import { gpuOnly, gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { FACADE_PROP_KINDS, facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
@@ -3295,6 +3296,34 @@ function writeMatrix(out: Float32Array, offset: number, p: Placement): void {
  * frame the batch first showed (`Box3.setFromObject` for the tallest
  * building, docs/performance.md #26), walking every window of a cell.
  */
+/**
+ * A batch's own instance arrays from its chunks, in order: the matrices, the
+ * colours of a coloured kind (white where a chunk has none), and a pane's
+ * light slot (-1: none) and the room behind it.
+ */
+function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean): {
+  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array;
+} {
+  const instanceMatrix = new Float32Array(count * 16);
+  const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
+  const litSlot = glassy ? new Float32Array(count) : undefined;
+  const rooms = glassy ? new Float32Array(count * ROOM_FLOATS) : undefined;
+  let at = 0;
+  for (const chunk of chunks) {
+    const batch = chunk.parts[kind];
+    if (batch.count === 0) continue;
+    instanceMatrix.set(batch.matrices, at * 16);
+    if (instanceColor && batch.colours) instanceColor.set(batch.colours, at * 3);
+    if (litSlot) {
+      if (batch.slots) litSlot.set(batch.slots, at);
+      else litSlot.fill(-1, at, at + batch.count);
+    }
+    if (rooms && batch.rooms) rooms.set(batch.rooms, at * ROOM_FLOATS);
+    at += batch.count;
+  }
+  return { instanceMatrix, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}) };
+}
+
 function boundInstances(mesh: InstancedMesh): void {
   mesh.computeBoundingBox();
   mesh.boundingSphere = mesh.boundingBox!.getBoundingSphere(new Sphere());
@@ -3515,26 +3544,14 @@ export function* assembleBuildingMeshesSteps(
     // Window panes carry their room's light slot, per instance, on their own
     // copy of the pane geometry (the kit's is shared by every batch).
     const glassy = !ghost && (kind === 'glass' || kind === 'glassDark');
+    const coloured = !ghost && COLOURED_PARTS.has(kind);
+    const arrays = partArrays(chunks, kind, count, glassy, coloured);
     const geometry = glassy ? kit.geometry[kind].clone() : kit.geometry[kind];
+    let roomBuffer: InstancedInterleavedBuffer | null = null;
     if (glassy) {
-      const slots = new Float32Array(count);
-      let k = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.parts[kind];
-        if (batch.slots) slots.set(batch.slots, k);
-        else slots.fill(-1, k, k + batch.count);
-        k += batch.count;
-      }
-      geometry.setAttribute('litSlot', new InstancedBufferAttribute(slots, 1));
+      geometry.setAttribute('litSlot', new InstancedBufferAttribute(arrays.litSlot!, 1));
       // And the room behind each, for the interior drawn through it (`kit.ts`).
-      const rooms = new Float32Array(count * ROOM_FLOATS);
-      k = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.parts[kind];
-        if (batch.rooms) rooms.set(batch.rooms, k * ROOM_FLOATS);
-        k += batch.count;
-      }
-      const roomBuffer = new InstancedInterleavedBuffer(rooms, ROOM_FLOATS);
+      roomBuffer = new InstancedInterleavedBuffer(arrays.rooms!, ROOM_FLOATS);
       geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
@@ -3544,21 +3561,30 @@ export function* assembleBuildingMeshesSteps(
     mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
     mesh.receiveShadow = !ghost;
-    const matrices = mesh.instanceMatrix.array as Float32Array;
-    const coloured = !ghost && COLOURED_PARTS.has(kind);
-    if (coloured) mesh.setColorAt(0, new Color(1, 1, 1));
-    const colours = coloured && mesh.instanceColor ? (mesh.instanceColor.array as Float32Array) : null;
-    let at = 0;
-    for (const chunk of chunks) {
-      const batch = chunk.parts[kind];
-      if (batch.count === 0) continue;
-      matrices.set(batch.matrices, at * 16);
-      if (colours && batch.colours) colours.set(batch.colours, at * 3);
-      at += batch.count;
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.instanceMatrix = new InstancedBufferAttribute(arrays.instanceMatrix, 16);
+    if (arrays.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(arrays.instanceColor, 3);
     boundInstances(mesh);
+    // Its own arrays live on the GPU only (`mesh/gpuOnly.ts`), made again
+    // from the chunks. DO NOT let go of the kit's geometry it draws: it is
+    // shared by every batch of the kind.
+    if (!ghost) {
+      const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { instanceMatrix: mesh.instanceMatrix };
+      if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
+      if (glassy) {
+        for (const name of ['position', 'normal', 'uv', 'litSlot'] as const) own[name] = geometry.getAttribute(name) as BufferAttribute;
+        if (geometry.index) own.index = geometry.index;
+        own.rooms = roomBuffer!;
+      }
+      const base = kit.geometry[kind];
+      gpuOnlyAttributes(mesh, own, () => {
+        const again: Record<string, ArrayLike<number>> = { ...partArrays(chunks, kind, count, glassy, coloured) };
+        if (glassy) {
+          for (const name of ['position', 'normal', 'uv'] as const) again[name] = (base.getAttribute(name) as BufferAttribute).array.slice();
+          if (base.index) again.index = base.index.array.slice();
+        }
+        return again;
+      });
+    }
     meshes.push(mesh);
     const g = kit.geometry[kind];
     triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;
@@ -3575,16 +3601,21 @@ export function* assembleBuildingMeshesSteps(
       mesh.name = `building-furniture-${kind}`;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      const matrices = mesh.instanceMatrix.array as Float32Array;
-      let at = 0;
-      for (const chunk of chunks) {
-        const batch = chunk.furniture?.[kind];
-        if (!batch) continue;
-        matrices.set(batch.matrices, at * 16);
-        at += batch.count;
-      }
-      mesh.instanceMatrix.needsUpdate = true;
+      const furnitureMatrices = (): Float32Array => {
+        const matrices = new Float32Array(count * 16);
+        let at = 0;
+        for (const chunk of chunks) {
+          const batch = chunk.furniture?.[kind];
+          if (!batch) continue;
+          matrices.set(batch.matrices, at * 16);
+          at += batch.count;
+        }
+        return matrices;
+      };
+      mesh.instanceMatrix = new InstancedBufferAttribute(furnitureMatrices(), 16);
       boundInstances(mesh);
+      // On the GPU only, made again from the chunks (`mesh/gpuOnly.ts`).
+      gpuOnlyAttributes(mesh, { instanceMatrix: mesh.instanceMatrix }, () => ({ instanceMatrix: furnitureMatrices() }));
       meshes.push(mesh);
       const g = furniture.geometry[kind];
       triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;

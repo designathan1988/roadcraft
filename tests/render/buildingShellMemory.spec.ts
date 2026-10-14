@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BufferAttribute, Mesh } from 'three';
+import type { BufferAttribute, InstancedMesh, InterleavedBufferAttribute, Mesh } from 'three';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { assembleBuildingMeshes, emitChunk } from '@render/buildings/buildingMesh';
@@ -38,6 +38,34 @@ describe("the town's shells", () => {
       const after = [...Object.values(m.geometry.attributes), m.geometry.index!].map((a) => Array.from((a as BufferAttribute).array));
       expect(after).toEqual(before[k]);
     });
+    meshes.dispose();
+  });
+
+  it('let their parts\' own arrays go too, never the kit\'s shared geometry, and take them back the same', () => {
+    const kit = createBuildingKit();
+    const chunks = [0, 1, 2, 3].map((i) => emitChunk(placed(i), () => 0));
+    const meshes = assembleBuildingMeshes(chunks, kit);
+    const parts = meshes.group.children.filter((m) => (m as InstancedMesh).isInstancedMesh) as InstancedMesh[];
+    expect(parts.some((p) => p.name === 'building-glass')).toBe(true);
+    const own = (p: InstancedMesh): { array: ArrayLike<number> | null; onUploadCallback(): void }[] => {
+      const list: { array: ArrayLike<number> | null; onUploadCallback(): void }[] = [p.instanceMatrix];
+      if (p.instanceColor) list.push(p.instanceColor);
+      if (p.userData['ownGeometry']) {
+        for (const name of ['position', 'normal', 'uv', 'litSlot']) list.push(p.geometry.getAttribute(name) as BufferAttribute);
+        list.push((p.geometry.getAttribute('roomA') as InterleavedBufferAttribute).data);
+      }
+      return list;
+    };
+    const before = parts.map((p) => own(p).map((a) => Array.from(a.array!)));
+    for (const p of parts) for (const a of own(p)) a.onUploadCallback();
+    for (const p of parts) {
+      for (const a of own(p)) expect(a.array).toBeNull();
+      expect(p.boundingSphere).not.toBeNull();
+      // The kit's geometry, drawn by every batch of the kind, keeps its arrays.
+      if (!p.userData['ownGeometry']) expect(p.geometry.getAttribute('position').array).not.toBeNull();
+    }
+    refillArrays(meshes.group);
+    parts.forEach((p, k) => expect(own(p).map((a) => Array.from(a.array!))).toEqual(before[k]));
     meshes.dispose();
   });
 
