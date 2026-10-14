@@ -931,7 +931,9 @@ export function createSceneRenderer(
       return Number.isFinite(lot) ? Math.max(lot, ground) : ground;
     },
     // A resident's parked car stands on its lot as the lot is drawn.
-    (building, x, y) => buildings.lotHeightAt(building as BuildingId, x, y));
+    (building, x, y) => buildings.lotHeightAt(building as BuildingId, x, y),
+    // The land alone: whether a walker off the streets is on screen at all, before the yards are asked.
+    (x, y) => terrain.renderedHeightAt(x, y));
 
   const crowdFrustum = new Frustum();
   const crowdProjection = new Matrix4();

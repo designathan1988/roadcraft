@@ -660,9 +660,15 @@ function instanced(
   return { mesh, n: 0, tinted: false };
 }
 
+/**
+ * `groundAt`: what a walker off the streets stands on (a yard, a terrace, the
+ * paving, the land); `roughGroundAt`: the land alone, cheap, for the test of
+ * whether they are on screen at all before `groundAt` is asked.
+ */
 export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () => void = () => {},
   groundAt?: (x: number, y: number) => number,
-  lotAt?: (building: number, x: number, y: number) => number): AgentMeshes {
+  lotAt?: (building: number, x: number, y: number) => number,
+  roughGroundAt?: (x: number, y: number) => number): AgentMeshes {
   // Paint, trim and the cabin read a vertex colour that multiplies the
   // instance colour: one body geometry carries its black-outs, seams, seats
   // and carpet in one draw. Every geometry drawn with them is built by
@@ -1184,6 +1190,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
    * (the player, 2026-10-06).
    */
   const procHeld = new Set<number>(), procHeldNow = new Set<number>();
+  /** The walkers of the simulation this frame (`sync`), one set for every frame. */
+  const procLive = new Set<number>();
   /** People made to play a clip (`forceClip`), and those whose clip did not move this frame. */
   const procForced = new Map<number, ProcClip>();
   const procFrozen = new Set<number>();
@@ -2293,10 +2301,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           // between them - where both read the same, so stepping onto a zebra
           // is a walk down the ramp, not a 15 cm drop in one frame.
           // A footway laid flush (docs/VIAS.md V1) has no rise at all (`footwayRiseAt`).
+          // Off screen first, on the ground under them less the kerb's few
+          // centimetres (the test's sphere is metres across): the paving's
+          // rise and a yard's height are asked only of those drawn. DO NOT ask
+          // them of every walker of the simulation before the test.
+          const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, segment);
+          if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, below)) continue;
           const rise = open ? m(0.04) : footwayRiseAt(world.net, pose.p.x, pose.p.y) * walkingRise(world.net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
             segment === undefined ? 'ground' : world.net.doc.segment(segment)?.structure ?? 'ground');
-          const deck = open ? land(pose.p.x, pose.p.y) + rise : elevationAt(world, pose.p.x, pose.p.y, segment) + rise;
-          if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, deck)) continue;
+          const deck = (open && roughGroundAt ? land(pose.p.x, pose.p.y) : below) + rise;
           frameAt(pose.p.x, pose.p.y, pose.angle, deck);
           if (procedural && ped.id !== PLAYER_ID) {
             // What they are doing shows before the fright on their face (a photo held up, a crouch, a fall).
@@ -2323,7 +2336,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
 
       if (procedural) {
-        const live = new Set<number>();
+        const live = procLive;
+        live.clear();
         for (const ped of world.pedViews) live.add(ped.id);
         // Those a ragdoll holds (struck, down, or dead) keep their person.
         for (const id of procHeld) live.add(id);
@@ -2344,9 +2358,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // Upload only what was written this frame.
       //
       // `needsUpdate = true` with no range makes three re-send the WHOLE
-      // attribute. These buffers are sized for the population ceiling, so
-      // uploading their entire capacity wastes bandwidth on unused instances.
-      // The written prefix is usually a tiny fraction of that.
+      // attribute. These buffers start at the population ceilings and grow
+      // by doubling (`growPart`), so uploading their entire capacity wastes
+      // bandwidth on unused instances.
       for (const part of allParts) {
         part.mesh.count = part.n;
         // An empty instanced mesh still costs a program bind, its uniforms
@@ -2374,6 +2388,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     },
     dispose() {
       pedestrians.dispose();
+      vehicleBlobs.dispose();
+      for (const part of allParts) part.mesh.dispose();
       for (const geometry of [
         unitBox,
         torsoGeometry,
