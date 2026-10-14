@@ -15,12 +15,13 @@ Atualizado: 2026-10-14 (noite). A versão longa anterior está no git (`git show
   mensagens de check-code, knip e refs dizem "defeitos conhecidos ainda no código" (c18494b);
   falsos positivos do research-gate tirados (29 comandos conferidos); o trabalho da célula em
   worker lido inteiro (abaixo).
-- próximo: fase 1 (bugs C7 independentes, cada um com teste que falha antes; segurança do
-  `innerHTML` primeiro). O trabalho da célula em worker não entra em commit antes de corrigir os
-  defeitos abaixo e medir a memória com a máquina livre.
+- fase 1 em curso (bugs C7 independentes, cada um com teste que falha antes): segurança do
+  `innerHTML` corrigida (linha de transporte; barreira da classe pendente, fase do roteamento);
+  próximos da lista C7 do plano. O trabalho da célula em worker não entra em commit antes de
+  corrigir os defeitos abaixo e medir a memória com a máquina livre.
 
 ## Repositório (conferido em 2026-10-14 noite)
-- `main` 80 commits à frente de `origin/main` (`b8c63c3`); envio ao GitHub só com o sim do jogador.
+- `main` à frente de `origin/main` (`b8c63c3`; eram 80 commits antes da fase 0); envio ao GitHub só com o sim do jogador.
 - Não commitado na árvore principal (da Auditoria):
   `src/render/buildings/` `cell.worker.ts`, `cellArrays.ts`, `cellPool.ts`, `cellRequests.ts`,
   `cellWork.ts`, `chunk.ts`, mudanças em `buildingMesh.ts`, `layer.ts`, `layerCells.ts`,

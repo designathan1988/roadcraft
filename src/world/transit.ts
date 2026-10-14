@@ -68,6 +68,12 @@ export const emptyTransit = (): TransitData => ({ stops: [], tracks: [], lines: 
 const LINE_COLOURS = ['#e8443a', '#2f7de1', '#2fb36b', '#f2a33a', '#9b59d0', '#14a5b8', '#e85d9b', '#7a8a2a'];
 
 const isMode = (v: unknown): v is TransitMode => v === 'bus' || v === 'train' || v === 'metro';
+/**
+ * A line's colour as the game writes it (`LINE_COLOURS`): read from a map file it reaches a
+ * style property, three's `Color` and a canvas, so only this exact shape passes (OWASP XSS
+ * Prevention Cheat Sheet, "strict structural validation"). DO NOT accept any string.
+ */
+const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Reads saved transport, dropping anything malformed; a line keeps only stops that exist and are of its mode. */
@@ -102,7 +108,7 @@ export function normalizeTransit(raw: unknown): TransitData {
     const mode = o['mode'];
     const ids = (o['stops'] as unknown[]).filter((id): id is number => finite(id) && byId.get(id)?.mode === mode);
     if (ids.length < 2) continue;
-    lines.push({ id: o['id'], mode, stops: ids, colour: typeof o['colour'] === 'string' ? o['colour'] : LINE_COLOURS[0]!,
+    lines.push({ id: o['id'], mode, stops: ids, colour: typeof o['colour'] === 'string' && HEX_COLOUR.test(o['colour']) ? o['colour'] : LINE_COLOURS[0]!,
       vehicles: finite(o['vehicles']) ? Math.max(1, Math.min(20, Math.round(o['vehicles']))) : 2,
       name: typeof o['name'] === 'string' ? o['name'] : `${o['id']}` });
   }

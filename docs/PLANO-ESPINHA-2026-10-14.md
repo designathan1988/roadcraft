@@ -349,6 +349,11 @@ sessões.** Na aprovação, aviso as conversas Auditoria e Hook para pararem de 
 **1. Bugs de comportamento independentes (C7), cada um com o teste que falha antes e passa depois:**
 os da lista C7 que não dependem de outra classe (segurança do innerHTML primeiro). Os que nascem de
 outra classe (semáforos reiniciados, ônibus removidos) saem na conversão daquela classe.
+Andamento: SEGURANÇA innerHTML corrigida em 2026-10-14 (nome e cor da linha de transporte: cor só
+`#rrggbb` na carga, `world/transit.ts`; a linha do painel por `textContent`, `ui/v2/transitLine.ts`;
+`tests/ui/transitLine.spec.ts` falhou antes e passa depois; conferido no jogo). Os outros 40 pontos
+que escrevem HTML foram rastreados: nenhum recebe texto do arquivo. PENDENTE a barreira da classe
+(todo HTML por um caminho só que escapa por padrão, e a regra de lint), na fase do roteamento.
 
 **2. Diário e espinha (eu):** entrada com operação e tipo por id e retângulo antes ∪ depois
 (corrige moveNode, pruneOrphanNodes, tetos gravando null, utilities null, restore 'traffic',

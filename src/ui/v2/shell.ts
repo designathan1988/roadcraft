@@ -63,6 +63,7 @@ import { UNITS_PER_METER } from '@world/units';
 import { balanceTip, formatMoney } from '../roads/money';
 import { drawProfile } from '../roads/drawProfile';
 import { catalogStrip } from '../roads/catalogPanel';
+import { transitLineRow } from './transitLine';
 import { closeRoadKeys, openRoadKeys, roadKeysOpen } from '../roads/keysPanel';
 import { cutWallsChosen, setCutWalls } from '../roads/cutWalls';
 import { keyLabel, onRoadKeysChange, roadKey } from '../roads/keys';
@@ -1689,8 +1690,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const { items } = section(t('transit.lines'));
     const noLines = lines.length === 0;
     for (const line of lines) {
-      const row = el('div', 'v2-transit-line');
-      row.innerHTML = `<i style="background:${line.colour}"></i><b>${line.name}</b><span>${t(`transit.mode.${line.mode}`)} · ${t('transit.stops', { n: line.stops.length })}</span>`;
+      const row = transitLineRow(line);
       const less = button('v2-icon', t('transit.fewer'), () => { tool2.setVehicles(line.id, line.vehicles - 1); render(); }, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 12h12"/></svg>');
       const count = el('span', 'v2-transit-count');
       count.textContent = String(line.vehicles);
