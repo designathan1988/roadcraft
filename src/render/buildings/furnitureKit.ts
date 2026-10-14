@@ -1,7 +1,7 @@
 import {
+  BufferAttribute,
   BufferGeometry,
   CylinderGeometry,
-  Float32BufferAttribute,
   MeshStandardMaterial,
   SphereGeometry,
 } from 'three';
@@ -51,7 +51,7 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   const n = g.getAttribute('position').count;
   const colours = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) colours.set(c, i * 3);
-  g.setAttribute('color', new Float32BufferAttribute(colours, 3));
+  g.setAttribute('color', new BufferAttribute(colours, 3));
   return g.index ? g.toNonIndexed() : g;
 }
 
@@ -315,7 +315,7 @@ export function createFurnitureGeometries(): Record<FurnitureKind, BufferGeometr
   for (const kind of FURNITURE_KINDS) {
     const parts = build(kind).map((g) => {
       // Every part with the same attributes, so they merge.
-      if (!g.getAttribute('uv')) g.setAttribute('uv', new Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+      if (!g.getAttribute('uv')) g.setAttribute('uv', new BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
       return g;
     });
     const merged = mergeGeometries(parts) as BufferGeometry;

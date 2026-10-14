@@ -1,9 +1,9 @@
 import { CAPTURE_NAME, type PersonRig } from './personRig';
 import type { BodyPart, Severable } from '@sim/people/view';
 import {
-  BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, Float32BufferAttribute, FloatType, Group,
+  BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, FloatType, Group,
   InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, Quaternion, MeshStandardMaterial, Vector3, NearestFilter,
-  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, Uint16BufferAttribute, UnsignedByteType,
+  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, UnsignedByteType,
   type Material, type Texture, type WebGLRenderer,
 } from 'three';
 import { bodyHeight } from '@people/body/morph';
@@ -1094,9 +1094,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         for (let k = 0; k < 3; k++) { refs[o * 3 + k] = eyes.pack.refs[i * 3 + k]!; refW[o * 3 + k] = eyes.pack.weights[i * 3 + k]!; }
       }
     }
-    body.setAttribute('aRefs', new Float32BufferAttribute(refs, 3));
-    body.setAttribute('aRefW', new Float32BufferAttribute(refW, 3));
-    if (!body.getAttribute('eyeMask')) body.setAttribute('eyeMask', new Float32BufferAttribute(new Float32Array(n), 1));
+    body.setAttribute('aRefs', new BufferAttribute(refs, 3));
+    body.setAttribute('aRefW', new BufferAttribute(refW, 3));
+    if (!body.getAttribute('eyeMask')) body.setAttribute('eyeMask', new BufferAttribute(new Float32Array(n), 1));
     if (!body.getAttribute('normal')) body.computeVertexNormals();
     await breathe();
 
@@ -1385,8 +1385,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     sortSkinWeights(source);
     const plan = await lodPlan(role === 'skin' ? 'skin' : name, source, kind, role);
     const widen = !!plan.cardOf && plan.widen.some((w) => w !== 1);
-    if (widen) source.setAttribute('aCard', new Float32BufferAttribute(cardCentres(source, plan.cardOf!), 3));
-    if (grown && !source.getAttribute('aFade')) source.setAttribute('aFade', new Float32BufferAttribute(new Float32Array(source.getAttribute('position').count).fill(1), 1));
+    if (widen) source.setAttribute('aCard', new BufferAttribute(cardCentres(source, plan.cardOf!), 3));
+    if (grown && !source.getAttribute('aFade')) source.setAttribute('aFade', new BufferAttribute(new Float32Array(source.getAttribute('position').count).fill(1), 1));
     const eye = source.getAttribute('eyeMask');
     const colour = role === 'skin' ? meanColour(map, source, (v) => !eye || eye.getX(v) < 0.5)
       : role === 'shoes' ? meanColour(map, source) : new Color(1, 1, 1);
@@ -1461,14 +1461,18 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const fitAt = performance.now();
         const fitted = cls.rig.wear!(it, cls.shape);
         const geometry = new BufferGeometry();
-        geometry.setAttribute('position', new Float32BufferAttribute(fitted.positions, 3));
+        geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         const n = fitted.positions.length / 3;
-        geometry.setAttribute('uv', new Float32BufferAttribute(it.pack.uvs ?? new Float32Array(n * 2), 2));
-        geometry.setAttribute('skinIndex', new Uint16BufferAttribute(fitted.joints, 4));
-        geometry.setAttribute('skinWeight', new Float32BufferAttribute(fitted.weights, 4));
-        geometry.setAttribute('aRefs', new Float32BufferAttribute(Float32Array.from(it.pack.refs), 3));
-        geometry.setAttribute('aRefW', new Float32BufferAttribute(it.pack.weights, 3));
-        if (it.pack.fade) geometry.setAttribute('aFade', new Float32BufferAttribute(it.pack.fade, 1));
+        // The pack's own arrays (uvs, weights, fade) are the cached item's
+        // (`item`), worn by every class: kept, not copied, by each class's
+        // attribute - nothing writes them. DO NOT write these attributes in
+        // place: it would change the item for every class at once.
+        geometry.setAttribute('uv', new BufferAttribute(it.pack.uvs ?? new Float32Array(n * 2), 2));
+        geometry.setAttribute('skinIndex', new BufferAttribute(fitted.joints, 4));
+        geometry.setAttribute('skinWeight', new BufferAttribute(fitted.weights, 4));
+        geometry.setAttribute('aRefs', new BufferAttribute(Float32Array.from(it.pack.refs), 3));
+        geometry.setAttribute('aRefW', new BufferAttribute(it.pack.weights, 3));
+        if (it.pack.fade) geometry.setAttribute('aFade', new BufferAttribute(it.pack.fade, 1));
         geometry.setIndex(Array.from(it.pack.index));
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
@@ -1630,13 +1634,13 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const it: ProxyItem = { pack, texture: null, transparent: true, textureFile: null };
         const fitted = cls.rig.wear!(it, cls.shape);
         const geometry = new BufferGeometry();
-        geometry.setAttribute('position', new Float32BufferAttribute(fitted.positions, 3));
-        geometry.setAttribute('uv', new Float32BufferAttribute(pack.uvs!, 2));
-        geometry.setAttribute('skinIndex', new Uint16BufferAttribute(fitted.joints, 4));
-        geometry.setAttribute('skinWeight', new Float32BufferAttribute(fitted.weights, 4));
-        geometry.setAttribute('aRefs', new Float32BufferAttribute(Float32Array.from(pack.refs), 3));
-        geometry.setAttribute('aRefW', new Float32BufferAttribute(pack.weights, 3));
-        geometry.setAttribute('aFade', new Float32BufferAttribute(pack.fade!, 1));
+        geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
+        geometry.setAttribute('uv', new BufferAttribute(pack.uvs!, 2));
+        geometry.setAttribute('skinIndex', new BufferAttribute(fitted.joints, 4));
+        geometry.setAttribute('skinWeight', new BufferAttribute(fitted.weights, 4));
+        geometry.setAttribute('aRefs', new BufferAttribute(Float32Array.from(pack.refs), 3));
+        geometry.setAttribute('aRefW', new BufferAttribute(pack.weights, 3));
+        geometry.setAttribute('aFade', new BufferAttribute(pack.fade!, 1));
         geometry.setIndex(Array.from(pack.index));
         geometry.computeVertexNormals();
         const v: Variant = { kind: 'hair', level: 0, widen: false, grown: true, lash: false };

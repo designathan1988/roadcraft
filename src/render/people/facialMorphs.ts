@@ -1,4 +1,4 @@
-import { Float32BufferAttribute } from 'three';
+import { BufferAttribute } from 'three';
 import { createPersonRig, type PersonRig, type PersonRigInput } from './personRig';
 
 /** Build relative shapes through the same body/proxy fitting and bind-pose transform. */
@@ -26,13 +26,13 @@ export async function attachFacialMorphs(input: PersonRigInput, rig: PersonRig,
     shapes[name] = delta;
   }
   const base = rig.mesh.geometry.getAttribute('position');
-  const attributes: Float32BufferAttribute[] = [];
+  const attributes: BufferAttribute[] = [];
   for (const [name, deltas] of Object.entries(shapes)) {
     const positions = input.positions.map((value, i) => value + deltas[i]!);
     // A dressed body knows its expressions as moves of its own vertices
     // (`PersonRig.morph`): no second build of the person.
     if (rig.morph) {
-      const attribute = new Float32BufferAttribute(rig.morph(positions), 3);
+      const attribute = new BufferAttribute(rig.morph(positions), 3);
       if (attribute.count !== base.count) throw new Error(`Expression ${name} changes body topology`);
       attribute.name = name;
       attributes.push(attribute);
@@ -48,7 +48,7 @@ export async function attachFacialMorphs(input: PersonRigInput, rig: PersonRig,
         relative[v * 3 + 1] = moved.getY(v) - base.getY(v);
         relative[v * 3 + 2] = moved.getZ(v) - base.getZ(v);
       }
-      const attribute = new Float32BufferAttribute(relative, 3);
+      const attribute = new BufferAttribute(relative, 3);
       attribute.name = name;
       attributes.push(attribute);
     } finally {

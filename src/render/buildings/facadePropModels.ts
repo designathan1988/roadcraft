@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   CircleGeometry,
   CylinderGeometry,
@@ -27,7 +28,7 @@ function tone(g: BufferGeometry, rgb: readonly [number, number, number]): Buffer
   const n = flat.getAttribute('position').count;
   const c = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { c[i * 3] = rgb[0]; c[i * 3 + 1] = rgb[1]; c[i * 3 + 2] = rgb[2]; }
-  flat.setAttribute('color', new Float32BufferAttribute(c, 3));
+  flat.setAttribute('color', new BufferAttribute(c, 3));
   flat.deleteAttribute('uv');
   return flat;
 }

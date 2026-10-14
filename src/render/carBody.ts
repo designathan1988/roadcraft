@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Float32BufferAttribute, Quaternion,
+  BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Float32BufferAttribute, Quaternion,
   Shape, TorusGeometry, Vector2, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -192,7 +192,7 @@ function tint<T extends BufferGeometry>(g: T, hex: number): T {
   const n = g.getAttribute('position').count;
   const data = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { data[i * 3] = c.r; data[i * 3 + 1] = c.g; data[i * 3 + 2] = c.b; }
-  g.setAttribute('color', new Float32BufferAttribute(data, 3));
+  g.setAttribute('color', new BufferAttribute(data, 3));
   return g;
 }
 
@@ -658,7 +658,7 @@ export function buildCarModel(a: Archetype, styleName: CarStyle = (a.style ?? 's
 
   // Smooth normals over the lofted surface (indexed), before splitting by region.
   const surface = new BufferGeometry();
-  surface.setAttribute('position', new Float32BufferAttribute(all, 3));
+  surface.setAttribute('position', new BufferAttribute(all, 3));
   const idx: number[] = [];
   for (const f of faces) idx.push(f.a, f.b, f.c, f.a, f.c, f.d!);
   surface.setIndex(idx);

@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, BufferGeometry, ConeGeometry, CylinderGeometry, DynamicDrawUsage, Float32BufferAttribute, Group,
+  BoxGeometry, BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, DynamicDrawUsage, Group,
   InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -31,7 +31,7 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   const n = flat.getAttribute('position').count;
   const colours = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) colours.set(c, i * 3);
-  flat.setAttribute('color', new Float32BufferAttribute(colours, 3));
+  flat.setAttribute('color', new BufferAttribute(colours, 3));
   if (flat.hasAttribute('uv')) flat.deleteAttribute('uv');
   return flat;
 }

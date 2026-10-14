@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute } from 'three';
+import { BufferAttribute, BufferGeometry } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { simplifyIndex } from './lodWorker';
@@ -269,9 +269,11 @@ export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometr
       const attribute = part.geometry.getAttribute(name);
       if (!attribute) return null;
       const size = attribute.itemSize;
-      const values = new Float32Array(order.length * size);
+      // Made in its own type and kept by the attribute (`BufferAttribute`):
+      // the typed subclasses copy the array they are given.
+      const values = name === 'skinIndex' ? new Uint16Array(order.length * size) : new Float32Array(order.length * size);
       order.forEach((v, i) => { for (let c = 0; c < size; c++) values[i * size + c] = attribute.getComponent(v, c); });
-      g.setAttribute(name, name === 'skinIndex' ? new Uint16BufferAttribute(Uint16Array.from(values), size) : new Float32BufferAttribute(values, size));
+      g.setAttribute(name, new BufferAttribute(values, size));
     }
     const position = g.getAttribute('position');
     const far = new Float32Array(order.length * 4);
@@ -280,7 +282,7 @@ export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometr
       far[i * 4] = r; far[i * 4 + 1] = gr; far[i * 4 + 2] = b;
       far[i * 4 + 3] = part.region === REGION.skin && position.getY(i) < ankle ? REGION.shoes : part.region;
     });
-    g.setAttribute('aFar', new Float32BufferAttribute(far, 4));
+    g.setAttribute('aFar', new BufferAttribute(far, 4));
     g.setIndex(out);
     pieces.push(g);
   }

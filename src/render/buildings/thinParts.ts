@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, type Material, type MeshStandardMaterial } from 'three';
+import { BufferAttribute, BufferGeometry, type Material, type MeshStandardMaterial } from 'three';
 
 /**
  * A geometry seen from both sides: its faces and a copy of them turned the
@@ -25,8 +25,8 @@ export function twoSided(g: BufferGeometry): BufferGeometry {
     }
   }
   const out = new BufferGeometry();
-  out.setAttribute('position', new Float32BufferAttribute(p, 3));
-  out.setAttribute('normal', new Float32BufferAttribute(q, 3));
+  out.setAttribute('position', new BufferAttribute(p, 3));
+  out.setAttribute('normal', new BufferAttribute(q, 3));
   if (flat !== g) flat.dispose();
   g.dispose();
   return out;

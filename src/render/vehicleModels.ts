@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   Color,
   CylinderGeometry,
@@ -283,7 +284,7 @@ function tint<T extends BufferGeometry>(g: T, hex: number): T {
     data[i * 3 + 1] = c.g;
     data[i * 3 + 2] = c.b;
   }
-  g.setAttribute('color', new Float32BufferAttribute(data, 3));
+  g.setAttribute('color', new BufferAttribute(data, 3));
   return g;
 }
 

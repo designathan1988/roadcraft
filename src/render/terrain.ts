@@ -1,6 +1,7 @@
 import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
 import {
+  BufferAttribute,
   BufferGeometry,
   Float32BufferAttribute,
   FrontSide,
@@ -2552,9 +2553,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    * diagonals (rock in teeth). Read per corner, both triangles of a wall cell
    * are steep, and the rock frays one cell onto the rim as a cliff edge does.
    */
-  // Written through the attribute's own array: Float32BufferAttribute copies
-  // the array it is given.
-  const steepAttribute = new Float32BufferAttribute(new Float32Array(GRID * GRID), 1);
+  // Written through the attribute's own array (`BufferAttribute` keeps the
+  // array it is given; the typed subclasses copy it).
+  const steepAttribute = new BufferAttribute(new Float32Array(GRID * GRID), 1);
   const steep = steepAttribute.array as Float32Array;
   geometry.setAttribute('aSteep', steepAttribute);
   let faceSteep = 0;
@@ -3565,7 +3566,7 @@ export function unifiedWaterGeometry(
     normals[i + 1] = 1;
   }
   geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('normal', new BufferAttribute(normals, 3));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;

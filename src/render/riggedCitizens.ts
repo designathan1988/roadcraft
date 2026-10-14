@@ -1,8 +1,8 @@
 import type { Severable } from '@sim/people/view';
 import {
-  BufferGeometry, Color, DataTexture, DynamicDrawUsage, Float32BufferAttribute, FloatType, Group, InstancedBufferAttribute, InstancedMesh,
+  BufferAttribute, BufferGeometry, Color, DataTexture, DynamicDrawUsage, FloatType, Group, InstancedBufferAttribute, InstancedMesh,
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
-  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type BufferAttribute,
+  RGBADepthPacking, SkinnedMesh, Texture, Vector3,
 } from 'three';
 import { PIXAR, REALISTIC, cartoonBody, styleFor, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
@@ -192,7 +192,7 @@ function markChildShirt(mesh: SkinnedMesh): void {
     }
     mask[i] = torso > 0.5 ? 1 : 0;
   }
-  geometry.setAttribute('clothingMask', new Float32BufferAttribute(mask, 1));
+  geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
 function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: DataTexture },

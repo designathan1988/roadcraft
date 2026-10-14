@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   Color,
   CylinderGeometry,
@@ -96,7 +97,7 @@ function part(
     colors[i * 3 + 1] = c[1];
     colors[i * 3 + 2] = c[2];
   }
-  g.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  g.setAttribute('color', new BufferAttribute(colors, 3));
   return g;
 }
 
@@ -211,7 +212,7 @@ export function grassTuftGeometry(): BufferGeometry {
   // blade changes, and at this size that reads as noise, not as grass.
   const normals = new Float32Array(positions.length);
   for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
-  g.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+  g.setAttribute('normal', new BufferAttribute(normals, 3));
   g.setAttribute('color', new Float32BufferAttribute(colors, 3));
   g.computeBoundingSphere();
   return g;
