@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, Group, InstancedMesh, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, Group, InstancedMesh, MeshStandardMaterial, Object3D } from 'three';
 export type { Box as TransitBox };
 
 import type { RoadDoc } from '@world/doc';
@@ -309,6 +309,8 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
   cars.count = 0;
   group.add(cars);
   const tint = new Color();
+  /** Each line's colour as three holds it, parsed once (`Color.set` of a CSS string parses it on every call). */
+  const lineColours = new Map<string, Color>();
   return {
     group,
     setXray(on) { xray.visible = on; },
@@ -317,7 +319,9 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
       let n = 0;
       for (const train of trains) {
         if (train.metro) continue;
-        tint.set(train.colour);
+        let colour = lineColours.get(train.colour);
+        if (!colour) lineColours.set(train.colour, colour = new Color(train.colour));
+        tint.copy(colour);
         for (const car of train.cars) {
           if (n >= MAX_CARS) break;
           place({ x: car.x, y: car.y, z: ground(car.x, car.y) + m(0.55), yaw: car.heading, length: CAR.length, width: CAR.width, height: CAR.height });
@@ -342,6 +346,10 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
       }
     },
     dispose() {
+      // Each instanced mesh's own buffers (`instanceMatrix`, `instanceColor`)
+      // with the box: freeing the box alone left them on the GPU at every
+      // rebuild of the transport (`WebGLObjects` frees them on the mesh's `dispose`).
+      group.traverse((object) => { if ((object as InstancedMesh).isInstancedMesh) (object as InstancedMesh).dispose(); });
       unit.dispose();
     },
   };
@@ -369,34 +377,95 @@ function entranceSpot(x: number, y: number, onRoad: (p: { x: number; y: number }
 }
 
 
+/** The run of track being laid, kept and written again as it changes (`createTrackPreview`). */
+export interface TrackPreview {
+  readonly group: Group;
+  /** The track along `points` as it will be built; fewer than two points shows nothing. */
+  set(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
+    groundAt: (x: number, y: number) => number, pavedAt?: (x: number, y: number) => number): void;
+  dispose(): void;
+}
+
+/** Each layer of the preview: its boxes in `trackBoxes`, colour, opacity, draw order and finish. */
+const PREVIEW_LAYERS = [
+  { boxes: 'tunnel', colour: 0x8d8a84, opacity: 0.55, order: 0, roughness: 0.8, metalness: 0 },
+  { boxes: 'ballast', colour: 0x7d776e, opacity: 0.9, order: 1, roughness: 0.8, metalness: 0 },
+  { boxes: 'sleepers', colour: 0x5b4636, opacity: 0.95, order: 2, roughness: 0.8, metalness: 0 },
+  { boxes: 'rails', colour: 0x9aa0a6, opacity: 1, order: 3, roughness: 0.35, metalness: 0.8 },
+  { boxes: 'roof', colour: 0x8d8a84, opacity: 0.18, order: 4, roughness: 0.8, metalness: 0 },
+] as const;
+
 /**
  * The run of track being laid (the transit tool's preview): the real track,
  * as it will be built - the train's on its ballast, the metro's in its bore
- * under the ground, seen through it - not a line. Built again as it changes.
+ * under the ground, seen through it - not a line. ONE set of instanced meshes
+ * for the tool's life, written again as the track changes, growing by
+ * doubling when it needs more room: the preview follows the pointer, and a new
+ * geometry and new instanced meshes per move were new GPU buffers per move,
+ * and the instance buffers were never freed (`dispose` freed the box only).
+ * DO NOT build the preview again per move.
  */
-export function buildTrackPreview(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
-  groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number = () => NaN): { group: Group; dispose(): void } {
+export function createTrackPreview(): TrackPreview {
   const group = new Group();
   group.name = 'transit-preview';
-  const laid = trackBoxes(points, mode, groundAt, pavedAt);
   const unit = new BoxGeometry(1, 1, 1);
   const o = new Object3D();
-  const add = (boxes: readonly Box[], colour: number, opacity: number, order: number, roughness = 0.8, metalness = 0): void => {
-    if (!boxes.length) return;
-    const mat = sharedMaterial(colour, roughness, metalness, opacity, true, mode !== 'metro');
-    const mesh = new InstancedMesh(unit, mat, boxes.length);
-    mesh.renderOrder = 30 + order;
+  const meshes = PREVIEW_LAYERS.map((layer) => {
+    const mesh = new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true), 16);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    mesh.renderOrder = 30 + layer.order;
     mesh.frustumCulled = false;
-    boxes.forEach((b, i) => {
-      o.position.set(b.x, b.z + b.height / 2, -b.y); o.rotation.set(0, b.yaw, 0); o.scale.set(b.length, b.height, b.width); o.updateMatrix();
-      mesh.setMatrixAt(i, o.matrix);
-    });
+    mesh.count = 0;
+    mesh.visible = false;
     group.add(mesh);
+    return mesh;
+  });
+  return {
+    group,
+    set(points, mode, groundAt, pavedAt = () => NaN) {
+      const laid = points.length >= 2 ? trackBoxes(points, mode, groundAt, pavedAt) : null;
+      PREVIEW_LAYERS.forEach((layer, k) => {
+        let mesh = meshes[k]!;
+        const boxes = laid ? laid[layer.boxes] : [];
+        if (boxes.length > mesh.instanceMatrix.count) {
+          // three cannot resize a buffer attribute: a new mesh, twice as long, the old one's buffers freed.
+          let capacity = mesh.instanceMatrix.count;
+          while (capacity < boxes.length) capacity *= 2;
+          const grown = new InstancedMesh(unit, mesh.material, capacity);
+          grown.instanceMatrix.setUsage(DynamicDrawUsage);
+          grown.renderOrder = mesh.renderOrder;
+          grown.frustumCulled = false;
+          group.remove(mesh);
+          mesh.dispose();
+          group.add(grown);
+          meshes[k] = mesh = grown;
+        }
+        // The metro's is seen through the ground; the train's is not.
+        mesh.material = sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, mode !== 'metro');
+        boxes.forEach((b, i) => {
+          o.position.set(b.x, b.z + b.height / 2, -b.y); o.rotation.set(0, b.yaw, 0); o.scale.set(b.length, b.height, b.width); o.updateMatrix();
+          mesh.setMatrixAt(i, o.matrix);
+        });
+        mesh.count = boxes.length;
+        mesh.visible = boxes.length > 0;
+        mesh.instanceMatrix.clearUpdateRanges();
+        if (boxes.length) {
+          mesh.instanceMatrix.addUpdateRange(0, boxes.length * 16);
+          mesh.instanceMatrix.needsUpdate = true;
+        }
+      });
+    },
+    dispose() {
+      for (const mesh of meshes) mesh.dispose();
+      unit.dispose();
+    },
   };
-  add(laid.tunnel, 0x8d8a84, 0.55, 0);
-  add(laid.ballast, 0x7d776e, 0.9, 1);
-  add(laid.sleepers, 0x5b4636, 0.95, 2);
-  add(laid.rails, 0x9aa0a6, 1, 3, 0.35, 0.8);
-  add(laid.roof, 0x8d8a84, 0.18, 4);
-  return { group, dispose() { unit.dispose(); } };
+}
+
+/** The run of track `points` built once as a preview (the shader warm-up, `renderer.ts`). */
+export function buildTrackPreview(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
+  groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number = () => NaN): TrackPreview {
+  const preview = createTrackPreview();
+  preview.set(points, mode, groundAt, pavedAt);
+  return preview;
 }

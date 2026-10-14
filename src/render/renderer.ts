@@ -84,7 +84,7 @@ import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { buildBarriers, type Barriers } from './barriers';
-import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
+import { buildTrackPreview, buildTransit, createTrackPreview, type TrackPreview, type TransitMeshes } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -2001,7 +2001,7 @@ export function createSceneRenderer(
   const inspect = import.meta.env.DEV ? createInspector(renderer, scene) : null;
   let lotOverlay: ReturnType<typeof createLotOverlay> | null = null;
   let transitXray = false;
-  let transitPreview: ReturnType<typeof buildTrackPreview> | null = null;
+  let transitPreview: TrackPreview | null = null;
   let transitPreviewKey = '';
 
   let buildingsHeld = false;
@@ -2629,11 +2629,12 @@ export function createSceneRenderer(
       const key = preview ? `${preview.mode}:${preview.points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(';')}` : '';
       if (key === transitPreviewKey) return;
       transitPreviewKey = key;
-      if (transitPreview) { world.remove(transitPreview.group); transitPreview.dispose(); transitPreview = null; }
-      if (preview && preview.points.length >= 2) {
-        transitPreview = buildTrackPreview(preview.points, preview.mode, terrain.renderedHeightAt, pavedHeightAt);
+      // ONE preview for the tool's life, written again as the track changes (`createTrackPreview`).
+      if (!transitPreview) {
+        transitPreview = createTrackPreview();
         world.add(transitPreview.group);
       }
+      transitPreview.set(preview?.points ?? [], preview?.mode ?? 'train', terrain.renderedHeightAt, pavedHeightAt);
     },
     setLotOverlay(input, changes) {
       lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
@@ -2804,11 +2805,14 @@ export function createSceneRenderer(
         }
         // A metro entrance stands off the streets and out of the buildings:
         // their footprints read only if an entrance asks.
-        let solids: Vec2[][] | null = null;
+        // The buildings at the point only (`BuildingStore.near`): DO NOT take every
+        // building of the town's footprints for one entrance.
         transit = buildTransit(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
           if (onCarriageway(net, p)) return true;
-          solids ??= [...net.doc.buildings.all()].flatMap((b) => solidFootprints(b));
-          return solids.some((ring) => pointInPolygon(p, ring));
+          for (const b of net.doc.buildings.near(p.x, p.y, p.x, p.y)) {
+            if (solidFootprints(b).some((ring) => pointInPolygon(p, ring))) return true;
+          }
+          return false;
         });
         transit.setXray(transitXray);
         world.add(transit.group);
