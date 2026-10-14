@@ -32,7 +32,7 @@ import { SHADOW_REACH, foliageTint, type Scenery, type SceneryKit } from './scen
  * and the city slowed to four buildings a second. Fixed capacity and a live
  * count, a new mesh only to grow (threejs.org InstancedMesh; three's GPU
  * buffer is made at the array's size, `WebGLAttributes.createBuffer`).
- * NÃO voltar a reconstruir os jardins da cidade inteira a cada prédio.
+ * DO NOT go back to rebuilding the whole town's gardens at every building.
  */
 
 /** A plant of a building's garden, in the world: a tree, a shrub, a run of hedge or a flower bed. */
@@ -174,6 +174,8 @@ function enclose(a: Bounds | null, b: Bounds): Bounds {
 
 /** One plant kind's instances: every garden's run of slots, the dead ones with a radius of -Infinity. */
 interface Store {
+  /** Its place in the stores, and in a leaf's `slots`. */
+  readonly index: number;
   readonly key: string;
   readonly name: string;
   readonly geometry: BufferGeometry;
@@ -193,10 +195,82 @@ interface Store {
   spheres: Float32Array;
   bounds: Bounds | null;
   runs: Map<readonly GardenPlant[], { start: number; count: number }>;
+  /** Per drawn position: the slot the GPU buffer holds there since the last cull (-1: unknown). */
+  shown: Int32Array;
+  /** The cull in progress: positions written so far and the first one that changed. */
+  drawn: number;
+  firstChanged: number;
 }
 
 /** The smallest store worth a mesh. */
 const MIN_CAPACITY = 64;
+
+/**
+ * THE GARDENS' CELLS, FOR CULLING: every plant sits in a leaf cell of a
+ * quadtree over the ground, and the cull walks the tree from its roots,
+ * dropping a node out of view with all it holds and taking a node wholly in
+ * view without testing anything under it - the hierarchical frustum culling
+ * with plane masks of bvh.js (`BVH.frustumCulling`, what InstancedMesh2
+ * culls with). The old cull tested every plant of the city against the
+ * frustum at every camera move: 0.8 to 2.3 s every minute or two of play in
+ * a city of 2 560 m, more the bigger the city. Now a move costs the nodes
+ * near the view's edge and the plants in view.
+ * DO NOT go back to a pass over every plant of the town per camera move,
+ * nor to a flat list of cells (it grows with the town's area too).
+ */
+interface CellNode {
+  /** Bounds of everything under it, scene frame; radius < 0 while empty. Grown, never shrunk: a gone plant leaves it conservative. */
+  x: number; y: number; z: number; r: number;
+  /** Inner node: its four quadrants. */
+  readonly children: (CellNode | null)[] | null;
+  /** Leaf: per store, its slots in ascending order (dead ones skipped by the cull, dropped at the store's repack). */
+  readonly slots: number[][] | null;
+}
+
+/** Side of a leaf cell. */
+const CELL = m(64);
+/** Levels above the leaves: a root spans CELL * 2^LEVELS (65 km), so a town of any size has a handful of roots. */
+const LEVELS = 10;
+/** Slack on a node's radius over float rounding: a node test may only keep more than its plants' tests would, never less. */
+const PAD = m(0.001);
+/** Every frustum plane still to test. */
+const ALL_PLANES = 0b111111;
+/**
+ * A changed run of an attribute to upload, kept as ONE pending range: three
+ * clears the ranges only when it uploads (`WebGLAttributes.updateBuffer`),
+ * and a hidden mesh would pile one up per cull.
+ */
+function markRange(attribute: InstancedBufferAttribute, start: number, count: number): void {
+  const pending = attribute.updateRanges[0];
+  if (!pending) attribute.addUpdateRange(start, count);
+  else {
+    const end = Math.max(pending.start + pending.count, start + count);
+    pending.start = Math.min(pending.start, start);
+    pending.count = end - pending.start;
+  }
+  attribute.needsUpdate = true;
+}
+/** Integer cell coordinates as one key (exact while |cell| < 2^24). */
+const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
+
+/**
+ * The planes of `mask` (bit p: plane p not yet known to hold the sphere
+ * inside) against the sphere: -1 when it lies wholly outside one of them,
+ * else the planes it straddles - 0 when it is wholly inside every one. The
+ * same sum as three's `Plane.distanceToPoint` in `Frustum.intersectsSphere`.
+ */
+function planeMask(frustum: Frustum, x: number, y: number, z: number, r: number, mask: number): number {
+  let out = 0;
+  for (let p = 0; p < 6; p++) {
+    const bit = 1 << p;
+    if ((mask & bit) === 0) continue;
+    const plane = frustum.planes[p]!, n = plane.normal;
+    const d = n.x * x + n.y * y + n.z * z + plane.constant;
+    if (d < -r) return -1;
+    if (d < r) out |= bit;
+  }
+  return out;
+}
 
 export interface Gardens extends Scenery {
   /**
@@ -219,10 +293,11 @@ export function createGardens(kit: SceneryKit): Gardens {
     // The kit's models have their spheres (`createSceneryKit`).
     const sphere = geometry.boundingSphere;
     stores.push({
-      key, name, geometry, material, depth, cards,
+      index: stores.length, key, name, geometry, material, depth, cards,
       centre: sphere?.center.clone() ?? new Vector3(), reach: sphere?.radius ?? 1,
       mesh: null, capacity: 0, used: 0, dead: 0,
       matrices: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), bounds: null, runs: new Map(),
+      shown: new Int32Array(0), drawn: 0, firstChanged: 0,
     });
   };
   // The same meshes, in the same order, as the scenery's plants (`plantMeshes`).
@@ -236,6 +311,71 @@ export function createGardens(kit: SceneryKit): Gardens {
     const cards = kit.cards[kind];
     if (cards) store(`bush:${kind}`, `garden-bushes-${kind}-cards`, cards, kit.shrubCards, kit.shrubCardsDepth, true);
   }
+
+  /** The quadtree's roots, by key, and in key order (the order the cull walks them). */
+  const roots = new Map<number, CellNode>();
+  let rootOrder: CellNode[] = [];
+  const leaves = new Map<number, CellNode>();
+  /** The leaves whose bounds grew since the last `update`: their ancestors are grown once at its end. */
+  const grown = new Set<number>();
+  const emptyNode = (leaf: boolean): CellNode => ({
+    x: 0, y: 0, z: 0, r: -1,
+    children: leaf ? null : [null, null, null, null],
+    slots: leaf ? stores.map(() => []) : null,
+  });
+  /** The leaf at these cell coordinates, made with its path from the root if new. */
+  const leafAt = (ix: number, iz: number): CellNode => {
+    const key = cellKey(ix, iz);
+    const leaf = leaves.get(key);
+    if (leaf) return leaf;
+    const rootKey = cellKey(ix >> LEVELS, iz >> LEVELS);
+    let node: CellNode | undefined = roots.get(rootKey);
+    if (!node) {
+      roots.set(rootKey, node = emptyNode(false));
+      rootOrder = [...roots.keys()].sort((a, b) => a - b).map((k) => roots.get(k)!);
+    }
+    for (let level = LEVELS; level > 0; level--) {
+      const quadrant = ((ix >> (level - 1)) & 1) | (((iz >> (level - 1)) & 1) << 1);
+      const children: (CellNode | null)[] = node.children!;
+      node = children[quadrant] ??= emptyNode(level === 1);
+    }
+    leaves.set(key, node);
+    return node;
+  };
+  /** Grows a node's bounds round a sphere (`enclose`). */
+  const grow = (node: CellNode, x: number, y: number, z: number, r: number): void => {
+    const b = enclose(node.r < 0 ? null : node, { x, y, z, r });
+    node.x = b.x; node.y = b.y; node.z = b.z; node.r = b.r;
+  };
+  /** Slot `i` of the store put in its cell (slots arrive in ascending order). */
+  const file = (s: Store, i: number): void => {
+    const sp = s.spheres;
+    const x = sp[i * 4]!, y = sp[i * 4 + 1]!, z = sp[i * 4 + 2]!, r = sp[i * 4 + 3]!;
+    // Scene z is the world's -y: the cell is found on the ground plane, x and z.
+    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
+    const leaf = leafAt(ix, iz);
+    leaf.slots![s.index]!.push(i);
+    grow(leaf, x, y, z, r);
+    grown.add(cellKey(ix, iz));
+  };
+  /** The grown leaves' ancestors grown round them, root down to the leaf's parent. */
+  const growAncestors = (): void => {
+    for (const key of grown) {
+      const leaf = leaves.get(key)!;
+      const ix = Math.floor(key / 0x2000000) - 0x1000000, iz = (key % 0x2000000) - 0x1000000;
+      let node = roots.get(cellKey(ix >> LEVELS, iz >> LEVELS))!;
+      for (let level = LEVELS; level > 0; level--) {
+        grow(node, leaf.x, leaf.y, leaf.z, leaf.r);
+        node = node.children![((ix >> (level - 1)) & 1) | (((iz >> (level - 1)) & 1) << 1)]!;
+      }
+    }
+    grown.clear();
+  };
+  /** The store's slots filed again after a repack moved them. */
+  const refile = (s: Store): void => {
+    for (const leaf of leaves.values()) leaf.slots![s.index]!.length = 0;
+    for (let i = 0; i < s.used; i++) if (s.spheres[i * 4 + 3] !== -Infinity) file(s, i);
+  };
 
   const newMesh = (s: Store): InstancedMesh => {
     const mesh = new InstancedMesh(s.geometry, s.material, s.capacity);
@@ -271,11 +411,15 @@ export function createGardens(kit: SceneryKit): Gardens {
       s.dead = 0;
       s.bounds = null;
       for (let i = 0; i < at; i++) s.bounds = enclose(s.bounds, { x: spheres[i * 4]!, y: spheres[i * 4 + 1]!, z: spheres[i * 4 + 2]!, r: spheres[i * 4 + 3]! });
-    } else {
-      matrices.set(s.matrices.subarray(0, s.used * 16));
-      colours.set(s.colours.subarray(0, s.used * 3));
-      spheres.set(s.spheres.subarray(0, s.used * 4));
+      s.matrices = matrices; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
+      // The slots moved: the cells hold them anew.
+      refile(s);
+      return;
     }
+    // Only grown: every slot where it was, and in its cell still.
+    matrices.set(s.matrices.subarray(0, s.used * 16));
+    colours.set(s.colours.subarray(0, s.used * 3));
+    spheres.set(s.spheres.subarray(0, s.used * 4));
     s.matrices = matrices; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
   };
   const point = new Vector3(), matrix = new Matrix4();
@@ -295,12 +439,61 @@ export function createGardens(kit: SceneryKit): Gardens {
     if (bounds) s.bounds = enclose(s.bounds, bounds);
     s.runs.set(list, { start, count: one.count });
     s.used += one.count;
+    for (let i = start; i < s.used; i++) file(s, i);
   };
 
   /** The gardens placed, as the last `update` had them. */
   let placed = new Set<readonly GardenPlant[]>();
   let culledFor: Matrix4 | null = null;
   const probe = new Sphere();
+  /** The frustum of the cull in progress. */
+  let cullFrustum: Frustum | null = null;
+  /**
+   * The node and what it holds against the planes of `mask` still unsettled
+   * for it (0: wholly in view, nothing under it tested). A node's sphere
+   * holds its plants' spheres, so a node out of view by the shadow reach has
+   * every plant out by it, and one in view by it has every plant in: the
+   * plants kept are exactly those the per-plant test keeps.
+   */
+  const visit = (node: CellNode, mask: number): void => {
+    if (node.r < 0) return;
+    let inner = mask;
+    if (mask !== 0) {
+      inner = planeMask(cullFrustum!, node.x, node.y, node.z, node.r + PAD + SHADOW_REACH, mask);
+      if (inner < 0) return;
+    }
+    if (node.children) {
+      for (const child of node.children) if (child) visit(child, inner);
+      return;
+    }
+    for (const s of stores) {
+      const slots = node.slots![s.index]!;
+      const mesh = s.mesh;
+      if (!mesh || slots.length === 0) continue;
+      const sp = s.spheres, shown = s.shown, matrices = s.matrices, colours = s.colours;
+      const target = mesh.instanceMatrix.array as Float32Array, tints = mesh.instanceColor!.array as Float32Array;
+      let n = s.drawn;
+      for (const i of slots) {
+        const r = sp[i * 4 + 3]!;
+        if (r === -Infinity) continue;
+        if (inner !== 0) {
+          // A cell across the view's edge: its plants one by one, the same test as ever.
+          probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
+          probe.radius = r + SHADOW_REACH;
+          if (!cullFrustum!.intersectsSphere(probe)) continue;
+        }
+        // Written only when this position held another plant.
+        if (shown[n] !== i) {
+          shown[n] = i;
+          if (n < s.firstChanged) s.firstChanged = n;
+          for (let j = 0; j < 16; j++) target[n * 16 + j] = matrices[i * 16 + j]!;
+          tints[n * 3] = colours[i * 3]!; tints[n * 3 + 1] = colours[i * 3 + 1]!; tints[n * 3 + 2] = colours[i * 3 + 2]!;
+        }
+        n++;
+      }
+      s.drawn = n;
+    }
+  };
   const live = (): InstancedMesh[] => stores.flatMap((s) => (s.mesh ? [s.mesh] : []));
   return {
     get meshes() { return live(); },
@@ -348,6 +541,12 @@ export function createGardens(kit: SceneryKit): Gardens {
           if (s.mesh) added.push(s.mesh);
         }
       }
+      growAncestors();
+      // Slots moved, came or went and meshes changed: the next cull writes every position it draws.
+      for (const s of stores) {
+        if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
+        s.shown.fill(-1);
+      }
       culledFor = null;
       return { removed, added };
     },
@@ -357,39 +556,20 @@ export function createGardens(kit: SceneryKit): Gardens {
     cull(frustum: Frustum, view: Matrix4) {
       if (culledFor && culledFor.equals(view)) return;
       culledFor = (culledFor ?? new Matrix4()).copy(view);
+      for (const s of stores) { s.drawn = 0; s.firstChanged = Infinity; }
+      cullFrustum = frustum;
+      for (const root of rootOrder) visit(root, ALL_PLANES);
+      cullFrustum = null;
       for (const s of stores) {
         const mesh = s.mesh;
         if (!mesh) continue;
-        const target = mesh.instanceMatrix.array as Float32Array;
-        const tints = mesh.instanceColor!.array as Float32Array;
-        let n = 0;
-        // The whole store, before its plants one by one (`scenery.ts` `cullInstances`).
-        const whole = s.bounds;
-        if (whole) {
-          probe.center.set(whole.x, whole.y, whole.z);
-          probe.radius = whole.r + SHADOW_REACH;
+        // Only the positions whose plant changed go to the GPU; the same
+        // plants in view (a small turn, a forced recull) upload nothing.
+        if (s.firstChanged < s.drawn) {
+          markRange(mesh.instanceMatrix, s.firstChanged * 16, (s.drawn - s.firstChanged) * 16);
+          markRange(mesh.instanceColor!, s.firstChanged * 3, (s.drawn - s.firstChanged) * 3);
         }
-        if (whole && frustum.intersectsSphere(probe)) {
-          const sp = s.spheres;
-          for (let i = 0; i < s.used; i++) {
-            const r = sp[i * 4 + 3]!;
-            if (r === -Infinity) continue;
-            probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
-            probe.radius = r + SHADOW_REACH;
-            if (!frustum.intersectsSphere(probe)) continue;
-            for (let j = 0; j < 16; j++) target[n * 16 + j] = s.matrices[i * 16 + j]!;
-            tints[n * 3] = s.colours[i * 3]!; tints[n * 3 + 1] = s.colours[i * 3 + 1]!; tints[n * 3 + 2] = s.colours[i * 3 + 2]!;
-            n++;
-          }
-        }
-        if (n === 0 && mesh.count === 0) continue;
-        mesh.count = n;
-        mesh.instanceMatrix.clearUpdateRanges();
-        if (n > 0) mesh.instanceMatrix.addUpdateRange(0, n * 16);
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.instanceColor!.clearUpdateRanges();
-        if (n > 0) mesh.instanceColor!.addUpdateRange(0, n * 3);
-        mesh.instanceColor!.needsUpdate = true;
+        mesh.count = s.drawn;
       }
     },
     exclude() { /* a garden's plants are the building's own */ },
