@@ -210,7 +210,8 @@ const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revis
 
 /** Cell of the lanes' grid, world units. */
 const LANE_CELL = m(30);
-const LANE_GRIDS = new WeakMap<object, { key: string; lanes: Lanelet[]; cells: Map<number, number[]> }>();
+type LaneGrid = { key: string; lanes: Lanelet[]; cells: Map<number, number[]>; rank?: Map<LaneletId, number> };
+const LANE_GRIDS = new WeakMap<object, LaneGrid>();
 /**
  * The lanes whose bounds come within `reach` of a point, in the graph's order
  * (the tie-break), from a grid of their bounds: every bay and every lot used to
@@ -229,7 +230,7 @@ function lanesNear(w: SimWorld, x: number, y: number, reach: number): Lanelet[] 
 }
 
 /** The lanes' grid (`lanesNear`). @rebuild Called when the lane graph moved; otherwise returns the grid it made. */
-function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<number, number[]> } {
+function laneGrid(w: SimWorld): LaneGrid {
   const key = `${w.graph.revision}:${w.graph.lanelets.size}`;
   let grid = LANE_GRIDS.get(w.graph);
   // Rebuilt under the same revision, the lanes are new objects: read again.
@@ -249,6 +250,13 @@ function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<numb
     LANE_GRIDS.set(w.graph, grid = { key, lanes, cells });
   }
   return grid;
+}
+
+/** Each lane's place in the graph's order (`lanesInBox`'s order), to sort what was found by it. */
+export function laneRank(w: SimWorld): (id: LaneletId) => number {
+  const grid = laneGrid(w);
+  const rank = grid.rank ??= new Map(grid.lanes.map((lane, i) => [lane.id, i]));
+  return (id) => rank.get(id) ?? Infinity;
 }
 
 /**

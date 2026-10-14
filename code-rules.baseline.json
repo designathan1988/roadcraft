@@ -119,7 +119,6 @@
  "whole-map-per-frame  src/sim/invariants.ts runAudit  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/invariants.ts runAudit  for SimWorld.controllers": 1,
  "whole-map-per-frame  src/sim/routing/router.ts trapLanes  for LaneletGraph.lanelets": 1,
- "whole-map-per-frame  src/sim/transit/transit.ts TransitSim.rebuild  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/vehicles/spawn.ts entryLanes  for LaneletGraph.lanelets": 1,
  "whole-map-per-frame  src/sim/vehicles/spawn.ts roadLength  for Network.ribbons": 1,
  "whole-map-per-frame  src/sim/world.ts SimWorld.applyAutoControl  for LaneletGraph.junctions": 1,
