@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { Scene } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { type Mesh, Scene } from 'three';
 import { createLotOverlay, type LotOverlayInput } from '@render/lotOverlay';
 import { ChangeJournal } from '@world/changes';
 import { TUNED_UNIT } from '@world/units';
@@ -27,21 +27,53 @@ function lots(n: number, zonedAt = -1): LotOverlayInput {
   return { key: `${n}:${zonedAt}`, polygons, lines: [], points: [] };
 }
 
+/** Every slice of a lay, as the frames that follow would (`set` is true while lots are left). */
+function layAll(overlay: ReturnType<typeof createLotOverlay>, input: LotOverlayInput, changes: ChangeJournal): number {
+  let frames = 1;
+  while (overlay.set(input, changes)) if (++frames > 10_000) throw new Error('the lay never ended');
+  return frames;
+}
+
+/** Vertices drawn by an overlay's meshes. */
+function drawn(scene: Scene): number {
+  const group = scene.getObjectByName('lot-overlay');
+  return (group?.children ?? []).reduce((n, o) => n + (o as Mesh).geometry.getAttribute('position').count, 0);
+}
+
 describe('lot overlay', () => {
+  it('lays a big town a slice a frame, all of it in the end', () => {
+    // The overlay's clock is the test's own: 20 microseconds a point of
+    // ground asked, so 400 lots outlast a frame's slice (work counted, not timed).
+    let clock = 0;
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    try {
+      const scene = new Scene();
+      const slow = createLotOverlay(scene, () => { clock += 0.02; return 0; });
+      const frames = layAll(slow, lots(400, 7), new ChangeJournal());
+      expect(frames).toBeGreaterThan(1);
+      const whole = new Scene();
+      layAll(createLotOverlay(whole, () => 0), lots(400, 7), new ChangeJournal());
+      expect(drawn(scene)).toBe(drawn(whole));
+      expect(drawn(scene)).toBeGreaterThan(0);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('lays again only the lot that changed', () => {
     let asked = 0;
     const overlay = createLotOverlay(new Scene(), () => { asked++; return 0; });
     const changes = new ChangeJournal();
-    overlay.set(lots(200), changes);
+    layAll(overlay, lots(200), changes);
     const all = asked;
     expect(all).toBeGreaterThan(0);
     asked = 0;
     // One lot zoned: its fill appears.
-    overlay.set(lots(200, 37), changes);
+    layAll(overlay, lots(200, 37), changes);
     expect(asked).toBeLessThan(all / 20);
     asked = 0;
     // Nothing changed: nothing laid.
-    overlay.set(lots(200, 37), changes);
+    layAll(overlay, lots(200, 37), changes);
     expect(asked).toBe(0);
   });
 
@@ -49,13 +81,13 @@ describe('lot overlay', () => {
     let asked = 0;
     const overlay = createLotOverlay(new Scene(), () => { asked++; return 0; });
     const changes = new ChangeJournal();
-    overlay.set(lots(200), changes);
+    layAll(overlay, lots(200), changes);
     const all = asked;
     asked = 0;
     // The ground reshaped round one lot: a building's pad levelled there
     // (`renderer.ts` `shapeGround` writes it as 'ground').
     changes.record('ground', [[0, 0, 50 * U, 70 * U]]);
-    overlay.set(lots(200), changes);
+    layAll(overlay, lots(200), changes);
     expect(asked).toBeGreaterThan(0);
     expect(asked).toBeLessThan(all / 50);
   });
@@ -64,11 +96,11 @@ describe('lot overlay', () => {
     let asked = 0;
     const overlay = createLotOverlay(new Scene(), () => { asked++; return 0; });
     const changes = new ChangeJournal();
-    overlay.set(lots(200), changes);
+    layAll(overlay, lots(200), changes);
     asked = 0;
     // A generated city wrote one of these a building: 3 000 lots laid again in 25 s (2026-10-14).
     changes.record('buildings', [[0, 0, 50 * U, 70 * U]]);
-    overlay.set(lots(200), changes);
+    layAll(overlay, lots(200), changes);
     expect(asked).toBe(0);
   });
 });
