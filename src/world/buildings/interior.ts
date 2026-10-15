@@ -514,7 +514,6 @@ function lobby(p: Plan): void {
   p.put('plant', p.x1 - m(1), p.y0 + m(1));
 }
 
-/** Homes (or hotel rooms) along the floor, each a few rooms with their furniture. */
 /**
  * A floor of flats, from its plan (`spaces.ts`): the corridor's two walls with
  * a door into every home, the walls between homes on the boundaries between
@@ -824,6 +823,7 @@ function houseFloor(p: Plan, b: Building, level: number): void {
   stairs();
 }
 
+/** Homes (or hotel rooms) along the floor, each a few rooms with their furniture. */
 function homeUnits(p: Plan, b: Building, hotel: boolean): void {
   const floor = deriveSpaces(b).find((s) => s.volume === p.v.id && s.level === p.level);
   const units = floor?.spaces.length ? floor.spaces : [{ x: p.v.x, y: p.v.y, w: p.v.w, d: p.v.d }];

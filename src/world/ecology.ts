@@ -326,7 +326,6 @@ function waterDistance(water: ArrayLike<number>, side: number, cell: number): Fl
   return d;
 }
 
-/** The mean of the heights round each corner over a square of `radius` corners: a separable box blur. */
 /**
  * `localMean` over the corners x0..x1, y0..y1 only (the rest 0): read from a
  * crop `radius` wider, which gives the same means inside it - the box at the
@@ -348,6 +347,7 @@ function localMeanIn(heights: ArrayLike<number>, side: number, radius: number, x
   return out;
 }
 
+/** The mean of the heights round each corner over a square of `radius` corners: a separable box blur. */
 function localMean(heights: ArrayLike<number>, side: number, radius: number): Float32Array {
   const rows = new Float32Array(side * side);
   const out = new Float32Array(side * side);

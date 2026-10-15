@@ -102,7 +102,6 @@ export function quadsOverlap(a: readonly Vec2[], b: readonly Vec2[], slack: numb
   return true;
 }
 
-/** Builds the grid of every ground street that carries pedestrians. */
 /**
  * What land may not be built on: any ground road's carriageway and footway
  * (`onRoad`, by the street's reach), and the paving as drawn - kerbs,
@@ -136,6 +135,7 @@ export function pavedTester(doc: RoadDoc, net: Network): { onRoad: (p: Vec2) => 
   return { onRoad, onPlate };
 }
 
+/** Builds the grid of every ground street that carries pedestrians. */
 export function buildZoneGrid(doc: RoadDoc, net: Network): ZoneGrid {
   const steps = zoneGridSteps(doc, net);
   let step = steps.next();

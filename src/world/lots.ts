@@ -225,7 +225,7 @@ export function planLots(doc: RoadDoc, net: Network): LotPlan {
  * `planLots` a little at a time: it yields between rows of the raster, blocks
  * and streets, and returns the plan. Replanning a town's lots in one go was a
  * quarter-second frame after every road edit; the game runs this a few
- * milliseconds a frame (`main.ts`, as `zoneGridSteps`) and applies the plan
+ * milliseconds a frame (`main.ts`) and applies the plan
  * only if nothing it read has changed meanwhile.
  */
 export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
