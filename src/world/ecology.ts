@@ -56,6 +56,13 @@ export interface EcologyInput {
    */
   readonly painted: ArrayLike<number> | null;
   readonly settings: NatureSettings;
+  /**
+   * Where the grid's centre lies in the world (a plate's centre). The patches
+   * and frays (`valueNoise`) are read at world positions: read at the grid's
+   * own, every plate drew the same pattern. Absent: the world's origin (a
+   * single field over the map).
+   */
+  readonly centre?: { readonly x: number; readonly y: number };
 }
 
 /** What grows at each corner, every value 0..1. */
@@ -403,6 +410,8 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate): Eco
     for (let ix = x0; ix <= x1; ix++) {
       const i = iy * side + ix;
       const x = -half + ix * cell, y = half - iy * cell;
+      // The world position, for the noise only (the rest reads the grid).
+      const wx = x + (input.centre?.x ?? 0), wy = y + (input.centre?.y ?? 0);
       const h = heights[i] as number;
       // Slope from the corners either side.
       const hx = ((heights[iy * side + Math.min(side - 1, ix + 1)] as number) - (heights[iy * side + Math.max(0, ix - 1)] as number)) / (2 * cell);
@@ -417,8 +426,8 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate): Eco
       site.altitude = h - lowest;
       site.sandstone = input.sandstone[i] as number;
       site.basalt = input.basalt[i] as number;
-      site.patch = 0.5 + 0.5 * valueNoise(x / m(92) + seedX, y / m(92) + seedY);
-      site.fray = 0.5 + 0.5 * valueNoise(x / m(22) + seedY, y / m(22) - seedX);
+      site.patch = 0.5 + 0.5 * valueNoise(wx / m(92) + seedX, wy / m(92) + seedY);
+      site.fray = 0.5 + 0.5 * valueNoise(wx / m(22) + seedY, wy / m(22) - seedX);
       // The biomes over this corner: the painted ones, the map's own the rest.
       let painted = 0;
       for (let r = 0; r < REGIONS.length; r++) {
