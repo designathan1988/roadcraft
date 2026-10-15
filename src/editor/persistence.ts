@@ -70,10 +70,7 @@ export interface SavedSettings {
   readonly unit?: number;
 }
 
-/**
- * Settings as stored: with the unit their camera is in (the autosave's and the file's, one rule).
- * Here, with the settings it stamps: in `mapExport.ts` it made the two files import each other.
- */
+/** Settings as stored, with their camera's unit (autosave and file). Here: in `mapExport.ts` it made an import cycle. */
 export const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
 
 export interface SavedSession {
