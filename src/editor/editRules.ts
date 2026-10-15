@@ -58,28 +58,21 @@ export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRef
   return null;
 }
 
-/** A copy of the roads as they stand, to judge an edit made in place against (`refuseRoadEdit`). */
-export function snapshotRoads(doc: RoadDoc, net: Network): RoadState {
-  const copy = doc.clone();
-  const copyNet = new Network(copy);
-  if (net.revision === doc.revision) copyNet.adopt(net);
-  else copyNet.rebuild();
-  return { doc: copy, net: copyNet };
-}
-
-/** Runs an edit made in place on the live roads */
-export function guardRoadEdit(doc: RoadDoc, net: Network, edit: () => boolean):
+/** DO NOT copy the map to judge an edit against (`doc.clone()` and the whole network, every in-place edit) */
+export function guardRoadEdit(doc: RoadDoc, net: Network, edit: (doc: RoadDoc, net: Network) => boolean):
   { readonly changed: boolean; readonly refused: RoadEditRefusal | null } {
-  const before = snapshotRoads(doc, net);
-  const money = roadsBefore(doc);
-  if (!edit()) return { changed: false, refused: null };
   if (net.revision !== doc.revision) net.rebuild();
+  const money = roadsBefore(doc);
+  const work = doc.fork();
+  const workNet = net.fork(work);
+  if (!edit(work, workNet)) return { changed: false, refused: null };
+  if (workNet.revision !== work.revision) workNet.rebuild();
   // Judged, then paid for (`editor/roads/economy.ts`): an edit the balance cannot cover is refused like any other.
-  const refused = refuseRoadEdit(before, { doc, net }) ?? (settleRoadEdit(money, doc).affordable ? null : 'funds');
-  if (!refused) return { changed: true, refused: null };
-  doc.replaceWith(before.doc);
-  net.adopt(before.net);
-  return { changed: false, refused };
+  const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet }) ?? (settleRoadEdit(money, work).affordable ? null : 'funds');
+  if (refused) return { changed: false, refused };
+  doc.takeBack(work);
+  net.takeBack(workNet);
+  return { changed: true, refused: null };
 }
 
 /** Segments of `after` that are new, or whose shape, class, structure or end points changed. */

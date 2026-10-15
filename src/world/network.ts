@@ -1,3 +1,4 @@
+import { ForkMap, ForkSet } from '@core/forkMap';
 import { MIN_RIBBON } from '@core/scalar';
 import { type Vec2, dot } from '@core/vec2';
 import type { RoadDoc } from './doc';
@@ -143,45 +144,47 @@ export class Network {
     this.flushCells.copyFrom(new CellFiling());
   }
 
-  /** Takes another network's derived state as the start of its own, without claiming to be up to date */
-  seedJunctions(from: Network): void {
-    this.copyState(from);
-    this.build.copyFrom(from.build, false);
-    this.revision = -1;
-    this.trafficRevision = -1;
+  /** DO NOT copy the network for an edit (`adopt`, twice per road drawn): `work`'s network, layered over this one, holding only what it writes. */
+  fork(work: RoadDoc): Network {
+    const copy = new Network(work);
+    const own = copy as unknown as Record<string, unknown>;
+    own['junctions'] = new ForkMap(this.junctions);
+    own['ribbons'] = new ForkMap(this.ribbons);
+    own['segmentCells'] = CellFiling.over(this.segmentCells);
+    own['junctionCells'] = CellFiling.over(this.junctionCells);
+    own['flushCells'] = CellFiling.over(this.flushCells);
+    own['impossible'] = new ForkMap(this.impossible);
+    own['squeezed'] = new ForkMap(this.squeezed);
+    own['trims'] = new ForkMap(this.trims);
+    own['plateReach'] = new ForkMap(this.plateReach);
+    own['transitions'] = new ForkSet(this.transitions);
+    copy.polylines.forkFrom(this.polylines);
+    copy.build.forkFrom(this.build);
+    copy.log.takeFrom(this.log);
+    const upToDate = this.revision === this.doc.revision;
+    copy.revision = upToDate ? work.revision : -1;
+    copy.trafficRevision = upToDate ? work.trafficRevision : -1;
+    return copy;
   }
 
-  /** Takes over another network's derived geometry instead of recomputing it. */
-  adopt(other: Network): void {
-    this.copyState(other);
-    this.build.copyFrom(other.build, true);
+  /** A working network (`fork`) taken back once its document was (`RoadDoc.takeBack`): only what it wrote, then its state. */
+  takeBack(work: Network): void {
+    for (const name of ['junctions', 'ribbons', 'impossible', 'squeezed', 'trims', 'plateReach'] as const) {
+      const from = work[name] as unknown;
+      if (!(from instanceof ForkMap)) throw new Error('Network.takeBack: not a working copy of this network');
+      from.applyTo(this[name] as Map<unknown, unknown>);
+    }
+    this.segmentCells.takeBack(work.segmentCells);
+    this.junctionCells.takeBack(work.junctionCells);
+    this.flushCells.takeBack(work.flushCells);
+    (work.transitions as ForkSet<NodeId>).applyTo(this.transitions);
+    this.polylines.takeBack(work.polylines);
+    this.build.takeBack(work.build);
+    const before = this.log.state;
+    this.log.takeFrom(work.log);
+    this.forgetCrossings(this.log.since(before));
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-  }
-
-  private copyState(other: Network): void {
-    this.junctions.clear();
-    for (const [node, byLevel] of other.junctions) this.junctions.set(node, byLevel);
-    this.ribbons.clear();
-    for (const [seg, ribbon] of other.ribbons) this.ribbons.set(seg, ribbon);
-    this.segmentCells.copyFrom(other.segmentCells);
-    this.junctionCells.copyFrom(other.junctionCells);
-    this.flushCells.copyFrom(other.flushCells);
-    this.trims.clear();
-    for (const [seg, t] of other.trims) this.trims.set(seg, t);
-    this.plateReach.clear();
-    for (const [key, reach] of other.plateReach) this.plateReach.set(key, reach);
-    this.transitions.clear();
-    for (const node of other.transitions) this.transitions.add(node);
-    this.impossible.clear();
-    for (const [node, gap] of other.impossible) this.impossible.set(node, gap);
-    this.squeezed.clear();
-    for (const [node, short] of other.squeezed) this.squeezed.set(node, short);
-    this.polylines.adopt(other.polylines);
-    const before = this.log.state;
-    this.log.takeFrom(other.log);
-    // The crossing caches belong to the geometry just replaced
-    this.forgetCrossings(this.log.since(before));
   }
 
   /** Drops the crossing distances a change of the network may have moved */

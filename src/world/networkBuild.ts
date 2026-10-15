@@ -1,3 +1,4 @@
+import { ForkMap, ForkSet } from '@core/forkMap';
 import { MIN_RIBBON } from '@core/scalar';
 import type { RoadDoc, RoadNode, RoadSegment } from './doc';
 import type { NodeId, SegmentId } from './ids';
@@ -79,7 +80,7 @@ export class NetworkBuild {
   private nodeSource = new Map<NodeId, string>();
   private nodeRecord = new Map<NodeId, string>();
   private nodeIncident = new Map<NodeId, readonly SegmentId[]>();
-  private readonly nodePlaces = new CellFiling<NodeId, object>();
+  private nodePlaces = new CellFiling<NodeId, object>();
 
   private active = new Set<NodeId>();
   private j1 = new Map<NodeId, MemoEntry>();
@@ -121,27 +122,46 @@ export class NetworkBuild {
     this.junctionMax = -Infinity;
   }
 
-  /** Takes another build's state as its own (`Network.adopt`, `seedJunctions`) */
-  copyFrom(other: NetworkBuild, upToDate: boolean): void {
-    this.seen = upToDate ? this.net.doc.changes.version : other.seen;
-    this.segmentSource = new Map(other.segmentSource);
-    this.segmentEnds = new Map(other.segmentEnds);
-    this.nodeSource = new Map(other.nodeSource);
-    this.nodeRecord = new Map(other.nodeRecord);
-    this.nodeIncident = new Map(other.nodeIncident);
-    this.nodePlaces.copyFrom(other.nodePlaces);
-    this.active = new Set(other.active);
-    this.j1 = new Map(other.j1);
-    this.j2 = new Map(other.j2);
-    this.j3 = new Map(other.j3);
-    this.scale1 = new Map(other.scale1);
-    this.scale2 = new Map(other.scale2);
-    this.trims2 = new Map(other.trims2);
-    this.plateRaw = new Map(other.plateRaw);
-    this.plateKeys = new Map(other.plateKeys);
-    this.ribbonMemo = new Map(other.ribbonMemo);
+  /** DO NOT copy every map (`copyFrom`, twice per road drawn): a working copy over `other`'s state that keeps only what it writes */
+  forkFrom(other: NetworkBuild): void {
+    this.seen = other.seen;
+    this.segmentSource = new ForkMap(other.segmentSource);
+    this.segmentEnds = new ForkMap(other.segmentEnds);
+    this.nodeSource = new ForkMap(other.nodeSource);
+    this.nodeRecord = new ForkMap(other.nodeRecord);
+    this.nodeIncident = new ForkMap(other.nodeIncident);
+    this.nodePlaces = CellFiling.over(other.nodePlaces);
+    this.active = new ForkSet(other.active);
+    this.j1 = new ForkMap(other.j1);
+    this.j2 = new ForkMap(other.j2);
+    this.j3 = new ForkMap(other.j3);
+    this.scale1 = new ForkMap(other.scale1);
+    this.scale2 = new ForkMap(other.scale2);
+    this.trims2 = new ForkMap(other.trims2);
+    this.plateRaw = new ForkMap(other.plateRaw);
+    this.plateKeys = new ForkMap(other.plateKeys);
+    this.ribbonMemo = new ForkMap(other.ribbonMemo);
     this.ribbonMax = other.ribbonMax;
     this.junctionMax = other.junctionMax;
+  }
+
+  /** A working copy's state (`forkFrom`) written into this one, up to its document as it stands now: only what the copy wrote. */
+  takeBack(fork: NetworkBuild): void {
+    const maps = [
+      [fork.segmentSource, this.segmentSource], [fork.segmentEnds, this.segmentEnds], [fork.nodeSource, this.nodeSource],
+      [fork.nodeRecord, this.nodeRecord], [fork.nodeIncident, this.nodeIncident], [fork.j1, this.j1], [fork.j2, this.j2],
+      [fork.j3, this.j3], [fork.scale1, this.scale1], [fork.scale2, this.scale2], [fork.trims2, this.trims2],
+      [fork.plateRaw, this.plateRaw], [fork.plateKeys, this.plateKeys], [fork.ribbonMemo, this.ribbonMemo],
+    ] as [Map<unknown, unknown>, Map<unknown, unknown>][];
+    for (const [from, to] of maps) {
+      if (!(from instanceof ForkMap)) throw new Error('NetworkBuild.takeBack: not a working copy');
+      from.applyTo(to);
+    }
+    this.nodePlaces.takeBack(fork.nodePlaces);
+    (fork.active as ForkSet<NodeId>).applyTo(this.active);
+    this.ribbonMax = fork.ribbonMax;
+    this.junctionMax = fork.junctionMax;
+    this.seen = this.net.doc.changes.version;
   }
 
   /** Whether a full rebuild must follow (never built, or forgotten). */

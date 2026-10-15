@@ -190,14 +190,21 @@ function sameEdits(text: string, seed: number, steps: number): void {
     edit(a, na, at);
     if (na.revision !== a.revision) na.rebuild();
     const work = b.fork();
-    const workNet = new Network(work);
-    workNet.adopt(nb);
+    const workNet = nb.fork(work);
     edit(work, workNet, at);
     if (workNet.revision !== work.revision) workNet.rebuild();
     b.replaceWith(work);
-    nb.adopt(workNet);
+    nb.takeBack(workNet);
     expect(b.changes.since(fromB)?.map(said), `${name} (step ${step}): the diary`).toEqual(a.changes.since(fromA)?.map(said));
     expect(places(b), `${name} (step ${step}): the indices by place`).toEqual(places(a));
+    // The network taken back as the one rebuilt in place: its pieces by id and what it refuses.
+    const ids = (m: ReadonlyMap<number, unknown> | ReadonlySet<number>): number[] => [...m.keys()].sort((x, y) => x - y);
+    expect(ids(nb.ribbons), `${name} (step ${step}): the ribbons`).toEqual(ids(na.ribbons));
+    expect(ids(nb.junctions), `${name} (step ${step}): the junctions`).toEqual(ids(na.junctions));
+    expect([...nb.impossible].sort(), `${name} (step ${step}): impossible`).toEqual([...na.impossible].sort());
+    expect([...nb.squeezed].sort(), `${name} (step ${step}): squeezed`).toEqual([...na.squeezed].sort());
+    expect(ids(nb.transitions), `${name} (step ${step}): transitions`).toEqual(ids(na.transitions));
+    expect([...nb.segmentCells.ids()].sort((x, y) => x - y), `${name} (step ${step}): filed`).toEqual([...na.segmentCells.ids()].sort((x, y) => x - y));
   }
   expect(b.toJSON()).toEqual(a.toJSON());
   expect(nb.revision).toBe(na.revision);

@@ -1,5 +1,6 @@
 import type { ChangeRect } from './changes';
 import { m } from './units';
+import { ForkMap } from '@core/forkMap';
 import { uniqueCounter } from '@core/identityMemo';
 
 /** THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the partition an edit's cost is measured in */
@@ -45,9 +46,9 @@ export class CellFiling<Id extends number, T extends object> {
   /** `side`: the side of its cells, world units - the world's cell by default */
   constructor(private readonly side = CELL) {}
 
-  private readonly entries = new Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }>();
-  private readonly byCell = new Map<number, Set<Id>>();
-  private readonly versions = new Map<number, number>();
+  private entries: Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }> = new Map();
+  private byCell: Map<number, Set<Id>> = new Map();
+  private versions: Map<number, number> = new Map();
   /** Moves whenever any cell's version does: the clock's reading at the latest change. */
   epoch = 0;
 
@@ -64,7 +65,7 @@ export class CellFiling<Id extends number, T extends object> {
     const cells: number[] = [];
     forCellsOver(rect, (key) => {
       cells.push(key);
-      let set = this.byCell.get(key);
+      let set = this.cellToWrite(key);
       if (!set) this.byCell.set(key, set = new Set());
       set.add(id);
       this.bump(key);
@@ -153,9 +154,33 @@ export class CellFiling<Id extends number, T extends object> {
     this.epoch = other.epoch;
   }
 
+  /** DO NOT copy every cell for an edit (`copyFrom` twice per road drawn): a working copy over `base` that writes only what it files */
+  static over<Id extends number, T extends object>(base: CellFiling<Id, T>): CellFiling<Id, T> {
+    const fork = new CellFiling<Id, T>(base.side);
+    fork.entries = new ForkMap(base.entries);
+    fork.byCell = new ForkMap(base.byCell);
+    fork.versions = new ForkMap(base.versions);
+    fork.epoch = base.epoch;
+    return fork;
+  }
+
+  /** A working copy's changes (`over`) written into the filing it was made over: what it filed, nothing else. */
+  takeBack(fork: CellFiling<Id, T>): void {
+    if (!(fork.entries instanceof ForkMap)) throw new Error('CellFiling.takeBack: not a working copy');
+    fork.entries.applyTo(this.entries);
+    (fork.byCell as ForkMap<number, Set<Id>>).applyTo(this.byCell);
+    (fork.versions as ForkMap<number, number>).applyTo(this.versions);
+    this.epoch = fork.epoch;
+  }
+
+  /** A cell's set to change: in a working copy, the one below copied first (a cell it files in, not the map). */
+  private cellToWrite(key: number): Set<Id> | undefined {
+    return this.byCell instanceof ForkMap ? this.byCell.writable(key, (set) => new Set(set)) : this.byCell.get(key);
+  }
+
   private unfile(id: Id, cells: readonly number[]): void {
     for (const key of cells) {
-      const set = this.byCell.get(key);
+      const set = this.cellToWrite(key);
       if (!set) continue;
       set.delete(id);
       if (set.size === 0) this.byCell.delete(key);

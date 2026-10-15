@@ -1,3 +1,4 @@
+import { ForkMap } from '@core/forkMap';
 import { Polyline } from '@core/polyline';
 import { type CurveShape, flattenSegment } from '@core/bezier';
 import { type Vec2, neg, perp } from '@core/vec2';
@@ -83,10 +84,14 @@ export class PolylineCache {
     this.map.clear();
   }
 
-  /** Takes over another cache's entries. */
-  adopt(other: PolylineCache): void {
-    this.map.clear();
-    for (const [id, pl] of other.map) this.map.set(id, pl);
+  /** A working copy over `other` (`Network.fork`): reads through it, keeps only the polylines it makes or drops. */
+  forkFrom(other: PolylineCache): void {
+    this.map = new ForkMap(other.map);
+  }
+
+  /** A working copy's changes (`forkFrom`) written back. */
+  takeBack(fork: PolylineCache): void {
+    (fork.map as ForkMap<SegmentId, Polyline>).applyTo(this.map);
   }
 
   get size(): number {
