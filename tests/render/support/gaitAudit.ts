@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { pedPose } from '@sim/pose';
@@ -9,9 +6,10 @@ import type { SimWorld } from '@sim/world';
 import { m } from '@world/units';
 import { SIGNAL_POST_RADIUS, signalPosts } from '@world/signalPosts';
 import { blocksPedestrians, streetFurniture } from '@world/streetFurniture';
-import { decodeRocketboxLibrary } from '@render/citizenWalk';
-import { WALK_STYLES, gaitClipsOf, type GaitClipName, type GaitClips, type GaitPlay } from '@render/citizenGait';
+import { WALK_STYLES, type GaitClipName, type GaitClips, type GaitPlay } from '@render/citizenGait';
 import { fixtureDoc, simOf } from '../../sim/support/bodies';
+import { gaitClipsOf } from './gaitClips';
+import { rocketboxLibrary } from './rocketboxLibrary';
 
 /**
  * Measures what the player sees a pedestrian's legs do against how the drawn
@@ -28,9 +26,7 @@ import { fixtureDoc, simOf } from '../../sim/support/bodies';
  *                forward/lateral velocity carried by the stepping legs.
  */
 
-const motion = (name: string): unknown =>
-  JSON.parse(readFileSync(join(process.cwd(), 'src', 'render', 'motion', name), 'utf8'));
-const LIBRARY = decodeRocketboxLibrary(motion('rocketboxMale.json'), motion('rocketboxFemale.json'));
+const LIBRARY = await rocketboxLibrary();
 const GAIT_CLIPS: Readonly<Record<'male' | 'female', GaitClips>> = {
   male: gaitClipsOf(LIBRARY.male, 'male'),
   female: gaitClipsOf(LIBRARY.female, 'female'),

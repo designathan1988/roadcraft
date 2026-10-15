@@ -262,8 +262,6 @@ export function agentHash(id: number): number {
   return (h ^ (h >>> 15)) >>> 0;
 }
 
-/** A slice of a hash as a fraction in [0, 1). */
-const frac = (h: number, shift: number): number => ((h >>> shift) & 0xff) / 256;
 /** A slice of a hash as an index into `n` items. */
 const pick = (h: number, shift: number, n: number): number => (h >>> shift) % n;
 /** Reads a palette entry, with the indexing narrowed away. */
@@ -281,22 +279,11 @@ export const SKIN_TONES: readonly number[] = [
   0xf2d3b6, 0xe6b98f, 0xd19a6a, 0xa9714a, 0x7d4e30, 0x4e3120,
 ];
 
-export const HAIR_COLOURS: readonly number[] = [
-  0x17110d, 0x2f1f14, 0x4a2f1c, 0x6f4a24, 0xa8803c, 0xc9412a, 0x8d8a83, 0xd8d6d0,
-];
-/** Index of the first grey in `HAIR_COLOURS`, which the elderly draw from. */
-const FIRST_GREY = 6;
-
 export const SHIRT_COLOURS: readonly number[] = [
   0xd8dde2, 0x2f5f92, 0xb8432f, 0x3f7d5c, 0xe0b83f, 0x8a4f8c, 0x2b2f36, 0xd77c3a, 0xf0e6d2,
   0x5d6b7a,
 ];
 
-export const TROUSER_COLOURS: readonly number[] = [
-  0x2b3440, 0x3d4a5c, 0x55504a, 0x1f2328, 0x7a6a52, 0x8f9399, 0x4a3a52, 0x233d33,
-];
-
-const SHOE_COLOURS: readonly number[] = [0x1a1a1c, 0x3b2a1e, 0x6b6e72, 0xe2e4e6];
 const HELMET_COLOURS: readonly number[] = [0x1c1e22, 0xd8dbe0, 0xc0392b, 0x2c5f9e, 0xe0a33a];
 
 /** Tints for parts that are never painted the vehicle's own colour. */
@@ -351,83 +338,6 @@ const BOX_BODY = 0xe6e8ea;
 
 /** Height of a seated head above the middle of its torso. */
 const SEAT_HEAD_RISE = m(0.38);
-
-type PedBuild = 'child' | 'adult' | 'elder';
-
-export interface PedLook {
-  readonly build: PedBuild;
-  /** Overall height, in world units. */
-  readonly height: number;
-  /** Width and depth multiplier, so a crowd is not one body repeated. */
-  readonly girth: number;
-  /** Head diameter as a fraction of height. Children are top-heavy. */
-  readonly headFraction: number;
-  readonly skin: number;
-  readonly hair: number;
-  readonly trousers: number;
-  readonly shoes: number;
-  /** Bare legs below a hem, instead of trouser legs. */
-  readonly skirt: boolean;
-  /** A flat cap instead of a skull of hair. */
-  readonly hat: boolean;
-  /** Forward lean of the torso, in radians. */
-  readonly stoop: number;
-  /** Stride length multiplier, which spreads the cadence across the crowd. */
-  readonly stride: number;
-  /** Whether a dog trots alongside. */
-  readonly dog: boolean;
-}
-
-/**
- * Everything about how one pedestrian looks, from their id alone.
- *
- * The shirt is deliberately absent: it stays the `color` the simulation drew at
- * spawn, so the seeded spawn stream still decides something visible and two
- * runs of one seed still produce the same street.
- */
-export function pedLook(id: number): PedLook {
-  const h = agentHash(id);
-  const g = agentHash(id ^ 0x5bf03635);
-
-  const age = pick(h, 0, 100);
-  const build: PedBuild = age < 16 ? 'child' : age < 88 ? 'adult' : 'elder';
-  const elder = build === 'elder';
-  const t = frac(h, 8);
-
-  // A child is 1.05 to 1.40 m, an adult 1.58 to 1.90, and the elderly a little
-  // shorter than they were. Heights are written in metres so they stay honest
-  // against a 1.45 m car roof.
-  const height =
-    build === 'child'
-      ? m(1.05 + t * 0.35)
-      : elder
-        ? m(1.5 + t * 0.22)
-        : m(1.58 + t * 0.32);
-
-  // Grey arrives with age rather than at random: three elderly heads in four
-  // draw from the grey end of the palette.
-  const hair =
-    elder && pick(g, 8, 4) !== 0
-      ? (HAIR_COLOURS[FIRST_GREY + pick(g, 10, 2)] as number)
-      : from(HAIR_COLOURS, g, 12);
-
-  return {
-    build,
-    height,
-    girth: 0.86 + frac(g, 0) * 0.34,
-    headFraction: build === 'child' ? 0.19 : elder ? 0.138 : 0.132,
-    skin: from(SKIN_TONES, h, 16),
-    hair,
-    trousers: from(TROUSER_COLOURS, g, 16),
-    shoes: from(SHOE_COLOURS, h, 24),
-    skirt: pick(h, 12, 8) < 3,
-    hat: pick(g, 22, 9) === 0,
-    stoop: elder ? 0.16 : build === 'child' ? 0.05 : 0.03,
-    stride: 0.86 + frac(g, 4) * 0.34,
-    // Children do not walk dogs unaccompanied, so the lead is an adult trait.
-    dog: build !== 'child' && pick(g, 24, 100) < 9,
-  };
-}
 
 export interface VehicleLook {
   /** Figures to draw, driver first. Never more than the class has seats. */

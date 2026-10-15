@@ -126,16 +126,6 @@ const TREE_KIND: Readonly<Record<TreeSpecies, LowPolyKind>> = {
   broadleaf: 'oak', broadleafTall: 'broadleafTall', conifer: 'cypress', ipeYellow: 'ipeYellow', ipePink: 'ipePink',
 };
 
-/**
- * One unit tall, root at the origin: the game's one low-poly tree style
- * (`lowPolyTrees.ts`), the same the countryside's trees are, so a street
- * tree and the wood behind it are one family. One model at every zoom: at
- * a few hundred triangles it is cheaper than the old crown's close model.
- */
-export function treeGeometry(species: TreeSpecies): BufferGeometry {
-  return treeParts(species).body;
-}
-
 /** A street or garden tree's body and its foliage cards (`lowPolyTrees.ts`). */
 export function treeParts(species: TreeSpecies): LowPolyParts {
   return lowPolyTreeParts(TREE_KIND[species], 0x7ee + species.length * 131 + species.charCodeAt(3));
@@ -143,11 +133,6 @@ export function treeParts(species: TreeSpecies): LowPolyParts {
 
 export type BushKind = 'bush' | 'bushFlowering' | 'hedge';
 export const BUSH_KINDS: readonly BushKind[] = ['bush', 'bushFlowering', 'hedge'];
-
-/** One unit tall, root at the origin; about 1.5 units across: the game's one low-poly style (`lowPolyTrees.ts`). */
-export function bushGeometry(kind: BushKind): BufferGeometry {
-  return bushParts(kind).body;
-}
 
 /** A bush's or hedge's body and its foliage cards (`lowPolyTrees.ts`). */
 export function bushParts(kind: BushKind): LowPolyParts {

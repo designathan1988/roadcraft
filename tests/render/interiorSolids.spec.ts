@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { Box3, Ray, Triangle, Vector3 } from 'three';
 
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
-import { buildBusModel, buildTruckModel, occupantScale, type SeatModel, type VehicleModel } from '@render/vehicleModels';
+import { buildBusModel, buildTruckModel, type SeatModel, type VehicleModel } from '@render/vehicleModels';
+import { occupantScale } from './support/occupantScale';
 import { buildCarModel, carStylesFor } from '@render/carBody';
 import type { InteriorSolid, InteriorSolidKind } from '@render/interiorSolids';
 import { seatBaseClip } from '@render/occupants';

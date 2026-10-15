@@ -5,7 +5,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { bands, surfaces } from '@world/surfaces';
 import type { MultiPoly } from '@core/clipper';
-import { buildSurfaceMesh } from '@render/mesh/surfaceMesh';
+import { buildSurfaceMesh } from './support/surfaceMesh';
 
 /**
  * Cost, measured rather than hoped for.

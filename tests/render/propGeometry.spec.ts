@@ -6,13 +6,12 @@ import {
   TREE_SPECIES,
   benchGeometry,
   binGeometry,
-  bushGeometry,
+  bushParts,
   grassTuftGeometry,
   hydrantGeometry,
   lampGeometry,
   lampLensGeometry,
   postboxGeometry,
-  treeGeometry,
   treeParts,
   treePitGeometry,
   wildflowerGeometry,
@@ -67,14 +66,14 @@ function plantTop(parts: { body: BufferGeometry; cards: BufferGeometry | null })
 describe('vegetation models', () => {
   it('are one unit tall with the root at the origin', () => {
     for (const species of TREE_SPECIES) {
-      const { minY } = check(treeGeometry(species));
+      const { minY } = check(treeParts(species).body);
       const maxY = plantTop(treeParts(species));
       expect(minY, species).toBeGreaterThanOrEqual(-0.01);
       expect(maxY, species).toBeGreaterThan(0.85);
       expect(maxY, species).toBeLessThan(1.15);
     }
     for (const kind of BUSH_KINDS) {
-      const { minY, maxY } = check(bushGeometry(kind));
+      const { minY, maxY } = check(bushParts(kind).body);
       expect(minY, kind).toBeGreaterThanOrEqual(-0.05);
       expect(maxY, kind).toBeLessThan(1.15);
     }
@@ -87,7 +86,7 @@ describe('vegetation models', () => {
 
   it('stay within a budget a thousand-tree map can afford', () => {
     for (const species of TREE_SPECIES) {
-      expect(treeGeometry(species).getAttribute('position').count / 3, species).toBeLessThan(900);
+      expect(treeParts(species).body.getAttribute('position').count / 3, species).toBeLessThan(900);
     }
     expect(grassTuftGeometry().getAttribute('position').count / 3).toBeLessThanOrEqual(40);
   });

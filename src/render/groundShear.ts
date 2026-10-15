@@ -31,10 +31,6 @@ export function groundGradient(heightAt: (x: number, y: number) => number, x: nu
   };
 }
 
-/** Height a point of the body at world (x, y), level at `h0` over (x0, y0), is sheared to. */
-export const shearedHeight = (g: Gradient, x0: number, y0: number, h0: number, x: number, y: number): number =>
-  h0 + g.gx * (x - x0) + g.gy * (y - y0);
-
 /**
  * Premultiplies `matrix` (three's axes: world y is -Z) by the shear about the
  * body's centre (X0, Z0): Y += gx (X - X0) - gy (Z - Z0).

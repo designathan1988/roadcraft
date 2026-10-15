@@ -5,7 +5,7 @@ import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { CellPool } from '@render/buildings/cellPool';
 import type { CellEntry, CellResult } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
-import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS, chunksByCell } from '@render/buildings/layerCells';
+import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
 import { growOnLot } from '@editor/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -63,6 +63,18 @@ function grownTown(): RoadDoc {
     if (growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed) === null && refused.size >= doc.lots.length) break;
   }
   return doc;
+}
+
+/** The buildings' chunks by cell, in list order. */
+function chunksByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk, cellSize: number): Map<string, BuildingChunk[]> {
+  const byCell = new Map<string, BuildingChunk[]>();
+  for (const b of buildings) {
+    const key = `${Math.floor(b.x / cellSize)},${Math.floor(b.y / cellSize)}`;
+    const list = byCell.get(key);
+    if (list) list.push(chunkOf(b));
+    else byCell.set(key, [chunkOf(b)]);
+  }
+  return byCell;
 }
 
 const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;

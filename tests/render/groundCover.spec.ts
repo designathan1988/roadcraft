@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FOREST_SPECIES, buildGroundCover, createGroundCoverKit, rockGeometry, scrubGeometry, treeModel } from '../../src/render/groundCover';
+import { FOREST_SPECIES, rockGeometry, scrubGeometry, treeModel } from '../../src/render/groundCover';
 
 const triangles = (geometry: { index: { count: number } | null; getAttribute(name: string): { count: number } }): number =>
   (geometry.index ? geometry.index.count : geometry.getAttribute('position').count) / 3;
@@ -25,17 +25,6 @@ describe('ground cover', () => {
         expect(total).toBeLessThanOrEqual(300);
       }
     }
-  });
-
-  it('draws any number of them in one mesh per variant', () => {
-    const kit = createGroundCoverKit();
-    const many = Array.from({ length: 3000 }, (_, i) => ({ x: i, y: 0, z: 0, size: 2, yaw: 0, seed: (i * 0.618) % 1 }));
-    const cover = buildGroundCover(many, many, kit);
-    expect(cover.meshes.length).toBeLessThanOrEqual(kit.rocks.length + kit.scrub.length);
-    const total = cover.meshes.reduce((sum, mesh) => sum + triangles(mesh.geometry) * mesh.count, 0);
-    expect(total).toBeLessThanOrEqual(3000 * (36 + 60));
-    cover.dispose();
-    kit.dispose();
   });
 
   it('keeps a stone sitting on the ground, not floating or sunk out of sight', () => {

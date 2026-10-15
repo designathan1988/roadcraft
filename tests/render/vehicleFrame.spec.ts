@@ -6,7 +6,7 @@ import { buildRoadElevation } from '@world/elevation';
 import { sampleTerrainHeight } from '@world/terrain';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { axleStations } from '@render/vehicleModels';
-import { framePoint, roadFrame } from '@render/vehicleFrame';
+import { roadFrame, type RoadFrame } from '@render/vehicleFrame';
 import { m } from '@world/units';
 import { buildInspectionMap } from '../fixtures/inspectionMap';
 
@@ -20,6 +20,25 @@ import { buildInspectionMap } from '../fixtures/inspectionMap';
  * never the ground's: a bridge or a bore is what it rides on.
  */
 const TOLERANCE = m(0.02);
+
+/** World (x, y, h) of a point on the frame's ground plane, `along` forward and `side` left. */
+function framePoint(
+  frame: RoadFrame, cx: number, cy: number, heading: number, along: number, side: number,
+): { x: number; y: number; h: number } {
+  // Roll about forward, then pitch about the lateral axis, then yaw.
+  const sr = Math.sin(frame.roll);
+  const cr = Math.cos(frame.roll);
+  const sp = Math.sin(frame.pitch);
+  const cp = Math.cos(frame.pitch);
+  // Local (forward, up, left).
+  const up1 = side * sr;
+  const left1 = side * cr;
+  const forward2 = along * cp - up1 * sp;
+  const up2 = along * sp + up1 * cp;
+  const ux = Math.cos(heading);
+  const uy = Math.sin(heading);
+  return { x: cx + ux * forward2 - uy * left1, y: cy + uy * forward2 + ux * left1, h: frame.deck + up2 };
+}
 
 describe('vehicle frame', () => {
   const map = buildInspectionMap();

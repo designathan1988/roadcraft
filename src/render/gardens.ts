@@ -588,10 +588,3 @@ export function createGardens(kit: SceneryKit): Gardens {
     },
   };
 }
-
-/** The gardens of these lists, made at once (`createGardens` and one `update`). */
-export function buildGardens(groups: readonly (readonly GardenPlant[])[], kit: SceneryKit): Gardens {
-  const gardens = createGardens(kit);
-  gardens.update({ added: groups, removed: [] });
-  return gardens;
-}

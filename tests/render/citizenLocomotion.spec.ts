@@ -1,19 +1,17 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Object3D, SkinnedMesh, Vector3 } from 'three';
-import { createGait, gaitClipsOf, gaitHeading, gaitPlays, stepGait, SHUFFLE_AMPLITUDE, REST_AMPLITUDE, type GaitPlay } from '@render/citizenGait';
-import { clipTransferFor, decodeRocketboxLibrary } from '@render/citizenWalk';
+import { createGait, gaitHeading, gaitPlays, stepGait, SHUFFLE_AMPLITUDE, REST_AMPLITUDE, type GaitPlay } from '@render/citizenGait';
+import { clipTransferFor } from '@render/citizenWalk';
 import { directionalWalkFor } from '@render/citizenStride';
 import { CROWD } from '@render/citizenCasting';
 import { DT } from '@sim/params';
 import { personHash, type PedView } from '@sim/people/view';
 import { m } from '@world/units';
 import { bonePosition, citizenRig } from './support/citizenRig';
+import { gaitClipsOf } from './support/gaitClips';
+import { rocketboxLibrary } from './support/rocketboxLibrary';
 
-const library = decodeRocketboxLibrary(
-  JSON.parse(readFileSync('src/render/motion/rocketboxMale.json', 'utf8')),
-  JSON.parse(readFileSync('src/render/motion/rocketboxFemale.json', 'utf8')),
-);
+const library = await rocketboxLibrary();
 const clips = gaitClipsOf(library.male, 'male');
 
 function walker(): PedView {

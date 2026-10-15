@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry, type Mesh } from 'three';
 import type { BlockArrays } from './roadLodPure';
 
-export { COARSE_ERROR,   coarseArrays, type BlockArrays } from './roadLodPure';
+export { coarseArrays, type BlockArrays } from './roadLodPure';
 
 /**
  * THE FAR LEVEL OF A BLOCK OF ROAD SURFACE, as meshes (`roadLodPure.ts` makes the arrays, in a worker): the

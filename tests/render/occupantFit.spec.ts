@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import {
-  CAB_EXTENTS, CHAIR_EXTENTS, REAR_SEATED_EXTENTS, SEATED_EXTENTS, buildBusModel, buildTruckModel, buildVehicleModel, extentsOf, occupantScale,
+  CAB_EXTENTS, CHAIR_EXTENTS, REAR_SEATED_EXTENTS, SEATED_EXTENTS, buildBusModel, buildTruckModel, extentsOf,
   type SeatedExtents,
 } from '@render/vehicleModels';
+import { buildCarModel } from '@render/carBody';
+import { occupantScale } from './support/occupantScale';
 import { RIDER_CLIPS } from '@render/riderPoses';
 import { CROWD } from '@render/citizenCasting';
 import { m } from '@world/units';
@@ -61,7 +63,7 @@ describe('occupants', () => {
   it('seats every body of the roster inside every cabin, at a human size', () => {
     const undersized: string[] = [];
     for (const a of ARCHETYPES) {
-      const model = a.shape === 'car' ? buildVehicleModel(a)
+      const model = a.shape === 'car' ? buildCarModel(a)
         : a.shape === 'bus' ? buildBusModel(a) : a.shape === 'truck' ? buildTruckModel(a) : null;
       if (!model) continue;
       expect(model.seats.length, a.id).toBeGreaterThanOrEqual(a.seats);

@@ -1,13 +1,11 @@
 import {
   BufferGeometry,
-  Float32BufferAttribute,
   Mesh,
   type Material,
 } from 'three';
 
 import type { MultiPoly } from '@core/clipper';
-import { surfaceShape } from './tileShape';
-import { type Context, type TileMeshOptions, meshPiece, meshSkirts, smoothTopNormals, streams } from './tileMesh';
+import type { TileMeshOptions } from './tileMesh';
 
 export {  type TileRect } from './tileShape';
 export { meshTileShape,  type Tile,     } from './tileMesh';
@@ -42,33 +40,6 @@ export interface SurfaceMeshOptions extends TileMeshOptions {
   readonly maxEdge: number;
   readonly castShadow?: boolean;
   readonly receiveShadow?: boolean;
-}
-
-export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
-  const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1], cut: [0, -1, 0] };
-
-  // Compact pieces first (`tileShape.ts` `splitToSpan`), then ear clipping inside each.
-  const out = streams();
-  const shape = surfaceShape(options.polygons, options.maxEdge, options.bottom !== undefined);
-  for (const piece of shape.pieces) meshPiece(piece, context, out);
-  if (shape.skirts) meshSkirts(shape.skirts, context, out);
-
-  const { positions, normals, uvs, colors, sections, indices } = out;
-  if (indices.length === 0) return null;
-  // Only the top face was given a placeholder normal; recomputing just those
-  // vertices keeps the skirt's hard edges while the surface itself is smooth.
-  smoothTopNormals(positions, normals, indices);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
-  // Always present, white when no tint was asked for: a material that declares
-  // `vertexColors` requires the attribute, and it is cheaper to write three
-  // ones than to keep two variants of every road material.
-  geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-  geometry.setAttribute('roadSection', new Float32BufferAttribute(sections, 3));
-  geometry.setIndex(indices);
-  return finish(geometry, options);
 }
 
 export function finish(geometry: BufferGeometry,

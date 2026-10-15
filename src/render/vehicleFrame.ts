@@ -90,22 +90,3 @@ export function roadFrameInto(
   out.deck = deck; out.pitch = pitch; out.roll = roll;
   return out;
 }
-
-/** World (x, y, h) of a point on the frame's ground plane, `along` forward and `side` left. */
-export function framePoint(
-  frame: RoadFrame, cx: number, cy: number, heading: number, along: number, side: number,
-): { x: number; y: number; h: number } {
-  // Roll about forward, then pitch about the lateral axis, then yaw.
-  const sr = Math.sin(frame.roll);
-  const cr = Math.cos(frame.roll);
-  const sp = Math.sin(frame.pitch);
-  const cp = Math.cos(frame.pitch);
-  // Local (forward, up, left).
-  const up1 = side * sr;
-  const left1 = side * cr;
-  const forward2 = along * cp - up1 * sp;
-  const up2 = along * sp + up1 * cp;
-  const ux = Math.cos(heading);
-  const uy = Math.sin(heading);
-  return { x: cx + ux * forward2 - uy * left1, y: cy + uy * forward2 + ux * left1, h: frame.deck + up2 };
-}

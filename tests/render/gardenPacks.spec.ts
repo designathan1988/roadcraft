@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Matrix4, type InstancedMesh } from 'three';
-import { createSceneryKit } from '@render/scenery';
-import { buildGardens, createGardens, type GardenPlant, type Gardens } from '@render/gardens';
+import { createSceneryKit, type SceneryKit } from '@render/scenery';
+import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { m } from '@world/units';
 import { townChanges } from '../support/gardenChange';
 
@@ -20,6 +20,13 @@ const garden = (g: number): GardenPlant[] => Array.from({ length: 9 }, (_, i) =>
 /** A view that sees everything. */
 const everything = new Frustum().setFromProjectionMatrix(new Matrix4().makeOrthographic(-1e7, 1e7, 1e7, -1e7, -1e7, 1e7));
 let views = 0;
+
+/** The gardens of these lists, made at once: the reference a town built afresh draws. */
+function buildGardens(groups: readonly (readonly GardenPlant[])[], kit: SceneryKit): Gardens {
+  const gardens = createGardens(kit);
+  gardens.update({ added: groups, removed: [] });
+  return gardens;
+}
 
 /** Each mesh's drawn instances, by name: matrix and tint of each, in their order. */
 function drawn(gardens: Gardens): Map<string, string[]> {

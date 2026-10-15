@@ -107,22 +107,3 @@ const overlaps = (r: Rect, a: Rect): boolean => r[0] <= a[2] && r[2] >= a[0] && 
 export function unionRect(a: Rect | null, b: Rect): Rect {
   return a === null ? b : [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
 }
-
-/**
- * A thing drawn on the ground: built again only when its own key changes or
- * the ground changes under its area. `stale` says whether to build it now,
- * and takes the build as done when it says so.
- */
-export class GroundDependant {
-  private key: string | null = null;
-  private seen = -1;
-
-  constructor(private readonly changes: GroundRecord) {}
-
-  stale(key: string, area: Area): boolean {
-    if (key === this.key && !this.changes.touches(this.seen, area)) return false;
-    this.key = key;
-    this.seen = this.changes.version;
-    return true;
-  }
-}
