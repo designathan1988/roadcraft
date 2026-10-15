@@ -305,11 +305,6 @@
       "count": 1
     }
   },
-  "src/render/markings.ts": {
-    "roadcraft/no-whole-map-walk": {
-      "count": 1
-    }
-  },
   "src/render/materials.ts": {
     "roadcraft/no-module-state": {
       "count": 1
@@ -450,14 +445,6 @@
     },
     "roadcraft/no-silent-catch": {
       "count": 4
-    }
-  },
-  "src/render/roadSurfaces.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-whole-map-walk": {
-      "count": 2
     }
   },
   "src/render/structures.ts": {

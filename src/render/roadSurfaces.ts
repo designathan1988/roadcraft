@@ -1,28 +1,20 @@
 import { Color, Group, type Material, type Mesh } from 'three';
 
-import type { MultiPoly, Poly } from '@core/clipper';
+import type { Poly } from '@core/clipper';
 import { Digest } from '@core/digest';
-import { offsetPolyline } from '@core/offset';
-import type { NodeId, SegmentId } from '@world/ids';
+import type { SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
-import { CASING_BAND, CURB_BAND, Level, ROAD_TYPES, type SurfaceLevel, laneWidth } from '@world/roadTypes';
+import { Level, ROAD_TYPES, laneWidth } from '@world/roadTypes';
 import type { CarriagewayMaterial } from '@world/roadSection';
 import { footwayRiseShare, packFlush } from '@world/roads/footwayRise';
-import { levelPolygons, levelRings } from '@world/surfaces';
-import { curbRamps, rampOutline, rampsMeeting, walkingRise } from '@world/curbRamps';
+import { rampsMeeting, walkingRise } from '@world/curbRamps';
 import type { CurbRamp } from '@world/rampRise';
-import {
-  RAISED_LIFT,
-  ROAD_STRUCTURES,
-  isRaised,
-  roadStructure,
-  type RoadStructure,
-} from '@world/structures';
+import { RAISED_LIFT, isRaised, roadStructure } from '@world/structures';
 import type { RoadElevation } from '@world/elevation';
-import { m } from '@world/units';
-import { medianNose } from '@world/landscape';
 import { LANE_LINE } from '@world/roadTypes';
-import { PAINT_RISE, markingQuads } from './markings';
+import { PAINT_RISE } from './markings';
+import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
+import type { Input } from './roadSurfaceRings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import { mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
@@ -139,6 +131,12 @@ export interface SurfaceReuse {
    */
   readonly stored?: Map<string, TileBundle>;
   /**
+   * The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`):
+   * each build brings them up to the network's change instead of gathering every road of the map
+   * again. Absent, every build makes them from the whole map.
+   */
+  readonly inputs?: SurfaceInputs;
+  /**
    * Each tile built afresh, to be kept for a later session: called once its blocks are merged, when
    * nothing of the build reads its arrays any more - the keeper may take them (transfer them).
    */
@@ -211,28 +209,6 @@ export interface RoadSurfaces {
 }
 
 /**
- * World size of one tile.
- *
- * A road edit used to merge, cut and triangulate every band of the whole
- * network: a quarter of a million triangles and every polygon boolean, most of
- * the time a new road took to appear, and more on a bigger map. Everything is
- * now done a tile at a time from the rings that reach the tile, and a tile
- * whose rings and surroundings (`SurfaceReuse.dependsOn`) have not changed is
- * copied from the last build, so an edit pays for the tiles it reaches. A
- * multiple of the ground and deck spans (8 x 6 and 16 x 6), so a tile holds
- * whole pieces.
- */
-const TILE = m(76.8);
-/**
- * Where the tile grid starts. Off any round number, so no road drawn on a
- * round coordinate has its edge lie along a tile line, where it would be taken
- * for a cut and lose its kerb (`meshTile`).
- */
-const TILE_ORIGIN = m(0.1484);
-/** How far round a tile a ring may reach and still be read by it. */
-const TILE_REACH = m(0.2);
-const TILE_BIAS = 1 << 15;
-/**
  * Tiles a side of one mesh. Every tile of the network used to be merged into
  * one mesh per surface on every edit and sent to the GPU whole - 50 to 80 MB
  * and a 400-850 ms frame for one short street in the default town
@@ -245,39 +221,6 @@ const CHUNK = 4;
  * for a while, few enough that the shapes waiting to be read stay small.
  */
 const SHAPE_BATCH = 64;
-
-/** One ring of input, with its box and its digest, measured once per build. */
-interface Input {
-  readonly poly: Poly;
-  readonly minX: number;
-  readonly minY: number;
-  readonly maxX: number;
-  readonly maxY: number;
-  readonly digest: number;
-}
-
-function inputOf(poly: Poly): Input | null {
-  const outer = poly[0];
-  if (!outer || outer.length < 3) return null;
-  const digest = new Digest();
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const ring of poly) {
-    digest.add(ring.length);
-    for (const point of ring) {
-      const x = point[0] as number;
-      const y = point[1] as number;
-      digest.add(x).add(y);
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-  return { poly, minX, minY, maxX, maxY, digest: digest.value() };
-}
 
 /** Linear-space tints per road class, so the asphalt mesh can vary by class. */
 const CLASS_TINT: readonly Color[] = ROAD_TYPES.map((type) =>
@@ -300,15 +243,6 @@ const PAVING_TINTS: Readonly<Record<string, readonly [number, number, number]>> 
   Object.entries(CARRIAGEWAY_TINT).map(([name, tint]) => [name, againstReference(tint)]));
 /** What each surface of a tile is made from (`roadTileShape.ts`). */
 type Source = TileSource;
-
-/** Everything that reaches each tile, by kind, in input order. */
-interface Reach {
-  readonly levels: Record<'casing' | 'sidewalk' | 'curb' | 'asphalt', Input[]>;
-  readonly medians: Record<'kerb' | 'planting' | 'paved', Input[]>;
-  readonly ramps: Input[];
-  readonly ribbons: Input[];
-  readonly quads: Map<string, Input[]>;
-}
 
 /** One surface of a structural level: how it is meshed, and from what. */
 interface SurfaceSpec {
@@ -392,67 +326,32 @@ export function* roadSurfaceSteps(
   const paintFor = (color: string): Material => paint?.get(color) ?? paint?.get(LANE_LINE) ?? materials.asphalt;
 
   const reading = <T>(work: () => T): T => elevation.remembering ? elevation.remembering(work) : work();
-  const manual = (id: SegmentId): boolean => {
-    const segment = net.doc.segment(id);
-    return !!segment && (Math.abs(net.doc.node(segment.a)?.heightOffset ?? 0) > 1e-6 ||
-      Math.abs(net.doc.node(segment.b)?.heightOffset ?? 0) > 1e-6);
-  };
+  // The inputs of every pass, kept road by road and node by node and brought up to the network by its
+  // change (`roadSurfaceInputs.ts`): an edit makes those of the items it touched. A build without a
+  // cache makes them from the whole map.
+  const inputs = reuse?.inputs ?? new SurfaceInputs();
+  inputs.refresh(net);
   // Roads at authored heights are drawn on their own, each from its own
   // deck, and those that run on from one another through a two-way node
   // as ONE surface: drawn a segment at a time, every piece of a road raised in
   // one stroke closed its ends, and the joins showed as lines and notched kerbs.
-  const alignments = new Map<SegmentId, SegmentId[]>();
-  {
-    const owner = new Map<SegmentId, SegmentId>();
-    const find = (id: SegmentId): SegmentId => {
-      let r = id;
-      while (owner.get(r) !== r) r = owner.get(r)!;
-      return r;
-    };
-    const ids = [...net.doc.segments.keys()].filter(manual);
-    for (const id of ids) owner.set(id, id);
-    for (const node of net.doc.nodes.values()) {
-      if (node.incident.length !== 2) continue;
-      const [p, q] = node.incident as [SegmentId, SegmentId];
-      // Bent or straight: a bend's junction plate belongs to the pass that
-      // holds both its legs (`ownsJunction`), so it is drawn in the same surface.
-      if (!owner.has(p) || !owner.has(q)) continue;
-      const a = find(p), b = find(q);
-      if (a !== b) owner.set(Math.max(a, b) as SegmentId, Math.min(a, b) as SegmentId);
-    }
-    for (const id of ids) {
-      const root = find(id);
-      const list = alignments.get(root);
-      if (list) list.push(id); else alignments.set(root, [id]);
-    }
-  }
-  const passes: { readonly id: string; readonly structure: RoadStructure; readonly segment?: SegmentId; readonly chain?: readonly SegmentId[] }[] = [
-    ...ROAD_STRUCTURES.map((structure) => ({ id: structure.id, structure: structure.id })),
-    ...[...alignments].map(([root, chain]) =>
-      ({ id: `alignment-${root}`, structure: 'ground' as const, segment: root, chain })),
-  ];
+  const passes = inputs.passList();
   if (reuse) {
     const current = new Set(passes.map((pass) => pass.id));
     for (const id of reuse.tiles.keys()) if (!current.has(id)) reuse.tiles.delete(id);
   }
-  // The structures some road not set by hand stands on, read once: DO NOT walk every segment of the map
-  // for each pass (passes x segments, the whole map again for every alignment).
-  const structuresBuilt = new Set<string>();
-  for (const segment of net.doc.segments.values()) if (!manual(segment.id)) structuresBuilt.add(segment.structure);
+  // Every pass may paint in every colour of the catalogue: a colour with no line in a tile draws
+  // nothing there (`roadTileShape.ts`), and the surfaces of a pass stay the same whatever is painted.
+  const paintColours = inputs.paintColours();
   for (const pass of passes) {
     yield;
     const structure = roadStructure(pass.structure);
-    const present = pass.chain !== undefined
-      ? pass.chain.some((id) => net.doc.segment(id) !== undefined)
-      : structuresBuilt.has(structure.id);
+    const present = pass.chain !== undefined || inputs.present(structure.id);
     if (!present) {
       reuse?.tiles.delete(pass.id);
       continue;
     }
 
-    const include = (id: SegmentId): boolean => pass.chain !== undefined
-      ? pass.chain.includes(id)
-      : !manual(id) && (net.doc.segment(id)?.structure ?? 'ground') === structure.id;
     const raised = pass.chain !== undefined
       ? pass.chain.some((id) => {
         const line = net.ribbons.get(id)?.full;
@@ -466,16 +365,14 @@ export function* roadSurfaceSteps(
       : isRaised(structure.id);
     const maxEdge = raised ? RAISED_MAX_EDGE : GROUND_MAX_EDGE;
 
-    // The footways' outer edges (the union of every footway of this pass), each straight piece filed by
-    // the cells of a grid its padded box covers, for the verge's fall (`roadSurfaceReads.ts` `fromFootway`).
-    // DO NOT file whole rings: the union of a town's footways is one ring round the whole town (and one per
-    // block), so every verge vertex measured a ring as long as the town's outline - 6.5 s of a 2,560 m city's
-    // roads, six times the 1,280 m one's for four times the roads (2026-10-15). Only a distance under
-    // CASING_BAND changes the batter (`vergeTop` clamps it), and a piece that near the point lies in its cell.
-    let footwayEdges: Map<number, number[]> | null = null;
-    const edges = (): Map<number, number[]> => {
-      if (!footwayEdges) footwayEdges = footwayEdgeGrid(levelPolygons(net, Level.Sidewalk, include));
-      return footwayEdges;
+    // The footways' outer edges round each cell, for the verge's fall (`roadSurfaceReads.ts` `fromFootway`),
+    // made for the cells of the tiles this build makes, from the footways that reach them
+    // (`SurfaceInputs.footwayEdges`). DO NOT merge every footway of the pass: the union of a town's
+    // footways is one ring round the whole town (and one per block), 6.5 s of a 2,560 m city's roads.
+    const footwayEdges = new Map<number, number[] | undefined>();
+    const edgesAt = (key: number): number[] | undefined => {
+      if (!footwayEdges.has(key)) footwayEdges.set(key, inputs.footwayEdges(pass.id, key));
+      return footwayEdges.get(key);
     };
     /** Each road's look, asked per vertex: made once a pass. */
     const looks = new Map<SegmentId, RoadLook | undefined>();
@@ -491,57 +388,10 @@ export function* roadSurfaceSteps(
       look,
       footwayShare: (x, y) => footwayRiseShare(net, x, y),
       walkingRise: (x, y, at) => walkingRise(net, x, y, true, at),
-      footwayEdges: (key) => edges().get(key),
+      footwayEdges: edgesAt,
     };
-
-    // ---------------------------------------------------------------- inputs
-    const levels: Record<'casing' | 'sidewalk' | 'curb' | 'asphalt', Input[]> = {
-      casing: inputsOf(levelRings(net, Level.Casing as SurfaceLevel, include)),
-      sidewalk: inputsOf(levelRings(net, Level.Sidewalk as SurfaceLevel, include)),
-      curb: inputsOf(levelRings(net, Level.Curb as SurfaceLevel, include)),
-      asphalt: inputsOf(levelRings(net, Level.Asphalt as SurfaceLevel, include)),
-    };
-    const strips = medianStrips(net, include);
-    const medians = { kerb: inputsOf(strips.kerb), planting: inputsOf(strips.planting), paved: inputsOf(strips.paved) };
-    // No dropped kerb on a footway laid flush: there is no kerb to drop.
-    const ramps = inputsOf(curbRamps(net).filter((r) => include(r.segment) && footwayRiseShare(net, r.x + r.nx * r.run, r.y + r.ny * r.run) > 0)
-      .map((r) => [rampOutline(r)]));
-    // The pass's inputs, the crossings' footway and the markings in steps of
-    // their own: together they were one step of ~20 ms after a road edit in the
-    // test city, past the slice (`renderer.ts` `pumpWorld`, P3).
-    yield;
-    // Paint belongs to the road legs, not to the shared intersection interior,
-    // so it is clipped to the ribbons' carriageway alone.
-    const ribbonAsphalt: Input[] = [];
-    for (const ribbon of net.ribbons.values()) {
-      if (!include(ribbon.id)) continue;
-      const ring = ribbon.rings[Level.Asphalt];
-      if (!ring || ring.isEmpty) continue;
-      const input = inputOf([ring.flatten().map((point) => [point.x, point.y])]);
-      if (input) ribbonAsphalt.push(input);
-    }
-    // ...and to the tapers where a road carries on at another width, whose lane
-    // lines and edge lines run on through them (see transitionMarkings).
-    for (const node of net.transitions) {
-      const junction = net.junctions.get(node)?.get(Level.Asphalt as SurfaceLevel);
-      const leg = junction?.legs[0];
-      if (!junction || !leg || !include(leg.seg)) continue;
-      const input = inputOf([junction.ring.flatten().map((point) => [point.x, point.y])]);
-      if (input) ribbonAsphalt.push(input);
-    }
-    // ...and to a mini-roundabout's plate, where its island is painted (docs/VIAS.md V5).
-    for (const node of net.doc.nodes.values()) {
-      if (node.control !== 'mini' || node.incident.length < 3) continue;
-      const junction = net.junctions.get(node.id)?.get(Level.Asphalt as SurfaceLevel);
-      if (!junction || !node.incident.some((seg) => include(seg))) continue;
-      const input = inputOf([junction.ring.flatten().map((point) => [point.x, point.y])]);
-      if (input) ribbonAsphalt.push(input);
-    }
-    yield;
     net.crossingSurface();
     yield;
-    const quads = new Map<string, Input[]>();
-    for (const [color, rings] of markingQuads(net, include, structure.id === 'ground')) quads.set(color, inputsOf(rings.map((ring) => [ring])));
     /** The pass as its surfaces read it, plain data: the same on the page and in a worker (`roadSurfaceReads.ts`). */
     const desc: PassDesc = {
       id: pass.id,
@@ -553,57 +403,13 @@ export function* roadSurfaceSteps(
       maxEdge,
       groundMaterial: groundMaterial !== undefined,
       scale: { asphalt: materials.scale.asphalt, footway: materials.scale.footway, kerb: materials.scale.kerb, verge: materials.scale.verge, deck: materials.scale.deck },
-      paint: [...quads.keys()],
+      paint: paintColours,
       paintLift: 0.02 + PAINT_RISE,
       classTint: CLASS_TINTS,
       referenceTint: REFERENCE_TINT,
       pavingTint: PAVING_TINTS,
     };
     const specs = passSurfaces(desc, pageReads).map((read) => dress(read, raised, materials, groundMaterial, paintFor));
-
-    // ----------------------------------------------------------------- tiles
-    const reach = new Map<number, Reach>();
-    const reachOf = (key: number): Reach => {
-      let value = reach.get(key);
-      if (!value) {
-        value = {
-          levels: { casing: [], sidewalk: [], curb: [], asphalt: [] },
-          medians: { kerb: [], planting: [], paved: [] },
-          ramps: [],
-          ribbons: [],
-          quads: new Map(),
-        };
-        reach.set(key, value);
-      }
-      return value;
-    };
-    const file = (input: Input, add: (into: Reach) => void): void => {
-      const x0 = Math.floor((input.minX - TILE_REACH - TILE_ORIGIN) / TILE);
-      const x1 = Math.floor((input.maxX + TILE_REACH - TILE_ORIGIN) / TILE);
-      const y0 = Math.floor((input.minY - TILE_REACH - TILE_ORIGIN) / TILE);
-      const y1 = Math.floor((input.maxY + TILE_REACH - TILE_ORIGIN) / TILE);
-      for (let ix = x0; ix <= x1; ix++) {
-        for (let iy = y0; iy <= y1; iy++) add(reachOf((ix + TILE_BIAS) * 0x1_0000 + (iy + TILE_BIAS)));
-      }
-    };
-    yield;
-    for (const name of ['casing', 'sidewalk', 'curb', 'asphalt'] as const) {
-      for (const input of levels[name]) file(input, (into) => into.levels[name].push(input));
-    }
-    for (const name of ['kerb', 'planting', 'paved'] as const) {
-      for (const input of medians[name]) file(input, (into) => into.medians[name].push(input));
-    }
-    for (const input of ramps) file(input, (into) => into.ramps.push(input));
-    for (const input of ribbonAsphalt) file(input, (into) => into.ribbons.push(input));
-    for (const [color, list] of quads) {
-      for (const input of list) {
-        file(input, (into) => {
-          const bucket = into.quads.get(color);
-          if (bucket) bucket.push(input);
-          else into.quads.set(color, [input]);
-        });
-      }
-    }
 
     // Everything a tile's build reads besides its rings and its surroundings:
     // the constants of every surface, so a change to one is a change to all.
@@ -627,35 +433,16 @@ export function* roadSurfaceSteps(
     /** The tiles in tile order: kept from before (its surfaces known, its arrays not), read from the store, or to build. */
     const tiles: PassTile[] = [];
     // In tile order, so a mesh is laid out the same however it was reached.
-    for (const key of [...reach.keys()].sort((a, b) => a - b)) {
-      const into = reach.get(key)!;
+    for (const key of inputs.tileKeys(pass.id)) {
+      const { reach: into, digest: read, colours } = inputs.reachOf(pass.id, key);
       const ix = Math.floor(key / 0x1_0000) - TILE_BIAS;
       const iy = (key % 0x1_0000) - TILE_BIAS;
       const rect: TileRect = [
         ix * TILE + TILE_ORIGIN, iy * TILE + TILE_ORIGIN, (ix + 1) * TILE + TILE_ORIGIN, (iy + 1) * TILE + TILE_ORIGIN,
       ];
-      const digest = new Digest().add(saltValue).add(key);
-      const addAll = (list: readonly Input[]): void => {
-        digest.add(list.length);
-        for (const input of list) digest.add(input.digest);
-      };
-      addAll(into.levels.casing);
-      addAll(into.levels.sidewalk);
-      addAll(into.levels.curb);
-      addAll(into.levels.asphalt);
-      addAll(into.medians.kerb);
-      addAll(into.medians.planting);
-      // Only when there is any, so the keys of maps without a paved median are as before.
-      if (into.medians.paved.length) addAll(into.medians.paved);
-      addAll(into.ramps);
-      addAll(into.ribbons);
-      // In a fixed order: the colours come in the order the network first
-      // paints them, which a street drawn elsewhere can change, and what a
-      // tile builds does not depend on it (its surfaces are kept by name).
-      for (const color of [...into.quads.keys()].sort()) {
-        digest.addText(color).add(paintSalt.get(color) ?? 0);
-        addAll(into.quads.get(color)!);
-      }
+      // A paint colour's constants in the keys of the tiles that hold lines of that colour alone.
+      const digest = new Digest().add(saltValue).add(key).add(read);
+      for (const color of colours) digest.add(paintSalt.get(color) ?? 0);
       if (reuse) digest.add(reuse.dependsOn(rect[0] - 1, rect[1] - 1, rect[2] + 1, rect[3] + 1));
       const value = digest.value();
       const surfaces = previous?.get(value);
@@ -696,13 +483,13 @@ export function* roadSurfaceSteps(
         for (let cx = Math.floor(rect[0] / FOOTWAY_EDGE_CELL); cx <= Math.floor(rect[2] / FOOTWAY_EDGE_CELL); cx++) {
           for (let cy = Math.floor(rect[1] / FOOTWAY_EDGE_CELL); cy <= Math.floor(rect[3] / FOOTWAY_EDGE_CELL); cy++) {
             const key = (cx + 32768) * 65536 + (cy + 32768);
-            if (edges().has(key)) edgeKeys.add(key);
+            if (edgesAt(key)) edgeKeys.add(key);
           }
         }
       }
       const flush = packFlush(net, around);
       transfer.push(...flush.transfer);
-      const edgeLists = [...edgeKeys].map((key) => Float64Array.from(edges().get(key)!));
+      const edgeLists = [...edgeKeys].map((key) => Float64Array.from(edgesAt(key)!));
       const joined = concat(edgeLists);
       const edgeData = { keys: Float64Array.from(edgeKeys), ends: joined.lineEnds, xy: joined.lines };
       for (const array of [edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
@@ -864,39 +651,6 @@ export function* roadSurfaceSteps(
   };
 }
 
-function inputsOf(polys: readonly Poly[]): Input[] {
-  const out: Input[] = [];
-  for (const poly of polys) {
-    const input = inputOf(poly);
-    if (input) out.push(input);
-  }
-  return out;
-}
-
-/**
- * The footways' outline as straight pieces filed by the cells of `FOOTWAY_EDGE_CELL` their box,
- * padded by twice `CASING_BAND`, covers: four numbers a piece (`roadSurfaceReads.ts` `fromFootway`).
- */
-function footwayEdgeGrid(polys: Iterable<Poly>): Map<number, number[]> {
-  const grid = new Map<number, number[]>();
-  const pad = CASING_BAND * 2;
-  for (const poly of polys) for (const ring of poly) {
-    if (ring.length < 3) continue;
-    for (let i = 0; i < ring.length; i++) {
-      const ax = ring[i]![0]!, ay = ring[i]![1]!;
-      const bx = ring[(i + 1) % ring.length]![0]!, by = ring[(i + 1) % ring.length]![1]!;
-      for (let cx = Math.floor((Math.min(ax, bx) - pad) / FOOTWAY_EDGE_CELL); cx <= Math.floor((Math.max(ax, bx) + pad) / FOOTWAY_EDGE_CELL); cx++) {
-        for (let cy = Math.floor((Math.min(ay, by) - pad) / FOOTWAY_EDGE_CELL); cy <= Math.floor((Math.max(ay, by) + pad) / FOOTWAY_EDGE_CELL); cy++) {
-          const key = (cx + 32768) * 65536 + (cy + 32768);
-          const list = grid.get(key);
-          if (list) list.push(ax, ay, bx, by); else grid.set(key, [ax, ay, bx, by]);
-        }
-      }
-    }
-  }
-  return grid;
-}
-
 /** Arrays end to end, with where each ends: one buffer to hand over instead of one an array. */
 function concat(parts: readonly ArrayLike<number>[]): { lineEnds: Uint32Array; lines: Float64Array } {
   let length = 0;
@@ -961,59 +715,4 @@ function polysOf(into: Reach): TilePolys {
     ribbons: polys(into.ribbons),
     quads: new Map([...into.quads].map(([color, list]) => [color, polys(list)])),
   };
-}
-
-/**
- * The central reservation's outlines, as two real polygons rather than as paint.
- *
- * It used to be drawn as two overlapping marking strokes at the same height —
- * a wide kerb colour with a narrower green inside it — which put two coplanar
- * surfaces in the depth buffer and produced the torn green scribble a player
- * photographed down the middle of every boulevard. A median is not paint: it is
- * a kerbed island with something growing in it, so it is built like one, with
- * its own height and its own skirt.
- *
- * Clipped against the carriageway so it can never leak past the kerb line, and
- * unioned so two medians meeting at a junction are one shape rather than two
- * overlapping ones - both a tile at a time, in `buildRoadSurfaces`.
- */
-function medianStrips(
-  net: Network,
-  include: (segment: SegmentId) => boolean,
-): { kerb: Poly[]; planting: Poly[]; paved: Poly[] } {
-  const kerb: Poly[] = [];
-  const planting: Poly[] = [];
-  const paved: Poly[] = [];
-  for (const ribbon of net.ribbons.values()) {
-    if (!include(ribbon.id)) continue;
-    const median = ribbon.road.median;
-    // A median painted on the carriageway has no kerb and no island (docs/VIAS.md V1).
-    if (median <= 0 || ribbon.road.medianFlush) continue;
-    const centre = ribbon.centre[Level.Asphalt];
-    if (!centre || centre.n < 2) continue;
-    // The island's nose stands back of each crossing (`world/landscape.ts`
-    // medianNose): measured from the node, the centre line starting at the mouth.
-    const seg = net.doc.segment(ribbon.id);
-    const back = (node: NodeId | undefined, from: { x: number; y: number }): number => {
-      const at = node === undefined ? null : net.doc.node(node);
-      const nose = node === undefined || !at ? 0 : medianNose(net, ribbon.id, node);
-      return nose > 0 && at ? Math.max(0, nose - Math.hypot(from.x - at.x, from.y - at.y)) : 0;
-    };
-    const s0 = back(seg?.a, centre.point(0)), s1 = centre.length - back(seg?.b, centre.point(centre.n - 1));
-    if (s1 - s0 < m(1)) continue;
-    const points = s0 > 0 || s1 < centre.length ? centre.sub(s0, s1).toPoints() : centre.toPoints();
-    // The kerb stone round the island, as wide as the footway's (`CURB_BAND`).
-    kerb.push(strip(points, median / 2 + CURB_BAND));
-    // Grass by default; paved in concrete or pavers when the profile says so.
-    const material = ribbon.road.materials?.median;
-    (material && material !== 'grass' ? paved : planting).push(strip(points, median / 2));
-  }
-  return { kerb, planting, paved };
-}
-
-/** A closed ribbon `half` wide either side of a centreline. */
-function strip(points: readonly { x: number; y: number }[], half: number): MultiPoly[number] {
-  const left = offsetPolyline(points, half);
-  const right = offsetPolyline(points, -half).reverse();
-  return [[...left, ...right].map((p) => [p.x, p.y])];
 }

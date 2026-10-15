@@ -57,6 +57,7 @@ import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { SurfaceInputs } from './roadSurfaceInputs';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
@@ -761,6 +762,7 @@ export function createSceneRenderer(
       .value(),
     paint: paintCatalogue(),
     chunks: new Map(),
+    inputs: new SurfaceInputs(),
     retired: [],
     stored: new Map(),
     // Written as each tile is built (the store copies it by the structured clone, MDN IndexedDB), so

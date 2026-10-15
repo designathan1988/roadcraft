@@ -116,18 +116,20 @@ function ownsJunction(net: SurfaceNet, nodeId: NodeId, include: SurfaceSegmentFi
 }
 
 /**
- * Every ring of one level, as clipper input, before they are merged: the
- * renderer merges them a tile at a time (`roadSurfaces.ts`), so an edit pays
- * only for the tiles it reaches.
+ * Every ring of one level, as clipper input, before they are merged
+ * (`levelPolygons`). The road surfaces read them road by road and junction by
+ * junction (`levelRingsOf`, `render/roadSurfaceInputs.ts`), so an edit pays only
+ * for what it touched.
  */
-export function levelRings(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
+function levelRings(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
   return levelRingsOf(net, level, net.ribbons.values(), net.junctions, include);
 }
 
 /**
  * `levelRings` of the given ribbons and junctions only: the rings round one
  * place (`poleLines.ts` poleLinesIn), read from the cells round it
- * (`Network.segmentCells`) instead of from every road of the map.
+ * (`Network.segmentCells`) instead of from every road of the map; those of one
+ * road or one junction (`render/roadSurfaceInputs.ts`).
  */
 export function levelRingsOf(
   net: SurfaceNet, level: SurfaceLevel, ribbons: Iterable<SurfaceRibbon>,

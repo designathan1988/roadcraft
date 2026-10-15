@@ -66,6 +66,14 @@ export function curbRamps(net: Network): readonly CurbRamp[] {
   return state.list;
 }
 
+/**
+ * The dropped kerbs of one node, as it stands (`rampState` brought up to the network first): what the
+ * road surfaces read of a node an edit reached (`render/roadSurfaceInputs.ts`), never every ramp of the map.
+ */
+export function rampsOfNode(net: Network, node: NodeId): readonly CurbRamp[] {
+  return rampState(net).byNode.get(node) ?? [];
+}
+
 /** The ramps a node's zebras (and a road's end there) have. */
 function rampsAt(net: Network, nodeId: NodeId): CurbRamp[] {
   const ramps: CurbRamp[] = [];

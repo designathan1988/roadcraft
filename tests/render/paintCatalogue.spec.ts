@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { PAINT_COLOURS, markingQuads } from '@render/markings';
+import { PAINT_COLOURS } from '@render/markings';
+import { SurfaceInputs } from '@render/roadSurfaceInputs';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
 import { RoadDoc } from '@world/doc';
@@ -28,7 +29,10 @@ describe('the paint catalogue', () => {
         doc.setMarkingStyle(style);
         const net = new Network(doc);
         net.rebuild();
-        for (const ground of [true, false]) for (const [color] of markingQuads(net, () => true, ground)) seen.add(color);
+        // Every road's and junction's paint, as the road surfaces gather it (`roadSurfaceInputs.ts`).
+        const inputs = new SurfaceInputs();
+        inputs.refresh(net);
+        for (const color of inputs.paintedColours()) seen.add(color);
       }
       expect(seen.size).toBeGreaterThan(1);
       expect([...seen].filter((c) => !PAINT_COLOURS.includes(c))).toEqual([]);
