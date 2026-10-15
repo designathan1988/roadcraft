@@ -569,7 +569,7 @@ function build(
 const instances = new WeakMap<InstancedMesh, CulledInstances>();
 
 /** A plant's foliage cards (`plantMeshes`), left out at the map zoom. DO NOT test `-leaves`: no mesh has it, the cards showed at every zoom. */
-export const isLeafCards = (name: string): boolean => name.endsWith('-cards');
+const isLeafCards = (name: string): boolean => name.endsWith('-cards');
 
 /** A near-white multiplier, so no two plants of one species are identical. */
 export function foliageTint(rng: Rng): Color {

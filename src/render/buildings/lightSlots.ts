@@ -14,7 +14,7 @@
  */
 
 /** Seeds there are (the old table's size: the glass's hash spreads them the same). */
-export const SPACE_SEEDS = 65_536;
+const SPACE_SEEDS = 65_536;
 
 /** The seed of one space: building, floor, block, and the space's corner (to a decimetre). */
 export function spaceSeed(building: number, level: number, volume: number, x: number, y: number): number {
