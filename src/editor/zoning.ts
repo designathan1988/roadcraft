@@ -442,11 +442,11 @@ function streetFloor(pavedAt: ((x: number, y: number) => number) | undefined, st
 /** Candidates made for a lot, the least like its neighbours kept (Mitchell's best candidate). */
 const CANDIDATES = 4;
 /** How far round a lot the buildings it should not look like are read: the 100 m of the rule it answers (`tests/world/variety.spec.ts`; at 90 m a twin 95 m off went unseen). */
-const LIKE_REACH = m(100);
+export const LIKE_REACH = m(100);
 /** How far beyond a footway's edge a point still counts as on the street, for a corner lot (`cornerOf`). */
 const STREET_MARGIN = m(0.6);
 /** How near the last building grown an open lot must be to grow next (the street filling along). */
-const GROW_ON_REACH = m(70);
+export const GROW_ON_REACH = m(70);
 
 /** How far `a` is from `b`. */
 function apart(a: Vec2, b: Vec2): number {
@@ -614,11 +614,36 @@ export interface LotPick {
 }
 
 /**
+ * The stream the next building is made with, its first draw the open lot
+ * drawn at random (of `count`): seeded by the id the building will take, so a
+ * city zoned the same way grows the same way.
+ */
+export function lotStream(seed: number, nextId: number, count: number): { readonly rng: Rng; readonly drawn: number } {
+  const rng = new Rng((seed ^ Math.imul(nextId, 0x9e3779b1)) >>> 0);
+  return { rng, drawn: rng.int(0, count - 1) };
+}
+
+/**
+ * The open lot nearest the last building grown, within `GROW_ON_REACH` (the
+ * street fills along), or null: none so near. `near`: the open lots that may
+ * be (a superset), in the lots' order.
+ */
+export function nearestLot(near: Iterable<Lot>, last: Vec2): Lot | null {
+  let best = GROW_ON_REACH, lot: Lot | null = null;
+  // Nearer by a millimetre at least: two lots as near (a street's two
+  // sides) are told apart by the list's order, not by rounding - which
+  // took one at 0.4 m a unit and the other at 1.
+  for (const l of near) {
+    const d = apart(lotCentre(l), last);
+    if (d < best - m(0.001)) { best = d; lot = l; }
+  }
+  return lot;
+}
+
+/**
  * The lot the next building grows on (`growOnLot`): the open lot nearest the
  * last building grown, when one is near (the street fills along), a lot at
- * random otherwise; null when none is open, `refused` set aside. The stream
- * is seeded by the id the building will take, so a city zoned the same way
- * grows the same way.
+ * random otherwise; null when none is open, `refused` set aside.
  */
 export function pickLot(doc: RoadDoc, refused: Set<number>, seed: number): LotPick | null {
   // The open lots kept by the document (`world/openLots.ts`): the lot drawn,
@@ -626,22 +651,12 @@ export function pickLot(doc: RoadDoc, refused: Set<number>, seed: number): LotPi
   const open = doc.openLots;
   const count = open.count(refused);
   if (!count) return null;
-  const rng = new Rng((seed ^ Math.imul(doc.buildings.nextId, 0x9e3779b1)) >>> 0);
+  const { rng, drawn } = lotStream(seed, doc.buildings.nextId, count);
   // The street fills along: the open lot nearest the last building grown,
   // when one is near (the player sees the street they zoned fill in, one
   // house after the next); anywhere else, a lot at random.
-  let lot = open.at(rng.int(0, count - 1));
   const last = open.lastGrown();
-  if (last) {
-    let best = GROW_ON_REACH;
-    // Nearer by a millimetre at least: two lots as near (a street's two
-    // sides) are told apart by the list's order, not by rounding - which
-    // took one at 0.4 m a unit and the other at 1.
-    for (const l of open.near(last, GROW_ON_REACH)) {
-      const d = apart(lotCentre(l), last);
-      if (d < best - m(0.001)) { best = d; lot = l; }
-    }
-  }
+  const lot = (last ? nearestLot(open.near(last, GROW_ON_REACH), last) : null) ?? open.at(drawn);
   return { lot, rng };
 }
 

@@ -125,7 +125,7 @@ import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 import { GrowthSession } from '@editor/growthFeed';
-import type { GrowAnswer } from '@editor/growthReplica';
+import { BATCH_MOST, type GrowAnswer } from '@editor/growthReplica';
 import { GrowthPool } from './growthPool';
 import { TERRAIN_CELL } from '@render/terrain';
 import { bulbClearing } from '@world/junction/bulb';
@@ -2258,7 +2258,8 @@ function askCity(growing: NonNullable<typeof cityGrowth>): void {
   if (growing.done || growing.layout || growth.busy || mover.dragging) return;
   if (++growing.guard > growing.total * 3 + 50) { growing.done = true; requestDraw(); return; }
   // A lot refused (nothing fits it) is set aside: none left open, the city is built.
-  if (!caused('cidade gerada', () => growth.ask(lotTool.refused, 0x5eed))) { growing.done = true; requestDraw(); }
+  // Several buildings an ask (`BATCH_MOST`): the street filling along in the worker, written as they come.
+  if (!caused('cidade gerada', () => growth.ask(lotTool.refused, 0x5eed, BATCH_MOST))) { growing.done = true; requestDraw(); }
 }
 /** Milliseconds a frame spent laying the generated city's lots (`growCity`). */
 const GROW_SLICE_MS = 100;
@@ -2286,14 +2287,13 @@ function growthAnswered(answer: GrowAnswer): boolean {
   if (mover.dragging) return false;
   const city = cityGrowth;
   const cause = city ? 'cidade gerada' : 'crescimento da zona';
-  const outcome = caused(cause, () => {
-    const out = growth.receive(answer);
-    const fresh = out.kind === 'grown' ? doc.buildings.get(out.id as BuildingId) : undefined;
+  // Each building stamped as grown now as it is written, before the next (`GrowthSession.receive`).
+  const outcome = caused(cause, () => growth.receive(answer, (id) => {
+    const fresh = doc.buildings.get(id as BuildingId);
     if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
-    return out;
-  });
-  if (outcome.kind === 'grown') {
-    if (city) city.left--;
+  }));
+  if (outcome.kind === 'answered' && outcome.grown.length) {
+    if (city) city.left -= outcome.grown.length;
     else {
       persistence.saveSessionSoon(doc, sessionSettings);
       updateStatus();

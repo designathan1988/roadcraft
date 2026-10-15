@@ -8,7 +8,7 @@ import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity, zoneCity } from '@editor/cityGenerator';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 import { type GrowthHost, type GrowthLane, GrowthSession } from '@editor/growthFeed';
-import { type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthReplica';
+import { BATCH_MOST, type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthReplica';
 import { validateBuilding } from '@world/buildings/validate';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';
@@ -90,40 +90,43 @@ class StandIn implements GrowthLane {
 }
 
 /** Grown with each building made by the stand-in (`GrowthSession`), as `main.ts` grows a city. */
-function grownOff(city: City, host: Omit<GrowthHost, 'doc' | 'net' | 'cell'>, lane = new StandIn(), between?: (k: number, session: GrowthSession) => void): { refused: Set<number>; lane: StandIn; outcomes: string[] } {
+function grownOff(city: City, host: Omit<GrowthHost, 'doc' | 'net' | 'cell'>, most: number, lane = new StandIn(), between?: (k: number, session: GrowthSession) => void): { refused: Set<number>; lane: StandIn; again: number } {
   const { doc, net } = city;
   const refused = new Set<number>();
   const session = new GrowthSession(lane, () => ({ doc, net, cell: CELL, ...host }));
-  const outcomes: string[] = [];
+  let again = 0;
   for (let guard = 0; guard < city.zoned * 3 + 50; guard++) {
-    if (!session.ask(refused, 0x5eed)) break;
+    if (!session.ask(refused, 0x5eed, most)) break;
     between?.(guard, session);
     const answer = lane.answer!;
     lane.answer = null;
-    const out = session.receive(answer);
-    outcomes.push(out.kind);
-    if (out.kind === 'grown') stamp(doc, out.id);
+    // Each building stamped as it is written, before the next (`main.ts` `growthAnswered`).
+    const out = session.receive(answer, (id) => stamp(doc, id));
+    if (out.kind === 'answered' && (out.again || session.busy)) again++;
   }
-  return { refused, lane, outcomes };
+  return { refused, lane, again };
 }
 
 /** Every record and every lot, as text. */
 const textOf = (doc: RoadDoc): string[] => [...[...doc.buildings.all()].map((b) => JSON.stringify(b)), ...doc.lots.map((l) => JSON.stringify(l))];
 
 describe('the growth in its worker', () => {
-  for (const [seed, hostOf] of [
-    [2, (): Host => ({ groundAt: ground, pavedAt: paved })],
-    [5, (): Host => ({ groundAt: () => 0 })],
-    [7, (net: Network): Host => ({ groundAt: ground, pavedAt: streets(net) })],
-  ] as const) it(`grows the city of seed ${seed} as the page grows it, record for record`, () => {
+  for (const [seed, hostOf, most] of [
+    [2, (): Host => ({ groundAt: ground, pavedAt: paved }), BATCH_MOST],
+    [5, (): Host => ({ groundAt: () => 0 }), BATCH_MOST],
+    [7, (net: Network): Host => ({ groundAt: ground, pavedAt: streets(net) }), BATCH_MOST],
+    [2, (): Host => ({ groundAt: ground, pavedAt: paved }), 1],
+  ] as const) it(`grows the city of seed ${seed}, ${most} lot(s) an ask, as the page grows it, record for record`, () => {
     const here = laid(seed), off = laid(seed);
     const host = hostOf(here.net);
     const refusedHere = grownHere(here, host);
-    const { refused, lane, outcomes } = grownOff(off, host);
+    const { refused, lane, again } = grownOff(off, host, most);
     expect(off.doc.buildings.size).toBeGreaterThan(here.zoned * 0.8);
     expect(textOf(off.doc)).toEqual(textOf(here.doc));
     expect([...refused].sort()).toEqual([...refusedHere].sort());
-    expect(outcomes.filter((o) => o === 'again').length).toBeLessThanOrEqual(lane.asks.filter((a) => a.paving).length / 20);
+    expect(again).toBeLessThanOrEqual(lane.asks.length / 20);
+    // Several lots an ask: the street filling along in the worker (with paving to read, only where it is handed over).
+    if (most > 1 && !(host.pavedAt && !('pack' in host.pavedAt))) expect(lane.asks.length).toBeLessThan(off.doc.buildings.size / 4);
     // The city's own paving handed over as its roads, read in the worker (`world/paving.ts`), not read here.
     if (host.pavedAt && 'pack' in host.pavedAt) expect(lane.asks.filter((a) => a.paving && !a.paved).length).toBeGreaterThan(lane.asks.length * 0.9);
     // Each building was sent to the worker once at most (they did not change after), never the town per lot.
@@ -141,8 +144,8 @@ describe('the growth in its worker', () => {
     // Every fifth ask told to the worker as reaching nothing round its lot.
     let k = 0;
     lane.meddle = (ask) => (k++ % 5 === 0 ? { ...ask, reach: { lot: [0, 0, 0, 0], around: [0, 0, 0, 0] } } : ask);
-    const { outcomes } = grownOff(off, host, lane);
-    expect(outcomes.filter((o) => o === 'again').length).toBeGreaterThan(10);
+    const { again } = grownOff(off, host, BATCH_MOST, lane);
+    expect(again).toBeGreaterThan(5);
     expect(textOf(off.doc)).toEqual(textOf(here.doc));
   });
 
@@ -151,8 +154,8 @@ describe('the growth in its worker', () => {
     const host = { groundAt: ground, pavedAt: paved };
     grownHere(here, host);
     const lane = new StandIn();
-    grownOff(off, host, lane, (k, session) => {
-      if (k % 97 !== 40) return;
+    grownOff(off, host, BATCH_MOST, lane, (k, session) => {
+      if (k % 13 !== 3) return;
       lane.replica = new GrowthReplica();
       session.restart();
     });
@@ -165,25 +168,22 @@ describe('the growth in its worker', () => {
     const { doc, net } = city;
     const lane = new StandIn();
     const refused = new Set<number>();
-    const host = { groundAt: ground, pavedAt: paved };
+    const host = { groundAt: ground, pavedAt: streets(net) };
     const session = new GrowthSession(lane, () => ({ doc, net, cell: CELL, ...host }));
     let blocked = 0, grown = 0;
-    for (let k = 0; k < 60; k++) {
-      if (!session.ask(refused, 0x5eed)) break;
+    for (let k = 0; k < 40; k++) {
+      if (!session.ask(refused, 0x5eed, BATCH_MOST)) break;
       const answer = lane.answer!;
-      if (k % 3 === 1 && 'record' in answer && answer.record) {
-        // Meanwhile, on the page, a building stands where the answer's would (not on its lot).
-        doc.buildings.add({ ...answer.record, elements: [] });
-        const out = session.receive(answer);
-        expect(out.kind).toBe('again');
+      const made = 'grown' in answer ? answer.grown.filter((g) => g.record) : [];
+      if (k % 3 === 1 && made.length > 1) {
+        // Meanwhile, on the page, a building stands where the answer's second would (not on its lot).
+        doc.buildings.add({ ...made[1]!.record!, elements: [] });
+        const out = session.receive(answer, (id) => { grown++; stamp(doc, id); });
+        expect(out.kind === 'answered' && out.again).toBe(true);
         blocked++;
         continue;
       }
-      const out = session.receive(answer);
-      if (out.kind === 'grown') {
-        grown++;
-        stamp(doc, out.id);
-      }
+      session.receive(answer, (id) => { grown++; stamp(doc, id); });
     }
     expect(blocked).toBeGreaterThan(5);
     expect(grown).toBeGreaterThan(10);
@@ -191,7 +191,7 @@ describe('the growth in its worker', () => {
     for (const b of doc.buildings.all()) {
       const lot = doc.lots.find((l) => l.building === b.id);
       if (!lot) continue;
-      expect(validateBuilding({ doc, net, groundAt: ground, pavedAt: paved }, b as Building, b.id), `building ${b.id}`).toBeNull();
+      expect(validateBuilding({ doc, net, groundAt: ground }, b as Building, b.id), `building ${b.id}`).toBeNull();
     }
   });
 });

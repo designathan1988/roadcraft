@@ -14,7 +14,7 @@ import { BuildingGrid } from '@world/buildings/grid';
 import { type Neighbour, type NeighbourSource, settledNeighbour } from '@world/buildings/neighbours';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { JunctionRing, RoadReach, RoadReachRibbon } from '@world/buildings/validate';
-import { type GrowthSite, designOnLot } from './zoning';
+import { GROW_ON_REACH, type GrowthSite, designOnLot, lotStream, nearestLot } from './zoning';
 
 /**
  * THE GROWTH'S WORKER: a building grown on a lot - its plan, its body made
@@ -84,27 +84,41 @@ export interface GrowthSync {
   } | null;
 }
 
-/** A building asked for: the lot, the stream it is made with, what it reads. */
+/**
+ * Buildings asked for: the first lot (picked by the page, `pickLot`) and the
+ * stream it is made with, then the lots the growth goes on to (`nearestLot`)
+ * while they are in `region` - the street filling along - and what they read.
+ */
 export interface GrowAsk {
   readonly id: number;
   readonly sync: GrowthSync;
   readonly lot: Lot;
   readonly rng: RngState;
-  /** The id the building will take (its draft's, for the checks). */
+  /** The seed of the lots' streams (`lotStream`). */
+  readonly seed: number;
+  /** Most lots grown for this ask (`BATCH_MOST` at most): 1, a lot at a time (the zones' growth, paced by the city's clock). */
+  readonly most: number;
+  /** The id the first building will take (its draft's, for the checks); the next ones take the ids after it. */
   readonly nextId: number;
-  /** Where its growth reads (`growthReachOf`). */
+  /** How many lots are open, `lot` among them (`OpenLots.count`). */
+  readonly count: number;
+  /** Where the building grown last stands (`OpenLots.lastGrown`), or null. */
+  readonly last: { readonly x: number; readonly y: number } | null;
+  /** The open lots whose centre is in `rect`, in the lots' order, `lot` not among them. */
+  readonly region: { readonly rect: ChangeRect; readonly lots: readonly Lot[] };
+  /** Where the lots read the document: `lot`, the ground, the roads, the paving and the buildings they meet; `around`, the buildings they look at. */
   readonly reach: { readonly lot: ChangeRect; readonly around: ChangeRect };
   /** The ground at the terrain's corners over `reach.lot`; null: no ground (the slope is not checked). */
   readonly ground: GroundPatch | null;
   /**
-   * The paving round the lot's street (`world/paving.ts` `PavingSource.pack`), read here as the page
+   * The paving over `reach.lot` (`world/paving.ts` `PavingSource.pack`), read here as the page
    * reads it; null: none handed over.
    */
   readonly paving: PavingData | null;
   /**
-   * The paving's height at each of `streetPointsOf(lot)`, x, y, height in turn, read by the page: where
-   * there is no `paving` to hand over, or a point of it the page must answer (asked again after a miss);
-   * null: none.
+   * The paving's height at each of `streetPointsOf(lot)` (the first lot's), x, y, height in turn, read by
+   * the page: where there is no `paving` to hand over, or a point of it the page must answer (asked
+   * again after a miss); null: none.
    */
   readonly paved: Float64Array | null;
   /** Whether there is paving to read at all (a grown building's street floor). */
@@ -113,10 +127,19 @@ export interface GrowAsk {
   readonly roads: boolean;
 }
 
+/** A lot grown: the building made for it, null when nothing fits it. */
+export interface Grown {
+  readonly lot: number;
+  readonly record: Omit<Building, 'id'> | null;
+}
+
 export type GrowAnswer =
-  | { readonly id: number; readonly record: Omit<Building, 'id'> | null; readonly ms: number }
-  | { readonly id: number; readonly miss: string }
+  /** The lots grown, in order (the first the one asked for); `miss`: the next one read outside what was sent. */
+  | { readonly id: number; readonly grown: readonly Grown[]; readonly miss?: string; readonly ms: number }
   | { readonly id: number; readonly error: string };
+
+/** Most lots grown for one ask: the page writes them in one go, and each is drawn after it (a few frames' worth, never the town). */
+export const BATCH_MOST = 32;
 
 /** A question asked outside where the request said its lot reads: the page sends it again with more round it. */
 export class GrowthMiss extends Error {}
@@ -131,7 +154,28 @@ class NeighbourReplica implements NeighbourSource {
   /** Where the request being answered reads them. */
   covered: readonly ChangeRect[] = [];
 
+  /** The buildings this replica grew itself, not yet sent back by the page (written there or not). */
+  private readonly own = new Set<BuildingId>();
+
+  /** A building grown here, read by the next lots of the same ask. */
+  grew(b: Building): void {
+    this.own.add(b.id);
+    this.put(b);
+  }
+
+  private put(b: Building): void {
+    const n = settledNeighbour(b);
+    if (this.items.has(n.id)) this.grid.update(n); else this.grid.insert(n);
+    this.items.set(n.id, n);
+  }
+
   apply(sync: GrowthSync['buildings']): void {
+    // What it grew itself goes first: the page sends back what it wrote of it, under the ids it took.
+    for (const id of this.own) {
+      this.items.delete(id);
+      this.grid.delete(id);
+    }
+    this.own.clear();
     if (sync.reset) {
       this.items.clear();
       this.grid = new BuildingGrid<Neighbour>([], (n) => n.bounds);
@@ -140,11 +184,7 @@ class NeighbourReplica implements NeighbourSource {
       this.items.delete(id as BuildingId);
       this.grid.delete(id as BuildingId);
     }
-    for (const b of sync.put) {
-      const n = settledNeighbour(b);
-      if (this.items.has(n.id)) this.grid.update(n); else this.grid.insert(n);
-      this.items.set(n.id, n);
-    }
+    for (const b of sync.put) this.put(b);
   }
 
   near(minX: number, minY: number, maxX: number, maxY: number): readonly Neighbour[] {
@@ -241,31 +281,58 @@ function pavedLookup(paved: Float64Array | null, paving: PavingData | null): (x:
   };
 }
 
-/** What the growth's worker keeps, and a building made for each lot asked (`handle`). */
+/** What the growth's worker keeps, and the buildings made for each ask (`handle`). */
 export class GrowthReplica {
   private readonly neighbours = new NeighbourReplica();
   private readonly roads = new RoadReplica();
 
-  /** One request: what changed taken in, the building made for its lot (null: nothing fits), or the miss. */
+  /**
+   * One ask: what changed taken in; the first lot's building made, then the
+   * next lot's - the open lot nearest the building grown last, as `pickLot`
+   * finds it - and so on while that lot is one the ask sent (`region`), up to
+   * `BATCH_MOST`; each building grown read by the next lots as a neighbour.
+   * The growth stops where only the page can go on: no lot open, the last
+   * building too near the region's edge to know its nearest lot, none near
+   * (the next is drawn at random over the town), or a lot reading outside
+   * what was sent (`miss`).
+   */
   handle(ask: GrowAsk): GrowAnswer {
     const started = performance.now();
     this.neighbours.apply(ask.sync.buildings);
     if (ask.sync.roads) this.roads.apply(ask.sync.roads);
     this.neighbours.covered = [ask.reach.lot, ask.reach.around];
     this.roads.covered = ask.reach.lot;
-    const site: GrowthSite = {
-      neighbours: this.neighbours,
-      net: ask.roads ? this.roads : null,
-      groundAt: ask.ground ? patchGround(ask.ground) : null,
-      ...(ask.pavedRead ? { pavedAt: pavedLookup(ask.paved, ask.paving) } : {}),
-      nextId: ask.nextId as BuildingId,
-    };
-    try {
-      const record = designOnLot(site, ask.lot, Rng.fromState(ask.rng));
-      return { id: ask.id, record, ms: performance.now() - started };
-    } catch (error) {
-      if (error instanceof GrowthMiss || error instanceof PatchMiss) return { id: ask.id, miss: error.message };
-      throw error;
+    const groundAt = ask.ground ? patchGround(ask.ground) : null;
+    const pavedAt = ask.pavedRead ? pavedLookup(ask.paved, ask.paving) : undefined;
+    const open = [...ask.region.lots];
+    const [rx0, ry0, rx1, ry1] = ask.region.rect;
+    const grown: Grown[] = [];
+    let lot = ask.lot, rng = Rng.fromState(ask.rng), nextId = ask.nextId, count = ask.count, last = ask.last;
+    for (;;) {
+      const site: GrowthSite = { neighbours: this.neighbours, net: ask.roads ? this.roads : null, groundAt, ...(pavedAt ? { pavedAt } : {}), nextId: nextId as BuildingId };
+      let record: Omit<Building, 'id'> | null;
+      try {
+        record = designOnLot(site, lot, rng);
+      } catch (error) {
+        if (!(error instanceof GrowthMiss || error instanceof PatchMiss)) throw error;
+        return { id: ask.id, grown, miss: error.message, ms: performance.now() - started };
+      }
+      grown.push({ lot: lot.id, record });
+      if (record) {
+        this.neighbours.grew({ ...record, id: nextId as BuildingId } as Building);
+        last = { x: record.x, y: record.y };
+        nextId++;
+      }
+      count--;
+      if (grown.length >= Math.min(ask.most, BATCH_MOST) || count <= 0 || !last) break;
+      // The next lot as `pickLot` finds it, when the region holds every open lot it may be.
+      if (last.x - GROW_ON_REACH < rx0 || last.x + GROW_ON_REACH > rx1 || last.y - GROW_ON_REACH < ry0 || last.y + GROW_ON_REACH > ry1) break;
+      const next = nearestLot(open, last);
+      if (!next) break;
+      open.splice(open.indexOf(next), 1);
+      rng = lotStream(ask.seed, nextId, count).rng;
+      lot = next;
     }
+    return { id: ask.id, grown, ms: performance.now() - started };
   }
 }

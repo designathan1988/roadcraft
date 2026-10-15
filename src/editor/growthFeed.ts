@@ -1,5 +1,5 @@
 import type { RngState } from '@core/rng';
-import { type ChangeKind, type ChangeRect, rectAround } from '@world/changes';
+import type { ChangeKind, ChangeRect } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 import { sampleGroundPatch } from '@world/groundPatch';
@@ -12,7 +12,11 @@ import type { NodeId, SegmentId } from '@world/ids';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { validateBuilding } from '@world/buildings/validate';
 import type { GrowAnswer, GrowAsk, GrowthSync, JunctionPiece, RoadPiece } from './growthReplica';
-import { commitGrown, growthReachOf, pickLot, streetPointsOf } from './zoning';
+import { LIKE_REACH, commitGrown, growthReachOf, pickLot, streetPointsOf } from './zoning';
+import { lotCentre } from '@world/lots';
+
+/** A rectangle grown by `pad` on every side. */
+const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1] - pad, r[2] + pad, r[3] + pad];
 
 /**
  * THE GROWTH, THE PAGE'S SIDE: the lot picked (`zoning.ts` `pickLot`), sent
@@ -56,12 +60,19 @@ export interface GrowthLane {
   post(ask: GrowAsk, transfer: readonly ArrayBuffer[]): void;
 }
 
-/** What an answer came to: a building grown, the lot set aside, or a lot to ask for again (`ask`). */
+/**
+ * What an answer came to: the buildings written (their ids, in order), the
+ * lots set aside, and whether the rest was let go to be asked for again (the
+ * document moved under it, `ask`); or nothing (`stale`: not the ask waited for).
+ */
 export type GrowthOutcome =
-  | { readonly kind: 'grown'; readonly id: number }
-  | { readonly kind: 'refused' }
-  | { readonly kind: 'again' }
+  | { readonly kind: 'answered'; readonly grown: readonly number[]; readonly refused: number; readonly again: boolean }
   | { readonly kind: 'stale' };
+
+/** Half the side of the region round the lot asked for whose open lots the growth goes on to in the worker (`GrowAsk.region`). */
+const REGION_HALF = 160;
+/** How far past the region its lots read the document: their frame, its margin (`growthReachOf`), a lot's size. */
+const READ_PAD = 48;
 
 /** The changes a building made off the page may have missed: its neighbours, its roads, its ground, its lot. */
 const MOVES: readonly ChangeKind[] = ['buildings', 'roads', 'terrain', 'lots'];
@@ -69,14 +80,14 @@ const MOVES: readonly ChangeKind[] = ['buildings', 'roads', 'terrain', 'lots'];
 const MISS_MARGIN = 32;
 /** Misses before a lot is set aside: a lot that reads farther than this is not one the growth can build. */
 const MOST_MISSES = 4;
-/** How far round the street's points the roads are handed over (they are read at the points themselves). */
-const STREET_PAD = 1;
 /** Times a lot's building may be refused on the page, the document having moved, before the lot is set aside. */
 const MOST_REFUSALS = 3;
 
 interface Asked {
   readonly id: number;
   readonly lot: Lot;
+  /** Every lot sent, by id: the first and the region's (the records as they were, to tell a lot changed since). */
+  readonly lots: ReadonlyMap<number, Lot>;
   readonly rng: RngState;
   readonly refused: Set<number>;
   readonly extra: number;
@@ -86,6 +97,9 @@ interface Asked {
 
 export class GrowthSession {
   private nextAsk = 1;
+  /** The seed of the lots' streams, and the most lots an ask grows, as last asked with. */
+  private seed = 0;
+  private most = 1;
   private asked: Asked | null = null;
   /** The buildings the worker holds; those of them the diary named since they were sent; whether it is to forget them all. */
   private readonly sentBuildings = new Set<number>();
@@ -116,8 +130,10 @@ export class GrowthSession {
    * Asks the worker for the next building (`pickLot`); false when no lot is
    * open (`refused` set aside) - or true, already asking, while one is made.
    */
-  ask(refused: Set<number>, seed: number): boolean {
+  ask(refused: Set<number>, seed: number, most = 1): boolean {
     if (this.asked) return true;
+    this.seed = seed;
+    this.most = most;
     const { doc, net } = this.host();
     // Read at every ask, a lot open or not: a cursor left unread keeps the diary's entries for it.
     this.readChanges(doc, net);
@@ -141,8 +157,13 @@ export class GrowthSession {
     if (asked) this.send(asked.lot, asked.rng, asked.refused, asked.extra, asked.misses);
   }
 
-  /** The worker's answer, written in the document when it still stands there. */
-  receive(answer: GrowAnswer): GrowthOutcome {
+  /**
+   * The worker's answer, its buildings written in order (`onGrown` told of
+   * each as it is, before the next) while each still stands where it was
+   * made - checked again first when the document moved meanwhile; the rest
+   * let go at the first that does not, to be asked for again.
+   */
+  receive(answer: GrowAnswer, onGrown: (id: number) => void = () => {}): GrowthOutcome {
     const asked = this.asked;
     if (!asked || answer.id !== asked.id) return { kind: 'stale' };
     this.asked = null;
@@ -150,46 +171,60 @@ export class GrowthSession {
     const changes = this.moves.read(doc.changes);
     // Not read again until the next ask: an idle cursor keeps nothing of the diary (`JournalReader`).
     this.moves.reset();
+    // Moved by someone else while the worker made them (what is written below is in the order it assumed).
     const moved = changes === null || changes.length > 0 || (net?.state ?? null) !== asked.netState;
     const open = doc.openLots;
-    open.count(asked.refused);
-    const lot = asked.lot;
+    const grown: number[] = [];
+    let refused = 0;
     if ('error' in answer) {
       // A fault of the growth itself, told; the lot set aside so the growth goes on.
-      console.error(`[growth] lot ${lot.id} failed in the growth's worker: ${answer.error}`);
-      if (this.lotOpen(doc, lot, asked.refused)) open.refuse(lot, asked.refused);
-      return { kind: 'refused' };
+      console.error(`[growth] lot ${asked.lot.id} failed in the growth's worker: ${answer.error}`);
+      open.count(asked.refused);
+      if (this.lotOpen(doc, asked.lot, asked.refused)) { open.refuse(asked.lot, asked.refused); refused++; }
+      return { kind: 'answered', grown, refused, again: false };
     }
-    if ('miss' in answer) {
-      if (!this.lotOpen(doc, lot, asked.refused)) return { kind: 'again' };
+    for (const g of answer.grown) {
+      open.count(asked.refused);
+      const lot = asked.lots.get(g.lot)!;
+      // The lot changed or took a building meanwhile: the next lot is picked again.
+      if (!this.lotOpen(doc, lot, asked.refused)) return { kind: 'answered', grown, refused, again: true };
+      if (g.record === null) {
+        // Nothing fits it as it was; the land may have changed under it since.
+        if (moved) return { kind: 'answered', grown, refused, again: true };
+        open.refuse(lot, asked.refused);
+        refused++;
+        continue;
+      }
+      if (moved && validateBuilding({ doc, net, groundAt, ...(pavedAt ? { pavedAt } : {}) }, { ...g.record, id: doc.buildings.nextId } as Building) !== null) {
+        const times = (this.refusals.get(lot.id) ?? 0) + 1;
+        this.refusals.set(lot.id, times);
+        if (times >= MOST_REFUSALS) {
+          this.refusals.delete(lot.id);
+          open.refuse(lot, asked.refused);
+          refused++;
+        }
+        // What came after was made beside it: let go with it.
+        return { kind: 'answered', grown, refused, again: true };
+      }
+      this.refusals.delete(lot.id);
+      const id = commitGrown(doc, lot, g.record);
+      grown.push(id);
+      onGrown(id);
+    }
+    if (answer.miss !== undefined && answer.grown.length === 0) {
+      // The first lot read outside what was sent: the same lot and stream, with more round it.
+      open.count(asked.refused);
+      const lot = asked.lot;
+      if (!this.lotOpen(doc, lot, asked.refused)) return { kind: 'answered', grown, refused, again: true };
       if (asked.misses + 1 >= MOST_MISSES) {
         console.warn(`[growth] lot ${lot.id} set aside: ${answer.miss}`);
         open.refuse(lot, asked.refused);
-        return { kind: 'refused' };
+        return { kind: 'answered', grown, refused: refused + 1, again: false };
       }
-      // The same lot and stream, with more round it.
       this.readChanges(doc, net);
       this.send(lot, asked.rng, asked.refused, asked.extra + MISS_MARGIN, asked.misses + 1);
-      return { kind: 'again' };
     }
-    // The lot changed or took a building meanwhile: the next lot is picked again.
-    if (!this.lotOpen(doc, lot, asked.refused)) return { kind: 'again' };
-    if (answer.record === null) {
-      // Nothing fits it as it was; the land may have changed under it since.
-      if (moved) return { kind: 'again' };
-      open.refuse(lot, asked.refused);
-      return { kind: 'refused' };
-    }
-    if (moved && validateBuilding({ doc, net, groundAt, ...(pavedAt ? { pavedAt } : {}) }, { ...answer.record, id: doc.buildings.nextId } as Building) !== null) {
-      const times = (this.refusals.get(lot.id) ?? 0) + 1;
-      this.refusals.set(lot.id, times);
-      if (times < MOST_REFUSALS) return { kind: 'again' };
-      this.refusals.delete(lot.id);
-      open.refuse(lot, asked.refused);
-      return { kind: 'refused' };
-    }
-    this.refusals.delete(lot.id);
-    return { kind: 'grown', id: commitGrown(doc, lot, answer.record) };
+    return { kind: 'answered', grown, refused, again: false };
   }
 
   /** Whether `lot` is still the document's, zoned, with no building standing and not set aside. */
@@ -229,35 +264,59 @@ export class GrowthSession {
     this.resetRoads = true;
   }
 
+  /**
+   * The ask for `lot` (picked here, `pickLot`, its stream `rng`) and the lots
+   * the growth may go on to in the worker: the open lots round it, with what
+   * they all read - the buildings, roads and ground round them, the paving
+   * there - sent once and kept in step (`syncBuildings`, `syncRoads`), the
+   * ground and the paving of the region read for this ask.
+   */
   private send(lot: Lot, rng: RngState, refused: Set<number>, extra: number, misses: number): void {
     const host = this.host();
     const { doc, net } = host;
+    const open = doc.openLots;
+    const count = open.count(refused);
+    const last = open.lastGrown();
     const base = growthReachOf(lot);
-    const grow = (r: ChangeRect): ChangeRect => [r[0] - extra, r[1] - extra, r[2] + extra, r[3] + extra];
-    const reach = { lot: grow(base.lot), around: grow(base.around) };
+    const c = lotCentre(lot);
+    const half = REGION_HALF + extra;
+    const rect: ChangeRect = [c.x - half, c.y - half, c.x + half, c.y + half];
+    const pad = READ_PAD + extra;
+    const union = (a: ChangeRect, b: ChangeRect): ChangeRect => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+    const lotRead = union([rect[0] - pad, rect[1] - pad, rect[2] + pad, rect[3] + pad], grow(base.lot, extra));
+    const around = union([lotRead[0] - LIKE_REACH, lotRead[1] - LIKE_REACH, lotRead[2] + LIKE_REACH, lotRead[3] + LIKE_REACH], grow(base.around, extra));
+    const reach = { lot: lotRead, around };
+    // The open lots whose centre is in the region, in the lots' order (`OpenLots.near` answers in it).
+    const lots = new Map<number, Lot>([[lot.id, lot]]);
+    const regionLots = doc.lotsIn(rect).filter((l) => {
+      if (l.id === lot.id || !this.lotOpen(doc, l, refused)) return false;
+      const m = lotCentre(l);
+      return m.x >= rect[0] && m.x <= rect[2] && m.y >= rect[1] && m.y <= rect[3];
+    }).sort((a, b) => doc.lotStore.orderOf(a.id)! - doc.lotStore.orderOf(b.id)!);
+    for (const l of regionLots) lots.set(l.id, l);
     const sync: GrowthSync = { buildings: this.syncBuildings(doc, reach), roads: net ? this.syncRoads(net, reach.lot) : null };
-    // The paving its street floors read (`streetPointsOf`): the roads round them handed over
-    // (`PavingSource.pack`, read in the worker as here); read here only where none can be handed
-    // over, or asked again after a miss (a point the roads handed over cannot answer).
+    // The paving the street floors read (`streetPointsOf`): the roads over the region handed over
+    // (`PavingSource.pack`, read in the worker as here); the first lot's points read here where
+    // nothing can be handed over, or asked again after a miss (a point the roads handed over cannot answer).
     let paved: Float64Array | null = null;
     let paving: PavingData | null = null;
     const transfer: ArrayBuffer[] = [];
     const pavedAt = host.pavedAt;
     if (pavedAt) {
-      const points = streetPointsOf(lot);
-      const packed = misses === 0 ? pavedAt.pack?.(rectAround(points, STREET_PAD)!) ?? null : null;
+      const packed = pavedAt.pack?.(reach.lot) ?? null;
       if (packed) { paving = packed.data; transfer.push(...packed.transfer); }
-      else {
+      if (!packed || misses > 0) {
+        const points = streetPointsOf(lot);
         paved = new Float64Array(points.length * 3);
         points.forEach((p, k) => { paved![k * 3] = p.x; paved![k * 3 + 1] = p.y; paved![k * 3 + 2] = pavedAt(p.x, p.y); });
       }
     }
     const id = this.nextAsk++;
-    // From here, what changes the building may have missed.
+    // From here, what changes the buildings may have missed.
     this.moves.read(doc.changes);
-    this.asked = { id, lot, rng, refused, extra, misses, netState: net?.state ?? null };
+    this.asked = { id, lot, lots, rng, refused, extra, misses, netState: net?.state ?? null };
     this.lane.post({
-      id, sync, lot, rng, nextId: doc.buildings.nextId, reach,
+      id, sync, lot, rng, seed: this.seed, most: this.most, nextId: doc.buildings.nextId, count, last, region: { rect, lots: regionLots }, reach,
       ground: host.groundAt ? sampleGroundPatch(reach.lot, host.cell, host.groundAt) : null,
       paving, paved, pavedRead: pavedAt !== undefined, roads: net !== null,
     }, transfer);
