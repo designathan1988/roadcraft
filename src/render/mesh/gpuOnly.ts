@@ -11,9 +11,9 @@ type Uploaded = BufferAttribute | InterleavedBuffer;
 const REFILL = 'refillArrays';
 
 function letGo(this: Uploaded): void {
-  const self = this as { array: (ArrayLike<number> & { byteLength?: number }) | null; userData?: Record<string, unknown> };
+  const self = this as { array: (ArrayLike<number> & { byteLength?: number }) | null };
   // Its size remembered for the memory counters (`memoryCounters.ts`): a byte or a short a value, not always a float.
-  (this as unknown as { keptBytes?: number }).keptBytes = self.array?.byteLength;
+  if (self.array?.byteLength !== undefined) (this as unknown as { keptBytes?: number }).keptBytes = self.array.byteLength;
   self.array = null;
 }
 
