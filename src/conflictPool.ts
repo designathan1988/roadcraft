@@ -12,7 +12,24 @@ import type { PairMeasurer, SweepSamples } from '@world/conflictTable';
  * page. No workers here (a test, an old browser): `measure` rejects, and the
  * pairs are measured on the page as before (`ConflictIndex.prepare`).
  */
-interface Lane { readonly worker: Worker; readonly waiting: Map<number, { resolve(tables: (Float64Array | null)[]): void; reject(error: Error): void }> }
+interface Lane {
+  readonly worker: Worker;
+  readonly waiting: Map<number, { resolve(tables: (Float64Array | null)[]): void; reject(error: Error): void }>;
+  /** Fails the pool when the worker stays silent with jobs waiting (`SILENCE_MS`). */
+  watchdog: ReturnType<typeof setTimeout> | null;
+}
+
+/**
+ * Longest a worker with jobs waiting may stay silent. It reports at least
+ * every `BEAT_MS` while it works (`conflictTable.worker.ts`), so a slow
+ * machine or a big city's share is never taken for a hung worker; the margin
+ * covers the module's first load. A worker that hangs (a loop that never
+ * ends, an answer lost) fails the pool after this: the jobs are rejected and
+ * measured on the page. DO NOT wait without a deadline: the topology catch-up
+ * yields WAITING until the answer comes (`ConflictIndex.prepare`), and the
+ * simulation stayed still for the page's life behind one silent worker.
+ */
+export const SILENCE_MS = 10_000;
 
 /** Most workers the pool opens: past four, a city's pairs are done before the copies are. */
 const MOST_LANES = 4;
@@ -54,7 +71,16 @@ export class ConflictPool implements PairMeasurer {
       lane.waiting.set(id, { resolve, reject });
       // The samples are copied (the page keeps its own); the indices handed over.
       lane.worker.postMessage({ id, sweeps, pairs }, [pairs.buffer]);
+      this.arm(lane);
     });
+  }
+
+  /** The lane's silence deadline started again, or stopped when nothing waits on it. */
+  private arm(lane: Lane): void {
+    if (lane.watchdog !== null) clearTimeout(lane.watchdog);
+    lane.watchdog = lane.waiting.size
+      ? setTimeout(() => this.fail(`a conflict worker was silent for ${SILENCE_MS} ms with pairs waiting`), SILENCE_MS)
+      : null;
   }
 
   private start(): Lane[] | null {
@@ -66,11 +92,14 @@ export class ConflictPool implements PairMeasurer {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
-        const lane: Lane = { worker, waiting: new Map() };
-        worker.onmessage = (event: MessageEvent<{ id: number; tables?: (Float64Array | null)[]; error?: string }>) => {
-          const job = lane.waiting.get(event.data.id);
+        const lane: Lane = { worker, waiting: new Map(), watchdog: null };
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; error?: string }>) => {
+          if (this.lanes !== lanes) return;
+          const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
+          if (job) lane.waiting.delete(event.data.id);
+          // Any word from the worker, a beat or an answer: it is alive.
+          this.arm(lane);
           if (!job) return;
-          lane.waiting.delete(event.data.id);
           if (event.data.tables) job.resolve(event.data.tables);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
@@ -110,6 +139,8 @@ export class ConflictPool implements PairMeasurer {
 
   private end(error: Error): void {
     for (const lane of this.lanes ?? []) {
+      if (lane.watchdog !== null) clearTimeout(lane.watchdog);
+      lane.watchdog = null;
       for (const job of lane.waiting.values()) job.reject(error);
       lane.waiting.clear();
       lane.worker.terminate();
