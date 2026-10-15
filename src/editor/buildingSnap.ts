@@ -7,6 +7,7 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { Level, halfWidth } from '@world/roadTypes';
 import { normaliseAngle } from './buildings';
+import { ribbonsNear } from './snap';
 import { m } from '@world/units';
 
 /**
@@ -78,10 +79,21 @@ function frontAnchor(centre: Vec2, size: FootprintSize, rotation: number): Vec2 
   return { x: centre.x - vx * (size.depth / 2), y: centre.y - vy * (size.depth / 2) };
 }
 
+/**
+ * The roads near the pointer, from the network's cells (`ribbonsNear`, `snap.ts`):
+ * a road counts when its centreline comes within `half + depth + ROAD_REACH`
+ * of the pointer, `half` its footway plus `ROAD_CLEARANCE`. A ribbon is filed
+ * over its centreline's box grown by its casing (`ribbonBounds`), which is
+ * wider than its footway, so a square of `ROAD_CLEARANCE + depth + ROAD_REACH`
+ * round the pointer meets every road that can count; they come in the order of
+ * `net.ribbons`, so the first of equals is the one the walk over every road kept.
+ * DO NOT walk `net.ribbons` here: this runs on every pointer move.
+ */
 function snapToRoad(net: Network, size: FootprintSize, cursor: Vec2): PlacementSnap | null {
   let best: { distance: number; anchor: Vec2; rotation: number; ribbon: number } | null = null;
   const at = cursor;
-  for (const ribbon of net.ribbons.values()) {
+  const reach = ROAD_CLEARANCE + size.depth + ROAD_REACH;
+  for (const ribbon of ribbonsNear(net, [at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
     const segment = net.doc.segment(ribbon.id);
     if (!segment || segment.structure === 'tunnel') continue;
     // The front on the back of the footway itself (see `ROAD_CLEARANCE`).
@@ -124,7 +136,15 @@ function cornerFlush(net: Network, anchor: Vec2, rotation: number, size: Footpri
   const vx = -Math.sin(rotation), vy = Math.cos(rotation);
   let shift = 0;
   let bestNeed = Infinity;
-  for (const ribbon of net.ribbons.values()) {
+  // The roads either side can reach: a side's middle is at `width / 2` from
+  // the back middle of the footprint, and a road counts within
+  // `back + width + module` of it, `back` its footway plus `ROAD_CLEARANCE`,
+  // inside the casing its ribbon is filed with (see `snapToRoad`). In the order
+  // of `net.ribbons`, so the first of equals is the one the old walk kept.
+  // DO NOT walk `net.ribbons` here: this runs on every pointer move.
+  const midX = anchor.x + vx * size.depth / 2, midY = anchor.y + vy * size.depth / 2;
+  const reach = size.width / 2 + ROAD_CLEARANCE + size.width + size.module;
+  for (const ribbon of ribbonsNear(net, [midX - reach, midY - reach, midX + reach, midY + reach])) {
     if (ribbon.id === snapped) continue;
     const segment = net.doc.segment(ribbon.id);
     if (!segment || segment.structure === 'tunnel') continue;
@@ -157,7 +177,12 @@ function cornerFlush(net: Network, anchor: Vec2, rotation: number, size: Footpri
 function nearestBuilding(doc: RoadDoc, cursor: Vec2, ignore?: BuildingId): Building | null {
   let best: Building | null = null;
   let bestDistance = BUILDING_REACH;
-  for (const b of doc.buildings.all()) {
+  // Only a building whose box comes within `BUILDING_REACH` can win: the
+  // store's grid (`BuildingStore.near`) hands those, a superset, in the order
+  // of `all()`, so the first of equals is the one the old walk kept.
+  // DO NOT walk `doc.buildings.all()` here: this runs on every pointer move.
+  const r = BUILDING_REACH;
+  for (const b of doc.buildings.near(cursor.x - r, cursor.y - r, cursor.x + r, cursor.y + r)) {
     if (b.id === ignore) continue;
     const box = buildingBounds(b);
     const at = cursor;
@@ -187,12 +212,15 @@ function flush(doc: RoadDoc, snap: PlacementSnap, size: FootprintSize, both: boo
   let bestU = EDGE_SNAP * size.module;
   let bestV = EDGE_SNAP * size.module;
   const reach = Math.max(size.width, size.depth) * 2 + m(8);
-  for (const b of doc.buildings.all()) {
+  const near = snap.anchor;
+  // The buildings whose box comes within `reach` (the test kept below), from
+  // the store's grid in the order of `all()`.
+  // DO NOT walk `doc.buildings.all()` here: this runs on every pointer move.
+  for (const b of doc.buildings.near(near.x - reach, near.y - reach, near.x + reach, near.y + reach)) {
     if (b.id === ignore) continue;
     const turn = Math.abs(normaliseAngle((b.rotation - snap.rotation) * 4)) / 4;
     if (turn > 0.02) continue;
     const box = buildingBounds(b);
-    const near = snap.anchor;
     if (box.minX > near.x + reach || box.maxX < near.x - reach ||
       box.minY > near.y + reach || box.maxY < near.y - reach) continue;
     for (const rect of footprintRects(b)) {

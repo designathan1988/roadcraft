@@ -4,6 +4,7 @@ import { ROAD_CLEARANCE, touchesRoad } from '@world/buildings/validate';
 import type { Network } from '@world/network';
 import { CURB_BAND, Level, halfWidth } from '@world/roadTypes';
 import { m } from '@world/units';
+import { ribbonsNear } from './snap';
 
 /**
  * Drawing walls, fences and hedges along a path (`world/barriers.ts`).
@@ -23,7 +24,14 @@ function snapBarrierPoint(net: Network | null, kind: BarrierKind, at: Vec2): Vec
   if (!net) return at;
   const half = m(BARRIER_SIZE[kind].thickness) / 2;
   let best: { d: number; p: Vec2 } | null = null;
-  for (const ribbon of net.ribbons.values()) {
+  // The roads near the point, from the network's cells (`ribbonsNear`, in
+  // increasing id: the first of equals is the one the walk over every road
+  // kept). A road counts within `back + FOOTWAY_REACH` of its centreline, and
+  // its ribbon is filed over the centreline's box grown by its casing, wider
+  // than its kerb or footway: past them `back` adds at most this reach.
+  // DO NOT walk `net.ribbons` here: it runs on every pointer move (`plan`).
+  const reach = ROAD_CLEARANCE + CURB_BAND + half + m(0.15) + FOOTWAY_REACH;
+  for (const ribbon of ribbonsNear(net, [at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
     if (net.doc.segment(ribbon.id)?.structure === 'tunnel') continue;
     // A kerb barrier stands just behind the kerb stone, on the footway's
     // road edge; the others along the footway's back.
@@ -96,8 +104,9 @@ export class BarrierTool {
 
   constructor(private readonly host: BarrierToolHost) {}
 
+  /** The gesture in progress, as a dictionary key (the interface translates it), or null. */
   gesture(): string | null {
-    return this.points ? 'cerca: traçando' : null;
+    return this.points ? 'gesture.barrier.tracing' : null;
   }
 
   cancel(): void {
@@ -110,9 +119,11 @@ export class BarrierTool {
    */
   down(world: Vec2, shift: boolean, screenX: number, screenY: number, detail: number): void {
     const { host } = this;
-    // Shift-click removes a run; a click puts a point down.
-    if (shift && host.removeAt(world)) {
-      host.hint('hint.barrier.removed');
+    // Shift-click removes a run; a click puts a point down. DO NOT let a
+    // Shift-click with no run under it fall through to a point: it began a
+    // fence the player never asked for.
+    if (shift) {
+      host.hint(host.removeAt(world) ? 'hint.barrier.removed' : 'hint.barrier.nothing');
       return;
     }
     const point = snapBarrierPoint(host.net(), host.kind(), world);
@@ -184,7 +195,12 @@ export class BarrierTool {
 
 /** Whether any corner of a footprint is on a carriageway or its kerb (a kerb barrier may stand on the footway). */
 function onCarriageway(net: Network, rect: readonly Vec2[]): boolean {
-  for (const ribbon of net.ribbons.values()) {
+  // Only a road whose kerb reaches a corner can count, and its ribbon is filed
+  // over a box grown wider than its kerb: the roads filed over the corners' box.
+  // DO NOT walk `net.ribbons` here: it runs on every pointer move (`plan`).
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of rect) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  for (const ribbon of ribbonsNear(net, [x0, y0, x1, y1])) {
     const reach = ribbon.road.width / 2 + CURB_BAND - m(0.02);
     for (const p of rect) if (ribbon.full.closestPoint(p).distance < reach) return true;
   }

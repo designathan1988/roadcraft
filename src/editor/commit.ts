@@ -9,9 +9,9 @@ import {
 import { segSeg } from '@core/intersect';
 import { Polyline } from '@core/polyline';
 import { type Vec2, dist } from '@core/vec2';
-import { type RoadDoc, fitRoadCurve, sameStamps } from '@world/doc';
+import { type RoadDoc, type RoadSegment, fitRoadCurve, sameStamps } from '@world/doc';
 import { Network } from '@world/network';
-import type { NodeId, SegmentId } from '@world/ids';
+import { type NodeId, type SegmentId, asSegmentId } from '@world/ids';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE, type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
@@ -21,7 +21,7 @@ import { type RoadStation, orderAlong, stationsAlong } from '@world/roads/buildM
 import { flipSection, sameRoadSectionIgnoringArrows, sectionForPiece } from '@world/roadSection';
 import { ROAD_TYPES } from '@world/roadTypes';
 import { roadStructure, type RoadStructure } from '@world/structures';
-import type { Anchor } from './snap';
+import { type Anchor, ribbonsNear } from './snap';
 import type { RoadPathPiece } from './roadPath';
 import { type RoadEditRefusal, refuseRoadEdit, snapshotRoads } from './editRules';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
@@ -209,7 +209,7 @@ function terrainIndexOf(doc: RoadDoc): TerrainIndex {
 
 function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?: (x: number, y: number) => number,
   previous: RoadElevation | null = null): { bored: boolean; elevation: RoadElevation | null } {
-  const fresh = [...work.segments.values()].filter((seg) => !before.segments.has(seg.id) && seg.structure === 'ground');
+  const fresh = segmentsNewIn(before, work).filter((seg) => seg.structure === 'ground');
   if (!fresh.length || !work.terrainStamps.length) return { bored: false, elevation: null };
   // A cut that deep needs relief under the new roads, and the land is flat
   // outside the stamps (the test just above): with no stamp reaching them,
@@ -249,6 +249,27 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   return { bored: changed, elevation };
 }
 
+/** Where the segments' allocator stands in `RoadDoc.allocatorMarks`. */
+const SEGMENT_MARK = 1;
+
+/**
+ * The segments of the working copy `work` that its original `before` does not
+ * hold: those with an id from `before`'s next one on (ids are handed out in
+ * increasing order, never again, and the copy goes on from the original's
+ * allocator). Read from the ids the edit handed out, never from the map.
+ * DO NOT filter `work.segments` against `before.segments`: every road drawn
+ * and every dry run read every road of the map twice.
+ */
+function segmentsNewIn(before: RoadDoc, work: RoadDoc): RoadSegment[] {
+  const out: RoadSegment[] = [];
+  const end = work.allocatorMarks()[SEGMENT_MARK]!;
+  for (let id = before.allocatorMarks()[SEGMENT_MARK]!; id < end; id++) {
+    const seg = work.segment(asSegmentId(id));
+    if (seg) out.push(seg);
+  }
+  return out;
+}
+
 /**
  * The stations of the road a gesture laid, on the copy it was laid on: the
  * new segments that lie on the drawn pieces (not the halves of a road it
@@ -265,8 +286,7 @@ function draftStations(
     return i === 0 ? pts : pts.slice(1);
   }));
   const laid = new Set<SegmentId>();
-  for (const seg of work.segments.values()) {
-    if (before.segments.has(seg.id)) continue;
+  for (const seg of segmentsNewIn(before, work)) {
     const line = workNet.ribbons.get(seg.id)?.full;
     if (!line) continue;
     const mid = line.sampleAt(line.length / 2).p;
@@ -419,7 +439,17 @@ function commitDraftInPlace(
   /** Existing nodes the draft crossed near, which may come onto it (`slideOntoCrossing`). */
   const slides: { node: NodeId; segment: SegmentId; at: Vec2 }[] = [];
 
-  for (const [id, seg] of [...doc.segments]) {
+  // The roads the draft can cross: those filed in the network's cells over
+  // the draft's box (a ribbon is filed over its centreline's box grown by its
+  // casing; two lines that cross have boxes that meet), in increasing id. The
+  // network is current here: free and node anchors only add nodes, a split
+  // anchor rebuilt it above. DO NOT walk `doc.segments`: every piece of every
+  // road drawn, and every pause of the pointer (the dry run), read every road
+  // of the map point by point.
+  const box = draft.bbox;
+  for (const { id } of ribbonsNear(net, [box.minX - MERGE_EPS, box.minY - MERGE_EPS, box.maxX + MERGE_EPS, box.maxY + MERGE_EPS])) {
+    const seg = doc.segment(id);
+    if (!seg) continue;
     if (!heights && seg.structure !== structure) continue;
     const existing = net.polylines.get(doc, id);
 
@@ -666,8 +696,8 @@ function materializeEndpoints(
       return true;
     }
 
-    resolved.set(tag, materializeFree(doc, anchor.at, heights?.[tag] ?? 0,
-      tag === 'end' && heights?.smoothEnd === true));
+    resolved.set(tag, materializeFree(doc, net, anchor.at, heights?.[tag] ?? 0,
+      tag === 'end' && heights?.smoothEnd === true, [...resolved.values()]));
     return true;
   };
 
@@ -694,9 +724,21 @@ function materializeEndpoints(
  * difference at the meeting point is the deck's problem, not the document's —
  * the raised span ramps down to the adjoining surface.
  */
-function materializeFree(doc: RoadDoc, at: Vec2, heightOffset = 0, smooth = false): NodeId {
-  for (const node of doc.nodes.values()) {
-    if (dist({ x: node.x, y: node.y }, at) < MERGE_EPS &&
+function materializeFree(doc: RoadDoc, net: Network, at: Vec2, heightOffset = 0, smooth = false,
+  /** Nodes this draft has already put down, with no road yet (the other end). */
+  fresh: readonly NodeId[] = []): NodeId {
+  // A node within `MERGE_EPS` is the end of a road filed in the network's cells
+  // round the point (orphans are pruned by every edit), or one this draft put
+  // down; the smallest id first, the first the walk over `doc.nodes` met.
+  // DO NOT walk `doc.nodes`: every free end of every piece read every node.
+  const candidates = new Set<NodeId>(fresh);
+  for (const { id } of ribbonsNear(net, [at.x - MERGE_EPS, at.y - MERGE_EPS, at.x + MERGE_EPS, at.y + MERGE_EPS])) {
+    const seg = doc.segment(id);
+    if (seg) { candidates.add(seg.a); candidates.add(seg.b); }
+  }
+  for (const id of [...candidates].sort((p, q) => p - q)) {
+    const node = doc.node(id);
+    if (node && dist({ x: node.x, y: node.y }, at) < MERGE_EPS &&
       Math.abs((node.heightOffset ?? 0) - heightOffset) <= HEIGHT_JOIN_EPS) return node.id;
   }
   return doc.addNode(at, heightOffset, smooth).id;
@@ -736,14 +778,26 @@ export function splitSegment(
  *    there and joined by one node. A crossing between the join tolerance and
  *    a deck's clearance can be neither, and is refused.
  * Returns `committed: false` with a reason when the drop must be undone.
+ * `net` is the network as it stood before the move (`moveNodeChecked`'s
+ * caller keeps it built): the nodes and roads near the drop are read from its
+ * cells, where the roads that did not move are filed.
  */
 export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth = 0): DraftResult {
   if (depth > 16) return { committed: true };
   const node = doc.node(id);
   if (!node) return { committed: false, reason: 'degenerate' };
 
-  for (const other of doc.nodes.values()) {
-    if (other.id === id) continue;
+  // A node it lands on is the end of a road filed in the network's cells round
+  // it (roads that did not move are filed where they are), the smallest id
+  // first as the walk over `doc.nodes` met them. DO NOT walk `doc.nodes`.
+  const near = new Set<NodeId>();
+  for (const { id: sid } of ribbonsNear(net, [node.x - MERGE_EPS, node.y - MERGE_EPS, node.x + MERGE_EPS, node.y + MERGE_EPS])) {
+    const seg = doc.segment(sid);
+    if (seg) { near.add(seg.a); near.add(seg.b); }
+  }
+  for (const otherId of [...near].sort((p, q) => p - q)) {
+    const other = doc.node(otherId);
+    if (!other || other.id === id) continue;
     if (dist(node, other) > MERGE_EPS || Math.abs(other.heightOffset - node.heightOffset) > HEIGHT_JOIN_EPS) continue;
     // Merging along a road would fold that road to nothing.
     if (node.incident.some((sid) => { const seg = doc.segment(sid); return seg && (seg.a === other.id || seg.b === other.id); })) {
@@ -764,8 +818,12 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
     const moved = doc.segment(sid);
     if (!moved) continue;
     const path = net.polylines.get(doc, sid);
-    for (const [otherId, other] of [...doc.segments]) {
-      if (otherId === sid || other.structure !== moved.structure) continue;
+    // The roads it can cross: filed over boxes that meet its own (the network
+    // was rebuilt just above). DO NOT walk `doc.segments`.
+    const pb = path.bbox;
+    for (const { id: otherId } of ribbonsNear(net, [pb.minX - MERGE_EPS, pb.minY - MERGE_EPS, pb.maxX + MERGE_EPS, pb.maxY + MERGE_EPS])) {
+      const other = doc.segment(otherId);
+      if (!other || otherId === sid || other.structure !== moved.structure) continue;
       if (other.a === moved.a || other.a === moved.b || other.b === moved.a || other.b === moved.b) continue;
       const line = net.polylines.get(doc, otherId);
       for (let i = 0; i + 1 < path.n; i++) {
@@ -808,17 +866,26 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
  * left as the drop made it, and the caller restores it.
  */
 export function moveNodeChecked(doc: RoadDoc, net: Network, id: NodeId, to: Vec2): DraftResult {
+  // The copy the rules judge against is also what a refused move puts back,
+  // as `guardRoadEdit` does: the caller keeps no copy of its own (the Move
+  // tool took the whole document as JSON at every press to undo a refusal).
+  // The copy itself is the F2 debt (docs/PLANO-ESPINHA-2026-10-14.md, C3).
   const before = snapshotRoads(doc, net);
   const money = roadsBefore(doc);
   if (!doc.moveNode(id, to)) return { committed: false, reason: 'duplicate' };
+  const refuse = (result: DraftResult): DraftResult => {
+    doc.replaceWith(before.doc);
+    net.adopt(before.net);
+    return result;
+  };
   const result = reconcileMovedNode(doc, net, id);
-  if (!result.committed) return result;
+  if (!result.committed) return refuse(result);
   net.rebuild();
   const refused = refuseRoadEdit(before, { doc, net });
-  if (refused) return { committed: false, reason: refused };
+  if (refused) return refuse({ committed: false, reason: refused });
   // The roads made longer are paid for, shorter partly paid back (`editor/roads/economy.ts`).
   const charge = settleRoadEdit(money, doc);
-  return charge.affordable ? { ...result, cost: charge.amount } : { committed: false, reason: 'funds', cost: charge.amount };
+  return charge.affordable ? { ...result, cost: charge.amount } : refuse({ committed: false, reason: 'funds', cost: charge.amount });
 }
 
 /** Joins two compatible straight segments meeting at an otherwise unused node. */

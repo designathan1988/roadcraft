@@ -169,14 +169,14 @@ export class LotTool {
 
   /** What the player is in the middle of doing with it, named (`main.ts` `currentGesture`). */
   gesture(): string | null {
-    if (this.erase) return 'zona: apagando';
-    if (this.stroke) return this.stroke.remove ? 'lote: tirando zona' : 'lote: pintando zona';
-    if (this.corner) return 'lote: movendo um canto';
-    if (this.drawn) return 'lote: desenhando';
-    if (this.cutLine) return 'lote: cortando';
-    if (this.curve) return 'lote: curvando um lado';
-    if (this.polygon.length > 0) return 'lote: polígono';
-    if (this.joinFirst !== null) return 'lote: unindo';
+    if (this.erase) return 'gesture.zone.erasing';
+    if (this.stroke) return this.stroke.remove ? 'gesture.zone.unzoning' : 'gesture.zone.zoning';
+    if (this.corner) return 'gesture.lot.corner';
+    if (this.drawn) return 'gesture.lot.drawing';
+    if (this.cutLine) return 'gesture.lot.cutting';
+    if (this.curve) return 'gesture.lot.curving';
+    if (this.polygon.length > 0) return 'gesture.lot.polygon';
+    if (this.joinFirst !== null) return 'gesture.lot.joining';
     return null;
   }
 
@@ -384,7 +384,10 @@ export class LotTool {
       this.erase.lots.add(lot.id);
       if (lot.building !== undefined) this.erase.buildings.add(lot.building as BuildingId);
     }
-    for (const b of this.doc.buildings.all()) {
+    // A building over the point has the point in its stored box: the store's
+    // grid hands those (`BuildingStore.near`). DO NOT walk `buildings.all()`:
+    // this runs for each of up to 400 steps of a pointer move.
+    for (const b of this.doc.buildings.near(world.x, world.y, world.x, world.y)) {
       if (Math.hypot(b.x - world.x, b.y - world.y) > m(80)) continue;
       if (solidFootprints(b).some((ring) => insideLot(world, { corners: ring }))) this.erase.buildings.add(b.id as BuildingId);
     }

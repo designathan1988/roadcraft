@@ -10,6 +10,7 @@ import { roadProfile, sectionFromProfile } from '@world/roadTypes';
 import { lotFrame, zoneLots, type Lot } from '@world/lots';
 import { ROAD_TYPES } from '@world/roadTypes';
 import { m } from '@world/units';
+import { ribbonsNear } from './snap';
 import { LEVEL_ROAD, type CityPlan } from '@world/cityGen/plan';
 
 /**
@@ -98,18 +99,27 @@ export function* greenCitySteps(doc: RoadDoc, net: Network, seed: number): Gener
  * or a collector and the district is lively enough, parks left open. Returns
  * how many lots were zoned.
  */
-export function zoneCity(doc: RoadDoc, plan: CityPlan): number {
+export function zoneCity(doc: RoadDoc, net: Network, plan: CityPlan): number {
   const main = new Set(['avenue', 'urban'].map((id) => ROAD_TYPES.findIndex((t) => t.id === id)));
-  const mains: [Vec2, Vec2][] = [];
-  for (const s of doc.segments.values()) {
-    if (!main.has(s.type)) continue;
-    const a = doc.nodes.get(s.a), b = doc.nodes.get(s.b);
-    if (a && b) mains.push([a, b]);
-  }
+  const reach = m(22);
+  // The main roads round each lot, from the network's cells (`ribbonsNear`): a
+  // road's chord lies in its centreline's box, which its ribbon is filed over
+  // grown. DO NOT gather every main road of the map and test each lot against
+  // all of them (lots × roads).
+  const mainsNear = (p: Vec2): [Vec2, Vec2][] => {
+    const out: [Vec2, Vec2][] = [];
+    for (const { id } of ribbonsNear(net, [p.x - reach, p.y - reach, p.x + reach, p.y + reach])) {
+      const s = doc.segment(id);
+      if (!s || !main.has(s.type)) continue;
+      const a = doc.nodes.get(s.a), b = doc.nodes.get(s.b);
+      if (a && b) out.push([a, b]);
+    }
+    return out;
+  };
   const groups = new Map<string, number[]>();
   for (const lot of doc.lots as readonly Lot[]) {
     const anchor = lotFrame(lot).anchor;
-    const zone = plan.zoneAt(anchor, nearAny(anchor, mains, m(22)));
+    const zone = plan.zoneAt(anchor, nearAny(anchor, mainsNear(anchor), reach));
     if (zone === 'park') continue;
     const key = `${zone.use}:${zone.density}`;
     let list = groups.get(key);

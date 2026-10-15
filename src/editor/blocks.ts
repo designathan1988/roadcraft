@@ -1,6 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
-import { Network } from '@world/network';
+import type { Network } from '@world/network';
 import { m } from '@world/units';
 import type { SegmentParking } from '@world/parking';
 import { commitRoadPath } from './commit';
@@ -37,16 +37,19 @@ export function blockGridLines(centre: Vec2, grid: BlockGrid): [Vec2, Vec2][] {
 }
 
 /**
- * Lays the grid into `doc` through the road tool's commit, line after line.
- * Returns how many lines were laid. `net` is rebuilt as it goes.
+ * Lays the grid into `doc` through the road tool's commit, line after line, on
+ * the game's own network `net` (`commitRoadPath` hands it the network of each
+ * line laid). Returns how many lines were laid.
+ * DO NOT make a network per line: each was built from nothing over the whole
+ * map, as many times as the grid has lines.
  */
 export function commitBlockGrid(
-  doc: RoadDoc, centre: Vec2, grid: BlockGrid, type: number, lanes: number | null, parking?: SegmentParking,
+  doc: RoadDoc, net: Network, centre: Vec2, grid: BlockGrid, type: number, lanes: number | null, parking?: SegmentParking,
 ): number {
   let laid = 0;
+  // `net` is built for `doc` (the caller's is: every edit rebuilds it), and
+  // each line laid hands it back current (`Network.adopt` in `commitRoadPath`).
   for (const [a, b] of blockGridLines(centre, grid)) {
-    const net = new Network(doc);
-    net.rebuild();
     // Ends join what is already there (an earlier line, an existing street).
     const anchor = (p: Vec2): Anchor => {
       const hit = findAnchor(doc, net, p, 4);

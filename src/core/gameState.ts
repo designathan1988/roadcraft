@@ -63,6 +63,8 @@ export class GameState<V extends object> {
   private count = 0;
   private readonly watchers: Watcher<V>[] = [];
   private flushing = false;
+  /** The serial the last flush told every watcher up to: nothing new, nothing to tell. */
+  private flushedUpTo = 0;
   /** A flush is queued as a microtask. */
   private scheduled = false;
 
@@ -122,9 +124,12 @@ export class GameState<V extends object> {
    * told in the next flush, never inside this one. Called once a frame.
    */
   flush(): void {
-    if (this.flushing) return;
+    // Called every frame: with nothing written since the last flush no watcher
+    // is behind (a new one starts at the serial it was added at).
+    if (this.flushing || this.serial === this.flushedUpTo) return;
     this.flushing = true;
     const upTo = this.serial;
+    this.flushedUpTo = upTo;
     try {
       for (const watcher of [...this.watchers]) {
         if (watcher.seen >= upTo) continue;
