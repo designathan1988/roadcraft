@@ -56,9 +56,9 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   const deps = w.signalDeps();
   const asleep = w.signalsAsleep(deps);
   for (const c of w.signalisedControllers()) {
-    if (asleep.has(c)) { restController(c); continue; }
+    if (asleep.get(c.node) === c) { restController(c); continue; }
     tickWork.controllers++;
-    if (stepController(c, deps) && w.doLess) asleep.add(c);
+    if (stepController(c, deps) && w.doLess) asleep.set(c.node, c);
   }
   lap('1 signals');
 

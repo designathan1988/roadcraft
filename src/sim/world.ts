@@ -177,9 +177,8 @@ export class SimWorld {
   private readonly maybeHolders = new Set<Vehicle>();
   /** Runtime lanes no longer in the graph (an edit took them): stage 7's work list (`collectGhosts`). */
   readonly ghostCandidates = new Set<LaneletId>();
-  /** Signals asleep (`signalsAsleep`): rested in green with nobody near on their last step. */
-  private readonly asleep = new Set<SignalController>();
-  private asleepSince = { roads: -1, junctions: -1 };
+  /** Signals asleep (`signalsAsleep`), by node: rested in green with nobody near on their last step. */
+  private readonly asleep = new Map<NodeId, SignalController>();
 
   /** @mapWide What vehicles, signals and the audit may know about the people at each crossing (`crossings/state.ts`). */
   readonly crossingStates: CrossingStates = new Map();
@@ -294,7 +293,7 @@ export class SimWorld {
     this.sidewalks.clear();
     this.walkSeen = null;
     this.signalPosts.reset();
-    this.junctionsVersion++;
+    this.junctionsChanged(null);
     this.occupied.clear();
     this.ghostCandidates.clear();
     this.asleep.clear();
@@ -409,60 +408,52 @@ export class SimWorld {
     return this.vehicles.inKeyOrder();
   }
 
+  /** Every junction in node order: for the readers of the whole map (doing everything, a whole layout), sorted when asked after a change. */
   junctionNodesInOrder(): readonly NodeId[] {
-    if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
-    return this.junctionOrder.nodes;
+    return this.inNodeOrder().nodes;
   }
 
-  /** The controllers stage 1 runs, in node order: those of the signalised junctions. */
+  /** The controllers of the signalised junctions in node order: every one, for doing everything and the specs. */
   signalisedControllers(): readonly SignalController[] {
-    if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
-    return this.junctionOrder.signalised;
+    return this.inNodeOrder().signalised;
   }
 
-  /** Moves whenever the junctions or their controllers do (a topology rebuild, a control the advisor switched) */
-  private junctionsVersion = 0;
-  private junctionOrder: {
-    version: number; nodes: readonly NodeId[]; signalised: readonly SignalController[];
-    /** The junction each approach lane leads into (`junctionsApproached`). */
-    junctionOf: ReadonlyMap<LaneletId, NodeId>;
-    /** The signal each approach lane and each crossing of a plan belongs to: what wakes it (`signalsAsleep`). */
-    approachOf: ReadonlyMap<LaneletId, SignalController>; crossingOf: ReadonlyMap<CrossingId, readonly SignalController[]>;
-  } = { version: -1, nodes: [], signalised: [], junctionOf: new Map(), approachOf: new Map(), crossingOf: new Map() };
-  private refreshJunctionOrder(): void {
+  /** DO NOT sort and map every junction of the map for an edit: kept null by `junctionsChanged` until a reader of every junction asks. */
+  private ordered: { readonly nodes: readonly NodeId[]; readonly signalised: readonly SignalController[] } | null = null;
+  private inNodeOrder(): { readonly nodes: readonly NodeId[]; readonly signalised: readonly SignalController[] } {
+    if (this.ordered) return this.ordered;
     const nodes = [...this.graph.junctions.keys()].sort((a, b) => a - b);
-    rebuildWork.lanes += nodes.length;
     const signalised: SignalController[] = [];
-    const junctionOf = new Map<LaneletId, NodeId>();
-    const approachOf = new Map<LaneletId, SignalController>();
-    const crossingOf = new Map<CrossingId, SignalController[]>();
     for (const node of nodes) {
       const c = this.controllers.get(node);
-      const junction = this.graph.junctions.get(node);
-      for (const lane of junction?.inbound ?? []) junctionOf.set(lane, node);
-      if (!c || !junction?.signalised) continue;
-      signalised.push(c);
-      for (const lane of junction.inbound) approachOf.set(lane, c);
-      for (const stage of c.plan.stages) {
-        for (const x of stage.pedWalk) {
-          const of = crossingOf.get(x);
-          if (!of) crossingOf.set(x, [c]);
-          else if (!of.includes(c)) of.push(c);
-        }
-      }
+      if (c && this.graph.junctions.get(node)!.signalised) signalised.push(c);
     }
-    this.junctionOrder = { version: this.junctionsVersion, nodes, signalised, junctionOf, approachOf, crossingOf };
+    return this.ordered = { nodes, signalised };
+  }
+
+  /** The junctions or controllers that changed (null: every one): the orders forgotten, their signals woken. */
+  private junctionsChanged(nodes: Iterable<NodeId> | null): void {
+    this.ordered = null;
+    if (nodes === null) this.wakeAll = true;
+    else for (const node of nodes) this.wake.add(node);
+  }
+  private readonly wake = new Set<NodeId>();
+  private wakeAll = true;
+
+  /** The junction a lane is an approach of (in its `inbound`), from the graph: no map of every approach of the map to keep. */
+  private junctionOfLane(id: LaneletId): NodeId | undefined {
+    const lane = this.graph.lanelets.get(id);
+    if (!lane || lane.kind !== 'link' || lane.to === undefined) return undefined;
+    return this.graph.junctions.get(lane.to)?.inbound.includes(id) ? lane.to : undefined;
   }
 
   /** The junctions with a vehicle on one of their approaches, in node order: the only ones with a lane head to admit */
   junctionsApproached(): readonly NodeId[] {
-    if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
-    const { junctionOf } = this.junctionOrder;
     const out = this.approached, seen = this.approachedSeen;
     seen.clear();
     let n = 0;
     for (const lane of this.occupied) {
-      const node = junctionOf.get(lane);
+      const node = this.junctionOfLane(lane);
       if (node === undefined || seen.has(node)) continue;
       seen.add(node);
       out[n++] = node;
@@ -473,28 +464,33 @@ export class SimWorld {
   private readonly approached: NodeId[] = [];
   private readonly approachedSeen = new Set<NodeId>();
 
-  /** DO NOT wake them on the document's revision */
-  signalsAsleep(deps: WorldSignalDeps): Set<SignalController> {
+  /** The roads' and controls' changes the sleeping signals were woken by (`signalsAsleep`). */
+  private readonly signalRoadsSeen = new JournalCursor(['roads', 'traffic']);
+
+  /** DO NOT wake every one on an edit: only those of the junctions it built again and where the diary says it reached */
+  signalsAsleep(deps: WorldSignalDeps): Map<NodeId, SignalController> {
     const asleep = this.asleep;
-    const roads = this.doc.changes.serialOf('roads', 'traffic');
-    if (!this.doLess || this.asleepSince.roads !== roads || this.asleepSince.junctions !== this.junctionsVersion) {
-      asleep.clear();
-      this.asleepSince = { roads, junctions: this.junctionsVersion };
+    const entries = this.signalRoadsSeen.read(this.doc.changes);
+    if (!this.doLess || this.wakeAll || entries === null || entries.some((e) => e.rects === null)) asleep.clear();
+    else {
+      for (const node of this.wake) asleep.delete(node);
+      for (const entry of entries) {
+        for (const rect of entry.rects!) for (const node of this.junctionFiling.idsMeeting(rect)) asleep.delete(node);
+      }
     }
+    this.wake.clear();
+    this.wakeAll = false;
     if (asleep.size === 0) return asleep;
-    if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
-    const { approachOf, crossingOf } = this.junctionOrder;
     for (const lane of this.occupied) {
-      const c = approachOf.get(lane);
-      if (c) asleep.delete(c);
+      const node = this.junctionOfLane(lane);
+      if (node !== undefined) asleep.delete(node);
     }
     for (const x of this.crossingStates.keys()) {
-      for (const c of crossingOf.get(x) ?? []) asleep.delete(c);
+      const node = crossingNode(x);
+      const c = asleep.get(node);
+      if (c && c.plan.stages.some((stage) => stage.pedWalk.includes(x))) asleep.delete(node);
     }
-    for (const node of deps.reserved().keys()) {
-      const c = this.controllers.get(node);
-      if (c) asleep.delete(c);
-    }
+    for (const node of deps.reserved().keys()) asleep.delete(node);
     return asleep;
   }
 
@@ -652,7 +648,7 @@ export class SimWorld {
       if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
       else if (rt.ghost) { rt.ghost = false; rt.ghostSince = 0; }
     }
-    this.junctionsVersion++;
+    this.junctionsChanged(changed?.junctions ?? null);
     // The controls the flows chose stay chosen across an edit (V5); a junction gone takes its own away.
     if (changed === null) {
       const nodes = new Set(this.graph.junctions.keys());
@@ -726,7 +722,7 @@ export class SimWorld {
       const signalised = choice === 'signal';
       if (junction.signalised === signalised) continue;
       this.graph.junctions.set(node, { ...junction, signalised });
-      this.junctionsVersion++;
+      this.junctionsChanged([node]);
       this.noteSignal(node);
       changed = true;
     }
@@ -970,7 +966,7 @@ export class SimWorld {
         this.noteSignal(node);
       }
     }
-    this.junctionsVersion++;
+    this.junctionsChanged(only);
   }
 
   /** What each controller's plan was made from (`syncControllers`). */
@@ -1094,6 +1090,9 @@ export class SimWorld {
     if (this.issues.length > 512) this.issues.shift();
   }
 }
+
+/** The junction a crossing is at (`makeCrossingId`). */
+const crossingNode = (id: CrossingId): NodeId => Number(id.slice(0, id.indexOf(':'))) as NodeId;
 
 /** What a controller's plan was made from (`SimWorld.planInputsOf`). */
 interface PlanInputs {
