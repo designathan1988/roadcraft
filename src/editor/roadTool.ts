@@ -7,7 +7,7 @@ import { clamp } from '@core/scalar';
 import { shapeFromControl, type CurveShape } from '@core/bezier';
 import { fitRoadCurve, type RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { type SegmentId, asSegmentId } from '@world/ids';
+import type { SegmentId } from '@world/ids';
 import type { LandscapeItem } from '@world/landscape';
 import { landscapeMeeting } from './itemCells';
 import { GRID_CELL, GRID_STEP, snapToGrid } from '@world/grid';
@@ -20,7 +20,7 @@ import {
   type Anchor, anchorForHeight as anchorAtHeight, anchorHeightOffset as anchorHeightAt, findAnchor, setGridSnapStep, snapRoadEndpoint,
   snapRoadStart, type SnapResult,
 } from './snap';
-import { commitRoadPath } from './commit';
+import { commitRoadPath, nextSegmentId, segmentsFrom } from './commit';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import type { RoadProfileSpec } from '@world/roads/profile';
@@ -465,7 +465,7 @@ export class RoadTool {
     /** The segment ids from here on are the edit's own (ids are handed out in increasing order, never again). */
     let firstNew = 0;
     host.mutate(() => {
-      firstNew = doc.allocatorMarks()[SEGMENT_MARK]!;
+      firstNew = nextSegmentId(doc);
       result = commitRoadPath(doc, net, d.start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
         (x, y) => host.naturalHeightAt(x, y), { groundSolve: host.groundSolve?.() ?? null });
       if (result.elevation) host.offerElevation(result.elevation, net.revision);
@@ -476,7 +476,7 @@ export class RoadTool {
       // segments just laid take it, paid for as the road was (`roads/economy.ts`);
       // what the balance cannot cover is not laid, and the road keeps its class.
       if (result.committed && (settings.profile || settings.width !== null)) {
-        const laid = segmentsFrom(doc, firstNew);
+        const laid = laidFrom(doc, firstNew);
         const kept = laid.map((id) => ({ ...doc.requireSegment(id) }));
         const money = roadsBefore(doc);
         if (settings.profile) applyProfileTo(doc, laid, settings.profile.profile, settings.profile.type);
@@ -498,13 +498,13 @@ export class RoadTool {
       }
       // Retaining walls in the cuttings of the roads just laid (V3).
       if (result.committed && settings.cutWalls) {
-        for (const id of segmentsFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
+        for (const id of laidFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
       }
       // The furniture of the roads just laid, in the same undo step (V7):
       // ordinary placed items, edited or removed one by one like any other.
       if (result.committed && settings.furniture && settings.furniture !== 'none') {
         if (net.revision !== doc.revision) net.rebuild();
-        const laid = segmentsFrom(doc, firstNew);
+        const laid = laidFrom(doc, firstNew);
         // The complete set: a power line down the left, its poles lit (V7).
         const power = settings.furniture === 'complete' && layPowerLines(doc, net, laid) > 0;
         for (const piece of furnitureFor(net, laid, settings.furniture, landscapeAlong(doc, net, laid), power)) doc.addLandscape(piece.kind, piece.at);
@@ -529,7 +529,7 @@ export class RoadTool {
     host.setHeight(finalHeight, 'via terminada');
     this.heightEdited = false;
     if (result.heightLimited) host.hint('hint.road.gradeLimited');
-    const laid = segmentsFrom(doc, firstNew);
+    const laid = laidFrom(doc, firstNew);
     if (laid.length) host.flash(laid);
     return true;
   }
@@ -593,22 +593,8 @@ export class RoadTool {
   }
 }
 
-/** Where the segments' allocator stands in `RoadDoc.allocatorMarks`. */
-const SEGMENT_MARK = 1;
-
-/**
- * The segments standing whose id is `first` or later: the ones an edit made,
- * ids being handed out in increasing order and never again. Read from the
- * ids the edit handed out, never from the map.
- * DO NOT copy `doc.segments.keys()` before an edit and filter every segment
- * after it: each road drawn read the whole map five times.
- */
-function segmentsFrom(doc: RoadDoc, first: number): SegmentId[] {
-  const out: SegmentId[] = [];
-  const end = doc.allocatorMarks()[SEGMENT_MARK]!;
-  for (let id = first; id < end; id++) if (doc.segment(asSegmentId(id))) out.push(asSegmentId(id));
-  return out;
-}
+/** The segment ids an edit made: those from `first` on (`commit.ts` `segmentsFrom`). */
+const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc, first).map((seg) => seg.id);
 
 /**
  * The placed items the furniture of `laid` can meet (`furnitureFor` reads those
