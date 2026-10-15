@@ -324,8 +324,14 @@ export const STYLES: readonly { readonly key: string; readonly materials: Requir
 export function applyStyle(b: Building, key: string): boolean {
   const style = STYLES.find((s) => s.key === key);
   if (!style) return false;
-  const before = JSON.stringify([b.materials, b.volumes.map((v) => v.materials)]);
+  // The storeys' own paint too (`wallMaterial` reads it first): left, the style
+  // did not show on the floors painted before it.
+  const state = (): string => JSON.stringify([b.materials, b.volumes.map((v) => [v.materials, v.storeys.map((s) => s.materials)])]);
+  const before = state();
   b.materials = { ...style.materials };
-  for (const v of b.volumes) delete v.materials;
-  return JSON.stringify([b.materials, b.volumes.map((v) => v.materials)]) !== before;
+  for (const v of b.volumes) {
+    delete v.materials;
+    for (const storey of v.storeys) delete storey.materials;
+  }
+  return state() !== before;
 }
