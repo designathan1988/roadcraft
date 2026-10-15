@@ -259,10 +259,10 @@ export class Network {
   /**
    * Takes over another network's derived geometry instead of recomputing it.
    *
-   * `commitDraft` works on a clone, builds a network for it to find crossings
-   * and splits, and then - on success - replaces the live document with the
-   * clone: the clone's network was built from the very same segments, and
-   * `RoadDoc.replaceWith` has made the two documents equal. Measured on a
+   * `commitDraft` works on a working copy (`RoadDoc.fork`), builds a network for it to find crossings
+   * and splits, and then - on success - takes the copy back into the live
+   * document: the copy's network was built from the very same segments, and
+   * `RoadDoc.takeBack` has made the two documents equal. Measured on a
    * 205-segment map: a rebuild cost about 55 ms, and drawing one road paid
    * for three of them. What the other network changed comes across with it
    * (`changesSince`), so whatever reads this one sees the edit.

@@ -223,6 +223,12 @@ export class ChangeJournal {
   private readonly byKind = new Map<ChangeKind, KindLog>();
   /** Up to where every kind may be missing entries: a copy starts with none (`continueFrom`). */
   private startedAt = 0;
+  /**
+   * Every entry written since this diary went on from another as a working
+   * copy's (`forkFrom`), all of them, in order: what taking the copy back
+   * writes into the original (`take`). Null: not a working copy's.
+   */
+  private written: Change[] | null = null;
 
   /** The serial of the latest entry: what a reader that has seen everything holds. */
   get version(): number {
@@ -258,6 +264,34 @@ export class ChangeJournal {
     this.byKind.clear();
     this.startedAt = other.serial;
     this.pendingCause = other.pendingCause;
+    this.written = null;
+  }
+
+  /**
+   * Goes on from `other` as a working copy's diary (`RoadDoc.fork`): as
+   * `continueFrom`, and every entry written from here on is kept whole,
+   * however many, for the original to take (`take`).
+   */
+  forkFrom(other: ChangeJournal): void {
+    this.continueFrom(other);
+    this.written = [];
+  }
+
+  /**
+   * Writes a working copy's entries into this diary, which stands
+   * where the copy's started: each the same entry at the same serial - what
+   * the same edits made here would have written - and the copy's cause after.
+   */
+  take(from: ChangeJournal): void {
+    const entries = from.written;
+    if (!entries) throw new Error('ChangeJournal.take: not a working copy\'s diary');
+    if (from.startedAt !== this.serial) throw new Error(`ChangeJournal.take: the copy started at ${from.startedAt}, this diary stands at ${this.serial}`);
+    for (const entry of entries) {
+      if (entry.serial !== this.serial + 1) throw new Error(`ChangeJournal.take: entry ${entry.serial} after ${this.serial}`);
+      this.serial = entry.serial;
+      this.write(entry);
+    }
+    this.pendingCause = from.pendingCause;
   }
 
   /** The serial before which entries are no longer kept. */
@@ -287,13 +321,20 @@ export class ChangeJournal {
       ...(extra.ms !== undefined ? { ms: extra.ms } : {}),
       ...(extra.detail ? { detail: extra.detail } : {}),
     };
+    this.write(entry);
+    return serial;
+  }
+
+  /** An entry whose serial is this diary's latest, put in the ring, its kind's log and a copy's list. */
+  private write(entry: Change): void {
+    const { serial, kind } = entry;
     this.ring[serial % KEPT] = entry;
     if (this.count < KEPT) this.count++;
     this.lastOf.set(kind, serial);
     let log = this.byKind.get(kind);
     if (!log) this.byKind.set(kind, (log = new KindLog(this.startedAt)));
     log.push(entry, () => this.neededFor(kind));
-    return serial;
+    this.written?.push(entry);
   }
 
   /**
@@ -355,6 +396,23 @@ export class ChangeJournal {
       for (const r of entry.rects) for (const a of list) if (overlaps(r, a)) return true;
     }
     return false;
+  }
+
+  /**
+   * The ids the entries of these kinds after `since` carry, each once; null
+   * when it cannot say (an entry forgotten, or one without ids: everything).
+   * A one-off question about a span of the diary (`RoadDoc.roadIdsChangedFrom`),
+   * not a reader that follows it (`JournalCursor`).
+   */
+  idsSince(since: number, kinds: readonly ChangeKind[]): Set<number> | null {
+    const entries = this.since(since, kinds);
+    if (!entries) return null;
+    const ids = new Set<number>();
+    for (const entry of entries) {
+      if (!entry.ids) return null;
+      for (const id of entry.ids) ids.add(id);
+    }
+    return ids;
   }
 
   /** The last `n` entries, newest first. */

@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import { ForkMap, forkWork } from '@core/forkMap';
 import { ChangeJournal, rectAround, type ChangeRect } from './changes';
 import { CellFiling } from './cells';
 import { JournalCursor } from './derived';
@@ -72,6 +73,13 @@ export class LotStore {
   private keySet = new Set<string>();
   /** The lots as an array, for the readers that still take one (`RoadDoc.lots`); null when a write made it stale. */
   private listed: readonly Lot[] | null = null;
+  /**
+   * The store a working copy lies over (`forkFrom`) while it has written no
+   * lot: its questions by place and its list are that store's. Null: its own.
+   */
+  private below: LotStore | null = null;
+  /** The keys still the original's (`forkFrom`): copied the first time the copy writes one (`ownKeys`). */
+  private keysShared = false;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
@@ -110,6 +118,7 @@ export class LotStore {
    * @rebuild The whole list only after a write.
    */
   list(): readonly Lot[] {
+    if (this.below) return this.below.list();
     return this.listed ??= [...this.items.values()];
   }
 
@@ -137,6 +146,7 @@ export class LotStore {
    * those whose shape reaches it (the caller keeps its exact test).
    */
   in(rect: ChangeRect): Lot[] {
+    if (this.below) return this.below.in(rect);
     return this.cells().idsMeeting(rect).map((id) => this.items.get(id)!);
   }
 
@@ -194,6 +204,7 @@ export class LotStore {
       const was = this.items.get(lot.id);
       if (!was) throw new Error(`LotStore: lot ${lot.id} put but not stored`);
       if (was === lot) continue;
+      this.leaveBelow();
       this.items.set(lot.id, lot);
       this.filing?.file(lot.id, lot, lotBox(lot));
       this.listed = null;
@@ -225,6 +236,7 @@ export class LotStore {
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i]!;
       if (this.keySet.has(key)) continue;
+      this.ownKeys();
       this.keySet.add(key);
       this.keyList.push(key);
       added = true;
@@ -237,6 +249,7 @@ export class LotStore {
 
   /** A stretch of the keys put back as it was (undo, `RoadDoc.restore`): `list.splice`, the set kept with it. */
   spliceKeys(start: number, remove: number, items: readonly string[]): string[] {
+    this.ownKeys();
     const tail = this.keyList.splice(start + remove);
     const gone = this.keyList.splice(start, remove);
     for (const key of gone) this.keySet.delete(key);
@@ -259,6 +272,7 @@ export class LotStore {
       if (was) rects.push(lotBox(was));
       if (value === undefined) this.drop(id);
       else if (was) {
+        this.leaveBelow();
         this.items.set(id, value);
         this.filing?.file(id, value, lotBox(value));
         this.listed = null;
@@ -292,6 +306,8 @@ export class LotStore {
    * one changed in place. The filing is made only if the copy is asked by place.
    */
   shareFrom(source: LotStore): void {
+    this.below = null;
+    this.keysShared = false;
     this.items = new Map(source.items);
     this.order = new Map(source.order);
     this.nextOrder = source.nextOrder;
@@ -321,6 +337,7 @@ export class LotStore {
     if (source.keyList.length !== this.keyList.length || source.keyList.some((k, i) => k !== this.keyList[i])) {
       this.keyList = [...source.keyList];
       this.keySet = new Set(source.keySet);
+      this.keysShared = false;
       keysMoved = true;
       this.journal.record('lotKeys', null, { cause });
     }
@@ -334,6 +351,7 @@ export class LotStore {
         if (was && now && this.order.get(id) === source.order.get(id)) {
           // Changed where it stands: replaced in place (a `Map`'s `set` keeps the key's place).
           if (was === now) continue;
+          this.leaveBelow();
           this.items.set(id, now);
           this.filing?.file(id, now, lotBox(now));
           this.listed = null;
@@ -358,13 +376,71 @@ export class LotStore {
       for (const mine of this.items.values()) if (mine !== theirs.next().value) { same = false; break; }
     }
     if (same) return keysMoved;
-    const keyList = this.keyList, keySet = this.keySet;
+    const keyList = this.keyList, keySet = this.keySet, keysShared = this.keysShared;
     this.reset();
     this.keyList = keyList;
     this.keySet = keySet;
+    this.keysShared = keysShared;
     for (const lot of source.items.values()) this.append(lot);
     this.journal.record('lots', null, { cause });
     return true;
+  }
+
+  /**
+   * A working copy over another store (`RoadDoc.fork`): its records and
+   * their places in the order read through, each written here only
+   * (`ForkMap`); its questions by place, its list and its keys the other's
+   * until this one writes them. Writes nothing in the diary.
+   */
+  forkFrom(source: LotStore): void {
+    this.items = new ForkMap(source.items);
+    this.order = new ForkMap(source.order);
+    this.nextOrder = source.nextOrder;
+    this.ids = new IdAllocator(source.ids.peek);
+    this.keyList = source.keyList;
+    this.keySet = source.keySet;
+    this.keysShared = true;
+    this.filing = null;
+    this.listed = null;
+    this.below = source;
+  }
+
+  /**
+   * Takes back a working copy over this store (`forkFrom`): the lots it took
+   * away, replaced (in place) and put last (in its order, with its place
+   * numbers), the filing kept by the same writers, and its keys when it wrote
+   * them. Its diary entries come with the copy's diary (`ChangeJournal.take`).
+   */
+  takeFork(copy: LotStore): void {
+    const { gone, replaced, added } = (copy.items as ForkMap<number, Lot>).changes();
+    if (gone.size || replaced.size || added.size) this.listed = null;
+    for (const id of gone) { this.items.delete(id); this.filing?.remove(id); }
+    for (const [id, lot] of replaced) { this.items.set(id, lot); this.filing?.file(id, lot, lotBox(lot)); }
+    for (const [id, lot] of added) { this.items.set(id, lot); this.filing?.file(id, lot, lotBox(lot)); }
+    (copy.order as ForkMap<number, number>).applyTo(this.order);
+    this.nextOrder = copy.nextOrder;
+    this.ids = new IdAllocator(copy.ids.peek);
+    if (!copy.keysShared) {
+      this.keyList = copy.keyList;
+      this.keySet = copy.keySet;
+    }
+  }
+
+  /** A working copy about to write a lot: its questions by place and its list its own from now on. */
+  private leaveBelow(): void {
+    if (!this.below) return;
+    this.below = null;
+    this.filing = null;
+    this.listed = null;
+  }
+
+  /** A working copy about to write its keys: its own, copied from the original's the first time. */
+  private ownKeys(): void {
+    if (!this.keysShared) return;
+    this.keysShared = false;
+    this.keyList = [...this.keyList];
+    this.keySet = new Set(this.keySet);
+    forkWork.copied += this.keyList.length;
   }
 
   /** Every lot, its corners copied (the file, `RoadDoc.serialized`). */
@@ -383,6 +459,7 @@ export class LotStore {
 
   /** A lot stored last in the order (`at`: the place number it keeps from a copy). */
   private append(lot: Lot, at?: number): void {
+    this.leaveBelow();
     this.items.set(lot.id, lot);
     this.order.set(lot.id, at ?? this.nextOrder++);
     this.filing?.file(lot.id, lot, lotBox(lot));
@@ -390,6 +467,7 @@ export class LotStore {
   }
 
   private drop(id: number): void {
+    this.leaveBelow();
     this.items.delete(id);
     this.order.delete(id);
     this.filing?.remove(id);
@@ -397,6 +475,8 @@ export class LotStore {
   }
 
   private reset(): void {
+    this.below = null;
+    this.keysShared = false;
     this.items = new Map();
     this.order = new Map();
     this.nextOrder = 0;

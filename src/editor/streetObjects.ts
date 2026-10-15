@@ -46,7 +46,7 @@ export function commitPedestrianCrossing(
     return { committed: false, reason: 'tooShort' };
   }
 
-  const work = doc.clone();
+  const work = doc.fork();
   const workNet = new Network(work);
   workNet.seedJunctions(net);
   workNet.rebuild();
@@ -67,7 +67,7 @@ export function commitPedestrianCrossing(
       segments.filter((id) => workNet.crosswalkDistanceAt(id, node) > 0).length !== 1) {
     return { committed: false, reason: 'geometry' };
   }
-  doc.replaceWith(work);
+  doc.takeBack(work);
   net.adopt(workNet);
   return { committed: true, node, segments };
 }
@@ -96,7 +96,7 @@ export function commitUturn(doc: RoadDoc, net: Network, segmentId: SegmentId, to
       original.length - at < net.stopLineDistance(segmentId, segment.b) + reserve) {
     return { committed: false, reason: 'tooShort' };
   }
-  const work = doc.clone();
+  const work = doc.fork();
   const workNet = new Network(work);
   workNet.seedJunctions(net);
   workNet.rebuild();
@@ -116,7 +116,7 @@ export function commitUturn(doc: RoadDoc, net: Network, segmentId: SegmentId, to
   const car = 1;
   const fits = [...graph.connectors.values()].some((c) => c.node === node && c.turn === 'uturn' && c.maxBodyClass >= car);
   if (!fits) return { committed: false, reason: 'narrow' };
-  doc.replaceWith(work);
+  doc.takeBack(work);
   net.adopt(workNet);
   return { committed: true, node };
 }

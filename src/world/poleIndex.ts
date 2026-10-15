@@ -27,6 +27,15 @@ export class PoleIndex {
   private readonly cellOfPole = new Map<PoleId, number>();
   private readonly spansOfPole = new Map<PoleId, Set<SpanId>>();
 
+  /** An index filing the same poles and spans in the same order (a working copy's own, `RoadDoc.ownIndex`). */
+  copy(): PoleIndex {
+    const out = new PoleIndex();
+    for (const [key, cell] of this.cells) out.cells.set(key, new Set(cell));
+    for (const [id, key] of this.cellOfPole) out.cellOfPole.set(id, key);
+    for (const [id, spans] of this.spansOfPole) out.spansOfPole.set(id, new Set(spans));
+    return out;
+  }
+
   clear(): void {
     this.cells.clear();
     this.cellOfPole.clear();
