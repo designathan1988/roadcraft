@@ -165,7 +165,7 @@
   },
   "src/render/bakePool.ts": {
     "roadcraft/no-module-state": {
-      "count": 5
+      "count": 4
     }
   },
   "src/render/buildings/buildingMesh.ts": {
