@@ -234,6 +234,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   // An active load remains useful only while a body requests it in drawn
   // frames. Wall time would cancel a visible person in a paused game.
   const wantedFrame = new Map<number, number>();
+  /** When each body's load last failed: asked again only `RETRY_MS` later (a network or a cook hiccup passes). */
+  const failed = new Map<number, number>();
+  const RETRY_MS = 5000;
   let visualFrame = 0;
   let activeLoads = 0;
   const resources = new Set<{ dispose(): void }>();
@@ -674,10 +677,20 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       if (queued) { queued.priority ||= priority; queued.wantedAt = performance.now(); }
       return existing;
     }
+    const failedAt = failed.get(index);
+    // Failed a moment ago (said then): not drawn, not asked again yet.
+    if (failedAt !== undefined && performance.now() - failedAt < RETRY_MS) return Promise.resolve();
     const work = new Promise<void>((resolve, reject) => {
       queuedLoads.set(index, { priority, wantedAt: performance.now(), resolve, reject });
     });
     loading.set(index, work);
+    // A load that failed is let go, to be asked again later: DO NOT keep the
+    // rejected promise - the body was never loaded again for the session.
+    work.catch((error: unknown) => {
+      console.error(`Citizen ${models[index]} failed to load; asked again in ${RETRY_MS} ms`, error);
+      if (loading.get(index) === work) loading.delete(index);
+      failed.set(index, performance.now());
+    });
     pump();
     return work;
   }
@@ -1075,7 +1088,16 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
               mesh.instanceColor.addUpdateRange(0, batch.count * 3);
               mesh.instanceColor.needsUpdate = true;
             }
-            if (mesh.morphTexture && lod === 0) mesh.morphTexture.needsUpdate = true;
+            if (mesh.morphTexture && lod === 0) {
+              // The faces of the bodies drawn, a row each (three sends an update
+              // range as one row of the image): DO NOT send all CAPACITY rows of
+              // weights every frame for the few people close enough to show a face.
+              const morph = mesh.morphTexture;
+              morph.clearUpdateRanges();
+              const row = morph.image.width;
+              if (batch.count * 2 < morph.image.height) for (let i = 0; i < batch.count; i++) morph.addUpdateRange(i * row, row);
+              morph.needsUpdate = true;
+            }
           }
         }
       }
