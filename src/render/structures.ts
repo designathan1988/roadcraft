@@ -803,6 +803,8 @@ export function buildStructureDetails(
     spans,
     dispose() {
       for (const geometry of owned) geometry.dispose();
+      // The instance buffers are let go only by the mesh's own dispose (three r186 WebGLObjects, 'dispose').
+      for (const o of group.children) if ((o as InstancedMesh).isInstancedMesh) (o as InstancedMesh).dispose();
       group.clear();
     },
   };
