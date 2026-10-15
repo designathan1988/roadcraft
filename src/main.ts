@@ -2269,7 +2269,7 @@ let cityBuiltIn = 0;
  */
 const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => growth.restart());
 const growth = new GrowthSession(growthPool, () => ({
-  doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y), cell: TERRAIN_CELL,
+  doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: scene.pavedHeightAt, cell: TERRAIN_CELL,
 }));
 /**
  * The worker's answer: the building written, stamped as grown now, and the

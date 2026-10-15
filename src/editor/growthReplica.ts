@@ -6,6 +6,7 @@ import type { ChangeRect } from '@world/changes';
 import { CellFiling } from '@world/cells';
 import { type GroundPatch, PatchMiss, patchGround } from '@world/groundPatch';
 import type { NodeId, SegmentId } from '@world/ids';
+import { type PavingData, pavingReader } from '@world/paving';
 import type { Lot } from '@world/lots';
 import { Level, type SurfaceLevel } from '@world/roadTypes';
 import type { RoadStructure } from '@world/structures';
@@ -95,8 +96,19 @@ export interface GrowAsk {
   readonly reach: { readonly lot: ChangeRect; readonly around: ChangeRect };
   /** The ground at the terrain's corners over `reach.lot`; null: no ground (the slope is not checked). */
   readonly ground: GroundPatch | null;
-  /** The paving's height at each of `streetPointsOf(lot)`: x, y, height in turn; null: no paving to read. */
+  /**
+   * The paving round the lot's street (`world/paving.ts` `PavingSource.pack`), read here as the page
+   * reads it; null: none handed over.
+   */
+  readonly paving: PavingData | null;
+  /**
+   * The paving's height at each of `streetPointsOf(lot)`, x, y, height in turn, read by the page: where
+   * there is no `paving` to hand over, or a point of it the page must answer (asked again after a miss);
+   * null: none.
+   */
   readonly paved: Float64Array | null;
+  /** Whether there is paving to read at all (a grown building's street floor). */
+  readonly pavedRead: boolean;
   /** Whether the roads are checked (a network on the page). */
   readonly roads: boolean;
 }
@@ -213,12 +225,17 @@ class RoadReplica implements RoadReach {
   }
 }
 
-/** The paving's heights sent for a lot, read back at exactly the points they were read at. */
-function pavedLookup(paved: Float64Array): (x: number, y: number) => number {
+/**
+ * The paving's height as the page reads it: at the points it read for the lot (`paved`), else off the
+ * roads handed over (`pavingReader`, the page's numbers bit for bit); a point neither answers is a
+ * miss, and the page reads it itself in the lot asked again (`growthFeed.ts`).
+ */
+function pavedLookup(paved: Float64Array | null, paving: PavingData | null): (x: number, y: number) => number {
   const at = new Map<string, number>();
-  for (let k = 0; k + 2 < paved.length; k += 3) at.set(`${paved[k]},${paved[k + 1]}`, paved[k + 2]!);
+  if (paved) for (let k = 0; k + 2 < paved.length; k += 3) at.set(`${paved[k]},${paved[k + 1]}`, paved[k + 2]!);
+  const read = paving ? pavingReader(paving) : null;
   return (x, y) => {
-    const h = at.get(`${x},${y}`);
+    const h = at.get(`${x},${y}`) ?? read?.(x, y);
     if (h === undefined) throw new GrowthMiss(`the paving asked at (${x}, ${y}), not sent`);
     return h;
   };
@@ -240,7 +257,7 @@ export class GrowthReplica {
       neighbours: this.neighbours,
       net: ask.roads ? this.roads : null,
       groundAt: ask.ground ? patchGround(ask.ground) : null,
-      ...(ask.paved ? { pavedAt: pavedLookup(ask.paved) } : {}),
+      ...(ask.pavedRead ? { pavedAt: pavedLookup(ask.paved, ask.paving) } : {}),
       nextId: ask.nextId as BuildingId,
     };
     try {

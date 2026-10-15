@@ -1,8 +1,9 @@
 import type { RngState } from '@core/rng';
-import type { ChangeKind, ChangeRect } from '@world/changes';
+import { type ChangeKind, type ChangeRect, rectAround } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 import { sampleGroundPatch } from '@world/groundPatch';
+import type { PavingData, PavingSource } from '@world/paving';
 import type { Lot } from '@world/lots';
 import type { Network } from '@world/network';
 import { Level } from '@world/roadTypes';
@@ -43,14 +44,16 @@ export interface GrowthHost {
   readonly doc: RoadDoc;
   readonly net: Network | null;
   readonly groundAt: ((x: number, y: number) => number) | null;
-  readonly pavedAt?: (x: number, y: number) => number;
+  /** The paving's height; with `pack`, handed to the worker as the roads it reads from (`world/paving.ts`). */
+  readonly pavedAt?: PavingSource;
   /** The side of the terrain's cells: the grid the lot's ground is read on (`world/groundPatch.ts`). */
   readonly cell: number;
 }
 
 /** Where the growth's worker answers (`growthPool.ts`; a spec's stand-in). */
 export interface GrowthLane {
-  post(ask: GrowAsk): void;
+  /** `transfer`: buffers made for this ask alone, handed over rather than copied (MDN, "Transferable objects"). */
+  post(ask: GrowAsk, transfer: readonly ArrayBuffer[]): void;
 }
 
 /** What an answer came to: a building grown, the lot set aside, or a lot to ask for again (`ask`). */
@@ -66,6 +69,8 @@ const MOVES: readonly ChangeKind[] = ['buildings', 'roads', 'terrain', 'lots'];
 const MISS_MARGIN = 32;
 /** Misses before a lot is set aside: a lot that reads farther than this is not one the growth can build. */
 const MOST_MISSES = 4;
+/** How far round the street's points the roads are handed over (they are read at the points themselves). */
+const STREET_PAD = 1;
 /** Times a lot's building may be refused on the page, the document having moved, before the lot is set aside. */
 const MOST_REFUSALS = 3;
 
@@ -231,11 +236,21 @@ export class GrowthSession {
     const grow = (r: ChangeRect): ChangeRect => [r[0] - extra, r[1] - extra, r[2] + extra, r[3] + extra];
     const reach = { lot: grow(base.lot), around: grow(base.around) };
     const sync: GrowthSync = { buildings: this.syncBuildings(doc, reach), roads: net ? this.syncRoads(net, reach.lot) : null };
+    // The paving its street floors read (`streetPointsOf`): the roads round them handed over
+    // (`PavingSource.pack`, read in the worker as here); read here only where none can be handed
+    // over, or asked again after a miss (a point the roads handed over cannot answer).
     let paved: Float64Array | null = null;
-    if (host.pavedAt) {
+    let paving: PavingData | null = null;
+    const transfer: ArrayBuffer[] = [];
+    const pavedAt = host.pavedAt;
+    if (pavedAt) {
       const points = streetPointsOf(lot);
-      paved = new Float64Array(points.length * 3);
-      points.forEach((p, k) => { paved![k * 3] = p.x; paved![k * 3 + 1] = p.y; paved![k * 3 + 2] = host.pavedAt!(p.x, p.y); });
+      const packed = misses === 0 ? pavedAt.pack?.(rectAround(points, STREET_PAD)!) ?? null : null;
+      if (packed) { paving = packed.data; transfer.push(...packed.transfer); }
+      else {
+        paved = new Float64Array(points.length * 3);
+        points.forEach((p, k) => { paved![k * 3] = p.x; paved![k * 3 + 1] = p.y; paved![k * 3 + 2] = pavedAt(p.x, p.y); });
+      }
     }
     const id = this.nextAsk++;
     // From here, what changes the building may have missed.
@@ -244,8 +259,8 @@ export class GrowthSession {
     this.lane.post({
       id, sync, lot, rng, nextId: doc.buildings.nextId, reach,
       ground: host.groundAt ? sampleGroundPatch(reach.lot, host.cell, host.groundAt) : null,
-      paved, roads: net !== null,
-    });
+      paving, paved, pavedRead: pavedAt !== undefined, roads: net !== null,
+    }, transfer);
   }
 
   /** The buildings the worker holds that changed (`readChanges`), and those round this lot it does not hold yet. */

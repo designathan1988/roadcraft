@@ -35,10 +35,10 @@ export class GrowthPool implements GrowthLane {
    */
   constructor(private readonly take: (answer: GrowAnswer) => boolean, private readonly restarted: () => void) {}
 
-  post(ask: GrowAsk): void {
+  post(ask: GrowAsk, transfer: readonly ArrayBuffer[]): void {
     if (!this.worker && !this.local) this.start();
     if (this.worker) {
-      this.worker.postMessage(ask);
+      this.worker.postMessage(ask, [...transfer]);
       this.postedAt = performance.now();
     } else this.pending = ask;
   }

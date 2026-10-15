@@ -154,7 +154,7 @@ export class BuildingStore {
    */
   nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
     meets: (b: Building, rect: readonly [number, number, number, number]) => boolean): Building[] {
-    this.grid ??= new BuildingGrid(this.items.values());
+    this.grid ??= new BuildingGrid(this.items.values(), (b) => storedBounds(b));
     return this.grid.nearAny(rects, pad, (id, rect) => meets(this.items.get(id)!, rect)).map((id) => this.items.get(id)!);
   }
 

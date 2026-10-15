@@ -383,8 +383,9 @@ export interface SceneHandle {
   /**
    * The height of the paving at a point - footway or carriageway of a road at
    * grade - or NaN off the roads. What a building's entrance opens onto.
+   * With `pack`: what a worker reads it from over a rectangle (`world/paving.ts`).
    */
-  pavedHeightAt(x: number, y: number): number;
+  readonly pavedHeightAt: PavingSource;
   resize(): void;
   draw(net: Network, sim: SimWorld, alpha: number, delta: number, options?: DrawOptions): void;
   setQuality(level: QualityLevel | 'auto'): void;

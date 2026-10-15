@@ -11,6 +11,9 @@ import { type GrowthHost, type GrowthLane, GrowthSession } from '@editor/growthF
 import { type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthReplica';
 import { validateBuilding } from '@world/buildings/validate';
 import type { Building, BuildingId } from '@world/buildings/types';
+import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';
+import { type PavingSource, pavedHeightFrom } from '@world/paving';
+import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 
 /**
  * THE GROWTH OFF THE PAGE (`editor/growthFeed.ts`, `growthReplica.ts`): a
@@ -30,8 +33,20 @@ const hill = (x: number, y: number): number => 6 * Math.sin(x / 140) + 4 * Math.
 const ground = (x: number, y: number): number => latticeHeight(x, y, CELL, (i, j) => hill(i * CELL, -j * CELL));
 /** Paving here and there, at the ground and a kerb over it. */
 const paved = (x: number, y: number): number => (Math.abs(Math.sin(x * 0.37 + y * 0.11)) < 0.4 ? ground(x, y) + 0.15 : NaN);
+/** The city's own paving, as the renderer reads it and packs it for a worker (`renderer.ts` `pavedHeightAt`). */
+function streets(net: Network): PavingSource {
+  const elevation = buildRoadElevation(net, ground);
+  const rise = (x: number, y: number): number => footwayRiseAt(net, x, y);
+  return Object.assign(
+    (x: number, y: number): number => (elevation.has(GROUND_ONLY) ? pavedHeightFrom(elevation, GROUND_ONLY, rise, x, y) : NaN),
+    { pack: (rect: readonly [number, number, number, number]) => {
+      const field = elevation.fieldFor!([rect], []), flush = packFlush(net, [rect]);
+      return { data: { rect, field: field.data, flush: flush.data }, transfer: [...field.transfer, ...flush.transfer] };
+    } });
+}
 
 interface City { doc: RoadDoc; net: Network; zoned: number }
+type Host = Omit<GrowthHost, 'doc' | 'net' | 'cell'>;
 /** The city as `main.ts` `generateCity` lays it, before its buildings. */
 function laid(seed: number): City {
   const plan = planCity({ ...DEFAULT_CITY, size: 'small', seed });
@@ -96,17 +111,21 @@ function grownOff(city: City, host: Omit<GrowthHost, 'doc' | 'net' | 'cell'>, la
 const textOf = (doc: RoadDoc): string[] => [...[...doc.buildings.all()].map((b) => JSON.stringify(b)), ...doc.lots.map((l) => JSON.stringify(l))];
 
 describe('the growth in its worker', () => {
-  for (const [seed, host] of [
-    [2, { groundAt: ground, pavedAt: paved }],
-    [5, { groundAt: () => 0 }],
+  for (const [seed, hostOf] of [
+    [2, (): Host => ({ groundAt: ground, pavedAt: paved })],
+    [5, (): Host => ({ groundAt: () => 0 })],
+    [7, (net: Network): Host => ({ groundAt: ground, pavedAt: streets(net) })],
   ] as const) it(`grows the city of seed ${seed} as the page grows it, record for record`, () => {
     const here = laid(seed), off = laid(seed);
+    const host = hostOf(here.net);
     const refusedHere = grownHere(here, host);
     const { refused, lane, outcomes } = grownOff(off, host);
     expect(off.doc.buildings.size).toBeGreaterThan(here.zoned * 0.8);
     expect(textOf(off.doc)).toEqual(textOf(here.doc));
     expect([...refused].sort()).toEqual([...refusedHere].sort());
-    expect(outcomes.filter((o) => o === 'again')).toEqual([]);
+    expect(outcomes.filter((o) => o === 'again').length).toBeLessThanOrEqual(lane.asks.filter((a) => a.paving).length / 20);
+    // The city's own paving handed over as its roads, read in the worker (`world/paving.ts`), not read here.
+    if (host.pavedAt && 'pack' in host.pavedAt) expect(lane.asks.filter((a) => a.paving && !a.paved).length).toBeGreaterThan(lane.asks.length * 0.9);
     // Each building was sent to the worker once at most (they did not change after), never the town per lot.
     const sent = lane.asks.reduce((n, a) => n + a.sync.buildings.put.length, 0);
     expect(sent).toBeLessThanOrEqual(off.doc.buildings.size);
