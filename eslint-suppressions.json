@@ -561,11 +561,6 @@
       "count": 2
     }
   },
-  "src/sim/vehicles/integrate.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/sim/vehicles/laneClosures.ts": {
     "roadcraft/no-module-state": {
       "count": 2

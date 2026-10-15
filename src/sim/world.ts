@@ -168,6 +168,8 @@ export class SimWorld {
   doLess = true;
   /** Lanes with a vehicle on them: written only by `enterLanelet`/`exitLanelet`, the only writers of `order`. */
   readonly occupied = new Set<LaneletId>();
+  /** What the car being integrated was clearing as its step began: integration's own scratch, filled per car (`integrate.ts`). */
+  readonly clearancesAtStart = new Set<Vehicle['clearingConnectors'][number]>();
   /**
    * The vehicles that may hold something at a junction: given a movement
    * (`admittedConnector`, admission), clearing one with their rear

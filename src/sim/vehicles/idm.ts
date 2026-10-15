@@ -85,10 +85,10 @@ export function idmAccel(p: DriverParams, v: number, v0: number, o: Obstacle): n
  * monolith's `enforceVehicleSeparation`, which repaired overlaps AFTER
  * integration by teleporting followers backwards (defect 5.5).
  */
-export function safeSpeed(p: DriverParams, o: Obstacle, dt: number): number {
+export function safeSpeed(p: DriverParams, o: Obstacle, dt: number, s0: number = p.s0): number {
   const b = p.bEmergency;
   const leadStopping = o.speed > 0 ? (o.speed * o.speed) / (2 * b) : 0;
-  const room = Math.max(0, o.gap - p.s0 + leadStopping);
+  const room = Math.max(0, o.gap - s0 + leadStopping);
   return Math.max(0, -b * dt + Math.sqrt(b * b * dt * dt + 2 * b * room));
 }
 

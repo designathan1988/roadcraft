@@ -3,6 +3,9 @@ import type { DriverParams } from '../vehicles/driver';
 import { safeSpeed, type Obstacle } from '../vehicles/idm';
 import { nextSpeed } from './operational';
 
+/** The standstill gap that physically stops a body: a hand's breadth, not the driver's preferred one. */
+const PHYSICAL_GAP = m(0.1);
+
 /**
  * Separate the driver's preferred standing gap from physical stopping room.
  * A newly denied movement inside that preferred gap must not instantaneously
@@ -10,17 +13,14 @@ import { nextSpeed } from './operational';
  */
 export function physicalSpeed(p: DriverParams, speed: number, wanted: number, acceleration: number,
   obstacles: readonly Obstacle[], dt: number): number {
-  const comfort = nextSpeed(p, speed, wanted, acceleration, obstacles, dt).v;
-  // The car-following parameters alone, with the physical gap, made only when
-  // a hard obstacle needs them: spread from the driver, every vehicle copied
-  // all of its personality into a fresh object every tick (MDN: a spread
-  // copies every own enumerable property).
-  let physical: DriverParams | null = null;
+  const comfort = nextSpeed(p, speed, wanted, acceleration, obstacles, dt);
+  // The physical gap is passed to the safe speed, the driver as it is. DO NOT
+  // build a driver with the physical gap here: that was an object per vehicle
+  // with a hard obstacle, every tick.
   let limit = Infinity;
   for (const obstacle of obstacles) {
     if (obstacle.hard === false) continue;
-    physical ??= { a: p.a, b: p.b, bEmergency: p.bEmergency, T: p.T, s0: m(0.1) };
-    limit = Math.min(limit, safeSpeed(physical, obstacle, dt));
+    limit = Math.min(limit, safeSpeed(p, obstacle, dt, PHYSICAL_GAP));
   }
   return Math.min(comfort, limit);
 }

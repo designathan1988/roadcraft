@@ -81,7 +81,7 @@ export function accAccel(p: DriverParams, v: number, v0: number, o: Obstacle): n
  * physical controller applies the collision-free stopping cap separately.
  */
 export function nextSpeed(p: DriverParams, v: number, v0: number, lastAccel: number,
-  obstacles: readonly Obstacle[], dt: number): { v: number; a: number } {
+  obstacles: readonly Obstacle[], dt: number): number {
   let target = iidm(p, v, v0, null);
   // Above the wanted speed (a slower stretch just entered, a turn), it is
   // shed at a comfortable deceleration, never in one tick as a hard cap at
@@ -101,6 +101,7 @@ export function nextSpeed(p: DriverParams, v: number, v0: number, lastAccel: num
   // the response and then needed harder braking later.
   const a = target < -p.b || (v < CRAWL && target < foot) ? Math.min(target, foot + JERK_UP * dt)
     : clamp(target, foot - JERK_DOWN * dt, foot + JERK_UP * dt);
-  const next = clamp(v + a * dt, 0, Math.max(0, cap));
-  return { v: next, a: (next - v) / dt };
+  // The speed alone, never an object per vehicle and tick: the acceleration is
+  // what the caller derives from it (`integrate.ts`, `v.accel`).
+  return clamp(v + a * dt, 0, Math.max(0, cap));
 }

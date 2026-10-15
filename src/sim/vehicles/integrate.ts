@@ -29,8 +29,6 @@ const CLEARANCE_EPSILON = COARSE_EPS;
  * `drive/physicalMotion.ts`, a Gipps-style braking bound), not repaired
  * afterwards.
  */
-const NO_CLEARANCES: ReadonlySet<Vehicle['clearingConnectors'][number]> = new Set();
-
 export function integrateAll(w: SimWorld): void {
   const removed: Vehicle[] = [];
 
@@ -69,9 +67,12 @@ export function integrateAll(w: SimWorld): void {
     // (`drive/physicalMotion.ts`).
     const next = physicalSpeed(v.driver, v.v, speedCap, v.accel, v.constraints.obstacles, DT);
     const ds = Math.max(0, 0.5 * (v.v + next) * DT);
-    // Only read (`has`): a car clearing no junction - nearly all of them -
-    // shares one empty set instead of copying an empty list every tick.
-    const clearancesAtStart = v.clearingConnectors.length ? new Set(v.clearingConnectors) : NO_CLEARANCES;
+    // What the car was clearing as the step began, only read (`has`) below:
+    // the world's one set, emptied and filled for each car. DO NOT make a
+    // set per car here: one per car at a junction, every tick.
+    const clearancesAtStart = w.clearancesAtStart;
+    clearancesAtStart.clear();
+    for (const token of v.clearingConnectors) clearancesAtStart.add(token);
 
     v.accel = (next - v.v) / DT;
     v.v = next;
