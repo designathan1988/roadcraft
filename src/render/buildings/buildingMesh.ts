@@ -398,9 +398,12 @@ class Shell {
   decay = 0;
 
   /**
-   * A planar polygon (3 or 4 world points, x/y map, z up) facing world normal
-   * `n`. The winding is measured, never assumed: world y is mirrored into
-   * three's z, which flips handedness (CLAUDE.md trap: winding).
+   * A planar convex polygon (3 or more world points in order, x/y map, z up)
+   * facing world normal `n`, laid as a fan from its first point. The winding
+   * is measured, never assumed: world y is mirrored into three's z, which
+   * flips handedness (CLAUDE.md trap: winding). DO NOT lay only the first
+   * two triangles: a lantern's octagonal and 24-sided caps (`emitLantern`
+   * `disc`) were left open, the rest of their sides never drawn.
    */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
     let part = this.parts.get(c.finish);
@@ -455,11 +458,9 @@ class Shell {
     const cz = ux * vy - uy * vx;
     const forward = cx * nx + cy * ny + cz * nz >= 0;
     const index = part.index;
-    if (forward) index.push(base, base + 1, base + 2);
-    else index.push(base, base + 2, base + 1);
-    if (points.length === 4) {
-      if (forward) index.push(base, base + 2, base + 3);
-      else index.push(base, base + 3, base + 2);
+    for (let k = 1; k + 1 < points.length; k++) {
+      if (forward) index.push(base, base + k, base + k + 1);
+      else index.push(base, base + k + 1, base + k);
     }
   }
 
