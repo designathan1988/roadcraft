@@ -251,16 +251,16 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     const connectorIds = new Set(v.clearingConnectors.map((token) => token.connector));
     if (v.admittedConnector) connectorIds.add(v.admittedConnector);
     if (lane?.kind === 'connector') connectorIds.add(lane.id);
-    const byNode = new Map<number, string[]>();
     for (const id of connectorIds) {
       const node = w.connector(id)?.node;
       if (node === undefined) continue;
-      const list = byNode.get(node);
-      if (list) list.push(id); else byNode.set(node, [id]);
-    }
-    for (const [node, ids] of byNode) {
+      // The vehicles are filed one after another: its entry at a node, if it
+      // has one, is that node's last.
       const list = holding.get(node);
-      if (list) list.push({ v, ids }); else holding.set(node, [{ v, ids }]);
+      const last = list?.[list.length - 1];
+      if (last?.v === v) last.ids.push(id);
+      else if (list) list.push({ v, ids: [id] });
+      else holding.set(node, [{ v, ids: [id] }]);
     }
   }
   for (const [crossing, state] of w.crossingStates) {
