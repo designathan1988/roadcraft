@@ -73,19 +73,41 @@ function blocks(lots: readonly Lot[]): Lot[][] {
   return [...out.values()];
 }
 
-/** Distance from a point to the nearest main road (avenue or collector) of the document. */
-function mainRoadDistance(doc: RoadDoc, p: Vec2): number {
+/** Side of the cells the main roads are filed in (`mainRoadsNear`). */
+const MAIN_CELL = m(64);
+
+/**
+ * Whether a point is within `reach` of a main road (avenue or collector) of
+ * the document, the main roads filed once by cell (their straight chords, as
+ * measured before). DO NOT measure every road of the city for each lot of each
+ * block: it was lots x roads on a generated city.
+ */
+function mainRoadsNear(doc: RoadDoc): (p: Vec2, reach: number) => boolean {
   const main = new Set(['avenue', 'urban', 'boulevard'].map((id) => ROAD_TYPES.findIndex((t) => t.id === id)));
-  let best = Infinity;
+  const cells = new Map<string, [Vec2, Vec2][]>();
   for (const s of doc.segments.values()) {
     if (!main.has(s.type)) continue;
     const a = doc.node(s.a), b = doc.node(s.b);
     if (!a || !b) continue;
-    const ex = b.x - a.x, ey = b.y - a.y, l2 = ex * ex + ey * ey;
-    const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / l2)) : 0;
-    best = Math.min(best, Math.hypot(a.x + ex * t - p.x, a.y + ey * t - p.y));
+    for (let i = Math.floor(Math.min(a.x, b.x) / MAIN_CELL); i <= Math.floor(Math.max(a.x, b.x) / MAIN_CELL); i++) {
+      for (let j = Math.floor(Math.min(a.y, b.y) / MAIN_CELL); j <= Math.floor(Math.max(a.y, b.y) / MAIN_CELL); j++) {
+        const list = cells.get(`${i},${j}`);
+        if (list) list.push([a, b]); else cells.set(`${i},${j}`, [[a, b]]);
+      }
+    }
   }
-  return best;
+  return (p, reach) => {
+    for (let i = Math.floor((p.x - reach) / MAIN_CELL); i <= Math.floor((p.x + reach) / MAIN_CELL); i++) {
+      for (let j = Math.floor((p.y - reach) / MAIN_CELL); j <= Math.floor((p.y + reach) / MAIN_CELL); j++) {
+        for (const [a, b] of cells.get(`${i},${j}`) ?? []) {
+          const ex = b.x - a.x, ey = b.y - a.y, l2 = ex * ex + ey * ey;
+          const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / l2)) : 0;
+          if (Math.hypot(a.x + ex * t - p.x, a.y + ey * t - p.y) < reach) return true;
+        }
+      }
+    }
+    return false;
+  };
 }
 
 /** A small deterministic generator for the trees' looks. */
@@ -98,6 +120,7 @@ function rng(seed: number): () => number {
 export function planSquares(doc: RoadDoc, seed: number): SquarePlan[] {
   const lots = doc.lots as readonly Lot[];
   const byCell = new Map<string, { block: Lot[]; centre: Vec2; score: number }>();
+  const onMainRoad = mainRoadsNear(doc);
   for (const block of blocks(lots)) {
     const area = block.reduce((s, l) => s + Math.abs(lotArea(l)), 0) / (UNITS_PER_METER * UNITS_PER_METER);
     if (area < AREA_RANGE[0] || area > AREA_RANGE[1]) continue;
@@ -105,7 +128,7 @@ export function planSquares(doc: RoadDoc, seed: number): SquarePlan[] {
     for (const l of block) { const c = lotCentre(l), a = Math.abs(lotArea(l)); x += c.x * a; y += c.y * a; w += a; }
     const centre = { x: x / w, y: y / w };
     // On a main road: some lot of the block fronts one (its front within reach).
-    const fronting = block.some((l) => mainRoadDistance(doc, { x: (l.corners[0]!.x + l.corners[1]!.x) / 2, y: (l.corners[0]!.y + l.corners[1]!.y) / 2 }) < m(20));
+    const fronting = block.some((l) => onMainRoad({ x: (l.corners[0]!.x + l.corners[1]!.x) / 2, y: (l.corners[0]!.y + l.corners[1]!.y) / 2 }, m(20)));
     if (!fronting) continue;
     const kx = Math.floor(centre.x / NEIGHBOURHOOD), ky = Math.floor(centre.y / NEIGHBOURHOOD);
     const mid = { x: (kx + 0.5) * NEIGHBOURHOOD, y: (ky + 0.5) * NEIGHBOURHOOD };
