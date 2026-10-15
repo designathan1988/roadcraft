@@ -37,4 +37,28 @@ describe('regional pole lines kept', () => {
     expect(poleLinesWork.made - made).toBe(0);
     expect(poleLinesWork.kept - kept).toBe(1);
   });
+
+  it('keeps every rectangle still right, however many, and lets go only those an edit reached', () => {
+    const doc = new RoadDoc();
+    doc.addSegment(doc.addNode({ x: m(-2000), y: m(-2000) }).id, doc.addNode({ x: m(-1900), y: m(-2000) }).id, 1);
+    const net = new Network(doc);
+    net.rebuild();
+    // More than the 64 a ceiling kept, each well apart from the others (more than the halo).
+    const rects: ChangeRect[] = [];
+    for (let i = 0; i < 100; i++) {
+      const x = (i % 10) * m(300) - m(1500), y = Math.floor(i / 10) * m(300) - m(1500);
+      rects.push([x, y, x + m(50), y + m(50)]);
+    }
+    for (const r of rects) poleLinesIn(net, r);
+    let made = poleLinesWork.made;
+    for (const r of rects) poleLinesIn(net, r);
+    expect(poleLinesWork.made - made).toBe(0);
+    // A street in one of them: that one alone is made again.
+    const hit = rects[37]!;
+    doc.addSegment(doc.addNode({ x: hit[0] + m(5), y: hit[1] + m(25) }).id, doc.addNode({ x: hit[2] - m(5), y: hit[1] + m(25) }).id, 1);
+    net.rebuild();
+    made = poleLinesWork.made;
+    for (const r of rects) poleLinesIn(net, r);
+    expect(poleLinesWork.made - made).toBe(1);
+  });
 });
