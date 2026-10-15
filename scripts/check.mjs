@@ -92,6 +92,7 @@ export const ALWAYS = [
   'tests/world/buildingNearAny.spec.ts',
   'tests/render/paintCatalogue.spec.ts',
   'tests/render/gardenMatrix.spec.ts',
+  'tests/render/roadLod.spec.ts',
 ];
 
 /**

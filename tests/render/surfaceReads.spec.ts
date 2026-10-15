@@ -22,7 +22,9 @@ import { buildRoadSurfaces } from '@render/roadSurfaces';
  * different road on screen. Moved a second time, 2026-10-15, with the triangles' diagonals
  * turned to Delaunay's (`tileShape.ts` `flipToDelaunay`): the same outline and vertices of
  * every piece, other diagonals inside them - photographed before and after in the same views
- * (a crossing, its curb ramps, the zebra, the footway): the same picture.
+ * (a crossing, its curb ramps, the zebra, the footway): the same picture. A third time the same day with the
+ * vertices that are the same in every attribute made one (`tileMesh.ts` `weldVertices`): the same triangles from
+ * fewer vertices, proved corner by corner in `tests/render/weldVertices.spec.ts`.
  *
  * Moved once, 2026-10-15, with the inputs kept road by road (`roadSurfaceInputs.ts`),
  * compared mesh by mesh with the build before: the city's every mesh the same bytes,
@@ -60,12 +62,12 @@ describe('road surface reads', () => {
   for (const [name, make, plain, onTerrain] of [
     ['the grid and bends fixture',
       () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document),
-      '134 dcb346811613d6ca8b0932bb01173679fe8fc000737d19fe8406cecf2b60ea60',
-      '134 93ab8d091d27c35d3fd30625c40f66234613d7b5a525bbc5f31263dbf7187dba'],
+      '134 a49be03eb61108d3f884c6692e205483e5e160b2a7488f1f9ad1cd0bd23d3c7d',
+      '134 6f9da7fcfd51ca72eccda047d22aeeeb501efdcec078baf0168fedfc14082a25'],
     ['a generated city',
       () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small', radius: 640 })),
-      '144 45aaf83f02a21a64d8c4b805fdb0fd946e61b8f227889b0785d1e5a88a7ced7f',
-      '144 d6edbd21cbca5c1d35ce10123594faca4d92fd13ddb0768bbb20f605e454daae'],
+      '144 397f75d14eebe42a9caf6a829f959f91cd193487e40a13216e9c866415e6aa85',
+      '144 8ad9d88d159469c4fb5d10e58b10db01ece588ac9482e01a5cdfa8ead7dbf731'],
   ] as const) it(`build ${name} byte for byte as before`, () => {
     const net = new Network(make());
     net.rebuild();

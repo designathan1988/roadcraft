@@ -19,6 +19,7 @@ import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import { mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
+import { levelsOf } from './mesh/roadLod';
 import { type TilePolys, type TileSource, tileShapes } from './roadTileShape';
 import type { RoadTiler, TileJob } from './roadTilePool';
 import type { SurfaceData } from './roadTileMesh';
@@ -123,6 +124,11 @@ export interface SurfaceReuse {
   /** Block meshes replaced but maybe still drawn: freed by the owner once the new roads are in. */
   readonly retired?: Mesh[];
   /**
+   * Whether a block at (x, y), world units, is near the camera: made at full detail, its far level hidden; else only
+   * the far level goes to the GPU (`mesh/roadLod.ts`). Absent: every block is at full detail, with no far level.
+   */
+  readonly near?: (x: number, y: number) => boolean;
+  /**
    * Tiles kept from an earlier session (`derivedCache.ts`), by `storedKey`:
    * a tile whose key comes round again is taken from here instead of built
    * (Unreal's Derived Data Cache: derived data made once, kept locally, and
@@ -141,6 +147,20 @@ export interface SurfaceReuse {
    * nothing of the build reads its arrays any more - the keeper may take them (transfer them).
    */
   readonly keep?: (key: string, bundle: TileBundle) => void;
+}
+
+/** The box round a block's tiles' rectangles, [minX, minY, maxX, maxY]. */
+function blockBox(rects: readonly TileRect[]): [number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) { minX = Math.min(minX, r[0]); minY = Math.min(minY, r[1]); maxX = Math.max(maxX, r[2]); maxY = Math.max(maxY, r[3]); }
+  return [minX, minY, maxX, maxY];
+}
+
+/** A block into the group with its far level, which waits hidden beside it (`mesh/roadLod.ts`). */
+function addBlock(group: Group, mesh: Mesh): void {
+  group.add(mesh);
+  const coarse = levelsOf(mesh)?.coarse;
+  if (coarse) group.add(coarse);
 }
 
 /** The name a tile is kept under between sessions: its pass and its digest. */
@@ -311,7 +331,7 @@ export function* roadSurfaceSteps(
   const usedChunks = new Set<string>();
   // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`):
   // drawn there anyway, its geometry went back to the GPU with no owner left to free it.
-  const retire = (mesh: Mesh): void => { cancelWarm([mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
+  const retire = (mesh: Mesh): void => { cancelWarm(levelsOf(mesh)?.coarse ? [mesh, levelsOf(mesh)!.coarse!] : [mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
   const group = new Group();
   group.name = 'road-network';
   const meshes: Mesh[] = [];
@@ -599,13 +619,17 @@ export function* roadSurfaceSteps(
           chunksKept++;
         } else {
           if (known) retire(known.mesh);
-          mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source);
+          // The block's box and centre, to lock its edge in the far level and to tell near from far (`roadLod.ts`).
+          const lock = reuse?.near ? blockBox(list.map((tile) => tile.rect)) : null;
+          mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source,
+            lock ? { lock, near: reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) } : undefined);
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
           // Sent to the GPU ahead, a few a frame (`warmLooseAhead`), so its arrays let go at once
           // (`mesh/gpuOnly.ts`). DO NOT wait for the camera to frame it: a block out of view was never
           // uploaded and kept its copy on the CPU - 476 MB of a 2 560 m city's heap (asphalt, footway,
           // kerb, verge, kerb ramps; 2026-10-15), and the whole map's would not fit a tab.
-          if (mesh) void warmLooseAhead([mesh]);
+          // The level that will be drawn: a far block's own mesh has no arrays to send (`roadResidency.ts`).
+          if (mesh) { const levels = levelsOf(mesh); void warmLooseAhead(levels && !levels.full && levels.coarse ? [levels.coarse] : [mesh]); }
           if (mesh) chunks?.set(key, { parts: list.map((tile) => tile.value), mesh });
           else chunks?.delete(key);
           chunksMerged++;
@@ -614,7 +638,7 @@ export function* roadSurfaceSteps(
         if (!mesh) continue;
         usedChunks.add(key);
         // A kept block stays where it is drawn until the swap (`adopt`).
-        if (mesh.parent === null) group.add(mesh);
+        if (mesh.parent === null) addBlock(group, mesh);
         meshes.push(mesh);
         triangles += (mesh.geometry.index?.count ?? 0) / 3;
       }
@@ -641,7 +665,7 @@ export function* roadSurfaceSteps(
     workMs: tilesMs + mergeMs,
     adopt() {
       // Every block, in the order it was built: the order a fresh build draws them in.
-      for (const mesh of meshes) group.add(mesh);
+      for (const mesh of meshes) addBlock(group, mesh);
     },
     dispose() {
       // Meshes the cache keeps are freed by `disposeSurfaceReuse`.

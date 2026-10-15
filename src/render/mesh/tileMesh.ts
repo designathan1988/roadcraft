@@ -225,16 +225,62 @@ export function meshTileShape(shape: SurfaceShape, options: TileMeshOptions): Ti
   // whole mesh would get.
   smoothTopNormals(out.positions, out.normals, out.indices);
   if (shape.skirts) meshSkirts(shape.skirts, context, out);
-  const positions = new Float32Array(out.positions);
-  return {
-    positions,
-    normals: new Float32Array(out.normals),
-    uvs: new Float32Array(out.uvs),
-    colors: new Float32Array(out.colors),
-    sections: new Float32Array(out.sections),
-    indices: new Uint32Array(out.indices),
-    box: boxOf(positions),
+  const welded = weldVertices(out);
+  return { ...welded, box: boxOf(welded.positions) };
+}
+
+/**
+ * The vertices that are the same in every attribute - position, normal, uv, tint, section - made one, the
+ * triangles' indices pointing at it: the same picture from fewer vertices (a vertex is 56 bytes, on the GPU
+ * and uploaded). A fifth of a road surface's vertices were such copies (a skirt's corner, a seam of two
+ * pieces, the vertex two triangles each made), 1.4 GB of a 2,560 m city's geometry before and after the thin
+ * triangles were gone. Exact, by the bits of every float: nothing is merged that differs in the least.
+ * The first of equal vertices keeps its place, so the order is what a build makes.
+ * DO NOT leave the vertices a triangle at a time: a copy per corner is what an unindexed mesh is.
+ */
+export function weldVertices(out: { positions: number[]; normals: number[]; uvs: number[]; colors: number[]; sections: number[]; indices: number[] }):
+  { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; sections: Float32Array; indices: Uint32Array } {
+  const count = out.positions.length / 3;
+  // Every attribute as the float32 the mesh stores, so equal means equal as drawn.
+  const p = new Float32Array(out.positions), n = new Float32Array(out.normals), u = new Float32Array(out.uvs);
+  const c = new Float32Array(out.colors), q = new Float32Array(out.sections);
+  const bits = (a: Float32Array): Uint32Array => new Uint32Array(a.buffer, a.byteOffset, a.length);
+  const pb = bits(p), nb = bits(n), ub = bits(u), cb = bits(c), qb = bits(q);
+  // Open addressing over the vertices' hash: the table holds the index of the first vertex of each tuple.
+  let size = 16;
+  while (size < count * 2) size *= 2;
+  const table = new Int32Array(size).fill(-1);
+  const mask = size - 1;
+  const remap = new Uint32Array(count);
+  let kept = 0;
+  const same = (i: number, j: number): boolean =>
+    pb[i * 3] === pb[j * 3] && pb[i * 3 + 1] === pb[j * 3 + 1] && pb[i * 3 + 2] === pb[j * 3 + 2]
+    && nb[i * 3] === nb[j * 3] && nb[i * 3 + 1] === nb[j * 3 + 1] && nb[i * 3 + 2] === nb[j * 3 + 2]
+    && ub[i * 2] === ub[j * 2] && ub[i * 2 + 1] === ub[j * 2 + 1]
+    && cb[i * 3] === cb[j * 3] && cb[i * 3 + 1] === cb[j * 3 + 1] && cb[i * 3 + 2] === cb[j * 3 + 2]
+    && qb[i * 3] === qb[j * 3] && qb[i * 3 + 1] === qb[j * 3 + 1] && qb[i * 3 + 2] === qb[j * 3 + 2];
+  const first: number[] = [];
+  for (let i = 0; i < count; i++) {
+    let h = 0x811c9dc5;
+    for (let k = 0; k < 3; k++) { h = Math.imul(h ^ pb[i * 3 + k]!, 0x01000193); h = Math.imul(h ^ nb[i * 3 + k]!, 0x01000193); }
+    h = Math.imul(h ^ ub[i * 2]!, 0x01000193); h = Math.imul(h ^ ub[i * 2 + 1]!, 0x01000193);
+    for (let k = 0; k < 3; k++) { h = Math.imul(h ^ cb[i * 3 + k]!, 0x01000193); h = Math.imul(h ^ qb[i * 3 + k]!, 0x01000193); }
+    let slot = (h ^ (h >>> 15)) & mask;
+    for (;;) {
+      const at = table[slot]!;
+      if (at < 0) { table[slot] = i; remap[i] = kept++; first.push(i); break; }
+      if (same(at, i)) { remap[i] = remap[at]!; break; }
+      slot = (slot + 1) & mask;
+    }
+  }
+  const take = (src: Float32Array, size: number): Float32Array => {
+    const dst = new Float32Array(kept * size);
+    for (let k = 0; k < kept; k++) { const i = first[k]!; for (let a = 0; a < size; a++) dst[k * size + a] = src[i * size + a]!; }
+    return dst;
   };
+  const indices = new Uint32Array(out.indices.length);
+  for (let i = 0; i < indices.length; i++) indices[i] = remap[out.indices[i]!]!;
+  return { positions: take(p, 3), normals: take(n, 3), uvs: take(u, 2), colors: take(c, 3), sections: take(q, 3), indices };
 }
 
 /** The box of a tile's positions, [minX, minY, minZ, maxX, maxY, maxZ], as three's `Box3.setFromBufferAttribute` gives it. */

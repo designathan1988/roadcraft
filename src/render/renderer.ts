@@ -87,6 +87,7 @@ import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
+import { isNear, updateRoadLevels } from './mesh/roadResidency';
 import { CandidateKeep } from './candidateKeep';
 import { JournalCursor } from '@world/derived';
 import { Engine } from '@core/engine';
@@ -754,6 +755,8 @@ export function createSceneRenderer(
   /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
   const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
     ? new Worker(new URL('./derivedWriter.worker.ts', import.meta.url), { type: 'module' }) : null;
+  /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
+  const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
@@ -761,6 +764,8 @@ export function createSceneRenderer(
       .add(terrain.digest(minX, minY, maxX, maxY))
       .value(),
     paint: paintCatalogue(),
+    // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
+    near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
     chunks: new Map(),
     inputs: new SurfaceInputs(),
     retired: [],
@@ -3491,6 +3496,15 @@ export function createSceneRenderer(
         }
         // The atlas keeps in full only the plates near what the view takes in (`flatAtlas.ts`).
         terrain.focus?.(centre.x, centre.y, halfHeight);
+        // The roads at full detail within reach of what the view takes in, the far level beyond: a few frames apart
+        // (the blocks are a few thousand), and a block coming near is made again from its tiles, a few a look.
+        roadFocus.x = centre.x; roadFocus.y = centre.y;
+        roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8));
+        if (roadFocus.frames++ % 6 === 0) {
+          const blocks: Mesh[] = [];
+          for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
+          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach);
+        }
         terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
       {
