@@ -66,7 +66,9 @@ export function siteGrading(
   const siteKeyOf = (b: Building): number => {
     let key = siteKey.get(b);
     if (key === undefined) {
-      if (!padsKnown.has(b)) buildingPads([b], groundAt, pavedAt, apron, padsKnown);
+      // The building's own platform, kept for the town's (`rebuild`). DO NOT put it through
+      // `buildingPads` for one building: a town's filing (its cells, its map) made and dropped per site.
+      if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
       const pad = padsKnown.get(b);
       const digest = new Digest();
       if (pad) {
