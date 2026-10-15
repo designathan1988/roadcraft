@@ -1,5 +1,6 @@
 import type { Crossing, PairMeasurer, SampledSweep, SweepAsk, SweepSamples } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
+import type { CornerAsk } from '@world/walkingLines';
 
 /**
  * THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. Each pair of
@@ -191,6 +192,28 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
+  /**
+   * Walkways' corners rounded across the workers (`conflictTable.worker.ts`, `roundCorners`): contiguous
+   * shares of the nodes asked, each node with its own rings and corners; the lines come back transferred.
+   */
+  roundCorners(asks: readonly CornerAsk[]): Promise<readonly (readonly (Float64Array | null)[])[]> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const per = Math.ceil(asks.length / lanes.length);
+    const parts: Promise<(Float64Array | null)[][]>[] = [];
+    for (let k = 0; k < lanes.length && k * per < asks.length; k++) {
+      const share = asks.slice(k * per, (k + 1) * per);
+      const lane = lanes[k]!;
+      const id = this.nextId++;
+      parts.push(new Promise<(Float64Array | null)[][]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as (Float64Array | null)[][]), reject });
+        lane.worker.postMessage({ kind: 'corners', id, asks: share });
+        this.arm(lane);
+      }));
+    }
+    return Promise.all(parts).then((answers) => answers.flat());
+  }
+
   /** The lane's silence deadline started again, or stopped when nothing waits on it. */
   private arm(lane: Lane): void {
     if (lane.watchdog !== null) clearTimeout(lane.watchdog);
@@ -209,7 +232,7 @@ export class ConflictPool implements PairMeasurer {
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; crossings?: (Crossing | null)[]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; crossings?: (Crossing | null)[]; corners?: (Float64Array | null)[][]; error?: string }>) => {
           if (this.lanes !== lanes) return;
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (job) lane.waiting.delete(event.data.id);
@@ -220,6 +243,7 @@ export class ConflictPool implements PairMeasurer {
           else if (event.data.turns) job.resolve(event.data.turns);
           else if (event.data.sweeps) job.resolve(event.data.sweeps);
           else if (event.data.crossings) job.resolve(event.data.crossings);
+          else if (event.data.corners) job.resolve(event.data.corners);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
         // A worker that cannot run, or a message it cannot read: the pool is

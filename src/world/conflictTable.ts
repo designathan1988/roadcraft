@@ -5,6 +5,7 @@ import type { Vec2 } from '@core/vec2';
 import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from './junctionTurns';
+import type { CornerMeasurer } from './walkingLines';
 
 /**
  * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
@@ -438,9 +439,9 @@ function widen(table: Float64Array, at: number, c: number): void {
  * Measures many pairs' tables somewhere else - the browser's workers
  * (`conflictPool.ts`) - each as `pairTable` would here, answered in the
  * order asked; rejected when it cannot (`ConflictIndex.prepare` then
- * measures them on the page).
+ * measures them on the page). The same workers round the walkways' corners (`CornerMeasurer`).
  */
-export interface PairMeasurer {
+export interface PairMeasurer extends CornerMeasurer {
   /** `key`: the pair's key, under which a measurer that `keeps` stores its table for the next session. */
   measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples; readonly key?: string }[]): Promise<readonly (Float64Array | null)[]>;
   /**

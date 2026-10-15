@@ -15,6 +15,8 @@ import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate } from '../fuzz/support/runner';
 import { conflictLines, graphLines } from '../world/support/graphLines';
 import { m } from '@world/units';
+import { roundCorners } from '@world/walkingLines';
+import { Digest } from '@core/digest';
 
 /** The generated towns' radius: a few dozen junctions, every kind the generator lays, inside a test's time. */
 const TOWN = m(260);
@@ -33,12 +35,12 @@ const SMALL_TOWN = m(200);
 interface Workers extends PairMeasurer {
   /** Every frame a worker sampled, as the page received it. */
   readonly frames: Set<Float64Array>;
-  readonly asked: { sweeps: number; pairs: number; turns: number; crossings: number };
+  readonly asked: { sweeps: number; pairs: number; turns: number; crossings: number; corners: number };
 }
 
 function workers(failSweeps = false): Workers {
   const frames = new Set<Float64Array>();
-  const asked = { sweeps: 0, pairs: 0, turns: 0, crossings: 0 };
+  const asked = { sweeps: 0, pairs: 0, turns: 0, crossings: 0, corners: 0 };
   return {
     frames,
     asked,
@@ -63,6 +65,10 @@ function workers(failSweeps = false): Workers {
       const answer: SampledSweep[] = structuredClone(sent.map((a) => sampleSweep(a, lines)));
       for (const s of answer) frames.add(s.frame);
       return Promise.resolve(answer);
+    },
+    roundCorners(asks) {
+      asked.corners += asks.length;
+      return Promise.resolve(structuredClone(structuredClone(asks).map((a) => roundCorners(a))));
     },
     crossings(pairs) {
       asked.crossings += pairs.length;
@@ -107,8 +113,12 @@ function expectSame(off: SimWorld, page: SimWorld, measuredOff: Map<string, Floa
   expect(sweeps(off), `${where}: sweeps`).toEqual(sweeps(page));
   const tables = (m: Map<string, Float64Array | null>) => [...m].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   expect(tables(measuredOff), `${where}: pair tables`).toEqual(tables(measuredPage));
+  expect(walkLines(off), `${where}: walkways`).toEqual(walkLines(page));
 }
 
+/** The residents' walkways, every one with its id, ends, reach and every point of its line. */
+const walkLines = (w: SimWorld): string[] => w.walkwaysNow().walkways().map((way) => `${way.id} ${way.kind} ${way.a} ${way.b} ${way.segment ?? '-'} ${way.node ?? '-'} `
+  + `${way.structure} ${way.kerb} ${way.lo} ${way.hi} ${way.width} ${way.unmarked ?? '-'} ${new Digest().addAll(way.path.xy).value()}`);
 
 /** Every sweep the index holds was sampled by a worker: none on the page. */
 function expectNoneOnPage(w: SimWorld, off: Workers): void {
@@ -140,6 +150,8 @@ describe('the traffic topology prepared off the page', () => {
     expect(measurer.asked.sweeps).toBeGreaterThan(off.graph.connectors.size / 2);
     expect(measurer.asked.pairs).toBeGreaterThan(0);
     expect(measurer.asked.crossings).toBeGreaterThan(0);
+    // The walkways' corners rounded by the workers, the same lines (`expectSame`).
+    expect(measurer.asked.corners).toBeGreaterThan(20);
     expect(off.conflicts.measured.build).toBe(0);
     expectNoneOnPage(off, measurer);
     expectSame(off, page, off.conflicts.takeMeasured(), page.conflicts.takeMeasured(), 'city');
@@ -222,6 +234,9 @@ describe('the traffic topology prepared off the page', () => {
         const prep = off.prepareVehicleTopology(measurer);
         let step = prep.next();
         while (!step.done && step.value !== WAITING) step = prep.next();
+        // Run to its end without waiting (nothing for the workers): its walkways were brought up, so are the page's
+        // (their ids follow the updates they were built in).
+        if (step.done) page.walkwaysNow();
         const plan = internals(off).prepGraph.turnPlan;
         if (plan && plan.provisional.size > 0) givenUp++;
         try { changed = applyOp(state, ops[++i]!); } catch (error) { recordRejected(error); break; }

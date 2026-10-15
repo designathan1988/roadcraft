@@ -689,8 +689,9 @@ export class SimWorld {
     // `measurer`'s workers when there are some (`conflictPool.ts`).
     yield* this.conflicts.prepare(graph, measurer, changed);
     yield;
-    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.update`).
-    this.walkwaysNow();
+    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.updateSteps`),
+    // their corners rounded by `measurer`'s workers when there are some.
+    yield* this.walkways.updateSteps(this.net, measurer);
     this.prepReached = new Set();
   }
 
