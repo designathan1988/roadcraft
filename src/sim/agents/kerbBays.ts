@@ -1,10 +1,9 @@
 import type { Vec2 } from '@core/vec2';
-import { localToWorld } from '@world/buildings/geometry';
-import type { Building, BuildingId } from '@world/buildings/types';
+import type { BuildingId } from '@world/buildings/types';
 import type { SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
 import { PARKING_PITCH } from '@world/parking';
-import { parkingLayout } from '@world/parkingLayout';
+import { entrancesOf, parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
 import type { BuildingDelta } from './buildingOrder';
@@ -56,45 +55,10 @@ export interface KerbBook {
   /** The entrances of each building that has any, and the entrances by cell. */
   readonly entrances: Map<BuildingId, readonly Entrance[]>;
   readonly entranceCells: Map<number, Set<BuildingId>>;
-  /** Each record's entrances, once per record (the store never changes one in place). */
-  readonly entranceOf: WeakMap<Building, readonly Entrance[]>;
 }
 
 export function newKerbBook(): KerbBook {
-  return { net: null, revision: -1, order: [], reach: new Map(), streets: new Map(), bays: new Map(), entrances: new Map(), entranceCells: new Map(), entranceOf: new WeakMap() };
-}
-
-/**
- * One record's entrances, once per record: what `parkingLayout.ts`
- * `lotEntrances` hands out for this building, in its order - each car gate
- * (a lowered kerb), then each car park's frontage. That one walks every
- * building of the town; the kerbs ask a building at a time.
- * DO NOT let this differ from `lotEntrances`: `tests/sim/indexes/baysByDiary.spec.ts`
- * lays the kerbs out with it against the old pass, which reads `lotEntrances`.
- */
-function entrancesOf(book: KerbBook, b: Building): readonly Entrance[] {
-  const known = book.entranceOf.get(b);
-  if (known) return known;
-  const out: Entrance[] = [];
-  for (const el of b.elements ?? []) {
-    if (el.kind !== 'gate' || el.w < CAR_GATE) continue;
-    const alongY = el.facing === 1 || el.facing === 3;
-    const c = Math.cos(el.angle ?? 0), s = Math.sin(el.angle ?? 0);
-    const ux = alongY ? -s : c, uy = alongY ? c : s;
-    out.push([localToWorld(b, el.x - ux * el.w / 2, el.y - uy * el.w / 2), localToWorld(b, el.x + ux * el.w / 2, el.y + uy * el.w / 2)]);
-  }
-  for (const el of b.elements ?? []) {
-    if (el.kind !== 'parking') continue;
-    const lot = b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
-    const box = lot ?? { x: el.x - el.w / 2, y: el.y - el.d / 2, w: el.w, d: el.d };
-    const corners = [
-      localToWorld(b, box.x, box.y), localToWorld(b, box.x + box.w, box.y),
-      localToWorld(b, box.x + box.w, box.y + box.d), localToWorld(b, box.x, box.y + box.d),
-    ];
-    for (let i = 0; i < 4; i++) out.push([corners[i]!, corners[(i + 1) % 4]!]);
-  }
-  book.entranceOf.set(b, out);
-  return out;
+  return { net: null, revision: -1, order: [], reach: new Map(), streets: new Map(), bays: new Map(), entrances: new Map(), entranceCells: new Map() };
 }
 
 function entranceBox(list: readonly Entrance[]): { x0: number; y0: number; x1: number; y1: number } {
@@ -150,7 +114,7 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
   const touched: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const id of delta?.ids ?? []) {
     const b = w.doc.buildings.get(id);
-    const now = b ? entrancesOf(book, b) : [];
+    const now = b ? entrancesOf(b) : [];
     const was = book.entrances.get(id) ?? [];
     if (sameEntrances(was, now)) continue;
     fileEntrances(book, id, was, false);
@@ -209,7 +173,7 @@ function readEntrances(w: SimWorld, book: KerbBook): void {
   book.entrances.clear();
   book.entranceCells.clear();
   for (const b of w.doc.buildings.all()) {
-    const list = entrancesOf(book, b);
+    const list = entrancesOf(b);
     if (!list.length) continue;
     book.entrances.set(b.id, list);
     fileEntrances(book, b.id, list, true);
