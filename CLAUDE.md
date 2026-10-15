@@ -42,17 +42,17 @@ instruções do projeto: não crie outro (nem `memory/`, nem `CLAUDE.md` em subp
 - Desenhar ou guardar o que não se vê: sem nível de distância; cópia na CPU do que já está na GPU.
 - Esperar a GPU no meio do quadro (`getImageData`) ou compilar shader durante o jogo.
 
-## Achados abertos (lidos no código em 2026-10-14, não corrigidos)
-- `render/buildings/layer.ts:518`: o caminho incremental exige `rest === storedRest`; a chave do
-  chão (`renderer.ts:2799`) muda a cada mudança do chão e a cidade inteira é remontada
-  (`layer.ts:631-676`). O mesmo com "ver por dentro", prédio em edição e prévia.
-- `layer.ts:303-348`: malhas dos prédios guardadas na CPU com teto de 128 MB, jogadas fora e
-  emitidas de novo quando a câmera volta (cache com teto que refaz).
-- Edição de via refaz o mapa inteiro de: grama (`renderer.ts:1768`), placas (`renderer.ts:1584`),
-  detalhes das estruturas (`1762`) e mobília (`1572`).
-- Por prédio: texto JSON guardado duas vezes (`world/buildings/store.ts:10`, `layer.ts:136`),
-  baias da fachada como objetos (`geometry.ts:578`), massas em JS depois da GPU (`layer.ts:350`).
-- `sim/drive/operational.ts:109` e `physicalMotion.ts:22`: objeto novo por carro por passo.
+## Achados abertos (lidos no código em 2026-10-14 noite, não corrigidos)
+- Os cinco blocos da auditoria (camada de prédios, refeituras por edição de via, cache de 128 MB,
+  alocações do tráfego, texto JSON por prédio) foram corrigidos: `OTIMIZACAO.md`, "Motor central".
+- Ainda O(mapa) por mudança: transporte (`renderer.ts`, `transitAreaOf` e `buildTransit` por
+  revisão), névoa e ravinas por revisão do terreno, florestas e cobertura reescritas pela lista
+  inteira quando o conjunto mantido muda (`natureTrees.ts` `update`, `buildGroundCover`).
+- `terrain.ts` (19 leituras de revisão), `flatAtlas.ts` (9), `main.ts` (10): ainda por converter.
+- O motor (`core/engine.ts`) tem só os produtos da fase `draw`; os outros derivados ainda se
+  atualizam sozinhos. A trava do ESLint (proibir revisão global fora do motor) não existe ainda.
+- Células de detalhe longe ficam na GPU (ordem do jogador): a memória de vídeo cresce com a área já
+  visitada; falta o teto pelo orçamento da placa (residência), sem refazer o que volta.
 - Pesquisa e propostas: `docs/research/especificacao-externa-cidade-infinita.md`,
   `docs/PESQUISA-CIDADE-10KM.md`, `docs/CIDADE-10KM.md`, `docs/PLANO-ESPINHA-2026-10-14.md`.
 

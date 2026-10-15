@@ -173,6 +173,23 @@ causa fora do código, não um número da cidade de teste).
 - Feito e medido (comparação 8×8 px na mesma tela, detalhe contra massa): molduras e faixas de andar na massa, média das texturas em luz linear, metálico/rugosidade/reflexo por acabamento (como o `MaterialProxySettings` do Unreal). Resultado: a diferença média PIOROU (17,6 → 20,6), a massa ficou 12 % mais escura e ainda mais saturada; de perto o detalhe tem textura, sujeira, varandas, peitoris e caixilhos claros que a massa não tem. Desfeito; o patch está guardado fora do repositório.
 - Conclusão: trocar o detalhe pela massa na vista de cima perderia beleza (proibido). O caminho que resta para a vista de cima é reduzir os triângulos do próprio detalhe sem mudar a imagem (casca simplificada por célula, meshoptimizer, com erro abaixo de um pixel).
 
+### Motor central e os cinco blocos (2026-10-14 noite)
+Cada linha é um commit; a causa estava no algoritmo e saiu do código.
+- `6e2801d` Tráfego sem alocação por carro e passo: `nextSpeed` devolve o número, folga física por argumento, um `Set` do mundo com `clear()` nos cruzamentos.
+- `4feb4af` Prédios sem texto nem objeto guardado por registro: estoque compara campo a campo; vagas e nivelamento por `Digest.addPlain`; baias do térreo empacotadas (`groundBays`), as completas emitidas sem guardar; sólidos da câmera em páginas (`slot >>> 12`).
+- `ae8fe6c` Camada de prédios: chão, prévia e ruínas pelo caminho incremental (prédios achados por lugar no diário); sai o `buildingsAreaOf` por revisão.
+- `312a23f` `core/engine.ts` (fases, livro-razão); vagas dos lotes pelo diário (`bayChangesSince`); `roomLamps` por lugar; `shapeBlocksSteps` sem as duas varreduras da cidade.
+- `bc8941e` Placas placa a placa (`signLayer.ts`: `Derived` por origem, postes em `InstanceRuns`, placas em vagas com `addUpdateRange`, crescimento 1,5× + 512).
+- `98211dc` Estruturas das vias por célula de 256 m (`structureCells.ts`).
+- `6a8d570` Workers dos prédios sem cache de 128 MB; célula longe fica na GPU (só esconde); registro e chão por digest numérico, texto só na mensagem.
+- `84acd6e` Jardins por digest numérico.
+- `8bcb0a4` "Ocultar outros" pelos materiais das células (`fade.ts`), o prédio sólido à parte; sai o caminho `'faded'`.
+- `ef15e1e` Motor ligado: mobília e placas como produtos da fase `draw` (`__roadcraft.ledger()`).
+- `b1ff93e` Plantas e pedras lugar a lugar (`candidateKeep.ts`), sem `FOREST_MAX`/`SCRUB_MAX`/`ROCK_MAX`.
+- `6e910ff` Varredura das árvores do ecossistema só nas placas cujo terreno mudou.
+- `adc1eb1` Semáforos: a simulação anota as junções que mudaram (o log compacta, não esquece); o desenho refaz só as células delas.
+- `054d744` Barreiras barreira a barreira (`Derived` + `InstanceRuns`).
+
 ## Pendente e por quê
 
 - **16 (emissão de prédio cara, ~7 ms cada)**: é o custo da chegada a uma área nova (medido 2026-10-14 num movimento de 8 s logo após gerar a cidade: 422 prédios, mediana 3,4 ms, p90 8,8 ms, máximo 15,6 ms; o movimento cai a ~33 fps nesse primeiro minuto, ~59 fps depois). Já feitos: #23 (compilação fora do movimento) e #24 (interiores). Perfil: `emitBuilding` 50% (fachadas, elementos com recorte de polígono por emissão), `emitLots` 16%, empacotamento 27%. Caminhos: cache por registro do que só depende do registro (recortes de elementos, `facadeBays`), emissão em fatias menores (gerador por volume), e emissão num worker com o chão amostrado.
