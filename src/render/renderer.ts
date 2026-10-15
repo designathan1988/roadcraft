@@ -1211,6 +1211,34 @@ export function createSceneRenderer(
     get version() { return groundChanges.version; },
     rectsSince: (since) => groundRectsSince(since),
   };
+  /**
+   * The diary's serials of the ground graded round the sites that changed (`shapeGround` with `sites`):
+   * a building's floor reads the land and the paving (`floorHeight` on `builtGroundAt`, `pavedHeightAt`),
+   * never the ground graded to the buildings, and the buildings that changed are named by their own
+   * entries. Kept until the floors' reader has passed them (`floorGroundSince`).
+   */
+  const sitesGradedSerials = new Set<number>();
+  /**
+   * Where the ground a building's floor reads changed since a serial (`cameraSolids.ts` `GroundSince`):
+   * the diary's ground less the sites graded. DO NOT re-floor the buildings round a graded site: every
+   * site graded in a growing city floored again every building its bank reached (40 m and more round
+   * it), the whole town in the frame its thousands of sites were graded (2026-10-15).
+   */
+  const floorGroundSince: GroundSince = {
+    get version() { return groundChanges.version; },
+    rectsSince: (since) => {
+      for (const serial of sitesGradedSerials) if (serial <= since) sitesGradedSerials.delete(serial);
+      const entries = groundDiary?.since(since, GROUND_KINDS);
+      if (!entries) return null;
+      const rects: ChangeRect[] = [];
+      for (const entry of entries) {
+        if (sitesGradedSerials.has(entry.serial)) continue;
+        if (entry.rects === null) return null;
+        rects.push(...entry.rects);
+      }
+      return rects;
+    },
+  };
   /** Where a building's floor reads the ground and the paving (`FLOOR_READ_REACH`), once per record. */
   const floorBoxes = new WeakMap<Building, ChangeRect>();
   const floorBox = (b: Building): ChangeRect => {
@@ -1469,7 +1497,10 @@ export function createSceneRenderer(
     // The ground is cut and filled here, and only here: what stands on it reads
     // where from the diary - once per call; a road edit's quarter blocks are
     // written together when the last is shaped (`shapeBlocksSteps`).
-    if (!padsReady) derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', net.doc.changes.version);
+    if (!padsReady) {
+      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', net.doc.changes.version);
+      if (sites && serial) sitesGradedSerials.add(serial);
+    }
     const roads = net.doc.segments.size > 0 ? elevation : null;
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
@@ -2985,7 +3016,7 @@ export function createSceneRenderer(
       // only the buildings the diary names, or where the ground moved under
       // their floor, are filed again (`cameraSolidsKeeper`); NOT the town at
       // every building grown or every road solved.
-      if (cameraSolidsKept.follow(net.doc.buildings, groundSince)) {
+      if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
         rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
         townSolids = () => cameraSolidsKept.solids();
       }
