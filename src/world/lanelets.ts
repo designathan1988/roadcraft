@@ -4,7 +4,7 @@ import { type Vec2, angleOf, normalize, sub } from '@core/vec2';
 import { MIN_RIBBON, normalizeAngle } from '@core/scalar';
 import { Digest } from '@core/digest';
 import type { NodeId, SegmentId } from './ids';
-import { movementKey, type JunctionControl, type RoadDoc } from './doc';
+import { movementKey, type JunctionControl, type RoadDoc, type RoadNode } from './doc';
 import type { Network } from './network';
 import { laneOffset, laneWidth, roadProfile, travelLanes } from './roadTypes';
 import { PARKING_DEPTH } from './parking';
@@ -266,136 +266,141 @@ export class LaneletGraph {
 
     for (const segId of ids) {
       yield;
-      laneletWork.segments++;
-      const seg = doc.requireSegment(segId);
-      // A tunnel with no geometry carries no traffic. Skipping the link
-      // lanelets removes the segment from the routing graph outright — no
-      // lanelets, no connectors, no junction groups — so a vehicle can never
-      // pass silently through a bore that is not drawn. The segment itself
-      // stays in the document, authored and saved normally.
-      if (seg.structure === 'tunnel' && !TUNNELS_DRAWN) continue;
-      const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
+      this.buildSegmentLinks(doc, net, segId, previous, next);
+    }
+  }
 
-      for (const forward of [true, false]) {
-        if (!allowsDirection(seg.direction, forward)) continue;
-        const lpd = travelLanes(rt, seg.direction);
-        const from = forward ? seg.a : seg.b;
-        const to = forward ? seg.b : seg.a;
+  /** The link lanelets of one segment, both directions (`buildLinks`), under the keys they were built from. */
+  private buildSegmentLinks(doc: RoadDoc, net: Network, segId: SegmentId, previous: Map<string, Lanelet[]>, next: Map<string, Lanelet[]>): void {
+    laneletWork.segments++;
+    const seg = doc.requireSegment(segId);
+    // A tunnel with no geometry carries no traffic. Skipping the link
+    // lanelets removes the segment from the routing graph outright — no
+    // lanelets, no connectors, no junction groups — so a vehicle can never
+    // pass silently through a bore that is not drawn. The segment itself
+    // stays in the document, authored and saved normally.
+    if (seg.structure === 'tunnel' && !TUNNELS_DRAWN) return;
+    const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
 
-        // A link ends at the STOP LINE, not at the junction mouth, leaving room
-        // for the crossing in between. Both distances come from the same trim.
-        const startTrim = net.stopLineDistance(segId, from);
-        const endTrim = net.stopLineDistance(segId, to);
+    for (const forward of [true, false]) {
+      if (!allowsDirection(seg.direction, forward)) continue;
+      const lpd = travelLanes(rt, seg.direction);
+      const from = forward ? seg.a : seg.b;
+      const to = forward ? seg.b : seg.a;
 
-        const full = orientedPolyline(doc, seg, from);
-        const total = full.length;
+      // A link ends at the STOP LINE, not at the junction mouth, leaving room
+      // for the crossing in between. Both distances come from the same trim.
+      const startTrim = net.stopLineDistance(segId, from);
+      const endTrim = net.stopLineDistance(segId, to);
 
-        // Consume the accessor's answer, do not re-derive it.
-        //
-        // This used to clamp each end independently against `total * 0.45`,
-        // which is a second stop-line formula competing with the first — the
-        // exact shape of defect 1.5, and it silently undid the accessor's
-        // guarantee that the stop line sits beyond the crossing. Measured on a
-        // boulevard with 84-unit arms: the accessor said 38.67 and the lanelet
-        // still ended at 37.80, putting the line 0.87 units inside the zebra.
-        //
-        // The trim solver already reserves `MIN_DRIVABLE_RESERVE` between the
-        // two approach zones, so the two ends normally fit. When they do not,
-        // scale them JOINTLY: that keeps their ratio, degrades both ends the
-        // same way, and never lets one end reach past the other.
-        const wanted = startTrim + endTrim;
-        const room = Math.max(0, total - MIN_RIBBON);
-        // What gives way is the approach zones, never the mouths: a lane that
-        // ended inside a junction's mouth would start its connector on the
-        // plate (the fuzzer's `trimOrder`). Only where the mouths alone do not
-        // fit are both ends scaled whole, as before.
-        const mouthStart = Math.min(startTrim, net.mouthDistance(segId, from));
-        const mouthEnd = Math.min(endTrim, net.mouthDistance(segId, to));
-        const approach = wanted - mouthStart - mouthEnd;
-        const spare = room - mouthStart - mouthEnd;
-        let s0: number, s1: number;
-        if (wanted > room && spare >= 0 && approach > 0) {
-          const k = spare / approach;
-          s0 = mouthStart + (startTrim - mouthStart) * k;
-          s1 = Math.max(s0 + MIN_RIBBON, total - mouthEnd - (endTrim - mouthEnd) * k);
-        } else {
-          const k = wanted > room && wanted > 0 ? room / wanted : 1;
-          s0 = startTrim * k;
-          s1 = Math.max(s0 + MIN_RIBBON, total - endTrim * k);
+      const full = orientedPolyline(doc, seg, from);
+      const total = full.length;
+
+      // Consume the accessor's answer, do not re-derive it.
+      //
+      // This used to clamp each end independently against `total * 0.45`,
+      // which is a second stop-line formula competing with the first — the
+      // exact shape of defect 1.5, and it silently undid the accessor's
+      // guarantee that the stop line sits beyond the crossing. Measured on a
+      // boulevard with 84-unit arms: the accessor said 38.67 and the lanelet
+      // still ended at 37.80, putting the line 0.87 units inside the zebra.
+      //
+      // The trim solver already reserves `MIN_DRIVABLE_RESERVE` between the
+      // two approach zones, so the two ends normally fit. When they do not,
+      // scale them JOINTLY: that keeps their ratio, degrades both ends the
+      // same way, and never lets one end reach past the other.
+      const wanted = startTrim + endTrim;
+      const room = Math.max(0, total - MIN_RIBBON);
+      // What gives way is the approach zones, never the mouths: a lane that
+      // ended inside a junction's mouth would start its connector on the
+      // plate (the fuzzer's `trimOrder`). Only where the mouths alone do not
+      // fit are both ends scaled whole, as before.
+      const mouthStart = Math.min(startTrim, net.mouthDistance(segId, from));
+      const mouthEnd = Math.min(endTrim, net.mouthDistance(segId, to));
+      const approach = wanted - mouthStart - mouthEnd;
+      const spare = room - mouthStart - mouthEnd;
+      let s0: number, s1: number;
+      if (wanted > room && spare >= 0 && approach > 0) {
+        const k = spare / approach;
+        s0 = mouthStart + (startTrim - mouthStart) * k;
+        s1 = Math.max(s0 + MIN_RIBBON, total - mouthEnd - (endTrim - mouthEnd) * k);
+      } else {
+        const k = wanted > room && wanted > 0 ? room / wanted : 1;
+        s0 = startTrim * k;
+        s1 = Math.max(s0 + MIN_RIBBON, total - endTrim * k);
+      }
+      const centreTrimmed = full.sub(s0, Math.min(s1, total));
+
+      // EVERYTHING of the document this lanelet — and any junction it runs
+      // into — is made of. Read in full from `buildJunctions` and the calls
+      // under it, so a field left out here is a field a junction cannot see
+      // move:
+      //
+      //   the segment's own points (the lanelet's shape, `carriedPair`'s
+      //   bend, `computeApproachGroups`' legs), its `type` and
+      //   `section.priority` (`carriedPair` ranks by `priority ?? type`),
+      //   `lanes` and `direction` and the whole `section`
+      //   (`laneWidth`, `sidewalk`, `median`, `speedKmh`, `priority`, through
+      //   `roadProfile`: `laneIsPlausible`'s lane counts, the signal rule),
+      //   `structure`, the two stop-line trims, the authored lane arrows
+      //   (`section.turnsForward` / `turnsBackward`: `laneTurnAllowed` and
+      //   the authored-turn lane choice in `buildJunctions`), and the degree
+      //   and pedestrian crossing of the node it runs into (`controlled`).
+      //
+      // The junction key is built out of these lanelet keys, so this list is
+      // what makes that one complete: `TUNNELS_DRAWN` is true and every
+      // direction is allowed somewhere, so every segment of a node has at
+      // least one lanelet here to speak for it.
+      const section = seg.section;
+      const crossing = doc.node(to)?.crossing;
+      const key = `${segId}|${forward ? 1 : 0}|${seg.type}|${seg.lanes ?? '-'}|${seg.direction}`
+        + `|${seg.structure ?? '-'}`
+        + `|${section ? `${section.laneWidth},${section.sidewalk},${section.median},${section.speedKmh},${section.priority}` : '-'}`
+        + `|${section?.turnsForward?.join(',') ?? '-'}|${section?.turnsBackward?.join(',') ?? '-'}`
+        + (section?.useForward || section?.useBackward || section?.linesForward || section?.linesBackward
+          ? `|u${section.useForward?.join(',') ?? ''}/${section.useBackward?.join(',') ?? ''}|l${section.linesForward?.join(',') ?? ''}/${section.linesBackward?.join(',') ?? ''}` : '')
+        + `|${lpd}|${laneWidth(rt)}|${rt.median}|${rt.speedLimit}|${rt.sidewalk}|${rt.parkingLeft},${rt.parkingRight},${rt.parkingLeftKind},${rt.parkingRightKind}`
+        + `|${doc.degree(to)}|${crossing ? `${crossing.kind},${crossing.segment}` : '-'}`
+        // Whether it begins or ends at a road's end (`turnPath`'s `RoadEnds`).
+        + `|${doc.mapEdge(from) ? 1 : 0}${doc.mapEdge(to) ? 1 : 0}`
+        + `|${s0}|${s1}|${new Digest().addAll(full.xy).value()}`;
+      let lanes = previous.get(key);
+      if (!lanes) {
+        const pts = centreTrimmed.toPoints();
+        const startTangent = centreTrimmed.sampleAt(0).t;
+        const endTangent = centreTrimmed.sampleAt(centreTrimmed.length).t;
+        lanes = [];
+        for (let lane = 0; lane < lpd; lane++) {
+          // Lane 0 is innermost; negative `perp` offset is the right of travel.
+          const laneCentre = Polyline.fromPoints(clipToEndSections(
+            offsetPolyline(pts, laneOffset(rt, lane, seg.direction, forward)), startTangent, endTangent,
+          ));
+          lanes.push({
+            id: laneletId(segId, from, to, lane),
+            kind: 'link',
+            centre: laneCentre,
+            length: laneCentre.length,
+            speedLimit: rt.speedLimit,
+            segment: segId,
+            from,
+            to,
+            laneIndex: lane,
+            ...((forward ? rt.parkingRightKind : rt.parkingLeftKind) === 'cycle' && lane === lpd - 1
+              ? { cycleShift: -(laneWidth(rt) / 2 + PARKING_DEPTH.cycle / 2) } : {}),
+            controlled: doc.degree(to) >= 3 || crossing !== undefined,
+            ...(laneUse(section, forward, lane) === 'bus' ? { use: 'bus' as const } : {}),
+            ...(lane > 0 && !laneLineCrossable(section, forward, lane - 1) ? { solidInner: true as const } : {}),
+            ...(lane < lpd - 1 && !laneLineCrossable(section, forward, lane) ? { solidOuter: true as const } : {}),
+          });
         }
-        const centreTrimmed = full.sub(s0, Math.min(s1, total));
-
-        // EVERYTHING of the document this lanelet — and any junction it runs
-        // into — is made of. Read in full from `buildJunctions` and the calls
-        // under it, so a field left out here is a field a junction cannot see
-        // move:
-        //
-        //   the segment's own points (the lanelet's shape, `carriedPair`'s
-        //   bend, `computeApproachGroups`' legs), its `type` and
-        //   `section.priority` (`carriedPair` ranks by `priority ?? type`),
-        //   `lanes` and `direction` and the whole `section`
-        //   (`laneWidth`, `sidewalk`, `median`, `speedKmh`, `priority`, through
-        //   `roadProfile`: `laneIsPlausible`'s lane counts, the signal rule),
-        //   `structure`, the two stop-line trims, the authored lane arrows
-        //   (`section.turnsForward` / `turnsBackward`: `laneTurnAllowed` and
-        //   the authored-turn lane choice in `buildJunctions`), and the degree
-        //   and pedestrian crossing of the node it runs into (`controlled`).
-        //
-        // The junction key is built out of these lanelet keys, so this list is
-        // what makes that one complete: `TUNNELS_DRAWN` is true and every
-        // direction is allowed somewhere, so every segment of a node has at
-        // least one lanelet here to speak for it.
-        const section = seg.section;
-        const crossing = doc.node(to)?.crossing;
-        const key = `${segId}|${forward ? 1 : 0}|${seg.type}|${seg.lanes ?? '-'}|${seg.direction}`
-          + `|${seg.structure ?? '-'}`
-          + `|${section ? `${section.laneWidth},${section.sidewalk},${section.median},${section.speedKmh},${section.priority}` : '-'}`
-          + `|${section?.turnsForward?.join(',') ?? '-'}|${section?.turnsBackward?.join(',') ?? '-'}`
-          + (section?.useForward || section?.useBackward || section?.linesForward || section?.linesBackward
-            ? `|u${section.useForward?.join(',') ?? ''}/${section.useBackward?.join(',') ?? ''}|l${section.linesForward?.join(',') ?? ''}/${section.linesBackward?.join(',') ?? ''}` : '')
-          + `|${lpd}|${laneWidth(rt)}|${rt.median}|${rt.speedLimit}|${rt.sidewalk}|${rt.parkingLeft},${rt.parkingRight},${rt.parkingLeftKind},${rt.parkingRightKind}`
-          + `|${doc.degree(to)}|${crossing ? `${crossing.kind},${crossing.segment}` : '-'}`
-          // Whether it begins or ends at a road's end (`turnPath`'s `RoadEnds`).
-          + `|${doc.mapEdge(from) ? 1 : 0}${doc.mapEdge(to) ? 1 : 0}`
-          + `|${s0}|${s1}|${new Digest().addAll(full.xy).value()}`;
-        let lanes = previous.get(key);
-        if (!lanes) {
-          const pts = centreTrimmed.toPoints();
-          const startTangent = centreTrimmed.sampleAt(0).t;
-          const endTangent = centreTrimmed.sampleAt(centreTrimmed.length).t;
-          lanes = [];
-          for (let lane = 0; lane < lpd; lane++) {
-            // Lane 0 is innermost; negative `perp` offset is the right of travel.
-            const laneCentre = Polyline.fromPoints(clipToEndSections(
-              offsetPolyline(pts, laneOffset(rt, lane, seg.direction, forward)), startTangent, endTangent,
-            ));
-            lanes.push({
-              id: laneletId(segId, from, to, lane),
-              kind: 'link',
-              centre: laneCentre,
-              length: laneCentre.length,
-              speedLimit: rt.speedLimit,
-              segment: segId,
-              from,
-              to,
-              laneIndex: lane,
-              ...((forward ? rt.parkingRightKind : rt.parkingLeftKind) === 'cycle' && lane === lpd - 1
-                ? { cycleShift: -(laneWidth(rt) / 2 + PARKING_DEPTH.cycle / 2) } : {}),
-              controlled: doc.degree(to) >= 3 || crossing !== undefined,
-              ...(laneUse(section, forward, lane) === 'bus' ? { use: 'bus' as const } : {}),
-              ...(lane > 0 && !laneLineCrossable(section, forward, lane - 1) ? { solidInner: true as const } : {}),
-              ...(lane < lpd - 1 && !laneLineCrossable(section, forward, lane) ? { solidOuter: true as const } : {}),
-            });
-          }
-        }
-        next.set(key, lanes);
-        for (const lanelet of lanes) {
-          this.lanelets.set(lanelet.id, lanelet);
-          this.laneletKeys.set(lanelet.id, key);
-          push(this.inbound, to, lanelet.id);
-          push(this.outbound, from, lanelet.id);
-          push(this.bySegment, segId, lanelet.id);
-        }
+      }
+      next.set(key, lanes);
+      for (const lanelet of lanes) {
+        this.lanelets.set(lanelet.id, lanelet);
+        this.laneletKeys.set(lanelet.id, key);
+        push(this.inbound, to, lanelet.id);
+        push(this.outbound, from, lanelet.id);
+        push(this.bySegment, segId, lanelet.id);
       }
     }
   }
@@ -413,272 +418,299 @@ export class LaneletGraph {
     };
     for (const [nodeId, node] of doc.nodes) {
       yield;
-      laneletWork.nodes++;
-      // A road's end that is a turning circle turns its traffic round (`junction/bulb.ts`).
-      const bulb = node.incident.length === 1 && node.end === 'bulb';
-      if (node.incident.length < 2 && !bulb) continue;
-      // The surface a turn has to stay on, built once per node and only when
-      // the node actually has a movement to shape.
-      let surface: JunctionSurface | null | undefined;
-      const surfaceOf = (): JunctionSurface | null => (surface ??= new JunctionSurface(net, nodeId));
-
-      const inbound = (this.inbound.get(nodeId) ?? []).slice().sort();
-      const outbound = (this.outbound.get(nodeId) ?? []).slice().sort();
-      if (!inbound.length || !outbound.length) continue;
-
-      // What a junction's connectors are made of, read in full from this loop
-      // and the calls under it: the surface the turns are shaped across, the
-      // node's own `control`, `incident` and `blockedMovements`, and every
-      // lanelet that meets there — whose own keys carry each segment's type,
-      // section, direction and geometry (`buildLinks`). All of it is here, so
-      // moving any one of them moves the key:
-      //
-      //   `node.control` -> `shouldSignalise`
-      //   `node.crossing` -> a mid-block crossing's own junction
-      //   `node.incident` -> the leg list, `computeApproachGroups`
-      //   `node.blockedMovements` -> which movements are dropped
-      //   the lanelet keys -> `surface.centre`, the turn geometry, lane counts,
-      //   `carriedPair`'s ranking by `section.priority ?? type`
-      //   `surface.key` -> the junction's own rings and the incident ribbons'
-      //
-      // `turnPath` needs the surface anyway, so asking for its key costs
-      // nothing extra — and a junction an edit did not reach hands back the
-      // connectors it had, objects and all.
-      const surfaceKey = surfaceOf()?.key ?? '';
-      const key = `${nodeId}|${new Digest().addText(String(surfaceKey)).addText(node.control)
-        .addText(node.crossing ? `${node.crossing.kind},${node.crossing.segment}` : '-')
-        .addText(node.incident.join(',')).addText(node.blockedMovements.join(',')).addText(linksDigest(node.laneLinks))
-        .addText(`${node.uturn ?? '-'}${node.end ?? '-'}`)
-        .addText(inbound.map((id) => this.laneletKeys.get(id) ?? id).join('|'))
-        .addText(outbound.map((id) => this.laneletKeys.get(id) ?? id).join('|')).value()}`;
-      const known = key ? previous.get(key) : undefined;
-      if (known) {
-        for (const lanelet of known.lanelets) this.lanelets.set(lanelet.id, lanelet);
-        for (const connector of known.connectors) {
-          this.connectors.set(connector.id, connector);
-          push(this.exits, connector.fromLane, connector.id);
-        }
-        this.junctions.set(nodeId, {
-          node: nodeId,
-          groups: known.groups,
-          connectors: known.connectors.map((connector) => connector.id),
-          inbound,
-          signalised: known.signalised,
-          control: node.control,
-        });
-        next.set(key, known);
-        continue;
-      }
-
-      // Only a leg that brings traffic INTO the node is an approach. A one-way
-      // road leaving the junction used to get a signal group of its own: a head
-      // facing an empty carriageway, and a whole stage of every cycle spent
-      // showing green to nobody while every real approach waited at red.
-      const approaching = new Set<SegmentId>();
-      for (const id of inbound) {
-        const segment = this.lanelets.get(id)?.segment;
-        if (segment !== undefined) approaching.add(segment);
-      }
-      const legs = node.incident
-        .slice()
-        .filter((segId) => approaching.has(segId))
-        .sort((a, b) => a - b)
-        .map((segId) => {
-          const seg = doc.requireSegment(segId);
-          const pl = orientedPolyline(doc, seg, nodeId);
-          return { segment: segId, dir: smoothedDirectionFromNode(pl) };
-        });
-
-      const groups = computeApproachGroups(legs);
-      const groupBySegment = new Map<SegmentId, number>();
-      for (const g of groups) for (const s of g.segments) groupBySegment.set(s, g.id);
-
-      const connectorIds: ConnectorId[] = [];
-      const road = carriedPair(doc, nodeId);
-      // The turns this junction chose before: a movement whose geometry did not move keeps its turn.
-      const turns = new JunctionTurns(before(nodeId)?.turns ?? null);
-
-      const addConnector = (
-        inId: LaneletId, inLane: Lanelet, outId: LaneletId, outLane: Lanelet, turn: TurnKind, carried = false,
-      ): void => {
-        const cid = connectorId(inId, outId);
-        if (this.connectors.has(cid)) return;
-        const waiting = inbound
-          .map((id) => this.lanelets.get(id))
-          .filter((l): l is Lanelet => !!l && l.id !== inId);
-        const inCentre = inLane.centre, outCentre = outLane.centre;
-        const turnResult = bulb
-          ? bulbTurnPath(inCentre, outCentre, surfaceOf(), { x: node.x, y: node.y }, BULB_TURN_RADIUS)
-          : node.uturn === inLane.segment && turn === 'uturn' && node.incident.length === 2
-            ? medianUturnPath(inCentre, outCentre, surfaceOf())
-            : turnPath(inCentre, outCentre, surfaceOf(), waiting, {
-              fromRoadEnd: inLane.from !== undefined && doc.mapEdge(inLane.from),
-              toRoadEnd: outLane.to !== undefined && doc.mapEdge(outLane.to),
-            }, turns);
-        const path = turnResult.path;
-        const lanelet: Lanelet = {
-          id: cid,
-          kind: 'connector',
-          centre: path,
-          length: path.length,
-          speedLimit: Math.min(inLane.speedLimit, outLane.speedLimit) * turnSpeedFactor(turn),
-          controlled: false,
-          node: nodeId,
-          fromLane: inId,
-          toLane: outId,
-          turn,
-          group: groupBySegment.get(inLane.segment as SegmentId) ?? 0,
-        };
-        this.lanelets.set(cid, lanelet);
-        this.connectors.set(cid, {
-          id: cid,
-          lanelet: cid,
-          node: nodeId,
-          fromLane: inId,
-          toLane: outId,
-          inSegment: inLane.segment as SegmentId,
-          outSegment: outLane.segment as SegmentId,
-          turn,
-          carried,
-          group: lanelet.group ?? 0,
-          length: path.length,
-          maxBodyClass: turnResult.maxBodyClass,
-        });
-        push(this.exits, inId, cid);
-        connectorIds.push(cid);
-      };
-
-      for (const inId of inbound) {
-        const inLane = this.lanelets.get(inId);
-        if (!inLane || inLane.segment === undefined) continue;
-        const inDir = endDirection(inLane.centre);
-        const incomingSegment = doc.requireSegment(inLane.segment);
-        const rules = inLane.from === incomingSegment.a ? incomingSegment.section?.turnsForward : incomingSegment.section?.turnsBackward;
-        const rule = rules?.[inLane.laneIndex ?? 0];
-        const authored = rule !== undefined && rule !== 'all';
-        // The player's own connections for this lane (docs/VIAS.md V4,
-        // `roads/connectors.ts`): exactly those, when any is still valid;
-        // a movement the node bans stays banned.
-        const manual = linksOf(node.laneLinks, inLane.segment, inLane.laneIndex ?? 0);
-        if (manual.length) {
-          let made = 0;
-          for (const link of manual) {
-            const outId = outbound.find((id) => {
-              const l = this.lanelets.get(id);
-              return l?.segment === link.to && (l.laneIndex ?? 0) === link.toLane;
-            });
-            const outLane = outId === undefined ? undefined : this.lanelets.get(outId);
-            if (!outId || !outLane) continue;
-            if (node.blockedMovements.includes(movementKey(inLane.segment, link.to))) continue;
-            const isReverse = outLane.segment === inLane.segment;
-            const turn = isReverse ? 'uturn' : classifyTurn(inDir, tangentAtStart(outLane.centre));
-            const carried = !isReverse && road !== null && road.includes(inLane.segment) && road.includes(link.to);
-            addConnector(inId, inLane, outId, outLane, turn, carried);
-            made++;
-          }
-          if (made > 0) continue;
-        }
-        const legal: { outId: LaneletId; outLane: Lanelet; turn: TurnKind; carried: boolean }[] = [];
-        // U-turns the lane-count rule above set aside. They come back only for
-        // a lane that has nothing else: where two roads both run back to the
-        // same node (a lens of two curves), EVERY movement classifies as a
-        // U-turn, and dropping them all left the lane with no exit at all - a
-        // car driving into a node it can never leave (the fuzzer's
-        // `deadLanelet`).
-        const dropped: typeof legal = [];
-
-        for (const outId of outbound) {
-          const outLane = this.lanelets.get(outId);
-          if (!outLane || outLane.segment === undefined) continue;
-
-          // A movement back down the segment it came from is a U-turn; allow it
-          // only where there is nowhere else to go.
-          const isReverse = outLane.segment === inLane.segment;
-          const outDir = tangentAtStart(outLane.centre);
-          const turn = isReverse ? 'uturn' : classifyTurn(inDir, outDir);
-          if (!laneTurnAllowed(rule, turn)) continue;
-          // The road the node is ON carries its lanes across, however it bends.
-          const carried = !isReverse && road !== null &&
-            road.includes(inLane.segment) && road.includes(outLane.segment);
-          const inSegment = doc.requireSegment(inLane.segment);
-          const inLanes = travelLanes(
-            roadProfile(inSegment.type, inSegment.lanes, inSegment.direction, inSegment.section, inSegment.parking),
-            inSegment.direction,
-          );
-          const outSegment = doc.requireSegment(outLane.segment);
-          const outLanes = travelLanes(
-            roadProfile(outSegment.type, outSegment.lanes, outSegment.direction, outSegment.section, outSegment.parking),
-            outSegment.direction,
-          );
-          if (node.blockedMovements.includes(movementKey(inLane.segment, outLane.segment))) continue;
-          if (turn === 'uturn' && outbound.length > inLanes) {
-            dropped.push({ outId, outLane, turn, carried });
-            continue;
-          }
-          legal.push({ outId, outLane, turn, carried });
-          const receivesAuthoredTurn = turn === 'left' ? (outLane.laneIndex ?? 0) === 0 :
-            turn === 'right' ? (outLane.laneIndex ?? 0) === outLanes - 1 :
-              (outLane.laneIndex ?? 0) === (inLane.laneIndex ?? 0);
-          if (authored ? receivesAuthoredTurn : laneIsPlausible(inLane, outLane, carried ? 'through' : turn, inLanes, outLanes)) {
-            addConnector(inId, inLane, outId, outLane, turn, carried);
-          }
-        }
-
-        // A wide road may feed a narrower exit. Strict lane matching is useful
-        // where alternatives exist, but it must never leave an outer lane with
-        // no route at all: vehicles spawned there would reach a green signal
-        // with no connector to request. Merge that lane onto the best legal
-        // outbound path only when the normal pairing produced none.
-        if (this.exitsOf(inId).length === 0 && !legal.length) legal.push(...dropped);
-        if (this.exitsOf(inId).length === 0 && legal.length) {
-          legal.sort((a, b) =>
-            fallbackTurnRank(a.turn) - fallbackTurnRank(b.turn) ||
-            (a.outLane.laneIndex ?? 0) - (b.outLane.laneIndex ?? 0) ||
-            a.outId.localeCompare(b.outId),
-          );
-          const fallback = legal[0]!;
-          // A lane that merges into the road it is on is still that road:
-          // losing `carried` here made the dropped lane give way at a node of
-          // three legs, and the lane beside it never had to let it in.
-          addConnector(inId, inLane, fallback.outId, fallback.outLane, fallback.turn, fallback.carried);
-        }
-      }
-
-      // A U-turn through the median (docs/VIAS.md V8, retorno): from the
-      // inner lane of the road it serves, by the median, back the other way -
-      // swept like any turn, so only what a body fits is driven (`maxBodyClass`).
-      if (node.uturn !== undefined && node.incident.length === 2) {
-        for (const inId of inbound) {
-          const inLane = this.lanelets.get(inId);
-          if (!inLane || inLane.segment !== node.uturn || (inLane.laneIndex ?? 0) !== 0) continue;
-          for (const outId of outbound) {
-            const outLane = this.lanelets.get(outId);
-            if (outLane?.segment === inLane.segment) addConnector(inId, inLane, outId, outLane, 'uturn');
-          }
-        }
-      }
-
-      // Signalise anything with three or more legs that carries real traffic.
-      const signalised = shouldSignalise(node.control, node.incident, doc);
-      this.junctions.set(nodeId, {
-        node: nodeId,
-        groups,
-        connectors: connectorIds,
-        inbound,
-        signalised,
-        control: node.control,
-      });
-      next.set(key, {
-        node: nodeId,
-        turns: turns.settle(),
-        groups,
-        signalised,
-
-        connectors: connectorIds.map((id) => this.connectors.get(id)!),
-        lanelets: connectorIds.map((id) => this.lanelets.get(id)!),
-      });
+      this.buildJunction(doc, net, nodeId, node, previous, next, before);
     }
   }
+
+  /** The connectors of one node (`buildJunctions`): kept whole when its key is known, built otherwise. */
+  private buildJunction(doc: RoadDoc, net: Network, nodeId: NodeId, node: RoadNode,
+    previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>, before: (node: NodeId) => JunctionCache | undefined): void {
+    laneletWork.nodes++;
+    // A road's end that is a turning circle turns its traffic round (`junction/bulb.ts`).
+    const bulb = node.incident.length === 1 && node.end === 'bulb';
+    if (node.incident.length < 2 && !bulb) return;
+    // The surface a turn has to stay on, built once per node and only when
+    // the node actually has a movement to shape.
+    let surface: JunctionSurface | null | undefined;
+    const surfaceOf = (): JunctionSurface | null => (surface ??= new JunctionSurface(net, nodeId));
+
+    const inbound = (this.inbound.get(nodeId) ?? []).slice().sort();
+    const outbound = (this.outbound.get(nodeId) ?? []).slice().sort();
+    if (!inbound.length || !outbound.length) return;
+
+    // What a junction's connectors are made of, read in full from this loop
+    // and the calls under it: the surface the turns are shaped across, the
+    // node's own `control`, `incident` and `blockedMovements`, and every
+    // lanelet that meets there — whose own keys carry each segment's type,
+    // section, direction and geometry (`buildLinks`). All of it is here, so
+    // moving any one of them moves the key:
+    //
+    //   `node.control` -> `shouldSignalise`
+    //   `node.crossing` -> a mid-block crossing's own junction
+    //   `node.incident` -> the leg list, `computeApproachGroups`
+    //   `node.blockedMovements` -> which movements are dropped
+    //   the lanelet keys -> `surface.centre`, the turn geometry, lane counts,
+    //   `carriedPair`'s ranking by `section.priority ?? type`
+    //   `surface.key` -> the junction's own rings and the incident ribbons'
+    //
+    // `turnPath` needs the surface anyway, so asking for its key costs
+    // nothing extra — and a junction an edit did not reach hands back the
+    // connectors it had, objects and all.
+    const surfaceKey = surfaceOf()?.key ?? '';
+    const key = `${nodeId}|${new Digest().addText(String(surfaceKey)).addText(node.control)
+      .addText(node.crossing ? `${node.crossing.kind},${node.crossing.segment}` : '-')
+      .addText(node.incident.join(',')).addText(node.blockedMovements.join(',')).addText(linksDigest(node.laneLinks))
+      .addText(`${node.uturn ?? '-'}${node.end ?? '-'}`)
+      .addText(inbound.map((id) => this.laneletKeys.get(id) ?? id).join('|'))
+      .addText(outbound.map((id) => this.laneletKeys.get(id) ?? id).join('|')).value()}`;
+    const known = key ? previous.get(key) : undefined;
+    if (known) {
+      for (const lanelet of known.lanelets) this.lanelets.set(lanelet.id, lanelet);
+      for (const connector of known.connectors) {
+        this.connectors.set(connector.id, connector);
+        push(this.exits, connector.fromLane, connector.id);
+      }
+      this.junctions.set(nodeId, {
+        node: nodeId,
+        groups: known.groups,
+        connectors: known.connectors.map((connector) => connector.id),
+        inbound,
+        signalised: known.signalised,
+        control: node.control,
+      });
+      next.set(key, known);
+      return;
+    }
+
+    // Only a leg that brings traffic INTO the node is an approach. A one-way
+    // road leaving the junction used to get a signal group of its own: a head
+    // facing an empty carriageway, and a whole stage of every cycle spent
+    // showing green to nobody while every real approach waited at red.
+    const approaching = new Set<SegmentId>();
+    for (const id of inbound) {
+      const segment = this.lanelets.get(id)?.segment;
+      if (segment !== undefined) approaching.add(segment);
+    }
+    const legs = node.incident
+      .slice()
+      .filter((segId) => approaching.has(segId))
+      .sort((a, b) => a - b)
+      .map((segId) => {
+        const seg = doc.requireSegment(segId);
+        const pl = orientedPolyline(doc, seg, nodeId);
+        return { segment: segId, dir: smoothedDirectionFromNode(pl) };
+      });
+
+    const groups = computeApproachGroups(legs);
+    const groupBySegment = new Map<SegmentId, number>();
+    for (const g of groups) for (const s of g.segments) groupBySegment.set(s, g.id);
+
+    const connectorIds: ConnectorId[] = [];
+    const road = carriedPair(doc, nodeId);
+    // The turns this junction chose before: a movement whose geometry did not move keeps its turn.
+    const turns = new JunctionTurns(before(nodeId)?.turns ?? null);
+
+    const addConnector = (
+      inId: LaneletId, inLane: Lanelet, outId: LaneletId, outLane: Lanelet, turn: TurnKind, carried = false,
+    ): void => {
+      const cid = connectorId(inId, outId);
+      if (this.connectors.has(cid)) return;
+      const waiting = inbound
+        .map((id) => this.lanelets.get(id))
+        .filter((l): l is Lanelet => !!l && l.id !== inId);
+      const inCentre = inLane.centre, outCentre = outLane.centre;
+      const turnResult = bulb
+        ? bulbTurnPath(inCentre, outCentre, surfaceOf(), { x: node.x, y: node.y }, BULB_TURN_RADIUS)
+        : node.uturn === inLane.segment && turn === 'uturn' && node.incident.length === 2
+          ? medianUturnPath(inCentre, outCentre, surfaceOf())
+          : turnPath(inCentre, outCentre, surfaceOf(), waiting, {
+            fromRoadEnd: inLane.from !== undefined && doc.mapEdge(inLane.from),
+            toRoadEnd: outLane.to !== undefined && doc.mapEdge(outLane.to),
+          }, turns);
+      const path = turnResult.path;
+      const lanelet: Lanelet = {
+        id: cid,
+        kind: 'connector',
+        centre: path,
+        length: path.length,
+        speedLimit: Math.min(inLane.speedLimit, outLane.speedLimit) * turnSpeedFactor(turn),
+        controlled: false,
+        node: nodeId,
+        fromLane: inId,
+        toLane: outId,
+        turn,
+        group: groupBySegment.get(inLane.segment as SegmentId) ?? 0,
+      };
+      this.lanelets.set(cid, lanelet);
+      this.connectors.set(cid, {
+        id: cid,
+        lanelet: cid,
+        node: nodeId,
+        fromLane: inId,
+        toLane: outId,
+        inSegment: inLane.segment as SegmentId,
+        outSegment: outLane.segment as SegmentId,
+        turn,
+        carried,
+        group: lanelet.group ?? 0,
+        length: path.length,
+        maxBodyClass: turnResult.maxBodyClass,
+      });
+      push(this.exits, inId, cid);
+      connectorIds.push(cid);
+    };
+
+    for (const inId of inbound) {
+      const inLane = this.lanelets.get(inId);
+      if (!inLane || inLane.segment === undefined) continue;
+      const inDir = endDirection(inLane.centre);
+      const incomingSegment = doc.requireSegment(inLane.segment);
+      const rules = inLane.from === incomingSegment.a ? incomingSegment.section?.turnsForward : incomingSegment.section?.turnsBackward;
+      const rule = rules?.[inLane.laneIndex ?? 0];
+      const authored = rule !== undefined && rule !== 'all';
+      // The player's own connections for this lane (docs/VIAS.md V4,
+      // `roads/connectors.ts`): exactly those, when any is still valid;
+      // a movement the node bans stays banned.
+      const manual = linksOf(node.laneLinks, inLane.segment, inLane.laneIndex ?? 0);
+      if (manual.length) {
+        let made = 0;
+        for (const link of manual) {
+          const outId = outbound.find((id) => {
+            const l = this.lanelets.get(id);
+            return l?.segment === link.to && (l.laneIndex ?? 0) === link.toLane;
+          });
+          const outLane = outId === undefined ? undefined : this.lanelets.get(outId);
+          if (!outId || !outLane) continue;
+          if (node.blockedMovements.includes(movementKey(inLane.segment, link.to))) continue;
+          const isReverse = outLane.segment === inLane.segment;
+          const turn = isReverse ? 'uturn' : classifyTurn(inDir, tangentAtStart(outLane.centre));
+          const carried = !isReverse && road !== null && road.includes(inLane.segment) && road.includes(link.to);
+          addConnector(inId, inLane, outId, outLane, turn, carried);
+          made++;
+        }
+        if (made > 0) continue;
+      }
+      const legal: { outId: LaneletId; outLane: Lanelet; turn: TurnKind; carried: boolean }[] = [];
+      // U-turns the lane-count rule above set aside. They come back only for
+      // a lane that has nothing else: where two roads both run back to the
+      // same node (a lens of two curves), EVERY movement classifies as a
+      // U-turn, and dropping them all left the lane with no exit at all - a
+      // car driving into a node it can never leave (the fuzzer's
+      // `deadLanelet`).
+      const dropped: typeof legal = [];
+
+      for (const outId of outbound) {
+        const outLane = this.lanelets.get(outId);
+        if (!outLane || outLane.segment === undefined) continue;
+
+        // A movement back down the segment it came from is a U-turn; allow it
+        // only where there is nowhere else to go.
+        const isReverse = outLane.segment === inLane.segment;
+        const outDir = tangentAtStart(outLane.centre);
+        const turn = isReverse ? 'uturn' : classifyTurn(inDir, outDir);
+        if (!laneTurnAllowed(rule, turn)) continue;
+        // The road the node is ON carries its lanes across, however it bends.
+        const carried = !isReverse && road !== null &&
+          road.includes(inLane.segment) && road.includes(outLane.segment);
+        const inSegment = doc.requireSegment(inLane.segment);
+        const inLanes = travelLanes(
+          roadProfile(inSegment.type, inSegment.lanes, inSegment.direction, inSegment.section, inSegment.parking),
+          inSegment.direction,
+        );
+        const outSegment = doc.requireSegment(outLane.segment);
+        const outLanes = travelLanes(
+          roadProfile(outSegment.type, outSegment.lanes, outSegment.direction, outSegment.section, outSegment.parking),
+          outSegment.direction,
+        );
+        if (node.blockedMovements.includes(movementKey(inLane.segment, outLane.segment))) continue;
+        if (turn === 'uturn' && outbound.length > inLanes) {
+          dropped.push({ outId, outLane, turn, carried });
+          continue;
+        }
+        legal.push({ outId, outLane, turn, carried });
+        const receivesAuthoredTurn = turn === 'left' ? (outLane.laneIndex ?? 0) === 0 :
+          turn === 'right' ? (outLane.laneIndex ?? 0) === outLanes - 1 :
+            (outLane.laneIndex ?? 0) === (inLane.laneIndex ?? 0);
+        if (authored ? receivesAuthoredTurn : laneIsPlausible(inLane, outLane, carried ? 'through' : turn, inLanes, outLanes)) {
+          addConnector(inId, inLane, outId, outLane, turn, carried);
+        }
+      }
+
+      // A wide road may feed a narrower exit. Strict lane matching is useful
+      // where alternatives exist, but it must never leave an outer lane with
+      // no route at all: vehicles spawned there would reach a green signal
+      // with no connector to request. Merge that lane onto the best legal
+      // outbound path only when the normal pairing produced none.
+      if (this.exitsOf(inId).length === 0 && !legal.length) legal.push(...dropped);
+      if (this.exitsOf(inId).length === 0 && legal.length) {
+        legal.sort((a, b) =>
+          fallbackTurnRank(a.turn) - fallbackTurnRank(b.turn) ||
+          (a.outLane.laneIndex ?? 0) - (b.outLane.laneIndex ?? 0) ||
+          a.outId.localeCompare(b.outId),
+        );
+        const fallback = legal[0]!;
+        // A lane that merges into the road it is on is still that road:
+        // losing `carried` here made the dropped lane give way at a node of
+        // three legs, and the lane beside it never had to let it in.
+        addConnector(inId, inLane, fallback.outId, fallback.outLane, fallback.turn, fallback.carried);
+      }
+    }
+
+    // A U-turn through the median (docs/VIAS.md V8, retorno): from the
+    // inner lane of the road it serves, by the median, back the other way -
+    // swept like any turn, so only what a body fits is driven (`maxBodyClass`).
+    if (node.uturn !== undefined && node.incident.length === 2) {
+      for (const inId of inbound) {
+        const inLane = this.lanelets.get(inId);
+        if (!inLane || inLane.segment !== node.uturn || (inLane.laneIndex ?? 0) !== 0) continue;
+        for (const outId of outbound) {
+          const outLane = this.lanelets.get(outId);
+          if (outLane?.segment === inLane.segment) addConnector(inId, inLane, outId, outLane, 'uturn');
+        }
+      }
+    }
+
+    // Signalise anything with three or more legs that carries real traffic.
+    const signalised = shouldSignalise(node.control, node.incident, doc);
+    this.junctions.set(nodeId, {
+      node: nodeId,
+      groups,
+      connectors: connectorIds,
+      inbound,
+      signalised,
+      control: node.control,
+    });
+    next.set(key, {
+      node: nodeId,
+      turns: turns.settle(),
+      groups,
+      signalised,
+      connectors: connectorIds.map((id) => this.connectors.get(id)!),
+      lanelets: connectorIds.map((id) => this.lanelets.get(id)!),
+    });
+  }
+
+  /**
+   * The connectors of the junction at `node` ALONE, made as the whole graph's
+   * build makes them (`buildJunction`): from the link lanelets of the roads
+   * that meet there (`buildSegmentLinks`) and the junction's own surface - all
+   * a junction's connectors read (the turns stay on the plate and its legs,
+   * the lanes that wait are the ones arriving there). What asks whether a
+   * movement of one junction can be driven asks this, never a graph of the
+   * whole map: `editor/streetObjects.ts` built one, and walked every
+   * connector of it, on every click of the U-turn tool.
+   * @perInput Runs once a question about one junction: it reads that junction and its roads.
+   */
+  static junctionConnectors(doc: RoadDoc, net: Network, nodeId: NodeId): { readonly connectors: readonly Connector[]; readonly centres: ReadonlyMap<ConnectorId, Polyline> } {
+    const node = doc.node(nodeId);
+    if (!node) return { connectors: [], centres: new Map() };
+    const graph = new LaneletGraph();
+    for (const segId of [...new Set(node.incident)].sort((a, b) => a - b)) graph.buildSegmentLinks(doc, net, segId, new Map(), new Map());
+    graph.buildJunction(doc, net, nodeId, node, new Map(), new Map(), () => undefined);
+    const connectors = (graph.junctions.get(nodeId)?.connectors ?? []).map((id) => graph.connectors.get(id)!);
+    return { connectors, centres: new Map(connectors.map((c) => [c.id, graph.lanelets.get(c.lanelet)!.centre])) };
+  }
+
 
   /**
    * The link lanelets of one segment, both directions, in the order of
