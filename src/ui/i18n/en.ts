@@ -844,6 +844,7 @@ export const EN: Dictionary = {
   'health.copyFailed': 'Could not copy: the browser refused the clipboard',
   'health.system.panels': 'panels',
   'health.system.camera': 'camera',
+  'health.system.growCity': 'city growth',
   'health.system.topology': 'topology',
   'health.system.simulation': 'simulation',
   'health.system.roadNetwork': 'road network',

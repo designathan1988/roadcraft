@@ -25,7 +25,8 @@ function update(graph: LaneletGraph, doc: RoadDoc, net: Network): { asked: numbe
   const plan = graph.turnPlan;
   const asks = structuredClone([...plan.asks]);
   const surfaces = new Map<string, JunctionSurface>();
-  for (const [key, ask] of asks) plan.chosen.set(key, structuredClone(chooseTurnOf(ask, surfaces)) as ChosenTurn);
+  const rings = structuredClone(plan.surfaces);
+  for (const [key, ask] of asks) plan.chosen.set(key, structuredClone(chooseTurnOf(ask, rings.get(ask.surfaceKey)!, surfaces)) as ChosenTurn);
   const redone = plan.provisional.size;
   graph.redoProvisional(doc, net);
   expect(graph.turnPlan).toBeNull();

@@ -832,6 +832,7 @@ export const PT_BR: Dictionary = {
   'health.copyFailed': 'Não foi possível copiar: o navegador recusou a área de transferência',
   'health.system.panels': 'painéis',
   'health.system.camera': 'câmera',
+  'health.system.growCity': 'crescimento da cidade',
   'health.system.topology': 'topologia',
   'health.system.simulation': 'simulação',
   'health.system.roadNetwork': 'rede viária',

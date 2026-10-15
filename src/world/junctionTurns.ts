@@ -17,14 +17,20 @@ export interface ChosenTurn {
  * would sweep: the turn chosen there is the one chosen here.
  */
 export interface TurnAsk {
+  /** The lanes' own lists (`Polyline.xy`, never changed once made): not copied here, once by the message. */
   readonly inXY: Float64Array;
   readonly outXY: Float64Array;
   readonly waiting: readonly Float64Array[];
+  /** The junction's surface, kept once a key in the plan (`TurnPlan.surfaces`). */
   readonly surfaceKey: string;
-  readonly centre: { readonly x: number; readonly y: number };
-  readonly rings: readonly Float64Array[];
   readonly fromRoadEnd: boolean;
   readonly toRoadEnd: boolean;
+}
+
+/** A junction's surface as a worker makes it again: its centre and its rings as flat x, y lists. */
+export interface SurfaceRings {
+  readonly centre: { readonly x: number; readonly y: number };
+  readonly rings: readonly Float64Array[];
 }
 
 /**
@@ -36,6 +42,8 @@ export interface TurnAsk {
 export class TurnPlan {
   recording = true;
   readonly asks = new Map<string, TurnAsk>();
+  /** Each junction surface the asks stand on, once a key. DO NOT copy its rings into every ask: a junction has dozens of turns. */
+  readonly surfaces = new Map<string, SurfaceRings>();
   readonly chosen = new Map<string, ChosenTurn>();
   /** The junctions built with a stand-in, and the turns they had. */
   readonly provisional = new Map<NodeId, JunctionTurns>();
@@ -80,9 +88,13 @@ export class JunctionTurns {
   }
 
   /** A turn left to be chosen off the page: what it is chosen from, asked once a key; the junction built again after. */
-  defer(key: string, ask: () => TurnAsk): void {
+  defer(key: string, ask: () => TurnAsk, surface: () => SurfaceRings): void {
     const plan = this.plan!;
-    if (!plan.asks.has(key)) plan.asks.set(key, ask());
+    if (!plan.asks.has(key)) {
+      const made = ask();
+      plan.asks.set(key, made);
+      if (!plan.surfaces.has(made.surfaceKey)) plan.surfaces.set(made.surfaceKey, surface());
+    }
     this.provisional = true;
     if (this.node !== null) plan.provisional.set(this.node, this);
   }

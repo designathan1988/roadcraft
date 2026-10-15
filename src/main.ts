@@ -2768,8 +2768,9 @@ function frame(now: number): void {
   // gesture finishes so agents never rebuild against every intermediate shape.
   // The frame that first draws an edit is held the same way.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
-  // A generated city being built (`generateCity`).
+  // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
   growCity();
+  frameTimer.mark('growCity');
   // The pistol or the bomb chosen: their effects and the physics the bodies
   // fall with loaded now, while the player aims (`SceneHandle.effects`), not
   // in every session.
@@ -2802,8 +2803,11 @@ function frame(now: number): void {
     // than smooth enough and avoids repeatedly rebuilding routes, signals and
     // spatial indexes for pointer samples that will be superseded immediately.
     if (!mover.dragging || mover.previewDue(now, scene.stats.rebuildMs)) {
+      // The traffic's topology is brought up by `TopologyCatchUp` from the next frame, the simulation held
+      // meanwhile: its turns and conflict pairs chosen by the workers (`conflictPool.ts`). DO NOT rebuild it
+      // here, whole and on the page: every frame of a generated city that laid lots or furniture rebuilt
+      // the town's topology in that frame (5.8 s at 2 560 m, 2026-10-15), and the workers never ran.
       net.rebuild();
-      if (!mover.dragging && sim.topologyRevision !== net.trafficRevision) rebuildSimulationTopology();
     }
   }
   frameTimer.mark('roadNetwork');

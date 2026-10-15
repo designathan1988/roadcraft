@@ -1,5 +1,5 @@
 import type { PairMeasurer, SweepSamples } from '@world/conflictTable';
-import type { ChosenTurn, TurnAsk } from '@world/junctionTurns';
+import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 
 /**
  * THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. Each pair of
@@ -81,7 +81,7 @@ export class ConflictPool implements PairMeasurer {
    * shares in the order asked - a junction's turns come one after another, so they mostly go to one
    * worker - each share with its junctions' surfaces once, the asks pointing at them.
    */
-  chooseTurns(asks: readonly TurnAsk[]): Promise<readonly ChosenTurn[]> {
+  chooseTurns(asks: readonly TurnAsk[], rings: ReadonlyMap<string, SurfaceRings>): Promise<readonly ChosenTurn[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
     const per = Math.ceil(asks.length / lanes.length);
@@ -95,7 +95,8 @@ export class ConflictPool implements PairMeasurer {
         if (at === undefined) {
           at = surfaces.length;
           index.set(a.surfaceKey, at);
-          surfaces.push({ centre: a.centre, rings: a.rings, key: a.surfaceKey });
+          const r = rings.get(a.surfaceKey)!;
+          surfaces.push({ centre: r.centre, rings: r.rings, key: a.surfaceKey });
         }
         return { surface: at, inXY: a.inXY, outXY: a.outXY, waiting: a.waiting, fromRoadEnd: a.fromRoadEnd, toRoadEnd: a.toRoadEnd };
       });

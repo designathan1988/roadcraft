@@ -239,6 +239,11 @@ const TILE_BIAS = 1 << 15;
  * while its tiles are.
  */
 const CHUNK = 4;
+/**
+ * Tiles a batch asked of the workers at once (`roadTilePool.ts`): enough to keep every worker busy
+ * for a while, few enough that the shapes waiting to be read stay small.
+ */
+const SHAPE_BATCH = 64;
 
 /** One ring of input, with its box and its digest, measured once per build. */
 interface Input {
@@ -923,25 +928,39 @@ export function* roadSurfaceSteps(
     // shapes the page makes, while this thread draws; each vertex read here after. DO NOT cut and
     // triangulate a city's tiles on the page: two thirds of its roads' build (2026-10-15).
     const missing = tiles.filter((t) => t.bundle === null);
-    let shaped: Map<string, SurfaceShape>[] | null = null;
-    if (tiler && missing.length) {
+    /** Asks the tiler for the shapes of `SHAPE_BATCH` tiles from `from` on; the answer lands in the record it returns. */
+    const ask = (from: number): { readonly from: number; readonly answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } } => {
       const answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } = {};
-      const tileSpecs = specs.map(tileSpecOf);
-      tiler.shapes(missing.map((t) => ({ rect: t.rect, into: polysOf(t.into) })), tileSpecs).then(
+      tiler!.shapes(missing.slice(from, from + SHAPE_BATCH).map((t) => ({ rect: t.rect, into: polysOf(t.into) })), tileSpecs).then(
         (shapes) => { answer.shapes = shapes; },
         (error: unknown) => { console.warn('[roads] the road tile workers failed; the tiles are built on the page', error); answer.failed = true; },
       );
-      while (!answer.shapes && !answer.failed) { tiler.check(); yield 'wait'; }
-      shaped = answer.shapes ?? null;
-    }
-    for (const [k, tile] of missing.entries()) {
-      const tileAt = performance.now();
-      tile.bundle = shaped ? bundleOf(shaped[k]!, specs) : buildTile(tile.into, tile.rect, specs);
-      tilesMs += performance.now() - tileAt;
-      built++;
-      rebuilt.push(tile.rect);
-      reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle);
-      yield;
+      return { from, answer };
+    };
+    const tileSpecs = specs.map(tileSpecOf);
+    // A batch at a time, the next asked before this one is read: the workers shape it while the page
+    // reads the heights of this one. DO NOT ask for every tile at once: the shapes of a whole city held
+    // together, before any was read, took the page past 7 GB (2026-10-15).
+    let job = tiler && missing.length ? ask(0) : null;
+    let failed = false;
+    for (let from = 0; from < missing.length; from += SHAPE_BATCH) {
+      let shaped: Map<string, SurfaceShape>[] | null = null;
+      if (job && !failed) {
+        while (!job.answer.shapes && !job.answer.failed) { tiler!.check(); yield 'wait'; }
+        shaped = job.answer.shapes ?? null;
+        if (!shaped) failed = true;
+        job = !failed && from + SHAPE_BATCH < missing.length ? ask(from + SHAPE_BATCH) : null;
+      }
+      for (let k = from; k < Math.min(missing.length, from + SHAPE_BATCH); k++) {
+        const tile = missing[k]!;
+        const tileAt = performance.now();
+        tile.bundle = shaped ? bundleOf(shaped[k - from]!, specs) : buildTile(tile.into, tile.rect, specs);
+        tilesMs += performance.now() - tileAt;
+        built++;
+        rebuilt.push(tile.rect);
+        reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle);
+        yield;
+      }
     }
     for (const tile of tiles) {
       const { value, ix, iy } = tile;

@@ -1719,16 +1719,12 @@ export function createSceneRenderer(
     // new one is complete. A job an edit overtakes is dropped.
     // A map being opened is built behind its curtain, in slices too: the
     // old world is not drawn meanwhile, nothing is (`beginLoad`).
-    const sliced = !roads || local || !reveal.opened;
-    const steps = worldSteps(net, local ? blocks : null, started, sliced);
-    if (!sliced) {
-      let step = steps.next();
-      while (!step.done) step = steps.next();
-      worldJob = null;
-    } else {
-      worldJob = steps;
-      worldJobFresh = true;
-    }
+    // A change of much of the map while the game is open (a generated city, a map opened over another)
+    // is sliced too, its tiles shaped by the workers (`roadTilePool.ts`). DO NOT build it in one go: the
+    // roads of a generated city were built in the frame of the change, on the page, and the workers never
+    // ran (2026-10-15).
+    worldJob = worldSteps(net, local ? blocks : null, started, true);
+    worldJobFresh = true;
   };
 
   /**

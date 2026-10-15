@@ -502,8 +502,8 @@ export function turnPath(inCentre: Polyline, outCentre: Polyline, surface: Junct
   };
   // Off the page (`TurnPlan`): asked of the workers; the junction stands on the old shape until built again with the answer.
   if (turns?.deferring) {
-    turns.defer(key, () => ({ inXY: inCentre.xy.slice(), outXY: outCentre.xy.slice(), waiting: waiting.map((lane) => lane.centre.xy.slice()),
-      surfaceKey: surface.key, centre: surface.centre, rings: surface.flatRings(), ...ends }));
+    turns.defer(key, () => ({ inXY: inCentre.xy, outXY: outCentre.xy, waiting: waiting.map((lane) => lane.centre.xy), surfaceKey: surface.key, ...ends }),
+      () => ({ centre: surface.centre, rings: surface.flatRings() }));
     return { path: bezierTurn(inCentre, outCentre, FALLBACK_HANDLE), maxBodyClass: HEAVY };
   }
   // The search already knows the largest body the chosen path fits: it is the

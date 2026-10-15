@@ -45,7 +45,7 @@ self.onmessage = (event: MessageEvent<PairsAsk | TurnsAsk>) => {
       const turns: ChosenTurn[] = [];
       for (const t of ask.turns) {
         const s = ask.surfaces[t.surface]!;
-        turns.push(chooseTurnOf({ ...t, surfaceKey: s.key, centre: s.centre, rings: s.rings }, made));
+        turns.push(chooseTurnOf({ ...t, surfaceKey: s.key }, s, made));
         beat();
       }
       self.postMessage({ id: ask.id, turns });

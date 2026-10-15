@@ -668,7 +668,7 @@ export class SimWorld {
     if (plan && plan.asks.size > 0) {
       const keys = [...plan.asks.keys()];
       const answer: { turns?: readonly ChosenTurn[]; failed?: boolean } = {};
-      measurer!.chooseTurns!(keys.map((k) => plan.asks.get(k)!)).then(
+      measurer!.chooseTurns!(keys.map((k) => plan.asks.get(k)!), plan.surfaces).then(
         (turns) => { answer.turns = turns; },
         (error: unknown) => { console.warn('[traffic] the turn workers failed; the turns are chosen on the page', error); answer.failed = true; },
       );

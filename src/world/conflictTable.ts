@@ -1,5 +1,5 @@
 import { m } from './units';
-import type { ChosenTurn, TurnAsk } from './junctionTurns';
+import type { ChosenTurn, SurfaceRings, TurnAsk } from './junctionTurns';
 
 /**
  * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
@@ -275,5 +275,5 @@ export interface PairMeasurer {
    * in the order asked; rejected when it cannot (the turns are then chosen on the page,
    * `LaneletGraph.redoProvisional`). Absent: every turn is chosen on the page.
    */
-  chooseTurns?(asks: readonly TurnAsk[]): Promise<readonly ChosenTurn[]>;
+  chooseTurns?(asks: readonly TurnAsk[], surfaces: ReadonlyMap<string, SurfaceRings>): Promise<readonly ChosenTurn[]>;
 }
