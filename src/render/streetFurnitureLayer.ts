@@ -259,6 +259,16 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
       for (const id of this.allKeys(source)) out.add(id);
       return;
     }
+    // The landscaping's entry names its items (`RoadDoc.addLandscapeMany`), and an item reads only its own
+    // record of the landscaping: those, and none round them. DO NOT look round each of an entry's
+    // rectangles: a generated city's one entry of 11,000 items asked the cells round every one of them.
+    if (change.kind === 'landscape' && change.ids) {
+      for (const id of change.ids) {
+        const item = source.net.doc.landscape.get(id);
+        if (!item || this.wanted(item)) out.add(id);
+      }
+      return;
+    }
     const pad = this.pads[change.kind] ?? 0;
     for (const rect of change.rects) {
       const area: ChangeRect = grow(rect, pad);

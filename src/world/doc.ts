@@ -682,14 +682,30 @@ export class RoadDoc {
 
   /** Places one landscaping item where `snapLandscape` put it. */
   addLandscape(kind: LandscapeKind, at: { x: number; y: number }, extra: { signType?: SignType; text?: string; planted?: number } = {}): LandscapeItem {
-    const on = clampToMap(at);
-    const text = extra.text?.slice(0, SIGN_TEXT_MAX);
-    const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
-      ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
-      ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
-    this.putLandscapeRecord(item);
-    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [item.id] });
-    return item;
+    return this.addLandscapeMany([{ kind, at, extra }])[0]!;
+  }
+
+  /**
+   * Places many items at once (a generated city's furniture and street names), in their order, written
+   * in the diary as ONE entry with each item's rectangle and id. DO NOT place a batch item by item with
+   * `addLandscape`: each wrote its own entry, a generated city's 11,000 overflowed the diary's kept
+   * entries of the kind (`changes.ts` KEPT), and every reader of the landscaping was told "everything
+   * changed" and worked out the whole map again - the street furniture, the signs, the poles, the
+   * walkers' footways - instead of the items placed.
+   */
+  addLandscapeMany(list: readonly { readonly kind: LandscapeKind; readonly at: { x: number; y: number };
+    readonly extra?: { signType?: SignType; text?: string; planted?: number } }[]): LandscapeItem[] {
+    const items = list.map(({ kind, at, extra = {} }) => {
+      const on = clampToMap(at);
+      const text = extra.text?.slice(0, SIGN_TEXT_MAX);
+      const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
+        ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
+        ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
+      this.putLandscapeRecord(item);
+      return item;
+    });
+    if (items.length) this.changes.record('landscape', items.map((item) => rectAround([item], ITEM_PAD)!), { ids: items.map((item) => item.id) });
+    return items;
   }
 
   removeLandscape(id: number): boolean {

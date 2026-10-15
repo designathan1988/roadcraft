@@ -137,6 +137,22 @@ describe('the street furniture kept from the diary', () => {
     kept.dispose();
   }, 20_000);
 
+  it('is the furniture and the grass made from nothing when items come in batches (one diary entry each)', () => {
+    // As the city generator places its furniture (`RoadDoc.addLandscapeMany`): one entry naming its items.
+    const batch = (town: Town, rng: Rng): void => {
+      const n = 1 + Math.floor(rng.float() * 30);
+      town.doc.addLandscapeMany(Array.from({ length: n }, () => {
+        const kind = KINDS[Math.floor(rng.float() * KINDS.length)]!;
+        const at = { x: rng.float() * span, y: rng.float() * span };
+        const snap = snapLandscape(town.net, town.doc.landscape.values(), kind, at, m(30));
+        return { kind, at: snap.ok ? snap.at : at };
+      }));
+      town.settle();
+    };
+    proveIncremental({ source: new Town(), make: () => furnitureProduct(kit), edits: [...edits, batch, batch], steps: 60, seed: 0xba7c });
+    proveIncremental({ source: new Town(), make: () => meadowProduct(kit), edits: [...edits, batch, batch], steps: 40, seed: 0xba7d });
+  });
+
   it('places again only the items an edit reached', () => {
     const town = new Town();
     const rng = new Rng(3);

@@ -88,9 +88,11 @@ export function* greenCitySteps(doc: RoadDoc, net: Network, seed: number): Gener
   const power = (yield* layPowerLinesSteps(doc, net, doc.segments.keys())) > 0;
   yield;
   const pieces = furnitureFor(net, doc.segments.keys(), 'complete', doc.landscape.values(), power, false);
-  for (const piece of pieces) doc.addLandscape(piece.kind, piece.at);
+  // One diary entry for all of them (`addLandscapeMany`). DO NOT add them one by one: 11,000 entries told
+  // every reader of the landscaping that everything changed.
+  doc.addLandscapeMany(pieces.map((piece) => ({ kind: piece.kind, at: piece.at })));
   // Every street named (V8).
-  for (const name of nameFor(net, doc.segments.keys())) doc.addLandscape('streetname', name.at, { text: name.text });
+  doc.addLandscapeMany(nameFor(net, doc.segments.keys()).map((name) => ({ kind: 'streetname' as const, at: name.at, extra: { text: name.text } })));
   return { squares: squares.length, pieces: pieces.length };
 }
 
