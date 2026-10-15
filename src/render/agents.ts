@@ -31,7 +31,8 @@ import {
 import type { SimWorld } from '@sim/world';
 import type { Vehicle as SimVehicle } from '@sim/vehicles/state';
 import type { SegmentId } from '@world/ids';
-import { type ChangeKind, ChangeSweep } from '@world/changes';
+import type { ChangeKind } from '@world/changes';
+import { ChangeSweep } from '@world/changeSweep';
 import { m, perM } from '@world/units';
 import { hypot2 } from '@core/scalar';
 import { DT, FLEET_CEILING, PED_CEILING } from '@sim/params';

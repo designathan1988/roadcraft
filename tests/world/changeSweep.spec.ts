@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ChangeKind, type ChangeRect, ChangeJournal, ChangeSweep } from '@world/changes';
+import { type ChangeKind, type ChangeRect, ChangeJournal } from '@world/changes';
+import { ChangeSweep } from '@world/changeSweep';
 import { Rng } from '@core/rng';
 
 /**
