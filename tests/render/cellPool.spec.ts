@@ -37,7 +37,7 @@ afterEach(() => {
 describe('a cell job no longer wanted', () => {
   it('waiting, never starts; begun, is dropped by its worker and the next one starts', () => {
     (globalThis as { Worker?: unknown }).Worker = FakeWorker;
-    const pool = new CellPool(() => boxes, () => '{}');
+    const pool = new CellPool(() => boxes, () => () => '{}');
     const done: number[] = [];
     // The same cell: the same lane, one job at a time on it.
     const a = pool.run('cell', '0,0', [], env, () => done.push(a));

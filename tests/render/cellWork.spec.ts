@@ -79,7 +79,7 @@ describe('a cell put together off the page', () => {
       const doc = grownTown();
       const town = [...doc.buildings.all()];
       expect(town.length).toBeGreaterThan(20);
-      const pool = new CellPool(() => boxes, (e) => texts.get(e.key)!, false);
+      const pool = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
       const env = { groundAt, naturalAt, ...(paved ? { pavedAt: paved } : {}) };
       /** The cells of `list` both ways: emitted and joined here, and by the pool. */
       const compare = (list: readonly Building[]): void => {

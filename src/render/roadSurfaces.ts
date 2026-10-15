@@ -25,6 +25,7 @@ import { PAINT_RISE, markingQuads, paintMaterial } from './markings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import { mergeTiles } from './mesh/surfaceTiles';
+import { cancelWarm, warmLooseAhead } from './uploads';
 import {
   clipToRect,
   disposeMesh,
@@ -345,7 +346,9 @@ export function* roadSurfaceSteps(
   let chunksKept = 0;
   const chunks = reuse?.chunks;
   const usedChunks = new Set<string>();
-  const retire = (mesh: Mesh): void => { if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
+  // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`):
+  // drawn there anyway, its geometry went back to the GPU with no owner left to free it.
+  const retire = (mesh: Mesh): void => { cancelWarm([mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
   const group = new Group();
   group.name = 'road-network';
   const meshes: Mesh[] = [];
@@ -945,6 +948,11 @@ export function* roadSurfaceSteps(
           if (known) retire(known.mesh);
           mesh = mergeTiles(list, spec.options);
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
+          // Sent to the GPU ahead, a few a frame (`warmLooseAhead`), so its arrays let go at once
+          // (`mesh/gpuOnly.ts`). DO NOT wait for the camera to frame it: a block out of view was never
+          // uploaded and kept its copy on the CPU - 476 MB of a 2 560 m city's heap (asphalt, footway,
+          // kerb, verge, kerb ramps; 2026-10-15), and the whole map's would not fit a tab.
+          if (mesh) void warmLooseAhead([mesh]);
           if (mesh) chunks?.set(key, { parts: list, mesh });
           else chunks?.delete(key);
           chunksMerged++;

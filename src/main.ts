@@ -1,4 +1,7 @@
 import { profileOf } from '@world/roads/profile';
+import { profiler } from '@core/profiler';
+import { mountProfilerHud } from '@ui/profilerHud';
+import { hookProfiler } from '@render/profilerHooks';
 import { hasTransit } from '@world/transit';
 import { mountCompass, northOnScreen, northTurn, type Compass } from '@ui/v2/compass';
 import { flipProfile, streetChain } from '@world/roads/streetChain';
@@ -690,6 +693,38 @@ function registerSimProducts(): void {
 }
 registerSimProducts();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw, engine);
+// The surgical profiler (`core/profiler.ts`): its hooks into three and WebGL, the engine's refreshes
+// timed and checked against the diary, its HUD shown from the start (Shift+F9).
+const profileFrameEnd = wireProfiler();
+function wireProfiler(): () => void {
+  hookProfiler(scene.gl);
+  engine.watch(() => doc.changes.version);
+  engine.onRefresh = (name, phase, ms, keys, idle) => profiler.product({ name, phase, ms, keys, idle });
+  mountProfilerHud(profiler, { visible: import.meta.env.DEV });
+  const supported = typeof PerformanceObserver !== 'undefined' ? PerformanceObserver.supportedEntryTypes : [];
+  if (supported.includes('longtask')) {
+    new PerformanceObserver((list) => { for (const entry of list.getEntries()) profiler.longTask(entry.duration); }).observe({ type: 'longtask', buffered: false });
+  }
+  if (supported.includes('measure')) {
+    new PerformanceObserver((list) => {
+      for (const m of list.getEntries()) if (m.name.startsWith('hitch:')) profiler.step(`passo ${m.name.slice(6)}`, m.duration);
+    }).observe({ type: 'measure', buffered: false });
+  }
+  /** The diary's serial the profiler last read: each frame tells it the changes since. */
+  let profiledSerial = doc.changes.version;
+  return (): void => {
+    const serial = doc.changes.version;
+    if (serial > profiledSerial) {
+      for (const c of doc.changes.latest(Math.min(serial - profiledSerial, 64))) profiler.change({ kind: c.kind, cause: c.cause, ids: c.ids?.length ?? 0 });
+    }
+    profiledSerial = serial;
+    profiler.heap((performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize);
+    profiler.gauges.set('drawCalls', scene.stats.drawCalls);
+    profiler.gauges.set('gpuGeometries', scene.gl.info.memory.geometries);
+    profiler.gauges.set('gpuTextures', scene.gl.info.memory.textures);
+    profiler.endFrame();
+  };
+}
 
 // The traffic's topology is not built here: it is built a slice a frame while
 // the opening puts the town together (`TopologyCatchUp`, its frames not yet
@@ -2707,6 +2742,7 @@ let worldShown = false;
  */
 function frame(now: number): void {
   if (!booted) return;
+  profiler.beginFrame();
   // Each system's time in this frame (`core/health.ts`): a long frame is told with the systems that took it.
   frameTimer.begin();
   beginFrameWork();
@@ -2805,6 +2841,8 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
+  for (const [system, ms] of timed.systems) profiler.step(`quadro ${system}`, ms);
+  profileFrameEnd();
 
   // Keep animating while anything is moving; otherwise settle. The clock
   // running over a town where nothing the simulation moves can be seen (no
@@ -4224,6 +4262,8 @@ const healthPanel = mountHealthPanel({
 
 // Diagnostic surface for browser-driven checks.
 (window as unknown as { __roadcraft: unknown }).__roadcraft = {
+  /** The surgical profiler's numbers (`core/profiler.ts`), as its HUD shows them. */
+  profiler: () => profiler.view(),
   /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
   ledger: () => Object.fromEntries(engine.ledger),
   doc,

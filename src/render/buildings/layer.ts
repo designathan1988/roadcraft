@@ -195,13 +195,18 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /**
    * An entry's record as text, for a job's message (`CellPool`): the building as sent, or, under a
-   * key cut open (`id|floor|side`), cut open at that floor from that side. Written for the message
-   * and not kept. DO NOT keep the texts cut open in a map with a cap: a cache that drops and remakes.
+   * key cut open (`id|floor|side`), cut open at that floor from that side. The record is taken when
+   * the job is asked (the store's records are read-only: `store.ts` OWNERSHIP) and written for the
+   * message when it is sent, not kept. DO NOT keep the texts cut open in a map with a cap: a cache that
+   * drops and remakes.
    */
-  const textOf = (entry: CellEntry): string => {
+  const textOf = (entry: CellEntry): () => string => {
     const b = sent.get(entry.key)!;
-    if (!entry.key.includes('|')) return JSON.stringify(b);
-    const [, level, dir] = entry.key.split('|').map(Number) as [number, number, number];
+    return () => recordText(b, entry.key);
+  };
+  const recordText = (b: Building, key: string): string => {
+    if (!key.includes('|')) return JSON.stringify(b);
+    const [, level, dir] = key.split('|').map(Number) as [number, number, number];
     const turn = dir * (Math.PI / 4);
     // Opened, a signature building is drawn by the shared kit with its rooms and furniture.
     const { blueprint: _sig, ...plain } = cutOpen(b, level, { x: Math.cos(turn), y: Math.sin(turn) });

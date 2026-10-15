@@ -24,6 +24,8 @@
 
 /** An input of the engine that is not the diary (the view, the clock, the quality): a serial moved when it changes. */
 export class EngineInput {
+  /** Moved by every input's `touch`: part of the engine's stamp (`Engine.watch`). */
+  static epoch = 0;
   private serialNow = 0;
 
   constructor(readonly name: string) {}
@@ -36,6 +38,7 @@ export class EngineInput {
   /** It changed. */
   touch(): void {
     this.serialNow++;
+    EngineInput.epoch++;
   }
 }
 
@@ -72,6 +75,10 @@ export interface ProductWork {
   total: number;
   /** Refreshes in which it computed anything. */
   busy: number;
+  /** Milliseconds its last refresh took. */
+  ms: number;
+  /** Refreshes in which it computed with no input moved since the phase's last refresh (`watch`): work for nothing. */
+  idle: number;
 }
 
 /**
@@ -84,6 +91,18 @@ export type Phase = 'frame' | 'draw' | 'step';
 
 export class Engine {
   private readonly products: Product[] = [];
+  /** What says an input moved (the diary's serial, the inputs' serials); none: every computing product is taken as needed. */
+  private stamp: (() => number) | null = null;
+  /** Each phase's stamp at its last refresh. */
+  private readonly stampAt = new Map<Phase, number>();
+  /** Told each product's refresh: its time, keys and whether it computed for nothing (the profiler). */
+  onRefresh: ((name: string, phase: Phase, ms: number, keys: number, idle: boolean) => void) | null = null;
+
+  /** Watches the serial of every input the products are told of: a product computing while it stands still is named. */
+  watch(stamp: () => number): void {
+    this.stamp = stamp;
+  }
+
   private readonly phaseOf = new Map<Product, Phase>();
   private readonly orders = new Map<Phase, Product[]>();
   /** Each product's work, by name: the ledger. */
@@ -97,7 +116,7 @@ export class Engine {
     if (this.ledger.has(product.name)) throw new Error(`engine: two products named ${product.name}`);
     this.products.push(product);
     this.phaseOf.set(product, phase);
-    this.ledger.set(product.name, { last: 0, total: 0, busy: 0 });
+    this.ledger.set(product.name, { last: 0, total: 0, busy: 0, ms: 0, idle: 0 });
     this.orders.clear();
     return product;
   }
@@ -117,12 +136,20 @@ export class Engine {
     let order = this.orders.get(phase);
     if (!order) this.orders.set(phase, order = this.sorted().filter((p) => this.phaseOf.get(p) === phase));
     const busy: string[] = [];
+    const stamp = this.stamp ? this.stamp() + EngineInput.epoch : -1;
+    const still = stamp >= 0 && this.stampAt.get(phase) === stamp;
+    this.stampAt.set(phase, stamp);
     for (const product of order) {
+      const at = performance.now();
       const n = product.refresh();
+      const ms = performance.now() - at;
       const work = this.ledger.get(product.name)!;
       work.last = n;
       work.total += n;
+      work.ms = ms;
       if (n > 0) { work.busy++; busy.push(product.name); }
+      if (n > 0 && still) work.idle++;
+      this.onRefresh?.(product.name, phase, ms, n, n > 0 && still);
     }
     this.lastBusy.set(phase, busy);
     return busy;
