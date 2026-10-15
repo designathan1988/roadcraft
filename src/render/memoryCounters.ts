@@ -38,7 +38,8 @@ export function countMemory(root: Object3D): MemoryCounters {
     buffers.add(owner);
     const array = owner.array as (ArrayLike<number> & { byteLength?: number }) | null;
     // Let go after upload: `count` stays (a plain field in three r186).
-    const bytes = array ? array.byteLength ?? array.length * 4 : owner.count * (owner.stride ?? owner.itemSize ?? 1) * 4;
+    const kept = (owner as { keptBytes?: number }).keptBytes;
+    const bytes = array ? array.byteLength ?? array.length * 4 : kept ?? owner.count * (owner.stride ?? owner.itemSize ?? 1) * 4;
     geometryBytes += bytes;
     bytesByName.set(holder, (bytesByName.get(holder) ?? 0) + bytes);
     if (array) {

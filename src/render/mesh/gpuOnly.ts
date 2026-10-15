@@ -11,7 +11,10 @@ type Uploaded = BufferAttribute | InterleavedBuffer;
 const REFILL = 'refillArrays';
 
 function letGo(this: Uploaded): void {
-  (this as { array: ArrayLike<number> | null }).array = null;
+  const self = this as { array: (ArrayLike<number> & { byteLength?: number }) | null; userData?: Record<string, unknown> };
+  // Its size remembered for the memory counters (`memoryCounters.ts`): a byte or a short a value, not always a float.
+  (this as unknown as { keptBytes?: number }).keptBytes = self.array?.byteLength;
+  self.array = null;
 }
 
 /** Lets the arrays of `own` (a mesh's own attributes by name) go once each is on the GPU */
