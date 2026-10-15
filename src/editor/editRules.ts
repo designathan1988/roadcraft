@@ -1,7 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import { COARSE_EPS } from '@core/scalar';
 import type { RoadDoc, RoadSegment } from '@world/doc';
-import type { SegmentId } from '@world/ids';
+import type { NodeId, SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { FLAT_GROUND, type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { Level, halfWidth } from '@world/roadTypes';
@@ -78,7 +78,7 @@ const SAME_PLACE = 1;
 /**
  * The reason to refuse turning `before` into `after`, or null when the edit
  * may stand. `after.net` must be rebuilt for `after.doc`; node and segment ids
- * of `before` keep their meaning in `after` (a working clone, or the same
+ * of `before` keep their meaning in `after` (a working copy, or the same
  * document edited in place).
  */
 export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRefusal | null {
@@ -142,6 +142,24 @@ export function guardRoadEdit(doc: RoadDoc, net: Network, edit: () => boolean):
 /** Segments of `after` that are new, or whose shape, class, structure or end points changed. */
 function changedSegments(before: RoadDoc, after: RoadDoc): SegmentId[] {
   const out: SegmentId[] = [];
+  // The roads the diary names since the two stood equal, and the roads of the
+  // nodes it names: only they can differ. DO NOT walk every road of the map
+  // and write each one out twice as text for every edit and every pause of
+  // the pointer while a road is drawn (the dry run); every road only when the
+  // diary cannot say (two documents not known to have stood equal).
+  const named = after.roadIdsChangedFrom(before);
+  if (named) {
+    const candidates = new Set<SegmentId>();
+    for (const id of named) {
+      if (after.segment(id as SegmentId)) candidates.add(id as SegmentId);
+      for (const sid of after.node(id as NodeId)?.incident ?? []) candidates.add(sid);
+    }
+    for (const id of candidates) {
+      const seg = after.segment(id)!, old = before.segment(id);
+      if (!old || segmentKey(before, old) !== segmentKey(after, seg)) out.push(id);
+    }
+    return out;
+  }
   for (const [id, seg] of after.segments) {
     const old = before.segment(id);
     if (!old || segmentKey(before, old) !== segmentKey(after, seg)) out.push(id);
