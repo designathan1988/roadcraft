@@ -58,18 +58,20 @@ export function bodyOf(w: SimWorld, v: Vehicle): Body | null {
 export function bodiesOverlap(a: Body, b: Body): boolean {
   const dx = b.c.x - a.c.x;
   const dy = b.c.y - a.c.y;
-  for (const axis of [a.u, { x: -a.u.y, y: a.u.x }, b.u, { x: -b.u.y, y: b.u.x }]) {
-    const distance = Math.abs(dx * axis.x + dy * axis.y);
-    const ra = projectedRadius(a, axis);
-    const rb = projectedRadius(b, axis);
-    if (distance >= ra + rb) return false;
-  }
-  return true;
+  // Farther apart than their half-diagonals: no axis needed.
+  const reach = Math.hypot(a.halfLength, a.halfWidth) + Math.hypot(b.halfLength, b.halfWidth);
+  if (dx * dx + dy * dy >= reach * reach) return false;
+  return !separates(a, b, dx, dy, a.u.x, a.u.y) && !separates(a, b, dx, dy, -a.u.y, a.u.x)
+    && !separates(a, b, dx, dy, b.u.x, b.u.y) && !separates(a, b, dx, dy, -b.u.y, b.u.x);
 }
 
-function projectedRadius(body: Body, axis: Vec2): number {
-  const along = Math.abs(body.u.x * axis.x + body.u.y * axis.y);
-  const across = Math.abs(-body.u.y * axis.x + body.u.x * axis.y);
+function separates(a: Body, b: Body, dx: number, dy: number, ax: number, ay: number): boolean {
+  return Math.abs(dx * ax + dy * ay) >= projectedRadius(a, ax, ay) + projectedRadius(b, ax, ay);
+}
+
+function projectedRadius(body: Body, ax: number, ay: number): number {
+  const along = Math.abs(body.u.x * ax + body.u.y * ay);
+  const across = Math.abs(-body.u.y * ax + body.u.x * ay);
   return body.halfLength * along + body.halfWidth * across;
 }
 
@@ -87,13 +89,15 @@ export interface Collision {
  */
 export function collisions(w: SimWorld): Collision[] {
   const cell = 40 * U;
-  const grid = new Map<string, Body[]>();
+  // Cells keyed by number: a string per body and per neighbour a tick was most of the check.
+  const grid = new Map<number, Body[]>();
+  const keyOf = (ix: number, iy: number): number => (ix + 32_768) * 65_536 + (iy + 32_768);
   const bodies: Body[] = [];
   for (const v of w.vehiclesInIdOrder()) {
     const body = bodyOf(w, v);
     if (!body) continue;
     bodies.push(body);
-    const key = `${Math.floor(body.c.x / cell)},${Math.floor(body.c.y / cell)}`;
+    const key = keyOf(Math.floor(body.c.x / cell), Math.floor(body.c.y / cell));
     const list = grid.get(key);
     if (list) list.push(body);
     else grid.set(key, [body]);
@@ -105,7 +109,7 @@ export function collisions(w: SimWorld): Collision[] {
     const cy = Math.floor(a.c.y / cell);
     for (let ix = cx - 1; ix <= cx + 1; ix++) {
       for (let iy = cy - 1; iy <= cy + 1; iy++) {
-        for (const b of grid.get(`${ix},${iy}`) ?? []) {
+        for (const b of grid.get(keyOf(ix, iy)) ?? []) {
           if (b.vehicle.id <= a.vehicle.id) continue;
           if (!bodiesOverlap(a, b)) continue;
           out.push({ a: a.vehicle, b: b.vehicle, category: categorise(w, a.vehicle, b.vehicle) });
