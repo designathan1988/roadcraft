@@ -32,7 +32,7 @@ function run(root: string, ...args: string[]): { code: number; out: string } {
 }
 
 const list = (root: string): { file: string; line: number; path: string }[] => JSON.parse(run(root, '--list').out);
-const baseline = (root: string): Record<string, number> => JSON.parse(readFileSync(join(root, 'refs.baseline.json'), 'utf8'));
+const baseline = (root: string): Record<string, number> => JSON.parse(readFileSync(join(root, 'scripts/baselines/refs.baseline.json'), 'utf8'));
 const entry = (file: string, path: string): string => `${u(file)}  ${u(path)}`;
 
 describe('check-refs', () => {

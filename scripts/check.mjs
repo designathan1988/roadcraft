@@ -1,5 +1,5 @@
-// THE CHECK (`npm run check`; `npm run check:all` before a push; and at the end of a conversation's turn
-// that changed code, `scripts/gate.mjs`, the fast one: `--fast`, see `stepsFor`). Every step has a hard limit (past it the
+// THE CHECK (`npm run check`; `npm run check:all` before a push; `--fast`: the barrier only, see
+// `stepsFor`). Every step has a hard limit (past it the
 // whole process tree is killed and the step fails), the run stops at the first failure and prints the
 // seconds of each step. Nothing here plays the game, times anything or retries.
 //   lint    ESLint (layers, file size, no silent catch, no module state), cached by file content
@@ -48,8 +48,8 @@ export const isDoc = (f) => f.startsWith('docs/') || f.endsWith('.md');
 export const isTest = (f) => f.startsWith('tests/');
 
 /**
- * The steps a set of changed files calls for (`null`: every step). `fast` (`--fast`, the end of a
- * conversation's turn, `scripts/gate.mjs`): the barrier only - the files changed linted, the types and
+ * The steps a set of changed files calls for (`null`: every step). `fast` (`--fast`): the barrier
+ * only - the files changed linted, the types and
  * the code rules, so a wrong form that left the code cannot come back. The specs, the counting suites,
  * the unused-export sweep and the bundle run at the END OF A BLOCK (`npm run check`, before a merge),
  * once (the player, 2026-10-14: "teste é no final dos blocos"). DO NOT put tests back in the turn's check.
@@ -73,14 +73,14 @@ const lintable = (files) => files.filter((f) => /\.(ts|js|mjs|cjs)$/.test(f) && 
  */
 function eslintCache() {
   const h = createHash('sha1');
-  for (const f of ['eslint.config.js', 'package-lock.json', 'eslint-suppressions.json']) h.update(readFileSync(join(ROOT, f)));
+  for (const f of ['eslint.config.js', 'package-lock.json', 'scripts/baselines/eslint-suppressions.json']) h.update(readFileSync(join(ROOT, f)));
   for (const f of readdirSync(join(ROOT, 'eslint-rules')).sort()) h.update(f).update(readFileSync(join(ROOT, 'eslint-rules', f)));
   return `node_modules/.cache/eslint/${h.digest('hex').slice(0, 12)}.json`;
 }
 
 /**
  * The specs that read the code or the page as text (through the file system, not by importing it): no
- * import graph leads to them, so they run in every check. `tests/tooling/gate.spec.ts` keeps the list whole.
+ * import graph leads to them, so they run in every check. `tests/tooling/check.spec.ts` keeps the list whole.
  */
 export const ALWAYS = [
   'tests/arch/', 'tests/tooling/', 'tests/ui/decimals.spec.ts', 'tests/ui/i18n.spec.ts', 'tests/ui/i18nKeys.spec.ts',
@@ -146,7 +146,7 @@ let fastRun = false;
 const STEPS = {
   lint: {
     limit: 90,
-    cmd: () => [node, 'node_modules/eslint/bin/eslint.js', ...(fastRun && picked ? lintable(picked) : ['.']), '--no-warn-ignored',
+    cmd: () => [node, 'node_modules/eslint/bin/eslint.js', ...(fastRun && picked ? lintable(picked) : ['.']), '--no-warn-ignored', '--suppressions-location', 'scripts/baselines/eslint-suppressions.json',
       '--cache', '--cache-strategy', 'content', '--cache-location', eslintCache()],
   },
   code: { limit: 60, cmd: () => [node, 'scripts/check-code.mjs'] },

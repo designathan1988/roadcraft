@@ -1,4 +1,0 @@
-#!/bin/sh
-# Runs `npm run check:all` on the commit being pushed (scripts/prepush.mjs);
-# a non-zero exit aborts the push.
-exec node scripts/prepush.mjs

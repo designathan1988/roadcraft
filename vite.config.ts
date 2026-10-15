@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath, URL } from 'node:url';
-import { buildStampPlugin } from './build-stamp';
-import { cookPlugin } from './cook-plugin';
-import { modelUrlsPlugin } from './model-urls-plugin';
+import { buildStampPlugin } from './scripts/vite/build-stamp';
+import { cookPlugin } from './scripts/vite/cook-plugin';
+import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 

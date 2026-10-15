@@ -13,7 +13,7 @@
     "build:raw": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --suppressions-location scripts/baselines/eslint-suppressions.json",
     "test": "node scripts/run-limited.mjs npm run test:raw",
     "test:raw": "vitest run",
     "test:watch": "node scripts/run-limited.mjs npm run test:watch:raw",
@@ -22,7 +22,6 @@
     "test:coverage:raw": "vitest run --coverage",
     "check": "node scripts/run-limited.mjs node scripts/check.mjs",
     "check:all": "node scripts/run-limited.mjs node scripts/check.mjs --all",
-    "setup": "git config core.hooksPath .githooks",
     "cook:people": "node scripts/cook-people.mjs --base=http://127.0.0.1:5300",
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
@@ -54,5 +53,38 @@
     "jolt-physics": "^1.1.0",
     "polygon-clipping": "0.15.7",
     "three": "^0.186.0"
+  },
+  "knip": {
+    "entry": [
+      "index.html",
+      "src/main.ts!",
+      "src/conflictTable.worker.ts!",
+      "src/render/buildings/fracture.worker.ts!",
+      "src/render/citizenBake.worker.ts!",
+      "src/render/ecology.worker.ts!",
+      "src/render/flatGround.worker.ts!",
+      "src/render/people/garmentPadding.worker.ts!",
+      "src/render/people/lodWorker.ts!",
+      "src/render/surfaceBake.worker.ts!",
+      "src/render/terrainLight.worker.ts!",
+      "scripts/**/*.mjs",
+      "desktop/main.cjs",
+      "eslint-rules/*.js"
+    ],
+    "project": [
+      "src/**/*.ts!",
+      "tests/**/*.ts",
+      "scripts/**/*.mjs",
+      "eslint-rules/*.js",
+      "*.ts",
+      "desktop/*.cjs",
+      "scripts/**/*.ts"
+    ],
+    "ignoreDependencies": [
+      "electron"
+    ],
+    "ignoreBinaries": [
+      "taskkill.exe"
+    ]
   }
 }

@@ -13,14 +13,14 @@
 // node scripts/check-refs.mjs [--update] [--root <dir>] [--list]
 // (`--root`: another tree; `--list`: its findings printed as JSON, for the
 // script's own test, `tests/arch/checkRefs.spec.ts`.)
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 const started = performance.now();
 const rootAt = process.argv.indexOf('--root');
 const root = rootAt >= 0 ? resolve(process.argv[rootAt + 1]) : process.cwd();
-const BASELINE = join(root, 'refs.baseline.json');
+const BASELINE = join(root, 'scripts/baselines/refs.baseline.json');
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'worktrees', '.git']);
 const SKIP_PATHS = new Set(['public', 'docs/source', 'docs/research/source']);
@@ -99,6 +99,7 @@ if (process.argv.includes('--update')) {
     console.error(`refs: ${added.length} new broken paths; the baseline only shrinks.`);
     process.exit(1);
   }
+  mkdirSync(dirname(BASELINE), { recursive: true });
   writeFileSync(BASELINE, JSON.stringify(Object.fromEntries(Object.entries(issues).sort()), null, 1) + '\n');
   console.log(`refs: baseline with ${total(issues)} occurrences in ${Object.keys(issues).length} entries (${stats})`);
   process.exit(0);

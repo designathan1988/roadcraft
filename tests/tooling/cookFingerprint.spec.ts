@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { importClosure } from '../../cook-plugin';
+import { importClosure } from '../../scripts/vite/cook-plugin';
 
 /**
  * The import closure the derived caches are fingerprinted by (`cook-plugin.ts`

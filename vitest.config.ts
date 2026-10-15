@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { cpus } from 'node:os';
-import { modelUrlsPlugin } from './model-urls-plugin';
+import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
 import { joinSessionJob, share } from './scripts/sessionJob.mjs';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));

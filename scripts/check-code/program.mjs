@@ -7,7 +7,7 @@ import { performance } from 'node:perf_hooks';
 
 const projectAt = process.argv.indexOf('--project');
 const root = projectAt >= 0 ? resolve(process.argv[projectAt + 1]) : process.cwd();
-const BASELINE = join(root, 'code-rules.baseline.json');
+const BASELINE = join(root, 'scripts/baselines/code-rules.baseline.json');
 const rel = (file) => relative(root, file).split(sep).join('/');
 const started = performance.now();
 

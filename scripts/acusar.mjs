@@ -1,8 +1,7 @@
 // THE ACCUSER: points at code to look at, never blocks anything. Lists, file
 // and line, each use of three.js that its official manual or docs warn
 // against, each API the installed three.js types mark @deprecated, each
-// occurrence of the patterns that already cost this game (OTIMIZACAO.md,
-// .claude/skills/investigando-desempenho/padroes.md), and what the code rules
+// occurrence of the patterns that already cost this game (CLAUDE.md), and what the code rules
 // (scripts/check-code.mjs) already hold in their baseline. Each rule carries
 // the sentence of its source, checked against the local copy of the docs
 // (C:/Codex-Shared/referencia): a rule whose sentence is not found there says
@@ -23,7 +22,7 @@ import { tmpdir } from 'node:os';
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
 const root = arg('--projeto') ? resolve(arg('--projeto')) : process.cwd();
-/** The project's own files, for the rules sourced in it (padroes.md); the game's when another project is read. */
+/** The project's own files, for the rules sourced in it (CLAUDE.md); the game's when another project is read. */
 const game = process.cwd();
 const REF = 'C:/Codex-Shared/referencia/threejs';
 const onlyRule = arg('--regra');
@@ -92,17 +91,17 @@ const RULES = {
   'compara-json': {
     titulo: 'comparação por JSON.stringify',
     porque: 'Serializa tudo para comparar; compare o que o diário diz que mudou.',
-    fonte: { projeto: '.claude/skills/investigando-desempenho/padroes.md', trecho: 'Comparar por JSON' },
+    fonte: { projeto: 'CLAUDE.md', trecho: 'Comparing by JSON' },
   },
   'chave-revisao-global': {
     titulo: 'chave de cache com revisão global (`${...revision}`)',
     porque: 'Qualquer mudança invalida tudo; a chave deveria ser o que a saída lê.',
-    fonte: { projeto: '.claude/skills/investigando-desempenho/padroes.md', trecho: 'chave de cache com revisão global' },
+    fonte: { projeto: 'CLAUDE.md', trecho: 'cache key with a global revision' },
   },
   'check-code': {
     titulo: 'já acusado pelas regras do check-code (linha de base)',
     porque: 'Ocorrências conhecidas que só podem diminuir (scripts/check-code.mjs), entre elas o mapa varrido dentro de laço sobre o mapa (whole-map-nested), seguido pelas chamadas.',
-    fonte: { projeto: 'code-rules.baseline.json', trecho: '' },
+    fonte: { projeto: 'scripts/baselines/code-rules.baseline.json', trecho: '' },
   },
 };
 
@@ -254,7 +253,7 @@ for (const sf of program.getSourceFiles()) {
 }
 
 // what check-code already holds
-const baselinePath = join(root, 'code-rules.baseline.json');
+const baselinePath = join(root, 'scripts/baselines/code-rules.baseline.json');
 if (existsSync(baselinePath)) {
   for (const [key, count] of Object.entries(JSON.parse(readFileSync(baselinePath, 'utf8')))) {
     const [rule, place, what] = key.split(/ {2,}/);

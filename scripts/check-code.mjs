@@ -46,7 +46,8 @@
 // (`--project` and `--list`: another project, its findings printed as JSON; the
 // rules' own test, `tests/arch/checkCode.spec.ts`.)
 import ts from 'typescript';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { BASELINE, checker, fromThree, inSrc, isFunction, rel, skipParens, sources, started, symbolOf, tagged, typed } from './check-code/program.mjs';
 import { byName, fits, holdsFor, keyListeners, nameOf, typesOf, unitSet, units, unitsOfSymbol } from './check-code/units.mjs';
@@ -722,6 +723,7 @@ if (process.argv.includes('--update')) {
     console.error(`código: ${refused.length} achados novos; a linha de base só diminui.`);
     process.exit(1);
   }
+  mkdirSync(dirname(BASELINE), { recursive: true });
   writeFileSync(BASELINE, JSON.stringify(issues, null, 1) + '\n');
   console.log(`código: linha de base com ${total(issues)} ocorrências em ${Object.keys(issues).length} itens (${stats})`);
   process.exit(0);

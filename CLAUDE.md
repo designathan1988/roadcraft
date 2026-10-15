@@ -1,113 +1,250 @@
 # Roadcraft 2
 
-Jogo de navegador de construir cidades (TypeScript, three.js r186, Vite; vai ser vendido na Steam).
-Jogo: `npm run dev` (127.0.0.1:5300). Verificação: `npm run check`. Este é o ÚNICO arquivo de
-instruções do projeto: não crie outro (nem `memory/`, nem `CLAUDE.md` em subpasta, nem hook).
+Browser city-builder (TypeScript, three.js r186, Vite; to be sold on Steam).
+Game: `npm run dev` (127.0.0.1:5300). Check: `npm run check`.
 
-## O que o jogador quer
-- Desempenho e qualidade gráfica excelentes em computadores diferentes, rumo à cidade sem limite:
-  primeiro o mapa inteiro de 10 km × 10 km, depois maior.
-- **Corrigido é quando o código não tem mais o problema**: algoritmo e dados certos para a cidade
-  de qualquer tamanho. Tempo que caiu numa cidade de teste não é correção; número não é meta.
-- NÃO amortizar: fatiar em quadros, segurar uma camada, teto num cache que expulsa e refaz, espaçar
-  refeituras. Isso esconde o custo, que volta com a cidade maior. Corrija a causa.
-- Faça o trabalho; não pergunte o que o código e estas regras já respondem. Pergunte só: perda de
-  qualidade gráfica, envio ao GitHub, apagar dados dele.
-- Nenhuma perda de qualidade gráfica sem o sim dele: fotos antes e depois, nas mesmas vistas.
-- Teste no fim de cada bloco de trabalho, uma vez. Nada de suíte a cada passo, nada de processo,
-  papelada, plano ou nota no lugar de corrigir.
-- Diga a verdade: o que não conferiu, diga que não conferiu. Nunca "já existe" ou "funciona" sem
-  ter lido o código que USA a coisa (o chamador, até o quadro, a edição ou o ponteiro).
-- Tenha noção e seja ético. Caso precise mudar a arquitetura de algo para funcionar, comunique. Caso autorizado mude. Não fique insistindo em consertos inúteis e perdendo tempo, ache a solução adequada, informa e peça autorização.
-- Não confie no seu conhecimento, busque na documentação oficial na internet e em sites adequados ao assunto em pauta.
-- Não comete tentativa e erro. Caso não saiba como resolver, ou não consiga na primeira vez: PESQUISE NA INTERNET.
+**This file is the project's only documentation, memory and instruction file.** Do not create
+another: no `docs/`, no reports, plans, prompts, notes, `memory/`, `README`, nested `CLAUDE.md`,
+skills or hooks. A finding goes into "Open findings" below; a fix leaves it (and its commit says
+cause, technique and source). Git history is the archive.
 
-## Idioma
-- Código em inglês: identificadores, comentários, testes, mensagens de erro. Comentário contra a
-  volta de um erro: "DO NOT …".
-- Português do Brasil: conversa, relatórios, `docs/`, `OTIMIZACAO.md`, mensagens de commit.
+## Files and naming
+- Every file is written in English: code, comments, tests, error messages and this file. Talk to
+  the player in Brazilian Portuguese; commit messages in Portuguese.
+- No ALL-CAPS file names (only `CLAUDE.md`, which Claude Code needs by that name, and the license
+  texts that ship with third-party assets).
+- Nothing at the repository root that is not strictly needed (package, lock, tsconfig, the Vite,
+  Vitest and ESLint configs, `index.html`, git and npm settings). Tooling lives in `scripts/`
+  (Vite plugins in `scripts/vite/`, check baselines in `scripts/baselines/`).
+- Nothing useless: no dead file, no stray probe, no duplicate. Scratch work goes to the session's
+  scratchpad, never into the repository or `C:/Codex-Shared/rc2-wt`.
 
-## Como trabalhar
-- Ache a causa lendo o código inteiro da parte: arquivo por arquivo, o chamador seguido até o
-  quadro, a edição ou o ponteiro, e os irmãos da mesma forma no projeto. Corrija a classe inteira.
-- Antes de uma técnica que o código ainda não usa, leia a fonte oficial. three.js da versão do jogo,
-  offline: `C:/Codex-Shared/referencia/` (docs, manual, exemplos, fonte; InstancedMesh2,
-  3DTilesRendererJS, three-mesh-bvh, postprocessing; índice no `README.md` de lá).
-- `node scripts/acusar.mjs` aponta usos do three contrários ao manual e padrões que já custaram caro.
-- Cada correção com commit próprio (causa, técnica, fonte) e linha em `OTIMIZACAO.md`.
+## What the player wants
+- Excellent performance and graphics on different computers, toward the unlimited city: first the
+  whole 10 km × 10 km map, then larger.
+- **Fixed means the code no longer has the problem**: the right algorithm and data for a city of
+  any size. A time that dropped on a test city is not a fix; a number is not a goal.
+- DO NOT amortize: slicing work across frames, holding a layer, a capped cache that evicts and
+  redoes, spacing out rebuilds. That hides the cost, which comes back with a bigger city. Fix the cause.
+- Do the work; do not ask what the code and these rules already answer. Ask only about: loss of
+  graphics quality, pushing to GitHub, deleting the player's data.
+- No loss of graphics quality without the player's yes: before and after shots from the same views.
+- Test once at the end of each block of work. No suite at every step, no process, paperwork, plan
+  or note instead of fixing.
+- Tell the truth: say what you did not check. Never "already exists" or "works" without reading
+  the code that USES it (the caller, up to the frame, the edit or the pointer).
+- Use judgement and be ethical. If something needs an architecture change to work, say so and wait
+  for authorization. Do not insist on fixes that do not work; find the proper solution, report it
+  and ask.
+- Do not trust your own knowledge: look up the official documentation and proper sources online.
+- No trial and error. If you do not know how to solve something, or it fails the first time,
+  RESEARCH ON THE INTERNET.
 
-## Causas que já custaram caro
-- Refazer tudo quando uma parte muda. Certo: o diário (`world/changes.ts`) diz o que mudou; um
-  derivado lê `doc.changes.since`/`touches` dos tipos dele, nunca uma chave com revisão global.
-- Varrer tudo para achar o que está perto. Certo: índice espacial (`buildings.near(caixa)`).
-- Cache com teto que expulsa e refaz o mesmo trabalho.
-- Trabalho pesado na thread principal. Certo: worker.
-- Desenhar ou guardar o que não se vê: sem nível de distância; cópia na CPU do que já está na GPU.
-- Esperar a GPU no meio do quadro (`getImageData`) ou compilar shader durante o jogo.
+## How to work
+- Find the cause by reading the whole part of the code: file by file, each caller followed up to
+  the frame, the edit or the pointer, and the siblings of the same shape in the project. Fix the
+  whole class.
+- Before a technique the code does not use yet, read the official source. three.js of the game's
+  version, offline: `C:/Codex-Shared/referencia/` (docs, manual, examples, source; InstancedMesh2,
+  3DTilesRendererJS, three-mesh-bvh, postprocessing; index in its `README.md`).
+- `node scripts/acusar.mjs` points at three.js uses the manual warns against and at the patterns
+  below. An accusation is a lead to read, not a proof.
+- One commit per fix, saying cause, technique and source.
 
-## Estado e documentos
-- O estado atual, os achados abertos e o índice dos documentos: `docs/ESTADO.md` (o único). Os
-  outros arquivos de `docs/` marcados HISTÓRICO não são lista de trabalho.
-- Não crie relatório, prompt ou plano novo em `docs/`: achado vai para `docs/ESTADO.md`, correção
-  feita para `OTIMIZACAO.md`.
+## Causes that already cost a lot
+- Rebuilding everything when one part changes. Right: the diary (`world/changes.ts`) says what
+  changed; a derived product reads `doc.changes.since`/`touches` for its own kinds, never a cache
+  key with a global revision.
+- Scanning everything to find what is near. Right: a spatial index (`buildings.near(box)`).
+- A capped cache that evicts and redoes the same work.
+- Heavy work on the main thread. Right: a worker.
+- Drawing or keeping what is not seen: no level of detail; a CPU copy of what is already on the GPU.
+- Waiting for the GPU mid-frame (`getImageData`) or compiling shaders during play.
+- Comparing by JSON (`JSON.stringify(a) === JSON.stringify(b)`) on a hot path. Right: compare what
+  the diary says changed.
+- The same data kept in two forms (the record or geometry on both CPU and GPU; a whole copy per edit).
 
-## Conferir no jogo
-- `node scripts/look.mjs <roteiro.json>` (exemplo `scripts/look/views.json`): Chrome instalado sem
-  janela, na placa de vídeo, 1920×1080. Câmera: meio arrasta, direito gira, roda aproxima; o
-  esquerdo é da ferramenta. O Chromium do Playwright não abre nesta máquina: `channel: 'chrome'`.
-- Abra cada PNG com Read e procure: texto cortado, sobreposição, peça flutuando, buraco, pisca, luz
-  errada, idioma trocado. Defeito visto é corrigido e fotografado de novo.
-- O navegador embutido do app devolve fotos de 800×450: serve para ler texto, não para imagem.
-- Comandos pesados por `node scripts/run-limited.mjs …` (job do Windows: 25% da CPU, 8 GB).
+## Lessons (DO NOT redo)
+- `BatchedMesh` for the building shells was undone: it keeps its whole capacity on the CPU
+  (`_initializeGeometry`), 1.1 GB of heap for 8.1 M vertices; with the chunk cache the heap hit
+  4.4-5.1 GB and the map ran at 14 fps. Do not redo it without a batch that drops its arrays.
+- Mass (far level) painted with the detail's colours was tried and undone: the mean difference got
+  worse (17.6 → 20.6) and the mass looked darker. Swapping detail for mass in the top view loses
+  beauty. The way left is fewer triangles in the detail itself (simplified shell per cell,
+  meshoptimizer, error under a pixel).
+- Checked and right (reopen only if a probe, a shot or the code says otherwise): upload ranges
+  (`addUpdateRange`) in agents, transit, grass, blob shadows, casualties, gore, exhaust, nature
+  trees, far forest and poles; picking by the ground plane, no `Raycaster`; on-demand frame loop
+  (`frameLoop.ts`); sRGB output, ACES, PMREM of the sky, no fog (player's choice); reversed float
+  depth.
+- Under review: building far level with hysteresis (shows simplified buildings for 3-4 s after a
+  camera move); one 4096 shadow map fitted to the view (stair-step aliasing up close); SMAA and
+  GTAO at half resolution (the player wants nothing blurry); baked textures with mipmaps (foliage
+  speckle up close).
 
-## Commits, ramos, agentes
-- `git status` antes; commit só dos seus caminhos: `git commit --only <caminhos>`, depois de ler o
-  `git diff` deles. Cada arquivo salvo na pasta principal recarrega o jogo na 5300.
-- Agentes: no máximo 5; cada um numa parte, no SEU worktree criado do `main` local
-  (`git worktree add -b fix/<parte> C:/Codex-Shared/rc2-wt/<parte> main`; `node_modules` e `cooked`
-  por junção). Leia o diff inteiro e faça o merge no `main`. Para tirar um worktree, desfaça as
-  junções com `rmdir`, nunca `rm -rf` (apagaria o `node_modules` da pasta principal).
-- Nunca envie ao GitHub sem o sim do jogador. Portas e pastas dele, nunca mexer: 4180-4183, 5173,
-  5175-5178, `C:/Codex-Shared/backup-mapa-jogador`.
+## State (2026-10-15)
+- `main` is **97 commits behind `fix/workers-10km`**, which contains `main` and every merged `fix/*`.
+  Reading only `main` shows old code. The worktree `rc2-wt/workers-10km` has uncommitted work of
+  another agent (`perfBudget.ts`, `main.ts`, `playEffects.ts`, `postprocess.ts`, `renderer.ts`,
+  `tests/core/cityBudget.spec.ts`).
+- Not merged anywhere yet: `fix/growth-worker` (city growth in a worker, 10 commits),
+  `fix/gerador-workers`, `fix/render-cidade` (1 commit: only cells in view in full detail; changes
+  quality, needs shots and the player's yes), nine `worktree-agent-*` branches from 2026-10-14.
+  Worktrees with uncommitted changes: `render-cenario`, `world-2`, `topo-swap`, `profiler-10km`,
+  `probe10`.
+- In the main folder, uncommitted work of another agent: `editor/commit.ts`, `world/changes.ts`,
+  `world/doc.ts`, `core/layeredMap.ts` and its spec. `core/forkMap.ts` (on the branch) and
+  `core/layeredMap.ts` (here) do the same job: keep one when merging.
+- The fixed map today: 5 × 5 plates of 2,048 m (`world/bounds.ts`).
 
-## Armadilhas por área
-**render** (só `src/render` importa `three`)
-- Profundidade invertida em buffer float (`depthConvention.ts`): pisca à distância nunca se corrige
-  empurrando o near nem aumentando offset; passe que lê profundidade usa `DEPTH_GLSL`.
-- A sombra anda em texels inteiros do chão (`environment.ts` `GroundShadowGrid`); o sol em passos
-  de 0,1° (`SUN_STEP`). `shadowMap.enabled` depende da qualidade: confira o nível primeiro.
-- O `y` do mundo vira o `z` do three e inverte o sentido: meça a área com sinal, não assuma.
-- `earcut` em faixa longa e fina faz triângulos enormes: corte antes (`splitToSpan`).
-- Textura e material feitos uma vez; nunca criar material dentro de uma refeitura.
-- Peça repetida é instanciada; material compartilhado precisa da mesma variante de programa.
-- `vertexColors: true` no material, ou a cor por vértice não faz nada.
-- `compileAsync` com o alvo do pós-processamento, senão o primeiro quadro trava.
-- Pessoas: MakeHuman cozidas antes (`cooked/`, versão em `cook-plugin.ts` `CAST`); esqueletos na
-  GPU (`people/crowdAnimation.ts`): `renderPalettes` depois do `update` e antes do desenho.
-- Nada de duas superfícies de um prédio no mesmo plano (`tests/render/coplanar.spec.ts`).
-- Shader do asfalto (`materials.ts` `ROAD_SPACE_FRAGMENT`): `uv.x * ASPHALT_TILE` é o través.
-- Buffers de instância medidos por `FLEET_CEILING` e `PED_CEILING` (`sim/params.ts`).
-- Efeito visual novo: em `postprocess.ts`, atrás de uma opção em `quality.ts`.
+## Open findings
+Read by agents on `fix/workers-10km` at `3780807` (quick read; line numbers from that commit;
+bytes and ms are estimates from reading). Re-check the line before fixing.
+
+GPU memory and drawing
+- Building detail residency has no cap: in perspective `reach = Infinity` (`renderer.ts:3196`) and
+  the only eviction needs `Number.isFinite(reach)` (`buildings/layer.ts:656`); video memory grows
+  with the area visited and a returning cell is re-emitted. Fix: residency by a byte budget; what
+  leaves falls back to the mass and returns without redoing.
+- Render targets and shadow map are not counted (`core/perfBudget.ts:196` passes `null`).
+- `color`/`roadSection` attributes on every road strip (`mesh/surfaceMesh.ts:68`, `tileMesh.ts:83`):
+  24 of 56 B per vertex unused. Fix: the `SurfaceSpec` declares what it reads.
+- Garden buffers sized to the whole city, never shrink; body and card stores keep the same matrices
+  (`gardens.ts:281-287, 512, 516`).
+- Non-indexed geometry: `structures.ts:414`, `vehicleModels.ts:298` (`toNonIndexed`).
+- About 43 draw calls per building cell: a mesh per finish and an `InstancedMesh` per part kind
+  (`buildingMesh.ts:3531, 3573`).
+- Needs shots and the player's yes: signature buildings without a far level (`massing.ts:157`);
+  terrain plates with content have no LOD (`flatAtlas.ts:104`).
+
+Main thread
+- The simulation runs on the page (`main.ts:2797`, `SIM_FRAME_BUDGET_MS`). Fix: `SimWorld` in a
+  worker fed by diary deltas, poses in shared memory, COOP/COEP in Vite and Electron.
+- City growth and power-line layout are sliced (`main.ts:2200-2273` `GROW_SLICE_MS`,
+  `roads/powerLine.ts:39`): amortization. The worker version is on `fix/growth-worker`.
+- Nature: one plate swept per frame (`renderer.ts:2359-2393`) and `new CandidateKeep` with every
+  tree (`:3045`).
+- Scene scan for shader variants every 2 s, compiling during play (`renderer.ts:3112`). Fix: a
+  closed variant catalogue compiled at load.
+- Opening: `net.rebuild({ full: true })` (`history.ts:155`); `readDerivedAll` reads the whole cache
+  (`renderer.ts:792`).
+- Profiler hooks always installed (`main.ts:707`, `profiler.ts:88`, `new Error().stack` per upload).
+
+O(map) per edit
+- `snapshotRoads` does `doc.clone()` (`editRules.ts:114`) per in-place edit. Fix: judge on `doc.fork()`.
+- `Network.adopt` copies the whole network (`network.ts:270-300`), twice per road drawn. Fix: a
+  layered fork, adopting only the delta.
+- `elevation.ts` walks every ribbon per solve (`:448`) and digests with `JSON.stringify` (`:1177`).
+- Autosave: `dirtyHead` rewrites the whole head (`chunkedSave.ts:133, 179`); under 3,000 buildings
+  `persistence.ts:188` writes the whole document. Fix: head in parts by the diary, written in a worker.
+- Undo: `DocImage` `structuredClone`s nodes, segments, poles, landscape and barriers
+  (`docImage.ts:83, 117`), compares lists by prefix/suffix (`:186`); `doc.ts:2086` logs
+  `'utilities'` without ids. 28 `JSON.stringify` comparisons in `doc.ts` `replaceContents`.
+- Terrain: a stamp discards the worker-built mesh (`terrain.ts:3125`); `new TerrainIndex` of every
+  stamp per revision (`:3102`); textures and buffers re-uploaded whole (no `addUpdateRange`).
+- `flatAtlas.ts`: each plate filters every paint dab (`:435-444`); `letGo` throws a plate away and
+  it is rebuilt when it returns (`:299-307`).
+- Global-revision derivatives in `renderer.ts`: `coverSweep` (`:2547, 2982`), elements rebuilt
+  whole (`:3535`), planted trees (`:3086`), `watchRoads` copies every ribbon each second (`:1314`).
+- Lot tool: `lotAt` is `doc.lots.find`, up to 400 times per move (`lotTool.ts:359, 552`); the
+  overlay recomposes every lot; the proposal key uses `net.revision` (`:259`). Fix: `doc.lotsIn(box)`.
+- Simulation: `refreshJunctionOrder` sorts every junction per edit (`sim/world.ts:534`);
+  `rebindVehicles` walks the whole fleet (`pipeline.ts:167-200`); every signal, even asleep, each
+  tick (`pipeline.ts:92`); control advisor every 10 s (`controlAdvisor.ts:37`); all stops scanned
+  (`transit/transit.ts:268`); `trainZones` built each tick (`walk.ts:1952`).
+- Fleet copied or scanned: per tick in `lotTraffic.ts:156, 269, 309`, `lorryTraffic.ts:136, 247`;
+  per frame in `render/agents.ts:2120`; per body in `wallsNear` (`playEffects.ts:307`).
+- Ragdoll allocates per frame (`ragdoll.ts:2027-2034, 1421`), one height field per body (`:1526`),
+  `ragdollGround` cleared whole above a cap (`playEffects.ts:240`). Baked crowd blends palettes on
+  the CPU (`riggedCitizens.ts:793, 911, 1143`).
+- 188 global-revision reads still suppressed in `scripts/baselines/eslint-suppressions.json` (35
+  files: `renderer.ts` 42, `doc.ts` 23, `flatAtlas.ts` 19, `main.ts` 15, `terrain.ts` 7). The engine
+  has only 6 `engine.register`; the other derived products update themselves.
+- Low: `conflictPool.ts:283` does not `terminate` workers already made when creation fails; files of
+  3,500-4,500 lines (`main.ts`, `renderer.ts`, `buildingMesh.ts`).
+
+Player's decisions
+- Caps that delete the player's work: `MAX_PLANTED_TREES = 20_000` (`doc.ts:1334`), elements
+  (`:1381`), undo dropping old steps by bytes (`history.ts:128`).
+- About 7 KB per building record (560 MB at 80,000 buildings); seed + lot would change the generator.
+
+Agents disagreed (check the line): `GTAOPass` allocating an unused `normalRenderTarget`
+(`postprocess.ts:262`, r186 `GTAOPass.js:225, 317`); `simShowsMotion` (`main.ts:2870`).
+
+Not checked (need a measure in the game): ~100 KB heap per building, ~30 MB/s garbage, a road
+taking 9-10 s, opening the big map, 18.6 ms GPU on the whole map, relighting at sun ≥ 2°.
+
+Already fixed on the branch (do not report as open): transit and fog by the diary; gullies
+(`setGullies` is empty); forests cell by cell (`plantCells.ts`); the `no-global-revision` lint;
+chunk LRU cache; atlas `CACHE = 6`; lot tool JSON key; road tiles without CPU arrays; `pedPoseInto`;
+lanelets by delta; cell emission in a worker (`cellPool.ts`); parking walls by `store.near`;
+`matrixAutoUpdate = false` on buildings; `changedSites` and `changedSegments` by the diary; the sky
+is hidden every frame (no overdraw).
+
+## Checking in the game
+- `node scripts/look.mjs <script.json>` (example `scripts/look/views.json`): installed Chrome,
+  headless, on the GPU, 1920×1080. Camera: middle drags, right rotates, wheel zooms; left belongs to
+  the tool. Playwright's Chromium does not open on this machine: `channel: 'chrome'`.
+- Open each PNG with Read and look for: cut text, overlap, floating pieces, holes, flicker, wrong
+  light, wrong language. A defect seen is fixed and shot again.
+- The app's built-in browser returns 800×450 shots: good for reading text, not for images.
+- Heavy commands through `node scripts/run-limited.mjs …` (Windows job: 25% CPU, 8 GB).
+
+## Commits, branches, agents
+- `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
+  `git diff`. Every file saved in the main folder reloads the game on 5300.
+- Agents: at most 5, each on one part, in ITS worktree made from local `main`
+  (`git worktree add -b fix/<part> C:/Codex-Shared/rc2-wt/<part> main`; `node_modules` and `cooked`
+  by junction). Read the whole diff and merge into `main`. To remove a worktree, undo the junctions
+  with `rmdir`, never `rm -rf` (it would delete the main folder's `node_modules`); delete the branch
+  once it is merged.
+- Never push to GitHub without the player's yes. The player's ports and folders, never touch:
+  4180-4183, 5173, 5175-5178, `C:/Codex-Shared/backup-mapa-jogador`.
+
+## Traps by area
+**render** (only `src/render` imports `three`)
+- Reversed depth in a float buffer (`depthConvention.ts`): distant flicker is never fixed by pushing
+  the near plane or raising an offset; a pass that reads depth uses `DEPTH_GLSL`.
+- The shadow moves in whole ground texels (`environment.ts` `GroundShadowGrid`); the sun in 0.1°
+  steps (`SUN_STEP`). `shadowMap.enabled` depends on the quality level: check the level first.
+- World `y` becomes three's `z` and flips direction: measure area with its sign, do not assume.
+- `earcut` on a long thin strip makes huge triangles: cut it first (`splitToSpan`).
+- Textures and materials made once; never create a material inside a rebuild.
+- A repeated piece is instanced; a shared material needs the same program variant.
+- `vertexColors: true` on the material, or per-vertex colour does nothing.
+- `compileAsync` with the post-processing target, or the first frame stalls.
+- People: MakeHuman baked ahead (`cooked/`, version in `scripts/vite/cook-plugin.ts` `CAST`);
+  skeletons on the GPU (`people/crowdAnimation.ts`): `renderPalettes` after `update`, before drawing.
+- Never two surfaces of a building in the same plane (`tests/render/coplanar.spec.ts`).
+- Asphalt shader (`materials.ts` `ROAD_SPACE_FRAGMENT`): `uv.x * ASPHALT_TILE` is across the road.
+- Instance buffers sized by `FLEET_CEILING` and `PED_CEILING` (`sim/params.ts`).
+- A new visual effect goes in `postprocess.ts`, behind an option in `quality.ts`.
 
 **world**
-- Um corte por ponta de via (`approach.ts`) alimenta boca, zebra, linha de parada, faixa, meio-fio.
-- `HEADING_CHORD` é de `sim/pose.ts`, `conflictPoints.ts` e `turnPaths.ts`: os três juntos.
-- Altura do terreno: `heightAt` é o campo; `renderedHeightAt` é o que se desenha.
-- Túnel é degrau no terreno mais portal; `TUNNEL_*` e `CUT_SHOULDER` andam juntos.
-- Via no nível é linha projetada, não o chão (`solveGround`); o cruzamento pega a altura das pernas.
-- Edição de prédio move `doc.buildings.revision`, nunca `doc.revision`.
-- Célula do terreno: 6,4 m. Números de via com fonte em `roads/tuning.ts`; só o jogador muda.
-- Mapa fixo hoje: 5 × 5 placas de 2.048 m (`world/bounds.ts`).
+- One cut per road end (`approach.ts`) feeds mouth, zebra, stop line, lane and kerb.
+- `HEADING_CHORD` belongs to `sim/pose.ts`, `conflictPoints.ts` and `turnPaths.ts`: all three together.
+- Terrain height: `heightAt` is the field; `renderedHeightAt` is what is drawn.
+- A tunnel is a step in the terrain plus a portal; `TUNNEL_*` and `CUT_SHOULDER` go together.
+- A road at grade is a projected line, not the ground (`solveGround`); a junction takes its legs' height.
+- A building edit moves `doc.buildings.revision`, never `doc.revision`.
+- Terrain cell: 6.4 m. One world unit is one metre. Road numbers with a source in `roads/tuning.ts`;
+  only the player changes them.
 
 **sim**
-- Um escritor por campo; ordem dos estágios em `pipeline.ts`. `clock.tick` só no fim do `step`.
-- `archetype` é a máquina, `driver` é a pessoa. Troca de faixa ocupa duas faixas (`bodiesIn`).
-- Estágio de sinal nunca junta movimentos que se cruzam (`signals/plan.ts`).
-- `WALKER_SHAPE`: todo campo de um pedestre declarado de uma vez (classes ocultas).
-- `SimWorld.doLess` tem de dar o mesmo que fazer tudo (`tests/sim/doLess.spec.ts`).
+- One writer per field; stage order in `pipeline.ts`. `clock.tick` only at the end of `step`.
+- `archetype` is the machine, `driver` is the person. A lane change occupies two lanes (`bodiesIn`).
+- A signal stage never groups crossing movements (`signals/plan.ts`).
+- `WALKER_SHAPE`: every field of a pedestrian declared at once (hidden classes).
+- `SimWorld.doLess` must give the same result as doing everything (`tests/sim/doLess.spec.ts`).
 
 **editor**
-- `commitDraft` adota a rede só depois de refeita. Toda edição de via paga em `roads/economy.ts`.
-- Ferramenta nova: `Tool` em `toolMachine.ts`, `case` no `pointerdown` de `main.ts`, letra em
-  `gameKeys.ts`, lugar em `ui/v2/shell.ts`, chaves `tool.`/`hint.` nos dois dicionários.
-- O carregamento valida com os predicados do próprio documento (`persistence.ts`).
+- `commitDraft` adopts the network only after it is rebuilt. Every road edit pays in `roads/economy.ts`.
+- New tool: `Tool` in `toolMachine.ts`, a `case` in `main.ts` `pointerdown`, a key in `gameKeys.ts`,
+  a place in `ui/v2/shell.ts`, `tool.`/`hint.` keys in both dictionaries.
+- Loading validates with the document's own predicates (`persistence.ts`).
+
+## Third-party assets
+- Trees: Kenney Nature Kit 2.1 (kenney.nl/assets/nature-kit), CC0 1.0, in `public/models/nature/`
+  (used by `src/render/natureTrees.ts`).
+- People: MakeHuman (CC0) and Microsoft Rocketbox animations (MIT); their license texts ship next to
+  the assets (`public/models/people/`, `public/models/citizens/`, `src/render/motion/`) and must stay.

@@ -6,9 +6,9 @@
 // the count falls, by the rule of CLAUDE.md).
 // node scripts/knip-check.mjs [--update]
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
-const BASELINE = 'knip.baseline.json';
+const BASELINE = 'scripts/baselines/knip.baseline.json';
 const run = spawnSync(process.execPath, ['node_modules/knip/bin/knip.js', '--reporter', 'json'], { encoding: 'utf8', maxBuffer: 1 << 26 });
 if (!run.stdout.trim().startsWith('{')) {
   console.error('knip não rodou:', run.stderr.slice(0, 2000));
@@ -28,6 +28,7 @@ if (process.argv.includes('--update')) {
     console.error(`knip: ${issues.length} problemas, mais que os ${baseline.length} da linha de base; a linha de base só diminui.`);
     process.exit(1);
   }
+  mkdirSync('scripts/baselines', { recursive: true });
   writeFileSync(BASELINE, JSON.stringify(issues, null, 1) + '\n');
   console.log(`knip: linha de base com ${issues.length} itens`);
   process.exit(0);
