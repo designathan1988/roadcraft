@@ -2,10 +2,11 @@ import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from './doc';
 import type { Network } from './network';
 import { carriesPedestrians } from './pedestrianAccess';
-import { Level, halfWidth } from './roadTypes';
-import { difference } from '@core/clipper';
-import { levelPolygons } from './surfaces';
-import { PavingIndex } from './pavingIndex';
+import { Level, type SurfaceLevel, halfWidth } from './roadTypes';
+import type { NodeId } from './ids';
+import type { Junction } from './junction/build';
+import { type MultiPoly, difference, union } from '@core/clipper';
+import { levelRingsOf } from './surfaces';
 import { hull, lotCentre, orientedBox, simplifyRing } from './lotRings';
 import { offsetRing } from './buildings/footprints';
 import { touchesRoad } from './buildings/validate';
@@ -13,6 +14,7 @@ import { m, stepsIn } from './units';
 import { pavedTester, quadsOverlap } from './zoneGrid';
 import type { ZoneDensity, ZoneUse } from './zones';
 import { rectAround, type ChangeRect } from './changes';
+import { grow } from './cells';
 import type { BuildingId } from './buildings/types';
 
 /**
@@ -267,6 +269,21 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
     cellsOf(b, (k) => { const list = ringCells.get(k); if (list) list.push(at); else ringCells.set(k, [at]); });
   };
   for (const l of kept) file(l.corners as Vec2[]);
+  /**
+   * The lots filed whose boxes meet a rectangle, in the order they were filed
+   * (the kept ones first, then those added): `rings` indices. `keptOnly`: the
+   * kept ones alone. DO NOT walk every lot of the town for each block row and
+   * each street strip: it was rows x lots, strips x lots.
+   */
+  const keptCount = rings.length;
+  const filedIn = (box: ChangeRect, keptOnly = false): number[] => {
+    const found = new Set<number>();
+    cellsOf(box, (k) => { for (const at of ringCells.get(k) ?? []) if (!keptOnly || at < keptCount) found.add(at); });
+    return [...found].sort((a, b) => a - b).filter((at) => {
+      const b = ringBoxes[at]!;
+      return b[0] <= box[2] && b[2] >= box[0] && b[1] <= box[3] && b[3] >= box[1];
+    });
+  };
   const fitFree = (corners: Vec2[]): Vec2[] | null => {
     const box = rectAround(corners);
     if (!box) return null;
@@ -421,7 +438,10 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       const rowSpans = (r: number): [number, number][] => {
         const t0 = -D / 2 + r * depth, t1 = t0 + depth;
         const taken: [number, number][] = [];
-        for (const l of kept) {
+        // The kept lots over the block's box (a lot off it takes no span of it).
+        const blockBox = grow(rectAround([at(-L / 2, -D / 2), at(L / 2, -D / 2), at(L / 2, D / 2), at(-L / 2, D / 2)])!, m(4));
+        for (const at of filedIn(blockBox, true)) {
+          const l = { corners: rings[at]! };
           const q = l.corners.map((p) => frame(p));
           const lt0 = Math.min(...q.map((p) => p.t)), lt1 = Math.max(...q.map((p) => p.t));
           if (Math.min(lt1, t1) - Math.max(lt0, t0) < depth * 0.25) continue;
@@ -463,9 +483,11 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
 
   // --- open land along streets: a continuous strip each side, cut in equal lots
   const ids = [...doc.segments.keys()].sort((a, b) => a - b);
+  // By a set: `ribbons.includes` for each street was streets².
+  const planned = new Set(ribbons);
   for (const segId of ids) {
     const ribbon = net.ribbons.get(segId);
-    if (!ribbon || !ribbons.includes(ribbon)) continue;
+    if (!ribbon || !planned.has(ribbon)) continue;
     yield;
     const line = ribbon.full;
     const face = halfWidth(ribbon.road, Level.Sidewalk) + m(0.3);
@@ -505,7 +527,10 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
         // one was dropped whole, and a gap up to a lot wide was left at every
         // corner of a street between two others (the player's empty spaces).
         const taken: [number, number][] = [];
-        for (const l of [...kept, ...add]) {
+        // The lots there (kept and added), by the strip's box: its two edges along the run, a lot's reach round them.
+        const stripBox = grow(rectAround(edge)!, m(4));
+        for (const at of filedIn(stripBox)) {
+          const l = { corners: rings[at]! };
           let near = false, ls0 = Infinity, ls1 = -Infinity;
           for (const corner of l.corners) {
             const q = corner;
@@ -790,21 +815,40 @@ export function lotRect(a: Vec2, b: Vec2, angle: number): Vec2[] | null {
   return [p(s0, t0), p(s1, t0), p(s1, t1), p(s0, t1)];
 }
 
-/** The paving as drawn (footways and all within them), grown by `grow`, indexed (`pavingIndex.ts`) by network (`onLand`). */
-const PAVING = new WeakMap<Network, { revision: number; grow: number; index: PavingIndex }[]>();
-function pavingOf(net: Network, grow = 0): PavingIndex {
-  const cached = (PAVING.get(net) ?? []).filter((c) => c.revision === net.revision);
-  const known = cached.find((c) => c.grow === grow);
-  if (known) return known.index;
-  const index = new PavingIndex((net.doc.segments.size ? levelPolygons(net, Level.Sidewalk) : []).map((raw) => grow === 0 ? raw : raw.map((ring, k) => {
+/**
+ * The paving as drawn (footways and all within them) round a box, grown by
+ * `grow`: the union of the footway rings of the streets and junctions filed
+ * over the box (`Network.segmentCells`, `junctionCells`), whole rings - no
+ * tile is cut out, so no seam - and each of its rings grown as the whole
+ * map's was. Inside the box it is the whole map's paving (a ring that does
+ * not reach the box changes nothing in it; a union and an offset are local),
+ * so a lot cut against it there is cut the same.
+ * DO NOT go back to the union of the whole map's footways, made again at each
+ * network revision (`levelPolygons` per revision, `PavingIndex`): every road
+ * edit paid for the whole map's paving at the next lot planned or drawn, and
+ * the snap of a lot's corner too.
+ * Null when no street or junction reaches the box.
+ */
+function pavingNear(net: Network, box: ChangeRect, grow = 0): MultiPoly | null {
+  const ribbons = net.ribbonsMeeting(box);
+  const junctions: [NodeId, ReadonlyMap<SurfaceLevel, Junction>][] = [];
+  for (const id of net.junctionCells.idsMeeting(box)) {
+    const byLevel = net.junctions.get(id);
+    if (byLevel) junctions.push([id, byLevel]);
+  }
+  if (!ribbons.length && !junctions.length) return null;
+  const paving = union(levelRingsOf(net, Level.Sidewalk, ribbons, junctions));
+  if (grow === 0) return paving;
+  return paving.map((raw) => raw.map((ring, k) => {
     const pts = ring.map(([x, y]) => ({ x: x!, y: y! }));
     // Grown all round: outer counter-clockwise, holes (the blocks) clockwise, so the right-hand offset grows the paving.
     const oriented = (k === 0) === (lotArea({ corners: pts }) > 0) ? pts : [...pts].reverse();
     return offsetRing(oriented, grow).map((p) => [p.x, p.y]);
-  })));
-  PAVING.set(net, [...cached, { revision: net.revision, grow, index }]);
-  return index;
+  }));
 }
+
+/** Room round a lot's box the paving is read over: past the clearance, so the cut inside the box is the whole map's. */
+const PAVING_MARGIN = m(2);
 
 /**
  * A lot drawn over the street, cut back to the land: what falls on the paving
@@ -816,8 +860,11 @@ function pavingOf(net: Network, grow = 0): PavingIndex {
 export function onLand(net: Network, points: readonly Vec2[], square = true, clearance = 0): Vec2[] | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-  // The paving within the lot's box alone (`pavingIndex.ts`): a town's is one piece with every block a hole.
-  const near = pavingOf(net, clearance).near(x0, y0, x1, y1);
+  // The paving round the lot's box alone (`pavingNear`).
+  const margin = Math.abs(clearance) + PAVING_MARGIN;
+  // A map with no street keeps the lot as drawn; one with streets, none near
+  // it, cuts it against nothing (its points on the clipping grid, as before).
+  const near = net.ribbons.size ? pavingNear(net, [x0 - margin, y0 - margin, x1 + margin, y1 + margin], clearance) ?? [] : null;
   if (!near) return [...points];
   let best: Vec2[] | null = null, bestArea = 0;
   for (const poly of difference([[points.map((p) => [p.x, p.y])]], near)) {
@@ -1005,47 +1052,23 @@ function nearerStreet(at: (s: number, t: number) => Vec2, s0: number, s1: number
   return true;
 }
 
-/** The footways' outer edges as drawn, in a grid, by network (`footwayEdges`). */
-const EDGE_CELL = m(16);
 /** An outline edge at least this long is a straight back of a footway; shorter ones are a corner's curve. */
 const STRAIGHT_BACK = m(2);
-interface FootwayEdges {
-  readonly revision: number;
-  readonly cells: Map<number, number[]>;
-  /** Edges as x0, y0, x1, y1, four numbers each. */
-  readonly edges: number[];
-}
-const EDGES = new WeakMap<Network, FootwayEdges>();
-const edgeKey = (i: number, j: number): number => i * 65_536 + j;
 
 /**
- * The outline of the paving a building may stand against: the union of every
- * footway as the game draws it (`levelPolygons`, the sidewalk level) - the
- * straight backs of the footways, and their curves round each junction's
- * corners. Built once per network.
+ * The outline of the paving a building may stand against round a box: the
+ * union of the footways (`pavingNear`) - the straight backs of the footways,
+ * and their curves round each junction's corners - as edges x0, y0, x1, y1.
  */
-function footwayEdges(net: Network): FootwayEdges {
-  const known = EDGES.get(net);
-  if (known && known.revision === net.revision) return known;
-  const cells = new Map<number, number[]>();
+function footwayEdgesNear(net: Network, box: ChangeRect): number[] {
   const edges: number[] = [];
-  const paving = net.doc.segments.size ? levelPolygons(net, Level.Sidewalk) : [];
-  for (const poly of paving) for (const ring of poly) {
+  for (const poly of pavingNear(net, box) ?? []) for (const ring of poly) {
     for (let k = 0; k < ring.length; k++) {
       const p = ring[k]!, q = ring[(k + 1) % ring.length]!;
-      const at = edges.length / 4;
       edges.push(p[0]!, p[1]!, q[0]!, q[1]!);
-      for (let i = Math.floor(Math.min(p[0]!, q[0]!) / EDGE_CELL); i <= Math.floor(Math.max(p[0]!, q[0]!) / EDGE_CELL); i++) {
-        for (let j = Math.floor(Math.min(p[1]!, q[1]!) / EDGE_CELL); j <= Math.floor(Math.max(p[1]!, q[1]!) / EDGE_CELL); j++) {
-          const list = cells.get(edgeKey(i, j));
-          if (list) list.push(at); else cells.set(edgeKey(i, j), [at]);
-        }
-      }
     }
   }
-  const built = { revision: net.revision, cells, edges };
-  EDGES.set(net, built);
-  return built;
+  return edges;
 }
 
 /**
@@ -1057,7 +1080,6 @@ function footwayEdges(net: Network): FootwayEdges {
  * itself. Another lot's corner first, so neighbours close up.
  */
 export function lotSnapper(doc: RoadDoc, net: Network, lots: readonly Pick<Lot, 'id' | 'corners'>[] = doc.lots): (p: Vec2, reach: number, skip?: number) => { p: Vec2; kind: 'corner' | 'street' | 'lot' | null } {
-  const { cells, edges } = footwayEdges(net);
   return (p, reach, skip) => {
     let lotBest: Vec2 | null = null, lotD = reach * 0.7;
     for (const l of lots) {
@@ -1069,21 +1091,18 @@ export function lotSnapper(doc: RoadDoc, net: Network, lots: readonly Pick<Lot, 
     // The straight backs of the footways near the point (their curves round
     // the corners left out): two of them that meet make a corner.
     const backs: { d: number; x0: number; y0: number; dx: number; dy: number }[] = [];
-    const seen = new Set<number>();
     const span = reach * 1.5;
-    for (let i = Math.floor((p.x - span) / EDGE_CELL); i <= Math.floor((p.x + span) / EDGE_CELL); i++) {
-      for (let j = Math.floor((p.y - span) / EDGE_CELL); j <= Math.floor((p.y + span) / EDGE_CELL); j++) {
-        for (const e of cells.get(edgeKey(i, j)) ?? []) {
-          if (seen.has(e)) continue;
-          seen.add(e);
-          const x0 = edges[e * 4]!, y0 = edges[e * 4 + 1]!, x1 = edges[e * 4 + 2]!, y1 = edges[e * 4 + 3]!;
-          const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
-          const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - x0) * dx + (p.y - y0) * dy) / len2)) : 0;
-          const qx = x0 + dx * t, qy = y0 + dy * t, d = Math.hypot(qx - p.x, qy - p.y);
-          if (d < bestD) { bestD = d; best = { x: qx, y: qy }; }
-          if (len2 >= STRAIGHT_BACK * STRAIGHT_BACK && d < span) backs.push({ d, x0, y0, dx, dy });
-        }
-      }
+    // The outline round the point, read over the reach and a straight back's
+    // length more: an edge within reach is whole there, as in the whole map's.
+    const around = span + STRAIGHT_BACK + PAVING_MARGIN;
+    const edges = footwayEdgesNear(net, [p.x - around, p.y - around, p.x + around, p.y + around]);
+    for (let e = 0; e < edges.length / 4; e++) {
+      const x0 = edges[e * 4]!, y0 = edges[e * 4 + 1]!, x1 = edges[e * 4 + 2]!, y1 = edges[e * 4 + 3]!;
+      const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - x0) * dx + (p.y - y0) * dy) / len2)) : 0;
+      const qx = x0 + dx * t, qy = y0 + dy * t, d = Math.hypot(qx - p.x, qy - p.y);
+      if (d < bestD) { bestD = d; best = { x: qx, y: qy }; }
+      if (len2 >= STRAIGHT_BACK * STRAIGHT_BACK && d < span) backs.push({ d, x0, y0, dx, dy });
     }
     backs.sort((u, v) => u.d - v.d);
     let corner: Vec2 | null = null;
