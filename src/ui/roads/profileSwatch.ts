@@ -119,7 +119,7 @@ export function profileSwatch(profile: RoadProfileSpec, span: number, width = 11
       else for (let x = 2; x < width; x += 10) ctx.fillRect(x, yy - 0.5, 5, 1);
     }
   }
-  // Arrows on a one-way road, one per lane, so the tile says "mão única".
+  // Arrows on a one-way road, one per lane, so the tile says "one-way".
   if (oneWay) {
     ctx.fillStyle = WHITE;
     for (const b of bands) {

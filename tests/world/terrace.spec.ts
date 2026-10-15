@@ -58,7 +58,7 @@ describe('terraced yards on a hillside', () => {
     expect(up).toBeGreaterThan(2);
     expect(down).toBeGreaterThan(2);
     expect(terraced / houses.length).toBeGreaterThan(0.5);
-    console.log(`TERRAÇOS ${terraced}/${houses.length} (${up} acima, ${down} abaixo); corte e aterro no meio do jardim ${(cutBefore * METERS_PER_UNIT).toFixed(1)} m -> ${(cutAfter * METERS_PER_UNIT).toFixed(1)} m`);
+    console.log(`TERRACES ${terraced}/${houses.length} (${up} above, ${down} below); cut and fill mid-garden ${(cutBefore * METERS_PER_UNIT).toFixed(1)} m -> ${(cutAfter * METERS_PER_UNIT).toFixed(1)} m`);
     expect(cutAfter).toBeLessThan(cutBefore * 0.5);
   });
 });

@@ -47,7 +47,7 @@ cause, technique and source). Git history is the archive.
 - Before a technique the code does not use yet, read the official source. three.js of the game's
   version, offline: `C:/Codex-Shared/referencia/` (docs, manual, examples, source; InstancedMesh2,
   3DTilesRendererJS, three-mesh-bvh, postprocessing; index in its `README.md`).
-- `node scripts/acusar.mjs` points at three.js uses the manual warns against and at the patterns
+- `node scripts/accuse.mjs` points at three.js uses the manual warns against and at the patterns
   below. An accusation is a lead to read, not a proof.
 - One commit per fix, saying cause, technique and source.
 

@@ -146,11 +146,11 @@ describe('the editor and the inspector use the interface’s own controls', () =
     const before = panel.querySelectorAll('.rp-card').length;
     (panel.querySelector('[data-action="save"]') as HTMLButtonElement).click();
     const field = panel.querySelector('.rp-field') as HTMLInputElement;
-    field.value = 'Minha rua';
+    field.value = 'My street';
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(panel.querySelectorAll('.rp-card').length).toBe(before + 1);
     const picked = [...panel.querySelectorAll('.rp-card.on .rp-card-name')].map((x) => x.textContent);
-    expect(picked).toContain('Minha rua');
+    expect(picked).toContain('My street');
     expect(panel.querySelector('.rp-foot [role="status"]')).toBeNull();
     localStorage.clear();
   });

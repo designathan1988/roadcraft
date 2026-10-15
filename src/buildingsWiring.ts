@@ -694,7 +694,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           seeInside.on = false;
           seeInside.target = null;
         } else {
-          // DO NOT switch on with no building: the bar showed 'Térreo' over the street and climbed to any floor, nothing open.
+          // DO NOT switch on with no building: the bar showed 'Ground floor' over the street and climbed to any floor, nothing open.
           const { w, h } = deps.size();
           const target = tool.buildingAt({ x: w / 2, y: h / 2 });
           if (target === null) {

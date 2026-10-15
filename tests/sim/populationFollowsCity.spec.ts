@@ -11,7 +11,7 @@ import { createAgentWalkEngine } from '@sim/agents/walk';
 import { trafficTarget } from '@sim/vehicles/spawn';
 import { busy, PEOPLE } from '@sim/ambient/demand';
 
-/** THE CITIES ARE EMPTY the player, 2026-10-11: A cidade não tem trânsito de carros e nem de pessoas. Todas as cidades são */
+/** THE CITIES ARE EMPTY the player, 2026-10-11: the city has no traffic of cars nor of people; every city is like that */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },

@@ -126,7 +126,7 @@ function facesOfGeometry(g: BufferGeometry, look: string, e: Float32Array, out: 
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     return [e[0]! * x + e[4]! * y + e[8]! * z + e[12]!, e[1]! * x + e[5]! * y + e[9]! * z + e[13]!, e[2]! * x + e[6]! * y + e[10]! * z + e[14]!];
   };
-  for (let t = 0; t + 2 < n; t += 3) face(at(idx ? idx.getX(t) : t), at(idx ? idx.getX(t + 1) : t + 1), at(idx ? idx.getX(t + 2) : t + 2), 'peça', look, [0, 0, 0], out);
+  for (let t = 0; t + 2 < n; t += 3) face(at(idx ? idx.getX(t) : t), at(idx ? idx.getX(t + 1) : t + 1), at(idx ? idx.getX(t + 2) : t + 2), 'part', look, [0, 0, 0], out);
 }
 
 /** Every face of one building, in the world: its shells by finish and colour, its parts by kind. */

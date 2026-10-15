@@ -59,7 +59,7 @@ describe('variety of grown buildings', () => {
         pairs++;
         if (signatureDistance(sig[i]!, sig[j]!) < 1.2) twins++;
       }
-      console.log(`VARIEDADE ${use} ${density}: ${street.length} prédios, ${twins}/${pairs} vizinhos parecidos, formas ${new Set(sig.map((s) => s.form)).size}, cores ${new Set(sig.map((s) => s.colour)).size}`);
+      console.log(`VARIETY ${use} ${density}: ${street.length} buildings, ${twins}/${pairs} look-alike neighbours, forms ${new Set(sig.map((s) => s.form)).size}, colours ${new Set(sig.map((s) => s.colour)).size}`);
       expect(twins, `${twins} look-alike pairs of ${pairs}`).toBe(0);
       // Within 100 m, few buildings share both form and paint with another.
       let alike = 0;
@@ -69,7 +69,7 @@ describe('variety of grown buildings', () => {
           if (sig[i]!.form === sig[j]!.form && signatureDistance(sig[i]!, sig[j]!) < 2.2) { alike++; break; }
         }
       }
-      console.log(`GÊMEOS ${use} ${density}: ${alike} de ${street.length} com um quase igual a menos de 100 m`);
+      console.log(`TWINS ${use} ${density}: ${alike} of ${street.length} with a near twin within 100 m`);
       expect(alike / street.length, `${alike} of ${street.length} with a near twin within 100 m`).toBeLessThan(0.15);
     });
   }

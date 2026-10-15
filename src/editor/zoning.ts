@@ -177,7 +177,7 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
   }
   const use = lot.use!;
   const frame = lotBuildFrame(lot);
-  // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "tem que aparecer sempre").
+  // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "it always has to appear").
   const u = { x: Math.cos(frame.rotation), y: Math.sin(frame.rotation) }, n = { x: -u.y, y: u.x };
   // A corner lot: a street along one of its sides too (the building then looks onto it, `planLot`).
   const corner = cornerOf(ctx, frame.anchor, u, n, frame.width, frame.depth);
@@ -283,7 +283,7 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
     }
     if (!result.ok || result.id === undefined) continue;
     const where = rectAround(lot.corners);
-    open.grew(lot, result.id as number, where ? [where] : null, 'prédio cresceu no lote');
+    open.grew(lot, result.id as number, where ? [where] : null, 'building grew on the lot');
     return result.id as number;
   }
   open.refuse(lot, refused);

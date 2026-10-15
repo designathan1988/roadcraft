@@ -8,7 +8,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/** The perspective camera from the overview down to the street (the player, 2026-10-09: "descer mais a vista e não travar") */
+/** The perspective camera from the overview down to the street (the player, 2026-10-09: "bring the view further down and do not freeze") */
 const W = 1280;
 const H = 720;
 

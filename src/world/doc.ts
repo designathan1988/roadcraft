@@ -101,7 +101,7 @@ export interface RoadNode {
   uturn?: SegmentId;
 }
 
-/** A road's end that is not the map's edge: a turning circle (balão de retorno). */
+/** A road's end that is not the map's edge: a turning circle. */
 export type RoadEnd = 'bulb';
 
 export type NodeCrossingKind = 'zebra' | 'signal';
@@ -1352,7 +1352,7 @@ export class RoadDoc {
 
   // ------------------------------------------------------------ working copy
 
-  /** DO NOT go back to copying the document for an edit (CLAUDE.md, "Refazer tudo quando uma parte muda"). */
+  /** DO NOT go back to copying the document for an edit (CLAUDE.md, "Rebuilding everything when one part changes"). */
   fork(): RoadDoc {
     const copy = new RoadDoc();
     this.layOver(copy);
@@ -1834,7 +1834,7 @@ export class RoadDoc {
       others.push('zones');
     }
     // The lots write their own, by id (`LotStore.replaceWith`); of a working copy, only those its diary names.
-    if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'substituídos por uma edição ou um desfazer');
+    if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'replaced by an edit or an undo');
     if (moved('transit') && JSON.stringify(this.transit) !== JSON.stringify(source.transit)) {
       this.transit = JSON.parse(JSON.stringify(source.transit)) as TransitData;
       others.push('transit');
@@ -2119,7 +2119,7 @@ export class RoadDoc {
       if (!isPaintKind(dab.kind) || ![dab.x, dab.y, dab.radius, dab.strength].every(Number.isFinite)) continue;
       doc.terrainPaint.push({ kind: dab.kind, x: dab.x, y: dab.y, radius: dab.radius, strength: dab.strength });
     }
-    const loaded = { cause: 'mapa carregado' } as const;
+    const loaded = { cause: 'map loaded' } as const;
     if (doc.terrainPaint.length) doc.changes.record('paint', null, loaded);
     // Absent: a map with the default weather (dry and still).
     if (data.weather) { doc.weather = readWeather(data.weather); doc.changes.record('weather', null, loaded); }
@@ -2198,7 +2198,7 @@ export class RoadDoc {
     if (data.transit) doc.transit = normalizeTransit(data.transit);
     // The balance, if the map has paid for anything (absent: the starting balance).
     const economy = data.economy === undefined ? null : readEconomy(data.economy);
-    if (economy) { doc.economy = economy; doc.changes.record('economy', null, { cause: 'mapa carregado' }); }
+    if (economy) { doc.economy = economy; doc.changes.record('economy', null, { cause: 'map loaded' }); }
     // The player's landscaping, if the map has any; anything malformed is dropped.
     for (const raw of data.landscape ?? []) {
       if (!isLandscapeKind(raw?.kind) || !Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isInteger(raw.id)) continue;
@@ -2256,8 +2256,8 @@ export class RoadDoc {
       seen.add(person.id);
       doc.people.push(person);
     }
-    doc.roadsChanged(null, true, { detail: 'mapa carregado' });
-    if (data.terrain?.length) doc.changes.record('terrain', null, { cause: 'mapa carregado' });
+    doc.roadsChanged(null, true, { detail: 'map loaded' });
+    if (data.terrain?.length) doc.changes.record('terrain', null, { cause: 'map loaded' });
     return doc;
   }
 }

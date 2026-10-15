@@ -231,8 +231,8 @@ export class LotStore {
       this.ids.reserve(lot.id);
     }
     for (const key of keys) if (!this.keySet.has(key)) { this.keySet.add(key); this.keyList.push(key); }
-    if (lots.length) this.journal.record('lots', null, { cause: 'mapa carregado' });
-    if (keys.length) this.journal.record('lotKeys', null, { cause: 'mapa carregado' });
+    if (lots.length) this.journal.record('lots', null, { cause: 'map loaded' });
+    if (keys.length) this.journal.record('lotKeys', null, { cause: 'map loaded' });
   }
 
   /** The same records as another store (they are never changed in place) */

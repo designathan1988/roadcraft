@@ -1357,7 +1357,7 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
     const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, w = it.x1 - it.x0, d = it.y1 - it.y0;
     switch (it.kind) {
       case 'tank': {
-        // The caixa d'água: a round fibreglass tank on a plinth, tapering in at the top, its lid.
+        // The rooftop water tank (caixa d'água): a round fibreglass tank on a plinth, tapering in at the top, its lid.
         const paint = TANK_PAINTS[it.variant % TANK_PAINTS.length]!;
         const r = Math.min(w, d) / 2;
         e.box(it.x0, it.y0, it.x1, it.y1, z, z + m(0.3), ROOF_PLANT);

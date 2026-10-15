@@ -7,14 +7,14 @@ import { joinSessionJob } from './sessionJob.mjs';
 
 const file = process.argv[2];
 if (!file) {
-  console.error('uso: node scripts/look.mjs <roteiro.json>');
+  console.error('usage: node scripts/look.mjs <script.json>');
   process.exit(2);
 }
 let plan;
 try {
   plan = JSON.parse(readFileSync(file, 'utf8'));
 } catch (err) {
-  console.error(`roteiro ilegível (${file}): ${err.message}`);
+  console.error(`unreadable script (${file}): ${err.message}`);
   process.exit(2);
 }
 const out = resolve(plan.out ?? join(tmpdir(), 'roadcraft-look', new Date().toISOString().replace(/[:.]/g, '-')));
@@ -22,7 +22,7 @@ mkdirSync(out, { recursive: true });
 const [width, height] = plan.viewport ?? [1920, 1080];
 /** The dev server reloads the page whenever any session saves a file (Vite) */
 const ATTEMPTS = 3;
-const RELOADED = 'a página recarregou no meio (um arquivo foi salvo e o Vite recarregou o jogo)';
+const RELOADED = 'the page reloaded midway (a file was saved and Vite reloaded the game)';
 
 // If the game cannot run within the share, the game is too slow: make it faster, DO NOT lift the cap.
 const job = joinSessionJob();
@@ -37,14 +37,14 @@ try {
       break;
     } catch (err) {
       if (!String(err.message).includes(RELOADED) || attempt >= ATTEMPTS) throw err;
-      console.log(`${RELOADED}: tentativa ${attempt + 1} de ${ATTEMPTS}`);
+      console.log(`${RELOADED}: attempt ${attempt + 1} of ${ATTEMPTS}`);
     }
   }
 } finally {
-  writeFileSync(join(out, 'relatorio.json'), JSON.stringify(report, null, 2));
+  writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
   await browser.close();
 }
-console.log(`relatório: ${join(out, 'relatorio.json')}${report.console.length ? ` (${report.console.length} erros/avisos no console)` : ''}`);
+console.log(`report: ${join(out, 'report.json')}${report.console.length ? ` (${report.console.length} errors/warnings in the console)` : ''}`);
 
 /** One run of the steps on a fresh page; throws `RELOADED` if the page reloads under it. */
 async function runOnce(report) {
@@ -53,7 +53,7 @@ async function runOnce(report) {
   if (plan.cpu && plan.cpu > 1) {
     const session = await page.context().newCDPSession(page);
     await session.send('Emulation.setCPUThrottlingRate', { rate: plan.cpu });
-    console.log(`CPU ${plan.cpu}x mais lenta (emulada)`);
+    console.log(`CPU ${plan.cpu}x slower (emulated)`);
   }
   try {
     await steps(page, report);
@@ -74,7 +74,7 @@ async function steps(page, report) {
   try {
     await page.goto(url, { waitUntil: 'load' });
   } catch (err) {
-    throw new Error(`o jogo não respondeu em ${url} (${err.message.split('\n')[0]}): suba o servidor com \`npm run dev\``, { cause: err });
+    throw new Error(`the game did not answer at ${url} (${err.message.split('\n')[0]}): start the server with \`npm run dev\``, { cause: err });
   }
   page.reloads = 0;
   page.on('load', () => { page.reloads++; });
@@ -83,10 +83,10 @@ async function steps(page, report) {
   report.renderer = await page.evaluate(() => {
     const gl = document.createElement('canvas').getContext('webgl2');
     const info = gl?.getExtension('WEBGL_debug_renderer_info');
-    return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : String(gl?.getParameter(gl.RENDERER) ?? 'sem WebGL2');
+    return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : String(gl?.getParameter(gl.RENDERER) ?? 'no WebGL2');
   });
-  console.log(`placa: ${report.renderer}`);
-  if (/swiftshader|software|llvmpipe|basic render/i.test(report.renderer)) throw new Error(`renderizador de software (${report.renderer}): fotos e tempos não valem`);
+  console.log(`GPU: ${report.renderer}`);
+  if (/swiftshader|software|llvmpipe|basic render/i.test(report.renderer)) throw new Error(`software renderer (${report.renderer}): shots and times do not count`);
 
   await page.waitForFunction(() => Boolean(window.__roadcraft?.memory), null, { timeout: 120_000 });
   // Every long frame from now on, kept in the page for "profileEnd".
@@ -104,7 +104,7 @@ async function steps(page, report) {
     await page.waitForFunction(() => window.__roadcraft && !window.__roadcraft.cityGrowth() && window.__roadcraft.memory().drawCalls > 100, null, { timeout: 1_800_000, polling: 1000 });
     stillThere();
     const value = { seconds: (Date.now() - t0) / 1000, builtIn: await page.evaluate(() => window.__roadcraft.cityBuiltIn()) };
-    console.log(`cidade pronta em ${value.seconds.toFixed(1)} s (crescimento ${Number(value.builtIn).toFixed(1)} s)`);
+    console.log(`city ready in ${value.seconds.toFixed(1)} s (growth ${Number(value.builtIn).toFixed(1)} s)`);
     return value;
   };
   if (plan.city) await city(plan.city);
@@ -162,18 +162,18 @@ async function steps(page, report) {
       const [x, y, w, h] = step.clip ?? [];
       await page.screenshot({ path, ...(step.clip ? { clip: { x, y, width: w, height: h } } : {}) });
       line.file = path;
-      console.log(`foto: ${path}`);
+      console.log(`shot: ${path}`);
     } else if (step.budget) {
       await frames(30);
-      line.value = await page.evaluate((view) => window.__roadcraft.budget(view).map((r) => `${r.situação} | ${r.item} | ${r.medido} | ${r.orçamento}${r.vezes ? ` | ${r.vezes}×` : ''}`), step.budget);
-      console.log(`orçamento (${step.budget}):\n  ${line.value.join('\n  ')}`);
+      line.value = await page.evaluate((view) => window.__roadcraft.budget(view).map((r) => `${r.status} | ${r.item} | ${r.measured} | ${r.budget}${r.times ? ` | ${r.times}×` : ''}`), step.budget);
+      console.log(`budget (${step.budget}):\n  ${line.value.join('\n  ')}`);
     } else if (step.city) line.value = await city(step.city);
     else if (step.memory) {
       line.value = await page.evaluate(() => {
         const r = window.__roadcraft.memory();
         return { heapMB: r.heapMB, geometryMB: r.geometryMB, geometryCpuMB: r.geometryCpuMB, textureMB: r.textureMB, drawCalls: r.drawCalls, triangles: r.triangles, cpuByName: r.cpuByName.slice(0, 8) };
       });
-      console.log(`memória: ${JSON.stringify(line.value)}`);
+      console.log(`memory: ${JSON.stringify(line.value)}`);
     } else if (step.profile) {
       cdp ??= await page.context().newCDPSession(page);
       await cdp.send('Profiler.enable');
@@ -181,7 +181,7 @@ async function steps(page, report) {
       await cdp.send('Profiler.start');
       profiling = { name: step.profile, since: await page.evaluate(() => performance.now()) };
     } else if (step.profileEnd) {
-      if (!profiling) throw new Error('"profileEnd" sem "profile" antes');
+      if (!profiling) throw new Error('"profileEnd" with no "profile" before it');
       const { profile } = await cdp.send('Profiler.stop');
       const path = join(out, `${String(i).padStart(2, '0')}-${profiling.name}.cpuprofile`);
       writeFileSync(path, JSON.stringify(profile));
@@ -189,7 +189,7 @@ async function steps(page, report) {
       line.value = { name: profiling.name, cpuprofile: path, ...summarise(profile, frames) };
       console.log(report1(line.value));
       profiling = null;
-    } else throw new Error(`passo desconhecido: ${JSON.stringify(step)}`);
+    } else throw new Error(`unknown step: ${JSON.stringify(step)}`);
     stillThere();
     report.steps.push(line);
   }
@@ -198,8 +198,8 @@ async function steps(page, report) {
 /** A script's place, short: the function, the file under `src/` (no origin, no Vite query) and the line. */
 // A declaration, not a `const`: the steps above run
 function where(fn, url, line) {
-  const file = String(url ?? '').replace(/^https?:\/\/[^/]+\//, '').replace(/\?.*$/, '') || '(nativo)';
-  return `${fn || '(anônima)'} @ ${file}${line >= 0 ? `:${line + 1}` : ''}`;
+  const file = String(url ?? '').replace(/^https?:\/\/[^/]+\//, '').replace(/\?.*$/, '') || '(native)';
+  return `${fn || '(anonymous)'} @ ${file}${line >= 0 ? `:${line + 1}` : ''}`;
 }
 
 /** What a profile and the long frames say, in milliseconds: each function's own time */
@@ -249,10 +249,10 @@ function summarise(profile, frames) {
 /** The summary as lines for the console. */
 function report1(v) {
   return [
-    `perfil "${v.name}": ${v.profiledMs} ms medidos, coleta de lixo ${v.garbageMs} ms; ${v.longFrames} quadros > 50 ms (${v.longFramesMs} ms, pior ${v.worstFrameMs} ms, bloqueio ${v.blockingMs} ms)`,
-    '  quadros longos, por função (ms, vezes, pior):', ...v.heldBy.map(([k, ms, n, w]) => `    ${ms} ms  ×${n}  pior ${w}  ${k}`),
-    '  tempo próprio (ms):', ...v.selfMs.slice(0, 15).map(([k, ms]) => `    ${ms}  ${k}`),
-    '  tempo com o que chama (ms):', ...v.totalMs.slice(0, 15).map(([k, ms]) => `    ${ms}  ${k}`),
-    `  perfil: ${v.cpuprofile}`,
+    `profile "${v.name}": ${v.profiledMs} ms measured, garbage collection ${v.garbageMs} ms; ${v.longFrames} frames > 50 ms (${v.longFramesMs} ms, worst ${v.worstFrameMs} ms, blocking ${v.blockingMs} ms)`,
+    '  long frames, by function (ms, times, worst):', ...v.heldBy.map(([k, ms, n, w]) => `    ${ms} ms  ×${n}  worst ${w}  ${k}`),
+    '  self time (ms):', ...v.selfMs.slice(0, 15).map(([k, ms]) => `    ${ms}  ${k}`),
+    '  total time, with callees (ms):', ...v.totalMs.slice(0, 15).map(([k, ms]) => `    ${ms}  ${k}`),
+    `  profile: ${v.cpuprofile}`,
   ].join('\n');
 }

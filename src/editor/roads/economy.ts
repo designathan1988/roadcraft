@@ -16,7 +16,7 @@ export function roadsBefore(doc: RoadDoc): RoadsBefore {
 export function settleRoadEdit(before: RoadsBefore, after: RoadDoc, apply = true): RoadCharge {
   const charge = chargeFor(before.value, roadValue(after), before.balance);
   if (apply && charge.affordable && charge.amount !== 0) {
-    after.setBalance(charge.balance, charge.amount > 0 ? 'via paga' : 'demolição devolvida');
+    after.setBalance(charge.balance, charge.amount > 0 ? 'road paid' : 'demolition refunded');
   }
   return charge;
 }

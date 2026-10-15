@@ -2,7 +2,7 @@ import { type FrameTimer, type HealthEntry, type HealthLog, LONG_FRAME_MS, syste
 import { stepBudget } from '@core/perfBudget';
 import { t } from './i18n';
 
-/** DO NOT write a message's text here: they were Portuguese in the code, and an English player read "Erro sem mensagem". */
+/** DO NOT write a message's text here: they were Portuguese in the code, and an English player read a Portuguese "error with no message". */
 /** A frame system's name in the game's language (`health.system.<id>`, `core/health.ts` `FrameSystem`) */
 export function systemName(system: string): string {
   const key = systemKey(system);

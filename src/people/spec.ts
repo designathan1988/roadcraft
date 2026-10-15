@@ -177,7 +177,7 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
   // Curated by eye (the player, 2026-10-05: "pessoas bonitas", no women all with short hair, no straggly strands)
   const available = new Set([...streetHair, ...systemHair, ...COMMUNITY.filter((i) => i.kind === 'hair' && i.street).map((i) => i.name)]);
   const only = (names: readonly string[]): string[] => names.filter((n) => available.has(n) || (WARDROBE.hair.long as readonly string[]).includes(n) || (WARDROBE.hair.short as readonly string[]).includes(n));
-  // Audited by eye on 2026-10-05 (the player: "tudo é horrível"): out went the see-through straggly long hair
+  // Audited by eye on 2026-10-05 (the player: "everything is horrible"): out went the see-through straggly long hair
   const FEMALE_LONG = only(['elvs_daisy_hair', 'elvs_hazel_hair', 'elvs_lady_hippy_hair', 'elvs_french_braid_variation']);
   const FEMALE_CHANEL = only(['toigo_blunt_bob', 'toigo_inverted_bob', 'toigo_blunt_bob_with_bangs']);
   const FEMALE_UPDO = only(['elvs_50s_updo', 'rehmanpolanski_hair_bun_brown']);

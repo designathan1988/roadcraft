@@ -49,7 +49,7 @@ describe('a flight of stairs between the half levels', () => {
         expect(low, `house ${h.id}: the flight's foot in its lower block`).toBeDefined();
       }
     }
-    console.log(`LANCES: ${flights} em ${split.length} casas em meio-nível`);
+    console.log(`FLIGHTS: ${flights} in ${split.length} split-level houses`);
   });
 
   it('keeps the furniture off the flight', () => {

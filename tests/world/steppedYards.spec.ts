@@ -96,13 +96,13 @@ describe('car parks and loading yards stepped on a hillside', () => {
       const stepped = withYard.filter((b) => b.volumes.some((v) => !v.open && volumeLift(v) !== 0));
       let now = 0, flat = 0;
       for (const b of stepped) { const e = earthworks(b); now += e.now; flat += e.flat; }
-      console.log(`${name.toUpperCase()}: ${stepped.length}/${withYard.length} em degrau; terra no pátio e nos blocos ${(flat / Math.max(1, stepped.length)).toFixed(2)} m -> ${(now / Math.max(1, stepped.length)).toFixed(2)} m`);
+      console.log(`${name.toUpperCase()}: ${stepped.length}/${withYard.length} stepped; earth in the yard and on the blocks ${(flat / Math.max(1, stepped.length)).toFixed(2)} m -> ${(now / Math.max(1, stepped.length)).toFixed(2)} m`);
       expect(stepped.length).toBeGreaterThan(0);
       expect(now).toBeLessThan(flat * 0.8);
       // The car parks and loading yards themselves (before: none stepped - cars and lorries came in at the street's floor)
       const parks = withYard.filter((b) => b.elements?.some((e) => e.kind === 'parking' && e.y > Math.max(...b.volumes.filter((o) => !o.open).map((o) => o.y + o.d)) - m(0.5)));
       const steppedParks = parks.filter((b) => b.volumes.some((v) => isYard(b, v) && Math.abs(v.ramp ?? v.terrace ?? 0) > 1e-6));
-      console.log(`  estacionamentos e pátios de carga em degrau: ${steppedParks.length}/${parks.length}`);
+      console.log(`  car parks and loading yards stepped: ${steppedParks.length}/${parks.length}`);
       expect(steppedParks.length / Math.max(1, parks.length)).toBeGreaterThanOrEqual(share);
       for (const b of steppedParks) expect(b.volumes.some((v) => v.open && v.ramp !== undefined && !isYard(b, v)), `drive ramp of building ${b.id}`).toBe(true);
       for (const b of withYard) {
@@ -187,7 +187,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
         }
       }
     }
-    console.log(`TERRA SOBRE O PISO: ${wrong.length} de ${surfaces} superfícies, pior ${(worst * METERS_PER_UNIT).toFixed(2)} m\n${wrong.join('\n')}`);
+    console.log(`EARTH OVER THE FLOOR: ${wrong.length} of ${surfaces} surfaces, worst ${(worst * METERS_PER_UNIT).toFixed(2)} m\n${wrong.join('\n')}`);
     // Before (27a7cb48): 23 of 290 surfaces, up to 7.46 m
     expect(wrong).toEqual([]);
   });
@@ -223,7 +223,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
       }
     }
     // Before: 2.2 m in the air on a court a storey up, under the paving on one a storey down.
-    console.log(`CAIXOTES: ${checked} no pátio em degrau, pior ${worst.toFixed(3)} m do piso`);
+    console.log(`CRATES: ${checked} in the stepped yard, worst ${worst.toFixed(3)} m from the floor`);
     expect(checked).toBeGreaterThan(0);
     expect(worst).toBeLessThan(m(0.02));
   });

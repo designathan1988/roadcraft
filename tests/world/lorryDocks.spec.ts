@@ -42,7 +42,7 @@ describe('lorry docks at the loading doors', () => {
         expect(Math.hypot(d.open.x - d.door.x, d.open.y - d.door.y)).toBeGreaterThan(m(8));
       }
     }
-    console.log(`DOCAS: ${atDoor} de ${docks} diante de uma porta de carga (${works.length} galpões)`);
+    console.log(`DOCKS: ${atDoor} of ${docks} in front of a loading door (${works.length} sheds)`);
     expect(works.length).toBeGreaterThan(4);
     expect(atDoor).toBe(docks);
   });

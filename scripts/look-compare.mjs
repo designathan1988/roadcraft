@@ -8,15 +8,15 @@ const THRESHOLD = 0.1;
 
 const [a, b, outArg] = process.argv.slice(2);
 if (!a || !b) {
-  console.error('uso: node scripts/look-compare.mjs <pasta antes> <pasta depois> [pasta de saída]');
+  console.error('usage: node scripts/look-compare.mjs <folder before> <folder after> [output folder]');
   process.exit(2);
 }
 const before = resolve(a), after = resolve(b);
-const out = resolve(outArg ?? join(after, 'comparacao'));
+const out = resolve(outArg ?? join(after, 'comparison'));
 mkdirSync(out, { recursive: true });
 const names = readdirSync(before).filter((n) => n.endsWith('.png') && readdirSync(after).includes(n)).sort();
 if (!names.length) {
-  console.error(`nenhuma foto de mesmo nome em ${before} e ${after}`);
+  console.error(`no shot of the same name in ${before} and ${after}`);
   process.exit(2);
 }
 
@@ -28,20 +28,20 @@ try {
     const data = (dir) => `data:image/png;base64,${readFileSync(join(dir, name)).toString('base64')}`;
     const result = await page.evaluate(compare, { a: data(before), b: data(after), threshold: THRESHOLD });
     if (result.error) { rows.push({ name, error: result.error }); continue; }
-    const diff = join(out, name.replace(/\.png$/, '-diferenca.png'));
+    const diff = join(out, name.replace(/\.png$/, '-diff.png'));
     writeFileSync(diff, Buffer.from(result.png.split(',')[1], 'base64'));
     rows.push({ name, changed: result.changed, share: result.changed / result.pixels, box: result.box, diff });
   }
 } finally {
   await browser.close();
 }
-writeFileSync(join(out, 'comparacao.json'), JSON.stringify(rows, null, 2));
+writeFileSync(join(out, 'comparison.json'), JSON.stringify(rows, null, 2));
 for (const r of rows) {
   if (r.error) { console.log(`${r.name}: ${r.error}`); continue; }
   const pct = (r.share * 100).toFixed(3).padStart(8);
-  console.log(`${pct} %  ${String(r.changed).padStart(8)} px  ${r.box ? `caixa ${r.box.join(',')}` : 'iguais'}  ${r.name}`);
+  console.log(`${pct} %  ${String(r.changed).padStart(8)} px  ${r.box ? `box ${r.box.join(',')}` : 'same'}  ${r.name}`);
 }
-console.log(`diferenças: ${out}`);
+console.log(`differences: ${out}`);
 
 /* global Image, OffscreenCanvas, FileReader -- `compare` runs in the page (page.evaluate), not in node. */
 /** In the page: both pictures decoded on canvases, compared, and the difference drawn. */

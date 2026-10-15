@@ -32,7 +32,7 @@ describe('a shop on the footway opens its door onto the street', () => {
   const onFootway = all.filter((h) => !gated(h));
 
   it('finds the shops with no people\'s gate, and gives each its door on the footway', () => {
-    console.log(`LOJAS NA CALÇADA: ${onFootway.length} de ${all.length} sem portão de pedestre`);
+    console.log(`SHOPS ON THE FOOTWAY: ${onFootway.length} of ${all.length} with no pedestrian gate`);
     expect(onFootway.length).toBeGreaterThan(2);
     for (const h of onFootway) {
       const doors = streetDoors(h);
