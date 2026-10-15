@@ -1107,13 +1107,14 @@ export class RoadDoc {
   setMarkingStyle(style: MarkingStyleId): void {
     if (this.markingStyle === style) return;
     this.markingStyle = style;
-    // The whole map, on purpose: every road's paint changes, and the network
-    // takes in a change with places only for the roads whose sources differ
-    // (`networkBuild.ts` `segmentSourceKey`, which does not hold the style) -
-    // with the roads' rectangles nothing would be painted again. DO NOT give
-    // this entry rectangles before the style is a source of the paint (a
-    // diary kind of its own, or part of the source key). Not the traffic.
-    this.roadsChanged(null, false, { detail: 'paint style' });
+    // Its own kind, the whole map: every road's paint and the plates the
+    // regional standard puts up change, and nothing else. DO NOT write it as a
+    // change of the roads again: `revision` moved, and the network, the lanes,
+    // the conflict table, the simulation and the roads' heights were worked
+    // out again for every road of the map, for a coat of paint. What draws the
+    // paint reads this kind (`render/renderer.ts`: the road surfaces and the
+    // signs).
+    this.changes.record('markingStyle', null, { detail: 'paint style' });
   }
 
   /** A U-turn through the median for the traffic arriving from `from` (`RoadNode.uturn`), or none. */
@@ -1761,8 +1762,7 @@ export class RoadDoc {
     itemRects();
     const where = (rects: readonly ChangeRect[]): readonly ChangeRect[] | null => (rects.length ? rects : null);
     if (roadsTouched) this.roadsChanged(where(roads), traffic, { ids: roadIds, detail: 'restored' });
-    // The paint style is every road's paint, not the traffic's plan (`setMarkingStyle`).
-    if (kinds.has('roads')) this.roadsChanged(null, false, { detail: 'paint style restored' });
+    // The paint style is written with the other values below, as its own kind (`setMarkingStyle`).
     if (kinds.has('utilities')) this.changes.record('utilities', where(utilities));
     if (kinds.has('landscape')) this.changes.record('landscape', where(landscape));
     if (kinds.has('barriers')) this.changes.record('barriers', where(barriers));
@@ -1771,7 +1771,7 @@ export class RoadDoc {
       // A stretch put back as it was moves nothing (an empty list of rectangles writes no entry).
       this.changes.record(kind, rects);
     }
-    for (const kind of kinds) if (!['roads', 'utilities', 'landscape', 'barriers'].includes(kind)) this.changes.record(kind, null);
+    for (const kind of kinds) if (!['utilities', 'landscape', 'barriers'].includes(kind)) this.changes.record(kind, null);
   }
 
   /** A list of the document by its part's name (`restore`, `world/docImage.ts`); read-only to the image (written through `restore`). */
@@ -1813,7 +1813,7 @@ export class RoadDoc {
     const value = structuredClone(raw);
     switch (part) {
       case 'terrainRelief': this.terrainRelief = value as ReliefVersion; kinds.add('terrain'); return;
-      case 'markingStyle': this.markingStyle = value as MarkingStyleId; kinds.add('roads'); return;
+      case 'markingStyle': this.markingStyle = value as MarkingStyleId; kinds.add('markingStyle'); return;
       case 'nature': this.nature = value as NatureSettings | null; kinds.add('nature'); return;
       case 'fogSettings': this.fogSettings = value as FogSettings; kinds.add('fog'); return;
       case 'gullyAuto': this.gullyAuto = value as number; kinds.add('gullies'); return;
@@ -1973,8 +1973,9 @@ export class RoadDoc {
 
     if (this.markingStyle !== source.markingStyle) {
       this.markingStyle = source.markingStyle;
-      this.roadsChanged(null, false, { detail: 'paint style' });
+      others.push('markingStyle');
     }
+
     if (landMoved) {
       this.terrainStamps.length = 0;
       this.terrainStamps.push(...source.terrainStamps.map((stamp) => ({ ...stamp })));

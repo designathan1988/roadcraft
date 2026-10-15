@@ -49,7 +49,7 @@ const RECORDS: readonly { readonly part: RecordPart; readonly kinds: readonly Do
 const LISTS = Object.keys(LIST_KINDS) as ListPart[];
 /** The values and the kind that moves each; null: compared at every commit (they are small). */
 const VALUES: Readonly<Record<ValuePart, DocChangeKind | null>> = {
-  terrainRelief: 'terrain', markingStyle: null, nature: 'nature', fogSettings: 'fog', gullyAuto: 'gullies', weather: 'weather',
+  terrainRelief: 'terrain', markingStyle: 'markingStyle', nature: 'nature', fogSettings: 'fog', gullyAuto: 'gullies', weather: 'weather',
   economy: 'economy', transit: 'transit', nextZoneId: null, nextLotId: null, allocators: null,
 };
 

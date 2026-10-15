@@ -104,13 +104,20 @@ describe('only what changed', () => {
     expect(entriesSince(doc, seen, 'traffic')).toEqual([]);
   });
 
-  it('the paint style put back by an undo is not the traffic\'s plan', () => {
+  it('the paint style, set or put back by an undo, is its own kind: not the roads, not the traffic\'s plan', () => {
     const doc = new RoadDoc();
     road(doc, { x: 0, y: 0 }, { x: 300, y: 0 });
-    const seen = doc.changes.version;
+    let seen = doc.changes.version;
+    const revision = doc.revision;
+    doc.setMarkingStyle('us');
+    expect(entriesSince(doc, seen, 'markingStyle')).toHaveLength(1);
+    expect(entriesSince(doc, seen, 'roads')).toEqual([]);
+    expect(doc.revision).toBe(revision);
+    seen = doc.changes.version;
     doc.restore({ records: [], lists: [], values: [{ part: 'markingStyle', value: 'br' }] });
     expect(doc.markingStyle).toBe('br');
-    expect(entriesSince(doc, seen, 'roads')).toHaveLength(1);
+    expect(entriesSince(doc, seen, 'markingStyle')).toHaveLength(1);
+    expect(entriesSince(doc, seen, 'roads')).toEqual([]);
     expect(entriesSince(doc, seen, 'traffic')).toEqual([]);
   });
 
