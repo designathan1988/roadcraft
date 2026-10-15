@@ -12,7 +12,9 @@ import {
   MeshStandardMaterial,
   Quaternion,
   Scene,
+  Sphere,
   Vector3,
+  type Frustum,
   type BufferGeometry,
   type Material,
 } from 'three';
@@ -89,28 +91,54 @@ const FACES = [1, -1] as const;
 
 export interface SignalHeads {
   readonly group: Group;
-  sync(world: SimWorld, detailed: boolean): void;
+  /** `frustum`: what the camera sees this frame; the lamps of cells out of it wait until they come in. */
+  sync(world: SimWorld, detailed: boolean, frustum?: Frustum): void;
   dispose(): void;
 }
 
 /**
- * One kind of part, for every head on the map: a single instanced mesh.
- *
- * A head used to be a dozen meshes of its own - post, arm, housing, three
- * visors, lenses and halos on both faces - and each was drawn once for the
- * picture, once for the shadow map and once more for the ambient-occlusion
- * pass. Forty heads were over a thousand draw calls a frame, more than the
- * whole rest of the scene. Now every post is one draw, every visor another,
- * and so on: nine for the whole map, however many junctions it has.
+ * The heads are batched BY CELL of the ground: one instanced mesh per kind
+ * of part per cell, each with the sphere round its cell's heads, so three's
+ * own frustum test (`Object3D.frustumCulled`, in the picture and in the
+ * shadow pass) leaves out the cells off screen. ONE mesh a kind for the whole
+ * map (nine draws, the old way) had a sphere over the map: every head of the
+ * town - 532 triangles each - went to the GPU in every pass, wherever the
+ * camera was. A cell is wide enough that a street view takes in a few.
  */
-interface Batch {
-  mesh: InstancedMesh;
-  /** Write cursor, reset only when this batch changes. */
-  n: number;
+const SIGNAL_CELL = m(256);
+/** How far a head's parts reach from the foot of its post, with its sway: the cell's sphere grows by it. */
+const HEAD_REACH = Math.hypot(ARM_LENGTH + HEAD_WIDTH, POST_HEIGHT) + m(0.1);
+
+interface Head {
+  readonly x: number;
+  readonly height: number;
+  readonly y: number;
+  readonly yaw: number;
+  readonly groupId: number;
+  readonly key: string;
+  state: SignalState | null;
 }
 
-/** Heads the batches are first sized for; they double when a map needs more. */
-const INITIAL_HEADS = 64;
+/** A signalised junction's heads, and the controller's phase they were last drawn at. */
+interface Junction {
+  readonly node: NodeId;
+  readonly heads: Head[];
+  /** The phase seen (`plan`, `stageIndex`, `sub`): the heads are asked again only when it moves. */
+  plan: unknown;
+  stage: number;
+  sub: string;
+}
+
+type BatchName = 'posts' | 'arms' | 'boxes' | 'visors' | 'lit' | 'halos' | 'red' | 'amber' | 'green';
+
+interface Cell {
+  readonly junctions: Junction[];
+  readonly heads: Head[];
+  readonly batches: Record<BatchName, InstancedMesh>;
+  readonly sphere: Sphere;
+  /** A head's state changed: its lenses are written again (this cell's only). */
+  stale: boolean;
+}
 
 /** Builds and updates the physical signal heads used by the Three.js renderer. */
 export function createSignalHeads(
@@ -167,48 +195,48 @@ export function createSignalHeads(
     green: new Color(0x59ff86),
   };
 
-  let capacity = INITIAL_HEADS;
-  const make = (name: string, geometry: BufferGeometry, material: Material, perHead: number,
-    shadows: { cast: boolean; receive: boolean }, coloured: boolean): Batch => {
-    const mesh = new InstancedMesh(geometry, material, capacity * perHead);
-    mesh.name = name;
-    mesh.count = 0;
-    mesh.castShadow = shadows.cast;
-    mesh.receiveShadow = shadows.receive;
-    // Rewritten every frame, so a bounding sphere computed once would be wrong.
-    mesh.frustumCulled = false;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    if (coloured) {
-      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * perHead * 3).fill(1), 3);
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
-    }
-    group.add(mesh);
-    return { mesh, n: 0 };
-  };
   const solid = { cast: true, receive: true };
   const shading = { cast: true, receive: false };
   const glow = { cast: false, receive: false };
-  const specs = () => ({
-    posts: make('signal-posts', postGeometry, steel, 1, solid, false),
-    arms: make('signal-arms', armGeometry, armSteel, 1, solid, false),
-    boxes: make('signal-boxes', housingGeometry, housing, 1, solid, false),
-    visors: make('signal-visors', visorGeometry, housing, LAMPS.length * FACES.length, shading, false),
-    lit: make('signal-lamps-lit', lensGeometry, lit, FACES.length, glow, true),
-    halos: make('signal-halos', haloGeometry, halo, FACES.length, glow, true),
-    red: make('signal-lamps-red', lensGeometry, dark.red, FACES.length, glow, false),
-    amber: make('signal-lamps-amber', lensGeometry, dark.amber, FACES.length, glow, false),
-    green: make('signal-lamps-green', lensGeometry, dark.green, FACES.length, glow, false),
-  });
-  let batches = specs();
-  const all = (): Batch[] => Object.values(batches);
-
-  const grow = (heads: number): void => {
-    for (const batch of all()) {
-      group.remove(batch.mesh);
-      batch.mesh.dispose();
+  /** Each kind of part: its geometry, material, instances a head, shadows, and whether it takes a colour per instance. */
+  const KINDS: Record<BatchName, readonly [BufferGeometry, Material, number, { cast: boolean; receive: boolean }, boolean]> = {
+    posts: [postGeometry, steel, 1, solid, false],
+    arms: [armGeometry, armSteel, 1, solid, false],
+    boxes: [housingGeometry, housing, 1, solid, false],
+    visors: [visorGeometry, housing, LAMPS.length * FACES.length, shading, false],
+    lit: [lensGeometry, lit, FACES.length, glow, true],
+    halos: [haloGeometry, halo, FACES.length, glow, true],
+    red: [lensGeometry, dark.red, FACES.length, glow, false],
+    amber: [lensGeometry, dark.amber, FACES.length, glow, false],
+    green: [lensGeometry, dark.green, FACES.length, glow, false],
+  };
+  const NAMES = Object.keys(KINDS) as BatchName[];
+  const FIXED: readonly BatchName[] = ['posts', 'arms', 'boxes', 'visors'];
+  const LENSES: readonly BatchName[] = ['lit', 'halos', 'red', 'amber', 'green'];
+  /** A cell's batches, sized for its heads, culled by its sphere. */
+  const batchesFor = (heads: number, sphere: Sphere): Record<BatchName, InstancedMesh> => {
+    const out = {} as Record<BatchName, InstancedMesh>;
+    for (const name of NAMES) {
+      const [geometry, material, perHead, shadows, coloured] = KINDS[name];
+      const capacity = Math.max(1, heads * perHead);
+      const mesh = new InstancedMesh(geometry, material, capacity);
+      mesh.name = `signal-${name}`;
+      mesh.count = 0;
+      mesh.castShadow = shadows.cast;
+      mesh.receiveShadow = shadows.receive;
+      // Culled as a cell, by the sphere round its heads (three's own test,
+      // `frustumCulled` left on). Written when the junctions change (posts)
+      // or a head's light does (lenses), not every frame.
+      mesh.boundingSphere = sphere;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      if (coloured) {
+        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+        mesh.instanceColor.setUsage(DynamicDrawUsage);
+      }
+      group.add(mesh);
+      out[name] = mesh;
     }
-    while (capacity < heads) capacity *= 2;
-    batches = specs();
+    return out;
   };
 
   // Where each part sits in its head, relative to the foot of the post.
@@ -238,139 +266,183 @@ export function createSignalHeads(
   const up = new Vector3(0, 1, 0);
   const foot = new Vector3();
   const one = new Vector3(1, 1, 1);
-  const put = (batch: Batch, local: Matrix4, colour?: Color): void => {
+  const put = (mesh: InstancedMesh, local: Matrix4, colour?: Color): void => {
     place.multiplyMatrices(root, local);
-    batch.mesh.setMatrixAt(batch.n, place);
-    if (colour) batch.mesh.setColorAt(batch.n, colour);
-    batch.n++;
+    mesh.setMatrixAt(mesh.count, place);
+    if (colour) mesh.setColorAt(mesh.count, colour);
+    mesh.count++;
+  };
+  /** What was written of a mesh to the GPU: its first `count` instances. */
+  const flush = (mesh: InstancedMesh): void => {
+    mesh.visible = mesh.count > 0;
+    if (!mesh.count) return;
+    mesh.instanceMatrix.clearUpdateRanges();
+    mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.clearUpdateRanges();
+      mesh.instanceColor.addUpdateRange(0, mesh.count * 3);
+      mesh.instanceColor.needsUpdate = true;
+    }
+  };
+  const rootOf = (head: Head): void => {
+    root.compose(foot.set(head.x, head.height, -head.y), turn.setFromAxisAngle(up, head.yaw), one);
   };
 
   /** What each head shows, by `node:segment`, for the verification harness. */
   const shown = new Map<string, SignalState>();
   group.userData.heads = shown;
-  type Placed = { x: number; height: number; y: number; yaw: number; node: NodeId; groupId: number; key: string; state: SignalState | null };
-  const placed: Placed[] = [];
+  let cells: Cell[] = [];
   let placedNetwork: SimWorld['net'] | null = null;
   let placedRevision = -1;
   let placedTrafficRevision = -1;
   let placedTerrainRevision = -1;
   let placedTopology = -1;
-  const flush = (batch: Batch): void => {
-    const mesh = batch.mesh;
-    mesh.count = batch.n;
-    if (!batch.n) return;
-    mesh.instanceMatrix.clearUpdateRanges();
-    mesh.instanceMatrix.addUpdateRange(0, batch.n * 16);
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.clearUpdateRanges();
-      mesh.instanceColor.addUpdateRange(0, batch.n * 3);
-      mesh.instanceColor.needsUpdate = true;
+
+  const dropCells = (): void => {
+    for (const cell of cells) for (const name of NAMES) { group.remove(cell.batches[name]); cell.batches[name].dispose(); }
+    cells = [];
+  };
+
+  /** A cell's lenses written again from its heads' states: that cell's alone. */
+  const writeLenses = (cell: Cell): void => {
+    const b = cell.batches;
+    for (const name of LENSES) b[name].count = 0;
+    for (const head of cell.heads) {
+      rootOf(head);
+      for (const name of LAMPS) {
+        const on = head.state === name;
+        for (let face = 0; face < FACES.length; face++) {
+          if (on) {
+            put(b.lit, lens[name][face] as Matrix4, LIT[name]);
+            put(b.halos, halos[name][face] as Matrix4, HALO[name]);
+          } else {
+            put(b[name], lens[name][face] as Matrix4);
+          }
+        }
+      }
     }
+    for (const name of LENSES) flush(b[name]);
+    cell.stale = false;
+  };
+
+  /**
+   * Every head of the map placed again, cell by cell.
+   * @rebuild Called when the network, the traffic plan, the terrain or the topology revision moved.
+   */
+  const placeAll = (world: SimWorld): void => {
+    dropCells();
+    shown.clear();
+    const byCell = new Map<number, Junction[]>();
+    let lamps = 0;
+    for (const node of world.junctionNodesInOrder()) {
+      const junction = world.graph.junctions.get(node);
+      if (!junction?.signalised || !world.controller(node)) continue;
+      const nodeRecord = world.doc.node(node);
+      if (!nodeRecord) continue;
+      const heads: Head[] = [];
+      for (const segmentId of nodeRecord.incident) {
+        const segment = world.doc.segment(segmentId);
+        if (!segment) continue;
+        const signalGroup = junction.groups.find((candidate) => candidate.segments.includes(segmentId));
+        if (!signalGroup) continue;
+        // Where the post stands is the world's (`world/signalPosts.ts`): the
+        // pedestrians walk round the same post.
+        const post = signalPostPlace(world.net, node, segmentId);
+        if (!post) continue;
+        heads.push({
+          x: post.x,
+          height: elevationAt(world, post.x, post.y, segmentId),
+          y: post.y,
+          // Local +X carries the arm inward over the road. Under the shared
+          // world-to-Three mapping, the world heading is also the Three yaw.
+          yaw: post.yaw,
+          groupId: signalGroup.id,
+          key: `${node}:${segmentId}`,
+          state: null,
+        });
+      }
+      if (!heads.length) continue;
+      lamps += heads.length * LAMPS.length * FACES.length;
+      const first = heads[0]!;
+      const key = Math.floor(first.x / SIGNAL_CELL) * 100_003 + Math.floor(first.y / SIGNAL_CELL);
+      const entry: Junction = { node, heads, plan: null, stage: -1, sub: '' };
+      const list = byCell.get(key);
+      if (list) list.push(entry); else byCell.set(key, [entry]);
+    }
+    for (const junctions of byCell.values()) {
+      const heads = junctions.flatMap((j) => j.heads);
+      let cx = 0, cy = 0, cz = 0;
+      for (const h of heads) { cx += h.x; cy += h.height; cz -= h.y; }
+      cx /= heads.length; cy /= heads.length; cz /= heads.length;
+      let r = 0;
+      for (const h of heads) r = Math.max(r, Math.hypot(h.x - cx, h.height - cy, -h.y - cz));
+      const sphere = new Sphere(new Vector3(cx, cy, cz), r + HEAD_REACH);
+      const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, stale: true };
+      for (const head of heads) {
+        rootOf(head);
+        put(cell.batches.posts, POST);
+        put(cell.batches.arms, ARM);
+        put(cell.batches.boxes, BOX);
+        for (const visor of visors) put(cell.batches.visors, visor);
+      }
+      for (const name of FIXED) flush(cell.batches[name]);
+      for (const name of LENSES) cell.batches[name].visible = false;
+      cells.push(cell);
+    }
+    group.userData.lamps = lamps;
   };
 
   return {
     group,
-    sync(world, detailed) {
+    sync(world, detailed, frustum) {
       if (!detailed) {
         group.visible = false;
         return;
       }
       group.visible = true;
-      const geometryChanged = placedNetwork !== world.net || placedRevision !== world.net.revision
+      if (placedNetwork !== world.net || placedRevision !== world.net.revision
         || placedTrafficRevision !== world.net.trafficRevision || placedTerrainRevision !== world.doc.terrainRevision
         // The junctions are the simulation's: rebuilt a frame after the network
         // (a control changed), and the posts must follow them, not the old graph.
-        || placedTopology !== world.topologyRevision;
-      if (geometryChanged) {
+        || placedTopology !== world.topologyRevision) {
         placedNetwork = world.net;
         placedRevision = world.net.revision;
         placedTrafficRevision = world.net.trafficRevision;
         placedTerrainRevision = world.doc.terrainRevision;
         placedTopology = world.topologyRevision;
-        shown.clear();
-        placed.length = 0;
-        for (const node of world.junctionNodesInOrder()) {
-          const junction = world.graph.junctions.get(node);
-          if (!junction?.signalised || !world.controller(node)) continue;
-          const nodeRecord = world.doc.node(node);
-          if (!nodeRecord) continue;
-
-          for (const segmentId of nodeRecord.incident) {
-            const segment = world.doc.segment(segmentId);
-            if (!segment) continue;
-            const signalGroup = junction.groups.find((candidate) =>
-              candidate.segments.includes(segmentId),
-            );
-            if (!signalGroup) continue;
-
-            // Where the post stands is the world's (`world/signalPosts.ts`): the
-            // pedestrians walk round the same post.
-            const post = signalPostPlace(world.net, node, segmentId);
-            if (!post) continue;
-            const position = { x: post.x, y: post.y };
-            const key = `${node}:${segmentId}`;
-            placed.push({
-              x: position.x,
-              height: elevationAt(world, position.x, position.y, segmentId),
-              y: position.y,
-              // Local +X carries the arm inward over the road. Under the shared
-              // world-to-Three mapping, the world heading is also the Three yaw.
-              yaw: post.yaw,
-              node,
-              groupId: signalGroup.id,
-              key,
-              state: null,
-            });
-          }
-        }
-
-        if (placed.length > capacity) grow(placed.length);
-        for (const batch of [batches.posts, batches.arms, batches.boxes, batches.visors]) batch.n = 0;
-        for (const head of placed) {
-          root.compose(foot.set(head.x, head.height, -head.y), turn.setFromAxisAngle(up, head.yaw), one);
-          put(batches.posts, POST);
-          put(batches.arms, ARM);
-          put(batches.boxes, BOX);
-          for (const visor of visors) put(batches.visors, visor);
-        }
-        for (const batch of [batches.posts, batches.arms, batches.boxes, batches.visors]) flush(batch);
-        group.userData.lamps = placed.length * LAMPS.length * FACES.length;
+        placeAll(world);
       }
-      let lampsChanged = geometryChanged;
-      for (const head of placed) {
-        const controller = world.controller(head.node);
-        const state = controller ? signalStateFor(controller, head.groupId) : 'red';
-        if (head.state !== state) {
-          head.state = state;
-          shown.set(head.key, state);
-          lampsChanged = true;
-        }
-      }
-      if (!lampsChanged) return;
-      for (const batch of [batches.lit, batches.halos, batches.red, batches.amber, batches.green]) batch.n = 0;
+      // Only the cells in view: their junctions' phases asked, and the lenses
+      // of a cell whose light changed written again - that cell's alone. A
+      // cell out of view is asked when it comes in. DO NOT ask every head of
+      // the map each frame, nor write every lens of the map at a change of one.
       let litLenses = 0;
-      for (const head of placed) {
-        root.compose(foot.set(head.x, head.height, -head.y), turn.setFromAxisAngle(up, head.yaw), one);
-        for (const name of LAMPS) {
-          const on = head.state === name;
-          for (let face = 0; face < FACES.length; face++) {
-            if (on) {
-              put(batches.lit, lens[name][face] as Matrix4, LIT[name]);
-              put(batches.halos, halos[name][face] as Matrix4, HALO[name]);
-              litLenses++;
-            } else {
-              put(batches[name], lens[name][face] as Matrix4);
-            }
+      for (const cell of cells) {
+        if (frustum && !frustum.intersectsSphere(cell.sphere)) continue;
+        for (const junction of cell.junctions) {
+          const controller = world.controller(junction.node);
+          const plan = controller?.plan ?? null, stage = controller?.stageIndex ?? -1, sub = controller?.sub ?? '';
+          if (junction.plan === plan && junction.stage === stage && junction.sub === sub && junction.heads[0]!.state !== null) continue;
+          junction.plan = plan;
+          junction.stage = stage;
+          junction.sub = sub;
+          for (const head of junction.heads) {
+            const state = controller ? signalStateFor(controller, head.groupId) : 'red';
+            if (head.state === state) continue;
+            head.state = state;
+            shown.set(head.key, state);
+            cell.stale = true;
           }
         }
+        if (cell.stale) writeLenses(cell);
+        litLenses += cell.batches.lit.count;
       }
-      for (const batch of [batches.lit, batches.halos, batches.red, batches.amber, batches.green]) flush(batch);
       group.userData.litLamps = litLenses;
     },
     dispose() {
       scene.remove(group);
-      for (const batch of all()) batch.mesh.dispose();
+      dropCells();
       group.clear();
       shown.clear();
       for (const geometry of [

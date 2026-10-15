@@ -3211,7 +3211,7 @@ export function createSceneRenderer(
       }
       // Falls off with the distance in world units: the same lamp in metres at any unit.
       for (const light of roomLights) light.intensity = cutSpec && light.userData['used'] ? 55 * TUNED_UNIT ** light.decay * (0.25 + 0.75 * lastDark) : 0;
-      signals.sync(sim, detailed);
+      signals.sync(sim, detailed, crowdFrustum);
 
       target.copy(rig.target);
       const halfHeight = canvas.clientHeight / Math.max(0.001, rig.viewport.zoom * 2);
