@@ -155,6 +155,11 @@ GPU memory and drawing
 - Garden buffers sized to the whole city, never shrink; body and card stores keep the same matrices
   (`gardens.ts:281-287, 512, 516`).
 - Non-indexed geometry: `structures.ts:414`, `vehicleModels.ts:298` (`toNonIndexed`).
+- Building shells cannot be simplified (L1): 48% of their edges are open borders even welded by position (each
+  `Shell.face` is a loose quad, T-junctions round every window), so meshoptimizer locks them. Tried 2026-10-15 with
+  index-only levels (0.25 m / 0.6 m, `ErrorAbsolute`+`Prune`): -13% triangles in the district view, plaster not reduced
+  at all, and the cells' detail landed later (weld + simplify in the worker); undone. Fix: the emitter builds each wall
+  as one welded grid with the windows' holes sharing its vertices; then simplify.
 - About 43 draw calls per building cell: a mesh per finish and an `InstancedMesh` per part kind
   (`buildingMesh.ts:3531, 3573`).
 - Needs shots and the player's yes: signature buildings without a far level (`massing.ts:157`);
