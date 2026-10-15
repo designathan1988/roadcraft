@@ -1,7 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, Sphere, type Mesh } from 'three';
 import { gpuOnly } from './gpuOnly';
-import { type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
-import { giveBackArrays } from './roadResidency';
+import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
+import { makeFar } from './roadResidency';
 import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
 
 /** A surface's tiles, in order, as one mesh's arrays (the indices shifted); null for none. */
@@ -45,7 +45,7 @@ function tileArrays(parts: readonly Tile[]): {
  */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
-  far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean }): Mesh | null {
+  far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void }): Mesh | null {
   const arrays = tileArrays(parts);
   if (!arrays) return null;
   const geometry = new BufferGeometry();
@@ -71,28 +71,38 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   }
   const mesh = finish(geometry, options);
   tilesOnGpu(mesh, source);
-  if (far) addFarLevel(mesh, arrays, options, source, far);
+  if (far) {
+    // The block's far level is made off the page (`roadTile.worker.ts`) and arrives later (`attachFarLevel`): the
+    // block is its own mesh until then. DO NOT simplify it here, a block after the other on the page.
+    mesh.userData[LOD_KEY] = { coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true } satisfies BlockLevels;
+    far.start?.(mesh, arrays);
+  }
   return mesh;
 }
 
+/** A block's arrays copied: what a worker is handed to simplify while the block keeps its own. */
+export function cloneBlock(arrays: BlockArrays): BlockArrays {
+  return { position: arrays.position.slice(), normal: arrays.normal.slice(), uv: arrays.uv.slice(), color: arrays.color.slice(), roadSection: arrays.roadSection.slice(), index: arrays.index.slice() };
+}
+
 /**
- * The block's far level (`roadLod.ts`): a simplified mesh beside the block's own, one of the two on the GPU. A
- * block made far from the camera never has its own sent (its arrays are given back at once, made again when the
- * camera comes, `roadResidency.ts`); one made near has it, and the far one waits hidden.
+ * The block's far level (`roadLod.ts`) as it arrives from its worker: a simplified mesh beside the block's own, one of
+ * the two on the GPU. `near`: the block's own stays (the far one waits hidden); else the far one is drawn and the
+ * block's own gives its buffers and arrays back at once (`roadResidency.ts`) - it was never sent to the GPU.
  */
-function addFarLevel(mesh: Mesh, arrays: NonNullable<ReturnType<typeof tileArrays>>, options: Pick<SurfaceMeshOptions,
+export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
-  far: { readonly lock: readonly [number, number, number, number]; readonly near: boolean }): void {
-  const coarse = coarseArrays(arrays, far.lock);
-  if (!coarse) return;
+  lock: readonly [number, number, number, number], near: boolean): Mesh {
   const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
   // Made again from the block's tiles when a lost context asks, like the block's own.
-  gpuOnly(level, () => coarseArrays(tileArrays(source())!, far.lock) ?? coarse);
-  const levels: BlockLevels = { coarse: level, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: far.near };
-  mesh.userData[LOD_KEY] = levels;
-  level.visible = !far.near;
-  mesh.visible = far.near;
-  if (!far.near) giveBackArrays(mesh);
+  gpuOnly(level, () => coarseArrays(tileArrays(source())!, lock) ?? coarse);
+  const levels = mesh.userData[LOD_KEY] as BlockLevels;
+  (levels as { coarse: Mesh | null }).coarse = level;
+  level.renderOrder = mesh.renderOrder;
+  level.visible = !near;
+  mesh.parent?.add(level);
+  if (!near) makeFar(mesh);
+  return level;
 }
 
 /** A merged mesh's arrays let go once on the GPU, and made again from `source`'s tiles when asked (`gpuOnly`). */

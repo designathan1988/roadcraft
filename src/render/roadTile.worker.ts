@@ -1,4 +1,5 @@
 import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
+import { type BlockArrays, coarseArrays } from './mesh/roadLodPure';
 
 /**
  * One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a
@@ -9,6 +10,7 @@ import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
  */
 type Message =
   | { readonly id: number; readonly ask: MeshAsk }
+  | { readonly id: number; readonly coarse: { readonly arrays: BlockArrays; readonly lock: readonly [number, number, number, number] } }
   | { readonly id: number; readonly heights: Float64Array };
 
 /** Most time between two words to the page while working: the pool hears the worker is alive. */
@@ -29,6 +31,12 @@ function serve(): (event: MessageEvent<Message>) => void {
       if (now - spoke >= BEAT_MS) { spoke = now; post.postMessage({ id, beat: true }); }
     };
     try {
+      if ('coarse' in data) {
+        // A block's far level (`mesh/roadLodPure.ts`): simplified here, handed back with its buffers transferred.
+        const made = coarseArrays(data.coarse.arrays, data.coarse.lock);
+        post.postMessage({ id, coarse: made }, made ? [made.position.buffer, made.normal.buffer, made.uv.buffer, made.color.buffer, made.roadSection.buffer, made.index.buffer] as ArrayBuffer[] : []);
+        return;
+      }
       let mesher: TileMesher;
       if ('ask' in data) {
         mesher = new TileMesher(data.ask);

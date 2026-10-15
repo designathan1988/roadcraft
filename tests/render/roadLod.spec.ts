@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { MeshBasicMaterial, type BufferAttribute, type Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { COARSE_ERROR } from '@render/mesh/roadLod';
+import { COARSE_ERROR, coarseArrays } from '@render/mesh/roadLod';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
-import { mergeTiles } from '@render/mesh/surfaceTiles';
+import { attachFarLevel, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
 import type { Tile } from '@render/mesh/tileMesh';
 
 /**
@@ -38,7 +38,11 @@ function strip(): Tile {
 const options = { name: 'asphalt', material: new MeshBasicMaterial(), receiveShadow: true } as const;
 // A road crossing its block from one side to the other: only its two ends lie on the block's edge.
 const lock = [0, -60, W, H + 60] as const;
-const make = (near: boolean): Mesh => mergeTiles([strip()], options, () => [strip()], { lock, near })!;
+/** The block with its far level made as a worker makes it (`roadTile.worker.ts`): the arrays copied, simplified, handed back. */
+const make = (near: boolean): Mesh => mergeTiles([strip()], options, () => [strip()], {
+  lock, near,
+  start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, options, () => [strip()], lock, near); },
+})!;
 const levels = (mesh: Mesh): { coarse: Mesh; full: boolean } => mesh.userData.lod as { coarse: Mesh; full: boolean };
 const trianglesOf = (mesh: Mesh): number => (mesh.geometry.index?.count ?? 0) / 3;
 
@@ -130,9 +134,63 @@ describe('the wiring', () => {
     expect(renderer).toMatch(/near: \(x, y\) => isNear\(x, y, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(renderer).toMatch(/updateRoadLevels\(blocks, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(readFileSync('src/render/mesh/surfaceMesh.ts', 'utf8')).toMatch(/coarse\.geometry\.dispose\(\)/);
+    // The far level is simplified by the workers: the page asks (`coarsen`) and attaches the answer, never simplifies a
+    // block itself (2,000 blocks of a 2,560 m city one after the other in the opening put the town up later).
+    expect(readFileSync('src/render/roadSurfaces.ts', 'utf8')).not.toMatch(/coarseArrays\(/);
+    expect(readFileSync('src/render/roadSurfaces.ts', 'utf8')).toMatch(/tiler\.coarsen\.bind\(tiler\)/);
+    expect(readFileSync('src/render/roadTile.worker.ts', 'utf8')).toMatch(/coarseArrays\(data\.coarse\.arrays, data\.coarse\.lock\)/);
     // The masses of the far buildings are sent ahead too, so their arrays go (`gpuOnly`): 157 MB of a 2,560 m city.
     const masses = readFileSync('src/render/buildings/massCells.ts', 'utf8');
     expect(masses).toMatch(/void warmLooseAhead\(\[mesh\]\);/);
     expect(masses).toMatch(/cancelWarm\(\[cell\.mesh\]\);/);
+  });
+});
+
+describe('the far levels made by the workers while the roads are built', () => {
+  it('are waited for before the roads are put in place, and every block made far is drawn by its far level alone', async () => {
+    const { planCity, DEFAULT_CITY } = await import('@world/cityGen/plan');
+    const { layCity } = await import('@editor/cityGenerator');
+    const { Network } = await import('@world/network');
+    const { buildRoadElevation } = await import('@world/elevation');
+    const { roadSurfaceSteps } = await import('@render/roadSurfaces');
+    const { SurfaceInputs } = await import('@render/roadSurfaceInputs');
+    const { levelsOf } = await import('@render/mesh/roadLod');
+    const net = new Network(layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small' })));
+    net.rebuild();
+    const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
+    const materials = new Proxy({}, { get: (_t, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial() }) as never;
+    let asked = 0;
+    // The worker, in this process: no tiles off the page (built here), the far levels by a copy and a later answer.
+    const tiler = {
+      tiles: () => Promise.reject(new Error('the tiles are built here')),
+      check: () => {},
+      coarsen: (arrays: Parameters<typeof coarseArrays>[0], blockLock: readonly [number, number, number, number]) => {
+        asked++;
+        return new Promise<ReturnType<typeof coarseArrays>>((done) => setTimeout(() => done(coarseArrays(structuredClone(arrays), blockLock)), 0));
+      },
+    };
+    const reuse = { tiles: new Map(), dependsOn: () => 0, paint: new Map(), chunks: new Map(), inputs: new SurfaceInputs(), near: () => false } as never;
+    const steps = roadSurfaceSteps(net, buildRoadElevation(net, ground), materials, ground, reuse, undefined, tiler as never);
+    let waited = 0;
+    for (;;) {
+      const step = steps.next();
+      if (step.done) { step.value.adopt(); break; }
+      if (step.value === 'wait') { waited++; await new Promise((done) => setTimeout(done, 0)); }
+    }
+    expect(asked).toBeGreaterThan(20);
+    expect(waited).toBeGreaterThan(0);
+    const chunks = [...(reuse as { chunks: Map<string, { mesh: Mesh }> }).chunks.values()].map((c) => c.mesh);
+    const withLevel = chunks.filter((m) => levelsOf(m)?.coarse);
+    expect(withLevel.length).toBeGreaterThan(20);
+    for (const mesh of withLevel) {
+      const level = levelsOf(mesh)!;
+      expect(level.full).toBe(false);
+      expect(mesh.visible).toBe(false);
+      expect(level.coarse!.visible).toBe(true);
+      expect(level.coarse!.parent).toBe(mesh.parent);
+      expect((mesh.geometry.getAttribute('position') as { array: unknown }).array).toBeNull();
+    }
+    // A block too small for a far level stays what it was, drawn at full detail.
+    for (const mesh of chunks.filter((m) => !levelsOf(m)?.coarse)) expect(mesh.visible).toBe(true);
   });
 });

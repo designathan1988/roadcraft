@@ -17,7 +17,7 @@ import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadS
 import type { Input } from './roadSurfaceRings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
-import { mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
+import { attachFarLevel, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { levelsOf } from './mesh/roadLod';
 import { type TilePolys, type TileSource, tileShapes } from './roadTileShape';
@@ -329,6 +329,8 @@ export function* roadSurfaceSteps(
   let remade = 0;
   const chunks = reuse?.chunks;
   const usedChunks = new Set<string>();
+  /** The blocks whose far level is being made by the workers (`mergeTiles`): the build waits for them before it ends. */
+  let coarsening = 0;
   // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`):
   // drawn there anyway, its geometry went back to the GPU with no owner left to free it.
   const retire = (mesh: Mesh): void => { cancelWarm(levelsOf(mesh)?.coarse ? [mesh, levelsOf(mesh)!.coarse!] : [mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
@@ -620,16 +622,40 @@ export function* roadSurfaceSteps(
         } else {
           if (known) retire(known.mesh);
           // The block's box and centre, to lock its edge in the far level and to tell near from far (`roadLod.ts`).
-          const lock = reuse?.near ? blockBox(list.map((tile) => tile.rect)) : null;
+          // Its far level is made by the workers, and only where there are some (`tiler.coarsen`).
+          const coarsen = reuse?.near && tiler?.coarsen ? tiler.coarsen.bind(tiler) : null;
+          const lock = coarsen ? blockBox(list.map((tile) => tile.rect)) : null;
+          const near = lock ? reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) : true;
+          let started: Mesh | null = null;
           mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source,
-            lock ? { lock, near: reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) } : undefined);
+            lock ? {
+              lock, near,
+              start: (block, arrays) => {
+                started = block;
+                coarsening++;
+                coarsen!(cloneBlock(arrays), lock).then((made) => {
+                  // The block may have been built again meanwhile: its far level is of the one it was made for.
+                  if (chunks?.get(key)?.mesh !== block) return;
+                  if (made) {
+                    const level = attachFarLevel(block, made, spec.options, source, lock, near);
+                    if (!near) void warmLooseAhead([level]);
+                  } else if (!near) void warmLooseAhead([block]);
+                }).catch((error: unknown) => {
+                  // No far level for this block: it stays at full detail, sent to the GPU.
+                  console.warn('[roads] the far level of a block could not be made', error);
+                  if (chunks?.get(key)?.mesh === block) void warmLooseAhead([block]);
+                }).finally(() => { coarsening--; });
+              },
+            } : undefined);
+          void started;
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
           // Sent to the GPU ahead, a few a frame (`warmLooseAhead`), so its arrays let go at once
           // (`mesh/gpuOnly.ts`). DO NOT wait for the camera to frame it: a block out of view was never
           // uploaded and kept its copy on the CPU - 476 MB of a 2 560 m city's heap (asphalt, footway,
           // kerb, verge, kerb ramps; 2026-10-15), and the whole map's would not fit a tab.
-          // The level that will be drawn: a far block's own mesh has no arrays to send (`roadResidency.ts`).
-          if (mesh) { const levels = levelsOf(mesh); void warmLooseAhead(levels && !levels.full && levels.coarse ? [levels.coarse] : [mesh]); }
+          // The level that will be drawn: a block made far waits for its far level (it is sent when it arrives,
+          // its own mesh never is, `roadResidency.ts`); one near, or with no workers, is sent now.
+          if (mesh && !(lock && !near)) void warmLooseAhead([mesh]);
           if (mesh) chunks?.set(key, { parts: list.map((tile) => tile.value), mesh });
           else chunks?.delete(key);
           chunksMerged++;
@@ -651,6 +677,9 @@ export function* roadSurfaceSteps(
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
+  // The far levels still being made: the roads are put in place with them (a block made far has none of its own to
+  // draw until its far level comes). DO NOT wait without a deadline: `check` fails the pool when a worker is silent.
+  while (coarsening > 0) { tiler?.check(); yield 'wait'; }
   // Where an edit's time went (`hitch:` entries, scripts/probe-hitches.mjs; docs/performance.md).
   const end = performance.now();
   performance.measure(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept ${remade} remade, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, { start: started, end });

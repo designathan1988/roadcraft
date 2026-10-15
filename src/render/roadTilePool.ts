@@ -1,4 +1,5 @@
 import type { Tile } from './mesh/tileMesh';
+import type { BlockArrays } from './mesh/roadLodPure';
 import type { TileRect } from './mesh/tileShape';
 import type { SurfaceData, TileMeshes } from './roadTileMesh';
 import type { PassDesc } from './roadSurfaceReads';
@@ -26,6 +27,8 @@ import type { TilePolys } from './roadTileShape';
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { readonly job: TileJob; resolve(tiles: TileMeshes[]): void; reject(error: Error): void }>;
+  /** The blocks whose far level is being made here (`coarsen`). */
+  readonly coarsening: Map<number, { resolve(arrays: BlockArrays | null): void; reject(error: Error): void }>;
   /** When the worker last spoke, or was handed a job (`performance.now()`). */
   heard: number;
 }
@@ -51,12 +54,31 @@ export interface RoadTiler {
   tiles(job: TileJob): Promise<Map<string, Tile>[]>;
   /** Called while waiting: fails the pool if a worker with tiles waiting has been silent too long. */
   check(now?: number): void;
+  /**
+   * A block's far level (`mesh/roadLodPure.ts`) made off the page: `arrays` are handed over (copy them first to keep
+   * them), `lock` the block's outer box. Null: too small to have one. Rejected when it cannot be made off the page.
+   */
+  coarsen?(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null>;
 }
 
 export class RoadTilePool implements RoadTiler {
   private lanes: Lane[] | null = null;
   private broken = false;
   private nextId = 1;
+  private nextLane = 0;
+
+  coarsen(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const lane = lanes[this.nextLane++ % lanes.length]!;
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      lane.coarsening.set(id, { resolve, reject });
+      lane.heard = performance.now();
+      lane.worker.postMessage({ id, coarse: { arrays, lock } },
+        [arrays.position.buffer, arrays.normal.buffer, arrays.uv.buffer, arrays.color.buffer, arrays.roadSection.buffer, arrays.index.buffer] as ArrayBuffer[]);
+    });
+  }
 
   tiles(job: TileJob): Promise<Map<string, Tile>[]> {
     const lanes = this.start();
@@ -82,7 +104,7 @@ export class RoadTilePool implements RoadTiler {
 
   check(now = performance.now()): void {
     for (const lane of this.lanes ?? []) {
-      if (lane.waiting.size && now - lane.heard > SILENCE_MS) {
+      if ((lane.waiting.size || lane.coarsening.size) && now - lane.heard > SILENCE_MS) {
         this.fail(`a road tile worker was silent for ${SILENCE_MS} ms with tiles waiting`);
         return;
       }
@@ -98,12 +120,19 @@ export class RoadTilePool implements RoadTiler {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./roadTile.worker.ts', import.meta.url), { type: 'module' });
-        const lane: Lane = { worker, waiting: new Map(), heard: performance.now() };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string }>) => {
+        const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now() };
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string; coarse?: BlockArrays | null }>) => {
           if (this.lanes !== lanes) return;
           lane.heard = performance.now();
           const { id, beat, need, tiles, error } = event.data;
           if (beat) return;
+          const block = lane.coarsening.get(id);
+          if (block) {
+            lane.coarsening.delete(id);
+            if ('coarse' in event.data) block.resolve(event.data.coarse ?? null);
+            else block.reject(new Error(error ?? 'road tile worker failed'));
+            return;
+          }
           const waiting = lane.waiting.get(id);
           if (!waiting) return;
           if (need) {
@@ -148,6 +177,8 @@ export class RoadTilePool implements RoadTiler {
     for (const lane of this.lanes ?? []) {
       for (const job of lane.waiting.values()) job.reject(error);
       lane.waiting.clear();
+      for (const block of lane.coarsening.values()) block.reject(error);
+      lane.coarsening.clear();
       lane.worker.terminate();
     }
     this.lanes = null;
