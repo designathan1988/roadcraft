@@ -12,6 +12,7 @@ import { type SignalController, type SignalDeps, createController, rebuildContro
 import { type CrossingId, makeCrossingId } from './signals/plan';
 import type { AuditIssue } from './audit';
 import { SidewalkGraph } from './peds/sidewalk';
+import { SignalPostIndex } from './peds/signalPostIndex';
 import { hasDownstreamStorage } from './intersections/spillback';
 import { CrossingSpans } from './intersections/crossingSpans';
 import { m } from '@world/units';
@@ -133,6 +134,8 @@ export class SimWorld {
   readonly graph = new LaneletGraph();
   readonly conflicts = new ConflictIndex();
   readonly sidewalks = new SidewalkGraph();
+  /** The traffic signal posts by place, kept from the junctions' controls (`signalChangesSince`): the walkers keep clear of them. */
+  readonly signalPosts = new SignalPostIndex();
   readonly claims = new ClaimTable();
 
   /** @mapWide Every vehicle on the map. */

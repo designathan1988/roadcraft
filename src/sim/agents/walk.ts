@@ -4,6 +4,7 @@ import { newFrame } from '@core/polyline';
 import type { WalkGraph, Walkway } from '@world/walkways';
 import { m } from '@world/units';
 import type { SegmentId } from '@world/ids';
+import { SIGNAL_POST_RADIUS } from '@world/signalPosts';
 import { DT, PED } from '../params';
 import { newPose, vehiclePoseNowInto } from '../pose';
 import type { SimWorld } from '../world';
@@ -1863,6 +1864,7 @@ function stepWalkers(w: SimWorld): void {
   const s = stateOf(w);
   if (!s.walkers.length) return;
   ensureGraph(w, s);
+  w.signalPosts.follow(w);
   indexReservations(w);
   // Who is where, a cell of a few metres each (`WalkerGrid`); those who come
   // out of a door or a car during the pass are read from `late`.
@@ -2068,6 +2070,20 @@ function stepWalkers(w: SimWorld): void {
         if (along + 2 * c.r <= 0 || along > LOOK) continue;
         addOther(Math.max(0.01, along), p.d - rx * f.ty + ry * f.tx, false, c.r, null, false);
       }
+    }
+    // The traffic signal posts: a body standing still in the stripes, kept
+    // clear of as a car's discs are (SUMO's striping keeps its distance
+    // within a stripe, sumo.dlr.de/docs/Simulation/Pedestrians.html). The
+    // post stands 0.9 m in from the kerb, 2 m past the zebra: inside the
+    // crowd waiting along the kerb (`WAIT_HALF`). DO NOT leave them out:
+    // people queuing for the crossing stood inside the post.
+    const posts = w.signalPosts.near(p.x, p.y, LOOK);
+    for (let k = 0; k < posts.length; k++) {
+      const post = posts[k]!;
+      const rx = post.x - p.x, ry = post.y - p.y;
+      const along = rx * f.tx + ry * f.ty - SIGNAL_POST_RADIUS + BODY;
+      if (along + 2 * SIGNAL_POST_RADIUS <= 0 || along > LOOK) continue;
+      addOther(Math.max(0.01, along), p.d - rx * f.ty + ry * f.tx, false, SIGNAL_POST_RADIUS, null, false);
     }
 
     // --- the stripe: the most room ahead, keeping to the right (SUMO's striping).
