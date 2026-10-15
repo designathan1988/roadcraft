@@ -516,7 +516,7 @@ export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonl
   return found.map((f) => f.crossing);
 }
 
-const NO_CROSSINGS: readonly { readonly rail: RailLine; readonly crossing: LevelCrossing }[] = [];
+const NO_CROSSINGS: readonly { readonly rail: RailLine; readonly crossing: LevelCrossing }[] = Object.freeze([]);
 
 /** Whether two loops run through the same points. */
 function samePoints(a: readonly Vec2[], b: readonly Vec2[]): boolean {

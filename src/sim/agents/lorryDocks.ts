@@ -460,8 +460,18 @@ function yardInputs(w: SimWorld, b: Building, index: YardNeighbours): number {
   return d.value();
 }
 
-/** The yards of a world, made when first asked and again when their building or the roads change. */
-const YARDS = new WeakMap<SimWorld, Map<number, Yard>>();
+/**
+ * The yards of a world, made when first asked and again when their building
+ * or the roads change, and the lots near each place for their checks
+ * (`yardNeighbours`).
+ */
+interface WorldYards { readonly byBuilding: Map<number, Yard>; neighbours: YardNeighbours | null }
+const YARDS = new WeakMap<SimWorld, WorldYards>();
+function yardsOf(w: SimWorld): WorldYards {
+  let yards = YARDS.get(w);
+  if (!yards) YARDS.set(w, yards = { byBuilding: new Map(), neighbours: null });
+  return yards;
+}
 
 /** The roads as they stand: a yard known good for them needs no look (`knownYard`). */
 export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
@@ -476,7 +486,7 @@ export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph
  */
 export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
   if (!gatedProperty(b) || !lorryDocks(b).length) return null;
-  const known = YARDS.get(w)?.get(b.id);
+  const known = YARDS.get(w)?.byBuilding.get(b.id);
   if (!known || known.building !== b) return undefined;
   const key = yardKey(w);
   if (known.key === key) return known;
@@ -485,31 +495,27 @@ export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
   return known;
 }
 
-/** The lots near each place for the yards' checks (`yardNeighbours`), kept per world. */
-const NEIGHBOURS = new WeakMap<SimWorld, YardNeighbours>();
+/** The lots near each place for the yards' checks (`yardNeighbours`), kept with the world's yards. */
 function neighboursOf(w: SimWorld): YardNeighbours {
-  const index = yardNeighbours(w, NEIGHBOURS.get(w) ?? null);
-  NEIGHBOURS.set(w, index);
-  return index;
+  const yards = yardsOf(w);
+  return yards.neighbours = yardNeighbours(w, yards.neighbours);
 }
 
 /** A building's yard forgotten: its building gone, or no longer one with a yard (`lorryTraffic.ts` YardList). */
 export function forgetYard(w: SimWorld, building: number): void {
-  YARDS.get(w)?.delete(building);
+  YARDS.get(w)?.byBuilding.delete(building);
 }
 
 /** @rebuild The yards of the buildings `keep` turns down forgotten: when the town's yards were read whole. */
 export function forgetYardsBut(w: SimWorld, keep: (building: number) => boolean): void {
-  const byBuilding = YARDS.get(w);
+  const byBuilding = YARDS.get(w)?.byBuilding;
   if (!byBuilding) return;
   for (const id of [...byBuilding.keys()]) if (!keep(id)) byBuilding.delete(id);
 }
 
 /** Keeps a yard made (`buildYard`) for its building. */
 export function keepYard(w: SimWorld, yard: Yard): void {
-  let byBuilding = YARDS.get(w);
-  if (!byBuilding) YARDS.set(w, byBuilding = new Map());
-  byBuilding.set(yard.building.id, yard);
+  yardsOf(w).byBuilding.set(yard.building.id, yard);
 }
 
 /** The yard of a building as it stands now, made to the end at once if it must be (probes and specs). */
