@@ -135,10 +135,6 @@ export const DEFAULT_LOOK: PersonLook = {
   outfit: 'male_casualsuit02', footwear: 'shoes01', hairCut: 'short02', brows: 'eyebrow001', lashes: 'eyelashes01', hat: 'none', outfitTint: null,
 };
 
-export function defaultPerson(id: number, name = ''): PersonSpec {
-  return { id, name, body: { ...DEFAULT_MACRO }, features: {}, look: { ...DEFAULT_LOOK } };
-}
-
 const pick = <T>(r: () => number, list: readonly T[]): T => list[Math.floor(r() * list.length)]!;
 
 /**

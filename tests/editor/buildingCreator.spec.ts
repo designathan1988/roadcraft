@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { asBuildingId, componentAt, type Building } from '@world/buildings/types';
-import { shapeBody, addPlanMass, addShapedUpperMass, cutPlanMass } from '@editor/buildingPlans';
+import { shapeBody, addPlanMass, addShapedUpperMass } from '@editor/buildingPlans';
 import { opAddSetback } from '@editor/buildings';
 import { applyFacadePattern, updateFacadeGeometry } from '@editor/buildingFacade';
 import { addRoofDetail, removeRoofDetail, updateRoofDetail } from '@editor/buildingRoofs';
@@ -57,7 +57,7 @@ describe('complete building creation grammar', () => {
     expect(loaded.volumes.find((v) => v.id === lookout)?.roofDetails?.[0]?.h).toBe(m(11.7));
     expect(loaded.volumes.find((v) => v.id === lookout)?.roofDetails?.[0]?.flag).toBe('saoPaulo');
   });
-  it('composes ground and upper masses, then cuts a notch without corrupting support', () => {
+  it('composes ground and upper masses without corrupting support', () => {
     const b = building();
     const first = b.volumes[0]!;
     expect(addRoofDetail(b, first.id, 'solar', { x: 10, y: 8 })).toBe(1);
@@ -68,8 +68,6 @@ describe('complete building creation grammar', () => {
       [{ x: 6, y: 4 }, { x: 30, y: 4 }, { x: 30, y: 15 }, { x: 6, y: 15 }], 2, 3);
     expect(top).not.toBeNull();
     expect(first.roofDetails).toHaveLength(0);
-    expect(structuralProblem(b)).toBeNull();
-    expect(cutPlanMass(b, ground!, [{ x: 58, y: -2 }, { x: 72, y: -2 }, { x: 72, y: 6 }, { x: 58, y: 6 }])).toBe(true);
     expect(structuralProblem(b)).toBeNull();
     expect(migrateBuilding(JSON.parse(JSON.stringify(b)))?.volumes).toHaveLength(3);
   });

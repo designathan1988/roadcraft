@@ -48,17 +48,6 @@ export const AREA_EPS = 1e-5 * TUNED_UNIT * TUNED_UNIT;
 export const overlapArea = (a: readonly Vec2[], b: readonly Vec2[]): number =>
   polygonArea(clipping.intersection(asPolygon(a), asPolygon(b)));
 
-/** A side cut leaves one simple outline; enclosed holes are built from masses. */
-export function cutOutline(source: readonly Vec2[], cut: readonly Vec2[]): Vec2[] | null {
-  if (overlapArea(source, cut) < AREA_EPS) return null;
-  const result = clipping.difference(asPolygon(source), asPolygon(cut));
-  if (result.length !== 1 || result[0]?.length !== 1) return null;
-  const ring = result[0][0];
-  if (!ring || ring.length < 4) return null;
-  const points = ring.slice(0, -1).map(([x, y]) => ({ x, y }));
-  return signedArea(points) < 0 ? points.reverse() : points;
-}
-
 /** The share (0..1) of `ring`'s area that lies over `supports`. */
 export function supportShare(ring: readonly Vec2[], supports: readonly Vec2[][]): number {
   const area = Math.abs(signedArea(ring));

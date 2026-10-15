@@ -1,5 +1,5 @@
-import { vehiclePose } from '../pose';
-import type { SimWorld } from '../world';
+import { vehiclePose } from '@sim/pose';
+import type { SimWorld } from '@sim/world';
 import { m, stepsIn } from '@world/units';
 
 /** Opt-in measurement of the published vehicle poses; never writes simulation state. */

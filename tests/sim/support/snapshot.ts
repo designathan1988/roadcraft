@@ -1,4 +1,4 @@
-import type { SimWorld } from './world';
+import type { SimWorld } from '@sim/world';
 
 /**
  * A stable fingerprint of simulation state.

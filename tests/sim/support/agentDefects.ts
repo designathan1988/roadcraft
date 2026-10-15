@@ -5,7 +5,7 @@ import { Network } from '@world/network';
 import { TUNED_UNIT, m } from '@world/units';
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
-import { VehicleMotionMetrics } from '@sim/drive/motionMetrics';
+import { VehicleMotionMetrics } from './motionMetrics';
 import { SimWorld } from '@sim/world';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { blueprintByKey, instantiate } from '@world/buildings/blueprints';
