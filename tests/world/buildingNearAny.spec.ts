@@ -57,5 +57,7 @@ describe('the buildings several rectangles reach', () => {
     const gardens = readFileSync('src/render/gardenLists.ts', 'utf8');
     expect(gardens).toMatch(/banks\.idsMeetingAny\(rects\)/);
     expect(gardens).not.toMatch(/for \(const rect of rects\)/);
+    const parking = readFileSync('src/sim/agents/parking.ts', 'utf8');
+    expect(parking).toMatch(/buildings\.nearAny\(rects, LOT_REACHED,/);
   });
 });

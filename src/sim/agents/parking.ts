@@ -290,12 +290,8 @@ export function baysOfSource(w: SimWorld, source: string): Bay[] {
 function lotsReached(w: SimWorld, lots: BuildingsInOrder, rects: readonly ChangeRect[], named: readonly BuildingId[]): Set<BuildingId> {
   const out = new Set<BuildingId>();
   for (const id of named) if (lots.has(id)) out.add(id);
-  for (const r of rects) {
-    for (const b of w.doc.buildings.near(r[0] - LOT_REACHED, r[1] - LOT_REACHED, r[2] + LOT_REACHED, r[3] + LOT_REACHED)) {
-      if (!lots.has(b.id) || out.has(b.id)) continue;
-      if (meets(r, storedBounds(b, LOT_READS))) out.add(b.id);
-    }
-  }
+  // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
+  for (const b of w.doc.buildings.nearAny(rects, LOT_REACHED, (b, r) => lots.has(b.id) && meets(r, storedBounds(b, LOT_READS)))) out.add(b.id);
   return out;
 }
 
