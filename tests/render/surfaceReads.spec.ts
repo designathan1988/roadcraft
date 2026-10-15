@@ -19,7 +19,10 @@ import { buildRoadSurfaces } from '@render/roadSurfaces';
  * the reads made before any of that (commit 8434df1): every attribute and
  * index, with the verge on its own material and on the terrain's.
  * DO NOT update these digests to make a change pass: a different digest is a
- * different road on screen.
+ * different road on screen. Moved a second time, 2026-10-15, with the triangles' diagonals
+ * turned to Delaunay's (`tileShape.ts` `flipToDelaunay`): the same outline and vertices of
+ * every piece, other diagonals inside them - photographed before and after in the same views
+ * (a crossing, its curb ramps, the zebra, the footway): the same picture.
  *
  * Moved once, 2026-10-15, with the inputs kept road by road (`roadSurfaceInputs.ts`),
  * compared mesh by mesh with the build before: the city's every mesh the same bytes,
@@ -57,12 +60,12 @@ describe('road surface reads', () => {
   for (const [name, make, plain, onTerrain] of [
     ['the grid and bends fixture',
       () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document),
-      '134 f056a9453099d14061179d774ce4a92dbb5c828b4208d3a8db55b9e38c12ad5c',
-      '134 ad369e48afa6a6838dd64f8fec0acddf6f35563b1b694d2bb9d4ab7fa911f669'],
+      '134 dcb346811613d6ca8b0932bb01173679fe8fc000737d19fe8406cecf2b60ea60',
+      '134 93ab8d091d27c35d3fd30625c40f66234613d7b5a525bbc5f31263dbf7187dba'],
     ['a generated city',
       () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small', radius: 640 })),
-      '144 324af30c814e856dfef1b556a27e124f482722c783f64125fe3d8c6ba630482e',
-      '144 4c2dda9ff281fe5336c7be02fdccfc7a0d93ecb65521bc8a6b640d3f33b8d8f5'],
+      '144 45aaf83f02a21a64d8c4b805fdb0fd946e61b8f227889b0785d1e5a88a7ced7f',
+      '144 d6edbd21cbca5c1d35ce10123594faca4d92fd13ddb0768bbb20f605e454daae'],
   ] as const) it(`build ${name} byte for byte as before`, () => {
     const net = new Network(make());
     net.rebuild();
