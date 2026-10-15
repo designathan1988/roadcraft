@@ -84,7 +84,10 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     }
     const { kind, brush } = s.element;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
-    const nearby = doc.elements.filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
+    // The elements round the dab only (`RoadDoc.elementsIn`). DO NOT filter
+    // `doc.elements`: every dab of a stroke walked every element of the map.
+    const nearby = doc.elementsIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
+      .filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
     doc.addElements(scatter(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, s.random, nearby));
     return;
   }
@@ -97,7 +100,9 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     }
     const { kind, brush } = s.tree;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
-    const nearby = doc.trees.filter((t) => Math.abs(t.x - at.x) < reach && Math.abs(t.y - at.y) < reach);
+    // The trees round the dab only (`RoadDoc.treesIn`), never every tree of the map.
+    const nearby = doc.treesIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
+      .filter((t) => Math.abs(t.x - at.x) < reach && Math.abs(t.y - at.y) < reach);
     if (s.tree.mode === 'one') {
       const spacing = brush.spacing * UNITS_PER_METER;
       if (nearby.every((t) => Math.hypot(t.x - at.x, t.y - at.y) >= spacing)) doc.plantTrees([oneTree(kind, brush, at.x, at.y, UNITS_PER_METER, s.random)]);
