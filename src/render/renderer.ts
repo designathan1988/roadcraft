@@ -79,6 +79,7 @@ import { createExhaust } from './exhaust';
 import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { createSignLayer } from './signLayer';
+import { Engine } from '@core/engine';
 import { fadeMeshes } from './buildings/fade';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
@@ -428,6 +429,8 @@ export function createSceneRenderer(
   initialZoom: number,
   initialQuality: QualityLevel | 'auto' = 'auto',
   onAssetsReady: () => void = () => {},
+  /** The engine the scene's products are registered with (`core/engine.ts`): the game's one, from `main.ts`. */
+  engine: Engine = new Engine(),
 ): SceneHandle {
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
@@ -1552,18 +1555,34 @@ export function createSceneRenderer(
    * landscaping edit, at each road edit reaching one, and each hour a tree
    * grew (`rebuildFurniture`, `growPlants`, removed).
    */
-  const syncPlaced = (net: Network): void => {
-    if (!elevation) return;
-    const at = performance.now();
-    const before = furniture.triangles;
-    furniture.sync(net, elevation, terrain.renderedHeightAt, cityMinutes);
-    builtTriangles += furniture.triangles - before;
-    performance.measure('hitch:furniture', { start: at, end: performance.now() });
+  /**
+   * The world the placed things stand on, once it stands (`draw`): what the engine's 'draw' phase
+   * reads. The furniture and the signs are products of the engine (`core/engine.ts`), brought up to
+   * the diary there, their work in its ledger.
+   */
+  let placedOn: Network | null = null;
+  engine.register({
+    name: 'street furniture',
+    refresh: (): number => {
+      if (!placedOn || !elevation) return 0;
+      const at = performance.now();
+      const before = furniture.triangles;
+      const work = furniture.sync(placedOn, elevation, terrain.renderedHeightAt, cityMinutes);
+      builtTriangles += furniture.triangles - before;
+      performance.measure('hitch:furniture', { start: at, end: performance.now() });
+      return work;
+    },
+  }, 'draw');
+  engine.register({
+    name: 'signs',
     // Only the signs whose ground a change reached (`signLayer.ts`). DO NOT build every sign of the
     // map again on a serial of the roads, the land or the landscaping: every edit anywhere did.
-    if (!signs.group.parent) world.add(signs.group);
-    signs.sync(net, elevation);
-  };
+    refresh: (): number => {
+      if (!placedOn || !elevation) return 0;
+      if (!signs.group.parent) world.add(signs.group);
+      return signs.sync(placedOn, elevation);
+    },
+  }, 'draw');
 
   /** Blocks whose ground a dropped rebuild had not shaped yet (`null`: the whole map). */
   let pendingBlocks: [number, number, number, number][] | null = [];
@@ -1781,7 +1800,7 @@ export function createSceneRenderer(
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
     performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
-    // The street furniture and the signs follow from the diary once the world stands (`syncPlaced`, in `draw`).
+    // The street furniture and the signs follow from the diary once the world stands (the engine's 'draw' phase, in `draw`).
     rebuildMs = performance.now() - started;
     performance.measure('hitch:road-edit/world rebuilt', { start: started, end: performance.now() });
     rebuilds++;
@@ -2741,7 +2760,7 @@ export function createSceneRenderer(
       // on. The old ones are drawn meanwhile, as the old roads are.
       const groundSettled = !stroking && !worldJob;
       // The street furniture and the signs on the world as it stands: what the diary says changed under them.
-      if (groundSettled) syncPlaced(net);
+      if (groundSettled) { placedOn = net; engine.refresh('draw'); }
       // The buildings follow the ground once a stroke is over, not on every
       // dab of it: re-grading 600 buildings per dab took seconds a dab.
       // Only when the ground changed under some building's own bank, and then

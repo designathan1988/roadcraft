@@ -9,6 +9,7 @@ import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp, coalescedTask } fro
 import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
+import { Engine } from '@core/engine';
 import { FrameTimer, HealthLog, frameStats } from '@core/health';
 import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
@@ -659,7 +660,9 @@ function savedQualityLevel(): QualityLevel {
 // never lowers them on its own.
 primeSurfaceBake(await surfaceBake);
 sim.conflicts.seed(await keptZones);
-const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw);
+/** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
+const engine = new Engine();
+const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw, engine);
 
 // The traffic's topology is not built here: it is built a slice a frame while
 // the opening puts the town together (`TopologyCatchUp`, its frames not yet
@@ -4147,6 +4150,8 @@ const healthPanel = mountHealthPanel({
 
 // Diagnostic surface for browser-driven checks.
 (window as unknown as { __roadcraft: unknown }).__roadcraft = {
+  /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
+  ledger: () => Object.fromEntries(engine.ledger),
   doc,
   net,
   sim,

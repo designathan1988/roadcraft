@@ -334,7 +334,8 @@ export interface StreetFurnitureLayer {
    * placed again, those still growing sized at the city's hour. Cheap when
    * nothing changed (the diary's serials only).
    */
-  sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): void;
+  /** Brings the furniture and the long grass up to the diary (and the hour); the items computed (the engine's ledger, `core/engine.ts`). */
+  sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): number;
   setMap(map: boolean): void;
   cull(frustum: Frustum, view: Matrix4): void;
   dispose(): void;
@@ -403,10 +404,11 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
         if (stillGrowing(value.planted, now)) growing.add(id);
       };
       for (const id of places.refresh(source)) place(id);
+      let work = places.work.last;
       // A new hour: the plants still growing sized again (and only those).
       if (!Object.is(nowHour, hour)) {
         hour = nowHour;
-        for (const id of [...growing]) place(id);
+        for (const id of [...growing]) { place(id); work++; }
       }
       if (removed.length || added.size) furniture.update({ removed, added: [...added] });
       const gone: Run[] = [], grown: Run[] = [];
@@ -417,6 +419,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
         if (value) { clumpRuns.set(id, value.run); grown.push(value.run); }
       }
       if (gone.length || grown.length) meadow.update({ removed: gone, added: grown });
+      return work + clumps.work.last;
     },
     setMap(map) {
       furniture.setMap(map);
