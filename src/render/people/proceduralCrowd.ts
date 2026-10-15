@@ -1273,8 +1273,18 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return piece;
   };
 
-  /** Room for twice the people in a piece, what is written kept. */
+  /**
+   * Room for twice the people in a piece, what is written kept. three cannot
+   * resize an attribute, so they are new ones, and the old ones' GPU buffers
+   * are freed first - the mesh's (`instanceMatrix`, `WebGLObjects`
+   * `onInstancedMeshDispose`) and the geometry's (`WebGLGeometries`
+   * `onGeometryDispose`; its shared vertex data goes up again on the next
+   * draw). DO NOT just swap them: three keeps a buffer per attribute and
+   * never deletes one it is not told of; each growth left the old ones on the GPU.
+   */
   const growPiece = (piece: Piece): void => {
+    piece.mesh.dispose();
+    piece.mesh.geometry.dispose();
     const capacity = piece.capacity * 2;
     const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     matrices.setUsage(DynamicDrawUsage);
