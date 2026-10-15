@@ -353,6 +353,17 @@ interface LotBays { readonly lot: string; readonly key: number; readonly bays: r
 
 /** The bays of a world as last worked out, and what they were worked out from. */
 interface BayBook {
+  /**
+   * The bays' sources (`L<building>` a lot, `K<segment>` a street's kerb)
+   * whose bays changed since `logBase`, oldest first, and the serial of the
+   * latest (`bayChangesSince`); emptied, with a new base, when longer than
+   * reading every source would be.
+   */
+  log: string[];
+  logBase: number;
+  serial: number;
+  /** `out` is to be put together again before it is handed out (`collectBays`). */
+  outStale: boolean;
   /** The lots (buildings with a `parking` element), in the store's order. */
   readonly lots: BuildingsInOrder;
   readonly known: Map<BuildingId, LotBays>;
@@ -366,14 +377,16 @@ interface BayBook {
 const BOOKS = new WeakMap<SimWorld, BayBook>();
 
 /**
- * The bays now, from the diary: the lots a building change reaches worked
- * out again, the others kept; every lot digested again when the roads moved.
- * Nothing of the town is walked unless the diary cannot say what changed.
+ * The bays brought up to date, from the diary: the lots a building change
+ * reaches worked out again, the others kept; every lot digested again when
+ * the roads moved. Nothing of the town is walked unless the diary cannot say
+ * what changed. Each source whose bays changed is logged (`bayChangesSince`).
  */
-function baysNow(w: SimWorld): readonly Bay[] {
+function updateBays(w: SimWorld): BayBook {
   let book = BOOKS.get(w);
   if (!book) {
-    book = { lots: new BuildingsInOrder(hasParking), known: new Map(), kerb: newKerbBook(), roads: null, first: undefined, out: [] };
+    book = { lots: new BuildingsInOrder(hasParking), known: new Map(), kerb: newKerbBook(), roads: null, first: undefined, out: [],
+      log: [], logBase: 0, serial: 0, outStale: true };
     BOOKS.set(w, book);
   }
   const roads = roadsKey(w);
@@ -382,17 +395,20 @@ function baysNow(w: SimWorld): readonly Bay[] {
   book.roads = roads;
   book.first = first;
   const delta = book.lots.update(w.doc);
-  const kerbMoved = followKerbs(w, book.kerb, roadsMoved, delta, (id) => book.lots.rank(id), (x, y, segment) => laneFor(w, x, y, undefined, segment));
-  if (!roadsMoved && delta !== null && delta.ids.length === 0 && !kerbMoved) return book.out;
+  for (const seg of followKerbs(w, book.kerb, roadsMoved, delta, (id) => book.lots.rank(id), (x, y, segment) => laneFor(w, x, y, undefined, segment))) {
+    noteBays(book, `K${seg}`);
+  }
+  if (!roadsMoved && delta !== null && delta.ids.length === 0) return book;
 
   // With the roads as they were, a lot whose reach no building change
   // touched keeps its bays without reading anything (the diary's rectangles).
   const rects = roadsMoved || delta === null ? null : delta.rects;
-  let changed = roadsMoved || delta === null || kerbMoved;
+  // Read whole, the store's order may be another: the list is put together again.
+  if (delta === null) book.outStale = true;
   if (delta === null) {
-    for (const id of [...book.known.keys()]) if (!book.lots.has(id)) book.known.delete(id);
+    for (const id of [...book.known.keys()]) if (!book.lots.has(id)) { book.known.delete(id); noteBays(book, `L${id}`); }
   } else {
-    for (const id of delta.ids) if (!book.lots.has(id) && book.known.delete(id)) changed = true;
+    for (const id of delta.ids) if (!book.lots.has(id) && book.known.delete(id)) noteBays(book, `L${id}`);
   }
   const walls = wallsOf(w);
   const look = rects === null ? book.lots.ids : lotsReached(w, book.lots, rects, delta!.ids);
@@ -400,14 +416,64 @@ function baysNow(w: SimWorld): readonly Bay[] {
     const b = w.doc.buildings.get(id)!;
     const was = book.known.get(id);
     const now = lotBaysOf(w, b, was, rects, walls);
-    if (now !== was) { book.known.set(id, now); changed = true; }
+    if (now !== was) { book.known.set(id, now); noteBays(book, `L${id}`); }
   }
-  if (!changed) return book.out;
+  return book;
+}
+
+/** A source's bays changed: logged, and the town's list to be put together again. */
+function noteBays(book: BayBook, source: string): void {
+  book.outStale = true;
+  book.log.push(source);
+  book.serial++;
+  // Longer than every source read once: forgotten (its readers read every source).
+  if (book.log.length > Math.max(256, book.known.size + book.kerb.order.length)) {
+    book.log = [];
+    book.logBase = ++book.serial;
+  }
+}
+
+/** @rebuild The town's list of bays, put together again only after a change (`collectBays`). */
+function baysNow(w: SimWorld): readonly Bay[] {
+  const book = updateBays(w);
+  if (!book.outStale) return book.out;
   const out: Bay[] = [];
   for (const id of book.lots.ids) for (const bay of book.known.get(id)!.bays) out.push({ ...bay, id: out.length });
   for (const id of book.kerb.order) for (const bay of book.kerb.bays.get(id) ?? []) out.push({ ...bay, id: out.length });
   book.out = out;
+  book.outStale = false;
   return out;
+}
+
+/**
+ * The sources of bays (`L<building>` a lot's, `K<segment>` a street's
+ * kerb) whose bays changed since `serial`, oldest first, and the serial now;
+ * `changed` null: every source is to be read (`baySources`) - the first
+ * look, or a log forgotten. For whoever keeps something by bay (the scenery's
+ * parked cars, `ambient.ts`). DO NOT read the town's list (`collectBays`)
+ * at every change: every bay of the town, for each building grown.
+ */
+export function bayChangesSince(w: SimWorld, serial: number): { readonly serial: number; readonly changed: readonly string[] | null } {
+  const book = updateBays(w);
+  if (serial < 0 || serial < book.logBase || serial > book.serial) return { serial: book.serial, changed: null };
+  return { serial: book.serial, changed: book.log.slice(serial - book.logBase) };
+}
+
+/** @rebuild Every source of bays, in the town's order (the lots in the store's, then the streets): read whole. */
+export function baySources(w: SimWorld): string[] {
+  const book = updateBays(w);
+  const out: string[] = [];
+  for (const id of book.lots.ids) if (book.known.has(id)) out.push(`L${id}`);
+  for (const id of book.kerb.order) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
+  return out;
+}
+
+/** A source's bays now (`bayChangesSince`), as fresh copies (ids within the source); none when it has none. */
+export function baysOfSource(w: SimWorld, source: string): Bay[] {
+  const book = updateBays(w);
+  const id = Number(source.slice(1));
+  const bays = source[0] === 'L' ? book.known.get(id as BuildingId)?.bays : book.kerb.bays.get(id as SegmentId);
+  return (bays ?? []).map((bay) => ({ ...bay, car: null }));
 }
 
 /** The lots whose reach (`LOT_READS`) meets one of the rectangles, and the lots named; found by place. */

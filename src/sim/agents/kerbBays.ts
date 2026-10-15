@@ -138,9 +138,11 @@ function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[]
 /**
  * The kerbs brought up to date: every street laid out again when the roads
  * moved, else only the streets an entrance changed in front of (a lot's gate
- * or car park drawn, moved or taken away). Whether any street's bays changed.
+ * or car park drawn, moved or taken away). The streets whose bays changed -
+ * laid out otherwise, or gone - for whoever keeps something by street
+ * (`parking.ts` bayChangesSince).
  */
-export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): boolean {
+export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
   const dirty = new Set<SegmentId>();
   const netMoved = roadsMoved || book.net !== w.net || book.revision !== w.net.revision;
   // The entrances: read whole when the diary cannot say what changed.
@@ -157,6 +159,7 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
     if (was.length) touched.push(entranceBox(was));
     if (now.length) touched.push(entranceBox(now));
   }
+  const before = netMoved ? new Map(book.bays) : book.bays;
   if (netMoved) readStreets(w, book);
   if (netMoved || delta === null) {
     for (const id of book.order) dirty.add(id);
@@ -172,8 +175,33 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
       }
     }
   }
-  for (const id of dirty) book.bays.set(id, kerbBaysOf(w, book, id, rank, laneAt));
-  return dirty.size > 0;
+  const changed = new Set<SegmentId>();
+  for (const id of dirty) {
+    const was = before.get(id);
+    const now = kerbBaysOf(w, book, id, rank, laneAt);
+    book.bays.set(id, now);
+    if (!was || !sameBays(was, now)) changed.add(id);
+  }
+  // Streets that no longer park (or are gone): their bays went with them.
+  if (netMoved) for (const id of before.keys()) if (!book.bays.has(id)) changed.add(id);
+  return changed;
+}
+
+/** Whether two lists of a street's bays are the same bays, field by field. */
+export function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]!, q = b[i]!;
+    if (p.building !== q.building || p.x !== q.x || p.y !== q.y || p.ox !== q.ox || p.oy !== q.oy || p.depth !== q.depth ||
+      p.room !== q.room || p.kerb !== q.kerb || p.via.length !== q.via.length) return false;
+    for (let k = 0; k < p.via.length; k++) if (p.via[k]!.x !== q.via[k]!.x || p.via[k]!.y !== q.via[k]!.y) return false;
+    const l = p.lane, m2 = q.lane;
+    if (l === m2) continue;
+    if (!l || !m2 || l.lanelet !== m2.lanelet || l.at !== m2.at || l.x !== m2.x || l.y !== m2.y || l.tx !== m2.tx || l.ty !== m2.ty ||
+      l.entryAt !== m2.entryAt) return false;
+  }
+  return true;
 }
 
 /** @rebuild Every building's entrances, read whole: the first look, or when the diary cannot say what changed. */
