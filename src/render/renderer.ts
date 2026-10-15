@@ -1167,6 +1167,17 @@ export function createSceneRenderer(
   const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
   /** The serial of the latest change of the ground (not of the diary: a zone drawn is no change of the ground), and how far the diary was read for it. */
   let groundVersion = 0, groundScanned = 0;
+  /** Where the ground changed after `since`, from the diary; null where it cannot say (the whole map, or forgotten). */
+  const groundRectsSince = (since: number): ChangeRect[] | null => {
+    const entries = groundDiary?.since(since, GROUND_KINDS);
+    if (!entries) return null;
+    const rects: ChangeRect[] = [];
+    for (const entry of entries) {
+      if (entry.rects === null) return null;
+      rects.push(...entry.rects);
+    }
+    return rects;
+  };
   const groundChanges: GroundRecord = {
     get version() {
       const diary = groundDiary;
@@ -1178,22 +1189,17 @@ export function createSceneRenderer(
       return groundVersion;
     },
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
+    // DO NOT leave it out: without it the gardens asked every planted
+    // building of the city whether the ground moved under it, at every
+    // change of the ground (`gardenLists.ts` `groundMoved`).
+    rectsSince: (since) => groundRectsSince(since),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
-    rectsSince(since) {
-      const entries = groundDiary?.since(since, GROUND_KINDS);
-      if (!entries) return null;
-      const rects: ChangeRect[] = [];
-      for (const entry of entries) {
-        if (entry.rects === null) return null;
-        rects.push(...entry.rects);
-      }
-      return rects;
-    },
+    rectsSince: (since) => groundRectsSince(since),
   };
   /** Where a building's floor reads the ground and the paving (`FLOOR_READ_REACH`), once per record. */
   const floorBoxes = new WeakMap<Building, ChangeRect>();

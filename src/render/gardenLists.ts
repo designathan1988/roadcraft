@@ -121,7 +121,10 @@ export function gardenLists(
     if (since < 0) return;
     const rects = ground.rectsSince ? ground.rectsSince(since) : null;
     if (rects) {
-      for (const rect of rects) for (const id of banks.idsMeeting(rect)) check(id, sites.get(id)!);
+      // Every placed site was placed at `groundRead` or before (`update` reads
+      // the ground first), so a change after `since` met by its bank moved
+      // its ground: no asking the diary back to when it was placed.
+      for (const rect of rects) for (const id of banks.idsMeeting(rect)) if (sites.get(id)!.plants) pending.add(id);
       return;
     }
     for (const [id, site] of sites) check(id, site);
