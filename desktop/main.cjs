@@ -42,13 +42,18 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  protocol.handle('app', (request) => {
+  protocol.handle('app', async (request) => {
     const { pathname } = new URL(request.url);
     const relative = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
     const file = path.normalize(path.join(GAME, relative));
     // Nothing outside the game's folder.
     if (!file.startsWith(GAME)) return new Response('forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(file).toString());
+    const response = await net.fetch(pathToFileURL(file).toString());
+    // Cross-origin isolated, as the Vite server serves it: SharedArrayBuffer for the simulation's worker.
+    const headers = new Headers(response.headers);
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

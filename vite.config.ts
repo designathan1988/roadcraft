@@ -5,6 +5,8 @@ import { cookPlugin } from './scripts/vite/cook-plugin';
 import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+// The page cross-origin isolated (MDN, crossOriginIsolated): what SharedArrayBuffer needs, for the simulation's worker.
+const ISOLATED = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
 
 export default defineConfig({
   root: '.',
@@ -32,7 +34,7 @@ export default defineConfig({
     port: Number(process.env['PORT'] ?? 5300),
     strictPort: true,
     // Lets the page sample its own JavaScript (`new Profiler`), to find what a frame spends its time on in the running game.
-    headers: { 'Document-Policy': 'js-profiling' },
+    headers: { 'Document-Policy': 'js-profiling', ...ISOLATED },
     // Test and coverage artefacts live under the project root.
     watch: {
       ignored: [
@@ -45,6 +47,7 @@ export default defineConfig({
       ],
     },
   },
+  preview: { headers: ISOLATED },
   build: {
     target: 'es2022',
     sourcemap: true,
