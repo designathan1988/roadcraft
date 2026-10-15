@@ -557,11 +557,6 @@ export interface FacadeBay {
 }
 
 /**
- * Every bay that is an OUTSIDE wall. A stretch of a side that another volume
- * stands against on the same level is a shared wall and is left out; a bay
- * only partly against one keeps its exposed piece, as plain wall.
- */
-/**
  * Each building's bays as last worked out, by the record they came from: the
  * platforms, the door links, the access signature and the meshes each worked
  * them out again for every building on every edit (docs/source/performance.md
@@ -572,22 +567,26 @@ export interface FacadeBay {
  * write the whole record as text on every ask to compare it (a furnished
  * building's JSON, for every bay question of every building).
  *
- * The least recently asked let go first: kept for every building (with each
- * one's record as text then) they were 150 MB of a city of 5 400
- * (2026-10-14); a building's bays are asked while it is emitted, graded or
- * walked into, a few hundred at a time.
+ * Kept for every record while it lives (a WeakMap: a record replaced or
+ * removed lets its bays go). They were once kept with each record's whole
+ * text beside them - 150 MB of a city of 5 400 (2026-10-14), most of it the
+ * text - and then held to the last 1 024 asked, which threw away and worked
+ * out again the bays of every building past that as the town was emitted.
+ * DO NOT put a cap back: a cache that drops and remakes hides the cost, which
+ * comes back with the bigger town.
  */
-const BAYS = new Map<Building, FacadeBay[]>();
-const BAYS_KEPT = 1024;
+const BAYS = new WeakMap<Building, FacadeBay[]>();
 export function facadeBays(b: Building): FacadeBay[] {
-  const known = BAYS.get(b);
-  if (known) { BAYS.delete(b); BAYS.set(b, known); return known; }
-  const bays = workOutFacadeBays(b);
-  if (BAYS.size >= BAYS_KEPT) BAYS.delete(BAYS.keys().next().value!);
-  BAYS.set(b, bays);
-  return bays;
+  let known = BAYS.get(b);
+  if (!known) BAYS.set(b, known = workOutFacadeBays(b));
+  return known;
 }
 
+/**
+ * Every bay that is an OUTSIDE wall. A stretch of a side that another volume
+ * stands against on the same level is a shared wall and is left out; a bay
+ * only partly against one keeps its exposed piece, as plain wall.
+ */
 function workOutFacadeBays(b: Building): FacadeBay[] {
   const out: FacadeBay[] = [];
   const elevations: number[] = [];
