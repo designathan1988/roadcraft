@@ -12,11 +12,13 @@ import { profiler } from '@core/profiler';
  * (three r186: `BufferGeometry`, `Material`, `Texture` and
  * `WebGLRenderTarget` each dispatch `dispose` from the base method).
  */
-let hooked = false;
+/** Set on `BufferGeometry.prototype` once the prototypes are wrapped: they are wrapped once. */
+const HOOKED = Symbol('profiler hooks');
 
 export function hookProfiler(renderer: WebGLRenderer): void {
-  if (hooked) return;
-  hooked = true;
+  const marked = BufferGeometry.prototype as unknown as Record<symbol, boolean>;
+  if (marked[HOOKED]) return;
+  marked[HOOKED] = true;
   wrap(BufferGeometry.prototype, 'dispose', () => profiler.count('dispose.geometry'));
   wrap(Material.prototype, 'dispose', () => profiler.count('dispose.material'));
   wrap(Texture.prototype, 'dispose', () => profiler.count('dispose.texture'));

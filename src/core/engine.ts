@@ -22,11 +22,10 @@
  * not exist; needed heavy work goes to a worker.
  */
 
-/** Moved by every `EngineInput.touch`: part of the engine's stamp (`Engine.watch`). */
-let inputEpoch = 0;
-
 /** An input of the engine that is not the diary (the view, the clock, the quality): a serial moved when it changes. */
 export class EngineInput {
+  /** Moved by every input's `touch`: part of the engine's stamp (`Engine.watch`). */
+  static epoch = 0;
   private serialNow = 0;
 
   constructor(readonly name: string) {}
@@ -39,7 +38,7 @@ export class EngineInput {
   /** It changed. */
   touch(): void {
     this.serialNow++;
-    inputEpoch++;
+    EngineInput.epoch++;
   }
 }
 
@@ -137,7 +136,7 @@ export class Engine {
     let order = this.orders.get(phase);
     if (!order) this.orders.set(phase, order = this.sorted().filter((p) => this.phaseOf.get(p) === phase));
     const busy: string[] = [];
-    const stamp = this.stamp ? this.stamp() + inputEpoch : -1;
+    const stamp = this.stamp ? this.stamp() + EngineInput.epoch : -1;
     const still = stamp >= 0 && this.stampAt.get(phase) === stamp;
     this.stampAt.set(phase, stamp);
     for (const product of order) {
