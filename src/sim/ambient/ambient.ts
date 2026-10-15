@@ -676,7 +676,9 @@ export class AmbientWorld {
    * the share that way at this hour (`outShare`). Not `not`, nor one too near
    * it to be worth the walk; the other end of a walk from `not` nearer is
    * likelier, by the gravity model's negative exponential (`WALK_DECAY`).
-   * Drawn in O(log n) (`LotPlaces.pick`), the lot drawn worked out then.
+   * Drawn by `LotPlaces.pick` - with no other end, in O(log n) (a Fenwick tree
+   * per kind); from another end, over the place cells (one look a cell) - the
+   * lot drawn worked out then.
    */
   private pickPlace(w: SimWorld, hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
     this.refreshPlaces(w);

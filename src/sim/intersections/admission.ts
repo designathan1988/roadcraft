@@ -925,8 +925,7 @@ class BankerPass {
 }
 
 /**
- * Work of the Banker's tests, counted for the scale test
- * (`tests/sim/admissionScale.spec.ts`), as `tickWork`: tests made and the
+ * Work of the Banker's tests, counted as `tickWork` is: tests made and the
  * processes they read.
  */
 export const admissionWork = { bankerTests: 0, bankerProcesses: 0 };
@@ -1189,9 +1188,11 @@ export function rightOfWay(
   // three queued behind it. Nothing in `audit()` saw it either, because
   // `greenBlocked` only watches signals and there was no signal.
   //
-  // A real uncontrolled junction is not symmetric: the larger road has priority
-  // and the smaller one gives way. So `none` falls through to the same class
-  // ranking `auto` uses, which is what breaks the tie and keeps the node alive.
+  // A real uncontrolled junction is not symmetric. `none` is answered below
+  // by its own rule (CTB art. 29, III: a "rodovia" goes first, else everyone
+  // gives way to the right, `yieldSide`), and the claim table and the wait
+  // ceiling break a full tie; `auto` goes on to the ranking of the road the
+  // junction is on.
   if (policy === 'stop') return 'stop';
   if (policy === 'yield') return 'yield';
   // A junction on "automatic" its flows put under a stop on every leg (V5).

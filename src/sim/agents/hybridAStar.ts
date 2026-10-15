@@ -28,8 +28,10 @@ import { m } from '@world/units';
  * Huttenlocher, "Distance Transforms of Sampled Functions", 2012): one look
  * per disc.
  *
- * No Reeds-Shepp shot to the goal: the goal is reached within a tolerance,
- * and the caller settles the last few centimetres with a short leg.
+ * Near the goal it tries the paper's analytic expansion, a Reeds-Shepp shot
+ * to the goal (`reedsShepp.ts`, `WaySearch.shot`), taken when nothing stands
+ * on it; otherwise the goal is reached within a tolerance, and the caller
+ * settles the last few centimetres with a short leg.
  */
 
 /** A vehicle as the planner sees it. World units. */

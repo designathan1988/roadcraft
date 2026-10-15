@@ -53,6 +53,9 @@ export function cyclesOf(w: SimWorld, lanelet: LaneletId): readonly RoadCycle[] 
   return indexOf(w).byLanelet.get(lanelet) ?? [];
 }
 
+/** Vehicles the ring meter read, counted for the work counters (`tickWork` and kin). */
+export const cycleWork = { vehiclesRead: 0 };
+
 /**
  * Whether a movement onto a small loop it is not already on has to wait for
  * room on it. Traffic already on a loop is never metered onto it.
@@ -64,9 +67,6 @@ export function cyclesOf(w: SimWorld, lanelet: LaneletId): readonly RoadCycle[] 
  * of the city. DO NOT go back to walking `w.vehicles` here: that was the whole
  * fleet for every request onto a ring, every tick.
  */
-/** Vehicles the ring meter read, counted for the scale test (`tests/sim/admissionScale.spec.ts`). */
-export const cycleWork = { vehiclesRead: 0 };
-
 export function cycleFull(w: SimWorld, from: LaneletId, to: LaneletId, need: number): boolean {
   for (const cycle of cyclesOf(w, to)) {
     if (cycle.lanelets.has(from)) continue;
