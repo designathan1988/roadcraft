@@ -33,7 +33,6 @@ import { DEFAULT_REGION, isRegionId, type NatureSettings } from '@world/ecology'
 import type { NodeId, SegmentId } from '@world/ids';
 import { BARRIER_KINDS, type BarrierKind } from '@world/barriers';
 import { BarrierTool } from '@editor/barriers';
-import { barrierNear } from '@editor/itemCells';
 import {
   POLE_PICK_PIXELS,
   PoleTool,
@@ -498,8 +497,8 @@ const barrierTool = new BarrierTool({
   net: () => net,
   kind: () => game.barrierKind,
   removeAt: (at) => {
-    // The runs round the point only (`editor/itemCells.ts`), not every wall of the map.
-    const hit = barrierNear(doc, at, BARRIER_PICK_PIXELS / view.zoom);
+    // The runs round the point only (`RoadDoc.barrierNear`), not every wall of the map.
+    const hit = doc.barrierNear(at, BARRIER_PICK_PIXELS / view.zoom);
     if (!hit) return false;
     mutate(() => doc.removeBarrier(hit.id));
     return true;

@@ -460,7 +460,8 @@ export function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: 
 }
 
 /** The largest radius of a placed item (`LANDSCAPE_RADIUS`). */
-const MAX_ITEM_RADIUS = Math.max(...Object.values(LANDSCAPE_RADIUS));
+/** The widest item's radius: what a search round a point grows by to meet every item reaching it. */
+export const MAX_ITEM_RADIUS = Math.max(...Object.values(LANDSCAPE_RADIUS));
 
 /**
  * `landscapeNear` over the document's items round the point only
