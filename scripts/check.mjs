@@ -86,6 +86,8 @@ export const ALWAYS = [
   'tests/arch/', 'tests/tooling/', 'tests/ui/decimals.spec.ts', 'tests/ui/i18n.spec.ts', 'tests/ui/i18nKeys.spec.ts',
   'tests/ui/oldInterface.spec.ts', 'tests/render/citizenLod.spec.ts', 'tests/render/vehicleFrame.spec.ts',
   'tests/render/warmLoose.spec.ts',
+  'tests/render/groundDigest.spec.ts',
+  'tests/world/buildings.spec.ts',
 ];
 
 /**
