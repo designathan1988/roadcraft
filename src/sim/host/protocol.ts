@@ -133,6 +133,8 @@ export interface Wound { readonly id: number; readonly part: BodyPart; readonly 
 /** The worker to the page. */
 export type FromSim =
   | { readonly type: 'ready' }
+  /** A message the worker could not handle: told, so the page reports it and does not wait for a frame never coming. */
+  | { readonly type: 'failed'; readonly message: string }
   | { readonly type: 'tick'; readonly slot: number; readonly vehicles: readonly (readonly [number, VehicleRich])[]; readonly peds: readonly (readonly [number, PedRich])[];
       readonly signals: readonly SignalLights[]; readonly layout: { readonly all: boolean; readonly junctions: readonly SignalLayout[] } | null; readonly trains: readonly TrainState[];
       readonly parked: readonly ParkedCar[] | null; readonly stats: SimStats;

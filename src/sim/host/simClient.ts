@@ -73,6 +73,8 @@ export class SimClient implements JournalReader {
   private lotKeysRewritten = -1;
   /** A frame asked of the worker and not answered: the next waits, its wall time added up meanwhile. */
   private inFlight = false;
+  /** The worker's last failure (`failed`), null while none. */
+  failure: string | null = null;
   private wallOwed = 0;
   private readonly pending = new Map<number, (value: unknown) => void>();
   private nextAsk = 1;
@@ -298,6 +300,13 @@ export class SimClient implements JournalReader {
         return;
       }
       case 'ready': return;
+      // DO NOT stay silent: the frame asked of it never comes, and the city would stand still with no word.
+      case 'failed':
+        // Told once (each frame after may fail the same way), the last kept for the probes.
+        if (this.failure === null) console.error("[sim] the simulation's worker failed:", message.message);
+        this.failure = message.message;
+        this.inFlight = false;
+        return;
     }
   }
 

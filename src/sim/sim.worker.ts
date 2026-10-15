@@ -8,5 +8,6 @@ let queue: Promise<void> = Promise.resolve();
 scope.onmessage = (event) => {
   queue = queue.then(() => host.handle(event.data)).catch((error: unknown) => {
     console.error('[sim worker]', error);
+    scope.postMessage({ type: 'failed', message: String((error as Error)?.stack ?? error) });
   });
 };
