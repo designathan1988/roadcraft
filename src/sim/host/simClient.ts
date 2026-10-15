@@ -67,6 +67,8 @@ export class SimClient {
   private seen = -1;
   private seenDoc: RoadDoc | null = null;
   private lotKeysSent = 0;
+  /** The lot store's `keysRewritten` when the keys were last sent: unchanged, only the keys added since go. */
+  private lotKeysRewritten = -1;
   /** A frame asked of the worker and not answered: the next waits, its wall time added up meanwhile. */
   private inFlight = false;
   private wallOwed = 0;
@@ -232,6 +234,7 @@ export class SimClient {
     this.seen = this.doc.changes.version;
     this.seenDoc = this.doc;
     this.lotKeysSent = this.doc.lotStore.keys.length;
+    this.lotKeysRewritten = this.doc.lotStore.keysRewritten;
   }
 
   /** The map's changes the worker's copy follows, since the last sent: by the records the diary names, or the whole map. */
@@ -266,9 +269,12 @@ export class SimClient {
     for (const [part, ids] of named) for (const id of ids) records.push({ part, id, value: recordOf(this.doc, part, id) });
     const lists: Restoration['lists'][number][] = [];
     if (keys) {
-      const all = this.doc.lotStore.keys;
-      lists.push({ part: 'lotKeys', start: 0, remove: this.lotKeysSent, items: all.slice() });
+      const store = this.doc.lotStore, all = store.keys;
+      // DO NOT send every key at each lot laid: the city's layout sent the whole list once per lot (O(lots²) copied).
+      if (store.keysRewritten === this.lotKeysRewritten && all.length >= this.lotKeysSent) lists.push({ part: 'lotKeys', start: this.lotKeysSent, remove: 0, items: all.slice(this.lotKeysSent) });
+      else lists.push({ part: 'lotKeys', start: 0, remove: this.lotKeysSent, items: all.slice() });
       this.lotKeysSent = all.length;
+      this.lotKeysRewritten = store.keysRewritten;
     }
     this.send({ type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) } });
   }

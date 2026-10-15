@@ -47,6 +47,8 @@ export class LotStore {
   private below: LotStore | null = null;
   /** The keys still the original's (`forkFrom`): copied the first time the copy writes one (`ownKeys`). */
   private keysShared = false;
+  /** Moves when the keys are changed other than by keys added at the end (`addKeys`): a follower sends the list whole then, else only the new tail. */
+  keysRewritten = 0;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
@@ -208,6 +210,7 @@ export class LotStore {
   spliceKeys(start: number, remove: number, items: readonly string[]): string[] {
     this.beforeKeys?.();
     this.ownKeys();
+    this.keysRewritten++;
     const tail = this.keyList.splice(start + remove);
     const gone = this.keyList.splice(start, remove);
     for (const key of gone) this.keySet.delete(key);
@@ -274,6 +277,7 @@ export class LotStore {
       this.keyList = [...source.keyList];
       this.keySet = new Set(source.keySet);
       this.keysShared = false;
+      this.keysRewritten++;
       keysMoved = true;
       this.journal.record('lotKeys', null, { cause });
     }
@@ -402,6 +406,7 @@ export class LotStore {
   }
 
   private reset(): void {
+    this.keysRewritten++;
     this.below = null;
     this.keysShared = false;
     this.items = this.recordingMap();
