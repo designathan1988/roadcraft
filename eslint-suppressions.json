@@ -444,7 +444,7 @@
   },
   "src/sim/agents/lorryDocks.ts": {
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "src/sim/agents/lotDoors.ts": {

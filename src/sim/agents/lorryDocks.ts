@@ -3,7 +3,7 @@ import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { isDock, lorryDocks, type LorryDock } from '@world/buildings/docks';
 import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
 import type { Lot } from '@world/lots';
-import { levelPolygons } from '@world/surfaces';
+import { levelRingsOf } from '@world/surfaces';
 import { Level } from '@world/roadTypes';
 import type { MultiPoly } from '@core/clipper';
 import { Digest } from '@core/digest';
@@ -533,52 +533,27 @@ export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
 
 /** The carriageways' polygons, each with its box in the world: a yard takes in only those near it. */
 type AsphaltPiece = { readonly rings: MultiPoly[number]; readonly box: { x0: number; y0: number; x1: number; y1: number } };
-/** Cell of the pieces' grid (`asphaltNear`). */
-const ASPHALT_CELL = m(64);
-const ASPHALT = new WeakMap<Network, { revision: number; pieces: AsphaltPiece[]; cells: Map<number, number[]> }>();
-/** @rebuild The pieces and their grid, made again when the network moved (`levelPolygons` is the whole map's: `world/surfaces.ts`). */
-function asphaltOf(net: Network): { pieces: readonly AsphaltPiece[]; cells: ReadonlyMap<number, number[]> } {
-  const known = ASPHALT.get(net);
-  if (known && known.revision === net.revision) return known;
-  const pieces = levelPolygons(net, Level.Asphalt as never).map((rings): AsphaltPiece => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of rings[0] ?? []) { x0 = Math.min(x0, x!); x1 = Math.max(x1, x!); y0 = Math.min(y0, y!); y1 = Math.max(y1, y!); }
-    return { rings, box: { x0, y0, x1, y1 } };
-  });
-  const cells = new Map<number, number[]>();
-  pieces.forEach((p, i) => {
-    if (!(p.box.x0 <= p.box.x1 && p.box.y0 <= p.box.y1)) return;
-    for (let gx = Math.floor(p.box.x0 / ASPHALT_CELL); gx <= Math.floor(p.box.x1 / ASPHALT_CELL); gx++) {
-      for (let gy = Math.floor(p.box.y0 / ASPHALT_CELL); gy <= Math.floor(p.box.y1 / ASPHALT_CELL); gy++) {
-        const k = neighbourCell(gx, gy);
-        const list = cells.get(k);
-        if (list) list.push(i); else cells.set(k, [i]);
-      }
-    }
-  });
-  const made = { revision: net.revision, pieces, cells };
-  ASPHALT.set(net, made);
-  return made;
-}
 
 /**
- * The carriageway pieces whose box meets a box of the world, in the order of
- * the pieces, from their grid. DO NOT walk every piece of the map for a yard:
- * every carriageway of the town, for each yard made and each yard checked.
+ * The carriageway pieces whose box meets a box of the world: the ribbons and the junction plates
+ * filed there (`Network.ribbonsMeeting`, `junctionCells`), each its own ring, in the order of the
+ * ribbons then the junctions. A yard fills them in one by one, so they need no merging: a block
+ * the roads ring round is in no piece, as it is in no hole of the merged ones.
+ * DO NOT merge the whole map's carriageways for a yard (`levelPolygons`): every road drawn
+ * anywhere merged them all again at the next yard asked.
  */
 function asphaltNear(net: Network, x0: number, y0: number, x1: number, y1: number): AsphaltPiece[] {
-  const { pieces, cells } = asphaltOf(net);
-  const picked = new Set<number>();
-  for (let gx = Math.floor(x0 / ASPHALT_CELL); gx <= Math.floor(x1 / ASPHALT_CELL); gx++) {
-    for (let gy = Math.floor(y0 / ASPHALT_CELL); gy <= Math.floor(y1 / ASPHALT_CELL); gy++) {
-      for (const i of cells.get(neighbourCell(gx, gy)) ?? []) picked.add(i);
-    }
-  }
+  const box: readonly [number, number, number, number] = [x0, y0, x1, y1];
+  const junctions = net.junctionCells.idsMeeting(box).flatMap((id) => {
+    const at = net.junctions.get(id);
+    return at ? [[id, at] as const] : [];
+  });
   const out: AsphaltPiece[] = [];
-  for (const i of [...picked].sort((a, b) => a - b)) {
-    const wb = pieces[i]!.box;
-    if (wb.x1 < x0 || wb.x0 > x1 || wb.y1 < y0 || wb.y0 > y1) continue;
-    out.push(pieces[i]!);
+  for (const rings of levelRingsOf(net, Level.Asphalt as never, net.ribbonsMeeting(box), junctions)) {
+    let px0 = Infinity, py0 = Infinity, px1 = -Infinity, py1 = -Infinity;
+    for (const [x, y] of rings[0] ?? []) { px0 = Math.min(px0, x!); px1 = Math.max(px1, x!); py0 = Math.min(py0, y!); py1 = Math.max(py1, y!); }
+    if (px1 < x0 || px0 > x1 || py1 < y0 || py0 > y1) continue;
+    out.push({ rings, box: { x0: px0, y0: py0, x1: px1, y1: py1 } });
   }
   return out;
 }
