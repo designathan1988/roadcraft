@@ -217,7 +217,8 @@ describe('sameProfile', () => {
     expect(sameProfile(reordered, base)).toBe(true);
   });
   it('takes an absent field and an undefined one as the same, and a changed width as another road', () => {
-    expect(sameProfile({ ...base, centreLine: undefined }, base)).toBe(true);
+    // The type has no undefined field, but a profile read back from storage may.
+    expect(sameProfile({ ...base, centreLine: undefined } as unknown as RoadProfileSpec, base)).toBe(true);
     const wider = { ...base, elements: base.elements.map((e, i) => (i === 0 ? { ...e, width: e.width + 1 } : e)) };
     expect(sameProfile(wider, base)).toBe(false);
     expect(sameProfile({ ...base, elements: base.elements.slice(1) }, base)).toBe(false);
