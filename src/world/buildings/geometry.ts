@@ -39,6 +39,35 @@ export function localToWorld(b: Building, lx: number, ly: number): Vec2 {
   return { x: b.x + lx * c - ly * s, y: b.y + lx * s + ly * c };
 }
 
+/**
+ * A building's frame - its origin, the cosine and the sine of its rotation -
+ * worked out once for the many points of one building (`frameX`, `frameY`,
+ * `frameToLocal`): the same numbers `localToWorld` and `worldToLocal` give,
+ * without a cosine and a sine a point. DO NOT call `localToWorld` point by
+ * point in a building's loops: grading the sites of a growing city, a floor's
+ * samples and its lots' heights at every corner of the ground were 1.4 s of
+ * cosines and sines in one frame (2026-10-15).
+ */
+export interface BuildingFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly c: number;
+  readonly s: number;
+}
+
+export const buildingFrame = (b: Building): BuildingFrame => ({ x: b.x, y: b.y, c: Math.cos(b.rotation), s: Math.sin(b.rotation) });
+/** World x of a local point, as `localToWorld` gives it. */
+export const frameX = (f: BuildingFrame, lx: number, ly: number): number => f.x + lx * f.c - ly * f.s;
+/** World y of a local point, as `localToWorld` gives it. */
+export const frameY = (f: BuildingFrame, lx: number, ly: number): number => f.y + lx * f.s + ly * f.c;
+export const frameToWorld = (f: BuildingFrame, lx: number, ly: number): Vec2 => ({ x: frameX(f, lx, ly), y: frameY(f, lx, ly) });
+/** A world point in the building's frame, as `worldToLocal` gives it. */
+export function frameToLocal(f: BuildingFrame, x: number, y: number): Vec2 {
+  const dx = x - f.x;
+  const dy = y - f.y;
+  return { x: dx * f.c + dy * f.s, y: -dx * f.s + dy * f.c };
+}
+
 export function worldToLocal(b: Building, p: Vec2): Vec2 {
   const c = Math.cos(b.rotation);
   const s = Math.sin(b.rotation);

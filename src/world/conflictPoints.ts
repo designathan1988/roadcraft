@@ -4,23 +4,17 @@ import type { NodeId } from './ids';
 import type { Connector, ConnectorId, JunctionTopology, Lanelet, LaneletGraph } from './lanelets';
 import { rebuildWork } from './rebuildWork';
 import {
-  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, type Crossing, HEAVY, type PairMeasurer, SWEEP_STEP, type SweepAsk,
-  type SweepSamples, firstCrossing, frameLengthsOf, joinedPath, lineDigest as digestOfLine, pairTable, shapeDigest, sweepFrame,
-  sweepSpan,
+  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Crossing, type Diverge, HEAVY, type PairFacts,
+  type PairMeasurer, type PairZones, type SweepAsk, type SweepSamples, type Zone, firstCrossing, frameLengthsOf, joinedPath,
+  lineDigest as digestOfLine, pairFacts, pairTable, pushDiverge, pushRef, shapeDigest, sweepFrame, sweepSpan, zonesOf,
 } from './conflictTable';
 
-/** Yielded by `ConflictIndex.prepare` while its pairs are measured off the page: nothing to do here until they come back. */
-export const WAITING = 'waiting' as const;
+import { WAITING, answered } from './waiting';
 
-export { BODY_CLASSES, BODY_CLASS_NAMES, BODY_ENVELOPE, type BodyClass, HEAVY } from './conflictTable';
+/** Yielded by `ConflictIndex.prepare` while its pairs are measured off the page (`waiting.ts`). */
+export { WAITING } from './waiting';
 
-/**
- * `cross`: the two centrelines intersect. `merge`: both end in the same lane.
- * `swept`: the centrelines never meet, but the BODIES driven along them do —
- * opposing left turns that pass too close, a bus swinging its tail across the
- * lane beside it.
- */
-export type ConflictKind = 'cross' | 'merge' | 'swept';
+export { BODY_CLASSES, BODY_CLASS_NAMES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Diverge, HEAVY, type Zone } from './conflictTable';
 
 export function bodyClassOf(length: number, width: number): BodyClass {
   for (const c of BODY_CLASSES) {
@@ -28,19 +22,6 @@ export function bodyClassOf(length: number, width: number): BodyClass {
     if (length <= e.length && width <= e.width) return c;
   }
   return HEAVY;
-}
-
-/**
- * Centre-arc interval over which a body of one class on one movement overlaps
- * the swept area of a body of another class on the other movement.
- *
- * Arc positions are of the BODY CENTRE along the movement, measured from the
- * stop line: negative while the centre is still on the approach, beyond the
- * connector length once it is on the exit lane.
- */
-export interface Zone {
-  readonly enter: number;
-  readonly exit: number;
 }
 
 export interface ConflictPoint {
@@ -59,27 +40,6 @@ export interface ConflictPoint {
    * `theirs` on the other movement, or null when those two sizes never touch.
    */
   zone(on: ConnectorId, mine: BodyClass, theirs: BodyClass): Zone | null;
-}
-
-export interface ConflictRef {
-  readonly point: number;
-  /** Earliest front arc position of the zone, for ordering. */
-  readonly s: number;
-  readonly other: ConnectorId;
-  readonly kind: ConflictKind;
-  /**
-   * Body-centre arc position past which a vehicle of each class has cleared
-   * the zone against ANY vehicle on the other movement. -Infinity when that
-   * class never touches it.
-   */
-  readonly exit: readonly number[];
-}
-
-/** Two movements out of the same lane: resolved by car-following, not claims. */
-export interface Diverge {
-  readonly other: ConnectorId;
-  /** Centre arc past which a body of class `mine` on the OTHER movement is clear of `theirs` on this one. */
-  otherExit(mine: BodyClass, theirs: BodyClass): number;
 }
 
 /**
@@ -193,20 +153,24 @@ export class ConflictIndex {
     const junctions = only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : [...graph.junctions.values()];
     // The sweeps the caches do not hold, sampled by the workers when there are some: read back below.
     if (measurer?.sampleSweeps) yield* this.sampleOffPage(graph, junctions, measurer);
+    this.prepared.clear();
     for (const junction of junctions) {
       rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
-      const sweeps: { sweep: Sweep; shape: SweepShape }[] = [];
+      const sweeps: Movement[] = [], pairKeys: string[] = [];
       for (const id of ids) {
         const c = graph.connectors.get(id);
         if (!c) continue;
-        const sweep = sweepOf(graph, c, this.sweepCache, this.sweepCache);
-        if (sweep) sweeps.push({ sweep, shape: shapeOf(sweep) });
+        const keys: string[] = [];
+        const sweep = sweepOf(graph, c, this.sweepCache, this.sweepCache, keys);
+        if (sweep) sweeps.push({ connector: c, inbound: graph.lanelet(c.fromLane)!, outbound: graph.lanelet(c.toLane)!, sweep, shape: shapeOf(sweep), sweepKey: keys[0]! });
       }
+      this.prepared.set(junction.node, { junction, ids, movements: sweeps, pairKeys });
       for (let i = 0; i < sweeps.length; i++) {
         for (let j = i + 1; j < sweeps.length; j++) {
           const a = sweeps[i]!, b = sweeps[j]!;
           const key = `${a.shape.hash}|${b.shape.hash}`;
+          pairKeys.push(key);
           if (measurer?.crossings && !read.has(key)) read.set(key, { a: a.shape.centre, b: b.shape.centre });
           const known = this.pairCache.get(key);
           if (known && sameShape(known.a, a.shape) && sameShape(known.b, b.shape)) continue;
@@ -319,6 +283,28 @@ export class ConflictIndex {
    * What each junction made (`buildJunction`): its points, its connectors, and the pair and sweep keys
    * it read from the caches - what `update` takes away when the junction is built again.
    */
+  /**
+   * What `prepare` read of each junction it prepared - its movements' sweeps and shapes, its pairs' keys -
+   * taken by `buildJunction` when the junction it builds is that very one (the lane graph taken over from
+   * the preparation's, `LaneletGraph.adopt`). DO NOT read them again at the swap: every movement swept and
+   * every pair looked up a second time, a city's on its first build, in the frame of the swap (2026-10-15).
+   */
+  private readonly prepared = new Map<NodeId, PreparedJunction>();
+
+  /** The junction's record from `prepare` (`prepared`), if it was made from the very junction and lanes built now. */
+  private takePrepared(graph: LaneletGraph, junction: JunctionTopology, previousSweeps: Map<string, Float64Array>, nextSweeps: Map<string, Float64Array>): PreparedJunction | null {
+    const ready = this.prepared.get(junction.node);
+    if (!ready) return null;
+    this.prepared.delete(junction.node);
+    if (ready.junction !== junction) return null;
+    for (const m of ready.movements) {
+      const c = m.connector;
+      if (graph.connectors.get(c.id) !== c || graph.lanelet(c.fromLane) !== m.inbound || graph.lanelet(c.lanelet) !== m.sweep.crossing
+        || graph.lanelet(c.toLane) !== m.outbound || (previousSweeps.get(m.sweepKey) ?? nextSweeps.get(m.sweepKey)) !== m.sweep.frame) return null;
+    }
+    return ready;
+  }
+
   private readonly ofJunction = new Map<NodeId, { readonly points: number[]; readonly connectors: ConnectorId[]; readonly pairs: string[]; readonly sweeps: string[] }>();
   /** How many junctions read each cached pair and sweep: one no junction reads any more is let go. */
   private readonly pairUses = new Map<string, number>();
@@ -340,6 +326,7 @@ export class ConflictIndex {
     /** @rebuild Every junction: the first build, a map opened, a graph the network's delta could not follow. */
     for (const junction of graph.junctions.values()) this.buildJunction(graph, junction, previous, next, previousSweeps, nextSweeps);
     this.measured.build = pairsMeasured - measuredBefore;
+    this.prepared.clear();
     this.pairCache = next;
     this.sweepCache = nextSweeps;
     // The zones kept from other maps and from roads since undone stay in
@@ -384,6 +371,7 @@ export class ConflictIndex {
       for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
     }
     this.measured.build = pairsMeasured - measuredBefore;
+    this.prepared.clear();
   }
 
   /** One junction's conflicts, from the graph and the caches, with what it made recorded (`ofJunction`). */
@@ -393,31 +381,28 @@ export class ConflictIndex {
     rebuildWork.conflicts++;
     const made = { points: [] as number[], connectors: [] as ConnectorId[], pairs: [] as string[], sweeps: [] as string[] };
     this.ofJunction.set(junction.node, made);
-    const ids = junction.connectors.slice().sort();
+    const ready = this.takePrepared(graph, junction, previousSweeps, nextSweeps);
+    const ids = ready?.ids ?? junction.connectors.slice().sort();
     made.connectors.push(...ids);
-    const sweeps = new Map<ConnectorId, Sweep>();
-    const shapes = new Map<ConnectorId, SweepShape>();
-    for (const id of ids) {
-      const c = graph.connectors.get(id);
-      if (!c) continue;
-      const sweep = sweepOf(graph, c, previousSweeps, nextSweeps, made.sweeps);
-      if (!sweep) continue;
-      sweeps.set(id, sweep);
-      shapes.set(id, shapeOf(sweep));
+    const movements: Movement[] = [];
+    if (ready) {
+      for (const m of ready.movements) { nextSweeps.set(m.sweepKey, m.sweep.frame); made.sweeps.push(m.sweepKey); movements.push(m); }
+    } else {
+      for (const id of ids) {
+        const c = graph.connectors.get(id);
+        if (!c) continue;
+        const sweep = sweepOf(graph, c, previousSweeps, nextSweeps, made.sweeps);
+        if (sweep) movements.push({ connector: c, inbound: undefined, outbound: undefined, sweep, shape: shapeOf(sweep), sweepKey: '' });
+      }
     }
     for (const key of made.sweeps) this.sweepUses.set(key, (this.sweepUses.get(key) ?? 0) + 1);
 
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
-        const a = graph.connectors.get(ids[i] as ConnectorId);
-        const b = graph.connectors.get(ids[j] as ConnectorId);
-        const sa = a && sweeps.get(a.id);
-        const sb = b && sweeps.get(b.id);
-        if (!a || !b || !sa || !sb) continue;
-
-        const shapeA = shapes.get(a.id) as SweepShape, shapeB = shapes.get(b.id) as SweepShape;
-        const pair = cachedPair(previous, next, sa, shapeA, sb, shapeB, this.store);
-        const pairKey = `${shapeA.hash}|${shapeB.hash}`;
+    let k = 0;
+    for (let i = 0; i < movements.length; i++) {
+      for (let j = i + 1; j < movements.length; j++) {
+        const { connector: a, sweep: sa, shape: shapeA } = movements[i]!, { connector: b, sweep: sb, shape: shapeB } = movements[j]!;
+        const pairKey = ready ? ready.pairKeys[k++]! : `${shapeA.hash}|${shapeB.hash}`;
+        const pair = cachedPair(previous, next, pairKey, sa, shapeA, sb, shapeB, this.store);
         made.pairs.push(pairKey);
         this.pairUses.set(pairKey, (this.pairUses.get(pairKey) ?? 0) + 1);
         const zones = pair.zones;
@@ -429,7 +414,8 @@ export class ConflictIndex {
           continue;
         }
 
-        this.recordIntrusions(a.id, b.id, zones);
+        const facts = pair.facts ??= pairFacts(zones);
+        this.recordIntrusions(a.id, b.id, facts);
 
         let kind: ConflictKind = 'swept';
         let at: Vec2;
@@ -449,24 +435,13 @@ export class ConflictIndex {
             at = pair.centre;
           }
         }
-        made.points.push(this.add(junction.node, a.id, b.id, kind, at, zones));
+        made.points.push(this.add(junction.node, a.id, b.id, kind, at, zones, facts));
       }
     }
   }
 
-  private recordIntrusions(a: ConnectorId, b: ConnectorId, zones: PairZones): void {
-    for (const mine of BODY_CLASSES) {
-      for (const theirs of BODY_CLASSES) {
-        const onA = zones.get(mine, theirs, false);
-        if (onA && onA.enter + (BODY_ENVELOPE[mine]?.length ?? 0) / 2 <= 0) {
-          this.queueIntrusions.push({ a, b, mine, theirs });
-        }
-        const onB = zones.get(theirs, mine, true);
-        if (onB && onB.enter + (BODY_ENVELOPE[theirs]?.length ?? 0) / 2 <= 0) {
-          this.queueIntrusions.push({ a: b, b: a, mine: theirs, theirs: mine });
-        }
-      }
-    }
+  private recordIntrusions(a: ConnectorId, b: ConnectorId, facts: PairFacts): void {
+    for (const x of facts.intrusions) this.queueIntrusions.push(x.onB ? { a: b, b: a, mine: x.mine, theirs: x.theirs } : { a, b, mine: x.mine, theirs: x.theirs });
   }
 
   private add(
@@ -476,6 +451,7 @@ export class ConflictIndex {
     kind: ConflictKind,
     at: Vec2,
     zones: PairZones,
+    facts: PairFacts,
   ): number {
     const [lo, hi] = a < b ? [a, b] : [b, a];
     // The key is the connector pair: a pair changing from a line crossing to a
@@ -487,8 +463,7 @@ export class ConflictIndex {
       this.idByKey.set(key, id);
     }
 
-    const sA = earliestFront(zones, false);
-    const sB = earliestFront(zones, true);
+    const { sA, sB } = facts;
     const point: ConflictPoint = {
       id,
       node,
@@ -503,8 +478,8 @@ export class ConflictIndex {
     };
     // Assignment rather than push preserves the stable (possibly sparse) id.
     this.points[id] = point;
-    pushRef(this.byConnector, a, { point: id, s: sA, other: b, kind, exit: clearExits(zones, false) });
-    pushRef(this.byConnector, b, { point: id, s: sB, other: a, kind, exit: clearExits(zones, true) });
+    pushRef(this.byConnector, a, { point: id, s: sA, other: b, kind, exit: facts.exitA });
+    pushRef(this.byConnector, b, { point: id, s: sB, other: a, kind, exit: facts.exitB });
     return id;
   }
 
@@ -521,20 +496,6 @@ export class ConflictIndex {
     for (const r of this.refs(a)) if (r.other === b) return true;
     return false;
   }
-}
-
-/**
- * The workers' answer, `WAITING` yielded until it comes (the frame's work ends there); null when they
- * failed, and the page then does `what` as before.
- */
-function* answered<T>(asked: Promise<T>, what: string): Generator<typeof WAITING, T | null> {
-  const answer: { value?: T; failed?: boolean } = {};
-  asked.then((value) => { answer.value = value; }, (error: unknown) => {
-    console.warn(`[traffic] the conflict workers failed; ${what} on the page`, error);
-    answer.failed = true;
-  });
-  while (!('value' in answer) && !answer.failed) yield WAITING;
-  return answer.failed ? null : answer.value as T;
 }
 
 // ------------------------------------------------------------------ sweeps
@@ -609,6 +570,27 @@ interface CachedPair {
   crossing?: Crossing | null;
   /** Middle of the heavy-body zone on `a`; undefined until asked. */
   centre?: Vec2;
+  /** What the index makes of the zones (`pairFacts`); undefined until asked. */
+  facts?: PairFacts;
+}
+
+/** A movement through a junction, swept: its connector, its sweep and shape and the key its frame is kept under. */
+interface Movement {
+  readonly connector: Connector;
+  /** The lanes `prepare` swept it along (`takePrepared` checks they are the graph's); unset when built here. */
+  readonly inbound: Lanelet | undefined;
+  readonly outbound: Lanelet | undefined;
+  readonly sweep: Sweep;
+  readonly shape: SweepShape;
+  readonly sweepKey: string;
+}
+
+/** A junction as `prepare` read it (`ConflictIndex.prepared`): its connectors, its swept movements, its pairs' keys in `buildJunction`'s order. */
+interface PreparedJunction {
+  readonly junction: JunctionTopology;
+  readonly ids: readonly ConnectorId[];
+  readonly movements: readonly Movement[];
+  readonly pairKeys: readonly string[];
 }
 
 /** Each centreline's digest, kept with its point list (`sweepOf`; made by a worker, `sampleOffPage`). */
@@ -704,13 +686,13 @@ function keepPair(key: string, shapeA: SweepShape, shapeB: SweepShape, table: Fl
 function cachedPair(
   previous: Map<string, CachedPair>,
   next: Map<string, CachedPair>,
+  key: string,
   a: Sweep,
   shapeA: SweepShape,
   b: Sweep,
   shapeB: SweepShape,
   store: KeptZones,
 ): CachedPair {
-  const key = `${shapeA.hash}|${shapeB.hash}`;
   const known = next.get(key) ?? previous.get(key);
   if (known && sameShape(known.a, shapeA) && sameShape(known.b, shapeB)) {
     next.set(key, known);
@@ -721,76 +703,7 @@ function cachedPair(
   return pair;
 }
 
-// ------------------------------------------------------------------- zones
-
-interface PairZones {
-  /** Zone on `a` (`onB` false) or on `b` (true) for body `mine` against `theirs`. */
-  get(mine: BodyClass, theirs: BodyClass, onB: boolean): Zone | null;
-}
-
-/** A pair's zones over its table (`pairTable`): what is kept between sessions. */
-function zonesOf(table: Float64Array): PairZones {
-  return {
-    get(mine, theirs, onB) {
-      const at = onB ? (theirs * 3 + mine) * 4 + 2 : (mine * 3 + theirs) * 4;
-      const enter = table[at] as number;
-      if (Number.isNaN(enter)) return null;
-      // Half a step either side covers the motion between two samples.
-      return { enter: enter - SWEEP_STEP / 2, exit: (table[at + 1] as number) + SWEEP_STEP / 2 };
-    },
-  };
-}
-
-/** Earliest body-FRONT arc position at which any class enters the zone. */
-function earliestFront(zones: PairZones, onB: boolean): number {
-  let best = Infinity;
-  for (const mine of BODY_CLASSES) {
-    const z = zones.get(mine, HEAVY, onB);
-    const half = (BODY_ENVELOPE[mine] as { length: number }).length / 2;
-    if (z) best = Math.min(best, z.enter + half);
-  }
-  return best;
-}
-
-/** Per class, the centre past which the body is clear of any other body. */
-function clearExits(zones: PairZones, onB: boolean): number[] {
-  return BODY_CLASSES.map((mine) => {
-    let exit = -Infinity;
-    for (const theirs of BODY_CLASSES) {
-      const z = zones.get(mine, theirs, onB);
-      if (z) exit = Math.max(exit, z.exit);
-    }
-    return exit;
-  });
-}
-
 function zoneCentre(a: Sweep, zones: PairZones): Vec2 {
   const z = zones.get(HEAVY, HEAVY, false);
   return a.path.sampleAt(z ? (z.enter + z.exit) / 2 : 0).p;
-}
-
-function pushDiverge(
-  map: Map<ConnectorId, Diverge[]>,
-  self: ConnectorId,
-  other: ConnectorId,
-  zones: PairZones,
-  selfIsB: boolean,
-): void {
-  const entry: Diverge = {
-    other,
-    otherExit: (mine, theirs) => zones.get(mine, theirs, !selfIsB)?.exit ?? -Infinity,
-  };
-  const list = map.get(self);
-  if (list) list.push(entry);
-  else map.set(self, [entry]);
-}
-
-function pushRef(
-  map: Map<ConnectorId, ConflictRef[]>,
-  key: ConnectorId,
-  ref: ConflictRef,
-): void {
-  const list = map.get(key);
-  if (list) list.push(ref);
-  else map.set(key, [ref]);
 }

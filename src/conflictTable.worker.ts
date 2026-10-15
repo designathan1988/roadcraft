@@ -4,6 +4,7 @@ import { type Crossing, type SampledSweep, type SweepSamples, firstCrossing, pai
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
+import { type CornerAsk, roundCorners } from '@world/walkingLines';
 import { keepDerivedMany } from './render/derivedCache';
 
 /**
@@ -17,7 +18,9 @@ import { keepDerivedMany } from './render/derivedCache';
  * - movements' sweeps: each by `sampleSweep` on the lanes sent, each lane made
  *   and digested once, the frames' buffers transferred;
  * - pairs' centreline crossings: each by `firstCrossing` on the two
- *   centrelines sent, each centreline's points made once.
+ *   centrelines sent, each centreline's points made once;
+ * - walkways' corners: each node's by `roundCorners` on its rings sent, the
+ *   lines' buffers transferred.
  */
 interface PairsAsk {
   readonly kind: 'pairs';
@@ -58,10 +61,16 @@ interface CrossingsAsk {
   readonly refs: Int32Array;
 }
 
+interface CornersAsk {
+  readonly kind: 'corners';
+  readonly id: number;
+  readonly asks: readonly CornerAsk[];
+}
+
 /** Most time between two words to the page while working: the pool's watchdog hears the worker is alive (`SILENCE_MS`). */
 const BEAT_MS = 500;
 
-self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | CrossingsAsk>) => {
+self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | CrossingsAsk | CornersAsk>) => {
   const ask = event.data;
   let spoke = performance.now();
   const beat = (): void => {
@@ -78,6 +87,18 @@ self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | Cr
         beat();
       }
       self.postMessage({ id: ask.id, turns });
+      return;
+    }
+    if (ask.kind === 'corners') {
+      const corners: (Float64Array | null)[][] = [];
+      const transfer: ArrayBuffer[] = [];
+      for (const node of ask.asks) {
+        const lines = roundCorners(node);
+        for (const line of lines) if (line) transfer.push(line.buffer as ArrayBuffer);
+        corners.push(lines);
+        beat();
+      }
+      (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id: ask.id, corners }, transfer);
       return;
     }
     if (ask.kind === 'crossings') {

@@ -6,11 +6,8 @@ import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
 import { union, type MultiPoly } from '@core/clipper';
 import { EndType, FillRule, JoinType, inflatePathsD, unionD, type PathsD } from 'clipper2-ts';
-import type { NodeId, SegmentId } from './ids';
 import { m, stepsIn } from './units';
 import { Level, type SurfaceLevel } from './roadTypes';
-import { type SurfaceNet, type SurfaceRibbon, levelRingsOf } from './surfaces';
-import type { ChangeRect } from './changes';
 import type { RoadStructure } from './structures';
 
 /**
@@ -25,6 +22,13 @@ const TANGENT_SHARE = 0.4;
 const CURVE_STEPS = 10;
 /** Tightest turn a walking line is given round a corner, u (1 m). */
 const MIN_CORNER_R = m(1);
+/** Passes of smoothing over a corner's line. */
+const SMOOTH_PASSES = 3;
+/** Length over which a corner eases off its footway's straight run onto the walking contour, u. */
+const EASE = m(0.6);
+const smooth = (t: number): number => t * t * (3 - 2 * t);
+/** Ends of two footways at one road node closer than this are one point, u. */
+export const JOIN = m(0.02);
 
 /** A cubic curve from `p0` heading `d0` to `p1` arriving heading `d1`, as a polyline. */
 function hermite(p0: Vec2, d0: Vec2, p1: Vec2, d1: Vec2): Polyline {
@@ -77,17 +81,6 @@ export function cornerPath(p0: Vec2, d0: Vec2, p1: Vec2, d1: Vec2, radius: numbe
 }
 
 /**
- * What the walking lines read of the network (`Network`): the surfaces' reads
- * and the pieces filed in a box. DO NOT import `network.ts` here: it reaches
- * `walkways.ts`, which imports this file, and the type import closed an import
- * cycle (`tests/arch/imports.spec.ts`).
- */
-export interface WalkingNet extends SurfaceNet {
-  readonly junctionCells: { idsMeeting(rect: ChangeRect): readonly NodeId[] };
-  ribbonsMeeting(rect: ChangeRect): Iterable<SurfaceRibbon>;
-}
-
-/**
  * The walking lines round one node, at one inset on one deck: the outline of
  * everything a kerb bounds (carriageway and kerb stone, as drawn), grown by
  * the inset. Each closed contour runs at exactly that distance from the
@@ -99,7 +92,8 @@ export interface WalkingNet extends SurfaceNet {
  * the road).
  *
  * Made from the ribbons and junction plates filed in the node's box
- * (`Network.ribbonsMeeting`, `junctionCells`): an outline within the box is
+ * (`Network.ribbonsMeeting`, `junctionCells`, read by `ringsOf`: on the page
+ * from the network, in a worker from the ask, `roundCorners`): an outline within the box is
  * the same whether the pieces beyond it are merged in or not, as a piece
  * meets the box or adds nothing inside it, and the box reaches the inset
  * beyond everything asked. DO NOT merge the whole map's kerbs and paving for
@@ -112,17 +106,11 @@ export class LocalLines {
   private readonly cache = new Map<string, Polyline[]>();
   private readonly edges = new Map<string, Polyline[]>();
   private readonly pavings = new Map<string, MultiPoly>();
-  /** `deckOf`: the deck a road's footways belong to (`walkways.ts`). */
-  constructor(private readonly net: WalkingNet, private readonly rect: ChangeRect, private readonly deckOf: (id: SegmentId) => RoadStructure) {}
+  constructor(private readonly ringsOf: RingsOf) {}
 
   /** The merged rings of a level on one deck, of the pieces in the box. */
   private polygons(level: SurfaceLevel, deck: RoadStructure): MultiPoly {
-    const net = this.net;
-    const junctions = net.junctionCells.idsMeeting(this.rect).flatMap((id) => {
-      const at = net.junctions.get(id);
-      return at ? [[id, at] as const] : [];
-    });
-    return union(levelRingsOf(net, level, net.ribbonsMeeting(this.rect), junctions, (id) => this.deckOf(id) === deck));
+    return union(this.ringsOf(level, deck));
   }
 
   /** Everything paved for walking or driving on one deck, out to the footway's outer edge. */
@@ -331,3 +319,152 @@ export function stretch(lines: readonly Polyline[], from: Vec2, to: Vec2, avoid:
   return out;
 }
 
+
+/** The rings of a level on one deck round one node, before they are merged (`levelRingsOf` of the pieces in its box). */
+export type RingsOf = (level: SurfaceLevel, deck: RoadStructure) => MultiPoly;
+
+/** One footway's end at a road node, as a corner reads it: where, walking into the node which way, its inset and width, its deck. */
+export interface CornerEnd {
+  readonly p: Vec2;
+  readonly into: Vec2;
+  readonly inset: number;
+  readonly width: number;
+  readonly structure: RoadStructure;
+}
+
+/**
+ * The walking line round from one footway end to another, as drawn, or null; `avoid`: the other footway
+ * ends at the node. Pure: on the page (`walkways.ts`) or in a worker (`roundCorners`), the same line.
+ */
+export function roundCorner(from: CornerEnd, to: CornerEnd, avoid: readonly Vec2[], lines: () => LocalLines): Polyline | null {
+  if (from.structure !== to.structure) return null;
+  const walking = lines();
+  // The stretch round the corner at each footway's own inset: where two
+  // roads with footways of different widths meet, the walking line moves
+  // from one inset to the other along the corner, easing in and out so it
+  // leaves each footway along it.
+  const a = stretch(walking.at(from.structure, from.inset), from.p, to.p, avoid);
+  const b = from.inset === to.inset ? a : stretch(walking.at(to.structure, to.inset), from.p, to.p, avoid);
+  if (!a || !b) return null;
+  const count = Math.max(a.length, b.length) - 1;
+  const ra = resample(a, count), rb = resample(b, count);
+  const pts: Vec2[] = [];
+  for (let q = 0; q <= count; q++) {
+    const u = q / count, w = u * u * (3 - 2 * u);
+    pts.push({ x: ra[q]!.x + (rb[q]!.x - ra[q]!.x) * w, y: ra[q]!.y + (rb[q]!.y - ra[q]!.y) * w });
+  }
+  // Where the footway narrows below the walking line's inset (its outer
+  // edge tapering faster than the kerb, at a change of road width), the
+  // line keeps half its usable width clear of the outer edge instead: it
+  // moves towards the kerb by as much as the footway is narrower there.
+  for (let q = 1; q < count; q++) {
+    const p = pts[q]!;
+    const u = q / count, half = (from.width + (to.width - from.width) * u) / 2;
+    const edge = walking.nearestOuter(from.structure, p);
+    if (!edge) continue;
+    const kd = Math.hypot(p.x - edge.point.x, p.y - edge.point.y);
+    const lack = half - kd;
+    const beyond = !walking.onPaving(from.structure, p);
+    if (lack <= 0 && !beyond) continue;
+    // Towards the kerb: away from the outer edge.
+    const ax = p.x - edge.point.x, ay = p.y - edge.point.y, al = Math.hypot(ax, ay) || 1;
+    const dir = beyond ? { x: -ax / al, y: -ay / al } : { x: ax / al, y: ay / al };
+    const move = beyond ? kd + half : lack;
+    pts[q] = { x: p.x + dir.x * move, y: p.y + dir.y * move };
+  }
+  // Leaving each footway exactly along it: over the first and last stretch
+  // the line eases from the footway's own straight run onto the contour,
+  // so a hair's difference between the two (an offset polyline against a
+  // rounded polygon offset) never shows as a kink.
+  const total = pts.reduce((sum, p, q) => (q ? sum + Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y) : 0), 0);
+  const ease = Math.min(EASE, total / 3);
+  let run = 0;
+  const out = { x: -to.into.x, y: -to.into.y };
+  const eased = pts.map((p, q) => {
+    if (q) run += Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y);
+    const fromStart = run, fromEnd = total - run;
+    if (fromStart < ease) {
+      const w = smooth(fromStart / ease);
+      const line = { x: from.p.x + from.into.x * fromStart, y: from.p.y + from.into.y * fromStart };
+      return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
+    }
+    if (fromEnd < ease) {
+      const w = smooth(fromEnd / ease);
+      const line = { x: to.p.x - out.x * fromEnd, y: to.p.y - out.y * fromEnd };
+      return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
+    }
+    return p;
+  });
+  eased[0] = from.p;
+  eased[count] = to.p;
+  // A few passes of neighbour averaging, the ends and their first steps
+  // held: the line's direction must not turn in one step anywhere, or a
+  // walker off its centre is thrown sideways there.
+  for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+    const prev = eased.map((p) => ({ x: p.x, y: p.y }));
+    for (let q = 2; q < count - 1; q++) {
+      eased[q] = { x: (prev[q - 1]!.x + 2 * prev[q]!.x + prev[q + 1]!.x) / 4, y: (prev[q - 1]!.y + 2 * prev[q]!.y + prev[q + 1]!.y) / 4 };
+    }
+  }
+  // The first and last chord define the tangent seen by walkers. Blending
+  // positions toward a tangent line does not constrain that chord: the
+  // contour can still pull its first sample sideways by several degrees.
+  if (count >= 3) {
+    const first = Math.min(EASE / 3, Math.hypot(eased[1]!.x - from.p.x, eased[1]!.y - from.p.y));
+    const last = Math.min(EASE / 3, Math.hypot(eased[count - 1]!.x - to.p.x, eased[count - 1]!.y - to.p.y));
+    eased[1] = { x: from.p.x + from.into.x * first, y: from.p.y + from.into.y * first };
+    eased[count - 1] = { x: to.p.x - out.x * last, y: to.p.y - out.y * last };
+  } else {
+    // At a sub-metre junction the sampled contour has only one interior
+    // point. It cannot define both endpoint derivatives; use short tangent
+    // chords before joining the two footway ends.
+    const chord = Math.min(JOIN, Math.hypot(to.p.x - from.p.x, to.p.y - from.p.y) / 4);
+    return Polyline.fromPoints([
+      from.p,
+      { x: from.p.x + from.into.x * chord, y: from.p.y + from.into.y * chord },
+      { x: to.p.x - out.x * chord, y: to.p.y - out.y * chord },
+      to.p,
+    ]);
+  }
+  const clean = eased.filter((p, q) => q === 0 || Math.hypot(p.x - eased[q - 1]!.x, p.y - eased[q - 1]!.y) > 1e-6);
+  return clean.length >= 2 ? Polyline.fromPoints(clean) : null;
+}
+
+
+/**
+ * The corners of one road node to round (`roundCorner`), as plain numbers for a worker (`conflictPool.ts`):
+ * the rings of the levels and decks they read round the node (`RingsOf`), each ring a flat x, y list, and
+ * each corner's two ends and the ends it keeps clear of.
+ */
+export interface CornerAsk {
+  readonly rings: readonly { readonly level: SurfaceLevel; readonly deck: RoadStructure; readonly polys: readonly (readonly Float64Array[])[] }[];
+  readonly corners: readonly { readonly from: CornerEnd; readonly to: CornerEnd; readonly avoid: readonly Vec2[] }[];
+}
+
+/**
+ * Rounds many nodes' corners somewhere else (`conflictPool.ts`), each as `roundCorners` would here,
+ * answered in the order asked; rejected when it cannot (the page rounds them, `Walkways.updateSteps`).
+ */
+export interface CornerMeasurer {
+  roundCorners?(asks: readonly CornerAsk[]): Promise<readonly (readonly (Float64Array | null)[])[]>;
+}
+
+/** A node's rings as an ask carries them: each ring's points as one flat x, y list. */
+export function flatRings(polys: MultiPoly): Float64Array[][] {
+  return polys.map((poly) => poly.map((ring) => {
+    const xy = new Float64Array(ring.length * 2);
+    ring.forEach(([x, y], k) => { xy[k * 2] = x!; xy[k * 2 + 1] = y!; });
+    return xy;
+  }));
+}
+
+/** Each corner of an ask rounded as `roundCorner` rounds it on the page, from the same rings: its line's points, or null. */
+export function roundCorners(ask: CornerAsk): (Float64Array | null)[] {
+  const byLevel = new Map(ask.rings.map((r) => [`${r.level}:${r.deck}`, r.polys]));
+  const lines = new LocalLines((level, deck) => (byLevel.get(`${level}:${deck}`) ?? []).map((poly) => poly.map((xy) => {
+    const ring: number[][] = [];
+    for (let k = 0; k + 1 < xy.length; k += 2) ring.push([xy[k]!, xy[k + 1]!]);
+    return ring;
+  })));
+  return ask.corners.map((c) => roundCorner(c.from, c.to, c.avoid, () => lines)?.xy ?? null);
+}
