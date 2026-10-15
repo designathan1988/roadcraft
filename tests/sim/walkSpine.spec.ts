@@ -265,7 +265,6 @@ function oldRoute(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Wa
   steps.push({ way: to.way, dir: arriveAtA ? 1 : -1, from: arriveAtA ? 0 : to.way.path.length, to: to.s });
   return steps;
 }
-const stepsText = (steps: readonly Step[] | null): string => (steps ? steps.map((s) => `${s.way?.id}:${s.dir}:${s.from}:${s.to}`).join(' ') : 'none');
 
 /** The walkway nearest a point (any kind but a crossing), with where on it. */
 function wayNear(g: WalkGraph, x: number, y: number): { way: Walkway; s: number } {
@@ -279,15 +278,43 @@ function wayNear(g: WalkGraph, x: number, y: number): { way: Walkway; s: number 
 }
 
 describe('a route search touches the nodes it reaches', () => {
-  it('gives the routes the search with fresh arrays gave, search after search on the same graph', () => {
+  // A* (`route`): as short as the old full search (`oldRoute`, Dijkstra with fresh arrays) - on a grid,
+  // one of the routes of the same length, not always the same one - each a chain of ways from the
+  // start to the goal.
+  it('gives routes as short as the full search gave, search after search on the same graph', () => {
     const g = graphOf(worldOf(grid(6)));
     const rng = new Rng(0x7007e);
     const ways = g.walkways().filter((w) => w.kind !== 'crossing');
+    const cost = (steps: Step[] | null): number => (steps ?? []).reduce((t, st) => t + Math.abs(st.to - st.from) + (st.way?.kind === 'crossing' ? m(12) : 0), 0);
     for (let k = 0; k < 400; k++) {
       const a = ways[rng.int(0, ways.length - 1)]!, b = ways[rng.int(0, ways.length - 1)]!;
       const from = { way: a, s: rng.float() * a.path.length }, to = { way: b, s: rng.float() * b.path.length };
-      expect(stepsText(route(g, from, to))).toBe(stepsText(oldRoute(g, from, to)));
+      const found = route(g, from, to), full = oldRoute(g, from, to);
+      expect(found === null).toBe(full === null);
+      if (!found) continue;
+      expect(cost(found)).toBeCloseTo(cost(full), 3);
+      expect(found[0]!.way).toBe(a);
+      expect(found[0]!.from).toBe(from.s);
+      expect(found.at(-1)!.way).toBe(b);
+      expect(found.at(-1)!.to).toBe(to.s);
+      // Each way entered at the end the one before left by.
+      for (let i = 1; i < found.length; i++) {
+        const before = found[i - 1]!, now = found[i]!;
+        const left = before.dir > 0 ? before.way!.b : before.way!.a, entered = now.dir > 0 ? now.way!.a : now.way!.b;
+        expect(entered).toBe(left);
+      }
     }
+  });
+
+  it('looks towards the goal: a route across the town touches an eighth of its nodes at most', () => {
+    // DO NOT search without the estimate: each of the scenery's people, in at the map's edge for the far
+    // side, spread over every footway of the town (1.2 s of a 2,560 m city's growth, 2026-10-15).
+    const g = graphOf(worldOf(grid(8)));
+    const from = wayNear(g, m(10), m(4)), to = wayNear(g, m(300), m(30));
+    const before = walkWork.routeNodes;
+    expect(route(g, from, to)).not.toBeNull();
+    // 79 of 1,152 nodes (2026-10-15); the search without the estimate touched 583.
+    expect(walkWork.routeNodes - before).toBeLessThan(g.nodes.length / 8);
   });
 
   it('touches as many nodes for a short route on a map four times the size', () => {

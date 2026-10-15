@@ -43,8 +43,9 @@ import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, type RoadElevation } from '@world/elevation';
-import { FOOTWAY_RISE, ROAD_TYPES, casingHalf, sidewalkHalf } from '@world/roadTypes';
-import { footwayRiseAt } from '@world/roads/footwayRise';
+import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
+import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
+import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
 import type { SimWorld } from '@sim/world';
 import type { Viewport } from '@view/viewport';
@@ -892,22 +893,25 @@ export function createSceneRenderer(
     return segment === undefined ? elevation.at(x, y) : elevation.onSegment(segment, x, y);
   };
 
-  /** See `SceneHandle.pavedHeightAt`. */
-  const pavedHeightAt = (x: number, y: number): number => {
+  /** The footway's rise over the carriageway at a point (`footwayRiseAt`), kerbed before any network is built. */
+  const footwayRiseHere = (x: number, y: number): number => (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE);
+  /**
+   * See `SceneHandle.pavedHeightAt` (`world/paving.ts`). With `pack`: what a building cell's worker
+   * reads it from near its cell (`cellPool.ts`), so the workers ask the page for none of it.
+   */
+  const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
-    const road = elevation.roadAt(x, y, GROUND_ONLY);
-    const rt = road.type >= 0 ? ROAD_TYPES[road.type] : undefined;
-    if (!rt) return NaN;
-    // `half` is this road's own casing (its lanes may be set individually):
-    // the footway ends a casing band inside it and starts a footway further in.
-    // Each side its own footway (docs/VIAS.md V1): `half` reaches the wider one.
-    const walk = (road.across >= 0 ? road.sidewalkLeft : road.sidewalkRight) ?? road.sidewalk ?? rt.sidewalk;
-    const footway = road.half - (casingHalf(rt) - sidewalkHalf(rt)) - ((road.sidewalk ?? rt.sidewalk) - walk);
-    const across = Math.abs(road.across);
-    if (across > footway) return NaN;
-    const deck = elevation.at(x, y, GROUND_ONLY);
-    return across > footway - walk ? deck + (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE) : deck;
-  };
+    return pavedHeightFrom(elevation, GROUND_ONLY, footwayRiseHere, x, y);
+  }, {
+    pack: (rect: readonly [number, number, number, number]): { data: PavingData; transfer: ArrayBuffer[] } | null => {
+      const ground = elevation !== null && elevation.has(GROUND_ONLY);
+      if (ground && !elevation!.fieldFor) return null;
+      const field = ground ? elevation!.fieldFor!([rect], []) : null;
+      const flush = worldNet ? packFlush(worldNet, [rect]) : null;
+      return { data: { rect, field: field?.data ?? null, flush: flush?.data ?? null },
+        transfer: [...field?.transfer ?? [], ...flush?.transfer ?? []] };
+    },
+  });
 
   const agents: AgentMeshes = createAgentMeshes(deckHeight, onAssetsReady,
     // A walker off the streets stands on what is drawn there: a building's
@@ -1365,14 +1369,11 @@ export function createSceneRenderer(
   const buildingsOnGroundSince = (doc: RoadDoc, serial: number): Building[] | null => {
     const rects = groundSince.rectsSince(serial);
     if (!rects) return null;
-    const out = new Map<BuildingId, Building>();
-    for (const r of rects) {
-      for (const b of doc.buildings.near(r[0] - BANK_REACH, r[1] - BANK_REACH, r[2] + BANK_REACH, r[3] + BANK_REACH)) {
-        const box = bankBox(b);
-        if (box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1]) out.set(b.id, b);
-      }
-    }
-    return [...out.values()];
+    // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
+    return doc.buildings.nearAny(rects, BANK_REACH, (b, r) => {
+      const box = bankBox(b);
+      return box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1];
+    });
   };
   /** The ground serial the buildings were last told of (`buildingGround`). */
   let buildingGroundSeen = -1;
@@ -1474,7 +1475,7 @@ export function createSceneRenderer(
       const rect = (x: number, y: number): [number, number, number, number] => [x - 1, y - 1, x + SHAPE_BLOCK + 1, y + SHAPE_BLOCK + 1];
       const job: BlockDigestAsk = {
         solves: ask.map(({ solve, blocks }) => ({
-          roads: solve.shapeCut!(blocks.map(([x, y]) => { const r = rect(x, y); return { minX: r[0], minY: r[1], maxX: r[2], maxY: r[3] }; })),
+          roads: solve.shapeCut!(blocks.map(([x, y]) => rect(x, y))),
           blocks: Float64Array.from(blocks.flat()),
         })),
         plates: terrain.naturalCut?.(ask.flatMap(({ blocks }) => blocks.map(([x, y]) => rect(x, y)))) ?? [],

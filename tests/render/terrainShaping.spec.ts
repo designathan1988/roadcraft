@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { layCity } from '@editor/cityGenerator';
 import { growOnLot } from '@editor/zoning';
-import type { Aabb } from '@core/aabb';
 import { type BlockDigestAsk, type GroundJob, type GroundShapeAsk, type PlateShapeAnswer, askPlate, blockDigest, cornerBoxes, runGroundJob } from '@render/groundShape';
 import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeBoth, shapeCorners } from '@render/terrainShaping';
 import { storedBounds } from '@world/buildings/geometry';
@@ -224,9 +223,9 @@ describe('a shaping pass off the page', () => {
     const BLOCK = 160;
     const blocks: number[] = [];
     for (let x = -HALF; x < HALF; x += BLOCK) for (let y = -HALF; y < HALF; y += BLOCK) blocks.push(x, y);
-    const rects = (): Aabb[] => {
-      const out: Aabb[] = [];
-      for (let k = 0; k < blocks.length; k += 2) out.push({ minX: blocks[k]! - 1, minY: blocks[k + 1]! - 1, maxX: blocks[k]! + BLOCK + 1, maxY: blocks[k + 1]! + BLOCK + 1 });
+    const rects = (): [number, number, number, number][] => {
+      const out: [number, number, number, number][] = [];
+      for (let k = 0; k < blocks.length; k += 2) out.push([blocks[k]! - 1, blocks[k + 1]! - 1, blocks[k]! + BLOCK + 1, blocks[k + 1]! + BLOCK + 1]);
       return out;
     };
     const ask: BlockDigestAsk = {

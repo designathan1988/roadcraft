@@ -187,7 +187,7 @@ export interface TownPads extends BuildingPads {
   /** A building's platform now (null: it has none, or is gone). */
   put(id: number, pad: Pad | null): void;
   /** The platforms a point inside `boxes` can read, as plain data for the ground's worker (`padShaper`). */
-  cut(boxes: readonly Aabb[]): PadShapeCut;
+  cut(boxes: readonly (readonly [number, number, number, number])[]): PadShapeCut;
 }
 
 /**
@@ -257,8 +257,8 @@ export function townPads(apron: number): TownPads {
       const indexOf = new Map<Pad, number>();
       const out = new Map<number, Int32Array>();
       for (const box of boxes) {
-        for (let cx = Math.floor(box.minX / CELL); cx <= Math.floor(box.maxX / CELL); cx++) {
-          for (let cy = Math.floor(box.minY / CELL); cy <= Math.floor(box.maxY / CELL); cy++) {
+        for (let cx = Math.floor(box[0] / CELL); cx <= Math.floor(box[2] / CELL); cx++) {
+          for (let cy = Math.floor(box[1] / CELL); cy <= Math.floor(box[3] / CELL); cy++) {
             const key = cellKey(cx, cy);
             if (out.has(key)) continue;
             const list = cells.get(key) ?? NO_PADS;

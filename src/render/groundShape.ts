@@ -1,8 +1,7 @@
-import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
 import { plateOf } from '@world/bounds';
 import { type PadShapeCut, padShaper } from '@world/buildings/pads';
-import { type CutRoads, type RoadShapeCut, roadShaper } from '@world/elevation';
+import { type RoadElevation, type RoadShapeCut, roadShaper } from '@world/elevation';
 import { type CornerGrid, type TerrainRegion, sampleCorners, shapeBoth, shapeCorners } from './terrainShaping';
 
 /**
@@ -93,16 +92,16 @@ export function askPlate(grid: CornerGrid, natural: Float64Array, regions: reado
  * plates' grid): what the roads and the platforms are cut to for it
  * (`RoadElevation.shapeCut`, `TownPads.cut`).
  */
-export function cornerBoxes(plates: readonly PlateShapeAsk[], cell: number, half: number): Aabb[] {
-  const boxes: Aabb[] = [];
+export function cornerBoxes(plates: readonly PlateShapeAsk[], cell: number, half: number): [number, number, number, number][] {
+  const boxes: [number, number, number, number][] = [];
   for (const plate of plates) {
     const r = plate.regions;
     for (let k = 0; k < r.length; k += 4) {
       if (r[k + 1]! < r[k]! || r[k + 3]! < r[k + 2]!) continue;
-      boxes.push({
-        minX: plate.cx - half + (r[k]! - 1) * cell, maxX: plate.cx - half + (r[k + 1]! + 1) * cell,
-        minY: plate.cy + half - (r[k + 3]! + 1) * cell, maxY: plate.cy + half - (r[k + 2]! - 1) * cell,
-      });
+      boxes.push([
+        plate.cx - half + (r[k]! - 1) * cell, plate.cy + half - (r[k + 3]! + 1) * cell,
+        plate.cx - half + (r[k + 1]! + 1) * cell, plate.cy + half - (r[k + 2]! - 1) * cell,
+      ]);
     }
   }
   return boxes;
@@ -165,7 +164,7 @@ export function shapeGroundAsk(ask: GroundShapeAsk, scratch = new ShapeScratch()
 }
 
 /** What `blockDigest` reads of a solve of the roads: a `RoadElevation`, or a cut's reader (`roadShaper`). */
-type BlockRoads = Pick<CutRoads, 'shapeAt' | 'at'> & { roadAt(x: number, y: number): { readonly type: number; readonly across: number; readonly half: number } };
+type BlockRoads = Pick<RoadElevation, 'shapeAt' | 'at' | 'roadAt'>;
 
 /**
  * What a block of ground reads of a solve, digested (`renderer.ts`
