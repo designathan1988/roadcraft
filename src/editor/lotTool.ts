@@ -8,6 +8,7 @@ import {
 } from '@world/lots';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { BuildingId } from '@world/buildings/types';
+import { JournalCursor } from '@world/derived';
 import { m } from '@world/units';
 import { nearestRibbon } from '@world/nearestRibbon';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
@@ -158,9 +159,12 @@ export class LotTool {
 
   /** The overlay of the last gesture frame and the state it was made from (`overlayKeyed`). */
   private live: { key: string; overlay: LotOverlay & { readonly key: string } } | null = null;
+  /** The diary read for the lots and buildings (`liveKey`): a count of the times it said something changed. */
+  private readonly liveCursor = new JournalCursor(['lots', 'buildings']);
+  private liveEdits = 0;
 
   /**
-   * Everything `overlay` reads, as a short string: the lots and buildings by revision, the mode and its
+   * Everything `overlay` reads, as a short string: the lots and buildings by what the diary says changed, the mode and its
    * settings, the pointer (where it is changes what is lit, snapped and measured), the gestures under way and
    * the proposal. DO NOT build the overlay and write it out as JSON to compare it: that is every lot of the
    * town, every frame, and grows with it. A field `overlay` starts reading goes here too.
@@ -175,7 +179,9 @@ export class LotTool {
     const cut = this.cutLine ? `${at(this.cutLine.a)}>${at(this.cutLine.b)}` : '-';
     const curve = this.curve ? `${at(this.curve.a)}>${at(this.curve.b)}~${at(this.curve.through)}` : '-';
     const polygon = this.polygon.map(at).join(';');
-    return [editing ? 'e' : 'q', this.doc.lotRevision, this.doc.buildings.revision, JSON.stringify(this.host.settings()),
+    const changed = this.liveCursor.read(this.doc.changes);
+    if (changed === null || changed.length > 0) this.liveEdits++;
+    return [editing ? 'e' : 'q', this.liveEdits, JSON.stringify(this.host.settings()),
       at(this.hover), this.hover ? this.host.zoom() : 0, this.joinFirst ?? '-', stroke, corner, drawn, cut, curve, polygon, proposal].join('|');
   }
 

@@ -39,8 +39,14 @@ import type { NaturalPlate } from './groundShape';
  */
 
 const REGION_STRIDE = 1000;
-/** Plates kept made but not drawn, the oldest let go first. */
-const CACHE = 6;
+/**
+ * A plate made but not drawn is kept while it is within this many times the reach the view wants in full
+ * (the margin keeps one on the line from being let go and made again, as `roadResidency.ts` does for the
+ * roads), let go beyond it: by distance from the view, never by how many are kept or how long ago they were drawn.
+ * DO NOT cap the plates by count: the six newest were kept wherever the view stood, and a plate next to it
+ * was let go for one far behind.
+ */
+const KEEP_MARGIN = 1.25;
 /** Most plates drawn in full near the view. */
 const NEAR_MOST = 9;
 /** Beyond this much ground in view, no plate is drawn in full: the far mesh alone. */
@@ -219,6 +225,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const farForest = createFarForest(MAP_REGIONS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
   let focusX = 0, focusY = 0;
+  /** How far from the view a made plate not drawn is kept (`KEEP_MARGIN`); set with the view (`focus`). */
+  let keepReach = Infinity;
   let farRelief: ReliefVersion | null = null;
   let far: FlatFar | null = null;
   const buildFar = (relief: ReliefVersion): void => {
@@ -311,9 +319,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);
     }
-    if (cached.length > CACHE) {
-      cached.sort((a, b) => a.used - b.used);
-      for (let k = 0; k < cached.length - CACHE; k++) letGo(cached[k]!);
+    for (const p of cached) {
+      if (Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach) letGo(p);
     }
     if (shownList.length !== partsShown.length || shownList.some((p, k) => partsShown[k]!.surface !== p.surface)) shownVersion++;
     partsShown = shownList.map((p) => ({ surface: p.surface!, cx: p.cx, cy: p.cy }));
@@ -526,6 +533,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       focusX = x;
       focusY = y;
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
+      keepReach = radius > 0 ? radius * KEEP_MARGIN : 0;
       const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
       if (key !== focusKey) {
         focusKey = key;
