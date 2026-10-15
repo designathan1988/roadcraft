@@ -5,7 +5,7 @@ import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
-import { hashSim } from '@sim/snapshot';
+import { hashSim } from './support/snapshot';
 
 /**
  * The simulation, exercised end to end on a network the editor could have drawn.

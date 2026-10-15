@@ -1,7 +1,8 @@
 import { MeshBasicMaterial, type BufferGeometry, type Mesh } from 'three';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { type Budget, COUNT_BUDGETS, withinBudget } from '@core/perfBudget';
+import type { Budget } from '@core/perfBudget';
+import { COUNT_BUDGETS, withinBudget } from './support/countBudgets';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { buildDefaultTown } from '@world/defaultTown';

@@ -3,7 +3,7 @@ import { signedArea } from '@core/polygon';
 import { inflatePaths, JoinType, EndType } from 'clipper2-ts';
 import { generateBlock, type BlueprintBody } from '@world/buildings/blueprints';
 import { GRID, MIN_SIZE } from '@world/buildings/geometry';
-import { AREA_EPS, localFootprint, edgeFrame, validOutline, cutOutline, overlapArea, roofDetailRing, supportedBy } from '@world/buildings/footprints';
+import { AREA_EPS, localFootprint, edgeFrame, validOutline, overlapArea, roofDetailRing, supportedBy } from '@world/buildings/footprints';
 import { upperStoreyFrom } from '@world/buildings/blueprints';
 import type { Building, RoofKind, Side, Volume } from '@world/buildings/types';
 import { perM } from '@world/units';
@@ -275,10 +275,3 @@ export function addShapedUpperMass(b: Building, sourceId: number, shape: PlanSha
   return addPlanMass(b, sourceId, points, source.base + source.storeys.length, floors);
 }
 
-/** Removes a polygon from the selected mass, keeping one simple boundary. */
-export function cutPlanMass(b: Building, volumeId: number, points: readonly Vec2[]): boolean {
-  const volume = b.volumes.find((v) => v.id === volumeId);
-  if (!volume) return false;
-  const cut = cutOutline(localFootprint(volume), points);
-  return cut !== null && setVolumePlan(volume, cut);
-}

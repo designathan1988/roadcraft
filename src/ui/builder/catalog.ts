@@ -133,18 +133,6 @@ export function tabSpec(id: BuilderCategoryId): BuilderTabSpec {
 export const BUILDER_CATALOG: readonly { readonly id: BuilderCategoryId; readonly tools: readonly BuilderToolSpec[] }[] =
   BUILDER_TAB_SPECS.map((tab) => ({ id: tab.id, tools: tab.sections.flatMap((s) => s.tools ?? []) }));
 
-/** Kept for the thumbnail studio and the icon test: families of pictured parts. */
-export const BUILDER_GALLERIES: Readonly<Record<string, readonly string[]>> = {
-  shapes: ['rect', 'shapeL', 'shapeU', 'circle', 'hexagon', 'octagon', 'chamfered'],
-  openWindows: ['window', 'sashWindow', 'wideWindow', 'ribbon', 'bayWindow', 'frenchWindow'],
-  openDoors: ['door', 'doubleDoor', 'garageDoor', 'loadingDoor'],
-  runs: ['wallRun', 'fenceRun', 'pavementRun', 'railing', 'stairRun'],
-  greenery: ['tree', 'shrub', 'hedge', 'flowers', 'rocks'],
-  furniture: ['bench', 'planter', 'parking', 'ac', 'awning'],
-  roofGear: ['solar', 'skylight', 'vent', 'chimney', 'waterTank', 'spire', 'lantern'],
-  roofs: ['roofFlat', 'roofTerrace', 'roofGable', 'roofHip', 'roofShed', 'roofSawtooth'],
-};
-
 /** The plans a closed outline can be recognised as, and drawn as. */
 export type PlanShapeId = 'rectangle' | 'l' | 'u' | 'circle' | 'hexagon' | 'octagon' | 'chamfered' | 'cross' | 'stepped';
 

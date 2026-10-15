@@ -10,7 +10,6 @@ import { validateBuilding } from '@world/buildings/validate';
 import {
   type BuildingContext,
   addBuildingRecord,
-  fuseVolumes,
   opUnionVolumes,
   placeBuilding,
   weldInto,
@@ -109,25 +108,6 @@ describe('welding two buildings', () => {
     expect(opUnionVolumes(draft, v.id)).toBe(true);
     expect(draft.volumes.length).toBe(before - 1);
     expect(draft.volumes[0]!.w).toBeCloseTo(v.w + wing.w, 6);
-  });
-
-  it('fuses a mass that is swallowed whole into the bigger one', () => {
-    const { ctx } = world();
-    const first = place(ctx, { x: 0, y: 60 * U });
-    const draft = cloneBuilding(first);
-    const v = draft.volumes[0]!;
-    // A small block entirely inside the first: the fusion leaves one block.
-    const inner = JSON.parse(JSON.stringify(v)) as typeof v;
-    inner.id = draft.nextVolumeId++;
-    inner.x = v.x + 5 * U;
-    inner.y = v.y + 5 * U;
-    inner.w = Math.max(6 * U, v.w / 3);
-    inner.d = Math.max(6 * U, v.d / 3);
-    draft.volumes.push(inner);
-    weldInto(ctx, draft, []);
-    fuseVolumes(draft);
-    expect(draft.volumes.length).toBe(1);
-    expect(validateBuilding(ctx, draft)).toBeNull();
   });
 
   it('stores the welded record and drops the absorbed buildings', () => {

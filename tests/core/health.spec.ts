@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FrameTimer, HealthLog, frameStats, overBudget, percentile, systemsOf } from '@core/health';
+import { FrameTimer, HealthLog, frameStats, percentile, systemsOf } from '@core/health';
 
 /** Sets what `performance.now()` answers. */
 function clockAt(ms: number): void {
@@ -63,7 +63,6 @@ describe('FrameTimer', () => {
     timer.mark('panels', 161);
     const frame = timer.end(161);
     expect([...frame.systems]).toEqual([['simulation', 4], ['drawing', 56], ['panels', 1]]);
-    expect(overBudget(frame).map(([name]) => name)).toEqual(['drawing']);
     timer.begin(200);
     timer.mark('simulation', 203);
     timer.end(203);

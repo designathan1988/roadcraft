@@ -34,7 +34,6 @@ import {
   opRotate,
   opSetComponent,
   opSetStoreys,
-  opSetUse,
   placeBuilding,
   removeVolume,
 } from '@editor/buildings';
@@ -160,12 +159,6 @@ describe('building operations', () => {
     for (const storey of v.storeys) expect(componentAt(storey.facade, 1, 2)).toBe('pillar');
     opSetComponent(b, 1, 0, 0, 0, 'wall', 'volume');
     expect(facadeBays(b).every((bay) => bay.component === 'wall')).toBe(true);
-  });
-
-  it('regenerates the facades for a change of use', () => {
-    const b = { ...generateBody('residential', bays(4), bays(3), 2), id: 1, x: 0, y: 0, rotation: 0 } as unknown as Building;
-    opSetUse(b, 'commercial');
-    expect(facadeBays(b).some((bay) => bay.component === 'shopfront')).toBe(true);
   });
 
   it('rotates about the footprint centre', () => {

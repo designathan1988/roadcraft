@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultPerson, normalizePerson, randomPerson, wornItems } from '@people/spec';
+import { DEFAULT_LOOK, normalizePerson, randomPerson, wornItems } from '@people/spec';
 import { ageFromYears } from '@people/body/macro';
 import { RoadDoc } from '@world/doc';
 import { isSerializedDoc } from '@editor/persistence';
@@ -45,8 +45,8 @@ describe('people saved with the city', () => {
     expect(p.body.age).toBe(0);
     expect(p.body.weight).toBe(0.5);
     expect(p.features).toEqual({ 'nose-flaring-decr-incr': 1 });
-    expect(p.look.skin).toBe(defaultPerson(0).look.skin);
-    expect(p.look.hairStyle).toBe(defaultPerson(0).look.hairStyle);
+    expect(p.look.skin).toBe(DEFAULT_LOOK.skin);
+    expect(p.look.hairStyle).toBe(DEFAULT_LOOK.hairStyle);
     expect(p.look.topColour).toBe(0x123456);
     expect(normalizePerson({ id: 'one' })).toBeNull();
     expect(normalizePerson(null)).toBeNull();

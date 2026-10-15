@@ -142,8 +142,6 @@ export class HealthLog {
   }
 }
 
-/** A frame at 60 frames a second, ms. */
-const FRAME_BUDGET_MS = 1000 / 60;
 /** A long frame: past this the player sees a hitch (MDN, Long Animation Frames: 50 ms). */
 export const LONG_FRAME_MS = 50;
 
@@ -158,23 +156,6 @@ export type FrameSystem = 'panels' | 'camera' | 'growCity' | 'topology' | 'simul
 
 /** The dictionary key of a system's name, as the monitor shows it. */
 export const systemKey = (system: string): string => `health.system.${system}`;
-
-/**
- * Each system's share of a frame, ms: declared once, here. A system over
- * its share is named in a long frame's entry; the shares add to more than a
- * frame because they are rarely all spent in the same one. Absent (the
- * camera): a whole frame.
- */
-const SYSTEM_BUDGET_MS: Readonly<Partial<Record<FrameSystem, number>>> = {
-  simulation: 4,
-  topology: 6,
-  roadNetwork: 4,
-  buildings: 3,
-  poles: 1,
-  drawing: 8,
-  overlay: 2,
-  panels: 2,
-};
 
 /** One frame's systems, ms each. */
 export interface FrameRecord {
@@ -264,9 +245,4 @@ export function systemsOf(frames: readonly FrameRecord[]): [string, number][] {
   const sum = new Map<string, number>();
   for (const f of frames) for (const [name, ms] of f.systems) sum.set(name, (sum.get(name) ?? 0) + ms);
   return [...sum].filter(([, ms]) => ms >= 0.5).sort((a, b) => b[1] - a[1]).map(([name, ms]) => [name, Math.round(ms * 10) / 10]);
-}
-
-/** The systems of a frame that went over their share (`SYSTEM_BUDGET_MS`). */
-export function overBudget(frame: FrameRecord): [string, number][] {
-  return [...frame.systems].filter(([name, ms]) => ms > (SYSTEM_BUDGET_MS[name as FrameSystem] ?? FRAME_BUDGET_MS));
 }

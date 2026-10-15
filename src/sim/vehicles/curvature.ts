@@ -77,15 +77,6 @@ function lateralShare(v: Vehicle): number {
 }
 
 /**
- * The lateral acceleration this driver is comfortable with at `speed`, world
- * units per second squared. Higher at a crawl than at speed (see
- * `MAX_LATERAL_ACCEL`).
- */
-export function comfortableLateral(v: Vehicle, speed = 0): number {
-  return lateralShare(v) * Math.max(MIN_LATERAL_ACCEL, MAX_LATERAL_ACCEL - LATERAL_ACCEL_FALL * speed);
-}
-
-/**
  * Fastest speed at which a bend of curvature `k` is taken within the driver's
  * speed-dependent comfort: the root of `k v^2 = share * (a0 - c v)`, or of the
  * floor once the falling figure has reached it.

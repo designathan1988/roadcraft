@@ -10,10 +10,7 @@ import { clamp } from '@core/scalar';
 import { METERS_PER_UNIT, m } from '@world/units';
 import {
   type BlueprintBody,
-  DEFAULT_PALETTE,
-  defaultFacade,
   instantiate,
-  storeyUse,
   upperStoreyFrom,
 } from '@world/buildings/blueprints';
 import { MAX_ELEMENT, MIN_ELEMENT, elementClash, elementRing, groundElements, onGround, runFor, takeElementId } from '@world/buildings/elements';
@@ -45,7 +42,6 @@ import {
   type Building,
   type BuildingElement,
   type BuildingId,
-  type BuildingUse,
   type Facade,
   type Relief,
   type RoofKind,
@@ -331,26 +327,6 @@ export function opSetRoof(b: Building, volumeId: number, roof: RoofKind): boolea
   const v = volumeById(b, volumeId);
   if (!v || v.roof === roof) return false;
   v.roof = roof;
-  return true;
-}
-
-/** Changes the building's use; with `regenerate`, every facade is re-derived for it. */
-export function opSetUse(b: Building, use: BuildingUse, regenerate = true): boolean {
-  if (b.use === use && !regenerate) return false;
-  b.use = use;
-  b.palette = DEFAULT_PALETTE[use];
-  if (regenerate) {
-    for (const v of b.volumes) {
-      v.storeys = v.storeys.map((storey, k) => {
-        const level = v.base + k;
-        const next: Storey = { facade: defaultFacade(use, level, v.w) };
-        const own = storeyUse(use, level);
-        if (own) next.use = own;
-        if (storey.spaces) next.spaces = storey.spaces;
-        return next;
-      });
-    }
-  }
   return true;
 }
 
@@ -897,46 +873,6 @@ export function opUnionVolumes(b: Building, volumeId: number, sameLookOnly = fal
   return false;
 }
 
-/**
- * Cuts a rectangle out of a volume: what remains is up to four volumes, all
- * keeping the original's storeys, base and roof. Faces pushed in or out go
- * with the cut - they are measured in bays that no longer exist.
- */
-function opSubtractRect(b: Building, volumeId: number, cut: { x: number; y: number; w: number; d: number }): boolean {
-  const v = volumeById(b, volumeId);
-  if (!v) return false;
-  const x0 = Math.max(v.x, cut.x);
-  const y0 = Math.max(v.y, cut.y);
-  const x1 = Math.min(v.x + v.w, cut.x + cut.w);
-  const y1 = Math.min(v.y + v.d, cut.y + cut.d);
-  if (x1 - x0 < 1e-6 || y1 - y0 < 1e-6) return false;
-  const pieces: { x: number; y: number; w: number; d: number }[] = [];
-  const push = (x: number, y: number, w: number, d: number): void => {
-    if (w >= MIN_SIZE && d >= MIN_SIZE) pieces.push({ x, y, w, d });
-  };
-  push(v.x, v.y, v.w, y0 - v.y);
-  push(v.x, y1, v.w, v.y + v.d - y1);
-  push(v.x, y0, x0 - v.x, y1 - y0);
-  push(x1, y0, v.x + v.w - x1, y1 - y0);
-  if (pieces.length === 0) return false;
-  const template = JSON.parse(JSON.stringify(v)) as Volume;
-  const made: Volume[] = pieces.map((r) => ({
-    ...(JSON.parse(JSON.stringify(template)) as Volume),
-    id: b.nextVolumeId++,
-    x: r.x,
-    y: r.y,
-    w: r.w,
-    d: r.d,
-  }));
-  for (const m of made) {
-    delete m.reliefs;
-    delete m.outline;
-    delete m.facadeGeometry;
-  }
-  b.volumes = b.volumes.filter((x) => x.id !== v.id).concat(made);
-  return true;
-}
-
 // =============================================================== welding
 
 /**
@@ -1070,57 +1006,6 @@ function simplePieces(poly: clipping.Polygon, depth = 0): Vec2[][] {
   return [...clipping.intersection(poly, left), ...clipping.intersection(poly, right)].flatMap((p) => simplePieces(p, depth + 1));
 }
 
-
-/** Makes the masses of one building disjoint, then fuses what makes a block. */
-export function fuseVolumes(b: Building): void {
-  // 1) An overlap is cut out of the smaller mass, so both survive and the
-  //    union is exact: no gap and no double wall inside.
-  for (let guard = 0; guard < 12; guard++) {
-    let changed = false;
-    outer: for (const a of [...b.volumes]) {
-      for (const c of [...b.volumes]) {
-        if (a.id === c.id) continue;
-        if (a.base !== c.base || a.base + a.storeys.length !== c.base + c.storeys.length) continue;
-        const x0 = Math.max(a.x, c.x);
-        const y0 = Math.max(a.y, c.y);
-        const x1 = Math.min(a.x + a.w, c.x + c.w);
-        const y1 = Math.min(a.y + a.d, c.y + c.d);
-        if (x1 - x0 < 1e-6 || y1 - y0 < 1e-6) continue;
-        const overlap = (x1 - x0) * (y1 - y0);
-        const areaA = a.w * a.d;
-        const areaC = c.w * c.d;
-        if (overlap > areaA - 1e-6 || overlap > areaC - 1e-6) {
-          // One is inside the other: keep the bigger, drop the swallowed one.
-          const doomed = areaA <= areaC ? a : c;
-          const remaining = b.volumes.filter((v) => v.id !== doomed.id);
-          if (remaining.some((v) => v.base === 0)) {
-            b.volumes = remaining;
-            changed = true;
-            break outer;
-          }
-        }
-        const doomed = areaA <= areaC ? a : c;
-        if (opSubtractRect(b, doomed.id, { x: x0, y: y0, w: x1 - x0, d: y1 - y0 })) {
-          changed = true;
-          break outer;
-        }
-      }
-    }
-    if (!changed) break;
-  }
-  // 2) Flush neighbours that make one rectangle become one mass.
-  for (let guard = 0; guard < 24; guard++) {
-    let merged = false;
-    for (const v of [...b.volumes]) {
-      // Only masses that look alike: two buildings welded keep their colours.
-      if (opUnionVolumes(b, v.id, true)) {
-        merged = true;
-        break;
-      }
-    }
-    if (!merged) break;
-  }
-}
 
 // =============================================================== faces and roofs
 

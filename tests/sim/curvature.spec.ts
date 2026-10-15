@@ -3,7 +3,8 @@ import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 import { step } from '@sim/pipeline';
 import { DT, MAX_LATERAL_ACCEL } from '@sim/params';
-import { comfortableLateral, curveSpeedCap } from '@sim/vehicles/curvature';
+import { curveSpeedCap } from '@sim/vehicles/curvature';
+import { comfortableLateral } from './support/comfortableLateral';
 import type { SimWorld } from '@sim/world';
 import { fixtureDoc, simOf } from './support/bodies';
 import { TUNED_UNIT } from '@world/units';
@@ -98,7 +99,7 @@ describe('curvature speed', () => {
     expect(worstOverCap).toBeLessThan(0.25);
   });
 
-  it('leaves a straight road alone and gives heavy vehicles a gentler limit', () => {
+  it('leaves a straight road alone', () => {
     const doc = new RoadDoc();
     const a = doc.addNode({ x: -800 * U, y: 0 });
     const b = doc.addNode({ x: 800 * U, y: 0 });
@@ -109,8 +110,6 @@ describe('curvature speed', () => {
     for (const v of sim.vehicles.values()) {
       checked++;
       expect(curveSpeedCap(sim, v)).toBe(Infinity);
-      const heavy = v.archetype.length > 20 * U;
-      if (heavy) expect(comfortableLateral(v)).toBeLessThan(MAX_LATERAL_ACCEL * 1.2 * 0.71);
     }
     expect(checked).toBeGreaterThan(0);
   });
