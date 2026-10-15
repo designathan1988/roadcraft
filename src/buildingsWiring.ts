@@ -19,7 +19,7 @@ import { BUILDER_CATALOG, DRAW_SHAPES, OPENING_COMPONENTS, TIER_SHAPES, type Bui
 import type { Viewport } from '@view/viewport';
 import type { SceneHandle } from '@render/renderer';
 import { drawBuildingOverlay } from '@ui/overlay/buildingOverlay';
-import { drawBuilderGizmos, type GizmoInput } from '@ui/overlay/builderGizmos';
+import { drawBuilderGrid } from '@ui/overlay/builderGrid';
 import { type ThumbnailStudio, createThumbnailStudio } from '@render/buildings/parts';
 import { createReferenceModel, type ReferenceTarget } from '@render/buildings/referenceModel';
 import { buildFromReference } from '@editor/fromReference';
@@ -1018,23 +1018,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     workspace.refresh(state());
   }
 
-  /** The Builder's own layer: the construction grid and the number being typed. */
+  /** The Builder's own layer: the construction grid, on the selected building's floor while the grid is on. */
   const drawGizmos = (ctx: CanvasRenderingContext2D): void => {
     const building = tool.selected();
-    const input: GizmoInput = {
-      project: view.project,
-      handles: [],
-      hovered: null,
-      grid: gridVisible && building ? { centre: { x: building.x, y: building.y }, z: tool.floorOf(building) + m(0.05) } : null,
-      ring: null,
-      draw: null,
-      measure: null,
-      numeric: null,
-      snap: null,
-      repeat: null,
-      floorBand: null,
-    };
-    drawBuilderGizmos(ctx, input);
+    if (gridVisible && building) drawBuilderGrid(ctx, view.project, { x: building.x, y: building.y }, tool.floorOf(building) + m(0.05));
   };
 
   return {
