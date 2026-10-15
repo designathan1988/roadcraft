@@ -105,7 +105,7 @@ export interface NatureForest {
 }
 
 /** The variety a tree is grown as, from its seed. */
-const varietyOf = (tree: { readonly seed: number }, varieties: number): number => Math.min(varieties - 1, Math.floor(tree.seed * varieties));
+export const varietyOf = (tree: { readonly seed: number }, varieties: number): number => Math.min(varieties - 1, Math.floor(tree.seed * varieties));
 
 /** How many of these trees (or places a tree may stand, by seed) each variety of the kit takes: the room a forest built for them needs. */
 export function forestRoom(trees: readonly { readonly seed: number }[], kit: NatureTreeKit): number[] {
@@ -122,9 +122,18 @@ const standKey = (cx: number, cy: number): number => cx * 100_003 + cy;
  * deep in a wood) and which way the open ground lies (unit, map axes).
  */
 function stands(trees: readonly TreePlacement[]): { crowd: Float32Array; openX: Float32Array; openY: Float32Array } {
+  return standsAmong(trees, trees);
+}
+
+/**
+ * How each of `trees` stands among `among` (which holds them, and every tree
+ * within `STAND_REACH` of one of them): what a forest kept cell by cell reads
+ * of its neighbours (`plantCells.ts`).
+ */
+export function standsAmong(trees: readonly TreePlacement[], among: readonly TreePlacement[]): { crowd: Float32Array; openX: Float32Array; openY: Float32Array } {
   const cell = STAND_REACH;
   const grid = new Map<number, number[]>();
-  trees.forEach((t, i) => {
+  among.forEach((t, i) => {
     const key = standKey(Math.floor(t.x / cell), Math.floor(t.y / cell));
     const list = grid.get(key);
     if (list) list.push(i); else grid.set(key, [i]);
@@ -136,8 +145,8 @@ function stands(trees: readonly TreePlacement[]): { crowd: Float32Array; openX: 
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         for (const j of grid.get(standKey(cx + dx, cy + dy)) ?? []) {
-          if (j === i) continue;
-          const o = trees[j]!;
+          const o = among[j]!;
+          if (o === t) continue;
           const ex = o.x - t.x, ey = o.y - t.y;
           const d = Math.hypot(ex, ey);
           if (d > STAND_REACH || d < 1e-3) continue;
@@ -152,6 +161,37 @@ function stands(trees: readonly TreePlacement[]): { crowd: Float32Array; openX: 
     openY[i] = a > 1e-3 ? -ay / a : 0;
   });
   return { crowd, openX, openY };
+}
+
+/**
+ * A tree's matrix, into `m` at `o`: deep in a wood taller and narrower; at
+ * its edge and alone broader, the crown leaning out over the open side (a
+ * shear, the foot kept). World = translate * shear * rotateY * scale, column by
+ * column as three keeps a matrix (`Matrix4.elements`).
+ */
+export function treeMatrixInto(item: TreePlacement, crowd: number, openX: number, openY: number, m: { [i: number]: number }, o: number): void {
+  const tall = item.size * (0.92 + 0.22 * crowd);
+  const wide = item.size * (1.12 - 0.3 * crowd) * (0.94 + ((item.seed * 5.3) % 1) * 0.12);
+  const lean = 0.22 * (1 - crowd) * Math.min(1, crowd * 4);
+  const sx = openX * lean, sz = -openY * lean;
+  const c = Math.cos(item.yaw), s = Math.sin(item.yaw);
+  m[o] = c * wide; m[o + 1] = 0; m[o + 2] = -s * wide; m[o + 3] = 0;
+  m[o + 4] = sx * tall; m[o + 5] = tall; m[o + 6] = sz * tall; m[o + 7] = 0;
+  m[o + 8] = s * wide; m[o + 9] = 0; m[o + 10] = c * wide; m[o + 11] = 0;
+  m[o + 12] = item.x; m[o + 13] = item.z; m[o + 14] = -item.y; m[o + 15] = 1;
+}
+
+/**
+ * A tree's own green, into `col` at `o` (it multiplies the model's linear
+ * colours, three's color_vertex): a little lighter or darker, and leaning
+ * yellow or blue, so a wood is many trees and not one copied.
+ */
+export function treeColourInto(item: TreePlacement, col: { [i: number]: number }, o: number): void {
+  const t = 0.9 + ((item.seed * 3.77) % 1) * 0.2;
+  const hue = ((item.seed * 1.3) % 1) - 0.5;
+  col[o] = t * (1 + hue * 0.16);
+  col[o + 1] = t;
+  col[o + 2] = t * (0.96 - hue * 0.12);
 }
 
 /**
@@ -216,29 +256,8 @@ export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTr
       const col = g.mesh.instanceColor!.array as Float32Array;
       indices.forEach((i, slot) => {
         const item = list[i]!;
-        const crowd = stand.crowd[i]!;
-        // Deep in a wood taller and narrower; at its edge and alone broader,
-        // the crown leaning out over the open side (a shear, the foot kept).
-        const tall = item.size * (0.92 + 0.22 * crowd);
-        const wide = item.size * (1.12 - 0.3 * crowd) * (0.94 + ((item.seed * 5.3) % 1) * 0.12);
-        const lean = 0.22 * (1 - crowd) * Math.min(1, crowd * 4);
-        const sx = stand.openX[i]! * lean, sz = -stand.openY[i]! * lean;
-        const c = Math.cos(item.yaw), s = Math.sin(item.yaw);
-        // World = translate * shear * rotateY * scale, column by column as
-        // three keeps a matrix (`Matrix4.elements`).
-        const o = slot * 16;
-        m[o] = c * wide; m[o + 1] = 0; m[o + 2] = -s * wide; m[o + 3] = 0;
-        m[o + 4] = sx * tall; m[o + 5] = tall; m[o + 6] = sz * tall; m[o + 7] = 0;
-        m[o + 8] = s * wide; m[o + 9] = 0; m[o + 10] = c * wide; m[o + 11] = 0;
-        m[o + 12] = item.x; m[o + 13] = item.z; m[o + 14] = -item.y; m[o + 15] = 1;
-        // Each tree its own green (it multiplies the model's linear colours,
-        // three's color_vertex): a little lighter or darker, and leaning
-        // yellow or blue, so a wood is many trees and not one copied.
-        const t = 0.9 + ((item.seed * 3.77) % 1) * 0.2;
-        const hue = ((item.seed * 1.3) % 1) - 0.5;
-        col[slot * 3] = t * (1 + hue * 0.16);
-        col[slot * 3 + 1] = t;
-        col[slot * 3 + 2] = t * (0.96 - hue * 0.12);
+        treeMatrixInto(item, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, m, slot * 16);
+        treeColourInto(item, col, slot * 3);
       });
       g.count = indices.length;
       g.mesh.count = g.count;

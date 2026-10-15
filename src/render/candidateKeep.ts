@@ -16,22 +16,22 @@ import { m } from '@world/units';
  * order of the whole map, and a building grown anywhere moved a stone elsewhere.
  */
 
-/** The places' cells, world units. */
-const CELL = m(64);
-const cellKey = (i: number, j: number): number => (i + 0x8000) * 0x10000 + (j + 0x8000);
-
-/** What a keep let stand: indices into the sweep's list (ascending), and the ground under each. */
-export interface Kept {
-  readonly idx: Int32Array;
-  readonly z: Float64Array;
-}
+/** The places' cells, world units: also the cells their drawing is kept in (`plantCells.ts`). */
+export const KEEP_CELL = m(64);
+const CELL = KEEP_CELL;
+/** A cell's key, from its column and row. */
+export const keepCellKey = (i: number, j: number): number => (i + 0x8000) * 0x10000 + (j + 0x8000);
+const cellKey = keepCellKey;
+/** A key's column and row. */
+export const keepCellOf = (key: number): readonly [number, number] => [Math.floor(key / 0x10000) - 0x8000, (key % 0x10000) - 0x8000];
 
 export class CandidateKeep<C extends { readonly x: number; readonly y: number }> {
   /** Per place: 1 standing, 0 not, -1 not tested yet. */
   private readonly standing: Int8Array;
   private readonly ground: Float64Array;
   private readonly cells = new Map<number, number[]>();
-  private keptNow: Kept | null = null;
+  /** The places whose standing or ground changed since the last `takeChanged`; null: every place (a first look). */
+  private changedNow: Set<number> | null = null;
 
   /** `test`: the ground under a place where it may stand, null where it may not. */
   constructor(readonly list: readonly C[], private readonly test: (c: C) => number | null) {
@@ -54,7 +54,7 @@ export class CandidateKeep<C extends { readonly x: number; readonly y: number }>
     const retest = (k: number): void => {
       const z = this.test(this.list[k]!);
       const now = z === null ? 0 : 1;
-      if (now !== this.standing[k] || (z !== null && z !== this.ground[k])) changed = true;
+      if (now !== this.standing[k] || (z !== null && z !== this.ground[k])) { changed = true; this.changedNow?.add(k); }
       this.standing[k] = now;
       if (z !== null) this.ground[k] = z;
     };
@@ -73,22 +73,31 @@ export class CandidateKeep<C extends { readonly x: number; readonly y: number }>
         }
       }
     }
-    if (changed) this.keptNow = null;
     return changed;
   }
 
-  /** The places standing, in the sweep's order, and their ground. */
-  kept(): Kept {
-    if (this.keptNow) return this.keptNow;
-    let n = 0;
-    for (let k = 0; k < this.list.length; k++) if (this.standing[k] === 1) n++;
-    const idx = new Int32Array(n), z = new Float64Array(n);
-    for (let k = 0, at = 0; k < this.list.length; k++) {
-      if (this.standing[k] !== 1) continue;
-      idx[at] = k;
-      z[at++] = this.ground[k]!;
-    }
-    this.keptNow = { idx, z };
-    return this.keptNow;
+  /**
+   * The cells whose places changed since the last call, and the call itself the new start; null:
+   * every cell (the first call after a sweep). What a drawing kept by cell draws again.
+   */
+  takeChangedCells(): Set<number> | null {
+    const changed = this.changedNow;
+    this.changedNow = new Set();
+    if (changed === null) return null;
+    const out = new Set<number>();
+    for (const k of changed) { const c = this.list[k]!; out.add(cellKey(Math.floor(c.x / CELL), Math.floor(c.y / CELL))); }
+    return out;
+  }
+
+  /** Every cell with a place in it. */
+  cellKeys(): IterableIterator<number> {
+    return this.cells.keys();
+  }
+
+  /** The places standing in a cell, and the ground under each. */
+  standingIn(key: number): { readonly c: C; readonly z: number }[] {
+    const out: { c: C; z: number }[] = [];
+    for (const k of this.cells.get(key) ?? []) if (this.standing[k] === 1) out.push({ c: this.list[k]!, z: this.ground[k]! });
+    return out;
   }
 }

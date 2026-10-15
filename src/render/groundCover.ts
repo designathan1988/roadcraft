@@ -249,7 +249,7 @@ export function createGroundCoverKit(): GroundCoverKit {
 }
 
 /** A stone's colour: warm grey with some brown and some moss-green ones. */
-function rockTint(item: CoverPlacement, out: Color): Color {
+export function rockTint(item: CoverPlacement, out: Color): Color {
   const t = (item.seed * 9.73) % 1;
   // The rock of the land it broke from: orange sandstone, near-black basalt.
   if (item.rock === 'sandstone') {
@@ -268,12 +268,44 @@ function rockTint(item: CoverPlacement, out: Color): Color {
 }
 
 /** A bush's colour: greens from olive to deep, a few going yellow. Linear. */
-function scrubTint(item: CoverPlacement, out: Color): Color {
+export function scrubTint(item: CoverPlacement, out: Color): Color {
   const t = (item.seed * 7.31) % 1;
   if (t < 0.45) return out.setRGB(0.08 + t * 0.05, 0.17 + t * 0.07, 0.03);
   if (t < 0.85) return out.setRGB(0.1, 0.2, 0.04);
   return out.setRGB(0.17, 0.2, 0.05);
 }
+
+/** How each kind of cover stands: sunk by a share of its height, tilted, and whether it stands straight (a tree). */
+export const COVER_STANCE = {
+  rocks: { sink: 0.12, tilt: 0.35, upright: false },
+  scrub: { sink: 0.05, tilt: 0.12, upright: false },
+  trees: { sink: 0, tilt: 0.05, upright: true },
+} as const;
+
+/** A cover's variant among `variants`, by its seed. */
+export const coverVariant = (item: CoverPlacement, variants: number): number => Math.min(variants - 1, Math.floor(item.seed * variants));
+
+/** One placement's matrix, into `out`: on its ground, turned, leaning a little, sized by its kind. */
+export function coverMatrixInto(item: CoverPlacement, sink: number, tilt: number, upright: boolean, out: Matrix4): Matrix4 {
+  const half = item.size / 2;
+  COVER_SCRATCH.position.set(item.x, item.z - half * sink, -item.y);
+  COVER_SCRATCH.rotation.setFromAxisAngle(COVER_UP, item.yaw);
+  COVER_SCRATCH.lean.setFromAxisAngle(COVER_SIDE, ((item.seed * 31.7) % 1 - 0.5) * tilt);
+  COVER_SCRATCH.rotation.multiply(COVER_SCRATCH.lean);
+  if (upright) {
+    // A tree keeps its proportions, a little narrower or broader.
+    const spread = 0.9 + ((item.seed * 5.3) % 1) * 0.25;
+    COVER_SCRATCH.scale.set(half * 2 * spread, half * 2, half * 2 * spread);
+  } else {
+    const squat = 0.75 + ((item.seed * 5.3) % 1) * 0.5;
+    COVER_SCRATCH.scale.set(half, half * squat, half * (0.8 + ((item.seed * 13.1) % 1) * 0.4));
+  }
+  return out.compose(COVER_SCRATCH.position, COVER_SCRATCH.rotation, COVER_SCRATCH.scale);
+}
+/** The axes a placement turns and leans about, and the pieces of its matrix, written by `coverMatrixInto` alone. */
+const COVER_UP = new Vector3(0, 1, 0);
+const COVER_SIDE = new Vector3(1, 0, 0);
+const COVER_SCRATCH = { position: new Vector3(), rotation: new Quaternion(), lean: new Quaternion(), scale: new Vector3() };
 
 function instanced(
   list: readonly CoverPlacement[],
@@ -289,13 +321,7 @@ function instanced(
   for (const item of list) byVariant[Math.min(byVariant.length - 1, Math.floor(item.seed * byVariant.length))]!.push(item);
   const meshes: InstancedMesh[] = [];
   const matrix = new Matrix4();
-  const position = new Vector3();
-  const rotation = new Quaternion();
-  const lean = new Quaternion();
-  const scale = new Vector3();
   const colour = new Color();
-  const up = new Vector3(0, 1, 0);
-  const side = new Vector3(1, 0, 0);
   byVariant.forEach((items, k) => {
     if (items.length === 0) return;
     const mesh = new InstancedMesh(geometries[k]!, material, items.length);
@@ -303,20 +329,7 @@ function instanced(
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     items.forEach((item, i) => {
-      const half = item.size / 2;
-      position.set(item.x, item.z - half * sink, -item.y);
-      rotation.setFromAxisAngle(up, item.yaw);
-      lean.setFromAxisAngle(side, ((item.seed * 31.7) % 1 - 0.5) * tilt);
-      rotation.multiply(lean);
-      if (upright) {
-        // A tree keeps its proportions, a little narrower or broader.
-        const spread = 0.9 + ((item.seed * 5.3) % 1) * 0.25;
-        scale.set(half * 2 * spread, half * 2, half * 2 * spread);
-      } else {
-        const squat = 0.75 + ((item.seed * 5.3) % 1) * 0.5;
-        scale.set(half, half * squat, half * (0.8 + ((item.seed * 13.1) % 1) * 0.4));
-      }
-      matrix.compose(position, rotation, scale);
+      coverMatrixInto(item, sink, tilt, upright, matrix);
       mesh.setMatrixAt(i, matrix);
       mesh.setColorAt(i, tint(item, colour));
     });
@@ -329,7 +342,7 @@ function instanced(
 }
 
 /** A tree's tint: its own colour is in its vertices; this only varies it a little. */
-function treeTint(item: CoverPlacement, out: Color): Color {
+export function treeTint(item: CoverPlacement, out: Color): Color {
   const seed = item.seed;
   const t = 0.86 + ((seed * 3.77) % 1) * 0.28;
   return out.setRGB(t * (0.97 + ((seed * 1.3) % 1) * 0.06), t, t * 0.96);
