@@ -2,6 +2,7 @@ import { normalizeAngle } from '@core/scalar';
 import { Ring, arcEdge, lineEdge, type RingEdge } from '@core/ring';
 import { type Vec2, add, angleOf, scale, sub } from '@core/vec2';
 import type { RoadDoc } from '../doc';
+import type { ElementItem } from '../elements';
 import type { NodeId } from '../ids';
 import type { PolylineCache } from '../geometry';
 import type { Network } from '../network';
@@ -162,11 +163,11 @@ export function clearBulbs(doc: RoadDoc, net: Network): number {
       if (inside(item) && doc.removeLandscape(item.id)) taken++;
     }
   }
-  // The elements are a list with no index (laid with the brush): one pass for every circle changed.
-  for (const item of [...doc.elements]) {
-    if (bulbs.some((bulb) => Math.hypot(item.x - bulb.node.x, item.y - bulb.node.y) < reach && pointInPolygon(item, bulb.poly))) {
-      taken += doc.removeElements(item.x, item.y, 1e-6, item.kind);
-    }
+  // The elements are a list with no index (laid with the brush): one pass for
+  // every circle changed, and those inside taken away together in one more.
+  const inside = new Set<ElementItem>();
+  for (const item of doc.elements) {
+    if (bulbs.some((bulb) => Math.hypot(item.x - bulb.node.x, item.y - bulb.node.y) < reach && pointInPolygon(item, bulb.poly))) inside.add(item);
   }
-  return taken;
+  return taken + doc.removeElementItems(inside);
 }

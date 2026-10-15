@@ -1162,10 +1162,9 @@ export class RoadDoc {
    */
   cutTrees(x: number, y: number, radius: number): void {
     const before = this.trees.length;
-    for (let i = this.trees.length - 1; i >= 0; i--) {
-      const t = this.trees[i]!;
-      if (Math.hypot(t.x - x, t.y - y) <= radius) this.trees.splice(i, 1);
-    }
+    // One pass, the kept moved down in order. DO NOT splice each one out: a
+    // stroke over a wood was trees x trees cut.
+    keepWhere(this.trees, (t) => Math.hypot(t.x - x, t.y - y) > radius);
     if (this.trees.length !== before) this.changes.record('trees', [circleRect({ x, y, radius })], { detail: `${before - this.trees.length} cut` });
     this.treeClearings.push({ x, y, radius });
     const gone = this.treeClearings.length > MAX_TREE_CLEARINGS ? this.treeClearings.shift() : undefined;
@@ -1199,13 +1198,20 @@ export class RoadDoc {
   /** Takes away the elements within `radius` of (x, y) - of one kind, or every kind (`kind` null). How many went. */
   removeElements(x: number, y: number, radius: number, kind: ElementKind | null): number {
     const before = this.elements.length;
-    for (let i = this.elements.length - 1; i >= 0; i--) {
-      const e = this.elements[i]!;
-      if ((kind === null || e.kind === kind) && Math.hypot(e.x - x, e.y - y) <= radius) this.elements.splice(i, 1);
-    }
+    keepWhere(this.elements, (e) => !((kind === null || e.kind === kind) && Math.hypot(e.x - x, e.y - y) <= radius));
     const gone = before - this.elements.length;
     if (gone > 0) {      this.changes.record('elements', [circleRect({ x, y, radius })]);
     }
+    return gone;
+  }
+
+  /** Takes away these elements (the very items), in one pass; how many went. */
+  removeElementItems(items: ReadonlySet<ElementItem>): number {
+    if (items.size === 0) return 0;
+    const before = this.elements.length;
+    keepWhere(this.elements, (e) => !items.has(e));
+    const gone = before - this.elements.length;
+    if (gone > 0) this.changes.record('elements', [elementsBox([...items])!]);
     return gone;
   }
 
@@ -2609,6 +2615,13 @@ function sameBarriers(a: RoadDoc, b: RoadDoc): boolean {
     }
   }
   return true;
+}
+
+/** Keeps in `list`, in order and in place, the items `keep` says; one pass. */
+function keepWhere<T>(list: T[], keep: (item: T) => boolean): void {
+  let at = 0;
+  for (const item of list) if (keep(item)) list[at++] = item;
+  list.length = at;
 }
 
 function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
