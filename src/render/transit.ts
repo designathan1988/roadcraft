@@ -1,4 +1,8 @@
-import { BoxGeometry, Color, DynamicDrawUsage, Group, InstancedMesh, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, type Frustum, Group, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D } from 'three';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
+import { CellFiling } from '@world/cells';
+import { Derived, type DerivedSpec } from '@world/derived';
+import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from './instanceRuns';
 export type { Box as TransitBox };
 
 import type { RoadDoc } from '@world/doc';
@@ -109,25 +113,29 @@ export function trackBoxes(points: readonly { x: number; y: number }[], mode: 't
   return out;
 }
 
-/** @rebuild Called when the transit's revision or the ground under it moved (`renderer.ts`). */
-export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => number,
-  pavedAt: (x: number, y: number) => number = () => NaN,
-  onRoad: (p: { x: number; y: number }) => boolean = () => false): TransitMeshes {
-  const group = new Group();
-  group.name = 'transit';
+/** Every kind of box the transport draws, by the store it is drawn in. */
+const VISIBLE = ['ballast', 'sleepers', 'rails', 'platforms', 'roofs', 'posts', 'glass', 'signs', 'halls'] as const;
+const XRAY = ['xTunnel', 'xBallast', 'xPlatforms', 'xSleepers', 'xRails', 'xRoof'] as const;
+type TransitParts = Record<(typeof VISIBLE)[number] | (typeof XRAY)[number], Box[]>;
+const emptyParts = (): TransitParts => Object.fromEntries([...VISIBLE, ...XRAY].map((k) => [k, []])) as unknown as TransitParts;
+type TransitStop = RoadDoc['transit']['stops'][number];
+type TransitTrack = RoadDoc['transit']['tracks'][number];
+
+/** A track's boxes: the train's on the ground, the metro's in its cut. */
+function trackParts(track: TransitTrack, groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number, out: TransitParts): void {
+  const laid = trackBoxes(track.points, track.mode, groundAt, pavedAt);
+  if (track.mode === 'train') { out.ballast.push(...laid.ballast); out.sleepers.push(...laid.sleepers); out.rails.push(...laid.rails); }
+  else { out.xTunnel.push(...laid.tunnel); out.xRoof.push(...laid.roof); out.xBallast.push(...laid.ballast); out.xSleepers.push(...laid.sleepers); out.xRails.push(...laid.rails); }
+}
+
+/** One stop's boxes (a station, a metro entrance with its hall below, a bus stop), into `out`. */
+function stopParts(doc: RoadDoc, stop: TransitStop, groundAt: (x: number, y: number) => number,
+  onRoad: (p: { x: number; y: number }) => boolean, out: TransitParts): void {
   const t = doc.transit;
-  const ballast: Box[] = [], sleepers: Box[] = [], rails: Box[] = [], platforms: Box[] = [], roofs: Box[] = [],
-    posts: Box[] = [], signs: Box[] = [], glass: Box[] = [];
-  // The metro's, seen as a cut through the ground (`setXray`).
-  const xTunnel: Box[] = [], xRoof: Box[] = [], xBallast: Box[] = [], xSleepers: Box[] = [], xRails: Box[] = [], xPlatforms: Box[] = [];
-  for (const track of t.tracks) {
-    const laid = trackBoxes(track.points, track.mode, groundAt, pavedAt);
-    if (track.mode === 'train') { ballast.push(...laid.ballast); sleepers.push(...laid.sleepers); rails.push(...laid.rails); }
-    else { xTunnel.push(...laid.tunnel); xRoof.push(...laid.roof); xBallast.push(...laid.ballast); xSleepers.push(...laid.sleepers); xRails.push(...laid.rails); }
-  }
-  const halls: Box[] = [];
-  const colourAt = (stop: number): string => t.lines.find((l) => l.stops.includes(stop))?.colour ?? '#2f7de1';
-  for (let s of t.stops) {
+  const { platforms, roofs, posts, signs, glass, halls, xTunnel, xPlatforms } = out;
+  let s = stop;
+  const colourAt = (id: number): string => t.lines.find((l) => l.stops.includes(id))?.colour ?? '#2f7de1';
+
     const z = groundAt(s.x, s.y);
     const colour = colourAt(s.id);
     if (s.mode === 'train') {
@@ -160,7 +168,7 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
       signs.push({ x: hx + nx * m(5.3), y: hy + ny * m(5.3), z: z + m(5), yaw, length: m(6), width: m(0.15), height: m(1), colour });
       // A passage from the hall onto the platform.
       platforms.push({ x: px + nx * m(3.2), y: py + ny * m(3.2), z, yaw, length: m(6), width: m(2.4), height: m(1.0) });
-      continue;
+      return;
     }
     if (s.mode === 'metro') {
       // The way down: a glazed entrance with the sign of the line - off the
@@ -205,7 +213,7 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
       roofs.push({ x: ex, y: ey, z: ez + m(2.6), yaw, length: m(4.4), width: m(3), height: m(0.2) });
       posts.push({ x: ex + ux * m(2.6), y: ey + uy * m(2.6), z: ez, yaw, length: m(0.12), width: m(0.12), height: m(3.4) });
       signs.push({ x: ex + ux * m(2.6), y: ey + uy * m(2.6), z: ez + m(3.4), yaw, length: m(0.9), width: m(0.9), height: m(0.9), colour });
-      continue;
+      return;
     }
     // A bus stop: a shelter on two posts along the street, its glass at the
     // back (away from the road), a pole with the sign at its end.
@@ -233,11 +241,168 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
     glass.push({ x: s.x + bx * m(0.75), y: s.y + by * m(0.75), z: z + m(0.15), yaw, length: long, width: m(0.06), height: m(2.1) });
     posts.push({ x: s.x + ux * (long / 2 + m(0.6)), y: s.y + uy * (long / 2 + m(0.6)), z: z + m(0.15), yaw, length: m(0.08), width: m(0.08), height: m(2.8) });
     signs.push({ x: s.x + ux * (long / 2 + m(0.6)), y: s.y + uy * (long / 2 + m(0.6)), z: z + m(2.6), yaw, length: m(0.6), width: m(0.05), height: m(0.6), colour });
+}
+
+interface TransitSource {
+  readonly changes: ChangeJournal;
+  readonly doc: RoadDoc;
+  readonly groundAt: (x: number, y: number) => number;
+  readonly pavedAt: (x: number, y: number) => number;
+  readonly onRoad: (p: { x: number; y: number }) => boolean;
+}
+/** A track's or a stop's runs (the visible ones, the cut's) and the box it reads. */
+interface TransitPlace { readonly visible: Run; readonly xray: Run; readonly box: ChangeRect; readonly boxes: number }
+
+/** How far round a stop its boxes and what they read reach (a station's 60 m platform and hall, an entrance's search). */
+const STOP_READS = m(100);
+/** How far round a track's points it reads the ground and the paving. */
+const TRACK_READS = m(6);
+const trackKey = (id: number): number => id * 2;
+const stopKey = (id: number): number => id * 2 + 1;
+
+/** The transport as a product of the diary, item by item: a track (`trackKey`), a stop (`stopKey`). */
+class TransitProduct implements DerivedSpec<TransitSource, number, TransitPlace> {
+  readonly name = 'transit';
+  readonly kinds: readonly ChangeKind[] = ['transit', 'terrain', 'elevation', 'ground', 'roads', 'buildings'];
+  readonly byId = false;
+  private readonly filing = new CellFiling<number, TransitPlace>();
+
+  constructor(private readonly visible: readonly RunStore[], private readonly xray: readonly RunStore[]) {}
+
+  /** @rebuild Every track and stop: read only when everything changed (a load, the diary forgotten). */
+  allKeys(source: TransitSource): Iterable<number> {
+    const out: number[] = [];
+    for (const track of source.doc.transit.tracks) out.push(trackKey(track.id));
+    for (const stop of source.doc.transit.stops) out.push(stopKey(stop.id));
+    for (const id of this.filing.ids()) out.push(id);
+    return out;
   }
 
+  dirty(change: Change, out: Set<number>, source: TransitSource): void {
+    if (change.rects === null) {
+      for (const key of this.allKeys(source)) out.add(key);
+      return;
+    }
+    for (const r of change.rects) for (const key of this.filing.idsMeeting(r)) out.add(key);
+    // A change of the transport itself may make a new track or stop: the transport's own items in its rectangles
+    // (a handful on a map; the other kinds reach only what stands, through the filing).
+    if (change.kind !== 'transit') return;
+    const meets = (x0: number, y0: number, x1: number, y1: number): boolean => change.rects!.some((r) => r[0] <= x1 && r[2] >= x0 && r[1] <= y1 && r[3] >= y0);
+    for (const track of source.doc.transit.tracks) {
+      const box = pointsBox(track.points, TRACK_READS);
+      if (box && meets(box[0], box[1], box[2], box[3])) out.add(trackKey(track.id));
+    }
+    for (const stop of source.doc.transit.stops) if (meets(stop.x - STOP_READS, stop.y - STOP_READS, stop.x + STOP_READS, stop.y + STOP_READS)) out.add(stopKey(stop.id));
+  }
+
+  compute(key: number, source: TransitSource): TransitPlace | undefined {
+    const id = Math.floor(key / 2);
+    const parts = emptyParts();
+    let box: ChangeRect | null;
+    if (key % 2 === 0) {
+      const track = source.doc.transit.tracks.find((k) => k.id === id);
+      if (!track) return undefined;
+      trackParts(track, source.groundAt, source.pavedAt, parts);
+      box = pointsBox(track.points, TRACK_READS);
+    } else {
+      const stop = source.doc.transit.stops.find((k) => k.id === id);
+      if (!stop) return undefined;
+      stopParts(source.doc, stop, source.groundAt, source.onRoad, parts);
+      box = [stop.x - STOP_READS, stop.y - STOP_READS, stop.x + STOP_READS, stop.y + STOP_READS];
+    }
+    if (!box) return undefined;
+    const o = new Object3D();
+    const c = new Color();
+    const runOf = (kinds: readonly (keyof TransitParts)[], stores: readonly RunStore[]): { run: Run; boxes: number } => {
+      const builder = new RunBuilder(stores);
+      let boxes = 0;
+      kinds.forEach((kind, store) => {
+        for (const b of parts[kind]) {
+          o.position.set(b.x, b.z + b.height / 2, -b.y);
+          o.rotation.set(0, b.yaw, 0);
+          o.scale.set(b.length, b.height, b.width);
+          o.updateMatrix();
+          builder.add(store, o.matrix.elements, Math.max(b.length, b.height, b.width), stores[store]!.tinted ? c.set(b.colour ?? '#ffffff') : undefined);
+          boxes++;
+        }
+      });
+      return { run: builder.build(), boxes };
+    };
+    const shown = runOf(VISIBLE, this.visible), cut = runOf(XRAY, this.xray);
+    return { visible: shown.run, xray: cut.run, box, boxes: shown.boxes };
+  }
+
+  equals(a: TransitPlace, b: TransitPlace): boolean {
+    return a.box.every((v, i) => v === b.box[i]) && sameRun(a.visible, b.visible) && sameRun(a.xray, b.xray);
+  }
+
+  changed(key: number, _before: TransitPlace | undefined, after: TransitPlace | undefined): void {
+    if (after === undefined) this.filing.remove(key);
+    else this.filing.file(key, after, after.box);
+  }
+}
+
+/** The box round some points, grown by `pad`; null for none. */
+function pointsBox(points: readonly { readonly x: number; readonly y: number }[], pad: number): ChangeRect | null {
+  if (!points.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of points) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+  return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+}
+
+/**
+ * The transport kept item by item from the diary (`TransitProduct`): a track or a stop made again only
+ * when it changed or what it stands on did, each a run of the layer's instanced stores. DO NOT build the
+ * whole transport again on its revision or a change of the ground under any piece of it.
+ */
+export function createTransit(): TransitMeshes & {
+  /** Brings the tracks and stops up to the diary; the items made again. */
+  sync(doc: RoadDoc, groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number, onRoad: (p: { x: number; y: number }) => boolean): number;
+  /** The parts the camera can see, every frame. */
+  cull(frustum: Frustum, view: Matrix4): void;
+} {
+  const group = new Group();
+  group.name = 'transit';
   const unit = new BoxGeometry(1, 1, 1);
   const material = (colour: number, roughness: number, metalness = 0, opacity = 1): MeshStandardMaterial =>
     sharedMaterial(colour, roughness, metalness, opacity);
+  const shown = (name: string, mat: MeshStandardMaterial, tinted = false): RunStore =>
+    ({ name, geometry: unit, material: mat, castShadow: true, receiveShadow: true, tinted, cards: false });
+  const visibleStores: RunStore[] = [
+    shown('transit-ballast', material(0x7d776e, 0.95)),
+    shown('transit-sleepers', material(0x5b4636, 0.9)),
+    shown('transit-rails', material(0x9aa0a6, 0.35, 0.8)),
+    shown('transit-platforms', material(0xbdb6aa, 0.9)),
+    shown('transit-roofs', material(0x3f4a52, 0.6, 0.2)),
+    shown('transit-posts', material(0x2e3438, 0.5, 0.6)),
+    shown('transit-glass', material(0xa9c7d6, 0.1, 0.1, 0.45)),
+    shown('transit-signs', material(0xffffff, 0.5), true),
+    shown('transit-halls', material(0xc9b79a, 0.85)),
+  ];
+  // The metro in its cut: drawn through the ground (no depth test against it)
+  // in its own order, the bore's concrete a little see-through so the tracks
+  // read inside; shown only while the transit tool is on.
+  const through = (name: string, colour: number, opacity: number, order: number): RunStore => {
+    const mat = sharedMaterial(colour, 0.8, 0, opacity, true, false, order);
+    return { name, geometry: unit, material: mat, castShadow: false, receiveShadow: false, tinted: false, cards: false, renderOrder: 20 + order };
+  };
+  const xrayStores: RunStore[] = [
+    through('metro-bore', 0x8d8a84, 0.55, 0),
+    through('metro-ballast', 0x6d675e, 0.95, 1),
+    through('metro-platforms', 0xd6cfc2, 0.95, 1),
+    through('metro-sleepers', 0x5b4636, 1, 2),
+    through('metro-rails', 0xb8bec4, 1, 3),
+    through('metro-roof', 0x8d8a84, 0.18, 4),
+  ];
+  const visible = createInstanceRuns('transit-pieces', visibleStores, m(8));
+  const xray = createInstanceRuns('transit-xray', xrayStores, 0);
+  xray.group.visible = false;
+  group.add(visible.group, xray.group);
+  const product = new Derived(new TransitProduct(visibleStores, xrayStores));
+  const drawn = new Map<number, TransitPlace>();
+  let boxes = 0;
+
+  // The trains: one box per car, moved each frame, in their line's colour.
   const o = new Object3D();
   const place = (b: Box): void => {
     o.position.set(b.x, b.z + b.height / 2, -b.y);
@@ -245,61 +410,6 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
     o.scale.set(b.length, b.height, b.width);
     o.updateMatrix();
   };
-  let triangles = 0;
-  const add = (name: string, boxes: readonly Box[], mat: MeshStandardMaterial, coloured = false): void => {
-    if (boxes.length === 0) return;
-    const mesh = new InstancedMesh(unit, mat, boxes.length);
-    mesh.name = name;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    const c = new Color();
-    boxes.forEach((b, i) => {
-      place(b);
-      mesh.setMatrixAt(i, o.matrix);
-      if (coloured) mesh.setColorAt(i, c.set(b.colour ?? '#ffffff'));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    group.add(mesh);
-    triangles += boxes.length * 12;
-  };
-  add('transit-ballast', ballast, material(0x7d776e, 0.95));
-  add('transit-sleepers', sleepers, material(0x5b4636, 0.9));
-  add('transit-rails', rails, material(0x9aa0a6, 0.35, 0.8));
-  add('transit-platforms', platforms, material(0xbdb6aa, 0.9));
-  add('transit-roofs', roofs, material(0x3f4a52, 0.6, 0.2));
-  add('transit-posts', posts, material(0x2e3438, 0.5, 0.6));
-  add('transit-glass', glass, material(0xa9c7d6, 0.1, 0.1, 0.45));
-  add('transit-signs', signs, material(0xffffff, 0.5), true);
-  add('transit-halls', halls, material(0xc9b79a, 0.85));
-
-  // The metro in its cut: drawn through the ground (no depth test against it)
-  // in its own order, the bore's concrete a little see-through so the tracks
-  // read inside; shown only while the transit tool is on.
-  const xray = new Group();
-  xray.name = 'transit-xray';
-  xray.visible = false;
-  const through = (colour: number, opacity: number, order: number): MeshStandardMaterial =>
-    sharedMaterial(colour, 0.8, 0, opacity, true, false, order);
-  const addThrough = (name: string, boxes: readonly Box[], mat: MeshStandardMaterial): void => {
-    if (!boxes.length) return;
-    const mesh = new InstancedMesh(unit, mat, boxes.length);
-    mesh.name = name;
-    mesh.renderOrder = 20 + (mat.userData['order'] as number);
-    boxes.forEach((b, i) => { place(b); mesh.setMatrixAt(i, o.matrix); });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.frustumCulled = false;
-    xray.add(mesh);
-  };
-  addThrough('metro-bore', xTunnel, through(0x8d8a84, 0.55, 0));
-  addThrough('metro-ballast', xBallast, through(0x6d675e, 0.95, 1));
-  addThrough('metro-platforms', xPlatforms, through(0xd6cfc2, 0.95, 1));
-  addThrough('metro-sleepers', xSleepers, through(0x5b4636, 1, 2));
-  addThrough('metro-rails', xRails, through(0xb8bec4, 1, 3));
-  addThrough('metro-roof', xRoof, through(0x8d8a84, 0.18, 4));
-  group.add(xray);
-
-  // The trains: one box per car, moved each frame, in their line's colour.
   const cars = new InstancedMesh(unit, material(0xffffff, 0.45, 0.3), MAX_CARS);
   cars.name = 'transit-trains';
   cars.castShadow = true;
@@ -313,8 +423,27 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
   const lineColours = new Map<string, Color>();
   return {
     group,
-    setXray(on) { xray.visible = on; },
-    triangles,
+    get triangles() { return boxes * 12; },
+    setXray(on) { xray.group.visible = on; },
+    sync(doc, groundAt, pavedAt, onRoad) {
+      const source: TransitSource = { changes: doc.changes, doc, groundAt, pavedAt, onRoad };
+      const goneShown: Run[] = [], cameShown: Run[] = [], goneCut: Run[] = [], cameCut: Run[] = [];
+      for (const key of product.refresh(source)) {
+        const was = drawn.get(key);
+        if (was) { goneShown.push(was.visible); goneCut.push(was.xray); boxes -= was.boxes; drawn.delete(key); }
+        const now = product.get(key);
+        if (now) { cameShown.push(now.visible); cameCut.push(now.xray); boxes += now.boxes; drawn.set(key, now); }
+      }
+      if (goneShown.length || cameShown.length) {
+        visible.update({ removed: goneShown, added: cameShown });
+        xray.update({ removed: goneCut, added: cameCut });
+      }
+      return product.work.last;
+    },
+    cull(frustum, view) {
+      visible.cull(frustum, view);
+      if (xray.group.visible) xray.cull(frustum, view);
+    },
     update(trains, ground) {
       let n = 0;
       for (const train of trains) {
@@ -346,11 +475,11 @@ export function buildTransit(doc: RoadDoc, groundAt: (x: number, y: number) => n
       }
     },
     dispose() {
-      // Each instanced mesh's own buffers (`instanceMatrix`, `instanceColor`)
-      // with the box: freeing the box alone left them on the GPU at every
-      // rebuild of the transport (`WebGLObjects` frees them on the mesh's `dispose`).
-      group.traverse((object) => { if ((object as InstancedMesh).isInstancedMesh) (object as InstancedMesh).dispose(); });
+      visible.dispose();
+      xray.dispose();
+      cars.dispose();
       unit.dispose();
+      drawn.clear();
     },
   };
 }

@@ -88,7 +88,7 @@ import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { createBarriers } from './barriers';
-import { buildTrackPreview, buildTransit, createTrackPreview, type TrackPreview, type TransitMeshes } from './transit';
+import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -128,7 +128,7 @@ import { refillArrays } from './mesh/gpuOnly';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
-import { GroundDependant, type GroundRecord, type Rect, rectAround, unionRect } from './groundChanges';
+import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, buildGroundCover, createGroundCoverKit, type CoverPlacement, type ForestSpecies, type GroundCover, type TreePlacement } from './groundCover';
 import { clearingIndex } from '@world/trees';
 import { natureDensity } from './natureNoise';
@@ -468,7 +468,7 @@ export function createSceneRenderer(
       if (root === world || root === buildings.group || root.name === 'traffic-signals' || stillRoots.has(root)) continue;
       if (castsInto(root)) return true;
     }
-    return transit !== null && castsInto(transit.group);
+    return castsInto(transit.group);
   };
   /** The ground and its grass, which never move (`movingCasters`). */
   const stillRoots = new Set<Object3D>();
@@ -726,32 +726,8 @@ export function createSceneRenderer(
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
   const barriers = createBarriers();
-  /**
-   * The rectangles a run of points stands on, piece by piece, grown by `pad`:
-   * a long diagonal wall or track has a box over half the map, and every
-   * street drawn in it rebuilt the whole layer.
-   */
-  const piecesOf = (points: readonly { readonly x: number; readonly y: number }[], pad: number): Rect[] => {
-    const out: Rect[] = [];
-    if (points.length === 1) out.push(rectAround(points, pad)!);
-    for (let i = 1; i < points.length; i++) out.push(rectAround([points[i - 1]!, points[i]!], pad)!);
-    return out;
-  };
-  /** Public transport (`transit.ts`), and the state it was built for. */
-  let transit: TransitMeshes | null = null;
-  /** Where the transport stands - its stops, stations and tracks, a metro entrance's search round them - piece by piece, by its revision. */
-  let transitAreaFor = -1;
-  let transitArea: Rect[] = [];
-  const transitAreaOf = (doc: RoadDoc): Rect[] => {
-    if (transitAreaFor !== doc.transitRevision) {
-      transitAreaFor = doc.transitRevision;
-      transitArea = [
-        ...doc.transit.stops.flatMap((stop) => piecesOf([stop], m(40))),
-        ...doc.transit.tracks.flatMap((track) => piecesOf(track.points, m(40))),
-      ];
-    }
-    return transitArea;
-  };
+  /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
+  const transit = createTransit();
   let elevation: RoadElevation | null = null;
   /** Each rewrite of the drawn ground by the land (`terrain.update`), and the highest corner read after one (`landTop`). */
   let landVersion = 0;
@@ -1199,9 +1175,6 @@ export function createSceneRenderer(
       return groundVersion;
     },
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
-  };
-  const onGround = {
-    transit: new GroundDependant(groundChanges),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
@@ -2599,7 +2572,7 @@ export function createSceneRenderer(
     forgetRuin(id) { fx?.forgetRuin(id); },
     setTransitXray(on) {
       transitXray = on;
-      transit?.setXray(on);
+      transit.setXray(on);
     },
     setTransitPreview(preview) {
       const key = preview ? `${preview.mode}:${preview.points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(';')}` : '';
@@ -2770,26 +2743,21 @@ export function createSceneRenderer(
         builtTriangles += barriers.triangles - before;
       }
       // Public transport: tracks, stations, stops (`transit.ts`), on its own revision.
-      if (groundSettled && onGround.transit.stale(String(net.doc.transitRevision), transitAreaOf(net.doc))) {
-        if (transit) {
-          builtTriangles -= transit.triangles;
-          world.remove(transit.group);
-          transit.dispose();
-        }
+      // Only the tracks and stops the diary says changed, or whose ground, roads or buildings did
+      // (`transit.ts`). DO NOT build the whole transport again on its revision or the ground under it.
+      if (groundSettled) {
+        if (!transit.group.parent) { world.add(transit.group); transit.setXray(transitXray); }
+        const before = transit.triangles;
         // A metro entrance stands off the streets and out of the buildings:
-        // their footprints read only if an entrance asks.
-        // The buildings at the point only (`BuildingStore.near`): DO NOT take every
-        // building of the town's footprints for one entrance.
-        transit = buildTransit(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
+        // the buildings at the point only (`BuildingStore.near`).
+        transit.sync(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
           if (onCarriageway(net, p)) return true;
           for (const b of net.doc.buildings.near(p.x, p.y, p.x, p.y)) {
             if (solidFootprints(b).some((ring) => pointInPolygon(p, ring))) return true;
           }
           return false;
         });
-        transit.setXray(transitXray);
-        world.add(transit.group);
-        builtTriangles += transit.triangles;
+        builtTriangles += transit.triangles - before;
       }
       // Each building's plants (`gardenLists.ts`), placed again only when some changed.
       const plants = plantLists.update(net.doc.buildings, groundSettled);
@@ -3160,8 +3128,9 @@ export function createSceneRenderer(
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);
+      transit.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
-      transit?.update(sim.city.transit.trains(), terrain.renderedHeightAt);
+      transit.update(sim.city.transit.trains(), terrain.renderedHeightAt);
       agents.sync(sim, alpha, detailed, rig.viewport.zoom, {
         pedestrianDetail: quality.pedestrianDetail,
         pedestrianVisible,
@@ -3493,7 +3462,7 @@ export function createSceneRenderer(
       exhaust.dispose();
       wear.dispose();
       barriers.dispose();
-      transit?.dispose();
+      transit.dispose();
       transitPreview?.dispose();
       polePreview?.dispose();
       utilities?.dispose();
