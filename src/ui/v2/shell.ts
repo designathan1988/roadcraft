@@ -590,7 +590,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   ];
   const syncInside = (): void => {
     if (insideBar.hidden === inside.on) insideBar.hidden = !inside.on;
-    const level = inside.level === 0 ? t('inside.ground') : `${inside.level + 1}º`;
+    // The dictionary's own floor names (Térreo, 1º andar; Ground, Floor 1). DO NOT
+    // number it here: `level + 1` named the floor above the ground '2º'.
+    const level = inside.level === 0 ? t('inside.ground') : t('inside.floor', { n: inside.level });
     if (insideLevelEl.textContent !== level) insideLevelEl.textContent = level;
   };
   syncInside();

@@ -26,7 +26,6 @@ import { buildFromReference } from '@editor/fromReference';
 import { buildingBounds } from '@world/buildings/geometry';
 import { initBuilderWorkspace, type BuilderActions, type BuilderState } from '@ui/builder/workspace';
 import { formatDecimal, plural, t } from '@ui/i18n';
-import { createInsideBar } from '@ui/insideBar';
 
 /**
  * The building tool's share of the composition root.
@@ -141,22 +140,14 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   let gridVisible = false;
   let hideOthers = false;
   let lastHint = '';
-  /** See inside, for the whole city: on or off, and the floor seen. */
   // See inside: one building, the one clicked, cut open at a floor.
   const seeInside: { on: boolean; level: number; target: BuildingId | null } = { on: false, level: 0, target: null };
-  // The floors of the building open, from the game's own interface (`ui/insideBar.ts`).
-  const insideBar = createInsideBar({
-    down: () => { seeInside.level = Math.max(0, seeInside.level - 1); tellInside(); deps.requestDraw(); },
-    up: () => {
-      const b = seeInside.target !== null ? doc.buildings.get(seeInside.target) : undefined;
-      seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 60, seeInside.level + 1);
-      tellInside(); deps.requestDraw();
-    },
-    close: () => { seeInside.on = false; seeInside.target = null; tellInside(); deps.requestDraw(); },
-  });
-  /** See inside shown as it now is: on the floating bar and in the interface's own (`workspace.onInside`). */
+  /**
+   * See inside shown as it now is, in the interface's top bar (`workspace.onInside`).
+   * DO NOT add a second bar for it: a floating one (`ui/insideBar.ts`) stood beside
+   * the top bar's, numbering the same floor '1º andar' there and '2º' here.
+   */
   function tellInside(): void {
-    insideBar.show(seeInside);
     workspace.showInside(seeInside);
   }
   /** What a drawn shape does: new building, joined block, block on the roof, cut. */
@@ -755,8 +746,14 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           const { w, h } = deps.size();
           seeInside.target = tool.buildingAt({ x: w / 2, y: h / 2 });
         }
+        // Switched off: the building is let go, so the next switch-on opens the one in view.
+        if (!seeInside.on) seeInside.target = null;
       }
-      else if (command === 'up') seeInside.level = Math.min(60, seeInside.level + 1);
+      else if (command === 'up') {
+        // No higher than the open building's top floor.
+        const b = seeInside.target !== null ? doc.buildings.get(seeInside.target) : undefined;
+        seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 60, seeInside.level + 1);
+      }
       else seeInside.level = Math.max(0, seeInside.level - 1);
       tellInside();
       deps.requestDraw();

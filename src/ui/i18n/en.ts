@@ -1045,7 +1045,6 @@ export const EN: Dictionary = {
   'inside.down': 'Floor below',
   'inside.up': 'Floor above',
   'inside.ground': 'Ground',
-  'inside.close': 'Close the inside view',
   'inside.floor': 'Floor {n}',
   'building.fn.house': 'House',
   'building.fn.townhouse': 'Townhouse',
