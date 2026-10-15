@@ -810,6 +810,16 @@ export function createSceneRenderer(
   const roadTiles = new RoadTilePool();
   /** The job was started in this frame (`pumpWorld` waits for the next). */
   let worldJobFresh = false;
+  /**
+   * The job has not shaped its ground yet (`worldSteps`, up to its blocks or
+   * the whole map): the sites grown meanwhile are graded by its own steps
+   * (`shapeBlocksSteps`). Once its ground is shaped the frames grade them
+   * again (`draw`), while the rest of the job (the road tiles, seconds of a
+   * generated city) goes on. DO NOT hold the grading for the whole job: the
+   * buildings a city grew meanwhile, thousands, were graded in the frame the
+   * job ended (10 s, 2026-10-15).
+   */
+  let worldJobGround = false;
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
   let openingSince: number | null = null;
@@ -1727,6 +1737,7 @@ export function createSceneRenderer(
     // ran (2026-10-15).
     worldJob = worldSteps(net, local ? blocks : null, started, true);
     worldJobFresh = true;
+    worldJobGround = true;
   };
 
   /**
@@ -1739,6 +1750,7 @@ export function createSceneRenderer(
     if (blocks === null) shapeGround(net);
     else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
     pendingBlocks = [];
+    worldJobGround = false;
     yield;
     // The tiles kept from the last session, read while the game started: a
     // sliced build waits for them a little (never an edit's frame spinning).
@@ -2710,10 +2722,11 @@ export function createSceneRenderer(
       // Only the ground round the sites that changed is graded again (growing
       // a building re-graded the whole map and every platform: a hitch for
       // every building the zones grew, the profile of 2026-10-05).
-      // While a road edit is prepared in slices its steps grade the sites (`shapeBlocksSteps`).
+      // While a road edit's job is shaping its ground its steps grade the sites (`shapeBlocksSteps`);
+      // after that, the frames do, the job's road tiles still being made (`worldJobGround`).
       // Each site on its own (`changedSites`): the buildings a frame of a generated city grew, wherever
       // they stand, cut and fill the ground round each of them, not the box round them all.
-      if (!worldJob && gradedFor !== net.doc.buildings.revision) {
+      if (!(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
         if (changed) shapeGround(net, changed.map(terrainRegion), true);
