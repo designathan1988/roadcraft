@@ -47,8 +47,9 @@ export function commitBlockGrid(
   doc: RoadDoc, net: Network, centre: Vec2, grid: BlockGrid, type: number, lanes: number | null, parking?: SegmentParking,
 ): number {
   let laid = 0;
+  // `net` is built for `doc` (the caller's is: every edit rebuilds it), and
+  // each line laid hands it back current (`Network.adopt` in `commitRoadPath`).
   for (const [a, b] of blockGridLines(centre, grid)) {
-    if (net.revision !== doc.revision) net.rebuild();
     // Ends join what is already there (an earlier line, an existing street).
     const anchor = (p: Vec2): Anchor => {
       const hit = findAnchor(doc, net, p, 4);
