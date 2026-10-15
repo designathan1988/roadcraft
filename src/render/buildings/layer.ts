@@ -6,7 +6,7 @@ import { buildingBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
-import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
+import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells, watchedCells,
   STREAM_AHEAD, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
@@ -17,124 +17,11 @@ import { createMassCells } from './massCells';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { CellRequests, sameEntries } from './cellRequests';
+import type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerApi';
+
+export type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerApi';
 import type { CellEntry, ChunkSummary } from './cellWork';
 
-/**
- * The buildings layer: the stored buildings and the editor's preview, each rebuilt only when what it
- * depends on moves (CLAUDE.md (Execution flow)). The stored buildings depend on their changes in the
- * diary (`townIndex.ts`), on the ground (`groundKey`, `render/groundChanges.ts`) and on which one the
- * preview stands in for; a building samples its ground again only when `groundTouched` says a change
- * reached it. The preview depends on its own serial.
- *
- * HLOD WITH STREAMING: a cell's detail (`BATCH_CELL`) exists only while the cell is drawn near by the
- * error on the screen (`massCells.ts`); far, only its masses stand. A cell coming near is asked of the
- * cell workers (`cellRequests.ts`), sent to the GPU when it lands and only then shown, whole; drawn far,
- * its meshes go at once, its chunks as the workers' cache allows (the far level's own margin,
- * `massCells.ts` HYSTERESIS, keeps a cell at the edge from going and coming; Cesium unloads the tiles
- * not selected the frame before, `trimLoadedTiles`). Unreal's World Partition HLOD, 3D Tiles' REPLACE
- * refinement. DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail
- * for a while (it was ten seconds, `RELEASE_FRAMES`): every view the camera passed through stayed on
- * the GPU with the one it looked at (two close views of a street, GL_OUT_OF_MEMORY, 2026-10-14).
- *
- * THE CELLS ARE MADE IN WORKERS (`cellWork.ts`): the page sends each building's record and ground and gets
- * the cell's batches back as arrays. DO NOT emit or join buildings here: it was most of a big city's lost
- * frames (11.6 of 114 s in the 2,560 m city, frames of up to 1.4 s, 2026-10-14). A building asked for at
- * once (`chunkOf`, a ruin) and the preview are the only ones emitted on the page.
- */
-export interface BuildingPreviewInput {
-  readonly building: Building;
-  readonly valid: boolean;
-  readonly hides: BuildingId | null;
-  readonly serial: number;
-  /** Drawn in the building's own materials, not as a ghost (the interior view). */
-  readonly solid?: boolean;
-}
-
-export interface BuildingLayer {
-  readonly group: Group;
-  readonly triangles: number;
-  /** Bumped whenever the stored buildings are rebuilt. */
-  readonly version: number;
-  /** A change is still being made: masses or near cells asked of the workers and not come. */
-  readonly pending: boolean;
-  /**
-   * Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`). Read by
-   * nothing here any more: the layer makes nothing a slice a frame (the cells and their masses come
-   * from the workers).
-   */
-  hidden: boolean;
-  /**
-   * Rebuilds what is stale. Returns true if the stored buildings were rebuilt.
-   * `pavedAt` is the paving (footways, carriageways) entrances open onto.
-   */
-  update(doc: RoadDoc, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt, naturalAt?: GroundAt,
-    groundTouched?: (b: Building, sinceKey: string) => boolean): boolean;
-  setPreview(preview: BuildingPreviewInput | null): void;
-  /**
-   * "See inside": every building within `radius` of (x, y) is drawn cut open
-   * at `level`, its rooms and furniture showing; null draws them whole.
-   */
-  setCutaway(spec: CutawaySpec | null): void;
-  /** Windows lit from inside at night, as many as are awake at `hour` (see `BuildingKit.setNight`). */
-  setNight(dark: number, hour?: number): void;
-  /** From afar (true) the frames and railings are drawn by their street faces only. */
-  setFar(far: boolean): void;
-  /** Thin facade parts stop casting shadows when their shadow width is subpixel. */
-  setShadowFar(far: boolean): void;
-  /**
-   * The frames, railings and louvres of each cell: drawn while its buildings
-   * are (their far level decides, `levelOfDetail`, by the error on the
-   * screen), whole where a frame's side spans enough pixels and by their
-   * street faces beyond. The eye and the screen as `levelOfDetail` takes them.
-   */
-  cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void;
-  /**
-   * Each cell of buildings drawn near (in detail) or far (its buildings'
-   * masses, `massCells.ts`) by the error on the screen: from the eye (map
-   * x/y and height), `pxAtMetre` the pixels a metre spans a metre away in a
-   * perspective view, or `orthoPx` the pixels a metre spans in an
-   * orthographic one (null in perspective); `reach` how far from the eye,
-   * on the map, a cell may still be near (the ground the screen takes in,
-   * with a margin; Infinity for no limit). Before `cullDetails`.
-   */
-  levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number): void;
-  /**
-   * "Ocultar outros": undefined draws every building solid, null fades them
-   * all, and an id fades every building but that one.
-   */
-  setDimmed(except: BuildingId | null | undefined): void;
-  /** Buildings drawn by someone else (a ruin being knocked down, `destruction.ts`): left out here. */
-  setRuined(ids: ReadonlySet<number>): void;
-  /** A building's meshes as drawn (world space), with the kit they are drawn with: what a ruin is cut from. */
-  chunkOf(b: Building): { chunk: BuildingChunk; kit: BuildingKit } | null;
-  /** The kit its buildings are drawn with (for warming the shaders broken buildings use). */
-  readonly kit: BuildingKit;
-  /** Whether a world point is under a building (for the scenery's plant cull). */
-  covers(x: number, y: number): boolean;
-  /** Bumped when what `covers` answers changes (a footprint or a lot moved, came or went). */
-  readonly coversVersion: number;
-  /**
-   * Height of a building's lot or parking bay as drawn at a world point, NaN
-   * off them: what a resident's parked car stands on (`render/agents.ts`).
-   */
-  lotHeightAt(building: BuildingId, x: number, y: number): number;
-  /** The drawn height of whichever building's lot is at a point, NaN off every lot. */
-  anyLotHeightAt(x: number, y: number): number;
-  /** A WebGL context restored (`mesh/gpuOnly.ts`): every cell made again, its arrays having been let go. */
-  refill(): void;
-  dispose(): void;
-}
-
-export interface CutawaySpec {
-  readonly level: number;
-  /** The way the camera looks, world and horizontal: the walls facing it come down. */
-  readonly view: { readonly x: number; readonly y: number };
-  readonly x: number;
-  readonly y: number;
-  readonly radius: number;
-  /** Only this building is cut open (the one the player clicked); the rest stand whole. */
-  readonly only?: BuildingId;
-}
 
 /**
  * Each record's text, written once per record object (MDN, WeakMap: a result
@@ -174,6 +61,8 @@ export function createBuildingLayer(): BuildingLayer {
   group.updateMatrix();
   let stored: BuildingMeshes | null = null;
   let ruined: ReadonlySet<number> = new Set();
+  /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
+  let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
   /**
    * Each cell's batch as shown, and the buildings it was made of. A cell coming in or going tells the
@@ -205,6 +94,9 @@ export function createBuildingLayer(): BuildingLayer {
   /** The shown town by cell, kept between changes, as of the diary's `townSeen` in `townDoc`; `storedRest`: the key but the buildings. */
   const town = new TownIndex(cellOf);
   let townSeen = -1, townDoc: RoadDoc | null = null, storedRest = '';
+  /** The ground, the building hidden by the preview and the ruins the town was last put together with (`update`). */
+  let storedGround = '', storedHides: BuildingId | null = null;
+  let storedRuined: ReadonlySet<number> = new Set();
   /** Cells held near whatever the eye says: the building cut open, the one being edited. */
   let forcedNear: ReadonlySet<string> = new Set();
   const cellNear = (key: string): boolean => eye === null || forcedNear.has(key) || massCells.near(key);
@@ -543,7 +435,7 @@ export function createBuildingLayer(): BuildingLayer {
       // One building asked for at once (a ruin): emitted here.
       return { chunk: emitChunk(b, groundAt, pavedAt, naturalAt), kit };
     },
-    update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundTouched) {
+    update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundTouched, groundMovedUnder) {
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
       touched = groundTouched;
       const env: CellEnv = { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
@@ -552,10 +444,13 @@ export function createBuildingLayer(): BuildingLayer {
       const cutKey = cutaway
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
-      // NOT the cut-open view: opening a building costs its cells (below), not the town.
-      const rest = `${groundKey}|${hides}|${dimKey}|${[...ruined].join(',')}`;
+      // NOT the cut-open view: opening a building costs its cells (below), not the town. NOR the ground,
+      // the building the preview hides or the ruins: each is the buildings it reaches, taken in below as
+      // changed ones. DO NOT put them back in this key: every road edit (the ground cut and filled), every
+      // building picked up and every blow put the whole town together again.
+      const rest = dimKey;
       // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
-      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}`;
+      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}|${groundKey}|${hides}|${ruinedSerial}`;
       let rebuilt = false;
       // The masses of the buildings an edit changed (or whose ground it moved) are asked of the cell
       // workers, cell by cell, each cell standing as it was until its masses come; then the cells drawn
@@ -566,10 +461,21 @@ export function createBuildingLayer(): BuildingLayer {
         // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
         const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined
           ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
-        const changed = since?.every((e) => e.ids) ? since : null;
-        if (changed && stored && details) {
+        // The buildings the ground moved under since the town was last taken in, found by place;
+        // null when that cannot be said.
+        const groundMoved = groundKey === storedGround ? [] : groundMovedUnder?.(storedGround) ?? null;
+        const changed = since?.every((e) => e.ids) && groundMoved ? since : null;
+        if (changed && groundMoved && stored && details) {
           const dirty = new Set<string>(), ids = new Set<BuildingId>();
-          for (const id of changed.flatMap((e) => e.ids!) as BuildingId[]) {
+          const named = changed.flatMap((e) => e.ids!) as BuildingId[];
+          for (const b of groundMoved) named.push(b.id);
+          // The one the preview hid and the one it hides now; the ruins that came and went.
+          if (hides !== storedHides) for (const id of [storedHides, hides]) if (id !== null) named.push(id);
+          if (ruined !== storedRuined) {
+            for (const id of ruined) if (!storedRuined.has(id)) named.push(id as BuildingId);
+            for (const id of storedRuined) if (!ruined.has(id)) named.push(id as BuildingId);
+          }
+          for (const id of named) {
             const b = doc.buildings.get(id);
             town.take(id, b && b.id !== hides && !ruined.has(b.id) ? b : undefined, dirty);
             ids.add(id);
@@ -654,6 +560,7 @@ export function createBuildingLayer(): BuildingLayer {
           backlog = shown.filter((b) => !keptFor(b) && fliesFlag(b));
         }
         storedKey = key;
+        [storedGround, storedHides, storedRuined] = [groundKey, hides, ruined];
         storedCut = cutKey;
         flyFlags();
         applyFacadeDetail();
@@ -696,7 +603,9 @@ export function createBuildingLayer(): BuildingLayer {
       return rebuilt;
     },
     setRuined(ids) {
+      if (ids.size === ruined.size && [...ids].every((id) => ruined.has(id))) return;
       ruined = new Set(ids);
+      ruinedSerial++;
     },
     setDimmed(except) {
       dimmed = except;

@@ -1195,7 +1195,6 @@ export function createSceneRenderer(
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
   };
   const onGround = {
-    buildings: new GroundDependant(groundChanges),
     barriers: new GroundDependant(groundChanges),
     transit: new GroundDependant(groundChanges),
   };
@@ -1296,15 +1295,6 @@ export function createSceneRenderer(
       }));
     } else if (!missing && !buried) roadsReported = false;
   };
-  /** Each building's bank, by building revision: what the buildings stand on, building by building. */
-  let buildingsAreaFor = -1;
-  let buildingsArea: Rect[] = [];
-  const buildingsAreaOf = (doc: RoadDoc): Rect[] => {
-    if (buildingsAreaFor === doc.buildings.revision) return buildingsArea;
-    buildingsAreaFor = doc.buildings.revision;
-    buildingsArea = [...doc.buildings.all()].map((b) => bankBox(b));
-    return buildingsArea;
-  };
   /**
    * Cuts and fills the ground to the roads AND to the buildings: a level
    * platform under each building and a grassed bank round it. A road keeps the
@@ -1319,14 +1309,38 @@ export function createSceneRenderer(
    * 1 300 boxes per building (audit M3a).
    */
   const bankBoxes = new WeakMap<Building, readonly [number, number, number, number]>();
+  /** How far a building's bank reaches past its own bounds. */
+  const BANK_REACH = TERRAIN_CELL * 1.5 + m(40) + TERRAIN_CELL;
   const bankBox = (b: Building): readonly [number, number, number, number] => {
     let box = bankBoxes.get(b);
     if (!box) {
-      const r = storedBounds(b, TERRAIN_CELL * 1.5 + m(40) + TERRAIN_CELL);
+      const r = storedBounds(b, BANK_REACH);
       bankBoxes.set(b, box = [r.minX, r.minY, r.maxX, r.maxY]);
     }
     return box;
   };
+  /**
+   * The buildings whose bank a change of the ground after `serial` reached,
+   * found by place (`buildings.near` over each change grown by the bank's
+   * reach, then the bank's own box); null when the diary cannot say (the
+   * whole map, or forgotten). DO NOT walk the town for it: every building's
+   * bank was made again at each building grown, the town each frame of a
+   * city's growth.
+   */
+  const buildingsOnGroundSince = (doc: RoadDoc, serial: number): Building[] | null => {
+    const rects = groundSince.rectsSince(serial);
+    if (!rects) return null;
+    const out = new Map<BuildingId, Building>();
+    for (const r of rects) {
+      for (const b of doc.buildings.near(r[0] - BANK_REACH, r[1] - BANK_REACH, r[2] + BANK_REACH, r[3] + BANK_REACH)) {
+        const box = bankBox(b);
+        if (box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1]) out.set(b.id, b);
+      }
+    }
+    return [...out.values()];
+  };
+  /** The ground serial the buildings were last told of (`buildingGround`). */
+  let buildingGroundSeen = -1;
   /**
    * Where two solves of the roads differ: the blocks of the map whose ground
    * the roads shape differently. A street drawn changes a few blocks; a road
@@ -2741,7 +2755,11 @@ export function createSceneRenderer(
       // dab of it: re-grading 600 buildings per dab took seconds a dab.
       // Only when the ground changed under some building's own bank, and then
       // each building samples its ground again only if a change reached it.
-      if (groundSettled && onGround.buildings.stale('', buildingsAreaOf(net.doc))) buildingGround = String(groundChanges.version);
+      if (groundSettled && groundChanges.version !== buildingGroundSeen) {
+        const moved = buildingGroundSeen < 0 ? null : buildingsOnGroundSince(net.doc, buildingGroundSeen);
+        if (moved === null || moved.length > 0) buildingGround = String(groundChanges.version);
+        buildingGroundSeen = groundChanges.version;
+      }
       // At the opening the buildings come once the first world (the roads,
       // the ground cut and filled to them) is in: emitted on the bare land
       // they were all emitted again on the shaped one.
@@ -2753,7 +2771,8 @@ export function createSceneRenderer(
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new
         // casters: the shadow map is drawn again.
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (b, since) => groundChanges.touches(Number(since), bankBox(b)))) shadowMoved = true;
+          (b, since) => groundChanges.touches(Number(since), bankBox(b)),
+          (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
         if (buildings.pending) onAssetsReady();
       }
       // The countryside's trees are grown once the first world is in, not
