@@ -10,7 +10,7 @@ import type { CarriagewayMaterial, FootwayMaterial } from '@world/roadSection';
 import { footwayRiseAt, footwayRiseShare } from '@world/roads/footwayRise';
 import { levelPolygons, levelRings } from '@world/surfaces';
 import { curbRamps, rampOutline, walkingRise } from '@world/curbRamps';
-import { Polyline } from '@core/polyline';
+import { EPS } from '@core/scalar';
 import {
   RAISED_LIFT,
   ROAD_STRUCTURES,
@@ -380,6 +380,7 @@ export function* roadSurfaceSteps(
     return material;
   };
 
+  const reading = <T>(work: () => T): T => elevation.remembering ? elevation.remembering(work) : work();
   const manual = (id: SegmentId): boolean => {
     const segment = net.doc.segment(id);
     return !!segment && (Math.abs(net.doc.node(segment.a)?.heightOffset ?? 0) > 1e-6 ||
@@ -440,13 +441,16 @@ export function* roadSurfaceSteps(
     const include = (id: SegmentId): boolean => pass.chain !== undefined
       ? pass.chain.includes(id)
       : !manual(id) && (net.doc.segment(id)?.structure ?? 'ground') === structure.id;
+    const chainHit = { s: 0, distance: 0 };
     /** The segment of the pass a point belongs to: the one whose centreline is nearest. */
     const segmentAt = (x: number, y: number): SegmentId => {
       const chain = pass.chain!;
       if (chain.length === 1) return chain[0]!;
       let best = chain[0]!, bestD = Infinity;
       for (const id of chain) {
-        const d = net.ribbons.get(id)?.full.closestPoint({ x, y }).distance ?? Infinity;
+        const line = net.ribbons.get(id)?.full;
+        if (line) line.closestInto(x, y, chainHit);
+        const d = line ? chainHit.distance : Infinity;
         if (d < bestD) { bestD = d; best = id; }
       }
       return best;
@@ -563,25 +567,31 @@ export function* roadSurfaceSteps(
     // road's centreline: round a junction's corner the nearest leg's
     // centreline is far off, and the batter started at the bottom - a grey
     // wall of footway skirt under the corner's paving.
-    // Filed by the cells of a grid their padded boxes cover: a point asks only
-    // the edges filed in its cell, the same ones the box test would pass. Every
-    // edge asked for every verge vertex was a square of the town's blocks:
-    // 6.6 s of a four-times town's first minute (2026-10-14).
-    let footwayEdges: Map<number, Polyline[]> | null = null;
+    // Each straight piece of the outline filed by the cells of a grid its
+    // padded box covers: a point measures only the pieces within reach of its
+    // cell. DO NOT file whole rings: the union of a town's footways is one ring
+    // round the whole town (and one per block), so every verge vertex measured
+    // a ring as long as the town's outline - 6.5 s of a 2,560 m city's roads,
+    // six times the 1,280 m one's for four times the roads (2026-10-15). Only a
+    // distance under CASING_BAND changes the batter (`vergeTop` clamps it), and
+    // a piece that near the point lies in its cell: the answer is the same.
+    let footwayEdges: Map<number, number[]> | null = null;
     const pad = CASING_BAND * 2;
     const edgeCell = (x: number, y: number): number => (Math.floor(x / FOOTWAY_EDGE_CELL) + 32768) * 65536 + (Math.floor(y / FOOTWAY_EDGE_CELL) + 32768);
-    const edges = (): Map<number, Polyline[]> => {
+    const edges = (): Map<number, number[]> => {
       if (!footwayEdges) {
         footwayEdges = new Map();
         for (const poly of levelPolygons(net, Level.Sidewalk, include)) for (const ring of poly) {
           if (ring.length < 3) continue;
-          const line = Polyline.fromPoints([...ring.map(([px, py]) => ({ x: px!, y: py! })), { x: ring[0]![0]!, y: ring[0]![1]! }]);
-          const box = line.bbox;
-          for (let cx = Math.floor((box.minX - pad) / FOOTWAY_EDGE_CELL); cx <= Math.floor((box.maxX + pad) / FOOTWAY_EDGE_CELL); cx++) {
-            for (let cy = Math.floor((box.minY - pad) / FOOTWAY_EDGE_CELL); cy <= Math.floor((box.maxY + pad) / FOOTWAY_EDGE_CELL); cy++) {
-              const key = (cx + 32768) * 65536 + (cy + 32768);
-              const list = footwayEdges.get(key);
-              if (list) list.push(line); else footwayEdges.set(key, [line]);
+          for (let i = 0; i < ring.length; i++) {
+            const ax = ring[i]![0]!, ay = ring[i]![1]!;
+            const bx = ring[(i + 1) % ring.length]![0]!, by = ring[(i + 1) % ring.length]![1]!;
+            for (let cx = Math.floor((Math.min(ax, bx) - pad) / FOOTWAY_EDGE_CELL); cx <= Math.floor((Math.max(ax, bx) + pad) / FOOTWAY_EDGE_CELL); cx++) {
+              for (let cy = Math.floor((Math.min(ay, by) - pad) / FOOTWAY_EDGE_CELL); cy <= Math.floor((Math.max(ay, by) + pad) / FOOTWAY_EDGE_CELL); cy++) {
+                const key = (cx + 32768) * 65536 + (cy + 32768);
+                const list = footwayEdges.get(key);
+                if (list) list.push(ax, ay, bx, by); else footwayEdges.set(key, [ax, ay, bx, by]);
+              }
             }
           }
         }
@@ -589,13 +599,26 @@ export function* roadSurfaceSteps(
       return footwayEdges;
     };
     const fromFootway = (x: number, y: number): number => {
-      let best = Infinity;
-      for (const line of edges().get(edgeCell(x, y)) ?? []) {
-        const box = line.bbox;
-        if (x < box.minX - pad || x > box.maxX + pad || y < box.minY - pad || y > box.maxY + pad) continue;
-        best = Math.min(best, line.distanceTo({ x, y }));
+      const list = edges().get(edgeCell(x, y));
+      if (!list) return Infinity;
+      // `Polyline.nearestSegment`'s arithmetic, in its order: the same nearest distance, bit for bit.
+      let bestSq = Infinity;
+      for (let k = 0; k < list.length; k += 4) {
+        const ax = list[k]!, ay = list[k + 1]!;
+        const abx = list[k + 2]! - ax, aby = list[k + 3]! - ay;
+        const l2 = abx * abx + aby * aby;
+        let qx = ax, qy = ay;
+        if (l2 >= EPS) {
+          let t = ((x - ax) * abx + (y - ay) * aby) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          qx = ax + abx * t;
+          qy = ay + aby * t;
+        }
+        const ex = x - qx, ey = y - qy;
+        const distSq = ex * ex + ey * ey;
+        if (distSq < bestSq) bestSq = distSq;
       }
-      return best;
+      return Math.sqrt(bestSq);
     };
     const vergeTop: HeightFn = (x, y) => {
       const footway = deck(x, y) + FOOTWAY_RISE;
@@ -954,7 +977,8 @@ export function* roadSurfaceSteps(
       for (let k = from; k < Math.min(missing.length, from + SHAPE_BATCH); k++) {
         const tile = missing[k]!;
         const tileAt = performance.now();
-        tile.bundle = shaped ? bundleOf(shaped[k - from]!, specs) : buildTile(tile.into, tile.rect, specs);
+        // Every point of the tile remembered while its vertices are read (`RoadElevation.remembering`).
+        tile.bundle = reading(() => shaped ? bundleOf(shaped[k - from]!, specs) : buildTile(tile.into, tile.rect, specs));
         tilesMs += performance.now() - tileAt;
         built++;
         rebuilt.push(tile.rect);
