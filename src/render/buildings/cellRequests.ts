@@ -21,7 +21,7 @@ import type { BuildingKit } from './kit';
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
   a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
-/** A cell's batches as landed: its coarse batch (or its faded one) and its detail cells'. */
+/** A cell's batches as landed: its coarse batch and its detail cells'. */
 export interface LandedCell {
   readonly entries: readonly CellEntry[];
   readonly batch: BuildingMeshes | null;
@@ -30,7 +30,7 @@ export interface LandedCell {
 
 interface Landing extends LandedCell { uploads: number }
 
-type BatchKind = 'cell' | 'faded';
+type BatchKind = 'cell';
 
 export class CellRequests {
   private readonly asked = new Map<string, { readonly entries: readonly CellEntry[]; id: number }>();
@@ -69,7 +69,7 @@ export class CellRequests {
       if (this.asked.get(key) !== ask) return;
       this.asked.delete(key);
       this.onSummaries(result.summaries, entries, env);
-      this.landed.set(key, this.land(entries, result, kind === 'faded', upload));
+      this.landed.set(key, this.land(entries, result, upload));
     });
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
@@ -151,8 +151,8 @@ export class CellRequests {
   }
 
   /** The batches wrapped in meshes, and sent to the GPU ahead (`warmLooseAhead`) when `upload`. */
-  private land(entries: readonly CellEntry[], result: CellResult, faded: boolean, upload: boolean): Landing {
-    const batch = result.batch ? meshesOf(result.batch, this.kit, false, faded) : null;
+  private land(entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing {
+    const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
     const details = new Map(result.details.map(([key, arrays]) => [key, meshesOf(arrays, this.kit, false, false)] as const));
     const landing: Landing = { entries, batch, details, uploads: 0 };
     if (!upload) return landing;

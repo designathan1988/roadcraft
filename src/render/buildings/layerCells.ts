@@ -227,19 +227,6 @@ export function createCoverIndex(): CoverIndex {
   };
 }
 
-/** `list` grouped by cell key, each building mapped by `of` (nulls left out). */
-export function groupByCell<T>(list: readonly Building[], cellOf: (b: Building) => string, of: (b: Building) => T | null): Map<string, T[]> {
-  const byCell = new Map<string, T[]>();
-  for (const b of list) {
-    const value = of(b);
-    if (value === null) continue;
-    const cell = cellOf(b);
-    const out = byCell.get(cell);
-    if (out) out.push(value);
-    else byCell.set(cell, [value]);
-  }
-  return byCell;
-}
 
 /** A detail cell's centre (map x/y), whether it is drawn by the far versions of its parts, and its coarse cell. */
 export interface DetailState { x: number; y: number; far: boolean; parent: string }

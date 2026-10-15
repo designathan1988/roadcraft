@@ -40,7 +40,7 @@ const MOST_LANES = 4;
  */
 const ACTIVE_PER_LANE = 1;
 /** Which jobs a lane begins first (lower first). */
-const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, faded: 0, mass: 1, summary: 2 };
+const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, mass: 1, summary: 2 };
 
 export class CellPool {
   private lanes: Lane[] | null = null;
@@ -63,7 +63,7 @@ export class CellPool {
   }
 
   /**
-   * A cell's job: its batches ('cell', 'faded') or its buildings' summaries
+   * A cell's job: its batches ('cell'), its masses ('mass') or its buildings' summaries
    * ('summary'), `done` called with the result - at once where no worker runs.
    * The id it returns cancels it.
    */

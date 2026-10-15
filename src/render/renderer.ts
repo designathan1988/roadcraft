@@ -79,6 +79,7 @@ import { createExhaust } from './exhaust';
 import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { createSignLayer } from './signLayer';
+import { fadeMeshes } from './buildings/fade';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
@@ -1908,6 +1909,11 @@ export function createSceneRenderer(
         const real = buildBuildingMeshes([sample], () => 0, buildings.kit, false);
         group.add(real.group);
         done.push(() => real.dispose());
+        // And faded ("ocultar outros", `fade.ts`): the faded materials on parts with and without instance colours.
+        const faded = buildBuildingMeshes([sample], () => 0, buildings.kit, false);
+        fadeMeshes(faded.group, buildings.kit, true);
+        group.add(faded.group);
+        done.push(() => faded.dispose());
       }
       // The gardens' plants and their shadows, the first lots painted grow them.
       const plants = plantSamples(sceneryKit);

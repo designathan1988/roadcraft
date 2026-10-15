@@ -47,7 +47,7 @@ export type { CellEntry, CellJobEntry } from './chunk';
  * buildings from afar (their masses, `massing.ts`), or only what the page reads
  * of far buildings (their flags, lots' ground, signature floor).
  */
-export type JobKind = 'cell' | 'faded' | 'mass' | 'summary';
+export type JobKind = 'cell' | 'mass' | 'summary';
 
 export interface CellJob {
   readonly id: number;
@@ -68,7 +68,7 @@ export interface ChunkSummary {
 }
 
 export interface CellResult {
-  /** The coarse batch ('cell'), the faded one ('faded'); none for a summary or masses. */
+  /** The coarse batch ('cell'); none for a summary or masses. */
   readonly batch: CellArrays | null;
   /** Each detail cell's batch, by its key ('cell'). */
   readonly details: readonly (readonly [string, CellArrays])[];
@@ -118,7 +118,6 @@ interface JobState {
 
 const COARSE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true };
 const DETAIL: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter((k) => DETAIL_PARTS.has(k)), shells: false, furniture: false };
-const WHOLE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS, shells: true, furniture: true };
 
 /** One worker's cells: each job emitted from the records it brings, nothing kept once it is done. */
 export class CellWork {
@@ -199,9 +198,6 @@ export class CellWork {
       return { key: e.entry.key, ...(flags ? { flags } : {}), lot: lotGround?.recipe ?? null, ...(signatureFloor !== undefined ? { signatureFloor } : {}) };
     });
     if (job.kind === 'summary') return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries } };
-    if (job.kind === 'faded') {
-      return { kind: 'done', job: job.id, result: { batch: cellArrays(chunks, { ...WHOLE, ghost: false, dim: true }, this.boxes), details: [], summaries } };
-    }
     const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false }, this.boxes);
     // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
     const byDetail = new Map<string, BuildingChunk[]>();
