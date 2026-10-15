@@ -25,10 +25,10 @@ export type Bounds = Float64Array;
 
 interface ShellArrays {
   readonly position: Float32Array;
-  readonly normal: Float32Array;
+  /** The normal (x, y, z) and the wear (w), each a signed byte over 127: four bytes a vertex (`meshesOf` reads both from it). */
+  readonly normalDecay: Int8Array;
   readonly colour: Float32Array;
   readonly uv: Float32Array;
-  readonly decay: Float32Array;
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
 }
@@ -137,7 +137,7 @@ export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
-  for (const s of Object.values(arrays.shells)) if (s) bytes += s.position.byteLength + s.normal.byteLength + s.colour.byteLength + s.uv.byteLength + s.decay.byteLength + s.index.byteLength;
+  for (const s of Object.values(arrays.shells)) if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.colour.byteLength + s.uv.byteLength + s.index.byteLength;
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -151,7 +151,7 @@ export function cellBytes(arrays: CellArrays): number {
 /** Every array buffer of a batch: handed over, not copied (MDN, `postMessage` transfer). */
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];
-  for (const s of Object.values(arrays.shells)) if (s) out.push(s.position.buffer, s.normal.buffer, s.colour.buffer, s.uv.buffer, s.decay.buffer, s.index.buffer, s.bounds.buffer);
+  for (const s of Object.values(arrays.shells)) if (s) out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.index.buffer, s.bounds.buffer);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -174,10 +174,10 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
   }
   if (indices === 0) return null;
   const position = new Float32Array(vertices * 3);
-  const normal = new Float32Array(vertices * 3);
+  // DO NOT keep them as floats: 16 bytes a vertex of the town's largest geometry for what a byte each tells (normals of flat walls, a wear level).
+  const normalDecay = new Int8Array(vertices * 4);
   const colour = new Float32Array(vertices * 3);
   const uv = new Float32Array(vertices * 2);
-  const decay = new Float32Array(vertices);
   const index = indexArray(vertices, indices);
   let v = 0;
   let n = 0;
@@ -185,16 +185,23 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
     const part = chunk.shells[finish];
     if (!part) continue;
     position.set(part.position, v * 3);
-    normal.set(part.normal, v * 3);
+    const count = part.position.length / 3;
+    for (let k = 0; k < count; k++) {
+      const at = (v + k) * 4;
+      normalDecay[at] = snorm(part.normal[k * 3]!); normalDecay[at + 1] = snorm(part.normal[k * 3 + 1]!); normalDecay[at + 2] = snorm(part.normal[k * 3 + 2]!);
+      normalDecay[at + 3] = snorm(part.decay[k]!);
+    }
     colour.set(part.colour, v * 3);
     uv.set(part.uv, v * 2);
-    decay.set(part.decay, v);
     for (let i = 0; i < part.index.length; i++) index[n + i] = (part.index[i] as number) + v;
     v += part.position.length / 3;
     n += part.index.length;
   }
-  return { position, normal, colour, uv, decay, index };
+  return { position, normalDecay, colour, uv, index };
 }
+
+/** A number in [-1, 1] as a signed byte the GPU reads back normalised (x / 127, WebGL 2 `vertexAttribPointer`). */
+const snorm = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 127);
 
 /** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
 function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean): {

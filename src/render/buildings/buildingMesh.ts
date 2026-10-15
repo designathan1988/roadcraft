@@ -17,6 +17,7 @@ import {
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
   InstancedMesh,
+  InterleavedBuffer,
   InterleavedBufferAttribute,
   Mesh,
   Sphere,
@@ -92,7 +93,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
-import { gpuOnly, gpuOnlyAttributes } from '../mesh/gpuOnly';
+import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
@@ -3181,10 +3182,12 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const g = new BufferGeometry();
     // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
     g.setAttribute('position', new BufferAttribute(shell.position, 3));
-    g.setAttribute('normal', new BufferAttribute(shell.normal, 3));
+    // Four signed bytes a vertex, read as the normal (its fourth byte left over: no 3-byte format in Direct3D 11) and as the wear.
+    const normalDecay = new InterleavedBuffer(shell.normalDecay, 4);
+    g.setAttribute('normal', new InterleavedBufferAttribute(normalDecay, 4, 0, true));
     g.setAttribute('color', new BufferAttribute(shell.colour, 3));
     g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
-    g.setAttribute('aDecay', new BufferAttribute(shell.decay, 1));
+    g.setAttribute('aDecay', new InterleavedBufferAttribute(normalDecay, 1, 3, true));
     g.setIndex(new BufferAttribute(shell.index, 1));
     // A Mesh a finish a cell, its arrays let go once on the GPU (below).
     g.boundingBox = boxOf(shell.bounds);
@@ -3192,9 +3195,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell[finish] : kit.shell[finish]);
     // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
-      gpuOnly(mesh, () => {
+      gpuOnlyAttributes(mesh, { position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute, index: g.index! }, () => {
         const again = refill?.().shells[finish];
-        return again ? { position: again.position, normal: again.normal, color: again.colour, uv: again.uv, aDecay: again.decay, index: again.index } : {};
+        return again ? { position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, index: again.index } : {};
       });
     }
     mesh.name = ghost ? `building-preview-shell-${finish}` : `building-shell-${finish}`;
