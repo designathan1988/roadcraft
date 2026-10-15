@@ -91,6 +91,7 @@ export const ALWAYS = [
   'tests/world/cellFilingAny.spec.ts',
   'tests/world/buildingNearAny.spec.ts',
   'tests/render/paintCatalogue.spec.ts',
+  'tests/render/gardenMatrix.spec.ts',
 ];
 
 /**

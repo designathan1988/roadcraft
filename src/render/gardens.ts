@@ -3,7 +3,6 @@ import {
   InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
-  Object3D,
   Sphere,
   Vector3,
   Group,
@@ -74,6 +73,22 @@ interface GardenPack {
   readonly count: number;
 }
 
+/**
+ * The matrix of a plant turned about the up axis only, written at `at` of `out`: three's `Matrix4.compose` for the
+ * quaternion `Euler(0, yaw, 0)` gives (x = 0, y = sin(yaw / 2), z = 0, w = cos(yaw / 2); `Quaternion.setFromEuler`,
+ * order XYZ), the same sums. DO NOT go through an `Object3D` for each plant of a garden: its position, rotation,
+ * scale and `updateMatrix` per instance were the packing's whole cost (2026-10-15).
+ */
+export function yawMatrixInto(out: Float32Array | number[], at: number, px: number, py: number, pz: number, yaw: number, sx: number, sy: number, sz: number): void {
+  const y = Math.sin(yaw / 2), w = Math.cos(yaw / 2);
+  const y2 = y + y;
+  const yy = y * y2, wy = w * y2;
+  out[at] = (1 - yy) * sx; out[at + 1] = 0; out[at + 2] = -wy * sx; out[at + 3] = 0;
+  out[at + 4] = 0; out[at + 5] = sy; out[at + 6] = 0; out[at + 7] = 0;
+  out[at + 8] = wy * sz; out[at + 9] = 0; out[at + 10] = (1 - yy) * sz; out[at + 11] = 0;
+  out[at + 12] = px; out[at + 13] = py; out[at + 14] = pz; out[at + 15] = 1;
+}
+
 /** One garden's plants placed, by plant kind (`tree:<species>`, `bush:<kind>`). */
 function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPack> {
   const trees = new Map<TreeSpecies, Placement[]>(TREE_SPECIES.map((s) => [s, []]));
@@ -136,18 +151,13 @@ function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPac
     }
   }
   const out = new Map<string, GardenPack>();
-  const object = new Object3D();
   const pack = (key: string, placed: readonly Placement[]): void => {
     if (!placed.length) return;
     const matrices = new Float32Array(placed.length * 16);
     const scales = new Float32Array(placed.length);
     let colours: Float32Array | null = null;
     placed.forEach((placement, index) => {
-      object.position.set(placement.x, placement.z, -placement.y);
-      object.rotation.set(0, placement.yaw, 0);
-      object.scale.set(placement.sx, placement.sy, placement.sz);
-      object.updateMatrix();
-      object.matrix.toArray(matrices, index * 16);
+      yawMatrixInto(matrices, index * 16, placement.x, placement.z, -placement.y, placement.yaw, placement.sx, placement.sy, placement.sz);
       scales[index] = Math.max(placement.sx, placement.sy, placement.sz);
       if (placement.tint) {
         colours ??= new Float32Array(placed.length * 3).fill(1);
