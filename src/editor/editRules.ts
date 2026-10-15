@@ -68,11 +68,11 @@ function flatSolves(before: RoadState, after: RoadState): { before(): RoadElevat
   return { before: beforeSolve, after: () => (solvedAfter ??= buildRoadElevation(after.net, FLAT_GROUND, beforeSolve())) };
 }
 
-/** The marks of `after` that may differ from `before`'s: on a working copy of it (`Network.fork`), only those the copy wrote */
+/** The marks of `after` that may differ from `before`'s: those its working copy (`Network.fork`) wrote */
 function written(before: Network, after: Network, name: 'impossible' | 'squeezed'): Iterable<[NodeId, number]> {
   const map = after[name];
   // DO NOT walk every mark of the map for each edit and each pause of the pointer: the others are `before`'s own.
-  if (after.forkedFrom !== before || !(map instanceof ForkMap)) return map;
+  if (after.forkedFrom !== before || !(map instanceof ForkMap)) throw new Error('refuseRoadEdit: the edit is judged on a working copy of the network (`Network.fork`)');
   const { replaced, added } = (map as ForkMap<NodeId, number>).changes();
   return [...replaced, ...added];
 }
@@ -99,20 +99,14 @@ function changedSegments(before: RoadDoc, after: RoadDoc): SegmentId[] {
   const out: SegmentId[] = [];
   // DO NOT walk every road of the map and write each one out twice as text for every edit and every pause of the pointer
   const named = after.roadIdsChangedFrom(before);
-  if (named) {
-    const candidates = new Set<SegmentId>();
-    for (const id of named) {
-      if (after.segment(id as SegmentId)) candidates.add(id as SegmentId);
-      for (const sid of after.node(id as NodeId)?.incident ?? []) candidates.add(sid);
-    }
-    for (const id of candidates) {
-      const seg = after.segment(id)!, old = before.segment(id);
-      if (!old || !sameSegment(before, old, after, seg)) out.push(id);
-    }
-    return out;
+  if (!named) throw new Error('refuseRoadEdit: the edit is judged on a working copy of the map (`RoadDoc.fork`)');
+  const candidates = new Set<SegmentId>();
+  for (const id of named) {
+    if (after.segment(id as SegmentId)) candidates.add(id as SegmentId);
+    for (const sid of after.node(id as NodeId)?.incident ?? []) candidates.add(sid);
   }
-  for (const [id, seg] of after.segments) {
-    const old = before.segment(id);
+  for (const id of candidates) {
+    const seg = after.segment(id)!, old = before.segment(id);
     if (!old || !sameSegment(before, old, after, seg)) out.push(id);
   }
   return out;
