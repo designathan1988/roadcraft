@@ -725,6 +725,11 @@ export class RoadDoc {
     return this.landscapeCells.idsMeeting(rect).map((id) => this.landscapeMap.get(id)!);
   }
 
+  /** The street furniture whose box reaches any of `rects`, each once, in increasing id order (`CellFiling.idsMeetingAny`). */
+  landscapeInAny(rects: readonly ChangeRect[]): LandscapeItem[] {
+    return this.landscapeCells.idsMeetingAny(rects).map((id) => this.landscapeMap.get(id)!);
+  }
+
   /** A record put (new, or replacing the one of its id, which keeps its place in the map's order). */
   private putLandscapeRecord(item: LandscapeItem): void {
     const was = this.landscapeMap.get(item.id);
