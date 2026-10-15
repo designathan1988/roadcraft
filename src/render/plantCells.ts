@@ -1,8 +1,14 @@
 import { Color, type Frustum, Group, Matrix4 } from 'three';
-import { KEEP_CELL, keepCellKey, keepCellOf } from './candidateKeep';
+import { keepCellKey, keepCellOf } from './candidateKeep';
+import { m } from '@world/units';
+
 import { COVER_STANCE, FOREST_SPECIES, coverMatrixInto, coverVariant, rockTint, scrubTint, treeTint, type CoverPlacement, type GroundCoverKit, type TreePlacement } from './groundCover';
 import { createInstanceRuns, RunBuilder, type Run, type RunStore } from './instanceRuns';
 import { TREE_MODELS, type NatureTreeKit, standsAmong, treeColourInto, treeMatrixInto, varietyOf } from './natureTrees';
+
+/** How far off the view a tree (up to 19 m tall) and a stone or bush still throw a shadow into it, low sun. */
+const TREE_SHADOW_REACH = m(48);
+const COVER_SHADOW_REACH = m(8);
 
 /**
  * THE PLANTS AND STONES DRAWN CELL BY CELL (the cells their keeps file them in,
@@ -27,9 +33,12 @@ export interface PlantCells {
   dispose(): void;
 }
 
-/** A layer of cells, each a run made by `runOf`; `neighbourly`: a change of a cell writes its neighbours again too. */
-function plantLayer(name: string, stores: readonly RunStore[], runOf: (cell: number, builder: RunBuilder) => void, neighbourly: boolean): PlantCells {
-  const runs = createInstanceRuns(name, stores, KEEP_CELL / 4);
+/**
+ * A layer of cells, each a run made by `runOf`; `neighbourly`: a change of a cell writes its neighbours
+ * again too; `margin`: how far off the view a plant is still drawn (the longest shadow it throws in).
+ */
+function plantLayer(name: string, stores: readonly RunStore[], runOf: (cell: number, builder: RunBuilder) => void, neighbourly: boolean, margin: number): PlantCells {
+  const runs = createInstanceRuns(name, stores, margin);
   const drawn = new Map<number, Run>();
   return {
     group: runs.group,
@@ -103,7 +112,7 @@ export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell
       builder.add(body, m, tree.size * 1.2, tint);
       if (cards >= 0) builder.add(cards, m, tree.size * 1.2, tint);
     });
-  }, true);
+  }, true, TREE_SHADOW_REACH);
 }
 
 /** The painted covers' stones and bushes, the rivers' stones, and the woods' card trees where the low-poly ones are not grown. */
@@ -140,5 +149,5 @@ export function createCoverCells(kit: GroundCoverKit, name: string, places: {
       put(builder, body, tree, COVER_STANCE.trees, treeTint);
       if (cards >= 0) put(builder, cards, tree, COVER_STANCE.trees, treeTint);
     }
-  }, false);
+  }, false, COVER_SHADOW_REACH);
 }
