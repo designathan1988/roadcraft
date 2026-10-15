@@ -10,6 +10,8 @@ import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
 import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp, coalescedTask } from './frameLoop';
 import { ConflictPool } from './conflictPool';
+import { BayPool } from './bayPool';
+import { useBayWorkers } from '@sim/agents/parking';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { Engine } from '@core/engine';
@@ -259,6 +261,9 @@ if (saved) {
 }
 
 const sim = new SimWorld(doc, net, 0x2024);
+// The lots' bays worked out on the other cores (`bayPool.ts`): a lot's grid and ways out are a
+// millisecond each, and a generated city's thousands held a simulation step for seconds on the page.
+useBayWorkers(sim, new BayPool());
 sim.auditEnabled = true;
 sim.auditLevel = 'cheap';
 // The status bar's alerts: checked once a second of play, not on every one

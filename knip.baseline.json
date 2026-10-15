@@ -109,7 +109,6 @@
  "exports src/sim/agents/lorryDocks.ts LORRY_RADIUS",
  "exports src/sim/agents/lorryDocks.ts settle",
  "exports src/sim/agents/lotNav.ts PEOPLE_SOLID",
- "exports src/sim/agents/parking.ts clearOfWalls",
  "exports src/sim/ambient/ambient.ts MAX_DRIVERS",
  "exports src/sim/ambient/ambient.ts MAX_WALKERS",
  "exports src/sim/audit.ts summarize",

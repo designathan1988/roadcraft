@@ -283,7 +283,7 @@ class TransitProduct implements DerivedSpec<TransitSource, number, TransitPlace>
       for (const key of this.allKeys(source)) out.add(key);
       return;
     }
-    for (const r of change.rects) for (const key of this.filing.idsMeeting(r)) out.add(key);
+    for (const key of this.filing.idsMeetingAny(change.rects)) out.add(key);
     // A change of the transport itself may make a new track or stop: the transport's own items in its rectangles
     // (a handful on a map; the other kinds reach only what stands, through the filing).
     if (change.kind !== 'transit') return;
