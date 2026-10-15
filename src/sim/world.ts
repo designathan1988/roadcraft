@@ -393,6 +393,7 @@ export class SimWorld {
     this.flowStats = new FlowStats();
     this.controlAdvisor = new ControlAdvisor();
     this.streams = forkStreams(this.seed);
+    this.forgetSignals();
     this.pedEngine.reset(this);
   }
 
@@ -690,7 +691,47 @@ export class SimWorld {
     rebuildWork.lanes += nodes.size;
     this.flow.keepOnly(nodes);
     this.advisor.forget(nodes);
+    // Every junction built again: whoever keeps something by a junction's control reads them all.
+    this.forgetSignals();
     if (this.applyAutoControl()) this.syncControllers();
+  }
+
+  /**
+   * The junctions whose signal came or went with the roads as they were (the
+   * advisor's choice, `applyAutoControl`), oldest first, since
+   * `signalLogBase`, and the serial of the latest. Forgotten when the
+   * junctions are built again (an edit of the roads) or the world is reset:
+   * every junction is then to be read again. For whatever keeps something by
+   * a junction's control (the posts the walkers keep clear of, the drawn
+   * signals and posts). DO NOT read a junction's control off
+   * `topologyRevision` alone: a switch by the advisor moves no revision, and
+   * a junction it turned to a signal showed no lights until the next edit of
+   * the roads.
+   */
+  private signalLog: NodeId[] = [];
+  private signalLogBase = 0;
+  private signalSerial = 0;
+
+  /**
+   * The junctions whose signal came or went since `serial` (`signalLog`),
+   * and the serial now; `nodes` null: every junction is to be read again (a
+   * first look, a rebuilt graph, a log forgotten).
+   */
+  signalChangesSince(serial: number): { readonly serial: number; readonly nodes: readonly NodeId[] | null } {
+    if (serial < this.signalLogBase || serial > this.signalSerial) return { serial: this.signalSerial, nodes: null };
+    return { serial: this.signalSerial, nodes: this.signalLog.slice(serial - this.signalLogBase) };
+  }
+
+  private noteSignal(node: NodeId): void {
+    this.signalLog.push(node);
+    this.signalSerial++;
+    // Longer than reading every junction: forgotten (its readers read them all).
+    if (this.signalLog.length > Math.max(64, this.graph.junctions.size)) this.forgetSignals();
+  }
+
+  private forgetSignals(): void {
+    this.signalLog = [];
+    this.signalLogBase = ++this.signalSerial;
   }
 
   /**
@@ -709,6 +750,7 @@ export class SimWorld {
       if (junction.signalised === signalised) continue;
       this.graph.junctions.set(node, { ...junction, signalised });
       this.junctionsVersion++;
+      this.noteSignal(node);
       changed = true;
     }
     return changed;
