@@ -21,7 +21,7 @@ import { type RoadStation, orderAlong, stationsAlong } from '@world/roads/buildM
 import { flipSection, sameRoadSectionIgnoringArrows, sectionForPiece } from '@world/roadSection';
 import { ROAD_TYPES } from '@world/roadTypes';
 import { roadStructure, type RoadStructure } from '@world/structures';
-import type { Anchor } from './snap';
+import { type Anchor, ribbonsNear } from './snap';
 import type { RoadPathPiece } from './roadPath';
 import { type RoadEditRefusal, refuseRoadEdit, snapshotRoads } from './editRules';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
@@ -419,7 +419,17 @@ function commitDraftInPlace(
   /** Existing nodes the draft crossed near, which may come onto it (`slideOntoCrossing`). */
   const slides: { node: NodeId; segment: SegmentId; at: Vec2 }[] = [];
 
-  for (const [id, seg] of [...doc.segments]) {
+  // The roads the draft can cross: those filed in the network's cells over
+  // the draft's box (a ribbon is filed over its centreline's box grown by its
+  // casing; two lines that cross have boxes that meet), in increasing id. The
+  // network is current here: free and node anchors only add nodes, a split
+  // anchor rebuilt it above. DO NOT walk `doc.segments`: every piece of every
+  // road drawn, and every pause of the pointer (the dry run), read every road
+  // of the map point by point.
+  const box = draft.bbox;
+  for (const { id } of ribbonsNear(net, [box.minX - MERGE_EPS, box.minY - MERGE_EPS, box.maxX + MERGE_EPS, box.maxY + MERGE_EPS])) {
+    const seg = doc.segment(id);
+    if (!seg) continue;
     if (!heights && seg.structure !== structure) continue;
     const existing = net.polylines.get(doc, id);
 
@@ -666,8 +676,8 @@ function materializeEndpoints(
       return true;
     }
 
-    resolved.set(tag, materializeFree(doc, anchor.at, heights?.[tag] ?? 0,
-      tag === 'end' && heights?.smoothEnd === true));
+    resolved.set(tag, materializeFree(doc, net, anchor.at, heights?.[tag] ?? 0,
+      tag === 'end' && heights?.smoothEnd === true, [...resolved.values()]));
     return true;
   };
 
@@ -694,9 +704,21 @@ function materializeEndpoints(
  * difference at the meeting point is the deck's problem, not the document's —
  * the raised span ramps down to the adjoining surface.
  */
-function materializeFree(doc: RoadDoc, at: Vec2, heightOffset = 0, smooth = false): NodeId {
-  for (const node of doc.nodes.values()) {
-    if (dist({ x: node.x, y: node.y }, at) < MERGE_EPS &&
+function materializeFree(doc: RoadDoc, net: Network, at: Vec2, heightOffset = 0, smooth = false,
+  /** Nodes this draft has already put down, with no road yet (the other end). */
+  fresh: readonly NodeId[] = []): NodeId {
+  // A node within `MERGE_EPS` is the end of a road filed in the network's cells
+  // round the point (orphans are pruned by every edit), or one this draft put
+  // down; the smallest id first, the first the walk over `doc.nodes` met.
+  // DO NOT walk `doc.nodes`: every free end of every piece read every node.
+  const candidates = new Set<NodeId>(fresh);
+  for (const { id } of ribbonsNear(net, [at.x - MERGE_EPS, at.y - MERGE_EPS, at.x + MERGE_EPS, at.y + MERGE_EPS])) {
+    const seg = doc.segment(id);
+    if (seg) { candidates.add(seg.a); candidates.add(seg.b); }
+  }
+  for (const id of [...candidates].sort((p, q) => p - q)) {
+    const node = doc.node(id);
+    if (node && dist({ x: node.x, y: node.y }, at) < MERGE_EPS &&
       Math.abs((node.heightOffset ?? 0) - heightOffset) <= HEIGHT_JOIN_EPS) return node.id;
   }
   return doc.addNode(at, heightOffset, smooth).id;
