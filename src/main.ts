@@ -2916,7 +2916,7 @@ let showChanges = false;
 /** How long a change stays drawn, ms. */
 const CHANGE_SHOWN = 8000;
 const CHANGE_COLOURS: Record<ChangeKind, string> = {
-  roads: '#ffd23f', traffic: '#fca311', clearings: '#95d5b2', terrain: '#c8823c', paint: '#9be564', buildings: '#ff8fab', zones: '#7bdff2', lots: '#b2f7ef',
+  roads: '#ffd23f', traffic: '#fca311', clearings: '#95d5b2', terrain: '#c8823c', paint: '#9be564', buildings: '#ff8fab', zones: '#7bdff2', lots: '#b2f7ef', lotKeys: '#80cbc4',
   utilities: '#f7aef8', barriers: '#d0d0d0', landscape: '#6bd425', transit: '#4cc9f0', people: '#ffffff',
   trees: '#2d6a4f', elements: '#e0aaff', fog: '#e9ecef', clouds: '#f8f9fa', weather: '#adb5bd', nature: '#52b788',
   gullies: '#8d5524', economy: '#2a9d8f', buildingWear: '#a26769', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',

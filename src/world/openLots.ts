@@ -1,80 +1,89 @@
 import type { Vec2 } from '@core/vec2';
 import { lotCentre } from './lotRings';
 import type { ChangeRect } from './changes';
+import type { JournalCursor } from './derived';
+import type { Lot } from './lots';
+import { LotStore } from './lotStore';
 import { m } from './units';
 
 /**
  * THE OPEN LOTS (`RoadDoc.openLots`): the zoned lots with no building
- * standing and not set aside, in the order of `doc.lots` and by place, for
- * the growth (`editor/zoning.ts` `growOnLot`). Every building grown read
- * every lot four times over - the open ones, the last grown, the nearest,
- * its own place in the list - a city of 80 000 lots 2.6·10¹⁰ reads.
+ * standing and not set aside, in the lots' order and by place, for the growth
+ * (`editor/zoning.ts` `growOnLot`). Every building grown read every lot four
+ * times over - the open ones, the last grown, the nearest, its own place in
+ * the list - a city of 80 000 lots 2.6·10¹⁰ reads.
  *
  * - "The k-th open lot" (the one drawn at random) is a descent of a Fenwick
- *   tree of the open flags: O(log n), the k-th in the list's order (Fenwick,
+ *   tree of the open flags: O(log n), the k-th in the lots' order (Fenwick,
  *   "A new data structure for cumulative frequency tables", 1994;
  *   cp-algorithms, "Fenwick Tree").
  * - "The open lots round a point" read the cells of a grid of the lots'
- *   centres (Nystrom, "Spatial Partition"), in the list's order.
+ *   centres (Nystrom, "Spatial Partition"), in the lots' order.
  *
- * Checked against the document at every question, never trusted: the lots
- * (`lotRevision`, which every writer moves), the buildings (the diary's
- * entries since, by id: one gone opens its lot again) and the set of lots
- * set aside (another set, or one emptied). What it cannot follow it makes
- * again from the list, as the loop it replaces did.
- * NÃO voltar a filtrar `doc.lots` a cada prédio crescido.
+ * Kept by the diary, lot by lot: the lots' entries carry their ids
+ * (`LotStore`), so a lot zoned, cut or deleted changes its own slot and
+ * nothing else; a building gone (the buildings' entries, by id) opens its lot
+ * again. A slot is a place in the lots' order: a lot changed where it stands
+ * keeps its slot, one put last in the store (`LotStore.orderOf` grew) leaves a
+ * hole and takes a new slot at the end, so the slots stay in the store's
+ * order and the k-th open lot is the one a fresh index would give. The holes
+ * and the room at the end are a dynamic table's (Cormen et al., "Introduction
+ * to Algorithms", 17.4): the slots laid again when the holes outnumber the
+ * lots or the room runs out, at most once per as many changes as there are
+ * lots - O(1) a change.
+ * NÃO voltar a filtrar `doc.lots` a cada prédio crescido, nem a refazer o
+ * índice inteiro a cada lote mudado.
  */
-
-/** A lot as it reads one (`world/lots.ts` `Lot`). */
-export interface LotLike {
-  readonly id: number;
-  readonly corners: readonly Vec2[];
-  readonly use?: string;
-  readonly building?: number;
-}
 
 /**
  * What it reads of the document (`RoadDoc.openLots`), handed over by it: the
  * document imports this module, never the other way (no import cycle).
  */
-export interface LotsHost<L extends LotLike> {
-  readonly lots: L[];
-  lotRevision(): number;
+export interface LotsHost {
+  readonly lots: LotStore;
   /** Whether the building of this id stands; where it stands. */
   standing(id: number): boolean;
   place(id: number): Vec2 | null;
   /** The serial of the buildings' latest change, and the changes after a serial (null: some forgotten). */
   buildingsRevision(): number;
   buildingsSince(serial: number): readonly { readonly ids?: readonly number[] }[] | null;
-  lotsChanged(rects: readonly ChangeRect[] | null, cause: string): void;
 }
 
 /** Side of a cell of the centres' grid, world units: about the reach of the street filling along. */
 const CELL = m(64);
 const keyOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
+/** The least room the slots are laid with. */
+const MIN_ROOM = 64;
 
-export class OpenLots<L extends LotLike> {
-  /** The lots as last read, slot by slot (the records are replaced, never changed: identity tells a stale one). */
-  private records: L[] = [];
+export class OpenLots {
+  /** The lot in each slot (undefined: a hole), as last read: the records are replaced, never changed, so identity tells a stale one. */
+  private records: (Lot | undefined)[] = [];
+  /** Each slot's place in the store's order (`LotStore.orderOf`) when it was taken. */
+  private slotOrder: number[] = [];
   private readonly slotOf = new Map<number, number>();
-  /** Each zoned lot's slot, by the cell of its centre, in the list's order. */
-  private readonly cells = new Map<number, number[]>();
+  /** Each zoned lot's slot, by the cell of its centre; and the cell each slot is filed in (-1: none). */
+  private readonly cells = new Map<number, Set<number>>();
+  private cellOfSlot: number[] = [];
   /** The slots of the lots naming a building, by its id. */
-  private readonly byBuilding = new Map<number, number[]>();
+  private readonly byBuilding = new Map<number, Set<number>>();
   private open = new Uint8Array(0);
-  /** Fenwick tree of `open`, 1-based. */
-  private tree = new Int32Array(0);
-  /** The highest power of two not above the slot count (where the descent starts). */
+  /** Fenwick tree of `open` over the whole room, 1-based (the slots past the last are zeros). */
+  private tree = new Int32Array(1);
+  /** The room: how many slots the arrays hold. */
+  private room = 0;
+  /** The highest power of two not above the room (where the descent starts). */
   private top = 0;
+  private holes = 0;
   private openCount = 0;
-  /** The highest id of a building standing on a lot, or -1. */
+  /** The highest id of a building standing on a lot, or -1; `lastStale`: to be found again before it is read. */
   private lastId = -1;
-  private seenLots = -1;
+  private lastStale = false;
+  private readonly cursor: JournalCursor = LotStore.cursor();
   private seenBuildings = -1;
   private refused: ReadonlySet<number> = new Set();
   private refusedSize = 0;
 
-  constructor(private readonly host: LotsHost<L>) {}
+  constructor(private readonly host: LotsHost) {}
 
   /** How many lots are open, `refused` set aside. */
   count(refused: ReadonlySet<number>): number {
@@ -82,20 +91,19 @@ export class OpenLots<L extends LotLike> {
     return this.openCount;
   }
 
-  /** The `k`-th open lot (from 0), in the list's order. Asked after `count`. */
-  at(k: number): L {
+  /** The `k`-th open lot (from 0), in the lots' order. Asked after `count`. */
+  at(k: number): Lot {
     if (k < 0 || k >= this.openCount) throw new RangeError(`lote aberto ${k} de ${this.openCount}`);
-    const n = this.records.length;
     let pos = 0, rest = k + 1;
     for (let step = this.top; step > 0; step >>= 1) {
       const next = pos + step;
-      if (next <= n && this.tree[next]! < rest) { pos = next; rest -= this.tree[next]!; }
+      if (next <= this.room && this.tree[next]! < rest) { pos = next; rest -= this.tree[next]!; }
     }
     return this.records[pos]!;
   }
 
-  /** The open lots whose centre may be within `reach` of `at` (a superset), in the list's order. Asked after `count`. */
-  near(at: Vec2, reach: number): L[] {
+  /** The open lots whose centre may be within `reach` of `at` (a superset), in the lots' order. Asked after `count`. */
+  near(at: Vec2, reach: number): Lot[] {
     const found: number[] = [];
     for (let i = Math.floor((at.x - reach) / CELL); i <= Math.floor((at.x + reach) / CELL); i++) {
       for (let j = Math.floor((at.y - reach) / CELL); j <= Math.floor((at.y + reach) / CELL); j++) {
@@ -107,80 +115,157 @@ export class OpenLots<L extends LotLike> {
 
   /** Where the building grown last stands (the highest id standing on a lot), or null. Asked after `count`. */
   lastGrown(): Vec2 | null {
+    if (this.lastStale) this.findLast();
     return this.lastId < 0 ? null : this.host.place(this.lastId);
   }
 
   /** `lot` took the building `id`: written in the document (`cause`, where), the index kept in step. */
-  grew(lot: L, id: number, rects: readonly ChangeRect[] | null, cause: string): void {
+  grew(lot: Lot, id: number, rects: readonly ChangeRect[] | null, cause: string): void {
     const slot = this.slotOf.get(lot.id);
-    if (slot === undefined || this.records[slot] !== lot || this.host.lots[slot] !== lot) throw new Error(`lote ${lot.id} fora do índice dos lotes abertos`);
-    const fresh: L = { ...lot, building: id };
-    this.host.lots[slot] = fresh;
-    this.records[slot] = fresh;
-    this.host.lotsChanged(rects, cause);
-    this.seenLots = this.host.lotRevision();
-    const named = this.byBuilding.get(id);
-    if (named) named.push(slot);
-    else this.byBuilding.set(id, [slot]);
-    this.refresh(slot);
+    if (slot === undefined || this.records[slot] !== lot || this.host.lots.get(lot.id) !== lot) throw new Error(`lote ${lot.id} fora do índice dos lotes abertos`);
+    const fresh: Lot = { ...lot, building: id };
+    this.host.lots.apply({ put: [fresh], ...(rects ? { also: rects } : {}) }, cause);
+    // Its own entry, read again at the next question, finds the slot as it is now.
+    this.place(slot, fresh);
   }
 
   /** `lot` set aside: nothing fits it (`refused`, the set last asked with). */
-  refuse(lot: L, refused: Set<number>): void {
+  refuse(lot: Lot, refused: Set<number>): void {
     if (refused !== this.refused) throw new Error('lotes recusados de outro conjunto');
     refused.add(lot.id);
     this.refusedSize = refused.size;
     const slot = this.slotOf.get(lot.id);
-    if (slot !== undefined) this.refresh(slot);
+    if (slot !== undefined) this.flag(slot);
   }
 
   private sync(refused: ReadonlySet<number>): void {
     const host = this.host;
-    if (host.lotRevision() !== this.seenLots || host.lots.length !== this.records.length || refused !== this.refused || refused.size !== this.refusedSize) {
+    const lots = host.lots.changedFor(this.cursor);
+    if (lots === null || refused !== this.refused || refused.size !== this.refusedSize) {
       this.rebuild(refused);
       return;
+    }
+    if (lots.length) {
+      const last: Lot[] = [];
+      for (const id of new Set(lots)) {
+        const lot = host.lots.get(id);
+        const slot = this.slotOf.get(id);
+        if (slot !== undefined) {
+          // Changed where it stands: the same slot. Gone, or put last in the store: a hole here.
+          if (lot && host.lots.orderOf(id) === this.slotOrder[slot]) { if (this.records[slot] !== lot) this.place(slot, lot); continue; }
+          this.clear(slot);
+        }
+        if (lot) last.push(lot);
+      }
+      if (this.records.length + last.length > this.room || this.holes > Math.max(MIN_ROOM, this.records.length - this.holes)) {
+        this.rebuild(refused);
+        return;
+      }
+      last.sort((a, b) => host.lots.orderOf(a.id)! - host.lots.orderOf(b.id)!);
+      for (const lot of last) {
+        const slot = this.records.length;
+        this.records.push(undefined);
+        this.slotOrder.push(host.lots.orderOf(lot.id)!);
+        this.cellOfSlot.push(-1);
+        this.slotOf.set(lot.id, slot);
+        this.place(slot, lot);
+      }
     }
     if (host.buildingsRevision() === this.seenBuildings) return;
     const entries = host.buildingsSince(this.seenBuildings);
     if (!entries || entries.some((e) => !e.ids)) { this.rebuild(refused); return; }
-    for (const e of entries) for (const id of e.ids!) for (const slot of this.byBuilding.get(id) ?? []) this.refresh(slot);
+    for (const e of entries) for (const id of e.ids!) for (const slot of this.byBuilding.get(id) ?? []) this.flag(slot);
     this.seenBuildings = host.buildingsRevision();
   }
 
-  /** One lot's flag read again (a building of it came or went, it was set aside). */
-  private refresh(slot: number): void {
-    const lot = this.records[slot]!;
-    const b = lot.building;
+  /** A slot takes this record (its lot's new version, or a lot new to the slot): its cell, its building and its flag with it. */
+  private place(slot: number, lot: Lot): void {
+    const was = this.records[slot];
+    if (was?.building !== lot.building) {
+      if (was?.building !== undefined) this.unname(was.building, slot);
+      if (lot.building !== undefined) {
+        const named = this.byBuilding.get(lot.building);
+        if (named) named.add(slot); else this.byBuilding.set(lot.building, new Set([slot]));
+      }
+    }
+    this.records[slot] = lot;
+    this.file(slot, lot.use ? cellOf(lot) : -1);
+    this.flag(slot);
+  }
+
+  /** A slot left as a hole: its lot gone from the store, or put last there. */
+  private clear(slot: number): void {
+    const was = this.records[slot]!;
+    if (was.building !== undefined) this.unname(was.building, slot);
+    this.slotOf.delete(was.id);
+    this.records[slot] = undefined;
+    this.file(slot, -1);
+    this.flag(slot);
+    this.holes++;
+  }
+
+  private unname(building: number, slot: number): void {
+    const named = this.byBuilding.get(building);
+    named?.delete(slot);
+    if (named?.size === 0) this.byBuilding.delete(building);
+    if (building === this.lastId) this.lastStale = true;
+  }
+
+  private file(slot: number, key: number): void {
+    const was = this.cellOfSlot[slot]!;
+    if (was === key) return;
+    if (was >= 0) {
+      const cell = this.cells.get(was)!;
+      cell.delete(slot);
+      if (cell.size === 0) this.cells.delete(was);
+    }
+    if (key >= 0) {
+      const cell = this.cells.get(key);
+      if (cell) cell.add(slot); else this.cells.set(key, new Set([slot]));
+    }
+    this.cellOfSlot[slot] = key;
+  }
+
+  /** One slot's flag read again (its lot changed, a building of it came or went, it was set aside). */
+  private flag(slot: number): void {
+    const lot = this.records[slot];
+    const b = lot?.building;
     const standing = b !== undefined && this.host.standing(b);
-    const open = lot.use && !standing && !this.refused.has(lot.id) ? 1 : 0;
+    const open = lot?.use && !standing && !this.refused.has(lot.id) ? 1 : 0;
     if (open !== this.open[slot]) {
       this.open[slot] = open;
       this.openCount += open ? 1 : -1;
-      for (let i = slot + 1; i <= this.records.length; i += i & -i) this.tree[i] = this.tree[i]! + (open ? 1 : -1);
+      for (let i = slot + 1; i <= this.room; i += i & -i) this.tree[i] = this.tree[i]! + (open ? 1 : -1);
     }
-    if (standing && b > this.lastId) this.lastId = b;
-    else if (!standing && b === this.lastId) this.lastId = this.highestStanding();
+    if (standing && b > this.lastId && !this.lastStale) this.lastId = b;
+    else if (!standing && b === this.lastId) this.lastStale = true;
   }
 
-  /** @rebuild Only when the building grown last is gone. */
-  private highestStanding(): number {
+  /** @rebuild Only when the building grown last is gone, or its lot. */
+  private findLast(): void {
     let best = -1;
-    for (const l of this.records) if (l.building !== undefined && l.building > best && this.host.standing(l.building)) best = l.building;
-    return best;
+    for (const l of this.records) if (l?.building !== undefined && l.building > best && this.host.standing(l.building)) best = l.building;
+    this.lastId = best;
+    this.lastStale = false;
   }
 
-  /** @rebuild The lots, the buildings or the set aside changed in a way it does not follow: all read again. */
+  /** @rebuild The lots taken whole (a load, a copy), the buildings' diary forgotten, the set aside changed, or the slots laid again (the room ran out, the holes outnumber the lots): all read again. */
   private rebuild(refused: ReadonlySet<number>): void {
     const host = this.host;
-    this.records = [...host.lots];
+    this.records = [...host.lots.all()];
     const n = this.records.length;
+    this.room = Math.max(MIN_ROOM, 2 * n);
+    this.slotOrder = this.records.map((lot) => host.lots.orderOf(lot!.id)!);
+    this.cellOfSlot = new Array<number>(n).fill(-1);
     this.slotOf.clear(); this.cells.clear(); this.byBuilding.clear();
-    this.open = new Uint8Array(n);
-    this.tree = new Int32Array(n + 1);
+    this.open = new Uint8Array(this.room);
+    this.tree = new Int32Array(this.room + 1);
     this.refused = refused;
     this.refusedSize = refused.size;
     this.openCount = 0;
+    this.holes = 0;
     this.lastId = -1;
+    this.lastStale = false;
     for (let slot = 0; slot < n; slot++) {
       const lot = this.records[slot]!;
       this.slotOf.set(lot.id, slot);
@@ -188,26 +273,28 @@ export class OpenLots<L extends LotLike> {
       const standing = b !== undefined && host.standing(b);
       if (b !== undefined) {
         const named = this.byBuilding.get(b);
-        if (named) named.push(slot);
-        else this.byBuilding.set(b, [slot]);
+        if (named) named.add(slot); else this.byBuilding.set(b, new Set([slot]));
         if (standing && b > this.lastId) this.lastId = b;
       }
       if (!lot.use) continue;
-      const c = lotCentre(lot), key = keyOf(Math.floor(c.x / CELL), Math.floor(c.y / CELL));
-      const cell = this.cells.get(key);
-      if (cell) cell.push(slot);
-      else this.cells.set(key, [slot]);
+      this.file(slot, cellOf(lot));
       if (!standing && !refused.has(lot.id)) { this.open[slot] = 1; this.openCount++; }
     }
     // The tree in one pass: each node handing its sum on to its parent.
-    for (let i = 1; i <= n; i++) {
+    for (let i = 1; i <= this.room; i++) {
       this.tree[i] = this.tree[i]! + this.open[i - 1]!;
       const up = i + (i & -i);
-      if (up <= n) this.tree[up] = this.tree[up]! + this.tree[i]!;
+      if (up <= this.room) this.tree[up] = this.tree[up]! + this.tree[i]!;
     }
-    this.top = 0;
-    if (n > 0) for (this.top = 1; this.top * 2 <= n; this.top *= 2);
-    this.seenLots = host.lotRevision();
+    for (this.top = 1; this.top * 2 <= this.room; this.top *= 2);
+    // The diary read up to now: what came before is in the slots.
+    host.lots.changedFor(this.cursor);
     this.seenBuildings = host.buildingsRevision();
   }
+}
+
+/** The cell of the centres' grid a lot's centre lies in. */
+function cellOf(lot: Lot): number {
+  const c = lotCentre(lot);
+  return keyOf(Math.floor(c.x / CELL), Math.floor(c.y / CELL));
 }

@@ -6,7 +6,7 @@ describe('the image of the document', () => {
   it('names a part for every key of the saved map that the player changes', () => {
     const doc = new RoadDoc();
     const parts = Object.values(PARTS_OF_SAVED).flat() as (string | null)[];
-    const records = new Set(['nodes', 'segments', 'poles', 'poleSpans', 'landscape', 'barriers', 'buildings']);
+    const records = new Set(['nodes', 'segments', 'poles', 'poleSpans', 'landscape', 'barriers', 'buildings', 'lots']);
     for (const part of parts) {
       if (part === null || records.has(part)) continue;
       if (part in LIST_KINDS) expect(Array.isArray(doc.listOf(part as never)), part).toBe(true);

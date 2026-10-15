@@ -42,6 +42,9 @@ const RECORDS: readonly { readonly part: RecordPart; readonly kinds: readonly Do
   { part: 'barriers', kinds: ['barriers'], entries: (d) => d.barriers, get: (d, id) => d.barriers.get(id) },
   // A building's record is replaced, never changed in place (`BuildingStore.put`): kept by reference.
   { part: 'buildings', kinds: ['buildings', 'buildingWear'], entries: (d) => buildingEntries(d), get: (d, id) => d.buildings.get(id as never), immutable: true },
+  // A lot's record too (`LotStore` OWNERSHIP), by the ids its entries carry. DO NOT go back to the lots as a
+  // list: a stretch of a list is found by walking it from both ends, the whole cadastre at each lot edited.
+  { part: 'lots', kinds: ['lots'], entries: (d) => lotEntries(d), get: (d, id) => d.lotStore.get(id), immutable: true },
 ];
 const LISTS = Object.keys(LIST_KINDS) as ListPart[];
 /** The values and the kind that moves each; null: compared at every commit (they are small). */
@@ -52,6 +55,10 @@ const VALUES: Readonly<Record<ValuePart, DocChangeKind | null>> = {
 
 function* buildingEntries(d: RoadDoc): Iterable<readonly [number, unknown]> {
   for (const b of d.buildings.all()) yield [b.id, b];
+}
+
+function* lotEntries(d: RoadDoc): Iterable<readonly [number, unknown]> {
+  for (const lot of d.lotStore.all()) yield [lot.id, lot];
 }
 
 export interface DocPatch {
