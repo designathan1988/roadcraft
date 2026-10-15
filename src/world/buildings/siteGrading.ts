@@ -1,4 +1,5 @@
 import type { GroundAt, PavedAt } from './foundation';
+import { Digest } from '@core/digest';
 import { type Pad, type TownPads, buildingPads, padOf } from './pads';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
@@ -45,9 +46,11 @@ export function siteGrading(
   /** Each building's platform by record, while the roads and the land stand (`buildingPads`). */
   let padsKnown = new WeakMap<Building, Pad | null>();
   /** The buildings the ground was last graded for, by id: their record then, its site as text, and the box their bank reaches. */
-  const graded = new Map<number, { ref: Building; site: string; box: SiteBox }>();
+  const graded = new Map<number, { ref: Building; site: number; box: SiteBox }>();
   /**
-   * What a building's site is graded from, as text, once per record: the
+   * What a building's site is graded from, as a digest (`core/digest.ts`),
+   * once per record (DO NOT key it by text: a string per building held while
+   * it stands): the
    * platform the grading reads (`buildingPads`, kept in `padsKnown` for the
    * grading itself) - each ring's corners, the platform's height at each,
    * water, paving, its solid blocks and split levels - and nothing else of
@@ -57,24 +60,26 @@ export function siteGrading(
    * town's ageing - a record every few seconds - re-graded the lot and set
    * off everything that stands on the ground round it.
    */
-  const siteText = new WeakMap<Building, string>();
-  const siteTextOf = (b: Building): string => {
-    let text = siteText.get(b);
-    if (text === undefined) {
+  const siteKey = new WeakMap<Building, number>();
+  const siteKeyOf = (b: Building): number => {
+    let key = siteKey.get(b);
+    if (key === undefined) {
       if (!padsKnown.has(b)) buildingPads([b], groundAt, pavedAt, apron, padsKnown);
       const pad = padsKnown.get(b);
-      text = '';
+      const digest = new Digest();
       if (pad) {
-        text = `${pad.solidCount}|${pad.stepped ? 1 : 0}`;
+        digest.add(pad.solidCount).add(pad.stepped ? 1 : 0);
         pad.rings.forEach((ring, i) => {
           const level = pad.levels[i]!;
-          text += `|${pad.water[i] ? 'w' : ''}${pad.paved[i] ? 'p' : ''}`;
-          for (const p of ring) text += `;${p.x.toFixed(3)},${p.y.toFixed(3)},${level(p.x, p.y).toFixed(3)}`;
+          digest.add(pad.water[i] ? 1 : 0).add(pad.paved[i] ? 1 : 0).add(ring.length);
+          // To the millimetre, as the text was: a platform moved by less grades the same.
+          for (const p of ring) digest.add(Math.round(p.x * 1000)).add(Math.round(p.y * 1000)).add(Math.round(level(p.x, p.y) * 1000));
         });
-      }
-      siteText.set(b, text);
+      } else digest.add(-1);
+      key = digest.value();
+      siteKey.set(b, key);
     }
-    return text;
+    return key;
   };
   /**
    * The diary's revision the sites were last read at, and the town's
@@ -96,7 +101,7 @@ export function siteGrading(
     const grade = (b: Building): void => {
       const was = graded.get(b.id);
       if (was?.ref === b) return;
-      const site = siteTextOf(b);
+      const site = siteKeyOf(b);
       // A new record of the same site (aged, renamed): nothing to grade.
       if (was && was.site === site) { graded.set(b.id, { ref: b, site, box: was.box }); return; }
       if (was) take(was.box);

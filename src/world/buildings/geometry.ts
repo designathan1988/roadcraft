@@ -4,6 +4,7 @@ import { pointInPolygon } from '@core/polygon';
 import { TUNED_UNIT, m } from '../units';
 import { localFootprint, edgeFrame, volumeSides, offsetRing, overlapArea, supportShare } from './footprints';
 import {
+  BAY_COMPONENTS,
   type BayComponent,
   type Building,
   type BuildingElement,
@@ -557,37 +558,68 @@ export interface FacadeBay {
 }
 
 /**
- * Each building's bays as last worked out, by the record they came from: the
- * platforms, the door links, the access signature and the meshes each worked
- * them out again for every building on every edit (docs/source/performance.md
- * #18). The list handed out is shared: read it, never change it.
- *
- * By the record itself: a stored record is never changed in place
- * (`BuildingStore`, OWNERSHIP), so the same object has the same bays. DO NOT
- * write the whole record as text on every ask to compare it (a furnished
- * building's JSON, for every bay question of every building).
- *
- * Kept for every record while it lives (a WeakMap: a record replaced or
- * removed lets its bays go). They were once kept with each record's whole
- * text beside them - 150 MB of a city of 5 400 (2026-10-14), most of it the
- * text - and then held to the last 1 024 asked, which threw away and worked
- * out again the bays of every building past that as the town was emitted.
- * DO NOT put a cap back: a cache that drops and remakes hides the cost, which
- * comes back with the bigger town.
+ * A building's bays, worked out when asked: the emission of its meshes (once
+ * per build of the record) and its foundation then. NOT kept: a list of bay
+ * objects held for every building of the town was 150 MB of a city of 5 400
+ * (2026-10-14). What is asked again and again - the ground floor's height
+ * (`foundation.ts` `floorHeight`, also by frame) and the street doors - reads
+ * the ground storey's bays packed by record (`groundBays`). DO NOT keep
+ * this list by record again, nor put a cap on such a cache: a cache that
+ * drops and remakes hides the cost, which comes back with the bigger town.
  */
-const BAYS = new WeakMap<Building, FacadeBay[]>();
 export function facadeBays(b: Building): FacadeBay[] {
-  let known = BAYS.get(b);
-  if (!known) BAYS.set(b, known = workOutFacadeBays(b));
+  return workOutFacadeBays(b);
+}
+
+/** Numbers per bay in a `GroundBays` table, and where each lies. */
+export const GROUND_BAY_STRIDE = 8;
+export const GB_X = 0, GB_Y = 1, GB_NX = 2, GB_NY = 3, GB_Z = 4, GB_SIDE = 5, GB_WIDTH = 6, GB_COMPONENT = 7;
+
+/**
+ * The ground storey's bays (level 0) of a building, packed: `GROUND_BAY_STRIDE`
+ * numbers a bay, at the `GB_*` offsets, the component as its index in
+ * `BAY_COMPONENTS`. One typed array per record, no object per bay.
+ */
+export type GroundBays = Float64Array;
+
+/**
+ * Each record's ground storey bays (`GroundBays`), by the record itself: a
+ * stored record is never changed in place (`BuildingStore`, OWNERSHIP), so the
+ * same object has the same bays, and a record replaced or removed lets them go
+ * (a WeakMap).
+ */
+const GROUND_BAYS = new WeakMap<Building, GroundBays>();
+export function groundBays(b: Building): GroundBays {
+  let known = GROUND_BAYS.get(b);
+  if (!known) {
+    const bays = workOutFacadeBays(b, 0);
+    known = new Float64Array(bays.length * GROUND_BAY_STRIDE);
+    bays.forEach((bay, i) => {
+      const o = i * GROUND_BAY_STRIDE;
+      known![o + GB_X] = bay.x;
+      known![o + GB_Y] = bay.y;
+      known![o + GB_NX] = bay.nx;
+      known![o + GB_NY] = bay.ny;
+      known![o + GB_Z] = bay.z;
+      known![o + GB_SIDE] = bay.side;
+      known![o + GB_WIDTH] = bay.width;
+      known![o + GB_COMPONENT] = BAY_COMPONENTS.indexOf(bay.component);
+    });
+    GROUND_BAYS.set(b, known);
+  }
   return known;
 }
+
+/** The component of a packed ground bay. */
+export const groundBayComponent = (table: GroundBays, i: number): BayComponent =>
+  BAY_COMPONENTS[table[i * GROUND_BAY_STRIDE + GB_COMPONENT]!]!;
 
 /**
  * Every bay that is an OUTSIDE wall. A stretch of a side that another volume
  * stands against on the same level is a shared wall and is left out; a bay
  * only partly against one keeps its exposed piece, as plain wall.
  */
-function workOutFacadeBays(b: Building): FacadeBay[] {
+function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
   const out: FacadeBay[] = [];
   const elevations: number[] = [];
   const top = topLevel(b);
@@ -597,6 +629,7 @@ function workOutFacadeBays(b: Building): FacadeBay[] {
       const storey = v.storeys[k];
       if (!storey) continue;
       const level = v.base + k;
+      if (onlyLevel !== undefined && level !== onlyLevel) continue;
       const z = volumeLift(v) + (elevations[level] ?? levelElevation(b, level));
       const height = levelHeight(b, level);
       for (const side of volumeSides(v)) {

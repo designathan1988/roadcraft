@@ -1,13 +1,19 @@
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
 import { JournalCursor } from '../derived';
+import { samePlain } from '@core/plain';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, cloneBuilding, settleBuilding } from './types';
 
-/** Each stored record's text (`BuildingStore.toText`). */
-const RECORD_TEXT = new WeakMap<Building, string>();
+/** Two records the same in every field but their wear (`decay`), compared field by field, no copy and no text. */
+function sameButWear(a: Building, b: Building): boolean {
+  const x = a as unknown as Record<string, unknown>, y = b as unknown as Record<string, unknown>;
+  for (const k in x) if (k !== 'decay' && !samePlain(x[k], y[k])) return false;
+  for (const k in y) if (k !== 'decay' && x[k] === undefined && y[k] !== undefined) return false;
+  return true;
+}
 
 /**
  * Where a building stands, for the diary: its box, or - a record with no
@@ -243,14 +249,15 @@ export class BuildingStore {
   }
 
   /**
-   * `JSON.stringify(this.toJSON())`, each record's text written once: records
-   * are never changed in place (OWNERSHIP above), and writing every
-   * furnished building again was most of the text the undo took on each road
-   * drawn (docs/performance.md #21).
+   * `JSON.stringify(this.toJSON())`, without the copies: a stored record is
+   * plain and never changed in place (OWNERSHIP above), so its own text is
+   * its copy's. Written when asked (the autosave, an export), never kept:
+   * DO NOT keep each record's text beside it - a string the size of the
+   * record held for every building of the town.
    */
   toText(): string {
     const parts: string[] = [];
-    for (const b of this.items.values()) parts.push(this.textOf(b));
+    for (const b of this.items.values()) parts.push(JSON.stringify(b));
     return `[${parts.join(',')}]`;
   }
 
@@ -326,9 +333,9 @@ export class BuildingStore {
       if (!was) {
         this.grid?.insert(kept);
         touched.push(kept);
-      } else if (this.textOf(kept) !== this.textOf(was)) {
+      } else if (!samePlain(kept, was)) {
         this.grid?.update(kept);
-        if ((kept.decay ?? 0) !== (was.decay ?? 0) && JSON.stringify({ ...kept, decay: was.decay }) === this.textOf(was)) worn.push(kept);
+        if ((kept.decay ?? 0) !== (was.decay ?? 0) && sameButWear(kept, was)) worn.push(kept);
         else touched.push(was, kept);
       }
     };
@@ -341,19 +348,5 @@ export class BuildingStore {
     }
     if (touched.length) this.changed(touched, 'replaced by an edit or an undo');
     if (worn.length) this.journal.record('buildingWear', worn.map(rectOf), { ids: worn.map((w) => w.id as number) });
-  }
-
-  /**
-   * One record's text, written once (`toText`): the record's own text, which
-   * is its copy's (`cloneBuilding` is a JSON round trip, and what JSON read
-   * back is written as the same text).
-   */
-  private textOf(b: Building): string {
-    let text = RECORD_TEXT.get(b);
-    if (text === undefined) {
-      text = JSON.stringify(b);
-      RECORD_TEXT.set(b, text);
-    }
-    return text;
   }
 }

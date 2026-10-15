@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DocImage, PARTS_OF_SAVED, samePlain } from '@world/docImage';
+import { DocImage, PARTS_OF_SAVED } from '@world/docImage';
+import { samePlain } from '@core/plain';
 import { LIST_KINDS, RoadDoc } from '@world/doc';
 
 describe('the image of the document', () => {

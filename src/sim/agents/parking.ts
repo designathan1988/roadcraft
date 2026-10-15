@@ -253,31 +253,35 @@ const LOT_REACHED = LOT_READS * 2;
  * record is never changed in place (`world/buildings/store.ts`, OWNERSHIP),
  * so what is read off it once stays true while it is stored.
  */
-const RECORD_READS = new WeakMap<Building, { text?: string; walls?: readonly Wall[] }>();
-function recordReads(b: Building): { text?: string; walls?: readonly Wall[] } {
+const RECORD_READS = new WeakMap<Building, { lot?: number; walls?: readonly Wall[] }>();
+function recordReads(b: Building): { lot?: number; walls?: readonly Wall[] } {
   let reads = RECORD_READS.get(b);
   if (!reads) RECORD_READS.set(b, reads = {});
   return reads;
 }
-function lotText(b: Building): string {
+/** What of a record its bays are worked out from: all of it but its age, name and plan version. */
+const notOfTheLot = (key: string): boolean => key === 'decay' || key === 'builtAt' || key === 'name' || key === 'lotPlan';
+/**
+ * The record's lot as a digest of its fields (`Digest.addPlain`), once per
+ * record. DO NOT key it by its JSON text: a string the size of the record
+ * held for every building with parking.
+ */
+function lotKey(b: Building): number {
   const reads = recordReads(b);
-  if (reads.text === undefined) {
-    const { decay: _decay, builtAt: _builtAt, name: _name, lotPlan: _lotPlan, ...lot } = b;
-    reads.text = JSON.stringify(lot);
-  }
-  return reads.text;
+  reads.lot ??= new Digest().addPlain(b, notOfTheLot).value();
+  return reads.lot;
 }
 
 const hasParking = (b: Building): boolean => (b.elements ?? []).some((el) => el.kind === 'parking');
 
 /**
  * A lot's bays as last worked out, with what they were worked out from: its
- * record (`lotText`), and a digest of the lanes within reach (their lines and
+ * record (`lotKey`), and a digest of the lanes within reach (their lines and
  * whether they are ghosts) and of the walls within reach. A lot whose
  * surroundings are the same keeps its bays (docs/performance.md #15). The
  * bays' ids are set when the town's list is put together.
  */
-interface LotBays { readonly lot: string; readonly key: number; readonly bays: readonly Bay[] }
+interface LotBays { readonly lot: number; readonly key: number; readonly bays: readonly Bay[] }
 
 /** The bays of a world as last worked out, and what they were worked out from. */
 interface BayBook {
@@ -426,7 +430,7 @@ const meets = (r: ChangeRect, box: { minX: number; minY: number; maxX: number; m
  */
 function lotBaysOf(w: SimWorld, b: Building, was: LotBays | undefined, rects: readonly ChangeRect[] | null, walls: Walls): LotBays {
   const box = storedBounds(b, LOT_READS);
-  const lot = lotText(b);
+  const lot = lotKey(b);
   if (rects && was && was.lot === lot && !rects.some((r) => meets(r, box))) return was;
   const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
   // The lot's key: each lane and wall within reach by its own digest

@@ -1,7 +1,7 @@
 import { steadyRatio } from '@core/scalar';
 import { containsPoint, localFootprint } from './footprints';
 import { m } from '../units';
-import { type FacadeBay, facadeBays, groundVolumes, localToWorld, volumeLift } from './geometry';
+import { type FacadeBay, type GroundBays, GB_NX, GB_NY, GB_X, GB_Y, GB_Z, GROUND_BAY_STRIDE, facadeBays, groundBayComponent, groundBays, groundVolumes, localToWorld, volumeLift } from './geometry';
 import type { BayComponent, Building, FaceId } from './types';
 
 /**
@@ -207,16 +207,23 @@ function atLevel(pavedAt: PavedAt, land: number, low = land): PavedAt {
  * is never below it: a door onto a footway is at the footway's level, not a
  * step down from it.
  */
-function entrancePaving(bays: readonly FacadeBay[], pavedAt: PavedAt): number {
+/** How far out from an access its paving is looked for, nearest first. */
+const ENTRANCE_LOOKS = 3;
+const entranceLook = (k: number): number => (k === 0 ? m(0.25) : k === 1 ? ENTRANCE_REACH * 0.5 : ENTRANCE_REACH);
+
+/** The ground storey's bays packed (`groundBays`): no bay object made, as the floor is asked for by frame. */
+function entrancePaving(bays: GroundBays, pavedAt: PavedAt): number {
   let best = -Infinity;
-  for (const bay of bays) {
-    if (!isAccess(bay)) continue;
-    for (const d of [m(0.25), ENTRANCE_REACH * 0.5, ENTRANCE_REACH]) {
-      const h = pavedAt(bay.x + bay.nx * d, bay.y + bay.ny * d);
+  for (let i = 0, o = 0; o < bays.length; i++, o += GROUND_BAY_STRIDE) {
+    if (!ACCESS_COMPONENTS.has(groundBayComponent(bays, i))) continue;
+    const x = bays[o + GB_X]!, y = bays[o + GB_Y]!, nx = bays[o + GB_NX]!, ny = bays[o + GB_NY]!;
+    for (let k = 0; k < ENTRANCE_LOOKS; k++) {
+      const d = entranceLook(k);
+      const h = pavedAt(x + nx * d, y + ny * d);
       if (Number.isFinite(h)) {
         // A door of a block at a floor of its own puts the ground floor that
-        // far from its paving (`bay.z` of a ground-level bay is its block's lift).
-        best = Math.max(best, h - bay.z);
+        // far from its paving (`z` of a ground-level bay is its block's lift).
+        best = Math.max(best, h - bays[o + GB_Z]!);
         break;
       }
     }
@@ -258,7 +265,7 @@ export function foundationOf(
   const all = bays ?? facadeBays(b);
   const { lowest, highest, levelLowest, levelHighest } = sampleFootprint(b, groundAt);
   const pavedAt = atLevel(anyPaving, highest, lowest);
-  const groundFloor = designedFloor ?? floorOver(highest, all, pavedAt, lotFront(b, pavedAt));
+  const groundFloor = designedFloor ?? floorOver(highest, groundBays(b), pavedAt, lotFront(b, pavedAt));
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
   const entrances: Entrance[] = [];
   for (const bay of all) {
@@ -395,7 +402,7 @@ export class FloorCache {
 export function floorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = NO_PAVING): number {
   const { lowest, highest } = sampleFootprint(b, groundAt);
   const paved = atLevel(pavedAt, highest, lowest);
-  return floorOver(highest, facadeBays(b), paved, lotFront(b, paved));
+  return floorOver(highest, groundBays(b), paved, lotFront(b, paved));
 }
 
 /**
@@ -444,16 +451,15 @@ export const THRESHOLD = m(0.04);
  * here: a block the player sinks (the Builder's block level) goes into the
  * ground, as Revit's base offset sets a wall below its level.
  */
-function floorOver(highest: number, bays: readonly FacadeBay[], pavedAt: PavedAt, lot = -Infinity): number {
+function floorOver(highest: number, bays: GroundBays, pavedAt: PavedAt, lot = -Infinity): number {
   if (pavedAt === NO_PAVING) return highest + PLINTH_MIN;
   const door = entrancePaving(bays, pavedAt);
   if (Number.isFinite(door)) return door + THRESHOLD;
   if (Number.isFinite(lot)) return lot + THRESHOLD;
   let front = -Infinity;
-  for (const bay of bays) {
-    if (bay.level !== 0) continue;
-    const h = pavedAt(bay.x + bay.nx * m(0.5), bay.y + bay.ny * m(0.5));
-    if (Number.isFinite(h)) front = Math.max(front, h - bay.z);
+  for (let o = 0; o < bays.length; o += GROUND_BAY_STRIDE) {
+    const h = pavedAt(bays[o + GB_X]! + bays[o + GB_NX]! * m(0.5), bays[o + GB_Y]! + bays[o + GB_NY]! * m(0.5));
+    if (Number.isFinite(h)) front = Math.max(front, h - bays[o + GB_Z]!);
   }
   return Number.isFinite(front) ? front + THRESHOLD : highest + PLINTH_MIN;
 }

@@ -766,11 +766,6 @@
       "count": 1
     }
   },
-  "src/world/buildings/store.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/world/buildings/streetDoors.ts": {
     "roadcraft/no-module-state": {
       "count": 1

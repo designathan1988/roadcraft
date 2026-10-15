@@ -27,21 +27,51 @@ const REACH = m(2);
 /** The grid the volumes are filed in, world units a cell. */
 const CELL = m(40);
 
-interface Solid {
-  /** The building's frame. */
-  readonly bx: number;
-  readonly by: number;
-  readonly cos: number;
-  readonly sin: number;
-  /** The volume's box, in the building's frame. */
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-  /** World heights: the building's floor and the eye's floor over the roof. */
-  readonly foot: number;
-  readonly top: number;
+/**
+ * The solid volumes, packed: `STRIDE` numbers a volume - its building's
+ * frame (`S_BX`, `S_BY`, `S_COS`, `S_SIN`), its box in that frame (`S_X0` ..
+ * `S_Y1`) and the world heights of the building's floor and of the eye's floor
+ * over the roof (`S_FOOT`, `S_TOP`) - in pages of `PAGE` volumes: volume
+ * `slot` lives in page `slot >>> PAGE_BITS` at `slot & (PAGE - 1)`. Pages are
+ * added as the town grows and never moved or copied; a building taken out
+ * gives its slots back to the free list. DO NOT go back to an object per
+ * volume and a set per building: 29 MB of a city of 5 400.
+ */
+const STRIDE = 10;
+const S_BX = 0, S_BY = 1, S_COS = 2, S_SIN = 3, S_X0 = 4, S_Y0 = 5, S_X1 = 6, S_Y1 = 7, S_FOOT = 8, S_TOP = 9;
+const PAGE_BITS = 12;
+const PAGE = 1 << PAGE_BITS;
+
+class SolidPages {
+  private pages: Float64Array[] = [];
+  private free: number[] = [];
+  private next = 0;
+
+  /** A slot for one volume, from the free list or a new one (a page added when it is the first of one). */
+  take(): number {
+    const slot = this.free.pop() ?? this.next++;
+    while (this.pages.length <= slot >>> PAGE_BITS) this.pages.push(new Float64Array(PAGE * STRIDE));
+    return slot;
+  }
+
+  give(slot: number): void {
+    this.free.push(slot);
+  }
+
+  /** The page holding `slot`, read at `at(slot) + S_*`. */
+  page(slot: number): Float64Array {
+    return this.pages[slot >>> PAGE_BITS]!;
+  }
+
+  clear(): void {
+    this.pages = [];
+    this.free = [];
+    this.next = 0;
+  }
 }
+
+/** Where a slot's numbers start in its page. */
+const at = (slot: number): number => (slot & (PAGE - 1)) * STRIDE;
 
 export interface CameraSolids {
   /** The lowest the eye may stand at (x, y), world height; -Infinity away from every building. */
@@ -174,34 +204,39 @@ export function cameraSolids(buildings: Iterable<Building>, floorOf: (b: Buildin
 
 const cellKey = (cx: number, cy: number): number => (cx + 4096) * 8192 + (cy + 4096);
 
-/** The solid volumes filed by cell, each building's taken out and filed again on its own. */
+/** The solid volumes filed by cell (their slots in `SolidPages`), each building's taken out and filed again on its own. */
 class SolidFiling implements CameraSolids {
-  private readonly cells = new Map<number, Solid[]>();
-  /** Each building's record filed, its solids and the cells they are filed in. */
-  private readonly filed = new Map<BuildingId, { readonly b: Building; readonly solids: ReadonlySet<Solid>; readonly keys: readonly number[] }>();
+  private readonly pages = new SolidPages();
+  private readonly cells = new Map<number, number[]>();
+  /** Each building's record filed, its volumes' slots and the cells they are filed in. */
+  private readonly filed = new Map<BuildingId, { readonly b: Building; readonly slots: readonly number[]; readonly keys: readonly number[] }>();
 
   clear(): void {
     this.cells.clear();
     this.filed.clear();
+    this.pages.clear();
   }
 
   /** `b`'s solid volumes filed, standing on `foot`. */
   add(b: Building, foot: number): void {
     const cos = Math.cos(b.rotation);
     const sin = Math.sin(b.rotation);
-    const solids = new Set<Solid>();
+    const slots: number[] = [];
     const keys: number[] = [];
     for (const v of b.volumes) {
       if (v.open || !isMass(v)) continue;
-      const solid: Solid = {
-        bx: b.x, by: b.y, cos, sin,
-        x0: v.x, y0: v.y, x1: v.x + v.w, y1: v.y + v.d,
-        foot, top: foot + volumeHeight(b, v) + roofRise(b, v) + CLEARANCE,
-      };
-      solids.add(solid);
+      const solid = this.pages.take();
+      const page = this.pages.page(solid), o = at(solid);
+      const x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.d;
+      page[o + S_BX] = b.x; page[o + S_BY] = b.y; page[o + S_COS] = cos; page[o + S_SIN] = sin;
+      page[o + S_X0] = x0; page[o + S_Y0] = y0; page[o + S_X1] = x1; page[o + S_Y1] = y1;
+      page[o + S_FOOT] = foot; page[o + S_TOP] = foot + volumeHeight(b, v) + roofRise(b, v) + CLEARANCE;
+      slots.push(solid);
       // The world box of the volume grown by the reach, filed in every cell it touches.
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const [lx, ly] of [[solid.x0, solid.y0], [solid.x1, solid.y0], [solid.x1, solid.y1], [solid.x0, solid.y1]] as const) {
+      for (let corner = 0; corner < 4; corner++) {
+        const lx = corner === 0 || corner === 3 ? x0 : x1;
+        const ly = corner < 2 ? y0 : y1;
         const wx = b.x + lx * cos - ly * sin;
         const wy = b.y + lx * sin + ly * cos;
         minX = Math.min(minX, wx); maxX = Math.max(maxX, wx);
@@ -217,7 +252,7 @@ class SolidFiling implements CameraSolids {
         }
       }
     }
-    this.filed.set(b.id, { b, solids, keys });
+    this.filed.set(b.id, { b, slots, keys });
   }
 
   /** The record a building was filed as. */
@@ -229,11 +264,14 @@ class SolidFiling implements CameraSolids {
   remove(id: BuildingId): void {
     const known = this.filed.get(id);
     if (!known) return;
-    for (const k of new Set(known.keys)) {
-      const kept = this.cells.get(k)!.filter((s) => !known.solids.has(s));
+    for (const k of known.keys) {
+      const list = this.cells.get(k);
+      if (!list) continue; // a cell two of its volumes are filed in, already emptied of them
+      const kept = list.filter((slot) => !known.slots.includes(slot));
       if (kept.length) this.cells.set(k, kept);
       else this.cells.delete(k);
     }
+    for (const slot of known.slots) this.pages.give(slot);
     this.filed.delete(id);
   }
 
@@ -241,34 +279,41 @@ class SolidFiling implements CameraSolids {
     visit: (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void): void {
     for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
       for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
-        for (const s of this.cells.get(cellKey(cx, cy)) ?? []) visit(s.bx, s.by, s.cos, s.sin, s.x0, s.y0, s.x1, s.y1, s.top - CLEARANCE);
+        for (const slot of this.cells.get(cellKey(cx, cy)) ?? []) {
+          const p = this.pages.page(slot), o = at(slot);
+          visit(p[o + S_BX]!, p[o + S_BY]!, p[o + S_COS]!, p[o + S_SIN]!, p[o + S_X0]!, p[o + S_Y0]!, p[o + S_X1]!, p[o + S_Y1]!, p[o + S_TOP]! - CLEARANCE);
+        }
       }
     }
   }
 
   floorAt(x: number, y: number): number {
-    return lowestEye(this.cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, REACH);
+    return lowestEye(this.pages, this.cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, REACH);
   }
 
   roofAt(x: number, y: number): number {
-    const eye = lowestEye(this.cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, 0);
+    const eye = lowestEye(this.pages, this.cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), x, y, 0);
     return eye === -Infinity ? eye : eye - CLEARANCE;
   }
 }
 
 /** The lowest the eye may stand at (x, y) over `list`, its floor easing down over `reach` round each volume. */
-function lowestEye(list: readonly Solid[] | undefined, x: number, y: number, reach: number): number {
+function lowestEye(pages: SolidPages, list: readonly number[] | undefined, x: number, y: number, reach: number): number {
   let floor = -Infinity;
-  for (const s of list ?? []) {
-    if (s.top <= floor) continue;
-    const dx = x - s.bx, dy = y - s.by;
-    const lx = dx * s.cos + dy * s.sin;
-    const ly = -dx * s.sin + dy * s.cos;
-    const ox = Math.max(s.x0 - lx, 0, lx - s.x1);
-    const oy = Math.max(s.y0 - ly, 0, ly - s.y1);
+  if (!list) return floor;
+  for (const slot of list) {
+    const p = pages.page(slot), o = at(slot);
+    const top = p[o + S_TOP]!;
+    if (top <= floor) continue;
+    const cos = p[o + S_COS]!, sin = p[o + S_SIN]!;
+    const dx = x - p[o + S_BX]!, dy = y - p[o + S_BY]!;
+    const lx = dx * cos + dy * sin;
+    const ly = -dx * sin + dy * cos;
+    const ox = Math.max(p[o + S_X0]! - lx, 0, lx - p[o + S_X1]!);
+    const oy = Math.max(p[o + S_Y0]! - ly, 0, ly - p[o + S_Y1]!);
     const d = Math.hypot(ox, oy);
     if (reach === 0 ? d > 0 : d >= reach) continue;
-    floor = Math.max(floor, reach === 0 ? s.top : s.top - (s.top - s.foot) * smoothstep(d / reach));
+    floor = Math.max(floor, reach === 0 ? top : top - (top - p[o + S_FOOT]!) * smoothstep(d / reach));
   }
   return floor;
 }

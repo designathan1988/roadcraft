@@ -1,7 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
 import { localFootprint } from './footprints';
-import { facadeBays, worldToLocal } from './geometry';
+import { GB_NX, GB_NY, GB_SIDE, GB_WIDTH, GB_X, GB_Y, GB_Z, GROUND_BAY_STRIDE, groundBayComponent, groundBays, worldToLocal } from './geometry';
 import { pointInPolygon } from '@core/polygon';
 import type { BayComponent, Building } from './types';
 
@@ -39,13 +39,16 @@ const STEP_OUT = m(0.6);
 export function streetDoors(b: Building): StreetDoor[] {
   const out: StreetDoor[] = [];
   const rings = b.volumes.filter((v) => v.mode !== 'void' && v.mode !== 'intersect').map((v) => localFootprint(v));
-  for (const bay of facadeBays(b)) {
-    if (bay.level !== 0 || bay.side !== 0 || !PEOPLE_DOORS.has(bay.component)) continue;
-    const foot: Vec2 = worldToLocal(b, { x: bay.x + bay.nx * STEP_OUT, y: bay.y + bay.ny * STEP_OUT });
+  // The ground storey's bays packed (`groundBays`), kept by record: no bay list worked out again.
+  const bays = groundBays(b);
+  for (let i = 0, o = 0; o < bays.length; i++, o += GROUND_BAY_STRIDE) {
+    if (bays[o + GB_SIDE] !== 0 || !PEOPLE_DOORS.has(groundBayComponent(bays, i))) continue;
+    const x = bays[o + GB_X]!, y = bays[o + GB_Y]!, nx = bays[o + GB_NX]!, ny = bays[o + GB_NY]!;
+    const foot: Vec2 = worldToLocal(b, { x: x + nx * STEP_OUT, y: y + ny * STEP_OUT });
     // Something of the building in front of it - a forecourt, a garden, a
     // porch block - means the door is reached through the lot, by its gate.
     if (rings.some((ring) => pointInPolygon(foot, ring))) continue;
-    out.push({ x: bay.x, y: bay.y, nx: bay.nx, ny: bay.ny, width: bay.width, z: bay.z });
+    out.push({ x, y, nx, ny, width: bays[o + GB_WIDTH]!, z: bays[o + GB_Z]! });
   }
   return out;
 }
