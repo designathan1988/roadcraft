@@ -66,7 +66,6 @@ const OUTFIT: Readonly<Record<RosterWardrobe, { female: readonly string[]; male:
   'sport-casual': { female: ['female_sportsuit01', 'female_casualsuit02'], male: ['male_casualsuit02', 'male_casualsuit04', 'male_casualsuit06', 'male_worksuit01'] },
   traditional: { female: ['female_elegantsuit01', 'female_casualsuit01'], male: ['male_worksuit01', 'male_casualsuit01'] },
 };
-void WARDROBE;
 /** The system outfits: a casual person drawn a dress or a suit by the generator keeps it half the time. */
 const WARDROBE_SYSTEM = new Set<string>([...WARDROBE.outfits.male, ...WARDROBE.outfits.female]);
 

@@ -166,17 +166,31 @@ export class DocImage {
       if (!moved(r.kinds)) continue;
       const at = performance.now();
       const kept = this.records.get(r.part)!;
-      for (const [id, now] of r.entries(doc)) {
+      const take = (id: number, now: unknown): void => {
         const was = kept.get(id);
-        if (was === now || (was !== undefined && samePlain(was, now))) continue;
+        if (was === now || (was !== undefined && now !== undefined && samePlain(was, now))) return;
+        if (now === undefined) {
+          if (was === undefined) return;
+          if (keep) records.push({ part: r.part, id, before: was, after: undefined });
+          kept.delete(id);
+          return;
+        }
         const after = r.immutable ? now : copy(now);
         if (keep) records.push({ part: r.part, id, before: was, after });
         kept.set(id, after);
-      }
-      for (const [id, was] of kept) {
-        if (r.get(doc, id) !== undefined) continue;
-        if (keep) records.push({ part: r.part, id, before: was, after: undefined });
-        kept.delete(id);
+      };
+      // The records the diary names since the last commit, and only they. Every
+      // record of the part only when it cannot say (an entry without ids - a
+      // load, an undo, a document replaced -, entries forgotten). DO NOT walk
+      // every record of a kind that moved: one road drawn compared every node
+      // and segment of the map, one building grown walked the town.
+      const ids = this.named(doc, r.kinds);
+      if (ids) {
+        for (const id of [...ids].sort((p, q) => p - q)) take(id, r.get(doc, id));
+      } else {
+        /** @rebuild Every record of the part only when the diary cannot say which changed. */
+        for (const [id, now] of r.entries(doc)) take(id, now);
+        for (const id of [...kept.keys()]) if (r.get(doc, id) === undefined) take(id, undefined);
       }
       if (performance.now() - at > 2) performance.measure(`hitch:image/${r.part} ${kept.size}`, { start: at, end: performance.now() });
     }
@@ -208,6 +222,24 @@ export class DocImage {
     this.see(doc);
     if (!records.length && !lists.length && !values.length) return null;
     return { records, lists, values, bytes: bytesHeld(records, lists, values) };
+  }
+
+  /**
+   * The ids the diary's entries of these kinds name since the last commit (a
+   * superset: an id may be another part's - node and segment ids share the
+   * roads' entries); null when some entry has none or was forgotten.
+   */
+  private named(doc: RoadDoc, kinds: readonly DocChangeKind[]): Set<number> | null {
+    let since = Infinity;
+    for (const kind of kinds) since = Math.min(since, this.seen.get(kind) ?? 0);
+    const entries = doc.changes.since(since, kinds);
+    if (entries === null) return null;
+    const ids = new Set<number>();
+    for (const entry of entries) {
+      if (!entry.ids) return null;
+      for (const id of entry.ids) ids.add(id);
+    }
+    return ids;
   }
 
   private see(doc: RoadDoc): void {

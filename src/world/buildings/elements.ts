@@ -69,7 +69,6 @@ export const ELEMENT_DEFAULTS: Readonly<Record<ElementKind, readonly [number, nu
   drain: [m(0.5), m(0.5), m(0.1)],
 };
 
-/** Whether an element's foot stands on the ground (rather than on a floor, or hung on a wall). */
 /** Parts hung on a facade rather than standing on the ground. */
 export const ON_FACADE: ReadonlySet<ElementKind> = new Set<ElementKind>(['canopy', 'ac', 'awning', 'clock']);
 
@@ -95,6 +94,7 @@ const GROUND_DRESSING: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'drain',
 ]);
 
+/** Whether an element's foot stands on the ground (rather than on a floor, or hung on a wall). */
 export const onGround = (e: BuildingElement): boolean => e.z <= EPS && !ON_FACADE.has(e.kind);
 
 /**
@@ -335,7 +335,7 @@ function elementsAgainstBayAxis(b: Building, v: Volume, bay: BayRef, kind: Eleme
   const [dw, dd, dh] = ELEMENT_DEFAULTS[kind];
   const frame = edgeFrame(v, bay.side);
   const n = { x: frame.nx, y: frame.ny };
-  const facing: Side = v.outline ? (Math.abs(n.x) > Math.abs(n.y) ? (n.x > 0 ? 1 : 3) : (n.y > 0 ? 2 : 0)) : (Math.abs(n.x) > Math.abs(n.y) ? (n.x > 0 ? 1 : 3) : (n.y > 0 ? 2 : 0));
+  const facing: Side = Math.abs(n.x) > Math.abs(n.y) ? (n.x > 0 ? 1 : 3) : (n.y > 0 ? 2 : 0);
   const s = sideStart(v, bay.side);
   const width = bayWidth(b, v, bay.side);
   const along = (bay.index + 0.5) * width;

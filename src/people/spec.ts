@@ -222,8 +222,7 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
   // What to wear: a top with trousers or a skirt (most people), one of the
   // system outfits, or a dress or a suit; then now and then glasses,
   // jewellery, and a beard on a man.
-  const tops = itemsOf('top', { street: true, sex }), trousers = itemsOf('bottom', { street: true, sex });
-  const skirts = itemsOf('skirt', { street: true, sex: 'female' }), dresses = itemsOf('dress', { street: true, sex: 'female' });
+  const dresses = itemsOf('dress', { street: true, sex: 'female' });
   const suits = itemsOf('suit', { street: true, sex });
   const wear = r();
   const extras: string[] = [];
@@ -231,7 +230,6 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
   // In the street only WHOLE outfits: a top and trousers from different packs
   // were modelled apart and cut through each other when worn together (a
   // waistband through the shirt). Separates stay in the Person Creator.
-  void tops; void trousers; void skirts;
   if (wear < 0.35 && female && dresses.length) outfit = pick(r, dresses);
   else if (wear < 0.4 && suits.length) outfit = pick(r, suits);
   // Not the work overalls nor the tank top and shorts, which read as a

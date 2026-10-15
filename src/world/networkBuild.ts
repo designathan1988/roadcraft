@@ -1,7 +1,7 @@
 import { MIN_RIBBON } from '@core/scalar';
 import type { RoadDoc, RoadNode, RoadSegment } from './doc';
 import type { NodeId, SegmentId } from './ids';
-import { Level, SURFACE_LEVELS, type SurfaceLevel } from './roadTypes';
+import { Level, SURFACE_LEVELS, type SurfaceLevel, flushOn } from './roadTypes';
 import { type Junction, buildJunction, surfaceMode } from './junction/build';
 import { deriveJunctionLevel } from './junction/derive';
 import { clampSegmentTrims } from './junction/trim';
@@ -30,6 +30,7 @@ interface Network {
   readonly squeezed: Map<NodeId, number>;
   readonly segmentCells: CellFiling<SegmentId, SegmentRibbon>;
   readonly junctionCells: CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>;
+  readonly flushCells: CellFiling<SegmentId, SegmentRibbon>;
 }
 
 /**
@@ -328,6 +329,7 @@ export class NetworkBuild {
       if (ribbon) oldRects.push(ribbonBounds(ribbon));
       net.ribbons.delete(id);
       net.segmentCells.remove(id);
+      net.flushCells.remove(id);
       net.trims.delete(id);
       for (const key of this.plateKeys.get(id) ?? []) net.plateReach.delete(key);
       this.plateKeys.delete(id);
@@ -350,7 +352,10 @@ export class NetworkBuild {
         if (before) oldRects.push(ribbonBounds(before));
         ribbonOrder.set(id, ribbon);
       }
-      net.segmentCells.file(id, ribbon, ribbonBounds(ribbon));
+      const bounds = ribbonBounds(ribbon);
+      net.segmentCells.file(id, ribbon, bounds);
+      if (flushOn(ribbon.road, 'left') || flushOn(ribbon.road, 'right')) net.flushCells.file(id, ribbon, bounds);
+      else net.flushCells.remove(id);
     }
 
     this.ribbonMax = ribbonOrder.done();
