@@ -130,5 +130,9 @@ describe('the wiring', () => {
     expect(renderer).toMatch(/near: \(x, y\) => isNear\(x, y, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(renderer).toMatch(/updateRoadLevels\(blocks, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(readFileSync('src/render/mesh/surfaceMesh.ts', 'utf8')).toMatch(/coarse\.geometry\.dispose\(\)/);
+    // The masses of the far buildings are sent ahead too, so their arrays go (`gpuOnly`): 157 MB of a 2,560 m city.
+    const masses = readFileSync('src/render/buildings/massCells.ts', 'utf8');
+    expect(masses).toMatch(/void warmLooseAhead\(\[mesh\]\);/);
+    expect(masses).toMatch(/cancelWarm\(\[cell\.mesh\]\);/);
   });
 });
