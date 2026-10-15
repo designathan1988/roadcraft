@@ -83,18 +83,15 @@ cause, technique and source). Git history is the archive.
   speckle up close).
 
 ## State (2026-10-15)
-- `main` is **97 commits behind `fix/workers-10km`**, which contains `main` and every merged `fix/*`.
-  Reading only `main` shows old code. The worktree `rc2-wt/workers-10km` has uncommitted work of
-  another agent (`perfBudget.ts`, `main.ts`, `playEffects.ts`, `postprocess.ts`, `renderer.ts`,
-  `tests/core/cityBudget.spec.ts`).
-- Not merged anywhere yet: `fix/growth-worker` (city growth in a worker, 10 commits),
+- `main` holds all the merged work (`fix/workers-10km` merged on 2026-10-15). No worktree is open.
+- Not merged, kept as branches only: `fix/growth-worker` (city growth in a worker, 10 commits),
   `fix/gerador-workers`, `fix/render-cidade` (1 commit: only cells in view in full detail; changes
-  quality, needs shots and the player's yes), nine `worktree-agent-*` branches from 2026-10-14.
-  Worktrees with uncommitted changes: `render-cenario`, `world-2`, `topo-swap`, `profiler-10km`,
-  `probe10`.
-- In the main folder, uncommitted work of another agent: `editor/commit.ts`, `world/changes.ts`,
-  `world/doc.ts`, `core/layeredMap.ts` and its spec. `core/forkMap.ts` (on the branch) and
-  `core/layeredMap.ts` (here) do the same job: keep one when merging.
+  quality, needs shots and the player's yes), six `worktree-agent-*` branches from 2026-10-14
+  (agents stopped midway), and `wip/*` (uncommitted work saved before worktrees were removed:
+  `wip/main-layered-doc` is a second copy-on-write map, superseded by `core/forkMap.ts`).
+- Comments are one line each; dead code is gone (`node scripts/knip-check.mjs`: 0 entries).
+- `node scripts/check-code.mjs` reports 55 findings not in its baseline, all from the merged
+  branch (whole-map walks per input, per frame): fix them, never add them to the baseline.
 - The fixed map today: 5 × 5 plates of 2,048 m (`world/bounds.ts`).
 
 ## Open findings
@@ -167,6 +164,9 @@ Player's decisions
 - Caps that delete the player's work: `MAX_PLANTED_TREES = 20_000` (`doc.ts:1334`), elements
   (`:1381`), undo dropping old steps by bytes (`history.ts:128`).
 - About 7 KB per building record (560 MB at 80,000 buildings); seed + lot would change the generator.
+- Road surface triangles of the fixed scene `tests/fixtures/grid-and-bends.json` fell from 275,691
+  to 133,500 (`tests/perf/budgets.spec.ts` fails its minimum): either the roads are built another
+  way or they lost detail. Needs before/after shots of the same views and the player's call.
 
 Agents disagreed (check the line): `GTAOPass` allocating an unused `normalRenderTarget`
 (`postprocess.ts:262`, r186 `GTAOPass.js:225, 317`); `simShowsMotion` (`main.ts:2870`).

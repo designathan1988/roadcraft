@@ -434,11 +434,6 @@
       "count": 4
     }
   },
-  "src/render/structures.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/render/surfaceBake.worker.ts": {
     "roadcraft/no-silent-catch": {
       "count": 1
@@ -815,11 +810,6 @@
       "count": 1
     }
   },
-  "src/world/buildings/procedural.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/world/buildings/store.ts": {
     "roadcraft/no-global-revision": {
       "count": 2
@@ -982,11 +972,6 @@
   },
   "tests/world/oldMapsIdentical.spec.ts": {
     "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
-  "tests/world/support/town/defaultTown.ts": {
-    "max-lines": {
       "count": 1
     }
   }

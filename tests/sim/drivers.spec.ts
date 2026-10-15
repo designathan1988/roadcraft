@@ -130,16 +130,7 @@ describe('overtaking', () => {
     }
 
     // Short enough that the pairs sampled above are still on the road
-    let attemptedChanges = 0;
-    if (process.env['ROADCRAFT_RECORD_OVERTAKES'] === '1') {
-      for (let tick = 0; tick < Math.round(25 / DT); tick++) {
-        step(sim, { traffic: true, pedestrians: false });
-        for (const vehicle of sim.vehicles.values()) {
-          if (vehicle.prev.lanelet !== vehicle.lanelet &&
-              sim.lanelet(vehicle.lanelet)?.kind === 'link') attemptedChanges++;
-        }
-      }
-    } else run(sim, 25);
+    run(sim, 25);
 
     let olderOvertakes = 0;
     let youngerOvertakes = 0;
