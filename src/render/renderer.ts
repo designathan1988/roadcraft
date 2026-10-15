@@ -1359,14 +1359,11 @@ export function createSceneRenderer(
   const buildingsOnGroundSince = (doc: RoadDoc, serial: number): Building[] | null => {
     const rects = groundSince.rectsSince(serial);
     if (!rects) return null;
-    const out = new Map<BuildingId, Building>();
-    for (const r of rects) {
-      for (const b of doc.buildings.near(r[0] - BANK_REACH, r[1] - BANK_REACH, r[2] + BANK_REACH, r[3] + BANK_REACH)) {
-        const box = bankBox(b);
-        if (box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1]) out.set(b.id, b);
-      }
-    }
-    return [...out.values()];
+    // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
+    return doc.buildings.nearAny(rects, BANK_REACH, (b, r) => {
+      const box = bankBox(b);
+      return box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1];
+    });
   };
   /** The ground serial the buildings were last told of (`buildingGround`). */
   let buildingGroundSeen = -1;
