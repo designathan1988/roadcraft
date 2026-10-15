@@ -301,8 +301,18 @@ export class RoadDoc {
    * is not the starting balance, so a map from before it reads the same.
    */
   economy: Economy = DEFAULT_ECONOMY;
-  /** Trees the player planted (`trees.ts`), oldest first. */
+  /**
+   * Trees the player planted (`trees.ts`), oldest first. Written only by the
+   * methods below (and `restore`), which keep `treeCells` in step.
+   */
   readonly trees: PlantedTree[] = [];
+  /** The planted trees by place (`treesIn`). */
+  private treeCells = new ItemGrid<PlantedTree>(LANDSCAPE_CELL);
+
+  /** The planted trees standing in the cells a rectangle reaches (a superset: test each). */
+  treesIn(rect: ChangeRect): PlantedTree[] {
+    return this.treeCells.near(rect);
+  }
   /** Where trees were cut away, the woods' own too (`trees.ts`), oldest first. */
   readonly treeClearings: TreeClearing[] = [];
   /**
@@ -1172,8 +1182,9 @@ export class RoadDoc {
 
   plantTrees(trees: readonly PlantedTree[]): void {
     if (trees.length === 0) return;
-    for (const t of trees) this.trees.push({ ...t });
+    for (const t of trees) { const tree = { ...t }; this.trees.push(tree); this.treeCells.add(tree); }
     const gone = this.trees.length > MAX_PLANTED_TREES ? this.trees.splice(0, this.trees.length - MAX_PLANTED_TREES) : [];
+    for (const t of gone) this.treeCells.remove(t);
     const goneRect = rectAround(gone, ITEM_PAD);
     this.changes.record('trees', goneRect ? [rectAround(trees, ITEM_PAD)!, goneRect] : [rectAround(trees, ITEM_PAD)!]);
   }
@@ -1184,9 +1195,12 @@ export class RoadDoc {
    */
   cutTrees(x: number, y: number, radius: number): void {
     const before = this.trees.length;
-    // One pass, the kept moved down in order. DO NOT splice each one out: a
-    // stroke over a wood was trees x trees cut.
-    keepWhere(this.trees, (t) => Math.hypot(t.x - x, t.y - y) > radius);
+    // The ones there, by place; then one pass, the kept moved down in order.
+    // DO NOT splice each one out (trees x trees cut), nor walk every tree of
+    // the map for each dab of the brush.
+    const there = new Set(this.treeCells.near([x - radius, y - radius, x + radius, y + radius]).filter((t) => Math.hypot(t.x - x, t.y - y) <= radius));
+    if (there.size) keepWhere(this.trees, (t) => !there.has(t));
+    for (const t of there) this.treeCells.remove(t);
     if (this.trees.length !== before) this.changes.record('trees', [circleRect({ x, y, radius })], { detail: `${before - this.trees.length} cut` });
     this.treeClearings.push({ x, y, radius });
     const gone = this.treeClearings.length > MAX_TREE_CLEARINGS ? this.treeClearings.shift() : undefined;
@@ -1198,6 +1212,7 @@ export class RoadDoc {
     if (this.trees.length > 0) {
       const where = rectAround(this.trees, ITEM_PAD)!;
       this.trees.length = 0;
+      this.treeCells = new ItemGrid(LANDSCAPE_CELL);
       this.changes.record('trees', [where]);
     }
     if (this.treeClearings.length > 0) {
@@ -1492,7 +1507,7 @@ export class RoadDoc {
     copy.gullyAuto = this.gullyAuto;
     copy.clouds.push(...this.clouds.map((c) => ({ ...c })));
     for (const e of this.elements) { const item = { ...e }; copy.elements.push(item); copy.elementCells.add(item); }
-    copy.trees.push(...this.trees.map((t) => ({ ...t })));
+    for (const t of this.trees) { const tree = { ...t }; copy.trees.push(tree); copy.treeCells.add(tree); }
     copy.treeClearings.push(...this.treeClearings.map((c) => ({ ...c })));
     copy.weather = { ...this.weather };
     copy.economy = { ...this.economy };
@@ -1666,6 +1681,9 @@ export class RoadDoc {
       if (part === 'elements') {
         for (const e of gone as ElementItem[]) this.elementCells.remove(e);
         for (const e of put as ElementItem[]) this.elementCells.add(e);
+      } else if (part === 'trees') {
+        for (const t of gone as PlantedTree[]) this.treeCells.remove(t);
+        for (const t of put as PlantedTree[]) this.treeCells.add(t);
       }
       // Where the items that left lay and where those that came lie: one box
       // each. DO NOT write `null` (the whole map) for a stretch of a list
@@ -1857,7 +1875,8 @@ export class RoadDoc {
     }
     if (moved('trees') && JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
       this.trees.length = 0;
-      this.trees.push(...source.trees.map((t) => ({ ...t })));
+      this.treeCells = new ItemGrid(LANDSCAPE_CELL);
+      for (const t of source.trees) { const tree = { ...t }; this.trees.push(tree); this.treeCells.add(tree); }
       others.push('trees');
     }
     if (moved('clearings') && JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
@@ -2138,7 +2157,7 @@ export class RoadDoc {
     // Absent: a map with no trees planted or cut.
     for (const raw of data.trees ?? []) {
       const tree = readPlantedTree(raw);
-      if (tree && doc.trees.length < MAX_PLANTED_TREES) doc.trees.push(tree);
+      if (tree && doc.trees.length < MAX_PLANTED_TREES) { doc.trees.push(tree); doc.treeCells.add(tree); }
     }
     if (doc.trees.length) doc.changes.record('trees', null, loaded);
     for (const raw of data.treeClearings ?? []) {
