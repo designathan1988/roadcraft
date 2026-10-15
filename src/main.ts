@@ -119,6 +119,7 @@ import { bulbClearing } from '@world/junction/bulb';
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
 import { RoadTop } from '@editor/roadTop';
+import { editRandom } from '@editor/editStream';
 
 /** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
 const clearBulbs = bulbClearing();
@@ -594,7 +595,6 @@ function dabSettings(): DabSettings {
     gully: { strength: gullyStrength, erase: gullyErase() },
     fog: { strength: fog.strength, height: fog.height, speed: fog.speed, erase: fogErase() },
     paint: paintKind(),
-    random: Math.random,
   };
 }
 canvas.dataset['tool'] = game.tool;
@@ -1738,7 +1738,7 @@ if (atmosphere.atmoClouds > 0) {
   if (doc.clouds.length === 0) {
     doc.addClouds(scatterClouds(Math.round((atmosphere.atmoClouds / 100) * 12), {
       size: Math.max(40, atmosphere.atmoCloudThickness * UNITS_PER_METER), height: atmosphere.atmoCloudBase * UNITS_PER_METER, density: 0.8,
-    }, 0.3, MAP_SIZE / 2, [], Math.random));
+    }, 0.3, MAP_SIZE / 2, [], editRandom(doc, 0, 0)));
     persistence.saveSessionSoon(doc, sessionSettings);
   }
   atmosphere.atmoClouds = 0;
@@ -1845,7 +1845,7 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
     const brush = cloudBrush();
     const laid = scatterClouds(cloudScatter.count, {
       size: brush.size * UNITS_PER_METER, height: brush.height * UNITS_PER_METER, density: brush.density / 100,
-    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, Math.random);
+    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, editRandom(doc, 0, 0));
     if (doc.addClouds(laid) < cloudScatter.count) flashHint('hint.cloud.full');
   }),
 };

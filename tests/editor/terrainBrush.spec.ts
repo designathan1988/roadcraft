@@ -12,7 +12,6 @@ function settings(mode: string): DabSettings {
     gully: { strength: 60, erase: false },
     fog: { strength: 50, height: 10, speed: 1, erase: false },
     paint: 'dirt' as never,
-    random: () => 0.5,
   };
 }
 
@@ -64,5 +63,23 @@ describe('the terrain brush', () => {
     b.end();
     expect(doc.terrainStamps.length).toBe(0);
     expect(doc.terrainPaint.length).toBeGreaterThan(0);
+  });
+
+  it('lays the same trees and elements for the same strokes on the same map: no Math.random in the document', () => {
+    const laid = (mode: string): string => {
+      const { brush: b, doc } = brush(mode);
+      b.begin(1, { x: 0, y: 0 });
+      b.paint({ x: 120, y: 30 });
+      b.end();
+      return JSON.stringify(mode === 'trees' ? doc.trees : doc.elements);
+    };
+    const random = vi.spyOn(Math, 'random');
+    for (const mode of ['trees', 'elements']) {
+      const first = laid(mode);
+      expect(first.length).toBeGreaterThan(10);
+      expect(laid(mode)).toBe(first);
+    }
+    expect(random).not.toHaveBeenCalled();
+    random.mockRestore();
   });
 });
