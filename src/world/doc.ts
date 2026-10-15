@@ -337,6 +337,17 @@ export class RoadDoc {
   private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
 
   /**
+   * The document this working copy was made from (`clone`), while that one
+   * still stands as it was then (its diary at the serial of the copy); null
+   * otherwise. What is derived from documents may take the original's as it
+   * stood and read only the copy's own changes (`economy.ts` `roadValue`).
+   */
+  get forkOrigin(): RoadDoc | null {
+    const fork = this.forkedFrom;
+    return fork && fork.doc.changes.version === fork.version ? fork.doc : null;
+  }
+
+  /**
    * Modular buildings. They keep their OWN revision,
    * `buildings.revision` (the diary's `buildings` kind): a building edit must
    * not move `revision`, which would rebuild the road network and the
