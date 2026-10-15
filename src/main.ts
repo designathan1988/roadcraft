@@ -1273,7 +1273,7 @@ canvas.addEventListener('pointerdown', (e) => {
         blockGridChoice.armed = false;
         let laid = 0;
         mutate(() => {
-          laid = commitBlockGrid(doc, world, blockGridChoice, game.roadTypeIndex, game.roadLanePreset, roadParking());
+          laid = commitBlockGrid(doc, net, world, blockGridChoice, game.roadTypeIndex, game.roadLanePreset, roadParking());
           return laid > 0;
         });
         flashHint(laid > 0 ? 'hint.blocks.built' : 'hint.road.invalid');
