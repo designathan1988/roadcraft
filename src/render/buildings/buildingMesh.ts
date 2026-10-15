@@ -125,7 +125,7 @@ export interface BuildingMeshes {
   dispose(): void;
 }
 
-/** What `assembleBuildingMeshesSteps` puts together, and where the shells go. */
+/** What `assembleBuildingMeshes` puts together, and where the shells go. */
 export interface AssemblySelection {
   readonly parts: ReadonlySet<PartKind>;
   readonly shells: boolean;
@@ -3412,24 +3412,6 @@ export function assembleBuildingMeshes(
   const take: CellSelection = { ...WHOLE, ...(selection ? { parts: [...selection.parts], shells: selection.shells, furniture: selection.furniture } : {}), ghost, dim };
   // A lost and restored WebGL context fills the meshes again from the chunks (`gpuOnly.ts`).
   return meshesOf(cellArrays(chunks, take, kitBoxes(kit)), kit, ghost, dim, () => cellArrays(chunks, take, kitBoxes(kit)));
-}
-
-/**
- * `assembleBuildingMeshes` in two steps, the arrays then the meshes: the
- * buildings layer puts a changed cell together across frames while the town as
- * it was stays drawn (`layer.ts`).
- */
-export function* assembleBuildingMeshesSteps(
-  chunks: readonly BuildingChunk[],
-  kit: BuildingKit,
-  ghost = false,
-  dim = false,
-  selection?: AssemblySelection,
-): Generator<void, BuildingMeshes, void> {
-  const take: CellSelection = { ...WHOLE, ...(selection ? { parts: [...selection.parts], shells: selection.shells, furniture: selection.furniture } : {}), ghost, dim };
-  const arrays = cellArrays(chunks, take, kitBoxes(kit));
-  yield;
-  return meshesOf(arrays, kit, ghost, dim, () => cellArrays(chunks, take, kitBoxes(kit)));
 }
 
 /**
