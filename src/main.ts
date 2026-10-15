@@ -115,10 +115,13 @@ import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
-import { clearBulbs } from '@world/junction/bulb';
+import { bulbClearing } from '@world/junction/bulb';
 
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
+
+/** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
+const clearBulbs = bulbClearing();
 
 type Alignment = 'straight' | 'curve' | 'free';
 

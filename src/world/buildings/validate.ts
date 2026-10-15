@@ -38,6 +38,7 @@ import {
   MIN_MODULE,
   MIN_STOREY_HEIGHT,
 } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /** Why a building cannot stand where it is. */
 export type BuildingProblem =
@@ -274,20 +275,10 @@ export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
 }
 
 /** A road's full centreline as points, once per ribbon (ribbons are never changed, only replaced). */
-const LINES = new WeakMap<SegmentRibbon, readonly Vec2[]>();
-function lineOf(ribbon: SegmentRibbon): readonly Vec2[] {
-  let line = LINES.get(ribbon);
-  if (!line) LINES.set(ribbon, line = ribbon.full.toPoints());
-  return line;
-}
+const lineOf = identityMemo((ribbon: SegmentRibbon): readonly Vec2[] => ribbon.full.toPoints());
 
 /** A junction's kerb ring as points, once per junction. */
-const RINGS = new WeakMap<Junction, readonly Vec2[]>();
-function ringOf(junction: Junction): readonly Vec2[] {
-  let ring = RINGS.get(junction);
-  if (!ring) RINGS.set(junction, ring = junction.ring.flatten());
-  return ring;
-}
+const ringOf = identityMemo((junction: Junction): readonly Vec2[] => junction.ring.flatten());
 
 // ------------------------------------------------------------------ geometry
 

@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import { identityMemo } from '@core/identityMemo';
 import type { Polyline } from '@core/polyline';
 import type { RoadDoc } from './doc';
 import type { NodeId, SegmentId } from './ids';
@@ -83,17 +84,15 @@ export function lotEntrances(doc: RoadDoc): [Vec2, Vec2][] {
   return out;
 }
 
-/** Each record's entrances, worked out once (records are never changed, only replaced). */
-const ENTRANCES = new WeakMap<Building, readonly [Vec2, Vec2][]>();
-
 /**
  * One building's entrances: its car gates and the edges of its parking, once
  * per record. The one definition: `sim/agents/kerbBays.ts` keeps a copy of
  * it (to be replaced by this).
  */
-export function entrancesOf(b: Building): readonly [Vec2, Vec2][] {
-  const known = ENTRANCES.get(b);
-  if (known) return known;
+export const entrancesOf: (b: Building) => readonly [Vec2, Vec2][] = identityMemo(workOutEntrances);
+
+/** Each record's entrances, worked out once (`entrancesOf`: records are never changed, only replaced). */
+function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
   const out: [Vec2, Vec2][] = [];
   // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the
   // kerb is lowered for vehicles to go in or out): its span stays clear,
@@ -117,7 +116,6 @@ export function entrancesOf(b: Building): readonly [Vec2, Vec2][] {
     ];
     for (let i = 0; i < 4; i++) out.push([corners[i]!, corners[(i + 1) % 4]!]);
   }
-  ENTRANCES.set(b, out);
   return out;
 }
 

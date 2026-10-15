@@ -1,5 +1,6 @@
 import type { ChangeRect } from './changes';
 import { m } from './units';
+import { uniqueCounter } from '@core/identityMemo';
 
 /**
  * THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the
@@ -53,7 +54,7 @@ const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2
  * filing's after it took another's (`copyFrom`) or started again: whatever
  * is kept by stamp stays right through `Network.adopt` and a full rebuild.
  */
-let versionClock = 0;
+const nextVersion = uniqueCounter();
 
 /** The work a filing did: things filed and cells visited. A count for the performance budgets (`core/perfBudget.ts`). */
 export const cellWork = { filed: 0, cellsRead: 0 };
@@ -166,9 +167,10 @@ export class CellFiling<Id extends number, T extends object> {
   }
 
   private bump(key: number): void {
-    this.versions.set(key, ++versionClock);
+    const version = nextVersion();
+    this.versions.set(key, version);
     // From the same clock: an epoch names one change too, never another
     // filing's (`poleLines.ts` keeps its regions by epoch across `adopt`).
-    this.epoch = versionClock;
+    this.epoch = version;
   }
 }

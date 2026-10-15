@@ -2,6 +2,7 @@ import { bayWidth, baysOn, elementRect, storedBounds, roofHeightAt, roofRise, vo
 import { containsPoint, edgeFrame, volumeSides } from './footprints';
 import type { Building, BuildingId, FaceId } from './types';
 import { m } from '../units';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * A ray, in WORLD axes: x and y on the map, z up. The editor gets one from
@@ -43,17 +44,12 @@ const OPEN_PLATE = m(0.3);
  * its roof, and the parts standing on it (a mast, a sign). Once per record (a
  * stored record is never changed in place).
  */
-const TOPS = new WeakMap<Building, number>();
-function heightOf(b: Building): number {
-  let top = TOPS.get(b);
-  if (top === undefined) {
-    top = 0;
-    for (const v of b.volumes) top = Math.max(top, volumeHeight(b, v) + roofRise(b, v));
-    for (const e of b.elements ?? []) top = Math.max(top, e.z + e.h);
-    TOPS.set(b, top);
-  }
+const heightOf = identityMemo((b: Building): number => {
+  let top = 0;
+  for (const v of b.volumes) top = Math.max(top, volumeHeight(b, v) + roofRise(b, v));
+  for (const e of b.elements ?? []) top = Math.max(top, e.z + e.h);
   return top;
-}
+});
 
 /**
  * The nearest building face under a ray.

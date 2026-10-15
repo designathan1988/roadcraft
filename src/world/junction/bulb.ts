@@ -121,9 +121,6 @@ export function bulbLine(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId, off
   return [...flat.slice(1), flat[0]!];
 }
 
-/** The network's state each document's turning circles were last cleared at (`clearBulbs`). */
-const clearedAt = new WeakMap<Network, object>();
-
 /**
  * Whatever stands in a turning circle's carriageway is taken away - a pole,
  * a tree, a bench set on the footway of a road's end before it was made a
@@ -136,11 +133,23 @@ const clearedAt = new WeakMap<Network, object>();
  * `landscapeIn`). DO NOT walk every junction of the map, and every pole and
  * element of the map for each, after every edit (it ran after every road
  * drawn, `main.ts`).
+ *
+ * A clearing reads the network's changes since its own last call: one
+ * clearing for one game (`main.ts` keeps it), its cursor its own. DO NOT keep
+ * the cursor in the module by network: the network changes in place, and
+ * which caller last read it is the caller's to know.
  */
-export function clearBulbs(doc: RoadDoc, net: Network): number {
-  const since = clearedAt.get(net);
-  const delta = since === undefined ? null : net.changesSince(since);
-  clearedAt.set(net, net.state);
+export function bulbClearing(): (doc: RoadDoc, net: Network) => number {
+  let read: { net: Network; state: object } | null = null;
+  return (doc, net) => {
+    const delta = read?.net === net ? net.changesSince(read.state) : null;
+    read = { net, state: net.state };
+    return clearBulbsOf(doc, net, delta);
+  };
+}
+
+/** `bulbClearing`'s work: the circles `delta` names, or every junction when it is null. */
+function clearBulbsOf(doc: RoadDoc, net: Network, delta: ReturnType<Network['changesSince']>): number {
   /** @rebuild Every junction only when the network cannot say what changed (the first clearing, a load). */
   const candidates = (): Iterable<NodeId> => delta === null ? net.junctions.keys() : delta.nodes;
   const bulbs: { node: Vec2; poly: Vec2[]; box: readonly [number, number, number, number] }[] = [];

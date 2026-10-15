@@ -1,6 +1,7 @@
 import { baysOn, levelHeight } from './geometry';
 import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * Extension point for interiors and occupants.
@@ -33,13 +34,7 @@ const KIND: Readonly<Record<BuildingUse, SpaceKind>> = {
  * never change it. A floor's furniture (`interior.ts` `homeUnits`) asked the
  * whole building's for each of its volumes and floors.
  */
-const SPACES = new WeakMap<Building, StoreySpaces[]>();
-
-export function deriveSpaces(b: Building): StoreySpaces[] {
-  let known = SPACES.get(b);
-  if (!known) SPACES.set(b, known = workOutSpaces(b));
-  return known;
-}
+export const deriveSpaces: (b: Building) => StoreySpaces[] = identityMemo(workOutSpaces);
 
 function workOutSpaces(b: Building): StoreySpaces[] {
   const out: StoreySpaces[] = [];

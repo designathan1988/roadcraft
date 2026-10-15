@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import { identityMemo } from '@core/identityMemo';
 import { Heap } from '@core/heap';
 import type { SegmentId } from './ids';
 import { m } from './units';
@@ -232,11 +233,8 @@ interface TrackStretch { readonly track: number; readonly order: number; readonl
 /** Side of the cells the stretches of track are filed in, world units. */
 const TRACK_CELL = m(32);
 /** The stretches of a version of the transit data by cell, made once per version (the data is replaced whole by each edit). */
-const TRACK_CELLS = new WeakMap<TransitData, Map<number, TrackStretch[]>>();
-function trackCells(t: TransitData): Map<number, TrackStretch[]> {
-  let cells = TRACK_CELLS.get(t);
-  if (cells) return cells;
-  cells = new Map();
+const trackCells = identityMemo((t: TransitData): Map<number, TrackStretch[]> => {
+  const cells = new Map<number, TrackStretch[]>();
   let order = 0;
   for (const track of t.tracks) {
     for (let i = 1; i < track.points.length; i++) {
@@ -251,9 +249,8 @@ function trackCells(t: TransitData): Map<number, TrackStretch[]> {
       }
     }
   }
-  TRACK_CELLS.set(t, cells);
   return cells;
-}
+});
 
 /**
  * The point of a track nearest `p` within `reach`, and its track; null when

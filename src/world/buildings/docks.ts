@@ -2,6 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
 import { localToWorld, solidFootprints, worldToLocal } from './geometry';
 import type { Building, BuildingElement } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * A works' lorry docks: the wide bays its loading yard is laid with, each
@@ -30,14 +31,8 @@ export const isDock = (el: BuildingElement): boolean =>
   el.kind === 'parking' && el.w / Math.max(1, Math.floor(el.w / STALL)) > LORRY_DOCK;
 
 /** Each record's docks, once (a stored record is never changed in place); shared: read only. */
-const DOCKS = new WeakMap<Building, LorryDock[]>();
-
 /** A building's lorry docks: asked by the lorries for every yard and every pass (`sim/agents/lorryTraffic.ts`). */
-export function lorryDocks(b: Building): LorryDock[] {
-  let known = DOCKS.get(b);
-  if (!known) DOCKS.set(b, known = docksOf(b));
-  return known;
-}
+export const lorryDocks: (b: Building) => LorryDock[] = identityMemo(docksOf);
 
 function docksOf(b: Building): LorryDock[] {
   const rings = solidFootprints(b).map((ring) => ring.map((p) => worldToLocal(b, p)));

@@ -4,6 +4,7 @@ import { signedArea } from '@core/polygon';
 import { asPolygon, localFootprint, roofPartFits, validOutline } from './footprints';
 import { MIN_SIZE } from './geometry';
 import type { Building, Volume } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * A building is blocks put together like bricks, and the blocks are never
@@ -29,13 +30,7 @@ import type { Building, Volume } from './types';
  * kept by record after it (`facadeBays`). The building handed out is shared:
  * read it, never change it.
  */
-const RESOLVED = new WeakMap<Building, Building>();
-
-export function resolveBlocks(b: Building): Building {
-  let known = RESOLVED.get(b);
-  if (!known) RESOLVED.set(b, known = resolve(b));
-  return known;
-}
+export const resolveBlocks: (b: Building) => Building = identityMemo(resolve);
 
 function resolve(b: Building): Building {
   const solids = b.volumes.filter((v) => !v.mode);

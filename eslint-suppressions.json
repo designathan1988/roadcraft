@@ -492,7 +492,7 @@
   },
   "src/sim/agents/parking.ts": {
     "roadcraft/no-module-state": {
-      "count": 5
+      "count": 4
     }
   },
   "src/sim/agents/reedsShepp.ts": {
@@ -789,16 +789,6 @@
       "count": 1
     }
   },
-  "src/world/buildings/validate.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/world/carriageway.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/world/conflictPoints.ts": {
     "roadcraft/no-module-state": {
       "count": 4
@@ -853,9 +843,6 @@
   "src/world/lots.ts": {
     "max-lines": {
       "count": 1
-    },
-    "roadcraft/no-module-state": {
-      "count": 2
     }
   },
   "src/world/poleLines.ts": {
@@ -863,14 +850,9 @@
       "count": 4
     }
   },
-  "src/world/roads/footwayRise.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/world/solids.ts": {
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/world/terrain.ts": {

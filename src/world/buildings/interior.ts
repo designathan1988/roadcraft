@@ -5,6 +5,7 @@ import { localFootprint } from './footprints';
 import { EPS, baysOn, isMass, levelHeight, volumeElevation } from './geometry';
 import { deriveSpaces, flatPlan } from './spaces';
 import { type Building, type BuildingFunction, type Volume, volumeTop, type PlacedFurniture } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * What is inside a building, floor by floor: rooms, the walls between them
@@ -174,12 +175,11 @@ function flightBox(f: LevelFlight): [number, number, number, number] {
  * view, the room lamps and the meshes asked the same floor again and again,
  * every plan and piece made anew. The floor handed out is shared: read it.
  */
-const INTERIORS = new WeakMap<Building, Map<number, FloorInterior>>();
+const floorsOf = identityMemo((_b: Building) => new Map<number, FloorInterior>());
 
 /** One floor of a building, inside. */
 export function interiorAt(b: Building, level: number): FloorInterior {
-  let floors = INTERIORS.get(b);
-  if (!floors) INTERIORS.set(b, floors = new Map());
+  const floors = floorsOf(b);
   let floor = floors.get(level);
   if (!floor) floors.set(level, floor = furnishFloor(b, level));
   return floor;
