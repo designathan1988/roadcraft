@@ -120,4 +120,37 @@ export class BuildingGrid<T extends Filed> {
     }
     return [...found].sort((a, b) => this.placed.get(a)!.rank - this.placed.get(b)!.rank);
   }
+
+  /**
+   * The ids of the buildings `meets` keeps for one of `rects`, asked of the
+   * buildings in the cells of that rectangle grown by `pad`, each once, in the
+   * store's order: each cell read once for all the rectangles over it. DO NOT
+   * ask `near` rectangle by rectangle for many: the ground's changes since a
+   * look overlap, and the cells they share were read, made a set of and sorted
+   * again for each (0.8 s in one frame of a 2,560 m city's growth, 2026-10-15).
+   */
+  nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
+    meets: (id: BuildingId, rect: readonly [number, number, number, number]) => boolean): BuildingId[] {
+    const over = new Map<number, (readonly [number, number, number, number])[]>();
+    for (const r of rects) {
+      const i0 = Math.floor((r[0] - pad) / CELL), i1 = Math.floor((r[2] + pad) / CELL);
+      const j0 = Math.floor((r[1] - pad) / CELL), j1 = Math.floor((r[3] + pad) / CELL);
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const k = keyOf(i, j);
+          if (!this.cells.has(k)) continue;
+          const list = over.get(k);
+          if (list) list.push(r); else over.set(k, [r]);
+        }
+      }
+    }
+    const kept = new Set<BuildingId>();
+    for (const [k, list] of over) {
+      for (const id of this.cells.get(k)!) {
+        if (kept.has(id)) continue;
+        for (const r of list) if (meets(id, r)) { kept.add(id); break; }
+      }
+    }
+    return [...kept].sort((a, b) => this.placed.get(a)!.rank - this.placed.get(b)!.rank);
+  }
 }

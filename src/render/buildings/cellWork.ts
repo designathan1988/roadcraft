@@ -1,5 +1,6 @@
 import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
+import { type PavingData, pavingReader } from '@world/paving';
 import { emitChunk } from './buildingMesh';
 import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers } from './cellArrays';
 import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
@@ -57,6 +58,8 @@ export interface CellJob {
   readonly entries: readonly CellJobEntry[];
   /** Whether the page has paving to read. */
   readonly paved: boolean;
+  /** The roads near the cell, to read the paving here instead of asking the page (`world/paving.ts`). */
+  readonly paving?: PavingData;
 }
 
 /** What the page keeps of a building emitted: its flags, how its lots' ground is made again, its signature floor. */
@@ -111,6 +114,8 @@ interface Emitting {
 
 interface JobState {
   readonly job: CellJob;
+  /** The paving read here (`pavingReader`): undefined where the page is asked. */
+  readonly pavedHere: ((x: number, y: number) => number | undefined) | null;
   /** One per entry, in the job's order. */
   readonly emitting: Emitting[];
   rounds: number;
@@ -134,7 +139,7 @@ export class CellWork {
     const emitting: Emitting[] = job.entries.map((entry) => ({
       entry, building: JSON.parse(entry.record) as Building, known: new Map(), asked: [], done: false, chunk: null, mass: null,
     }));
-    const state: JobState = { job, emitting, rounds: 0 };
+    const state: JobState = { job, pavedHere: job.paving ? pavingReader(job.paving) : null, emitting, rounds: 0 };
     this.jobs.set(job.id, state);
     return this.emitRound(state);
   }
@@ -167,6 +172,10 @@ export class CellWork {
         const k = readingKey(kind, x, y);
         const value = e.known.get(k);
         if (value !== undefined) return value;
+        if (kind === PAVED && state.pavedHere) {
+          const here = state.pavedHere(x, y);
+          if (here !== undefined) return here;
+        }
         if (!asked.has(k)) { asked.add(k); points.push(kind, x, y); }
         return kind === PAVED ? NaN : 0;
       };

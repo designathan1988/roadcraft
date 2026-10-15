@@ -23,6 +23,13 @@ import type { RoadDoc, SerializedDoc } from '@world/doc';
  * DO NOT walk every building of the map to find the parts that changed, nor
  * write the head on every save: a building grown wrote the roads, the lots and
  * the trees of the whole city again and compared every record of it.
+ *
+ * A building's wear (`decay`, `buildingWear`) is kept beside its part, as the
+ * part's ids and wears (`:wear:`), and laid over the records when read: a
+ * building aged writes its part's wears, never its part's records again.
+ * DO NOT write a part's records for wear: the town ageing made every part of
+ * the map turned into text and gzipped again, 512 records for one number each
+ * (2026-10-15).
  */
 
 /** Buildings a part holds, by id. */
@@ -72,6 +79,8 @@ export class PartedSaves {
   private readonly stored = new Set<number>();
   /** What changed and is not yet written (kept across a failed write): the parts, or all; the head. */
   private dirtyParts: Set<number> | 'all' = 'all';
+  /** The parts whose buildings' wear changed and is not yet written (their records may not have). */
+  private dirtyWear: Set<number> | 'all' = 'all';
   private dirtyHead = true;
   /** Saves one after another: a save under way finishes before the next reads the map. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -79,6 +88,7 @@ export class PartedSaves {
   constructor(private readonly store: PartStore, private readonly key: string) {}
 
   private partKey(part: number): string { return `${this.key}:part:${part}`; }
+  private wearKey(part: number): string { return `${this.key}:wear:${part}`; }
 
   save(doc: RoadDoc, settings: unknown, savedAt = Date.now()): Promise<boolean> {
     return this.queued(() => this.write(doc, settings, savedAt));
@@ -95,6 +105,7 @@ export class PartedSaves {
     this.stored.clear();
     for (const part of parts) this.stored.add(part);
     this.dirtyParts = new Set();
+    this.dirtyWear = new Set();
     this.dirtyHead = false;
   }
 
@@ -103,6 +114,7 @@ export class PartedSaves {
     this.doc = null;
     this.stored.clear();
     this.dirtyParts = 'all';
+    this.dirtyWear = 'all';
     this.dirtyHead = true;
   }
 
@@ -113,14 +125,20 @@ export class PartedSaves {
       this.cursor.read(doc.changes);
       this.doc = doc;
       this.dirtyParts = 'all';
+      this.dirtyWear = 'all';
       this.dirtyHead = true;
       return;
     }
     for (const entry of entries) {
       if (!BUILDING_KINDS.includes(entry.kind)) { this.dirtyHead = true; continue; }
-      if (this.dirtyParts === 'all') continue;
-      if (!entry.ids) { this.dirtyParts = 'all'; continue; }
-      for (const id of entry.ids) this.dirtyParts.add(Math.floor(id / BUILDINGS_PER_PART));
+      // Wear alone: the part's wears; anything else of a building: its part's records (and wears).
+      const wearOnly = entry.kind === 'buildingWear';
+      if (!entry.ids) { this.dirtyWear = 'all'; if (!wearOnly) this.dirtyParts = 'all'; continue; }
+      for (const id of entry.ids) {
+        const part = Math.floor(id / BUILDINGS_PER_PART);
+        if (this.dirtyWear !== 'all') this.dirtyWear.add(part);
+        if (!wearOnly && this.dirtyParts !== 'all') this.dirtyParts.add(part);
+      }
     }
   }
 
@@ -129,9 +147,17 @@ export class PartedSaves {
     const dirty = this.dirtyParts;
     const whole = dirty === 'all';
     const parts = dirty === 'all' ? everyPart(doc) : new Map([...dirty].map((part) => [part, recordsOf(doc, part)] as const));
+    // The stored parts whose wears alone are written: their records stand as stored.
+    const wornDirty = this.dirtyWear;
+    const worn = new Map<number, Building[]>();
+    if (!whole) {
+      const wornParts = wornDirty === 'all' ? [...this.stored] : [...wornDirty];
+      for (const part of wornParts) if (!parts.has(part) && this.stored.has(part)) worn.set(part, recordsOf(doc, part));
+    }
     const head = this.dirtyHead;
     // Taken now; put back if the write fails (and with whatever came meanwhile).
     this.dirtyParts = new Set();
+    this.dirtyWear = new Set();
     this.dirtyHead = false;
     const put: [string, Blob][] = [];
     const remove: string[] = [];
@@ -139,14 +165,17 @@ export class PartedSaves {
     for (const [part, records] of parts) {
       if (records.length === 0) {
         next.delete(part);
-        if (this.stored.has(part)) remove.push(this.partKey(part));
+        if (this.stored.has(part)) remove.push(this.partKey(part), this.wearKey(part));
         continue;
       }
       // `JSON.stringify` of a record is the text of its copy (`cloneBuilding` is a JSON round trip).
       put.push([this.partKey(part), await gzip(`[${records.map((b) => JSON.stringify(b)).join(',')}]`)]);
+      put.push([this.wearKey(part), wearsOf(records)]);
       next.add(part);
     }
-    if (whole) for (const part of this.stored) if (!next.has(part)) remove.push(this.partKey(part));
+    // A stored part with no building left is a change of its records (`buildings`), never of wear alone.
+    for (const [part, records] of worn) if (records.length) put.push([this.wearKey(part), wearsOf(records)]);
+    if (whole) for (const part of this.stored) if (!next.has(part)) remove.push(this.partKey(part), this.wearKey(part));
     if (head) put.push([`${this.key}:head`, await gzip(JSON.stringify(doc.withoutBuildings()))]);
     const manifest: Manifest = { version: 3, savedAt, parts: [...next].sort((a, b) => a - b), settings };
     put.push([`${this.key}:manifest`, new Blob([JSON.stringify(manifest)])]);
@@ -154,6 +183,8 @@ export class PartedSaves {
       // Read again: what came while the write was under way (TS keeps the narrowing across the await).
       const since = this.dirtyParts as Set<number> | 'all';
       this.dirtyParts = dirty === 'all' || since === 'all' ? 'all' : new Set([...dirty, ...since]);
+      const wornSince = this.dirtyWear as Set<number> | 'all';
+      this.dirtyWear = wornDirty === 'all' || wornSince === 'all' ? 'all' : new Set([...wornDirty, ...wornSince]);
       this.dirtyHead ||= head;
       return false;
     }
@@ -171,13 +202,17 @@ export class PartedSaves {
     const blobs = await this.store.get([`${this.key}:head`, ...manifest.parts.map((part) => this.partKey(part))]);
     const [headBlob, ...partBlobs] = blobs;
     if (!headBlob || partBlobs.some((blob) => !blob)) return null;
+    // Each part's wears, where kept (a map saved before them has none: its records carry their wear).
+    const wearBlobs = await this.store.get(manifest.parts.map((part) => this.wearKey(part)));
     const head: unknown = JSON.parse(await gunzip(headBlob));
     if (typeof head !== 'object' || head === null) return null;
     const buildings: unknown[] = [];
-    for (const blob of partBlobs) {
-      const records: unknown = JSON.parse(await gunzip(blob!));
+    for (let i = 0; i < partBlobs.length; i++) {
+      const records: unknown = JSON.parse(await gunzip(partBlobs[i]!));
       if (!Array.isArray(records)) return null;
-      for (const record of records) buildings.push(record);
+      const wearBlob = wearBlobs[i];
+      const wears = wearBlob ? readWears(await wearBlob.text()) : null;
+      for (const record of records) buildings.push(wears ? withWear(record, wears) : record);
     }
     return { document: { ...(head as SerializedDoc), buildings } as SerializedDoc, settings: manifest.settings, savedAt: manifest.savedAt, parts: manifest.parts };
   }
@@ -193,7 +228,7 @@ export class PartedSaves {
   private async savedKeys(): Promise<string[]> {
     const [manifestBlob] = await this.store.get([`${this.key}:manifest`]);
     const manifest: unknown = manifestBlob ? JSON.parse(await manifestBlob.text()) : null;
-    const parts = isManifest(manifest) ? manifest.parts.map((part) => this.partKey(part)) : [];
+    const parts = isManifest(manifest) ? manifest.parts.flatMap((part) => [this.partKey(part), this.wearKey(part)]) : [];
     return [`${this.key}:head`, ...parts, `${this.key}:manifest`];
   }
 
@@ -224,6 +259,32 @@ export class PartedSaves {
       return this.store.write(put, keys);
     });
   }
+}
+
+/** A part's wears: each building's id and decay (0: none), as numbers in pairs. */
+function wearsOf(records: readonly Building[]): Blob {
+  const pairs: number[] = [];
+  for (const b of records) pairs.push(b.id, b.decay ?? 0);
+  return new Blob([JSON.stringify(pairs)]);
+}
+
+/** A part's wears read back, by id; null when they cannot be read (the records' own wear stands). */
+function readWears(text: string): Map<number, number> | null {
+  const pairs: unknown = JSON.parse(text);
+  if (!Array.isArray(pairs) || pairs.length % 2 !== 0 || !pairs.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const out = new Map<number, number>();
+  for (let i = 0; i < pairs.length; i += 2) out.set(pairs[i] as number, pairs[i + 1] as number);
+  return out;
+}
+
+/** A stored record with the wear kept for it laid over (no `decay` when it has none, as a record never worn). */
+function withWear(record: unknown, wears: ReadonlyMap<number, number>): unknown {
+  if (typeof record !== 'object' || record === null) return record;
+  const r = record as { id?: unknown; decay?: number };
+  const decay = typeof r.id === 'number' ? wears.get(r.id) : undefined;
+  if (decay === undefined || decay === (r.decay ?? 0)) return record;
+  const { decay: _was, ...rest } = r;
+  return decay === 0 ? rest : { ...rest, decay };
 }
 
 /** The buildings of one part, by id: the ids of its range looked up, never the whole store. */

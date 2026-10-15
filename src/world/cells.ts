@@ -147,6 +147,37 @@ export class CellFiling<Id extends number, T extends object> {
     return [...out].sort((a, b) => a - b);
   }
 
+  /**
+   * The ids whose bounds meet any of `rects`, each once, in increasing order:
+   * what `idsMeeting` of each gives, joined - each cell read once for all the
+   * rectangles over it. DO NOT ask `idsMeeting` rectangle by rectangle for a
+   * change of many: an entry's blocks, grown by a reach, overlap, and every
+   * cell they share was read, made a set of and sorted again for each
+   * (the street furniture's diary, 2026-10-15).
+   */
+  idsMeetingAny(rects: readonly ChangeRect[]): Id[] {
+    if (rects.length === 1) return this.idsMeeting(rects[0]!);
+    const over = new Map<number, ChangeRect[]>();
+    for (const rect of rects) {
+      forCellsOver(rect, (key) => {
+        const list = over.get(key);
+        if (list) list.push(rect); else over.set(key, [rect]);
+      }, this.side);
+    }
+    const out = new Set<Id>();
+    for (const [key, list] of over) {
+      cellWork.cellsRead++;
+      const set = this.byCell.get(key);
+      if (!set) continue;
+      for (const id of set) {
+        if (out.has(id)) continue;
+        const box = this.entries.get(id)!.rect;
+        for (const rect of list) if (rectsMeet(box, rect)) { out.add(id); break; }
+      }
+    }
+    return [...out].sort((a, b) => a - b);
+  }
+
   /** The versions of the cells `rect` reaches, as one string: equal strings, nothing filed there moved. */
   stamp(rect: ChangeRect): string {
     let text = '';

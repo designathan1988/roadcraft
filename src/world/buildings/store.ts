@@ -147,6 +147,17 @@ export class BuildingStore {
     return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
   }
 
+  /**
+   * The buildings `meets` keeps for one of `rects`, asked of those within `pad` of it, each once, in the
+   * store's order (`BuildingGrid.nearAny`): what `near` of each rectangle grown by `pad`, tested and joined,
+   * gives - each cell read once.
+   */
+  nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
+    meets: (b: Building, rect: readonly [number, number, number, number]) => boolean): Building[] {
+    this.grid ??= new BuildingGrid(this.items.values());
+    return this.grid.nearAny(rects, pad, (id, rect) => meets(this.items.get(id)!, rect)).map((id) => this.items.get(id)!);
+  }
+
   /** The id the next `add` will hand out. */
   get nextId(): BuildingId {
     return asBuildingId(this.ids.peek);

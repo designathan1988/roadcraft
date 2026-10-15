@@ -124,7 +124,8 @@ export function gardenLists(
       // Every placed site was placed at `groundRead` or before (`update` reads
       // the ground first), so a change after `since` met by its bank moved
       // its ground: no asking the diary back to when it was placed.
-      for (const rect of rects) for (const id of banks.idsMeeting(rect)) if (sites.get(id)!.plants) pending.add(id);
+      // Every change in one look (`idsMeetingAny`): a change at a time read the cells they share again for each.
+      for (const id of banks.idsMeetingAny(rects)) if (sites.get(id)!.plants) pending.add(id);
       return;
     }
     for (const [id, site] of sites) check(id, site);

@@ -60,7 +60,7 @@ describe('a map saved in parts', () => {
     const one = [...doc.buildings.all()][3]!;
     doc.buildings.put({ ...one, decay: 0.5 });
     await saves.save(doc, {});
-    expect(store.writes[2]).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    expect(store.writes[2]).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, `map:wear:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
     // A road changed: the head alone, no part.
     const node = [...doc.nodes.values()][0]!;
     doc.setNodeHeightOffset(node.id, node.heightOffset + 1);
@@ -68,6 +68,28 @@ describe('a map saved in parts', () => {
     expect(store.writes[3]).toEqual(['map:head', 'map:manifest']);
     const read = await saves.read();
     expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it('writes a building aged as the wears of its part, never the records of its part again', async () => {
+    // DO NOT write a part's records for wear: the town ageing turned every part of the map into text and
+    // gzipped it again, 512 records for one number each (2026-10-15).
+    const doc = town();
+    const store = memoryStore();
+    const saves = new PartedSaves(store, 'map');
+    await saves.save(doc, {});
+    const aged = [...doc.buildings.all()].filter((_, i) => i % 97 === 0);
+    for (const b of aged) doc.buildings.wear(b.id, 0.6);
+    await saves.save(doc, {});
+    const written = store.writes.at(-1)!;
+    expect(written.filter((k) => k.includes(':part:'))).toEqual([]);
+    expect(written.filter((k) => k.includes(':wear:')).length).toBe(new Set(aged.map((b) => Math.floor(b.id / BUILDINGS_PER_PART))).size);
+    // Read back, worn: the wears laid over the records stored before.
+    const read = await saves.read();
+    expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
+    // A map saved before the wears were kept apart (no `:wear:` key) reads its records as they are.
+    for (const key of [...store.blobs.keys()]) if (key.includes(':wear:')) store.blobs.delete(key);
+    const old = await saves.read();
+    expect(old!.document.buildings!.length).toBe(doc.buildings.size);
   });
 
   it('keeps what a failed write did not write for the next save', async () => {
@@ -80,7 +102,7 @@ describe('a map saved in parts', () => {
     store.refuse = true;
     expect(await saves.save(doc, {})).toBe(false);
     await saves.save(doc, {});
-    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, `map:wear:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
     const read = await saves.read();
     expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
   });
@@ -95,7 +117,7 @@ describe('a map saved in parts', () => {
     const one = [...doc.buildings.all()][2]!;
     doc.buildings.put({ ...one, decay: 0.75 });
     await reader.save(doc, {});
-    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, `map:wear:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
     expect(RoadDoc.fromJSON((await reader.read())!.document).toJSON()).toEqual(doc.toJSON());
   });
 
