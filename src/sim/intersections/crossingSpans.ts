@@ -27,6 +27,8 @@ export interface CrossingSpan {
  */
 const REACH = (BODY_ENVELOPE[HEAVY]?.width ?? 0) / 2 + m(0.9);
 const SAMPLE = 0.5;
+/** How far outside its own box a rounded point of a line may fall, u (`measure`). */
+const OUT_OF_BOX = 1e-6;
 /** A walker's clearance from a vehicle body (`PedestrianClearance`), plus margin. */
 const PERSON_CLEAR = m(0.6);
 
@@ -106,6 +108,14 @@ export class CrossingSpans {
     const made = { connectors: [] as ConnectorId[], lanes: [] as string[], keys: [] as string[] };
     this.ofJunction.set(node, made);
     const incident = w.doc.node(node)?.incident ?? [];
+    // Each zebra's points sampled once for the junction, every movement and lane measured against them.
+    // DO NOT sample a zebra again for each movement: a fifth of the measuring at 2.5 km (2026-10-15).
+    const sampled = new Map<Polyline, Float64Array>();
+    const samplesOf = (zebra: Polyline, length: number): Float64Array => {
+      let known = sampled.get(zebra);
+      if (!known) sampled.set(zebra, known = sampleZebra(zebra, length));
+      return known;
+    };
     for (const connectorId of junction.connectors) {
       rebuildWork.spans++;
       const connector = w.graph.connectors.get(connectorId);
@@ -121,7 +131,7 @@ export class CrossingSpans {
         const span = known && known.length === edge.length && sameFloats(known.path, path.xy)
           && sameFloats(known.edge, edge.path.xy)
           ? known.span
-          : measure(path, edge.path, edge.length);
+          : measure(path, edge.path, samplesOf(edge.path, edge.length));
         this.measured.set(id, { path: path.xy, edge: edge.path.xy, length: edge.length, span });
         made.keys.push(id);
         let byCrossing = this.spans.get(connector.id);
@@ -147,7 +157,7 @@ export class CrossingSpans {
         const known = previous.get(id);
         const span = known && known.length === edge.length && sameFloats(known.path, lane.centre.xy)
           && sameFloats(known.edge, edge.path.xy)
-          ? known.span : measure(lane.centre, edge.path, edge.length);
+          ? known.span : measure(lane.centre, edge.path, samplesOf(edge.path, edge.length));
         this.measured.set(id, { path: lane.centre.xy, edge: edge.path.xy, length: edge.length, span });
         made.keys.push(id);
         if (span) stop = Math.min(stop, span.along);
@@ -175,13 +185,36 @@ interface Measured {
   readonly span: CrossingSpan | null;
 }
 
-/** The stretch of a crossing `length` long that a movement along `path` drives over. */
-function measure(path: Polyline, crossing: Polyline, length: number): CrossingSpan | null {
+/** A crossing `length` long sampled every `SAMPLE`: s, x, y a sample. */
+function sampleZebra(crossing: Polyline, length: number): Float64Array {
+  const out: number[] = [];
+  for (let s = 0; s <= length; s += SAMPLE) {
+    const p = crossing.sampleAt(s).p;
+    out.push(s, p.x, p.y);
+  }
+  return Float64Array.from(out);
+}
+
+/** The stretch of a crossing (its `samples`, `sampleZebra`) that a movement along `path` drives over. */
+function measure(path: Polyline, crossing: Polyline, samples: Float64Array): CrossingSpan | null {
+  // A point farther from the path's box than REACH is farther from the path: no closest point to ask
+  // for. A whole crossing that far (its box from the path's) is never driven over. DO NOT ask the
+  // closest point of every sample of every zebra of the junction against every movement and every
+  // approach lane (a whole road): a second of the frame of the swap at 2.5 km, nearly all of it for
+  // zebras the movement never comes near (2026-10-15). The margin keeps a sample a rounding outside its
+  // segment's box from being dropped.
+  const box = path.bbox;
+  const gap = (minX: number, minY: number, maxX: number, maxY: number): number =>
+    Math.hypot(Math.max(box.minX - maxX, 0, minX - box.maxX), Math.max(box.minY - maxY, 0, minY - box.maxY));
+  const zebra = crossing.bbox;
+  if (gap(zebra.minX, zebra.minY, zebra.maxX, zebra.maxY) > REACH + OUT_OF_BOX) return null;
   let s0 = Infinity;
   let s1 = -Infinity;
   let centre = Infinity;
-  for (let s = 0; s <= length; s += SAMPLE) {
-    const hit = path.closestPoint(crossing.sampleAt(s).p);
+  for (let k = 0; k < samples.length; k += 3) {
+    const s = samples[k]!, p = { x: samples[k + 1]!, y: samples[k + 2]! };
+    if (gap(p.x, p.y, p.x, p.y) > REACH + OUT_OF_BOX) continue;
+    const hit = path.closestPoint(p);
     if (hit.distance > REACH) continue;
     s0 = Math.min(s0, s);
     s1 = Math.max(s1, s);
