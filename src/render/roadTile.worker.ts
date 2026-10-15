@@ -1,6 +1,7 @@
 import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
 import { type BlockArrays, coarseArrays } from './mesh/roadLodPure';
 import type { JobScope } from '../jobs/jobScope';
+import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a share shaped and meshed whole */
 type Message =
@@ -65,5 +66,8 @@ function handler(post: JobScope): (event: MessageEvent<Message>) => void {
 
 /** The road tiles' service of the job system (`jobs/job.worker.ts`). */
 export function serve(self: JobScope): void {
-  self.onmessage = handler(self) as (event: MessageEvent) => void;
+  const handle = handler(self) as (event: MessageEvent) => void;
+  // DO NOT simplify before the simplifier's WebAssembly is made: every far block failed and was drawn whole (meshoptimizer README, `MeshoptSimplifier.ready`).
+  const ready = MeshoptSimplifier.ready.catch(() => undefined);
+  self.onmessage = (event: MessageEvent) => void ready.then(() => handle(event));
 }
