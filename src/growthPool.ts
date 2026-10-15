@@ -2,9 +2,9 @@ import { type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthRepl
 import type { GrowthLane } from '@editor/growthFeed';
 import { jobPort } from './jobs/jobPool';
 
-/** THE GROWTH'S LANE OF THE JOB POOL, FROM THE PAGE (`growth.worker.ts`): one building at a time; a failed or silent lane falls back to a replica on the page */
+/** THE GROWTH'S LANE OF THE JOB POOL, FROM THE PAGE (`growth.worker.ts`): one building at a time; a failed lane falls back to a replica on the page. DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share (a failure comes as an error). */
 
-/** Longest the worker may stay silent with a lot waiting (one lot is milliseconds; the module's first load, some hundred). */
+/** Silence past which a worker with a lot waiting is reported, once a stretch, and still waited for (one lot is milliseconds; the module's first load, some hundred). */
 const SILENCE_MS = 10_000;
 
 export class GrowthPool implements GrowthLane {
@@ -16,6 +16,8 @@ export class GrowthPool implements GrowthLane {
   private held: GrowAnswer | null = null;
   /** When the lot waiting on the worker was posted; null: none waits. */
   private postedAt: number | null = null;
+  /** Whether this stretch of silence was reported. */
+  private told = false;
 
   /** `take`: an answer came, false to offer it again next frame; `restarted`: the replica is new, all to be sent again. */
   constructor(private readonly take: (answer: GrowAnswer) => boolean, private readonly restarted: () => void) {}
@@ -25,10 +27,11 @@ export class GrowthPool implements GrowthLane {
     if (this.worker) {
       this.worker.postMessage(ask, [...transfer]);
       this.postedAt = performance.now();
+      this.told = false;
     } else this.pending = ask;
   }
 
-  /** Once a frame: an answer held offered again, the page's replica's lot answered, a silent worker given up. */
+  /** Once a frame: an answer held offered again, the page's replica's lot answered, a silent worker reported (and still waited for). */
   pump(): void {
     if (this.held && this.take(this.held)) this.held = null;
     if (this.local && this.pending && !this.held) {
@@ -36,8 +39,11 @@ export class GrowthPool implements GrowthLane {
       this.pending = null;
       this.offer(this.local.handle(ask));
     }
-    if (this.postedAt !== null && performance.now() - this.postedAt > SILENCE_MS) {
-      this.fail(`the growth worker was silent for ${SILENCE_MS} ms with a lot waiting`);
+    const now = performance.now();
+    if (this.postedAt !== null && !this.told && now - this.postedAt > SILENCE_MS) {
+      // Said once a stretch, and waited for: the growth on the page would stall every frame after it.
+      this.told = true;
+      console.warn(`[growth] the growth worker has been silent for ${Math.round(now - this.postedAt)} ms with a lot waiting (busy or without CPU); still waiting`);
     }
   }
 
