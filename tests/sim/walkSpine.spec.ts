@@ -265,7 +265,6 @@ function oldRoute(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Wa
   steps.push({ way: to.way, dir: arriveAtA ? 1 : -1, from: arriveAtA ? 0 : to.way.path.length, to: to.s });
   return steps;
 }
-const stepsText = (steps: readonly Step[] | null): string => (steps ? steps.map((s) => `${s.way?.id}:${s.dir}:${s.from}:${s.to}`).join(' ') : 'none');
 
 /** The walkway nearest a point (any kind but a crossing), with where on it. */
 function wayNear(g: WalkGraph, x: number, y: number): { way: Walkway; s: number } {
