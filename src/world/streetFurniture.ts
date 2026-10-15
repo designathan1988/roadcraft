@@ -152,6 +152,3 @@ export function streetFurniture(net: Network): FurnitureItem[] {
   }
   return items;
 }
-
-/** The items a person on the footway has to walk around. */
-export const blocksPedestrians = (item: FurnitureItem): boolean => item.on === 'footway';

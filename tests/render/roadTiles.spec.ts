@@ -9,7 +9,7 @@ import { buildRoadElevation, type RoadElevation } from '@world/elevation';
 import type { SceneMaterials } from '@render/materials';
 import { buildRoadSurfaces, roadSurfaceSteps, type SurfaceReuse } from '@render/roadSurfaces';
 import { SurfaceInputs } from '@render/roadSurfaceInputs';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from '../world/support/town/defaultTown';
 import { TUNED_UNIT } from '@world/units';
 import { refillArrays } from '@render/mesh/gpuOnly';
 

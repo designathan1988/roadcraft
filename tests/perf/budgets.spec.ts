@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { type Budget, COUNT_BUDGETS, withinBudget } from '@core/perfBudget';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from '../world/support/town/defaultTown';
 import { buildingPads, padsWork } from '@world/buildings/pads';
 import { kerbward, kerbWork } from '@world/poleLines';
 import { buildRoadElevation } from '@world/elevation';

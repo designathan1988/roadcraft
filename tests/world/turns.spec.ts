@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { LaneletGraph, classifyTurn } from '@world/lanelets';
+import { LaneletGraph } from '@world/lanelets';
+import { classifyTurn } from '@world/junctionBuild';
 import { perp } from '@core/vec2';
 import { createIsoRig } from '@render/isoViewport';
 import { JunctionSurface, turnFits } from '@world/turnPaths';

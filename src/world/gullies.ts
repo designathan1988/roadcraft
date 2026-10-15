@@ -32,20 +32,3 @@ export function readGullyDab(data: unknown): GullyDab | null {
   if (!d || !finite(d.x) || !finite(d.y) || !finite(d.radius) || !finite(d.strength)) return null;
   return { x: d.x, y: d.y, radius: Math.max(1, d.radius), strength: Math.min(1, Math.max(0, d.strength)), ...(d.erase === true ? { erase: true } : {}) };
 }
-
-/**
- * The dabs at a point: how much they cut (0..1) and how much they wipe away
- * (0..1), each dab in turn with a smooth falloff to its rim - cutting lifts
- * the first and lowers the second, erasing the other way round.
- */
-export function gulliesAt(dabs: readonly GullyDab[], x: number, y: number): { cut: number; wipe: number } {
-  let cut = 0, wipe = 0;
-  for (const dab of dabs) {
-    const r = Math.hypot(x - dab.x, y - dab.y) / dab.radius;
-    if (r >= 1) continue;
-    const s = 1 - r * r;
-    const w = s * s * dab.strength;
-    if (dab.erase) { wipe += (1 - wipe) * w; cut *= 1 - w; } else { cut += (1 - cut) * w; wipe *= 1 - w; }
-  }
-  return { cut, wipe };
-}

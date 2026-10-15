@@ -5,8 +5,9 @@ import { m, METERS_PER_UNIT } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import { LANDING_RISE, PLINTH_MIN, floorHeight, foundationOf } from '@world/buildings/foundation';
 import {
-  clashes, facadeBays, isSupported, levelHeight, localToWorld, volumeElevation, volumeHeight, volumeLift, worldToLocal,
+  facadeBays, isSupported, levelHeight, localToWorld, volumeElevation, volumeHeight, volumeLift, worldToLocal,
 } from '@world/buildings/geometry';
+import { clashes } from './support/clashes';
 import { buildingPads } from '@world/buildings/pads';
 import { cutOpen } from '@world/buildings/interior';
 import { validateBuilding } from '@world/buildings/validate';

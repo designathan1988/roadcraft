@@ -8,7 +8,8 @@ import { pointInPolygon } from '@core/polygon';
 import { area, type MultiPoly } from '@core/clipper';
 import { roadProfile } from '@world/roadTypes';
 import { sectionOf } from '@world/section';
-import { buildWalkways, deckOf, type WalkGraph } from '@world/walkways';
+import { deckOf, type WalkGraph } from '@world/walkways';
+import { buildWalkways } from './oracle/buildWalkways';
 import { fixtureDoc, LAYOUTS, layoutDoc } from '../sim/support/bodies';
 
 /**

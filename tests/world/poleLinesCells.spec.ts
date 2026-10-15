@@ -5,10 +5,11 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
-import { insideMulti, kerbward, onFootway, poleLines, poleLinesAt, poleLinesWork, type PoleLines } from '@world/poleLines';
+import { kerbward, onFootway, poleLines, poleLinesAt, poleLinesWork, type PoleLines } from '@world/poleLines';
 import { cellWork } from '@world/cells';
 import { planPoleRun, planPoleRunWhole } from '@editor/poles';
 import { m } from '@world/units';
+import { insideMulti } from './oracle/insideMulti';
 
 /**
  * THE POLE LINES BY CELL (docs/source/PROBLEMAS.md P7.7): what is asked about a

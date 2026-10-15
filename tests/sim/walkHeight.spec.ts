@@ -8,7 +8,7 @@ import { DT } from '@sim/params';
 import { SIDESTEP, createAgentWalkEngine } from '@sim/agents/walk';
 import { gaitSpeed } from '@sim/people/view';
 import { FOOTWAY_RISE } from '@world/roadTypes';
-import { curbRamps, walkingRise } from '@world/curbRamps';
+import { rampsOfNode, walkingRise } from '@world/curbRamps';
 import { m } from '@world/units';
 
 /**
@@ -55,8 +55,9 @@ describe('walking height', () => {
     const sim = city();
     // Four legs, a zebra on each, a ramp at each of its two ends; and the
     // unmarked crossing at each of the four road ends, two ramps each.
-    expect(curbRamps(sim.net).length).toBe(16);
-    for (const r of curbRamps(sim.net)) {
+    const ramps = [...sim.doc.nodes.keys()].flatMap((id) => rampsOfNode(sim.net, id));
+    expect(ramps.length).toBe(16);
+    for (const r of ramps) {
       // At the foot the walking surface is the carriageway's, from either side.
       expect(walkingRise(sim.net, r.x + r.nx * m(0.01), r.y + r.ny * m(0.01), true)).toBeLessThan(0.02);
       expect(walkingRise(sim.net, r.x + r.nx * m(0.01), r.y + r.ny * m(0.01), false)).toBeLessThan(0.02);

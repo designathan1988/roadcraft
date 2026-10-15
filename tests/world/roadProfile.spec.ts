@@ -7,7 +7,7 @@ import { flipSection, normalizeRoadSection } from '@world/roadSection';
 import { type RoadProfileSpec, applyProfile, profileOf, profileProblems, profileRoad, sameProfile } from '@world/roads/profile';
 import { classTemplates, normalizeTemplate } from '@world/roads/templates';
 import { sectionOf } from '@world/section';
-import { buildWalkways } from '@world/walkways';
+import { buildWalkways } from './oracle/buildWalkways';
 import { m } from '@world/units';
 import { applyProfileTo } from '@editor/roads/profile';
 import { footwayRiseShare } from '@world/roads/footwayRise';

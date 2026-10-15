@@ -1,7 +1,7 @@
 import type { Vec2 } from '@core/vec2';
-import { type BlueprintBody, instantiate } from './buildings/blueprints';
-import { footprintRects } from './buildings/geometry';
-import type { Building, BuildingFunction } from './buildings/types';
+import { type BlueprintBody, instantiate } from '@world/buildings/blueprints';
+import { footprintRects } from '@world/buildings/geometry';
+import type { Building, BuildingFunction } from '@world/buildings/types';
 
 /**
  * Where a building stands on a block: boxes, edges, and the arithmetic that

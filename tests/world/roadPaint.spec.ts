@@ -5,7 +5,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { approachLegends, segmentMarkings, type StrokeSpec } from '@world/markings';
 import { catalogRoads } from '@world/roads/catalog';
-import { derivedSigns } from '@world/roads/derivedSigns';
+import { derivedSigns } from './oracle/derivedSigns';
 import { markingStyle } from '@world/roads/markingStyle';
 import { applyProfile } from '@world/roads/profile';
 import { LANE_LINE, sectionFromProfile, travelWidth } from '@world/roadTypes';

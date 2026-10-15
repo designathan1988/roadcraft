@@ -3,16 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import {
   DEFAULT_POLE_SPACING,
-  MAX_POLE_SPACING,
-  MIN_POLE_SPACING,
   WIRE_MAX_SAG,
   poleCarriesLamp,
-  polePositions,
-  sampleWire,
   spanSag,
   wireDrop,
 } from '@world/utilities';
 import { m } from '@world/units';
+import { sampleWire } from './oracle/sampleWire';
 
 /**
  * The overhead utility network.
@@ -25,39 +22,6 @@ import { m } from '@world/units';
  */
 
 describe('pole runs', () => {
-  it('puts a pole at both ends of the drag, whatever the length', () => {
-    // A run whose length is not a whole number of spacings must still reach
-    // the point the player released, or the tool looks like it ignored them.
-    for (const length of [1, 17, 40, 41.7, 199, 1000]) {
-      const poles = polePositions({ x: 0, y: 0 }, { x: length, y: 0 });
-      expect(poles.length, `length ${length}`).toBeGreaterThanOrEqual(2);
-      expect(poles[0]?.x).toBeCloseTo(0, 6);
-      expect(poles[poles.length - 1]?.x).toBeCloseTo(length, 6);
-    }
-  });
-
-  it('keeps its spacing inside the legal band', () => {
-    for (const length of [30, 100, 250, 900]) {
-      const poles = polePositions({ x: 0, y: 0 }, { x: length, y: 0 });
-      for (let i = 1; i < poles.length; i++) {
-        const gap = (poles[i]?.x ?? 0) - (poles[i - 1]?.x ?? 0);
-        // Half the minimum, because a short run is allowed to be one span.
-        expect(gap, `length ${length}`).toBeLessThanOrEqual(MAX_POLE_SPACING + 1e-6);
-        if (poles.length > 2) expect(gap).toBeGreaterThan(MIN_POLE_SPACING * 0.5);
-      }
-    }
-  });
-
-  it('spaces poles near the default on a long run', () => {
-    const poles = polePositions({ x: 0, y: 0 }, { x: 1000, y: 0 });
-    const gap = (poles[1]?.x ?? 0) - (poles[0]?.x ?? 0);
-    expect(Math.abs(gap - DEFAULT_POLE_SPACING)).toBeLessThan(DEFAULT_POLE_SPACING * 0.3);
-  });
-
-  it('is degenerate-safe', () => {
-    expect(polePositions({ x: 5, y: 5 }, { x: 5, y: 5 }).length).toBe(1);
-  });
-
   it('lights every other pole, deterministically', () => {
     expect(poleCarriesLamp(0)).toBe(true);
     expect(poleCarriesLamp(1)).toBe(false);
@@ -114,7 +78,9 @@ describe('wires hang', () => {
 
 describe('the document carries the network', () => {
   const runOf = (doc: RoadDoc, from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const ids = polePositions(from, to).map((at, i) => doc.addPole(at, poleCarriesLamp(i)).id);
+    const spans = Math.max(1, Math.round(Math.hypot(to.x - from.x, to.y - from.y) / DEFAULT_POLE_SPACING));
+    const at = (i: number) => ({ x: from.x + (to.x - from.x) * i / spans, y: from.y + (to.y - from.y) * i / spans });
+    const ids = Array.from({ length: spans + 1 }, (_, i) => doc.addPole(at(i), poleCarriesLamp(i)).id);
     for (let i = 1; i < ids.length; i++) {
       const a = ids[i - 1];
       const b = ids[i];

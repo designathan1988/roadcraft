@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
-import { buildWalkways } from '@world/walkways';
+import { buildWalkways } from '../world/oracle/buildWalkways';
 import { CROSSWALK_DEPTH, STOP_BAR_SETBACK } from '@world/approach';
 import { History, followNetwork } from '@editor/history';
 import { commitPedestrianCrossing } from '@editor/streetObjects';

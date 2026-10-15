@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Digest } from '@core/digest';
-import { Walkways, buildWalkways, type WalkGraph } from '@world/walkways';
+import { Walkways, type WalkGraph } from '@world/walkways';
+import { buildWalkways } from './oracle/buildWalkways';
 import { rebuildWork } from '@world/rebuildWork';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';

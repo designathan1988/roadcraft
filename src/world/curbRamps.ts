@@ -47,24 +47,9 @@ interface RampState {
   state: object | null;
   readonly byNode: Map<NodeId, readonly CurbRamp[]>;
   readonly grid: Map<number, CurbRamp[]>;
-  /** Every ramp, node by node; null until asked after a change. */
-  list: readonly CurbRamp[] | null;
 }
 
 const cache = new WeakMap<Network, RampState>();
-
-/** Every dropped kerb of the network, as it stands. */
-export function curbRamps(net: Network): readonly CurbRamp[] {
-  const state = rampState(net);
-  if (!state.list) {
-    const list: CurbRamp[] = [];
-    // Node by node in the order they were placed (the document's order when
-    // all were made at once; a node given ramps later comes last).
-    for (const ramps of state.byNode.values()) for (const r of ramps) list.push(r);
-    state.list = list;
-  }
-  return state.list;
-}
 
 /**
  * The dropped kerbs of one node, as it stands (`rampState` brought up to the network first): what the
@@ -137,11 +122,10 @@ function placeAll(net: Network, state: RampState): void {
 
 function rampState(net: Network): RampState {
   let state = cache.get(net);
-  if (!state) cache.set(net, state = { state: null, byNode: new Map(), grid: new Map(), list: null });
+  if (!state) cache.set(net, state = { state: null, byNode: new Map(), grid: new Map() });
   if (state.state === net.state) return state;
   const delta = state.state === null ? null : net.changesSince(state.state);
   state.state = net.state;
-  state.list = null;
   if (delta === null) { placeAll(net, state); return state; }
   const dirty = new Set<NodeId>(delta.nodes);
   const ends = (seg: SegmentId): void => {

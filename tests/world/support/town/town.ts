@@ -1,10 +1,10 @@
-import type { BlueprintBody } from './buildings/blueprints';
-import { Model, cityBuilding, mat } from './buildings/cityBuildings';
-import type { MaterialSpec } from './buildings/materials';
-import type { BayComponent, Building, BuildingFunction, RoofKind, Side } from './buildings/types';
-import { ROAD_CLEARANCE } from './buildings/validate';
+import type { BlueprintBody } from '@world/buildings/blueprints';
+import { Model, cityBuilding, mat } from '@world/buildings/cityBuildings';
+import type { MaterialSpec } from '@world/buildings/materials';
+import type { BayComponent, Building, BuildingFunction, RoofKind, Side } from '@world/buildings/types';
+import { ROAD_CLEARANCE } from '@world/buildings/validate';
 import { type Box, type Edge, facingBody, inside, overlaps } from './sampleTown';
-import { m } from './units';
+import { m } from '@world/units';
 
 /**
  * The town's building kit: houses drawn up here, every one its own (its plan,

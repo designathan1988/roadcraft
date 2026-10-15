@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from './support/town/defaultTown';
 
 /**
  * The undo and the autosave keep the document as text (`RoadDoc.toText`), with

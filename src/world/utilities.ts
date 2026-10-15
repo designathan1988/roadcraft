@@ -1,4 +1,4 @@
-import { type Vec2, dist, sub } from '@core/vec2';
+import type { Vec2 } from '@core/vec2';
 import type { PoleId, SpanId } from './ids';
 import { m } from './units';
 import { ROAD_TUNING } from './roads/tuning';
@@ -102,65 +102,6 @@ export function spanSag(length: number): number {
 export function wireDrop(t: number, sag: number): number {
   const u = t * 2 - 1;
   return sag * (1 - u * u);
-}
-
-/**
- * Samples one wire between two poles, as a flat list of 3D points.
- *
- * The ends are given as full 3D positions because the two poles can stand on
- * ground of different heights, and a wire between them hangs from a straight
- * chord that is itself sloped.
- */
-export function sampleWire(
-  ax: number,
-  ay: number,
-  az: number,
-  bx: number,
-  by: number,
-  bz: number,
-  segments = WIRE_SEGMENTS,
-): { x: number; y: number; z: number }[] {
-  const length = Math.hypot(bx - ax, by - ay);
-  const sag = spanSag(length);
-  const out: { x: number; y: number; z: number }[] = new Array(segments + 1);
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    out[i] = {
-      x: ax + (bx - ax) * t,
-      y: ay + (by - ay) * t,
-      z: az + (bz - az) * t - wireDrop(t, sag),
-    };
-  }
-  return out;
-}
-
-/**
- * Where the poles of a freshly drawn run go.
- *
- * The run is given as the two ends of a drag. Poles are placed at a regular
- * spacing, and BOTH ENDS ALWAYS GET ONE: a run whose length is not a whole
- * number of spacings would otherwise stop short of where the player released,
- * which reads as the tool having ignored them. The interior spacing is
- * adjusted instead, which is also what a real line does.
- */
-export function polePositions(
-  from: Vec2,
-  to: Vec2,
-  spacing = DEFAULT_POLE_SPACING,
-): Vec2[] {
-  const length = dist(from, to);
-  if (!(length > 0)) return [{ x: from.x, y: from.y }];
-
-  const step = Math.max(MIN_POLE_SPACING, Math.min(MAX_POLE_SPACING, spacing));
-  const spans = Math.max(1, Math.round(length / step));
-  const direction = sub(to, from);
-
-  const out: Vec2[] = new Array(spans + 1);
-  for (let i = 0; i <= spans; i++) {
-    const t = i / spans;
-    out[i] = { x: from.x + direction.x * t, y: from.y + direction.y * t };
-  }
-  return out;
 }
 
 /**

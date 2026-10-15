@@ -36,16 +36,6 @@ const SPEED_PAST_MOUTH = m(14);
 const SPEED_MIN_LENGTH = m(60);
 
 /**
- * The signs the rules put up, every junction of the map in id order.
- * @rebuild The whole map: what a check from nothing reads (the sign layer keeps them junction by junction, `signsAtNode`).
- */
-export function derivedSigns(net: Network): DerivedSign[] {
-  const out: DerivedSign[] = [];
-  for (const node of [...net.doc.nodes.keys()].sort((a, b) => a - b)) out.push(...signsAtNode(net, node));
-  return out;
-}
-
-/**
  * The signs the rules put up at one junction: on each segment leaving it, the
  * rule's plate for the traffic arriving and the speed plate for the traffic
  * leaving. What it reads: the junction, its segments and their far ends.

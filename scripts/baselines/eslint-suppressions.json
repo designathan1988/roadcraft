@@ -853,11 +853,6 @@
       "count": 1
     }
   },
-  "src/world/defaultTown.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/world/doc.ts": {
     "max-lines": {
       "count": 1
@@ -950,12 +945,12 @@
   },
   "src/world/parkingLayout.ts": {
     "roadcraft/no-whole-map-walk": {
-      "count": 2
+      "count": 1
     }
   },
   "src/world/poleLines.ts": {
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/world/solids.ts": {
@@ -1000,6 +995,11 @@
   },
   "tests/world/oldMapsIdentical.spec.ts": {
     "roadcraft/no-silent-catch": {
+      "count": 1
+    }
+  },
+  "tests/world/support/town/defaultTown.ts": {
+    "max-lines": {
       "count": 1
     }
   }

@@ -79,13 +79,6 @@ const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
 
-/** Frontages of lots that hold parking, as world segments: their entrances. */
-export function lotEntrances(doc: RoadDoc): [Vec2, Vec2][] {
-  const out: [Vec2, Vec2][] = [];
-  for (const b of doc.buildings.all()) out.push(...entrancesOf(b));
-  return out;
-}
-
 /**
  * One building's entrances: its car gates and the edges of its parking, once
  * per record. The one definition: `sim/agents/kerbBays.ts` keeps a copy of

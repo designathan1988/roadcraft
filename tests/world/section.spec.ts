@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ROAD_TYPES, halfWidth, roadProfile } from '@world/roadTypes';
 import { Level } from '@world/roadTypes';
-import { sectionOf, bandWidth, MIN_THROUGH } from '@world/section';
+import { type Band, sectionOf, MIN_THROUGH } from '@world/section';
 import { m } from '@world/units';
+
+const bandWidth = (b: Band): number => b.outer - b.inner;
 
 /**
  * The cross-section is the one description of what lies across a road. It

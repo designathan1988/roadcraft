@@ -143,7 +143,7 @@
  "src/world/changes.ts  docs/AUDITORIA-2026-10-14.md": 1,
  "src/world/changes.ts  docs/source/PROBLEMAS.md": 1,
  "src/world/cityGen/squares.ts  docs/source/VIAS.md": 1,
- "src/world/defaultTown.ts  docs/source/ESCALA.md": 1,
+ "tests/world/support/town/defaultTown.ts  docs/source/ESCALA.md": 1,
  "src/world/derived.ts  docs/PLANO-ESPINHA-2026-10-14.md": 1,
  "src/world/doc.ts  docs/PROBLEMS.md": 2,
  "src/world/doc.ts  docs/source/ESCALA.md": 1,

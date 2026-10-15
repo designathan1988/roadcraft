@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { DEFAULT_GULLY_AUTO, gulliesAt, readGullyDab } from '@world/gullies';
+import { DEFAULT_GULLY_AUTO, readGullyDab } from '@world/gullies';
 
 describe('gullies laid with the brush', () => {
   it('are kept in the map with the land’s own amount: saved and loaded', () => {
@@ -23,15 +23,6 @@ describe('gullies laid with the brush', () => {
     expect(doc.gullyRevision).toBe(before);
     doc.addGullyDab({ x: 0, y: 0, radius: 30, strength: 1 });
     expect(doc.gullyRevision).toBe(before + 1);
-  });
-
-  it('cuts under a stroke, and the eraser wipes it (and the land’s own) away', () => {
-    const cut = { x: 0, y: 0, radius: 100, strength: 0.9 };
-    expect(gulliesAt([cut], 0, 0).cut).toBeCloseTo(0.9);
-    expect(gulliesAt([cut], 120, 0)).toEqual({ cut: 0, wipe: 0 });
-    const after = gulliesAt([cut, { ...cut, strength: 1, erase: true }], 0, 0);
-    expect(after.cut).toBeCloseTo(0);
-    expect(after.wipe).toBeCloseTo(1);
   });
 
   it('reads only well-formed dabs from a file', () => {

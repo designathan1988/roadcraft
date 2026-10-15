@@ -307,36 +307,6 @@ function boundsOf(points: readonly Vec2[]): { minX: number; minY: number; maxX: 
   return { minX, minY, maxX, maxY };
 }
 
-/** Separating-axis overlap of two convex polygons; touching is not overlap. */
-export function convexOverlap(a: readonly Vec2[], b: readonly Vec2[]): boolean {
-  for (const poly of [a, b]) {
-    for (let i = 0; i < poly.length; i++) {
-      const p = poly[i] as Vec2;
-      const q = poly[(i + 1) % poly.length] as Vec2;
-      const ax = -(q.y - p.y);
-      const ay = q.x - p.x;
-      const len = Math.hypot(ax, ay);
-      if (len < 1e-12) continue;
-      let aMin = Infinity;
-      let aMax = -Infinity;
-      let bMin = Infinity;
-      let bMax = -Infinity;
-      for (const r of a) {
-        const d = (r.x * ax + r.y * ay) / len;
-        aMin = Math.min(aMin, d);
-        aMax = Math.max(aMax, d);
-      }
-      for (const r of b) {
-        const d = (r.x * ax + r.y * ay) / len;
-        bMin = Math.min(bMin, d);
-        bMax = Math.max(bMax, d);
-      }
-      if (aMax <= bMin + 1e-6 || bMax <= aMin + 1e-6) return false;
-    }
-  }
-  return true;
-}
-
 function segmentsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
   const o = (p: Vec2, q: Vec2, r: Vec2): number => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
   const d1 = o(c, d, a);
