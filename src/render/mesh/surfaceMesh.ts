@@ -73,8 +73,9 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
 
 export function finish(geometry: BufferGeometry,
   options: Pick<SurfaceMeshOptions, 'name' | 'material' | 'castShadow' | 'receiveShadow'>): Mesh {
-  geometry.computeBoundingSphere();
-  geometry.computeBoundingBox();
+  // Bounds given (a block of tiles: its tiles' boxes, `surfaceTiles.ts`) stand; else measured.
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
   const mesh = new Mesh(geometry, options.material);
   mesh.name = options.name;
   mesh.castShadow = options.castShadow ?? false;
