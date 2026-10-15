@@ -31,7 +31,7 @@ import {
 import type { SimWorld } from '@sim/world';
 import type { Vehicle as SimVehicle } from '@sim/vehicles/state';
 import type { SegmentId } from '@world/ids';
-import type { ChangeKind, ChangeRect } from '@world/changes';
+import { type ChangeKind, ChangeSweep } from '@world/changes';
 import { m, perM } from '@world/units';
 import { hypot2 } from '@core/scalar';
 import { DT, FLEET_CEILING, PED_CEILING } from '@sim/params';
@@ -1916,14 +1916,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
    * asked at and floated over (or sank into) the ground edited under it.
    */
   const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number; seen: number }>();
-  /** The diary's latest serial of `OFF_ROAD_GROUND` this frame (`sync`). */
+  /**
+   * The diary's new entries of `OFF_ROAD_GROUND`, read once a frame (`sync`) and filed by cell: each
+   * car asks the cell it stands in. DO NOT ask the diary per car (`touches`): every car read every
+   * entry since its serial, cars x entries a frame - 30 s of a 2 560 m city's growing, quadratic.
+   */
+  let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
   const offRoadDeck = (world: SimWorld, v: SimVehicle, x: number, y: number): number => {
     const known = offRoadDecks.get(v);
     if (known && known.x === x && known.y === y) {
       if (known.seen >= offRoadSerial) return known.deck;
-      const at: ChangeRect = [x, y, x, y];
-      if (!world.net.doc.changes.touches(known.seen, at, OFF_ROAD_GROUND)) {
+      if (!offRoadSweep!.touches(known.seen, x, y)) {
         known.seen = offRoadSerial;
         return known.deck;
       }
@@ -2073,7 +2077,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     renderPalettes: (renderer) => procedural?.renderPalettes(renderer),
     sync(world, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       currentWorld = world;
-      offRoadSerial = world.net.doc.changes.serialOf(...OFF_ROAD_GROUND);
+      // A new document has a journal of its own: the sweep follows the one the world stands on.
+      if (offRoadSweep?.journal !== world.net.doc.changes) offRoadSweep = new ChangeSweep(world.net.doc.changes, OFF_ROAD_GROUND);
+      offRoadSweep.advance();
+      offRoadSerial = offRoadSweep.serial;
       const now = typeof performance !== 'undefined' ? performance.now() : suspensionClock + 16;
       suspensionDt = Math.min(0.1, Math.max(0, (now - suspensionClock) / 1000));
       suspensionClock = now;
