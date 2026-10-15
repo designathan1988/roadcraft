@@ -1,25 +1,21 @@
-import { EPS } from '@core/scalar';
 import { Polyline } from '@core/polyline';
-import { filletCorner } from '@core/fillet';
-import { lineLine } from '@core/intersect';
 import type { Vec2 } from '@core/vec2';
+import { Digest } from '@core/digest';
 import type { NodeId, SegmentId } from './ids';
 import type { RoadDoc } from './doc';
-import { m, stepsIn } from './units';
+import { m } from './units';
 import type { Network } from './network';
 import { footwayPath } from './footwayPath';
 import { Level } from './roadTypes';
-import { bandMid, bandWidth, sectionOf } from './section';
+import { bandMid, sectionOf } from './section';
 import { orientedPolyline } from './geometry';
 import { CROSSWALK_DEPTH } from './approach';
-import { EndType, FillRule, JoinType, inflatePathsD, unionD, type PathsD } from 'clipper2-ts';
-import { levelPolygons } from './surfaces';
-import type { SurfaceLevel } from './roadTypes';
-import { pointInPolygon } from '@core/polygon';
-import type { MultiPoly } from '@core/clipper';
+import { CellFiling } from './cells';
+import type { ChangeRect } from './changes';
 import type { RoadStructure } from './structures';
 import { bulbLine } from './junction/bulb';
 import { rebuildWork } from './rebuildWork';
+import { LocalLines, cornerPath, resample, stretch } from './walkingLines';
 
 /**
  * WHERE PEOPLE WALK, as lanes: the pedestrian network of the city.
@@ -118,136 +114,185 @@ const smooth = (t: number): number => t * t * (3 - 2 * t);
 
 /** Ends of two footways at one road node closer than this are one point, u. */
 const JOIN = m(0.02);
-/** A corner's curve leaves each footway along it for this share of the gap between the ends (fallback only). */
-const TANGENT_SHARE = 0.4;
-/** Points per fallback curve. */
-const CURVE_STEPS = 10;
-/** Tightest turn a walking line is given round a corner, u (1 m). */
-const MIN_CORNER_R = m(1);
 /** A crossing lands on a walkway no further than this beyond its usable width, u. */
 const LAND_REACH = m(0.8);
 
+/** What one update of the walkways took away and put in (`WalkGraph.changesSince`). */
+export interface WalkChange {
+  readonly removed: readonly Walkway[];
+  readonly added: readonly Walkway[];
+}
+
+/** How many updates the graph remembers; a reader further behind reads it whole again. */
+const KEPT_CHANGES = 64;
+
+/**
+ * The walkways and their nodes, by id. An edit takes out what it changed and
+ * puts in what it made (`Walkways.update`): a walkway or a node made again
+ * just as it was is handed back with its id - the same object - so whoever
+ * holds it (a walker's route) goes on with it; ids taken away and not made
+ * again are given to the next ones made, so the arrays are as long as the
+ * graph, not as its history.
+ */
 export class WalkGraph {
-  readonly nodes: WalkNode[] = [];
-  readonly ways: Walkway[] = [];
+  /** By id; a hole where an edit took one away (`holds`). */
+  readonly nodes: (WalkNode | undefined)[] = [];
+  readonly ways: (Walkway | undefined)[] = [];
   /** The walkways meeting at each node. */
   readonly at = new Map<number, number[]>();
-  /** Footway ids by road, corner ids by node, ascending; kept on every `add` (a split adds its second half). */
-  private readonly footwaysOf = new Map<SegmentId, number[]>();
-  private readonly cornersOf = new Map<NodeId, number[]>();
+  private readonly freeNodes: number[] = [];
+  private readonly freeWays: number[] = [];
+  /** What the update under way took out, by what it is: made again, it comes back as it was. */
+  private spareNodes = new Map<string, WalkNode[]>();
+  private spareWays = new Map<number, Walkway[]>();
+  private added: Walkway[] = [];
+  private readonly log: { readonly from: object; readonly change: WalkChange }[] = [];
+  private token: object = {};
+  private readonly none: readonly WalkChange[] = [];
+
+  /** The graph's state now, for `changesSince`. */
+  get state(): object { return this.token; }
+
+  /**
+   * What changed since the graph was in `state`, an update at a time, in
+   * order; null when it is too far behind (read it whole again).
+   */
+  changesSince(state: object): readonly WalkChange[] | null {
+    if (state === this.token) return this.none;
+    const i = this.log.findIndex((e) => e.from === state);
+    return i < 0 ? null : this.log.slice(i).map((e) => e.change);
+  }
+
+  /** The walkways in the graph now, in id order (a new array: for a reader of them all, as a test). */
+  walkways(): Walkway[] {
+    return this.ways.filter((w): w is Walkway => w !== undefined);
+  }
+
+  /** Whether this walkway is in the graph as it is now (a route may hold one an edit took out). */
+  holds(way: Walkway): boolean {
+    return this.ways[way.id] === way;
+  }
 
   node(p: Vec2): number {
-    const id = this.nodes.length;
-    this.nodes.push({ id, x: p.x, y: p.y });
+    const spare = this.spareNodes.get(nodeKey(p))?.pop();
+    if (spare) {
+      this.nodes[spare.id] = spare;
+      return spare.id;
+    }
+    const id = this.freeNodes.pop() ?? this.nodes.length;
+    this.nodes[id] = { id, x: p.x, y: p.y };
     return id;
   }
 
   add(way: Omit<Walkway, 'id'>): Walkway {
-    const w: Walkway = { ...way, id: this.ways.length };
-    this.ways.push(w);
+    const key = wayKey(way);
+    const spares = this.spareWays.get(key);
+    const k = spares ? spares.findIndex((w) => sameWay(w, way)) : -1;
+    let w: Walkway;
+    if (k >= 0) {
+      w = spares![k]!;
+      spares!.splice(k, 1);
+    } else {
+      w = { ...way, id: this.freeWays.pop() ?? this.ways.length };
+      this.added.push(w);
+    }
+    this.ways[w.id] = w;
     this.link(w.a, w.id);
     this.link(w.b, w.id);
-    if (w.kind === 'footway' && w.segment !== undefined) fileUnder(this.footwaysOf, w.segment, w.id);
-    else if (w.kind === 'corner' && w.node !== undefined) fileUnder(this.cornersOf, w.node, w.id);
     return w;
   }
 
-  /**
-   * The point nearest `p` on this road's footways and this node's corners
-   * (the earliest wins a tie), read off the lists they are filed under, as an
-   * index serves a lookup by key. DO NOT go back to scanning `ways`: every
-   * crossing end measured every walkway of the town, quadratic, 2.2 s of a
-   * 2 560 m one (2026-10-14). The lists, merged in id order, are that scan.
-   */
-  nearestOwn(p: Vec2, seg: SegmentId, node: NodeId): { way: Walkway; s: number; distance: number } | null {
-    const roads = this.footwaysOf.get(seg) ?? [], corners = this.cornersOf.get(node) ?? [];
-    let best: { way: Walkway; s: number; distance: number } | null = null;
-    // Both lists ascend (ids only grow); merged, they are the scan's order.
-    for (let i = 0, j = 0; i < roads.length || j < corners.length;) {
-      const id = j >= corners.length || (i < roads.length && roads[i]! < corners[j]!) ? roads[i++]! : corners[j++]!;
-      const way = this.ways[id]!;
-      const c = way.path.closestPoint(p);
-      if (!best || c.distance < best.distance) best = { way, s: c.s, distance: c.distance };
-    }
-    return best;
+  /** Takes a walkway out; it comes back, the same object, if the update makes it again (`add`). */
+  drop(id: number): void {
+    const w = this.ways[id];
+    if (!w) return;
+    this.unlink(w.a, id);
+    this.unlink(w.b, id);
+    this.ways[id] = undefined;
+    const key = wayKey(w);
+    const spares = this.spareWays.get(key);
+    if (spares) spares.push(w); else this.spareWays.set(key, [w]);
   }
 
-  private link(node: number, way: number): void { fileUnder(this.at, node, way); }
+  /** Takes a node out; it comes back with its id if the update makes one at the same point (`node`). */
+  dropNode(id: number): void {
+    const n = this.nodes[id];
+    if (!n) return;
+    this.nodes[id] = undefined;
+    this.at.delete(id);
+    const key = nodeKey(n);
+    const spares = this.spareNodes.get(key);
+    if (spares) spares.push(n); else this.spareNodes.set(key, [n]);
+  }
 
-  /** Cuts a walkway in two at arc length `s`; returns the node there (an end's node when `s` is at an end). */
-  split(way: Walkway, s: number): number {
-    if (s <= JOIN) return way.a;
-    if (s >= way.path.length - JOIN) return way.b;
-    const first = way.path.sub(0, s), second = way.path.sub(s, way.path.length);
-    const mid = this.node(first.sampleAt(first.length).p);
-    this.ways[way.id] = { ...way, path: first, b: mid };
-    const atB = this.at.get(way.b)!;
-    atB.splice(atB.indexOf(way.id), 1);
-    this.link(mid, way.id);
-    const { id: _id, path: _path, a: _a, ...rest } = way;
-    this.add({ ...rest, path: second, a: mid });
-    return mid;
+  /** The update done: what it took out and did not make again lets its id go, and the change is logged. */
+  settle(): void {
+    const removed: Walkway[] = [];
+    for (const spares of this.spareWays.values()) for (const w of spares) { removed.push(w); this.freeWays.push(w.id); }
+    for (const spares of this.spareNodes.values()) for (const n of spares) this.freeNodes.push(n.id);
+    this.spareWays = new Map();
+    this.spareNodes = new Map();
+    const added = this.added;
+    this.added = [];
+    if (!removed.length && !added.length) return;
+    this.log.push({ from: this.token, change: { removed, added } });
+    this.token = {};
+    if (this.log.length > KEPT_CHANGES) this.log.shift();
+  }
+
+  private link(node: number, way: number): void {
+    const list = this.at.get(node);
+    if (list) list.push(way);
+    else this.at.set(node, [way]);
+  }
+
+  private unlink(node: number, way: number): void {
+    const list = this.at.get(node);
+    const i = list ? list.indexOf(way) : -1;
+    if (i >= 0) list!.splice(i, 1);
   }
 }
 
-function fileUnder<K>(lists: Map<K, number[]>, key: K, id: number): void {
-  const list = lists.get(key);
-  if (list) list.push(id);
-  else lists.set(key, [id]);
+const nodeKey = (p: Vec2): string => `${p.x},${p.y}`;
+
+/** A walkway's digest: everything it is (`sameWay` settles a clash). */
+function wayKey(w: Omit<Walkway, 'id'>): number {
+  return new Digest().addText(w.kind).add(w.segment ?? -1).add(w.node ?? -1).add(w.a).add(w.b).add(w.kerb)
+    .addText(w.structure).add(w.unmarked ? 1 : 0).add(w.lo).add(w.hi).add(w.width).addAll(w.path.xy).value();
 }
 
-/** A cubic curve from `p0` heading `d0` to `p1` arriving heading `d1`, as a polyline. */
-function hermite(p0: Vec2, d0: Vec2, p1: Vec2, d1: Vec2): Polyline {
-  const gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-  const k = gap * TANGENT_SHARE;
-  const c0 = { x: p0.x + d0.x * k, y: p0.y + d0.y * k };
-  const c1 = { x: p1.x - d1.x * k, y: p1.y - d1.y * k };
-  const pts: Vec2[] = [];
-  for (let i = 0; i <= CURVE_STEPS; i++) {
-    const t = i / CURVE_STEPS, u = 1 - t;
-    pts.push({
-      x: u * u * u * p0.x + 3 * u * u * t * c0.x + 3 * u * t * t * c1.x + t * t * t * p1.x,
-      y: u * u * u * p0.y + 3 * u * u * t * c0.y + 3 * u * t * t * c1.y + t * t * t * p1.y,
-    });
-  }
-  return Polyline.fromPoints(pts);
+function sameWay(p: Omit<Walkway, 'id'>, q: Omit<Walkway, 'id'>): boolean {
+  if (p.kind !== q.kind || p.segment !== q.segment || p.node !== q.node || p.a !== q.a || p.b !== q.b || p.kerb !== q.kerb
+    || p.structure !== q.structure || p.unmarked !== q.unmarked || p.lo !== q.lo || p.hi !== q.hi || p.width !== q.width) return false;
+  const a = p.path.xy, b = q.path.xy;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
-/**
- * The walking line round a corner: along the footway of one leg, round an
- * arc, along the footway of the next - the two walking lines filleted where
- * they meet. Given the kerb return's radius less the walking line's inset, the
- * arc is concentric with the kerb. Leaves each end along its footway: no kink.
- */
-function cornerPath(p0: Vec2, d0: Vec2, p1: Vec2, d1: Vec2, radius: number): Polyline {
-  const meet = lineLine(p0, d0, p1, d1, 1e-6);
-  // Parallel lines (a road carried straight on), or lines meeting behind
-  // either end: a smooth curve between the ends.
-  if (!meet || meet.sA <= 0 || meet.sB >= 0) return hermite(p0, d0, p1, d1);
-  const x = meet.point;
-  const awayA = { x: -d0.x, y: -d0.y };
-  const psi = Math.acos(Math.max(-1, Math.min(1, awayA.x * d1.x + awayA.y * d1.y)));
-  // No longer than the room each end leaves before the corner.
-  const room = Math.min(meet.sA, -meet.sB) * Math.tan(psi / 2);
-  const f = filletCorner(x, awayA, d1, Math.min(Math.max(radius, MIN_CORNER_R), room));
-  if (!f) return hermite(p0, d0, p1, d1);
-  const pts: Vec2[] = [p0];
-  const a0 = Math.atan2(f.ta.y - f.c.y, f.ta.x - f.c.x);
-  let sweep = Math.atan2(f.tb.y - f.c.y, f.tb.x - f.c.x) - a0;
-  while (sweep > Math.PI) sweep -= 2 * Math.PI;
-  while (sweep < -Math.PI) sweep += 2 * Math.PI;
-  const steps = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 24)));
-  for (let k = 0; k <= steps; k++) {
-    const a = a0 + (sweep * k) / steps;
-    pts.push({ x: f.c.x + Math.cos(a) * f.r, y: f.c.y + Math.sin(a) * f.r });
-  }
-  pts.push(p1);
-  const clean = pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i - 1]!.x, p.y - pts[i - 1]!.y) > 1e-6);
-  return Polyline.fromPoints(clean);
+/** One side's footway of one road, mouth to mouth, before the crossings cut it (`Walkways.cut`). */
+interface RawFootway {
+  readonly segment: SegmentId;
+  /** Side of the road: +1 left of the centreline as stored (a to b), -1 right. */
+  readonly side: 1 | -1;
+  readonly path: Polyline;
+  readonly width: number;
+  readonly lo: number;
+  readonly hi: number;
+  readonly kerb: -1 | 1;
+  readonly structure: RoadStructure;
+  /** How far the walking line lies beyond the kerb's outer edge, and the footway beyond it, u. */
+  readonly inset: number;
+  readonly outer: number;
+  /** Its two ends in the graph, and the path's frame there. */
+  readonly a: number;
+  readonly b: number;
+  readonly first: { readonly p: Vec2; readonly t: Vec2 };
+  readonly last: { readonly p: Vec2; readonly t: Vec2 };
 }
 
 interface FootwayEnd {
-  readonly way: Walkway;
+  readonly way: RawFootway;
   readonly node: number;
   /** Side of the road: +1 left of the centreline as stored (a to b), -1 right. */
   readonly side: 1 | -1;
@@ -262,516 +307,443 @@ interface FootwayEnd {
   readonly into: Vec2;
 }
 
-/**
- * The walking lines of one deck at one inset: the outline of everything a
- * kerb bounds (carriageway and kerb stone, as drawn), grown by the inset.
- * Each closed contour runs at exactly that distance from the kerb's outer
- * edge all the way round - along a road, round a junction's kerb return, a
- * bevelled sharp bend, the end of a hairpin - which is what a walking line
- * is. Polygon offsetting (Clipper2) does it for any shape the junction
- * builder and the road ribbons draw together; the junction's own ring alone
- * does not (it cuts the outside of a sharp bend straight across the road).
- */
-class WalkingLines {
-  private readonly cache = new Map<string, Polyline[]>();
-  private readonly edges = new Map<string, Polyline[]>();
-  constructor(private readonly net: Network) {}
-
-  /** The merged rings of a level on the decks it lets in. */
-  private polygons(level: SurfaceLevel, include: (id: SegmentId) => boolean): MultiPoly {
-    return levelPolygons(this.net, level, include);
-  }
-
-  private readonly pavings = new Map<string, MultiPoly>();
-
-  /** Everything paved for walking or driving on one deck, out to the footway's outer edge. */
-  paving(deck: RoadStructure): MultiPoly {
-    let known = this.pavings.get(deck);
-    if (!known) {
-      // The footway level alone: `surfaces` unions all four levels of the map
-      // to hand back one (docs/performance.md #11).
-      known = this.polygons(Level.Sidewalk, (id) => deckOf(this.net.doc, id) === deck);
-      this.pavings.set(deck, known);
-    }
-    return known;
-  }
-
-  /** The paving of a deck as point rings with their boxes, made once (`onPaving`). */
-  private readonly pavingRings = new Map<string, { outer: PavingRing | null; holes: PavingRing[] }[]>();
-
-  /**
-   * Whether a point is on the paving of a deck. The rings were copied into
-   * fresh point objects on every call - the whole town's footway outline for
-   * every point of every corner - which was a tenth of a road edit.
-   */
-  onPaving(deck: RoadStructure, p: Vec2): boolean {
-    let polys = this.pavingRings.get(deck);
-    if (!polys) {
-      polys = this.paving(deck).map(([outerRing, ...holes]) => ({
-        outer: outerRing ? pavingRing(outerRing) : null,
-        holes: holes.map(pavingRing),
-      }));
-      this.pavingRings.set(deck, polys);
-    }
-    for (const poly of polys) {
-      if (!poly.outer || !inRing(p, poly.outer)) continue;
-      if (poly.holes.some((h) => inRing(p, h))) continue;
-      return true;
-    }
-    return false;
-  }
-
-  private readonly outerIndex = new Map<string, NearestEdge>();
-  /**
-   * The nearest point of the footway's outer edge on one deck, as the nearest
-   * of `outer`'s lines' `closestPoint`s (earlier lines and pieces win ties),
-   * read off a grid: every point of every corner used to measure the whole
-   * map's edge - one ring of thousands of pieces on a connected network -
-   * 46 of the 62 ms a road edit spent here in the default town
-   * (docs/performance.md #11).
-   */
-  nearestOuter(deck: RoadStructure, p: Vec2): { point: Vec2; distance: number } | null {
-    let index = this.outerIndex.get(deck);
-    if (!index) this.outerIndex.set(deck, index = new NearestEdge(this.outer(deck)));
-    return index.nearest(p);
-  }
-
-  /** The footway's outer edge on one deck: the outline of the paving, as drawn. */
-  outer(deck: RoadStructure): Polyline[] {
-    const known = this.edges.get(deck);
-    if (known) return known;
-    const paving = this.paving(deck);
-    const lines: Polyline[] = [];
-    for (const poly of paving) for (const ring of poly) {
-      if (ring.length >= 3) lines.push(Polyline.fromPoints([...ring.map(([x, y]) => ({ x: x!, y: y! })), { x: ring[0]![0]!, y: ring[0]![1]! }]));
-    }
-    this.edges.set(deck, lines);
-    return lines;
-  }
-
-  at(deck: RoadStructure, inset: number): Polyline[] {
-    const key = `${deck}:${inset.toFixed(4)}`;
-    const known = this.cache.get(key);
-    if (known) return known;
-    const kerbs = this.polygons(Level.Curb, (id) => deckOf(this.net.doc, id) === deck);
-    const paths: PathsD = [];
-    for (const poly of kerbs) for (const ring of poly) paths.push(ring.map(([x, y]) => ({ x: x!, y: y! })));
-    const grown = inflatePathsD(unionD(paths, [], FillRule.NonZero, 3), inset, JoinType.Round, EndType.Polygon, 2, 3, m(0.008));
-    const lines = grown.filter((r) => r.length >= 3).map((r) => Polyline.fromPoints([...r, r[0]!]));
-    this.cache.set(key, lines);
-    return lines;
-  }
-}
-
-/** The pieces of some lines on a grid: the nearest point among all of them, reading only the cells near it. */
-class NearestEdge {
-  private static readonly CELL = m(9.6);
-  /** Each piece: ax, ay, bx, by, in line then piece order. */
-  private readonly pieces: number[] = [];
-  private readonly cells = new Map<number, number[]>();
-  private lo = [Infinity, Infinity];
-  private hi = [-Infinity, -Infinity];
-
-  constructor(lines: readonly Polyline[]) {
-    const C = NearestEdge.CELL;
-    for (const line of lines) {
-      const xy = line.xy;
-      for (let k = 0; k + 3 < xy.length; k += 2) {
-        const i = this.pieces.length / 4;
-        const ax = xy[k]!, ay = xy[k + 1]!, bx = xy[k + 2]!, by = xy[k + 3]!;
-        this.pieces.push(ax, ay, bx, by);
-        const x0 = Math.floor(Math.min(ax, bx) / C), x1 = Math.floor(Math.max(ax, bx) / C);
-        const y0 = Math.floor(Math.min(ay, by) / C), y1 = Math.floor(Math.max(ay, by) / C);
-        this.lo = [Math.min(this.lo[0]!, x0), Math.min(this.lo[1]!, y0)];
-        this.hi = [Math.max(this.hi[0]!, x1), Math.max(this.hi[1]!, y1)];
-        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
-          const key = (x + 32768) * 65536 + (y + 32768);
-          const list = this.cells.get(key);
-          if (list) list.push(i); else this.cells.set(key, [i]);
-        }
-      }
-    }
-  }
-
-  nearest(p: Vec2): { point: Vec2; distance: number } | null {
-    if (!this.cells.size || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
-    const C = NearestEdge.CELL, P = this.pieces;
-    const cx = Math.floor(p.x / C), cy = Math.floor(p.y / C);
-    let bestSq = Infinity, bestI = -1, bestX = 0, bestY = 0;
-    const seen = new Set<number>();
-    const visit = (x: number, y: number): void => {
-      const list = this.cells.get((x + 32768) * 65536 + (y + 32768));
-      if (!list) return;
-      for (const i of list) {
-        if (seen.has(i)) continue;
-        seen.add(i);
-        const ax = P[i * 4]!, ay = P[i * 4 + 1]!, abx = P[i * 4 + 2]! - ax, aby = P[i * 4 + 3]! - ay;
-        const l2 = abx * abx + aby * aby;
-        let qx = ax, qy = ay;
-        if (l2 >= EDGE_EPS) {
-          let t = ((p.x - ax) * abx + (p.y - ay) * aby) / l2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-          qx = ax + abx * t; qy = ay + aby * t;
-        }
-        const d = (p.x - qx) ** 2 + (p.y - qy) ** 2;
-        if (d < bestSq || (d === bestSq && i < bestI)) { bestSq = d; bestI = i; bestX = qx; bestY = qy; }
-      }
-    };
-    const reach = Math.max(Math.abs(cx - this.lo[0]!), Math.abs(cx - this.hi[0]!), Math.abs(cy - this.lo[1]!), Math.abs(cy - this.hi[1]!));
-    for (let r = 0; r <= reach; r++) {
-      for (let x = cx - r; x <= cx + r; x++) {
-        visit(x, cy - r);
-        if (r) visit(x, cy + r);
-      }
-      for (let y = cy - r + 1; y <= cy + r - 1; y++) {
-        visit(cx - r, y);
-        visit(cx + r, y);
-      }
-      // Anything outside the square searched is at least r cells away.
-      if (bestI >= 0 && Math.sqrt(bestSq) < r * C) break;
-    }
-    return bestI < 0 ? null : { point: { x: bestX, y: bestY }, distance: Math.sqrt(bestSq) };
-  }
-}
-/** A piece shorter than this is its first point (`Polyline`'s own threshold). */
-const EDGE_EPS = EPS;
-
-interface PavingRing { readonly points: Vec2[]; readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }
-function pavingRing(ring: readonly (readonly number[])[]): PavingRing {
-  const points = ring.map(([x, y]) => ({ x: x!, y: y! }));
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const q of points) { minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y); }
-  return { points, minX, minY, maxX, maxY };
-}
-/** `pointInPolygon`, skipped when the point is outside the ring's box. */
-function inRing(p: Vec2, r: PavingRing): boolean {
-  return p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY && pointInPolygon(p, r.points);
-}
-
-/** Points along a polyline at `count + 1` evenly spaced shares of its length. */
-function resample(points: readonly Vec2[], count: number): Vec2[] {
-  const line = Polyline.fromPoints(points.filter((p, q) => q === 0 || Math.hypot(p.x - points[q - 1]!.x, p.y - points[q - 1]!.y) > 1e-9));
-  const out: Vec2[] = [];
-  for (let q = 0; q <= count; q++) out.push(line.sampleAt((line.length * q) / count).p);
-  return out;
-}
-
-/** How far from a walking line two footway ends may lie, together, for a stretch of it to join them. */
-const STRETCH_REACH = m(0.8);
-
-/**
- * The stretch of a closed walking line from the point nearest `from` to the
- * point nearest `to`, going the way that passes none of `avoid` (the other
- * footway ends at the junction). Null when the two ends are not on one line.
- */
-function stretch(lines: readonly Polyline[], from: Vec2, to: Vec2, avoid: readonly Vec2[]): Vec2[] | null {
-  let line: Polyline | null = null, best = Infinity;
-  for (const l of lines) {
-    // A line whose box is no nearer the two ends than the best found, or than
-    // a stretch takes, holds no nearer one: not walked (the box's MINDIST is
-    // a lower bound, Roussopoulos et al. 1995). Every corner of the town read
-    // every walking line of the town - 8.6 s of a 2 560 m town (2026-10-14).
-    const box = l.bbox;
-    const lower = Math.hypot(Math.max(box.minX - from.x, 0, from.x - box.maxX), Math.max(box.minY - from.y, 0, from.y - box.maxY))
-      + Math.hypot(Math.max(box.minX - to.x, 0, to.x - box.maxX), Math.max(box.minY - to.y, 0, to.y - box.maxY));
-    if (lower > Math.min(best, STRETCH_REACH) + 1e-9) continue;
-    const a = l.closestPoint(from), b = l.closestPoint(to);
-    if (a.distance + b.distance < best) { best = a.distance + b.distance; line = l; }
-  }
-  if (!line || best > STRETCH_REACH) return null;
-  const total = line.length;
-  const sa = line.closestPoint(from).s, sb = line.closestPoint(to).s;
-  const avoided = avoid.map((p) => line!.closestPoint(p)).filter((c) => c.distance < m(0.8)).map((c) => c.s);
-  // Forward from sa to sb (wrapping), or backward.
-  const within = (s: number, s0: number, s1: number): boolean => (s0 <= s1 ? s > s0 && s < s1 : s > s0 || s < s1);
-  const forwardClear = !avoided.some((s) => within(s, sa, sb));
-  const backwardClear = !avoided.some((s) => within(s, sb, sa));
-  if (!forwardClear && !backwardClear) return null;
-  const forward = forwardClear && (!backwardClear || ((sb - sa + total) % total) <= ((sa - sb + total) % total));
-  const span = forward ? (sb - sa + total) % total : (sa - sb + total) % total;
-  // A point every 20 cm: the smoothing below runs point by point.
-  const steps = Math.max(2, Math.ceil(stepsIn(span, 0.2)));
-  const out: Vec2[] = [];
-  for (let k = 0; k <= steps; k++) {
-    const s = forward ? sa + (span * k) / steps : sa - (span * k) / steps;
-    out.push(line.sampleAt(((s % total) + total) % total).p);
-  }
-  return out;
-}
-
-/** The pedestrian network of the whole map. Pure: the same network gives the same graph. */
+/** The pedestrian network of the whole map, from nothing. Pure: the same network gives the same walkways. */
 export function buildWalkways(net: Network): WalkGraph {
-  const steps = walkwaySteps(net);
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
+  return new Walkways().update(net);
 }
 
-/**
- * `buildWalkways` in steps, a junction's corners at a time: the simulation
- * builds it ahead of a topology change across frames (`SimWorld.prepareVehicleTopology`);
- * in one go it was a stall of about 100 ms in the default town (docs/performance.md #11).
- */
-export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
-  const g = new WalkGraph();
-  const doc = net.doc;
-  const ends = new Map<NodeId, FootwayEnd[]>();
-  const endAt = (node: NodeId, e: FootwayEnd): void => {
-    const list = ends.get(node);
-    if (list) list.push(e);
-    else ends.set(node, [e]);
-  };
+/** A road's footways: what its corners and crossings join, and the pieces the crossings cut them into. */
+interface SegmentUnit {
+  /** Its nodes when it was built: what a change of it builds again. */
+  readonly ends: readonly [NodeId, NodeId];
+  readonly raws: readonly RawFootway[];
+  pieces: number[];
+}
 
-  // --- footways: down the middle of each side's through zone
-  for (const segId of [...doc.segments.keys()].sort((a, b) => a - b)) {
+/** Where a crossing of a node lands on a road's footway: a node of the graph, `s` along it. */
+interface Landing {
+  readonly raw: RawFootway;
+  readonly s: number;
+  readonly node: number;
+}
+
+/** What one road node made: its corners, crossings and road end, and the nodes it cut them at. */
+interface NodeUnit {
+  readonly ways: number[];
+  readonly nodes: number[];
+  readonly landings: Landing[];
+}
+
+/** How far round a node's footway ends its corners may run, u: the box its walking lines are read from. */
+const NODE_REACH = m(12);
+/** How far beyond that the kerbs and paving are read: more than any walking line's inset. */
+const LINES_REACH = m(6);
+
+/**
+ * The walkways kept up with the network by what each edit changed (SUMO
+ * builds a junction's walking areas from that junction's own sidewalks and
+ * crossings, sumo.dlr.de/docs/Simulation/Pedestrians.html). A ROAD makes its
+ * two footways; a NODE makes its corners from the footways meeting there, its
+ * crossings landing on those footways and corners, and the crossing across a
+ * road end; a road's footways are then cut where the crossings at its two
+ * ends landed. An edit (`Network.changesSince`) builds again the roads it
+ * changed and the nodes it changed, at their ends, or whose walking lines it
+ * reached; every road at those nodes is cut again. The rest stands, its ids
+ * and objects with it.
+ * DO NOT build the walkways of the whole map for an edit: every road drawn
+ * built the town's footways, corners and crossings again, and the walkers'
+ * index and the people placed along them read them all again.
+ */
+export class Walkways {
+  readonly graph = new WalkGraph();
+  private readonly segments = new Map<SegmentId, SegmentUnit>();
+  private readonly nodeUnits = new Map<NodeId, NodeUnit>();
+  /** The box each node read its walking lines from: an edit reaching it builds the node again. */
+  private readonly reads = new CellFiling<NodeId, NodeUnit>();
+  private netState: object | null = null;
+
+  /** The walkways of the network as it is now. */
+  update(net: Network): WalkGraph {
+    if (this.netState === net.state) return this.graph;
+    const doc = net.doc;
+    const delta = this.netState === null ? null : net.changesSince(this.netState);
+    this.netState = net.state;
+    const rawSegs = new Set<SegmentId>(), nodes = new Set<NodeId>();
+    if (delta === null) {
+      // @rebuild Everything: the first build, a map opened, a network further behind than it remembers.
+      for (const id of this.segments.keys()) rawSegs.add(id);
+      for (const id of doc.segments.keys()) rawSegs.add(id);
+      for (const id of this.nodeUnits.keys()) nodes.add(id);
+      for (const id of doc.nodes.keys()) nodes.add(id);
+    } else {
+      // A node's record (its height: the deck of its roads) is read by every road at it.
+      for (const id of delta.segments) rawSegs.add(id);
+      for (const id of delta.nodes) {
+        nodes.add(id);
+        for (const seg of doc.node(id)?.incident ?? []) rawSegs.add(seg);
+      }
+      for (const rect of delta.rects) for (const id of this.reads.idsMeeting(rect)) nodes.add(id);
+    }
+    // A road's footways end at its nodes, before and now: their corners and crossings are made again.
+    for (const id of rawSegs) {
+      const before = this.segments.get(id);
+      if (before) { nodes.add(before.ends[0]); nodes.add(before.ends[1]); }
+      const now = doc.segment(id);
+      if (now) { nodes.add(now.a); nodes.add(now.b); }
+    }
+    // Every road at a node made again is cut again where its crossings land.
+    const cutSegs = new Set<SegmentId>(rawSegs);
+    for (const id of nodes) for (const seg of doc.node(id)?.incident ?? []) cutSegs.add(seg);
+
+    const g = this.graph;
+    for (const id of cutSegs) {
+      const unit = this.segments.get(id);
+      if (!unit) continue;
+      for (const way of unit.pieces) g.drop(way);
+      unit.pieces = [];
+    }
+    for (const id of rawSegs) {
+      const unit = this.segments.get(id);
+      if (!unit) continue;
+      for (const raw of unit.raws) { g.dropNode(raw.a); g.dropNode(raw.b); }
+      this.segments.delete(id);
+    }
+    for (const id of nodes) {
+      const unit = this.nodeUnits.get(id);
+      if (!unit) continue;
+      for (const way of unit.ways) g.drop(way);
+      for (const node of unit.nodes) g.dropNode(node);
+      this.nodeUnits.delete(id);
+      this.reads.remove(id);
+    }
+    const ascending = (a: number, b: number): number => a - b;
+    for (const id of [...rawSegs].sort(ascending)) if (doc.segment(id)) this.segments.set(id, this.footways(net, id));
+    for (const id of [...nodes].sort(ascending)) if (doc.node(id)) this.buildNode(net, id);
+    for (const id of [...cutSegs].sort(ascending)) {
+      const unit = this.segments.get(id);
+      if (unit) this.cut(doc, id, unit);
+    }
+    g.settle();
+    return g;
+  }
+
+  /** A road's two footways, down the middle of each side's through zone. */
+  private footways(net: Network, segId: SegmentId): SegmentUnit {
     rebuildWork.walkways++;
+    const doc = net.doc;
     const seg = doc.requireSegment(segId);
+    const raws: RawFootway[] = [];
+    const unit: SegmentUnit = { ends: [seg.a, seg.b], raws, pieces: [] };
     const ribbon = net.ribbons.get(segId);
-    if (!ribbon) continue;
+    if (!ribbon) return unit;
     const section = sectionOf(ribbon.road, seg.direction);
-    if (!section.walkable) continue;
+    if (!section.walkable) return unit;
     for (const side of [1, -1] as const) {
       // Each side's own footway (an asymmetric road, docs/VIAS.md V1).
       const path = footwayPath(ribbon, seg.direction, side);
       if (!path) continue;
       const zones = side > 0 ? section.left : section.right;
       const mid = bandMid(zones.through);
-      const width = bandWidth(zones.through);
       const inset = mid - zones.curb.outer;
       const outer = zones.frontage.outer - mid;
       const first = path.sampleAt(0), last = path.sampleAt(path.length);
       // Along a to b, the path's left is away from the road on the left
       // side (+1), towards it on the right side (-1).
       const lo = side > 0 ? -inset : -outer, hi = side > 0 ? outer : inset;
-      const way = g.add({ kind: 'footway', path, width: hi - lo, lo, hi, kerb: side > 0 ? -1 : 1, segment: segId, structure: deckOf(doc, segId), a: g.node(first.p), b: g.node(last.p) });
-      void width;
-      // Walking into b along the path the kerb is on the right of the left
-      // footway; walking into a, the other way, on its left.
-      endAt(seg.a, { way, node: way.a, side, inset, outer, kerbSide: side > 0 ? 1 : -1, p: first.p, into: { x: -first.t.x, y: -first.t.y } });
-      endAt(seg.b, { way, node: way.b, side, inset, outer, kerbSide: side > 0 ? -1 : 1, p: last.p, into: last.t });
+      raws.push({ segment: segId, side, path, width: hi - lo, lo, hi, kerb: side > 0 ? -1 : 1, structure: deckOf(doc, segId),
+        inset, outer, a: this.graph.node(first.p), b: this.graph.node(last.p),
+        first: { p: first.p, t: first.t }, last: { p: last.p, t: last.t } });
+    }
+    return unit;
+  }
+
+  /** A road's footways cut where the crossings at its two ends landed on them. */
+  private cut(doc: RoadDoc, segId: SegmentId, unit: SegmentUnit): void {
+    const seg = doc.requireSegment(segId);
+    const ends = seg.a === seg.b ? [this.nodeUnits.get(seg.a)] : [this.nodeUnits.get(seg.a), this.nodeUnits.get(seg.b)];
+    for (const raw of unit.raws) {
+      const marks = ends.flatMap((u) => u?.landings.filter((l) => l.raw === raw) ?? []).sort((p, q) => p.s - q.s);
+      let s0 = 0, from = raw.a;
+      const piece = (path: Polyline, to: number): void => {
+        unit.pieces.push(this.graph.add({ kind: 'footway', path, width: raw.width, lo: raw.lo, hi: raw.hi, kerb: raw.kerb,
+          segment: segId, structure: raw.structure, a: from, b: to }).id);
+      };
+      for (const mark of marks) {
+        if (mark.node === from) continue;
+        piece(raw.path.sub(s0, mark.s), mark.node);
+        s0 = mark.s;
+        from = mark.node;
+      }
+      piece(s0 > 0 ? raw.path.sub(s0, raw.path.length) : raw.path, raw.b);
     }
   }
 
-  // --- corners: round each corner of a junction, from one leg's footway to the next's
-  const joined = new Set<number>();
-  /** The walking line round from one footway end to another, as drawn, or null. */
-  const roundCorner = (from: FootwayEnd, to: FootwayEnd, all: readonly FootwayEnd[], walking: WalkingLines): Polyline | null => {
-    if (from.way.structure !== to.way.structure) return null;
-    const avoid = all.filter((e) => e !== from && e !== to).map((e) => e.p);
-    // The stretch round the corner at each footway's own inset: where two
-    // roads with footways of different widths meet, the walking line moves
-    // from one inset to the other along the corner, easing in and out so it
-    // leaves each footway along it.
-    const a = stretch(walking.at(from.way.structure, from.inset), from.p, to.p, avoid);
-    const b = from.inset === to.inset ? a : stretch(walking.at(to.way.structure, to.inset), from.p, to.p, avoid);
-    if (!a || !b) return null;
-    const count = Math.max(a.length, b.length) - 1;
-    const ra = resample(a, count), rb = resample(b, count);
-    const pts: Vec2[] = [];
-    for (let q = 0; q <= count; q++) {
-      const u = q / count, w = u * u * (3 - 2 * u);
-      pts.push({ x: ra[q]!.x + (rb[q]!.x - ra[q]!.x) * w, y: ra[q]!.y + (rb[q]!.y - ra[q]!.y) * w });
-    }
-    // Where the footway narrows below the walking line's inset (its outer
-    // edge tapering faster than the kerb, at a change of road width), the
-    // line keeps half its usable width clear of the outer edge instead: it
-    // moves towards the kerb by as much as the footway is narrower there.
-    for (let q = 1; q < count; q++) {
-      const p = pts[q]!;
-      const u = q / count, half = (from.way.width + (to.way.width - from.way.width) * u) / 2;
-      const edge = walking.nearestOuter(from.way.structure, p);
-      if (!edge) continue;
-      const kd = Math.hypot(p.x - edge.point.x, p.y - edge.point.y);
-      const lack = half - kd;
-      const beyond = !walking.onPaving(from.way.structure, p);
-      if (lack <= 0 && !beyond) continue;
-      // Towards the kerb: away from the outer edge.
-      const ax = p.x - edge.point.x, ay = p.y - edge.point.y, al = Math.hypot(ax, ay) || 1;
-      const dir = beyond ? { x: -ax / al, y: -ay / al } : { x: ax / al, y: ay / al };
-      const move = beyond ? kd + half : lack;
-      pts[q] = { x: p.x + dir.x * move, y: p.y + dir.y * move };
-    }
-    // Leaving each footway exactly along it: over the first and last stretch
-    // the line eases from the footway's own straight run onto the contour,
-    // so a hair's difference between the two (an offset polyline against a
-    // rounded polygon offset) never shows as a kink.
-    const total = pts.reduce((sum, p, q) => (q ? sum + Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y) : 0), 0);
-    const ease = Math.min(EASE, total / 3);
-    let run = 0;
-    const out = { x: -to.into.x, y: -to.into.y };
-    const eased = pts.map((p, q) => {
-      if (q) run += Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y);
-      const fromStart = run, fromEnd = total - run;
-      if (fromStart < ease) {
-        const w = smooth(fromStart / ease);
-        const line = { x: from.p.x + from.into.x * fromStart, y: from.p.y + from.into.y * fromStart };
-        return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
-      }
-      if (fromEnd < ease) {
-        const w = smooth(fromEnd / ease);
-        const line = { x: to.p.x - out.x * fromEnd, y: to.p.y - out.y * fromEnd };
-        return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
-      }
-      return p;
-    });
-    eased[0] = from.p;
-    eased[count] = to.p;
-    // A few passes of neighbour averaging, the ends and their first steps
-    // held: the line's direction must not turn in one step anywhere, or a
-    // walker off its centre is thrown sideways there.
-    for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
-      const prev = eased.map((p) => ({ x: p.x, y: p.y }));
-      for (let q = 2; q < count - 1; q++) {
-        eased[q] = { x: (prev[q - 1]!.x + 2 * prev[q]!.x + prev[q + 1]!.x) / 4, y: (prev[q - 1]!.y + 2 * prev[q]!.y + prev[q + 1]!.y) / 4 };
-      }
-    }
-    // The first and last chord define the tangent seen by walkers. Blending
-    // positions toward a tangent line does not constrain that chord: the
-    // contour can still pull its first sample sideways by several degrees.
-    if (count >= 3) {
-      const first = Math.min(EASE / 3, Math.hypot(eased[1]!.x - from.p.x, eased[1]!.y - from.p.y));
-      const last = Math.min(EASE / 3, Math.hypot(eased[count - 1]!.x - to.p.x, eased[count - 1]!.y - to.p.y));
-      eased[1] = { x: from.p.x + from.into.x * first, y: from.p.y + from.into.y * first };
-      eased[count - 1] = { x: to.p.x - out.x * last, y: to.p.y - out.y * last };
-    } else {
-      // At a sub-metre junction the sampled contour has only one interior
-      // point. It cannot define both endpoint derivatives; use short tangent
-      // chords before joining the two footway ends.
-      const chord = Math.min(JOIN, Math.hypot(to.p.x - from.p.x, to.p.y - from.p.y) / 4);
-      return Polyline.fromPoints([
-        from.p,
-        { x: from.p.x + from.into.x * chord, y: from.p.y + from.into.y * chord },
-        { x: to.p.x - out.x * chord, y: to.p.y - out.y * chord },
-        to.p,
-      ]);
-    }
-    const clean = eased.filter((p, q) => q === 0 || Math.hypot(p.x - eased[q - 1]!.x, p.y - eased[q - 1]!.y) > 1e-6);
-    return clean.length >= 2 ? Polyline.fromPoints(clean) : null;
-  };
-  const walking = new WalkingLines(net);
-  const join = (from: FootwayEnd, to: FootwayEnd, nodeId: NodeId, kerb: Vec2 | null, drawn: Polyline | null = null): void => {
-    joined.add(from.node); joined.add(to.node);
-    const out = { x: -to.into.x, y: -to.into.y };
-    // The corner keeps the kerb on the side it is on walking into the node
-    // along `from`, and the narrower of the two footways' reaches.
-    const inset = Math.min(from.inset, to.inset), outer = Math.min(from.outer, to.outer);
-    const lo = from.kerbSide < 0 ? -inset : -outer, hi = from.kerbSide < 0 ? outer : inset;
-    if (Math.hypot(from.p.x - to.p.x, from.p.y - to.p.y) < JOIN) {
-      // The same point: the two footways simply meet (a road carried straight on).
-      g.add({ kind: 'corner', path: Polyline.fromPoints([from.p, { x: from.p.x + out.x * JOIN, y: from.p.y + out.y * JOIN }]),
-        width: hi - lo, lo, hi, kerb: from.kerbSide < 0 ? -1 : 1, node: nodeId, structure: from.way.structure, a: from.node, b: to.node });
-      return;
-    }
-    // Concentric with the kerb return: the radius is the walking line's own
-    // distance from the return's centre - less than the kerb's round the
-    // inside of a corner, more round the outside of a bend.
-    const radius = kerb ? Math.abs((kerb.x - from.p.x) * from.into.y - (kerb.y - from.p.y) * from.into.x) : 0;
-    const path = drawn ?? cornerPath(from.p, from.into, to.p, out, radius);
-    g.add({ kind: 'corner', path, width: hi - lo, lo, hi, kerb: from.kerbSide < 0 ? -1 : 1, node: nodeId,
-      structure: from.way.structure, a: from.node, b: to.node });
-  };
-  for (const [nodeId, mine] of ends) {
-    yield;
-    const node = doc.requireNode(nodeId);
-    const here = mine;
-    const byLevel = net.junctions.get(nodeId);
-    const junction = byLevel?.get(Level.Sidewalk);
-    if (junction && junction.legs.length >= 2 && !junction.transition) {
-      // Each leg's footway joins the next leg's round the node, in angular
-      // order, whatever the angle between them (SUMO's netconvert,
-      // `NBNode::buildWalkingAreas`: sidewalks are grouped by their order
-      // round the junction, never by the angle). A shallow merge has no
-      // carriageway corners (`junction/build.ts`, legs under 25 degrees
-      // apart): read off them, none of its footways joined any other, and
-      // everything beyond it was an island nobody could walk to.
-      const pairs = junction.corners.length ? junction.corners
-        : junction.legs.map((_, i) => ({ i, j: (i + 1) % junction.legs.length }));
-      for (const corner of pairs) {
-        const li = junction.legs[corner.i]!, lj = junction.legs[corner.j]!;
-        // Leg i's LEFT boundary feeds the corner, leg j's RIGHT boundary leaves it.
-        const from = sideOf(here, li.seg, node, li.nrm, 1);
-        const to = sideOf(here, lj.seg, node, lj.nrm, -1);
-        if (!from || !to || from === to) continue;
-        const kerb = byLevel?.get(Level.Curb)?.corners.find((c) => c.i === corner.i && c.j === corner.j)?.fillet ?? null;
-        join(from, to, nodeId, kerb?.c ?? null, roundCorner(from, to, here, walking));
-      }
-      continue;
-    }
-    // A node of two roads drawn as a taper or a bend, or not drawn at all:
-    // each side's footway runs on into the other road's on the same side.
-    if (node.incident.length === 2) {
-      const [s0, s1] = node.incident as [SegmentId, SegmentId];
-      for (const e0 of here.filter((e) => e.way.segment === s0)) {
-        let best: FootwayEnd | null = null, bestD = Infinity;
-        for (const e1 of here.filter((e) => e.way.segment === s1)) {
-          const d = Math.hypot(e1.p.x - e0.p.x, e1.p.y - e0.p.y);
-          if (d < bestD) { best = e1; bestD = d; }
-        }
-        if (best) join(e0, best, nodeId, null, roundCorner(e0, best, here, walking));
-      }
-    }
-  }
-  yield;
-  // --- crossings: over the carriageway on each zebra
-  for (const [nodeId, node] of doc.nodes) {
+  /** A road node's corners, crossings and road end. */
+  private buildNode(net: Network, nodeId: NodeId): void {
     rebuildWork.walkways++;
-    if (node.incident.length < 2) continue;
-    for (const segId of node.incident) {
-      const d = net.crosswalkDistanceAt(segId, nodeId);
-      if (d <= 0) continue;
+    const g = this.graph, doc = net.doc;
+    const node = doc.requireNode(nodeId);
+    const unit: NodeUnit = { ways: [], nodes: [], landings: [] };
+    this.nodeUnits.set(nodeId, unit);
+    // The footway ends here, road by road in id order, each road's left side then its right.
+    const here: FootwayEnd[] = [];
+    for (const segId of [...new Set(node.incident)].sort((a, b) => a - b)) {
       const seg = doc.requireSegment(segId);
-      const ribbon = net.ribbons.get(segId);
-      if (!ribbon) continue;
-      const section = sectionOf(ribbon.road, seg.direction);
-      if (!section.walkable) continue;
-      const f = orientedPolyline(doc, seg, nodeId).sampleAt(d);
-      // Looking away from the node: from `a` its left is the road's left, from `b` its right.
-      const fromA = seg.a === nodeId;
-      const midLeft = bandMid((fromA ? section.left : section.right).through);
-      const midRight = bandMid((fromA ? section.right : section.left).through);
-      const left = { x: f.p.x + f.n.x * midLeft, y: f.p.y + f.n.y * midLeft };
-      const right = { x: f.p.x - f.n.x * midRight, y: f.p.y - f.n.y * midRight };
-      // Each end lands on the walkway nearest it on its own side - this
-      // road's footway or the corner beside it - split there.
-      const a = landOn(g, left, segId, nodeId);
-      const b = landOn(g, right, segId, nodeId);
-      if (a === null || b === null || a === b) continue;
-      const pa = g.nodes[a]!, pb = g.nodes[b]!;
-      // As wide as the zebra painted.
-      g.add({ kind: 'crossing', path: Polyline.fromPoints([pa, pb]), width: CROSSWALK_DEPTH, lo: -CROSSWALK_DEPTH / 2, hi: CROSSWALK_DEPTH / 2, kerb: 0,
-        segment: segId, node: nodeId, structure: deckOf(doc, segId), a, b });
+      for (const raw of this.segments.get(segId)?.raws ?? []) {
+        // Walking into b along the path the kerb is on the right of the left
+        // footway; walking into a, the other way, on its left.
+        if (seg.a === nodeId) here.push({ way: raw, node: raw.a, side: raw.side, inset: raw.inset, outer: raw.outer,
+          kerbSide: raw.side > 0 ? 1 : -1, p: raw.first.p, into: { x: -raw.first.t.x, y: -raw.first.t.y } });
+        if (seg.b === nodeId) here.push({ way: raw, node: raw.b, side: raw.side, inset: raw.inset, outer: raw.outer,
+          kerbSide: raw.side > 0 ? -1 : 1, p: raw.last.p, into: raw.last.t });
+      }
     }
-  }
-  // --- road ends: across the end of a road that leads nowhere, an unmarked
-  // crossing joins its two footways, or each side of a street that ends would
-  // be an island to whoever walks it (a cul-de-sac, a road off the map).
-  for (const [nodeId, mine] of ends) {
-    const end = doc.requireNode(nodeId);
-    if (end.incident.length !== 1) continue;
-    const here = mine;
+    let x0 = node.x, y0 = node.y, x1 = node.x, y1 = node.y;
+    for (const e of here) { x0 = Math.min(x0, e.p.x); y0 = Math.min(y0, e.p.y); x1 = Math.max(x1, e.p.x); y1 = Math.max(y1, e.p.y); }
+    const pad = NODE_REACH + LINES_REACH;
+    const rect: ChangeRect = [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+    this.reads.file(nodeId, unit, rect);
+    let lines: LocalLines | null = null;
+    const walking = (): LocalLines => (lines ??= new LocalLines(net, rect, (id) => deckOf(doc, id)));
+
+    // --- corners: round each corner of the junction, from one leg's footway to the next's
+    const corners: Omit<Walkway, 'id'>[] = [];
+    const join = (from: FootwayEnd, to: FootwayEnd, kerb: Vec2 | null, drawn: Polyline | null = null): void => {
+      const out = { x: -to.into.x, y: -to.into.y };
+      // The corner keeps the kerb on the side it is on walking into the node
+      // along `from`, and the narrower of the two footways' reaches.
+      const inset = Math.min(from.inset, to.inset), outer = Math.min(from.outer, to.outer);
+      const lo = from.kerbSide < 0 ? -inset : -outer, hi = from.kerbSide < 0 ? outer : inset;
+      if (Math.hypot(from.p.x - to.p.x, from.p.y - to.p.y) < JOIN) {
+        // The same point: the two footways simply meet (a road carried straight on).
+        corners.push({ kind: 'corner', path: Polyline.fromPoints([from.p, { x: from.p.x + out.x * JOIN, y: from.p.y + out.y * JOIN }]),
+          width: hi - lo, lo, hi, kerb: from.kerbSide < 0 ? -1 : 1, node: nodeId, structure: from.way.structure, a: from.node, b: to.node });
+        return;
+      }
+      // Concentric with the kerb return: the radius is the walking line's own
+      // distance from the return's centre - less than the kerb's round the
+      // inside of a corner, more round the outside of a bend.
+      const radius = kerb ? Math.abs((kerb.x - from.p.x) * from.into.y - (kerb.y - from.p.y) * from.into.x) : 0;
+      const path = drawn ?? cornerPath(from.p, from.into, to.p, out, radius);
+      corners.push({ kind: 'corner', path, width: hi - lo, lo, hi, kerb: from.kerbSide < 0 ? -1 : 1, node: nodeId,
+        structure: from.way.structure, a: from.node, b: to.node });
+    };
+    if (here.length) {
+      const byLevel = net.junctions.get(nodeId);
+      const junction = byLevel?.get(Level.Sidewalk);
+      if (junction && junction.legs.length >= 2 && !junction.transition) {
+        // Each leg's footway joins the next leg's round the node, in angular
+        // order, whatever the angle between them (SUMO's netconvert,
+        // `NBNode::buildWalkingAreas`: sidewalks are grouped by their order
+        // round the junction, never by the angle). A shallow merge has no
+        // carriageway corners (`junction/build.ts`, legs under 25 degrees
+        // apart): read off them, none of its footways joined any other, and
+        // everything beyond it was an island nobody could walk to.
+        const pairs = junction.corners.length ? junction.corners
+          : junction.legs.map((_, i) => ({ i, j: (i + 1) % junction.legs.length }));
+        for (const corner of pairs) {
+          const li = junction.legs[corner.i]!, lj = junction.legs[corner.j]!;
+          // Leg i's LEFT boundary feeds the corner, leg j's RIGHT boundary leaves it.
+          const from = sideOf(here, li.seg, node, li.nrm, 1);
+          const to = sideOf(here, lj.seg, node, lj.nrm, -1);
+          if (!from || !to || from === to) continue;
+          const kerb = byLevel?.get(Level.Curb)?.corners.find((c) => c.i === corner.i && c.j === corner.j)?.fillet ?? null;
+          join(from, to, kerb?.c ?? null, roundCorner(from, to, here, walking));
+        }
+      } else if (node.incident.length === 2) {
+        // A node of two roads drawn as a taper or a bend, or not drawn at all:
+        // each side's footway runs on into the other road's on the same side.
+        const [s0, s1] = node.incident as [SegmentId, SegmentId];
+        for (const e0 of here.filter((e) => e.way.segment === s0)) {
+          let best: FootwayEnd | null = null, bestD = Infinity;
+          for (const e1 of here.filter((e) => e.way.segment === s1)) {
+            const d = Math.hypot(e1.p.x - e0.p.x, e1.p.y - e0.p.y);
+            if (d < bestD) { best = e1; bestD = d; }
+          }
+          if (best) join(e0, best, null, roundCorner(e0, best, here, walking));
+        }
+      }
+    }
+
+    // --- crossings: over the carriageway on each zebra
+    const others: Omit<Walkway, 'id'>[] = [];
+    /**
+     * The node on the walkway nearest `p` among this road's footways and this
+     * node's corners - cut there - or null when none is near.
+     */
+    const landOn = (p: Vec2, segId: SegmentId): number | null => {
+      let best: { raw: RawFootway | null; corner: number; s: number; distance: number; width: number } | null = null;
+      for (const raw of this.segments.get(segId)?.raws ?? []) {
+        const c = raw.path.closestPoint(p);
+        if (!best || c.distance < best.distance) best = { raw, corner: -1, s: c.s, distance: c.distance, width: raw.width };
+      }
+      for (let k = 0; k < corners.length; k++) {
+        const c = corners[k]!.path.closestPoint(p);
+        if (!best || c.distance < best.distance) best = { raw: null, corner: k, s: c.s, distance: c.distance, width: corners[k]!.width };
+      }
+      if (!best || best.distance > best.width / 2 + LAND_REACH) return null;
+      const way = best.raw ?? corners[best.corner]!;
+      if (best.s <= JOIN) return way.a;
+      if (best.s >= way.path.length - JOIN) return way.b;
+      const mid = g.node(way.path.sampleAt(best.s).p);
+      unit.nodes.push(mid);
+      if (best.raw) unit.landings.push({ raw: best.raw, s: best.s, node: mid });
+      else {
+        const corner = corners[best.corner]!;
+        corners[best.corner] = { ...corner, path: corner.path.sub(0, best.s), b: mid };
+        corners.push({ ...corner, path: corner.path.sub(best.s, corner.path.length), a: mid });
+      }
+      return mid;
+    };
+    if (node.incident.length >= 2) {
+      for (const segId of node.incident) {
+        const d = net.crosswalkDistanceAt(segId, nodeId);
+        if (d <= 0) continue;
+        const seg = doc.requireSegment(segId);
+        const ribbon = net.ribbons.get(segId);
+        if (!ribbon) continue;
+        const section = sectionOf(ribbon.road, seg.direction);
+        if (!section.walkable) continue;
+        const f = orientedPolyline(doc, seg, nodeId).sampleAt(d);
+        // Looking away from the node: from `a` its left is the road's left, from `b` its right.
+        const fromA = seg.a === nodeId;
+        const midLeft = bandMid((fromA ? section.left : section.right).through);
+        const midRight = bandMid((fromA ? section.right : section.left).through);
+        const left = { x: f.p.x + f.n.x * midLeft, y: f.p.y + f.n.y * midLeft };
+        const right = { x: f.p.x - f.n.x * midRight, y: f.p.y - f.n.y * midRight };
+        // Each end lands on the walkway nearest it on its own side - this
+        // road's footway or the corner beside it - cut there.
+        const a = landOn(left, segId);
+        const b = landOn(right, segId);
+        if (a === null || b === null || a === b) continue;
+        const pa = g.nodes[a]!, pb = g.nodes[b]!;
+        // As wide as the zebra painted.
+        others.push({ kind: 'crossing', path: Polyline.fromPoints([pa, pb]), width: CROSSWALK_DEPTH, lo: -CROSSWALK_DEPTH / 2, hi: CROSSWALK_DEPTH / 2, kerb: 0,
+          segment: segId, node: nodeId, structure: deckOf(doc, segId), a, b });
+      }
+    }
+
+    // --- road end: across the end of a road that leads nowhere, an unmarked
+    // crossing joins its two footways, or each side of a street that ends would
+    // be an island to whoever walks it (a cul-de-sac, a road off the map).
     const left = here.find((e) => e.side > 0), right = here.find((e) => e.side < 0);
-    if (!left || !right || left.way.structure !== right.way.structure || left.way.segment === undefined) continue;
-    if (Math.hypot(left.p.x - right.p.x, left.p.y - right.p.y) < JOIN) continue;
-    // A turning circle (docs/VIAS.md V8): its footway runs round it, and so
-    // does the walk from one side of the street to the other - on the
-    // footway's walking line, nobody crossing the circle's carriageway.
-    if (end.end === 'bulb') {
-      const offset = Math.abs((left.p.x - end.x) * -left.into.y + (left.p.y - end.y) * left.into.x);
-      let line = bulbLine(doc, net.polylines, nodeId, offset);
+    if (node.incident.length === 1 && left && right && left.way.structure === right.way.structure
+      && Math.hypot(left.p.x - right.p.x, left.p.y - right.p.y) >= JOIN) {
+      // A turning circle (docs/VIAS.md V8): its footway runs round it, and so
+      // does the walk from one side of the street to the other - on the
+      // footway's walking line, nobody crossing the circle's carriageway.
+      let line = node.end === 'bulb' ? bulbLine(doc, net.polylines, nodeId, Math.abs((left.p.x - node.x) * -left.into.y + (left.p.y - node.y) * left.into.x)) : null;
       if (line) {
         const first = line[0]!, last = line[line.length - 1]!;
         if (Math.hypot(first.x - left.p.x, first.y - left.p.y) > Math.hypot(last.x - left.p.x, last.y - left.p.y)) line = [...line].reverse();
         const inset = Math.min(left.inset, right.inset), outer = Math.min(left.outer, right.outer);
         const lo = left.kerbSide < 0 ? -inset : -outer, hi = left.kerbSide < 0 ? outer : inset;
-        g.add({ kind: 'corner', path: Polyline.fromPoints([left.p, ...line, right.p]), width: hi - lo, lo, hi,
+        others.push({ kind: 'corner', path: Polyline.fromPoints([left.p, ...line, right.p]), width: hi - lo, lo, hi,
           kerb: left.kerbSide < 0 ? -1 : 1, node: nodeId, structure: left.way.structure, a: left.node, b: right.node });
-        continue;
+      } else {
+        others.push({ kind: 'crossing', path: Polyline.fromPoints([left.p, right.p]), width: m(2), lo: -m(1), hi: m(1), kerb: 0,
+          segment: left.way.segment, node: nodeId, structure: left.way.structure, a: left.node, b: right.node, unmarked: true });
       }
     }
-    g.add({ kind: 'crossing', path: Polyline.fromPoints([left.p, right.p]), width: m(2), lo: -m(1), hi: m(1), kerb: 0,
-      segment: left.way.segment, node: nodeId, structure: left.way.structure, a: left.node, b: right.node, unmarked: true });
+    for (const way of corners) unit.ways.push(g.add(way).id);
+    for (const way of others) unit.ways.push(g.add(way).id);
   }
-  return g;
+}
+
+/** The walking line round from one footway end to another, as drawn, or null. */
+function roundCorner(from: FootwayEnd, to: FootwayEnd, all: readonly FootwayEnd[], lines: () => LocalLines): Polyline | null {
+  if (from.way.structure !== to.way.structure) return null;
+  const walking = lines();
+  const avoid = all.filter((e) => e !== from && e !== to).map((e) => e.p);
+  // The stretch round the corner at each footway's own inset: where two
+  // roads with footways of different widths meet, the walking line moves
+  // from one inset to the other along the corner, easing in and out so it
+  // leaves each footway along it.
+  const a = stretch(walking.at(from.way.structure, from.inset), from.p, to.p, avoid);
+  const b = from.inset === to.inset ? a : stretch(walking.at(to.way.structure, to.inset), from.p, to.p, avoid);
+  if (!a || !b) return null;
+  const count = Math.max(a.length, b.length) - 1;
+  const ra = resample(a, count), rb = resample(b, count);
+  const pts: Vec2[] = [];
+  for (let q = 0; q <= count; q++) {
+    const u = q / count, w = u * u * (3 - 2 * u);
+    pts.push({ x: ra[q]!.x + (rb[q]!.x - ra[q]!.x) * w, y: ra[q]!.y + (rb[q]!.y - ra[q]!.y) * w });
+  }
+  // Where the footway narrows below the walking line's inset (its outer
+  // edge tapering faster than the kerb, at a change of road width), the
+  // line keeps half its usable width clear of the outer edge instead: it
+  // moves towards the kerb by as much as the footway is narrower there.
+  for (let q = 1; q < count; q++) {
+    const p = pts[q]!;
+    const u = q / count, half = (from.way.width + (to.way.width - from.way.width) * u) / 2;
+    const edge = walking.nearestOuter(from.way.structure, p);
+    if (!edge) continue;
+    const kd = Math.hypot(p.x - edge.point.x, p.y - edge.point.y);
+    const lack = half - kd;
+    const beyond = !walking.onPaving(from.way.structure, p);
+    if (lack <= 0 && !beyond) continue;
+    // Towards the kerb: away from the outer edge.
+    const ax = p.x - edge.point.x, ay = p.y - edge.point.y, al = Math.hypot(ax, ay) || 1;
+    const dir = beyond ? { x: -ax / al, y: -ay / al } : { x: ax / al, y: ay / al };
+    const move = beyond ? kd + half : lack;
+    pts[q] = { x: p.x + dir.x * move, y: p.y + dir.y * move };
+  }
+  // Leaving each footway exactly along it: over the first and last stretch
+  // the line eases from the footway's own straight run onto the contour,
+  // so a hair's difference between the two (an offset polyline against a
+  // rounded polygon offset) never shows as a kink.
+  const total = pts.reduce((sum, p, q) => (q ? sum + Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y) : 0), 0);
+  const ease = Math.min(EASE, total / 3);
+  let run = 0;
+  const out = { x: -to.into.x, y: -to.into.y };
+  const eased = pts.map((p, q) => {
+    if (q) run += Math.hypot(p.x - pts[q - 1]!.x, p.y - pts[q - 1]!.y);
+    const fromStart = run, fromEnd = total - run;
+    if (fromStart < ease) {
+      const w = smooth(fromStart / ease);
+      const line = { x: from.p.x + from.into.x * fromStart, y: from.p.y + from.into.y * fromStart };
+      return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
+    }
+    if (fromEnd < ease) {
+      const w = smooth(fromEnd / ease);
+      const line = { x: to.p.x - out.x * fromEnd, y: to.p.y - out.y * fromEnd };
+      return { x: line.x + (p.x - line.x) * w, y: line.y + (p.y - line.y) * w };
+    }
+    return p;
+  });
+  eased[0] = from.p;
+  eased[count] = to.p;
+  // A few passes of neighbour averaging, the ends and their first steps
+  // held: the line's direction must not turn in one step anywhere, or a
+  // walker off its centre is thrown sideways there.
+  for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+    const prev = eased.map((p) => ({ x: p.x, y: p.y }));
+    for (let q = 2; q < count - 1; q++) {
+      eased[q] = { x: (prev[q - 1]!.x + 2 * prev[q]!.x + prev[q + 1]!.x) / 4, y: (prev[q - 1]!.y + 2 * prev[q]!.y + prev[q + 1]!.y) / 4 };
+    }
+  }
+  // The first and last chord define the tangent seen by walkers. Blending
+  // positions toward a tangent line does not constrain that chord: the
+  // contour can still pull its first sample sideways by several degrees.
+  if (count >= 3) {
+    const first = Math.min(EASE / 3, Math.hypot(eased[1]!.x - from.p.x, eased[1]!.y - from.p.y));
+    const last = Math.min(EASE / 3, Math.hypot(eased[count - 1]!.x - to.p.x, eased[count - 1]!.y - to.p.y));
+    eased[1] = { x: from.p.x + from.into.x * first, y: from.p.y + from.into.y * first };
+    eased[count - 1] = { x: to.p.x - out.x * last, y: to.p.y - out.y * last };
+  } else {
+    // At a sub-metre junction the sampled contour has only one interior
+    // point. It cannot define both endpoint derivatives; use short tangent
+    // chords before joining the two footway ends.
+    const chord = Math.min(JOIN, Math.hypot(to.p.x - from.p.x, to.p.y - from.p.y) / 4);
+    return Polyline.fromPoints([
+      from.p,
+      { x: from.p.x + from.into.x * chord, y: from.p.y + from.into.y * chord },
+      { x: to.p.x - out.x * chord, y: to.p.y - out.y * chord },
+      to.p,
+    ]);
+  }
+  const clean = eased.filter((p, q) => q === 0 || Math.hypot(p.x - eased[q - 1]!.x, p.y - eased[q - 1]!.y) > 1e-6);
+  return clean.length >= 2 ? Polyline.fromPoints(clean) : null;
 }
 
 /** The footway end of `seg` at this node on the given side of the leg (its normal `nrm`, sign +1 left). */
@@ -783,14 +755,4 @@ function sideOf(ends: readonly FootwayEnd[], seg: SegmentId, node: Vec2, nrm: Ve
     if (side > bestSide) { best = e; bestSide = side; }
   }
   return best;
-}
-
-/**
- * The node on the walkway nearest `p` among this road's footways and this
- * node's corners - split there - or null when none is near.
- */
-function landOn(g: WalkGraph, p: Vec2, seg: SegmentId, node: NodeId): number | null {
-  const best = g.nearestOwn(p, seg, node);
-  if (!best || best.distance > best.way.width / 2 + LAND_REACH) return null;
-  return g.split(best.way, best.s);
 }

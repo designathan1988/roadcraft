@@ -164,7 +164,7 @@ describe('an asymmetric road in the world', () => {
     const { net, id } = cross();
     const section = sectionOf(net.ribbons.get(id)!.road, 'both');
     expect(section.left.frontage.outer).toBeLessThan(section.right.frontage.outer);
-    const ways = buildWalkways(net).ways.filter((w) => w.kind === 'footway' && w.segment === id);
+    const ways = buildWalkways(net).walkways().filter((w) => w.kind === 'footway' && w.segment === id);
     // The footways may be cut where crossings land on them: every piece lies on its side's line.
     const ys = ways.map((w) => w.path.sampleAt(w.path.length / 2).p.y);
     expect(Math.max(...ys)).toBeCloseTo((section.left.through.inner + section.left.through.outer) / 2, 6);

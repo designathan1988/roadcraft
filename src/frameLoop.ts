@@ -1,4 +1,3 @@
-import { workUntil } from '@core/frameWork';
 import { rebindPeds, rebindVehicles } from '@sim/pipeline';
 import type { SimWorld } from '@sim/world';
 import { WAITING } from '@world/conflictPoints';
@@ -151,79 +150,50 @@ export function coalescedTask(fn: () => void): () => void {
   };
 }
 
-/** Milliseconds a frame spends bringing the traffic's topology up to date. */
-const TOPOLOGY_SLICE_MS = 6;
 /**
- * The same while the town is being opened, its frames not yet shown: a load
- * has its own time each frame (Unity's background loading priority), not what
- * an edit may take - and since none of these frames is seen, a long one costs
- * nothing a short one would not, while every extra frame pays its own drawing
- * again. Built in one go before the first frame, the conflict zones alone
- * held the opening 423 ms; at 25 ms a frame, on a GPU drawing the loading
- * town in 350 ms frames, the traffic stood still for 7 s after it appeared.
- */
-const LOADING_SLICE_MS = 250;
-
-/**
- * The traffic's topology brought up to an edit's road plan, a few
- * milliseconds a frame, the simulation held meanwhile: first the conflict
- * zones of the new junctions measured on a graph of their own and the
- * vehicles swapped onto it, then the footways, then the walkers rebound in
- * the frame after - each drawn in between. Together in one frame they were
- * a stall of up to 240 ms after every edit (docs/performance.md #11).
+ * The traffic's topology brought up to an edit's road plan, the simulation
+ * held meanwhile: the conflict zones of the junctions the edit built again
+ * measured on a graph of their own, by the workers (`conflictPool.ts`), and
+ * the vehicles swapped onto it; then the footways, kerbs and zebras, and the
+ * walkers rebound.
+ * Each piece redoes only what the edit changed (`LaneletGraph.update`,
+ * `Walkways.update`, `SidewalkGraph.update`, `CrossingSpans.update`), so it
+ * runs whole in the frame the edit's road is built; only the pairs the
+ * workers measure are waited for. DO NOT go back to a few milliseconds of it
+ * a frame (TOPOLOGY_SLICE_MS, LOADING_SLICE_MS): spreading the work over
+ * frames hid that every edit built the town's topology, and the hold grew
+ * with the town.
  */
 export class TopologyCatchUp {
   /** `measurer`: the workers the new junctions' conflict pairs are measured by (`conflictPool.ts`); none, on the page. */
   constructor(private readonly measurer?: PairMeasurer) {}
 
   private vehicles: { revision: number; steps: Generator<void | typeof WAITING, void> } | null = null;
-  private walks: { revision: number; steps: Generator<void, void, void> } | null = null;
-  private pedsToRebind = false;
 
   /**
-   * One frame's share of the work towards `revision` (the network's
-   * `trafficRevision`). True when the simulation must stay still this frame;
-   * `worldBusy`: the road itself is still being built, and goes first;
-   * `loading`: the town is being opened (`LOADING_SLICE_MS`).
+   * This frame's work towards `revision` (the network's `trafficRevision`).
+   * True when the simulation must stay still this frame (the workers still
+   * measuring); `worldBusy`: the road itself is still being built, and goes
+   * first.
    */
-  step(sim: SimWorld, revision: number, worldBusy: boolean, loading = false): boolean {
-    const slice = (): number => (loading ? performance.now() + LOADING_SLICE_MS : workUntil(TOPOLOGY_SLICE_MS) || performance.now() + 1);
-    if (sim.topologyRevision === revision) {
-      if (this.pedsToRebind) {
-        this.pedsToRebind = false;
-        rebindPeds(sim);
-        return false;
-      }
-      return false;
-    }
-    // The road of an edit being built first: the frame's allowance goes to
-    // it. A load has its own time, and works alongside.
-    if (worldBusy && !loading) return true;
+  step(sim: SimWorld, revision: number, worldBusy: boolean): boolean {
+    if (sim.topologyRevision === revision) return false;
+    if (worldBusy) return true;
     if (sim.vehicleTopologyRevision !== revision) {
       if (!this.vehicles || this.vehicles.revision !== revision) {
         this.vehicles = { revision, steps: sim.prepareVehicleTopology(this.measurer) };
       }
-      const until = slice();
       let prep = this.vehicles.steps.next();
       // WAITING: the workers have the pairs; nothing to do here this frame.
-      while (!prep.done && prep.value !== WAITING && performance.now() < until) prep = this.vehicles.steps.next();
-      if (prep.done) {
-        this.vehicles = null;
-        sim.rebuildVehicleTopology();
-        rebindVehicles(sim);
-      }
-      return true;
+      while (!prep.done && prep.value !== WAITING) prep = this.vehicles.steps.next();
+      if (!prep.done) return true;
+      this.vehicles = null;
+      sim.rebuildVehicleTopology();
+      rebindVehicles(sim);
     }
-    if (!this.walks || this.walks.revision !== revision) {
-      this.walks = { revision, steps: sim.walkTopologySteps() };
-    }
-    const until = slice();
-    let step = this.walks.steps.next();
-    while (!step.done && performance.now() < until) step = this.walks.steps.next();
-    if (step.done) {
-      this.walks = null;
-      this.pedsToRebind = true;
-    }
-    return true;
+    sim.rebuildWalkTopology();
+    rebindPeds(sim);
+    return false;
   }
 }
+

@@ -469,12 +469,12 @@ const WALKER_SHAPE = {
 
 interface State {
   graph: WalkGraph | null;
-  builtFor: string;
+  /** The graph's state its index was brought up to (`WalkGraph.changesSince`). */
+  graphState: object | null;
   wayIndex: Map<number, number[]>;
   walkers: Walker[];
   byId: Map<number, Walker>;
   arrivals: number[];
-  nextId: number;
   /**
    * For each car holding (or asking for) its way across the footway, the
    * walkers who were on that ground when it took it: they walk on off it;
@@ -613,7 +613,7 @@ const STATES = new WeakMap<SimWorld, State>();
 function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
-    s = { graph: null, builtFor: '', wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], nextId: 1, onCarWay: new Map(),
+    s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], onCarWay: new Map(),
       shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
@@ -637,25 +637,47 @@ const cellKey = (x: number, y: number, size: number): number => cell(Math.floor(
 
 // ------------------------------------------------------------------ ground
 
-/** The walkways of the map as it is now, built again when the network changes. */
+/**
+ * The walkways of the map as it is now, and their index by cell kept by what
+ * each edit took out and put in (`WalkGraph.changesSince`). DO NOT index
+ * every walkway again when the network changes: every road drawn filed the
+ * town's walkways again.
+ */
 function ensureGraph(w: SimWorld, s: State): WalkGraph | null {
-  const key = `${w.net.revision}:${w.topologyRevision}`;
-  if (s.graph && s.builtFor === key) return s.graph;
-  s.graph = w.walkwaysFor(w.net.revision);
-  s.builtFor = key;
-  s.wayIndex.clear();
-  for (const way of s.graph.ways) {
-    const bb = way.path.bbox;
-    const pad = Math.max(Math.abs(way.lo), Math.abs(way.hi));
-    for (let x = Math.floor((bb.minX - pad) / WAY_CELL); x <= Math.floor((bb.maxX + pad) / WAY_CELL); x++) {
-      for (let y = Math.floor((bb.minY - pad) / WAY_CELL); y <= Math.floor((bb.maxY + pad) / WAY_CELL); y++) {
-        const k = cell(x, y);
-        const list = s.wayIndex.get(k);
+  const g = w.walkwaysNow();
+  const changes = s.graph === g && s.graphState ? g.changesSince(s.graphState) : null;
+  if (changes === null) {
+    // @rebuild A walk state new (a map opened, a world reset) or further behind than the graph remembers.
+    s.wayIndex.clear();
+    for (const way of g.ways) if (way) fileWay(s, way, true);
+  } else {
+    for (const change of changes) {
+      for (const way of change.removed) fileWay(s, way, false);
+      for (const way of change.added) fileWay(s, way, true);
+    }
+  }
+  s.graph = g;
+  s.graphState = g.state;
+  return g;
+}
+
+/** A walkway filed in (or out of) the cells its usable width reaches. */
+function fileWay(s: State, way: Walkway, add: boolean): void {
+  const bb = way.path.bbox;
+  const pad = Math.max(Math.abs(way.lo), Math.abs(way.hi));
+  for (let x = Math.floor((bb.minX - pad) / WAY_CELL); x <= Math.floor((bb.maxX + pad) / WAY_CELL); x++) {
+    for (let y = Math.floor((bb.minY - pad) / WAY_CELL); y <= Math.floor((bb.maxY + pad) / WAY_CELL); y++) {
+      const k = cell(x, y);
+      const list = s.wayIndex.get(k);
+      if (add) {
         if (list) list.push(way.id); else s.wayIndex.set(k, [way.id]);
+      } else if (list) {
+        const i = list.indexOf(way.id);
+        if (i >= 0) list.splice(i, 1);
+        if (!list.length) s.wayIndex.delete(k);
       }
     }
   }
-  return s.graph;
 }
 
 /** The walkway nearest a point within `reach` (crossings excluded: nobody starts on a zebra). */
@@ -777,7 +799,10 @@ function routeScratch(g: WalkGraph): RouteScratch {
   const n = g.nodes.length;
   let r = ROUTE_SCRATCH.get(g);
   if (!r || r.stamp.length < n) {
-    r = { dist: new Float64Array(n), via: new Int32Array(n), stamp: new Uint32Array(n), done: new Uint32Array(n), gen: 0, open: new Heap() };
+    // The graph grows with the edits (`Walkways.update`): room for half as much again, so a road drawn
+    // does not make them again (InstancedMesh2's capacity, 1.5x + 512).
+    const room = Math.ceil(n * 1.5) + 512;
+    r = { dist: new Float64Array(room), via: new Int32Array(room), stamp: new Uint32Array(room), done: new Uint32Array(room), gen: 0, open: new Heap() };
     ROUTE_SCRATCH.set(g, r);
   }
   // Every 2^32 searches the stamps start again from nought (none is then this generation).
@@ -1091,19 +1116,6 @@ function onZebra(w: SimWorld, p: Walker): Zebra | null {
 
 // ------------------------------------------------------------------ engine
 
-const wayKeys = new WeakMap<Walkway, string>();
-/** A walkway by what it is and where it runs: the same on both sides of an edit that left it as it was. */
-function wayKey(way: Walkway): string {
-  let key = wayKeys.get(way);
-  if (key === undefined) {
-    const points = way.path.toPoints().map((q) => `${q.x.toFixed(3)},${q.y.toFixed(3)}`).join(';');
-    key = `${way.kind}|${way.segment ?? ''}|${way.node ?? ''}|${way.kerb}|${way.structure}|${way.unmarked ? 1 : 0}|`
-      + `${way.lo.toFixed(4)}|${way.hi.toFixed(4)}|${points}`;
-    wayKeys.set(way, key);
-  }
-  return key;
-}
-
 /** How far from a lane's centre somebody on the footway may be hailed from (`hailable`). */
 const HAIL_REACH = m(9);
 /** How far from the door the walkway somebody gets out onto may be (`alight`). */
@@ -1223,24 +1235,14 @@ export function createAgentWalkEngine(): PedestrianEngine {
     step(w) { stepWalkers(w); },
     rebind(w) {
       const s = stateOf(w);
-      const before = s.graph;
       const g = ensureGraph(w, s);
-      // The walkways themselves unchanged (a building's doors, say): every
-      // route stands as it is.
-      if (g && g === before) return;
-      // The walkways the edit left as they were, by what they are and where
-      // they run: a walker whose route is all on those goes on with it; only
-      // the others look for a way again (each a search of the walkways).
-      const kept = new Map<string, Walkway>();
-      if (g && before) for (const way of g.ways) kept.set(wayKey(way), way);
+      // A walker whose route is all on walkways the edit left - or made again
+      // just as they were, handed back the same (`WalkGraph.add`) - goes on
+      // with it; only the others look for a way again (each a search of the
+      // walkways). DO NOT key every walkway of the map to find them: every
+      // edit read the town's walkways again.
       for (const p of s.walkers) {
-        if (kept.size && p.steps.every((st) => !st.way || kept.has(wayKey(st.way)))) {
-          for (let i = 0; i < p.steps.length; i++) {
-            const st = p.steps[i]!;
-            if (st.way) p.steps[i] = { ...st, way: kept.get(wayKey(st.way))! };
-          }
-          continue;
-        }
+        if (g && p.steps.every((st) => !st.way || g.holds(st.way))) continue;
         // Found again from where they are, through a lot's gate when the walk runs through one (`reroute`).
         if (!reroute(w, s, p, lastOf(p))) finish(s, p);
       }
@@ -1252,12 +1254,10 @@ export function createAgentWalkEngine(): PedestrianEngine {
     // clock, the grids, the parked cars' zones, the cars' ways, the shocks -
     // as a new world's (`SimWorld.reset`): kept, the clock and the filed
     // grids of the old map made a reset world walk otherwise than a new one.
-    // The ids still to give go on, as the vehicles' (`nextVehicleId`): the
-    // renderer knows a person by id.
+    // The ids still to give go on, kept by the world as the vehicles' are
+    // (`SimWorld.nextPersonId`): the renderer knows a person by id.
     reset(w) {
-      const next = stateOf(w).nextId;
       STATES.delete(w);
-      stateOf(w).nextId = next;
     },
     walkTrip(w, trip) { return startWalk(w, trip); },
     takeArrivals(w) {
@@ -1528,7 +1528,7 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   const mid = plan(w, s, from, to, Math.max(trip.reach ?? 0, REACH));
   if (!mid) return null;
   const steps = head.length || tail.length ? [...lotSteps(head), ...mid, ...lotSteps(tail)] : mid;
-  const id = trip.person ?? s.nextId++;
+  const id = trip.person ?? w.nextPersonId++;
   const old = s.byId.get(id);
   if (old) finish(s, old, false);
   const gender: PersonGender = trip.person !== undefined ? ((personHash(trip.person) & 1) === 0 ? 'f' : 'm')

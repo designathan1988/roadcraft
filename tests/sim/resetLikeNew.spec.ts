@@ -34,10 +34,12 @@ function draws(sim: SimWorld): Record<string, number> {
 }
 
 /**
- * What a tick writes that a reset world and a new one must share: vehicles
- * and signals. Not yet the people: the walking engine's own reset
- * (`agents/walk.ts`) keeps its clock, its grids and its caches, and a walker
- * stood a fraction of a millimetre elsewhere by tick 25 (2026-10-14).
+ * What a tick writes that a reset world and a new one must share: vehicles,
+ * signals and people. A person's manner is drawn from their id, so the new
+ * world is told the next person id as it is the next vehicle id
+ * (`SimWorld.nextPersonId`); kept inside the walking engine, the ids went on
+ * there unseen and a walker of the reset world stood a fraction of a
+ * millimetre elsewhere from the fourth tick (2026-10-15).
  */
 function state(sim: SimWorld): string {
   const out: string[] = [];
@@ -46,6 +48,7 @@ function state(sim: SimWorld): string {
     const c = sim.controllers.get(node);
     if (c) out.push(`c${node}:${c.stageIndex}:${c.sub}:${c.elapsed}`);
   }
+  for (const p of sim.pedViews) out.push(`p${p.id}:${p.x}:${p.y}:${p.heading}`);
   return out.join('|');
 }
 
@@ -76,6 +79,7 @@ describe('a reset world', () => {
     const fresh = game();
     fresh.clock.tick = used.clock.tick;
     fresh.nextVehicleId = used.nextVehicleId;
+    fresh.nextPersonId = used.nextPersonId;
     for (let t = 1; t <= Math.round(15 / DT); t++) {
       step(used, { traffic: true, pedestrians: true });
       step(fresh, { traffic: true, pedestrians: true });

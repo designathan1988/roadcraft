@@ -3,7 +3,9 @@ import { JournalCursor } from '@world/derived';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { type Connector, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
+import { type Connector, type GraphChange, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
+import { ChangeLog } from '@core/changeLog';
+import { NetworkLength } from '@world/networkLength';
 import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
@@ -29,7 +31,7 @@ import type { PedView } from './people/view';
 import type { PedestrianEngine } from './people/engine';
 import { City } from './city/city';
 import { AmbientWorld } from './ambient/ambient';
-import { buildWalkways, walkwaySteps, type WalkGraph } from '@world/walkways';
+import { Walkways, type WalkGraph } from '@world/walkways';
 import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
 import { type AutoControl, ControlAdvisor } from './roads/controlAdvisor';
@@ -238,6 +240,14 @@ export class SimWorld {
   private streams: SimStreams;
 
   nextVehicleId = 1;
+  /**
+   * The next person's id, kept by the world as the vehicles' are: a reset
+   * gives on from here, and a new world told the same walks as the reset one
+   * (a person's pace and manner are drawn from the id, `agents/walk.ts`).
+   */
+  nextPersonId = 1;
+  /** The summed length of the roads, kept by what each rebuild changed (`world/networkLength.ts`). */
+  readonly roadLength = new NetworkLength();
   /** Per-world population timer; simulations must never influence each other. */
   vehicleSpawnClock = 0;
   /**
@@ -376,6 +386,8 @@ export class SimWorld {
     // (`crossingsAt`). Kept, a reset world made its signals from the old
     // map's crossings and ran otherwise than a new one.
     this.sidewalks.clear();
+    this.walkSeen = null;
+    this.signalPosts.reset();
     this.junctionsVersion++;
     this.occupied.clear();
     this.ghostCandidates.clear();
@@ -641,24 +653,15 @@ export class SimWorld {
     // The new pairs of the junctions built again, measured by `measurer`'s workers when there are some (`conflictPool.ts`).
     yield* this.conflicts.prepare(graph, measurer, changed?.junctions ?? null);
     yield;
-    // The residents' walkways of the network (`walkways`), in a frame of their
-    // own: built in the frame that rebinds the walkers, with the footway graph
-    // and the crossings, they made it a stall of 170 ms in the default town
-    // (docs/performance.md #11).
-    if (!this.walkwaysCache || this.walkwaysCache.revision !== this.net.revision) {
-      const revision = this.net.revision;
-      const graph = yield* walkwaySteps(this.net);
-      this.walkwaysCache = { revision, graph };
-    }
+    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.update`).
+    this.walkwaysNow();
   }
 
-  private walkwaysCache: { revision: number; graph: WalkGraph } | null = null;
-  /** The walkways of the network at `revision` (`world/walkways.ts`), built once per revision. */
-  walkwaysFor(revision: number): WalkGraph {
-    if (!this.walkwaysCache || this.walkwaysCache.revision !== revision) {
-      this.walkwaysCache = { revision, graph: buildWalkways(this.net) };
-    }
-    return this.walkwaysCache.graph;
+  /** The residents' walkways (`world/walkways.ts`), kept by what each edit changed. */
+  private readonly walkways = new Walkways();
+  /** The walkways of the network as it is now. */
+  walkwaysNow(): WalkGraph {
+    return this.walkways.update(this.net);
   }
 
   /** Builds the preparation graph with a map's load, so its first edit does not build it from nothing. */
@@ -666,6 +669,14 @@ export class SimWorld {
     const graph = this.prepGraph ??= new LaneletGraph();
     if (graph.revision !== this.net.revision) graph.update(this.doc, this.net);
   }
+
+  /**
+   * What each build of the lane graph changed (`LaneletGraph.update`; null: built whole), for what is
+   * derived from it to redo only that: the kerbs and zebras, their spans, the controllers.
+   */
+  readonly topologyLog = new ChangeLog<GraphChange>();
+  /** The topology's state the kerbs, zebras and spans were brought up to (`walkTopologySteps`). */
+  private walkSeen: object | null = null;
 
   /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
@@ -675,6 +686,7 @@ export class SimWorld {
     // DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the whole map for an
     // edit: every road drawn paid for the town.
     const changed = this.graph.update(this.doc, this.net);
+    this.topologyLog.push(changed);
     if (changed === null) this.conflicts.build(this.graph); else this.conflicts.update(this.graph, changed.junctions);
     this.claims.dropMissing(this.conflicts);
     this.syncControllers(changed?.junctions ?? null);
@@ -837,21 +849,20 @@ export class SimWorld {
    * topology for `topologyRevision`.
    */
   rebuildWalkTopology(): void {
-    const steps = this.walkTopologySteps();
-    let step = steps.next();
-    while (!step.done) step = steps.next();
-  }
-
-  /**
-   * `rebuildWalkTopology` in steps (`SidewalkGraph.buildSteps`); the world is held until the last.
-   * @rebuild Run while the topology is behind the network (`frameLoop.ts` `TopologyCatchUp`).
-   */
-  *walkTopologySteps(): Generator<void, void, void> {
     if (this.vehicleTopologyRevision !== this.net.trafficRevision) this.rebuildVehicleTopology();
-    yield* this.sidewalks.buildSteps(this.doc, this.net, this.graph);
-    yield;
-    this.crossingSpans.build(this);
-    this.syncControllers();
+    // What the lane graph changed since the kerbs, zebras and their spans were last brought up
+    // (`topologyLog`; null: build them whole). DO NOT build them, nor sync every controller, for the
+    // whole map on an edit: every road drawn made the town's again.
+    const changes = this.topologyLog.since(this.walkSeen);
+    this.walkSeen = this.topologyLog.state;
+    let nodes: Set<NodeId> | null = null;
+    if (changes) {
+      nodes = new Set();
+      for (const change of changes) for (const node of change.junctions) nodes.add(node);
+    }
+    this.sidewalks.update(this.doc, this.net, this.graph, changes);
+    this.crossingSpans.update(this, nodes);
+    this.syncControllers(nodes);
     this.topologyRevision = this.net.trafficRevision;
   }
 

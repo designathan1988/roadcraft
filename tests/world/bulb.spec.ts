@@ -57,7 +57,7 @@ describe('a turning circle at a road end', () => {
     doc.setNodeEnd(end as never, 'bulb');
     net.rebuild();
     const g = buildWalkways(net);
-    const here = g.ways.filter((w) => w.node === end);
+    const here = g.walkways().filter((w) => w.node === end);
     // No crossing over the circle; one walk round it, joining the street's two footways.
     expect(here.filter((w) => w.kind === 'crossing')).toEqual([]);
     const round = here.filter((w) => w.kind === 'corner');

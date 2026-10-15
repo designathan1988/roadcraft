@@ -21,53 +21,105 @@ const LOOKAHEAD = 5;
  * on through a bend no car fits, and stood at the end of its route for good,
  * the street queued behind it (defects.spec, player-city, 75 s at a junction).
  *
- * Per graph build and body class, worked out once. The world's graph is one
- * object built again in place by every road edit (`LaneletGraph.buildSteps`
- * clears it and sets `revision` to the network's): the traps are kept with
- * the revision they were worked out at.
- * DO NOT key them by the graph object alone: kept by it, the traps of the
- * first build outlived every edit (`tests/sim/trapLanes.spec.ts`).
+ * Worked out by peeling (SUMO's "disconnected" edges, by their complement):
+ * a lane with exits none of whose movements the body fits is a trap (a SEED),
+ * and so is a lane whose every movement it fits leads into traps; a road off
+ * the map (no exits) never is, and what stays reaches one or a cycle it can
+ * keep driving round. The peel walks back from the seeds only, over the
+ * movements into each trap (its junction's connectors): its work is the
+ * trapped region's, however big the town. A lane is a seed or not by its own
+ * exits, so the seeds are kept by what each edit changed
+ * (`SimWorld.topologyLog`): the lanes it made and the lanes into the
+ * junctions it built again. DO NOT go back to the reverse edges of every lane
+ * of the map built for each topology: every road drawn walked the town's
+ * lanes again (`tests/scale/edit.spec.ts`, x15 between a small map and a
+ * large one).
  */
-const trapMemo = new WeakMap<object, { revision: number; byBody: Map<number, ReadonlySet<LaneletId>> }>();
-export function trapLanes(w: SimWorld, body: number): ReadonlySet<LaneletId> {
-  let memo = trapMemo.get(w.graph);
-  if (!memo || memo.revision !== w.graph.revision) trapMemo.set(w.graph, memo = { revision: w.graph.revision, byBody: new Map() });
-  const byBody = memo.byBody;
-  const known = byBody.get(body);
-  if (known) return known;
-  // Reverse edges over the movements this body fits.
-  const into = new Map<LaneletId, LaneletId[]>();
-  const links: LaneletId[] = [];
-  for (const lane of w.graph.lanelets.values()) {
-    rebuildWork.routing++;
-    if (lane.kind !== 'link') continue;
-    links.push(lane.id);
-    for (const cid of w.graph.exitsOf(lane.id)) {
+class TrapIndex {
+  /** Per body class asked for: the seeds, and the traps peeled from them (null: to peel again). */
+  private readonly bodies = new Map<number, { readonly seeds: Set<LaneletId>; traps: ReadonlySet<LaneletId> | null }>();
+  private seen: object | null = null;
+
+  traps(w: SimWorld, body: number): ReadonlySet<LaneletId> {
+    this.follow(w);
+    let known = this.bodies.get(body);
+    if (!known) {
+      // @rebuild A body class asked for the first time on this graph: every lane looked at once.
+      known = { seeds: new Set(), traps: null };
+      for (const lane of w.graph.lanelets.values()) {
+        rebuildWork.routing++;
+        if (lane.kind === 'link' && isSeed(w, lane.id, body)) known.seeds.add(lane.id);
+      }
+      this.bodies.set(body, known);
+    }
+    return known.traps ??= peel(w, body, known.seeds);
+  }
+
+  /** The seeds brought up to the lane graph's changes since it was last. */
+  private follow(w: SimWorld): void {
+    const changes = w.topologyLog.since(this.seen);
+    if (changes !== null && !changes.length) return;
+    this.seen = w.topologyLog.state;
+    if (changes === null) { this.bodies.clear(); return; }
+    // The lanes whose exits may have changed: those the edits made or took, and those into the junctions they built again.
+    const lanes = new Set<LaneletId>();
+    for (const change of changes) {
+      for (const lane of change.lanelets) lanes.add(lane);
+      for (const node of change.junctions) for (const lane of w.graph.inbound.get(node) ?? []) lanes.add(lane);
+    }
+    for (const [body, known] of this.bodies) {
+      for (const lane of lanes) {
+        rebuildWork.routing++;
+        if (w.graph.lanelets.get(lane)?.kind === 'link' && isSeed(w, lane, body)) known.seeds.add(lane);
+        else known.seeds.delete(lane);
+      }
+      known.traps = null;
+    }
+  }
+}
+
+/** The movements out of a lane this body fits. */
+function fittingExits(w: SimWorld, lane: LaneletId, body: number): number {
+  let n = 0;
+  for (const cid of w.graph.exitsOf(lane)) {
+    const c = w.connector(cid);
+    if (c && c.maxBodyClass >= body) n++;
+  }
+  return n;
+}
+
+/** A lane with exits none of which this body fits. */
+const isSeed = (w: SimWorld, lane: LaneletId, body: number): boolean =>
+  w.graph.exitsOf(lane).length > 0 && fittingExits(w, lane, body) === 0;
+
+/** The traps: the seeds, and every lane whose movements this body fits all lead into traps, peeled back from them. */
+function peel(w: SimWorld, body: number, seeds: ReadonlySet<LaneletId>): ReadonlySet<LaneletId> {
+  const traps = new Set<LaneletId>(seeds);
+  const left = new Map<LaneletId, number>();
+  const stack = [...seeds];
+  while (stack.length) {
+    const id = stack.pop()!;
+    const from = w.graph.lanelets.get(id)?.from;
+    const junction = from === undefined ? undefined : w.graph.junctions.get(from);
+    // The movements into this lane: its junction's connectors that end on it.
+    for (const cid of junction?.connectors ?? []) {
+      rebuildWork.routing++;
       const c = w.connector(cid);
-      if (!c || c.maxBodyClass < body) continue;
-      let list = into.get(c.toLane);
-      if (!list) into.set(c.toLane, list = []);
-      list.push(lane.id);
+      if (!c || c.toLane !== id || c.maxBodyClass < body) continue;
+      if (w.graph.lanelets.get(c.fromLane)?.kind !== 'link') continue;
+      const d = (left.get(c.fromLane) ?? fittingExits(w, c.fromLane, body)) - 1;
+      left.set(c.fromLane, d);
+      if (d === 0 && !traps.has(c.fromLane)) { traps.add(c.fromLane); stack.push(c.fromLane); }
     }
   }
-  // Peeled off, again and again: a lane with exits whose movements this body
-  // fits lead only to lanes already peeled (or it fits none). A road off the map
-  // (no exits) is never peeled; what stays reaches one, or a cycle it can
-  // keep driving round (SUMO's "disconnected" edges, by their complement).
-  const outDegree = new Map<LaneletId, number>();
-  for (const id of links) outDegree.set(id, (w.graph.exitsOf(id).map((cid) => w.connector(cid)).filter((c) => !!c && c.maxBodyClass >= body)).length);
-  const peel: LaneletId[] = links.filter((id) => outDegree.get(id) === 0 && w.graph.exitsOf(id).length > 0);
-  const traps = new Set<LaneletId>(peel);
-  while (peel.length) {
-    const id = peel.pop()!;
-    for (const from of into.get(id) ?? []) {
-      const d = (outDegree.get(from) ?? 0) - 1;
-      outDegree.set(from, d);
-      if (d === 0 && !traps.has(from)) { traps.add(from); peel.push(from); }
-    }
-  }
-  byBody.set(body, traps);
   return traps;
+}
+
+const trapIndexes = new WeakMap<SimWorld, TrapIndex>();
+export function trapLanes(w: SimWorld, body: number): ReadonlySet<LaneletId> {
+  let index = trapIndexes.get(w);
+  if (!index) trapIndexes.set(w, index = new TrapIndex());
+  return index.traps(w, body);
 }
 
 /**

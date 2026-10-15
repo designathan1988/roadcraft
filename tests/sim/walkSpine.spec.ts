@@ -48,12 +48,12 @@ function worldOf(doc: RoadDoc): SimWorld {
   return w;
 }
 
-const graphOf = (w: SimWorld): WalkGraph => w.walkwaysFor(w.net.revision);
+const graphOf = (w: SimWorld): WalkGraph => w.walkwaysNow();
 
 /** One walker on every footway, a quarter of the way along it to three quarters, in the graph's order. */
 function populate(w: SimWorld): number {
   let n = 0;
-  for (const way of graphOf(w).ways) {
+  for (const way of graphOf(w).walkways()) {
     if (way.kind !== 'footway' || way.path.length < m(6)) continue;
     const a = way.path.sampleAt(way.path.length * 0.25).p, b = way.path.sampleAt(way.path.length * 0.75).p;
     if (w.pedEngine.walkTrip!(w, { trip: n, fromX: a.x, fromY: a.y, toX: b.x, toY: b.y, seed: n * 7 + 1, ageClass: 'adult' }) !== null) n++;
@@ -270,7 +270,7 @@ const stepsText = (steps: readonly Step[] | null): string => (steps ? steps.map(
 /** The walkway nearest a point (any kind but a crossing), with where on it. */
 function wayNear(g: WalkGraph, x: number, y: number): { way: Walkway; s: number } {
   let best: { way: Walkway; s: number; d: number } | null = null;
-  for (const way of g.ways) {
+  for (const way of g.walkways()) {
     if (way.kind === 'crossing') continue;
     const hit = way.path.closestPoint({ x, y });
     if (!best || hit.distance < best.d) best = { way, s: hit.s, d: hit.distance };
@@ -282,7 +282,7 @@ describe('a route search touches the nodes it reaches', () => {
   it('gives the routes the search with fresh arrays gave, search after search on the same graph', () => {
     const g = graphOf(worldOf(grid(6)));
     const rng = new Rng(0x7007e);
-    const ways = g.ways.filter((w) => w.kind !== 'crossing');
+    const ways = g.walkways().filter((w) => w.kind !== 'crossing');
     for (let k = 0; k < 400; k++) {
       const a = ways[rng.int(0, ways.length - 1)]!, b = ways[rng.int(0, ways.length - 1)]!;
       const from = { way: a, s: rng.float() * a.path.length }, to = { way: b, s: rng.float() * b.path.length };

@@ -30,7 +30,7 @@ describe('authored pedestrian crossing', () => {
     expect(doc.requireNode(result.node).control).toBe(kind === 'signal' ? 'signal' : 'priority');
     expect(doc.requireNode(result.node).crossing).toEqual({ kind, segment: result.segments[0] });
     const walking = buildWalkways(net);
-    const crossings = walking.ways.filter((way) => way.kind === 'crossing' && way.node === result.node);
+    const crossings = walking.walkways().filter((way) => way.kind === 'crossing' && way.node === result.node);
     expect(crossings).toHaveLength(1);
     const middle = crossings[0]!.path.sampleAt(crossings[0]!.path.length / 2).p;
     expect(middle.x).toBeCloseTo(0, 2);

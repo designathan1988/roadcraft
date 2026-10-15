@@ -87,8 +87,9 @@ function oldBuild(graph: LaneletGraph): Map<LaneletId, { id: number; storage: nu
   return byLanelet;
 }
 
+/** A lane's loops by what they are - links, connectors, storage - not by the order they were numbered in (the index is kept by edits, `CycleIndex`). */
 const text = (cycles: readonly { id: number; storage: number; lanelets: ReadonlySet<LaneletId> }[]): string =>
-  cycles.map((c) => `${c.id}:${c.storage}:${[...c.lanelets].join(',')}`).join(' ; ');
+  cycles.map((c) => `${c.storage}:${[...c.lanelets].sort().join(',')}`).sort().join(' ; ');
 
 function compare(w: SimWorld): number {
   const old = oldBuild(w.graph);

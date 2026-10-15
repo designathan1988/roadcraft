@@ -49,7 +49,7 @@ function catchUp(net: Network, w: SimWorld): void {
   const prep = w.prepareVehicleTopology();
   while (!prep.next().done) { /* a slice a frame in the game */ }
   w.rebuildTopology();
-  w.walkwaysFor(net.revision);
+  w.walkwaysNow();
   trapLanes(w, 1);
 }
 

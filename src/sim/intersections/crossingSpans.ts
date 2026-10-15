@@ -1,6 +1,7 @@
 import type { Polyline } from '@core/polyline';
 import { BODY_ENVELOPE, HEAVY } from '@world/conflictPoints';
 import type { ConnectorId } from '@world/lanelets';
+import type { NodeId } from '@world/ids';
 import type { Connector } from '@world/lanelets';
 import { m } from '@world/units';
 import { CROSSWALK_DEPTH } from '@world/approach';
@@ -60,17 +61,59 @@ export class CrossingSpans {
    */
   private measured = new Map<string, Measured>();
 
+  /** What each junction measured: its connectors, its approach lanes and the keys of `measured` it made. */
+  private readonly ofJunction = new Map<NodeId, { readonly connectors: ConnectorId[]; readonly lanes: string[]; readonly keys: string[] }>();
+
+  /** @rebuild Every junction: a world's first topology, or a lane graph built whole. */
   build(w: SimWorld): void {
     this.spans.clear();
     this.approachStops.clear();
+    this.ofJunction.clear();
     const previous = this.measured;
     this.measured = new Map();
-    for (const connector of w.graph.connectors.values()) {
+    for (const node of w.graph.junctions.keys()) this.measureJunction(w, node, previous);
+  }
+
+  /**
+   * The spans of these junctions measured again (the junctions the lane graph built
+   * again, `LaneletGraph.update`; null: every one), every other junction's kept. A
+   * span depends only on its movement and its zebra, both at its own junction.
+   * DO NOT measure every movement of the map for an edit: every road drawn measured
+   * the town's zebras again.
+   */
+  update(w: SimWorld, nodes: ReadonlySet<NodeId> | null): void {
+    if (nodes === null) { this.build(w); return; }
+    const before: string[] = [];
+    for (const node of nodes) {
+      const made = this.ofJunction.get(node);
+      if (!made) continue;
+      for (const id of made.connectors) this.spans.delete(id);
+      for (const lane of made.lanes) this.approachStops.delete(lane);
+      before.push(...made.keys);
+      this.ofJunction.delete(node);
+    }
+    for (const node of [...nodes].sort((x, y) => x - y)) this.measureJunction(w, node, this.measured);
+    // What was measured before and not again goes: the cache holds what the junctions have.
+    const kept = new Set<string>();
+    for (const node of nodes) for (const key of this.ofJunction.get(node)?.keys ?? []) kept.add(key);
+    for (const key of before) if (!kept.has(key)) this.measured.delete(key);
+  }
+
+  /** One junction's spans: each movement over each zebra, and each approach's stop before another leg's. */
+  private measureJunction(w: SimWorld, node: NodeId, previous: Map<string, Measured>): void {
+    const junction = w.graph.junctions.get(node);
+    if (!junction) return;
+    const made = { connectors: [] as ConnectorId[], lanes: [] as string[], keys: [] as string[] };
+    this.ofJunction.set(node, made);
+    const incident = w.doc.node(node)?.incident ?? [];
+    for (const connectorId of junction.connectors) {
       rebuildWork.spans++;
-      const path = w.lanelet(connector.lanelet)?.centre;
-      if (!path) continue;
-      for (const segment of w.doc.node(connector.node)?.incident ?? []) {
-        const crossing = `${connector.node}:${segment}`;
+      const connector = w.graph.connectors.get(connectorId);
+      const path = connector && w.lanelet(connector.lanelet)?.centre;
+      if (!connector || !path) continue;
+      made.connectors.push(connector.id);
+      for (const segment of incident) {
+        const crossing = `${node}:${segment}`;
         const edge = w.sidewalks.edges.get(w.sidewalks.crossings.get(crossing) ?? '');
         if (!edge) continue;
         const id = key(connector.id, crossing);
@@ -80,6 +123,7 @@ export class CrossingSpans {
           ? known.span
           : measure(path, edge.path, edge.length);
         this.measured.set(id, { path: path.xy, edge: edge.path.xy, length: edge.length, span });
+        made.keys.push(id);
         let byCrossing = this.spans.get(connector.id);
         if (!byCrossing) this.spans.set(connector.id, byCrossing = new Map());
         byCrossing.set(crossing, span);
@@ -89,28 +133,26 @@ export class CrossingSpans {
     // adjacent acute leg even though its own stop line is correctly placed.
     // Measure those physical overlaps once per topology, before any pedestrian
     // enters, so the red-light obstacle holds the front before that zebra.
-    for (const junction of w.graph.junctions.values()) {
-      rebuildWork.spans++;
-      const incident = w.doc.node(junction.node)?.incident ?? [];
-      for (const laneId of junction.inbound) {
-        const lane = w.lanelet(laneId);
-        if (!lane || lane.kind !== 'link') continue;
-        let stop = lane.length;
-        for (const segment of incident) {
-          if (segment === lane.segment) continue;
-          const crossing = `${junction.node}:${segment}`;
-          const edge = w.sidewalks.edges.get(w.sidewalks.crossings.get(crossing) ?? '');
-          if (!edge) continue;
-          const id = `approach:${key(laneId, crossing)}`;
-          const known = previous.get(id);
-          const span = known && known.length === edge.length && sameFloats(known.path, lane.centre.xy)
-            && sameFloats(known.edge, edge.path.xy)
-            ? known.span : measure(lane.centre, edge.path, edge.length);
-          this.measured.set(id, { path: lane.centre.xy, edge: edge.path.xy, length: edge.length, span });
-          if (span) stop = Math.min(stop, span.along);
-        }
-        if (stop < lane.length) this.approachStops.set(laneId, stop);
+    rebuildWork.spans++;
+    for (const laneId of junction.inbound) {
+      const lane = w.lanelet(laneId);
+      if (!lane || lane.kind !== 'link') continue;
+      let stop = lane.length;
+      for (const segment of incident) {
+        if (segment === lane.segment) continue;
+        const crossing = `${node}:${segment}`;
+        const edge = w.sidewalks.edges.get(w.sidewalks.crossings.get(crossing) ?? '');
+        if (!edge) continue;
+        const id = `approach:${key(laneId, crossing)}`;
+        const known = previous.get(id);
+        const span = known && known.length === edge.length && sameFloats(known.path, lane.centre.xy)
+          && sameFloats(known.edge, edge.path.xy)
+          ? known.span : measure(lane.centre, edge.path, edge.length);
+        this.measured.set(id, { path: lane.centre.xy, edge: edge.path.xy, length: edge.length, span });
+        made.keys.push(id);
+        if (span) stop = Math.min(stop, span.along);
       }
+      if (stop < lane.length) { this.approachStops.set(laneId, stop); made.lanes.push(laneId); }
     }
   }
 

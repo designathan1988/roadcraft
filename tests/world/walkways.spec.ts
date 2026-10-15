@@ -43,6 +43,7 @@ function pieces(g: WalkGraph): Map<number, number> {
   const piece = new Map<number, number>();
   let next = 0;
   for (const start of g.nodes) {
+    if (!start) continue;
     if (piece.has(start.id)) continue;
     const stack = [start.id];
     piece.set(start.id, next);
@@ -79,7 +80,7 @@ describe('walkways', () => {
       };
       let off = 0, samples = 0;
       const where: string[] = [];
-      for (const w of g.ways) {
+      for (const w of g.walkways()) {
         if (w.kind === 'footway') {
           // Construction: the footway is its road's centreline offset to the
           // middle of the through zone - check it is (the paving of crossing
@@ -112,8 +113,8 @@ describe('walkways', () => {
 
     it(`${name}: joined without kinks`, () => {
       const g = buildWalkways(city(name));
-      expect(g.ways.filter((w) => w.kind === 'corner').length).toBeGreaterThan(0);
-      for (const w of g.ways.filter((x) => x.kind === 'corner')) {
+      expect(g.walkways().filter((w) => w.kind === 'corner').length).toBeGreaterThan(0);
+      for (const w of g.walkways().filter((x) => x.kind === 'corner')) {
         for (const [end, s] of [[w.a, 0], [w.b, w.path.length]] as const) {
           const t = w.path.sampleAt(s).t;
           for (const wi of g.at.get(end) ?? []) {
@@ -139,7 +140,7 @@ describe('walkways', () => {
       // One footway polygon per island: union them.
       const union = mergedIslands(merged);
       const groundPieces = new Map<number, Set<number>>();
-      for (const w of g.ways) {
+      for (const w of g.walkways()) {
         if (w.kind === 'crossing') continue;
         const pc = piece.get(w.a)!;
         const decks = groundPieces.get(pc) ?? new Set<number>();
@@ -194,8 +195,8 @@ describe('walkways', () => {
         const n = stack.pop()!;
         for (const wi of g.at.get(n) ?? []) for (const o of [g.ways[wi]!.a, g.ways[wi]!.b]) if (!reached.has(o)) { reached.add(o); stack.push(o); }
       }
-      expect(reached.size).toBe(g.nodes.length);
-      expect(g.nodes.filter((n) => (g.at.get(n.id) ?? []).length === 1)).toEqual([]);
+      expect(reached.size).toBe(g.nodes.filter((n) => n).length);
+      expect(g.nodes.flatMap((n) => (n ? [n] : [])).filter((n) => (g.at.get(n.id) ?? []).length === 1)).toEqual([]);
     });
   }
 });

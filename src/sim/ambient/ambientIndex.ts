@@ -1,4 +1,5 @@
 import type { ChangeJournal } from '@world/changes';
+import { NetworkLength } from '@world/networkLength';
 import type { BuildingStore } from '@world/buildings/store';
 import type { Building } from '@world/buildings/types';
 import type { Network, SegmentRibbon } from '@world/network';
@@ -335,10 +336,10 @@ export class BuildingMix {
  * map (r = Infinity) is summed once per network.
  */
 export class StreetLength {
+  /** The street length of the whole map (`world/networkLength.ts`). */
+  private readonly whole = new NetworkLength();
   /** Each ribbon's straight pieces as the walk reads them: middle x, middle y, length. Ribbons are never changed in place. */
   private readonly pieces = new WeakMap<SegmentRibbon, Float64Array>();
-  /** The street length of the whole map, by the network it was summed for. */
-  private readonly whole = new WeakMap<Network, { revision: number; epoch: number; total: number }>();
 
   around(net: Network, x: number, y: number, r: number): number {
     if (r === Infinity) return Number.isNaN(x) || Number.isNaN(y) ? 0 : this.wholeMap(net);
@@ -353,14 +354,13 @@ export class StreetLength {
     return total;
   }
 
-  /** @rebuild Summed again only when the network moved (an edit of the roads), never per question. */
+  /**
+   * The street length of the whole map: the network's, kept by what each
+   * rebuild changed (`world/networkLength.ts`). DO NOT sum every ribbon of the
+   * map when the network moves: every road drawn walked the town's roads.
+   */
   private wholeMap(net: Network): number {
-    const known = this.whole.get(net);
-    if (known && known.revision === net.revision && known.epoch === net.segmentCells.epoch) return known.total;
-    let total = 0;
-    for (const ribbon of net.ribbons.values()) total = this.add(total, ribbon, 0, 0, Infinity);
-    this.whole.set(net, { revision: net.revision, epoch: net.segmentCells.epoch, total });
-    return total;
+    return this.whole.of(net);
   }
 
   /** The pieces of `ribbon` whose middle is within `r` of (x, y), added to `total` in order. */

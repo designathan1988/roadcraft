@@ -189,6 +189,15 @@ Cada linha é um commit; a causa estava no algoritmo e saiu do código.
 - `6e910ff` Varredura das árvores do ecossistema só nas placas cujo terreno mudou.
 - `adc1eb1` Semáforos: a simulação anota as junções que mudaram (o log compacta, não esquece); o desenho refaz só as células delas.
 - `054d744` Barreiras barreira a barreira (`Derived` + `InstanceRuns`).
+- `01750a9` Trilhos e paradas item a item (`createTransit`); `29b0e08` atlas do chão só nas placas alcançadas.
+- `4fea2a7`/`39430ce` Árvores, arbustos e pedras por célula (`plantCells.ts`): só as células cujo candidato mudou, margem pela sombra de cada camada.
+- `b5495ec` Prédios: detalhe residente na GPU pela distância à vista (o que passa de 2× o alcance sai da placa).
+- `5766e33` Topologia do tráfego pelo delta da rede: lanes, conflitos, controladores, fluxos e conselheiro só nos cruzamentos que a edição refez.
+- `45e0d25` Pátios dos caminhões com o asfalto lido por lugar (sem a união do mapa inteiro).
+- Grafo dos pedestres (`walkways.ts`, `walkingLines.ts`): unidades por rua e por nó refeitas pelo delta da rede; linhas de caminhar e pavimento lidos da caixa do nó (sem a união do mapa por tabuleiro); nó ou caminho que volta igual devolve o mesmo id e objeto; o índice dos pedestres e o religamento leem o diário do grafo (sem chave de todos os caminhos).
+- Diário da topologia (`core/changeLog.ts`, `SimWorld.topologyLog`): calçadas e faixas da simulação (`SidewalkGraph.update`), trechos de faixa por cruzamento (`CrossingSpans.update`), controladores, anéis pequenos (busca por faixa com o que leu arquivado), ids de faixa por nó e faixas-armadilha (sementes pelo diário, descasque só da região presa). `tests/scale/baseline.json` vazio: nenhum produto de uma edição de rua cresce com o mapa.
+- Sai o fatiamento da topologia em quadros (`TOPOLOGY_SLICE_MS`, `LOADING_SLICE_MS`): o trabalho é o da edição; só os pares medidos pelos workers são esperados.
+- Reinício igual a mundo novo: índice dos postes de semáforo zerado com o mundo; o próximo id de pessoa é do mundo (`nextPersonId`), como o de veículo.
 
 ## Pendente e por quê
 

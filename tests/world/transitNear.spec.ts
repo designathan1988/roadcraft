@@ -21,7 +21,7 @@ describe('the transit tool by place', () => {
     const doc = layCity(planCity({ ...DEFAULT_CITY, size: 'small', seed: 3 }));
     const net = new Network(doc);
     net.rebuild();
-    const ways = buildWalkways(net).ways.filter((w) => w.kind === 'footway' && w.segment !== undefined);
+    const ways = buildWalkways(net).walkways().filter((w) => w.kind === 'footway' && w.segment !== undefined);
     const old = (p: Vec2, reach: number, rejects?: (q: Vec2) => boolean) => {
       let best: { x: number; y: number; segment: number; d: number } | null = null;
       for (const way of ways) {

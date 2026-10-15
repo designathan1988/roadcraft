@@ -177,7 +177,7 @@ describe('the street length round a place', () => {
     return total;
   }
 
-  it('sums to the last bit as the walk over every ribbon, through edits of the roads', () => {
+  it('sums as the walk over every ribbon, through edits of the roads', () => {
     const roads = new RoadDoc();
     const rng = new Rng(0x40ad);
     const nodes: number[] = [];
@@ -210,7 +210,10 @@ describe('the street length round a place', () => {
         net.rebuild();
       }
       expect(net.ribbons.size).toBeGreaterThan(0);
-      expect(streetLength(net, 0, 0, Infinity)).toBe(oldRoad(net, 0, 0, Infinity));
+      // The whole map's is kept by the edits (`world/networkLength.ts`), summed exactly in millionths of a
+      // unit: within a millionth a road of the walk's float sum, whatever order the edits came in.
+      const whole = oldRoad(net, 0, 0, Infinity);
+      expect(Math.abs(streetLength(net, 0, 0, Infinity) - whole)).toBeLessThanOrEqual(1e-6 * net.ribbons.size + 1e-9 * whole);
       wholes.add(streetLength(net, 0, 0, Infinity));
       for (let q = 0; q < 40; q++) {
         const x = m(rng.range(-500, 500)), y = m(rng.range(-500, 500));

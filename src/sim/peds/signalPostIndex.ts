@@ -25,6 +25,17 @@ export class SignalPostIndex {
   /** What `near` hands out, written again by each call. */
   private readonly found: SignalPost[] = [];
 
+  /**
+   * Nothing placed, as a new world's (`SimWorld.reset`). DO NOT keep the posts
+   * across a reset: the signals the old world's advisor chose kept their posts,
+   * and the walkers of the new world stepped round posts nobody had put up.
+   */
+  reset(): void {
+    this.serial = -1;
+    this.byNode.clear();
+    this.cells.clear();
+  }
+
   /** Brought up to the junctions' controls now. */
   follow(w: SimWorld): void {
     const { serial, nodes } = w.signalChangesSince(this.serial);

@@ -41,7 +41,7 @@ const ADMIT_PER_TICK = 4;
  * runaway guard far above it.
  */
 export function trafficTarget(w: SimWorld): number {
-  const total = roadLength(w.net);
+  const total = roadLength(w);
   // The number chosen; past one car per 12 m of road they would only stand
   // bumper to bumper, so not more than that.
   const chosen = chosenTraffic(w);
@@ -64,43 +64,55 @@ export function trafficTarget(w: SimWorld): number {
 export function chosenTraffic(w: SimWorld): number | null {
   if (w.trafficCount !== null) return w.trafficCount;
   if (!w.followCity) return null;
-  return roadLength(w.net) * TRAFFIC_DENSITY * w.trafficIntensity * w.demandMultiplier;
+  return roadLength(w) * TRAFFIC_DENSITY * w.trafficIntensity * w.demandMultiplier;
 }
 
-/** The road length of a network, kept per revision: asked several times a tick, it summed every ribbon of the map each time. */
-const lengths = new WeakMap<SimWorld['net'], { readonly revision: number; readonly total: number }>();
-export function roadLength(net: SimWorld['net']): number {
-  const known = lengths.get(net);
-  if (known && known.revision === net.revision) return known.total;
-  let total = 0;
-  for (const ribbon of net.ribbons.values()) total += ribbon.full.length;
-  lengths.set(net, { revision: net.revision, total });
-  return total;
+/** The road length of a network, kept by what each rebuild changed (`world/networkLength.ts`). */
+export function roadLength(w: SimWorld): number {
+  return w.roadLength.of(w.net);
 }
 
 /**
- * Lane entries at the edge of the map, where traffic arrives from outside.
- * Kept per topology and document revision: every lane of the map was walked
- * and sorted every tick, and each one given a runtime entry on the way
- * (stage 2, 1.1 ms of a tick on a 36 x 36 grid, annex B2).
+ * Lane entries at the edge of the map, where traffic arrives from outside, in
+ * id order. Kept by the lane graph's changes (`SimWorld.topologyLog`): the
+ * lanes an edit made or took, and those out of the junctions it built again
+ * (a node made a map edge or no longer one), looked at again; the others
+ * stand. Every lane of the map was walked and sorted every tick (stage 2,
+ * 1.1 ms of a tick on a 36 x 36 grid, annex B2), then at every revision of
+ * the document - a building grown included. DO NOT walk the map's lanes for
+ * an edit.
  */
 function entryLanes(w: SimWorld): readonly string[] {
   let known = entries.get(w);
-  if (!known || known.topology !== w.vehicleTopologyRevision || known.revision !== w.doc.revision) {
-    const lanes: string[] = [];
-    for (const lane of w.graph.lanelets.values()) {
-      if (lane.kind !== 'link' || lane.length < m(12)) continue;
-      if (lane.from !== undefined && w.doc.mapEdge(lane.from)) lanes.push(lane.id);
+  if (!known) entries.set(w, known = { seen: null, lanes: new Set(), sorted: null });
+  if (known.seen !== w.topologyLog.state) {
+    const changes = w.topologyLog.since(known.seen);
+    known.seen = w.topologyLog.state;
+    const look = (id: string): void => { if (isEntry(w, id)) known!.lanes.add(id); else known!.lanes.delete(id); };
+    if (changes === null) {
+      // @rebuild A world's first topology, or a lane graph built whole.
+      known.lanes.clear();
+      for (const id of w.graph.lanelets.keys()) look(id);
+    } else {
+      for (const change of changes) {
+        for (const id of change.lanelets) look(id);
+        for (const node of change.junctions) for (const id of w.graph.outbound.get(node) ?? []) look(id);
+      }
     }
-    known = { topology: w.vehicleTopologyRevision, revision: w.doc.revision, lanes: lanes.sort() };
-    entries.set(w, known);
+    known.sorted = null;
   }
-  const lanes = known.lanes;
+  const lanes = known.sorted ??= [...known.lanes].sort();
   // A lane retired by an edit still on its way out takes no arrival.
   for (const id of lanes) if (w.runtime.get(id)?.ghost) return lanes.filter((l) => !w.runtime.get(l)?.ghost);
   return lanes;
 }
-const entries = new WeakMap<SimWorld, { readonly topology: number; readonly revision: number; readonly lanes: readonly string[] }>();
+const entries = new WeakMap<SimWorld, { seen: object | null; readonly lanes: Set<string>; sorted: readonly string[] | null }>();
+
+/** A link long enough to arrive on, starting at a node on the edge of the map. */
+function isEntry(w: SimWorld, id: string): boolean {
+  const lane = w.graph.lanelets.get(id);
+  return !!lane && lane.kind === 'link' && lane.length >= m(12) && lane.from !== undefined && w.doc.mapEdge(lane.from);
+}
 
 /** Seconds to the next arrival of a Poisson stream of `rate` per second. */
 function nextGap(w: SimWorld, rate: number): number {

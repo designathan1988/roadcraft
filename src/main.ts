@@ -2668,10 +2668,9 @@ function frame(now: number): void {
     actionsWarm = true;
     void scene.effects();
   }
-  // The traffic's topology catching up with an edit, a slice a frame, the
-  // simulation held until it has (`TopologyCatchUp`); with a load's time
-  // while the opening's town is put together, nothing of it shown yet.
-  if ((!holdSim || scene.opening) && topology.step(sim, net.trafficRevision, scene.worldBusy, scene.opening)) {
+  // The traffic's topology catching up with an edit, the simulation held
+  // while the workers measure the new junctions' pairs (`TopologyCatchUp`).
+  if ((!holdSim || scene.opening) && topology.step(sim, net.trafficRevision, scene.worldBusy)) {
     holdSim = true;
     requestDraw();
   }

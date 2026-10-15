@@ -74,7 +74,7 @@ export function derivedLines(net: Network): string[] {
   const b = bands(surfaces(net));
   out.push(`bands ${polyDigest(b.casing)} ${polyDigest(b.footway)} ${polyDigest(b.kerb)} ${polyDigest(b.carriageway)}`);
   const walks = buildWalkways(net);
-  for (const w of walks.ways) {
+  for (const w of walks.walkways()) {
     out.push(`walk ${w.id} ${w.kind} ${new Digest().addAll(w.path.xy).add(w.width).add(w.lo).add(w.hi).value()}`);
   }
   for (const f of streetFurniture(net)) out.push(`furniture ${f.kind} ${f.segment} ${f.x} ${f.y}`);

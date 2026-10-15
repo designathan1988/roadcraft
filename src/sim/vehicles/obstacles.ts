@@ -75,14 +75,22 @@ function pedestrianAhead(w: SimWorld, v: Vehicle): Obstacle | null {
 }
 
 /**
- * The crossing id of every road at a node (`makeCrossingId`), spelt once per
- * topology: a fresh string per vehicle per road per tick was hashed again at
- * every look-up of the crossing states.
+ * The crossing id of every road at a node (`makeCrossingId`), spelt once: a
+ * fresh string per vehicle per road per tick was hashed again at every
+ * look-up of the crossing states. A node's ids are spelt again only when an
+ * edit built its junction again (`SimWorld.topologyLog`). DO NOT drop every
+ * node's for an edit: the whole map's were spelt again after each road drawn.
  */
-const CROSSING_IDS = new WeakMap<SimWorld, { revision: number; byNode: Map<NodeId, CrossingId[]> }>();
+const CROSSING_IDS = new WeakMap<SimWorld, { seen: object | null; byNode: Map<NodeId, CrossingId[]> }>();
 function crossingIdsAt(w: SimWorld, node: NodeId): readonly CrossingId[] {
   let memo = CROSSING_IDS.get(w);
-  if (!memo || memo.revision !== w.topologyRevision) CROSSING_IDS.set(w, memo = { revision: w.topologyRevision, byNode: new Map() });
+  if (!memo) CROSSING_IDS.set(w, memo = { seen: null, byNode: new Map() });
+  if (memo.seen !== w.topologyLog.state) {
+    const changes = w.topologyLog.since(memo.seen);
+    memo.seen = w.topologyLog.state;
+    if (changes === null) memo.byNode.clear();
+    else for (const change of changes) for (const junction of change.junctions) memo.byNode.delete(junction);
+  }
   let ids = memo.byNode.get(node);
   if (!ids) memo.byNode.set(node, ids = (w.doc.node(node)?.incident ?? []).map((segment) => makeCrossingId(node, segment)));
   return ids;

@@ -583,7 +583,8 @@ export class AmbientWorld {
   private opening = true;
   private openTicks = OPEN_TICKS;
   private readonly openSpots: { x: number; y: number }[] = [];
-  private footFor = '';
+  /** The walkways' state the footways below were read at (`WalkGraph.state`). */
+  private footFor: object | null = null;
   private foot: { way: Walkway; at: number }[] = [];
   private footLength = 0;
 
@@ -644,13 +645,14 @@ export class AmbientWorld {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return;
     this.refreshPlaces(w);
-    const key = `${w.net.revision}:${w.topologyRevision}`;
-    if (key !== this.footFor) {
-      this.footFor = key;
+    const graph = w.walkwaysNow();
+    // @rebuild Read only while a map is opening (`OPEN_TICKS`), when the walkways change.
+    if (graph.state !== this.footFor) {
+      this.footFor = graph.state;
       this.foot = [];
       this.footLength = 0;
-      for (const way of w.walkwaysFor(w.net.revision).ways) {
-        if (way.kind !== 'footway' || way.path.length < m(4)) continue;
+      for (const way of graph.ways) {
+        if (!way || way.kind !== 'footway' || way.path.length < m(4)) continue;
         this.foot.push({ way, at: this.footLength });
         this.footLength += way.path.length;
       }
