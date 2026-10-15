@@ -11,7 +11,7 @@ import { integrateAll } from './vehicles/integrate';
 import { stepDespawn, stepDispatch } from './vehicles/spawn';
 import { stepLaneChange } from './vehicles/laneChange';
 import { stepKerbStops } from './vehicles/kerbStops';
-import { extend, planFrom, reconsiderRoute, repairRoute } from './routing/router';
+import { cutAtBreak, extend, planFrom, reconsiderRoute, repairRoute } from './routing/router';
 import { snapshotInto, type Vehicle } from './vehicles/state';
 import { runAudit } from './invariants';
 import { signalStateFor } from './signals/query';
@@ -413,8 +413,9 @@ function pinReservedRoute(w: SimWorld, v: Vehicle): boolean {
   const suffix = suffixAt >= 0 ? v.route.slice(suffixAt + 1) : [];
   v.route = [...prefix, ...suffix];
   w.noteRoute(v);
-  // `repairRoute` deliberately reconstructs connector routes from scratch
+  // `repairRoute` deliberately reconstructs connector routes from scratch: on one, the kept way on is only cut where an edit broke it
   if (lane.kind === 'link') repairRoute(w, v);
+  else if (cutAtBreak(w, v)) extend(w, v);
   return true;
 }
 

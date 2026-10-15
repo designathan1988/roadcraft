@@ -59,7 +59,7 @@ describe('an edit of the roads', () => {
     expect(rebound(w)).toBe(0);
   });
 
-  it('rebinds those on, driving over or holding what it took', () => {
+  it('rebinds those on, driving over or holding what it took, and leaves no route over it', () => {
     const w = running();
     // The segment the most routes go over.
     const over = new Map<SegmentId, number>();
@@ -81,5 +81,9 @@ describe('an edit of the roads', () => {
     const n = rebound(w);
     expect(n).toBeGreaterThanOrEqual(reached.length);
     expect(n).toBeLessThan(w.vehicles.size);
+    // Every route stands on the lanes of the graph as it is now: a car in a junction kept the way on it had (`pinReservedRoute`).
+    for (const v of w.vehicles.values()) {
+      for (const id of v.route) expect(w.lanelet(id), `vehicle ${v.id} routed over ${id}`).toBeDefined();
+    }
   });
 });

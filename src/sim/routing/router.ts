@@ -370,6 +370,21 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
   extend(w, v);
 }
 
+/** A route cut where it stops standing on the graph (a lane gone, a movement that no longer joins them); whether it was cut. */
+export function cutAtBreak(w: SimWorld, v: Vehicle): boolean {
+  const body = bodyClassOfArchetype(v.archetype);
+  let keep = 0;
+  for (const id of v.route) {
+    if (!w.lanelet(id)) break;
+    if (keep > 0 && !isLegalTransition(w, v.route[keep - 1]!, id, body)) break;
+    keep++;
+  }
+  if (keep === v.route.length) return false;
+  v.route.length = keep;
+  w.noteRoute(v);
+  return true;
+}
+
 function isLegalTransition(w: SimWorld, fromId: LaneletId, toId: LaneletId,
   body: ReturnType<typeof bodyClassOfArchetype>): boolean {
   const from = w.lanelet(fromId);
