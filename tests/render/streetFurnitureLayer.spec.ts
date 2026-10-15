@@ -153,6 +153,28 @@ describe('the street furniture kept from the diary', () => {
     proveIncremental({ source: new Town(), make: () => meadowProduct(kit), edits: [...edits, batch, batch], steps: 40, seed: 0xba7d });
   });
 
+  it('compiles ahead every store as the layer draws it', () => {
+    const town = new Town();
+    const rng = new Rng(0x3a);
+    for (let i = 0; i < 400; i++) edits[0]!(town, rng);
+    const layer = createStreetFurniture(kit);
+    layer.sync(town.net, town.elevation, town.groundAt, 0);
+    const warm = new Map(layer.warm().map((mesh) => [mesh.name, mesh]));
+    const drawn = [...layer.meshes, ...(layer.grass.children as InstancedMesh[])];
+    expect(drawn.length).toBeGreaterThan(8);
+    // What three keys a program by: the geometry, the material, the instancing and its colours, the shadow's depth material.
+    for (const mesh of drawn) {
+      const ahead = warm.get(mesh.name);
+      expect(ahead, mesh.name).toBeDefined();
+      expect(ahead!.geometry, mesh.name).toBe(mesh.geometry);
+      expect(ahead!.material, mesh.name).toBe(mesh.material);
+      expect(ahead!.customDepthMaterial, mesh.name).toBe(mesh.customDepthMaterial);
+      expect(!!ahead!.instanceColor, mesh.name).toBe(!!mesh.instanceColor);
+      expect([ahead!.castShadow, ahead!.receiveShadow], mesh.name).toEqual([mesh.castShadow, mesh.receiveShadow]);
+    }
+    layer.dispose();
+  });
+
   it('places again only the items an edit reached', () => {
     const town = new Town();
     const rng = new Rng(3);

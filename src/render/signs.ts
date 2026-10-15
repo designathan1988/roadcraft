@@ -4,6 +4,7 @@ import {
   DoubleSide,
   MeshStandardMaterial,
   SRGBColorSpace,
+  type Texture,
 } from 'three';
 
 import type { Vec2 } from '@core/vec2';
@@ -368,8 +369,7 @@ export class SignSheets {
     const rows = Math.min(FIRST_ROWS, maxRows(cellHeight));
     const canvas = sheetCanvas(rows, cellHeight);
     const texture = sheetTexture(canvas);
-    // The same parameters on every sheet: the same program (three keys it by them, not by the texture).
-    const material = new MeshStandardMaterial({ map: texture, alphaTest: 0.5, side: DoubleSide, roughness: 0.5, metalness: 0.1 });
+    const material = plateMaterial(texture);
     const sheet: Sheet = { canvas, texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0 };
     this.sheets.push(sheet);
     return sheet;
@@ -398,6 +398,15 @@ export class SignSheets {
     }
     return this.newSheet(cellHeight);
   }
+}
+
+/**
+ * A sheet's material. The same parameters on every sheet: the same program
+ * (three keys it by them, not by the texture), the one compiled ahead from a
+ * plate made with this (`signLayer.ts` warm).
+ */
+export function plateMaterial(texture: Texture): MeshStandardMaterial {
+  return new MeshStandardMaterial({ map: texture, alphaTest: 0.5, side: DoubleSide, roughness: 0.5, metalness: 0.1 });
 }
 
 /**

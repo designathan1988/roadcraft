@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Mesh, MeshStandardMaterial } from 'three';
 
 import { Rng } from '@core/rng';
 import { RoadDoc } from '@world/doc';
@@ -8,7 +9,7 @@ import { SIGN_TYPES, snapLandscape } from '@world/landscape';
 import type { ChangeRect } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import { m } from '@world/units';
-import { signProduct } from '@render/signLayer';
+import { createSignLayer, signProduct } from '@render/signLayer';
 import { proveIncremental } from '../support/derivedEquivalence';
 
 /**
@@ -16,7 +17,8 @@ import { proveIncremental } from '../support/derivedEquivalence';
  * at every step of random edits - roads drawn and demolished, signs and
  * street names placed one by one and in batches, items taken away, the paint
  * standard changed -, the signs made from nothing; a landscaping entry stands
- * no junction again (its plates do not read the landscaping).
+ * no junction again (its plates do not read the landscaping); and the plate
+ * compiled ahead is drawn with the program a sheet's plates are.
  */
 
 const span = m(400);
@@ -118,3 +120,38 @@ describe('the signs kept from the diary', () => {
   });
 });
 
+/** A canvas without a page: the sizes it is given, and a 2D context that draws nothing. */
+function fakeCanvas(): { width: number; height: number; getContext: () => unknown } {
+  const context: unknown = new Proxy({}, {
+    get: (_target, key) => key === 'measureText' ? () => ({ width: 0 }) : () => {},
+    set: () => true,
+  });
+  return { width: 0, height: 0, getContext: () => context };
+}
+
+describe('the signs compiled ahead', () => {
+  beforeAll(() => { vi.stubGlobal('document', { createElement: () => fakeCanvas() }); });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  it('a post and a plate drawn with the programs of the posts and plates the layer stands', () => {
+    const town = new Town();
+    const rng = new Rng(0x9a);
+    for (let i = 0; i < 20; i++) edits[0]!(town, rng);
+    const layer = createSignLayer();
+    layer.sync(town.net, town.elevation);
+    const drawn = new Map<string, Mesh>();
+    layer.group.traverse((o) => { if ((o as Mesh).isMesh) drawn.set(o.name, o as Mesh); });
+    const warm = layer.warm();
+    expect(new Set(warm.map((w) => w.name))).toEqual(new Set(drawn.keys()));
+    // What three keys a program by (`WebGLPrograms.getParameters`): the material's kind and parameters,
+    // a map or none, the alpha test, the side, the instancing and its colours, the shadow cast.
+    const key = (mesh: Mesh): string => {
+      const mat = mesh.material as MeshStandardMaterial;
+      const instanced = mesh as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown };
+      return JSON.stringify([mat.type, !!mat.map, mat.alphaTest > 0, mat.side, mat.vertexColors, mat.transparent, mat.roughness, mat.metalness,
+        !!instanced.isInstancedMesh, !!instanced.instanceColor, mesh.castShadow, Object.keys(mesh.geometry.attributes).sort()]);
+    };
+    for (const mesh of warm) expect(key(mesh), mesh.name).toBe(key(drawn.get(mesh.name)!));
+    layer.dispose();
+  });
+});

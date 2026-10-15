@@ -74,16 +74,30 @@ let compiler = false;
  */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
 const plainDepth = new MeshDepthMaterial();
+/** What a stand-in's plain depth material is set to (`userData`), at the moment it is compiled (`drainCompiles`). */
+interface DepthVariant { readonly side: Side; readonly alphaTest: number; readonly map: Texture | null; readonly alphaMap: Texture | null }
+const DEPTH_VARIANT = 'roadcraftDepthVariant';
+type DepthMaterial = Material & { map?: Texture | null; alphaMap?: Texture | null };
+const setDepth = (depth: DepthMaterial, v: DepthVariant): void => {
+  depth.side = v.side;
+  depth.alphaTest = v.alphaTest;
+  depth.map = v.map;
+  depth.alphaMap = v.alphaMap;
+};
 export function shadowStandIn(mesh: Mesh): Mesh | null {
   if (!mesh.castShadow || Array.isArray(mesh.material)) return null;
   const material = mesh.material as Material & { map?: Texture | null; alphaMap?: Texture | null; shadowSide?: Side | null };
-  const depth = ((mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial ?? plainDepth) as Material & { map?: Texture | null; alphaMap?: Texture | null };
-  depth.side = material.shadowSide ?? SHADOW_SIDE[material.side];
-  depth.alphaTest = material.alphaToCoverage ? 0.5 : material.alphaTest;
-  depth.map = material.map ?? null;
-  depth.alphaMap = material.alphaMap ?? null;
+  const custom = (mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial as DepthMaterial | undefined;
+  const variant: DepthVariant = { side: material.shadowSide ?? SHADOW_SIDE[material.side], alphaTest: material.alphaToCoverage ? 0.5 : material.alphaTest,
+    map: material.map ?? null, alphaMap: material.alphaMap ?? null };
+  setDepth(custom ?? plainDepth, variant);
   const copy = compileCopy(mesh) as Mesh;
-  copy.material = depth;
+  copy.material = custom ?? plainDepth;
+  // The plain depth material is shared by every stand-in, and they are compiled later, together: each
+  // set to its own variant as it is compiled (`drainCompiles`). DO NOT compile them with the material as
+  // the last one left it: a sign's plate (a map, cut by its alpha) and a bench (neither) in one batch
+  // built only the plate's shadow program, and the bench's was linked in the first shadow pass drawing it.
+  if (!custom) copy.userData[DEPTH_VARIANT] = variant;
   copy.visible = true;
   return copy;
 }
@@ -124,7 +138,20 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   while (toCompile.length) {
     const { object, shadow, done } = toCompile.shift()!;
     if (shadow) renderer.setRenderTarget(shadowTarget ??= new WebGLRenderTarget(1, 1));
-    renderer.compileAsync(object, camera, scene).then(done, done);
+    // Each stand-in on the plain depth material with its own variant (`shadowStandIn`), then the whole:
+    // three builds a material's program from its state when compiled, and keeps every program it built for it.
+    const units: { readonly object: Object3D; readonly variant?: DepthVariant }[] = [];
+    object.traverse((o) => {
+      const variant = o.userData[DEPTH_VARIANT] as DepthVariant | undefined;
+      if (variant) units.push({ object: o, variant });
+    });
+    units.push({ object });
+    const compiled: Promise<unknown>[] = [];
+    for (const unit of units) {
+      if (unit.variant) setDepth(plainDepth, unit.variant);
+      compiled.push(renderer.compileAsync(unit.object, camera, scene));
+    }
+    Promise.all(compiled).then(() => done(), () => done());
     if (shadow) renderer.setRenderTarget(target);
   }
   renderer.setRenderTarget(previous);
