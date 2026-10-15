@@ -40,6 +40,35 @@ cause, technique and source). Git history is the archive.
 - No trial and error. If you do not know how to solve something, or it fails the first time,
   RESEARCH ON THE INTERNET.
 
+## Architecture rewrite (authorized by the player on 2026-10-15)
+The player authorized replacing the architecture where it blocks scale: "extremely fast, with
+graphics quality, sold on Steam; change the whole architecture if needed". The full brief was
+pasted in the session that started this; these are its binding decisions.
+- Threads: the page only does input, UI, level choice, GPU upload of what became visible and
+  drawing. Simulation in a worker (typed arrays, poses in a SharedArrayBuffer, triple buffer).
+  One job system (hardwareConcurrency - 2) replaces the 14 pools. COOP/COEP in Vite and app://.
+- Data: typed tables (SoA) for buildings, lots, nodes, segments, zones. Building = seed +
+  generator version + player delta; the rich record is regenerated in a worker. Edits are
+  commands with an inverse (no doc.clone, no structuredClone images, no JSON compares, no
+  whole-network adopt). Every derived product follows the diary or a per-cell dirty set.
+  One grid: plate 2048 m, tile 1024 m, cell 256 m, sub-cell 64 m, Morton keys.
+- Buildings: L0 full detail; L1 per-cell shell simplified by meshoptimizer (error under 1 px,
+  same colours and atlas); L2 per 1 km tile and L3 per plate merged with baked appearance.
+  One shell material (texture array + finish id); parts instanced per kind for the whole near
+  ring. Compact vertices. Detail residency capped in bytes, falling back to L1.
+- World: terrain CDLOD/clipmap; instances per 256 m cell with far levels; roads painted into
+  the plate texture past ~2 km. Simulation meso everywhere, micro in a ~1.5 km window.
+- Light: 3 shadow cascades, casters by level and screen size; shader variants compiled at load;
+  textures baked to KTX2 at build time.
+- Renderer: decided by a 4-day spike (WebGL2 vs WebGPU with compute culling and indirect draw).
+  Decision: <pending>.
+- Phases: F0 prep, F0b relief, F1 data, F2 threads, F3 spike, F4 buildings, F5 world,
+  F6 light, F7 whole-map generation, F8 Steam, F9 validation. Current: <F0>.
+- Still asks the player: graphics-quality changes (shots), migrating his saved map, pushing.
+- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
+  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
+  yourself, in sequence; keep progress here.
+
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
   the frame, the edit or the pointer, and the siblings of the same shape in the project. Fix the
@@ -193,11 +222,12 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents: at most 5, each on one part, in ITS worktree made from local `main`
-  (`git worktree add -b fix/<part> C:/Codex-Shared/rc2-wt/<part> main`; `node_modules` and `cooked`
-  by junction). Read the whole diff and merge into `main`. To remove a worktree, undo the junctions
-  with `rmdir`, never `rm -rf` (it would delete the main folder's `node_modules`); delete the branch
-  once it is merged.
+- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
+  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
+  yourself, in sequence; keep progress here.
+- A worktree, when one is needed, is made from local `main` (`node_modules` and `cooked` by
+  junction). To remove it, undo the junctions with `rmdir`, never `rm -rf` (it would delete the
+  main folder's `node_modules`); delete the branch once it is merged.
 - Never push to GitHub without the player's yes. The player's ports and folders, never touch:
   4180-4183, 5173, 5175-5178, `C:/Codex-Shared/backup-mapa-jogador`.
 
