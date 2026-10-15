@@ -19,6 +19,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+import { Rng } from '@core/rng';
 import { signatureKind } from '@world/buildings/towerKit';
 import { LANDMARKS } from './landmarks';
 import type { Building } from '@world/buildings/types';
@@ -46,6 +47,12 @@ type Mat = string;
 let materials: Record<Mat, Material> | null = null;
 /** Facade materials, by style and storey rhythm, made once each. */
 const facades = new Map<string, Material>();
+/** A seed from a name (FNV-1a): the same pictures in every run. */
+const seedOf = (name: string): number => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+};
 
 type FacadeKind = 'curtainBlue' | 'curtainDark' | 'curtainGreen' | 'punchedBeige' | 'punchedCream' | 'gridDark' | 'brick' | 'stoneGrid'
   | 'archTerracotta' | 'ribbonWhite' | 'squareConcrete' | 'navyGrid' | 'copperFins' | 'ribbonBlack' | 'punchedPink' | 'curtainTeal'
@@ -59,7 +66,15 @@ type FacadeKind = 'curtainBlue' | 'curtainDark' | 'curtainGreen' | 'punchedBeige
 function facade(kind: FacadeKind, bay: number, storey: number, base: number): Mat {
   const key = `${kind}|${bay}|${storey}|${base}`;
   if (facades.has(key)) return key;
-  const t = canvasTexture(256, (g, s) => {
+  // Each style's picture painted once, kept with its first material (under `picture|kind`): the
+  // materials of its other rhythms read it through their own repeat and offset (a clone shares the
+  // picture's source, one texture on the graphics card: three's `Texture.clone`). DO NOT paint a
+  // picture per rhythm: a rhythm is a building's bay, storey and ground height, and every signature
+  // building of new proportions painted and sent a 256-pixel picture more, never let go.
+  const first = facades.get(`picture|${kind}`) as MeshStandardMaterial | undefined;
+  // Its noise seeded by the style: the same picture in every run (DO NOT use Math.random here).
+  const rng = new Rng(seedOf(kind));
+  const picture = first?.map ?? canvasTexture(256, (g, s) => {
     const glass = (top: string, bottom: string, x: number, y: number, w: number, h: number): void => {
       const grad = g.createLinearGradient(0, y, 0, y + h);
       grad.addColorStop(0, top); grad.addColorStop(1, bottom);
@@ -70,7 +85,7 @@ function facade(kind: FacadeKind, bay: number, storey: number, base: number): Ma
       for (let y = 0; y < s; y += 7) {
         g.fillStyle = 'rgba(70,30,20,.35)'; g.fillRect(0, y, s, 1);
         for (let x = (y / 7) % 2 ? 0 : 9; x < s; x += 18) g.fillRect(x, y, 1, 7);
-        g.fillStyle = `rgba(${150 + Math.random() * 40},${60 + Math.random() * 20},40,.15)`; g.fillRect(Math.random() * s, y + 1, 30, 5);
+        g.fillStyle = `rgba(${150 + rng.float() * 40},${60 + rng.float() * 20},40,.15)`; g.fillRect(rng.float() * s, y + 1, 30, 5);
       }
     };
     const archWindow = (x: number, y: number, w: number, h: number, frame: string, pane: string, mull: string): void => {
@@ -136,7 +151,7 @@ function facade(kind: FacadeKind, bay: number, storey: number, base: number): Ma
       for (let k = 0; k < 4; k++) g.fillRect(k * s / 4, s * 0.18, 3, s * 0.52);
     } else if (kind === 'squareConcrete') {
       g.fillStyle = '#b9b6ae'; g.fillRect(0, 0, s, s);
-      for (let i = 0; i < 300; i++) { g.fillStyle = 'rgba(120,118,112,.25)'; g.fillRect(Math.random() * s, Math.random() * s, 2, 2); }
+      for (let i = 0; i < 300; i++) { g.fillStyle = 'rgba(120,118,112,.25)'; g.fillRect(rng.float() * s, rng.float() * s, 2, 2); }
       g.fillStyle = '#e07b2c'; g.fillRect(s * 0.18, s * 0.18, s * 0.64, s * 0.6);
       glass('#5e7d8f', '#2c3b45', s * 0.22, s * 0.22, s * 0.56, s * 0.52);
     } else if (kind === 'navyGrid') {
@@ -176,10 +191,14 @@ function facade(kind: FacadeKind, bay: number, storey: number, base: number): Ma
       g.fillStyle = kind === 'gridDark' ? '#c9ced2' : '#2b2e31'; g.fillRect(x + w / 2 - 2, y, 4, h);
       if (kind === 'punchedBeige' || kind === 'punchedCream') { g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(x - 8, y + h + 5, w + 16, 6); }
     }
-  }, 1 / bay, 1 / storey);
+  });
+  const t = first ? picture.clone() : picture;
+  t.repeat.set(1 / bay, 1 / storey);
   t.offset.y = -base / storey;
   const glassy = kind.startsWith('curtain') || kind === 'copperFins';
-  facades.set(key, new MeshStandardMaterial({ map: t, roughness: glassy ? 0.15 : 0.85, metalness: glassy ? 0.45 : 0 }));
+  const material = new MeshStandardMaterial({ map: t, roughness: glassy ? 0.15 : 0.85, metalness: glassy ? 0.45 : 0 });
+  facades.set(key, material);
+  if (!first) facades.set(`picture|${kind}`, material);
   return key;
 }
 
@@ -196,10 +215,12 @@ function canvasTexture(size: number, paint: (g: CanvasRenderingContext2D, s: num
 }
 
 function makeMaterials(): Record<Mat, Material> {
+  // The materials' noise from one seeded stream, made in this fixed order: the same pictures in every run.
+  const rng = new Rng(seedOf('signature-materials'));
   // Stone base: large grey slabs, thin joints (a 1.2 m x 0.6 m course).
   const stone = canvasTexture(256, (g, s) => {
     g.fillStyle = '#77736e'; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(${90 + Math.random() * 40},${88 + Math.random() * 36},${84 + Math.random() * 30},.35)`; g.fillRect(Math.random() * s, Math.random() * s, 3, 3); }
+    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(${90 + rng.float() * 40},${88 + rng.float() * 36},${84 + rng.float() * 30},.35)`; g.fillRect(rng.float() * s, rng.float() * s, 3, 3); }
     g.strokeStyle = '#4f4c49'; g.lineWidth = 3;
     for (let r = 0; r < 4; r++) {
       g.beginPath(); g.moveTo(0, r * s / 4); g.lineTo(s, r * s / 4); g.stroke();
@@ -210,23 +231,23 @@ function makeMaterials(): Record<Mat, Material> {
   // Render: warm light grey, a faint trowel texture.
   const render = canvasTexture(128, (g, s) => {
     g.fillStyle = '#d9d4cb'; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 900; i++) { const v = 200 + Math.random() * 30; g.fillStyle = `rgba(${v},${v - 4},${v - 10},.25)`; g.fillRect(Math.random() * s, Math.random() * s, 2, 2); }
+    for (let i = 0; i < 900; i++) { const v = 200 + rng.float() * 30; g.fillStyle = `rgba(${v},${v - 4},${v - 10},.25)`; g.fillRect(rng.float() * s, rng.float() * s, 2, 2); }
   }, 1 / 3, 1 / 3);
   // Timber cladding: horizontal boards of a brown-orange wood, 0.15 m each.
   const wood = canvasTexture(256, (g, s) => {
     for (let r = 0; r < 16; r++) {
-      const v = Math.random() * 18;
+      const v = rng.float() * 18;
       g.fillStyle = `rgb(${150 + v},${86 + v * 0.6},${52 + v * 0.4})`;
       g.fillRect(0, r * s / 16, s, s / 16);
       g.fillStyle = 'rgba(60,30,15,.55)'; g.fillRect(0, r * s / 16, s, 2);
-      for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(90,45,20,.18)'; g.fillRect(Math.random() * s, r * s / 16 + 3 + Math.random() * 8, 30 + Math.random() * 60, 1); }
+      for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(90,45,20,.18)'; g.fillRect(rng.float() * s, r * s / 16 + 3 + rng.float() * 8, 30 + rng.float() * 60, 1); }
     }
   }, 1 / 2.4, 1 / 2.4);
   // Vertical timber slats with dark gaps.
   const slats = canvasTexture(128, (g, s) => {
     g.fillStyle = '#2a1a10'; g.fillRect(0, 0, s, s);
     for (let c = 0; c < 8; c++) {
-      const v = Math.random() * 16;
+      const v = rng.float() * 16;
       g.fillStyle = `rgb(${140 + v},${82 + v * 0.6},${48 + v * 0.4})`;
       g.fillRect(c * s / 8 + 2, 0, s / 8 - 5, s);
     }
@@ -242,19 +263,19 @@ function makeMaterials(): Record<Mat, Material> {
   // Surfaces that read as stone, concrete, roofing, tiles: never flat colour (flat light planes blow out to white).
   const ashlar = (base: string, joint: string): CanvasTexture => canvasTexture(256, (g, s) => {
     g.fillStyle = base; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(${90 + Math.random() * 80},${85 + Math.random() * 75},${75 + Math.random() * 70},.12)`; g.fillRect(Math.random() * s, Math.random() * s, 3, 3); }
+    for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(${90 + rng.float() * 80},${85 + rng.float() * 75},${75 + rng.float() * 70},.12)`; g.fillRect(rng.float() * s, rng.float() * s, 3, 3); }
     g.strokeStyle = joint; g.lineWidth = 2;
     for (let r = 0; r < 8; r++) { g.beginPath(); g.moveTo(0, (r * s) / 8); g.lineTo(s, (r * s) / 8); g.stroke(); for (let c = 0; c < 4; c++) { const x = (c + (r % 2) * 0.5) * (s / 4); g.beginPath(); g.moveTo(x, (r * s) / 8); g.lineTo(x, ((r + 1) * s) / 8); g.stroke(); } }
   }, 1 / 2.4, 1 / 2.4);
   const speckle = (base: string, dot: number, lines = 0): CanvasTexture => canvasTexture(256, (g, s) => {
     g.fillStyle = base; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 2500; i++) { const v = Math.random() > 0.5 ? 255 : 0; g.fillStyle = `rgba(${v},${v},${v},${dot})`; g.fillRect(Math.random() * s, Math.random() * s, 2, 2); }
+    for (let i = 0; i < 2500; i++) { const v = rng.float() > 0.5 ? 255 : 0; g.fillStyle = `rgba(${v},${v},${v},${dot})`; g.fillRect(rng.float() * s, rng.float() * s, 2, 2); }
     g.fillStyle = 'rgba(0,0,0,.18)'; for (let k = 1; k <= lines; k++) { g.fillRect(0, (k * s) / (lines + 1), s, 2); g.fillRect((k * s) / (lines + 1), 0, 2, s); }
   }, 1 / 4, 1 / 4);
   // Rusticated stone: 0.6 m courses with deep shadowed joints, long blocks.
   const rusticated = (base: string, joint: string): CanvasTexture => canvasTexture(256, (g, s) => {
     g.fillStyle = base; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 600; i++) { g.fillStyle = `rgba(${120 + Math.random() * 60},${110 + Math.random() * 50},${90 + Math.random() * 40},.12)`; g.fillRect(Math.random() * s, Math.random() * s, 3, 3); }
+    for (let i = 0; i < 600; i++) { g.fillStyle = `rgba(${120 + rng.float() * 60},${110 + rng.float() * 50},${90 + rng.float() * 40},.12)`; g.fillRect(rng.float() * s, rng.float() * s, 3, 3); }
     for (let r = 0; r < 4; r++) {
       const y = (r * s) / 4;
       g.fillStyle = joint; g.fillRect(0, y, s, 7);
@@ -285,7 +306,7 @@ function makeMaterials(): Record<Mat, Material> {
   }, 1 / 1.5, 1 / 1);
   const courses = (base: string, line: string, rows: number): CanvasTexture => canvasTexture(128, (g, s) => {
     g.fillStyle = base; g.fillRect(0, 0, s, s);
-    for (let r = 0; r < rows; r++) { g.fillStyle = line; g.fillRect(0, (r * s) / rows, s, 2); for (let c = 0; c < 6; c++) g.fillRect((c + (r % 2) * 0.5) * (s / 6), (r * s) / rows, 1, s / rows); g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`; g.fillRect(0, (r * s) / rows + 2, s, s / rows - 2); }
+    for (let r = 0; r < rows; r++) { g.fillStyle = line; g.fillRect(0, (r * s) / rows, s, 2); for (let c = 0; c < 6; c++) g.fillRect((c + (r % 2) * 0.5) * (s / 6), (r * s) / rows, 1, s / rows); g.fillStyle = `rgba(0,0,0,${rng.float() * 0.08})`; g.fillRect(0, (r * s) / rows + 2, s, s / rows - 2); }
   }, 1 / 1.5, 1 / 1.5);
   return {
     stone: std({ map: stone, roughness: 0.85 }),
