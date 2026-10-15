@@ -6,6 +6,7 @@ import type { SignalController } from './signals/fsm';
 import { COARSE_EPS } from '@core/scalar';
 import { pedestrianAffectsSpan, reservationCoversCrossing } from './intersections/crossingSpans';
 import { m } from '@world/units';
+import type { Vehicle } from './vehicles/state';
 
 /**
  * Runtime invariant checks.
@@ -239,18 +240,39 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
   // Nobody the pedestrian engine has put on a crossing may be inside the
   // stretch a vehicle's reservation still protects. Read from what vehicles
   // themselves read (`crossingStates`), whichever engine published it.
+  // The vehicles holding or clearing a movement, filed once by the node of
+  // each (in the fleet's order, each with its movements in the order they
+  // were read): a crossing asks only those at its own node. DO NOT walk the
+  // fleet for each person on each crossing (people x vehicles an audit).
+  const holding = new Map<number, { v: Vehicle; ids: string[] }[]>();
+  for (const v of w.vehicles.values()) {
+    const lane = w.lanelet(v.lanelet);
+    if (!v.clearingConnectors.length && !v.admittedConnector && lane?.kind !== 'connector') continue;
+    const connectorIds = new Set(v.clearingConnectors.map((token) => token.connector));
+    if (v.admittedConnector) connectorIds.add(v.admittedConnector);
+    if (lane?.kind === 'connector') connectorIds.add(lane.id);
+    const byNode = new Map<number, string[]>();
+    for (const id of connectorIds) {
+      const node = w.connector(id)?.node;
+      if (node === undefined) continue;
+      const list = byNode.get(node);
+      if (list) list.push(id); else byNode.set(node, [id]);
+    }
+    for (const [node, ids] of byNode) {
+      const list = holding.get(node);
+      if (list) list.push({ v, ids }); else holding.set(node, [{ v, ids }]);
+    }
+  }
   for (const [crossing, state] of w.crossingStates) {
     if (!state.occupants.length) continue;
     const split = crossing.indexOf(':');
     const node = Number(crossing.slice(0, split));
     const segment = Number(crossing.slice(split + 1));
+    const here = holding.get(node);
+    if (!here) continue;
     for (const occupant of state.occupants) {
-      for (const v of w.vehicles.values()) {
-        const lane = w.lanelet(v.lanelet);
-        const connectorIds = new Set(v.clearingConnectors.map((token) => token.connector));
-        if (v.admittedConnector) connectorIds.add(v.admittedConnector);
-        if (lane?.kind === 'connector') connectorIds.add(lane.id);
-        for (const connectorId of connectorIds) {
+      for (const { v, ids } of here) {
+        for (const connectorId of ids) {
           const connector = w.connector(connectorId);
           if (connector?.node === node) {
             const span = w.crossingSpans.span(connector.id, crossing);
