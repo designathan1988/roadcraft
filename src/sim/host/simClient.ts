@@ -1,5 +1,5 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
-import type { DocChangeKind } from '@world/changes';
+import type { DocChangeKind, JournalReader } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import { archetypeById, type Archetype } from '../vehicles/archetypes';
 import type { KerbStop } from '../vehicles/kerbStops';
@@ -58,7 +58,9 @@ const RECORD_KINDS: Readonly<Partial<Record<DocChangeKind, readonly RecordPart[]
 const VALUE_KINDS: Readonly<Partial<Record<DocChangeKind, ValuePart>>> = { transit: 'transit' };
 const FOLLOWED: readonly DocChangeKind[] = [...Object.keys(RECORD_KINDS), ...Object.keys(VALUE_KINDS), 'lotKeys'] as DocChangeKind[];
 
-export class SimClient {
+export class SimClient implements JournalReader {
+  /** The kinds the worker's copy follows: the diary keeps them until this client has sent them (`changes.follow`). */
+  readonly kinds = FOLLOWED;
   private worker: Worker | null = null;
   private readonly frames = makeSharedFrames();
   private readonly data = new Float64Array(this.frames.data);
@@ -230,8 +232,15 @@ export class SimClient {
     this.worker?.postMessage(message);
   }
 
+  /** What the worker's copy has been sent up to (`JournalReader`). */
+  get seenSerial(): number {
+    return this.seen;
+  }
+
   private markSent(): void {
     this.seen = this.doc.changes.version;
+    // DO NOT read the diary without following it: past 2 x KEPT entries of a kind it let them go, and the whole map was sent again each frame a city was laid out.
+    if (this.seenDoc !== this.doc) this.doc.changes.follow(this);
     this.seenDoc = this.doc;
     this.lotKeysSent = this.doc.lotStore.keys.length;
     this.lotKeysRewritten = this.doc.lotStore.keysRewritten;
