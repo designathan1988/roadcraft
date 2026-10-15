@@ -6,6 +6,7 @@ import {
   addPolygonLot, applyLots, curveLotSide, cutLines, deleteLot, insideLot, joinLots, lotCentre, lotFrame, lotRect, lotSnapper,
   moveLotCorner, onLand, planLotsSteps, setLotFront, splitLot, zoneLots, type Lot, type LotPlan,
 } from '@world/lots';
+import { LotStore } from '@world/lotStore';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { BuildingId } from '@world/buildings/types';
 import { JournalCursor } from '@world/derived';
@@ -84,19 +85,21 @@ export class LotTool {
 
   /** The overlay with the other tools and the lots and buildings it was made from (`overlayKeyed`). */
   private quiet: { key: string; overlay: LotOverlay & { readonly key: string } } | null = null;
-  private zonedFor = -1;
-  private zoned = false;
+  /** The zoned lots, kept by the lots the diary names (`anyZoned`). */
+  private readonly zonedIds = new Set<number>();
+  private readonly zonedCursor = LotStore.cursor();
 
-  /** Whether any lot is zoned: the faint zones are shown with the other tools. Looked at again when the lots change. */
+  /** Whether any lot is zoned: the faint zones are shown with the other tools. DO NOT walk every lot when one changes. */
   anyZoned(): boolean {
-    if (this.zonedFor !== this.doc.lotRevision) this.lookForZoned();
-    return this.zoned;
-  }
-
-  /** @rebuild Called when the lots changed (`anyZoned`). */
-  private lookForZoned(): void {
-    this.zonedFor = this.doc.lotRevision;
-    this.zoned = this.doc.lots.some((l) => l.use);
+    const store = this.doc.lotStore;
+    const changed = store.changedFor(this.zonedCursor);
+    if (changed === null) {
+      this.zonedIds.clear();
+      for (const lot of store.all()) if (lot.use) this.zonedIds.add(lot.id);
+    } else {
+      for (const id of changed) { if (store.get(id)?.use) this.zonedIds.add(id); else this.zonedIds.delete(id); }
+    }
+    return this.zonedIds.size > 0;
   }
 
   /** `overlay` with the key the scene compares (`render/lotOverlay.ts`). */
@@ -207,7 +210,7 @@ export class LotTool {
 
   /** What the proposal was worked out from: the roads and the stored lots. */
   private proposalKey(): string {
-    return `${this.net.revision}:${this.doc.lots.length}:${this.doc.nextLotId}`;
+    return `${this.net.revision}:${this.doc.lotStore.size}:${this.doc.nextLotId}`;
   }
 
   /** Moves the proposal on by up to `budget` milliseconds, starting it again when what it was worked out from changed. */
@@ -297,12 +300,15 @@ export class LotTool {
   /** The snap of lot points to the footways, the blocks' corners and the other lots' corners. */
   private snapReach(): number { return Math.max(m(2.5), 16 / Math.max(0.05, this.host.zoom())); }
   private snap(p: Vec2): Vec2 { return lotSnapper(this.doc, this.net)(p, this.snapReach()).p; }
-  private lotAt(p: Vec2): Lot | undefined { return this.doc.lots.find((l) => insideLot(p, l)); }
+  /** DO NOT walk `doc.lots`: this runs for each of up to 400 steps of a pointer move. */
+  private lotAt(p: Vec2): Lot | undefined { return this.doc.lotAt(p); }
+  /** The lots whose box comes within `reach` of a point (a superset: test each). */
+  private lotsNear(p: Vec2, reach: number): Lot[] { return this.doc.lotsIn([p.x - reach, p.y - reach, p.x + reach, p.y + reach]); }
 
   /** The side of a lot nearest a point: its two corners. */
   private sideNear(p: Vec2): { a: Vec2; b: Vec2 } | null {
     let best: { a: Vec2; b: Vec2 } | null = null, bestD = 18 / Math.max(0.05, this.host.zoom());
-    for (const l of this.doc.lots) for (let i = 0; i < l.corners.length; i++) {
+    for (const l of this.lotsNear(p, bestD)) for (let i = 0; i < l.corners.length; i++) {
       const a = l.corners[i]!, b = l.corners[(i + 1) % l.corners.length]!;
       const q = p;
       const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
@@ -316,7 +322,7 @@ export class LotTool {
   /** The side of a lot nearest a point within reach: the lot and the side's index (corner i to i + 1). */
   private sideAt(p: Vec2): { lot: Lot; side: number; a: Vec2; b: Vec2 } | null {
     let best: { lot: Lot; side: number; a: Vec2; b: Vec2 } | null = null, bestD = 18 / Math.max(0.05, this.host.zoom());
-    for (const l of this.doc.lots) for (let i = 0; i < l.corners.length; i++) {
+    for (const l of this.lotsNear(p, bestD)) for (let i = 0; i < l.corners.length; i++) {
       const a = l.corners[i]!, b = l.corners[(i + 1) % l.corners.length]!;
       const q = p;
       const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
@@ -330,8 +336,8 @@ export class LotTool {
 
   /** A dragged corner's snap: onto the streets and other corners, never onto itself. */
   private snapExcept(p: Vec2, from: Vec2): Vec2 {
-    const snap = lotSnapper(this.doc, this.net, this.doc.lots.map((l) => ({ id: l.id, corners: l.corners.filter((q) => Math.hypot(q.x - from.x, q.y - from.y) > m(0.8)) })));
-    return snap(p, this.snapReach()).p;
+    // The lots near the point, by place, their corners at `from` left out (`apart`): DO NOT copy every lot of the map.
+    return lotSnapper(this.doc, this.net, undefined, from)(p, this.snapReach()).p;
   }
 
   /** Which side of a lot is its front: the longest of those against a street */
@@ -399,7 +405,7 @@ export class LotTool {
     if (settings.mode === 'edit') {
       // The nearest corner within reach of the pointer.
       let best: Vec2 | null = null, bestD = 14 / zoom;
-      for (const l of doc.lots) for (const q of l.corners) {
+      for (const l of this.lotsNear(at, bestD)) for (const q of l.corners) {
         const d = Math.hypot(q.x - at.x, q.y - at.y);
         if (d < bestD) { bestD = d; best = q; }
       }
@@ -531,7 +537,7 @@ export class LotTool {
       if (commit && Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) > m(2)) {
         // Every lot the line crosses is cut along it.
         const a = { x: line.a.x, y: line.a.y }, b = { x: line.b.x, y: line.b.y };
-        const crossed = doc.lots.filter((l) => {
+        const crossed = doc.lotsIn([Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)]).filter((l) => {
           if (!l.corners.length) return false;
           return cutLines(l, { kind: 'line', a, b }).length &&
             l.corners.some((q) => (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) > 0) &&
