@@ -31,7 +31,6 @@ function setup(): { tool: BuildingTool; doc: RoadDoc } {
   };
   const host: ToolHost = {
     context: () => ({ doc, net, groundAt: () => 0 }),
-    groundKey: () => '0',
     commit: (edit) => edit(),
     changed: () => {}, flash: () => {},
   };

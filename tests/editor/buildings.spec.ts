@@ -324,7 +324,6 @@ describe('the tool', () => {
     const history = new History();
     const host: ToolHost = {
       context: () => ctx,
-      groundKey: () => `${doc.revision}:${doc.terrainRevision}`,
       commit(edit: () => EditResult): EditResult {
         history.begin(doc);
         const r = edit();

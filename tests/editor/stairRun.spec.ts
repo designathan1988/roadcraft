@@ -39,7 +39,6 @@ function setup(): { t: BuildingTool; doc: RoadDoc; building: Building } {
   expect(placed.ok, String(placed.problem)).toBe(true);
   const host: ToolHost = {
     context: () => ctx,
-    groundKey: () => `${doc.revision}:${doc.terrainRevision}`,
     commit(edit: () => EditResult): EditResult {
       return edit();
     },

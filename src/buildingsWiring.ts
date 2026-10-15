@@ -157,7 +157,6 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
 
   const host: ToolHost = {
     context: () => ({ doc, net, groundAt: (x: number, y: number) => scene.builtGroundAt(x, y) }),
-    groundKey: () => `${doc.revision}:${doc.terrainRevision}`,
     commit(edit: () => EditResult): EditResult {
       history.begin(doc);
       const result = edit();

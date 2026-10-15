@@ -36,7 +36,6 @@ function setup(): { tool: BuildingTool; doc: RoadDoc; ctx: ReturnType<ToolHost['
   const ctx = { doc, net, groundAt: () => 0 };
   const host: ToolHost = {
     context: () => ctx,
-    groundKey: () => '0',
     commit: (edit) => edit(),
     changed: () => {}, flash: () => {},
   };

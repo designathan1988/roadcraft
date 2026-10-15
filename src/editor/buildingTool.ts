@@ -12,7 +12,8 @@ import {
 } from '@world/buildings/blueprints';
 import { cityBuilding } from '@world/buildings/cityBuildings';
 import { FURNITURE_SIZE, type FurnitureKind, cutOpen, furnishingOf } from '@world/buildings/interior';
-import { FloorCache, type PavedAt, floorHeight } from '@world/buildings/foundation';
+import { type PavedAt, floorHeight } from '@world/buildings/foundation';
+import { BuildingFloors } from './buildingFloors';
 import { edgeFrame, localFootprint, overlapArea } from '@world/buildings/footprints';
 import { GRID } from '@world/buildings/geometry';
 import { METERS_PER_UNIT, m } from '@world/units';
@@ -112,8 +113,6 @@ export interface ToolView {
 
 export interface ToolHost {
   context(): BuildingContext;
-  /** A key that changes whenever the ground under any building may have. */
-  groundKey(): string;
   /** Records history, runs the edit, stores it; returns the edit's result. */
   commit(edit: () => EditResult): EditResult;
   /** Something the screen or the panel shows has changed. */
@@ -236,7 +235,8 @@ export class BuildingTool {
 
   private drag: Drag | null = null;
   private serial = 0;
-  private readonly floors = new FloorCache();
+  /** The stored buildings' floors, kept from the diary (`buildingFloors.ts`). */
+  private readonly floors = new BuildingFloors();
   private lastScreen: Vec2 | null = null;
   private lastWorld: Vec2 | null = null;
 
@@ -251,8 +251,7 @@ export class BuildingTool {
   /** Ground-floor height: cached for stored buildings, measured for a preview. */
   floorOf(b: Building): number {
     if (this.preview && b === this.preview.building) return floorHeight(b, this.view.groundAt, this.view.pavedAt);
-    const key = `${this.host.groundKey()}:${this.host.context().doc.buildings.revision}`;
-    return this.floors.floorOf(b, this.view.groundAt, key, this.view.pavedAt);
+    return this.floors.floorOf(this.host.context().doc, b, this.view.groundAt, this.view.pavedAt);
   }
 
   selected(): Building | null {
