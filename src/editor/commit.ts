@@ -9,9 +9,9 @@ import {
 import { segSeg } from '@core/intersect';
 import { Polyline } from '@core/polyline';
 import { type Vec2, dist } from '@core/vec2';
-import { type RoadDoc, fitRoadCurve, sameStamps } from '@world/doc';
+import { type RoadDoc, type RoadSegment, fitRoadCurve, sameStamps } from '@world/doc';
 import { Network } from '@world/network';
-import type { NodeId, SegmentId } from '@world/ids';
+import { type NodeId, type SegmentId, asSegmentId } from '@world/ids';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE, type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
@@ -209,7 +209,7 @@ function terrainIndexOf(doc: RoadDoc): TerrainIndex {
 
 function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?: (x: number, y: number) => number,
   previous: RoadElevation | null = null): { bored: boolean; elevation: RoadElevation | null } {
-  const fresh = [...work.segments.values()].filter((seg) => !before.segments.has(seg.id) && seg.structure === 'ground');
+  const fresh = segmentsNewIn(before, work).filter((seg) => seg.structure === 'ground');
   if (!fresh.length || !work.terrainStamps.length) return { bored: false, elevation: null };
   // A cut that deep needs relief under the new roads, and the land is flat
   // outside the stamps (the test just above): with no stamp reaching them,
@@ -249,6 +249,27 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   return { bored: changed, elevation };
 }
 
+/** Where the segments' allocator stands in `RoadDoc.allocatorMarks`. */
+const SEGMENT_MARK = 1;
+
+/**
+ * The segments of the working copy `work` that its original `before` does not
+ * hold: those with an id from `before`'s next one on (ids are handed out in
+ * increasing order, never again, and the copy goes on from the original's
+ * allocator). Read from the ids the edit handed out, never from the map.
+ * DO NOT filter `work.segments` against `before.segments`: every road drawn
+ * and every dry run read every road of the map twice.
+ */
+function segmentsNewIn(before: RoadDoc, work: RoadDoc): RoadSegment[] {
+  const out: RoadSegment[] = [];
+  const end = work.allocatorMarks()[SEGMENT_MARK]!;
+  for (let id = before.allocatorMarks()[SEGMENT_MARK]!; id < end; id++) {
+    const seg = work.segment(asSegmentId(id));
+    if (seg) out.push(seg);
+  }
+  return out;
+}
+
 /**
  * The stations of the road a gesture laid, on the copy it was laid on: the
  * new segments that lie on the drawn pieces (not the halves of a road it
@@ -265,8 +286,7 @@ function draftStations(
     return i === 0 ? pts : pts.slice(1);
   }));
   const laid = new Set<SegmentId>();
-  for (const seg of work.segments.values()) {
-    if (before.segments.has(seg.id)) continue;
+  for (const seg of segmentsNewIn(before, work)) {
     const line = workNet.ribbons.get(seg.id)?.full;
     if (!line) continue;
     const mid = line.sampleAt(line.length / 2).p;
