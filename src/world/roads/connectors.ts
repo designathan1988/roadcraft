@@ -46,6 +46,9 @@ export function normalizeLaneLinks(raw: unknown): LaneLink[] | undefined {
   return out.length ? sortLinks(out) : undefined;
 }
 
+/** Stable segment-pair key for a movement through a junction (`RoadNode.blockedMovements`). */
+export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
+
 export const linkKey = (l: LaneLink): string => `${l.from}:${l.fromLane}>${l.to}:${l.toLane}`;
 
 /** Links in one order, so two lists that say the same thing are the same text. */

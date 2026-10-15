@@ -5,7 +5,7 @@ import type { Connector, ConnectorId, JunctionTopology, Lanelet, LaneletGraph } 
 import { rebuildWork } from './rebuildWork';
 import {
   BODY_CLASSES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Crossing, type Diverge, HEAVY, type PairFacts,
-  type PairMeasurer, type PairZones, type SweepAsk, type SweepSamples, type Zone, firstCrossing, frameLengthsOf, joinedPath,
+  type FinishAsk, type PairMeasurer, type PairZones, type SweepAsk, type SweepSamples, type Zone, firstCrossing, frameLengthsOf, joinedPath,
   lineDigest as digestOfLine, pairFacts, pairTable, pushDiverge, pushRef, shapeDigest, sweepFrame, sweepSpan, zonesOf,
 } from './conflictTable';
 
@@ -147,7 +147,7 @@ export class ConflictIndex {
     /** The pairs to measure off the page (`measurer`), each key once. */
     const wanted: { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[] = [];
     const asked = new Set<string>();
-    /** Every pair these junctions read, each key once: their centrelines' crossings are found off the page too. */
+    /** Every pair these junctions read, each key once: their crossings and facts are worked out off the page too. */
     const read = new Map<string, { readonly a: Float64Array; readonly b: Float64Array }>();
     // The junctions an edit built again (`LaneletGraph.update`); every one only for a graph built whole.
     const junctions = only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : [...graph.junctions.values()];
@@ -171,7 +171,7 @@ export class ConflictIndex {
           const a = sweeps[i]!, b = sweeps[j]!;
           const key = `${a.shape.hash}|${b.shape.hash}`;
           pairKeys.push(key);
-          if (measurer?.crossings && !read.has(key)) read.set(key, { a: a.shape.centre, b: b.shape.centre });
+          if (measurer?.finishPairs && !read.has(key)) read.set(key, { a: a.shape.centre, b: b.shape.centre });
           const known = this.pairCache.get(key);
           if (known && sameShape(known.a, a.shape) && sameShape(known.b, b.shape)) continue;
           const wasKept = this.store.kept.has(key);
@@ -187,7 +187,7 @@ export class ConflictIndex {
       }
     }
     if (measurer && wanted.length) yield* this.measureOffPage(wanted, measurer);
-    if (measurer?.crossings && read.size) yield* this.crossOffPage(read, measurer);
+    if (measurer?.finishPairs && read.size) yield* this.finishOffPage(read, measurer);
   }
 
   /** The pairs `prepare` found new, measured by `measurer`'s workers (`conflictPool.ts`) and left in the caches. */
@@ -211,26 +211,33 @@ export class ConflictIndex {
   }
 
   /**
-   * Where the centrelines of the pairs `prepare` read first cross (`firstCrossing`), found by `measurer`'s
-   * workers for every pair with zones not knowing it yet (measured now or read back from an earlier
-   * session) and kept with the pair for `buildJunction`; when they fail, the build finds them as before.
-   * DO NOT find them on the page when there are workers: every segment of one centreline against every
-   * segment of the other, every pair of a generated city, held the frame of the swap onto the new graph
-   * over a second at 2.5 km (2026-10-15).
+   * The pairs `prepare` read finished by `measurer`'s workers (`finishPair`), for every pair with zones not
+   * knowing them yet (measured now or read back from an earlier session): where their centrelines first
+   * cross (`firstCrossing`) and what the index makes of their zones (`pairFacts`), kept with the pair for
+   * `buildJunction`; when they fail, the build works them out as before. DO NOT work them out on the page
+   * when there are workers: every segment of one centreline against every segment of the other, every
+   * pair of a generated city, held the frame of the swap onto the new graph over a second at 2.5 km, and
+   * the facts, thirty zones a pair, a quarter of what was left of it (2026-10-15).
    */
-  private *crossOffPage(read: ReadonlyMap<string, { readonly a: Float64Array; readonly b: Float64Array }>,
+  private *finishOffPage(read: ReadonlyMap<string, { readonly a: Float64Array; readonly b: Float64Array }>,
     measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
     const pairs: CachedPair[] = [];
-    const asks: { readonly a: Float64Array; readonly b: Float64Array }[] = [];
+    const asks: FinishAsk[] = [];
     for (const [key, centres] of read) {
       const pair = this.pairCache.get(key);
-      if (!pair?.zones || pair.crossing !== undefined) continue;
+      if (!pair?.table || (pair.crossing !== undefined && pair.facts !== undefined)) continue;
       pairs.push(pair);
-      asks.push(centres);
+      asks.push({ ...centres, table: pair.table });
     }
-    const crossings = asks.length ? yield* answered(measurer.crossings!(asks), 'the crossings are found') : null;
-    // One a build found meanwhile is the same answer, kept as it is.
-    if (crossings) pairs.forEach((pair, k) => { if (pair.crossing === undefined) pair.crossing = crossings[k]!; });
+    const finished = asks.length ? yield* answered(measurer.finishPairs!(asks), 'the pairs are finished') : null;
+    // One a build worked out meanwhile is the same answer, kept as it is.
+    if (finished) {
+      pairs.forEach((pair, k) => {
+        const done = finished[k]!;
+        if (pair.crossing === undefined) pair.crossing = done.crossing;
+        pair.facts ??= done.facts;
+      });
+    }
   }
 
   /**
@@ -566,11 +573,13 @@ interface CachedPair {
   readonly a: SweepShape;
   readonly b: SweepShape;
   readonly zones: PairZones | null;
-  /** Where the two centrelines first cross; undefined until asked (`buildJunction`, `crossOffPage`). */
+  /** The table the zones read (`pairTable`): what a worker finishes the pair from (`finishOffPage`). */
+  readonly table: Float64Array | null;
+  /** Where the two centrelines first cross; undefined until asked (`buildJunction`, `finishOffPage`). */
   crossing?: Crossing | null;
   /** Middle of the heavy-body zone on `a`; undefined until asked. */
   centre?: Vec2;
-  /** What the index makes of the zones (`pairFacts`); undefined until asked. */
+  /** What the index makes of the zones (`pairFacts`); undefined until asked (`buildJunction`, `finishOffPage`). */
   facts?: PairFacts;
 }
 
@@ -669,7 +678,7 @@ interface KeptZones {
 /** A pair measured, or read back from an earlier session. */
 function measurePair(key: string, a: Sweep, shapeA: SweepShape, b: Sweep, shapeB: SweepShape, store: KeptZones): CachedPair {
   const kept = store.kept.get(key);
-  if (kept !== undefined) return { a: shapeA, b: shapeB, zones: kept && zonesOf(kept) };
+  if (kept !== undefined) return { a: shapeA, b: shapeB, zones: kept && zonesOf(kept), table: kept };
   return keepPair(key, shapeA, shapeB, pairTable(a, b), store);
 }
 
@@ -679,7 +688,7 @@ function keepPair(key: string, shapeA: SweepShape, shapeB: SweepShape, table: Fl
   pairsMeasured++;
   store.kept.set(key, table);
   if (fresh) store.fresh.set(key, table);
-  return { a: shapeA, b: shapeB, zones: table && zonesOf(table) };
+  return { a: shapeA, b: shapeB, zones: table && zonesOf(table), table };
 }
 
 /** A pair's zones, answered from the previous build when neither sweep moved. */

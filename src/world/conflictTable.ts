@@ -5,6 +5,9 @@ import type { Vec2 } from '@core/vec2';
 import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
 import type { CornerMeasurer } from './walkingLines';
+import type { RoadNode, RoadSegment } from './doc';
+import type { ApproachGroup } from './approachGroups';
+import type { NodeId, SegmentId } from './ids';
 
 /**
  * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
@@ -245,6 +248,27 @@ export function firstCrossing(a: readonly Vec2[], b: readonly Vec2[]): Crossing 
   return null;
 }
 
+/** A pair to finish somewhere else (`PairMeasurer.finishPairs`): its two centrelines' own point lists (`Polyline.xy`) and its table (`pairTable`). */
+export interface FinishAsk {
+  readonly a: Float64Array;
+  readonly b: Float64Array;
+  readonly table: Float64Array;
+}
+
+/** A pair finished (`finishPair`): where its centrelines first cross, and what the index makes of its zones. */
+export interface FinishedPair {
+  readonly crossing: Crossing | null;
+  readonly facts: PairFacts;
+}
+
+/** Numbers in a pair's table (`pairTable`): 3 x 3 class pairs x [enterA, exitA, enterB, exitB]. */
+export const TABLE_SIZE = 36;
+
+/** A pair finished from its two centrelines' points and its table: `firstCrossing` and `pairFacts`, as the index works them out (`ConflictIndex.buildJunction`). */
+export function finishPair(a: readonly Vec2[], b: readonly Vec2[], table: Float64Array): FinishedPair {
+  return { crossing: firstCrossing(a, b), facts: pairFacts(zonesOf(table)) };
+}
+
 /** What `pairTable` reads of a movement's sweep (`conflictPoints.ts` `Sweep`), and the caches it keeps on it. */
 export interface SweepSamples {
   /** First sampled centre arc position (negative: on the approach). */
@@ -410,7 +434,7 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
   const rangeA = rangeOf(a), rangeB = rangeOf(b);
 
   // 3 x 3 class pairs x [enterA, exitA, enterB, exitB]; NaN = no overlap.
-  const table = new Float64Array(36).fill(Number.NaN);
+  const table = new Float64Array(TABLE_SIZE).fill(Number.NaN);
   // The four SAT axes and their body projections are identical for all nine
   // class pairs at a sampled pose pair. Compute them once, then vary extents.
   const projection = new Float64Array(20);
@@ -467,13 +491,87 @@ function widen(table: Float64Array, at: number, c: number): void {
   table[at + 1] = Number.isNaN(hi) ? c : Math.max(hi, c);
 }
 
+// ------------------------------------------------------------------ junctions
+
+/**
+ * A whole build's junctions as a worker is sent them and answers (`junctionBuild.ts` `buildJunctionOf`),
+ * named with the measurer's interface as `TurnAsk` is. DO NOT define them in `junctionBuild.ts`: this file
+ * importing it closed an import cycle through `turnPaths.ts` and `junctionTurns.ts`.
+ */
+
+/** How a movement turns (`junctionBuild.ts` `classifyTurn`). */
+export type TurnKind = 'through' | 'left' | 'right' | 'uturn';
+
+/** What a junction reads of its node. */
+export type JunctionNode = Pick<RoadNode, 'id' | 'x' | 'y' | 'incident' | 'control' | 'crossing' | 'blockedMovements' | 'laneLinks' | 'uturn' | 'end'>;
+
+/** A road meeting the junction: what the junction reads of it, and its two ends (its centreline, `segmentLine`). */
+export interface JunctionLeg {
+  readonly segment: Pick<RoadSegment, 'id' | 'a' | 'b' | 'curve' | 'type' | 'lanes' | 'direction' | 'section' | 'parking'>;
+  readonly from: Vec2;
+  readonly to: Vec2;
+}
+
+/** A link lane arriving at or leaving a junction (`LaneletGraph.buildSegmentLinks`), as a worker is sent it: its centre as its own point list (`Polyline.xy`). */
+export interface LaneAsk {
+  readonly id: string;
+  /** The key it was built under: the junction's own key is made of its lanes' (`junctionBuild.ts` `junctionKey`). */
+  readonly key: string;
+  readonly segment: SegmentId;
+  readonly from: NodeId;
+  readonly to: NodeId;
+  readonly laneIndex: number;
+  readonly speedLimit: number;
+  readonly centre: Float64Array;
+  /** Whether its `from`, and its `to`, is a road's end (`RoadDoc.mapEdge`), where traffic comes into the map or leaves it. */
+  readonly fromEdge: boolean;
+  readonly toEdge: boolean;
+}
+
+/**
+ * One junction of a whole build, as a worker builds it (`buildJunctionOf`): its input as plain numbers, the
+ * pieces of its surface (rings as flat lists, mouth strips with their road's centreline), and the turns its
+ * build before chose (`JunctionTurns`), if any. A lane or a ring met by several junctions is the same
+ * array in each: one message copies it once (the structured clone keeps what is shared shared).
+ */
+export interface JunctionAsk {
+  readonly node: JunctionNode;
+  readonly legs: readonly JunctionLeg[];
+  readonly inbound: readonly LaneAsk[];
+  readonly outbound: readonly LaneAsk[];
+  readonly surface: { readonly centre: Vec2; readonly parts: readonly (Float64Array | { readonly full: Float64Array; readonly half: number; readonly mouth: number })[] };
+  readonly before: readonly (readonly [string, ChosenTurn])[] | null;
+}
+
+/** A junction a worker built (`buildJunctionOf`): its key, groups and control, each movement with its path's points, the turns it kept. */
+export interface JunctionAnswer {
+  readonly key: string;
+  readonly groups: readonly ApproachGroup[];
+  readonly signalised: boolean;
+  readonly connectors: readonly {
+    readonly from: number; readonly to: number; readonly turn: TurnKind; readonly carried: boolean; readonly group: number;
+    readonly speedLimit: number; readonly maxBodyClass: BodyClass | -1; readonly path: Float64Array;
+  }[];
+  readonly turns: readonly (readonly [string, ChosenTurn])[];
+}
+
+/**
+ * Builds a whole build's junctions somewhere else - the browser's workers (`conflictPool.ts`) - each as
+ * `buildJunctionOf` would here, answered in the order asked; rejected when it cannot (the junctions are then
+ * built on the page, `LaneletGraph.buildJunction`). Absent: every junction is built on the page.
+ */
+export interface JunctionMeasurer {
+  buildJunctions?(asks: readonly JunctionAsk[]): Promise<readonly JunctionAnswer[]>;
+}
+
 /**
  * Measures many pairs' tables somewhere else - the browser's workers
  * (`conflictPool.ts`) - each as `pairTable` would here, answered in the
  * order asked; rejected when it cannot (`ConflictIndex.prepare` then
- * measures them on the page). The same workers round the walkways' corners (`CornerMeasurer`).
+ * measures them on the page). The same workers round the walkways' corners (`CornerMeasurer`) and build a
+ * whole build's junctions (`JunctionMeasurer`).
  */
-export interface PairMeasurer extends CornerMeasurer {
+export interface PairMeasurer extends CornerMeasurer, JunctionMeasurer {
   /** `key`: the pair's key, under which a measurer that `keeps` stores its table for the next session. */
   measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples; readonly key?: string }[]): Promise<readonly (Float64Array | null)[]>;
   /**
@@ -495,11 +593,12 @@ export interface PairMeasurer extends CornerMeasurer {
    */
   sampleSweeps?(asks: readonly SweepAsk[]): Promise<readonly SampledSweep[]>;
   /**
-   * Finds many pairs' centreline crossings somewhere else, each as `firstCrossing` would here on the two
-   * movements' own point lists (`Polyline.xy`), answered in the order asked; rejected when it cannot
-   * (the conflict index then finds them on the page, `ConflictIndex.build`). Absent: found on the page.
+   * Finishes many pairs somewhere else, each as `finishPair` would here - where the two movements'
+   * centrelines first cross (on their own point lists, `Polyline.xy`) and what the index makes of the
+   * pair's zones (`pairFacts`, on its table) - answered in the order asked; rejected when it cannot (the
+   * conflict index then works them out on the page, `ConflictIndex.build`). Absent: on the page.
    */
-  crossings?(pairs: readonly { readonly a: Float64Array; readonly b: Float64Array }[]): Promise<readonly (Crossing | null)[]>;
+  finishPairs?(pairs: readonly FinishAsk[]): Promise<readonly FinishedPair[]>;
 }
 
 // ------------------------------------------------------------------ zones

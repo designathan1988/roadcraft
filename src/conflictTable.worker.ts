@@ -1,10 +1,11 @@
 import { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
-import { type Crossing, type SampledSweep, type SweepSamples, firstCrossing, pairTable, sampleSweep } from '@world/conflictTable';
+import { type FinishedPair, type SampledSweep, type SweepSamples, TABLE_SIZE, finishPair, pairTable, sampleSweep } from '@world/conflictTable';
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
 import { type CornerAsk, roundCorners } from '@world/walkingLines';
+import { type JunctionAnswer, type JunctionAsk, buildJunctionOf } from '@world/junctionBuild';
 import { keepDerivedMany } from './render/derivedCache';
 
 /**
@@ -17,10 +18,14 @@ import { keepDerivedMany } from './render/derivedCache';
  *   each surface made once;
  * - movements' sweeps: each by `sampleSweep` on the lanes sent, each lane made
  *   and digested once, the frames' buffers transferred;
- * - pairs' centreline crossings: each by `firstCrossing` on the two
- *   centrelines sent, each centreline's points made once;
+ * - pairs finished: each by `finishPair` on the two centrelines and the
+ *   table sent (its crossing and its zones' facts), each centreline's points
+ *   made once;
  * - walkways' corners: each node's by `roundCorners` on its rings sent, the
- *   lines' buffers transferred.
+ *   lines' buffers transferred;
+ * - a whole build's junctions: each by `buildJunctionOf` on its node, roads,
+ *   lanes and surface pieces sent, each lane and ring made once, the paths'
+ *   buffers transferred.
  */
 interface PairsAsk {
   readonly kind: 'pairs';
@@ -52,13 +57,21 @@ interface SweepsAsk {
   readonly count: Int32Array;
 }
 
-interface CrossingsAsk {
-  readonly kind: 'crossings';
+interface FinishAsk {
+  readonly kind: 'finish';
   readonly id: number;
   /** Every centreline the share's pairs read, once (`Polyline.xy`). */
   readonly lines: readonly Float64Array[];
   /** Two indices into `lines` a pair. */
   readonly refs: Int32Array;
+  /** The pairs' tables one after another, `TABLE_SIZE` numbers each. */
+  readonly tables: Float64Array;
+}
+
+interface JunctionsAsk {
+  readonly kind: 'junctions';
+  readonly id: number;
+  readonly asks: readonly JunctionAsk[];
 }
 
 interface CornersAsk {
@@ -70,7 +83,7 @@ interface CornersAsk {
 /** Most time between two words to the page while working: the pool's watchdog hears the worker is alive (`SILENCE_MS`). */
 const BEAT_MS = 500;
 
-self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | CrossingsAsk | CornersAsk>) => {
+self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | FinishAsk | CornersAsk | JunctionsAsk>) => {
   const ask = event.data;
   let spoke = performance.now();
   const beat = (): void => {
@@ -89,6 +102,19 @@ self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | Cr
       self.postMessage({ id: ask.id, turns });
       return;
     }
+    if (ask.kind === 'junctions') {
+      const lines = new Map<Float64Array, Polyline>(), rings = new Map<Float64Array, Vec2[]>();
+      const junctions: JunctionAnswer[] = [];
+      const transfer = new Set<ArrayBuffer>();
+      for (const junction of ask.asks) {
+        const built = buildJunctionOf(junction, lines, rings);
+        for (const c of built.connectors) transfer.add(c.path.buffer as ArrayBuffer);
+        junctions.push(built);
+        beat();
+      }
+      (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id: ask.id, junctions }, [...transfer]);
+      return;
+    }
     if (ask.kind === 'corners') {
       const corners: (Float64Array | null)[][] = [];
       const transfer: ArrayBuffer[] = [];
@@ -101,15 +127,16 @@ self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | Cr
       (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id: ask.id, corners }, transfer);
       return;
     }
-    if (ask.kind === 'crossings') {
+    if (ask.kind === 'finish') {
       // The points as the page reads them (`Polyline.toPoints`), each centreline's once.
       const points = ask.lines.map((xy) => Polyline.fromFlat(xy).toPoints() as readonly Vec2[]);
-      const crossings: (Crossing | null)[] = [];
+      const finished: FinishedPair[] = [];
       for (let k = 0; k < ask.refs.length; k += 2) {
-        crossings.push(firstCrossing(points[ask.refs[k]!]!, points[ask.refs[k + 1]!]!));
+        const q = k / 2;
+        finished.push(finishPair(points[ask.refs[k]!]!, points[ask.refs[k + 1]!]!, ask.tables.subarray(q * TABLE_SIZE, (q + 1) * TABLE_SIZE)));
         beat();
       }
-      self.postMessage({ id: ask.id, crossings });
+      self.postMessage({ id: ask.id, finished });
       return;
     }
     if (ask.kind === 'sweeps') {
