@@ -5,7 +5,7 @@ import { flipProfile, streetChain } from '@world/roads/streetChain';
 import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
-import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp } from './frameLoop';
+import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp, coalescedTask } from './frameLoop';
 import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
@@ -1098,12 +1098,7 @@ function syncGesture(): void {
 // queued from this capturing listener ran BEFORE the handlers it was to follow.)
 // One task for every event since the last one ran: a pointer reporting many
 // moves a frame queued a timer per move.
-let gestureSyncQueued = false;
-const syncGestureSoon = (): void => {
-  if (gestureSyncQueued) return;
-  gestureSyncQueued = true;
-  setTimeout(() => { gestureSyncQueued = false; syncGesture(); }, 0);
-};
+const syncGestureSoon = coalescedTask(syncGesture);
 for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'] as const) {
   window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
