@@ -16,6 +16,7 @@ import { deckOf } from './walkways';
 import { m } from './units';
 import type { ChangeRect } from './changes';
 import { cellAt, cellRect, grow } from './cells';
+import { NEAR, PAVED, firstTrue, gridRect, type RasterGrid } from './rasterGrid';
 import type { Junction } from './junction/build';
 import type { SegmentRibbon } from './network';
 
@@ -470,44 +471,167 @@ function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readon
   return { paving: paving !== 0, kerbed: kerbed !== 0 };
 }
 
+/** The footway and kerb rings of a street, made once per ribbon the network built. */
+function ribbonRings(net: Network, ribbon: SegmentRibbon, include: (id: SegmentId) => boolean): FootRings {
+  const footRings = stateOf(net).rings;
+  let rings = footRings.get(ribbon);
+  if (!rings) {
+    rings = {
+      paving: windingRings(levelRingsOf(net, Level.Sidewalk, [ribbon], [], include)),
+      kerbed: windingRings(levelRingsOf(net, Level.Curb, [ribbon], [], include)),
+    };
+    footRings.set(ribbon, rings);
+  }
+  return rings;
+}
+
+/** The footway and kerb rings of a junction, made once per junction the network solved. */
+function junctionRings(net: Network, id: NodeId, byLevel: ReadonlyMap<SurfaceLevel, Junction>, include: (id: SegmentId) => boolean): FootRings {
+  const footRings = stateOf(net).rings;
+  let rings = footRings.get(byLevel);
+  if (!rings) {
+    rings = {
+      paving: windingRings(levelRingsOf(net, Level.Sidewalk, [], [[id, byLevel]], include)),
+      kerbed: windingRings(levelRingsOf(net, Level.Curb, [], [[id, byLevel]], include)),
+    };
+    footRings.set(byLevel, rings);
+  }
+  return rings;
+}
+
 /** The footway and kerb rings of the streets with footways and their junctions filed over `rect`, each made once per object the network built. */
 function localRings(net: Network, rect: ChangeRect): FootRings[] {
   const include = polesInclude(net);
-  const footRings = stateOf(net).rings;
   const out: FootRings[] = [];
   for (const id of net.segmentCells.idsMeeting(rect)) {
     const ribbon = net.ribbons.get(id);
-    if (!ribbon) continue;
-    let rings = footRings.get(ribbon);
-    if (!rings) {
-      rings = {
-        paving: windingRings(levelRingsOf(net, Level.Sidewalk, [ribbon], [], include)),
-        kerbed: windingRings(levelRingsOf(net, Level.Curb, [ribbon], [], include)),
-      };
-      footRings.set(ribbon, rings);
-    }
-    out.push(rings);
+    if (ribbon) out.push(ribbonRings(net, ribbon, include));
   }
   for (const id of net.junctionCells.idsMeeting(rect)) {
     const byLevel = net.junctions.get(id);
-    if (!byLevel) continue;
-    let rings = footRings.get(byLevel);
-    if (!rings) {
-      rings = {
-        paving: windingRings(levelRingsOf(net, Level.Sidewalk, [], [[id, byLevel]], include)),
-        kerbed: windingRings(levelRingsOf(net, Level.Curb, [], [[id, byLevel]], include)),
-      };
-      footRings.set(byLevel, rings);
-    }
-    out.push(rings);
+    if (byLevel) out.push(junctionRings(net, id, byLevel, include));
   }
   return out;
+}
+
+/**
+ * `onFootway || onKerbed` on a raster (`zoneGrid.ts` `markPaved`): every `NEAR` cell
+ * whose centre is inside the paving or a kerb, as `insideLevels` answers it,
+ * turned to `PAVED`. Each ring is filled scanline by scanline: along a row,
+ * an edge crossing it adds its winding to the cells left of the crossing -
+ * `windingOf`'s test, `(bx - ax) * (y - ay) - (x - ax) * (by - ay)`, is
+ * monotone in x (each operation rounds monotonically), so the cells it counts
+ * are a run from the left, found by bisection on the very same arithmetic.
+ * The windings are summed per row in two difference arrays (paving, kerbed)
+ * and read off by a running sum: exactly the sums `insideLevels` makes, a
+ * ring counting only at the centres inside its owner's filed rectangle (what
+ * `idsMeeting` of the point gives) and inside its bounds (as `insideLevels`
+ * tests them). DO NOT go back to asking each cell: that is the whole raster
+ * times the rings round each cell.
+ */
+export function* markPlates(net: Network, grid: RasterGrid, label: Int32Array): Generator<void, void> {
+  const { minX, minY, W, H, step } = grid;
+  const S = CLIPPER_SCALE;
+  const include = polesInclude(net);
+  const rect = gridRect(grid);
+  const cx = (i: number): number => minX + (i + 0.5) * step;
+  const cy = (j: number): number => minY + (j + 0.5) * step;
+  // Every ring that can count at some centre, with the run of columns it may count in.
+  interface Placed { readonly ring: WindingRing; readonly kerbed: boolean; readonly filed: ChangeRect; readonly lo: number; readonly hi: number }
+  const placed: Placed[] = [];
+  const place = (rings: FootRings, filed: ChangeRect | undefined): void => {
+    if (!filed) return;
+    for (const kerbed of [false, true]) {
+      for (const ring of kerbed ? rings.kerbed : rings.paving) {
+        // insideLevels: x >= r.x0 && x <= r.x1, and idsMeeting: filed[0] <= p.x <= filed[2] - both monotone in the column.
+        const lo = firstTrue(0, W, (i) => cx(i) >= filed[0] && cx(i) * S >= ring.x0);
+        const hi = firstTrue(lo, W, (i) => cx(i) > filed[2] || cx(i) * S > ring.x1);
+        if (lo < hi) placed.push({ ring, kerbed, filed, lo, hi });
+      }
+    }
+  };
+  for (const id of net.segmentCells.idsMeeting(rect)) {
+    const ribbon = net.ribbons.get(id);
+    if (ribbon) place(ribbonRings(net, ribbon, include), net.segmentCells.rectOf(id));
+  }
+  for (const id of net.junctionCells.idsMeeting(rect)) {
+    const byLevel = net.junctions.get(id);
+    if (byLevel) place(junctionRings(net, id, byLevel, include), net.junctionCells.rectOf(id));
+  }
+  yield;
+  // Each edge filed under the rows it crosses (a counting sort by row): ring, then edge's end index.
+  const rowOf: number[] = [], ringOf: number[] = [], edgeOf: number[] = [];
+  for (let p = 0; p < placed.length; p++) {
+    const { ring, filed } = placed[p]!;
+    const xy = ring.xy;
+    for (let i = 0, j = xy.length - 2; i < xy.length; j = i, i += 2) {
+      const ay = xy[j + 1]!, by = xy[i + 1]!;
+      if (ay === by) continue;
+      const lowY = Math.min(ay, by) / S, highY = Math.max(ay, by) / S;
+      const r0 = Math.max(0, Math.floor((lowY - minY) / step - 0.5) - 1);
+      const r1 = Math.min(H - 1, Math.ceil((highY - minY) / step - 0.5) + 1);
+      for (let row = r0; row <= r1; row++) {
+        const py = cy(row), y = py * S;
+        if (py < filed[1] || py > filed[3] || y < ring.y0 || y > ring.y1) continue;
+        if ((ay <= y) === (by <= y)) continue;
+        rowOf.push(row); ringOf.push(p); edgeOf.push(i);
+      }
+    }
+  }
+  const start = new Int32Array(H + 1);
+  for (const row of rowOf) start[row + 1]!++;
+  for (let row = 0; row < H; row++) start[row + 1]! += start[row]!;
+  const order = new Int32Array(rowOf.length);
+  const fill = start.slice(0, H);
+  for (let k = 0; k < rowOf.length; k++) order[fill[rowOf[k]!]!++] = k;
+  yield;
+  const paving = new Int32Array(W + 1), kerbed = new Int32Array(W + 1);
+  for (let row = 0; row < H; row++) {
+    if (start[row] === start[row + 1]) continue;
+    const y = cy(row) * S;
+    let from = W, to = 0;
+    for (let n = start[row]!; n < start[row + 1]!; n++) {
+      const k = order[n]!;
+      const { ring, kerbed: isKerb, lo, hi } = placed[ringOf[k]!]!;
+      const xy = ring.xy, i = edgeOf[k]!, j = i === 0 ? xy.length - 2 : i - 2;
+      const ax = xy[j]!, ay = xy[j + 1]!, bx = xy[i]!, by = xy[i + 1]!;
+      // windingOf: upward edges count +1 where the cross is > 0, downward ones -1 where it is < 0; both a run from the left.
+      const up = ay <= y;
+      const end = firstTrue(lo, hi, (c) => {
+        const x = cx(c) * S;
+        const cross = (bx - ax) * (y - ay) - (x - ax) * (by - ay);
+        return up ? !(cross > 0) : !(cross < 0);
+      });
+      if (end === lo) continue;
+      const acc = isKerb ? kerbed : paving;
+      acc[lo]! += up ? 1 : -1;
+      acc[end]! -= up ? 1 : -1;
+      from = Math.min(from, lo); to = Math.max(to, end);
+    }
+    let wp = 0, wk = 0;
+    const base = row * W;
+    for (let c = from; c < to; c++) {
+      wp += paving[c]!; wk += kerbed[c]!;
+      if ((wp !== 0 || wk !== 0) && label[base + c] === NEAR) label[base + c] = PAVED;
+    }
+    paving.fill(0, from, to + 1); kerbed.fill(0, from, to + 1);
+    if (row % 64 === 63) yield;
+  }
 }
 
 /** Whether a point is on a footway: on the paving, outside every kerbed carriageway. */
 export function onFootway(net: Network, p: Vec2): boolean {
   const inside = insideLevels(net, p);
   return inside.paving && !inside.kerbed;
+}
+
+/**
+ * `onFootway || onKerbed` in one question: inside the paving or a kerb. DO NOT
+ * ask the two in turn: each walked the rings round the point again.
+ */
+export function onPaving(net: Network, p: Vec2): boolean {
+  const inside = insideLevels(net, p);
+  return inside.paving || inside.kerbed;
 }
 
 /** Whether a point is on a kerbed carriageway (inside a kerb). */
