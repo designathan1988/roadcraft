@@ -12,8 +12,10 @@ folder imports `three`. This file lists what breaks far from where you edit here
 3. **`SUN_AZIMUTH` against the camera's azimuth** decides whether shadows are
    visible at all: with the sun opposite the camera every shadow falls behind its
    own caster.
-4. **Instance buffers** in `agents.ts` are sized by `FLEET_CEILING` and
-   `PED_CEILING` (`sim/params.ts`).
+4. **Instance buffers** in `agents.ts` (and `blobShadows.ts`) START at
+   `FLEET_CEILING` and `PED_CEILING` (`sim/params.ts`) and double when a frame
+   writes past them (`growPart`): the town's parked cars come on top of the
+   moving fleet. A ceiling there is a start, never a cut.
 5. **Door edges** in `vehicleModels.ts` must agree with the seat count in
    `sim/vehicles/kerbStops.ts`.
 
