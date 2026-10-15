@@ -12,22 +12,23 @@ import { m } from '@world/units';
 
 /** THE POLE LAYER KEPT BY POLE (`render/poleLayer.ts`) */
 
-/** Each mesh's drawn instances as sorted rows, and the wires' instances likewise: the picture, whatever the slots. */
+/** Each part's drawn instances as sorted rows over every cell, and the wires' likewise: the picture, whatever the slots. */
 function picture(layer: PoleLayer): Map<string, string[]> {
   const out = new Map<string, string[]>();
+  const put = (name: string, rows: string[]): void => { out.set(name, [...(out.get(name) ?? []), ...rows].sort()); };
   layer.group.traverse((o) => {
     const mesh = o as InstancedMesh;
     if (mesh.isInstancedMesh) {
       const a = mesh.instanceMatrix.array as Float32Array;
       const rows: string[] = [];
       for (let i = 0; i < mesh.count; i++) rows.push([...a.subarray(i * 16, i * 16 + 16)].map((v) => v.toFixed(4)).join(','));
-      if (rows.length) out.set(mesh.name, rows.sort());
+      if (rows.length) put(mesh.name, rows);
     } else if ((o as Mesh).isMesh && o.name === 'utility-wires') {
       const geometry = (o as Mesh).geometry as InstancedBufferGeometry;
       const data = (geometry.getAttribute('aStart') as InterleavedBufferAttribute).data.array as Float32Array;
       const rows: string[] = [];
       for (let i = 0; i < geometry.instanceCount; i++) rows.push([...data.subarray(i * 8, i * 8 + 8)].map((v) => v.toFixed(4)).join(','));
-      if (rows.length) out.set(o.name, rows.sort());
+      if (rows.length) put(o.name, rows);
     }
   });
   return out;

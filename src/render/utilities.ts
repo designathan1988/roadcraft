@@ -3,8 +3,9 @@ import {
   CylinderGeometry,
   BoxGeometry,
   BufferAttribute,
-  Group,
   InstancedBufferGeometry,
+  type InstancedInterleavedBuffer,
+  InterleavedBufferAttribute,
   DoubleSide,
   Material,
   MeshDepthMaterial,
@@ -58,12 +59,18 @@ const LAMP_TILT = (8 * Math.PI) / 180;
 const WIRE_SWING = m(0.35);
 /** Half-width of a drawn cable: thicker than life so it reads at play zoom. */
 const WIRE_RADIUS = m(0.035);
+/** A drawn cable's width as the eye sees it: the mean width of the tube's square section turned every way (perimeter / pi). */
+export const WIRE_WIDTH = (4 * Math.SQRT2 * WIRE_RADIUS) / Math.PI;
+/** A cable at least this many pixels wide is drawn as the tube; a thinner one as a strip square to the eye. */
+const WIRE_TUBE_PIXELS = 1.5;
+/** A cable keeps its width down to the first of these, in pixels, and none of it at the second: its coverage fades out (`WIRE_GLSL`). */
+export const WIRE_FADE = [1 / 8, 1 / 32] as const;
 import type { UtilityPole, UtilitySpan } from '@world/utilities';
 
 /** The overhead utility network on screen: poles, cross-arms, wires and lamps. */
 
 export interface Utilities {
-  readonly group: Group;
+  readonly group: Object3D;
   readonly triangles: number;
   dispose(): void;
 }
@@ -87,6 +94,12 @@ const POLE_PART = {
 } as const;
 export const POLE_PART_COUNT = 11;
 
+/** A shape a part may be drawn with, and how far (world units) its outline strays from the part's own. */
+export interface PartLevel {
+  readonly geometry: BufferGeometry;
+  readonly error: number;
+}
+
 /** One instanced part: its mesh's name, shape and material, and how it takes light and shadow. */
 export interface PolePartSpec {
   readonly name: string;
@@ -95,15 +108,30 @@ export interface PolePartSpec {
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
   readonly renderOrder: number;
+  /** The light a lamp throws on the street (pool, beam): drawn at any size, seen at night from across the map. */
+  readonly glows: boolean;
+  /** How many times a lit surface's brightness it shines: a lens lit at night is seen smaller than a pixel (coverage times brightness). */
+  readonly brightness: () => number;
+  /** Its shapes, finest first: the first is `geometry`, the others coarser (`PoleLayer` picks by the error on the screen). */
+  readonly levels: readonly PartLevel[];
 }
+
+const unlit = (): number => 1;
 
 /** The parts in `POLE_PART` order: the catalogue's shapes and materials, the lamps' light from the scenery's kit. */
 export function polePartSpecs(kit: SceneryKit): readonly PolePartSpec[] {
-  const { metal, timber, housing, porcelain, steel, mastGeometry, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = PARTS;
-  const solid = (name: string, geometry: BufferGeometry, material: Material): PolePartSpec =>
-    ({ name, geometry, material, castShadow: true, receiveShadow: true, renderOrder: 0 });
+  const { metal, timber, housing, porcelain, steel, mastLevels, capGeometry, insulatorGeometry, canGeometry, boxGeometry, lensGeometry } = PARTS;
+  const solid = (name: string, geometry: BufferGeometry, material: Material, levels: readonly PartLevel[] = [{ geometry, error: 0 }]): PolePartSpec =>
+    ({ name, geometry, material, castShadow: true, receiveShadow: true, renderOrder: 0, glows: false, brightness: unlit, levels });
+  const light = (name: string, geometry: BufferGeometry, material: Material, renderOrder: number): PolePartSpec =>
+    ({ name, geometry, material, castShadow: false, receiveShadow: false, renderOrder, glows: true, brightness: unlit, levels: [{ geometry, error: 0 }] });
+  // The lens shines the kit's glow, brighter at night (`SceneryKit.setNight`).
+  const lens: PolePartSpec = {
+    name: 'utility-lamp-lenses', geometry: lensGeometry, material: kit.glow, castShadow: false, receiveShadow: true, renderOrder: 0,
+    glows: false, brightness: () => Math.max(1, kit.glow.color.r, kit.glow.color.g, kit.glow.color.b), levels: [{ geometry: lensGeometry, error: 0 }],
+  };
   return [
-    solid('utility-poles', mastGeometry, timber),
+    solid('utility-poles', mastLevels[0]!.geometry, timber, mastLevels),
     solid('utility-arms', boxGeometry, timber),
     solid('utility-caps', capGeometry, steel),
     solid('utility-braces', boxGeometry, steel),
@@ -111,9 +139,9 @@ export function polePartSpecs(kit: SceneryKit): readonly PolePartSpec[] {
     solid('utility-transformers', canGeometry, steel),
     solid('utility-lamp-arms', boxGeometry, metal),
     solid('utility-lamp-heads', boxGeometry, housing),
-    { name: 'utility-lamp-lenses', geometry: lensGeometry, material: kit.glow, castShadow: false, receiveShadow: true, renderOrder: 0 },
-    { name: 'utility-lamp-pools', geometry: kit.pool, material: kit.poolGlow, castShadow: false, receiveShadow: false, renderOrder: 3 },
-    { name: 'utility-lamp-beams', geometry: kit.beam, material: kit.beamGlow, castShadow: false, receiveShadow: false, renderOrder: 4 },
+    lens,
+    light('utility-lamp-pools', kit.pool, kit.poolGlow, 3),
+    light('utility-lamp-beams', kit.beam, kit.beamGlow, 4),
   ];
 }
 
@@ -249,30 +277,93 @@ export function spanWires(
 /** Half-width of a drawn cable (`WIRE_GLSL`), for the wires' bounds. */
 export const WIRE_HALF_WIDTH = WIRE_RADIUS;
 
-/** The tube every wire is drawn from */
-export function wireTemplate(): InstancedBufferGeometry {
-  const vertices = WIRE_SEGMENTS * 24;
-  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
-  let v = 0;
-  const put = (segment: number, end: number, corner: number, face: number): void => {
-    position[v * 3] = segment; position[v * 3 + 1] = end; position[v * 3 + 2] = corner;
+/** One way of drawing a wire, shared by every cell's wires: a template of (t along the wire, t at the other end of its segment, corner). */
+interface WireTemplate {
+  readonly position: BufferAttribute;
+  readonly normal: BufferAttribute;
+  readonly index: BufferAttribute;
+  /** Chords it bends the wire into. */
+  readonly segments: number;
+}
+
+/** The tube: four faces a segment, each lit flat (`normal.x` names the face), corners 0-3 round the wire. */
+function tubeTemplate(): WireTemplate {
+  const segments = WIRE_SEGMENTS;
+  const position = new Float32Array(segments * 16 * 3), normal = new Float32Array(segments * 16 * 3);
+  const index = new Uint16Array(segments * 24);
+  let v = 0, i = 0;
+  const put = (t: number, other: number, corner: number, face: number): number => {
+    position[v * 3] = t; position[v * 3 + 1] = other; position[v * 3 + 2] = corner;
     normal[v * 3] = face;
-    v++;
+    return v++;
   };
-  for (let i = 0; i < WIRE_SEGMENTS; i++) {
+  for (let s = 0; s < segments; s++) {
+    const t0 = s / segments, t1 = (s + 1) / segments;
     for (let k = 0; k < 4; k++) {
       const j = (k + 1) % 4;
-      put(i, 0, k, k); put(i, 1, k, k); put(i, 1, j, k);
-      put(i, 0, k, k); put(i, 1, j, k); put(i, 0, j, k);
+      const a = put(t0, t1, k, k), b = put(t1, t0, k, k), c = put(t1, t0, j, k), d = put(t0, t1, j, k);
+      index.set([a, b, c, a, c, d], i);
+      i += 6;
     }
   }
+  return { position: new BufferAttribute(position, 3), normal: new BufferAttribute(normal, 3), index: new BufferAttribute(index, 1), segments };
+}
+
+/** A strip of `segments` chords square to the eye, its two edges corners 4 and 5, wound to face the eye (`WIRE_GLSL`). */
+function stripTemplate(segments: number): WireTemplate {
+  const vertices = (segments + 1) * 2;
+  const position = new Float32Array(vertices * 3);
+  const index = new Uint16Array(segments * 6);
+  for (let s = 0; s <= segments; s++) {
+    const t = s / segments;
+    position.set([t, t, 4, t, t, 5], s * 6);
+    // Edge 4 is `+side`, edge 5 `-side`, `side` = tangent x view ray: this order is anticlockwise as the eye sees it.
+    if (s < segments) index.set([2 * s, 2 * s + 3, 2 * s + 2, 2 * s, 2 * s + 1, 2 * s + 3], s * 6);
+  }
+  return { position: new BufferAttribute(position, 3), normal: new BufferAttribute(new Float32Array(vertices * 3), 3), index: new BufferAttribute(index, 1), segments };
+}
+
+/** The ways of drawing a wire, finest first: the tube, then strips of 8, 4, 2 and 1 chords. Made once, at load. */
+const WIRE_TEMPLATES: readonly WireTemplate[] = [tubeTemplate(), stripTemplate(8), stripTemplate(4), stripTemplate(2), stripTemplate(1)];
+
+/** How to draw wires seen at `pixelsPerMetre` with at most `sag` of sag: a template (`wireGeometry`), or -1 when they have faded out. */
+export function wireLevel(pixelsPerMetre: number, sag: number): number {
+  const width = WIRE_WIDTH * pixelsPerMetre;
+  if (width < WIRE_FADE[1]) return -1;
+  if (width >= WIRE_TUBE_PIXELS) return 0;
+  // A strip's chords stray from the parabola by sag / segments squared: the fewest chords that keep that under a pixel.
+  for (let level = WIRE_TEMPLATES.length - 1; level > 1; level--) {
+    const n = WIRE_TEMPLATES[level]!.segments;
+    if ((sag * pixelsPerMetre) / (n * n) < 1) return level;
+  }
+  return 1;
+}
+
+/** A cell's wires drawn with one template: the template's shared attributes and the cell's instances (eight numbers a wire). */
+export function wireGeometry(level: number, instances: InstancedInterleavedBuffer): InstancedBufferGeometry {
+  const template = WIRE_TEMPLATES[level]!;
   const geometry = new InstancedBufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(position, 3));
-  geometry.setAttribute('normal', new BufferAttribute(normal, 3));
+  geometry.setIndex(template.index);
+  geometry.setAttribute('position', template.position);
+  geometry.setAttribute('normal', template.normal);
+  geometry.setAttribute('aStart', new InterleavedBufferAttribute(instances, 3, 0));
+  geometry.setAttribute('aEnd', new InterleavedBufferAttribute(instances, 3, 3));
+  geometry.setAttribute('aSagPhase', new InterleavedBufferAttribute(instances, 2, 6));
   return geometry;
 }
 
-/** A wire's tube in the vertex shader, the arithmetic the CPU did per segment (in three's axes) */
+/** A wire geometry let go: its instances' buffer freed on the GPU, the templates' kept (three's dispose frees every attribute it holds). */
+export function releaseWireGeometry(geometry: InstancedBufferGeometry): void {
+  geometry.setIndex(null);
+  geometry.deleteAttribute('position');
+  geometry.deleteAttribute('normal');
+  geometry.dispose();
+}
+
+/** The screen the wires are drawn on: half its height in pixels, 0 before a layer has seen it (no fade). Set by `PoleLayer`. */
+export const wireScreen = { uWirePixels: { value: 0 } };
+
+/** A wire's vertex in the vertex shader, from its template and its instance (in three's axes) */
 const WIRE_GLSL = `
         attribute vec3 aStart;
         attribute vec3 aEnd;
@@ -286,49 +377,70 @@ const WIRE_GLSL = `
         vec3 wireCorner(vec3 u, vec3 w, float c) {
           return c < 0.5 ? u : c < 1.5 ? w : c < 2.5 ? -u : -w;
         }
-        void wireFrame(out vec3 p0, out vec3 p1, out vec3 u, out vec3 w) {
-          p0 = wireAt(position.x / ${WIRE_SEGMENTS.toFixed(1)});
-          p1 = wireAt((position.x + 1.0) / ${WIRE_SEGMENTS.toFixed(1)});
-          vec3 d = p1 - p0;
+        // The share of its width a wire keeps where it is: all of it down to ${WIRE_FADE[0]} px wide, none at ${WIRE_FADE[1]} (pixels <= 0: all).
+        float wireKeep(vec3 p, float pixels) {
+          if (pixels <= 0.0) return 1.0;
+          float depth = isPerspectiveMatrix(projectionMatrix) ? max(-(modelViewMatrix * vec4(p, 1.0)).z, 1e-4) : 1.0;
+          float wide = ${WIRE_WIDTH.toFixed(6)} * pixels * projectionMatrix[1][1] / depth;
+          return smoothstep(${WIRE_FADE[1].toFixed(6)}, ${WIRE_FADE[0].toFixed(6)}, wide);
+        }
+        vec3 wirePosition(out vec3 n, float pixels) {
+          vec3 p = wireAt(position.x);
+          float keep = wireKeep(p, pixels);
+          if (position.z > 3.5) {
+            // A strip across the curve's tangent, square to the ray from the eye; its normal leans out to its edges as a round cable's.
+            vec3 d = aEnd - aStart;
+            d.y += 4.0 * aSagPhase.x * (position.x * 2.0 - 1.0);
+            d = normalize(d);
+            vec3 ray = isPerspectiveMatrix(projectionMatrix) ? p - cameraPosition : -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+            vec3 side = cross(d, ray);
+            float sl = length(side);
+            side = sl > 1e-6 ? side / sl : vec3(1.0, 0.0, 0.0);
+            float s = position.z < 4.5 ? 1.0 : -1.0;
+            n = normalize(normalize(cross(d, side)) + s * side);
+            return p + side * (s * ${(WIRE_WIDTH / 2).toFixed(6)} * keep);
+          }
+          // The tube: the frame of the vertex's segment, from its chord.
+          vec3 d = wireAt(max(position.x, position.y)) - wireAt(min(position.x, position.y));
           float dl = length(d);
           d /= dl > 0.0 ? dl : 1.0;
-          u = vec3(-d.z, 0.0, d.x);
+          vec3 u = vec3(-d.z, 0.0, d.x);
           float ul = length(u);
           u = u / (ul > 0.0 ? ul : 1.0) * ${WIRE_RADIUS.toFixed(6)};
-          w = vec3(u.y * d.z - u.z * d.y, u.z * d.x - u.x * d.z, u.x * d.y - u.y * d.x);
+          vec3 w = cross(u, d);
           float wl = length(w);
           w = w / (wl > 0.0 ? wl : 1.0) * ${WIRE_RADIUS.toFixed(6)};
-        }
-        vec3 wirePosition() {
-          vec3 p0, p1, u, w;
-          wireFrame(p0, p1, u, w);
-          return (position.y < 0.5 ? p0 : p1) + wireCorner(u, w, position.z);
+          n = normalize(wireCorner(u, w, normal.x) + wireCorner(u, w, mod(normal.x + 1.0, 4.0)));
+          return p + wireCorner(u, w, position.z) * keep;
         }`;
 
 /** The wires' materials: lit with the wind, and the shadow's depth, both bending the template along each wire. */
 function wireMaterials(): { readonly lit: MeshStandardMaterial; readonly depth: MeshDepthMaterial } {
-  // A wire is thinner than a pixel at any play zoom.
+  // A wire thinner than a pixel is a strip whose coverage fades (`WIRE_FADE`).
   const lit = new MeshStandardMaterial({ color: 0x1e2224, roughness: 0.55, metalness: 0.3, side: DoubleSide });
   lit.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, windUniforms, { uWireAmp: { value: WIRE_SWING } });
+    Object.assign(shader.uniforms, windUniforms, { uWireAmp: { value: WIRE_SWING } }, wireScreen);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>${WIRE_WIND_UNIFORMS_GLSL}${WIRE_GLSL}`)
+      .replace('#include <common>', `#include <common>${WIRE_WIND_UNIFORMS_GLSL}
+        uniform float uWirePixels;${WIRE_GLSL}`)
       .replace('#include <beginnormal_vertex>', `
-        vec3 nP0, nP1, nU, nW;
-        wireFrame(nP0, nP1, nU, nW);
-        vec3 objectNormal = normalize(wireCorner(nU, nW, normal.x) + wireCorner(nU, nW, mod(normal.x + 1.0, 4.0)));`)
+        vec3 wireNormal;
+        vec3 wirePoint = wirePosition(wireNormal, uWirePixels);
+        vec3 objectNormal = wireNormal;`)
       .replace('#include <begin_vertex>', `
-        vec3 transformed = wirePosition();
-        float wireT = (position.x + position.y) / ${WIRE_SEGMENTS.toFixed(1)};
+        vec3 transformed = wirePoint;
+        float wireT = position.x;
         float wireSwing = 4.0 * wireT * (1.0 - wireT);${wireWindGlsl('wireSwing', 'aSagPhase.y')}`);
   };
   lit.customProgramCacheKey = () => 'wire-instanced';
-  // The shadow as it was: the tube at rest, without the wind.
+  // The shadow as it was: the wire at rest, without the wind, at its full width.
   const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   depth.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>${WIRE_GLSL}`)
-      .replace('#include <begin_vertex>', 'vec3 transformed = wirePosition();');
+      .replace('#include <begin_vertex>', `
+        vec3 wireNormal;
+        vec3 transformed = wirePosition(wireNormal, 0.0);`);
   };
   depth.customProgramCacheKey = () => 'wire-instanced-depth';
   return { lit, depth };
@@ -343,7 +455,8 @@ interface UtilityParts {
   readonly wireDepth: MeshDepthMaterial;
   readonly porcelain: MeshStandardMaterial;
   readonly steel: MeshStandardMaterial;
-  readonly mastGeometry: CylinderGeometry;
+  /** The mast, finest first (`mastShape`). */
+  readonly mastLevels: readonly PartLevel[];
   readonly capGeometry: CylinderGeometry;
   readonly insulatorGeometry: CylinderGeometry;
   readonly canGeometry: CylinderGeometry;
@@ -353,8 +466,11 @@ interface UtilityParts {
 /** Made once, at load (`PARTS`, the end of this file), never disposed (a few materials and small shapes) */
 function makeUtilityParts(): UtilityParts {
   const parts = madeUtilityParts();
-  // Each shape's bounds once, at load: the pole layer grows its meshes' bounds from them.
-  for (const geometry of [parts.mastGeometry, parts.capGeometry, parts.insulatorGeometry, parts.canGeometry, parts.boxGeometry, parts.lensGeometry]) geometry.computeBoundingSphere();
+  // Each shape's bounds once, at load: the pole layer grows its meshes' bounds from the spheres, and sizes a piece on the screen from the boxes.
+  for (const geometry of [...parts.mastLevels.map((level) => level.geometry), parts.capGeometry, parts.insulatorGeometry, parts.canGeometry, parts.boxGeometry, parts.lensGeometry]) {
+    geometry.computeBoundingSphere();
+    geometry.computeBoundingBox();
+  }
   return parts;
 }
 
@@ -379,7 +495,7 @@ function madeUtilityParts(): UtilityParts {
     // A pin insulator: a glazed porcelain bell on a short pin.
     porcelain: new MeshStandardMaterial({ color: 0xd8dcd6, roughness: 0.25, metalness: 0 }),
     steel: new MeshStandardMaterial({ color: 0x8c9590, roughness: 0.45, metalness: 0.55 }),
-    mastGeometry: new CylinderGeometry(POLE_TOP_RADIUS, POLE_BASE_RADIUS, POLE_HEIGHT, 12),
+    mastLevels: [12, 6, 3].map(mastShape),
     capGeometry: new CylinderGeometry(POLE_TOP_RADIUS * 0.4, POLE_TOP_RADIUS * 1.15, m(0.08), 10),
     insulatorGeometry: new CylinderGeometry(INSULATOR_RADIUS * 0.55, INSULATOR_RADIUS, INSULATOR_TALL, 10),
     canGeometry: new CylinderGeometry(CAN_RADIUS, CAN_RADIUS, m(0.95), 14),
@@ -387,6 +503,21 @@ function madeUtilityParts(): UtilityParts {
     // One face, looking down: a lens only shines down (see `lampLensGeometry`).
     lensGeometry: new PlaneGeometry(1, 1).rotateX(Math.PI / 2),
   };
+}
+
+/** The mast with `sides` sides and no base (it stands in the ground); a coarse one as wide as the round one on average */
+function mastShape(sides: number): PartLevel {
+  // A polygon's mean width is its perimeter over pi: 2 n R sin(pi / n) / pi = 2 r.
+  const widen = sides >= 12 ? 1 : Math.PI / (sides * Math.sin(Math.PI / sides));
+  const geometry = new CylinderGeometry(POLE_TOP_RADIUS * widen, POLE_BASE_RADIUS * widen, POLE_HEIGHT, sides);
+  // three's groups: the side, the top, then the base (`CylinderGeometry.generateCap`).
+  const base = geometry.groups[2]!;
+  geometry.setIndex(new BufferAttribute((geometry.index!.array as Uint16Array).slice(0, base.start), 1));
+  geometry.clearGroups();
+  // How far its outline strays from a round mast at the foot: outside at a corner, inside mid-face.
+  const r = POLE_BASE_RADIUS, R = r * widen;
+  const error = sides >= 12 ? 0 : Math.max(R - r, r - R * Math.cos(Math.PI / sides));
+  return { geometry, error };
 }
 
 /** Ground a pole stands on: the footway where there is one, the terrain where there is not. */
