@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import { valueNoise } from '../terrain';
 
 /**
  * THE CITY'S GRAIN: the tensor field the streets of a generated city follow.
@@ -83,17 +84,5 @@ export class TensorField {
   }
 }
 
-function hash2(x: number, y: number): number {
-  let h = Math.imul(x | 0, 374_761_393) ^ Math.imul(y | 0, 668_265_263);
-  h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
-  return ((h ^ (h >>> 16)) >>> 0) / 2_147_483_648 - 1;
-}
-
-/** Smooth value noise in [-1, 1]. */
-export function valueNoise(x: number, y: number): number {
-  const x0 = Math.floor(x), y0 = Math.floor(y);
-  const fx = x - x0, fy = y - y0;
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-  const a = hash2(x0, y0), b = hash2(x0 + 1, y0), c = hash2(x0, y0 + 1), d = hash2(x0 + 1, y0 + 1);
-  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
-}
+/** Smooth value noise in [-1, 1]: the land's own (`terrain.ts`), one definition. */
+export { valueNoise };
