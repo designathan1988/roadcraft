@@ -392,9 +392,33 @@ export function createBuildingLayer(): BuildingLayer {
       version++;
     });
   };
-  /** The cells held near whatever the eye says: the building cut open (`near`), the one being edited (`dimmed`). */
-  const forcedCells = (shown: readonly Building[]): ReadonlySet<string> =>
-    new Set(shown.filter((b) => (dimmed !== undefined && b.id === dimmed) || (cutaway !== null && near(b))).map(cellOf));
+  /**
+   * The cells a cut-open view reaches (the building asked for, or every building within its radius,
+   * a cell's margin for a building over its cell's edge), among the town's cells.
+   */
+  const cutCellsOf = (doc: RoadDoc, spec: CutawaySpec | null): Set<string> => {
+    const out = new Set<string>();
+    if (!spec) return out;
+    if (spec.only !== undefined) {
+      const b = doc.buildings.get(spec.only);
+      if (b && town.has(b.id)) out.add(cellOf(b));
+      return out;
+    }
+    const i0 = Math.floor((spec.x - spec.radius) / BATCH_CELL) - 1, i1 = Math.floor((spec.x + spec.radius) / BATCH_CELL) + 1;
+    const j0 = Math.floor((spec.y - spec.radius) / BATCH_CELL) - 1, j1 = Math.floor((spec.y + spec.radius) / BATCH_CELL) + 1;
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (townCells.has(`${i},${j}`)) out.add(`${i},${j}`);
+    return out;
+  };
+  /** The cells held near whatever the eye says: those cut open (`cutCells`), the one being edited (`dimmed`). */
+  const forcedCells = (doc: RoadDoc): ReadonlySet<string> => {
+    const out = new Set(cutCells);
+    const edited = dimmed !== undefined && dimmed !== null ? doc.buildings.get(dimmed) : undefined;
+    if (edited) out.add(cellOf(edited));
+    return out;
+  };
+  /** The cut-open view the cells were last asked for (`cutKey` in `update`), and the cells it reaches. */
+  let storedCut = 'whole';
+  let cutCells = new Set<string>();
   /** A cell's detail let go: its batches and its detail cells', its buildings' chunks left to the workers' cache. */
   const releaseCell = (key: string): void => {
     dropCell(cells, key, stored);
@@ -528,18 +552,19 @@ export function createBuildingLayer(): BuildingLayer {
       const cutKey = cutaway
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
-      const rest = `${groundKey}|${hides}|${dimKey}|${cutKey}|${[...ruined].join(',')}`;
+      // NOT the cut-open view: opening a building costs its cells (below), not the town.
+      const rest = `${groundKey}|${hides}|${dimKey}|${[...ruined].join(',')}`;
       // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
       const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}`;
       let rebuilt = false;
       // The masses of the buildings an edit changed (or whose ground it moved) are asked of the cell
       // workers, cell by cell, each cell standing as it was until its masses come; then the cells drawn
       // near are asked their detail (`landCells`). The first town too (the opening, a map loaded).
-      // A building cut open or the others faded takes the same road (its cells are held near, `forcedCells`).
+      // The others faded takes the same road (their cells are held near, `forcedCells`).
       if (key !== storedKey) {
         // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key:
         // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
-        const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined && cutaway === null
+        const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined
           ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
         const changed = since?.every((e) => e.ids) ? since : null;
         if (changed && stored && details) {
@@ -550,7 +575,8 @@ export function createBuildingLayer(): BuildingLayer {
             ids.add(id);
           }
           townSeen = doc.changes.version;
-          forcedNear = forcedCells([...dirty].flatMap((cell) => town.byCell.get(cell) ?? []));
+          cutCells = cutCellsOf(doc, cutaway);
+          forcedNear = forcedCells(doc);
           // Some buildings changed: their cells' masses asked again and their detail made again, each shown as
           // it lands (`landCells`), the rest of the town as it is (AUDITORIA A1).
           for (const cell of dirty) { askMass(cell, env, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
@@ -592,7 +618,8 @@ export function createBuildingLayer(): BuildingLayer {
           massTown = dimmed === undefined ? town.byCell : groupByCell(shown, cellOf, (b) => b);
           for (const cell of [...massCells.keys()]) if (!massTown.has(cell)) askMass(cell, env, groundAt, groundKey, pavedAt);
           for (const cell of massTown.keys()) askMass(cell, env, groundAt, groundKey, pavedAt);
-          forcedNear = forcedCells(shown);
+          cutCells = cutCellsOf(doc, cutaway);
+          forcedNear = forcedCells(doc);
           chooseNow();
           goneFar.clear();
           // Only the cells drawn near have their detail; the rest stand as their masses (`massCells`) and come in
@@ -627,10 +654,22 @@ export function createBuildingLayer(): BuildingLayer {
           backlog = shown.filter((b) => !keptFor(b) && fliesFlag(b));
         }
         storedKey = key;
+        storedCut = cutKey;
         flyFlags();
         applyFacadeDetail();
         version++;
         rebuilt = true;
+      }
+      // A building opened or closed ("ver por dentro"): the cells it reaches, before and now, asked again with
+      // it cut open, the rest of the town as it is. DO NOT put the town together again for it: every cell's
+      // masses were asked again and the cut cell waited behind them.
+      if (cutKey !== storedCut && stored && details) {
+        const was = cutCells;
+        cutCells = cutCellsOf(doc, cutaway);
+        for (const cell of [...was, ...cutCells]) pendingCells.add(cell);
+        forcedNear = forcedCells(doc);
+        chooseNow();
+        storedCut = cutKey;
       }
       // The cells pending land as they come back from the workers; those the eye neared since are asked; those long far go out (HLOD streaming).
       if (stored && details && landCells(env, groundAt, groundKey, pavedAt)) {

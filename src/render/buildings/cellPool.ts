@@ -24,7 +24,7 @@ export interface CellEnv {
   readonly pavedAt?: PavedAt;
 }
 
-interface Running { readonly job: CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null }
+interface Running { readonly job: CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
 
 /** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
 interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; readonly queue: Running[] }
@@ -47,6 +47,8 @@ export class CellPool {
   private broken = false;
   private local: CellWork | null = null;
   private nextId = 1;
+  /** Begun jobs whose results nobody wants any more (`supersede`). */
+  private readonly abandoned = new Set<number>();
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
   constructor(private readonly boxes: () => KitBoxes, private readonly budget: number, private readonly workers = true,
@@ -68,7 +70,9 @@ export class CellPool {
     const job: CellJob = { id: this.nextId++, kind, cell, entries, paved: env.pavedAt !== undefined };
     const lanes = this.start();
     const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
-    const running: Running = { job, env, done, lane };
+    // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
+    const rank = entries.some((e) => e.key.includes('|')) ? -1 : PRIORITY[kind];
+    const running: Running = { job, env, done, lane, rank };
     if (!lane) { this.onPage(running); return job.id; }
     lane.queue.push(running);
     this.pump(lane);
@@ -83,9 +87,7 @@ export class CellPool {
   private pump(lane: Lane): void {
     while (lane.jobs.size < ACTIVE_PER_LANE && lane.queue.length) {
       let at = 0;
-      for (let i = 1; i < lane.queue.length && PRIORITY[lane.queue[at]!.job.kind] > 0; i++) {
-        if (PRIORITY[lane.queue[i]!.job.kind] < PRIORITY[lane.queue[at]!.job.kind]) at = i;
-      }
+      for (let i = 1; i < lane.queue.length && lane.queue[at]!.rank > -1; i++) if (lane.queue[i]!.rank < lane.queue[at]!.rank) at = i;
       const next = lane.queue.splice(at, 1)[0]!;
       lane.jobs.set(next.job.id, next);
       lane.worker.postMessage({ type: 'start', job: next.job });
@@ -110,10 +112,26 @@ export class CellPool {
       const waiting = lane.queue.findIndex((r) => r.job.id === id);
       if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
       if (lane.jobs.delete(id)) {
+        this.abandoned.delete(id);
         lane.worker.postMessage({ type: 'cancel', job: id });
         this.pump(lane);
         return;
       }
+    }
+  }
+
+  /**
+   * A job a newer one for its cell replaces: out of its lane's queue if it has not begun; begun, left
+   * to finish into its worker's cache (the newer one then finds every building of it made) and its
+   * result not handed on. DO NOT cancel a begun job for a newer one of its cell: the worker threw away
+   * the rounds it had done and began the whole cell again (a building cut open, "ver por dentro",
+   * waited for its cell twice over, 2026-10-14).
+   */
+  supersede(id: number): void {
+    for (const lane of this.lanes ?? []) {
+      const waiting = lane.queue.findIndex((r) => r.job.id === id);
+      if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
+      if (lane.jobs.has(id)) { this.abandoned.add(id); return; }
     }
   }
 
@@ -180,6 +198,12 @@ export class CellPool {
   private answer(lane: Lane, reply: WorkReply | { kind: 'error'; job: number; message: string }): void {
     const running = lane.jobs.get(reply.job);
     if (!running) return;
+    if (this.abandoned.has(reply.job) && (reply.kind === 'error' || reply.kind === 'done')) {
+      this.abandoned.delete(reply.job);
+      lane.jobs.delete(reply.job);
+      this.pump(lane);
+      return;
+    }
     if (reply.kind === 'error') {
       console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
       lane.jobs.delete(reply.job);

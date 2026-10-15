@@ -61,7 +61,8 @@ export class CellRequests {
     if (got) { disposeLanded(got); this.landed.delete(key); }
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
-    if (asked) this.pool.cancel(asked.id);
+    // Replaced by the cell as it is now: begun, it finishes into the worker's cache (`supersede`).
+    if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
     this.asked.set(key, ask);
     ask.id = this.pool.run(kind, cell, entries, env, (result) => {
