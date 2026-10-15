@@ -4,6 +4,10 @@ import { CrossingSpans } from '@sim/intersections/crossingSpans';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE ZEBRA SPANS KEPT BY WHAT CHANGED (`CrossingSpans.update`, from the
  * world's topology log): after every edit of the fuzzer's sequences, the span
@@ -30,7 +34,7 @@ describe('the zebra spans kept by the topology log', () => {
     w.rebuildTopology();
     for (let i = 0; i < ops.length; i++) {
       let changed: boolean;
-      try { changed = applyOp(state, ops[i]!); } catch { break; }
+      try { changed = applyOp(state, ops[i]!); } catch (error) { recordRejected(error); break; }
       if (!changed) continue;
       w.rebuildTopology();
       const whole = new CrossingSpans();

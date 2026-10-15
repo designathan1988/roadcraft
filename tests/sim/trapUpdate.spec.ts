@@ -5,6 +5,10 @@ import { trapLanes } from '@sim/routing/router';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE TRAP LANES KEPT BY WHAT CHANGED (`router.ts` TrapIndex, from the
  * world's topology log): after every edit, for every body class, the traps
@@ -46,7 +50,7 @@ function run(ops: readonly Parameters<typeof applyOp>[1][], name: string): void 
   for (let body = 0; body <= 3; body++) trapLanes(w, body);
   ops.forEach((op, i) => {
     let changed: boolean;
-    try { changed = applyOp(state, op); } catch { return; }
+    try { changed = applyOp(state, op); } catch (error) { recordRejected(error); return; }
     if (!changed) return;
     w.rebuildTopology();
     for (let body = 0; body <= 3; body++) expect([...trapLanes(w, body)].sort(), `${name} op ${i} (${op.op}) body ${body}`).toEqual(fromNothing(w, body));

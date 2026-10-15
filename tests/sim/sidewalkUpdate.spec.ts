@@ -8,6 +8,10 @@ import { SidewalkGraph } from '@sim/peds/sidewalk';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE KERBS AND ZEBRAS KEPT BY WHAT CHANGED (`SidewalkGraph.update`): after
  * every edit of the fuzzer's sequences and fixtures - read one at a time, and
@@ -59,7 +63,7 @@ describe('the kerbs and zebras kept by the lane graph\'s changes', () => {
     let made = 0;
     for (let i = 0; i < ops.length; i++) {
       let changed: boolean;
-      try { changed = applyOp(state, ops[i]!); } catch { break; }
+      try { changed = applyOp(state, ops[i]!); } catch (error) { recordRejected(error); break; }
       if (!changed) continue;
       made++;
       kept.follow(made % every === 0);
@@ -72,7 +76,7 @@ describe('the kerbs and zebras kept by the lane graph\'s changes', () => {
     const kept = keptOf(state.doc, state.net);
     fixture.ops.forEach((op, i) => {
       let changed: boolean;
-      try { changed = applyOp(state, op); } catch { return; }
+      try { changed = applyOp(state, op); } catch (error) { recordRejected(error); return; }
       if (!changed) return;
       kept.follow(true);
       expect(kept.lines(), `${fixture.name} op ${i}`).toEqual(fresh(state.doc, state.net));

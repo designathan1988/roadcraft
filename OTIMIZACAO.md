@@ -207,6 +207,8 @@ Cada linha é um commit; a causa estava no algoritmo e saiu do código.
 - Motor: barreiras e transporte como produtos `draw`; pedestres e grade de faixas como produtos `frame` (fase agora chamada pelo laço do quadro).
 - Alcance dos destinos (`routing/laneReach.ts`): componentes fortemente conexos das faixas mantidos pelo diário da topologia; remoção conferida por busca das duas pontas ao mesmo tempo (Even–Shiloach), Tarjan só no componente que de fato se partiu, fusão pelos ciclos do grafo condensado, saídas somadas sob demanda. Antes: Tarjan do mapa inteiro a cada revisão de tráfego.
 - Passo 2 (laço único): entrada do canvas (ponteiro, roda, cliques) numa fila (`core/events.ts`) tratada no começo do quadro, na ordem em que veio, com o que se lê do evento copiado no despacho; nivelamento preso do pincel e veredito da via no quadro, sem `setInterval`/`setTimeout` próprios. Teclas ficam no ouvinte: o `preventDefault` é decidido pelo comando, que pode passar à regra seguinte.
+- Passo 4 (barreira): regras `roadcraft/no-global-revision`, `no-whole-map-walk` (fora de `@rebuild`) e `no-logic-timer`; o que havia ficou em `eslint-suppressions.json`, que só encolhe. Ao ligá-las: `zoning.ts` sideReach (cada ponto de cada tentativa de prédio media todas as ruas e todos os prédios da cidade) e `lotTool` (frente do lote e direção da rua pela rua mais próxima, `world/nearestRibbon.ts`) passaram a ler por lugar.
+- Passo 3: o `GameState` já guarda ferramenta, seleção, pausa, velocidade, qualidade e painéis; a câmera fica fora do anel de eventos (muda a cada quadro numa panorâmica) e o que depende da vista já é chaveado pela matriz da vista (`InstanceRuns.cull`).
 
 ## Pendente e por quê
 

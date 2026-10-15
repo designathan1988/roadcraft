@@ -5,6 +5,10 @@ import { rebuildWork } from '@world/rebuildWork';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE WALKWAYS KEPT BY WHAT CHANGED (`Walkways.update`): after every edit of
  * the fuzzer's sequences and fixtures, the walkways brought up to the network
@@ -52,7 +56,7 @@ describe('the walkways kept by the network\'s delta', () => {
     let local = 0;
     for (let i = 0; i < ops.length; i++) {
       let changed: boolean;
-      try { changed = applyOp(state, ops[i]!); } catch { break; }
+      try { changed = applyOp(state, ops[i]!); } catch (error) { recordRejected(error); break; }
       if (!changed) continue;
       const before = rebuildWork.walkways;
       const g = kept.update(state.net);
@@ -70,7 +74,7 @@ describe('the walkways kept by the network\'s delta', () => {
     kept.update(state.net);
     fixture.ops.forEach((op, i) => {
       let changed: boolean;
-      try { changed = applyOp(state, op); } catch { return; }
+      try { changed = applyOp(state, op); } catch (error) { recordRejected(error); return; }
       if (!changed) return;
       const g = kept.update(state.net);
       expect(holdsTogether(g), `${fixture.name} op ${i}`).toEqual([]);
@@ -86,7 +90,7 @@ describe('the walkways kept by the network\'s delta', () => {
     for (const op of ops) {
       const g = kept.update(state.net);
       const before = g.walkways();
-      try { if (!applyOp(state, op)) continue; } catch { break; }
+      try { if (!applyOp(state, op)) continue; } catch (error) { recordRejected(error); break; }
       kept.update(state.net);
       handed += before.filter((w) => g.holds(w)).length;
     }

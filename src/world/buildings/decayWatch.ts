@@ -44,6 +44,7 @@ export function createDecayWatch(doc: RoadDoc, wear: (id: BuildingId, decay: num
     const changes = seen.read(doc.changes);
     lastNow = now;
     if (changes === null) {
+      // @rebuild The diary forgot, or the clock went back: every building filed again.
       due.clear();
       queue.clear();
       for (const b of doc.buildings.all()) file(b, b.id, now);

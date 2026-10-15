@@ -509,6 +509,7 @@ export function createBuildingLayer(): BuildingLayer {
             signatures.set(shown, k?.summary.signatureFloor ?? signatureFloorOf(shown, naturalAt, pavedAt));
           }
         } else {
+          // @rebuild The whole town filed again (a first look, or a diary that cannot say what changed).
           // The whole town filed again; its near cells made again, each shown as it lands - until then a cell
           // keeps the batch it had, or its masses. NOT the town held until every cell has landed: one change
           // after another kept it waiting, and the streaming with it (2026-10-14).
