@@ -129,7 +129,7 @@ import { FOREST_SPECIES, buildGroundCover, createGroundCoverKit, type CoverPlace
 import { clearingIndex } from '@world/trees';
 import { natureDensity } from './natureNoise';
 import { buildNatureForest, forestRoom, loadNatureTrees, seedOfKind, type NatureForest, type NatureTreeKit } from './natureTrees';
-import { createFogTexture, rasterFog, type FogLayer } from './fogLayer';
+import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { buildElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 
@@ -1065,7 +1065,12 @@ export function createSceneRenderer(
   /** The painted fog's map (`fogLayer.ts`), and the fog and land it was built for. */
   const fogTexture = createFogTexture();
   let fogLayer: FogLayer | null = null;
-  let fogFor = '';
+  const fogField = createFogField(fogTexture);
+  /** What the fog map follows in the diary, and how far it was read. */
+  const FOG_KINDS: readonly ChangeKind[] = ['fog', 'terrain', 'ground'];
+  let fogJournal: ChangeJournal | null = null;
+  let fogSeen = -1;
+  let fogTerrainSeen = -1;
   let fogMoving = false;
   /** Clouds placed on the map: they boil, so the frame is drawn now and then. */
   let placedCloudsShown = false;
@@ -3408,13 +3413,22 @@ export function createSceneRenderer(
         // The painted fog: its map again when the fog or the land under it
         // changed (never in the middle of a sculpting stroke).
         const doc = net.doc;
-        const key = `${doc.fogRevision}:${doc.terrainRevision}`;
         // A fog stroke shows as it is painted; a land stroke waits for its end.
-        const landHeld = !!options?.holdRoads && fogFor.split(':')[1] !== String(doc.terrainRevision);
-        if (key !== fogFor && !landHeld) {
-          fogFor = key;
+        const landHeld = !!options?.holdRoads && fogTerrainSeen !== doc.terrainRevision;
+        const fogSerial = doc.changes.serialOf(...FOG_KINDS);
+        if ((fogJournal !== doc.changes || fogSerial !== fogSeen) && !landHeld) {
           const startedAt = performance.now();
-          fogLayer = doc.fogDabs.length > 0 ? rasterFog(fogTexture, doc.fogDabs, (x, y) => terrain.renderedHeightAt(x, y)) : null;
+          // Only where the fog, the land or the ground under it changed (`createFogField`): DO NOT
+          // raster the whole map at every dab of a brush.
+          const entries = fogJournal === doc.changes && fogSeen >= 0 ? doc.changes.since(fogSeen, FOG_KINDS) : null;
+          const ground = (x: number, y: number): number => terrain.renderedHeightAt(x, y);
+          const laid = !entries || entries.some((e) => e.rects === null)
+            ? fogField.whole(doc.fogDabs, ground)
+            : fogField.update(doc.fogDabs, ground, entries.flatMap((e) => e.rects!));
+          fogLayer = laid.any ? laid : null;
+          fogJournal = doc.changes;
+          fogSeen = fogSerial;
+          fogTerrainSeen = doc.terrainRevision;
           performance.measure('hitch:fog', { start: startedAt, end: performance.now() });
         }
         const f = doc.fogSettings;
