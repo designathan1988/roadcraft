@@ -83,13 +83,6 @@ pasted in the session that started this; these are its binding decisions.
   Chrome memory, the world not shown 4 min after; a medium city lost its WebGL context (GL_OUT_OF_MEMORY) in a
   8 GB job: 28 workers in the page's process (14 pools) and ~1 GB of geometry.
 - Still asks the player: graphics-quality changes (shots), migrating his saved map, pushing.
-- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
-  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
-  yourself, in sequence; keep progress here.
-- Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
-  Read; in a file over 800 lines read only the part that matters. During a block only the
-  typecheck and the tests of what was touched; the full check and the route at the end of the
-  block and at the phase gate.
 
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
@@ -257,9 +250,9 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
-  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
-  yourself, in sequence; keep progress here.
+- Agents: at most 5 in parallel (player's order, 2026-10-15; replaces "No agents"), ultracode and
+  parallel sessions included. Each one in its own worktree made from local `main`, one part each,
+  no two on the same files; read its diff whole before merging. Keep progress here.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
