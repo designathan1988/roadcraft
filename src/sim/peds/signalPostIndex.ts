@@ -1,5 +1,5 @@
 import type { NodeId } from '@world/ids';
-import { type SignalPost, signalPosts } from '@world/signalPosts';
+import { type SignalPost, signalPostPlace, signalPosts } from '@world/signalPosts';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
 
@@ -38,10 +38,24 @@ export class SignalPostIndex {
     }
     for (const node of new Set(nodes)) {
       this.lift(node);
-      const record = w.doc.node(node);
-      if (!record) continue;
-      // The world's posts round the junction (a superset), those of this junction kept.
-      for (const post of signalPosts(w.net, w.graph, { x: record.x, y: record.y, radius: m(1) })) if (post.node === node) this.file(post);
+      this.placeJunction(w, node);
+    }
+  }
+
+  /**
+   * One junction's posts: one on each approach of a signal group, where the
+   * world stands it (`signalPostPlace`), as `signalPosts` lists them.
+   * DO NOT ask `signalPosts` for them: its whole-map pass is in the same
+   * function as the pass round a point.
+   */
+  private placeJunction(w: SimWorld, node: NodeId): void {
+    const junction = w.graph.junctions.get(node);
+    const record = w.doc.node(node);
+    if (!junction?.signalised || !record) return;
+    for (const segment of record.incident) {
+      if (!junction.groups.some((group) => group.segments.includes(segment))) continue;
+      const post = signalPostPlace(w.net, node, segment);
+      if (post) this.file(post);
     }
   }
 
