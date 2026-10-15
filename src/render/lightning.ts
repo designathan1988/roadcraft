@@ -76,14 +76,32 @@ export function createLightning(): Lightning {
   const strikes: { age: number; meshes: LineSegments2[]; materials: LineMaterial[] }[] = [];
   // Brighter than white: past the tone curve, and into the bloom at night.
   const core = new Color(6, 6.4, 8);
+  /**
+   * Materials of strikes gone, kept for the next: a material made per strike
+   * and disposed after it released the line program with the last one
+   * (`WebGLPrograms.releaseProgram`), and the next strike compiled it again
+   * in the middle of the game. DO NOT dispose them between strikes.
+   */
+  const free: LineMaterial[] = [];
+  const material = (): LineMaterial =>
+    free.pop() ?? new LineMaterial({ color: core, linewidth: 1, transparent: true, opacity: 1, depthWrite: false, toneMapped: false });
+  // One of them in the scene from the start, hidden, on an empty line: the
+  // renderer's look for new programs (`renderer.ts`, `compileCopy`) builds
+  // the line program before the first strike draws it.
+  const warm = new LineSegments2(new LineSegmentsGeometry().setPositions([0, 0, 0, 0, 0, 0]), material());
+  warm.visible = false;
+  warm.frustumCulled = false;
+  group.add(warm);
   const make = (positions: number[], width: number, opacity: number): { mesh: LineSegments2; material: LineMaterial } => {
     const geometry = new LineSegmentsGeometry();
     geometry.setPositions(positions);
-    const material = new LineMaterial({ color: core, linewidth: width, transparent: true, opacity, depthWrite: false, toneMapped: false });
-    const mesh = new LineSegments2(geometry, material);
+    const m = material();
+    m.linewidth = width;
+    m.opacity = opacity;
+    const mesh = new LineSegments2(geometry, m);
     mesh.frustumCulled = false;
     mesh.renderOrder = 6;
-    return { mesh, material };
+    return { mesh, material: m };
   };
   return {
     group,
@@ -100,7 +118,7 @@ export function createLightning(): Lightning {
         s.age += delta;
         if (s.age >= STRIKE_LIFE) {
           for (const m of s.meshes) { group.remove(m); m.geometry.dispose(); }
-          for (const m of s.materials) m.dispose();
+          free.push(...s.materials);
           strikes.splice(i, 1);
           continue;
         }
@@ -121,6 +139,10 @@ export function createLightning(): Lightning {
         for (const m of s.materials) m.dispose();
       }
       strikes.length = 0;
+      for (const m of free) m.dispose();
+      free.length = 0;
+      warm.geometry.dispose();
+      (warm.material as LineMaterial).dispose();
     },
   };
 }
