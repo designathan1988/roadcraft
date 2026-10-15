@@ -81,7 +81,9 @@ export function stepAdmission(w: SimWorld): void {
   // every request's tests, which went through the whole fleet each time.
   admittedBy = new Map();
   holders = new Set();
-  for (const v of w.vehicles.values()) {
+  // Only the vehicles at a junction (`SimWorld.junctionHolders`): a vehicle
+  // holding anything is admitted, clearing, or on a connector.
+  for (const v of w.junctionHolders()) {
     if (v.admittedConnector) {
       const list = admittedBy.get(v.admittedConnector);
       if (list) list.push(v); else admittedBy.set(v.admittedConnector, [v]);
@@ -233,6 +235,7 @@ function admit(w: SimWorld, banker: BankerPass): void {
           .map((reservation) => reservation.connector.id);
       }
       r.v.admittedConnector = r.conn.id;
+      w.noteHolder(r.v);
       w.mergeTurn.set(r.conn.toLane, r.conn.fromLane);
       banker.changed(r.v);
       granted(r.v, r.conn.id);
@@ -289,7 +292,9 @@ function admit(w: SimWorld, banker: BankerPass): void {
  * and clears under the all-red, which is exactly what the all-red is for.
  */
 function revokeStaleGrants(w: SimWorld): void {
-  for (const v of w.vehiclesInIdOrder()) {
+  // The admitted, in id order (`SimWorld.junctionHolders`, not the fleet).
+  const admitted = w.junctionHolders().filter((v) => v.admittedConnector !== null).sort((a, b) => a.id - b.id);
+  for (const v of admitted) {
     if (!v.admittedConnector) continue;
     const lane = w.lanelet(v.lanelet);
     // Only while the nose is still on the approach. Once the vehicle is on the

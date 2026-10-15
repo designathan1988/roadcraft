@@ -86,7 +86,8 @@ export function indexReservations(w: SimWorld): void {
   const index = RESERVATIONS.get(w) ?? new Map<NodeId, Reservation[]>();
   index.clear();
   RESERVATIONS.set(w, index);
-  for (const v of w.vehicles.values()) {
+  // Only the vehicles at a junction (`SimWorld.junctionHolders`), not the fleet.
+  for (const v of w.junctionHolders()) {
     const lane = w.lanelet(v.lanelet);
     // A vehicle mid-lane, clearing nothing and admitted nowhere, holds no
     // reservation: skipping it before building its key list is most of the

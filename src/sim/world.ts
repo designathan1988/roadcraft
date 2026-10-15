@@ -165,6 +165,17 @@ export class SimWorld {
   doLess = true;
   /** Lanes with a vehicle on them: written only by `enterLanelet`/`exitLanelet`, the only writers of `order`. */
   readonly occupied = new Set<LaneletId>();
+  /**
+   * The vehicles that may hold something at a junction: given a movement
+   * (`admittedConnector`, admission), clearing one with their rear
+   * (`clearingConnectors`, integration), or on a connector
+   * (`enterLanelet`). Noted by those writers (`noteHolder`), dropped by
+   * `junctionHolders` once they hold nothing. DO NOT find them by walking
+   * the fleet: three passes over every vehicle of the map each tick (the
+   * signals' reservations, the walkers', the admission's holders) for the
+   * few at a junction.
+   */
+  private readonly maybeHolders = new Set<Vehicle>();
   /** Runtime lanes no longer in the graph (an edit took them): stage 7's work list (`collectGhosts`). */
   readonly ghostCandidates = new Set<LaneletId>();
   /**
@@ -346,6 +357,7 @@ export class SimWorld {
    */
   reset(): void {
     this.vehicles.clear();
+    this.maybeHolders.clear();
     this.runtime.clear();
     this.claims.clear();
     this.controllers.clear();
@@ -431,6 +443,26 @@ export class SimWorld {
 
   controller(node: NodeId): SignalController | undefined {
     return this.controllers.get(node);
+  }
+
+  /** A vehicle that may now hold something at a junction (`maybeHolders`): for the writers of what it holds. */
+  noteHolder(v: Vehicle): void {
+    this.maybeHolders.add(v);
+  }
+
+  /**
+   * The vehicles holding or clearing a movement, or on a connector, now - in
+   * no set order (every reader's answer is a set: who reserves what, who
+   * holds what). Those noted that hold nothing any more are dropped here.
+   */
+  junctionHolders(): Vehicle[] {
+    const out: Vehicle[] = [];
+    for (const v of this.maybeHolders) {
+      if (this.vehicles.get(v.id) !== v) { this.maybeHolders.delete(v); continue; }
+      if (v.admittedConnector !== null || v.clearingConnectors.length > 0 || this.lanelet(v.lanelet)?.kind === 'connector') out.push(v);
+      else this.maybeHolders.delete(v);
+    }
+    return out;
   }
 
   /**
@@ -789,7 +821,7 @@ export class SimWorld {
     const reservedGroups = (): Map<NodeId, Set<number>> => {
       if (reserved) return reserved;
       reserved = new Map();
-      for (const vehicle of this.vehicles.values()) {
+      for (const vehicle of this.junctionHolders()) {
         const lane = this.lanelet(vehicle.lanelet);
         const ownsAllocation =
           vehicle.admittedConnector !== null ||
@@ -1018,6 +1050,7 @@ export class SimWorld {
     this.sortLane(rt);
     v.lanelet = id;
     const lane = this.lanelet(id);
+    if (lane?.kind === 'connector') this.noteHolder(v);
     // A vehicle entering a junction's movement: the flow from its leg (V5).
     if (recordVolume && lane?.kind === 'connector' && lane.node !== undefined) {
       const from = this.lanelet(lane.fromLane ?? '')?.segment;
@@ -1106,6 +1139,7 @@ export class SimWorld {
   }
 
   removeVehicle(v: Vehicle): void {
+    this.maybeHolders.delete(v);
     this.clearShadow(v);
     this.exitLanelet(v, v.lanelet);
     this.claims.releaseAll(v.id);

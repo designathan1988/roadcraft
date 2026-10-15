@@ -436,6 +436,7 @@ function advanceTo(w: SimWorld, v: Vehicle, target: string, carried: number): bo
         connector: current.id,
         distanceBeyondExit: carried,
       });
+      w.noteHolder(v);
     }
     // Admission now describes only the movement the front is about to enter.
     // The previous junction remains protected by `clearingConnectors`.
