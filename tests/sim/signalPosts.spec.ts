@@ -85,12 +85,13 @@ describe('the signal posts the walkers keep clear of', () => {
       expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
     }
     expect(switched).toBeGreaterThan(20);
-    // An edit of the roads builds every junction again: every one to be read.
+    // An edit of the roads: the junctions it reached (at the ends of the segments there) to be read, not
+    // every junction of the map - and the posts kept from them are the posts placed from nothing.
     const before = sim.signalChangesSince(-1).serial;
     doc.addSegment(doc.addNode({ x: 120, y: -150 }).id, doc.addNode({ x: 120, y: -250 }).id, 1);
     sim.net.rebuild();
     sim.rebuildTopology();
-    expect(sim.signalChangesSince(before).nodes).toBeNull();
+    expect(sim.signalChangesSince(before).nodes).not.toBeNull();
     sim.signalPosts.follow(sim);
     expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
   }, 60_000);

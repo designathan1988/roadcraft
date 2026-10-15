@@ -1,4 +1,5 @@
 import { Rng } from '@core/rng';
+import { JournalCursor } from '@world/derived';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
@@ -696,8 +697,10 @@ export class SimWorld {
     rebuildWork.lanes += nodes.size;
     this.flow.keepOnly(nodes);
     this.advisor.forget(nodes);
-    // Every junction built again: whoever keeps something by a junction's control reads them all.
-    this.forgetSignals();
+    // The junctions whose control the rebuild changed are noted by `syncControllers`; those at the ends
+    // of the segments the edit reached (their posts stand where the roads are) are noted here. DO NOT
+    // forget the log here: every road drawn anywhere had every junction's posts and heads placed again.
+    this.noteJunctionsReached();
     if (this.applyAutoControl()) this.syncControllers();
   }
 
@@ -730,8 +733,32 @@ export class SimWorld {
   private noteSignal(node: NodeId): void {
     this.signalLog.push(node);
     this.signalSerial++;
-    // Longer than reading every junction: forgotten (its readers read them all).
-    if (this.signalLog.length > Math.max(64, this.graph.junctions.size)) this.forgetSignals();
+    // Twice as long as reading every junction: the older half let go, the base moved past it. A reader
+    // behind the base reads every junction (`signalChangesSince` null); one that keeps up never is. DO NOT
+    // forget the whole log here: a reader that had just read was sent to read every junction again.
+    const most = 2 * Math.max(64, this.graph.junctions.size);
+    if (this.signalLog.length > most) {
+      const drop = this.signalLog.length - most / 2;
+      this.signalLog.splice(0, drop);
+      this.signalLogBase += drop;
+    }
+  }
+
+  /** The roads' changes since the last rebuild (`noteJunctionsReached`). */
+  private readonly roadsSeen = new JournalCursor(['roads']);
+
+  /** The junctions at the ends of the segments the roads' changes reached, noted; the log forgotten when the diary cannot say. */
+  private noteJunctionsReached(): void {
+    const entries = this.roadsSeen.read(this.doc.changes);
+    if (entries === null || entries.some((e) => e.rects === null)) { this.forgetSignals(); return; }
+    for (const entry of entries) {
+      for (const rect of entry.rects!) {
+        for (const id of this.net.segmentCells.idsMeeting(rect)) {
+          const segment = this.doc.segment(id);
+          if (segment) { this.noteSignal(segment.a); this.noteSignal(segment.b); }
+        }
+      }
+    }
   }
 
   private forgetSignals(): void {
@@ -1043,6 +1070,7 @@ export class SimWorld {
         if (was && samePlanInputs(was, inputs)) continue;
         rebuildWork.signals++;
         rebuildController(existing, junction, crossings, deps);
+        this.noteSignal(node);
         // A fixed-time signal back where the common clock says, with its offset (V5).
         if (settings?.mode === 'fixed') seekFixed(existing, settings, this.tickCount() * DT);
       } else {
@@ -1053,6 +1081,7 @@ export class SimWorld {
         const created = createController(junction, crossings, deps, offset);
         if (settings?.mode === 'fixed') seekFixed(created, settings, this.tickCount() * DT);
         this.controllers.set(node, created);
+        this.noteSignal(node);
       }
       this.planInputs.set(node, inputs);
     }
@@ -1061,6 +1090,7 @@ export class SimWorld {
       if (!this.graph.junctions.has(node)) {
         this.controllers.delete(node);
         this.planInputs.delete(node);
+        this.noteSignal(node);
       }
     }
     this.junctionsVersion++;

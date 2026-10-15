@@ -20,6 +20,7 @@ import {
 } from 'three';
 
 import { signalPostPlace } from '@world/signalPosts';
+import { JournalCursor } from '@world/derived';
 import type { SimWorld } from '@sim/world';
 import type { NodeId, SegmentId } from '@world/ids';
 import { signalStateFor, type SignalState } from '@sim/signals/query';
@@ -292,16 +293,21 @@ export function createSignalHeads(
   /** What each head shows, by `node:segment`, for the verification harness. */
   const shown = new Map<string, SignalState>();
   group.userData.heads = shown;
-  let cells: Cell[] = [];
+  /** The cells by key (`SIGNAL_CELL` of each junction's first head), and each junction's cell. */
+  const cells = new Map<number, Cell>();
+  const junctionCell = new Map<NodeId, number>();
+  /** The network the heads stand on, the junctions' log as last read (`signalChangesSince`), and the land's changes. */
   let placedNetwork: SimWorld['net'] | null = null;
-  let placedRevision = -1;
-  let placedTrafficRevision = -1;
-  let placedTerrainRevision = -1;
-  let placedTopology = -1;
+  let signalSerial = -1;
+  const landRead = new JournalCursor(['terrain', 'elevation']);
 
+  const dropCell = (cell: Cell): void => {
+    for (const name of NAMES) { group.remove(cell.batches[name]); cell.batches[name].dispose(); }
+  };
   const dropCells = (): void => {
-    for (const cell of cells) for (const name of NAMES) { group.remove(cell.batches[name]); cell.batches[name].dispose(); }
-    cells = [];
+    for (const cell of cells.values()) dropCell(cell);
+    cells.clear();
+    junctionCell.clear();
   };
 
   /** A cell's lenses written again from its heads' states: that cell's alone. */
@@ -326,71 +332,112 @@ export function createSignalHeads(
     cell.stale = false;
   };
 
+  /** A signalised junction's heads, one on each approach of a signal group, where the world stands its post. */
+  const junctionOf = (world: SimWorld, node: NodeId): Junction | null => {
+    const junction = world.graph.junctions.get(node);
+    if (!junction?.signalised || !world.controller(node)) return null;
+    const nodeRecord = world.doc.node(node);
+    if (!nodeRecord) return null;
+    const heads: Head[] = [];
+    for (const segmentId of nodeRecord.incident) {
+      const segment = world.doc.segment(segmentId);
+      if (!segment) continue;
+      const signalGroup = junction.groups.find((candidate) => candidate.segments.includes(segmentId));
+      if (!signalGroup) continue;
+      // Where the post stands is the world's (`world/signalPosts.ts`): the
+      // pedestrians walk round the same post.
+      const post = signalPostPlace(world.net, node, segmentId);
+      if (!post) continue;
+      heads.push({
+        x: post.x,
+        height: elevationAt(world, post.x, post.y, segmentId),
+        y: post.y,
+        // Local +X carries the arm inward over the road. Under the shared
+        // world-to-Three mapping, the world heading is also the Three yaw.
+        yaw: post.yaw,
+        groupId: signalGroup.id,
+        key: `${node}:${segmentId}`,
+        state: null,
+      });
+    }
+    return heads.length ? { node, heads, plan: null, stage: -1, sub: '' } : null;
+  };
+  const cellKeyOf = (j: Junction): number => Math.floor(j.heads[0]!.x / SIGNAL_CELL) * 100_003 + Math.floor(j.heads[0]!.y / SIGNAL_CELL);
+  /** A cell's batches made again from its junctions: that cell's alone. */
+  const buildCell = (key: number, junctions: Junction[]): void => {
+    const was = cells.get(key);
+    if (was) { dropCell(was); cells.delete(key); }
+    if (!junctions.length) return;
+    const heads = junctions.flatMap((j) => j.heads);
+    let cx = 0, cy = 0, cz = 0;
+    for (const h of heads) { cx += h.x; cy += h.height; cz -= h.y; }
+    cx /= heads.length; cy /= heads.length; cz /= heads.length;
+    let r = 0;
+    for (const h of heads) r = Math.max(r, Math.hypot(h.x - cx, h.height - cy, -h.y - cz));
+    const sphere = new Sphere(new Vector3(cx, cy, cz), r + HEAD_REACH);
+    const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, stale: true };
+    for (const head of heads) {
+      rootOf(head);
+      put(cell.batches.posts, POST);
+      put(cell.batches.arms, ARM);
+      put(cell.batches.boxes, BOX);
+      for (const visor of visors) put(cell.batches.visors, visor);
+    }
+    for (const name of FIXED) flush(cell.batches[name]);
+    for (const name of LENSES) cell.batches[name].visible = false;
+    cells.set(key, cell);
+  };
+  const countLamps = (): void => {
+    let lamps = 0;
+    for (const cell of cells.values()) lamps += cell.heads.length * LAMPS.length * FACES.length;
+    group.userData.lamps = lamps;
+  };
+
   /**
    * Every head of the map placed again, cell by cell.
-   * @rebuild Called when the network, the traffic plan, the terrain or the topology revision moved.
+   * @rebuild Called when the junctions' log cannot say what changed (the first look, a map opened, a log forgotten).
    */
   const placeAll = (world: SimWorld): void => {
     dropCells();
     shown.clear();
     const byCell = new Map<number, Junction[]>();
-    let lamps = 0;
     for (const node of world.junctionNodesInOrder()) {
-      const junction = world.graph.junctions.get(node);
-      if (!junction?.signalised || !world.controller(node)) continue;
-      const nodeRecord = world.doc.node(node);
-      if (!nodeRecord) continue;
-      const heads: Head[] = [];
-      for (const segmentId of nodeRecord.incident) {
-        const segment = world.doc.segment(segmentId);
-        if (!segment) continue;
-        const signalGroup = junction.groups.find((candidate) => candidate.segments.includes(segmentId));
-        if (!signalGroup) continue;
-        // Where the post stands is the world's (`world/signalPosts.ts`): the
-        // pedestrians walk round the same post.
-        const post = signalPostPlace(world.net, node, segmentId);
-        if (!post) continue;
-        heads.push({
-          x: post.x,
-          height: elevationAt(world, post.x, post.y, segmentId),
-          y: post.y,
-          // Local +X carries the arm inward over the road. Under the shared
-          // world-to-Three mapping, the world heading is also the Three yaw.
-          yaw: post.yaw,
-          groupId: signalGroup.id,
-          key: `${node}:${segmentId}`,
-          state: null,
-        });
-      }
-      if (!heads.length) continue;
-      lamps += heads.length * LAMPS.length * FACES.length;
-      const first = heads[0]!;
-      const key = Math.floor(first.x / SIGNAL_CELL) * 100_003 + Math.floor(first.y / SIGNAL_CELL);
-      const entry: Junction = { node, heads, plan: null, stage: -1, sub: '' };
+      const entry = junctionOf(world, node);
+      if (!entry) continue;
+      const key = cellKeyOf(entry);
+      junctionCell.set(node, key);
       const list = byCell.get(key);
       if (list) list.push(entry); else byCell.set(key, [entry]);
     }
-    for (const junctions of byCell.values()) {
-      const heads = junctions.flatMap((j) => j.heads);
-      let cx = 0, cy = 0, cz = 0;
-      for (const h of heads) { cx += h.x; cy += h.height; cz -= h.y; }
-      cx /= heads.length; cy /= heads.length; cz /= heads.length;
-      let r = 0;
-      for (const h of heads) r = Math.max(r, Math.hypot(h.x - cx, h.height - cy, -h.y - cz));
-      const sphere = new Sphere(new Vector3(cx, cy, cz), r + HEAD_REACH);
-      const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, stale: true };
-      for (const head of heads) {
-        rootOf(head);
-        put(cell.batches.posts, POST);
-        put(cell.batches.arms, ARM);
-        put(cell.batches.boxes, BOX);
-        for (const visor of visors) put(cell.batches.visors, visor);
+    for (const [key, junctions] of byCell) buildCell(key, junctions);
+    countLamps();
+  };
+
+  /** These junctions placed again, and the cells they left or came into made again. */
+  const placeSome = (world: SimWorld, nodes: Iterable<NodeId>): void => {
+    const touched = new Map<number, Junction[]>();
+    const cellJunctions = (key: number): Junction[] => {
+      let list = touched.get(key);
+      if (!list) touched.set(key, list = [...(cells.get(key)?.junctions ?? [])]);
+      return list;
+    };
+    for (const node of new Set(nodes)) {
+      const was = junctionCell.get(node);
+      if (was !== undefined) {
+        const list = cellJunctions(was);
+        const at = list.findIndex((j) => j.node === node);
+        if (at >= 0) for (const head of list[at]!.heads) shown.delete(head.key);
+        if (at >= 0) list.splice(at, 1);
+        junctionCell.delete(node);
       }
-      for (const name of FIXED) flush(cell.batches[name]);
-      for (const name of LENSES) cell.batches[name].visible = false;
-      cells.push(cell);
+      const entry = junctionOf(world, node);
+      if (!entry) continue;
+      const key = cellKeyOf(entry);
+      junctionCell.set(node, key);
+      cellJunctions(key).push(entry);
     }
-    group.userData.lamps = lamps;
+    for (const [key, junctions] of touched) buildCell(key, junctions);
+    countLamps();
   };
 
   return {
@@ -401,24 +448,35 @@ export function createSignalHeads(
         return;
       }
       group.visible = true;
-      if (placedNetwork !== world.net || placedRevision !== world.net.revision
-        || placedTrafficRevision !== world.net.trafficRevision || placedTerrainRevision !== world.doc.terrainRevision
-        // The junctions are the simulation's: rebuilt a frame after the network
-        // (a control changed), and the posts must follow them, not the old graph.
-        || placedTopology !== world.topologyRevision) {
+      // The junctions are the simulation's: what changed among them since the last look is its log
+      // (`SimWorld.signalChangesSince`: a control switched, the junctions an edit reached); the heads'
+      // heights follow the land, at the junctions near where it changed. DO NOT place every head of the
+      // map again on a revision of the network, the traffic, the land or the topology: every road drawn
+      // anywhere did.
+      const log = world.signalChangesSince(signalSerial);
+      const land = landRead.read(world.doc.changes);
+      if (placedNetwork !== world.net || log.nodes === null || land === null || land.some((e) => e.rects === null)) {
         placedNetwork = world.net;
-        placedRevision = world.net.revision;
-        placedTrafficRevision = world.net.trafficRevision;
-        placedTerrainRevision = world.doc.terrainRevision;
-        placedTopology = world.topologyRevision;
         placeAll(world);
+      } else {
+        const nodes = new Set<NodeId>(log.nodes);
+        for (const entry of land) {
+          for (const rect of entry.rects!) {
+            for (const id of world.net.segmentCells.idsMeeting(rect)) {
+              const segment = world.doc.segment(id);
+              if (segment) { nodes.add(segment.a); nodes.add(segment.b); }
+            }
+          }
+        }
+        if (nodes.size) placeSome(world, nodes);
       }
+      signalSerial = log.serial;
       // Only the cells in view: their junctions' phases asked, and the lenses
       // of a cell whose light changed written again - that cell's alone. A
       // cell out of view is asked when it comes in. DO NOT ask every head of
       // the map each frame, nor write every lens of the map at a change of one.
       let litLenses = 0;
-      for (const cell of cells) {
+      for (const cell of cells.values()) {
         if (frustum && !frustum.intersectsSphere(cell.sphere)) continue;
         for (const junction of cell.junctions) {
           const controller = world.controller(junction.node);
