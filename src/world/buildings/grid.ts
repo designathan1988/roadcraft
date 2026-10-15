@@ -1,6 +1,6 @@
+import type { Aabb } from '@core/aabb';
 import { m } from '../units';
-import { storedBounds } from './geometry';
-import type { Building, BuildingId } from './types';
+import type { BuildingId } from './types';
 
 /**
  * THE BUILDINGS BY PLACE (`BuildingStore.near`): a grid of cells, each
@@ -27,19 +27,30 @@ interface Placed {
   readonly rank: number;
 }
 
-export class BuildingGrid {
+/** What the grid files: a building, or what its neighbours read of one (`neighbours.ts`), with its anchor. */
+interface Filed {
+  readonly id: BuildingId;
+  readonly x: number;
+  readonly y: number;
+}
+
+export class BuildingGrid<T extends Filed> {
   /** Each cell's buildings in the store's order (by rank). */
   private readonly cells = new Map<number, BuildingId[]>();
   private readonly placed = new Map<BuildingId, Placed>();
   private nextRank = 0;
 
-  /** Every building, in the store's order (a load, a clear, a whole store taken over). */
-  constructor(all: Iterable<Building>) {
+  /**
+   * Every building, in the store's order (a load, a clear, a whole store taken over). `boxOf`: its box as
+   * the store files it (`storedBounds`), the same for whatever stands in for it, so a grid of neighbours
+   * (`editor/growthReplica.ts`) answers as the store's does.
+   */
+  constructor(all: Iterable<T>, private readonly boxOf: (item: T) => Aabb) {
     for (const b of all) this.insert(b);
   }
 
-  private keysOf(b: Building): number[] {
-    const box = storedBounds(b);
+  private keysOf(b: T): number[] {
+    const box = this.boxOf(b);
     const x0 = Math.min(box.minX, b.x), y0 = Math.min(box.minY, b.y), x1 = Math.max(box.maxX, b.x), y1 = Math.max(box.maxY, b.y);
     const keys: number[] = [];
     for (let i = Math.floor(x0 / CELL); i <= Math.floor(x1 / CELL); i++) {
@@ -70,14 +81,14 @@ export class BuildingGrid {
   }
 
   /** A building new to the store: last in its order. */
-  insert(b: Building): void {
+  insert(b: T): void {
     const keys = this.keysOf(b), rank = this.nextRank++;
     this.placed.set(b.id, { keys, rank });
     this.file(b.id, rank, keys);
   }
 
   /** A building's record replaced: it keeps its place in the order. */
-  update(b: Building): void {
+  update(b: T): void {
     const was = this.placed.get(b.id);
     if (!was) { this.insert(b); return; }
     const keys = this.keysOf(b);

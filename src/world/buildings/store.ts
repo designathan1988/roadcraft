@@ -67,7 +67,7 @@ export class BuildingStore {
    */
   private settled = new WeakSet<object>();
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
-  private grid: BuildingGrid | null = null;
+  private grid: BuildingGrid<Building> | null = null;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
@@ -143,7 +143,7 @@ export class BuildingStore {
    * asks about one place asks this, never `all()`.
    */
   near(minX: number, minY: number, maxX: number, maxY: number): Building[] {
-    this.grid ??= new BuildingGrid(this.items.values());
+    this.grid ??= new BuildingGrid(this.items.values(), (b) => storedBounds(b));
     return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
   }
 

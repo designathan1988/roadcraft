@@ -387,7 +387,7 @@ function travelProfile(
  * They are strictly decreasing from Casing to Asphalt, which is what guarantees
  * the level rings nest (see the containment assertion in the junction tests).
  */
-export function halfWidth(rt: RoadType, level: SurfaceLevel): number {
+export function halfWidth(rt: Pick<RoadType, 'width' | 'sidewalk'>, level: SurfaceLevel): number {
   switch (level) {
     case Level.Asphalt:
       return rt.width / 2;

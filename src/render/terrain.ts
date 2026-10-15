@@ -1,4 +1,5 @@
 import { Digest } from '@core/digest';
+import { cellDiagonal, cellHeight } from '@world/groundPatch';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -2212,8 +2213,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         const a = cx + GRID * cy, b = cx + GRID * (cy + 1), c = cx + 1 + GRID * (cy + 1), d = cx + 1 + GRID * cy;
-        // A margin, so near-flat cells keep the plane's diagonal.
-        into[cx + cy * TERRAIN_SEGMENTS] = Math.abs((corners[a] as number) - (corners[c] as number)) + 0.5 < Math.abs((corners[b] as number) - (corners[d] as number)) ? 1 : 0;
+        // A margin, so near-flat cells keep the plane's diagonal (`cellDiagonal`, read by the growth's worker too).
+        into[cx + cy * TERRAIN_SEGMENTS] = cellDiagonal(corners[a] as number, corners[b] as number, corners[c] as number, corners[d] as number);
       }
     }
   };
@@ -2261,10 +2262,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const d = corners[ix + 1 + iy * GRID] as number;
     // Each cell is split along the diagonal it is DRAWN with (`retriangulate`):
     // b-d into (a, b, d) and (b, c, d), or a-c into (a, d, c) and (a, b, c).
-    if (diagonals[ix + iy * TERRAIN_SEGMENTS]) {
-      return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
-    }
-    return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);
+    // One rule with the growth's worker (`world/groundPatch.ts` `cellHeight`).
+    return cellHeight(a, b, c, d, u, v, diagonals[ix + iy * TERRAIN_SEGMENTS]!);
   };
 
   const renderedHeightAt = (x: number, y: number): number => sampleGrid(grid, flip, x, y);
