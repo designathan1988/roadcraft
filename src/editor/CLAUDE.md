@@ -54,12 +54,12 @@ owner in docs/STATUS.md before changing them.
 - **An editing tool:** add it to the `Tool` union and `TOOLS` in
   `editor/toolMachine.ts` (under `roads` if the Roads button holds it), a `case`
   in the `pointerdown` switch of `main.ts` and a letter in `TOOL_LETTERS` of
-  `editor/gameKeys.ts` (keys are rules there, never a new `keydown` listener); add a button with
-  `data-tool="…"` to `index.html` and its icon and tooltip in the interface
-  (`src/ui/v2/shell.ts` presses `.tool[data-tool]`); then `tool.<name>`,
-  `hint.<name>` and `hint.mobile.<name>` in both dictionaries. The junction-control
+  `editor/gameKeys.ts` (keys are rules there, never a new `keydown` listener); give it its
+  place in the interface (`src/ui/v2/shell.ts`: `categoryOf`, the panel of its
+  category, and `CATS` for a new one in the dock); then `tool.<name>`,
+  `hint.<name>` in both dictionaries. The junction-control
   tool (`cycleNodeControl`) is the smallest complete example.
 - **A terrain brush:** `world/terrain.ts` first (see `src/world/CLAUDE.md`), then its
   button in the interface, then `TERRAIN_BRUSH_COLOUR` and `TERRAIN_BRUSH_FILL` in
   `main.ts` (or the ring preview throws), then both dictionaries including
-  `hint.terrain.<mode>` and `hint.mobile.terrain.<mode>`.
+  `hint.terrain.<mode>` (a key nothing asks for fails `tests/ui/i18nKeys.spec.ts`).
