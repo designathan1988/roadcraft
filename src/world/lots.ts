@@ -306,14 +306,26 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
     const bb = r.full.bbox;
     return [bb.minX - pad, bb.minY - pad, bb.maxX + pad, bb.maxY + pad] as [number, number, number, number];
   });
-  // Groups: boxes overlapping, joined (a union-find over the pairs).
+  // Groups: boxes overlapping, joined (a union-find over the pairs). The
+  // pairs that can overlap are found by the cells the boxes cover (spatial
+  // hashing): every box against every other was streets² on each plan. The
+  // groups do not depend on the order of the joins.
   const parent = ribbons.map((_, i) => i);
   const root = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]!]!; i = parent[i]!; } return i; };
+  const boxCells = new Map<number, number[]>();
   for (let i = 0; i < boxes.length; i++) {
     const a = boxes[i]!;
-    for (let j = i + 1; j < boxes.length; j++) {
-      const b = boxes[j]!;
-      if (a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]) parent[root(i)] = root(j);
+    for (let cx = Math.floor(a[0] / GROUP_CELL); cx <= Math.floor(a[2] / GROUP_CELL); cx++) {
+      for (let cy = Math.floor(a[1] / GROUP_CELL); cy <= Math.floor(a[3] / GROUP_CELL); cy++) {
+        const k = (cx + 32768) * 65536 + (cy + 32768);
+        const list = boxCells.get(k);
+        if (!list) { boxCells.set(k, [i]); continue; }
+        for (const j of list) {
+          const b = boxes[j]!;
+          if (root(i) !== root(j) && a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]) parent[root(i)] = root(j);
+        }
+        list.push(i);
+      }
     }
   }
   const groups = new Map<number, number[]>();
@@ -538,6 +550,8 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
 const LAND_CLEARANCE = m(0.08);
 /** Side of the grid the lots are filed in while a plan is made (`planLotsSteps`). */
 const FIT_CELL = m(64);
+/** Side of the grid the streets' boxes are grouped in (`planLotsSteps`). */
+const GROUP_CELL = m(128);
 
 /**
  * A proposed lot (four corners, the front first) cut back to the land: the
