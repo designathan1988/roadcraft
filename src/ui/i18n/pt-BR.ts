@@ -827,6 +827,7 @@ export const PT_BR: Dictionary = {
   'health.tab.state': 'Estado',
   'health.copy': 'Copiar registro',
   'health.copied': 'Copiado',
+  'health.copyFailed': 'Não foi possível copiar: o navegador recusou a área de transferência',
   'health.status.ok': 'Nada quebrou nem travou nos últimos 30 s',
   'health.status.slow': 'Houve quadro lento nos últimos 30 s',
   'health.status.broken': 'Algo quebrou nos últimos 30 s',

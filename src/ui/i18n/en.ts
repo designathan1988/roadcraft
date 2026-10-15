@@ -839,6 +839,7 @@ export const EN: Dictionary = {
   'health.tab.state': 'State',
   'health.copy': 'Copy log',
   'health.copied': 'Copied',
+  'health.copyFailed': 'Could not copy: the browser refused the clipboard',
   'health.status.ok': 'Nothing broke or hitched in the last 30 s',
   'health.status.slow': 'A frame was slow in the last 30 s',
   'health.status.broken': 'Something broke in the last 30 s',

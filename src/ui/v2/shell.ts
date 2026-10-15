@@ -472,6 +472,8 @@ export interface ShellHandle {
    * the key put it down (as the dock's second click), and I opens Information.
    */
   toolKeyed(tool: string): void;
+  /** Puts a control of the game's own in the top bar, before Help (F9's button, `ui/healthPanel.ts`). */
+  addToBar(control: HTMLElement): void;
 }
 
 export function mountShell(deps: ShellDeps): ShellHandle {
@@ -2169,6 +2171,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     toolKeyed(next) {
       open = next === 'inspect' || tool() !== 'inspect';
       later();
+    },
+    addToBar(control) {
+      actionsBar.insertBefore(control, helpB);
     },
   };
 }
