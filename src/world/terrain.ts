@@ -310,10 +310,9 @@ function baseReliefTuned(x: number, y: number): number {
  * tests per brush stroke, which is precisely the stall felt while painting.
  */
 export class TerrainIndex {
-  private readonly cell: number;
   private readonly buckets = new Map<number, TerrainStamp[]>();
   readonly stamps: readonly TerrainStamp[];
-  /** Incremented whenever the index is rebuilt, for cache invalidation. */
+  /** The revision the caller built it at (`RoadDoc.terrainRevision`), kept for it; the index itself never reads it. */
   readonly revision: number;
   /** The land under the stamps (`ReliefVersion`). */
   readonly relief: ReliefVersion;
@@ -333,17 +332,18 @@ export class TerrainIndex {
     // the renderer could never tell what had just changed.
     this.stamps = stamps.slice();
     this.revision = revision;
-    let widest = m(25.6);
-    for (const stamp of stamps) widest = Math.max(widest, stamp.radius);
-    this.cell = widest;
+    // A FIXED cell, each stamp filed in every cell it covers. DO NOT size the
+    // cell by the widest stamp: one wide stamp (the default town's hill, 560 m)
+    // made every cell that wide, and every height query - a terrain vertex, a
+    // road station - read nearly every stamp of the map.
     for (const stamp of stamps) {
-      const x0 = Math.floor((stamp.x - stamp.radius) / this.cell);
-      const x1 = Math.floor((stamp.x + stamp.radius) / this.cell);
-      const y0 = Math.floor((stamp.y - stamp.radius) / this.cell);
-      const y1 = Math.floor((stamp.y + stamp.radius) / this.cell);
+      const x0 = Math.floor((stamp.x - stamp.radius) / STAMP_CELL);
+      const x1 = Math.floor((stamp.x + stamp.radius) / STAMP_CELL);
+      const y0 = Math.floor((stamp.y - stamp.radius) / STAMP_CELL);
+      const y1 = Math.floor((stamp.y + stamp.radius) / STAMP_CELL);
       for (let x = x0; x <= x1; x++) {
         for (let y = y0; y <= y1; y++) {
-          const key = x * 73_856_093 + y * 19_349_663;
+          const key = stampCellKey(x, y);
           const bucket = this.buckets.get(key);
           if (bucket) bucket.push(stamp);
           else this.buckets.set(key, [stamp]);
@@ -359,10 +359,14 @@ export class TerrainIndex {
    * applying them out of order gives a different surface.
    */
   near(x: number, y: number): readonly TerrainStamp[] {
-    const key = Math.floor(x / this.cell) * 73_856_093 + Math.floor(y / this.cell) * 19_349_663;
-    return this.buckets.get(key) ?? EMPTY;
+    return this.buckets.get(stampCellKey(Math.floor(x / STAMP_CELL), Math.floor(y / STAMP_CELL))) ?? EMPTY;
   }
 }
+
+/** Side of the stamp index's cells, world units. */
+const STAMP_CELL = m(64);
+/** A cell's key from its column and row: exact, no two cells share one (a hash of them could). */
+const stampCellKey = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
 
 const EMPTY: readonly TerrainStamp[] = [];
 

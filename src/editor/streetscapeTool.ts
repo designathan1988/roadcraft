@@ -1,13 +1,12 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { footwayAt, landscapeNear, snapLandscape, type LandscapeItem, type LandscapeKind, type LandscapeSnap } from '@world/landscape';
+import { MAX_ITEM_RADIUS, footwayAt, landscapeNearIn, snapLandscape, type LandscapeItem, type LandscapeKind, type LandscapeSnap } from '@world/landscape';
 import type { SignType } from '@world/landscape';
 import { m } from '@world/units';
 import { signApproach } from '@world/roads/derivedSigns';
 import { FURNITURE_CATALOG } from '@world/roads/furnitureCatalog';
 import { Level, halfWidth } from '@world/roadTypes';
-import { LANDSCAPE_RADIUS_MOST, landscapeAround } from './itemCells';
 import { ribbonsNear } from './snap';
 
 /** What the landscaping tool reads of the game and does to it. */
@@ -53,7 +52,7 @@ export class StreetscapeTool {
     const { host } = this;
     const { doc } = host;
     if (shift) {
-      const hit = landscapeNear(landscapeAround(doc, world, this.reach() + LANDSCAPE_RADIUS_MOST), world, this.reach());
+      const hit = landscapeNearIn(doc, world, this.reach());
       if (hit) {
         host.mutate(() => doc.removeLandscape(hit.id));
         host.hint('hint.streetscape.removed');
@@ -156,7 +155,7 @@ function rowPieces(host: StreetscapeToolHost, kind: LandscapeKind, from: Landsca
 
 /**
  * The placed items `snapLandscape` can meet for a point `at` and a `reach`, from
- * the document's cells (`itemCells.ts`), never the whole map. It tests an item
+ * the document's cells (`RoadDoc.landscapeIn`), never the whole map. It tests an item
  * against the point it would place: on a footway, at most `reach` past the
  * band and a footway's width in from it, so within `reach + 2H` of `at`, `H`
  * the widest casing of the roads it looks at (those within `reach`); in a
@@ -170,7 +169,8 @@ function itemsAround(host: StreetscapeToolHost, at: Vec2, reach: number): Landsc
   for (const ribbon of ribbonsNear(host.net, [at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
     widest = Math.max(widest, halfWidth(ribbon.road, Level.Casing));
   }
-  return landscapeAround(host.doc, at, reach + 2 * widest + 2 * LANDSCAPE_RADIUS_MOST + MEADOW_CLEAR);
+  const r = reach + 2 * widest + 2 * MAX_ITEM_RADIUS + MEADOW_CLEAR;
+  return host.doc.landscapeIn([at.x - r, at.y - r, at.x + r, at.y + r]);
 }
 
 /** How far a meadow keeps from another (`snapLandscape`), and more than any gap between two items. */

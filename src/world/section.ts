@@ -26,8 +26,9 @@ import { carriesPedestrians } from './pedestrianAccess';
  * same section (OpenDRIVE lanes, Cities: Skylines lanes).
  *
  * Offsets are distances from the road centreline, world units, measured
- * outward on either side; the section is symmetric today (`RoadType` has one
- * footway width for both sides), so one `SideZones` describes both.
+ * outward on either side; each side has its own `SideZones` (`left`,
+ * `right`): a footway may be wider, or laid flush, on one side only
+ * (docs/source/VIAS.md V1).
  */
 
 /** A band across one side of the road: from `inner` to `outer`, measured from the centreline. */

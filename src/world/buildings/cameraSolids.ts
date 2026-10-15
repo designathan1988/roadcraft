@@ -1,6 +1,6 @@
 import { m } from '@world/units';
 import { isMass, roofRise, volumeHeight } from './geometry';
-import type { BuildingStore } from './store';
+import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
 /**
@@ -107,7 +107,7 @@ export interface CameraSolidsKeeper {
 export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: Building) => Rect, reach: number): CameraSolidsKeeper {
   const filing = new SolidFiling();
   let buildings: BuildingStore | null = null;
-  let read = -1;
+  const read = BuildingStore.cursor();
   let groundSeen = -1;
   /** Buildings to file again at the next ask, or the whole town; those whose floor the ground moved under, apart. */
   const pending = new Set<BuildingId>();
@@ -120,12 +120,10 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
       if (town !== buildings) { buildings = town; whole = true; }
       const was = pending.size;
       const wholeWas = whole;
-      if (read !== town.revision) {
-        const ids = read < 0 ? null : town.changedSince(read);
-        if (ids) for (const id of ids) pending.add(id);
-        else whole = true;
-        read = town.revision;
-      }
+      // Another store is another diary: the cursor reads it as everything changed.
+      const ids = town.changedFor(read);
+      if (ids) for (const id of ids) pending.add(id);
+      else whole = true;
       if (groundSeen !== ground.version) {
         const rects = groundSeen < 0 ? null : ground.rectsSince(groundSeen);
         if (rects === null) whole = true;

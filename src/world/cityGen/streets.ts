@@ -92,7 +92,9 @@ export function traceStreets(
       // street of this family laid offers seeds one spacing away on both
       // sides, so the streets fill the city row by row at even spacing; a
       // random point only when the queue runs dry.
+      // Read from `head` on: DO NOT `shift()` it, a copy of the queue for every seed taken.
       const queue: Vec2[] = [];
+      let head = 0;
       const offer = (points: readonly Vec2[]): void => {
         for (let i = 2; i < points.length; i += 4) {
           const p = points[i]!, q = points[i - 1]!;
@@ -102,8 +104,8 @@ export function traceStreets(
       };
       for (const line of lines) if (line.family === family) offer(line.points);
       while (fails < L.seedTries) {
-        const fromQueue = queue.length > 0;
-        const seed: Vec2 = fromQueue ? queue.shift()! : { x: rng.range(bounds.x0, bounds.x1), y: rng.range(bounds.y0, bounds.y1) };
+        const fromQueue = head < queue.length;
+        const seed: Vec2 = fromQueue ? queue[head++]! : { x: rng.range(bounds.x0, bounds.x1), y: rng.range(bounds.y0, bounds.y1) };
         if (!inside(seed) || grids[family].near(seed, dsep * 0.98) || !dirOf(family, seed)) { if (!fromQueue) fails++; continue; }
         const line = trace(seed, family, L, dtest);
         if (!line) { if (!fromQueue) fails++; continue; }
@@ -114,19 +116,23 @@ export function traceStreets(
       }
     }
   }
-  // Dangling ends carried on to the street they would meet.
-  for (const line of lines) {
-    if (line.closed) continue;
+  // Dangling ends carried on to the street they would meet. The stretches
+  // are filed by cell (`StretchGrid`): every end read every point of every
+  // street, ends x points on a city.
+  const stretches = new StretchGrid(m(80));
+  lines.forEach((line, k) => stretches.addLine(line, k));
+  lines.forEach((line, k) => {
+    if (line.closed) return;
     const L = levels[line.level]!;
     for (const end of [0, 1] as const) {
       const pts = line.points;
       const a = end === 0 ? pts[1]! : pts[pts.length - 2]!, b = end === 0 ? pts[0]! : pts[pts.length - 1]!;
       const dx = b.x - a.x, dy = b.y - a.y, n = Math.hypot(dx, dy) || 1;
-      const hit = castTo(lines, line, b, { x: dx / n, y: dy / n }, L.dlookahead);
+      const hit = castTo(stretches, line, b, { x: dx / n, y: dy / n }, L.dlookahead);
       if (!hit) continue;
-      if (end === 0) pts.unshift(hit); else pts.push(hit);
+      if (end === 0) { pts.unshift(hit); stretches.addFront(line, k, hit, b); } else { pts.push(hit); stretches.addBack(line, k, b, hit); }
     }
-  }
+  });
   return lines;
 
   function trace(seed: Vec2, family: 0 | 1, L: StreetLevel, dtest: number): { points: Vec2[]; closed: boolean } | null {
@@ -169,18 +175,72 @@ function oriented(d: Vec2 | null, prev: Vec2): Vec2 | null {
   return d.x * prev.x + d.y * prev.y < 0 ? { x: -d.x, y: -d.y } : d;
 }
 
+/** A street's stretch as filed: its ends, its street, and its place in the order a walk of every street meets it. */
+interface Stretch { readonly line: StreetLine; readonly a: Vec2; readonly b: Vec2; readonly rank: number }
+
+/**
+ * The streets' stretches by cell, kept as ends are carried on (`traceStreets`):
+ * a stretch put before a street's first keeps its place in the order a walk
+ * of every street meets them (each street a range of ranks).
+ */
+class StretchGrid {
+  private readonly cells = new Map<number, Stretch[]>();
+  private readonly front = new Map<StreetLine, number>();
+  private readonly back = new Map<StreetLine, number>();
+  constructor(private readonly cell: number) {}
+
+  addLine(line: StreetLine, k: number): void {
+    const pts = line.points;
+    for (let i = 1; i < pts.length; i++) this.file({ line, a: pts[i - 1]!, b: pts[i]!, rank: k * RANKS + i });
+    this.front.set(line, 1);
+    this.back.set(line, pts.length - 1);
+  }
+
+  addFront(line: StreetLine, k: number, a: Vec2, b: Vec2): void {
+    const at = this.front.get(line)! - 1;
+    this.front.set(line, at);
+    this.file({ line, a, b, rank: k * RANKS + at });
+  }
+
+  addBack(line: StreetLine, k: number, a: Vec2, b: Vec2): void {
+    const at = this.back.get(line)! + 1;
+    this.back.set(line, at);
+    this.file({ line, a, b, rank: k * RANKS + at });
+  }
+
+  /** The stretches whose boxes may meet the box, in the order of a walk of every street. */
+  near(x0: number, y0: number, x1: number, y1: number): Stretch[] {
+    const found = new Set<Stretch>();
+    for (let i = Math.floor(x0 / this.cell); i <= Math.floor(x1 / this.cell); i++) {
+      for (let j = Math.floor(y0 / this.cell); j <= Math.floor(y1 / this.cell); j++) {
+        for (const s of this.cells.get(key(i, j)) ?? []) found.add(s);
+      }
+    }
+    return [...found].sort((p, q) => p.rank - q.rank);
+  }
+
+  private file(s: Stretch): void {
+    const { a, b } = s;
+    for (let i = Math.floor(Math.min(a.x, b.x) / this.cell); i <= Math.floor(Math.max(a.x, b.x) / this.cell); i++) {
+      for (let j = Math.floor(Math.min(a.y, b.y) / this.cell); j <= Math.floor(Math.max(a.y, b.y) / this.cell); j++) {
+        const list = this.cells.get(key(i, j));
+        if (list) list.push(s); else this.cells.set(key(i, j), [s]);
+      }
+    }
+  }
+}
+/** Room for a street's ranks either side of its first stretch (ends carried on add a few). */
+const RANKS = 1 << 20;
+const key = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
+
 /** The first street a ray from `p` along `dir` meets within `reach` (not its own last stretch). */
-function castTo(lines: readonly StreetLine[], own: StreetLine, p: Vec2, dir: Vec2, reach: number): Vec2 | null {
+function castTo(stretches: StretchGrid, own: StreetLine, p: Vec2, dir: Vec2, reach: number): Vec2 | null {
   let best: Vec2 | null = null, bestT = reach;
   const ex = p.x + dir.x * reach, ey = p.y + dir.y * reach;
-  for (const line of lines) {
-    const pts = line.points;
-    for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1]!, b = pts[i]!;
-      if (line === own && (Math.hypot(a.x - p.x, a.y - p.y) < reach * 1.5 || Math.hypot(b.x - p.x, b.y - p.y) < reach * 1.5)) continue;
-      const t = rayHit(p.x, p.y, ex, ey, a.x, a.y, b.x, b.y);
-      if (t !== null && t * reach > 1e-3 && t * reach < bestT) { bestT = t * reach; best = { x: p.x + dir.x * t * reach, y: p.y + dir.y * t * reach }; }
-    }
+  for (const { line, a, b } of stretches.near(Math.min(p.x, ex), Math.min(p.y, ey), Math.max(p.x, ex), Math.max(p.y, ey))) {
+    if (line === own && (Math.hypot(a.x - p.x, a.y - p.y) < reach * 1.5 || Math.hypot(b.x - p.x, b.y - p.y) < reach * 1.5)) continue;
+    const t = rayHit(p.x, p.y, ex, ey, a.x, a.y, b.x, b.y);
+    if (t !== null && t * reach > 1e-3 && t * reach < bestT) { bestT = t * reach; best = { x: p.x + dir.x * t * reach, y: p.y + dir.y * t * reach }; }
   }
   return best;
 }
@@ -248,11 +308,20 @@ export function planarize(lines: readonly StreetLine[], o: GraphOptions): Street
       cuts[r.line]!.push({ seg: r.seg, t: hit.u, p });
     }
   }
-  // Ends that stop on another street (a T, from the look-ahead) are cuts on it too.
+  // Ends that stop on another street (a T, from the look-ahead) are cuts on it
+  // too: the stretches of the cells round the end (`hash`), in their order. DO
+  // NOT read every stretch of the city for each end.
   polys.forEach((pl, line) => {
     for (const end of [pl.points[0]!, pl.points[pl.points.length - 1]!]) {
       let best: { line: number; seg: number; t: number; d: number } | null = null;
-      for (const s of segs) {
+      const reach = o.merge * 0.5;
+      const near = new Set<number>();
+      for (let i = Math.floor((end.x - reach) / cellSize); i <= Math.floor((end.x + reach) / cellSize); i++) {
+        for (let j = Math.floor((end.y - reach) / cellSize); j <= Math.floor((end.y + reach) / cellSize); j++) {
+          for (const k of hash.get(`${i},${j}`) ?? []) near.add(k);
+        }
+      }
+      for (const s of [...near].sort((p, q) => p - q).map((k) => segs[k]!)) {
         if (s.line === line) continue;
         const ex = s.b.x - s.a.x, ey = s.b.y - s.a.y, l2 = ex * ex + ey * ey;
         if (l2 < 1e-9) continue;

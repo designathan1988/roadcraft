@@ -137,6 +137,20 @@ export class SimPeriodic {
   }
 }
 
+/**
+ * `fn` run once, in a task of its own, after however many calls came since it
+ * last ran: one timer for a burst of events, not one a call. Whether a run is
+ * already asked for lives in the task itself, not loose in the caller's module.
+ */
+export function coalescedTask(fn: () => void): () => void {
+  let queued = false;
+  return () => {
+    if (queued) return;
+    queued = true;
+    setTimeout(() => { queued = false; fn(); }, 0);
+  };
+}
+
 /** Milliseconds a frame spends bringing the traffic's topology up to date. */
 const TOPOLOGY_SLICE_MS = 6;
 /**

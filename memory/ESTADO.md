@@ -3,11 +3,29 @@
 Atualizado: 2026-10-14 (noite). A versão longa anterior está no git (`git show 8ddba37:memory/ESTADO.md`).
 
 ## Quem trabalha (2026-10-14 noite)
-- Uma conversa só, "Análise de otimização e desempenho do jogo". Cinco agentes, cada um lendo
-  inteira uma parte do código e corrigindo no SEU worktree (C:/Codex-Shared/rc2-wt/<parte>, ramo
-  fix/<parte>, criado do main local): sim, world, render-cidade, render-vivos, editor-ui. Cada ramo
-  começa com o commit "Herdado" (o trabalho dos agentes parados e o meu, não revisado). Eu leio
-  cada diff, rodo o analisador no worktree e faço o merge. Ninguém edita a pasta principal.
+- Uma conversa só, "Análise de otimização e desempenho do jogo". Agentes, cada um lendo inteira
+  uma parte do código e corrigindo no SEU worktree (C:/Codex-Shared/rc2-wt/<parte>, ramo
+  fix/<parte>, criado do main local): sim, world, render-cidade, render-vivos (rodando) e
+  editor-2 (o que ficou aberto do editor/core). Eu leio cada diff, rodo o analisador e os testes do
+  bloco e faço o merge na pasta principal.
+- No main (2026-10-14 ~21h40): `66e3f87` fix/ui (src/ui lido e corrigido por mim), `8395fe6`
+  fix/editor-ui (36 commits do agente, revisados), `49298cf`. Conferido no jogo (look.mjs, cidade
+  padrão, 5320): inspetor, catálogo, F9, ver por dentro (uma barra, andar limitado ao prédio).
+  Depois: analisador em 3 módulos (saída idêntica; lint), `94ecc73` coalescedTask, `f4cc590`
+  fix/people (src/people revisto por mim).
+- fix/render-vivos (34 commits) devolvido ao agente: regressão visual no pós (c9cd086: tracejado
+  e serrilhado na rua zoom 28; recortes em %TEMP%/rv-look/*-crop*.png). Luz dos cânions agora
+  termina e escurece a base das fachadas: mostrar ao jogador antes de juntar.
+- Sonda da cidade de 10 km em curso: cópia congelada C:/Codex-Shared/rc2-wt/probe10 (main
+  f4cc590, servida no 5340 com cache próprio), saída em C:/Codex-Shared/rc2-wt/probe10-out.
+- Pendente no merge do world: `editor/itemCells.ts` (índice da paisagem e muros do editor) e
+  `doc.landscapeIn` do world são o mesmo índice: ficar com o do documento; `FURNITURE_CELL` de
+  roadTool.ts com o `CELL` de world/roads/furnitureSets.ts.
+- Defeitos vistos no jogo, com dono: o corte de "ver por dentro" não desenha (também no main;
+  enviado ao render-cidade, fotos em C:/Codex-Shared/rc2-wt/ui-look/fotos-terreo-*); olho dentro
+  da copa de árvore (decisão do jogador); realce azul da via escolhida por cima dos prédios.
+- Lint do main falha em scripts/check-code.mjs (1.007 linhas, máx. 800) e render/buildings/layer.ts
+  (801, do render-cidade).
 
 ## Ramos antigos dos agentes (decididos em 2026-10-14 noite; os worktrees de .claude/worktrees saíram)
 - Removidos por inúteis ou já no main: a84faa1 (BufferAttribute = a08cb68), aa3046a (churrasqueiras =

@@ -252,23 +252,29 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
 /** Where the segments' allocator stands in `RoadDoc.allocatorMarks`. */
 const SEGMENT_MARK = 1;
 
+/** The id the next segment of `doc` will take: read before an edit, to find its own segments after it. */
+export const nextSegmentId = (doc: RoadDoc): number => doc.allocatorMarks()[SEGMENT_MARK]!;
+
 /**
- * The segments of the working copy `work` that its original `before` does not
- * hold: those with an id from `before`'s next one on (ids are handed out in
- * increasing order, never again, and the copy goes on from the original's
- * allocator). Read from the ids the edit handed out, never from the map.
- * DO NOT filter `work.segments` against `before.segments`: every road drawn
- * and every dry run read every road of the map twice.
+ * The segments of `doc` standing whose id is `first` or later: the ones an
+ * edit made, ids being handed out in increasing order and never again (a
+ * working copy goes on from its original's allocator). Read from the ids the
+ * edit handed out, never from the map; the one place this is read (the road
+ * tool's too). DO NOT copy `doc.segments.keys()` before an edit, or filter
+ * `work.segments` against `before.segments`, and compare every segment after
+ * it: each road drawn and each dry run read the whole map.
  */
-function segmentsNewIn(before: RoadDoc, work: RoadDoc): RoadSegment[] {
+export function segmentsFrom(doc: RoadDoc, first: number): RoadSegment[] {
   const out: RoadSegment[] = [];
-  const end = work.allocatorMarks()[SEGMENT_MARK]!;
-  for (let id = before.allocatorMarks()[SEGMENT_MARK]!; id < end; id++) {
-    const seg = work.segment(asSegmentId(id));
+  for (let id = first, end = nextSegmentId(doc); id < end; id++) {
+    const seg = doc.segment(asSegmentId(id));
     if (seg) out.push(seg);
   }
   return out;
 }
+
+/** The segments of the working copy `work` that its original `before` does not hold. */
+const segmentsNewIn = (before: RoadDoc, work: RoadDoc): RoadSegment[] => segmentsFrom(work, nextSegmentId(before));
 
 /**
  * The stations of the road a gesture laid, on the copy it was laid on: the

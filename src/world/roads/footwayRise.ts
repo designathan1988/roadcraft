@@ -1,4 +1,4 @@
-import type { Network, SegmentRibbon } from '../network';
+import type { Network } from '../network';
 import { CASING_BAND, FOOTWAY_RISE, flushOn, footwayOn } from '../roadTypes';
 
 /**
@@ -10,48 +10,30 @@ import { CASING_BAND, FOOTWAY_RISE, flushOn, footwayOn } from '../roadTypes';
  * poles - so none of them floats over a flush footway or sinks into a
  * kerbed one.
  *
- * Cheap where there is nothing flush, which is every map before V1: the
- * flush roads are listed once per network revision and the answer is the
- * constant when there are none.
+ * Asked for every walker in every frame, and for every lamp, sign and pole:
+ * the flush roads are found by place (`Network.flushCells`, kept by the
+ * network's build), so a point reads the cells round it and nothing where
+ * no road is flush - every map before V1.
+ * DO NOT go back to a list of every flush road of the map, made again at
+ * each network revision and walked for every point.
  */
-interface FlushIndex {
-  readonly revision: number;
-  readonly roads: readonly { readonly ribbon: SegmentRibbon; readonly left: boolean; readonly right: boolean; readonly reach: number }[];
-}
-
-const indexes = new WeakMap<Network, FlushIndex>();
-
-/** @rebuild Lists the flush roads once a network revision; every other question returns that list. */
-function flushIndex(net: Network): FlushIndex {
-  const known = indexes.get(net);
-  if (known && known.revision === net.revision) return known;
-  const roads: FlushIndex['roads'][number][] = [];
-  for (const ribbon of net.ribbons.values()) {
-    const left = flushOn(ribbon.road, 'left'), right = flushOn(ribbon.road, 'right');
-    if (!left && !right) continue;
-    roads.push({ ribbon, left, right, reach: ribbon.road.width / 2 + ribbon.road.sidewalk + CASING_BAND });
-  }
-  const index = { revision: net.revision, roads };
-  indexes.set(net, index);
-  return index;
-}
 
 const hit = { s: 0, distance: 0 };
 
 /** The share of `FOOTWAY_RISE` the footway at (x, y) stands at: 1 kerbed, 0 flush. */
 export function footwayRiseShare(net: Network, x: number, y: number): number {
-  const { roads } = flushIndex(net);
-  if (!roads.length) return 1;
-  for (const road of roads) {
-    const box = road.ribbon.full.bbox;
-    if (x < box.minX - road.reach || x > box.maxX + road.reach || y < box.minY - road.reach || y > box.maxY + road.reach) continue;
-    road.ribbon.full.closestInto(x, y, hit);
-    if (hit.distance > road.reach) continue;
-    const frame = road.ribbon.full.sampleAt(hit.s);
+  // A ribbon's filed bounds reach its casing (`ribbonBounds`): every road whose footway holds the point.
+  for (const id of net.flushCells.idsMeeting([x, y, x, y])) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon) continue;
+    const reach = ribbon.road.width / 2 + ribbon.road.sidewalk + CASING_BAND;
+    ribbon.full.closestInto(x, y, hit);
+    if (hit.distance > reach) continue;
+    const frame = ribbon.full.sampleAt(hit.s);
     const left = (x - frame.p.x) * frame.n.x + (y - frame.p.y) * frame.n.y >= 0;
-    if (!(left ? road.left : road.right)) continue;
-    const edge = road.ribbon.road.width / 2;
-    if (hit.distance >= edge - 1e-6 && hit.distance <= edge + footwayOn(road.ribbon.road, left ? 'left' : 'right') + CASING_BAND) return 0;
+    if (!flushOn(ribbon.road, left ? 'left' : 'right')) continue;
+    const edge = ribbon.road.width / 2;
+    if (hit.distance >= edge - 1e-6 && hit.distance <= edge + footwayOn(ribbon.road, left ? 'left' : 'right') + CASING_BAND) return 0;
   }
   return 1;
 }
