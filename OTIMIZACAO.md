@@ -203,6 +203,8 @@ Cada linha é um commit; a causa estava no algoritmo e saiu do código.
 - Ambiente: carros nascem entre as faixas perto da vista (índice espacial), não sorteando o mapa inteiro e descartando os longe (numa cidade grande quase nenhum nascia perto); pontas de rua mantidas pelo delta da rede, sorteio sem copiar a lista.
 - Semáforos dormentes acordam por mudança de via ou de controle (`roads`/`traffic` do diário), não a cada prédio crescido.
 - Faixa de cada caminho dos pedestres validada pelo registro do próprio nó (`SidewalkGraph.madeAt`), não pela revisão da topologia.
+- Lotes recusados soltos só perto do que a rede mudou (`lotTool.refusedNow`); antes o crescimento tentava de novo todos os recusados da cidade a cada rua.
+- Motor: barreiras e transporte como produtos `draw`; pedestres e grade de faixas como produtos `frame` (fase agora chamada pelo laço do quadro).
 
 ## Pendente e por quê
 

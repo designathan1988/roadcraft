@@ -10,6 +10,8 @@ import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { Engine } from '@core/engine';
+import { rebuildWork } from '@world/rebuildWork';
+import { laneGrid } from '@sim/agents/laneGrid';
 import { FrameTimer, HealthLog, frameStats } from '@core/health';
 import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
@@ -662,6 +664,30 @@ primeSurfaceBake(await surfaceBake);
 sim.conflicts.seed(await keptZones);
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
+/**
+ * The simulation's products derived from the roads, in the engine (its ledger names any that computes
+ * with nothing changed): the residents' walkways and the lanes by place, each brought up to what the
+ * lane graph changed (`Walkways.update`, `LaneGrid.follow`). Refreshed once the topology stands.
+ */
+function registerSimProducts(): void {
+  engine.register({
+    name: 'walkways',
+    refresh: (): number => {
+      const before = rebuildWork.walkways;
+      sim.walkwaysNow();
+      return rebuildWork.walkways - before;
+    },
+  }, 'frame');
+  engine.register({
+    name: 'lanes by place',
+    refresh: (): number => {
+      const before = sim.laneGrid.work;
+      laneGrid(sim);
+      return sim.laneGrid.work - before;
+    },
+  }, 'frame');
+}
+registerSimProducts();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw, engine);
 
 // The traffic's topology is not built here: it is built a slice a frame while
@@ -2074,7 +2100,7 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   yield;
   const zoned = zoneCity(doc, net, plan);
   lotTool.refused.clear();
-  lotTool.refusedFor(net.revision);
+  lotTool.refusedNow();
   return { zoned, ...green };
 }
 /**
@@ -2593,7 +2619,7 @@ let zoneGrowthHold = { at: 0, until: 0 };
 function growZones(): void {
   // Buildings on zoned lots (`world/lots.ts`).
   // A road edit can make room on a lot refused before: try them again.
-  const lotRefused = lotTool.refusedFor(net.revision);
+  const lotRefused = lotTool.refusedNow();
   const now = sim.clock.time;
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
@@ -2674,6 +2700,8 @@ function frame(now: number): void {
     holdSim = true;
     requestDraw();
   }
+  // The simulation's derived products brought up to the topology (the engine's 'frame' phase).
+  if (!holdSim) engine.refresh('frame');
   frameTimer.mark('topology');
   const alpha = holdSim
     ? 1

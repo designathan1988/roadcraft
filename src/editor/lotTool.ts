@@ -12,6 +12,8 @@ import { m } from '@world/units';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
 /** How far apart a zone stroke is sampled between two pointer reports: under any lot's front. */
+/** How far from a road edit a refused lot is tried again: its frontage and setbacks read the roads that near, u. */
+const REFUSED_REACH = m(40);
 const STROKE_STEP = m(2);
 
 /**
@@ -65,7 +67,8 @@ export class LotTool {
   hover: Vec2 | null = null;
   /** Lots on which nothing would grow, skipped by the growth until the land or the roads change. */
   readonly refused = new Set<number>();
-  private refusedNet = -1;
+  /** The network's state the refused lots were last brought up to (`refusedNow`). */
+  private refusedNet: object | null = null;
 
   /** The corners of a lot being drawn point by point (the polygon mode). */
   private polygon: Vec2[] = [];
@@ -162,9 +165,21 @@ export class LotTool {
   private get doc(): RoadDoc { return this.host.doc; }
   private get net(): Network { return this.host.net; }
 
-  /** The refused lots are tried again when the roads changed (a road edit can make room). */
-  refusedFor(netRevision: number): Set<number> {
-    if (this.refusedNet !== netRevision) { this.refused.clear(); this.refusedNet = netRevision; }
+  /**
+   * The refused lots, those near what the network changed since let go, to be
+   * tried again (a road edit can make room there; `Network.changesSince`). DO
+   * NOT let every refused lot of the town go for an edit: the growth tried
+   * every one of them again, each up to its eighteen sites, after each road.
+   */
+  refusedNow(): Set<number> {
+    const net = this.net;
+    if (this.refusedNet === net.state) return this.refused;
+    const delta = this.refusedNet === null ? null : net.changesSince(this.refusedNet);
+    this.refusedNet = net.state;
+    if (delta === null) { this.refused.clear(); return this.refused; }
+    for (const r of delta.rects) {
+      for (const lot of this.doc.lotsIn([r[0] - REFUSED_REACH, r[1] - REFUSED_REACH, r[2] + REFUSED_REACH, r[3] + REFUSED_REACH])) this.refused.delete(lot.id);
+    }
     return this.refused;
   }
 

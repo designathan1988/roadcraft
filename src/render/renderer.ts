@@ -1560,6 +1560,42 @@ export function createSceneRenderer(
     },
   }, 'draw');
 
+  engine.register({
+    name: 'barriers',
+    // Walls, fences and hedges: only those the diary says changed, or whose ground moved (`barriers.ts`).
+    // DO NOT build every barrier of the map again on its revision or on a change of the ground under any one.
+    refresh: (): number => {
+      if (!placedOn) return 0;
+      if (!barriers.group.parent) world.add(barriers.group);
+      const before = barriers.triangles;
+      const work = barriers.sync(placedOn.doc, terrain.renderedHeightAt);
+      builtTriangles += barriers.triangles - before;
+      return work;
+    },
+  }, 'draw');
+  engine.register({
+    name: 'transit',
+    // Tracks, stations and stops: only those the diary says changed, or whose ground, roads or buildings did
+    // (`transit.ts`). DO NOT build the whole transport again on its revision or the ground under it.
+    refresh: (): number => {
+      const net = placedOn;
+      if (!net) return 0;
+      if (!transit.group.parent) { world.add(transit.group); transit.setXray(transitXray); }
+      const before = transit.triangles;
+      // A metro entrance stands off the streets and out of the buildings: the buildings at the point only
+      // (`BuildingStore.near`).
+      const work = transit.sync(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
+        if (onCarriageway(net, p)) return true;
+        for (const b of net.doc.buildings.near(p.x, p.y, p.x, p.y)) {
+          if (solidFootprints(b).some((ring) => pointInPolygon(p, ring))) return true;
+        }
+        return false;
+      });
+      builtTriangles += transit.triangles - before;
+      return work;
+    },
+  }, 'draw');
+
   /** Blocks whose ground a dropped rebuild had not shaped yet (`null`: the whole map). */
   let pendingBlocks: [number, number, number, number][] | null = [];
   /**
@@ -2678,7 +2714,8 @@ export function createSceneRenderer(
       // though only the ground the swap puts in place is the one they stand
       // on. The old ones are drawn meanwhile, as the old roads are.
       const groundSettled = !stroking && !worldJob;
-      // The street furniture and the signs on the world as it stands: what the diary says changed under them.
+      // The street furniture, the signs, the barriers and the transport on the world as it stands (the engine's
+      // 'draw' products): what the diary says changed under them.
       if (groundSettled) { placedOn = net; engine.refresh('draw'); }
       // The buildings follow the ground once a stroke is over, not on every
       // dab of it: re-grading 600 buildings per dab took seconds a dab.
@@ -2713,32 +2750,6 @@ export function createSceneRenderer(
       if (!fxPreload && !fxLoading && roads !== null && !worldJob && typeof requestIdleCallback === 'function') {
         fxPreload = true;
         requestIdleCallback(() => { void loadEffects(); }, { timeout: 5000 });
-      }
-      // Walls, fences and hedges: on their own revision, and on the ground under each piece of them.
-      // Only the barriers the diary says changed, or whose ground moved (`barriers.ts`). DO NOT build every
-      // barrier of the map again on its revision or on a change of the ground under any one of them.
-      if (groundSettled) {
-        if (!barriers.group.parent) world.add(barriers.group);
-        const before = barriers.triangles;
-        barriers.sync(net.doc, terrain.renderedHeightAt);
-        builtTriangles += barriers.triangles - before;
-      }
-      // Public transport: tracks, stations, stops (`transit.ts`), on its own revision.
-      // Only the tracks and stops the diary says changed, or whose ground, roads or buildings did
-      // (`transit.ts`). DO NOT build the whole transport again on its revision or the ground under it.
-      if (groundSettled) {
-        if (!transit.group.parent) { world.add(transit.group); transit.setXray(transitXray); }
-        const before = transit.triangles;
-        // A metro entrance stands off the streets and out of the buildings:
-        // the buildings at the point only (`BuildingStore.near`).
-        transit.sync(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
-          if (onCarriageway(net, p)) return true;
-          for (const b of net.doc.buildings.near(p.x, p.y, p.x, p.y)) {
-            if (solidFootprints(b).some((ring) => pointInPolygon(p, ring))) return true;
-          }
-          return false;
-        });
-        builtTriangles += transit.triangles - before;
       }
       // Each building's plants (`gardenLists.ts`), placed again only when some changed.
       const plants = plantLists.update(net.doc.buildings, groundSettled);

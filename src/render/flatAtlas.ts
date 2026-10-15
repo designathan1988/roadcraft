@@ -339,12 +339,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     contentKey = key;
     const entries = contentCursor.read(doc.changes);
     if (entries && entries.every((e) => e.rects !== null)) {
-      const next = new Set(content);
-      for (const e of entries) for (const rect of e.rects!) plateCountOf(rect, next);
-      for (const p of plates) if (p.source.terrainStamps.length || p.source.terrainPaint.length) next.add(p.index);
-      const changed = next.size !== content.size;
-      content = next;
-      return changed;
+      // Marked in place: the plates the changes reach (a stamp or paint has its rects too).
+      const before = content.size;
+      for (const e of entries) for (const rect of e.rects!) plateCountOf(rect, content);
+      return content.size !== before;
     }
     return readWholeContent(doc);
   };

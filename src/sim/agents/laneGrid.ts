@@ -35,6 +35,8 @@ export class LaneGrid {
   private seen: object | null = null;
   /** The boxes of the lanes each follow changed, before and after (null: every lane). */
   readonly changes = new ChangeLog<readonly ChangeRect[]>();
+  /** Lanes filed or taken out since made: the engine's ledger (`main.ts`). */
+  work = 0;
 
   /** Brought up to the lane graph's changes since it was last. */
   follow(graph: LaneletGraph, log: ChangeLog<GraphChange>): void {
@@ -63,6 +65,7 @@ export class LaneGrid {
   }
 
   private file(lane: Lanelet): void {
+    this.work++;
     const box = lane.centre.bbox;
     const cells: number[] = [];
     for (let gx = Math.floor(box.minX / LANE_CELL); gx <= Math.floor(box.maxX / LANE_CELL); gx++) {
@@ -77,6 +80,7 @@ export class LaneGrid {
   }
 
   private unfile(was: Filed): void {
+    this.work++;
     for (const k of was.cells) {
       const list = this.cells.get(k);
       if (!list) continue;
