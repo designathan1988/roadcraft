@@ -1,6 +1,7 @@
 import type { GroundAt, PavedAt } from './foundation';
 import { Digest } from '@core/digest';
 import { type Pad, type TownPads, buildingPads, padLevelAt, padOf } from './pads';
+import type { BuildingFloors } from './floors';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
@@ -42,7 +43,13 @@ export function siteGrading(
   pavedAt: PavedAt | undefined,
   apron: number,
   bankBox: (b: Building) => SiteBox,
+  /**
+   * Each building's floor as kept for every reader (`floors.ts`), on `groundAt` and `pavedAt`:
+   * forgotten here whenever a platform is worked out afresh. Without it, each platform works its own out.
+   */
+  floors?: BuildingFloors,
 ): SiteGrading {
+  const floorOf = floors ? (b: Building): number => floors.floorOf(b) : undefined;
   /** The buildings' platforms as last worked out, reused while a stroke is held. */
   let padsCache: TownPads | null = null;
   /** Each building's platform by record, while the roads and the land stand (`buildingPads`). */
@@ -68,7 +75,7 @@ export function siteGrading(
     if (key === undefined) {
       // The building's own platform, kept for the town's (`rebuild`). DO NOT put it through
       // `buildingPads` for one building: a town's filing (its cells, its map) made and dropped per site.
-      if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
+      if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
       const pad = padsKnown.get(b);
       const digest = new Digest();
       if (pad) {
@@ -132,7 +139,8 @@ export function siteGrading(
     get pads() { return padsCache; },
     changedSites,
     refresh(b) {
-      padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
+      floors?.forget(b);
+      padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
       refreshed.add(b.id);
     },
     /** @rebuild The whole town's platforms filed only the first time, after `forget`, or when the diary cannot say which buildings changed. */
@@ -144,16 +152,17 @@ export function siteGrading(
           const b = buildings.get(id);
           let pad: Pad | null = null;
           if (b) {
-            if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
+            if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
             pad = padsKnown.get(b) ?? null;
           }
           town.put(id, pad);
         }
-      } else padsCache = buildings.size > 0 ? buildingPads(buildings.all(), groundAt, pavedAt, apron, padsKnown) : null;
+      } else padsCache = buildings.size > 0 ? buildingPads(buildings.all(), groundAt, pavedAt, apron, padsKnown, floorOf) : null;
       refreshed.clear();
     },
     forget(buildings) {
       padsKnown = new WeakMap();
+      floors?.forgetAll();
       graded.clear();
       sitesRead.reset();
       padsBuilt.reset();

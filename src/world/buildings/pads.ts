@@ -118,13 +118,15 @@ export function buildingPads(
    * worked out again. The caller drops it when the ground or the roads move.
    */
   known?: WeakMap<Building, Pad | null>,
+  /** Each building's floor as kept for every reader (`floors.ts`); worked out here without. */
+  floorOf?: (b: Building) => number,
 ): TownPads {
   const town = townPads(apron);
   for (const b of buildings) {
     let pad: Pad | null;
     if (known?.has(b)) pad = known.get(b) ?? null;
     else {
-      pad = padOf(b, naturalGround, pavedAt, apron);
+      pad = padOf(b, naturalGround, pavedAt, apron, floorOf);
       known?.set(b, pad);
     }
     town.put(b.id, pad);
@@ -133,13 +135,15 @@ export function buildingPads(
 }
 
 /** One building's platform (its blocks' and its open lots' rings, levels and bounds); null for one with none. */
-export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | undefined, apron: number): Pad | null {
+export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | undefined, apron: number,
+  floorOf?: (b: Building) => number): Pad | null {
   const built = solidFootprints(b);
   // Each block's own platform: a block at a floor of its own (a split
   // level, `Volume.lift`) has its own, as CityEngine aligns the terrain to
   // each shape at that shape's height.
   const lifts = groundVolumes(b).filter((v) => !v.open).map(volumeLift);
-  const floor = floorHeight(b, naturalGround, pavedAt);
+  // The floor as every reader has it (`floors.ts`), on the same ground and paving.
+  const floor = floorOf ? floorOf(b) : floorHeight(b, naturalGround, pavedAt);
   // Under the building, level at the floor less the plinth; under its open
   // lots, the lot's own surface (`lots.ts`), which falls with the street.
   const lots = lotSurfaces(b, floor, pavedAt);

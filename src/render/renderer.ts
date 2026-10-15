@@ -99,7 +99,8 @@ import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
-import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';
+import { buildingFloors } from '@world/buildings/floors';
+import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
 import { TUNED_UNIT, m, perM } from '@world/units';
 /** Room lights kept in the scene for the floors cut open (`roomLamps.ts`). */
@@ -1280,7 +1281,13 @@ export function createSceneRenderer(
     const grow = (r: ChangeRect, d: number): ChangeRect => [r[0] - d, r[1] - d, r[2] + d, r[3] + d];
     return entries.flatMap((e) => e.kind === 'buildings' ? e.rects! : e.rects!.map((r) => grow(r, CANYON_GROUND_REACH)));
   };
-  const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt), floorBox, FLOOR_READ_REACH);
+  /**
+   * Each building's floor, once per record while what it reads stands (`floors.ts`): the sites' platforms
+   * and the camera's solids read the same numbers. Brought up to the diary before each reads (`followFloors`).
+   */
+  const floors = buildingFloors(builtGroundAt, pavedHeightAt, floorBox, FLOOR_READ_REACH);
+  const followFloors = (net: Network): void => floors.follow(net.doc.buildings, floorGroundSince);
+  const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
    * a few seconds after a bomb the streets showed as grass, then came back;
@@ -1329,7 +1336,7 @@ export function createSceneRenderer(
    * ground it has claimed; a platform takes the rest.
    */
   /** Each building's platform, the town's, and the sites as last graded (`world/buildings/siteGrading.ts`). */
-  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b));
+  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b), floors);
   /**
    * The box a building's bank reaches, once per record (records are never
    * changed in place): asked for every building in town by the layer's
@@ -1524,6 +1531,7 @@ export function createSceneRenderer(
         if (box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1]) reached.set(b.id, b);
       }
     }
+    followFloors(net);
     for (const b of reached.values()) {
       sitesGraded.refresh(b);
       yield;
@@ -1612,6 +1620,7 @@ export function createSceneRenderer(
       if (sites && serial) sitesGradedSerials.add(serial);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
+    followFloors(net);
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
       // The roads or the land moved: every platform is worked out afresh.
@@ -2884,6 +2893,7 @@ export function createSceneRenderer(
       // they stand, cut and fill the ground round each of them, not the box round them all.
       // The passes the ground's worker answered put in place, in the order asked, where they were asked.
       landShapes();
+      followFloors(net);
       if (!(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
@@ -3143,6 +3153,7 @@ export function createSceneRenderer(
       // only the buildings the diary names, or where the ground moved under
       // their floor, are filed again (`cameraSolidsKeeper`); NOT the town at
       // every building grown or every road solved.
+      followFloors(net);
       if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
         rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
         townSolids = () => cameraSolidsKept.solids();
