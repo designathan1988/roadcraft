@@ -160,3 +160,32 @@ describe('the history', () => {
     expect(history.bytes).toBeLessThan(JSON.stringify(doc.toJSON()).length / 20);
   });
 });
+
+describe('the diary of an undo', () => {
+  it('names the poles, spans, landscaping and barriers put back, so what is derived by id redoes only them (`solids.ts`)', () => {
+    const { doc } = city();
+    const history = new History();
+    history.begin(doc);
+    const p = doc.addPole({ x: 20, y: 12 }, true), q = doc.addPole({ x: 50, y: 12 }, false);
+    const span = doc.addPoleSpan(p.id, q.id);
+    history.end(doc);
+    const named = (act: () => void, kind: 'utilities' | 'landscape' | 'barriers' = 'utilities'): number[] | null => {
+      const from = doc.changes.version;
+      act();
+      const entries = doc.changes.since(from, [kind])!;
+      if (!entries.length || entries.some((e) => !e.ids)) return null;
+      return [...new Set(entries.flatMap((e) => e.ids!))].sort((a, b) => a - b);
+    };
+    const all = [...new Set([p.id, q.id, span!.id])].sort((a, b) => a - b);
+    expect(named(() => history.undo(doc))).toEqual(all);
+    expect(named(() => history.redo(doc))).toEqual(all);
+    history.begin(doc);
+    const barrier = doc.addBarrier('fence', [{ x: 10, y: 30 }, { x: 40, y: 30 }]);
+    history.end(doc);
+    expect(named(() => history.undo(doc), 'barriers')).toEqual([barrier!.id]);
+    history.begin(doc);
+    const bench = doc.addLandscape('bench', { x: 30, y: 20 });
+    history.end(doc);
+    expect(named(() => history.undo(doc), 'landscape')).toEqual([bench.id]);
+  });
+});

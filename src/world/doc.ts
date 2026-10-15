@@ -1729,6 +1729,7 @@ export class RoadDoc {
     // DO NOT write `traffic` for every road record: an undo of a node raised rebuilt the simulation's plan.
     let traffic = false;
     const roadIds: number[] = [];
+    const utilityIds: number[] = [], landscapeIds: number[] = [], barrierIds: number[] = [];
     const lotRecords: { id: number; value: Lot | undefined }[] = [];
     // Where the roads stand: each record's own rectangle, and a node's roads (its move moves them).
     const roadRects = (): void => {
@@ -1765,14 +1766,14 @@ export class RoadDoc {
           put(this.nodes as Map<number, RoadNode>); this.loose.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
         }
         case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; roadIds.push(id); break;
-        case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); break;
-        case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); break;
+        case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); utilityIds.push(id); break;
+        case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); utilityIds.push(id); break;
         case 'landscape':
           if (value === undefined) this.deleteLandscapeRecord(id); else this.putLandscapeRecord(structuredClone(value) as LandscapeItem);
-          kinds.add('landscape'); break;
+          kinds.add('landscape'); landscapeIds.push(id); break;
         case 'barriers':
           if (value === undefined) this.deleteBarrierRecord(id); else this.putBarrierRecord(structuredClone(value) as Barrier);
-          kinds.add('barriers'); break;
+          kinds.add('barriers'); barrierIds.push(id); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
         // Kept by reference, as the buildings (`LotStore` OWNERSHIP); all of them in one entry, below.
         case 'lots': lotRecords.push({ id, value: value as Lot | undefined }); break;
@@ -1807,9 +1808,10 @@ export class RoadDoc {
     const where = (rects: readonly ChangeRect[]): readonly ChangeRect[] | null => (rects.length ? rects : null);
     if (roadsTouched) this.roadsChanged(where(roads), traffic, { ids: roadIds, detail: 'restored' });
     // The paint style is written with the other values below, as its own kind (`setMarkingStyle`).
-    if (kinds.has('utilities')) this.changes.record('utilities', where(utilities));
-    if (kinds.has('landscape')) this.changes.record('landscape', where(landscape));
-    if (kinds.has('barriers')) this.changes.record('barriers', where(barriers));
+    // With the poles and spans put back, as their writers name them (`addPole`, `addPoleSpan`).
+    if (kinds.has('utilities')) this.changes.record('utilities', where(utilities), { ids: utilityIds });
+    if (kinds.has('landscape')) this.changes.record('landscape', where(landscape), { ids: landscapeIds });
+    if (kinds.has('barriers')) this.changes.record('barriers', where(barriers), { ids: barrierIds });
     for (const [kind, rects] of listRects) {
       if (kinds.has(kind)) continue;
       // A stretch put back as it was moves nothing (an empty list of rectangles writes no entry).
