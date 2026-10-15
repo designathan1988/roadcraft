@@ -227,18 +227,56 @@ export function railGraph(t: TransitData, mode: 'train' | 'metro'): RailGraph {
   return { mode, points, edges, at };
 }
 
-/** The point of a track nearest `p` within `reach`, and its track; null when none is. */
-export function nearestTrack(t: TransitData, p: Vec2, reach: number, mode?: 'train' | 'metro'): { track: number; x: number; y: number; d: number } | null {
-  let best: { track: number; x: number; y: number; d: number } | null = null;
+/** A stretch of a track as filed: its track's place and its own, for the order a walk of every track meets them. */
+interface TrackStretch { readonly track: number; readonly order: number; readonly mode: TransitMode; readonly a: Vec2; readonly b: Vec2 }
+/** Side of the cells the stretches of track are filed in, world units. */
+const TRACK_CELL = m(32);
+/** The stretches of a version of the transit data by cell, made once per version (the data is replaced whole by each edit). */
+const TRACK_CELLS = new WeakMap<TransitData, Map<number, TrackStretch[]>>();
+function trackCells(t: TransitData): Map<number, TrackStretch[]> {
+  let cells = TRACK_CELLS.get(t);
+  if (cells) return cells;
+  cells = new Map();
+  let order = 0;
   for (const track of t.tracks) {
-    if (mode && track.mode !== mode) continue;
     for (let i = 1; i < track.points.length; i++) {
-      const a = track.points[i - 1]!, b = track.points[i]!, q = p;
-      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
-      const u = len2 > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2)) : 0;
-      const x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(q.x - x, q.y - y);
-      if (d < reach && (!best || d < best.d)) best = { track: track.id, x, y, d };
+      const a = track.points[i - 1]!, b = track.points[i]!;
+      const s: TrackStretch = { track: track.id, order: order++, mode: track.mode, a, b };
+      for (let x = Math.floor(Math.min(a.x, b.x) / TRACK_CELL); x <= Math.floor(Math.max(a.x, b.x) / TRACK_CELL); x++) {
+        for (let y = Math.floor(Math.min(a.y, b.y) / TRACK_CELL); y <= Math.floor(Math.max(a.y, b.y) / TRACK_CELL); y++) {
+          const key = (x + 32768) * 65536 + (y + 32768);
+          const list = cells.get(key);
+          if (list) list.push(s); else cells.set(key, [s]);
+        }
+      }
     }
+  }
+  TRACK_CELLS.set(t, cells);
+  return cells;
+}
+
+/**
+ * The point of a track nearest `p` within `reach`, and its track; null when
+ * none is. The stretches within reach are read by cell (`trackCells`), in the
+ * order a walk of every track meets them, so the first of equals is the same.
+ * DO NOT walk every point of every track for each move of the pointer.
+ */
+export function nearestTrack(t: TransitData, p: Vec2, reach: number, mode?: 'train' | 'metro'): { track: number; x: number; y: number; d: number } | null {
+  const cells = trackCells(t);
+  const found = new Set<TrackStretch>();
+  for (let x = Math.floor((p.x - reach) / TRACK_CELL); x <= Math.floor((p.x + reach) / TRACK_CELL); x++) {
+    for (let y = Math.floor((p.y - reach) / TRACK_CELL); y <= Math.floor((p.y + reach) / TRACK_CELL); y++) {
+      for (const s of cells.get((x + 32768) * 65536 + (y + 32768)) ?? []) found.add(s);
+    }
+  }
+  let best: { track: number; x: number; y: number; d: number } | null = null;
+  for (const s of [...found].sort((u, v) => u.order - v.order)) {
+    if (mode && s.mode !== mode) continue;
+    const { a, b } = s, q = p;
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const u = len2 > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2)) : 0;
+    const x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(q.x - x, q.y - y);
+    if (d < reach && (!best || d < best.d)) best = { track: s.track, x, y, d };
   }
   return best;
 }
