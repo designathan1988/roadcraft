@@ -306,8 +306,19 @@ export class RoadDoc {
    * methods below (and `restore`), which keep `treeCells` in step.
    */
   readonly trees: PlantedTree[] = [];
-  /** The planted trees by place (`treesIn`). */
-  private treeCells = new ItemGrid<PlantedTree>(LANDSCAPE_CELL);
+  /**
+   * The planted trees by place (`treesIn`), made when first asked and then
+   * kept by the writers; null after the whole list is replaced (a copy, a
+   * load, an edited copy taken back), as `BuildingStore`'s grid.
+   */
+  private treeGrid: ItemGrid<PlantedTree> | null = null;
+  private get treeCells(): ItemGrid<PlantedTree> {
+    if (!this.treeGrid) {
+      this.treeGrid = new ItemGrid(LANDSCAPE_CELL);
+      for (const t of this.trees) this.treeGrid.add(t);
+    }
+    return this.treeGrid;
+  }
 
   /** The planted trees standing in the cells a rectangle reaches (a superset: test each). */
   treesIn(rect: ChangeRect): PlantedTree[] {
@@ -321,8 +332,15 @@ export class RoadDoc {
    * `elementCells` in step. DO NOT push or splice it from outside.
    */
   readonly elements: ElementItem[] = [];
-  /** The elements by place (`elementsIn`). */
-  private elementCells = new ItemGrid<ElementItem>(LANDSCAPE_CELL);
+  /** The elements by place (`elementsIn`): made when first asked, null after the whole list is replaced (as `treeGrid`). */
+  private elementGrid: ItemGrid<ElementItem> | null = null;
+  private get elementCells(): ItemGrid<ElementItem> {
+    if (!this.elementGrid) {
+      this.elementGrid = new ItemGrid(LANDSCAPE_CELL);
+      for (const e of this.elements) this.elementGrid.add(e);
+    }
+    return this.elementGrid;
+  }
 
   /** The elements standing in the cells a rectangle reaches (a superset: test each). */
   elementsIn(rect: ChangeRect): ElementItem[] {
@@ -1182,9 +1200,9 @@ export class RoadDoc {
 
   plantTrees(trees: readonly PlantedTree[]): void {
     if (trees.length === 0) return;
-    for (const t of trees) { const tree = { ...t }; this.trees.push(tree); this.treeCells.add(tree); }
+    for (const t of trees) { const tree = { ...t }; this.trees.push(tree); this.treeGrid?.add(tree); }
     const gone = this.trees.length > MAX_PLANTED_TREES ? this.trees.splice(0, this.trees.length - MAX_PLANTED_TREES) : [];
-    for (const t of gone) this.treeCells.remove(t);
+    for (const t of gone) this.treeGrid?.remove(t);
     const goneRect = rectAround(gone, ITEM_PAD);
     this.changes.record('trees', goneRect ? [rectAround(trees, ITEM_PAD)!, goneRect] : [rectAround(trees, ITEM_PAD)!]);
   }
@@ -1212,7 +1230,7 @@ export class RoadDoc {
     if (this.trees.length > 0) {
       const where = rectAround(this.trees, ITEM_PAD)!;
       this.trees.length = 0;
-      this.treeCells = new ItemGrid(LANDSCAPE_CELL);
+      this.treeGrid = null;
       this.changes.record('trees', [where]);
     }
     if (this.treeClearings.length > 0) {
@@ -1224,9 +1242,9 @@ export class RoadDoc {
 
   addElements(items: readonly ElementItem[]): void {
     if (items.length === 0) return;
-    for (const item of items) { this.elements.push(item); this.elementCells.add(item); }
+    for (const item of items) { this.elements.push(item); this.elementGrid?.add(item); }
     const gone = this.elements.length > MAX_ELEMENTS ? this.elements.splice(0, this.elements.length - MAX_ELEMENTS) : [];
-    for (const item of gone) this.elementCells.remove(item);
+    for (const item of gone) this.elementGrid?.remove(item);
     const rects = [elementsBox(items)!];
     const goneRect = elementsBox(gone);
     if (goneRect) rects.push(goneRect);
@@ -1252,7 +1270,7 @@ export class RoadDoc {
     if (items.size === 0) return 0;
     const before = this.elements.length;
     keepWhere(this.elements, (e) => !items.has(e));
-    for (const e of items) this.elementCells.remove(e);
+    for (const e of items) this.elementGrid?.remove(e);
     const gone = before - this.elements.length;
     if (gone > 0) this.changes.record('elements', [elementsBox([...items])!]);
     return gone;
@@ -1262,7 +1280,7 @@ export class RoadDoc {
     if (this.elements.length === 0) return;
     const where = elementsBox(this.elements)!;
     this.elements.length = 0;
-    this.elementCells = new ItemGrid(LANDSCAPE_CELL);
+    this.elementGrid = null;
     this.changes.record('elements', [where]);
   }
 
@@ -1506,8 +1524,8 @@ export class RoadDoc {
     copy.gullyDabs.push(...this.gullyDabs.map((dab) => ({ ...dab })));
     copy.gullyAuto = this.gullyAuto;
     copy.clouds.push(...this.clouds.map((c) => ({ ...c })));
-    for (const e of this.elements) { const item = { ...e }; copy.elements.push(item); copy.elementCells.add(item); }
-    for (const t of this.trees) { const tree = { ...t }; copy.trees.push(tree); copy.treeCells.add(tree); }
+    copy.elements.push(...this.elements.map((e) => ({ ...e })));
+    copy.trees.push(...this.trees.map((t) => ({ ...t })));
     copy.treeClearings.push(...this.treeClearings.map((c) => ({ ...c })));
     copy.weather = { ...this.weather };
     copy.economy = { ...this.economy };
@@ -1679,11 +1697,11 @@ export class RoadDoc {
       const put = items.map((item) => structuredClone(item));
       const gone = spliceIn(this.listOf(part), start, remove, put);
       if (part === 'elements') {
-        for (const e of gone as ElementItem[]) this.elementCells.remove(e);
-        for (const e of put as ElementItem[]) this.elementCells.add(e);
+        for (const e of gone as ElementItem[]) this.elementGrid?.remove(e);
+        for (const e of put as ElementItem[]) this.elementGrid?.add(e);
       } else if (part === 'trees') {
-        for (const t of gone as PlantedTree[]) this.treeCells.remove(t);
-        for (const t of put as PlantedTree[]) this.treeCells.add(t);
+        for (const t of gone as PlantedTree[]) this.treeGrid?.remove(t);
+        for (const t of put as PlantedTree[]) this.treeGrid?.add(t);
       }
       // Where the items that left lay and where those that came lie: one box
       // each. DO NOT write `null` (the whole map) for a stretch of a list
@@ -1875,8 +1893,8 @@ export class RoadDoc {
     }
     if (moved('trees') && JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
       this.trees.length = 0;
-      this.treeCells = new ItemGrid(LANDSCAPE_CELL);
-      for (const t of source.trees) { const tree = { ...t }; this.trees.push(tree); this.treeCells.add(tree); }
+      this.treeGrid = null;
+      this.trees.push(...source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
     if (moved('clearings') && JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
@@ -1887,8 +1905,8 @@ export class RoadDoc {
 
     if (moved('elements') && (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements))) {
       this.elements.length = 0;
-      this.elementCells = new ItemGrid(LANDSCAPE_CELL);
-      for (const e of source.elements) { this.elements.push(e); this.elementCells.add(e); }
+      this.elementGrid = null;
+      this.elements.push(...source.elements);
       others.push('elements');
     }
 
@@ -2157,7 +2175,7 @@ export class RoadDoc {
     // Absent: a map with no trees planted or cut.
     for (const raw of data.trees ?? []) {
       const tree = readPlantedTree(raw);
-      if (tree && doc.trees.length < MAX_PLANTED_TREES) { doc.trees.push(tree); doc.treeCells.add(tree); }
+      if (tree && doc.trees.length < MAX_PLANTED_TREES) doc.trees.push(tree);
     }
     if (doc.trees.length) doc.changes.record('trees', null, loaded);
     for (const raw of data.treeClearings ?? []) {
@@ -2168,7 +2186,7 @@ export class RoadDoc {
     // Absent: a map with no elements laid.
     for (const raw of data.elements ?? []) {
       const item = readElement(raw);
-      if (item) { doc.elements.push(item); doc.elementCells.add(item); }
+      if (item) doc.elements.push(item);
     }
     if (doc.elements.length) doc.changes.record('elements', null, loaded);
     // Absent: a map with no clouds placed.
