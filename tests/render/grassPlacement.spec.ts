@@ -1,33 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { BufferGeometry, Float32BufferAttribute, MeshBasicMaterial, type InstancedMesh } from 'three';
 
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { buildRoadElevation } from '@world/elevation';
-import { buildGrass } from '@render/grass';
-
-/** A one-triangle stand-in for the tuft and flower models. */
-function kit() {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
-  const material = new MeshBasicMaterial();
-  return { tuft: geometry, flower: geometry, grass: material, flowers: material };
-}
+import { grassClump } from '@render/grass';
 
 /** Every tuft's ground position, rounded to a centimetre-ish grid. */
 function tufts(doc: RoadDoc): Set<string> {
   const net = new Network(doc);
   net.rebuild();
   const elevation = buildRoadElevation(net, () => 0);
-  const placed = [...doc.landscape.values()].filter((item) => item.kind === 'meadow');
-  const field = buildGrass(elevation, () => 0, kit(), placed);
   const out = new Set<string>();
-  for (const child of field.group.children) {
-    const mesh = child as InstancedMesh;
-    const m = mesh.instanceMatrix.array;
-    for (let i = 0; i < m.length / 16; i++) out.add(`${Math.round(m[i * 16 + 12]! * 10)},${Math.round(m[i * 16 + 14]! * 10)}`);
+  for (const item of doc.landscape.values()) {
+    if (item.kind !== 'meadow') continue;
+    const clump = grassClump(elevation, () => 0, item);
+    for (const t of [...clump.tufts, ...clump.flowers]) out.add(`${Math.round(t.x * 10)},${Math.round(t.y * 10)}`);
   }
-  field.dispose();
   return out;
 }
 

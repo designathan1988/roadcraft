@@ -2,7 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import type { Network } from './network';
 import type { SegmentId } from './ids';
 import { m } from './units';
-import { LANDSCAPE_RADIUS, type LandscapeKind, crossingAccesses, crossingAccessTester, footwayAt, medianAt } from './landscape';
+import { LANDSCAPE_RADIUS, type LandscapeItem, type LandscapeKind, crossingAccesses, crossingAccessTester, footwayAt, medianAt, nearCrossingAccess } from './landscape';
 
 export { TREE_PIT } from './section';
 
@@ -84,55 +84,73 @@ function hash01(a: number, b: number): number {
 }
 
 /**
+ * One placed item as the furniture standing where it was put: on the footway
+ * under it, or (a tree, a shrub) in a planted median; null when it is not
+ * furniture, when no footway or median is under it any more (its road
+ * demolished or moved away: neither drawn nor walked round until one is), or
+ * when it stands in a zebra's landing (`onAccess`: a crossing built after it
+ * was placed hides it rather than block the crossing). What reads one item -
+ * the renderer, item by item (`render/streetFurnitureLayer.ts`) - asks this,
+ * with the landings near it (`nearCrossingAccess`, the default); what reads
+ * every item at once, `streetFurniture`.
+ */
+export function furnitureOf(
+  net: Network,
+  placed: LandscapeItem,
+  onAccess: (segment: SegmentId, x: number, y: number, radius: number) => boolean = (segment, x, y, radius) => nearCrossingAccess(net, segment, x, y, radius),
+): FurnitureItem | null {
+  // Long grass on open ground is drawn by the grass field, not walked round.
+  const kind = FURNITURE_OF[placed.kind];
+  if (!kind) return null;
+  const item = standing(net, placed, kind);
+  return item && !onAccess(item.segment, item.x, item.y, item.radius) ? item : null;
+}
+
+/** The furniture an item makes on the footway or the median under it, before the crossings are asked. */
+function standing(net: Network, placed: LandscapeItem, kind: FurnitureKind): FurnitureItem | null {
+  const hit = footwayAt(net, placed, STAND_REACH);
+  if (!hit) {
+    // A tree or shrub in a planted median (docs/source/VIAS.md V7): nobody walks there.
+    const median = kind === 'streetTree' || kind === 'shrub' ? medianAt(net, placed, m(0.3)) : null;
+    if (!median) return null;
+    return { kind, x: placed.x, y: placed.y, segment: median.segment,
+      along: { x: median.frame.t.x, y: median.frame.t.y },
+      outward: { x: median.frame.n.x, y: median.frame.n.y },
+      on: 'median', radius: LANDSCAPE_RADIUS[placed.kind], seed: hash01(placed.id, 0x5eed),
+      ...(placed.planted !== undefined ? { planted: placed.planted } : {}) };
+  }
+  const outward = { x: hit.frame.n.x * hit.side, y: hit.frame.n.y * hit.side };
+  const base = {
+    kind,
+    x: placed.x,
+    y: placed.y,
+    segment: hit.segment,
+    along: { x: hit.frame.t.x, y: hit.frame.t.y },
+    outward,
+    on: 'footway' as const,
+    radius: LANDSCAPE_RADIUS[placed.kind],
+    seed: hash01(placed.id, 0x5eed),
+    ...(placed.planted !== undefined ? { planted: placed.planted } : {}),
+  };
+  // A bench by the kerb turns its back on the traffic and faces the footway.
+  return kind === 'bench' ? { ...base, halfLength: m(0.9), halfWidth: m(0.26), faces: outward } : base;
+}
+
+/**
  * Everything standing on the footways: the items the player placed with the
- * landscaping tool (`landscape.ts`), each on the footway under it. Nothing is
- * generated along the streets any more (the player's order of 2026-10-05).
- * An item whose footway has gone (its road demolished or moved away) is not
- * listed: it is neither drawn nor walked round until a footway is under it again.
+ * landscaping tool (`landscape.ts`), each on the footway under it
+ * (`furnitureOf`). Nothing is generated along the streets any more (the
+ * player's order of 2026-10-05).
  */
 export function streetFurniture(net: Network): FurnitureItem[] {
+  // The landings filed once for every item (`crossingAccessTester`).
+  const onAccess = crossingAccessTester(net, crossingAccesses(net));
   const items: FurnitureItem[] = [];
   for (const placed of net.doc.landscape.values()) {
-    // Long grass on open ground is drawn by the grass field, not walked round.
-    const kind = FURNITURE_OF[placed.kind];
-    if (!kind) continue;
-    const hit = footwayAt(net, placed, STAND_REACH);
-    if (!hit) {
-      // A tree or shrub in a planted median (docs/source/VIAS.md V7): nobody walks there.
-      const median = kind === 'streetTree' || kind === 'shrub' ? medianAt(net, placed, m(0.3)) : null;
-      if (median) {
-        items.push({ kind, x: placed.x, y: placed.y, segment: median.segment,
-          along: { x: median.frame.t.x, y: median.frame.t.y },
-          outward: { x: median.frame.n.x, y: median.frame.n.y },
-          on: 'median', radius: LANDSCAPE_RADIUS[placed.kind], seed: hash01(placed.id, 0x5eed),
-          ...(placed.planted !== undefined ? { planted: placed.planted } : {}) });
-      }
-      continue;
-    }
-    const outward = { x: hit.frame.n.x * hit.side, y: hit.frame.n.y * hit.side };
-    const base = {
-      kind,
-      x: placed.x,
-      y: placed.y,
-      segment: hit.segment,
-      along: { x: hit.frame.t.x, y: hit.frame.t.y },
-      outward,
-      on: 'footway' as const,
-      radius: LANDSCAPE_RADIUS[placed.kind],
-      seed: hash01(placed.id, 0x5eed),
-      ...(placed.planted !== undefined ? { planted: placed.planted } : {}),
-    };
-    if (kind === 'bench') {
-      // A bench by the kerb turns its back on the traffic and faces the footway.
-      items.push({ ...base, halfLength: m(0.9), halfWidth: m(0.26), faces: outward });
-    } else {
-      items.push(base);
-    }
+    const item = furnitureOf(net, placed, onAccess);
+    if (item) items.push(item);
   }
-  // Nothing stands in a zebra's landing (`crossingAccesses`): a crossing
-  // built after an item was placed hides it rather than block the crossing.
-  const onAccess = crossingAccessTester(net, crossingAccesses(net));
-  return items.filter((item) => !onAccess(item.segment, item.x, item.y, item.radius));
+  return items;
 }
 
 /** The items a person on the footway has to walk around. */

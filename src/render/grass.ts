@@ -1,265 +1,119 @@
-import {
-  Color, DynamicDrawUsage, Group, InstancedMesh, Object3D, Sphere,
-  type BufferGeometry, type Frustum, type Material, type Matrix4,
-} from 'three';
+import { Color } from 'three';
 
 import { Rng } from '@core/rng';
 import type { RoadElevation } from '@world/elevation';
-import { m, perM } from '@world/units';
+import { m } from '@world/units';
 
 /**
- * Grass you can see blades of: instanced tufts and wildflowers over the ground.
+ * Grass you can see blades of: the long grass the player places (Paisagismo
+ * > Mato), a clump of instanced tufts and the odd wildflower at each place.
  *
  * The terrain texture is grass from the map zoom. From a few metres, a flat
  * texture is a flat texture, and the ground was the "hard" thing in the scene -
- * a carpet under objects that stood on it. Real turf is never mown to a plane
- * at the edge of a road: it grows in tufts along the verge, around lamp posts
- * and at the foot of every tree, with the odd flower in it.
+ * a carpet under objects that stood on it. Real turf is never mown to a plane:
+ * it grows in tufts, with the odd flower in it.
  *
- * ## Placement
- *
- * In CLUMPS, not uniformly. A uniform scatter dense enough to read as grass
- * would be millions of instances over a city; clumps put the same budget where
- * the eye goes - the roadside, where the roads are - and read as uneven,
- * unmown ground rather than as a sparse lawn. A clump's centre is tested
- * against the roads once, and its tufts only against the ground height.
- *
- * ## Chunks
- *
- * Instances are grouped by 96-unit cell, but drawn as ONE instanced mesh per
- * kind. A mesh per cell was 1 070 meshes on the player map - a draw call per
- * visible cell per pass whenever grass showed. The cells now only order the
- * instances: when the camera moves (`cull`), the visible cells' instances are
- * copied to the front of the buffer as a few contiguous runs, and only those
- * are drawn.
+ * Nothing grows by itself (the player's order of 2026-10-05): the clumps
+ * once scattered over open ground and along the roads had no caller left with
+ * a budget above nought, and were removed with the scenery that asked for
+ * none (`buildScenery`). A clump is a pure function of its item and the
+ * ground under it (`grassClump`); the layer keeps each clump's tufts as one
+ * run of its instance stores (`streetFurnitureLayer.ts`), made again only
+ * when the diary says something under that clump changed.
  */
 
-/**
- * Below this zoom a tuft is two or three pixels tall, and a million triangles
- * of them would be drawn to show a texture the ground already has; grass is
- * hidden.
- */
-export const GRASS_MIN_ZOOM = perM(10);
-
-const CHUNK = m(38.4);
 /** Real turf height, root to tip. */
 const TUFT_MIN = m(0.18);
 const TUFT_RANGE = m(0.3);
 const FLOWER_MIN = m(0.25);
 const FLOWER_RANGE = m(0.2);
+/** The largest clump's radius (`grassClump`: one to three metres). */
+const CLUMP_REACH = m(3);
+/** How far round a clump's centre the slope is read (`grassClump`). */
+const SLOPE_PROBE = m(1.6);
+/** How far round its item a clump reads the ground and the roads: its radius and the slope's probe. */
+export const CLUMP_READ_REACH = CLUMP_REACH + SLOPE_PROBE;
 
-export interface GrassField {
-  readonly group: Group;
-  readonly triangles: number;
-  /**
-   * Keeps only the cells the camera can see. `view` is the camera's projection
-   * times its inverse world matrix; nothing is done while it is unchanged.
-   */
-  cull(frustum: Frustum, view: Matrix4): void;
-  dispose(): void;
+export interface Tuft {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly height: number;
+  readonly width: number;
+  readonly tint: Color;
 }
 
-/** One kind of plant: every instance, cell by cell, and what is drawn. */
-interface Field {
-  readonly mesh: InstancedMesh;
-  readonly matrices: Float32Array;
-  readonly colours: Float32Array;
-  /** Per cell: first instance, count, and a bounding sphere (x, y, z, radius). */
-  readonly cells: { start: number; count: number; sphere: Sphere }[];
-}
-
-interface Tuft {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  height: number;
-  width: number;
-  tint: Color;
+/** A clump's grass: its tufts and its wildflowers. */
+export interface Clump {
+  readonly tufts: readonly Tuft[];
+  readonly flowers: readonly Tuft[];
 }
 
 const FLOWER_COLOURS = [0xf6f3e8, 0xf2d24b, 0xb58be0, 0xe8618c, 0xf5a13a].map((hex) => new Color(hex));
+const NONE: Clump = { tufts: [], flowers: [] };
 
 /**
- * The long grass the player placed (Paisagismo > Mato), a clump at each
- * place. Nothing grows by itself (the player's order of 2026-10-05): the
- * clumps scattered over open ground and along the roads (a `clumps` budget
- * with a `wetAt` test) had no caller left with a budget above nought, and
- * were removed with the scenery that asked for none (`buildScenery`).
+ * The clump at a placed item, from its own generator (seeded by its id, so
+ * an edit elsewhere moves none of it): the centre is tested against the roads
+ * and the slope, then its tufts are laid on the ground as drawn.
  */
-export function buildGrass(
+export function grassClump(
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
-  kit: { tuft: BufferGeometry; flower: BufferGeometry; grass: Material; flowers: Material },
-  placed: readonly { readonly x: number; readonly y: number; readonly id: number }[] = [],
-): GrassField {
-  const group = new Group();
-  group.name = 'grass';
-  const tufts = new Map<string, Tuft[]>();
-  const flowers = new Map<string, Tuft[]>();
-  const push = (bucket: Map<string, Tuft[]>, tuft: Tuft): void => {
-    const key = `${Math.floor(tuft.x / CHUNK)}:${Math.floor(tuft.y / CHUNK)}`;
-    const list = bucket.get(key);
-    if (list) list.push(tuft);
-    else bucket.set(key, [tuft]);
-  };
+  placed: { readonly x: number; readonly y: number; readonly id: number },
+): Clump {
+  const rng = new Rng(Math.imul(placed.id + 1, 0x9e3779b1) >>> 0);
+  const cx = placed.x, cy = placed.y;
+  const radius = m(1) + rng.float() * m(2);
+  const road = elevation.roadAt(cx, cy);
+  if (road.type >= 0 && Math.abs(road.across) < road.half + radius * 0.6 + m(0.32)) return NONE;
+  const slope =
+    Math.abs(terrainAt(cx + SLOPE_PROBE, cy) - terrainAt(cx - SLOPE_PROBE, cy)) +
+    Math.abs(terrainAt(cx, cy + SLOPE_PROBE) - terrainAt(cx, cy - SLOPE_PROBE));
+  if (slope > m(2.4)) return NONE;
 
-  /**
-   * One clump at (cx, cy), from its own generator: the centre is tested
-   * against the roads, the water and the slope, then its tufts are laid.
-   */
-  const clump = (rng: Rng, cx: number, cy: number): void => {
-    const radius = m(1) + rng.float() * m(2);
-    const road = elevation.roadAt(cx, cy);
-    if (road.type >= 0 && Math.abs(road.across) < road.half + radius * 0.6 + m(0.32)) return;
-    const slope =
-      Math.abs(terrainAt(cx + m(1.6), cy) - terrainAt(cx - m(1.6), cy)) +
-      Math.abs(terrainAt(cx, cy + m(1.6)) - terrainAt(cx, cy - m(1.6)));
-    if (slope > m(2.4)) return;
-
-    // Dense enough to read as a patch of long grass. At 16 to 42 blades over
-    // a clump several metres wide they were scattered dark specks - dirt on
-    // the screen, not grass.
-    const count = 90 + Math.floor(rng.float() * 70);
-    // Each clump has its own colour: lush, pale, or gone to seed.
-    const dry = rng.float();
-    // Close to the lawn's own green: the bright lime clumps stood out as stickers.
-    const clumpHue = (dry > 0.8 ? new Color(1.05, 0.98, 0.66) : new Color(0.62 + dry * 0.1, 0.8, 0.5)).multiplyScalar(0.62);
-    for (let i = 0; i < count; i++) {
-      // Denser in the middle of a clump, as grass grows out from a patch.
-      const r = radius * Math.sqrt(rng.float()) * (0.4 + rng.float() * 0.6);
-      const a = rng.float() * Math.PI * 2;
-      const x = cx + Math.cos(a) * r;
-      const y = cy + Math.sin(a) * r;
-      // A tuft at the edge of a clump can still reach a road.
-      if (road.type >= 0 && Math.abs(road.across) - r < road.half + m(0.24)) {
-        const near = elevation.roadAt(x, y);
-        if (near.type >= 0 && Math.abs(near.across) < near.half + m(0.24)) continue;
-      }
-      const z = terrainAt(x, y) - m(0.02);
-      const shade = 0.95 + rng.float() * 0.22;
-      const tuft: Tuft = {
-        x,
-        y,
-        z,
-        yaw: rng.float() * Math.PI * 2,
-        height: TUFT_MIN + rng.float() * TUFT_RANGE * (1 - r / (radius * 1.4)),
-        width: 0.9 + rng.float() * 0.6,
-        tint: clumpHue.clone().multiplyScalar(shade),
-      };
-      if (rng.float() < 0.045) {
-        push(flowers, {
-          ...tuft,
-          height: FLOWER_MIN + rng.float() * FLOWER_RANGE,
-          width: 1,
-          tint: (FLOWER_COLOURS[Math.floor(rng.float() * FLOWER_COLOURS.length)] as Color).clone(),
-        });
-      } else {
-        push(tufts, tuft);
-      }
+  const tufts: Tuft[] = [], flowers: Tuft[] = [];
+  // Dense enough to read as a patch of long grass. At 16 to 42 blades over
+  // a clump several metres wide they were scattered dark specks - dirt on
+  // the screen, not grass.
+  const count = 90 + Math.floor(rng.float() * 70);
+  // Each clump has its own colour: lush, pale, or gone to seed.
+  const dry = rng.float();
+  // Close to the lawn's own green: the bright lime clumps stood out as stickers.
+  const clumpHue = (dry > 0.8 ? new Color(1.05, 0.98, 0.66) : new Color(0.62 + dry * 0.1, 0.8, 0.5)).multiplyScalar(0.62);
+  for (let i = 0; i < count; i++) {
+    // Denser in the middle of a clump, as grass grows out from a patch.
+    const r = radius * Math.sqrt(rng.float()) * (0.4 + rng.float() * 0.6);
+    const a = rng.float() * Math.PI * 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    // A tuft at the edge of a clump can still reach a road.
+    if (road.type >= 0 && Math.abs(road.across) - r < road.half + m(0.24)) {
+      const near = elevation.roadAt(x, y);
+      if (near.type >= 0 && Math.abs(near.across) < near.half + m(0.24)) continue;
     }
-  };
-  // The clumps the player placed (Paisagismo > Mato): nothing grows by
-  // itself any more (the player's order of 2026-10-05).
-  for (const p of placed) clump(new Rng(Math.imul(p.id + 1, 0x9e3779b1) >>> 0), p.x, p.y);
-  let triangles = 0;
-  const fields: Field[] = [];
-  const object = new Object3D();
-  const emit = (bucket: Map<string, Tuft[]>, geometry: BufferGeometry, material: Material, name: string): void => {
-    let total = 0;
-    for (const list of bucket.values()) total += list.length;
-    if (total === 0) return;
-    const perInstance = geometry.getAttribute('position').count / 3;
-    const mesh = new InstancedMesh(geometry, material, total);
-    mesh.name = name;
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    // Culled by cell in `cull`; a sphere round the whole map rejects nothing.
-    mesh.frustumCulled = false;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    const cells: Field['cells'] = [];
-    let index = 0;
-    for (const list of bucket.values()) {
-      let minX = Infinity;
-      let minY = Infinity;
-      let minZ = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      let maxZ = -Infinity;
-      const first = index;
-      for (const tuft of list) {
-        object.position.set(tuft.x, tuft.z, -tuft.y);
-        object.rotation.set(0, tuft.yaw, 0);
-        object.scale.set(tuft.height * tuft.width, tuft.height, tuft.height * tuft.width);
-        object.updateMatrix();
-        mesh.setMatrixAt(index, object.matrix);
-        mesh.setColorAt(index, tuft.tint);
-        index++;
-        const reach = tuft.height * Math.max(1, tuft.width);
-        minX = Math.min(minX, tuft.x - reach);
-        maxX = Math.max(maxX, tuft.x + reach);
-        minY = Math.min(minY, tuft.z);
-        maxY = Math.max(maxY, tuft.z + tuft.height);
-        minZ = Math.min(minZ, -tuft.y - reach);
-        maxZ = Math.max(maxZ, -tuft.y + reach);
-      }
-      const sphere = new Sphere();
-      sphere.center.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-      sphere.radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-      cells.push({ start: first, count: list.length, sphere });
+    const z = terrainAt(x, y) - m(0.02);
+    const shade = 0.95 + rng.float() * 0.22;
+    const tuft: Tuft = {
+      x,
+      y,
+      z,
+      yaw: rng.float() * Math.PI * 2,
+      height: TUFT_MIN + rng.float() * TUFT_RANGE * (1 - r / (radius * 1.4)),
+      width: 0.9 + rng.float() * 0.6,
+      tint: clumpHue.clone().multiplyScalar(shade),
+    };
+    if (rng.float() < 0.045) {
+      flowers.push({
+        ...tuft,
+        height: FLOWER_MIN + rng.float() * FLOWER_RANGE,
+        width: 1,
+        tint: (FLOWER_COLOURS[Math.floor(rng.float() * FLOWER_COLOURS.length)] as Color).clone(),
+      });
+    } else {
+      tufts.push(tuft);
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
-      mesh.instanceColor.needsUpdate = true;
-    }
-    group.add(mesh);
-    fields.push({
-      mesh,
-      matrices: Float32Array.from(mesh.instanceMatrix.array as Float32Array),
-      colours: Float32Array.from((mesh.instanceColor?.array ?? new Float32Array(0)) as Float32Array),
-      cells,
-    });
-    triangles += perInstance * total;
-  };
-  emit(tufts, kit.tuft, kit.grass, 'grass-tufts');
-  emit(flowers, kit.flower, kit.flowers, 'wildflowers');
-
-  let culledFor: Matrix4 | null = null;
-  return {
-    group,
-    triangles,
-    cull(frustum, view) {
-      if (culledFor && culledFor.equals(view)) return;
-      culledFor = culledFor ? culledFor.copy(view) : view.clone();
-      for (const field of fields) {
-        const matrices = field.mesh.instanceMatrix.array as Float32Array;
-        const colours = field.mesh.instanceColor?.array as Float32Array | undefined;
-        let n = 0;
-        for (const cell of field.cells) {
-          if (!frustum.intersectsSphere(cell.sphere)) continue;
-          matrices.set(field.matrices.subarray(cell.start * 16, (cell.start + cell.count) * 16), n * 16);
-          if (colours) colours.set(field.colours.subarray(cell.start * 3, (cell.start + cell.count) * 3), n * 3);
-          n += cell.count;
-        }
-        field.mesh.count = n;
-        field.mesh.instanceMatrix.clearUpdateRanges();
-        if (n > 0) field.mesh.instanceMatrix.addUpdateRange(0, n * 16);
-        field.mesh.instanceMatrix.needsUpdate = true;
-        if (field.mesh.instanceColor) {
-          field.mesh.instanceColor.clearUpdateRanges();
-          if (n > 0) field.mesh.instanceColor.addUpdateRange(0, n * 3);
-          field.mesh.instanceColor.needsUpdate = true;
-        }
-        field.mesh.visible = n > 0;
-      }
-    },
-    dispose() {
-      // Geometry and materials belong to the kit and outlive a rebuild; only
-      // the per-instance buffers are this field's.
-      for (const field of fields) field.mesh.dispose();
-      group.clear();
-    },
-  };
+  }
+  return { tufts, flowers };
 }
-

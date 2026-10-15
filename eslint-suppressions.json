@@ -391,11 +391,6 @@
       "count": 1
     }
   },
-  "src/render/scenery.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/render/structures.ts": {
     "max-lines": {
       "count": 1
