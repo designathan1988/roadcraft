@@ -643,6 +643,11 @@ export class RoadDoc {
   }
 
   /** The barriers whose box reaches a rectangle (a superset: test each), in increasing id order. */
+  /** The barriers whose box reaches any of `rects` (a superset: test each), each once, in increasing id order (`CellFiling.idsMeetingAny`). */
+  barriersInAny(rects: readonly ChangeRect[]): Barrier[] {
+    return this.barrierCells.idsMeetingAny(rects).map((id) => this.barrierMap.get(id)!);
+  }
+
   barriersIn(rect: ChangeRect): Barrier[] {
     return this.barrierCells.idsMeeting(rect).map((id) => this.barrierMap.get(id)!);
   }
