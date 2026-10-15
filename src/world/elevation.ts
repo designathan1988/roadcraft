@@ -877,9 +877,6 @@ export function buildRoadElevation(
   const hit = { s: 0, distance: 0 };
   /** The reads of the field, the same code a road tile worker runs over the roads handed to it (`roadField.ts`). */
   const field = roadField(index, byId, terrainAt);
-  /** Each profile's place in `profiles`: the order the index files them in, kept in what a worker is handed. */
-  let order: Map<Profile, number> | null = null;
-
   const result: RoadElevation = {
     solved: solvedCount,
     at: field.at,
@@ -888,13 +885,10 @@ export function buildRoadElevation(
     roadAt: field.roadAt,
     surfaceFrameAt: field.surfaceFrameAt,
     fieldFor(rects, also) {
-      if (!order) {
-        order = new Map();
-        profiles.forEach((p, i) => order!.set(p, i));
-      }
-      const { profiles: meet, cells } = index.meeting(rects);
-      for (const id of also) { const p = byId.get(id); if (p) meet.add(p); }
-      return packField([...meet].sort((a, b) => order!.get(a)! - order!.get(b)!), cells);
+      const chain: Profile[] = [];
+      for (const id of also) { const p = byId.get(id); if (p) chain.push(p); }
+      const { profiles: meet, cells } = index.meeting(rects, chain);
+      return packField(meet, cells);
     },
     differences(other) {
       const mine = profileSummaries;

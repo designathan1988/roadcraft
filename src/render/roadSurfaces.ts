@@ -7,7 +7,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
 import { CASING_BAND, CURB_BAND, Level, ROAD_TYPES, type SurfaceLevel, laneWidth } from '@world/roadTypes';
 import type { CarriagewayMaterial } from '@world/roadSection';
-import { footwayRiseShare } from '@world/roads/footwayRise';
+import { footwayRiseShare, packFlush } from '@world/roads/footwayRise';
 import { levelPolygons, levelRings } from '@world/surfaces';
 import { curbRamps, rampOutline, rampsMeeting, walkingRise } from '@world/curbRamps';
 import type { CurbRamp } from '@world/rampRise';
@@ -690,11 +690,9 @@ export function* roadSurfaceSteps(
         const found = look(id);
         if (found) lookList.push([id, found]);
       }
-      const flushIds = new Set<SegmentId>();
       const ramps = new Set<CurbRamp>();
       const edgeKeys = new Set<number>();
       for (const rect of around) {
-        for (const id of net.flushCells.idsMeeting(rect)) flushIds.add(id);
         for (const r of rampsMeeting(net, rect)) if (r.structure === structure.id) ramps.add(r);
         if (raised) continue;
         for (let cx = Math.floor(rect[0] / FOOTWAY_EDGE_CELL); cx <= Math.floor(rect[2] / FOOTWAY_EDGE_CELL); cx++) {
@@ -704,28 +702,13 @@ export function* roadSurfaceSteps(
           }
         }
       }
-      const flushRoads: SurfaceData['flush']['roads'][number][] = [];
-      const flushRects: number[] = [];
-      const flushLines: Float64Array[] = [];
-      for (const id of flushIds) {
-        const ribbon = net.ribbons.get(id);
-        const rect = net.flushCells.rectOf(id);
-        if (!ribbon || !rect) continue;
-        const road = ribbon.road;
-        flushRoads.push({ width: road.width, sidewalk: road.sidewalk,
-          ...(road.sidewalkLeft !== undefined ? { sidewalkLeft: road.sidewalkLeft } : {}),
-          ...(road.sidewalkRight !== undefined ? { sidewalkRight: road.sidewalkRight } : {}),
-          ...(road.flushLeft !== undefined ? { flushLeft: road.flushLeft } : {}),
-          ...(road.flushRight !== undefined ? { flushRight: road.flushRight } : {}) });
-        flushRects.push(rect[0], rect[1], rect[2], rect[3]);
-        flushLines.push(ribbon.full.xy);
-      }
-      const flush = { rects: Float64Array.from(flushRects), ...concat(flushLines), roads: flushRoads };
+      const flush = packFlush(net, around);
+      transfer.push(...flush.transfer);
       const edgeLists = [...edgeKeys].map((key) => Float64Array.from(edges().get(key)!));
       const joined = concat(edgeLists);
       const edgeData = { keys: Float64Array.from(edgeKeys), ends: joined.lineEnds, xy: joined.lines };
-      for (const array of [flush.rects, flush.lineEnds, flush.lines, edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
-      return { data: { field, looks: lookList, flush, ramps: [...ramps], edges: edgeData }, transfer };
+      for (const array of [edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
+      return { data: { field, looks: lookList, flush: flush.data, ramps: [...ramps], edges: edgeData }, transfer };
     };
     /**
      * Builds `list`'s tiles, each handed to `done`: made whole by the workers when there are some

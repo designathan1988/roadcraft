@@ -2,7 +2,7 @@ import { Polyline } from '@core/polyline';
 import type { SegmentId } from '@world/ids';
 import { type FieldData, PointHeights, fieldOf } from '@world/roadField';
 import { type CurbRamp, rampGrid, rampRiseIn } from '@world/rampRise';
-import { type FlushRoad, flushHolds } from '@world/roads/footwayRise';
+import { type FlushData, flushShareOf } from '@world/roads/footwayRise';
 import type { SurfaceShape, TileRect } from './mesh/tileShape';
 import { meshTileShape, type Tile } from './mesh/tileMesh';
 import { type PassDesc, type RoadLook, type SurfaceRead, type SurfaceReads, passSurfaces, tileSpecOf } from './roadSurfaceReads';
@@ -31,13 +31,8 @@ export interface SurfaceData {
   readonly field: FieldData;
   /** The looks of those roads and of the pass's chain. */
   readonly looks: readonly (readonly [SegmentId, RoadLook])[];
-  /** The roads with a footway laid flush whose filed box meets the tiles (`Network.flushCells`): box, line, widths. */
-  readonly flush: {
-    readonly rects: Float64Array;
-    readonly lineEnds: Uint32Array;
-    readonly lines: Float64Array;
-    readonly roads: readonly FlushRoad[];
-  };
+  /** The roads with a footway laid flush whose filed box meets the tiles (`Network.flushCells`). */
+  readonly flush: FlushData;
   /** The dropped kerbs filed in the cells of the tiles, of the pass's structure. */
   readonly ramps: readonly CurbRamp[];
   /** The footways' outer edges in the cells of the tiles (`footwayEdgeCell`), four numbers an edge. */
@@ -72,16 +67,7 @@ function readsOf(data: SurfaceData, heights: PointHeights, missing: number[]): S
     }
   }
   const looks = new Map(data.looks);
-  const flush: { minX: number; minY: number; maxX: number; maxY: number; line: Polyline; road: FlushRoad }[] = [];
-  {
-    let at = 0;
-    for (let i = 0; i < data.flush.roads.length; i++) {
-      const r = data.flush.rects;
-      flush.push({ minX: r[i * 4]!, minY: r[i * 4 + 1]!, maxX: r[i * 4 + 2]!, maxY: r[i * 4 + 3]!,
-        line: Polyline.fromFlat(data.flush.lines.subarray(at, data.flush.lineEnds[i]!)), road: data.flush.roads[i]! });
-      at = data.flush.lineEnds[i]!;
-    }
-  }
+  const footwayShare = flushShareOf(data.flush);
   const ramps = rampGrid(data.ramps);
   const edges = new Map<number, Float64Array>();
   {
@@ -96,14 +82,7 @@ function readsOf(data: SurfaceData, heights: PointHeights, missing: number[]): S
     terrainAt,
     lineOf: (id) => lines.get(id),
     look: (id) => looks.get(id),
-    footwayShare(x, y) {
-      // The roads filed at the point (`CellFiling.idsMeeting`: its box holds it, edges included); any flush there answers 0.
-      for (const f of flush) {
-        if (x < f.minX || x > f.maxX || y < f.minY || y > f.maxY) continue;
-        if (flushHolds(f.line, f.road, x, y)) return 0;
-      }
-      return 1;
-    },
+    footwayShare,
     walkingRise: (x, y, structure) => rampRiseIn(ramps, x, y, true, structure),
     footwayEdges: (key) => edges.get(key),
   };

@@ -242,12 +242,34 @@ export class SpatialIndex<P extends { readonly bbox: Aabb }> {
     return digest.value();
   }
 
+  /** Each profile's place in the list the index was built from, and a mark per place (`meeting`). */
+  private ranks: Map<P, number> | null = null;
+  private marks: Uint32Array | null = null;
+  private mark = 0;
+
   /**
-   * Every profile `near` can return for a point of the rectangles, and the
-   * cells that holds for (`answers` of an index built over them alone).
+   * Every profile `near` can return for a point of the rectangles, and `also`, in the order the index
+   * was built from (an index built over them alone files them as this one does), with the cells that
+   * holds for (`answers`). Marked by place, not gathered in a set: asked for every building cell's job
+   * (`world/paving.ts`), each a few hundred cells of the index.
    */
-  meeting(rects: readonly (readonly [number, number, number, number])[]): { profiles: Set<P>; cells: number[] } {
-    const profiles = new Set<P>(this.oversized);
+  meeting(rects: readonly (readonly [number, number, number, number])[], also: readonly P[] = []): { profiles: P[]; cells: number[] } {
+    if (!this.ranks) {
+      this.ranks = new Map(this.all.map((p, i) => [p, i]));
+      this.marks = new Uint32Array(this.all.length);
+    }
+    const ranks = this.ranks, marks = this.marks!;
+    if (++this.mark === 0xffffffff) { marks.fill(0); this.mark = 1; }
+    const mark = this.mark;
+    const picked: number[] = [];
+    const take = (profile: P): void => {
+      const rank = ranks.get(profile)!;
+      if (marks[rank] === mark) return;
+      marks[rank] = mark;
+      picked.push(rank);
+    };
+    for (const profile of this.oversized) take(profile);
+    for (const profile of also) take(profile);
     const cells = new Set<number>();
     for (const [minX, minY, maxX, maxY] of rects) {
       for (let x = Math.floor(minX / this.cell); x <= Math.floor(maxX / this.cell); x++) {
@@ -255,11 +277,13 @@ export class SpatialIndex<P extends { readonly bbox: Aabb }> {
           const key = cellKeyOf(x, y);
           if (cells.has(key)) continue;
           cells.add(key);
-          for (const profile of this.buckets.get(key) ?? EMPTY) profiles.add(profile);
+          const bucket = this.buckets.get(key);
+          if (bucket) for (const profile of bucket) take(profile);
         }
       }
     }
-    return { profiles, cells: [...cells] };
+    picked.sort((a, b) => a - b);
+    return { profiles: picked.map((rank) => this.all[rank]!), cells: [...cells] };
   }
 
   near(x: number, y: number): readonly P[] {

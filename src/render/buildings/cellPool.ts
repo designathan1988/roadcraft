@@ -1,5 +1,8 @@
-import type { GroundAt, PavedAt } from '@world/buildings/foundation';
+import type { GroundAt } from '@world/buildings/foundation';
 import type { Finish } from '@world/buildings/materials';
+import type { PavingSource } from '@world/paving';
+import { m } from '@world/units';
+import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
 
@@ -17,11 +20,24 @@ import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type J
  * is the same either way. A worker that fails hands its jobs to the page.
  */
 
-/** What a job reads on the page: the ground as drawn and as it was, and the paving. */
+/** What a job reads on the page: the ground as drawn and as it was, and the paving (with `pack`: read by the worker itself). */
 export interface CellEnv {
   readonly groundAt: GroundAt;
   readonly naturalAt: GroundAt;
-  readonly pavedAt?: PavedAt;
+  readonly pavedAt?: PavingSource;
+}
+
+/**
+ * How far past its cell a job's buildings read the paving off the roads handed to its worker
+ * (`PavingData`): their lots and frontages. A point farther is asked of the page, as before.
+ */
+const PAVING_REACH = m(64);
+
+/** The rectangle a cell's worker reads the paving in: the cell (`BATCH_CELL`, key "x,y") and `PAVING_REACH` round it. */
+function pavingRect(cell: string): [number, number, number, number] | null {
+  const [cx, cy] = cell.split(',').map(Number) as [number, number];
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  return [cx * BATCH_CELL - PAVING_REACH, cy * BATCH_CELL - PAVING_REACH, (cx + 1) * BATCH_CELL + PAVING_REACH, (cy + 1) * BATCH_CELL + PAVING_REACH];
 }
 
 /**
@@ -29,7 +45,7 @@ export interface CellEnv {
  * DO NOT write each record's text into a job waiting its turn - a town's masses asked at its opening
  * held every building's JSON text while they waited (109 MB of a 2 560 m city's live heap, 2026-10-15).
  */
-interface Running { readonly id: number; readonly job: () => CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
+interface Running { readonly id: number; readonly job: (worker: boolean) => { readonly job: CellJob; readonly transfer: ArrayBuffer[] }; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
 
 /** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
 interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; readonly queue: Running[] }
@@ -77,7 +93,15 @@ export class CellPool {
     const id = this.nextId++;
     const writers = entries.map((e) => this.text(e));
     const paved = env.pavedAt !== undefined;
-    const job = (): CellJob => ({ id, kind, cell, entries: entries.map((e, i) => ({ ...e, record: writers[i]!() })), paved });
+    // For a worker, the roads near the cell, so it reads the paving itself (`world/paving.ts`): the page answers
+    // only the ground. DO NOT ask the page for each point of the paving: a 2,560 m city's cells asked
+    // it 2.3 s of the page's time (`pavedHeightAt` -> `roadAt`/`query`, 2026-10-15).
+    const job = (worker: boolean): { job: CellJob; transfer: ArrayBuffer[] } => {
+      const base = { id, kind, cell, entries: entries.map((e, i) => ({ ...e, record: writers[i]!() })), paved };
+      const rect = worker && paved && env.pavedAt?.pack ? pavingRect(cell) : null;
+      const packed = rect ? env.pavedAt!.pack!(rect) : null;
+      return packed ? { job: { ...base, paving: packed.data }, transfer: packed.transfer } : { job: base, transfer: [] };
+    };
     const lanes = this.start();
     const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
@@ -100,7 +124,8 @@ export class CellPool {
       for (let i = 1; i < lane.queue.length && lane.queue[at]!.rank > -1; i++) if (lane.queue[i]!.rank < lane.queue[at]!.rank) at = i;
       const next = lane.queue.splice(at, 1)[0]!;
       lane.jobs.set(next.id, next);
-      lane.worker.postMessage({ type: 'start', job: next.job() });
+      const { job, transfer } = next.job(true);
+      lane.worker.postMessage({ type: 'start', job }, transfer);
     }
   }
 
@@ -153,7 +178,7 @@ export class CellPool {
   private onPage(running: Running): void {
     this.local ??= new CellWork(this.boxes(), this.tone);
     const work = this.local;
-    let reply = work.start(running.job());
+    let reply = work.start(running.job(false).job);
     while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
     this.finish(running, reply.result);
   }

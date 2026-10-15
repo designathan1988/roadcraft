@@ -126,3 +126,15 @@ describe('the road tiles made off the page', () => {
     expect(read('src/render/roadTilePool.ts')).not.toMatch(/meshTileShape\(|tileShapes\(|passSurfaces\(/);
   });
 });
+
+describe('the paving a building cell reads', () => {
+  it('is read by the cell workers off the roads handed to them, not asked of the page point by point', () => {
+    expect([...reach('src/render/buildings/cell.worker.ts')]).toEqual(expect.arrayContaining(['src/world/paving.ts', 'src/world/roadField.ts']));
+    const pool = read('src/render/buildings/cellPool.ts');
+    expect(pool).toMatch(/const \{ job, transfer \} = next\.job\(true\);/);
+    expect(pool).toMatch(/env\.pavedAt!\.pack!\(rect\)/);
+    expect(read('src/render/buildings/cellWork.ts')).toMatch(/kind === PAVED && state\.pavedHere/);
+    // The renderer's paving packs its roads for a cell.
+    expect(read('src/render/renderer.ts')).toMatch(/const pavedHeightAt: PavingSource = Object\.assign\(/);
+  });
+});

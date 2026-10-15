@@ -43,8 +43,9 @@ import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, type RoadElevation } from '@world/elevation';
-import { FOOTWAY_RISE, ROAD_TYPES, casingHalf, sidewalkHalf } from '@world/roadTypes';
-import { footwayRiseAt } from '@world/roads/footwayRise';
+import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
+import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
+import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
 import type { SimWorld } from '@sim/world';
 import type { Viewport } from '@view/viewport';
@@ -888,22 +889,25 @@ export function createSceneRenderer(
     return segment === undefined ? elevation.at(x, y) : elevation.onSegment(segment, x, y);
   };
 
-  /** See `SceneHandle.pavedHeightAt`. */
-  const pavedHeightAt = (x: number, y: number): number => {
+  /** The footway's rise over the carriageway at a point (`footwayRiseAt`), kerbed before any network is built. */
+  const footwayRiseHere = (x: number, y: number): number => (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE);
+  /**
+   * See `SceneHandle.pavedHeightAt` (`world/paving.ts`). With `pack`: what a building cell's worker
+   * reads it from near its cell (`cellPool.ts`), so the workers ask the page for none of it.
+   */
+  const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
-    const road = elevation.roadAt(x, y, GROUND_ONLY);
-    const rt = road.type >= 0 ? ROAD_TYPES[road.type] : undefined;
-    if (!rt) return NaN;
-    // `half` is this road's own casing (its lanes may be set individually):
-    // the footway ends a casing band inside it and starts a footway further in.
-    // Each side its own footway (docs/VIAS.md V1): `half` reaches the wider one.
-    const walk = (road.across >= 0 ? road.sidewalkLeft : road.sidewalkRight) ?? road.sidewalk ?? rt.sidewalk;
-    const footway = road.half - (casingHalf(rt) - sidewalkHalf(rt)) - ((road.sidewalk ?? rt.sidewalk) - walk);
-    const across = Math.abs(road.across);
-    if (across > footway) return NaN;
-    const deck = elevation.at(x, y, GROUND_ONLY);
-    return across > footway - walk ? deck + (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE) : deck;
-  };
+    return pavedHeightFrom(elevation, GROUND_ONLY, footwayRiseHere, x, y);
+  }, {
+    pack: (rect: readonly [number, number, number, number]): { data: PavingData; transfer: ArrayBuffer[] } | null => {
+      const ground = elevation !== null && elevation.has(GROUND_ONLY);
+      if (ground && !elevation!.fieldFor) return null;
+      const field = ground ? elevation!.fieldFor!([rect], []) : null;
+      const flush = worldNet ? packFlush(worldNet, [rect]) : null;
+      return { data: { rect, field: field?.data ?? null, flush: flush?.data ?? null },
+        transfer: [...field?.transfer ?? [], ...flush?.transfer ?? []] };
+    },
+  });
 
   const agents: AgentMeshes = createAgentMeshes(deckHeight, onAssetsReady,
     // A walker off the streets stands on what is drawn there: a building's
