@@ -764,8 +764,17 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
   const node = doc.node(id);
   if (!node) return { committed: false, reason: 'degenerate' };
 
-  for (const other of doc.nodes.values()) {
-    if (other.id === id) continue;
+  // A node it lands on is the end of a road filed in the network's cells round
+  // it (roads that did not move are filed where they are), the smallest id
+  // first as the walk over `doc.nodes` met them. DO NOT walk `doc.nodes`.
+  const near = new Set<NodeId>();
+  for (const { id: sid } of ribbonsNear(net, [node.x - MERGE_EPS, node.y - MERGE_EPS, node.x + MERGE_EPS, node.y + MERGE_EPS])) {
+    const seg = doc.segment(sid);
+    if (seg) { near.add(seg.a); near.add(seg.b); }
+  }
+  for (const otherId of [...near].sort((p, q) => p - q)) {
+    const other = doc.node(otherId);
+    if (!other || other.id === id) continue;
     if (dist(node, other) > MERGE_EPS || Math.abs(other.heightOffset - node.heightOffset) > HEIGHT_JOIN_EPS) continue;
     // Merging along a road would fold that road to nothing.
     if (node.incident.some((sid) => { const seg = doc.segment(sid); return seg && (seg.a === other.id || seg.b === other.id); })) {
@@ -786,8 +795,12 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
     const moved = doc.segment(sid);
     if (!moved) continue;
     const path = net.polylines.get(doc, sid);
-    for (const [otherId, other] of [...doc.segments]) {
-      if (otherId === sid || other.structure !== moved.structure) continue;
+    // The roads it can cross: filed over boxes that meet its own (the network
+    // was rebuilt just above). DO NOT walk `doc.segments`.
+    const pb = path.bbox;
+    for (const { id: otherId } of ribbonsNear(net, [pb.minX - MERGE_EPS, pb.minY - MERGE_EPS, pb.maxX + MERGE_EPS, pb.maxY + MERGE_EPS])) {
+      const other = doc.segment(otherId);
+      if (!other || otherId === sid || other.structure !== moved.structure) continue;
       if (other.a === moved.a || other.a === moved.b || other.b === moved.a || other.b === moved.b) continue;
       const line = net.polylines.get(doc, otherId);
       for (let i = 0; i + 1 < path.n; i++) {
