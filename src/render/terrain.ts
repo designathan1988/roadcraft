@@ -2404,8 +2404,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // The bounds grown over the corners that moved (`Sphere.expandByPoint`
     // keeps everything it held): worked out again over all 90 601 corners it
     // was 0.8 ms for each of the hundred-odd quarter blocks of a road edit.
-    if (geometry.boundingSphere) for (const i of changed) geometry.boundingSphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
-    else geometry.computeBoundingSphere();
+    // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made): DO NOT
+    // work it out again here, over every corner, in the pass a frame puts in place.
+    const sphere = geometry.boundingSphere!;
+    for (const i of changed) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
     lastChanged = changed;
     return true;
   };
