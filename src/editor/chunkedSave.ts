@@ -1,5 +1,5 @@
 import type { Building, BuildingId } from '@world/buildings/types';
-import { DOC_CHANGE_KINDS } from '@world/changes';
+import { type ChangeKind, DOC_CHANGE_KINDS } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { RoadDoc, SerializedDoc } from '@world/doc';
 
@@ -61,7 +61,7 @@ function isManifest(value: unknown): value is Manifest {
 }
 
 /** The kinds that live in the buildings' parts; every other kind of the document is in the head. */
-const BUILDING_KINDS: ReadonlySet<string> = new Set(['buildings', 'buildingWear']);
+const BUILDING_KINDS: readonly ChangeKind[] = ['buildings', 'buildingWear'];
 
 export class PartedSaves {
   /** The diary read up to the last save (every kind of the document). */
@@ -117,7 +117,7 @@ export class PartedSaves {
       return;
     }
     for (const entry of entries) {
-      if (!BUILDING_KINDS.has(entry.kind)) { this.dirtyHead = true; continue; }
+      if (!BUILDING_KINDS.includes(entry.kind)) { this.dirtyHead = true; continue; }
       if (this.dirtyParts === 'all') continue;
       if (!entry.ids) { this.dirtyParts = 'all'; continue; }
       for (const id of entry.ids) this.dirtyParts.add(Math.floor(id / BUILDINGS_PER_PART));
@@ -151,7 +151,8 @@ export class PartedSaves {
     const manifest: Manifest = { version: 3, savedAt, parts: [...next].sort((a, b) => a - b), settings };
     put.push([`${this.key}:manifest`, new Blob([JSON.stringify(manifest)])]);
     if (!(await this.store.write(put, remove))) {
-      const since = this.dirtyParts;
+      // Read again: what came while the write was under way (TS keeps the narrowing across the await).
+      const since = this.dirtyParts as Set<number> | 'all';
       this.dirtyParts = dirty === 'all' || since === 'all' ? 'all' : new Set([...dirty, ...since]);
       this.dirtyHead ||= head;
       return false;
