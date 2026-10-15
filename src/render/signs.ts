@@ -61,6 +61,28 @@ export function plateFaces(type: SignType, x: number, y: number, yaw: number): {
   return type === 'street' ? [face(yaw), face(yaw + Math.PI)] : [face(yaw)];
 }
 
+/**
+ * The size a plate's words are written at: the first of `size`, `size - 2`,
+ * `size - 4`... whose width (`widthAt`) fits `max`, or the first at or under
+ * 10 px - what stepping down 2 px at a time and measuring each size gave. A
+ * street's name was measured at every size from the top, each with its font
+ * set again (`measureText`, in the frame its plate was first stood: every name
+ * of a generated city in one frame). A word's width grows with its size, so
+ * the size the first measure scales to is the boundary or a step from it: a
+ * step or two either way finds the same size with two or three measures.
+ * DO NOT measure every size from the top.
+ */
+export function fitSize(max: number, size: number, widthAt: (px: number) => number): number {
+  const top = widthAt(size);
+  if (top <= max || size <= 10) return size;
+  // Steps down to the first size at or under 10: the walk ends there, fitting or not.
+  const last = Math.ceil((size - 10) / 2);
+  const ok = (k: number): boolean => k >= last || widthAt(size - 2 * k) <= max;
+  let k = Math.min(last, Math.max(1, Math.ceil((size - (size * max) / top) / 2)));
+  if (ok(k)) { while (k > 1 && ok(k - 1)) k--; } else { do k++; while (!ok(k)); }
+  return size - 2 * k;
+}
+
 function plateCanvas(type: SignType, text: string): HTMLCanvasElement {
   const plate = PLATE[type];
   const W = 256, H = Math.max(64, Math.round((256 * plate.h) / plate.w));
@@ -69,9 +91,8 @@ function plateCanvas(type: SignType, text: string): HTMLCanvasElement {
   const g = c.getContext('2d')!;
   const cx = W / 2, cy = H / 2, r = Math.min(W, H) / 2 - 4;
   const fit = (s: string, max: number, size: number): void => {
-    let px = size;
+    const px = fitSize(max, size, (at) => { g.font = `700 ${at}px system-ui, sans-serif`; return g.measureText(s).width; });
     g.font = `700 ${px}px system-ui, sans-serif`;
-    while (g.measureText(s).width > max && px > 10) { px -= 2; g.font = `700 ${px}px system-ui, sans-serif`; }
   };
   const circle = (fill: string, ring: string | null): void => {
     g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = ring ?? fill; g.fill();
