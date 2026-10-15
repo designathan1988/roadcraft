@@ -1952,9 +1952,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   // ---- the ecosystem (world/ecology.ts)
   const ecologyTexture = material.userData['ecology'] as DataTexture;
-  /** The biomes painted per corner, `REGIONS.length` weights a corner (`rasterBiome`). */
-  const biomeCorners = new Float32Array(GRID * GRID * REGIONS.length);
-  let biomePainted = false;
+  /** The biomes painted per corner, `REGIONS.length` weights a corner (`rasterBiome`); made with the first biome painted (DO NOT keep ~10 MB a plate of zeros). */
+  let biomeCorners: Float32Array | null = null;
   let nature: NatureSettings | null = null;
   let natureSeen = -1;
   let ecologyField: EcologyField | null = null;
@@ -2000,7 +1999,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const input = {
         side: GRID, cell: TERRAIN_CELL, heights: Float64Array.from(natural), water: wet,
         sandstone: Float32Array.from(sand), basalt: Float32Array.from(basalt),
-        painted: biomePainted ? Float32Array.from(biomeCorners) : null, settings: nature,
+        painted: biomeCorners ? Float32Array.from(biomeCorners) : null, settings: nature,
       };
       const transfer: ArrayBuffer[] = [input.heights.buffer, wet.buffer, input.sandstone.buffer, input.basalt.buffer];
       if (input.painted) transfer.push(input.painted.buffer);
@@ -2040,7 +2039,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const field = computeEcology({
       side: GRID, cell: TERRAIN_CELL, heights: natural, water: wet,
       sandstone: material.userData['sandCorners'] as Float32Array, basalt: material.userData['basaltCorners'] as Float32Array,
-      painted: biomePainted ? biomeCorners : null, settings: nature,
+      painted: biomeCorners, settings: nature,
     }, over && ecologyField ? { previous: ecologyField, ix0: over[0], ix1: over[1], iy0: over[2], iy1: over[3] } : undefined);
     performance.measure('hitch:ecology', { start: startedAt, end: performance.now() });
     applyEcology(field);
@@ -2296,8 +2295,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         return;
       }
       if (isBiomeKind(dab.kind)) {
-        rasterBiome(biomeCorners, dab);
-        biomePainted = true;
+        rasterBiome(biomeCorners ??= new Float32Array(GRID * GRID * REGIONS.length), dab);
         ecologyAll();
         return;
       }
@@ -2314,8 +2312,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       for (const kind of COVER_KINDS) covers[kind].fill(0);
       sandCorners.fill(0);
       basaltCorners.fill(0);
-      biomeCorners.fill(0);
-      biomePainted = false;
+      biomeCorners = null;
       ecologyAll();
       for (const dab of dabs) lay(dab);
       covered = true;
