@@ -609,6 +609,8 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       ragdolls.clear(); gore.clear(); blast.clear();
       tracers.dispose();
       scene.remove(destruction.group, casualties.group, blast.group, gore.group, muzzle);
+      // What each holds on the GPU (and the fracture's workers): only taken out of the scene, it stayed.
+      destruction.dispose(); casualties.dispose(); blast.dispose(); gore.dispose();
       agents.setBleed(() => {});
     },
   };

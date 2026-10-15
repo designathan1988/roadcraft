@@ -3492,6 +3492,19 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      // Everything the renderer made, the GPU's included: the layers, the
+      // previews and the effects too (they were left out, and a renderer
+      // made again - a map opened, the tier changed - left them all behind).
+      fx?.dispose();
+      exhaust.dispose();
+      wear.dispose();
+      barriers?.dispose();
+      transit?.dispose();
+      transitPreview?.dispose();
+      polePreview?.dispose();
+      utilities?.dispose();
+      signs?.dispose();
+      for (const flash of gridFlashes) flash.mesh.geometry.dispose();
       agents.dispose();
       signals.dispose();
       buildings.dispose();
