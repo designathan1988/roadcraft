@@ -1525,15 +1525,13 @@ export function createSceneRenderer(
     // The buildings whose bank reaches a block the roads changed, found by place. DO NOT walk
     // `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a
     // building a step): the town twice for each road drawn; `rebuild` works out the platforms it lacks.
-    const reached = new Map<BuildingId, Building>();
-    for (const q of blocks) {
-      for (const b of net.doc.buildings.near(q[0] - BANK_REACH, q[1] - BANK_REACH, q[2] + BANK_REACH, q[3] + BANK_REACH)) {
-        const box = bankBox(b);
-        if (box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1]) reached.set(b.id, b);
-      }
-    }
+    // Every block in one look (`nearAny`): a block at a time read the cells they share again for each.
+    const reached = net.doc.buildings.nearAny(blocks, BANK_REACH, (b, q) => {
+      const box = bankBox(b);
+      return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
+    });
     followFloors(net);
-    for (const b of reached.values()) {
+    for (const b of reached) {
       sitesGraded.refresh(b);
       yield;
     }

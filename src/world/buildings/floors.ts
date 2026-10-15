@@ -49,12 +49,11 @@ export function buildingFloors(groundAt: GroundAt, pavedAt: PavedAt | undefined,
       const rects = seen < 0 ? null : ground.rectsSince(seen);
       seen = ground.version;
       if (rects === null) { known = new WeakMap(); return; }
-      for (const r of rects) {
-        for (const b of buildings.near(r[0] - reach, r[1] - reach, r[2] + reach, r[3] + reach)) {
-          const box = boxOf(b);
-          if (box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1]) known.delete(b);
-        }
-      }
+      // Every change in one look (`BuildingStore.nearAny`).
+      for (const b of buildings.nearAny(rects, reach, (b, r) => {
+        const box = boxOf(b);
+        return box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1];
+      })) known.delete(b);
     },
   };
 }
