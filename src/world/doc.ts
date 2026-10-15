@@ -540,7 +540,7 @@ export class RoadDoc {
     const id = asSpanId(this.spanIds.take());
     const span: UtilitySpan = { id, a, b };
     this.putSpanRecord(span);
-    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b] });
+    this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b, id] });
     return span;
   }
 
@@ -663,13 +663,16 @@ export class RoadDoc {
     const pole = this.poles.get(id);
     if (!pole) return;
     const reached: { x: number; y: number }[] = [pole];
+    // The pole and its spans by id (a reader by id: the undo image).
+    const ids: number[] = [id];
     for (const span of this.spansAt(id)) {
       const other = this.poles.get(span.a === id ? span.b : span.a);
       if (other) reached.push(other);
       this.deleteSpanRecord(span.id);
+      ids.push(span.id);
     }
     this.deletePoleRecord(id);
-    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids: [id] });
+    this.changes.record('utilities', [rectAround(reached, ITEM_PAD)!], { ids });
   }
 
   /** The pole nearest a point, within `radius`, or null. */
@@ -870,6 +873,8 @@ export class RoadDoc {
     this.nodes.delete(source);
     dropStaleCrossing(keep);
     this.markNode(target, true, gone ? [gone] : []);
+    // The node that went, by id, for a reader by id (its rectangle is in the entry above).
+    this.roadsChanged(gone ? [gone] : null, true, { ids: [source], detail: 'node merged away' });
     return true;
   }
 
@@ -1395,7 +1400,9 @@ export class RoadDoc {
     if (before) rects.push(before);
     const s = this.segments.get(id);
     if (s) for (const end of [s.a, s.b]) { const r = this.nodeRect(end); if (r) rects.push(r); }
-    this.roadsChanged(rects.length ? rects : null, true, { ids: [id] });
+    // With its two ends: their records (`incident`) change with it, and a reader
+    // by id (the undo image, `docImage.ts`) must be told so.
+    this.roadsChanged(rects.length ? rects : null, true, { ids: s ? [id, s.a, s.b] : [id] });
   }
 
   /** A rectangle as the diary takes it: itself, or the whole map when there is none. */
@@ -2526,14 +2533,16 @@ function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; ids: nu
     traffic = true;
     add(b.segmentRect(id));
   }
+  // The nodes by id too, as `markNode` writes them: a reader by id (the undo image) reads them.
   for (const [id, p] of a.nodes) {
     const q = b.nodes.get(id);
     if (q && sameNode(p, q)) continue;
     if (nodeMovesTraffic(p, q)) traffic = true;
+    ids.push(id);
     add(a.nodeRect(id));
     if (q) add(b.nodeRect(id));
   }
-  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) { traffic = true; add(b.nodeRect(id)); }
+  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) { traffic = true; ids.push(id); add(b.nodeRect(id)); }
   return { rects, ids, traffic };
 }
 
