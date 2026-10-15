@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { pointInPolygon } from '@core/polygon';
 
@@ -213,6 +214,21 @@ describe('validation', () => {
     // Flush against it: a terrace, which must be allowed.
     const terrace = building({ id: asBuildingId(9), x: 4 * first.module, y: 40 });
     expect(validateBuilding(ctx, terrace)).toBeNull();
+  });
+
+  it('sees a neighbour as it stands now, its rings kept per record and never per check', () => {
+    const doc = new RoadDoc();
+    const ctx = { doc, net: null, groundAt: flat };
+    const first = doc.buildings.add(building({ x: 0, y: 40 }));
+    const probe = building({ id: asBuildingId(9), x: 10, y: 45 });
+    expect(validateBuilding(ctx, probe)).toBe('building');
+    // The neighbour moved away: a new record, seen anew (a ring kept by record never answers for the old one).
+    doc.buildings.put({ ...doc.buildings.get(first.id)!, x: 900 });
+    expect(validateBuilding(ctx, probe)).toBeNull();
+    // DO NOT turn the neighbours' corners into the world at each check (3.8 s of a city's growth, 2026-10-15).
+    const source = readFileSync('src/world/buildings/validate.ts', 'utf8');
+    expect(source).toMatch(/const others = obstaclesOf\(other\);/);
+    expect(source).toMatch(/const obstaclesOf = identityMemo\(/);
   });
 
   it('rejects a building off the map', () => {
