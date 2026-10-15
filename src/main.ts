@@ -3951,7 +3951,31 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-window.addEventListener('beforeunload', () => persistence.saveSession(doc, sessionSettings()));
+/**
+ * Closing the game saves it. In the desktop window (`desktop/main.cjs`, the
+ * `app:` scheme) the close waits for the save to be written: a value set in
+ * `beforeunload` cancels Electron's close without asking anything
+ * (electronjs.org, BrowserWindow 'close'), and once the write settled - or
+ * after `CLOSE_WAIT_MS`, if storage hangs - the window is closed again. A tab
+ * gets no such wait (a browser would ask the player to leave): it saves and
+ * goes, as IndexedDB promises nothing to a page being unloaded (MDN).
+ */
+const CLOSE_WAIT_MS = 8000;
+function saveOnClose(): (event: BeforeUnloadEvent) => void {
+  let saved = false;
+  return (event) => {
+    if (saved) return;
+    persistence.saveSession(doc, sessionSettings());
+    if (location.protocol !== 'app:') return;
+    event.preventDefault();
+    event.returnValue = '';
+    void Promise.race([persistence.written(), new Promise((done) => setTimeout(done, CLOSE_WAIT_MS))]).then(() => {
+      saved = true;
+      window.close();
+    });
+  };
+}
+window.addEventListener('beforeunload', saveOnClose());
 // A hidden or discarded tab may never see `beforeunload` (phones, tab freezing).
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') persistence.flush();

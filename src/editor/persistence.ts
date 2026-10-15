@@ -163,7 +163,9 @@ export class Persistence {
    * parts, and the reload opened the map as it was before.
    */
   private generation = 0;
-
+  /** The last write started (`written`, settled either way): what a closing desktop window waits for. */
+  private lastWrite: Promise<unknown> = Promise.resolve();
+  written(): Promise<void> { return this.lastWrite.then(() => undefined, () => undefined); }
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
     const generation = ++this.generation;
     // In parts, whatever the map's size (`chunkedSave.ts`); the small key points there. DO NOT choose by
@@ -172,7 +174,7 @@ export class Persistence {
       this.writeSettings(settings);
       const key = this.storageKey, savedAt = Date.now();
       this.partsKept = true;
-      void this.parted.save(doc, withUnit(settings), savedAt).then((ok) => {
+      this.lastWrite = this.parted.save(doc, withUnit(settings), savedAt).then((ok) => {
         if (!ok) { this.onSaveFailed?.(); return; }
         if (generation !== this.generation) return;
         try { localStorage.setItem(key, `{"version":2,"stored":"parts","savedAt":${savedAt}}`); } catch (error) { console.error('[save] the pointer to the parts was not written; the parts stand', error); }
@@ -202,7 +204,7 @@ export class Persistence {
     this.writeSettings(settings);
     const key = this.storageKey;
     const savedAt = Date.now();
-    void this.store.put(key, session).then((ok) => {
+    this.lastWrite = this.store.put(key, session).then((ok) => {
       if (!ok) { this.onSaveFailed?.(); return; }
       if (generation !== this.generation) return;
       this.dropParts();
@@ -511,7 +513,6 @@ export function normalizeSettings(settings: SavedSettings): SavedSettings {
  * read no more: they left every city with ten cars.
  */
 export const MAX_INTENSITY = 3;
-
 
 /**
  * The saved camera in this build's world unit (`world/rescale.ts`): its zoom
