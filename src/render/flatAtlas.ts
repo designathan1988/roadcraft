@@ -20,11 +20,14 @@ import {
   wallMaterial,
   type TerrainPart,
   type TerrainRegion,
+  type ShapeAsking,
   type TerrainShaper,
   type TerrainSource,
   type TerrainSurface,
 } from './terrain';
 import { m } from '@world/units';
+import type { Aabb } from '@core/aabb';
+import type { NaturalPlate } from './groundShape';
 
 /**
  * THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`): a grid of square
@@ -650,6 +653,52 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       for (const [p, regions] of byPlate) if (ensure(p).shapeToRoads(shape && shaperFor(p, shape), regions)) { moved = true; measureTop(p); }
       if (moved) measureHighest();
       return moved;
+    },
+    askShape(region, bounds) {
+      const list: readonly TerrainRegion[] | null = region === null ? null
+        : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
+      // Each plate's pass, as `shapeToRoads` above makes them: the plates shown, or those the regions name.
+      const parts: { p: Plate; s: TerrainSurface; asking: ShapeAsking }[] = [];
+      if (list === null) {
+        const local = (p: Plate): Aabb[] | null => bounds && bounds.map((b) => ({ minX: b.minX - p.cx, minY: b.minY - p.cy, maxX: b.maxX - p.cx, maxY: b.maxY - p.cy }));
+        for (const p of shownList) parts.push({ p, s: p.surface!, asking: p.surface!.askShape(null, local(p)) });
+      } else {
+        const byPlate = new Map<Plate, TerrainRegion[]>();
+        for (const r of list) {
+          const { plate, local } = decode(r);
+          let mine = byPlate.get(plate);
+          if (!mine) byPlate.set(plate, mine = []);
+          mine.push(local);
+        }
+        for (const [p, regions] of byPlate) { const s = ensure(p); parts.push({ p, s, asking: s.askShape(regions, null) }); }
+      }
+      return {
+        plates: parts.flatMap(({ p, asking }) => asking.plates.map((a) => ({ ...a, cx: p.cx, cy: p.cy }))),
+        take(answers) {
+          let moved = false;
+          let k = 0;
+          for (const { p, s, asking } of parts) {
+            const mine = answers.slice(k, k += asking.plates.length);
+            // A plate let go meanwhile took its ground with it, as it would have with the pass made here.
+            if (p.surface !== s) continue;
+            if (asking.take(mine)) { moved = true; measureTop(p); }
+          }
+          if (moved) measureHighest();
+          return moved;
+        },
+      };
+    },
+    naturalCut(boxes) {
+      const out = new Map<number, NaturalPlate>();
+      for (const box of boxes) {
+        for (const [x, y] of [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]] as const) {
+          const p = plates[plateOf(x, y)]!;
+          const corners = p.surface?.naturalCorners?.();
+          if (!corners || out.has(p.index)) continue;
+          out.set(p.index, { index: p.index, cx: p.cx, cy: p.cy, n: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, ...corners });
+        }
+      }
+      return [...out.values()];
     },
     regionOf(box) {
       const p = plates[plateOf((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)]!;

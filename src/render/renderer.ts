@@ -59,6 +59,9 @@ import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, ty
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
+import { GroundShapePool } from './groundShapePool';
+import { type BlockDigestAsk, type GroundShapeAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
 import { createGardens, type GardenPlant, type Gardens } from './gardens';
@@ -1387,43 +1390,107 @@ export function createSceneRenderer(
    * Heights to a thousandth of a unit, as the solve's own digest had them.
    */
   const groundRead = new WeakMap<RoadElevation, Map<number, number>>();
-  const blockRead = (solve: RoadElevation, x0: number, y0: number): number => {
+  /** The blocks of a solve being digested off the page, each with the job that will file it (`compareSolves`). */
+  const groundReading = new WeakMap<RoadElevation, Map<number, Promise<void>>>();
+  const blockKey = (x0: number, y0: number): number => x0 * 65_536 + y0;
+  const readOf = (solve: RoadElevation): Map<number, number> => {
     let known = groundRead.get(solve);
     if (!known) groundRead.set(solve, known = new Map());
-    const key = x0 * 65_536 + y0;
+    return known;
+  };
+  /** A block of a solve digested on the page (`groundShape.ts` `blockDigest`, the worker's own function). */
+  const blockRead = (solve: RoadElevation, x0: number, y0: number): number => {
+    const known = readOf(solve);
+    const key = blockKey(x0, y0);
     const kept = known.get(key);
     if (kept !== undefined) return kept;
-    const digest = new Digest();
-    const quantum = (h: number): number => Math.round(h * 1000);
-    for (let x = Math.ceil((x0 + TERRAIN_HALF) / TERRAIN_CELL) * TERRAIN_CELL - TERRAIN_HALF; x <= x0 + SHAPE_BLOCK; x += TERRAIN_CELL) {
-      for (let y = Math.ceil((y0 + TERRAIN_HALF) / TERRAIN_CELL) * TERRAIN_CELL - TERRAIN_HALF; y <= y0 + SHAPE_BLOCK; y += TERRAIN_CELL) {
-        const shaped = solve.shapeAt(x, y, terrain.naturalRenderedHeightAt(x, y));
-        digest.add(quantum(shaped.height)).add(quantum(shaped.weight));
-        const road = solve.roadAt(x, y);
-        if (road.type >= 0 && Math.abs(road.across) <= road.half) digest.add(road.type).add(quantum(solve.at(x, y)));
-        else digest.add(-1);
-      }
-    }
-    const value = digest.value();
+    const value = blockDigest(solve, terrain.naturalRenderedHeightAt, x0, y0, SHAPE_BLOCK, TERRAIN_CELL, TERRAIN_HALF);
     known.set(key, value);
     return value;
   };
-  const changedBlocks = (before: RoadElevation, after: RoadElevation): [number, number, number, number][] => {
-    const out: [number, number, number, number][] = [];
+  /** Two solves compared block by block (`compareSolves`): `blocks` once `ready`, with the page's time it took. */
+  interface BlockCompare { blocks: [number, number, number, number][]; ready: boolean; ms: number }
+  /**
+   * The blocks whose ground two solves of the roads shape differently, or
+   * whose decks differ: digested by the ground's worker when it is there
+   * (`groundShape.ts` `digestBlocks`, the page's `blockDigest` to the bit),
+   * on the page otherwise. A block of a solve already digested, or being
+   * digested for an earlier comparison, is not asked again.
+   */
+  const compareSolves = (before: RoadElevation, after: RoadElevation, landBlocks: readonly [number, number, number, number][] | null): BlockCompare => {
+    const at = performance.now();
+    const out: BlockCompare = { blocks: [], ready: false, ms: 0 };
+    const candidates: [number, number][] = [];
     // Only blocks a road that differs reaches can differ (`differences`):
     // every block of the map used to be digested twice on every edit.
     const where = after.differences?.(before) ?? null;
-    if (where && !where.length) return out;
-    // Every plate's own blocks.
-    for (const plate of MAP_REGIONS) {
-      for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
-        for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
-          const x1 = x + SHAPE_BLOCK, y1 = y + SHAPE_BLOCK;
-          if (where && !where.some((r) => r.minX <= x1 && r.maxX >= x && r.minY <= y1 && r.maxY >= y)) continue;
-          if (blockRead(before, x, y) !== blockRead(after, x, y)) out.push([x, y, x1, y1]);
+    if (!where || where.length) {
+      // Every plate's own blocks.
+      for (const plate of MAP_REGIONS) {
+        for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
+          for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
+            const x1 = x + SHAPE_BLOCK, y1 = y + SHAPE_BLOCK;
+            if (where && !where.some((r) => r.minX <= x1 && r.maxX >= x && r.minY <= y1 && r.maxY >= y)) continue;
+            candidates.push([x, y]);
+          }
         }
       }
     }
+    const finish = (): void => {
+      const changed: [number, number, number, number][] = [];
+      for (const [x, y] of candidates) if (blockRead(before, x, y) !== blockRead(after, x, y)) changed.push([x, y, x + SHAPE_BLOCK, y + SHAPE_BLOCK]);
+      if (landBlocks) {
+        const seen = new Set(changed.map((b) => `${b[0]},${b[1]}`));
+        for (const b of landBlocks) if (!seen.has(`${b[0]},${b[1]}`)) changed.push(b);
+      }
+      out.blocks = changed;
+      out.ready = true;
+    };
+    const waits: Promise<void>[] = [];
+    const ask: { solve: RoadElevation; blocks: [number, number][] }[] = [];
+    for (const solve of [before, after]) {
+      const known = readOf(solve);
+      const reading = groundReading.get(solve);
+      const mine: [number, number][] = [];
+      for (const [x, y] of candidates) {
+        const key = blockKey(x, y);
+        if (known.has(key)) continue;
+        const job = reading?.get(key);
+        if (job) { if (!waits.includes(job)) waits.push(job); continue; }
+        mine.push([x, y]);
+      }
+      if (mine.length) ask.push({ solve, blocks: mine });
+    }
+    if (ask.length && groundWorkers.available && ask.every((a) => a.solve.shapeCut)) {
+      // The roads near the blocks asked and the ground under them, as plain numbers; a block the worker
+      // cannot read (NaN: a plate not made) and a job that fails are digested here, in `finish`.
+      const rect = (x: number, y: number): [number, number, number, number] => [x - 1, y - 1, x + SHAPE_BLOCK + 1, y + SHAPE_BLOCK + 1];
+      const job: BlockDigestAsk = {
+        solves: ask.map(({ solve, blocks }) => ({
+          roads: solve.shapeCut!(blocks.map(([x, y]) => { const r = rect(x, y); return { minX: r[0], minY: r[1], maxX: r[2], maxY: r[3] }; })),
+          blocks: Float64Array.from(blocks.flat()),
+        })),
+        plates: terrain.naturalCut?.(ask.flatMap(({ blocks }) => blocks.map(([x, y]) => rect(x, y)))) ?? [],
+        block: SHAPE_BLOCK, cell: TERRAIN_CELL, half: TERRAIN_HALF,
+      };
+      const filed = groundWorkers.digest(job).then((answers) => {
+        ask.forEach(({ solve, blocks }, k) => {
+          const known = readOf(solve);
+          blocks.forEach(([x, y], j) => { const v = answers[k]![j]!; if (!Number.isNaN(v)) known.set(blockKey(x, y), v); });
+        });
+      }, (error: unknown) => { console.warn('[ground] blocks digested on the page', error); }).finally(() => {
+        for (const { solve, blocks } of ask) for (const [x, y] of blocks) groundReading.get(solve)?.delete(blockKey(x, y));
+      });
+      for (const { solve, blocks } of ask) {
+        let reading = groundReading.get(solve);
+        if (!reading) groundReading.set(solve, reading = new Map());
+        for (const [x, y] of blocks) reading.set(blockKey(x, y), filed);
+      }
+      waits.push(filed);
+    }
+    if (!waits.length) { finish(); out.ms = performance.now() - at; return out; }
+    out.ms = performance.now() - at;
+    void Promise.all(waits).then(() => { const t = performance.now(); finish(); out.ms += performance.now() - t; });
     return out;
   };
   /** A terrain region (`terrainRegion`) back as the world box it covers, a cell round. */
@@ -1446,7 +1513,7 @@ export function createSceneRenderer(
    * its own, then the ground a few blocks at a time - in one go it was 60-150
    * ms of every road edit in the default town (docs/performance.md #10).
    */
-  function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<void, void, void> {
+  function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<'wait' | void, void, void> {
     // The buildings whose bank reaches a block the roads changed, found by place. DO NOT walk
     // `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a
     // building a step): the town twice for each road drawn; `rebuild` works out the platforms it lacks.
@@ -1475,32 +1542,75 @@ export function createSceneRenderer(
     };
     const regions = blocks.flatMap(quarters).map(terrainRegion);
     if (sites) regions.push(...sites.map(terrainRegion));
-    // A block a step: three were 33 ms, past the frame's allowance (`core/frameWork.ts`).
-    const BATCH = 1;
-    let shaping = 0;
-    for (let i = 0; i < regions.length; i += BATCH) {
-      const at = performance.now();
-      shapeGround(net, regions.slice(i, i + BATCH), false, true);
-      shaping += performance.now() - at;
-      yield;
-    }
+    // Every region in one pass, worked out by the ground's worker while the frames go on (`shapeGround`).
+    // DO NOT cut it into a block a step again: that spread the page's work over frames, and it is the
+    // worker's now.
+    const shaping = shapeGround(net, regions, false, true);
+    while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
     derived(net, 'ground', regions.map(regionRect), 'chão cortado e aterrado até as vias', worldCause,
-      { ms: shaping, detail: `${regions.length} regiões` });
+      { ms: shaping.ms, detail: `${regions.length} regiões` });
   }
 
 
-  const shapeGround = (net: Network, regions: TerrainRegion | readonly TerrainRegion[] | null = null, sites = false, padsReady = false): void => {
+  /** The ground's work off the page (`groundShapePool.ts`). */
+  const groundWorkers = new GroundShapePool();
+  /** A shaping pass asked of the ground's worker (`shapeGround`): put in place in the order asked (`landShapes`). */
+  interface Shaping {
+    readonly ask: GroundShapeAsk;
+    readonly take: (answers: readonly PlateShapeAnswer[]) => boolean;
+    /** What the ground's readers are told, once the heights are in place (the diary's 'ground'). */
+    readonly then: () => void;
+    answers: PlateShapeAnswer[] | null;
+    failed: boolean;
+    landed: boolean;
+    /** The page's time: the ask put together and the answer put in place. */
+    ms: number;
+  }
+  /**
+   * The passes asked, in order. Each is put in place once it and every pass
+   * before it are answered: the ground ends as the passes made one after the
+   * other here left it, each reading the roads and the platforms as they were
+   * when it was asked (its ask holds them). A pass the worker failed is made
+   * here from the same ask. Never asked again.
+   */
+  const shapings: Shaping[] = [];
+  const LANDED = { landed: true, ms: 0 } as const;
+  /** Puts in place every pass answered, in the order asked, up to the first still being worked out. */
+  const landShapes = (): void => {
+    while (shapings.length) {
+      const next = shapings[0]!;
+      if (!next.answers && !next.failed) { groundWorkers.check(); return; }
+      shapings.shift();
+      const at = performance.now();
+      next.take(next.answers ?? shapeGroundAsk(next.ask));
+      next.ms += performance.now() - at;
+      next.landed = true;
+      next.then();
+    }
+  };
+  /**
+   * Cuts and fills the ground round `regions` (null: the whole map) to the
+   * roads and the platforms. Off the page whenever the ground's worker is
+   * there (and behind any pass still waiting for it): the heights land with
+   * its answer (`landShapes`), and `landed` says when. DO NOT shape the
+   * corners here while the worker is there: 9.5 s of the page in a 2,560 m
+   * city's growth (2026-10-15).
+   */
+  const shapeGround = (net: Network, regions: TerrainRegion | readonly TerrainRegion[] | null = null, sites = false, padsReady = false): { readonly landed: boolean; readonly ms: number } => {
+    const at = performance.now();
     const list: readonly TerrainRegion[] | null = regions === null ? null
       : typeof regions[0] === 'number' ? [regions as TerrainRegion] : regions as readonly TerrainRegion[];
-    if (list && !list.length) return;
+    if (list && !list.length) return LANDED;
     const region = list;
     // The ground is cut and filled here, and only here: what stands on it reads
-    // where from the diary - once per call; a road edit's quarter blocks are
-    // written together when the last is shaped (`shapeBlocksSteps`).
-    if (!padsReady) {
-      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', net.doc.changes.version);
+    // where from the diary - once per call, when its heights are in place; a road
+    // edit's blocks are written together by their job (`shapeBlocksSteps`).
+    const parent = net.doc.changes.version;
+    const told = (): void => {
+      if (padsReady) return;
+      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', parent);
       if (sites && serial) sitesGradedSerials.add(serial);
-    }
+    };
     const roads = net.doc.segments.size > 0 ? elevation : null;
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
@@ -1509,20 +1619,28 @@ export function createSceneRenderer(
       sitesGraded.rebuild(net.doc.buildings);
     }
     const pads = net.doc.buildings.size > 0 ? sitesGraded.pads : null;
-    if (!pads) {
-      terrain.shapeToRoads(roads, region);
-      return;
+    if (groundWorkers.available || shapings.length) {
+      // The corners asked, and the roads and platforms they read as they stand now, as plain numbers.
+      const asking = terrain.askShape(region, region ? null : [...(roads?.shapeBounds() ?? []), ...(pads?.shapeBounds() ?? [])]);
+      const boxes = cornerBoxes(asking.plates, TERRAIN_CELL, TERRAIN_HALF);
+      const ask: GroundShapeAsk = { roads: roads ? roads.shapeCut!(boxes) : null, pads: pads ? pads.cut(boxes) : null, plates: asking.plates };
+      const shaping: Shaping = { ask, take: asking.take, then: told, answers: null, failed: false, landed: false, ms: 0 };
+      shapings.push(shaping);
+      if (groundWorkers.available) {
+        groundWorkers.shape(ask).then((answers) => { shaping.answers = answers; }, (error: unknown) => {
+          console.warn('[ground] a pass is shaped on the page', error);
+          shaping.failed = true;
+        });
+      } else shaping.failed = true;
+      shaping.ms = performance.now() - at;
+      // No worker: put in place now, after the passes before it.
+      if (shaping.failed) landShapes();
+      return shaping;
     }
-    terrain.shapeToRoads({
-      shapeBounds: () => [...(roads?.shapeBounds() ?? []), ...pads.shapeBounds()],
-      shapeAt(x, y, ground) {
-        const road = roads ? roads.shapeAt(x, y, ground) : { height: ground, weight: 0 };
-        const pad = pads.shapeAt(x, y, ground);
-        if (pad.weight <= 0) return road;
-        if (road.weight <= 0) return pad;
-        return { height: pad.height + (road.height - pad.height) * road.weight, weight: 1 };
-      },
-    }, region);
+    told();
+    const shape = pads ? { shapeBounds: () => [...(roads?.shapeBounds() ?? []), ...pads.shapeBounds()], shapeAt: shapeBoth(roads, pads) } : roads;
+    terrain.shapeToRoads(shape, region);
+    return { landed: true, ms: performance.now() - at };
   };
 
   /** `doc.utilityRevision` the poles and the furniture were last brought up to. */
@@ -1642,8 +1760,12 @@ export function createSceneRenderer(
     },
   }, 'draw');
 
-  /** Blocks whose ground a dropped rebuild had not shaped yet (`null`: the whole map). */
-  let pendingBlocks: [number, number, number, number][] | null = [];
+  /**
+   * The comparisons of solves whose blocks a dropped rebuild had not shaped
+   * yet (`compareSolves`, each read when its job reads them; `null`: the
+   * whole map), the last one's own.
+   */
+  let pendingBlocks: (BlockCompare | null)[] = [];
   /**
    * The land a brush moved since the world was last built (`'all'`: anywhere -
    * an undo, a map loaded, several stamps at once): the dirty region of the
@@ -1734,25 +1856,13 @@ export function createSceneRenderer(
     const land = landDirty;
     landDirty = null;
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
-    let changed: [number, number, number, number][] | null = null;
-    const atBlocks = performance.now();
-    if (previousElevation && (landStill || landBlocks)) {
-      changed = changedBlocks(previousElevation, elevation);
-      if (landBlocks) {
-        const seen = new Set(changed.map((b) => `${b[0]},${b[1]}`));
-        for (const b of landBlocks) if (!seen.has(`${b[0]},${b[1]}`)) changed.push(b);
-      }
-    }
-    performance.measure('hitch:road-edit/changed blocks', { start: atBlocks, end: performance.now() });
-    // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
-    worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', net.doc.changes.version,
-      { ms: performance.now() - started, detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || net.doc.changes.version;
-    const blocks = changed && pendingBlocks ? [...pendingBlocks, ...changed] : null;
-    // The roads' own heights (the footway, the carriageway) moved where the
-    // solve did: the 'elevation' entry just written is what the things on the
-    // ground read (`groundChanges`).
-    const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25;
-    pendingBlocks = local ? blocks : null;
+    // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job,
+    // which waits for them; null: the whole map. With those of the jobs an edit overtook before they shaped
+    // their ground.
+    const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
+    pendingBlocks = compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null];
+    const elevationMs = performance.now() - started;
+    const cause = net.doc.changes.version;
     // The land itself changed: at once. After a road edit, and for the first
     // world when the game opens: a few milliseconds a frame (`pumpWorld`) -
     // built in the frame of the edit, it was a stall of 100-500 ms on every
@@ -1766,7 +1876,7 @@ export function createSceneRenderer(
     // is sliced too, its tiles shaped by the workers (`roadTilePool.ts`). DO NOT build it in one go: the
     // roads of a generated city were built in the frame of the change, on the page, and the workers never
     // ran (2026-10-15).
-    worldJob = worldSteps(net, local ? blocks : null, started, true);
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true);
     worldJobFresh = true;
     worldJobGround = true;
   };
@@ -1776,10 +1886,25 @@ export function createSceneRenderer(
    * a slice a frame (`pumpWorld`), so it may wait for its shaders.
    * @rebuild Started by `buildWorld`; its slices run only while a rebuild is in progress.
    */
-  function* worldSteps(net: Network, blocks: [number, number, number, number][] | null, started: number, sliced: boolean): Generator<'wait' | void, void, void> {
+  function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
+    started: number, sliced: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
-    if (blocks === null) shapeGround(net);
-    else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
+    // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
+    while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
+    const own = compares[compares.length - 1] ?? null;
+    const changed = own ? own.blocks : null;
+    // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
+    worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', solved.cause,
+      { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || solved.cause;
+    const joined = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
+    // The roads' own heights (the footway, the carriageway) moved where the
+    // solve did: the 'elevation' entry just written is what the things on the
+    // ground read (`groundChanges`).
+    const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25 ? joined : null;
+    if (blocks === null) {
+      const shaping = shapeGround(net);
+      while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
+    } else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
     pendingBlocks = [];
     worldJobGround = false;
     yield;
@@ -2757,6 +2882,8 @@ export function createSceneRenderer(
       // after that, the frames do, the job's road tiles still being made (`worldJobGround`).
       // Each site on its own (`changedSites`): the buildings a frame of a generated city grew, wherever
       // they stand, cut and fill the ground round each of them, not the box round them all.
+      // The passes the ground's worker answered put in place, in the order asked, where they were asked.
+      landShapes();
       if (!(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
@@ -3472,6 +3599,7 @@ export function createSceneRenderer(
     },
     dispose() {
       roadTiles.dispose();
+      groundWorkers.dispose();
       tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the
       // previews and the effects too (they were left out, and a renderer

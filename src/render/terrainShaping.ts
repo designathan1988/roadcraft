@@ -40,7 +40,7 @@ export interface CornerGrid {
  * of thousands of buildings graded at once (2026-10-15).
  *
  * Without regions (the whole plate): the corners of the boxes, the only ones
- * `shapeAt` can move.
+ * `shapeAt` can move (`boxRegion`).
  */
 export function shapeCorners(
   grid: CornerGrid,
@@ -67,14 +67,62 @@ export function shapeCorners(
       }
     }
   };
-  if (regions) {
-    for (const r of regions) visit(Math.max(0, r[0]), Math.min(n - 1, r[1]), Math.max(0, r[2]), Math.min(n - 1, r[3]));
-    return;
+  for (const r of regions ?? shape.shapeBounds().map((box) => boxRegion(grid, box))) {
+    visit(Math.max(0, r[0]), Math.min(n - 1, r[1]), Math.max(0, r[2]), Math.min(n - 1, r[3]));
   }
-  for (const box of shape.shapeBounds()) {
-    visit(
-      Math.max(0, Math.floor((box.minX + grid.half) / grid.cell)), Math.min(n - 1, Math.ceil((box.maxX + grid.half) / grid.cell)),
-      Math.max(0, Math.floor((grid.half - box.maxY) / grid.cell)), Math.min(n - 1, Math.ceil((grid.half - box.minY) / grid.cell)),
-    );
+}
+
+/** The corners a box of the plate's coordinates covers, a corner round (clamped where they are visited). */
+export function boxRegion(grid: Pick<CornerGrid, 'cell' | 'half'>, box: Aabb): TerrainRegion {
+  return [
+    Math.floor((box.minX + grid.half) / grid.cell), Math.ceil((box.maxX + grid.half) / grid.cell),
+    Math.floor((grid.half - box.maxY) / grid.cell), Math.ceil((grid.half - box.minY) / grid.cell),
+  ];
+}
+
+type ShapeAt = TerrainShaper['shapeAt'];
+
+/**
+ * The roads' and the buildings' platforms' shaping as one (`renderer.ts`
+ * `shapeGround`, and the ground's worker): a road keeps the ground it has
+ * claimed; a platform takes the rest.
+ */
+export function shapeBoth(roads: { shapeAt: ShapeAt } | null, pads: { shapeAt: ShapeAt }): ShapeAt {
+  return (x, y, ground) => {
+    const road = roads ? roads.shapeAt(x, y, ground) : { height: ground, weight: 0 };
+    const pad = pads.shapeAt(x, y, ground);
+    if (pad.weight <= 0) return road;
+    if (road.weight <= 0) return pad;
+    return { height: pad.height + (road.height - pad.height) * road.weight, weight: 1 };
+  };
+}
+
+/**
+ * The height a plate's ground is drawn at, at a point of the plate (its own
+ * coordinates, inside it): the corners' triangles as each cell is drawn
+ * (`diagonals`, `terrain.ts` `retriangulate`). The plate reads its ground
+ * with it, and the ground's worker reads a copy of the corners with it: the
+ * same numbers to the bit.
+ */
+export function sampleCorners(grid: Pick<CornerGrid, 'n' | 'cell' | 'half'>, corners: ArrayLike<number>, diagonals: ArrayLike<number>, x: number, y: number): number {
+  const n = grid.n;
+  const segments = n - 1;
+  // `PlaneGeometry` lays its rows from +y downwards, so the row index grows as
+  // world y falls.
+  const gx = (x + grid.half) / grid.cell;
+  const gy = (grid.half - y) / grid.cell;
+  const ix = Math.min(segments - 1, Math.floor(gx));
+  const iy = Math.min(segments - 1, Math.floor(gy));
+  const u = gx - ix;
+  const v = gy - iy;
+  const a = corners[ix + iy * n] as number;
+  const b = corners[ix + (iy + 1) * n] as number;
+  const c = corners[ix + 1 + (iy + 1) * n] as number;
+  const d = corners[ix + 1 + iy * n] as number;
+  // Each cell is split along the diagonal it is DRAWN with (`retriangulate`):
+  // b-d into (a, b, d) and (b, c, d), or a-c into (a, d, c) and (a, b, c).
+  if (diagonals[ix + iy * segments]) {
+    return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
   }
+  return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);
 }

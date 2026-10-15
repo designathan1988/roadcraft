@@ -54,7 +54,9 @@ import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
-import { type CornerGrid, type TerrainRegion, type TerrainShaper, shapeCorners } from './terrainShaping';
+import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeCorners } from './terrainShaping';
+import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
+import type { Aabb } from '@core/aabb';
 
 /**
  * Side of one terrain plate, in world units: the map is laid in square plates
@@ -102,6 +104,8 @@ const GRID = TERRAIN_SEGMENTS + 1;
  * edge planted trees off the end of the world.
  */
 export const TERRAIN_HALF = TERRAIN_SIZE / 2;
+/** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
+const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
 /**
  * Where the grass field stands this frame (`grassField.ts`): world x, y, how
@@ -258,6 +262,22 @@ export interface TerrainSurface {
    * bounds again: an edit touching 20 blocks paid that 20 times).
    */
   shapeToRoads(shape: TerrainShaper | null, region?: TerrainRegion | readonly TerrainRegion[] | null): boolean;
+  /**
+   * `shapeToRoads` asked off the page (`groundShape.ts`): the corners its pass
+   * reads for `region` - with none, for `bounds`, the shapers' boxes, world
+   * coordinates for the atlas and the plate's own for a plate - each plate's
+   * in `plates`, and `take`, which puts the worker's answers (one a plate, in
+   * order) in place as `shapeToRoads` would have: true when anything moved.
+   */
+  askShape(region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): ShapeAsking;
+  /** The plate's natural corners and the diagonals they are drawn with (`naturalRenderedHeightAt`), as kept: never written by the caller. */
+  naturalCorners?(): { readonly natural: Float64Array; readonly diagonals: Uint8Array };
+  /**
+   * The atlas's plates' natural ground a set of world boxes reads
+   * (`naturalRenderedHeightAt`), as plain data for the ground's worker; a
+   * plate not made is left out (the page reads it).
+   */
+  naturalCut?(boxes: readonly (readonly [number, number, number, number])[]): NaturalPlate[];
   /** The grid corners a world box covers, as `shapeToRoads` takes them. */
   regionOf(box: readonly [number, number, number, number]): TerrainRegion;
   /** A region back as the world box it covers, a cell round. */
@@ -292,6 +312,12 @@ export interface TerrainSurface {
 }
 
 export type { TerrainRegion, TerrainShaper } from './terrainShaping';
+
+/** A shaping pass asked off the page (`TerrainSurface.askShape`). */
+export interface ShapeAsking {
+  readonly plates: readonly PlateShapeAsk[];
+  take(answers: readonly PlateShapeAnswer[]): boolean;
+}
 
 /**
  * A plate of the ground and where its centre stands (`flatAtlas.ts`).
@@ -2247,24 +2273,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     if (!(x >= -TERRAIN_HALF && x <= TERRAIN_HALF && y >= -TERRAIN_HALF && y <= TERRAIN_HALF)) {
       return naturalHeightAt(x, y);
     }
-    // `PlaneGeometry` lays its rows from +y downwards, so the row index grows as
-    // world y falls.
-    const gx = (x + TERRAIN_HALF) / TERRAIN_CELL;
-    const gy = (TERRAIN_HALF - y) / TERRAIN_CELL;
-    const ix = Math.min(TERRAIN_SEGMENTS - 1, Math.floor(gx));
-    const iy = Math.min(TERRAIN_SEGMENTS - 1, Math.floor(gy));
-    const u = gx - ix;
-    const v = gy - iy;
-    const a = corners[ix + iy * GRID] as number;
-    const b = corners[ix + (iy + 1) * GRID] as number;
-    const c = corners[ix + 1 + (iy + 1) * GRID] as number;
-    const d = corners[ix + 1 + iy * GRID] as number;
-    // Each cell is split along the diagonal it is DRAWN with (`retriangulate`):
-    // b-d into (a, b, d) and (b, c, d), or a-c into (a, d, c) and (a, b, c).
-    if (diagonals[ix + iy * TERRAIN_SEGMENTS]) {
-      return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
-    }
-    return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);
+    return sampleCorners(plateGrid, corners, diagonals, x, y);
   };
 
   const renderedHeightAt = (x: number, y: number): number => sampleGrid(grid, flip, x, y);
@@ -2308,11 +2317,42 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
   const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: (i) => position.getX(i), y: (i) => -position.getZ(i) };
 
+  const regionList = (region: TerrainRegion | readonly TerrainRegion[] | null): readonly TerrainRegion[] | null =>
+    region === null ? null : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
   /** The corners the last shaping pass moved (`touchesWater`). */
   let lastChanged: readonly number[] = [];
   const shapeToRoads = (shape: TerrainShaper | null, region: TerrainRegion | readonly TerrainRegion[] | null = null): boolean => {
-    const regions: readonly TerrainRegion[] | null = region === null ? null
-      : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
+    const regions = regionList(region);
+    // Only the corners of the regions, or of the boxes some road or platform
+    // could shape (`shapeCorners`): asking all 90 601 of them was most of the pass.
+    return shapePass(regions, shape && ((take) => {
+      pass++;
+      shapeCorners(corners, natural, shape, regions, visited, pass, take);
+    }));
+  };
+  /**
+   * The corners a pass of `region` reads (with none, of `bounds`: the boxes
+   * of the shapers, in the plate's coordinates), as the ground's worker takes
+   * them (`groundShape.ts`), and `take`, which puts its answer in place as
+   * `shapeToRoads` would have - the same corners, heights and order.
+   */
+  const askShape = (region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): {
+    ask: PlateShapeAsk; take(answer: PlateShapeAnswer): boolean;
+  } => {
+    const regions = regionList(region);
+    const asked = regions ?? (bounds ?? []).map((box) => boxRegion(plateGrid, box));
+    return {
+      ask: askPlate(corners, natural, asked),
+      take: (answer) => shapePass(regions, (take) => {
+        for (let k = 0; k < answer.corners.length; k++) take(answer.corners[k]!, answer.heights[k]!);
+      }),
+    };
+  };
+  /**
+   * One pass: the corners of `regions` (null: of the plate) back to their land,
+   * then `fill` hands each corner it shapes to `take`, then the mesh follows.
+   */
+  const shapePass = (regions: readonly TerrainRegion[] | null, fill: ((take: (i: number, height: number) => void) => void) | null): boolean => {
     // The corners whose height this pass changes, whichever way.
     const changed: number[] = [];
     // Restore whatever the last shaping moved, so this is a pure function of
@@ -2335,17 +2375,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       }
     }
     const fresh: number[] = [];
-
-    if (shape) {
-      // Only the corners of the regions, or of the boxes some road or platform
-      // could shape (`shapeCorners`): asking all 90 601 of them was most of the pass.
-      pass++;
-      shapeCorners(corners, natural, shape, regions, visited, pass, (i, height) => {
-        grid[i] = height;
-        shapedCorners[i] = 1;
-        fresh.push(i);
-      });
-    }
+    fill?.((i, height) => {
+      grid[i] = height;
+      shapedCorners[i] = 1;
+      fresh.push(i);
+    });
 
     for (const i of fresh) {
       const was = before.get(i) ?? (natural[i] as number);
@@ -2702,6 +2736,15 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     }
     return false;
   };
+  /** After a shaping pass (here or off the page): a road that cut through a valley changes where the water's shore is. */
+  const shapeLanded = (moved: boolean, region: TerrainRegion | readonly TerrainRegion[] | null): boolean => {
+    // At once, or once the stroke is over when one is held (`settle`).
+    if (moved && touchesWater()) {
+      if (region) { waterStale = true; markWaterDirty(null); }
+      else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
+    }
+    return moved;
+  };
   const touchesWater = (): boolean => {
     if (!waterBox) return wetDiscs.length > 0;
     for (const i of lastChanged) {
@@ -3020,14 +3063,21 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const shapeAt = performance.now();
       const moved = shapeToRoads(shape, region);
       performance.measure('hitch:road-edit/ground shape', { start: shapeAt, end: performance.now() });
-      // A road that cut through a valley changes where the water's shore is:
-      // at once, or once the stroke is over when one is held (`settle`).
-      if (moved && touchesWater()) {
-        if (region) { waterStale = true; markWaterDirty(null); }
-        else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
-      }
-      return moved;
+      return shapeLanded(moved, region);
     },
+    askShape(region, bounds) {
+      const { ask, take } = askShape(region, bounds);
+      return {
+        plates: [ask],
+        take: (answers) => {
+          const at = performance.now();
+          const moved = take(answers[0]!);
+          performance.measure('hitch:ground/shaped heights put in place', { start: at, end: performance.now() });
+          return shapeLanded(moved, region);
+        },
+      };
+    },
+    naturalCorners: () => ({ natural, diagonals: naturalFlip }),
     update(doc, stroking = false) {
       diary = doc.changes;
       if (revision === doc.terrainRevision) return false;

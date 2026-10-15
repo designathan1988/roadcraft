@@ -355,6 +355,11 @@ export interface RoadElevation {
    */
   shapeBounds(): readonly Aabb[];
   /**
+   * The roads `shapeAt` can read at any point inside `boxes`, as plain numbers for the
+   * worker that grades the ground (`roadShaper` answers there as `shapeAt` does here).
+   */
+  shapeCut?(boxes: readonly Aabb[]): RoadShapeCut;
+  /**
    * A digest of everything a height, frame or road query can read at any
    * point of a rectangle, the terrain aside: the solved profile of every road
    * the spatial index could hand such a query, in the order it would. Two
@@ -1077,29 +1082,8 @@ export function buildRoadElevation(
     return height;
   };
 
-  /** The height at a point from the `found` candidates just measured. */
-  const blend = (x: number, y: number, best: number, found: number): number => {
-    // The ground is read only where it is used: under a road's full authority
-    // (every vertex of its surface) it is not. DO NOT read it first for all.
-    if (found === 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
-    // How much the roads have to say here at all: everything within
-    // `PROFILE_REACH`, nothing past `PROFILE_FADE`, eased in between.
-    const authority = 1 - smoothstep(PROFILE_REACH, PROFILE_FADE, best);
-    if (authority <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
-    let sum = 0;
-    let weight = 0;
-    for (let i = 0; i < found; i++) {
-      // Surely under the cut below: no exponential for a road that cannot count.
-      if ((distances[i] as number) - best > BLEND_SKIP) continue;
-      const w = Math.exp(-((distances[i] as number) - best) / BLEND_TAU);
-      if (w < 1e-4) continue;
-      sum += w * heightAtArc(picked[i] as Profile, arcs[i] as number);
-      weight += w;
-    }
-    if (weight <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
-    const road = sum / weight;
-    return authority >= 1 ? road : road * authority + (terrainAt(x, y) + ROAD_GROUND_CLEARANCE) * (1 - authority);
-  };
+  /** The height at a point from the `found` candidates just measured (`blendRoads`). */
+  const blend = (x: number, y: number, best: number, found: number): number => blendRoads(x, y, best, found, distances, arcs, picked, terrainAt);
 
   const result: RoadElevation = {
     solved: solvedCount,
@@ -1210,78 +1194,21 @@ export function buildRoadElevation(
       return { along, across };
     },
     shapeBounds: () => boxes,
-    shapeAt(x, y, naturalGround) {
-      // EVERY structure may shape the ground, and which one does is decided by
-      // authority rather than by distance.
-      //
-      // "Only roads at grade" was nearly right and wrong in one case that
-      // matters: a ramp coming down off a viaduct is a road at grade by the time
-      // it reaches the street, and leaving the ground untouched under it meant
-      // the ramp had a hill in its way — so the solver lifted the junction to
-      // clear the hill and the street meeting it was left with a step. What
-      // actually decides whether the ground is shaped is how far the structure
-      // is ABOVE it: on it, cut and fill; well clear of it, piers and nothing.
-      //
-      // Taking the nearest profile and then asking whether it shapes would lose
-      // the answer whenever a flying deck happened to pass closer than the road
-      // that is really on the ground, so every candidate is scored and the one
-      // with the most to say wins.
-      let bestWeight = 0;
-      let bestHeight = 0;
-      for (const profile of index.near(x, y)) {
-        profile.line.closestInto(x, y, hit);
-        const distance = hit.distance;
-        const inner = profile.half + SHAPE_INNER;
-        // Cheap bound first: rejecting on the widest batter any road could ask
-        // for keeps a dense network from paying for every road in its cell.
-        if (distance >= inner + SHAPE_SHOULDER_MAX) continue;
-        const sunken = isSunken(profile.structure) ||
-          (profile.manualVertical && naturalGround - heightAtArc(profile, hit.s) > 0);
-        const surface = heightAtArc(profile, hit.s);
-        // Under the road (carriageway and footway) the ground is pulled well
-        // below the deck, where nothing can show through it. Beyond the
-        // footway's back edge it is brought up to just under the carriageway's
-        // level: the verge then carries a gentle 25 cm fall from the footway,
-        // not a 60 cm wall, and the road no longer reads as a slab on the
-        // grass. Not to the footway's level: the terrain is a 6.4 m grid, and
-        // a corner vertex at footway height lifts the interpolated ground
-        // through the asphalt of the kerb return beside it.
-        const beside = !sunken && distance > profile.half - CASING_BAND;
-        const height = beside ? surface - BESIDE_DROP : surface - SHAPE_DROP;
-        // The batter is sized from the earthwork it has to carry away, so a
-        // shallow fill blends out quickly and a deep cut opens out properly.
-        // A cutting held by retaining walls is dug no wider than a portal's:
-        // the wall at the road's edge stands in front of the step
-        // (`render/structures.ts` `retainingWalls`).
-        const shoulder = sunken || (profile.walls && naturalGround > height)
-          ? CUT_SHOULDER
-          : Math.min(SHAPE_SHOULDER_MAX, Math.max(SHAPE_SHOULDER, Math.abs(naturalGround - height) * BATTER));
-        if (distance >= inner + shoulder) continue;
-        let weight = 1 - smoothstep(inner, inner + shoulder, distance);
-        if (isRaised(profile.structure) ||
-          (profile.manualVertical && surface > naturalGround)) {
-          // Lifted clear of the ground: the structure stands on piers and the
-          // landscape passes under it untouched.
-          weight *= 1 - smoothstep(LIFT_ON, LIFT_OFF, surface - naturalGround);
-        } else if (sunken) {
-          // A road buried under its own hill is a TUNNEL, and a tunnel does not
-          // cut the hill open — it bores through it. Fading the shaping out as
-          // the road goes deeper is what produces an open cutting at each portal
-          // and solid ground over the bore, from one rule and no special case.
-          // The cover is measured to the road's SURFACE, because that is the
-          // number the portal geometry is placed against.
-          //
-          // NOT for a road at grade, which is now allowed to run in a cutting
-          // several units deep: the same test would decide the hill had closed
-          // over it and quietly bury an open road.
-          weight *= 1 - smoothstep(TUNNEL_ROOF, TUNNEL_BORE, naturalGround - surface);
+    shapeAt: (x, y, naturalGround) => roadShapeAt(index.near(x, y), x, y, naturalGround),
+    shapeCut(within) {
+      const roads: ShapingRoadData[] = [];
+      const indexOf = new Map<Profile, number>();
+      const take = (profile: Profile): number => {
+        let at = indexOf.get(profile);
+        if (at === undefined) {
+          indexOf.set(profile, at = roads.length);
+          roads.push({ structure: profile.structure, manualVertical: profile.manualVertical, walls: profile.walls, half: profile.half,
+            type: profile.type, h: Float64Array.from(profile.h), step: profile.step, xy: profile.line.xy });
         }
-        if (weight > bestWeight) {
-          bestWeight = weight;
-          bestHeight = height;
-        }
-      }
-      return bestWeight <= 0 ? NO_SHAPE : { height: bestHeight, weight: bestWeight };
+        return at;
+      };
+      const { bucketed, cells, oversized } = index.cut(within, take);
+      return { bucketed, cells, oversized, roads };
     },
     has(structures) {
       if (!structures) return profiles.length > 0;
@@ -1979,7 +1906,7 @@ function stationIndex(profile: Profile, s: number): number {
 }
 
 /** Linear read of a profile at an arc position — continuous, never stepped. */
-function heightAtArc(profile: Profile, s: number): number {
+function heightAtArc(profile: { readonly h: ArrayLike<number>; readonly step: number }, s: number): number {
   const { h, step } = profile;
   const at = Math.min(h.length - 1, Math.max(0, s / step));
   const low = Math.floor(at);
@@ -1988,6 +1915,220 @@ function heightAtArc(profile: Profile, s: number): number {
   const b = h[high] as number;
   return a + (b - a) * (at - low);
 }
+
+// ------------------------------------------------------------ ground shaping
+
+/** What the ground's shaping reads of a road (`roadShapeAt`): a solve's own profile, or its copy off the page. */
+interface ShapingRoad {
+  readonly structure: RoadStructure;
+  readonly manualVertical: boolean;
+  readonly walls: boolean;
+  readonly half: number;
+  readonly h: ArrayLike<number>;
+  readonly step: number;
+  readonly line: Pick<Polyline, 'closestInto'>;
+}
+
+/** A road as the ground's shaping reads it, in plain numbers (`RoadShapeCut`), with its class (`roadAt`). */
+interface ShapingRoadData extends Omit<ShapingRoad, 'line' | 'h'> {
+  readonly type: number;
+  readonly h: Float64Array;
+  /** The centreline's points (`Polyline.xy`), made a line again where it is read (`Polyline.fromFlat`). */
+  readonly xy: Float64Array;
+}
+
+/**
+ * The roads a shaping of the ground can read inside some boxes, as plain
+ * numbers: copied to the worker that grades the ground
+ * (`render/groundShape.worker.ts`) and read there (`roadShaper`) as the solve
+ * reads its own - the spatial index's lists for every cell the boxes reach, in
+ * its order (the first of equal weights wins), and its roads too big for a cell.
+ */
+export interface RoadShapeCut {
+  /** Whether the index files any road by cell; with none, every road (each too big) is asked everywhere. */
+  readonly bucketed: boolean;
+  readonly roads: readonly ShapingRoadData[];
+  /** Each index cell the boxes reach, by key: its roads (indices into `roads`) in the index's order, empty for none. */
+  readonly cells: ReadonlyMap<number, Int32Array>;
+  /** The roads too big for the cells (indices into `roads`), asked after a cell's own, in order. */
+  readonly oversized: Int32Array;
+}
+
+/**
+ * The height at a point from the `found` roads just measured (their distances, arcs and profiles,
+ * the nearest at `best`): the solve's own query and a cut's reader off the page (`roadShaper`) read
+ * with this one function. DO NOT give either side its own copy of it.
+ */
+function blendRoads(x: number, y: number, best: number, found: number, distances: readonly number[], arcs: readonly number[],
+  picked: readonly ShapingRoad[], terrainAt: (x: number, y: number) => number): number {
+  // The ground is read only where it is used: under a road's full authority
+  // (every vertex of its surface) it is not. DO NOT read it first for all.
+  if (found === 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
+  // How much the roads have to say here at all: everything within
+  // `PROFILE_REACH`, nothing past `PROFILE_FADE`, eased in between.
+  const authority = 1 - smoothstep(PROFILE_REACH, PROFILE_FADE, best);
+  if (authority <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
+  let sum = 0;
+  let weight = 0;
+  for (let i = 0; i < found; i++) {
+    // Surely under the cut below: no exponential for a road that cannot count.
+    if ((distances[i] as number) - best > BLEND_SKIP) continue;
+    const w = Math.exp(-((distances[i] as number) - best) / BLEND_TAU);
+    if (w < 1e-4) continue;
+    sum += w * heightAtArc(picked[i] as ShapingRoad, arcs[i] as number);
+    weight += w;
+  }
+  if (weight <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
+  const road = sum / weight;
+  return authority >= 1 ? road : road * authority + (terrainAt(x, y) + ROAD_GROUND_CLEARANCE) * (1 - authority);
+}
+
+/** Scratch of `roadShapeAt`'s nearest-point reads. */
+const shapeHit = { s: 0, distance: 0 };
+
+/**
+ * How far the ground should be pulled towards the roads at a point, and to
+ * what height (`RoadElevation.shapeAt`), from the roads the index gives there
+ * (`candidates`, in its order): the solve's own and a cut's copy off the page
+ * (`roadShaper`) answer with this one function, so the two give the same
+ * ground to the bit. DO NOT give either side its own copy of it.
+ */
+function roadShapeAt(candidates: Iterable<ShapingRoad>, x: number, y: number, naturalGround: number): { height: number; weight: number } {
+  // EVERY structure may shape the ground, and which one does is decided by
+  // authority rather than by distance.
+  //
+  // "Only roads at grade" was nearly right and wrong in one case that
+  // matters: a ramp coming down off a viaduct is a road at grade by the time
+  // it reaches the street, and leaving the ground untouched under it meant
+  // the ramp had a hill in its way — so the solver lifted the junction to
+  // clear the hill and the street meeting it was left with a step. What
+  // actually decides whether the ground is shaped is how far the structure
+  // is ABOVE it: on it, cut and fill; well clear of it, piers and nothing.
+  //
+  // Taking the nearest profile and then asking whether it shapes would lose
+  // the answer whenever a flying deck happened to pass closer than the road
+  // that is really on the ground, so every candidate is scored and the one
+  // with the most to say wins.
+  let bestWeight = 0;
+  let bestHeight = 0;
+  for (const profile of candidates) {
+    profile.line.closestInto(x, y, shapeHit);
+    const distance = shapeHit.distance;
+    const inner = profile.half + SHAPE_INNER;
+    // Cheap bound first: rejecting on the widest batter any road could ask
+    // for keeps a dense network from paying for every road in its cell.
+    if (distance >= inner + SHAPE_SHOULDER_MAX) continue;
+    const sunken = isSunken(profile.structure) ||
+      (profile.manualVertical && naturalGround - heightAtArc(profile, shapeHit.s) > 0);
+    const surface = heightAtArc(profile, shapeHit.s);
+    // Under the road (carriageway and footway) the ground is pulled well
+    // below the deck, where nothing can show through it. Beyond the
+    // footway's back edge it is brought up to just under the carriageway's
+    // level: the verge then carries a gentle 25 cm fall from the footway,
+    // not a 60 cm wall, and the road no longer reads as a slab on the
+    // grass. Not to the footway's level: the terrain is a 6.4 m grid, and
+    // a corner vertex at footway height lifts the interpolated ground
+    // through the asphalt of the kerb return beside it.
+    const beside = !sunken && distance > profile.half - CASING_BAND;
+    const height = beside ? surface - BESIDE_DROP : surface - SHAPE_DROP;
+    // The batter is sized from the earthwork it has to carry away, so a
+    // shallow fill blends out quickly and a deep cut opens out properly.
+    // A cutting held by retaining walls is dug no wider than a portal's:
+    // the wall at the road's edge stands in front of the step
+    // (`render/structures.ts` `retainingWalls`).
+    const shoulder = sunken || (profile.walls && naturalGround > height)
+      ? CUT_SHOULDER
+      : Math.min(SHAPE_SHOULDER_MAX, Math.max(SHAPE_SHOULDER, Math.abs(naturalGround - height) * BATTER));
+    if (distance >= inner + shoulder) continue;
+    let weight = 1 - smoothstep(inner, inner + shoulder, distance);
+    if (isRaised(profile.structure) ||
+      (profile.manualVertical && surface > naturalGround)) {
+      // Lifted clear of the ground: the structure stands on piers and the
+      // landscape passes under it untouched.
+      weight *= 1 - smoothstep(LIFT_ON, LIFT_OFF, surface - naturalGround);
+    } else if (sunken) {
+      // A road buried under its own hill is a TUNNEL, and a tunnel does not
+      // cut the hill open — it bores through it. Fading the shaping out as
+      // the road goes deeper is what produces an open cutting at each portal
+      // and solid ground over the bore, from one rule and no special case.
+      // The cover is measured to the road's SURFACE, because that is the
+      // number the portal geometry is placed against.
+      //
+      // NOT for a road at grade, which is now allowed to run in a cutting
+      // several units deep: the same test would decide the hill had closed
+      // over it and quietly bury an open road.
+      weight *= 1 - smoothstep(TUNNEL_ROOF, TUNNEL_BORE, naturalGround - surface);
+    }
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      bestHeight = height;
+    }
+  }
+  return bestWeight <= 0 ? NO_SHAPE : { height: bestHeight, weight: bestWeight };
+}
+
+/**
+ * What a cut's reader answers (`roadShaper`): the ground's shaping, and at a point the nearest
+ * road (its class, half width, and `across` UNSIGNED: its distance) and the blended deck height -
+ * what `RoadElevation` answers there, with no structure filter, to the bit.
+ */
+export interface CutRoads {
+  shapeAt(x: number, y: number, naturalGround: number): { height: number; weight: number };
+  roadAt(x: number, y: number): { readonly type: number; readonly across: number; readonly half: number };
+  at(x: number, y: number): number;
+}
+
+/**
+ * The roads of a cut (`RoadElevation.shapeCut`) read as the solve reads its own
+ * (`roadShapeAt`, `blendRoads` over the index's lists, in its order): the same
+ * numbers to the bit. `terrainAt` is the ground the solve was laid on, read
+ * where the roads have no say. A point outside the cut's cells is an error,
+ * never a guess.
+ */
+export function roadShaper(cut: RoadShapeCut, terrainAt: (x: number, y: number) => number = noGround): CutRoads {
+  type Road = ShapingRoad & { readonly type: number };
+  const roads: Road[] = cut.roads.map((r) => ({ ...r, line: Polyline.fromFlat(r.xy) }));
+  const oversized = Array.from(cut.oversized, (k) => roads[k]!);
+  const lists = new Map<number, readonly Road[]>();
+  for (const [key, ids] of cut.cells) lists.set(key, [...Array.from(ids, (k) => roads[k]!), ...oversized]);
+  const near = (x: number, y: number): readonly Road[] => {
+    if (!cut.bucketed) return oversized;
+    const list = lists.get(indexKey(x, y));
+    if (!list) throw new Error(`no roads were cut for (${x}, ${y})`);
+    return list;
+  };
+  const hit = { s: 0, distance: 0 };
+  const distances: number[] = [];
+  const arcs: number[] = [];
+  const picked: Road[] = [];
+  return {
+    shapeAt: (x, y, naturalGround) => roadShapeAt(near(x, y), x, y, naturalGround),
+    roadAt(x, y) {
+      let best: Road | null = null;
+      let bestDistance = Infinity;
+      for (const road of near(x, y)) {
+        road.line.closestInto(x, y, hit);
+        if (hit.distance < bestDistance) { bestDistance = hit.distance; best = road; }
+      }
+      return best ? { type: best.type, across: bestDistance, half: best.half } : { type: -1, across: x, half: 0 };
+    },
+    at(x, y) {
+      let best = Infinity;
+      let found = 0;
+      for (const road of near(x, y)) {
+        road.line.closestInto(x, y, hit);
+        distances[found] = hit.distance;
+        arcs[found] = hit.s;
+        picked[found] = road;
+        found++;
+        if (hit.distance < best) best = hit.distance;
+      }
+      return blendRoads(x, y, best, found, distances, arcs, picked, terrainAt);
+    },
+  };
+}
+
+const noGround = (x: number, y: number): number => { throw new Error(`no ground was given for (${x}, ${y})`); };
 
 // ------------------------------------------------------------ spatial index
 
@@ -2001,6 +2142,8 @@ function heightAtArc(profile: Profile, s: number): number {
  */
 /** Side of the spatial index's cells, world units. */
 const INDEX_CELL = m(25.6);
+/** The index's cell key of a point (`SpatialIndex.near`). */
+const indexKey = (x: number, y: number): number => Math.floor(x / INDEX_CELL) * 73_856_093 + Math.floor(y / INDEX_CELL) * 19_349_663;
 class SpatialIndex {
   private readonly cell = INDEX_CELL;
   private readonly buckets = new Map<number, Profile[]>();
@@ -2062,9 +2205,28 @@ class SpatialIndex {
     return digest.value();
   }
 
+  /**
+   * What `near` reads at any point of the boxes, by index (`take`): every cell's list in its order
+   * (empty for a cell with none), the roads too big for a cell, and whether any road is in a cell.
+   */
+  cut(boxes: readonly Aabb[], take: (profile: Profile) => number): { bucketed: boolean; cells: Map<number, Int32Array>; oversized: Int32Array } {
+    const cells = new Map<number, Int32Array>();
+    if (this.buckets.size > 0) {
+      for (const box of boxes) {
+        for (let x = Math.floor(box.minX / this.cell); x <= Math.floor(box.maxX / this.cell); x++) {
+          for (let y = Math.floor(box.minY / this.cell); y <= Math.floor(box.maxY / this.cell); y++) {
+            const key = x * 73_856_093 + y * 19_349_663;
+            if (!cells.has(key)) cells.set(key, Int32Array.from(this.buckets.get(key) ?? EMPTY, take));
+          }
+        }
+      }
+    }
+    return { bucketed: this.buckets.size > 0, cells, oversized: Int32Array.from(this.oversized, take) };
+  }
+
   near(x: number, y: number): readonly Profile[] {
     if (this.buckets.size === 0) return this.all;
-    const key = Math.floor(x / this.cell) * 73_856_093 + Math.floor(y / this.cell) * 19_349_663;
+    const key = indexKey(x, y);
     const bucket = this.buckets.get(key);
     if (this.oversized.length === 0) return bucket ?? EMPTY;
     return bucket ? [...bucket, ...this.oversized] : this.oversized;

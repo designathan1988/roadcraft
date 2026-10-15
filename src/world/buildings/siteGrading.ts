@@ -1,6 +1,6 @@
 import type { GroundAt, PavedAt } from './foundation';
 import { Digest } from '@core/digest';
-import { type Pad, type TownPads, buildingPads, padOf } from './pads';
+import { type Pad, type TownPads, buildingPads, padLevelAt, padOf } from './pads';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
@@ -77,7 +77,7 @@ export function siteGrading(
           const level = pad.levels[i]!;
           digest.add(pad.water[i] ? 1 : 0).add(pad.paved[i] ? 1 : 0).add(ring.length);
           // To the millimetre, as the text was: a platform moved by less grades the same.
-          for (const p of ring) digest.add(Math.round(p.x * 1000)).add(Math.round(p.y * 1000)).add(Math.round(level(p.x, p.y) * 1000));
+          for (const p of ring) digest.add(Math.round(p.x * 1000)).add(Math.round(p.y * 1000)).add(Math.round(padLevelAt(level, p.x, p.y) * 1000));
         });
       } else digest.add(-1);
       key = digest.value();
