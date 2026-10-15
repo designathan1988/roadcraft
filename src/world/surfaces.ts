@@ -1,11 +1,39 @@
 import { type MultiPoly, difference, union } from '@core/clipper';
-import { Level, halfWidth, type SurfaceLevel } from './roadTypes';
-import type { Network, SegmentRibbon } from './network';
-import type { Junction } from './junction/build';
+import type { CurveShape } from '@core/bezier';
+import type { Polyline } from '@core/polyline';
+import type { Ring } from '@core/ring';
+import { Level, halfWidth, type RoadType, type SurfaceLevel } from './roadTypes';
 import type { NodeId, SegmentId } from './ids';
-import { roadStructure } from './structures';
+import { type RoadStructure, roadStructure } from './structures';
 
 export type SurfaceSegmentFilter = (segment: SegmentId) => boolean;
+
+/*
+ * What the surfaces read of the network (`Network`), of a road's ribbon
+ * (`SegmentRibbon`) and of a junction (`Junction`), by shape. DO NOT import
+ * `network.ts` or `junction/build.ts` here: both reach `walkways.ts`, whose
+ * walking lines read this file, and the type imports closed an import cycle
+ * (`tests/arch/imports.spec.ts`).
+ */
+export interface SurfaceRibbon {
+  readonly id: SegmentId;
+  readonly road: RoadType;
+  readonly rings: Record<number, Ring>;
+  readonly full: Polyline;
+}
+export interface SurfaceJunction {
+  readonly rings: readonly Ring[];
+}
+export interface SurfaceNet {
+  readonly doc: {
+    node(id: NodeId): { readonly incident: readonly SegmentId[] } | undefined;
+    segment(id: SegmentId): { readonly a: NodeId; readonly b: NodeId; readonly curve: CurveShape | null; readonly structure: RoadStructure } | undefined;
+    degree(id: NodeId): number;
+  };
+  readonly trims: ReadonlyMap<SegmentId, { readonly a: Record<number, number>; readonly b: Record<number, number> }>;
+  readonly ribbons: ReadonlyMap<SegmentId, SurfaceRibbon>;
+  readonly junctions: ReadonlyMap<NodeId, ReadonlyMap<SurfaceLevel, SurfaceJunction>>;
+}
 
 /**
  * The network's surfaces as real polygons.
@@ -70,7 +98,7 @@ export interface Bands {
  * ramps down to the ground at it.) Tunnels are left out of the choice because
  * they build no surface at all.
  */
-function ownsJunction(net: Network, nodeId: NodeId, include: SurfaceSegmentFilter): boolean {
+function ownsJunction(net: SurfaceNet, nodeId: NodeId, include: SurfaceSegmentFilter): boolean {
   const node = net.doc.node(nodeId);
   if (!node) return false;
   let lowest = Infinity;
@@ -92,7 +120,7 @@ function ownsJunction(net: Network, nodeId: NodeId, include: SurfaceSegmentFilte
  * renderer merges them a tile at a time (`roadSurfaces.ts`), so an edit pays
  * only for the tiles it reaches.
  */
-export function levelRings(net: Network, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
+export function levelRings(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
   return levelRingsOf(net, level, net.ribbons.values(), net.junctions, include);
 }
 
@@ -102,8 +130,8 @@ export function levelRings(net: Network, level: SurfaceLevel, include?: SurfaceS
  * (`Network.segmentCells`) instead of from every road of the map.
  */
 export function levelRingsOf(
-  net: Network, level: SurfaceLevel, ribbons: Iterable<SegmentRibbon>,
-  junctions: Iterable<readonly [NodeId, ReadonlyMap<SurfaceLevel, Junction>]>, include?: SurfaceSegmentFilter,
+  net: SurfaceNet, level: SurfaceLevel, ribbons: Iterable<SurfaceRibbon>,
+  junctions: Iterable<readonly [NodeId, ReadonlyMap<SurfaceLevel, SurfaceJunction>]>, include?: SurfaceSegmentFilter,
 ): MultiPoly {
   const out: MultiPoly = [];
 
@@ -152,11 +180,11 @@ export function levelRingsOf(
 }
 
 /** One merged polygon set per surface level. */
-export function levelPolygons(net: Network, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
+export function levelPolygons(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
   return union(levelRings(net, level, include));
 }
 
-export function surfaces(net: Network, include?: SurfaceSegmentFilter): Surfaces {
+export function surfaces(net: SurfaceNet, include?: SurfaceSegmentFilter): Surfaces {
   return {
     casing: levelPolygons(net, Level.Casing, include),
     sidewalk: levelPolygons(net, Level.Sidewalk, include),

@@ -3,7 +3,7 @@ import { ChangeJournal, rectAround, type ChangeRect } from './changes';
 import { CellFiling } from './cells';
 import { JournalCursor } from './derived';
 import { IdAllocator } from './ids';
-import { insideLot, type Lot } from './lots';
+import { insideLot, type Lot } from './lotRecord';
 import { m } from './units';
 
 /** Where a lot lies: the box round its corners. */

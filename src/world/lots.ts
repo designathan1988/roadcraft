@@ -17,6 +17,7 @@ import { rectAround, type ChangeRect } from './changes';
 import { grow } from './cells';
 import { LAND, NEAR } from './rasterGrid';
 import type { BuildingId } from './buildings/types';
+import { insideLot, type Lot } from './lotRecord';
 
 /**
  * Lots: the land cut into plots the player zones and buildings grow on, as a
@@ -40,21 +41,6 @@ import type { BuildingId } from './buildings/types';
  * and lots the paving now covers are removed.
  */
 
-export interface Lot {
-  readonly id: number;
-  /**
-   * The boundary, counter-clockwise (the inside on the left of each side):
-   * any polygon - four corners as generated, more where the player drew one,
-   * many along a curved side. The first side (corners 0 -> 1) is the front,
-   * on the street.
-   */
-  readonly corners: readonly Vec2[];
-  readonly use?: ZoneUse;
-  readonly density?: ZoneDensity;
-  /** The building that grew on it, while it stands. */
-  readonly building?: number;
-}
-
 /** Depth of a lot along an open street. */
 const LOT_DEPTH = m(32);
 /**
@@ -69,24 +55,13 @@ const MIN_LOT = m(10);
 const RASTER = m(2);
 
 export { lotCentre } from './lotRings';
+export { insideLot, type Lot } from './lotRecord';
 
 export function lotArea(l: Pick<Lot, 'corners'>): number {
   let a = 0;
   const q = l.corners;
   for (let i = 0; i < q.length; i++) { const p = q[i]!, r = q[(i + 1) % q.length]!; a += p.x * r.y - r.x * p.y; }
   return a / 2;
-}
-
-export function insideLot(point: Vec2, l: Pick<Lot, 'corners'>): boolean {
-  let inside = false;
-  const q = l.corners;
-  if (!q.length) return false;
-  const p = point;
-  for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
-    const a = q[i]!, b = q[j]!;
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
 }
 
 /** The lot's frame for a building: front middle, facing angle (along the front), width and depth. */
