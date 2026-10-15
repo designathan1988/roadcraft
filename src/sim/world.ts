@@ -22,10 +22,20 @@ import { SignalPostIndex } from './peds/signalPostIndex';
 import { hasDownstreamStorage } from './intersections/spillback';
 import { CrossingSpans } from './intersections/crossingSpans';
 import { m } from '@world/units';
+import { CellFiling } from '@world/cells';
+import { vehiclePose } from './pose';
 import { DT } from './params';
 
 /** How far before its line a bus asks for priority, world units (V5). */
 const BUS_REACH = m(90);
+/** The micro simulation's window (`keepMicroWindow`): a junction this near a vehicle has its conflicts; 15 s ahead of a car at 70 km/h. */
+const VEHICLE_WINDOW = m(300);
+/** The most of the window round the focus, where the scenery's cars are made (`AmbientWorld.traffic`). */
+const FOCUS_WINDOW = m(600);
+/** Seconds of the city's time between moves of the window. */
+const WINDOW_EVERY = 0.5;
+/** What the filing holds for a junction: its id is the whole of it. */
+const JUNCTION_FILED = {};
 
 /** What the signals read of the world (`SignalDeps`), and the reservations by node, which wake a sleeping one (`SimWorld.signalsAsleep`). */
 export type WorldSignalDeps = SignalDeps & { readonly reserved: () => ReadonlyMap<NodeId, ReadonlySet<number>> };
@@ -132,6 +142,14 @@ export class SimWorld {
 
   /** @mapWide Every vehicle on the map. */
   readonly vehicles = new VersionedMap<VehicleId, Vehicle>();
+  /** Whether the conflicts are kept only in the micro window (the game, `simHost.ts`); the specs keep every junction's. */
+  private microWindow = false;
+  /** The junctions by place, filed as each graph build changes them (`fileJunctions`). */
+  private readonly junctionFiling = new CellFiling<NodeId, object>();
+  private windowTick = -Infinity;
+  private windowFleet = 0;
+  /** The window the focus and the vehicles ask for, not moved to yet (`moveWindowSteps`). */
+  private windowWanted: Set<NodeId> | null = null;
   /** What moves the people (`people/engine.ts`); everything else reaches them through it. */
   pedEngine: PedestrianEngine = NO_PEDESTRIANS;
   /** The vehicle model: Drive v2 (`drive/*`), the only one (the plain-IDM legacy model was taken out on 2026-10-08). */
@@ -512,12 +530,67 @@ export class SimWorld {
   /** The topology's state the kerbs, zebras and spans were brought up to (`walkTopologySteps`). */
   private walkSeen: object | null = null;
 
+  /** The junctions a build changed filed again by place; every one for a graph built whole. */
+  private fileJunctions(changed: GraphChange | null): void {
+    const nodes = changed === null ? [...this.junctionFiling.ids(), ...this.graph.junctions.keys()] : changed.junctions;
+    for (const node of nodes) {
+      this.junctionFiling.remove(node);
+      const at = this.graph.junctions.has(node) ? this.doc.node(node) : undefined;
+      if (at) this.junctionFiling.file(node, JUNCTION_FILED, [at.x, at.y, at.x, at.y]);
+    }
+    this.windowTick = -Infinity;
+  }
+
+  /** The game's simulation keeps conflicts only where traffic is: round the focus and every vehicle (DO NOT build every junction's pairs of the map: 1.3 KB each, 63 MB in a 4,868-building city). */
+  useMicroWindow(): void {
+    this.microWindow = true;
+    this.windowTick = -Infinity;
+    if (this.conflicts.setWindow(this.graph, new Set())) this.claims.dropMissing(this.conflicts);
+  }
+
+  /** The window moved to the one asked for: the pairs of the junctions it reaches measured off the thread first (`measurer`, `conflictPool.ts`), then the swap (`TopologyCatchUp.stepWindow`). */
+  *moveWindowSteps(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
+    const next = this.windowWanted;
+    if (!next) return;
+    this.windowWanted = null;
+    const entering = this.conflicts.entering(this.graph, next);
+    // DO NOT build them here unprepared: each new pair measured on the simulation's thread held it for minutes on a large city.
+    if (entering.size) yield* this.conflicts.prepare(this.graph, measurer, entering, next);
+    if (this.conflicts.setWindow(this.graph, next)) this.claims.dropMissing(this.conflicts);
+  }
+
+  /** Whether a window move is asked for. */
+  get windowMoving(): boolean {
+    return this.windowWanted !== null;
+  }
+
+  /** Stage 2 (`pipeline.ts`): the window asked for with the focus and the vehicles, each half second or when vehicles were made; moved off the step (`moveWindowSteps`). */
+  keepMicroWindow(): void {
+    if (!this.microWindow) return;
+    const tick = this.clock.tick;
+    if (tick - this.windowTick < Math.round(WINDOW_EVERY / DT) && this.vehicles.size <= this.windowFleet) return;
+    this.windowTick = tick;
+    this.windowFleet = this.vehicles.size;
+    const next = new Set<NodeId>();
+    const take = (x: number, y: number, r: number): void => {
+      for (const node of this.junctionFiling.idsMeeting([x - r, y - r, x + r, y + r])) next.add(node);
+    };
+    const focus = this.focus;
+    if (focus) take(focus.x, focus.y, Math.min(FOCUS_WINDOW, Math.max(focus.r * 1.35, m(200)) * 1.15 + m(100)));
+    for (const v of this.vehicles.values()) {
+      const pose = vehiclePose(this, v, 1);
+      if (pose) take(pose.p.x, pose.p.y, VEHICLE_WINDOW);
+    }
+    this.windowWanted = this.conflicts.holdsWindow(next) ? null : next;
+  }
+
   /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
     // DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the whole map for an edit
     const prep = this.prepGraph;
     const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
+    this.fileJunctions(changed);
     if (changed === null) this.conflicts.build(this.graph); else this.conflicts.update(this.graph, changed.junctions);
     this.claims.dropMissing(this.conflicts);
     this.syncControllers(changed?.junctions ?? null);

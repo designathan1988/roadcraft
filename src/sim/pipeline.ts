@@ -70,6 +70,8 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   // The scenery's people and traffic, made and taken away out of sight (`sim/ambient`).
   w.ambient.step(w);
   ensureVehicleRoutes(w);
+  // The micro window moved with the focus and the vehicles: conflicts where traffic is, before the admission reads them (5).
+  w.keepMicroWindow();
   lap('2 dispatch+routes');
   // Lane choice sits between routing and constraints: it must see a settled route, and integration must see its verdict.
   if (traffic) stepLaneChange(w);

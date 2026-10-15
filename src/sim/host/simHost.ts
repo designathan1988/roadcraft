@@ -75,6 +75,8 @@ export class SimHost {
     this.doc.replaceFromJSON(doc, { repair: false });
     this.net.rebuild({ full: true });
     const sim = new SimWorld(this.doc, this.net, seed);
+    // Conflicts only where traffic is (the micro window), not every junction of the map.
+    sim.useMicroWindow();
     useBayWorkers(sim, new BayPool());
     sim.auditEnabled = true;
     sim.auditLevel = 'cheap';
@@ -116,6 +118,7 @@ export class SimHost {
     if (this.net.revision !== this.doc.revision) this.net.rebuild();
     let held = hold;
     if (this.topology.step(sim, this.net.trafficRevision, false)) held = true;
+    else this.topology.stepWindow(sim, this.net.trafficRevision);
     let alpha = 1;
     if (!held) {
       sim.walkwaysNow();
