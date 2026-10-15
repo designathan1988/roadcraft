@@ -73,7 +73,8 @@ import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
 import { createSignalHeads, type SignalHeads } from './signals';
-import { buildStructureDetails, structureRibbons, type StructureDetails } from './structures';
+import { buildStructureDetails } from './structures';
+import { type StructureCells, createStructureCells } from './structureCells';
 import { createExhaust } from './exhaust';
 import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
@@ -659,7 +660,8 @@ export function createSceneRenderer(
   scene.add(world);
 
   let roads: RoadSurfaces | null = null;
-  let details: StructureDetails | null = null;
+  /** The roads' structures, cell by cell (`structureCells.ts`), made with the first world. */
+  let details: StructureCells | null = null;
   /**
    * What the player placed on the footways and the long grass, kept item by
    * item from the diary (`streetFurnitureLayer.ts`): one layer for the map,
@@ -1561,13 +1563,6 @@ export function createSceneRenderer(
     if (!signs.group.parent) world.add(signs.group);
     signs.sync(net, elevation);
   };
-  /** Whether a change in `blocks` (`null`: everywhere) reaches any of these boxes. */
-  const blocksReach = (blocks: readonly (readonly [number, number, number, number])[] | null,
-    boxes: Iterable<readonly [number, number, number, number]>): boolean => {
-    if (blocks === null) return true;
-    for (const r of boxes) for (const b of blocks) if (r[0] <= b[2] && r[2] >= b[0] && r[1] <= b[3] && r[3] >= b[1]) return true;
-    return false;
-  };
 
   /** Blocks whose ground a dropped rebuild had not shaped yet (`null`: the whole map). */
   let pendingBlocks: [number, number, number, number][] | null = [];
@@ -1728,10 +1723,10 @@ export function createSceneRenderer(
     // structures, when the edit raised or buried no road of its own: a street
     // drawn anywhere built every viaduct, pole and bench of the map again
     // (docs/performance.md #13).
+    // Only the cells of structures the edit reached (`structureCells.ts`), not every viaduct of the map.
     const atdetails = performance.now();
-    const keepDetails = details !== null && !blocksReach(blocks, details.spans)
-      && (() => { const near = structureRibbons(net, solve, terrain.renderedHeightAt, blocks!); return near.raised.length + near.tunnels.length + near.walled.length === 0; })();
-    const freshDetails = keepDetails ? details! : buildStructureDetails(net, solve, terrain.renderedHeightAt, materials, terrain.vergeMaterial);
+    details ??= createStructureCells(materials, terrain.vergeMaterial);
+    const freshDetails = details.prepare(net, solve, terrain.renderedHeightAt, blocks);
     performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
     yield;
     // The overhead utility network. It is drawn from the document directly
@@ -1756,7 +1751,7 @@ export function createSceneRenderer(
     // stopped its frame while the driver built it.
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, freshDetails.group]) {
+      for (const piece of [freshRoads.group, ...freshDetails.fresh]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1772,13 +1767,13 @@ export function createSceneRenderer(
     // where the ground changes under them) vanished after a road edit.
     let triangles = builtTriangles;
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
-    if (details) { triangles -= details.triangles; world.remove(details.group); if (details !== freshDetails) details.dispose(); }
+    triangles -= details.triangles;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
     world.add(roads.group);
-    details = freshDetails;
-    world.add(details.group);
+    freshDetails.apply();
+    if (!details.group.parent) world.add(details.group);
     utilityRevision = utilityBuilt;
     builtTriangles = triangles + roads.triangles + details.triangles;
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).

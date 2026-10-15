@@ -56,19 +56,21 @@ export interface StructureDetails {
 }
 
 /** Room round a structure's road that its details read (abutments, casings met, portals). */
-const SPAN_REACH = m(24);
+export const SPAN_REACH = m(24);
 
 /**
  * The roads that carry structures: raised ones (a viaduct, a bridge, or a
  * deck lifted more than 2 m off the ground) and buried ones (a tunnel,
  * or a road deeper than the bore). With `within`, only the roads whose line
- * reaches one of those boxes are asked.
+ * reaches one of those boxes are asked, found by place (`segmentCells`);
+ * with `candidates`, only those. DO NOT walk every ribbon of the map for a box.
  */
 export function structureRibbons(
   net: Network,
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
   within?: readonly (readonly [number, number, number, number])[],
+  candidates?: readonly SegmentRibbon[],
 ): { raised: SegmentRibbon[]; tunnels: SegmentRibbon[]; walled: SegmentRibbon[] } {
   const samples = (ribbon: SegmentRibbon,
     predicate: (cover: number) => boolean): boolean => {
@@ -79,10 +81,13 @@ export function structureRibbons(
     }
     return false;
   };
-  const asked = within === undefined ? [...net.ribbons.values()] : [...net.ribbons.values()].filter((ribbon) => {
-    const bb = ribbon.full.bbox;
-    return within.some((r) => r[0] <= bb.maxX + SPAN_REACH && r[2] >= bb.minX - SPAN_REACH && r[1] <= bb.maxY + SPAN_REACH && r[3] >= bb.minY - SPAN_REACH);
-  });
+  const near = (): SegmentRibbon[] => {
+    const ids = new Set<SegmentId>();
+    for (const r of within!) for (const id of net.segmentCells.idsMeeting([r[0] - SPAN_REACH, r[1] - SPAN_REACH, r[2] + SPAN_REACH, r[3] + SPAN_REACH])) ids.add(id);
+    return [...ids].sort((a, b) => a - b).map((id) => net.ribbons.get(id)).filter((r): r is SegmentRibbon => r !== undefined);
+  };
+  /** @rebuild Every ribbon only for the whole map's details (the first world, a map opened). */
+  const asked = candidates ?? (within === undefined ? [...net.ribbons.values()] : near());
   const raised = asked.filter((ribbon) =>
     isRaised(net.doc.segment(ribbon.id)?.structure ?? 'ground') || samples(ribbon, (lift) => lift > RAISED_LIFT),
   );
@@ -268,7 +273,7 @@ interface Placement {
 }
 
 /** A column's foot over its width: `CylinderGeometry(1, 1.08, ...)` scaled by the width (`buildStructureDetails`). */
-const PIER_FOOT_FLARE = 1.08;
+export const PIER_FOOT_FLARE = 1.08;
 
 /**
  * Whether a column `clearance` round, standing at (x, y), reaches into the
@@ -514,11 +519,15 @@ export function buildStructureDetails(
    * `roadSurfaces.ts`). Without it (a warm-up, a test) the backfill is not drawn.
    */
   groundMaterial?: Material,
+  /** Only these roads' structures (a cell of the structure layer, `structureCells.ts`); all of the map without. */
+  only?: readonly SegmentRibbon[],
+  /** The shapes the instances are drawn with, kept by the caller across builds; made here (and let go with these) without. */
+  shapes?: { readonly pier: BufferGeometry; readonly box: BufferGeometry },
 ): StructureDetails {
   const group = new Group();
   group.name = 'road-structure-details';
 
-  const { raised, tunnels, walled } = structureRibbons(net, elevation, terrainAt);
+  const { raised, tunnels, walled } = structureRibbons(net, elevation, terrainAt, undefined, only);
   const spans = [...raised, ...tunnels, ...walled].map((ribbon) => {
     const bb = ribbon.full.bbox;
     return [bb.minX - SPAN_REACH, bb.minY - SPAN_REACH, bb.maxX + SPAN_REACH, bb.maxY + SPAN_REACH] as const;
@@ -647,15 +656,15 @@ export function buildStructureDetails(
     triangles += (count / 3) * (mesh instanceof InstancedMesh ? mesh.count : 1);
   };
 
-  const pierGeometry = new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
-  const capGeometry = new BoxGeometry(1, 1, 1);
+  const pierGeometry = shapes?.pier ?? new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
+  const capGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
   attach(instanced('structure-piers', pierGeometry, materials.concrete, piers));
   attach(instanced('structure-pier-caps', capGeometry, materials.concrete, caps));
   attach(instanced('structure-abutments', capGeometry, materials.concrete, abutments));
   const parapetMesh = parapets.mesh('structure-parapets', materials.parapet);
   attach(parapetMesh);
 
-  const owned: BufferGeometry[] = [pierGeometry, capGeometry];
+  const owned: BufferGeometry[] = shapes ? [] : [pierGeometry, capGeometry];
   if (parapetMesh) owned.push(parapetMesh.geometry);
 
   // ------------------------------------------------------- retaining walls
@@ -790,11 +799,11 @@ export function buildStructureDetails(
       }
     }
 
-    const portalGeometry = new BoxGeometry(1, 1, 1);
+    const portalGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
     attach(instanced('tunnel-jambs', portalGeometry, materials.concrete, jambs));
     attach(instanced('tunnel-lintels', portalGeometry, materials.concrete, lintels));
     attach(instanced('tunnel-headwalls', portalGeometry, materials.concrete, headwalls));
-    owned.push(portalGeometry);
+    if (!shapes) owned.push(portalGeometry);
   }
 
   return {
