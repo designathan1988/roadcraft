@@ -1,7 +1,7 @@
 {
- "scripts/acusar.mjs  docs/BufferAttribute.html.md": 1,
- "scripts/acusar.mjs  docs/Object3D.html.md": 1,
- "scripts/acusar.mjs  docs/WebGLRenderer.html.md": 1,
+ "scripts/accuse.mjs  docs/BufferAttribute.html.md": 1,
+ "scripts/accuse.mjs  docs/Object3D.html.md": 1,
+ "scripts/accuse.mjs  docs/WebGLRenderer.html.md": 1,
  "tests/arch/checkCode.spec.ts  src/derived.ts": 8,
  "tests/arch/checkCode.spec.ts  src/frame.ts": 6,
  "tests/arch/checkCode.spec.ts  src/items.ts": 3,

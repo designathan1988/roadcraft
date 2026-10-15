@@ -51,7 +51,7 @@ export interface PostChain {
   dispose(): void;
 }
 
-/** The player's sky (Paisagem > Céu e clima) */
+/** The player's sky (Landscape > Sky and weather) */
 export interface Atmosphere {
   /** How much of the sky the old setting covered (0..1). */
   readonly clouds: number;
@@ -525,7 +525,7 @@ function layOne(i: number, id: number, x: number, z: number, base: number, size:
   }
 }
 
-/** THE ATMOSPHERE, on the image (the player sets it: Paisagem > Céu e clima): */
+/** THE ATMOSPHERE, on the image (the player sets it: Landscape > Sky and weather): */
 const CLOUD_SHADOWS = {
   uniforms: {
     tDiffuse: { value: null },
@@ -562,7 +562,7 @@ const CLOUD_SHADOWS = {
     // The sky seen from near the ground: pale at the horizon, deeper above.
     uSkyHorizon: { value: new Color(0x86bdf0) },
     uSkyHigh: { value: new Color(0x2a66c8) },
-    // Below the map: a deep navy, never black (the player, 2026-10-09: "não quero que fique preto, é azul escuro")
+    // Below the map: a deep navy, never black (the player, 2026-10-09: "I do not want it black, it is dark blue")
     uAbyss: { value: new Color(0x0b1a33) },
     // The clouds' bodies, marched at a quarter of the pixels (`CLOUD_BODIES_MAIN`): light, and what of the scene shows through.
     tClouds: { value: null as Texture | null },
@@ -919,7 +919,7 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
         float tFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5), focusDepth) - ro);
         // Drawn from up close only: from far enough to take in the whole diorama every cloud stands out against the empty space
         float spanFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5, 1.0), focusDepth) - worldAt(vec2(0.5, 0.0), focusDepth));
-        // Over the map only now (layClouds), so they show from every zoom (the player, 2026-10-07: "quero que as nuvens apareçam")
+        // Over the map only now (layClouds), so they show from every zoom (the player, 2026-10-07: "I want the clouds to show")
         float bodies = 1.0 - smoothstep(${m(3600).toFixed(2)}, ${m(5600).toFixed(2)}, spanFocus);
         vec2 spans[MAX_CLOUDS];
         for (int c = 0; c < MAX_CLOUDS; c++) {

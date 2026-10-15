@@ -71,7 +71,7 @@ export function setFogErase(next: boolean): void {
   fogErasing = next;
 }
 
-/** The tree brush (Paisagem > Terreno > Árvores, `world/trees.ts`) */
+/** The tree brush (Landscape > Terrain > Trees, `world/trees.ts`) */
 export const TREE_MODES = ['plant', 'one', 'cut'] as const;
 export type TreeMode = (typeof TREE_MODES)[number];
 let treeModeNow: TreeMode = 'plant';

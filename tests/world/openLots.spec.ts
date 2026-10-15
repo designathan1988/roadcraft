@@ -27,7 +27,7 @@ describe('open lots', () => {
     const doc = new RoadDoc();
     const square = (x: number, y: number): Lot['corners'] => [{ x, y }, { x: x + m(20), y }, { x: x + m(20), y: y + m(30) }, { x, y: y + m(30) }];
     const fresh = (): Omit<Lot, 'id'> => ({ corners: square(rng.float() * m(1500), rng.float() * m(1500)), ...(rng.float() < 0.8 ? { use: 'residential' as const, density: 'low' as const } : {}) });
-    doc.lotStore.apply({ add: Array.from({ length: 300 }, fresh) }, 'lotes de teste');
+    doc.lotStore.apply({ add: Array.from({ length: 300 }, fresh) }, 'test lots');
     /** Lots taken away, to be put back (an undo): they go last in the order. */
     const gone: Lot[] = [];
     let refused = new Set<number>();
@@ -52,7 +52,7 @@ describe('open lots', () => {
         const lot = doc.openLots.at(rng.int(0, count - 1));
         const c = lotCentre(lot);
         const b = doc.buildings.add({ ...generateBody('residential', 10, 10, 2), x: c.x, y: c.y, rotation: 0 } as unknown as Building);
-        doc.openLots.grew(lot, b.id as number, null, 'teste');
+        doc.openLots.grew(lot, b.id as number, null, 'test');
         doc.buildings.put({ ...b, decay: 0 } as Building);
       } else if (r < 0.6 && count) {
         doc.openLots.refuse(doc.openLots.at(rng.int(0, count - 1)), refused);
@@ -63,17 +63,17 @@ describe('open lots', () => {
       } else if (r < 0.82) {
         // A lot unzoned, or zoned, by its writer (a new record, the lots' revision moved).
         const { use, density, ...rest } = doc.lots[rng.int(0, doc.lots.length - 1)]!;
-        doc.lotStore.apply({ put: [use ? rest : { ...rest, use: 'commercial', density: density ?? 'medium' }] }, 'zona trocada');
+        doc.lotStore.apply({ put: [use ? rest : { ...rest, use: 'commercial', density: density ?? 'medium' }] }, 'zone changed');
       } else if (r < 0.84) {
         const lot = doc.lots[rng.int(0, doc.lots.length - 1)]!;
         gone.push(lot);
-        doc.lotStore.apply({ remove: [lot.id] }, 'lote apagado');
+        doc.lotStore.apply({ remove: [lot.id] }, 'lot deleted');
       } else if (r < 0.87) {
         // Cut in two (the old one out, the pieces new and last), or one put back by an undo (last).
         if (gone.length && rng.float() < 0.5) {
           const back = gone.pop()!;
           doc.lotStore.restore([{ id: back.id, value: back }], 'desfeito');
-        } else doc.lotStore.apply({ remove: [doc.lots[rng.int(0, doc.lots.length - 1)]!.id], add: [fresh(), fresh()] }, 'lote dividido');
+        } else doc.lotStore.apply({ remove: [doc.lots[rng.int(0, doc.lots.length - 1)]!.id], add: [fresh(), fresh()] }, 'lot split');
       } else if (r < 0.9) {
         refused.clear();
       } else if (r < 0.93) {

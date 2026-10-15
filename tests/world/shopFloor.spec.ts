@@ -79,11 +79,11 @@ describe('a building up a hillside street stands at its footway', () => {
         // How far the plan was set back from the lot's front (a try's margin).
         const margin = ((b.x - frame.anchor.x) * n.x + (b.y - frame.anchor.y) * n.y) * METERS_PER_UNIT;
         if (margin > 0.1) setBack++;
-        rows.push(`${b.id} ${b.function} ${uphill ? 'subida' : 'descida'}: piso ${over.toFixed(2)} m sobre a calçada, frente do lote a ${(front * METERS_PER_UNIT).toFixed(1)} m, planta recuada ${margin.toFixed(1)} m`);
+        rows.push(`${b.id} ${b.function} ${uphill ? 'uphill' : 'downhill'}: floor ${over.toFixed(2)} m over the footway, lot front at ${(front * METERS_PER_UNIT).toFixed(1)} m, plan set back ${margin.toFixed(1)} m`);
         // Before: up to 5.6 m over it (in the game, 12 shops of 14 up the street over 30 cm).
         if (!(over >= 0 && over < 0.2) || !(front * METERS_PER_UNIT < 0.1)) wrong.push(rows[rows.length - 1]!);
       }
-      console.log(`${name.toUpperCase()}: ${up} na subida, piso no máximo ${worst.toFixed(2)} m sobre a calçada, ${setBack} com a planta recuada\n${rows.join('\n')}`);
+      console.log(`${name.toUpperCase()}: ${up} uphill, floor at most ${worst.toFixed(2)} m over the footway, ${setBack} with the plan set back\n${rows.join('\n')}`);
       expect(wrong, 'floor at the footway, lot out to it').toEqual([]);
       expect(up).toBeGreaterThan(8);
       // The steeper street grows its shops set back (measured 2026-10-11: 28 of 30), each carried out to its footway.

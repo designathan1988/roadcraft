@@ -268,7 +268,7 @@ export function createActions(deps: ActionsDeps): Actions {
         const d = Math.hypot(c.x - world.x, c.y - world.y);
         if (d > soot) continue;
         const add = 0.35 * (1 - d / soot) * Math.min(1, strength / 8);
-        if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.wear(c.id, Math.min(1, (c.decay ?? 0) + add))); changed = true; }
+        if (add > 0.02) { deps.caused('explosion soot', () => doc.buildings.wear(c.id, Math.min(1, (c.decay ?? 0) + add))); changed = true; }
       }
       // Poles: broken whole, snapped or to splinters; the wires torn off them pull the next poles over, or hang from them.
       const broken = new Set<PoleId>();
@@ -388,7 +388,7 @@ export function createActions(deps: ActionsDeps): Actions {
     deps.redraw();
   }
 
-  /** Buildings on fire the player's order of 2026-10-05: o fogo ir tomando conta dos prédios vizinhos, acontecendo */
+  /** Buildings on fire the player's order of 2026-10-05: the fire spreading over the neighbouring buildings, as it happens */
   function ignite(id: number): void {
     if (burning.has(id) || burning.size >= 3) return;
     const now = sim.clock.time;

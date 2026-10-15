@@ -251,7 +251,7 @@ export interface SceneHandle {
   setBuildingCutaway(spec: CutawaySpec | null): void;
   /** The sky: always day, always night, or the residents' own clock. */
   setSkyMode(mode: SkyMode): void;
-  /** Clouds and mist as the player set them (Paisagem > Céu e clima). */
+  /** Clouds and mist as the player set them (Landscape > Sky and weather). */
   setAtmosphere(atmosphere: Atmosphere): void;
   /** Perspective camera on, or the orthographic (isometric) view. */
   setPerspective(on: boolean): void;
@@ -1209,8 +1209,8 @@ export function createSceneRenderer(
     // DO NOT cut it into a block a step again: that spread the page's work over frames, and it is the worker's now.
     const shaping = shapeGround(net, regions, false, true);
     while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
-    derived(net, 'ground', regions.map(regionRect), 'chão cortado e aterrado até as vias', worldCause,
-      { ms: shaping.ms, detail: `${regions.length} regiões` });
+    derived(net, 'ground', regions.map(regionRect), 'ground cut and filled up to the roads', worldCause,
+      { ms: shaping.ms, detail: `${regions.length} regions` });
   }
 
 
@@ -1255,7 +1255,7 @@ export function createSceneRenderer(
     const parent = net.doc.changes.version;
     const told = (): void => {
       if (padsReady) return;
-      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', parent);
+      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
       if (sites && serial) sitesGradedSerials.add(serial);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
@@ -1463,8 +1463,8 @@ export function createSceneRenderer(
     const own = compares[compares.length - 1] ?? null;
     const changed = own ? own.blocks : null;
     // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
-    worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', solved.cause,
-      { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || solved.cause;
+    worldCause = derived(net, 'elevation', changed, 'road heights solved', solved.cause,
+      { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocks of ${SHAPE_BLOCK} u` : 'whole map' }) || solved.cause;
     const joined = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
     // The roads' own heights (the footway, the carriageway) moved where the solve did
     const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25 ? joined : null;
@@ -1484,7 +1484,7 @@ export function createSceneRenderer(
     const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null);
     keepTiles();
-    derived(net, 'surfaces', freshRoads.rebuilt, 'superfícies das vias refeitas', worldCause,
+    derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
     const atdetails = performance.now();

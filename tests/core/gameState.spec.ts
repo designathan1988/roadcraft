@@ -8,19 +8,19 @@ const settle = async (): Promise<void> => { for (let i = 0; i < 5; i++) await Pr
 describe('GameState', () => {
   it('writes a change down with its cause, and nothing when the value is the same', () => {
     const { state } = fresh();
-    expect(state.set('tool', 'road', 'ferramenta escolhida')).toBe(true);
-    expect(state.set('tool', 'road', 'de novo')).toBe(false);
+    expect(state.set('tool', 'road', 'tool chosen')).toBe(true);
+    expect(state.set('tool', 'road', 'again')).toBe(false);
     expect(state.values.tool).toBe('road');
-    expect(state.latest(5).map((c) => [c.key, c.from, c.to, c.cause])).toEqual([['tool', 'inspect', 'road', 'ferramenta escolhida']]);
+    expect(state.latest(5).map((c) => [c.key, c.from, c.to, c.cause])).toEqual([['tool', 'inspect', 'road', 'tool chosen']]);
   });
 
   it('tells a watcher once, after the code that changed the state, only its keys, without a frame', async () => {
     const { state, wake } = fresh();
     const told = vi.fn();
     state.watch(['paused', 'speed'], told);
-    state.set('paused', true, 'pausa');
-    state.set('tool', 'road', 'ferramenta');
-    state.set('speed', 3, 'velocidade');
+    state.set('paused', true, 'paused');
+    state.set('tool', 'road', 'tool');
+    state.set('speed', 3, 'speed');
     expect(told).not.toHaveBeenCalled();
     expect(wake).toHaveBeenCalledTimes(1);
     await settle();
@@ -33,9 +33,9 @@ describe('GameState', () => {
   it('tells what a watcher sets in a later flush, not inside the one telling it', async () => {
     const { state } = fresh();
     const second = vi.fn();
-    state.watch(['tool'], () => { state.set('speed', 2, 'reação'); });
+    state.watch(['tool'], () => { state.set('speed', 2, 'reaction'); });
     state.watch(['speed'], second);
-    state.set('tool', 'road', 'ferramenta');
+    state.set('tool', 'road', 'tool');
     state.flush();
     expect(second).not.toHaveBeenCalled();
     await settle();
@@ -50,7 +50,7 @@ describe('GameState', () => {
     const spy = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((fn) => queue(() => { try { fn(); } catch (e) { thrown.push(e); } }));
     state.watch(['tool'], () => { throw new Error('painel quebrado'); });
     state.watch(['tool'], after);
-    state.set('tool', 'road', 'ferramenta');
+    state.set('tool', 'road', 'tool');
     await settle();
     spy.mockRestore();
     expect(after).toHaveBeenCalledTimes(1);
@@ -62,7 +62,7 @@ describe('GameState', () => {
     const told = vi.fn();
     const stop = state.watch(['tool'], told);
     stop();
-    state.set('tool', 'road', 'ferramenta');
+    state.set('tool', 'road', 'tool');
     await settle();
     expect(told).not.toHaveBeenCalled();
   });
@@ -71,7 +71,7 @@ describe('GameState', () => {
     const { state } = fresh();
     const told = vi.fn();
     state.watch(['speed'], told);
-    for (let i = 1; i <= 600; i++) state.set('speed', i, 'muitas');
+    for (let i = 1; i <= 600; i++) state.set('speed', i, 'many');
     state.flush();
     expect(told).toHaveBeenCalledWith(null);
   });

@@ -248,7 +248,7 @@ function renderSegment(
   }
   const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
   const length = net.polylines.get(doc, id).length;
-  // Its street's name and numbers (V8): "Rua das Flores · Via urbana", "Nº 120 a 204".
+  // Its street's name and numbers (V8): "Rua das Flores · Urban road", "No. 120 to 204".
   const streetName = streetNameOf(net, id);
   setTitle(`${streetName ?? t('inspector.road')} · ${roadTypeName(rt)}`);
   const numbers = streetNumbers(doc, net, id);

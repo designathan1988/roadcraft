@@ -28,7 +28,7 @@ if (diagnostics.length) {
     getCurrentDirectory: () => root,
     getNewLine: () => ts.sys.newLine,
   }));
-  console.error(`tipos: ${diagnostics.length} erro(s)`);
+  console.error(`types: ${diagnostics.length} error(s)`);
   process.exit(1);
 }
 const typed = performance.now();

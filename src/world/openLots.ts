@@ -63,7 +63,7 @@ export class OpenLots {
 
   /** The `k`-th open lot (from 0), in the lots' order. Asked after `count`. */
   at(k: number): Lot {
-    if (k < 0 || k >= this.openCount) throw new RangeError(`lote aberto ${k} de ${this.openCount}`);
+    if (k < 0 || k >= this.openCount) throw new RangeError(`open lot ${k} of ${this.openCount}`);
     let pos = 0, rest = k + 1;
     for (let step = this.top; step > 0; step >>= 1) {
       const next = pos + step;
@@ -92,7 +92,7 @@ export class OpenLots {
   /** `lot` took the building `id`: written in the document (`cause`, where), the index kept in step. */
   grew(lot: Lot, id: number, rects: readonly ChangeRect[] | null, cause: string): void {
     const slot = this.slotOf.get(lot.id);
-    if (slot === undefined || this.records[slot] !== lot || this.host.lots.get(lot.id) !== lot) throw new Error(`lote ${lot.id} fora do índice dos lotes abertos`);
+    if (slot === undefined || this.records[slot] !== lot || this.host.lots.get(lot.id) !== lot) throw new Error(`lot ${lot.id} missing from the open lots' index`);
     const fresh: Lot = { ...lot, building: id };
     this.host.lots.apply({ put: [fresh], ...(rects ? { also: rects } : {}) }, cause);
     // Its own entry, read again at the next question, finds the slot as it is now.
@@ -101,7 +101,7 @@ export class OpenLots {
 
   /** `lot` set aside: nothing fits it (`refused`, the set last asked with). */
   refuse(lot: Lot, refused: Set<number>): void {
-    if (refused !== this.refused) throw new Error('lotes recusados de outro conjunto');
+    if (refused !== this.refused) throw new Error('refused lots of another set');
     refused.add(lot.id);
     this.refusedSize = refused.size;
     const slot = this.slotOf.get(lot.id);

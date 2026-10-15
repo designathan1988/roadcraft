@@ -213,7 +213,7 @@ function clearOldMapsOnce(): void {
 let bootFailed = false;
 if (saved) {
   try {
-    doc.changes.causeNext('mapa salvo carregado');
+    doc.changes.causeNext('saved map loaded');
     restoreInto(doc, saved, net);
     doc.changes.causeNext('jogo');
     // Opened from the map's parts: those parts are this document, the next save writes only what changes.
@@ -780,7 +780,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   history.begin(doc);
   performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
   // What the diary says this edit came from (`world/changes.ts`).
-  doc.changes.causeNext(`ferramenta ${game.tool}`);
+  doc.changes.causeNext(`tool ${game.tool}`);
   const changed = fn();
   if (changed) {
     // DO NOT move these below `history.end`.
@@ -811,7 +811,7 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
   if (!data) return;
   roadTool.cancel();
   if (source === 'import') {
-    caused('mapa aberto', () => restoreInto(doc, data, net));
+    caused('map opened', () => restoreInto(doc, data, net));
     // A different map: nothing of the old simulation may carry over.
     sim.reset();
     sim.ambient.reset(sim);
@@ -821,7 +821,7 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
   // A map opened: its traffic built now, the old simulation gone.
   if (source === 'import') scene.beginLoad();
   buildings.restored();
-  select(null, game.selectedSegmentS, null, 'outro mapa');
+  select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
   persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
@@ -956,7 +956,7 @@ function currentGesture(): string | null {
 function syncGesture(): void {
   // Before the boot the file may not have run to the gestures' own variables.
   if (!booted) return;
-  gameState.set('gesture', currentGesture(), `ferramenta ${game.tool}`);
+  gameState.set('gesture', currentGesture(), `tool ${game.tool}`);
 }
 // After the event's own handlers: a task of its own, after the whole dispatch.
 const syncGestureSoon = coalescedTask(syncGesture);
@@ -968,7 +968,7 @@ const NO_CAUSE = 'jogo';
 for (const type of ['pointerdown', 'pointerup', 'click', 'dblclick', 'keydown'] as const) {
   window.addEventListener(type, () => {
     if (!booted) return;
-    doc.changes.causeNext(`ferramenta ${game.tool}${game.gesture ? `: ${game.gesture}` : ''}`);
+    doc.changes.causeNext(`tool ${game.tool}${game.gesture ? `: ${game.gesture}` : ''}`);
     setTimeout(() => doc.changes.causeNext(NO_CAUSE), 0);
   }, { capture: true, passive: true });
 }
@@ -1139,7 +1139,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
       break;
     case 'road':
       if (blockGridChoice.armed) {
-        // Vias > Quarteirões: the whole grid, centred where the click lands.
+        // Roads > Blocks at once: the whole grid, centred where the click lands.
         blockGridChoice.armed = false;
         let laid = 0;
         mutate(() => {
@@ -1207,7 +1207,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
           return node !== null;
         })) node = null;
         if (node !== null) {
-          select(null, game.selectedSegmentS, node, 'via dividida');
+          select(null, game.selectedSegmentS, node, 'road split');
           showInspector();
         }
       }
@@ -1268,7 +1268,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
     }
       select(anchor.kind === 'segment' ? (anchor.segment ?? null) : null,
         anchor.kind === 'segment' ? (anchor.s ?? null) : null,
-        anchor.kind === 'node' ? (anchor.node ?? null) : null, 'clique de inspeção');
+        anchor.kind === 'node' ? (anchor.node ?? null) : null, 'inspection click');
       showInspector();
       break;
   }
@@ -1464,19 +1464,19 @@ function laneChoices(): { id: string; label: string; on: boolean }[] {
 function setLanes(id: string): void {
   const choice = LANE_CHOICES.find((c) => c.id === id);
   if (!choice) return;
-  gameState.set('roadLanePreset', choice.lanes, 'faixas escolhidas');
+  gameState.set('roadLanePreset', choice.lanes, 'lanes chosen');
   if (choice.lanes === null) selectRoadType(MEDIAN_CLASS);
   requestDraw();
 }
 
 function selectRoadType(i: number): void {
   if (!ROAD_TYPES[i]) return;
-  gameState.set('roadTypeIndex', i, 'classe de via escolhida');
+  gameState.set('roadTypeIndex', i, 'road class chosen');
   requestDraw();
 }
 
 function setAlignment(next: Alignment): void {
-  gameState.set('alignment', next, 'traçado escolhido');
+  gameState.set('alignment', next, 'alignment chosen');
   if (next !== 'curve') roadTool.dropCurve();
   updateHint();
   requestDraw();
@@ -1489,27 +1489,27 @@ const ROUNDABOUT_RADIUS_M = [32, 128] as const;
 
 /** A lot or zone setting changed (Zoning): the use, the density, the eraser, the lot verb, the cut. */
 function setZone(patch: ShellZonePatch): void {
-  if (patch.eraser !== undefined) gameState.set('zoneEraser', patch.eraser, 'borracha de zona');
-  if (patch.use === 'residential' || patch.use === 'commercial' || patch.use === 'industrial') gameState.set('zoneUse', patch.use, 'uso da zona');
-  if (patch.density === 'low' || patch.density === 'medium' || patch.density === 'high') gameState.set('zoneDensity', patch.density, 'densidade da zona');
+  if (patch.eraser !== undefined) gameState.set('zoneEraser', patch.eraser, 'zone eraser');
+  if (patch.use === 'residential' || patch.use === 'commercial' || patch.use === 'industrial') gameState.set('zoneUse', patch.use, 'zone use');
+  if (patch.density === 'low' || patch.density === 'medium' || patch.density === 'high') gameState.set('zoneDensity', patch.density, 'zone density');
   if (patch.mode !== undefined) {
     const wanted = patch.mode;
     gameState.set('zoneMode', wanted === 'fill' || wanted === 'edit' || wanted === 'front' || wanted === 'split' || wanted === 'join' || wanted === 'add' ||
-      wanted === 'polygon' || wanted === 'curve' || wanted === 'delete' ? wanted : 'brush', 'modo de zona');
+      wanted === 'polygon' || wanted === 'curve' || wanted === 'delete' ? wanted : 'brush', 'zone mode');
     lotTool.modeChanged();
   }
-  if (patch.splitKind !== undefined) gameState.set('lotSplitKind', patch.splitKind === 'horizontal' ? 'horizontal' : patch.splitKind === 'line' ? 'line' : 'vertical', 'corte de lote');
-  if (patch.splitParts !== undefined) gameState.set('lotSplitParts', clamp(Math.round(patch.splitParts), 2, 6), 'partes do lote');
+  if (patch.splitKind !== undefined) gameState.set('lotSplitKind', patch.splitKind === 'horizontal' ? 'horizontal' : patch.splitKind === 'line' ? 'line' : 'vertical', 'lot cut');
+  if (patch.splitParts !== undefined) gameState.set('lotSplitParts', clamp(Math.round(patch.splitParts), 2, 6), 'lot parts');
   requestDraw();
 }
 
 /** Every brush of the terrain tool, in the order of its number keys. */
 const BRUSH_MODES: readonly BrushMode[] = ['raise', 'lower', 'flatten', 'river', 'paint', 'mesa', 'canyon', 'escarpment', 'sugarloaf', 'fog', 'cloud', 'elements', 'gully', 'trees', 'weather'];
 function setTerrainMode(next: BrushMode): void {
-  gameState.set('terrainMode', next, 'pincel de terreno');
+  gameState.set('terrainMode', next, 'terrain brush');
   // Each tool its own hardness: a chapada's cliff is not the hill's slope.
   const hardness = hardnessByMode[next];
-  if (hardness !== undefined) gameState.set('terrainHardness', hardness, 'dureza do modo');
+  if (hardness !== undefined) gameState.set('terrainHardness', hardness, 'mode hardness');
   updateHint();
 }
 
@@ -1517,11 +1517,11 @@ function setTerrainMode(next: BrushMode): void {
 const TERRAIN_RADIUS_RANGE = [30, 300] as const;
 const TERRAIN_STRENGTH_RANGE = [1, 160] as const;
 function setTerrainRadius(value: number): void {
-  gameState.set('terrainRadius', clamp(Math.round(value), TERRAIN_RADIUS_RANGE[0], TERRAIN_RADIUS_RANGE[1]), 'raio do pincel');
+  gameState.set('terrainRadius', clamp(Math.round(value), TERRAIN_RADIUS_RANGE[0], TERRAIN_RADIUS_RANGE[1]), 'brush radius');
   requestDraw();
 }
 function setTerrainStrength(value: number): void {
-  gameState.set('terrainStrength', clamp(Math.round(value), TERRAIN_STRENGTH_RANGE[0], TERRAIN_STRENGTH_RANGE[1]), 'força do pincel');
+  gameState.set('terrainStrength', clamp(Math.round(value), TERRAIN_STRENGTH_RANGE[0], TERRAIN_STRENGTH_RANGE[1]), 'brush strength');
   requestDraw();
 }
 
@@ -1543,7 +1543,7 @@ function mapSlider(min: number, max: number, step: number, get: () => number, se
 const brushSlider = (min: number, max: number, step: number, get: () => number, set: (v: number) => void): ShellSlider =>
   ({ min, max, step, get, set: (v) => { set(v); requestDraw(); } });
 
-// THE WEATHER (Paisagem > Céu, `world/weather.ts`) and the water under the river brush: the map's, one undo step a drag.
+// THE WEATHER (Landscape > Sky, `world/weather.ts`) and the water under the river brush: the map's, one undo step a drag.
 scene.onStrike((_x, _y, distance) => playThunder(distance / UNITS_PER_METER, doc.weather.thunder));
 const weatherSlider = (key: keyof typeof doc.weather, min: number, max: number, step: number, scale: number): ShellSlider =>
   mapSlider(min, max, step, () => Math.round(doc.weather[key] * scale * 10) / 10, (v) => doc.setWeather({ [key]: v / scale }));
@@ -1591,7 +1591,7 @@ const SLIDERS: Readonly<Record<string, ShellSlider>> = {
   terrainStrength: { min: TERRAIN_STRENGTH_RANGE[0], max: TERRAIN_STRENGTH_RANGE[1], step: 1, get: () => game.terrainStrength, set: setTerrainStrength },
   // The brush's hardness: a mesa's cliff or a canyon's wall instead of a dome; each mode keeps its own.
   terrainHardness: { min: 0, max: 95, step: 5, get: () => game.terrainHardness, set: (v) => {
-    gameState.set('terrainHardness', clamp(Math.round(v), 0, 95), 'dureza do pincel');
+    gameState.set('terrainHardness', clamp(Math.round(v), 0, 95), 'brush hardness');
     if (hardnessByMode[game.terrainMode] !== undefined) hardnessByMode[game.terrainMode] = game.terrainHardness;
   } },
   // The gully brush, and how much of the steep land carries gullies of itself (the map's, `world/gullies.ts`).
@@ -1640,7 +1640,7 @@ const SLIDERS: Readonly<Record<string, ShellSlider>> = {
     set: (v) => { sim.pedestrianIntensity = v / 100; persistence.saveSettingsSoon(sessionSettings); } },
   // The roundabout tool's radius, metres.
   roundaboutRadius: { min: ROUNDABOUT_RADIUS_M[0], max: ROUNDABOUT_RADIUS_M[1], step: 4, get: () => Math.round(game.roundaboutRadius / UNITS_PER_METER),
-    set: (v) => { gameState.set('roundaboutRadius', clamp(v, ROUNDABOUT_RADIUS_M[0], ROUNDABOUT_RADIUS_M[1]) * UNITS_PER_METER, 'tamanho da rotatória'); requestDraw(); } },
+    set: (v) => { gameState.set('roundaboutRadius', clamp(v, ROUNDABOUT_RADIUS_M[0], ROUNDABOUT_RADIUS_M[1]) * UNITS_PER_METER, 'roundabout size'); requestDraw(); } },
 };
 
 /** The map's biome (`world/ecology.ts`): one gives an old map its ecosystem too; "none" takes it away. Undoable. */
@@ -1687,9 +1687,9 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
 /** Puts a tool in hand: what it does to the game (gestures dropped, the selection let go, the Builder switched on or off). */
 function takeTool(next: Tool): void {
   cancelGestures();
-  gameState.set('tool', next, 'ferramenta escolhida');
+  gameState.set('tool', next, 'tool chosen');
   if (next !== 'inspect') {
-    select(null, game.selectedSegmentS, null, `ferramenta ${next}`);
+    select(null, game.selectedSegmentS, null, `tool ${next}`);
     closeInspector();
   }
   const buildingActive = next === 'building';
@@ -1757,7 +1757,7 @@ function mountInterface(): void {
     setLanes,
     setZone,
     setTerrainMode: (mode) => { if ((BRUSH_MODES as readonly string[]).includes(mode)) setTerrainMode(mode as BrushMode); },
-    setBarrierKind: (kind) => { if ((BARRIER_KINDS as readonly string[]).includes(kind)) gameState.set('barrierKind', kind as BarrierKind, 'tipo de cerca'); },
+    setBarrierKind: (kind) => { if ((BARRIER_KINDS as readonly string[]).includes(kind)) gameState.set('barrierKind', kind as BarrierKind, 'fence type'); },
     mapBiome,
     setMapBiome,
     mapAction: (name) => MAP_ACTIONS[name]?.(),
@@ -1780,7 +1780,7 @@ function mountInterface(): void {
       const node = id === undefined ? undefined : doc.node(id);
       if (id === undefined || !node) return;
       setTool('inspect');
-      select(null, null, id, 'nó impossível mostrado');
+      select(null, null, id, 'impossible node shown');
       showInspector();
       view.moveTo(node);
       requestDraw();
@@ -1818,7 +1818,7 @@ function updateCompass(): void {
 setTimeout(mountInterface, 0);
 
 function setPaused(paused: boolean): void {
-  gameState.set('paused', paused, paused ? 'pausa' : 'simulação retomada');
+  gameState.set('paused', paused, paused ? 'paused' : 'simulation resumed');
   sim.clock.paused = paused;
   frameClock.restart();
   persistence.saveSettingsSoon(sessionSettings);
@@ -1828,7 +1828,7 @@ function setPaused(paused: boolean): void {
 function setSpeed(speed: number): void {
   if (speed <= 0) setPaused(true);
   else {
-    gameState.set('speed', speed, 'velocidade escolhida');
+    gameState.set('speed', speed, 'speed chosen');
     sim.clock.speed = speed;
     setPaused(false);
   }
@@ -1842,7 +1842,7 @@ function setDemand(value: number): void {
 }
 
 function toggleCongestion(): void {
-  gameState.set('congestionOverlay', !game.congestionOverlay, 'mapa de congestionamento');
+  gameState.set('congestionOverlay', !game.congestionOverlay, 'congestion map');
   persistence.saveSettingsSoon(sessionSettings);
 }
 trackFocusModality();
@@ -1901,7 +1901,7 @@ function growCity(): void {
     // The layout first, within the slice; the lots counted as they are cut.
     const until = performance.now() + GROW_SLICE_MS;
     let laid: { zoned: number } | null = null;
-    caused('cidade gerada', () => {
+    caused('city generated', () => {
       for (;;) {
         const step = growing.layout!.next();
         if (step.done) { laid = step.value; break; }
@@ -1928,7 +1928,7 @@ function growCity(): void {
 function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
   const until = performance.now() + GROW_SLICE_MS;
   let done = false;
-  caused('cidade gerada', () => {
+  caused('city generated', () => {
     while (performance.now() < until) {
       if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
       const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
@@ -1964,12 +1964,12 @@ const SKY_KEY = 'roadcraft.sky';
 const SKY_MODES: readonly SkyMode[] = ['day', 'night', 'cycle'];
 function setSky(mode: string): void {
   if (!(SKY_MODES as readonly string[]).includes(mode)) return;
-  gameState.set('sky', mode as SkyMode, 'céu escolhido');
+  gameState.set('sky', mode as SkyMode, 'sky chosen');
   try { localStorage.setItem(SKY_KEY, mode); } catch { /* not kept */ }
 }
 try {
   const saved = localStorage.getItem(SKY_KEY);
-  if (saved && (SKY_MODES as readonly string[]).includes(saved)) gameState.set('sky', saved as SkyMode, 'preferência guardada');
+  if (saved && (SKY_MODES as readonly string[]).includes(saved)) gameState.set('sky', saved as SkyMode, 'saved preference');
 } catch { /* storage blocked: day */ }
 gameState.watch(['sky'], () => { scene.setSkyMode(game.sky); requestDraw(); });
 scene.setSkyMode(game.sky);
@@ -2011,7 +2011,7 @@ async function openMap(): Promise<void> {
 // Perspective or the isometric (orthographic) view, the player's choice, kept.
 const PERSPECTIVE_KEY = 'roadcraft.perspective.v2';
 function setPerspective(on: boolean): void {
-  gameState.set('perspective', on, 'câmera');
+  gameState.set('perspective', on, 'camera');
   try { localStorage.setItem(PERSPECTIVE_KEY, on ? '1' : '0'); } catch { /* not kept */ }
 }
 /** The camera as the game's state has it. */
@@ -2023,7 +2023,7 @@ gameState.watch(['perspective'], showPerspective);
 queueMicrotask(() => {
   let kept: string | null = null;
   try { kept = localStorage.getItem(PERSPECTIVE_KEY); } catch { /* storage blocked: the default */ }
-  gameState.set('perspective', kept !== '0', 'preferência guardada');
+  gameState.set('perspective', kept !== '0', 'saved preference');
   showPerspective();
 });
 
@@ -2067,7 +2067,7 @@ function afterRestore(): void {
   roadTool.cancel();
   followNetwork(doc, net);
   buildings.restored();
-  select(null, game.selectedSegmentS, null, 'outro mapa');
+  select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
   persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
@@ -2077,8 +2077,8 @@ function afterRestore(): void {
 
 /** Whether there is something to undo and to redo, in the game's state. */
 function updateHistoryButtons(): void {
-  gameState.set('canUndo', history.canUndo, 'histórico');
-  gameState.set('canRedo', history.canRedo, 'histórico');
+  gameState.set('canUndo', history.canUndo, 'history');
+  gameState.set('canRedo', history.canRedo, 'history');
 }
 
 /** Restores the user-visible state stored beside a map without touching topology. */
@@ -2091,13 +2091,13 @@ function restoreSettings(settings: SavedSettings): void {
   syncViewFromFlatCamera();
   restoreOrbit(settings.camera);
   // Through the game's state: setting the clock alone left `game.speed` and the speed buttons showing the speed before the
-  gameState.set('speed', settings.speed, 'mapa carregado');
+  gameState.set('speed', settings.speed, 'map loaded');
   sim.clock.speed = settings.speed;
   setPaused(settings.paused);
   sim.trafficIntensity = settings.trafficIntensity;
   sim.pedestrianIntensity = settings.pedestrianIntensity;
   sim.demandMultiplier = settings.demandMultiplier ?? 1;
-  gameState.set('congestionOverlay', settings.congestionOverlay, 'mapa carregado');
+  gameState.set('congestionOverlay', settings.congestionOverlay, 'map loaded');
   persistence.saveSettingsSoon(sessionSettings);
   requestDraw();
 }
@@ -2105,7 +2105,7 @@ updateHistoryButtons();
 
 /** The road inspector closed (its × , Escape, Delete): nothing picked. */
 function closeInspectorPanel(): void {
-  select(null, game.selectedSegmentS, null, 'inspetor fechado');
+  select(null, game.selectedSegmentS, null, 'inspector closed');
   closeInspector();
   requestDraw();
 }
@@ -2115,7 +2115,7 @@ function closeInspector(): void {
   hideInspector();
 }
 // Open or closed, by a command or by itself (what it showed is gone): in the game's state.
-onInspectorChange((open) => gameState.set('inspectorOpen', open, open ? 'inspetor aberto' : 'inspetor fechado'));
+onInspectorChange((open) => gameState.set('inspectorOpen', open, open ? 'inspector opened' : 'inspector closed'));
 
 /** Junction control, as a tool rather than as a form field. */
 const CONTROL_CYCLE: readonly JunctionControl[] = [
@@ -2312,7 +2312,7 @@ function growZones(): void {
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
   // DO NOT read `doc.lots` here (`lots.some` walked every lot twice a second).
-  const grown = caused('crescimento da zona', () => {
+  const grown = caused('zone growth', () => {
     const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
     const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
     if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
@@ -2432,7 +2432,7 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
-  for (const [system, ms] of timed.systems) profiler.step(`quadro ${system}`, ms);
+  for (const [system, ms] of timed.systems) profiler.step(`frame ${system}`, ms);
   profileFrameEnd();
 
   // Keep animating while anything is moving; otherwise settle.
@@ -3375,7 +3375,7 @@ function showInspector(): void {
           return true;
         });
         if (placed !== null) {
-          select(null, null, placed, 'ponto inserido na via');
+          select(null, null, placed, 'point inserted on the road');
           showInspector();
         }
       },
@@ -3417,7 +3417,7 @@ function showInspector(): void {
           return true;
         })) node = null;
         if (node !== null) {
-          select(null, null, node, 'ponto suave inserido');
+          select(null, null, node, 'smooth point inserted');
           showInspector();
         }
       },
@@ -3473,7 +3473,7 @@ function showInspector(): void {
       },
       onJoin: (node) => {
         mutateRoads(() => joinSegments(doc, node));
-        select(game.selectedSegment, game.selectedSegmentS, null, 'vias unidas');
+        select(game.selectedSegment, game.selectedSegmentS, null, 'roads joined');
         closeInspector();
       },
       onRemoveNode: (node) => {
@@ -3485,7 +3485,7 @@ function showInspector(): void {
           doc.pruneOrphanNodes();
           return true;
         });
-        select(game.selectedSegment, game.selectedSegmentS, null, 'ponto removido');
+        select(game.selectedSegment, game.selectedSegmentS, null, 'point removed');
         closeInspector();
       },
       onDelete: (id) => {
@@ -3494,7 +3494,7 @@ function showInspector(): void {
           doc.pruneOrphanNodes();
           return true;
         });
-        select(null, game.selectedSegmentS, game.selectedNode, 'via apagada');
+        select(null, game.selectedSegmentS, game.selectedNode, 'road deleted');
         closeInspector();
       },
     },
@@ -3510,7 +3510,7 @@ function duplicateSelectedSegment(id = game.selectedSegment): void {
     return copy !== null;
   })) copy = null;
   if (copy !== null) {
-    select(copy, game.selectedSegmentS, null, 'via duplicada');
+    select(copy, game.selectedSegmentS, null, 'road duplicated');
     showInspector();
   }
 }
@@ -3623,10 +3623,10 @@ const savedQuality = (() => {
     return null;
   }
 })();
-gameState.set('quality', isQualityLevel(savedQuality) ? savedQuality : 'high', 'preferência guardada');
+gameState.set('quality', isQualityLevel(savedQuality) ? savedQuality : 'high', 'saved preference');
 function setQuality(value: string): void {
   if (!isQualityLevel(value)) return;
-  gameState.set('quality', value, 'menu de qualidade');
+  gameState.set('quality', value, 'quality menu');
   scene.setQuality(value);
   try {
     window.localStorage.setItem(QUALITY_STORAGE_KEY, value);
@@ -3799,7 +3799,7 @@ ${JSON.stringify(counts)}`;
   },
   /** The running game against the city plan's budgets */
   budget: (view: CityView) => {
-    if (!(view in VIEW_BUDGETS)) throw new Error(`vista: ${Object.keys(VIEW_BUDGETS).join(' | ')}`);
+    if (!(view in VIEW_BUDGETS)) throw new Error(`view: ${Object.keys(VIEW_BUDGETS).join(' | ')}`);
     const c = countMemory(scene.scene);
     const gpu = scene.gpu.supported ? scene.gpu.samples.toArray().slice(-120).sort((a, b) => a - b) : [];
     const rows = cityBudgetTable({
@@ -3871,7 +3871,7 @@ function refreshShell(): void {
 }
 
 // Buildings run down without maintenance (`world/buildings/decayWatch.ts`)
-const decayLook = createDecayWatch(doc, (id, decay) => caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)));
+const decayLook = createDecayWatch(doc, (id, decay) => caused('building wear', () => doc.buildings.wear(id, decay)));
 const decayWatch = (): void => { if (decayLook(sim.city.minutes(sim))) requestDraw(); };
 /** The buildings' decay looked at every 3 s of the city's time (`frame`), not on the wall clock. */
 const decayDue = new SimPeriodic(3);

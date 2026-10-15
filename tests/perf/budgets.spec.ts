@@ -17,7 +17,7 @@ import { m } from '@world/units';
 
 const materials = new Proxy({}, { get: (_t, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial() }) as unknown as SceneMaterials;
 const report = (name: string, value: number, budget: Budget): void => {
-  expect(withinBudget(value, budget), `${name} = ${value} (orçamento ${budget.min ?? '-'}..${budget.max}: ${budget.why})`).toBe(true);
+  expect(withinBudget(value, budget), `${name} = ${value} (budget ${budget.min ?? '-'}..${budget.max}: ${budget.why})`).toBe(true);
 };
 
 describe('performance budgets, counted', () => {
@@ -34,18 +34,18 @@ describe('performance budgets, counted', () => {
     padsWork.rings = 0;
     let corners = 0;
     for (let y = y0; y <= y1; y += m(2)) for (let x = x0; x <= x1; x += m(2)) { pads.shapeAt(x, y, ground(x, y)); corners++; }
-    report('anéis por canto', padsWork.rings / corners, COUNT_BUDGETS.padRingsPerCorner);
+    report('rings per corner', padsWork.rings / corners, COUNT_BUDGETS.padRingsPerCorner);
   });
 
   it('finds the kerb nearest a pole walking few edges', () => {
     kerbWork.edges = 0;
     let asks = 0;
     for (let y = y0; y <= y1; y += m(8)) for (let x = x0; x <= x1; x += m(8)) { kerbward(net, { x, y }, m(6)); asks++; }
-    report('arestas por consulta', kerbWork.edges / asks, COUNT_BUDGETS.kerbEdgesPerAsk);
+    report('edges per ask', kerbWork.edges / asks, COUNT_BUDGETS.kerbEdgesPerAsk);
   });
 
   it("files the town's crossing surface in a small grid", () => {
-    report('células das travessias', net.crossingSurface().cells, COUNT_BUDGETS.townWalkableCells);
+    report('crossing cells', net.crossingSurface().cells, COUNT_BUDGETS.townWalkableCells);
   });
 
   it('draws the fixed scene with its detail, in few meshes', () => {
@@ -60,7 +60,7 @@ describe('performance budgets, counted', () => {
       meshes++;
       triangles += (g.getIndex()?.count ?? g.getAttribute('position').count) / 3;
     });
-    report('triângulos das vias', triangles, COUNT_BUDGETS.fixtureRoadTriangles);
-    report('malhas das vias', meshes, COUNT_BUDGETS.fixtureRoadMeshes);
+    report('road triangles', triangles, COUNT_BUDGETS.fixtureRoadTriangles);
+    report('road meshes', meshes, COUNT_BUDGETS.fixtureRoadMeshes);
   });
 });

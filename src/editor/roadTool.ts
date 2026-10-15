@@ -146,13 +146,13 @@ export class RoadTool {
 
   /** A new map: drawn at the land's own height again. */
   reset(): void {
-    this.host.setHeight(0, 'mapa novo');
+    this.host.setHeight(0, 'new map');
     this.heightEdited = false;
   }
 
   /** A height chosen from outside the tool (the console). */
   heightChosen(value: number): void {
-    this.host.setHeight(value, 'altura pedida pelo console');
+    this.host.setHeight(value, 'height asked from the console');
     this.heightEdited = true;
   }
 
@@ -219,7 +219,7 @@ export class RoadTool {
       if (best) start = { ...start, at: best.at, s: best.s };
     }
     const startHeightOffset = chained ? this.chainHeight : start.kind === 'free' ? settings.heightOffset : this.anchorHeight(start);
-    if (!chained && start.kind !== 'free' && !this.heightEdited) host.setHeight(startHeightOffset, 'via começa num ponto existente');
+    if (!chained && start.kind !== 'free' && !this.heightEdited) host.setHeight(startHeightOffset, 'road starts at an existing point');
     this.heightEdited = false;
     this.chainPreview = null;
     this.shift = { x: 0, y: 0 };
@@ -305,7 +305,7 @@ export class RoadTool {
     const before = host.settings().heightOffset;
     const now = before / UNITS_PER_METER;
     const next = metres > 0 ? Math.floor(now + 1e-6) + metres : Math.ceil(now - 1e-6) + metres;
-    host.setHeight(next * UNITS_PER_METER, 'altura da via');
+    host.setHeight(next * UNITS_PER_METER, 'road height');
     this.heightEdited = true;
     const height = host.settings().heightOffset;
     const screen = this.pointerScreen;
@@ -468,7 +468,7 @@ export class RoadTool {
     this.chainPreview = null;
     this.curvePending = null;
     this.chainHeight = finalHeight;
-    host.setHeight(finalHeight, 'via terminada');
+    host.setHeight(finalHeight, 'road finished');
     this.heightEdited = false;
     if (result.heightLimited) host.hint('hint.road.gradeLimited');
     const laid = laidFrom(doc, firstNew);

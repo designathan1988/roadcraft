@@ -505,9 +505,9 @@ export function applyLots(doc: RoadDoc, plan: LotPlan): boolean {
   const store = doc.lotStore;
   if (!plan.add.length && !plan.drop.length && plan.keys.every((k) => store.hasKey(k))) return false;
   // DO NOT go back to filtering the list of every lot for the few dropped: it was the whole town per plan applied.
-  store.apply({ remove: plan.drop, add: plan.add.map((c) => ({ corners: c.corners })) }, 'lotes planejados');
+  store.apply({ remove: plan.drop, add: plan.add.map((c) => ({ corners: c.corners })) }, 'lots planned');
   // The land of each key new to the document, as `lotKeys`: DO NOT write it as a change of the lots
-  store.addKeys(plan.keys, plan.keyRects, 'terreno cortado em lotes');
+  store.addKeys(plan.keys, plan.keyRects, 'land cut into lots');
   return true;
 }
 
@@ -599,7 +599,7 @@ export function splitLot(doc: RoadDoc, id: number, cut: LotCut): boolean {
   if (pieces.length < 2) return false;
   // The pieces are new lots, last in the order (`LotStore` ORDER).
   const made = pieces.map((piece) => ({ corners: facingCorners(withFront(piece, front)), ...(lot.use ? { use: lot.use, density: lot.density ?? 'low' as const } : {}) }));
-  doc.lotStore.apply({ remove: [id], add: made }, 'lote dividido');
+  doc.lotStore.apply({ remove: [id], add: made }, 'lot split');
   return true;
 }
 
@@ -629,13 +629,13 @@ export function joinLots(doc: RoadDoc, idA: number, idB: number): boolean {
   if (f < 0) f = ring.findIndex((p) => near(p, fa));
   const ordered = f > 0 ? [...ring.slice(f), ...ring.slice(0, f)] : ring;
   // A new lot, last in the order (`LotStore` ORDER).
-  doc.lotStore.apply({ remove: [idA, idB], add: [{ corners: facingCorners(ordered), ...(lotA.use ? { use: lotA.use, density: lotA.density ?? 'low' } : {}) }] }, 'lotes unidos');
+  doc.lotStore.apply({ remove: [idA, idB], add: [{ corners: facingCorners(ordered), ...(lotA.use ? { use: lotA.use, density: lotA.density ?? 'low' } : {}) }] }, 'lots joined');
   return true;
 }
 
 export function deleteLot(doc: RoadDoc, id: number): boolean {
   if (!doc.lotStore.has(id)) return false;
-  doc.lotStore.apply({ remove: [id] }, 'lote apagado');
+  doc.lotStore.apply({ remove: [id] }, 'lot deleted');
   return true;
 }
 
@@ -724,7 +724,7 @@ export function addPolygonLot(doc: RoadDoc, points: readonly Vec2[], front: numb
   // The lots there only (their boxes within the overlap test's margin), never every lot of the city.
   const box = rectAround(corners)!;
   if (doc.lotsIn(grow(box, m(0.5))).some((l) => quadsOverlap(corners, l.corners, m(0.5)) && overlapDeep(corners, l.corners))) return null;
-  return doc.lotStore.apply({ add: [{ corners }] }, 'lote desenhado')[0]!;
+  return doc.lotStore.apply({ add: [{ corners }] }, 'lot drawn')[0]!;
 }
 
 /** Makes one side of a lot its front - the side on the street, which the building grown there faces */
@@ -736,7 +736,7 @@ export function setLotFront(doc: RoadDoc, id: number, side: number): boolean {
   if (k === 0) return false;
   if (lot.building !== undefined) doc.buildings.remove(lot.building as Parameters<typeof doc.buildings.remove>[0]);
   const { building: _gone, ...rest } = lot;
-  doc.lotStore.apply({ put: [{ ...rest, corners: [...lot.corners.slice(k), ...lot.corners.slice(0, k)] }] }, 'frente do lote');
+  doc.lotStore.apply({ put: [{ ...rest, corners: [...lot.corners.slice(k), ...lot.corners.slice(0, k)] }] }, 'lot front');
   return true;
 }
 
@@ -762,7 +762,7 @@ export function moveLotCorner(doc: RoadDoc, from: Vec2, to: Vec2): boolean {
     });
     if (changed) put.push({ ...l, corners });
   }
-  if (put.length) doc.lotStore.apply({ put }, 'canto do lote movido');
+  if (put.length) doc.lotStore.apply({ put }, 'lot corner moved');
   return put.length > 0;
 }
 
@@ -793,7 +793,7 @@ export function curveLotSide(doc: RoadDoc, a: Vec2, b: Vec2, through: Vec2): boo
     }
   }
   // The curve lies within the triangle of its ends and its control point, and can bulge past `through` along the side
-  if (put.length) doc.lotStore.apply({ put, also: [rectAround([a, b, through, control])!] }, 'lado do lote curvado');
+  if (put.length) doc.lotStore.apply({ put, also: [rectAround([a, b, through, control])!] }, 'lot side curved');
   return put.length > 0;
 }
 
@@ -814,7 +814,7 @@ export function zoneLots(doc: RoadDoc, ids: readonly number[], zone: { use: Zone
       put.push(rest);
     }
   }
-  if (put.length) store.apply({ put }, zone ? 'lotes zoneados' : 'zona tirada dos lotes');
+  if (put.length) store.apply({ put }, zone ? 'lots zoned' : 'zone taken off the lots');
   return put.length > 0;
 }
 

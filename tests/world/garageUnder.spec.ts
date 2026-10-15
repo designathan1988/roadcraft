@@ -40,7 +40,7 @@ describe('a garage in the lower ground floor, on the downhill side', () => {
 
   it('gives the houses a whole storey down with a drive a garage under their back', () => {
     const lowered = houses.filter((h) => h.volumes.some((v) => !v.open && Math.abs(volumeLift(v) + levelHeight(h, 0)) < 1e-6));
-    console.log(`GARAGEM EMBAIXO: ${garaged.length} de ${lowered.length} casas com o fundo um andar abaixo (${houses.length} casas)`);
+    console.log(`GARAGE UNDER: ${garaged.length} of ${lowered.length} houses with the back a storey lower (${houses.length} houses)`);
     expect(garaged.length).toBeGreaterThan(0);
     for (const h of garaged) expect(validateBuilding({ doc, net, groundAt: hill }, h, h.id), `house ${h.id}`).toBeNull();
   });
@@ -99,7 +99,7 @@ describe('a garage in the lower ground floor, on the downhill side', () => {
         if (walls.some((e) => Math.abs(e.y - y) <= e.w / 2 + m(0.05))) walled++;
       }
     }
-    console.log(`RAMPA: ${walled} de ${off} trechos fora do chão com muro de arrimo`);
+    console.log(`RAMP: ${walled} of ${off} stretches off the ground with a retaining wall`);
     expect(off).toBeGreaterThan(0);
     expect(walled).toBe(off);
   });

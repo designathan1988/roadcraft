@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** THE ACCUSER'S RULES ON A PROJECT OF ONE FILE (`scripts/acusar.mjs`), as typescript-eslint's RuleTester checks a rule */
+/** THE ACCUSER'S RULES ON A PROJECT OF ONE FILE (`scripts/accuse.mjs`), as typescript-eslint's RuleTester checks a rule */
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const three = join(root, 'node_modules', '@types', 'three', 'index.d.ts').split('\\').join('/');
 
@@ -13,91 +13,91 @@ const CASES = `
 import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial, Object3D, ShaderMaterial, WebGLRenderer, WebGLRenderTarget } from 'three';
 
 export function recompile(m: MeshBasicMaterial): void {
-  m.needsUpdate = true; // espera material-needs-update
+  m.needsUpdate = true; // expect material-needs-update
 }
 export function notAMaterial(o: { needsUpdate: boolean }): void {
-  o.needsUpdate = true; // não material-needs-update
+  o.needsUpdate = true; // not material-needs-update
 }
 export function wholePosition(g: BufferGeometry): void {
   const position = g.getAttribute('position') as BufferAttribute;
-  position.needsUpdate = true; // espera buffer-inteiro espera posicao-sem-volume
+  position.needsUpdate = true; // expect whole-buffer expect position-without-bounds
 }
 export function rangedWithBounds(g: BufferGeometry): void {
   const position = g.getAttribute('position') as BufferAttribute;
   position.addUpdateRange(0, 3);
-  position.needsUpdate = true; // não buffer-inteiro não posicao-sem-volume
+  position.needsUpdate = true; // not whole-buffer not position-without-bounds
   g.computeBoundingSphere();
 }
 export function madeHere(): BufferAttribute {
   const fresh = new BufferAttribute(new Float32Array(3), 3);
-  fresh.needsUpdate = true; // não buffer-inteiro
+  fresh.needsUpdate = true; // not whole-buffer
   return fresh;
 }
 export function swap(mesh: Mesh): void {
-  mesh.geometry.setAttribute('uv', new BufferAttribute(new Float32Array(2), 2)); // espera geometria-trocada
+  mesh.geometry.setAttribute('uv', new BufferAttribute(new Float32Array(2), 2)); // expect geometry-swapped
 }
 export function build(): BufferGeometry {
   const g = new BufferGeometry();
-  g.setAttribute('uv', new BufferAttribute(new Float32Array(2), 2)); // não geometria-trocada
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(2), 2)); // not geometry-swapped
   return g;
 }
 export function drop(scene: Object3D, mesh: Mesh): void {
-  scene.remove(mesh); // espera remove-sem-dispose
+  scene.remove(mesh); // expect remove-without-dispose
 }
 export function dropAndFree(scene: Object3D, mesh: Mesh): void {
-  scene.remove(mesh); // não remove-sem-dispose
+  scene.remove(mesh); // not remove-without-dispose
   mesh.geometry.dispose();
 }
 export function setDelete(ids: Set<number>): void {
   ids.delete(1);
   const list: number[] = [];
-  list.splice(0, 1); // não remove-sem-dispose
+  list.splice(0, 1); // not remove-without-dispose
 }
 export function readBack(r: WebGLRenderer, t: WebGLRenderTarget, out: Uint8Array): void {
-  r.readRenderTargetPixels(t, 0, 0, 1, 1, out); // espera leitura-da-gpu
+  r.readRenderTargetPixels(t, 0, 0, 1, 1, out); // expect gpu-readback
 }
 export function materials(): MeshBasicMaterial[] {
   const out: MeshBasicMaterial[] = [];
-  for (let i = 0; i < 3; i++) out.push(new MeshBasicMaterial()); // espera criado-em-laco
+  for (let i = 0; i < 3; i++) out.push(new MeshBasicMaterial()); // expect created-in-loop
   return out;
 }
 export function geometries(): BufferGeometry[] {
   const out: BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) out.push(new BufferGeometry()); // não criado-em-laco
+  for (let i = 0; i < 3; i++) out.push(new BufferGeometry()); // not created-in-loop
   return out;
 }
 export function always(mesh: Mesh): void {
-  mesh.frustumCulled = false; // espera recorte-desligado
+  mesh.frustumCulled = false; // expect culling-off
 }
 export function uniforms(m: ShaderMaterial): void {
-  m.uniformsNeedUpdate = true; // espera uniforms-redundante
+  m.uniformsNeedUpdate = true; // expect redundant-uniforms
 }
 export function same(a: object, b: object): boolean {
-  return JSON.stringify(a) === JSON.stringify(b); // espera compara-json
+  return JSON.stringify(a) === JSON.stringify(b); // expect compare-json
 }
 export function save(a: object): string {
-  return JSON.stringify(a); // não compara-json
+  return JSON.stringify(a); // not compare-json
 }
 export function key(d: { revision: number }): string {
-  return \`\${d.revision}:x\`; // espera chave-revisao-global
+  return \`\${d.revision}:x\`; // expect global-revision-key
 }
 export function checked(m: MeshBasicMaterial): void {
-  // acusar-ok material-needs-update: troca de textura uma vez, na carga
-  m.needsUpdate = true; // não material-needs-update
+  // accuse-ok material-needs-update: texture swapped once, at load
+  m.needsUpdate = true; // not material-needs-update
 }
 export function reasonless(m: MeshBasicMaterial): void {
-  m.needsUpdate = true; // acusar-ok material-needs-update espera material-needs-update
+  m.needsUpdate = true; // accuse-ok material-needs-update expect material-needs-update
 }
 `;
 
-interface Finding { regra: string; linha: number }
+interface Finding { rule: string; line: number }
 
 /** The accuser's findings on a project of one file. */
 function accused(text: string): Finding[] {
-  const dir = mkdtempSync(join(tmpdir(), 'acusar-'));
+  const dir = mkdtempSync(join(tmpdir(), 'accuse-'));
   try {
     mkdirSync(join(dir, 'src'));
-    writeFileSync(join(dir, 'src', 'casos.ts'), text);
+    writeFileSync(join(dir, 'src', 'cases.ts'), text);
     writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
       compilerOptions: {
         target: 'ES2022', lib: ['ES2022', 'DOM'], module: 'ESNext', moduleResolution: 'bundler',
@@ -105,8 +105,8 @@ function accused(text: string): Finding[] {
       },
       include: ['src'],
     }));
-    const out = execFileSync(process.execPath, [join(root, 'scripts', 'acusar.mjs'), '--projeto', dir, '--json'], { encoding: 'utf8', cwd: root });
-    return (JSON.parse(out) as { acusacoes: Finding[] }).acusacoes;
+    const out = execFileSync(process.execPath, [join(root, 'scripts', 'accuse.mjs'), '--project', dir, '--json'], { encoding: 'utf8', cwd: root });
+    return (JSON.parse(out) as { accusations: Finding[] }).accusations;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -119,7 +119,7 @@ function declared(text: string): { must: Finding[]; mustNot: Finding[] } {
   text.split('\n').forEach((line, i) => {
     const comment = line.slice(line.indexOf('//') + 2);
     if (!line.includes('//')) return;
-    for (const m of comment.matchAll(/\b(espera|não) ([a-z-]+)/g)) (m[1] === 'espera' ? must : mustNot).push({ regra: m[2]!, linha: i + 1 });
+    for (const m of comment.matchAll(/\b(expect|not) ([a-z-]+)/g)) (m[1] === 'expect' ? must : mustNot).push({ rule: m[2]!, line: i + 1 });
   });
   return { must, mustNot };
 }
@@ -129,7 +129,7 @@ describe('the accuser', () => {
     const found = accused(CASES);
     const { must, mustNot } = declared(CASES);
     expect(must.length).toBeGreaterThan(10);
-    const has = (f: Finding): boolean => found.some((x) => x.regra === f.regra && x.linha === f.linha);
+    const has = (f: Finding): boolean => found.some((x) => x.rule === f.rule && x.line === f.line);
     expect(must.filter((f) => !has(f))).toEqual([]);
     expect(mustNot.filter(has)).toEqual([]);
   });

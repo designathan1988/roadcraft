@@ -71,10 +71,10 @@ function dragAcross(half: number, from: { x: number; y: number }, to: { x: numbe
 }
 
 describe('a middle-button drag across the town', () => {
-  // The bairro drag takes the centre over three buildings (36, 60 and 24 m)
+  // The district drag takes the centre over three buildings (36, 60 and 24 m)
   const cases = [
-    ['bairro', m(45), { x: 200, y: 700 }, { x: 1250, y: 150 }, 240],
-    ['rua alta', m(14), { x: 500, y: 600 }, { x: 900, y: 420 }, 120],
+    ['district', m(45), { x: 200, y: 700 }, { x: 1250, y: 150 }, 240],
+    ['high street', m(14), { x: 500, y: 600 }, { x: 900, y: 420 }, 120],
   ] as const;
   for (const [name, half, from, to, count] of cases) {
     it(`${name}: the view follows the hand evenly, never back, the eye never leaping`, () => {

@@ -20,7 +20,7 @@ beforeEach(() => localStorage.clear());
 
 describe("the player's blueprint library", () => {
   it('keeps a blueprint this build cannot read when another is saved or removed', () => {
-    const unreadable = { key: 'user-later', name: 'De outra versão', body: { volumes: [] }, unit: 1 };
+    const unreadable = { key: 'user-later', name: 'From another version', body: { volumes: [] }, unit: 1 };
     localStorage.setItem(KEY, JSON.stringify([unreadable]));
     const library = new BlueprintLibrary(KEY);
     expect(library.list()).toEqual([]);
@@ -35,14 +35,14 @@ describe("the player's blueprint library", () => {
     const cut = '[{"key":"user-1","name":"Casa","body":{"volumes":[';
     localStorage.setItem(KEY, cut);
     const library = new BlueprintLibrary(KEY);
-    expect(library.save('Nova', body)).not.toBeNull();
+    expect(library.save('New', body)).not.toBeNull();
     expect(Object.values(others())).toContain(cut);
-    expect(library.list().map((b) => b.name)).toEqual(['Nova']);
+    expect(library.list().map((b) => b.name)).toEqual(['New']);
   });
 
   it('drops no blueprint, however many are saved', () => {
     const library = new BlueprintLibrary(KEY);
-    for (let i = 0; i < 60; i++) expect(library.save(`Projeto ${i}`, body), `save ${i}`).not.toBeNull();
+    for (let i = 0; i < 60; i++) expect(library.save(`Blueprint ${i}`, body), `save ${i}`).not.toBeNull();
     expect(library.list()).toHaveLength(60);
   });
 
@@ -52,7 +52,7 @@ describe("the player's blueprint library", () => {
     const before = localStorage.getItem(KEY);
     const full = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError'); });
     try {
-      expect(library.save('Outra', body)).toBeNull();
+      expect(library.save('Other', body)).toBeNull();
       expect(library.remove(first.key)).toBe(false);
     } finally {
       full.mockRestore();

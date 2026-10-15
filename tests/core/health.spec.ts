@@ -12,27 +12,27 @@ describe('HealthLog', () => {
   it('writes what broke with its context, newest first', () => {
     const log = new HealthLog();
     clockAt(1000);
-    log.record('error', 'broken', 'falhou A', { context: 'ferramenta road' });
-    log.record('slow-frame', 'slow', 'Quadro longo: desenho', { ms: 80, systems: [['desenho', 70]] });
+    log.record('error', 'broken', 'failed A', { context: 'tool road' });
+    log.record('slow-frame', 'slow', 'Long frame: drawing', { ms: 80, systems: [['drawing', 70]] });
     const [latest, first] = log.latest(5);
-    expect(latest?.message).toBe('Quadro longo: desenho');
-    expect(latest?.systems).toEqual([['desenho', 70]]);
-    expect(first?.context).toBe('ferramenta road');
+    expect(latest?.message).toBe('Long frame: drawing');
+    expect(latest?.systems).toEqual([['drawing', 70]]);
+    expect(first?.context).toBe('tool road');
   });
 
   it('counts a repeat of the same failure on one entry, keeping the longest time', () => {
     const log = new HealthLog();
     clockAt(1000);
-    log.record('slow-frame', 'slow', 'Quadro longo: simulação', { ms: 60 });
+    log.record('slow-frame', 'slow', 'Long frame: simulation', { ms: 60 });
     clockAt(2000);
-    log.record('slow-frame', 'slow', 'Quadro longo: simulação', { ms: 90 });
+    log.record('slow-frame', 'slow', 'Long frame: simulation', { ms: 90 });
     clockAt(3000);
-    log.record('slow-frame', 'slow', 'Quadro longo: simulação', { ms: 70 });
+    log.record('slow-frame', 'slow', 'Long frame: simulation', { ms: 70 });
     expect(log.latest(5)).toHaveLength(1);
     expect(log.latest(1)[0]).toMatchObject({ count: 3, ms: 90 });
     // Long after, it is a new entry.
     clockAt(60_000);
-    log.record('slow-frame', 'slow', 'Quadro longo: simulação', { ms: 55 });
+    log.record('slow-frame', 'slow', 'Long frame: simulation', { ms: 55 });
     expect(log.latest(5)).toHaveLength(2);
   });
 
@@ -40,9 +40,9 @@ describe('HealthLog', () => {
     const log = new HealthLog();
     clockAt(1000);
     expect(log.status()).toBe('ok');
-    log.record('slow-frame', 'slow', 'Quadro longo: desenho', { ms: 70 });
+    log.record('slow-frame', 'slow', 'Long frame: drawing', { ms: 70 });
     expect(log.status()).toBe('slow');
-    log.record('error', 'broken', 'falhou');
+    log.record('error', 'broken', 'failed');
     expect(log.status()).toBe('broken');
     clockAt(40_000);
     expect(log.status()).toBe('ok');

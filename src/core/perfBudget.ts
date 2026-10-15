@@ -13,16 +13,16 @@ export interface Budget {
 
 /** A step the game measures (`performance.measure('hitch:<name>')`), ms of one occurrence */
 const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
-  'mutate/edit+after': { max: 150, level: 'warn', why: 'o clique de uma edição: commit e texto do desfazer (65-112 ms)' },
-  'mutate/after edit': { max: 150, level: 'warn', why: 'o clique de uma edição, com a rede refeita (65-112 ms)' },
-  'road-edit/utilities': { max: 120, level: 'warn', why: 'postes e fios refeitos numa edição (68-86 ms)' },
-  'road-edit/world rebuilt': { max: 2500, level: 'warn', why: 'uma edição de via inteira, fatiada (0,3-1,6 s)' },
-  'commit/stations': { max: 120, level: 'warn', why: 'estações e pontos no commit (55-58 ms)' },
-  'elevation/full': { max: 120, level: 'warn', why: 'alturas das vias refeitas (54-56 ms)' },
-  'network/rebuild': { max: 60, level: 'warn', why: 'a rede refeita (até 12 ms)' },
-  'draw/Rebuild': { max: 200, level: 'warn', why: 'reconstrução dentro de um quadro (até 187 ms)' },
-  'draw/Pump': { max: 120, level: 'warn', why: 'fatia de trabalho de um quadro (até 100 ms)' },
-  'draw/Render': { max: 100, level: 'warn', why: 'desenho de um quadro, CPU (até 83 ms)' },
+  'mutate/edit+after': { max: 150, level: 'warn', why: 'the click of an edit: commit and the undo text (65-112 ms)' },
+  'mutate/after edit': { max: 150, level: 'warn', why: 'the click of an edit, with the network rebuilt (65-112 ms)' },
+  'road-edit/utilities': { max: 120, level: 'warn', why: 'poles and wires rebuilt in an edit (68-86 ms)' },
+  'road-edit/world rebuilt': { max: 2500, level: 'warn', why: 'a whole road edit, sliced (0.3-1.6 s)' },
+  'commit/stations': { max: 120, level: 'warn', why: 'stations and stops in the commit (55-58 ms)' },
+  'elevation/full': { max: 120, level: 'warn', why: 'road heights rebuilt (54-56 ms)' },
+  'network/rebuild': { max: 60, level: 'warn', why: 'the network rebuilt (up to 12 ms)' },
+  'draw/Rebuild': { max: 200, level: 'warn', why: 'a rebuild inside a frame (up to 187 ms)' },
+  'draw/Pump': { max: 120, level: 'warn', why: 'a frame slice of work (up to 100 ms)' },
+  'draw/Render': { max: 100, level: 'warn', why: 'drawing one frame, CPU (up to 83 ms)' },
 };
 
 /** DO NOT cut at the space first: 'mutate/after edit' and 'road-edit/world rebuilt' became 'mutate/after' and */
@@ -37,31 +37,31 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
 }
 
 /** THE CITY PLAN'S BUDGETS: what the whole-map city may cost, from the plan */
-export type CityView = 'rua' | 'bairro' | 'mapa';
+export type CityView = 'street' | 'district' | 'map';
 
 /** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor). */
 export const VIEW_BUDGETS: Readonly<Record<CityView, { readonly triangles: number; readonly drawCalls: number; readonly gpuMs: number; readonly fps: number }>> = {
-  rua: { triangles: 10_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
-  bairro: { triangles: 8_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
-  mapa: { triangles: 4_000_000, drawCalls: 300 + 100, gpuMs: 12, fps: 50 },
+  street: { triangles: 10_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
+  district: { triangles: 8_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
+  map: { triangles: 4_000_000, drawCalls: 300 + 100, gpuMs: 12, fps: 50 },
 };
 
 /** What holds geometry on the GPU, by the plan's levels (§8.3); `null` budget: the plan sets none. */
-export type MemoryGroup = 'L0 cascas' | 'L0 peças dos prédios' | 'L1 massas' | 'L2 ladrilhos' | 'L3 placas' | 'vias' | 'postes e fios' | 'terreno' | 'vegetação' | 'pessoas e veículos' | 'outros';
+export type MemoryGroup = 'L0 shells' | 'L0 building parts' | 'L1 masses' | 'L2 tiles' | 'L3 plates' | 'roads' | 'poles and wires' | 'terrain' | 'vegetation' | 'people and vehicles' | 'other';
 
 /** MB of GPU memory each group may hold (§8.6, a city of 80 000 buildings). */
 const MEMORY_BUDGETS_MB: Readonly<Record<MemoryGroup, number | null>> = {
-  'L0 cascas': 300,
-  'L0 peças dos prédios': 150,
-  'L1 massas': 120,
-  'L2 ladrilhos': 60,
-  'L3 placas': 15,
-  vias: null,
-  'postes e fios': null,
-  terreno: null,
-  vegetação: null,
-  'pessoas e veículos': null,
-  outros: null,
+  'L0 shells': 300,
+  'L0 building parts': 150,
+  'L1 masses': 120,
+  'L2 tiles': 60,
+  'L3 plates': 15,
+  roads: null,
+  'poles and wires': null,
+  terrain: null,
+  vegetation: null,
+  'people and vehicles': null,
+  other: null,
 };
 
 /** Textures (600 MB) and the live JavaScript heap (1.5 GB, `CIDADE-10KM.md`). */
@@ -70,16 +70,16 @@ const HEAP_BUDGET_MB = 1500;
 
 /** The plan's group of a scene object, by its name (`mesh.name`, as `buildingMesh.ts` and the others set it). */
 export function memoryGroup(name: string): MemoryGroup {
-  if (name.startsWith('building-preview')) return 'outros';
-  if (name.startsWith('building-shell-')) return 'L0 cascas';
-  if (name.startsWith('building-massing')) return 'L1 massas';
-  if (name.startsWith('building-')) return 'L0 peças dos prédios';
-  if (/^(asphalt|footway|kerb|verge|curb-ramp|median-|markings-|road)/.test(name)) return 'vias';
-  if (name.startsWith('utility-')) return 'postes e fios';
-  if (/^(terrain-|flat-world)/.test(name)) return 'terreno';
-  if (/^(garden-|far-forest|forest|tree|grass|woods|far-woods)/.test(name)) return 'vegetação';
-  if (/^(citizen-|car-|bus-|truck-|vehicle|male-|female-)/.test(name)) return 'pessoas e veículos';
-  return 'outros';
+  if (name.startsWith('building-preview')) return 'other';
+  if (name.startsWith('building-shell-')) return 'L0 shells';
+  if (name.startsWith('building-massing')) return 'L1 masses';
+  if (name.startsWith('building-')) return 'L0 building parts';
+  if (/^(asphalt|footway|kerb|verge|curb-ramp|median-|markings-|road)/.test(name)) return 'roads';
+  if (name.startsWith('utility-')) return 'poles and wires';
+  if (/^(terrain-|flat-world)/.test(name)) return 'terrain';
+  if (/^(garden-|far-forest|forest|tree|grass|woods|far-woods)/.test(name)) return 'vegetation';
+  if (/^(citizen-|car-|bus-|truck-|vehicle|male-|female-)/.test(name)) return 'people and vehicles';
+  return 'other';
 }
 
 /** What `__roadcraft.budget` measured in the running game. */
@@ -104,49 +104,49 @@ export interface CityMeasure {
 
 export interface BudgetRow {
   readonly item: string;
-  readonly medido: string;
-  readonly orçamento: string;
-  /** `acima` first: what to work on. */
-  readonly situação: 'acima' | 'ok' | 'sem orçamento no plano' | 'não medido' | 'aproximado';
+  readonly measured: string;
+  readonly budget: string;
+  /** `over` first: what to work on. */
+  readonly status: 'over' | 'ok' | 'no budget in the plan' | 'not measured' | 'approximate';
   /** How far over (measured / budget); 0 when within, or not comparable. */
-  readonly vezes: number;
+  readonly times: number;
 }
 
 const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
-const fmt = (n: number): string => n.toLocaleString('pt-BR');
+const fmt = (n: number): string => n.toLocaleString('en-US');
 
 /** The plan's budgets against a measure, the rows furthest over first. */
 export function cityBudgetTable(m: CityMeasure): BudgetRow[] {
   const v = VIEW_BUDGETS[m.view];
   const rows: BudgetRow[] = [];
   const cap = (item: string, value: number | null, budget: number | null, unit: string): void => {
-    if (value === null) { rows.push({ item, medido: '—', orçamento: budget === null ? '—' : `≤ ${fmt(budget)} ${unit}`, situação: 'não medido', vezes: 0 }); return; }
-    if (budget === null) { rows.push({ item, medido: `${fmt(value)} ${unit}`, orçamento: '—', situação: 'sem orçamento no plano', vezes: 0 }); return; }
+    if (value === null) { rows.push({ item, measured: '—', budget: budget === null ? '—' : `≤ ${fmt(budget)} ${unit}`, status: 'not measured', times: 0 }); return; }
+    if (budget === null) { rows.push({ item, measured: `${fmt(value)} ${unit}`, budget: '—', status: 'no budget in the plan', times: 0 }); return; }
     const over = value > budget;
-    rows.push({ item, medido: `${fmt(value)} ${unit}`, orçamento: `≤ ${fmt(budget)} ${unit}`, situação: over ? 'acima' : 'ok', vezes: over ? Math.round((value / budget) * 10) / 10 : 0 });
+    rows.push({ item, measured: `${fmt(value)} ${unit}`, budget: `≤ ${fmt(budget)} ${unit}`, status: over ? 'over' : 'ok', times: over ? Math.round((value / budget) * 10) / 10 : 0 });
   };
-  cap(`triângulos desenhados (${m.view})`, m.triangles, v.triangles, '');
-  cap(`draw calls, cor + sombra (${m.view})`, m.drawCalls, v.drawCalls, '');
+  cap(`triangles drawn (${m.view})`, m.triangles, v.triangles, '');
+  cap(`draw calls, colour + shadow (${m.view})`, m.drawCalls, v.drawCalls, '');
   cap(`GPU p95 (${m.view})`, m.gpuMs, v.gpuMs, 'ms');
   const slow = m.fps < v.fps;
-  rows.push({ item: `fps (${m.view})`, medido: fmt(m.fps), orçamento: `≥ ${v.fps}`, situação: slow ? 'acima' : 'ok', vezes: slow && m.fps > 0 ? Math.round((v.fps / m.fps) * 10) / 10 : 0 });
+  rows.push({ item: `fps (${m.view})`, measured: fmt(m.fps), budget: `≥ ${v.fps}`, status: slow ? 'over' : 'ok', times: slow && m.fps > 0 ? Math.round((v.fps / m.fps) * 10) / 10 : 0 });
 
   const groups = new Map<MemoryGroup, number>();
   for (const [name, bytes] of m.bytesByName) {
     const g = memoryGroup(name);
     groups.set(g, (groups.get(g) ?? 0) + bytes);
   }
-  for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) cap(`memória de vídeo: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB');
-  cap('memória de vídeo: texturas (sem mipmaps)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
-  cap('memória de vídeo: alvos de render e sombras', m.targetBytes == null ? null : mb(m.targetBytes), 300, 'MB');
-  rows.push({ item: 'geometria presa na CPU (parte do heap)', medido: `${fmt(mb(m.geometryCpuBytes))} MB`, orçamento: '—', situação: 'sem orçamento no plano', vezes: 0 });
+  for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) cap(`video memory: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB');
+  cap('video memory: textures (no mipmaps)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
+  cap('video memory: render targets and shadows', m.targetBytes == null ? null : mb(m.targetBytes), 300, 'MB');
+  rows.push({ item: 'geometry held on the CPU (part of the heap)', measured: `${fmt(mb(m.geometryCpuBytes))} MB`, budget: '—', status: 'no budget in the plan', times: 0 });
   rows.push({
-    item: 'heap JS (performance.memory: heap + arrays, arredondado)',
-    medido: m.heapBytes === null ? '—' : `${fmt(mb(m.heapBytes))} MB`,
-    orçamento: `≤ ${fmt(HEAP_BUDGET_MB)} MB`,
-    situação: m.heapBytes === null ? 'não medido' : 'aproximado',
-    vezes: 0,
+    item: 'JS heap (performance.memory: heap + arrays, rounded)',
+    measured: m.heapBytes === null ? '—' : `${fmt(mb(m.heapBytes))} MB`,
+    budget: `≤ ${fmt(HEAP_BUDGET_MB)} MB`,
+    status: m.heapBytes === null ? 'not measured' : 'approximate',
+    times: 0,
   });
-  const order = { acima: 0, ok: 1, aproximado: 2, 'sem orçamento no plano': 3, 'não medido': 4 } as const;
-  return rows.sort((a, b) => order[a.situação] - order[b.situação] || b.vezes - a.vezes);
+  const order = { over: 0, ok: 1, approximate: 2, 'no budget in the plan': 3, 'not measured': 4 } as const;
+  return rows.sort((a, b) => order[a.status] - order[b.status] || b.times - a.times);
 }

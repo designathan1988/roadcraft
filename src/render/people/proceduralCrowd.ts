@@ -270,7 +270,7 @@ function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
   // Half the people in a grown style, half in a stock one that passed the audit (`randomPerson`'s curated lists).
   const mouth = (l: PersonLook): PersonLook => ({ ...l, extras: [...(l.extras ?? []), 'acc:teeth', 'acc:tongue'] });
   if (!hair || ((h >>> 20) & 1) === 0) return mouth(dressed);
-  // Children keep the stock styles (the player: the grown ones on a child "nem usa isso").
+  // Children keep the stock styles (the player: the grown ones on a child "nobody even wears that").
   if (yearsFromAge(spec.body.age) < 14) return mouth(dressed);
   // Hair grown procedurally (`people/hair/procedural.ts`): older women shorter or up, girls never in a bun, older men short.
   const years = yearsFromAge(spec.body.age);

@@ -65,7 +65,7 @@ describe('split-level buildings on a hillside', () => {
       if (Math.max(...lifts) > 0) up++;
       if (Math.min(...lifts) < 0) down++;
     }
-    console.log(`MEIO-NÍVEL ${stepped.length}/${houses.length} (${up} acima, ${down} abaixo)`);
+    console.log(`SPLIT LEVEL ${stepped.length}/${houses.length} (${up} above, ${down} below)`);
     expect(stepped.length / houses.length).toBeGreaterThan(0.4);
     expect(up).toBeGreaterThan(1);
     expect(down).toBeGreaterThan(1);

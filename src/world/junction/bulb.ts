@@ -12,7 +12,7 @@ import { m } from '../units';
 import { buildLegs } from './legs';
 import type { Junction } from './build';
 
-/** A TURNING CIRCLE AT A ROAD'S END (balão de retorno): the player marks an end as one */
+/** A TURNING CIRCLE AT A ROAD'S END: the player marks an end as one */
 export const BULB_RADIUS = m(13);
 /** The radius traffic turns round it at */
 export const BULB_TURN_RADIUS = BULB_RADIUS - m(3);

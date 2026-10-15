@@ -484,7 +484,7 @@ function factsOf(unit) {
 
 // ------------------------------------------------------------ reach and rules
 const roots = units.filter((u) => tagged(u, 'perFrame'));
-if (!roots.length) { console.error('código: nenhuma função @perFrame achada'); process.exit(2); }
+if (!roots.length) { console.error('code: no @perFrame function found'); process.exit(2); }
 
 function reach(stopAtRebuild) {
   const parent = new Map(roots.map((r) => [r, null]));
@@ -627,7 +627,7 @@ if (why >= 0) {
   process.exit(0);
 }
 const total = (list) => Object.values(list).reduce((a, b) => a + b, 0);
-const stats = `${units.length} funções, ${perFrame.size} por quadro, ${inFrame.size} alcançadas do quadro, ${fieldBased} chamadas ligadas pelo tipo do receptor, ${unresolved} sem alvo no código; tipos ${((typed - started) / 1000).toFixed(1)} s, regras ${((performance.now() - typed) / 1000).toFixed(1)} s`;
+const stats = `${units.length} functions, ${perFrame.size} per frame, ${inFrame.size} reached from the frame, ${fieldBased} calls bound by the receiver's type, ${unresolved} with no target in the code; types ${((typed - started) / 1000).toFixed(1)} s, rules ${((performance.now() - typed) / 1000).toFixed(1)} s`;
 const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
 const added = Object.keys(issues).filter((key) => issues[key] > (baseline[key] ?? 0));
 const gone = Object.keys(baseline).filter((key) => (issues[key] ?? 0) < baseline[key]);
@@ -638,18 +638,18 @@ if (process.argv.includes('--update')) {
     .filter((rule) => !Object.keys(baseline).some((key) => key.startsWith(`${rule}  `)));
   const refused = added.filter((key) => !seeding.some((rule) => key.startsWith(`${rule}  `)));
   if (refused.length && existsSync(BASELINE)) {
-    for (const key of refused) console.error(`novo: ${key}  ×${issues[key]}
+    for (const key of refused) console.error(`new: ${key}  ×${issues[key]}
     ${found.get(key).path}`);
-    console.error(`código: ${refused.length} achados novos; a linha de base só diminui.`);
+    console.error(`code: ${refused.length} new findings; the baseline only shrinks.`);
     process.exit(1);
   }
   mkdirSync(dirname(BASELINE), { recursive: true });
   writeFileSync(BASELINE, JSON.stringify(issues, null, 1) + '\n');
-  console.log(`código: linha de base com ${total(issues)} ocorrências em ${Object.keys(issues).length} itens (${stats})`);
+  console.log(`code: baseline with ${total(issues)} occurrences in ${Object.keys(issues).length} entries (${stats})`);
   process.exit(0);
 }
-for (const key of added) console.error(`novo: ${key}  ×${issues[key]} (linha de base ${baseline[key] ?? 0})\n    ${found.get(key).path}`);
-if (gone.length) console.error(`código: ${gone.length} itens da linha de base resolvidos ou reduzidos; atualize (node scripts/check-code.mjs --update):\n${gone.join('\n')}`);
+for (const key of added) console.error(`new: ${key}  ×${issues[key]} (baseline ${baseline[key] ?? 0})\n    ${found.get(key).path}`);
+if (gone.length) console.error(`code: ${gone.length} baseline entries fixed or reduced; update it (node scripts/check-code.mjs --update):\n${gone.join('\n')}`);
 // DO NOT word this line as a pass.
-console.log(`código: ${added.length} novos; ${Object.keys(baseline).length} defeitos conhecidos ainda no código (${total(baseline)} ocorrências na linha de base, a corrigir) (${stats})`);
+console.log(`code: ${added.length} new; ${Object.keys(baseline).length} known defects still in the code (${total(baseline)} occurrences in the baseline, to fix) (${stats})`);
 process.exit(added.length || gone.length ? 1 : 0);

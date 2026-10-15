@@ -7,7 +7,7 @@ import { Level, halfWidth } from '@world/roadTypes';
 import { pavedTester } from '@world/zoneGrid';
 import { m } from '@world/units';
 
-/** NO EMPTY SPACE AT A CORNER (the player, 2026-10-09: "os espaços vazios"). */
+/** NO EMPTY SPACE AT A CORNER (the player, 2026-10-09: "the empty spaces"). */
 
 function street(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();

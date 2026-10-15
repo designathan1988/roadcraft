@@ -22,16 +22,16 @@ function edit(doc: RoadDoc, rng: Rng): void {
   const lots = doc.lots;
   const any = (): Lot => lots[rng.int(0, lots.length - 1)]!;
   const r = rng.float();
-  if (r < 0.3 || lots.length < 4) doc.lotStore.apply({ add: [square(rng)] }, 'teste: novo');
-  else if (r < 0.45) doc.lotStore.apply({ remove: [any().id] }, 'teste: apagado');
-  else if (r < 0.6) doc.lotStore.apply({ remove: [any().id], add: [square(rng), square(rng)] }, 'teste: cortado');
+  if (r < 0.3 || lots.length < 4) doc.lotStore.apply({ add: [square(rng)] }, 'test: new');
+  else if (r < 0.45) doc.lotStore.apply({ remove: [any().id] }, 'test: deleted');
+  else if (r < 0.6) doc.lotStore.apply({ remove: [any().id], add: [square(rng), square(rng)] }, 'test: cut');
   else if (r < 0.8) {
     const { use, density, ...rest } = any();
-    doc.lotStore.apply({ put: [use ? rest : { ...rest, use: 'commercial', density: density ?? 'medium' }] }, 'teste: zona');
+    doc.lotStore.apply({ put: [use ? rest : { ...rest, use: 'commercial', density: density ?? 'medium' }] }, 'test: zone');
   } else {
     const l = any();
     const dx = m(rng.float() * 8 - 4);
-    doc.lotStore.apply({ put: [{ ...l, corners: l.corners.map((q, i) => (i === 0 ? { x: q.x + dx, y: q.y } : q)) }] }, 'teste: canto');
+    doc.lotStore.apply({ put: [{ ...l, corners: l.corners.map((q, i) => (i === 0 ? { x: q.x + dx, y: q.y } : q)) }] }, 'test: corner');
   }
 }
 
@@ -39,7 +39,7 @@ describe('the lots by their owner', () => {
   it('answer by place what the walk over every lot answered, edit after edit', () => {
     const rng = new Rng(11);
     const doc = new RoadDoc();
-    for (let i = 0; i < 200; i++) doc.lotStore.apply({ add: [square(rng)] }, 'teste');
+    for (let i = 0; i < 200; i++) doc.lotStore.apply({ add: [square(rng)] }, 'test');
     for (let step = 0; step < 300; step++) {
       edit(doc, rng);
       const all = [...doc.lotStore.all()];
@@ -71,7 +71,7 @@ describe('the lots by their owner', () => {
   it('takes a working copy back by the ids its diary names, in the copy\'s order', () => {
     const rng = new Rng(5);
     const doc = new RoadDoc();
-    for (let i = 0; i < 80; i++) doc.lotStore.apply({ add: [square(rng)] }, 'teste');
+    for (let i = 0; i < 80; i++) doc.lotStore.apply({ add: [square(rng)] }, 'test');
     for (let round = 0; round < 30; round++) {
       const work = doc.clone();
       for (let k = 0; k < 1 + rng.int(0, 6); k++) edit(work, rng);
@@ -92,7 +92,7 @@ describe('the lots by their owner', () => {
   it('undoes and redoes edits of the lots by their records', () => {
     const rng = new Rng(9);
     const doc = new RoadDoc();
-    for (let i = 0; i < 60; i++) doc.lotStore.apply({ add: [square(rng)] }, 'teste');
+    for (let i = 0; i < 60; i++) doc.lotStore.apply({ add: [square(rng)] }, 'test');
     const image = new DocImage(doc);
     for (let round = 0; round < 40; round++) {
       const before = new Map([...doc.lotStore.all()].map((l) => [l.id, l]));
@@ -114,11 +114,11 @@ describe('the lots by their owner', () => {
 
   it('keeps land cut into lots apart from the lots: new keys alone move no lot', () => {
     const doc = new RoadDoc();
-    doc.lotStore.apply({ add: [{ corners: [{ x: 0, y: 0 }, { x: m(20), y: 0 }, { x: m(20), y: m(30) }, { x: 0, y: m(30) }] }] }, 'teste');
+    doc.lotStore.apply({ add: [{ corners: [{ x: 0, y: 0 }, { x: m(20), y: 0 }, { x: m(20), y: m(30) }, { x: 0, y: m(30) }] }] }, 'test');
     const lots = doc.lotRevision;
-    expect(doc.lotStore.addKeys(['b:1,2,3,4'], [[0, 0, m(50), m(50)]], 'teste')).toBe(true);
+    expect(doc.lotStore.addKeys(['b:1,2,3,4'], [[0, 0, m(50), m(50)]], 'test')).toBe(true);
     expect(doc.lotRevision).toBe(lots);
     expect(doc.lotKeys).toEqual(['b:1,2,3,4']);
-    expect(doc.lotStore.addKeys(['b:1,2,3,4'], undefined, 'teste')).toBe(false);
+    expect(doc.lotStore.addKeys(['b:1,2,3,4'], undefined, 'test')).toBe(false);
   });
 });

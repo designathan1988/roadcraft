@@ -88,7 +88,7 @@ describe('road profile', () => {
   it('offers the classes as templates and reads a saved one back only when it can be built', () => {
     const templates = classTemplates();
     expect(templates).toHaveLength(ROAD_TYPES.length);
-    const mine = { id: 'user:1', name: 'Rua da feira', type: 1, profile: withFootways(templates[1]!.profile, m(3), m(6)) };
+    const mine = { id: 'user:1', name: 'Market street', type: 1, profile: withFootways(templates[1]!.profile, m(3), m(6)) };
     expect(normalizeTemplate(JSON.parse(JSON.stringify(mine)))).toEqual(mine);
     expect(normalizeTemplate({ ...mine, profile: { ...mine.profile, elements: mine.profile.elements.slice(1) } })).toBeNull();
     expect(normalizeTemplate({ ...mine, type: 99 })).toBeNull();

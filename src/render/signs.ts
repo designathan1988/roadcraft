@@ -358,7 +358,7 @@ export function cellUv({ sheet, cell, h }: Placed): { u0: number; v0: number; u1
   return { u0: x / W, u1: (x + CELL) / W, v0: 1 - (y + h) / H, v1: 1 - y / H };
 }
 
-/** The signs' post, one shape and one material for every sign of every build (NÃO criar por reconstrução). */
+/** The signs' post, one shape and one material for every sign of every build (DO NOT create it per rebuild). */
 export const POST = { geometry: new CylinderGeometry(POST_RADIUS, m(0.045), 1, 8), material: new MeshStandardMaterial({ color: 0x8e979b, roughness: 0.45, metalness: 0.6 }) };
 
 /** The corners of three's plane of 1 x 1 (`PlaneGeometry`), and its two triangles. */

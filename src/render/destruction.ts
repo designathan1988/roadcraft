@@ -371,7 +371,7 @@ export function createDestruction(
               p.v.multiplyScalar(0.3); p.v.y = Math.abs(p.v.y) * 0.5; p.w.multiplyScalar(0.4);
               if (p.fragment.radius > m(1.2) && Math.random() < 0.3) exhaust.burst(mesh.position.x, -mesh.position.z, p.floor, 3, 3, m(1.5), m(3), 4);
             } else {
-              // Settled: it stays where it fell, a heap of the building, for good (the player: "não faça os escombros sumirem")
+              // Settled: it stays where it fell, a heap of the building, for good (the player: "do not make the rubble vanish")
               p.settled = true;
               p.v.set(0, 0, 0);
               p.age = 0;
@@ -382,7 +382,7 @@ export function createDestruction(
           }
         }
       }
-      // The rubble stays for good (the player: "não faça os escombros sumirem")
+      // The rubble stays for good (the player: "do not make the rubble vanish")
     },
     dispose() {
       for (const ruin of ruins.values()) {

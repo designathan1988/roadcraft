@@ -10,7 +10,7 @@ import { DT, JAM_GAP } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { trafficTarget } from '@sim/vehicles/spawn';
 
-/** A map opened is already lived in (the player, 2026-10-09: "sempre que abrir a cidade tem que já ter carros e pessoas") */
+/** A map opened is already lived in (the player, 2026-10-09: "whenever the city opens it must already have cars and people") */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },

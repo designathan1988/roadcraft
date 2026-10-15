@@ -70,7 +70,7 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
   shortSide: { name: 'shortSide', regions: { front: 1.25, crown: 1.05, temple: 0.55, occipital: 0.72, nape: 0.42 }, length: 0.95, part: 0.5, volume: 0.08, gravity: 0.15, clumps: 160, cardWidth: 0.34, layers: 1, strands: 'straight' },
 };
 
-/** Drawn for the crowd: straight hair only (the player, 2026-10-05: "faça cabelo liso, nada de afro") */
+/** Drawn for the crowd: straight hair only (the player, 2026-10-05: "make the hair straight, no afro") */
 export const FEMALE_HAIR = ['longStraight', 'midLayered', 'bob', 'bobFringe', 'ponytail', 'bun',
   'pigtails', 'braid', 'twinBraids', 'sideSwept', 'pixie', 'topKnot',
   'ponytailFringe', 'longFringe', 'longHeadband', 'shoulderBob'] as const;

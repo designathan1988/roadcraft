@@ -108,13 +108,13 @@ export function auditForms(city: GrownCity): { wildRoofs: number; badHalls: numb
       const wall = (levelElevation(b, v.base + v.storeys.length) - levelElevation(b, v.base)) * METERS_PER_UNIT;
       // A lean-to or a sawtooth tooth: a couple of metres at most; a gable or a hip: about a storey.
       const limit = v.roof === 'shed' || v.roof === 'sawtooth' ? Math.min(2.2, Math.max(1.2, wall * 0.4)) : Math.min(4.5, Math.max(3.2, wall * 0.9));
-      if (rise > limit + 0.05) { wildRoofs++; if (examples.length < 8) examples.push(`telhado ${v.roof} sobe ${rise.toFixed(1)} m sobre ${wall.toFixed(1)} m: ${b.function} ${b.id}`); }
+      if (rise > limit + 0.05) { wildRoofs++; if (examples.length < 8) examples.push(`${v.roof} roof rises ${rise.toFixed(1)} m over ${wall.toFixed(1)} m: ${b.function} ${b.id}`); }
     }
     if (b.use === 'industrial') {
       const hall = [...b.volumes].filter((v) => !v.open).sort((p, q) => q.w * q.d - p.w * p.d)[0];
       if (hall) {
         const h = (levelElevation(b, hall.base + hall.storeys.length) - levelElevation(b, hall.base)) * METERS_PER_UNIT;
-        if (h < 5.5 || h > 12) { badHalls++; if (examples.length < 8) examples.push(`galpão de ${h.toFixed(1)} m`); }
+        if (h < 5.5 || h > 12) { badHalls++; if (examples.length < 8) examples.push(`shed of ${h.toFixed(1)} m`); }
       }
     }
   }

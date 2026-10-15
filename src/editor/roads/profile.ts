@@ -4,7 +4,7 @@ import { sameParking } from '@world/parking';
 import { sameRoadSection } from '@world/roadSection';
 import { type ProfileProblem, type RoadProfileSpec, applyProfile, profileProblems } from '@world/roads/profile';
 
-/** Applying a profile to roads already built (: "aplicar sem demolir") */
+/** Applying a profile to roads already built (: "apply without demolishing") */
 export interface ApplyResult {
   readonly changed: boolean;
   readonly problems: readonly ProfileProblem[];
