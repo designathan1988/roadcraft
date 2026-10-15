@@ -778,6 +778,9 @@ export function splitSegment(
  *    there and joined by one node. A crossing between the join tolerance and
  *    a deck's clearance can be neither, and is refused.
  * Returns `committed: false` with a reason when the drop must be undone.
+ * `net` is the network as it stood before the move (`moveNodeChecked`'s
+ * caller keeps it built): the nodes and roads near the drop are read from its
+ * cells, where the roads that did not move are filed.
  */
 export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth = 0): DraftResult {
   if (depth > 16) return { committed: true };
