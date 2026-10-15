@@ -194,7 +194,6 @@
  "types src/sim/vehicles/kerbStops.ts KerbStopPhase",
  "types src/sim/vehicles/kerbStops.ts TaskKind",
  "types src/sim/vehicles/state.ts ConnectorClearance",
- "types src/world/buildings/pads.ts BuildingPads",
  "types src/world/conflictPoints.ts Zone",
  "types src/world/walkways.ts WalkwayKind"
 ]

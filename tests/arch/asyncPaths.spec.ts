@@ -13,9 +13,11 @@ import { describe, expect, it } from 'vitest';
  *   never run to its end in one frame, and its roads get the tile workers;
  * - nothing holds the buildings' layer (`holdBuildings`);
  * - the parked cars read the diary through the sweep, never `touches` per car;
+ * - the ground's cut and fill and the comparison of two solves go to the
+ *   ground's worker whenever it is there, never a corner shaped on the page;
  * - the workers import pure modules only: no three, no page (their output is
  *   checked byte for byte against the page's in tests/render/roadTileWorkers,
- *   tests/world/turnPlan and the conflict specs).
+ *   tests/render/terrainShaping, tests/world/turnPlan and the conflict specs).
  */
 const read = (path: string): string => readFileSync(path, 'utf8');
 
@@ -103,7 +105,7 @@ describe('the road tiles kept for a later session', () => {
 });
 
 describe('the workers', () => {
-  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts']) {
+  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];
       expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);
@@ -149,6 +151,49 @@ describe('the growth of the buildings', () => {
     expect(bodyOf(feed.replace('  receive(', 'function receive('), 'receive')).toMatch(/moved && validateBuilding\(/);
   });
 });
+
+describe('the ground cut and filled', () => {
+  const renderer = read('src/render/renderer.ts');
+  /** The source of `const name = (` up to its closing line. */
+  const constBody = (name: string): string => {
+    const at = renderer.indexOf(`const ${name} = (`);
+    expect(at, name).toBeGreaterThan(-1);
+    return renderer.slice(at, renderer.indexOf('\n  };\n', at));
+  };
+
+  it('asks the worker for every pass while it is there, and shapes no corner on the page meanwhile', () => {
+    const shape = constBody('shapeGround');
+    const offPage = shape.indexOf('if (groundWorkers.available || shapings.length) {');
+    const here = shape.indexOf('terrain.shapeToRoads(');
+    expect(offPage).toBeGreaterThan(-1);
+    expect(here).toBeGreaterThan(offPage);
+    const branch = shape.slice(offPage, here);
+    expect(branch).toMatch(/groundWorkers\.shape\(ask\)/);
+    expect(branch).toMatch(/return shaping;\s*\}\s*told\(\);[\s\S]*$/);
+    expect(branch).not.toMatch(/shapeCorners|\.shapeAt\(|shapeToRoads/);
+    // The page's own pass only once nothing waits for the worker.
+    expect(shape.slice(here)).not.toMatch(/shapings\.push/);
+  });
+
+  it('puts the passes in place in the order asked, and the world waits for them', () => {
+    const land = constBody('landShapes');
+    expect(land).toMatch(/shapings\.shift\(\)/);
+    expect(land).toMatch(/next\.answers \?\? shapeGroundAsk\(next\.ask\)/);
+    const generators = renderer.replace(/function\* /g, 'function ');
+    const blocks = bodyOf(generators, 'shapeBlocksSteps');
+    expect(blocks).not.toMatch(/BATCH|regions\.slice\(/);
+    expect(blocks).toMatch(/while \(!shaping\.landed\) \{ landShapes\(\); if \(shaping\.landed\) break; yield 'wait'; \}/);
+    expect(renderer).toMatch(/function\* worldSteps\([\s\S]{0,700}while \(compares\.some\(\(c\) => c && !c\.ready\)\)/);
+  });
+
+  it('compares two solves off the page, each block of a solve asked once', () => {
+    const compare = constBody('compareSolves');
+    expect(compare).toMatch(/groundWorkers\.digest\(job\)/);
+    expect(compare).toMatch(/groundReading\.get\(solve\)/);
+    expect(renderer).not.toMatch(/const changedBlocks = /);
+  });
+});
+
 
 describe('the bays of the lots', () => {
   it('are asked of the workers in the game, worked out on the page only by a world without them', () => {

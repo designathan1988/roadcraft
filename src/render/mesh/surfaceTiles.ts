@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, type Mesh } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Sphere, type Mesh } from 'three';
 import { gpuOnly } from './gpuOnly';
 import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
 
@@ -52,6 +52,20 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
   geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
   geometry.setIndex(new BufferAttribute(arrays.index, 1));
+  // Bounded by its tiles' boxes, made with them in the worker (`tileMesh.ts`): DO NOT measure every
+  // vertex of the block again on the page (0.6 s of a 2,560 m city's road blocks, 2026-10-15). The box
+  // is the one its vertices give; the sphere is the box's (`Box3.getBoundingSphere`): it holds them all.
+  if (parts.every((tile) => tile.box)) {
+    const box = new Box3();
+    for (const tile of parts) {
+      const b = tile.box!;
+      if (b[0]! > b[3]!) continue;
+      box.min.set(Math.min(box.min.x, b[0]!), Math.min(box.min.y, b[1]!), Math.min(box.min.z, b[2]!));
+      box.max.set(Math.max(box.max.x, b[3]!), Math.max(box.max.y, b[4]!), Math.max(box.max.z, b[5]!));
+    }
+    geometry.boundingBox = box;
+    geometry.boundingSphere = box.getBoundingSphere(new Sphere());
+  }
   const mesh = finish(geometry, options);
   tilesOnGpu(mesh, source);
   return mesh;

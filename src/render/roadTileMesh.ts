@@ -184,6 +184,7 @@ export function tileBuffers(tiles: readonly TileMeshes[]): ArrayBuffer[] {
     for (const [, t] of tile) {
       out.push(t.positions.buffer as ArrayBuffer, t.normals.buffer as ArrayBuffer, t.uvs.buffer as ArrayBuffer,
         t.colors.buffer as ArrayBuffer, t.sections.buffer as ArrayBuffer, t.indices.buffer as ArrayBuffer);
+      if (t.box) out.push(t.box.buffer as ArrayBuffer);
     }
   }
   return out;

@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { layCity } from '@editor/cityGenerator';
 import { growOnLot } from '@editor/zoning';
-import { type CornerGrid, type TerrainRegion, type TerrainShaper, shapeCorners } from '@render/terrainShaping';
+import { type BlockDigestAsk, type GroundJob, type GroundShapeAsk, type PlateShapeAnswer, askPlate, blockDigest, cornerBoxes, runGroundJob } from '@render/groundShape';
+import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeBoth, shapeCorners } from '@render/terrainShaping';
 import { storedBounds } from '@world/buildings/geometry';
 import { siteGrading } from '@world/buildings/siteGrading';
 import type { Building } from '@world/buildings/types';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import type { RoadDoc } from '@world/doc';
 import { buildRoadElevation } from '@world/elevation';
-import { PLATE_SIZE } from '@world/bounds';
+import { PLATE_SIZE, plateOf } from '@world/bounds';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import { Network } from '@world/network';
 import { m } from '@world/units';
@@ -143,5 +144,110 @@ describe('a shaping pass over regions', () => {
       if (asked[i] && !inRegions[i]) expect.fail(`corner ${i} asked outside the regions`);
     }
     expect(calls).toBe(corners);
+  });
+});
+
+/**
+ * THE SAME PASSES OFF THE PAGE (`groundShape.ts`, `groundShape.worker.ts`): the
+ * corners asked and the roads and platforms they read, copied as `postMessage`
+ * copies them (`structuredClone`), shaped by the worker's function and copied
+ * back, give the page's pass - the same corners, in the same order, the same
+ * heights, to the bit; and two solves compared block by block give the page's
+ * digests and the same blocks changed.
+ */
+describe('a shaping pass off the page', () => {
+  const doc = grownCity();
+  const net = new Network(doc);
+  net.rebuild();
+  const elevation = buildRoadElevation(net, groundAt);
+  const reach = CELL * 1.5 + m(40) + CELL;
+  const bank = (b: Building): readonly [number, number, number, number] => {
+    const r = storedBounds(b, reach);
+    return [r.minX, r.minY, r.maxX, r.maxY];
+  };
+  const sites = siteGrading(groundAt, undefined, CELL * 1.5, bank);
+  const changed = sites.changedSites(doc.buildings) ?? [];
+  sites.rebuild(doc.buildings);
+  const pads = sites.pads!;
+  const regions: TerrainRegion[] = changed.map((box) => [
+    Math.floor((box[0] + HALF) / CELL), Math.ceil((box[2] + HALF) / CELL),
+    Math.floor((HALF - box[3]) / CELL), Math.ceil((HALF - box[1]) / CELL),
+  ]);
+  const shaper: TerrainShaper = {
+    shapeBounds: () => [...elevation.shapeBounds(), ...pads.shapeBounds()],
+    shapeAt: shapeBoth(elevation, pads),
+  };
+  /** The page's pass: each corner taken, in order. */
+  const onThePage = (asked: readonly TerrainRegion[] | null): [number, number][] => {
+    const taken: [number, number][] = [];
+    shapeCorners(grid, natural, shaper, asked, new Int32Array(N * N), 1, (i, h) => { taken.push([i, h]); });
+    return taken;
+  };
+  /** The worker's: the ask copied there and its answer copied back, as messages are. */
+  const offThePage = (asked: readonly TerrainRegion[]): [number, number][] => {
+    const plate = askPlate(grid, natural, asked);
+    const boxes = cornerBoxes([plate], CELL, HALF);
+    const ask: GroundShapeAsk = { roads: elevation.shapeCut!(boxes), pads: pads.cut(boxes), plates: [plate] };
+    const job = structuredClone<GroundJob>({ kind: 'shape', ask });
+    const [answer] = structuredClone(runGroundJob(job).answer) as PlateShapeAnswer[];
+    return Array.from(answer!.corners, (i, k) => [i, answer!.heights[k]!]);
+  };
+  const same = (a: readonly [number, number][], b: readonly [number, number][]): void => {
+    expect(a.length).toBe(b.length);
+    for (let k = 0; k < a.length; k++) {
+      if (a[k]![0] !== b[k]![0] || !Object.is(a[k]![1], b[k]![1])) expect.fail(`take ${k}: corner ${a[k]![0]} at ${a[k]![1]} against ${b[k]![0]} at ${b[k]![1]}`);
+    }
+  };
+
+  it('moves the corners the page moves, in its order, to its heights', () => {
+    const here = onThePage(regions);
+    expect(here.length).toBeGreaterThan(1000);
+    same(offThePage(regions), here);
+  });
+
+  it('shapes the whole plate as the page does, the plate sent once', () => {
+    const here = onThePage(null);
+    const boxes = shaper.shapeBounds().map((b) => boxRegion(grid, b));
+    expect(askPlate(grid, natural, boxes).whole).toBe(true);
+    same(offThePage(boxes), here);
+  });
+
+  it('digests two solves block by block as the page does', () => {
+    // The land raised under a part of the town: the roads there solved again.
+    const raised = (x: number, y: number): number => groundAt(x, y) + (Math.hypot(x - m(150), y + m(100)) < m(260) ? m(2.5) : 0);
+    const other = buildRoadElevation(net, raised);
+    const diagonals = new Uint8Array(SEGMENTS * SEGMENTS);
+    for (let k = 0; k < diagonals.length; k += 3) diagonals[k] = 1;
+    const naturalAt = (x: number, y: number): number =>
+      x >= -HALF && x <= HALF && y >= -HALF && y <= HALF ? sampleCorners(grid, natural, diagonals, x, y) : groundAt(x, y);
+    const BLOCK = 160;
+    const blocks: number[] = [];
+    for (let x = -HALF; x < HALF; x += BLOCK) for (let y = -HALF; y < HALF; y += BLOCK) blocks.push(x, y);
+    const rects = (): [number, number, number, number][] => {
+      const out: [number, number, number, number][] = [];
+      for (let k = 0; k < blocks.length; k += 2) out.push([blocks[k]! - 1, blocks[k + 1]! - 1, blocks[k]! + BLOCK + 1, blocks[k + 1]! + BLOCK + 1]);
+      return out;
+    };
+    const ask: BlockDigestAsk = {
+      solves: [elevation, other].map((solve) => ({ roads: solve.shapeCut!(rects()), blocks: Float64Array.from(blocks) })),
+      plates: [{ index: plateOf(0, 0), cx: 0, cy: 0, n: N, cell: CELL, half: HALF, natural, diagonals }],
+      block: BLOCK, cell: CELL, half: HALF,
+    };
+    const answers = structuredClone(runGroundJob(structuredClone<GroundJob>({ kind: 'blocks', ask })).answer) as Float64Array[];
+    const page = [elevation, other].map((solve) => Array.from({ length: blocks.length / 2 }, (_, k) =>
+      blockDigest(solve, naturalAt, blocks[k * 2]!, blocks[k * 2 + 1]!, BLOCK, CELL, HALF)));
+    let offPlate = 0;
+    for (let s = 0; s < 2; s++) {
+      page[s]!.forEach((digest, k) => {
+        const off = answers[s]![k]!;
+        // Past the plate's edge the land's own field is read: the page digests that block itself.
+        if (Number.isNaN(off)) { offPlate++; return; }
+        if (off !== digest) expect.fail(`solve ${s}, block ${k}: ${off} against ${digest}`);
+      });
+    }
+    // The last row and column of blocks reach past the plate; the others are all off the page.
+    expect(offPlate).toBeLessThanOrEqual(2 * 25 * 2);
+    const differ = page[0]!.filter((d, k) => d !== page[1]![k]).length;
+    expect(differ).toBeGreaterThan(3);
   });
 });
