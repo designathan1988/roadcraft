@@ -2125,10 +2125,10 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   syncSky();
   syncSpeed();
   syncHistory();
-  // The Builder reports its state every frame while it is in hand
-  // (`buildingsWiring.ts` refresh): the panel is rebuilt only when what it
-  // shows has changed - it was rebuilt, fifty cards and all, every frame. The
-  // same state handed again means its pictures arrived.
+  // The Builder reports its state whenever it marks it changed - a hint, a
+  // drag, a selection (`buildingsWiring.ts` refresh, `dirty`): the panel is
+  // rebuilt only when what it shows has changed - it was rebuilt, fifty cards
+  // and all, on every report. The same state handed again means its pictures arrived.
   let builderSig = '';
   const sigOf = (s: BuilderState): string => JSON.stringify([s.category, s.tool, s.armed, [...s.ready].sort().join(','), s.floor, s.snap, s.grid, s.hideOthers,
     s.selection, s.planning, s.planPoints, s.userBlueprints.map((b) => b.key), s.pattern, s.scope, s.roof, s.material, s.drawAction, s.inspectorOpen]);
