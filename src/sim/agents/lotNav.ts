@@ -1,6 +1,6 @@
 import { Heap } from '@core/heap';
 import { m } from '@world/units';
-import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
+import type { BuildingElement, ElementKind } from '@world/buildings/types';
 
 /**
  * Driving inside a car park: a grid over the lot, its cells blocked where a
@@ -56,6 +56,9 @@ export const PEOPLE_GRID: LotGridOptions = { cell: m(0.2), clearance: m(0.25), s
 
 export interface LotRect { readonly x: number; readonly y: number; readonly w: number; readonly d: number }
 
+/** What a lot's grid reads of a part of the lot (`buildLotGrid`): all a worker is sent of it (`lotBays.ts` `shareOf`). */
+export type LotPart = Pick<BuildingElement, 'kind' | 'x' | 'y' | 'w' | 'd' | 'facing' | 'angle' | 'z'>;
+
 export interface LotGrid {
   readonly x0: number;
   readonly y0: number;
@@ -72,7 +75,7 @@ export interface LotGrid {
 }
 
 /** The corners of an element's box in the local frame, turned by its angle. */
-function elementCorners(el: BuildingElement): { x: number; y: number }[] {
+function elementCorners(el: LotPart): { x: number; y: number }[] {
   const alongY = el.facing === 0 || el.facing === 2;
   const sx = (alongY ? el.w : el.d) / 2;
   const sy = (alongY ? el.d : el.w) / 2;
@@ -245,7 +248,7 @@ function growByClearance(solid: Uint8Array, nx: number, ny: number, reach: numbe
  * `options`: a car's grid when absent; a person's is `PEOPLE_GRID`. Cell for
  * cell the grid of before (`tests/sim/indexes/lotGridSame.spec.ts`).
  */
-export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonly { x: number; y: number }[])[],
+export function buildLotGrid(b: { readonly elements?: readonly LotPart[] }, lot: LotRect, walls: readonly (readonly { x: number; y: number }[])[],
   exits: readonly { readonly inner: { x: number; y: number }; readonly edge: { x: number; y: number } }[],
   options: LotGridOptions = {}): LotGrid {
   const CELL = options.cell ?? DEFAULT_CELL;
