@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
-import { DocImage } from '@world/docImage';
 import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, cloneBuilding } from '@world/buildings/types';
 
@@ -53,9 +52,9 @@ describe("a building's wear", () => {
   it('reaches what saves and undoes the document', () => {
     const doc = new RoadDoc();
     const a = doc.buildings.add(house(0));
-    const image = new DocImage(doc);
+    doc.beginEdit();
     doc.buildings.wear(a.id, 0.7);
-    const patch = image.commit(doc)!;
+    const patch = doc.endEdit()!;
     expect(patch).not.toBeNull();
     const record = patch.records.find((r) => r.part === 'buildings' && r.id === a.id)!;
     expect((record.after as Building).decay).toBe(0.7);

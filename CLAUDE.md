@@ -65,11 +65,9 @@ pasted in the session that started this; these are its binding decisions.
 - Phases: F0 prep, F0b relief, F1 data, F2 threads, F3 spike, F4 buildings, F5 world,
   F6 light, F7 whole-map generation, F8 Steam, F9 validation. Current: <F0>.
 - Still asks the player: graphics-quality changes (shots), migrating his saved map, pushing.
-- Agents (player's order, 2026-10-15; replaces "Agents: at most 5"): at most 2 at once, read and
-  search only (Explore kind), each with a closed question (what, which files, what to return as
-  file:line) and a short report; only when the reading is large and other work goes on meanwhile.
-  An agent never writes, edits, commits, runs the game, makes a worktree or opens another agent.
-  No teammates, parallel sessions or ultracode. All code is written by the session, in sequence.
+- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
+  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
+  yourself, in sequence; keep progress here.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
@@ -228,11 +226,9 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents (player's order, 2026-10-15; replaces "Agents: at most 5"): at most 2 at once, read and
-  search only (Explore kind), each with a closed question (what, which files, what to return as
-  file:line) and a short report; only when the reading is large and other work goes on meanwhile.
-  An agent never writes, edits, commits, runs the game, makes a worktree or opens another agent.
-  No teammates, parallel sessions or ultracode. All code is written by the session, in sequence.
+- No agents (player's order, 2026-10-15; replaces "Agents: at most 5"): never spawn a subagent,
+  teammate, parallel session or agent worktree, and never turn on ultracode. Do every step
+  yourself, in sequence; keep progress here.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '@core/rng';
 import { RoadDoc } from '@world/doc';
-import { DocImage, sideOf } from '@world/docImage';
+import { sideOf } from '@world/docImage';
 import { insideLot, type Lot } from '@world/lots';
 import { lotBox } from '@world/lotStore';
 import type { ChangeRect } from '@world/changes';
@@ -93,18 +93,16 @@ describe('the lots by their owner', () => {
     const rng = new Rng(9);
     const doc = new RoadDoc();
     for (let i = 0; i < 60; i++) doc.lotStore.apply({ add: [square(rng)] }, 'test');
-    const image = new DocImage(doc);
     for (let round = 0; round < 40; round++) {
+      doc.beginEdit();
       const before = new Map([...doc.lotStore.all()].map((l) => [l.id, l]));
       for (let k = 0; k < 1 + rng.int(0, 4); k++) edit(doc, rng);
       const after = new Map([...doc.lotStore.all()].map((l) => [l.id, l]));
-      const patch = image.commit(doc)!;
+      const patch = doc.endEdit()!;
       expect(patch.lists.some((l) => (l.part as string) === 'lots')).toBe(false);
       doc.restore(sideOf(patch, 'before'));
-      image.absorb(doc);
       expect(new Map([...doc.lotStore.all()].map((l) => [l.id, l]))).toEqual(before);
       doc.restore(sideOf(patch, 'after'));
-      image.absorb(doc);
       expect(new Map([...doc.lotStore.all()].map((l) => [l.id, l]))).toEqual(after);
       const x = rng.float() * SIDE, y = rng.float() * SIDE;
       const rect: ChangeRect = [x, y, x + m(100), y + m(100)];

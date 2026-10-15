@@ -1,3 +1,4 @@
+import { RecordMap } from '@core/recordMap';
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
 import { JournalCursor } from '../derived';
@@ -25,7 +26,7 @@ function rectOf(b: Building): ChangeRect {
 /** DO NOT copy a record on the way in again "to be safe": the deep copy of every record added or replaced */
 export class BuildingStore {
   /** @mapWide Every building of the map. A working copy's lies over the original's (`forkFrom`). */
-  private items: Map<BuildingId, Building> = new Map();
+  private items: Map<BuildingId, Building> = new RecordMap();
   /** The store a working copy lies over (`forkFrom`) while it has written nothing: its questions by place are that store's. */
   private below: BuildingStore | null = null;
   private ids = new IdAllocator(1);
@@ -36,6 +37,11 @@ export class BuildingStore {
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
+
+  /** Told each building's record before it is written (an edit being recorded, `RoadDoc.beginEdit`); null: nobody listens. */
+  watch(before: ((id: BuildingId, was: Building | undefined) => void) | null): void {
+    if (this.items instanceof RecordMap) this.items.before = before;
+  }
 
   /** The serial of the latest change of the buildings in the diary (their shape, place or use; not their wear). */
   get revision(): number {

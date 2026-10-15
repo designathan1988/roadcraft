@@ -1,8 +1,5 @@
-/** THE DOCUMENT AS LAST COMMITTED, and what changed since: the undo by records. */
-import type { DocChangeKind } from './changes';
-import { samePlain } from '@core/plain';
-import { DOC_CHANGE_KINDS } from './changes';
-import { LIST_KINDS, type ListPart, type RecordPart, type Restoration, type RoadDoc, type SerializedDoc, type ValuePart } from './doc';
+/** AN EDIT AS A COMMAND AND ITS INVERSE (`RoadDoc.beginEdit`/`endEdit`): the states before and after of what it changed. */
+import type { ListPart, RecordPart, Restoration, SerializedDoc, ValuePart } from './doc';
 
 /** Each saved key of the map and the part that keeps it: a key added to the format and not here does not compile. */
 export const PARTS_OF_SAVED = {
@@ -14,38 +11,12 @@ export const PARTS_OF_SAVED = {
   buildings: 'buildings', zones: 'zones', zoneMarks: 'zoneMarks', lots: 'lots', lotKeys: 'lotKeys', people: 'people', economy: 'economy',
 } as const satisfies Record<keyof SerializedDoc, RecordPart | ListPart | ValuePart | readonly (ListPart | ValuePart)[] | null>;
 
-/** The keyed collections: their records by id, and the kinds of change that move them. */
-const RECORDS: readonly { readonly part: RecordPart; readonly kinds: readonly DocChangeKind[]; readonly entries: (d: RoadDoc) => Iterable<readonly [number, unknown]>; readonly get: (d: RoadDoc, id: number) => unknown; readonly immutable?: boolean }[] = [
-  { part: 'nodes', kinds: ['roads', 'traffic'], entries: (d) => d.nodes, get: (d, id) => d.nodes.get(id as never) },
-  { part: 'segments', kinds: ['roads', 'traffic'], entries: (d) => d.segments, get: (d, id) => d.segments.get(id as never) },
-  { part: 'poles', kinds: ['utilities'], entries: (d) => d.poles, get: (d, id) => d.poles.get(id as never) },
-  { part: 'poleSpans', kinds: ['utilities'], entries: (d) => d.poleSpans, get: (d, id) => d.poleSpans.get(id as never) },
-  { part: 'landscape', kinds: ['landscape'], entries: (d) => d.landscape, get: (d, id) => d.landscape.get(id) },
-  { part: 'barriers', kinds: ['barriers'], entries: (d) => d.barriers, get: (d, id) => d.barriers.get(id) },
-  // A building's record is replaced, never changed in place (`BuildingStore.put`): kept by reference.
-  { part: 'buildings', kinds: ['buildings', 'buildingWear'], entries: (d) => buildingEntries(d), get: (d, id) => d.buildings.get(id as never), immutable: true },
-  // DO NOT go back to the lots as a list
-  { part: 'lots', kinds: ['lots'], entries: (d) => lotEntries(d), get: (d, id) => d.lotStore.get(id), immutable: true },
-];
-const LISTS = Object.keys(LIST_KINDS) as ListPart[];
-/** The values and the kind that moves each; null: compared at every commit (they are small). */
-const VALUES: Readonly<Record<ValuePart, DocChangeKind | null>> = {
-  terrainRelief: 'terrain', markingStyle: 'markingStyle', nature: 'nature', fogSettings: 'fog', gullyAuto: 'gullies', weather: 'weather',
-  economy: 'economy', transit: 'transit', nextZoneId: null, nextLotId: null, allocators: null,
-};
-
-function* buildingEntries(d: RoadDoc): Iterable<readonly [number, unknown]> {
-  for (const b of d.buildings.all()) yield [b.id, b];
-}
-
-function* lotEntries(d: RoadDoc): Iterable<readonly [number, unknown]> {
-  for (const lot of d.lotStore.all()) yield [lot.id, lot];
-}
-
 export interface DocPatch {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly before: unknown; readonly after: unknown }[];
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly before: readonly unknown[]; readonly after: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly before: unknown; readonly after: unknown }[];
+  /** The whole map before and after, when the edit replaced it whole (a map opened, a city generated). */
+  readonly whole?: { readonly before: SerializedDoc; readonly after: SerializedDoc };
   /** Roughly what it holds, UTF-16 bytes of its text. */
   readonly bytes: number;
 }
@@ -53,6 +24,7 @@ export interface DocPatch {
 /** One side of a patch as `RoadDoc.restore` takes it: `before` undoes, `after` redoes. */
 export function sideOf(patch: DocPatch, side: 'before' | 'after'): Restoration {
   const back = side === 'before';
+  if (patch.whole) return { records: [], lists: [], values: [], whole: back ? patch.whole.before : patch.whole.after };
   return {
     records: patch.records.map((r) => ({ part: r.part, id: r.id, value: back ? r.before : r.after })),
     lists: patch.lists.map((l) => ({ part: l.part, start: l.start, remove: back ? l.after.length : l.before.length, items: back ? l.before : l.after })),
@@ -60,131 +32,13 @@ export function sideOf(patch: DocPatch, side: 'before' | 'after'): Restoration {
   };
 }
 
-const copy = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
-
-const IMMUTABLE: readonly RecordPart[] = RECORDS.filter((r) => r.immutable).map((r) => r.part);
 const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
 
-/** What a patch holds that the document does not, UTF-16 bytes of its text: the copies, and of a record replaced whole */
-function bytesHeld(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
-  let bytes = 0;
-  for (const r of records) bytes += textBytes(r.before) + (IMMUTABLE.includes(r.part) ? 0 : textBytes(r.after));
+/** What a patch holds, UTF-16 bytes of its text (`editor/history.ts` keeps the steps under a budget). */
+export function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values'], whole?: DocPatch['whole']): number {
+  let bytes = whole ? textBytes(whole.before) + textBytes(whole.after) : 0;
+  for (const r of records) bytes += textBytes(r.before) + (r.part === 'buildings' || r.part === 'lots' ? 0 : textBytes(r.after));
   for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
   for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
   return bytes;
-}
-
-export class DocImage {
-  private readonly records = new Map<RecordPart, Map<number, unknown>>();
-  private readonly lists = new Map<ListPart, unknown[]>();
-  private readonly values = new Map<ValuePart, unknown>();
-  /** The diary's serial of each kind at the last commit. */
-  private readonly seen = new Map<DocChangeKind, number>();
-
-  constructor(doc: RoadDoc) {
-    this.take(doc);
-  }
-
-  /** Takes the whole document as it is (a copy of every record, list and value). */
-  take(doc: RoadDoc): void {
-    for (const r of RECORDS) {
-      const kept = new Map<number, unknown>();
-      for (const [id, value] of r.entries(doc)) kept.set(id, r.immutable ? value : copy(value));
-      this.records.set(r.part, kept);
-    }
-    for (const part of LISTS) this.lists.set(part, doc.listOf(part).map((item) => copy(item)));
-    for (const part of Object.keys(VALUES) as ValuePart[]) this.values.set(part, copy(doc.valueOf(part)));
-    this.see(doc);
-  }
-
-  /** What changed since the last commit, and the image brought up to the document; null when nothing did. */
-  commit(doc: RoadDoc): DocPatch | null {
-    return this.update(doc, true);
-  }
-
-  /** The image brought up to the document, keeping nothing of what changed: a change made with no edit open */
-  absorb(doc: RoadDoc): void {
-    this.update(doc, false);
-  }
-
-  private update(doc: RoadDoc, keep: boolean): DocPatch | null {
-    const moved = (kinds: readonly DocChangeKind[]): boolean => kinds.some((k) => doc.changes.serialOf(k) > (this.seen.get(k) ?? 0));
-    const records: DocPatch['records'][number][] = [];
-    const lists: DocPatch['lists'][number][] = [];
-    const values: DocPatch['values'][number][] = [];
-    for (const r of RECORDS) {
-      if (!moved(r.kinds)) continue;
-      const at = performance.now();
-      const kept = this.records.get(r.part)!;
-      const take = (id: number, now: unknown): void => {
-        const was = kept.get(id);
-        if (was === now || (was !== undefined && now !== undefined && samePlain(was, now))) return;
-        if (now === undefined) {
-          if (was === undefined) return;
-          if (keep) records.push({ part: r.part, id, before: was, after: undefined });
-          kept.delete(id);
-          return;
-        }
-        const after = r.immutable ? now : copy(now);
-        if (keep) records.push({ part: r.part, id, before: was, after });
-        kept.set(id, after);
-      };
-      // DO NOT walk every record of a kind that moved
-      const ids = this.named(doc, r.kinds);
-      if (ids) {
-        for (const id of [...ids].sort((p, q) => p - q)) take(id, r.get(doc, id));
-      } else {
-        /** @rebuild Every record of the part only when the diary cannot say which changed. */
-        for (const [id, now] of r.entries(doc)) take(id, now);
-        for (const id of [...kept.keys()]) if (r.get(doc, id) === undefined) take(id, undefined);
-      }
-      if (performance.now() - at > 2) performance.measure(`hitch:image/${r.part} ${kept.size}`, { start: at, end: performance.now() });
-    }
-    for (const part of LISTS) {
-      if (!moved([LIST_KINDS[part]])) continue;
-      const at = performance.now();
-      const kept = this.lists.get(part)!;
-      const now = doc.listOf(part);
-      let start = 0;
-      while (start < kept.length && start < now.length && samePlain(kept[start], now[start])) start++;
-      let end = 0;
-      while (end < kept.length - start && end < now.length - start && samePlain(kept[kept.length - 1 - end], now[now.length - 1 - end])) end++;
-      if (start === kept.length && start === now.length) continue;
-      const before = kept.slice(start, kept.length - end);
-      const after = now.slice(start, now.length - end).map((item) => copy(item));
-      if (keep) lists.push({ part, start, before, after });
-      kept.splice(start, before.length, ...(keep ? after.map((item) => copy(item)) : after));
-      if (performance.now() - at > 2) performance.measure(`hitch:image/${part} ${now.length}`, { start: at, end: performance.now() });
-    }
-    for (const part of Object.keys(VALUES) as ValuePart[]) {
-      const kind = VALUES[part];
-      if (kind !== null && !moved([kind])) continue;
-      const was = this.values.get(part);
-      const now = doc.valueOf(part);
-      if (samePlain(was, now)) continue;
-      if (keep) values.push({ part, before: was, after: copy(now) });
-      this.values.set(part, copy(now));
-    }
-    this.see(doc);
-    if (!records.length && !lists.length && !values.length) return null;
-    return { records, lists, values, bytes: bytesHeld(records, lists, values) };
-  }
-
-  /** The ids the diary's entries of these kinds name since the last commit */
-  private named(doc: RoadDoc, kinds: readonly DocChangeKind[]): Set<number> | null {
-    let since = Infinity;
-    for (const kind of kinds) since = Math.min(since, this.seen.get(kind) ?? 0);
-    const entries = doc.changes.since(since, kinds);
-    if (entries === null) return null;
-    const ids = new Set<number>();
-    for (const entry of entries) {
-      if (!entry.ids) return null;
-      for (const id of entry.ids) ids.add(id);
-    }
-    return ids;
-  }
-
-  private see(doc: RoadDoc): void {
-    for (const kind of DOC_CHANGE_KINDS) this.seen.set(kind, doc.changes.serialOf(kind));
-  }
 }

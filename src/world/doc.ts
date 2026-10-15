@@ -48,6 +48,9 @@ import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
 import { ForkMap, forkWork } from '@core/forkMap';
+import { RecordMap } from '@core/recordMap';
+import { samePlain } from '@core/plain';
+import { patchBytes, type DocPatch } from './docImage';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
 export function fitRoadCurve(
@@ -140,22 +143,22 @@ function rectsAlong(points: readonly { readonly x: number; readonly y: number }[
 }
 
 export class RoadDoc {
-  readonly nodes = new Map<NodeId, RoadNode>();
-  readonly segments = new Map<SegmentId, RoadSegment>();
+  readonly nodes: Map<NodeId, RoadNode> = new RecordMap();
+  readonly segments: Map<SegmentId, RoadSegment> = new RecordMap();
   /** The nodes that may have been left with no road (`pruneOrphanNodes`) */
   private loose = new LooseNodes();
 
   /** The overhead utility network: poles and the wire runs between them. */
   // DO NOT write these maps directly.
-  private poleMap: Map<PoleId, UtilityPole> = new Map();
-  private spanMap: Map<SpanId, UtilitySpan> = new Map();
+  private poleMap: Map<PoleId, UtilityPole> = new RecordMap();
+  private spanMap: Map<SpanId, UtilitySpan> = new RecordMap();
   private poleIndex = new PoleIndex();
   get poles(): ReadonlyMap<PoleId, UtilityPole> { return this.poleMap; }
   get poleSpans(): ReadonlyMap<SpanId, UtilitySpan> { return this.spanMap; }
 
   /** Walls, fences and hedges drawn along paths (`barriers.ts`). */
   // DO NOT write this map directly.
-  private barrierMap: Map<number, Barrier> = new Map();
+  private barrierMap: Map<number, Barrier> = new RecordMap();
   get barriers(): ReadonlyMap<number, Barrier> { return this.barrierMap; }
   /** The barriers by place (`barriersIn`), filed over the box of their points. */
   private barrierCells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
@@ -163,7 +166,7 @@ export class RoadDoc {
 
   /** Street landscaping the player placed on the footways: trees, shrubs, benches, bins, street lights, hydrants, post boxes */
   // DO NOT write this map directly.
-  private landscapeMap: Map<number, LandscapeItem> = new Map();
+  private landscapeMap: Map<number, LandscapeItem> = new RecordMap();
   get landscape(): ReadonlyMap<number, LandscapeItem> { return this.landscapeMap; }
   /** The street furniture by place (`landscapeIn`), in cells a few items wide. */
   private landscapeCells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
@@ -1428,6 +1431,7 @@ export class RoadDoc {
     // The lists the copy wrote (it owns them): their items in place here, the filings by place kept by difference.
     for (const part of DOC_LISTS) {
       if (copy.sharedLists.has(part)) continue;
+      this.noteList(part);
       const mine = this.listOf(part) as unknown[], theirs = copy.listOf(part);
       const grid = part === 'trees' ? this.treeGrid : part === 'elements' ? this.elementGrid : null;
       if (grid) {
@@ -1461,17 +1465,22 @@ export class RoadDoc {
   /** A node's record to change in place: a working copy's own (copied from the original's the first time), or the record itself. */
   private nodeToWrite(id: NodeId): RoadNode | undefined {
     const map = this.nodes;
-    return map instanceof ForkMap ? map.writable(id, copyNode) : map.get(id);
+    if (map instanceof ForkMap) return map.writable(id, copyNode);
+    if (this.recorder) this.note('nodes', id, map.get(id));
+    return map.get(id);
   }
 
   /** A segment's record to change in place (as `nodeToWrite`). */
   private segmentToWrite(id: SegmentId): RoadSegment | undefined {
     const map = this.segments;
-    return map instanceof ForkMap ? map.writable(id, copySegment) : map.get(id);
+    if (map instanceof ForkMap) return map.writable(id, copySegment);
+    if (this.recorder) this.note('segments', id, map.get(id));
+    return map.get(id);
   }
 
   /** A list about to be written in place: a working copy's own, copied from the original's the first time (`fork`). */
   private ownList(part: DocListPart): void {
+    this.noteList(part);
     if (!this.sharedLists.delete(part)) return;
     const list = this.listOf(part);
     this.setList(part, list.slice());
@@ -1563,6 +1572,8 @@ export class RoadDoc {
       this.takeFork(source);
       return;
     }
+    // The whole map replaced during an edit (a map opened, a city generated): the edit's undo puts back the map as it was.
+    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.toJSON();
     const moved = this.movedIn(source);
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
@@ -1609,12 +1620,104 @@ export class RoadDoc {
 
   // --------------------------------------------------- undo by records `world/docImage.ts` keeps the document as last
 
+  /** DO NOT keep an image of the whole map for undo (`structuredClone` of every record at the first edit): the edit records */
+  private recorder: EditRecorder | null = null;
+
+  /** An edit begins (`editor/history.ts`): from now each record, list and value keeps its state before its first write. */
+  beginEdit(): void {
+    const recorder: EditRecorder = { records: new Map(), lists: new Map(), values: new Map(), whole: null };
+    for (const part of VALUE_PARTS) recorder.values.set(part, this.valueOf(part));
+    this.recorder = recorder;
+    this.listen(recorder);
+  }
+
+  /** The edit ends: what it changed, as the states before and after (a command and its inverse); null when nothing did. */
+  endEdit(): DocPatch | null {
+    const rec = this.recorder;
+    if (!rec) return null;
+    this.recorder = null;
+    this.listen(null);
+    if (rec.whole) {
+      const whole = { before: rec.whole, after: this.toJSON() };
+      return { records: [], lists: [], values: [], whole, bytes: patchBytes([], [], [], whole) };
+    }
+    const records: DocPatch['records'][number][] = [];
+    for (const [part, kept] of rec.records) {
+      for (const [id, before] of kept) {
+        const after = copyRecord(part, this.recordOf(part, id));
+        if (before === after || (before !== undefined && after !== undefined && samePlain(before, after))) continue;
+        records.push({ part, id, before, after });
+      }
+    }
+    const lists: DocPatch['lists'][number][] = [];
+    for (const [part, was] of rec.lists) {
+      const now = this.listOf(part);
+      let start = 0;
+      while (start < was.length && start < now.length && samePlain(was[start], now[start])) start++;
+      let end = 0;
+      while (end < was.length - start && end < now.length - start && samePlain(was[was.length - 1 - end], now[now.length - 1 - end])) end++;
+      if (start === was.length && start === now.length) continue;
+      lists.push({ part, start, before: was.slice(start, was.length - end).map(copyItem), after: now.slice(start, now.length - end).map(copyItem) });
+    }
+    const values: DocPatch['values'][number][] = [];
+    for (const [part, before] of rec.values) {
+      const now = this.valueOf(part);
+      if (!samePlain(before, now)) values.push({ part, before, after: copyItem(now) });
+    }
+    if (!records.length && !lists.length && !values.length) return null;
+    return { records, lists, values, bytes: patchBytes(records, lists, values) };
+  }
+
+  /** A record's state before its first write in the edit, kept once. */
+  private note(part: RecordPart, id: number, was: unknown): void {
+    const rec = this.recorder!;
+    let kept = rec.records.get(part);
+    if (!kept) rec.records.set(part, kept = new Map());
+    if (!kept.has(id)) kept.set(id, copyRecord(part, was));
+  }
+
+  /** A list's state before its first write in the edit, kept once (only the lists the edit writes are copied). */
+  private noteList(part: ListPart): void {
+    const rec = this.recorder;
+    if (rec && !rec.lists.has(part)) rec.lists.set(part, this.listOf(part).slice());
+  }
+
+  /** The record maps and the stores told of their writes while an edit is recorded (`RecordMap.before`). */
+  private listen(rec: EditRecorder | null): void {
+    const tell = <K extends number, V>(map: Map<K, V>, part: RecordPart): void => {
+      if (map instanceof RecordMap) map.before = rec ? (key: K, was: V | undefined) => this.note(part, key, was) : null;
+    };
+    tell(this.nodes, 'nodes');
+    tell(this.segments, 'segments');
+    tell(this.poleMap, 'poles');
+    tell(this.spanMap, 'poleSpans');
+    tell(this.landscapeMap, 'landscape');
+    tell(this.barrierMap, 'barriers');
+    this.buildings.watch(rec ? (id, was) => this.note('buildings', id, was) : null);
+    this.lotStore.watch(rec ? (id, was) => this.note('lots', id, was) : null, rec ? () => this.noteList('lotKeys') : null);
+  }
+
+  /** A record of the document as it stands, by its part. */
+  private recordOf(part: RecordPart, id: number): unknown {
+    switch (part) {
+      case 'nodes': return this.nodes.get(id as NodeId);
+      case 'segments': return this.segments.get(id as SegmentId);
+      case 'poles': return this.poleMap.get(id as PoleId);
+      case 'poleSpans': return this.spanMap.get(id as SpanId);
+      case 'landscape': return this.landscapeMap.get(id);
+      case 'barriers': return this.barrierMap.get(id);
+      case 'buildings': return this.buildings.get(id as BuildingId);
+      case 'lots': return this.lotStore.get(id);
+    }
+  }
+
   /** The id allocators' next ids: nodes, segments, poles, spans, barriers, landscaping, terrain stamps, buildings. */
   allocatorMarks(): number[] {
     return [this.nodeIds.peek, this.segIds.peek, this.poleIds.peek, this.spanIds.peek, this.barrierIds.peek, this.landscapeIds.peek, this.nextTerrainId, this.buildings.nextId];
   }
 
   restore(r: Restoration): void {
+    if (r.whole) { this.replaceFromJSON(r.whole, { repair: false }); return; }
     const roads: ChangeRect[] = [], utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [];
     // The kinds changed as a whole (a value: the relief, the weather...)
     const kinds = new Set<DocChangeKind>();
@@ -2325,6 +2428,8 @@ export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind>> = {
 /** What undo or redo puts back: records (undefined: none), stretches of lists (`splice`), values. */
 export interface Restoration {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly value: unknown }[];
+  /** The whole map, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */
+  readonly whole?: SerializedDoc;
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
@@ -2715,3 +2820,26 @@ function samePaint(a: readonly PaintDab[], b: readonly PaintDab[]): boolean {
   }
   return true;
 }
+
+/** What an edit keeps while it is recorded (`RoadDoc.beginEdit`): each thing's state before its first write. */
+interface EditRecorder {
+  readonly records: Map<RecordPart, Map<number, unknown>>;
+  readonly lists: Map<ListPart, unknown[]>;
+  readonly values: Map<ValuePart, unknown>;
+  whole: SerializedDoc | null;
+}
+
+const VALUE_PARTS: readonly ValuePart[] = ['terrainRelief', 'markingStyle', 'nature', 'fogSettings', 'gullyAuto', 'weather', 'economy', 'transit', 'nextZoneId', 'nextLotId', 'allocators'];
+
+/** A record kept apart from the one that goes on being written: the roads' copied as the fork copies them, the stores' by reference */
+function copyRecord(part: RecordPart, value: unknown): unknown {
+  if (value === undefined) return undefined;
+  switch (part) {
+    case 'nodes': return copyNode(value as RoadNode);
+    case 'segments': return copySegment(value as RoadSegment);
+    case 'buildings': case 'lots': return value;
+    default: return structuredClone(value);
+  }
+}
+
+const copyItem = <T>(value: T): T => (value === undefined ? value : structuredClone(value));

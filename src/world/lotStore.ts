@@ -1,3 +1,4 @@
+import { RecordMap } from '@core/recordMap';
 import type { Vec2 } from '@core/vec2';
 import { ForkMap, forkWork } from '@core/forkMap';
 import { ChangeJournal, rectAround, type ChangeRect } from './changes';
@@ -30,7 +31,7 @@ export interface LotEdit {
 /** DO NOT hand the lots out as an array the callers write into, nor search one by id or by place */
 export class LotStore {
   /** @mapWide Every lot of the map, in the lots' order. */
-  private items = new Map<number, Lot>();
+  private items: Map<number, Lot> = new RecordMap();
   /** Each lot's place in the order: grows with every lot put last. */
   private order = new Map<number, number>();
   private nextOrder = 0;
@@ -49,6 +50,20 @@ export class LotStore {
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
+
+  /** Told each lot before it is written, and before the keys are (an edit being recorded, `RoadDoc.beginEdit`); null: nobody. */
+  watch(before: ((id: number, was: Lot | undefined) => void) | null, keys: (() => void) | null): void {
+    this.beforeKeys = keys;
+    if (this.items instanceof RecordMap) this.items.before = before;
+  }
+  private beforeKeys: (() => void) | null = null;
+
+  /** A map of the lots that tells its writes to whoever listens now (a whole-store change keeps the listener). */
+  private recordingMap(from?: ReadonlyMap<number, Lot>): RecordMap<number, Lot> {
+    const map = new RecordMap<number, Lot>(from);
+    if (this.items instanceof RecordMap) map.before = this.items.before;
+    return map;
+  }
 
   /** The serial of the latest change of the lots in the diary. */
   get revision(): number {
@@ -172,6 +187,7 @@ export class LotStore {
 
   /** Adds land to what is already cut into lots (`lots.ts` `applyLots`) */
   addKeys(keys: readonly string[], rects: readonly ChangeRect[] | undefined, cause: string): boolean {
+    this.beforeKeys?.();
     const where: ChangeRect[] = [];
     let placeless = false, added = false;
     for (let i = 0; i < keys.length; i++) {
@@ -190,6 +206,7 @@ export class LotStore {
 
   /** A stretch of the keys put back as it was (undo, `RoadDoc.restore`): `list.splice`, the set kept with it. */
   spliceKeys(start: number, remove: number, items: readonly string[]): string[] {
+    this.beforeKeys?.();
     this.ownKeys();
     const tail = this.keyList.splice(start + remove);
     const gone = this.keyList.splice(start, remove);
@@ -239,7 +256,7 @@ export class LotStore {
   shareFrom(source: LotStore): void {
     this.below = null;
     this.keysShared = false;
-    this.items = new Map(source.items);
+    this.items = this.recordingMap(source.items);
     this.order = new Map(source.order);
     this.nextOrder = source.nextOrder;
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
@@ -330,6 +347,7 @@ export class LotStore {
     this.nextOrder = copy.nextOrder;
     this.ids = new IdAllocator(copy.ids.peek);
     if (!copy.keysShared) {
+      this.beforeKeys?.();
       this.keyList = copy.keyList;
       this.keySet = copy.keySet;
     }
@@ -386,7 +404,7 @@ export class LotStore {
   private reset(): void {
     this.below = null;
     this.keysShared = false;
-    this.items = new Map();
+    this.items = this.recordingMap();
     this.order = new Map();
     this.nextOrder = 0;
     this.keyList = [];

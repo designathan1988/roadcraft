@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DocImage, PARTS_OF_SAVED } from '@world/docImage';
+import { PARTS_OF_SAVED } from '@world/docImage';
 import { samePlain } from '@core/plain';
 import { LIST_KINDS, RoadDoc } from '@world/doc';
 
@@ -28,12 +28,14 @@ describe('the image of the document', () => {
     const doc = new RoadDoc();
     const a = doc.addNode({ x: 0, y: 0 }), b = doc.addNode({ x: 100, y: 0 });
     doc.addSegment(a.id, b.id, 1);
-    const image = new DocImage(doc);
-    expect(image.commit(doc)).toBe(null);
+    doc.beginEdit();
+    expect(doc.endEdit()).toBe(null);
+    doc.beginEdit();
     doc.moveNode(b.id, { x: 120, y: 10 });
-    const patch = image.commit(doc)!;
+    const patch = doc.endEdit()!;
     expect(patch.records.map((r) => `${r.part}:${r.id}`)).toContain(`nodes:${b.id}`);
     expect(patch.records.some((r) => r.part === 'nodes' && r.id === a.id)).toBe(false);
-    expect(image.commit(doc)).toBe(null);
+    doc.beginEdit();
+    expect(doc.endEdit()).toBe(null);
   });
 });

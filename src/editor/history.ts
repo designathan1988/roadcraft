@@ -1,5 +1,5 @@
 import { RoadDoc, type SerializedDoc } from '@world/doc';
-import { DocImage, sideOf, type DocPatch } from '@world/docImage';
+import { sideOf, type DocPatch } from '@world/docImage';
 import type { Network } from '@world/network';
 import { repairNearConnections } from './repair';
 
@@ -7,10 +7,8 @@ import { repairNearConnections } from './repair';
 export class History {
   private readonly undoStack: DocPatch[] = [];
   private readonly redoStack: DocPatch[] = [];
-  /** The document as last committed; taken at the first edit. */
-  private image: DocImage | null = null;
-  /** An edit has begun and not ended. */
-  private open = false;
+  /** The document whose edit is open (`RoadDoc.beginEdit`), or null. */
+  private open: RoadDoc | null = null;
 
   /** `limit` steps, and at most `byteBudget` bytes of patches across both stacks. */
   constructor(private readonly limit = 60, private readonly byteBudget = 96 * 1024 * 1024) {}
@@ -24,7 +22,7 @@ export class History {
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0 || this.open;
+    return this.undoStack.length > 0 || this.open !== null;
   }
 
   get canRedo(): boolean {
@@ -33,35 +31,33 @@ export class History {
 
   /** An edit begins: the one before it is closed (or what changed on its own taken in). */
   begin(doc: RoadDoc): void {
-    this.settle(doc);
-    this.open = true;
+    this.settle();
+    doc.beginEdit();
+    this.open = doc;
   }
 
   /** The edit ends: its patch becomes a step; whether it changed anything. */
   end(doc: RoadDoc): boolean {
-    const changed = this.close(doc);
-    this.open = false;
-    return changed;
+    if (this.open !== doc) return false;
+    return this.close();
   }
 
   /** Puts back the document as it was before the last step; false with nothing to undo. */
   undo(doc: RoadDoc): boolean {
-    this.settle(doc);
+    this.settle();
     const patch = this.undoStack.pop();
     if (!patch) return false;
     doc.restore(sideOf(patch, 'before'));
-    this.image!.absorb(doc);
     this.redoStack.push(patch);
     return true;
   }
 
   /** Puts back the step last undone; false with nothing to redo. */
   redo(doc: RoadDoc): boolean {
-    this.settle(doc);
+    this.settle();
     const patch = this.redoStack.pop();
     if (!patch) return false;
     doc.restore(sideOf(patch, 'after'));
-    this.image!.absorb(doc);
     this.undoStack.push(patch);
     this.trim();
     return true;
@@ -70,35 +66,26 @@ export class History {
   clear(): void {
     this.undoStack.length = 0;
     this.redoStack.length = 0;
-    this.image = null;
-    this.open = false;
+    this.open?.endEdit();
+    this.open = null;
   }
 
-  /** The open edit closed as a step, or, with none open, what changed on its own taken into the image. */
-  private settle(doc: RoadDoc): void {
-    if (this.open) {
-      this.close(doc);
-      this.open = false;
-    } else if (this.image) this.timed('history/absorb', () => this.image!.absorb(doc));
-    else this.image = this.timed('history/image', () => new DocImage(doc));
+  /** The open edit closed as a step: what it changed, written as it happened. */
+  private settle(): void {
+    if (this.open) this.close();
   }
 
-  private close(doc: RoadDoc): boolean {
-    this.image ??= this.timed('history/image', () => new DocImage(doc));
-    const patch = this.timed('history/commit', () => this.image!.commit(doc));
+  private close(): boolean {
+    const doc = this.open!;
+    this.open = null;
+    const start = performance.now();
+    const patch = doc.endEdit();
+    performance.measure('hitch:history/commit', { start, end: performance.now() });
     if (!patch) return false;
     this.undoStack.push(patch);
     this.redoStack.length = 0;
     this.trim();
     return true;
-  }
-
-  /** `work`, timed in the page's measures (`hitch:` entries). */
-  private timed<T>(what: string, work: () => T): T {
-    const start = performance.now();
-    const out = work();
-    performance.measure(`hitch:${what}`, { start, end: performance.now() });
-    return out;
   }
 
   /** Drops the OLDEST undo steps past the count or the byte budget; the newest always stays. */
