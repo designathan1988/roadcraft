@@ -110,6 +110,10 @@ describe('the cars standing in bays, asked by the lots', () => {
         const bay = byKey.get(bayKey(body.free));
         if (bay) oldPool.push({ bay, body });
       }
+      // In the order of the bays (the list of parked cars keeps none: a car
+      // taken out of it leaves its place to the last, `AmbientWorld.removeParked`).
+      const rank = new Map(lots.bays.map((bay, i) => [bay, i] as const));
+      oldPool.sort((p, q) => rank.get(p.bay)! - rank.get(q.bay)!);
       expect(lots.sceneryInBays(w)).toEqual(oldPool);
       sceneryPooled += oldPool.length;
       checked++;

@@ -200,6 +200,18 @@ export const walkWork = { hailLooked: 0, routeNodes: 0, parkedFiled: 0 };
 
 interface ParkedEntry { readonly car: Vehicle; x: number; y: number; angle: number; zone: CarZone | null; readonly cells: number[]; seen: number }
 
+/** The parked cars as their keeper tells their changes (`ambient/ambient.ts` AmbientWorld). */
+export interface ParkedSource {
+  /** The cars standing now. */
+  readonly parked: readonly Vehicle[];
+  /** The serial of the latest change of `parked`. */
+  readonly parkedSerial: number;
+  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. */
+  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null;
+  /** The cars of `parked` that may move while standing in it. */
+  readonly movers: ReadonlySet<Vehicle>;
+}
+
 /**
  * The parked cars' zones by cell, kept as the cars come, go and move: only a
  * car that changed is taken out of its cells and filed again. DO NOT file
@@ -217,6 +229,52 @@ export class ParkedZoneIndex {
   private readonly list: ParkedEntry[] = [];
   private readonly byCar = new Map<Vehicle, ParkedEntry>();
   private pass = 0;
+  /** The serial of the source last followed (`follow`); -1: never. */
+  private serial = -1;
+
+  /**
+   * Brought up to the cars standing, from what their keeper says changed:
+   * the cars that came and went since the last look, and the cars that may
+   * move (`ParkedSource.movers`) looked at again; the rest are not looked at.
+   * Whole when the keeper cannot say (the bays made again, a new map).
+   */
+  follow(source: ParkedSource): void {
+    const changes = this.serial < 0 ? null : source.parkedSince(this.serial);
+    this.serial = source.parkedSerial;
+    // The order-kept list belongs to `sync`: a later `sync` finds it from the cars.
+    this.list.length = 0;
+    if (changes === null) {
+      const now = new Set(source.parked);
+      for (const [car, e] of [...this.byCar]) {
+        if (now.has(car)) continue;
+        this.unfile(e);
+        this.byCar.delete(car);
+      }
+      for (const car of source.parked) this.keep(car);
+    } else {
+      for (const c of changes) {
+        if (c.added) { this.keep(c.car); continue; }
+        const e = this.byCar.get(c.car);
+        if (!e) continue;
+        this.unfile(e);
+        this.byCar.delete(c.car);
+      }
+    }
+    for (const car of source.movers) {
+      const e = this.byCar.get(car);
+      if (e && moved(e, car.free)) this.place(e, car.free);
+    }
+  }
+
+  /** A car filed where it stands, if it is not, or again if it moved. */
+  private keep(car: Vehicle): void {
+    let e = this.byCar.get(car);
+    if (!e) {
+      e = { car, x: 0, y: 0, angle: 0, zone: null, cells: [], seen: 0 };
+      this.byCar.set(car, e);
+      this.place(e, car.free);
+    } else if (moved(e, car.free)) this.place(e, car.free);
+  }
 
   /** Brings the cells up to `cars`, the cars standing now (`AmbientWorld.parked`). */
   sync(cars: readonly Vehicle[]): void {
@@ -1864,7 +1922,7 @@ function stepWalkers(w: SimWorld): void {
   // apart with them, `src/backup/residents`); the lots' cars and the lorries
   // in that list move. Only a car that came, went or moved is filed again
   // (`ParkedZoneIndex`).
-  s.parked.sync(w.ambient.parked);
+  s.parked.follow(w.ambient);
   s.onCarWay.clear();
   // The trains at grade: solid as cars are (nobody walks across a level crossing under one).
   for (const discs of w.city.transit.trainZones()) {

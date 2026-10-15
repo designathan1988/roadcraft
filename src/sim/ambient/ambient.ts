@@ -107,6 +107,24 @@ export class AmbientWorld {
   readonly parked: Vehicle[] = [];
   /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
   private readonly standing = new Set<Vehicle>();
+  /** Each car's place in `parked`, for its removal in one step (`removeParked`). */
+  private readonly parkedAt = new Map<Vehicle, number>();
+  /**
+   * The cars of `parked` that may move while they stand in it: those put
+   * there through `addParked` (the lots' cars driving into or out of a bay,
+   * the lorries in a yard). The scenery's own stand where they were put.
+   */
+  readonly movers = new Set<Vehicle>();
+  /**
+   * The cars that came into `parked` and went since `parkedBase`, oldest
+   * first (`parkedSince`), and the serial of the latest: what the walkers'
+   * zones of the parked cars follow (`agents/walk.ts` ParkedZoneIndex). DO
+   * NOT make a reader compare the whole list every tick to find what changed:
+   * every parked car of the map, each tick.
+   */
+  private parkedLog: { readonly car: Vehicle; readonly added: boolean }[] = [];
+  private parkedBase = 0;
+  parkedSerial = 0;
   /** The scenery's own cars standing in bays, by the bay's place (`spotKey`), and each one's bay. */
   private readonly sceneryAt = new Map<string, Vehicle>();
   private readonly bayOf = new Map<Vehicle, number>();
@@ -155,6 +173,9 @@ export class AmbientWorld {
     this.bays.clear();
     this.parked.length = 0;
     this.standing.clear();
+    this.parkedAt.clear();
+    this.movers.clear();
+    this.forgetParkedLog();
     this.sceneryAt.clear();
     this.bayOf.clear();
     this.baysFor = '';
@@ -821,18 +842,49 @@ export class AmbientWorld {
     return this.standing.has(body);
   }
 
-  /** A car of the lots' (or anybody's) drawn with the cars standing in bays. */
+  /** A car of the lots' (or anybody's) drawn with the cars standing in bays: one that may move there (`movers`). */
   addParked(body: Vehicle): void {
     if (this.standing.has(body)) return;
     this.standing.add(body);
+    this.parkedAt.set(body, this.parked.length);
     this.parked.push(body);
+    this.movers.add(body);
+    this.logParked(body, true);
   }
 
-  /** A car taken out of the cars standing in bays (the order of the rest kept). */
+  /**
+   * A car taken out of the cars standing in bays: the last of the list takes
+   * its place. DO NOT `indexOf` and `splice` it out: every parked car of the
+   * map, for each car of the lots that drives out (nobody reads the order).
+   */
   removeParked(body: Vehicle): void {
     this.standing.delete(body);
-    const at = this.parked.indexOf(body);
-    if (at >= 0) this.parked.splice(at, 1);
+    this.movers.delete(body);
+    const at = this.parkedAt.get(body);
+    if (at === undefined) return;
+    const last = this.parked.pop()!;
+    if (last !== body) { this.parked[at] = last; this.parkedAt.set(last, at); }
+    this.parkedAt.delete(body);
+    this.logParked(body, false);
+  }
+
+  /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. */
+  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null {
+    if (serial < this.parkedBase || serial > this.parkedSerial) return null;
+    return this.parkedLog.slice(serial - this.parkedBase);
+  }
+
+  private logParked(car: Vehicle, added: boolean): void {
+    this.parkedLog.push({ car, added });
+    this.parkedSerial++;
+    // Longer than the list itself, reading the list whole is no dearer: forgotten.
+    if (this.parkedLog.length > Math.max(64, this.parked.length)) this.forgetParkedLog();
+  }
+
+  /** Everything logged forgotten: a reader of before reads `parked` whole (`parkedSince` null). */
+  private forgetParkedLog(): void {
+    this.parkedLog = [];
+    this.parkedBase = ++this.parkedSerial;
   }
 
   /** The scenery's own car standing in the bay at `spot` (`spotKey` of the bay), if one stands there. */
@@ -862,6 +914,8 @@ export class AmbientWorld {
     this.parked.push(...others);
     this.standing.clear();
     for (const car of others) this.standing.add(car);
+    // The list made again: its readers read it whole.
+    this.forgetParkedLog();
     for (const bay of this.bayList) {
       // Left empty by a car the lots drove out (`release`), or held by one of theirs.
       if (this.vacated.has(spotKey(bay))) continue;
@@ -889,6 +943,8 @@ export class AmbientWorld {
       this.parked.push(car);
       this.standing.add(car);
     }
+    this.parkedAt.clear();
+    this.parked.forEach((car, i) => this.parkedAt.set(car, i));
   }
 
   // ------------------------------------------------------------ the place
