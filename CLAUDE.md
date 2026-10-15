@@ -61,7 +61,7 @@ pasted in the session that started this; these are its binding decisions.
 - Light: 3 shadow cascades, casters by level and screen size; shader variants compiled at load;
   textures baked to KTX2 at build time.
 - Renderer: decided by a 4-day spike (WebGL2 vs WebGPU with compute culling and indirect draw).
-  Decision: <pending>.
+  Decision: WebGL2 (2026-10-15, measured: draw submission ~4% of the frame; the bound is triangles and memory).
 - Phases: F0 prep, F0b relief, F1 data, F2 threads, F3 spike, F4 buildings, F5 world,
   F6 light, F7 whole-map generation, F8 Steam, F9 validation. Current: block D (buildings).
 - Player's queue (2026-10-15, replaces the phase gates: tsc, commit, a look at the game per block): A undo/COOP/sim
@@ -74,6 +74,11 @@ pasted in the session that started this; these are its binding decisions.
   corners); whole-map undo without a second city (25ea349); save head in parts on `rewrite/b-save-head-parts` (919814d,
   changes the save format: waits for the player). Block C: one job pool (da8c810); growth in the pool's `growth` lane
   (2b029a9). Medium city after C: growth 14.9 s, 14.8 M triangles, 1,371 draws, GPU p95 254 ms on the UHD 770 (D's target).
+- Block D so far: shells 37 B a vertex (1b54d50); page memory: cell arrays held by a closure (9c3498d), baked texels let
+  go after upload (ed82632), biomes on demand (7e9d803), gardens as poses (aeea9c9), bounds without allocation (bedd0ba);
+  the sim client follows the diary, no whole-map resend (40e6e7c, e07a09c); the world build no longer stops on an empty
+  box (003d473). Small city heap 1,486 -> 1,074 MB. WebGL stays: draw submission is ~4% of a frame, the GPU is bound by
+  triangles, not by calls (no 30% CPU gain to buy with WebGPU).
 - Measured before (worst case 4x4, 81,128 buildings, 17,160 segments): growth 5.7 min, JS heap ~3 GB, ~18 GB of
   Chrome memory, the world not shown 4 min after; a medium city lost its WebGL context (GL_OUT_OF_MEMORY) in a
   8 GB job: 28 workers in the page's process (14 pools) and ~1 GB of geometry.
@@ -155,6 +160,14 @@ GPU memory and drawing
 - Garden buffers sized to the whole city, never shrink; body and card stores keep the same matrices
   (`gardens.ts:281-287, 512, 516`).
 - Non-indexed geometry: `structures.ts:414`, `vehicleModels.ts:298` (`toNonIndexed`).
+- Worst case still crashes the tab in the 8 GB job: a 2x2 city (19,635 buildings) holds ~3.2 GB in the page, ~1 GB in
+  the sim worker, 0.34 GB in the pool (2026-10-15, `measureUserAgentSpecificMemory`). Not found yet: ~120 KB of page heap
+  per building (the medium city's live JS is ~68 KB, spread; the rest typed arrays). Heap snapshots of a big city do not
+  finish under the job's 25% CPU: measure on a machine without the cap.
+- The sim worker keeps a whole copy of the map (`SimClient.load` sends `doc.toJSON()`): it reads buildings only for
+  parking, kerb bays, docks and entrances. Fix with the micro window (block E): the worker gets what traffic reads, near.
+- Terrain plates keep their editing arrays on the page (~6 MB geometry + paint layers each; 154 MB of CPU geometry at
+  2x2). `instanceRuns.ts` keeps 16-float matrices per thing as the gardens did (general matrices, not only yaw).
 - Building shells cannot be simplified (L1): 48% of their edges are open borders even welded by position (each
   `Shell.face` is a loose quad, T-junctions round every window), so meshoptimizer locks them. Tried 2026-10-15 with
   index-only levels (0.25 m / 0.6 m, `ErrorAbsolute`+`Prune`): -13% triangles in the district view, plaster not reduced
