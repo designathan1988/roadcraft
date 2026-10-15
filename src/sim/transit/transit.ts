@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import type { BuildingId } from '@world/buildings/types';
 import { type RailGraph, type TransitLine, type TransitStop, railGraph, railPath } from '@world/transit';
 import { m } from '@world/units';
 import { DRIVER_NOISE, DT } from '../params';
@@ -26,16 +25,13 @@ import type { BayLane } from '../agents/parking';
  * at its speed, brakes for the next station, stands there with its doors
  * open, and keeps its distance to the train ahead.
  *
- * PASSENGERS are residents (`CityLife.start`): somebody without a car going
- * far, with a line from near where they are to near where they go, walks to
- * the stop, waits there, boards the first vehicle of the line that stops,
- * gets off at their stop and walks the rest. Nobody is made up.
+ * Nobody rides them: the passengers were the residents (their days, kept
+ * apart in `src/backup/residents` with the API they used here: a line
+ * planned, a walk to the stop, the wait, boarding and getting off).
  */
 
 /** Seconds a bus stands at a stop with its doors open, and at a terminal; a train at a station. */
 const BUS_DWELL = 12, TERMINAL_DWELL = 30, TRAIN_DWELL = 20;
-/** Places on a bus, on a train. */
-const BUS_SEATS = 40, TRAIN_SEATS = 240;
 /** Top speed, acceleration and braking of a train and of the metro, u/s and u/s². */
 const TRAIN_TOP = m(22), METRO_TOP = m(20), TRAIN_ACCEL = m(0.9), TRAIN_BRAKE = m(1.1);
 /** The gap a train keeps to the one ahead on its line. */
@@ -48,8 +44,6 @@ const BUS_SPACING = 40;
 export const STOP_REACH = m(450);
 /** A bus is at its stop this near the stopping point, below this speed. */
 const AT_STOP = m(2.5), STOPPED = m(0.3);
-/** How far from its track a station's platform is (its middle), u: as drawn. */
-const PLATFORM = m(3.6);
 /** The track ahead of a moving train kept clear by walkers. */
 const TRAIN_AHEAD = m(30);
 /** Seconds of a train's run ahead of it kept clear of walkers: time to walk across the track and more. */
@@ -61,29 +55,8 @@ const KEEP_CLEAR = m(20);
 /** A level crossing closes when a train is this far from it. */
 const CROSSING_WARN = m(160);
 const NONE: number[] = [];
-
-/** Whether two loops run through the same points. */
-function samePoints(a: readonly Vec2[], b: readonly Vec2[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i]!.x !== b[i]!.x || a[i]!.y !== b[i]!.y) return false;
-  return true;
-}
 /** Cars of a train, length of one. */
 const TRAIN_CARS = 4, METRO_CARS = 3, CAR_LENGTH = m(18);
-
-export interface Rider {
-  readonly trip: number;
-  readonly resident: number;
-  readonly person: number;
-  readonly line: number;
-  readonly from: number;
-  readonly to: number;
-  /** Where they go from the stop they get off at. */
-  readonly building: BuildingId;
-  phase: 'toStop' | 'waiting' | 'riding' | 'fromStop';
-  /** The vehicle they are on: a bus's id, or a train's index on its line. */
-  on: string | null;
-}
 
 interface Bus {
   readonly line: number;
@@ -94,9 +67,6 @@ interface Bus {
   dwell: number;
   /** Seconds before it is put on the road (spaced from the bus before). */
   wait: number;
-  readonly riders: Set<number>;
-  /** The resident at the wheel (`CityLife.hireDriver`), or null: nobody of the city free. */
-  staff: number | null;
 }
 
 interface Train {
@@ -107,7 +77,6 @@ interface Train {
   /** Index of the station it is going to on the loop. */
   next: number;
   dwell: number;
-  readonly riders: Set<number>;
 }
 
 /** Where a train track crosses a lane of a road at grade: the lane, how far along it, how far along the line's loop. */
@@ -135,7 +104,6 @@ export interface TrainView {
   readonly metro: boolean;
   readonly cars: readonly { readonly x: number; readonly y: number; readonly heading: number }[];
   readonly v: number;
-  readonly riders: number;
 }
 
 export class TransitSim {
@@ -145,20 +113,14 @@ export class TransitSim {
   private stopLanes = new Map<number, BayLane>();
   private buses: Bus[] = [];
   private rails: RailLine[] = [];
-  /** Riders by trip id. */
-  readonly riders = new Map<number, Rider>();
-  /** Riders waiting at each stop. */
-  private readonly waiting = new Map<number, Set<number>>();
-  /** Residents who got off a vehicle since the last look: their trip, and where they got off. */
-  private readonly alighted: { trip: number; at: Vec2 }[] = [];
-  /** Counters for the probes and the HUD. */
-  boarded = 0;
-  carried = 0;
+  /** The lines by id, made again with them (`lineOf`). */
+  private lines = new Map<number, TransitLine>();
 
   /** The lines and their vehicles made again from the map as it is. */
   private rebuild(w: SimWorld): void {
     const t = w.doc.transit;
     this.stops = new Map(t.stops.map((s) => [s.id, s]));
+    this.lines = new Map(t.lines.map((l) => [l.id, l]));
     this.stopLanes.clear();
     for (const s of t.stops) {
       if (s.mode !== 'bus') continue;
@@ -188,7 +150,7 @@ export class TransitSim {
       for (let k = 0; k < line.vehicles; k++) {
         const bus = was[k];
         if (!bus) {
-          this.buses.push({ line: line.id, id: null, next: start, dir: 1, dwell: 0, wait: k * BUS_SPACING, riders: new Set(), staff: null });
+          this.buses.push({ line: line.id, id: null, next: start, dir: 1, dwell: 0, wait: k * BUS_SPACING });
           continue;
         }
         if (bus.next >= line.stops.length) { bus.next = start; bus.dir = 1; }
@@ -202,22 +164,7 @@ export class TransitSim {
       for (const b of list) {
         if (kept.has(b)) continue;
         if (b.id !== null) { const v = w.vehicles.get(b.id); if (v) w.removeVehicle(v); }
-        for (const r of b.riders) this.dropRider(r);
       }
-    }
-    // Each train station's platform: beside its track, on the left of the track's way.
-    this.platforms.clear();
-    for (const st of t.stops) {
-      if (st.mode !== 'train') continue;
-      const track = t.tracks.find((k) => k.id === st.track);
-      if (!track) continue;
-      let yaw = 0, best = Infinity;
-      for (let i = 1; i < track.points.length; i++) {
-        const a = track.points[i - 1]!, b = track.points[i]!, s = st;
-        const d = Math.hypot((a.x + b.x) / 2 - s.x, (a.y + b.y) / 2 - s.y);
-        if (d < best) { best = d; yaw = Math.atan2(b.y - a.y, b.x - a.x); }
-      }
-      this.platforms.set(st.id, { x: st.x - Math.sin(yaw) * PLATFORM, y: st.y + Math.cos(yaw) * PLATFORM });
     }
     const railsBefore = new Map(this.rails.map((r) => [r.line.id, r]));
     this.rails = [];
@@ -270,7 +217,7 @@ export class TransitSim {
       for (let k = 0; !same && k < line.vehicles; k++) {
         const s = (length * k) / line.vehicles;
         const next = stationsOn.findIndex((st) => st.s >= s);
-        trains.push({ line: line.id, key: `${line.id}:${k}`, s, v: 0, next: next < 0 ? 0 : next, dwell: 0, riders: new Set() });
+        trains.push({ line: line.id, key: `${line.id}:${k}`, s, v: 0, next: next < 0 ? 0 : next, dwell: 0 });
       }
       // Level crossings: where the loop crosses a lane of a road (the metro runs under them all).
       const crossings = line.mode === 'train' ? levelCrossings(w, points, at) : [];
@@ -299,24 +246,17 @@ export class TransitSim {
     for (const rail of this.rails) for (const train of rail.trains) this.stepTrain(rail, train);
   }
 
-  private lineOf(w: SimWorld, id: number): TransitLine | undefined { return w.doc.transit.lines.find((l) => l.id === id); }
+  /** A line by id (`lines`): each bus asked it every tick of every line of the town. */
+  private lineOf(id: number): TransitLine | undefined { return this.lines.get(id); }
 
   // ------------------------------------------------------------- buses
 
-  /** The buses on the road and the resident driving each (null: nobody of the city). */
-  drivers(): { bus: VehicleId; resident: number | null }[] {
-    return this.buses.filter((b) => b.id !== null).map((b) => ({ bus: b.id!, resident: b.staff }));
-  }
-
   private stepBus(w: SimWorld, bus: Bus): void {
-    const line = this.lineOf(w, bus.line);
+    const line = this.lineOf(bus.line);
     if (!line) return;
     const v = bus.id !== null ? w.vehicles.get(bus.id) : undefined;
     if (!v) {
       // Not on the road (not yet, or taken off it): put on at the stop it was going to, in its time.
-      for (const r of bus.riders) this.dropRider(r);
-      bus.riders.clear();
-      bus.staff = null;
       bus.wait -= DT;
       if (bus.wait > 0) return;
       bus.id = this.spawnBus(w, line, bus);
@@ -330,9 +270,8 @@ export class TransitSim {
     if (!c) { this.sendBus(w, line, bus, v); return; }
     const at = v.lanelet === c.lanelet && v.v < STOPPED && v.s >= c.at - AT_STOP;
     if (!at) return;
-    // At the stop, doors open: off, then on.
+    // At the stop, doors open.
     const stopId = line.stops[bus.next]!;
-    if (bus.dwell === 0) this.exchange(w, line, stopId, `bus:${v.id}`, bus.riders, BUS_SEATS, { x: this.stops.get(stopId)!.x, y: this.stops.get(stopId)!.y });
     bus.dwell += DT;
     const terminal = this.stops.get(stopId)?.terminal || bus.next === 0 || bus.next === line.stops.length - 1;
     if (bus.dwell < (terminal ? TERMINAL_DWELL : BUS_DWELL)) return;
@@ -409,8 +348,6 @@ export class TransitSim {
     if (ahead < m(0.6) && train.v < m(0.5)) {
       train.v = 0;
       train.dwell = TRAIN_DWELL;
-      const p = this.stopAt(station.stop) ?? this.pointAt(rail, station.s);
-      this.exchange(null, rail.line, station.stop, `train:${train.key}`, train.riders, TRAIN_SEATS, p);
       return;
     }
     // The train ahead on the line.
@@ -492,16 +429,10 @@ export class TransitSim {
 
   /**
    * Every car of the trains at grade, and the track just ahead of each
-   * moving one, as discs a walker keeps clear of (centre, radius): nobody
-   * steps onto a level crossing with a train coming, and whoever is on it
-   * walks off it in time.
+   * moving one, as discs a walker keeps clear of (centre, radius), one list
+   * per train: nobody steps onto a level crossing with a train coming, and
+   * whoever is on its ground walks off all of it, never stuck between two discs.
    */
-  trainBodies(ahead = true): { x: number; y: number; r: number }[] {
-    return this.trainZones(ahead).flat();
-  }
-
-
-  /** The same, one list per train: a walker on a train's ground walks off all of it, never stuck between two discs. */
   trainZones(ahead = true): { x: number; y: number; r: number }[][] {
     const zones = new Map<string, { x: number; y: number; r: number }[]>();
     const zone = (key: string): { x: number; y: number; r: number }[] => { let z = zones.get(key); if (!z) { z = []; zones.set(key, z); } return z; };
@@ -539,124 +470,12 @@ export class TransitSim {
       for (const train of rail.trains) {
         const cars: { x: number; y: number; heading: number }[] = [];
         for (let k = 0; k < n; k++) cars.push(this.pointAt(rail, train.s - CAR_LENGTH * (k + 0.5)));
-        out.push({ key: train.key, colour: rail.line.colour, metro, cars, v: train.v, riders: train.riders.size });
+        out.push({ key: train.key, colour: rail.line.colour, metro, cars, v: train.v });
       }
     }
     return out;
   }
 
-  // ------------------------------------------------------------- passengers
-
-  /**
-   * The best line from near one point to near another: the stop to get on at
-   * and the one to get off at, each within a walk, when riding saves walking;
-   * null otherwise.
-   */
-  plan(w: SimWorld, from: Vec2, to: Vec2): { line: number; board: number; alight: number } | null {
-    const t = w.doc.transit;
-    const direct = Math.hypot(to.x - from.x, to.y - from.y);
-    let best: { line: number; board: number; alight: number; cost: number } | null = null;
-    for (const line of t.lines) {
-      // Only lines running now.
-      if (line.mode === 'bus' ? !this.buses.some((b) => b.line === line.id) : !this.rails.some((r) => r.line.id === line.id)) continue;
-      let a: { id: number; d: number } | null = null, b: { id: number; d: number } | null = null;
-      for (const id of line.stops) {
-        const s = this.stops.get(id);
-        if (!s) continue;
-        const da = Math.hypot(s.x - from.x, s.y - from.y), db = Math.hypot(s.x - to.x, s.y - to.y);
-        if (da < STOP_REACH && (!a || da < a.d)) a = { id, d: da };
-        if (db < STOP_REACH && (!b || db < b.d)) b = { id, d: db };
-      }
-      if (!a || !b || a.id === b.id) continue;
-      const cost = a.d + b.d;
-      if (cost > direct * 0.6) continue;
-      if (!best || cost < best.cost) best = { line: line.id, board: a.id, alight: b.id, cost };
-    }
-    return best ? { line: best.line, board: best.board, alight: best.alight } : null;
-  }
-
-  /**
-   * Where a stop is met (the walk to it, the wait, getting off): a bus stop
-   * itself; a train station's platform beside its track (as drawn,
-   * `render/transit.ts`), never the track; a metro station's entrance.
-   */
-  stopAt(id: number): Vec2 | null {
-    const s = this.stops.get(id);
-    if (!s) return null;
-    if (s.mode === 'train') return this.platforms.get(id) ?? { x: s.x, y: s.y };
-    // The metro: down its entrance on the footway.
-    return s.entrance ? { x: s.entrance.x, y: s.entrance.y } : { x: s.x, y: s.y };
-  }
-  private platforms = new Map<number, Vec2>();
-
-  /** A rider set off walking to their stop. */
-  addRider(r: Rider): void { this.riders.set(r.trip, r); }
-
-  /** A rider's walk ended: at the stop, they wait; from it, they are there. */
-  walkEnded(trip: number): 'waiting' | 'arrived' | null {
-    const r = this.riders.get(trip);
-    if (!r) return null;
-    if (r.phase === 'toStop') {
-      r.phase = 'waiting';
-      let set = this.waiting.get(r.from);
-      if (!set) { set = new Set(); this.waiting.set(r.from, set); }
-      set.add(trip);
-      return 'waiting';
-    }
-    this.riders.delete(trip);
-    return 'arrived';
-  }
-
-  /** Those who got off since the last look: the city walks them on. */
-  takeAlighted(): { trip: number; at: Vec2 }[] { return this.alighted.splice(0); }
-
-  /** Riders waiting at a stop now (for the shelter's crowd). */
-  waitingAt(stop: number): number { return this.waiting.get(stop)?.size ?? 0; }
-
-  /** At a stop with the doors open: those for here get off; those waiting for this line get on. */
-  private exchange(_w: SimWorld | null, line: TransitLine, stop: number, on: string, inside: Set<number>, seats: number, at: Vec2): void {
-    for (const trip of [...inside]) {
-      const r = this.riders.get(trip);
-      if (!r || r.to !== stop) continue;
-      inside.delete(trip);
-      r.phase = 'fromStop';
-      r.on = null;
-      this.alighted.push({ trip, at });
-      this.carried++;
-    }
-    const queue = this.waiting.get(stop);
-    if (!queue) return;
-    for (const trip of [...queue]) {
-      if (inside.size >= seats) break;
-      const r = this.riders.get(trip);
-      if (!r || r.line !== line.id) continue;
-      queue.delete(trip);
-      inside.add(trip);
-      r.phase = 'riding';
-      r.on = on;
-      this.boarded++;
-    }
-  }
-
-  /** A rider whose vehicle was lost: off at once where it was (they walk on from the stop they boarded at). */
-  private dropRider(trip: number): void {
-    const r = this.riders.get(trip);
-    if (!r) return;
-    r.phase = 'fromStop';
-    const s = this.stops.get(r.from);
-    if (s) this.alighted.push({ trip, at: { x: s.x, y: s.y } });
-  }
-
-  /** Riders on board each vehicle, for the HUD and the probes. */
-  onBoard(): number {
-    let n = 0;
-    for (const b of this.buses) n += b.riders.size;
-    for (const r of this.rails) for (const t of r.trains) n += t.riders.size;
-    return n;
-  }
-
-  /** The buses on the road now (their vehicle ids). */
-  busIds(): VehicleId[] { return this.buses.map((b) => b.id).filter((id): id is VehicleId => id !== null); }
 }
 
 /**
@@ -698,6 +517,13 @@ export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonl
 }
 
 const NO_CROSSINGS: readonly { readonly rail: RailLine; readonly crossing: LevelCrossing }[] = [];
+
+/** Whether two loops run through the same points. */
+function samePoints(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i]!.x !== b[i]!.x || a[i]!.y !== b[i]!.y) return false;
+  return true;
+}
 
 /** Where segment a-b crosses segment p-q: the share along each, or null. */
 function crossAt(a: Vec2, b: Vec2, p: Vec2, q: Vec2): { u: number; v: number } | null {
