@@ -1,6 +1,7 @@
-import type { Crossing, PairMeasurer, SampledSweep, SweepAsk, SweepSamples } from '@world/conflictTable';
+import { type FinishAsk, type FinishedPair, type PairMeasurer, type SampledSweep, type SweepAsk, type SweepSamples, TABLE_SIZE } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
+import type { JunctionAnswer, JunctionAsk } from '@world/junctionBuild';
 
 /**
  * THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. Each pair of
@@ -162,14 +163,15 @@ export class ConflictPool implements PairMeasurer {
   }
 
   /**
-   * Pairs' centreline crossings found across the workers (`conflictTable.worker.ts`, `firstCrossing`):
-   * contiguous shares, each with every centreline it reads once, the pairs pointing at them.
+   * Pairs finished across the workers (`conflictTable.worker.ts`, `finishPair`): their centrelines'
+   * crossings and their zones' facts. Contiguous shares, each with every centreline it reads once, the
+   * pairs pointing at them, and the share's tables packed into one list (`TABLE_SIZE` numbers a pair).
    */
-  crossings(pairs: readonly { readonly a: Float64Array; readonly b: Float64Array }[]): Promise<readonly (Crossing | null)[]> {
+  finishPairs(pairs: readonly FinishAsk[]): Promise<readonly FinishedPair[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
     const per = Math.ceil(pairs.length / lanes.length);
-    const parts: Promise<(Crossing | null)[]>[] = [];
+    const parts: Promise<FinishedPair[]>[] = [];
     for (let k = 0; k < lanes.length && k * per < pairs.length; k++) {
       const share = pairs.slice(k * per, (k + 1) * per);
       const index = new Map<Float64Array, number>();
@@ -180,12 +182,36 @@ export class ConflictPool implements PairMeasurer {
         return i;
       };
       const refs = new Int32Array(share.length * 2);
-      share.forEach((p, q) => { refs[q * 2] = at(p.a); refs[q * 2 + 1] = at(p.b); });
+      const tables = new Float64Array(share.length * TABLE_SIZE);
+      share.forEach((p, q) => { refs[q * 2] = at(p.a); refs[q * 2 + 1] = at(p.b); tables.set(p.table, q * TABLE_SIZE); });
       const lane = lanes[k]!;
       const id = this.nextId++;
-      parts.push(new Promise<(Crossing | null)[]>((resolve, reject) => {
-        lane.waiting.set(id, { resolve: (answer) => resolve(answer as (Crossing | null)[]), reject });
-        lane.worker.postMessage({ kind: 'crossings', id, lines, refs }, [refs.buffer]);
+      parts.push(new Promise<FinishedPair[]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as FinishedPair[]), reject });
+        lane.worker.postMessage({ kind: 'finish', id, lines, refs, tables }, [refs.buffer, tables.buffer]);
+        this.arm(lane);
+      }));
+    }
+    return Promise.all(parts).then((answers) => answers.flat());
+  }
+
+  /**
+   * A whole build's junctions built across the workers (`conflictTable.worker.ts`, `buildJunctionOf`):
+   * contiguous shares in node order, one message a share - a lane, a road or a ring met by several of its
+   * junctions is one array there, copied once - the paths' points coming back transferred.
+   */
+  buildJunctions(asks: readonly JunctionAsk[]): Promise<readonly JunctionAnswer[]> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const per = Math.ceil(asks.length / lanes.length);
+    const parts: Promise<JunctionAnswer[]>[] = [];
+    for (let k = 0; k < lanes.length && k * per < asks.length; k++) {
+      const share = asks.slice(k * per, (k + 1) * per);
+      const lane = lanes[k]!;
+      const id = this.nextId++;
+      parts.push(new Promise<JunctionAnswer[]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as JunctionAnswer[]), reject });
+        lane.worker.postMessage({ kind: 'junctions', id, asks: share });
         this.arm(lane);
       }));
     }
@@ -232,7 +258,7 @@ export class ConflictPool implements PairMeasurer {
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; crossings?: (Crossing | null)[]; corners?: (Float64Array | null)[][]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string }>) => {
           if (this.lanes !== lanes) return;
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (job) lane.waiting.delete(event.data.id);
@@ -242,8 +268,9 @@ export class ConflictPool implements PairMeasurer {
           if (event.data.tables) job.resolve(event.data.tables);
           else if (event.data.turns) job.resolve(event.data.turns);
           else if (event.data.sweeps) job.resolve(event.data.sweeps);
-          else if (event.data.crossings) job.resolve(event.data.crossings);
+          else if (event.data.finished) job.resolve(event.data.finished);
           else if (event.data.corners) job.resolve(event.data.corners);
+          else if (event.data.junctions) job.resolve(event.data.junctions);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
         // A worker that cannot run, or a message it cannot read: the pool is

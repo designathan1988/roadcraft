@@ -32,6 +32,7 @@ export class Ring {
   readonly start: Vec2;
   readonly edges: readonly RingEdge[];
   private _flat: Vec2[] | null = null;
+  private _flatXY: Float64Array | null = null;
   private _area: number | null = null;
   private _bbox: Aabb | null = null;
 
@@ -81,6 +82,18 @@ export class Ring {
     }
     this._flat = out;
     return out;
+  }
+
+  /**
+   * `flatten` as one flat x, y list, made once: what a worker makes the same ring from (`world/junctionBuild.ts`).
+   * DO NOT flatten it again per use: a road's outline is in the surface of every junction near it.
+   */
+  flatXY(): Float64Array {
+    if (this._flatXY) return this._flatXY;
+    const points = this.flatten();
+    const xy = new Float64Array(points.length * 2);
+    for (let i = 0; i < points.length; i++) { xy[i * 2] = points[i]!.x; xy[i * 2 + 1] = points[i]!.y; }
+    return (this._flatXY = xy);
   }
 
   get bbox(): Aabb {

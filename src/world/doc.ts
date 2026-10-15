@@ -1,6 +1,6 @@
 import { type MarkingStyleId, isMarkingStyle } from './roads/markingStyle';
 import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, normalizeSignalSettings, rulesDigest, signalDigest } from './roads/rules';
-import { type LaneLink, linksDigest, normalizeLaneLinks } from './roads/connectors';
+import { type LaneLink, linksDigest, movementKey, normalizeLaneLinks } from './roads/connectors';
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
 import { isLot, type Lot } from './lots';
 import { OpenLots } from './openLots';
@@ -65,8 +65,8 @@ export type { SegmentDirection };
 /** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
 export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' | 'none' | 'mini';
 
-/** Stable segment-pair key for a movement through a junction. */
-export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
+/** Stable segment-pair key for a movement through a junction (`roads/connectors.ts`). */
+export { movementKey };
 
 /** Whether a movement key names segment `id` as its entry or its exit. */
 function movementMentions(key: string, id: SegmentId): boolean {

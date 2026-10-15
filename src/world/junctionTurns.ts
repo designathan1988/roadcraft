@@ -85,4 +85,16 @@ export class JunctionTurns {
     for (const [key, turn] of this.made) settled.made.set(key, turn);
     return settled;
   }
+
+  /** The turns it holds, in the order found: what a worker is sent and answers (`junctionBuild.ts`). */
+  entries(): [string, ChosenTurn][] {
+    return [...this.made];
+  }
+
+  /** A settled junction's turns from `entries` (a worker's answer, or what it is sent). */
+  static of(entries: readonly (readonly [string, ChosenTurn])[]): JunctionTurns {
+    const turns = new JunctionTurns();
+    for (const [key, turn] of entries) turns.made.set(key, turn);
+    return turns;
+  }
 }

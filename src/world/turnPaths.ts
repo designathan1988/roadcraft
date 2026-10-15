@@ -2,11 +2,11 @@ import { type FrameOut, Polyline, newFrame } from '@core/polyline';
 import { type Vec2, addScaled, dot, len, normalize, sub } from '@core/vec2';
 import { GEO_EPS } from '@core/scalar';
 import { type PolygonBands, insideBands, polygonBands } from '@core/polygonBands';
-import type { NodeId, SegmentId } from './ids';
+import type { NodeId } from './ids';
 import type { Network } from './network';
-import { Level, halfWidth } from './roadTypes';
 import { mouthOverlapStrip } from './junction/mouthOverlap';
-import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictPoints';
+import { type SurfaceSource, surfaceParts } from './surfaceParts';
+import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictTable';
 import { m, stepsIn } from './units';
 import { TurnDigest as Digest } from './turnDigest';
 import { HEADING_CHORD, chordHeading } from './heading';
@@ -96,7 +96,7 @@ function surfaceKey(centre: Vec2, areas: readonly Area[]): string {
   for (const area of areas) digest.mix(area.hashA, area.hashB);
   return digest.value();
 }
-const unflat = (xy: Float64Array): Vec2[] => Array.from({ length: xy.length / 2 }, (_, i) => ({ x: xy[i * 2]!, y: xy[i * 2 + 1]! }));
+export const unflat = (xy: Float64Array): Vec2[] => Array.from({ length: xy.length / 2 }, (_, i) => ({ x: xy[i * 2]!, y: xy[i * 2 + 1]! }));
 
 /** The drivable surface around one node: its junction plate and its legs. */
 export class JunctionSurface {
@@ -108,63 +108,28 @@ export class JunctionSurface {
   /** Digest of every ring point, for `turnPath`'s memo. */
   readonly key: string;
 
-  /** The surface round `node`; or, from its centre and flat rings (a worker's, `chooseTurnOf`), the same one, the same key. */
-  constructor(from: Network | { readonly centre: Vec2; readonly rings: readonly Float64Array[] }, node?: NodeId) {
+  /**
+   * The surface round `node`, from its pieces (`surfaceParts`; a worker's, the same pieces sent); or,
+   * from its centre and flat rings (a worker's, `chooseTurnOf`), the same one, the same key.
+   */
+  constructor(from: Network | SurfaceSource | { readonly centre: Vec2; readonly rings: readonly Float64Array[] }, node?: NodeId) {
     const add = (ring: Poly): void => {
       if (ring.length < 3) return;
       this.areas.push(areaOf(ring));
     };
-    if (!('ribbons' in from)) {
+    if (!('ribbons' in from) && !('parts' in from)) {
       this.centre = { x: from.centre.x, y: from.centre.y };
       for (const xy of from.rings) add(unflat(xy));
       this.key = surfaceKey(this.centre, this.areas);
       return;
     }
-    const net = from;
-    const at = net.doc.node(node!);
-    this.centre = { x: at?.x ?? 0, y: at?.y ?? 0 };
-    // A road's own outline and, on a curved road, the strips the drawn surface
-    // lays across its mouths (`junction/mouthOverlap.ts`).
-    const road = (segment: SegmentId, level: Level.Asphalt | Level.Curb, mouths: readonly NodeId[]): void => {
-      const ribbon = net.ribbons.get(segment);
-      if (!ribbon) return;
-      const ring = ribbon.rings[level];
-      if (ring && !ring.isEmpty) add(ring.flatten());
-      const seg = net.doc.segments.get(segment);
-      const trims = net.trims.get(segment);
-      if (!seg?.curve || !trims) return;
-      for (const end of mouths) {
-        if (net.doc.degree(end) < 2) continue;
-        const trim = (seg.a === end ? trims.a[level] : trims.b[level]) ?? 0;
-        if (trim <= 0) continue;
-        const strip = mouthOverlapStrip(ribbon.full, halfWidth(ribbon.road, level),
-          seg.a === end ? trim : ribbon.full.length - trim);
+    const source = 'ribbons' in from ? surfaceParts(from, node!) : from;
+    this.centre = { x: source.centre.x, y: source.centre.y };
+    for (const part of source.parts) {
+      if ('full' in part) {
+        const strip = mouthOverlapStrip(part.full, part.half, part.mouth);
         if (strip) add(strip);
-      }
-    };
-    for (const level of [Level.Asphalt, Level.Curb] as const) {
-      const junction = net.junctions.get(node!)?.get(level);
-      for (const ring of junction?.rings ?? []) if (!ring.isEmpty) add(ring.flatten());
-      for (const segment of net.doc.node(node!)?.incident ?? []) {
-        // And the plate at the leg's far end: a body sweeps on past the
-        // start of its exit lane, and where the leg is shorter than that it is
-        // already crossing the next junction - drivable ground the sweep must
-        // see (a swept path is checked over the whole manoeuvre). Left out,
-        // a movement onto a short leg fitted no vehicle (fuzz
-        // `turnOffSurface`, a 0.5-unit leg between two junctions).
-        const seg = net.doc.segments.get(segment);
-        const far = seg ? (seg.a === node! ? seg.b : seg.a) : undefined;
-        road(segment, level, far === undefined || far === node ? [node!] : [node!, far]);
-        if (far === undefined || far === node) continue;
-        for (const farRing of net.junctions.get(far)?.get(level)?.rings ?? []) if (!farRing.isEmpty) add(farRing.flatten());
-        // And the roads on beyond it: past a node with no plate (one road
-        // bending on, a chain) the approach of a short leg is already the next
-        // road's, and a body a length behind the stop line stands on it (fuzz
-        // `turnOffSurface`, seed 36 of 60 operations: a 1.6-unit lane).
-        for (const next of net.doc.node(far)?.incident ?? []) {
-          if (next !== segment) road(next, level, [far]);
-        }
-      }
+      } else add('edges' in part ? part.flatten() : part);
     }
     this.key = surfaceKey(this.centre, this.areas);
   }

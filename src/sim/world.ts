@@ -670,7 +670,8 @@ export class SimWorld {
     graph.turnPlan = measurer?.chooseTurns ? left ?? new TurnPlan() : left;
     // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say,
     // through its steps as the edit's (`updateSteps`). DO NOT call `update` here: a whole build was one call.
-    const changed = this.prepReach(yield* graph.updateSteps(this.doc, this.net));
+    // A graph built whole has its junctions built by `measurer`'s workers when there are some (`junctionsOffPage`).
+    const changed = this.prepReach(yield* graph.updateSteps(this.doc, this.net, measurer ?? null));
     const plan = graph.turnPlan;
     if (plan && plan.asks.size > 0) {
       const keys = [...plan.asks.keys()];

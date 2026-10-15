@@ -75,10 +75,5 @@
   "src/world/walkable.ts",
   "src/world/walkways.ts",
   "src/world/zoneGrid.ts"
- ],
- [
-  "src/world/conflictPoints.ts",
-  "src/world/lanelets.ts",
-  "src/world/turnPaths.ts"
  ]
 ]
