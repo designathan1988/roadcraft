@@ -3261,11 +3261,14 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;
   }
   // Furniture, only where an interior is drawn: one batch per kind.
-  const furnished = FURNITURE_KINDS.filter((kind) => arrays.furniture[kind]);
+  // DO NOT read `arrays` in a closure here: V8 would keep it in this function's context, held by every closure of the batch (`setVisible`, the refills), and every cell's CPU arrays would outlive their upload.
+  const pieces = arrays.furniture;
+  const furnished: FurnitureKind[] = [];
+  for (const kind of FURNITURE_KINDS) if (pieces[kind]) furnished.push(kind);
   if (furnished.length) {
     const furniture = kit.furniture();
     for (const kind of furnished) {
-      const piece = arrays.furniture[kind]!;
+      const piece = pieces[kind]!;
       const mesh = new InstancedMesh(furniture.geometry[kind], dim ? kit.dimParts : furniture.material, piece.count);
       mesh.name = `building-furniture-${kind}`;
       mesh.castShadow = true;
