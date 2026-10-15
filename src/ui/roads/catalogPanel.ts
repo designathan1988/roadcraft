@@ -1,6 +1,6 @@
 import { pricePerUnit } from '@world/economy';
 import { type CatalogCategory, CATALOG_CATEGORIES, type CatalogRoad, catalogRoads } from '@world/roads/catalog';
-import { profileRoad, profileWidth } from '@world/roads/profile';
+import { type RoadProfileSpec, profileRoad, profileWidth, sameProfile } from '@world/roads/profile';
 import type { RoadTemplate } from '@world/roads/templates';
 import { UNITS_PER_METER } from '@world/units';
 import { t } from '../i18n';
@@ -35,8 +35,8 @@ export interface CatalogHost {
 let category: CatalogCategory | null = null;
 
 const nameOf = (r: RoadTemplate): string => (r.nameKey ? t(r.nameKey) : r.name ?? r.id);
-const sameRoad = (a: { type: number; profile: unknown }, b: { type: number; profile: unknown }): boolean =>
-  a.type === b.type && JSON.stringify(a.profile) === JSON.stringify(b.profile);
+const sameRoad = (a: { type: number; profile: RoadProfileSpec }, b: { type: number; profile: RoadProfileSpec }): boolean =>
+  a.type === b.type && sameProfile(a.profile, b.profile);
 
 /** Every road the catalogue offers, the player's own under "mine". */
 function allCatalogRoads(): CatalogRoad[] {

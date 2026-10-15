@@ -4,7 +4,7 @@ import { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import { Level, ROAD_TYPES, footwayOn, roadProfile } from '@world/roadTypes';
 import { flipSection, normalizeRoadSection } from '@world/roadSection';
-import { type RoadProfileSpec, applyProfile, profileOf, profileProblems, profileRoad } from '@world/roads/profile';
+import { type RoadProfileSpec, applyProfile, profileOf, profileProblems, profileRoad, sameProfile } from '@world/roads/profile';
 import { classTemplates, normalizeTemplate } from '@world/roads/templates';
 import { sectionOf } from '@world/section';
 import { buildWalkways } from '@world/walkways';
@@ -202,5 +202,24 @@ describe('paving round a bend', () => {
     expect(Math.abs(ratio() - 1)).toBeGreaterThan(0.03);
     // ...laid at the true length of the line it is on, it is not.
     expect(ratio(40)).toBeCloseTo(1, 2);
+  });
+});
+
+describe('sameProfile', () => {
+  const base = profileOf({ type: 1, lanes: null, direction: 'both' });
+  it('is the same road whatever order the fields were written in', () => {
+    const reordered: RoadProfileSpec = {
+      priority: base.priority,
+      speedKmh: base.speedKmh,
+      elements: base.elements.map((e) => Object.fromEntries(Object.entries(e).reverse()) as typeof e),
+    };
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(base));
+    expect(sameProfile(reordered, base)).toBe(true);
+  });
+  it('takes an absent field and an undefined one as the same, and a changed width as another road', () => {
+    expect(sameProfile({ ...base, centreLine: undefined }, base)).toBe(true);
+    const wider = { ...base, elements: base.elements.map((e, i) => (i === 0 ? { ...e, width: e.width + 1 } : e)) };
+    expect(sameProfile(wider, base)).toBe(false);
+    expect(sameProfile({ ...base, elements: base.elements.slice(1) }, base)).toBe(false);
   });
 });
