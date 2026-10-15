@@ -1,3 +1,4 @@
+import { Heap } from '@core/heap';
 import { m } from '@world/units';
 import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
 
@@ -167,35 +168,10 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
   // Distance from the exits over free cells (Dijkstra, eight neighbours).
   const dist = new Float32Array(nx * ny).fill(Infinity);
   const exitOf = new Int32Array(nx * ny).fill(-1);
-  const heap: number[] = [];
-  const push = (cell: number): void => {
-    heap.push(cell);
-    let k = heap.length - 1;
-    while (k > 0) {
-      const p = (k - 1) >> 1;
-      if (dist[heap[p]!]! <= dist[heap[k]!]!) break;
-      [heap[p], heap[k]] = [heap[k]!, heap[p]!];
-      k = p;
-    }
-  };
-  const pop = (): number => {
-    const top = heap[0]!;
-    const last = heap.pop()!;
-    if (heap.length > 0) {
-      heap[0] = last;
-      let k = 0;
-      for (;;) {
-        const a = 2 * k + 1, c = a + 1;
-        let s = k;
-        if (a < heap.length && dist[heap[a]!]! < dist[heap[s]!]!) s = a;
-        if (c < heap.length && dist[heap[c]!]! < dist[heap[s]!]!) s = c;
-        if (s === k) break;
-        [heap[s], heap[k]] = [heap[k]!, heap[s]!];
-        k = s;
-      }
-    }
-    return top;
-  };
+  // Each cell with the distance it was reached at, fixed in the entry
+  // (`@core/heap`). DO NOT key a heap on `dist[cell]`: a waiting entry's key
+  // then falls under it when a shorter way lowers `dist`.
+  const heap = new Heap();
   const grid0 = { x0, y0, cell: CELL, nx, ny, blocked };
   exits.forEach((ex, n) => {
     // A way out only where the line to the lot's edge is free: through a gate, not a fence.
@@ -207,11 +183,11 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
     if (blocked[cell] || dist[cell]! === 0) return;
     dist[cell] = 0;
     exitOf[cell] = n;
-    push(cell);
+    heap.push(cell, 0);
   });
   const done = new Uint8Array(nx * ny);
-  while (heap.length > 0) {
-    const cell = pop();
+  while (heap.size > 0) {
+    const cell = heap.pop();
     if (done[cell]) continue;
     done[cell] = 1;
     const i = cell % nx, j = (cell - i) / nx;
@@ -225,7 +201,7 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
         // No cutting a blocked corner diagonally.
         if (di && dj && (blocked[j * nx + a] || blocked[c * nx + i])) continue;
         const d = dist[cell]! + (di && dj ? Math.SQRT2 : 1) * CELL;
-        if (d < dist[n]!) { dist[n] = d; exitOf[n] = exitOf[cell]!; push(n); }
+        if (d < dist[n]!) { dist[n] = d; exitOf[n] = exitOf[cell]!; heap.push(n, dist[n]!); }
       }
     }
   }
