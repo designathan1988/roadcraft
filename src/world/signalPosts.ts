@@ -57,10 +57,25 @@ export function signalPostPlace(net: Network, node: NodeId, segmentId: SegmentId
   return { node, segment: segmentId, x: position.x, y: position.y, yaw: angleOf({ x: -right.x, y: -right.y }) };
 }
 
-/** Every signal post on the map, in a deterministic order. */
-export function signalPosts(net: Network, graph: LaneletGraph): SignalPost[] {
+/**
+ * Every signal post on the map, in a deterministic order; with `near`, only
+ * those of the junctions at the ends of the roads within reach of it, found by
+ * place (`Network.ribbonsMeeting`: a post stands on its leg, by the kerb,
+ * inside the road's ribbon - so a post within reach is on a road within reach).
+ * A superset: the caller keeps its own test. DO NOT ask for every post of the
+ * map to keep those round one point (a blast, `actionsWiring.ts`).
+ */
+export function signalPosts(net: Network, graph: LaneletGraph, near?: { readonly x: number; readonly y: number; readonly radius: number }): SignalPost[] {
   const out: SignalPost[] = [];
-  const nodes = [...graph.junctions.keys()].sort((a, b) => a - b);
+  let nodes: NodeId[];
+  if (near) {
+    const ends = new Set<NodeId>();
+    for (const ribbon of net.ribbonsMeeting([near.x - near.radius, near.y - near.radius, near.x + near.radius, near.y + near.radius])) {
+      const s = net.doc.segment(ribbon.id);
+      if (s) { ends.add(s.a); ends.add(s.b); }
+    }
+    nodes = [...ends].filter((node) => graph.junctions.has(node)).sort((a, b) => a - b);
+  } else nodes = [...graph.junctions.keys()].sort((a, b) => a - b);
   for (const node of nodes) {
     const junction = graph.junctions.get(node);
     if (!junction?.signalised) continue;
