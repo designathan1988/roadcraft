@@ -90,6 +90,7 @@ if (typeof scope.document === 'undefined' && typeof scope.postMessage === 'funct
       const levels = simplifyLevels(req);
       scope.postMessage!({ id: req.id, levels }, levels.map((l) => l.index.buffer));
     } catch (error) {
+      console.error('[lod worker]', error);
       scope.postMessage!({ id: req.id, error: String(error) }, []);
     }
   };
