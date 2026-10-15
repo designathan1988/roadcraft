@@ -74,6 +74,8 @@ const RANK: Record<RowClass, number> = {
  *     stationary at the line — is always a contender.
  */
 export function stepAdmission(w: SimWorld): void {
+  // A pass's own movement tokens: they are compared only within it.
+  MOVEMENT_TOKENS.clear();
   revokeStaleGrants(w);
   // Who was admitted to which connector, and who holds anything: read by
   // every request's tests, which went through the whole fleet each time.
@@ -779,6 +781,12 @@ function convoyCanEnter(w: SimWorld, r: Request, conn: Connector): boolean {
  */
 type ResourceKey = number;
 
+/**
+ * The tokens of this admission pass (cleared at its start, `stepAdmission`):
+ * a token is only ever compared with others of the same pass. DO NOT keep
+ * them for the session: every connector id ever met stayed in it, across
+ * every edit and every map opened.
+ */
 const MOVEMENT_TOKENS = new Map<string, number>();
 function movementToken(connector: string): ResourceKey {
   let token = MOVEMENT_TOKENS.get(connector);
