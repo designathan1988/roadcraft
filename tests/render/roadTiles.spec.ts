@@ -8,6 +8,7 @@ import { Network } from '@world/network';
 import { buildRoadElevation, type RoadElevation } from '@world/elevation';
 import type { SceneMaterials } from '@render/materials';
 import { buildRoadSurfaces, roadSurfaceSteps, type SurfaceReuse } from '@render/roadSurfaces';
+import { SurfaceInputs } from '@render/roadSurfaceInputs';
 import { buildDefaultTown } from '@world/defaultTown';
 import { TUNED_UNIT } from '@world/units';
 import { refillArrays } from '@render/mesh/gpuOnly';
@@ -53,6 +54,7 @@ function reuseFor(elevation: () => RoadElevation): SurfaceReuse {
     dependsOn: (minX, minY, maxX, maxY) => elevation().digest(minX, minY, maxX, maxY),
     paint: new Map(),
     chunks: new Map(),
+    inputs: new SurfaceInputs(),
   };
 }
 

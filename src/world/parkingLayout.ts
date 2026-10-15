@@ -3,7 +3,7 @@ import { identityMemo } from '@core/identityMemo';
 import type { Polyline } from '@core/polyline';
 import type { RoadDoc } from './doc';
 import type { NodeId, SegmentId } from './ids';
-import type { Network } from './network';
+import type { Network, SegmentRibbon } from './network';
 import { CROSSWALK_DEPTH } from './approach';
 import { localToWorld } from './buildings/geometry';
 import type { Building } from './buildings/types';
@@ -48,7 +48,7 @@ interface ParkingBay {
   readonly facing: Vec2;
 }
 
-interface ParkingLine {
+export interface ParkingLine {
   readonly segment: SegmentId;
   readonly points: readonly Vec2[];
   readonly width: number;
@@ -131,86 +131,106 @@ function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
 export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLayout {
   const bays: ParkingBay[] = [];
   const lines: ParkingLine[] = [];
+  for (const ribbon of net.ribbons.values()) parkingOf(net, ribbon, entrances, bays, lines);
+  return { bays, lines };
+}
+
+/**
+ * The paint of one street's parking (`parkingLayout`): what the road surfaces paint of it again when an
+ * edit reaches it, or a building near it changes (`render/roadSurfaceInputs.ts`).
+ */
+export function parkingLinesOf(net: Network, ribbon: SegmentRibbon): ParkingLine[] {
+  const lines: ParkingLine[] = [];
+  parkingOf(net, ribbon, null, [], lines);
+  return lines;
+}
+
+/** Whether a street has parking laid out at all (`parkingOf`): only then do the buildings near it move its paint. */
+export function parksAlong(net: Network, ribbon: SegmentRibbon): boolean {
+  const rt = ribbon.road;
+  return (rt.parkingLeft > 0 || rt.parkingRight > 0) && net.doc.segment(ribbon.id)?.structure === 'ground';
+}
+
+/** One street's bays and lines, onto `bays` and `lines`. */
+function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec2, Vec2][] | null,
+  bays: ParkingBay[], lines: ParkingLine[]): void {
   const doc = net.doc;
-  for (const ribbon of net.ribbons.values()) {
-    const rt = ribbon.road;
-    if (rt.parkingLeft <= 0 && rt.parkingRight <= 0) continue;
-    const segment = doc.segment(ribbon.id);
-    if (!segment || segment.structure !== 'ground') continue;
-    const line = ribbon.full;
-    const length = line.length;
-    const half = rt.width / 2;
-    const s0 = endClear(net, ribbon.id, segment.a);
-    const s1 = length - endClear(net, ribbon.id, segment.b);
-    const mouthA = net.mouthDistance(ribbon.id, segment.a);
-    const mouthB = length - net.mouthDistance(ribbon.id, segment.b);
-    for (const side of [1, -1] as const) {
-      const kind = side === 1 ? rt.parkingLeftKind : rt.parkingRightKind;
-      const depth = side === 1 ? rt.parkingLeft : rt.parkingRight;
-      if (kind === 'none' || depth <= 0) continue;
-      if (kind === 'cycle') {
-        // A cycle lane: red from mouth to mouth, a solid white line on the
-        // side of the traffic. No bays.
-        const run = [Math.max(0, mouthA), Math.min(length, mouthB)] as const;
-        if (run[1] - run[0] < m(4)) continue;
-        const along = (offset: number): Vec2[] => {
-          const pts: Vec2[] = [];
-          const n = Math.max(2, Math.ceil(stepsIn(run[1] - run[0], 2)) + 1);
-          for (let i = 0; i < n; i++) {
-            const f = line.sampleAt(run[0] + ((run[1] - run[0]) * i) / (n - 1));
-            pts.push({ x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side });
-          }
-          return pts;
-        };
-        lines.push({ segment: ribbon.id, points: along(half - depth / 2), width: depth - m(0.1), color: CYCLE_RED, dash: null });
-        lines.push({ segment: ribbon.id, points: along(half - depth + m(0.06)), width: m(0.12), color: WHITE, dash: null });
-        continue;
-      }
-      // Which way a car moving on this side travels, along a -> b.
-      const travel = segment.direction === 'aToB' ? 1 : segment.direction === 'bToA' ? -1 : side === 1 ? -1 : 1;
-      const blocked = frontagesOn(line, half, side, entrances ?? entrancesNear(doc, line, half));
-      const runs = subtract([[s0, s1]], blocked);
-      const pitch = PARKING_PITCH[kind];
-      const at = (s: number, offset: number): Vec2 => {
-        const f = line.sampleAt(Math.max(0, Math.min(length, s)));
-        return { x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side };
-      };
-      const kerb = half, inner = half - depth;
-      let parked: [number, number][] = [];
-      for (const [lo, hi] of runs) {
-        const count = Math.floor((hi - lo) / pitch + 1e-6);
-        if (count < 1) continue;
-        // Bays along the kerb, following the road's line: each one stationed
-        // on the centreline, so on a curve it bends with the kerb.
-        const first = lo + (hi - lo - count * pitch) / 2;
-        for (let k = 0; k < count; k++) {
-          const a = first + k * pitch, b = a + pitch;
-          const corners: [Vec2, Vec2, Vec2, Vec2] = [at(a, kerb), at(b, kerb), at(b, inner), at(a, inner)];
-          const mid = line.sampleAt(Math.max(0, Math.min(length, (a + b) / 2)));
-          const centre = { x: mid.p.x + mid.n.x * (kerb + inner) / 2 * side, y: mid.p.y + mid.n.y * (kerb + inner) / 2 * side };
-          // A parked car faces the way the traffic beside it goes.
-          bays.push({ segment: ribbon.id, side, kind, corners, centre, facing: { x: mid.t.x * travel, y: mid.t.y * travel } });
-          // The division between this bay and the next, from the kerb across the lane.
-          if (k > 0) lines.push({ segment: ribbon.id, points: [at(a, kerb), at(a, inner)], width: BAY_LINE, color: WHITE, dash: null });
+  const rt = ribbon.road;
+  if (!parksAlong(net, ribbon)) return;
+  const segment = doc.segment(ribbon.id);
+  if (!segment) return;
+  const line = ribbon.full;
+  const length = line.length;
+  const half = rt.width / 2;
+  const s0 = endClear(net, ribbon.id, segment.a);
+  const s1 = length - endClear(net, ribbon.id, segment.b);
+  const mouthA = net.mouthDistance(ribbon.id, segment.a);
+  const mouthB = length - net.mouthDistance(ribbon.id, segment.b);
+  for (const side of [1, -1] as const) {
+    const kind = side === 1 ? rt.parkingLeftKind : rt.parkingRightKind;
+    const depth = side === 1 ? rt.parkingLeft : rt.parkingRight;
+    if (kind === 'none' || depth <= 0) continue;
+    if (kind === 'cycle') {
+      // A cycle lane: red from mouth to mouth, a solid white line on the
+      // side of the traffic. No bays.
+      const run = [Math.max(0, mouthA), Math.min(length, mouthB)] as const;
+      if (run[1] - run[0] < m(4)) continue;
+      const along = (offset: number): Vec2[] => {
+        const pts: Vec2[] = [];
+        const n = Math.max(2, Math.ceil(stepsIn(run[1] - run[0], 2)) + 1);
+        for (let i = 0; i < n; i++) {
+          const f = line.sampleAt(run[0] + ((run[1] - run[0]) * i) / (n - 1));
+          pts.push({ x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side });
         }
-        const last = first + count * pitch;
-        // The run closed across the parking lane at both ends.
-        lines.push({ segment: ribbon.id, points: [at(first, kerb), at(first, inner)], width: BAY_LINE, color: WHITE, dash: null });
-        lines.push({ segment: ribbon.id, points: [at(last, kerb), at(last, inner)], width: BAY_LINE, color: WHITE, dash: null });
-        // The parking lane's edge, dashed along the whole run, following the road.
-        lines.push({ segment: ribbon.id, points: stations(first, last).map((s) => at(s, inner)), width: BAY_LINE, color: WHITE, dash: MER_DASH });
-        parked.push([first, last]);
+        return pts;
+      };
+      lines.push({ segment: ribbon.id, points: along(half - depth / 2), width: depth - m(0.1), color: CYCLE_RED, dash: null });
+      lines.push({ segment: ribbon.id, points: along(half - depth + m(0.06)), width: m(0.12), color: WHITE, dash: null });
+      continue;
+    }
+    // Which way a car moving on this side travels, along a -> b.
+    const travel = segment.direction === 'aToB' ? 1 : segment.direction === 'bToA' ? -1 : side === 1 ? -1 : 1;
+    const blocked = frontagesOn(line, half, side, entrances ?? entrancesNear(doc, line, half));
+    const runs = subtract([[s0, s1]], blocked);
+    const pitch = PARKING_PITCH[kind];
+    const at = (s: number, offset: number): Vec2 => {
+      const f = line.sampleAt(Math.max(0, Math.min(length, s)));
+      return { x: f.p.x + f.n.x * offset * side, y: f.p.y + f.n.y * offset * side };
+    };
+    const kerb = half, inner = half - depth;
+    let parked: [number, number][] = [];
+    for (const [lo, hi] of runs) {
+      const count = Math.floor((hi - lo) / pitch + 1e-6);
+      if (count < 1) continue;
+      // Bays along the kerb, following the road's line: each one stationed
+      // on the centreline, so on a curve it bends with the kerb.
+      const first = lo + (hi - lo - count * pitch) / 2;
+      for (let k = 0; k < count; k++) {
+        const a = first + k * pitch, b = a + pitch;
+        const corners: [Vec2, Vec2, Vec2, Vec2] = [at(a, kerb), at(b, kerb), at(b, inner), at(a, inner)];
+        const mid = line.sampleAt(Math.max(0, Math.min(length, (a + b) / 2)));
+        const centre = { x: mid.p.x + mid.n.x * (kerb + inner) / 2 * side, y: mid.p.y + mid.n.y * (kerb + inner) / 2 * side };
+        // A parked car faces the way the traffic beside it goes.
+        bays.push({ segment: ribbon.id, side, kind, corners, centre, facing: { x: mid.t.x * travel, y: mid.t.y * travel } });
+        // The division between this bay and the next, from the kerb across the lane.
+        if (k > 0) lines.push({ segment: ribbon.id, points: [at(a, kerb), at(a, inner)], width: BAY_LINE, color: WHITE, dash: null });
       }
-      parked = parked.sort((p, q) => p[0] - q[0]);
-      // No parking along the rest of this kerb: a yellow line beside it.
-      const offset = kerb - m(0.25);
-      for (const [lo, hi] of subtract([[mouthA, mouthB]], parked)) {
-        if (hi - lo < m(0.5)) continue;
-        lines.push({ segment: ribbon.id, points: stations(lo, hi).map((s) => at(s, offset)), width: NO_PARKING_LINE, color: YELLOW, dash: null });
-      }
+      const last = first + count * pitch;
+      // The run closed across the parking lane at both ends.
+      lines.push({ segment: ribbon.id, points: [at(first, kerb), at(first, inner)], width: BAY_LINE, color: WHITE, dash: null });
+      lines.push({ segment: ribbon.id, points: [at(last, kerb), at(last, inner)], width: BAY_LINE, color: WHITE, dash: null });
+      // The parking lane's edge, dashed along the whole run, following the road.
+      lines.push({ segment: ribbon.id, points: stations(first, last).map((s) => at(s, inner)), width: BAY_LINE, color: WHITE, dash: MER_DASH });
+      parked.push([first, last]);
+    }
+    parked = parked.sort((p, q) => p[0] - q[0]);
+    // No parking along the rest of this kerb: a yellow line beside it.
+    const offset = kerb - m(0.25);
+    for (const [lo, hi] of subtract([[mouthA, mouthB]], parked)) {
+      if (hi - lo < m(0.5)) continue;
+      lines.push({ segment: ribbon.id, points: stations(lo, hi).map((s) => at(s, offset)), width: NO_PARKING_LINE, color: YELLOW, dash: null });
     }
   }
-  return { bays, lines };
 }
 
 /** Stations from `lo` to `hi`, one a metre and both ends. */

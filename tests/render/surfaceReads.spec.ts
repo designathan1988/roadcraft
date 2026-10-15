@@ -20,6 +20,15 @@ import { buildRoadSurfaces } from '@render/roadSurfaces';
  * index, with the verge on its own material and on the terrain's.
  * DO NOT update these digests to make a change pass: a different digest is a
  * different road on screen.
+ *
+ * Moved once, 2026-10-15, with the inputs kept road by road (`roadSurfaceInputs.ts`),
+ * compared mesh by mesh with the build before: the city's every mesh the same bytes,
+ * only the paint's meshes in the catalogue's order (`PAINT_COLOURS`) instead of the
+ * order the map first painted them in; the fixture's the same but for the grass
+ * verge's heights, at most 0.034 mm apart - its fall read off the footways' outline
+ * made round each cell from the footways there (`SurfaceInputs.footwayEdges`), not
+ * cut out of one union of the whole town, whose far crossings moved its vertices by
+ * Clipper's grid (0.04 mm, `CLIPPER_SCALE`).
  */
 const materials = new Proxy({}, {
   get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
@@ -48,12 +57,12 @@ describe('road surface reads', () => {
   for (const [name, make, plain, onTerrain] of [
     ['the grid and bends fixture',
       () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document),
-      '134 7fc35c931e1b19c2d87fece26e7649c96c5899cd813009e8c8d35a720eef4db4',
-      '134 d463bc490a4e57b1f73c04822c2a8d010f9553dd0ab35baf96813374513a256b'],
+      '134 f056a9453099d14061179d774ce4a92dbb5c828b4208d3a8db55b9e38c12ad5c',
+      '134 ad369e48afa6a6838dd64f8fec0acddf6f35563b1b694d2bb9d4ab7fa911f669'],
     ['a generated city',
       () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small', radius: 640 })),
-      '144 5f9459e74ff68b075626478bd5dbebc9011225a05c74f93253c824fcb7f8130e',
-      '144 c306fb5a274dd28c0979defe4f5c892b4a6a222795ef5a6833573633d849b73a'],
+      '144 324af30c814e856dfef1b556a27e124f482722c783f64125fe3d8c6ba630482e',
+      '144 4c2dda9ff281fe5336c7be02fdccfc7a0d93ecb65521bc8a6b640d3f33b8d8f5'],
   ] as const) it(`build ${name} byte for byte as before`, () => {
     const net = new Network(make());
     net.rebuild();

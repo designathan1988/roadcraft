@@ -10,7 +10,11 @@ import { buildRoadElevation } from '@world/elevation';
 import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
 import type { SceneMaterials } from '@render/materials';
-import { buildRoadSurfaces, roadSurfaceSteps, type RoadSurfaces } from '@render/roadSurfaces';
+import { buildRoadSurfaces, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse } from '@render/roadSurfaces';
+import { SurfaceInputs, surfaceInputWork } from '@render/roadSurfaceInputs';
+import type { NodeId, SegmentId } from '@world/ids';
+import { generateBody } from '@world/buildings/blueprints';
+import type { Building } from '@world/buildings/types';
 import { TileMesher, type TileMeshes } from '@render/roadTileMesh';
 import type { RoadTiler, TileJob } from '@render/roadTilePool';
 
@@ -140,5 +144,97 @@ describe('road surface tiles made off the page', () => {
       for (let i = 0; i < position.count; i++) expect(sphere.distanceToPoint(p.fromBufferAttribute(position as never, i))).toBeLessThanOrEqual(1e-3);
     });
     expect(blocks).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE INPUTS KEPT BETWEEN BUILDS (`roadSurfaceInputs.ts`): after each edit the
+ * passes read the rings of the roads and nodes it touched, made again, and
+ * every other kept from before - and the roads built so are the roads a build
+ * from nothing makes, every attribute and index, byte for byte, the blocks
+ * kept from the build before included.
+ */
+describe('road surface inputs kept between builds', () => {
+  // Materials that stay the same between builds, so a block whose tiles did not change keeps its mesh.
+  const stable = new Map<PropertyKey, unknown>();
+  const kept = new Proxy({}, {
+    get: (_target, key) => {
+      if (key === 'scale') return new Proxy({}, { get: () => 4 });
+      if (!stable.has(key)) stable.set(key, new MeshBasicMaterial());
+      return stable.get(key);
+    },
+  }) as unknown as SceneMaterials;
+  const doc = authored();
+  const net = new Network(doc);
+  net.rebuild();
+  let elevation = buildRoadElevation(net, ground);
+  const reuse: SurfaceReuse = {
+    tiles: new Map(),
+    dependsOn: (minX, minY, maxX, maxY) => elevation.digest(minX, minY, maxX, maxY),
+    paint: new Map(),
+    chunks: new Map(),
+    inputs: new SurfaceInputs(),
+  };
+  buildRoadSurfaces(net, elevation, kept, ground, reuse);
+  const roads = doc.segments.size;
+
+  /**
+   * The edit, the network and the solve brought up to it, then the kept build against one from nothing.
+   * `everywhere`: an edit of every road (the paint's standard), whose items are all made again.
+   */
+  const after = (edit: () => void, everywhere = false): RoadSurfaces => {
+    edit();
+    net.rebuild();
+    elevation = buildRoadElevation(net, ground);
+    surfaceInputWork.segments = 0;
+    surfaceInputWork.nodes = 0;
+    const warm = buildRoadSurfaces(net, elevation, kept, ground, reuse);
+    // The items the edit touched made again, never the whole map - but for a change of every road's paint.
+    if (everywhere) expect(surfaceInputWork.segments).toBe(doc.segments.size);
+    else expect(surfaceInputWork.segments).toBeLessThan(roads / 2);
+    const fresh = buildRoadSurfaces(net, elevation, kept, ground);
+    expect(warm.reused).toBeGreaterThan(0);
+    expect(bytesOf(warm.group)).toBe(bytesOf(fresh.group));
+    fresh.dispose();
+    return warm;
+  };
+  const nodes = (): NodeId[] => [...doc.nodes.keys()].sort((p, q) => p - q);
+  const ofDegree = (n: number): NodeId[] => nodes().filter((id) => doc.node(id)!.incident.length === n);
+
+  it('adds a road, then moves a node', () => {
+    const end = doc.node(ofDegree(1)[0]!)!;
+    after(() => { doc.addSegment(end.id, doc.addNode({ x: end.x + m(30), y: end.y + m(40) }).id, 1); });
+    const corner = doc.node(ofDegree(3)[0]!)!;
+    after(() => { doc.moveNode(corner.id, { x: corner.x + m(3), y: corner.y - m(2) }); });
+  });
+
+  it('deletes a road, then raises a node by hand into an alignment of its own', () => {
+    const ground = [...doc.segments.values()].filter((s) => s.structure === 'ground').sort((p, q) => p.id - q.id);
+    after(() => { doc.removeSegment(ground[ground.length - 1]!.id); });
+    const before = [...reuse.tiles.keys()].filter((id) => id.startsWith('alignment-')).length;
+    const middle = ofDegree(2).find((id) => doc.node(id)!.heightOffset === 0)!;
+    after(() => { doc.setNodeHeightOffset(middle, m(5)); });
+    expect([...reuse.tiles.keys()].filter((id) => id.startsWith('alignment-')).length).toBeGreaterThan(before);
+  });
+
+  it('lowers it again, and changes the standard of the paint', () => {
+    const raised = nodes().filter((id) => doc.node(id)!.heightOffset > 0);
+    after(() => { doc.setNodeHeightOffset(raised[raised.length - 1]!, 0); });
+    after(() => { doc.setMarkingStyle('br'); }, true);
+  });
+
+  it('makes a junction a mini-roundabout, puts a crossing mid-block and parking along a street', () => {
+    after(() => { doc.setNodeControl(ofDegree(3)[1]!, 'mini'); });
+    const through = ofDegree(2).find((id) => doc.node(id)!.heightOffset === 0)!;
+    after(() => { expect(doc.setNodeCrossing(through, 'zebra', doc.node(through)!.incident[0]! as SegmentId)).toBe(true); });
+    const street = [...doc.segments.values()].filter((s) => s.structure === 'ground').sort((p, q) => p.id - q.id)[1]!;
+    after(() => { doc.setSegmentParking(street.id, { left: 'parallel', right: 'parallel' }); });
+    // A lot with parking of its own beside that street: its bays keep clear of the entrance.
+    const ribbon = net.ribbons.get(street.id)!;
+    const mid = ribbon.full.sampleAt(ribbon.full.length / 2);
+    const out = ribbon.road.width / 2 + m(6);
+    const lot = { ...generateBody('residential', 30, 30, 2), x: mid.p.x + mid.n.x * out, y: mid.p.y + mid.n.y * out, rotation: 0,
+      elements: [{ id: 1, kind: 'parking', x: 0, y: 0, facing: 0, w: m(8), d: m(8), z: 0, h: 0 }] } as unknown as Building;
+    expect(after(() => { doc.buildings.add(lot); }).built).toBeGreaterThan(0);
   });
 });
