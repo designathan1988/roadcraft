@@ -73,10 +73,9 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
       for (const id of this.allKeys(source)) out.add(id);
       return;
     }
-    for (const r of change.rects) {
-      for (const barrier of source.doc.barriersIn([r[0] - READ_REACH, r[1] - READ_REACH, r[2] + READ_REACH, r[3] + READ_REACH])) out.add(barrier.id);
-      for (const id of this.filing.idsMeeting(r)) out.add(id);
-    }
+    // Every rectangle of the entry in one look (`barriersInAny`, `idsMeetingAny`): one at a time read the cells they share again.
+    for (const barrier of source.doc.barriersInAny(change.rects.map((r) => [r[0] - READ_REACH, r[1] - READ_REACH, r[2] + READ_REACH, r[3] + READ_REACH] as const))) out.add(barrier.id);
+    for (const id of this.filing.idsMeetingAny(change.rects)) out.add(id);
   }
 
   compute(id: number, source: BarrierSource): BarrierPlace | undefined {

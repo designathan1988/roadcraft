@@ -69,7 +69,7 @@ export interface FlushData {
 /** `FlushData` for `rects`, its arrays fresh: the buffers to hand over in `transfer`. */
 export function packFlush(net: Network, rects: readonly (readonly [number, number, number, number])[]): { data: FlushData; transfer: ArrayBuffer[] } {
   const ids = new Set<number>();
-  for (const rect of rects) for (const id of net.flushCells.idsMeeting(rect)) ids.add(id);
+  for (const id of net.flushCells.idsMeetingAny(rects)) ids.add(id);
   const roads: FlushRoad[] = [];
   const boxes: number[] = [];
   const lines: Float64Array[] = [];

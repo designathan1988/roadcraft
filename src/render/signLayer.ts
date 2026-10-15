@@ -114,22 +114,20 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
         }
         return;
       }
-      for (const rect of change.rects) {
-        for (const key of this.filing.idsMeeting(rect)) if (key % 2 === 1) out.add(key);
-        for (const item of net.doc.landscapeIn(grow(rect, ITEM_READS))) if (isSignItem(item)) out.add(itemKey(item.id));
-      }
+      // Every rectangle in one look (`idsMeetingAny`, `landscapeInAny`): one at a time read the cells they share again.
+      for (const key of this.filing.idsMeetingAny(change.rects)) if (key % 2 === 1) out.add(key);
+      for (const item of net.doc.landscapeInAny(change.rects.map((rect) => grow(rect, ITEM_READS)))) if (isSignItem(item)) out.add(itemKey(item.id));
       return;
     }
-    for (const rect of change.rects) {
-      // What stands already and reads this ground.
-      for (const key of this.filing.idsMeeting(rect)) out.add(key);
-      // What may stand now: the junctions at the ends of the segments here, the sign items near.
-      for (const id of net.segmentCells.idsMeeting(rect)) {
-        const seg = net.doc.segment(id);
-        if (seg) { out.add(nodeKey(seg.a)); out.add(nodeKey(seg.b)); }
-      }
-      for (const item of net.doc.landscapeIn(grow(rect, ITEM_READS))) if (isSignItem(item)) out.add(itemKey(item.id));
+    // Every rectangle in one look (`idsMeetingAny`, `landscapeInAny`): one at a time read the cells they share again.
+    // What stands already and reads this ground.
+    for (const key of this.filing.idsMeetingAny(change.rects)) out.add(key);
+    // What may stand now: the junctions at the ends of the segments here, the sign items near.
+    for (const id of net.segmentCells.idsMeetingAny(change.rects)) {
+      const seg = net.doc.segment(id);
+      if (seg) { out.add(nodeKey(seg.a)); out.add(nodeKey(seg.b)); }
     }
+    for (const item of net.doc.landscapeInAny(change.rects.map((rect) => grow(rect, ITEM_READS)))) if (isSignItem(item)) out.add(itemKey(item.id));
   }
 
   compute(key: number, source: SignSource): SignValue | undefined {

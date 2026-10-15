@@ -48,4 +48,13 @@ describe('a filing asked for several rectangles at once', () => {
     expect(source).toMatch(/idsMeetingAny\(areas\)/);
     expect(source).not.toMatch(/landscapeIn\(area\)/);
   });
+
+  it('is how every product of the diary looks round a change of many rectangles', () => {
+    // DO NOT look rectangle by rectangle (`for (const r of change.rects) ... idsMeeting(r)`).
+    for (const path of ['src/render/barriers.ts', 'src/render/signLayer.ts', 'src/render/transit.ts', 'src/world/networkBuild.ts', 'src/world/roads/footwayRise.ts']) {
+      const text = readFileSync(path, 'utf8');
+      expect(text, path).toMatch(/idsMeetingAny\(/);
+      expect(text, path).not.toMatch(/for \(const (r|rect) of (change\.|entry\.)?rects\)[^\n]*idsMeeting\(/);
+    }
+  });
 });

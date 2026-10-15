@@ -158,11 +158,8 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
         const rects = groundSeen < 0 ? null : ground.rectsSince(groundSeen);
         if (rects === null) whole = true;
         else if (!whole) {
-          for (const r of rects) {
-            for (const b of town.near(r[0] - reach, r[1] - reach, r[2] + reach, r[3] + reach)) {
-              if (overlaps(boxOf(b), r)) { pending.add(b.id); groundMoved.add(b.id); }
-            }
-          }
+          // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
+          for (const b of town.nearAny(rects, reach, (b, r) => overlaps(boxOf(b), r))) { pending.add(b.id); groundMoved.add(b.id); }
         }
         groundSeen = ground.version;
       }

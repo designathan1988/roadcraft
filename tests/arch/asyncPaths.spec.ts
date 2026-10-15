@@ -105,7 +105,7 @@ describe('the road tiles kept for a later session', () => {
 });
 
 describe('the workers', () => {
-  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/render/groundShape.worker.ts']) {
+  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];
       expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);
@@ -156,6 +156,22 @@ describe('the ground cut and filled', () => {
   });
 });
 
+
+describe('the bays of the lots', () => {
+  it('are asked of the workers in the game, worked out on the page only by a world without them', () => {
+    // The game's world has the pool (`bayPool.ts`, `bays.worker.ts`).
+    expect(read('src/main.ts')).toMatch(/useBayWorkers\(sim, new BayPool\(\)\);/);
+    expect(read('src/bayPool.ts')).toMatch(/new Worker\(new URL\('\.\/bays\.worker\.ts', import\.meta\.url\)/);
+    const parking = read('src/sim/agents/parking.ts');
+    // A lot looked at is asked of the workers when the world has them; `bayRows` on the page only without.
+    expect(bodyOf(parking, 'baysNow')).toMatch(/lookAtLot\([^;]*workers \? asked : null\);/);
+    expect(bodyOf(parking, 'baysNow')).toMatch(/workers\.work\(asks\)/);
+    expect([...parking.matchAll(/bayRows\(/g)].length).toBe(1);
+    const look = bodyOf(parking, 'lookAtLot');
+    expect(look).toMatch(/if \(!asked\) \{\s*book\.known\.set\(b\.id, \{ lot, key, bays: bayRows\(pageReads\(w, walls\), b\) \}\);/);
+    expect(look).toMatch(/asked\.push\(/);
+  });
+});
 
 describe('the road tiles made off the page', () => {
   it('are shaped and meshed in the workers, and taken as they come on the page', () => {
