@@ -79,7 +79,10 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
     for (const chunk of chunks) count += chunk.parts[kind].count;
     if (count === 0) continue;
     const glassy = !ghost && (kind === 'glass' || kind === 'glassDark');
-    const coloured = !ghost && COLOURED_PARTS.has(kind);
+    // Faded, every part is drawn with the one faded material (`kit.dimParts`): every part with a colour
+    // (white where it has none), one program variant. DO NOT colour only the trims there: the material
+    // seen with and without instance colours was built again and again (three keys the program by it).
+    const coloured = !ghost && (dim || COLOURED_PARTS.has(kind));
     const arrays = partArrays(chunks, kind, count, glassy, coloured);
     parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.instanceMatrix, count, boxes.parts[kind]) };
   }

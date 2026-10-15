@@ -3560,6 +3560,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.instanceMatrix = new InstancedBufferAttribute(piece.instanceMatrix, 16);
+      // Faded, white instance colours as every faded part has (`cellArrays.ts`): one program variant of `dimParts`.
+      if (dim) mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(piece.count * 3).fill(1), 3);
       mesh.boundingBox = boxOf(piece.bounds);
       mesh.boundingSphere = sphereOf(piece.bounds);
       // On the GPU only, made again from the chunks (`mesh/gpuOnly.ts`).
