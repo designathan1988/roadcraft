@@ -305,8 +305,19 @@ export class RoadDoc {
   readonly trees: PlantedTree[] = [];
   /** Where trees were cut away, the woods' own too (`trees.ts`), oldest first. */
   readonly treeClearings: TreeClearing[] = [];
-  /** The elements the player laid with the brush (`elements.ts`), oldest first. */
+  /**
+   * The elements the player laid with the brush (`elements.ts`), oldest first.
+   * Written only by the methods below (and `restore`), which keep
+   * `elementCells` in step. DO NOT push or splice it from outside.
+   */
   readonly elements: ElementItem[] = [];
+  /** The elements by place (`elementsIn`). */
+  private elementCells = new ItemGrid<ElementItem>(LANDSCAPE_CELL);
+
+  /** The elements standing in the cells a rectangle reaches (a superset: test each). */
+  elementsIn(rect: ChangeRect): ElementItem[] {
+    return this.elementCells.near(rect);
+  }
 
   /**
    * What changed in this document, where and why (`changes.ts`): every
@@ -1187,8 +1198,9 @@ export class RoadDoc {
 
   addElements(items: readonly ElementItem[]): void {
     if (items.length === 0) return;
-    for (const item of items) this.elements.push(item);
+    for (const item of items) { this.elements.push(item); this.elementCells.add(item); }
     const gone = this.elements.length > MAX_ELEMENTS ? this.elements.splice(0, this.elements.length - MAX_ELEMENTS) : [];
+    for (const item of gone) this.elementCells.remove(item);
     const rects = [elementsBox(items)!];
     const goneRect = elementsBox(gone);
     if (goneRect) rects.push(goneRect);
@@ -1197,8 +1209,12 @@ export class RoadDoc {
 
   /** Takes away the elements within `radius` of (x, y) - of one kind, or every kind (`kind` null). How many went. */
   removeElements(x: number, y: number, radius: number, kind: ElementKind | null): number {
+    // The ones there, by place; the list then kept in one pass without them.
+    const there = new Set(this.elementCells.near([x - radius, y - radius, x + radius, y + radius])
+      .filter((e) => (kind === null || e.kind === kind) && Math.hypot(e.x - x, e.y - y) <= radius));
     const before = this.elements.length;
-    keepWhere(this.elements, (e) => !((kind === null || e.kind === kind) && Math.hypot(e.x - x, e.y - y) <= radius));
+    if (there.size) keepWhere(this.elements, (e) => !there.has(e));
+    for (const e of there) this.elementCells.remove(e);
     const gone = before - this.elements.length;
     if (gone > 0) {      this.changes.record('elements', [circleRect({ x, y, radius })]);
     }
@@ -1210,6 +1226,7 @@ export class RoadDoc {
     if (items.size === 0) return 0;
     const before = this.elements.length;
     keepWhere(this.elements, (e) => !items.has(e));
+    for (const e of items) this.elementCells.remove(e);
     const gone = before - this.elements.length;
     if (gone > 0) this.changes.record('elements', [elementsBox([...items])!]);
     return gone;
@@ -1219,6 +1236,7 @@ export class RoadDoc {
     if (this.elements.length === 0) return;
     const where = elementsBox(this.elements)!;
     this.elements.length = 0;
+    this.elementCells = new ItemGrid(LANDSCAPE_CELL);
     this.changes.record('elements', [where]);
   }
 
@@ -1462,7 +1480,7 @@ export class RoadDoc {
     copy.gullyDabs.push(...this.gullyDabs.map((dab) => ({ ...dab })));
     copy.gullyAuto = this.gullyAuto;
     copy.clouds.push(...this.clouds.map((c) => ({ ...c })));
-    copy.elements.push(...this.elements.map((e) => ({ ...e })));
+    for (const e of this.elements) { const item = { ...e }; copy.elements.push(item); copy.elementCells.add(item); }
     copy.trees.push(...this.trees.map((t) => ({ ...t })));
     copy.treeClearings.push(...this.treeClearings.map((c) => ({ ...c })));
     copy.weather = { ...this.weather };
@@ -1632,7 +1650,12 @@ export class RoadDoc {
     }
     for (const { part, start, remove, items } of r.lists) {
       const kind = LIST_KINDS[part];
-      const gone = spliceIn(this.listOf(part), start, remove, items.map((item) => structuredClone(item)));
+      const put = items.map((item) => structuredClone(item));
+      const gone = spliceIn(this.listOf(part), start, remove, put);
+      if (part === 'elements') {
+        for (const e of gone as ElementItem[]) this.elementCells.remove(e);
+        for (const e of put as ElementItem[]) this.elementCells.add(e);
+      }
       // Where the items that left lay and where those that came lie: one box
       // each. DO NOT write `null` (the whole map) for a stretch of a list
       // whose items have places.
@@ -1834,7 +1857,8 @@ export class RoadDoc {
 
     if (moved('elements') && (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements))) {
       this.elements.length = 0;
-      this.elements.push(...source.elements);
+      this.elementCells = new ItemGrid(LANDSCAPE_CELL);
+      for (const e of source.elements) { this.elements.push(e); this.elementCells.add(e); }
       others.push('elements');
     }
 
@@ -2114,7 +2138,7 @@ export class RoadDoc {
     // Absent: a map with no elements laid.
     for (const raw of data.elements ?? []) {
       const item = readElement(raw);
-      if (item) doc.elements.push(item);
+      if (item) { doc.elements.push(item); doc.elementCells.add(item); }
     }
     if (doc.elements.length) doc.changes.record('elements', null, loaded);
     // Absent: a map with no clouds placed.
@@ -2615,6 +2639,38 @@ function sameBarriers(a: RoadDoc, b: RoadDoc): boolean {
     }
   }
   return true;
+}
+
+/**
+ * Things standing at a point (an element of the brush), by the cell of their
+ * point: the same item object put in and taken out (they have no id).
+ */
+class ItemGrid<T extends { readonly x: number; readonly y: number }> {
+  private readonly cells = new Map<number, Set<T>>();
+  constructor(private readonly side: number) {}
+  private keyOf(x: number, y: number): number { return (Math.floor(x / this.side) + 32768) * 65536 + (Math.floor(y / this.side) + 32768); }
+  add(item: T): void {
+    const key = this.keyOf(item.x, item.y);
+    const set = this.cells.get(key);
+    if (set) set.add(item); else this.cells.set(key, new Set([item]));
+  }
+  remove(item: T): void {
+    const key = this.keyOf(item.x, item.y);
+    const set = this.cells.get(key);
+    if (!set) return;
+    set.delete(item);
+    if (set.size === 0) this.cells.delete(key);
+  }
+  /** The items in the cells a rectangle reaches. */
+  near(rect: ChangeRect): T[] {
+    const out: T[] = [];
+    for (let i = Math.floor(rect[0] / this.side); i <= Math.floor(rect[2] / this.side); i++) {
+      for (let j = Math.floor(rect[1] / this.side); j <= Math.floor(rect[3] / this.side); j++) {
+        for (const item of this.cells.get((i + 32768) * 65536 + (j + 32768)) ?? []) out.push(item);
+      }
+    }
+    return out;
+  }
 }
 
 /** Keeps in `list`, in order and in place, the items `keep` says; one pass. */

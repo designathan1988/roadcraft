@@ -163,11 +163,13 @@ export function clearBulbs(doc: RoadDoc, net: Network): number {
       if (inside(item) && doc.removeLandscape(item.id)) taken++;
     }
   }
-  // The elements are a list with no index (laid with the brush): one pass for
-  // every circle changed, and those inside taken away together in one more.
+  // The elements round each circle by place (`RoadDoc.elementsIn`), taken
+  // away together in one pass.
   const inside = new Set<ElementItem>();
-  for (const item of doc.elements) {
-    if (bulbs.some((bulb) => Math.hypot(item.x - bulb.node.x, item.y - bulb.node.y) < reach && pointInPolygon(item, bulb.poly))) inside.add(item);
+  for (const bulb of bulbs) {
+    for (const item of doc.elementsIn(bulb.box)) {
+      if (Math.hypot(item.x - bulb.node.x, item.y - bulb.node.y) < reach && pointInPolygon(item, bulb.poly)) inside.add(item);
+    }
   }
   return taken + doc.removeElementItems(inside);
 }
