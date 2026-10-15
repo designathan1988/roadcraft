@@ -1,5 +1,5 @@
 import { primeDetailPixels, type DetailBakePixels } from './mesh/detailLayer';
-import { primeBakedSurfacePixels, type BakedPixels } from './mesh/textureBaker';
+import { primeBakedSurfacePixels, refillBakedTexels, setTexelSource, type BakedPixels } from './mesh/textureBaker';
 
 interface SurfaceBakeResult {
   readonly surfaces: readonly BakedPixels[];
@@ -51,4 +51,8 @@ export function primeSurfaceBake(result: SurfaceBakeResult | null): void {
   if (!result) return;
   primeBakedSurfacePixels(result.surfaces);
   primeDetailPixels(result.details);
+  // The textures let their texels go once uploaded: read back from the bake's cache when one must be uploaded again.
+  setTexelSource(() => void startSurfaceBake().then((again) => {
+    refillBakedTexels(again ? [...again.surfaces, ...again.details.flatMap((d) => [d.map, d.normal])] : []);
+  }));
 }

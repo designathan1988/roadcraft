@@ -126,6 +126,7 @@ const SHADOW_SAFETY_FRAMES = 30;
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
+import { wantAllTexels } from './mesh/textureBaker';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
@@ -767,6 +768,7 @@ export function createSceneRenderer(
     refillArrays(scene);
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
+    wantAllTexels();
   });
   /** The buildings' garden plants, and the buildings and ground they were planted for. */
   let gardens: Gardens | null = null;

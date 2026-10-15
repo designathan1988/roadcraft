@@ -23,9 +23,52 @@ export function canvasPixels(key: string, texture: Texture): BakedPixels {
   return { key, width: canvas.width, height: canvas.height, rgba: image.data.buffer };
 }
 
+/** Baked textures whose texels are let go once on the GPU, by key: given back by `refillBakedTexels` (a lost context, a new anisotropy). */
+const gpuOnlyTexels = new Map<string, DataTexture>();
+/** What reads the texels again from the bake's cache (`surfaceBakeClient.ts`), set by the renderer; null: none, the texels are kept. */
+let texelSource: (() => void) | null = null;
+let texelsWanted = false;
+
+/** DO NOT keep a baked texture's texels once uploaded: some 250 MB of the page's heap were copies of what the GPU holds. */
+function letTexelsGo(texture: Texture): void {
+  if (!texelSource) return;
+  (texture.image as { data: Uint8Array | null }).data = null;
+}
+
+/** The baked textures' texels asked again (a texture must be uploaded anew); once until they come. */
+function wantTexels(): void {
+  if (texelsWanted || !texelSource) return;
+  texelsWanted = true;
+  texelSource();
+}
+
+/** Where the texels are read again from, once the textures may let theirs go. */
+export function setTexelSource(source: () => void): void {
+  texelSource = source;
+}
+
+/** Texels read again: each let-go texture given its own and uploaded anew (it lets them go again after). */
+export function refillBakedTexels(pixels: readonly BakedPixels[]): void {
+  texelsWanted = false;
+  for (const item of pixels) {
+    const texture = gpuOnlyTexels.get(item.key);
+    const image = texture?.image as { data: Uint8Array | null } | undefined;
+    if (!texture || !image || image.data) continue;
+    image.data = new Uint8Array(item.rgba);
+    texture.needsUpdate = true;
+  }
+}
+
+/** Every baked texture let go, its texels needed again (the WebGL context restored). */
+export function wantAllTexels(): void {
+  wantTexels();
+}
+
 /** The worker sends raw texels, preserving the original canvas pixels exactly. */
 export function bakedTextureFromPixels(pixels: BakedPixels, srgb: boolean): Texture {
   const value = new DataTexture(new Uint8Array(pixels.rgba), pixels.width, pixels.height, RGBAFormat, UnsignedByteType);
+  value.onUpdate = letTexelsGo;
+  gpuOnlyTexels.set(pixels.key, value);
   value.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
   value.wrapS = RepeatWrapping;
   value.wrapT = RepeatWrapping;
@@ -51,6 +94,8 @@ export function rememberBakedTexture(key: string, value: Texture): void { cache.
 function setAnisotropy(value: Texture, anisotropy: number): void {
   if (value.anisotropy >= anisotropy) return;
   value.anisotropy = anisotropy;
+  // Texels let go: uploaded anew only once they are read back (an upload of none would draw it black).
+  if ((value.image as { data?: unknown } | null)?.data === null) { wantTexels(); return; }
   value.needsUpdate = true;
 }
 
