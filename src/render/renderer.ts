@@ -2557,7 +2557,7 @@ export function createSceneRenderer(
         pedestrianVisible,
         personPixels,
         screenScale,
-        pixelRatio: renderer.domElement.width / Math.max(1, renderer.domElement.clientWidth),
+        pixelRatio: renderer.getPixelRatio(),
         shadows: renderer.shadowMap.enabled,
         eye: cullCamera.position,
         vehicleVisible,
