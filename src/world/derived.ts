@@ -1,5 +1,5 @@
 import type { Product } from '@core/engine';
-import type { Change, ChangeJournal, ChangeKind, ChangeRect } from './changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect, JournalReader } from './changes';
 
 /**
  * THE SPINE OF EVERY PRODUCT DERIVED FROM THE DOCUMENT (docs/PLANO-ESPINHA-2026-10-14.md,
@@ -25,9 +25,14 @@ import type { Change, ChangeJournal, ChangeKind, ChangeRect } from './changes';
  * newer diary); the diary forgot entries; or, for a reader of ids, an entry of
  * its kinds has no ids (a store cleared or loaded writes one such entry).
  */
-export class JournalCursor {
+export class JournalCursor implements JournalReader {
   private journal: ChangeJournal | null = null;
   private seen = -1;
+
+  /** The serial last read (`JournalReader`): its diary keeps what came after it for it. */
+  get seenSerial(): number {
+    return this.seen;
+  }
 
   /** `needIds`: an entry without ids means everything changed (the reader works by item). */
   constructor(readonly kinds: readonly ChangeKind[], private readonly needIds = false) {}
@@ -36,6 +41,7 @@ export class JournalCursor {
   read(journal: ChangeJournal): readonly Change[] | null {
     const same = this.journal === journal;
     const seen = this.seen;
+    if (!same) journal.follow(this);
     this.journal = journal;
     this.seen = journal.version;
     if (!same || seen < 0) return null;
@@ -183,13 +189,20 @@ const SWEEP_MAX_CELLS = 4096;
  * growing (`render/agents.ts` `offRoadDeck`, 2026-10-15), quadratic in the
  * city.
  */
-export class ChangeSweep {
+export class ChangeSweep implements JournalReader {
   private from = -1;
   private now = -1;
   /** Rectangles by cell; null: a change of the whole map (or one too wide to file). */
   private cells: Map<number, ChangeRect[]> | null = new Map();
 
-  constructor(readonly journal: ChangeJournal, private readonly kinds: readonly ChangeKind[]) {}
+  constructor(readonly journal: ChangeJournal, readonly kinds: readonly ChangeKind[]) {
+    journal.follow(this);
+  }
+
+  /** What it has read up to (`JournalReader`): its diary keeps what came after it until the next `advance`. */
+  get seenSerial(): number {
+    return this.now;
+  }
 
   /** The serial the readers are brought up to. */
   get serial(): number {

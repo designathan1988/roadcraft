@@ -25,10 +25,12 @@ describe('the diary read by kind', () => {
   });
 
   it('forgets a kind by its own entries', () => {
+    // The last 2,048 of a kind are always kept; older ones are let go (in a batch, past twice that) when
+    // no reader that follows the diary still needs them (`ChangeJournal.follow`).
     const j = new ChangeJournal();
-    for (let i = 0; i < 2049; i++) j.record('ground', [R]);
+    for (let i = 0; i < 4097; i++) j.record('ground', [R]);
     expect(j.since(0, ['ground'])).toBeNull();
-    expect(j.since(1, ['ground'])).toHaveLength(2048);
+    expect(j.since(4097 - 2048, ['ground'])).toHaveLength(2048);
   });
 
   it('costs nothing to ask about a kind that did not move', () => {

@@ -107,26 +107,48 @@ export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 const KEPT = 2048;
 
 /**
- * The entries of one kind, newest last, in a ring of `KEPT`, and the serial
- * up to which they may be missing (one overwritten, or the copy's start).
+ * A reader of some kinds that follows the diary (`ChangeJournal.follow`): the
+ * entries after the serial it last read are kept for it, however many come
+ * before it reads again.
+ */
+export interface JournalReader {
+  readonly kinds: readonly ChangeKind[];
+  /** The serial it has read up to; negative: it has read nothing yet (it reads everything first). */
+  readonly seenSerial: number;
+}
+
+/**
+ * The entries of one kind, oldest first, and the serial up to which they may
+ * be missing (let go, or the copy's start). At least the last `KEPT` are kept,
+ * and every entry a reader that follows the diary has not read yet
+ * (`needed`): the entries a reader still needs are let go only when it has
+ * read them. DO NOT let them go by count alone: a city growing while the
+ * simulation waited for the traffic's topology wrote thousands of building
+ * entries, its readers (the lots' bays, the store's order) were told
+ * "everything changed" and read every lot of the town again (2026-10-15).
  */
 class KindLog {
-  private readonly ring: Change[] = [];
-  private written = 0;
+  private entries: Change[] = [];
   constructor(public missingUpTo: number) {}
 
-  push(entry: Change): void {
-    const at = this.written % KEPT;
-    const old = this.ring[at];
-    if (old) this.missingUpTo = Math.max(this.missingUpTo, old.serial);
-    this.ring[at] = entry;
-    this.written++;
+  /** `needed`: the oldest serial a reader of this kind has read up to (Infinity: none follows it). */
+  push(entry: Change, needed: () => number): void {
+    this.entries.push(entry);
+    // Let go of what no one needs only past twice what is always kept: each entry looked at a constant number of times.
+    if (this.entries.length < 2 * KEPT) return;
+    const keepFrom = this.entries.length - KEPT;
+    const upTo = needed();
+    let cut = 0;
+    while (cut < keepFrom && this.entries[cut]!.serial <= upTo) cut++;
+    if (!cut) return;
+    this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
+    this.entries = this.entries.slice(cut);
   }
 
   /** Its entries after `since`, newest first, into `out`; each one looked at counted. */
   after(since: number, out: Change[]): void {
-    for (let i = this.written - 1; i >= Math.max(0, this.written - KEPT); i--) {
-      const entry = this.ring[i % KEPT]!;
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const entry = this.entries[i]!;
       journalWork.entries++;
       if (entry.serial <= since) return;
       out.push(entry);
@@ -157,6 +179,27 @@ export function rectAround(points: Iterable<{ readonly x: number; readonly y: nu
 
 export class ChangeJournal {
   private serial = 0;
+  /** The readers that follow this diary (`follow`), held weakly: one gone needs nothing kept. */
+  private readers: WeakRef<JournalReader>[] = [];
+
+  /** A reader follows this diary: what it has not read of its kinds is kept until it reads it. */
+  follow(reader: JournalReader): void {
+    if (!this.readers.some((r) => r.deref() === reader)) this.readers.push(new WeakRef(reader));
+  }
+
+  /** The oldest serial a live reader of `kind` has read up to (Infinity: none follows it). */
+  private neededFor(kind: ChangeKind): number {
+    let upTo = Infinity;
+    const live: WeakRef<JournalReader>[] = [];
+    for (const ref of this.readers) {
+      const reader = ref.deref();
+      if (!reader) continue;
+      live.push(ref);
+      if (reader.seenSerial >= 0 && reader.kinds.includes(kind)) upTo = Math.min(upTo, reader.seenSerial);
+    }
+    this.readers = live;
+    return upTo;
+  }
   /** Entries after `forgotten`, oldest first, in a ring of `KEPT`. */
   private readonly ring: (Change | undefined)[] = new Array<Change | undefined>(KEPT);
   private count = 0;
@@ -237,7 +280,7 @@ export class ChangeJournal {
     this.lastOf.set(kind, serial);
     let log = this.byKind.get(kind);
     if (!log) this.byKind.set(kind, (log = new KindLog(this.startedAt)));
-    log.push(entry);
+    log.push(entry, () => this.neededFor(kind));
     return serial;
   }
 

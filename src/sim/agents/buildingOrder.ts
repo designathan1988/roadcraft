@@ -1,5 +1,5 @@
 import type { RoadDoc } from '@world/doc';
-import type { ChangeRect } from '@world/changes';
+import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
 import type { Building, BuildingId } from '@world/buildings/types';
 
 /**
@@ -99,7 +99,12 @@ const NOTHING: BuildingDelta = { ids: [], rects: [] };
  * The buildings that pass `keep`, in the store's order, kept from the diary.
  * `update` brings them up to date and says what changed since the last call.
  */
-export class BuildingsInOrder {
+export class BuildingsInOrder implements JournalReader {
+  readonly kinds: readonly ChangeKind[] = ['buildings'];
+  /** What it has read up to (`JournalReader`): its diary keeps the buildings' entries after it until it reads them. */
+  get seenSerial(): number {
+    return this.serial;
+  }
   /** The store's order, this reader's own (it follows the diary with it). */
   private readonly order = new StoreOrder();
   private doc: RoadDoc | null = null;
@@ -139,6 +144,7 @@ export class BuildingsInOrder {
       return NOTHING;
     }
     const entries = this.doc === doc ? journal.since(this.serial, ['buildings']) : null;
+    if (this.doc !== doc) journal.follow(this);
     this.doc = doc;
     this.serial = journal.version;
     const ids = new Set<BuildingId>();
