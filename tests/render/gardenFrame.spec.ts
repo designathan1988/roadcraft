@@ -4,6 +4,7 @@ import { Rng } from '@core/rng';
 import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
+import { townChanges } from '../support/gardenChange';
 
 /**
  * The gardens' work per frame and per building (docs/PLANO-ESPINHA-2026-10-14.md):
@@ -58,7 +59,7 @@ describe('the gardens per frame', () => {
 
   it('a still camera culls nothing again, though setMap is called every frame', () => {
     const gardens = createGardens(kit);
-    gardens.update(town(200, m(2000), 3));
+    gardens.update({ added: town(200, m(2000), 3), removed: [] });
     const { frustum, view: matrix } = view();
     const probe = counted(frustum);
     gardens.setMap(false);
@@ -74,7 +75,7 @@ describe('the gardens per frame', () => {
 
   it('leaves the leaf cards out at the map zoom, and brings back the same plants', () => {
     const gardens = createGardens(kit);
-    gardens.update(town(200, m(2000), 8));
+    gardens.update({ added: town(200, m(2000), 8), removed: [] });
     const { frustum, view: matrix } = view();
     gardens.setMap(false);
     gardens.cull(frustum, matrix);
@@ -96,7 +97,8 @@ describe('the gardens per frame', () => {
   it('one garden more sends only the stores it touched to the GPU, and draws what a fresh build draws', () => {
     const lists = town(200, m(2000), 5, ['tree', 'shrub', 'hedge']);
     const gardens = createGardens(kit);
-    gardens.update(lists);
+    const change = townChanges();
+    gardens.update(change(lists));
     const { frustum, view: matrix } = view();
     gardens.setMap(false);
     gardens.cull(frustum, matrix);
@@ -106,14 +108,14 @@ describe('the gardens per frame', () => {
     // A bed of flowers in view: only the flowering bushes' stores change.
     const bed: GardenPlant[] = [{ kind: 'flowers', x: 0, y: 0, z: 0, w: m(3), d: m(2), h: m(0.5), yaw: 0, seed: 0.3 }];
     const more = [...lists, bed];
-    gardens.update(more);
+    gardens.update(change(more));
     gardens.cull(frustum, matrix);
     const uploaded = (gardens.meshes as InstancedMesh[])
       .filter((mesh) => known.has(mesh.name) && mesh.instanceMatrix.updateRanges.length > 0)
       .map((mesh) => mesh.name);
     expect(uploaded.every((name) => name.startsWith('garden-bushes-bushFlowering'))).toBe(true);
     const fresh = createGardens(kit);
-    fresh.update(more);
+    fresh.update({ added: more, removed: [] });
     fresh.setMap(false);
     fresh.cull(frustum, matrix);
     expect(drawn(gardens)).toEqual(drawn(fresh));

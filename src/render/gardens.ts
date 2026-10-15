@@ -230,13 +230,20 @@ const ALL_PLANES = 0b111111;
 const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
 
 
+/** The buildings' garden lists to place and to take away (`gardenLists.ts`): a list is placed once and taken away by the same object. */
+export interface GardenChange {
+  readonly added: readonly (readonly GardenPlant[])[];
+  readonly removed: readonly (readonly GardenPlant[])[];
+}
+
 export interface Gardens extends Scenery {
   /**
-   * The gardens of the buildings' lists, in the town's order: a list the same
-   * object as before keeps its slots; the meshes taken out of the scene and
-   * put in (a store grown past its room is a new mesh).
+   * The gardens that came and went: a list taken away leaves its slots dead,
+   * one placed takes slots; the meshes taken out of the scene and put in (a
+   * store grown past its room is a new mesh). DO NOT hand it the town's lists
+   * to find what changed: that was a pass over the town per building grown.
    */
-  update(groups: readonly (readonly GardenPlant[])[]): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
+  update(change: GardenChange): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
 }
 
 export function createGardens(kit: SceneryKit): Gardens {
@@ -349,15 +356,13 @@ export function createGardens(kit: SceneryKit): Gardens {
     mesh.count = 0;
     return mesh;
   };
-  /** The store's arrays sized for `capacity`, its live slots in `order` from slot 0. */
-  const repack = (s: Store, capacity: number, order: readonly (readonly GardenPlant[])[] | null): void => {
+  /** The store's arrays sized for `capacity`; packed (`pack`), its live runs from slot 0 in the order they stood. */
+  const repack = (s: Store, capacity: number, pack: boolean): void => {
     const matrices = new Float32Array(capacity * 16), colours = new Float32Array(capacity * 3).fill(1), spheres = new Float32Array(capacity * 4);
-    if (order) {
+    if (pack) {
       const runs = new Map<readonly GardenPlant[], { start: number; count: number }>();
       let at = 0;
-      for (const list of order) {
-        const run = s.runs.get(list);
-        if (!run) continue;
+      for (const [list, run] of [...s.runs].sort((a, b) => a[1].start - b[1].start)) {
         matrices.set(s.matrices.subarray(run.start * 16, (run.start + run.count) * 16), at * 16);
         colours.set(s.colours.subarray(run.start * 3, (run.start + run.count) * 3), at * 3);
         spheres.set(s.spheres.subarray(run.start * 4, (run.start + run.count) * 4), at * 4);
@@ -400,8 +405,6 @@ export function createGardens(kit: SceneryKit): Gardens {
     for (let i = start; i < s.used; i++) file(s, i);
   };
 
-  /** The gardens placed, as the last `update` had them. */
-  let placed = new Set<readonly GardenPlant[]>();
   let culledFor: Matrix4 | null = null;
   /**
    * The map zoom as the last `setMap` gave it (null: never told). At the map
@@ -471,13 +474,10 @@ export function createGardens(kit: SceneryKit): Gardens {
       for (const s of stores) if (s.mesh) n += trianglesOf(s.geometry) * (s.used - s.dead);
       return n;
     },
-    update(groups) {
+    update(change) {
       const removed: InstancedMesh[] = [], added: InstancedMesh[] = [];
-      const now = new Set(groups);
-      // Only the gardens that came and went are read: the town's list is walked once.
-      const gone = [...placed].filter((list) => !now.has(list));
-      const fresh = groups.filter((list) => !placed.has(list));
-      placed = now;
+      // Only the gardens that came and went are read.
+      const gone = change.removed, fresh = change.added;
       let touched = false;
       for (const s of stores) {
         let left = 0;
@@ -498,12 +498,12 @@ export function createGardens(kit: SceneryKit): Gardens {
         const was = s.mesh;
         let moved = false;
         if (s.dead > 0 && s.dead * 2 >= s.used + coming) {
-          // Half the store dead: packed again in the town's order, the new ones after.
-          repack(s, Math.max(s.capacity, MIN_CAPACITY), groups);
+          // Half the store dead: packed again in the order the runs stood, the new ones after.
+          repack(s, Math.max(s.capacity, MIN_CAPACITY), true);
           moved = true;
         }
         if (s.used + coming > s.capacity) {
-          repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), null);
+          repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), false);
           s.mesh = null;
         }
         for (const list of fresh) {
@@ -582,6 +582,6 @@ export function createGardens(kit: SceneryKit): Gardens {
 /** The gardens of these lists, made at once (`createGardens` and one `update`). */
 export function buildGardens(groups: readonly (readonly GardenPlant[])[], kit: SceneryKit): Gardens {
   const gardens = createGardens(kit);
-  gardens.update(groups);
+  gardens.update({ added: groups, removed: [] });
   return gardens;
 }

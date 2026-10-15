@@ -3,6 +3,7 @@ import { Frustum, Matrix4, type InstancedMesh } from 'three';
 import { createSceneryKit } from '@render/scenery';
 import { buildGardens, createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { m } from '@world/units';
+import { townChanges } from '../support/gardenChange';
 
 /**
  * The gardens are packed building by building and kept so (`gardens.ts`,
@@ -53,8 +54,9 @@ describe('garden packs', () => {
     const lists = Array.from({ length: 40 }, (_, g) => garden(g));
     const gardens = createGardens(kit);
     const shown = new Set<InstancedMesh>();
+    const change = townChanges();
     const apply = (groups: readonly (readonly GardenPlant[])[]): void => {
-      const { removed, added } = gardens.update(groups);
+      const { removed, added } = gardens.update(change(groups));
       for (const mesh of removed) { expect(shown.has(mesh)).toBe(true); shown.delete(mesh); }
       for (const mesh of added) shown.add(mesh);
     };
@@ -65,10 +67,10 @@ describe('garden packs', () => {
     const changed = lists.map((list, g) => (g % 3 === 0 ? garden(g + 100) : list)).filter((_, g) => g % 5 !== 1);
     apply(changed);
     expect(sorted(drawn(gardens))).toEqual(sorted(drawn(buildGardens(changed, kit))));
-    // Most gone: packed again in the town's order - the very order of a town built afresh.
+    // Most gone: packed again in the order the gardens were placed - the plants of a town built afresh.
     const few = changed.slice(0, 6);
     apply(few);
-    expect(drawing(drawn(gardens))).toEqual(drawing(drawn(buildGardens(few, kit))));
+    expect(sorted(drawn(gardens))).toEqual(sorted(drawn(buildGardens(few, kit))));
     // The meshes in the scene are the ones it has.
     expect(new Set(gardens.meshes)).toEqual(shown);
     gardens.dispose();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { gardenLists } from '@render/gardenLists';
-import type { GardenPlant } from '@render/gardens';
+import type { GardenChange, GardenPlant } from '@render/gardens';
 import type { GroundRecord, Rect } from '@render/groundChanges';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building, BuildingElement, BuildingId } from '@world/buildings/types';
@@ -10,8 +10,8 @@ import { m } from '@world/units';
 
 /**
  * The gardens' lists taken in a change at a time, by the ids the diary gives
- * (`BuildingStore.changedSince`, AUDITORIA C2): after any edits they are the
- * lists a reader made from nothing on the same town gives, in its order.
+ * (`BuildingStore.changedSince`, AUDITORIA C2): after any edits the lists
+ * the changes leave placed are the lists a reader made from nothing gives.
  */
 const still: GroundRecord = { version: 0, touches: () => false };
 const bank = (b: Building): Rect => [b.x - m(20), b.y - m(20), b.x + m(20), b.y + m(20)];
@@ -34,7 +34,15 @@ describe('the gardens, a change at a time', () => {
     const doc = new RoadDoc();
     for (let i = 0; i < 30; i++) doc.buildings.add(body(i, (i % 6) * m(60), Math.floor(i / 6) * m(60), rand() < 0.6));
     const live = gardenLists(still, bank, plantsOf);
-    live.update(doc.buildings, true);
+    /** The lists the gardens hold, as the changes handed to them leave them. */
+    const held = new Set<readonly GardenPlant[]>();
+    const apply = (change: GardenChange | null): void => {
+      if (!change) return;
+      for (const list of change.removed) { expect(held.has(list)).toBe(true); held.delete(list); }
+      for (const list of change.added) held.add(list);
+    };
+    const texts = (lists: Iterable<readonly GardenPlant[]>): string[] => [...lists].map((list) => JSON.stringify(list)).sort();
+    apply(live.update(doc.buildings, true));
     let placed = 0;
     for (let round = 0; round < 40; round++) {
       const ids = [...doc.buildings.all()].map((b) => b.id);
@@ -45,11 +53,12 @@ describe('the gardens, a change at a time', () => {
       else if (roll < 0.7) { const b = doc.buildings.get(pick)!; doc.buildings.put({ ...b, x: b.x + m(5) }); }
       else if (roll < 0.85) { const b = doc.buildings.get(pick)!; doc.buildings.put({ ...b, palette: (b.palette + 1) % 8 }); }
       else { const b = doc.buildings.get(pick)!; doc.buildings.put({ ...b, elements: (b.elements ?? []).filter((e) => e.kind !== 'tree') }); }
-      const lists = live.update(doc.buildings, true);
-      const whole = gardenLists(still, bank, plantsOf).update(doc.buildings, true)!;
-      if (lists) placed++;
+      const change = live.update(doc.buildings, true);
+      apply(change);
+      const whole = gardenLists(still, bank, plantsOf).update(doc.buildings, true)?.added ?? [];
       // A repaint changes no garden: nothing placed again.
-      if (lists) expect(JSON.stringify(lists)).toBe(JSON.stringify(whole));
+      if (change) placed++;
+      expect(texts(held)).toEqual(texts(whole));
     }
     expect(placed).toBeGreaterThan(15);
   });
