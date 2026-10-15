@@ -1,3 +1,4 @@
+import type { Product } from '@core/engine';
 import type { Change, ChangeJournal, ChangeKind } from './changes';
 
 /**
@@ -136,4 +137,28 @@ export class Derived<D extends { readonly changes: ChangeJournal }, K, V> {
     this.work.last = dirty.size;
     return changed;
   }
+}
+
+/**
+ * A `Derived` as a product of the engine (`core/engine.ts`): refreshed there
+ * against the source of the moment, the keys whose value changed handed to
+ * `onChanged` (the drawing or the index kept from them).
+ */
+export function derivedProduct<D extends { readonly changes: ChangeJournal }, K, V>(
+  derived: Derived<D, K, V>,
+  source: () => D | null,
+  onChanged?: (keys: ReadonlySet<K>, source: D) => void,
+  after?: readonly Product[],
+): Product {
+  return {
+    name: derived.spec.name,
+    ...(after ? { after } : {}),
+    refresh(): number {
+      const from = source();
+      if (!from) return 0;
+      const changed = derived.refresh(from);
+      if (changed.size && onChanged) onChanged(changed, from);
+      return derived.work.last;
+    },
+  };
 }

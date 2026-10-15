@@ -4,6 +4,7 @@ import { levelElevation, levelHeight, liftAt, localToWorld } from '@world/buildi
 import { LAMP_KINDS, interiorAt } from '@world/buildings/interior';
 import { m } from '@world/units';
 import type { CutawaySpec } from './buildings/layer';
+import type { Building } from '@world/buildings/types';
 
 /**
  * The room lights of the floors cut open (the building tool's cutaway): one
@@ -13,27 +14,34 @@ import type { CutawaySpec } from './buildings/layer';
  * changes the scene's light count (which recompiles every shader).
  */
 export class RoomLamps {
-  /** Each cut floor's height, by building and level, for the buildings as they last were. */
-  private readonly floors = new Map<string, number>();
-  private revision = -1;
+  /**
+   * Each cut floor's height, by the building's record and level: a record is
+   * never changed in place (`BuildingStore`, OWNERSHIP), so a record replaced
+   * lets its heights go. DO NOT clear them all on `buildings.revision`: any
+   * building of the town grown or aged threw every height away.
+   */
+  private readonly floors = new WeakMap<Building, Map<number, number>>();
 
   lamps(world: SimWorld, spec: CutawaySpec | null, groundAt: GroundAt, pavedAt: PavedAt, max: number): { x: number; y: number; z: number }[] {
     const out: { x: number; y: number; z: number }[] = [];
     if (!spec) return out;
-    if (world.doc.buildings.revision !== this.revision) {
-      this.revision = world.doc.buildings.revision;
-      this.floors.clear();
-    }
-    const near = [...world.doc.buildings.all()]
+    // The building asked for, or those within the radius found by place (`buildings.near`). DO NOT walk
+    // `buildings.all()`: this runs every frame the cutaway is open, the whole town each time.
+    const buildings = world.doc.buildings;
+    const only = spec.only !== undefined ? buildings.get(spec.only) : undefined;
+    const candidates = spec.only !== undefined ? (only ? [only] : [])
+      : buildings.near(spec.x - spec.radius, spec.y - spec.radius, spec.x + spec.radius, spec.y + spec.radius);
+    const near = candidates
       .map((b) => ({ b, d: Math.hypot(b.x - spec.x, b.y - spec.y) }))
-      .filter((e) => (spec.only !== undefined ? e.b.id === spec.only : e.d <= spec.radius))
+      .filter((e) => spec.only !== undefined || e.d <= spec.radius)
       .sort((a, c) => a.d - c.d);
     for (const { b } of near) {
-      const key = `${b.id}:${spec.level}`;
-      let floor = this.floors.get(key);
+      let levels = this.floors.get(b);
+      if (!levels) this.floors.set(b, levels = new Map());
+      let floor = levels.get(spec.level);
       if (floor === undefined) {
         floor = floorHeight(b, groundAt, pavedAt) + levelElevation(b, spec.level) + m(0.05);
-        this.floors.set(key, floor);
+        levels.set(spec.level, floor);
       }
       for (const f of interiorAt(b, spec.level).furniture) {
         if (!LAMP_KINDS.has(f.kind)) continue;

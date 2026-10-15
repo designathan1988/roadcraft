@@ -22,8 +22,6 @@ export interface SiteGrading {
   changedSites(buildings: BuildingStore): SiteBox | null;
   /** A building's platform worked out again (the roads round it moved). */
   refresh(b: Building): void;
-  /** A building's platform worked out if it is not known; true when it was worked out now. */
-  ensure(b: Building): boolean;
   /** The town's platforms put together from each building's (`pads`); null for a town with none. */
   rebuild(buildings: BuildingStore): void;
   /** The roads or the land moved: every platform is worked out afresh, and every site read again as graded. */
@@ -132,11 +130,6 @@ export function siteGrading(
     refresh(b) {
       padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
       refreshed.add(b.id);
-    },
-    ensure(b) {
-      if (padsKnown.has(b)) return false;
-      padsKnown.set(b, padOf(b, groundAt, pavedAt, apron));
-      return true;
     },
     /** @rebuild The whole town's platforms filed only the first time, after `forget`, or when the diary cannot say which buildings changed. */
     rebuild(buildings) {

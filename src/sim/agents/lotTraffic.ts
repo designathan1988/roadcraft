@@ -7,7 +7,7 @@ import { createVehicle, snapshot, type Vehicle, type VehicleId } from '../vehicl
 import { assignOccupancy } from '../vehicles/kerbStops';
 import { planFrom } from '../routing/router';
 import { chooseVehicleDestination } from '../routing/destination';
-import { collectBays, stallFits, type Bay } from './parking';
+import { bayChangesSince, baySources, baysOfSource, stallFits, type Bay } from './parking';
 import { trafficTarget } from '../vehicles/spawn';
 import { flows, kindOf } from '../ambient/demand';
 import { arrival, departure, type Manoeuvre } from './manoeuvre';
@@ -100,9 +100,12 @@ const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.
 export class LotTraffic {
   private readonly cars = new Map<VehicleId, LotCar>();
   private clock = 0;
-  private baysFor = '';
-  private seenFor = '';
-  private bays: Bay[] = [];
+  /** The bays' diary as last read (`bayChangesSince`), and the serial seen a look before it was read. */
+  private baysRead = -1;
+  private baysSeen = -1;
+  /** The gated bays by their source (`L<building>`, `K<segment>`), and by place (`bayKey`): kept from the diary. */
+  private readonly bySource = new Map<string, Bay[]>();
+  private readonly bays = new Map<string, Bay>();
   /** The lorries to the works' docks, stepped with the cars (`lorryTraffic.ts`). */
   readonly lorries = new LorryTraffic();
   /** Counters for probes: cars sent in, parked, driven out. */
@@ -136,9 +139,10 @@ export class LotTraffic {
     this.cars.clear();
     this.owed = 0;
     this.clock = 0;
-    this.baysFor = '';
-    this.seenFor = '';
-    this.bays = [];
+    this.baysRead = -1;
+    this.baysSeen = -1;
+    this.bySource.clear();
+    this.bays.clear();
     // As a new map's: the counters from nought (the random stream is the
     // world's, `SimWorld.rng.lots`, forked again by `SimWorld.reset`).
     this.called = 0;
@@ -168,7 +172,7 @@ export class LotTraffic {
     if (this.clock < LOOK) return;
     this.clock = 0;
     this.readBays(w);
-    if (!this.bays.length) return;
+    if (!this.bays.size) return;
     const target = trafficTarget(w);
     this.depart(w, target);
     // Trips ending in a lot, at the rate a trip ends; never more owed than can be on their way at once.
@@ -236,17 +240,36 @@ export class LotTraffic {
     }
   }
 
-  /** The gated lots' bays, read again a look after the buildings or the roads changed (the scenery fills them first). */
+  /**
+   * The gated lots' bays, kept from the bays' diary (`bayChangesSince`): only
+   * the sources whose bays changed are read again, a look after they changed
+   * (the scenery fills them first). DO NOT read the town's list
+   * (`collectBays`) on a change of `buildings.revision`: every bay of the
+   * town, for each building grown - each look of a city's growth.
+   */
   private readBays(w: SimWorld): void {
-    const key = `${w.doc.buildings.revision}:${w.topologyRevision}`;
-    if (key !== this.seenFor) { this.seenFor = key; return; }
-    if (key === this.baysFor) return;
-    this.baysFor = key;
-    this.bays = collectBays(w).filter((b) => !b.kerb && b.lane?.entryAt !== undefined && b.via.length > 0);
-    const live = new Map(this.bays.map((b) => [bayKey(b), b]));
-    // A car whose bay is gone (its building was replaced) goes with it, unless it is on its way.
+    const { serial, changed } = bayChangesSince(w, this.baysRead);
+    if (changed !== null && changed.length === 0) { this.baysRead = serial; return; }
+    if (serial !== this.baysSeen) { this.baysSeen = serial; return; }
+    const sources = changed ?? baySources(w);
+    const gone = new Set<string>();
+    if (changed === null) {
+      for (const key of this.bays.keys()) gone.add(key);
+      this.bySource.clear();
+      this.bays.clear();
+    }
+    for (const source of new Set(sources)) {
+      for (const bay of this.bySource.get(source) ?? []) { gone.add(bayKey(bay)); this.bays.delete(bayKey(bay)); }
+      const now = baysOfSource(w, source).filter((b) => !b.kerb && b.lane?.entryAt !== undefined && b.via.length > 0);
+      if (now.length) this.bySource.set(source, now); else this.bySource.delete(source);
+      for (const bay of now) this.bays.set(bayKey(bay), bay);
+    }
+    this.baysRead = serial;
+    // A car whose bay went (its building was replaced) goes with it, unless it is on its way.
     for (const car of [...this.cars.values()]) {
-      const now = live.get(bayKey(car.bay));
+      const key = bayKey(car.bay);
+      if (!gone.has(key)) continue;
+      const now = this.bays.get(key);
       if (now) { car.bay = now; continue; }
       if (car.phase === 'coming') this.release(w, car);
       else if (car.phase === 'parked') this.drop(w, car);
@@ -321,7 +344,7 @@ export class LotTraffic {
   private sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[] {
     const out: { bay: Bay; body: Vehicle }[] = [];
     const pooled = new Set<Vehicle>();
-    for (const bay of this.bays) {
+    for (const bay of this.bays.values()) {
       const body = w.ambient.sceneryCarAt(bayKey(bay));
       if (!body || this.cars.has(body.id) || pooled.has(body)) continue;
       pooled.add(body);
@@ -343,7 +366,9 @@ export class LotTraffic {
       if (car.body?.free) taken.add(bayKey(car.body.free));
     }
     for (const lorry of this.lorries.view()) if (Number.isFinite(lorry.x)) taken.add(bayKey(lorry));
-    return this.bays.filter((b) => !taken.has(bayKey(b)) && !w.ambient.sceneryCarAt(bayKey(b)));
+    const out: Bay[] = [];
+    for (const b of this.bays.values()) if (!taken.has(bayKey(b)) && !w.ambient.sceneryCarAt(bayKey(b))) out.push(b);
+    return out;
   }
 
   // ------------------------------------------------------------ the phases

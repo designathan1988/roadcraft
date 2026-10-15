@@ -1422,10 +1422,17 @@ export function createSceneRenderer(
    * ms of every road edit in the default town (docs/performance.md #10).
    */
   function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<void, void, void> {
-    const touches = (q: readonly [number, number, number, number]): boolean =>
-      blocks.some((b) => q[0] <= b[2] && q[2] >= b[0] && q[1] <= b[3] && q[3] >= b[1]);
-    for (const b of net.doc.buildings.all()) {
-      if (!touches(bankBox(b))) continue;
+    // The buildings whose bank reaches a block the roads changed, found by place. DO NOT walk
+    // `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a
+    // building a step): the town twice for each road drawn; `rebuild` works out the platforms it lacks.
+    const reached = new Map<BuildingId, Building>();
+    for (const q of blocks) {
+      for (const b of net.doc.buildings.near(q[0] - BANK_REACH, q[1] - BANK_REACH, q[2] + BANK_REACH, q[3] + BANK_REACH)) {
+        const box = bankBox(b);
+        if (box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1]) reached.set(b.id, b);
+      }
+    }
+    for (const b of reached.values()) {
       sitesGraded.refresh(b);
       yield;
     }
@@ -1433,12 +1440,6 @@ export function createSceneRenderer(
     // The sites that changed with the edit (a building the road razed) are
     // graded here too, in the slices, not in the edit's own frame.
     const sites = sitesGraded.changedSites(net.doc.buildings);
-    // Every platform not known yet, one building a step: all of them in one
-    // step was a frame of 50 ms after the memory of them was dropped.
-    for (const b of net.doc.buildings.all()) {
-      if (!sitesGraded.ensure(b)) continue;
-      yield;
-    }
     sitesGraded.rebuild(net.doc.buildings);
     yield;
     // Each block in quarters, a quarter a step: a whole block was 18 ms of
