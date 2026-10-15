@@ -10,8 +10,12 @@ import './roads.css';
  * defaults back. The keys live in `editor/roads/keys.ts`.
  */
 let open: HTMLElement | null = null;
+/** Lets go of the open panel's key listener when it closes (MDN, addEventListener `signal`). */
+let listening: AbortController | null = null;
 
 export function closeRoadKeys(): void {
+  listening?.abort();
+  listening = null;
   open?.remove();
   open = null;
 }
@@ -74,9 +78,6 @@ export function openRoadKeys(anchor?: HTMLElement): void {
 
   // While a chip waits, the next key is its, before the game sees it.
   const onKey = (event: KeyboardEvent): void => {
-    // This panel closed (or replaced by a new one, which has its own listener):
-    // let go, before a stale chip still waiting takes the key.
-    if (open !== root) { window.removeEventListener('keydown', onKey, true); return; }
     if (!waiting) {
       if (event.key === 'Escape') { closeRoadKeys(); event.stopPropagation(); }
       return;
@@ -91,7 +92,10 @@ export function openRoadKeys(anchor?: HTMLElement): void {
     render();
   };
   // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
-  window.addEventListener('keydown', onKey, true);
+  // Removed with the panel (`closeRoadKeys`), not on the next key: a panel opened
+  // and closed many times left one listener each until a key was pressed.
+  listening = new AbortController();
+  window.addEventListener('keydown', onKey, { capture: true, signal: listening.signal });
 
   if (anchor) {
     const box = anchor.getBoundingClientRect();
