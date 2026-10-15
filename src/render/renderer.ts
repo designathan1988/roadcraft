@@ -1225,6 +1225,29 @@ export function createSceneRenderer(
    * the diary names it or the ground moved where its floor reads it. NOT its bank (`bankBox`, 40 m and more
    * round it): every site graded in a growing town floored again the dozens of buildings round it.
    */
+  /**
+   * Where the buildings or the ground under them changed since the canyon
+   * light last asked (`canyonLight.ts`): the diary's rectangles; null when it
+   * cannot say (a load, entries forgotten). DO NOT key the canyon on a
+   * revision of the whole town again: it laid its whole window at every building.
+   */
+  const CANYON_KINDS: readonly ChangeKind[] = ['buildings', 'ground', 'elevation'];
+  const CANYON_GROUND_REACH = FLOOR_READ_REACH + m(64);
+  let canyonJournal: ChangeJournal | null = null;
+  let canyonSerial = -1;
+  const NOTHING_CHANGED: readonly ChangeRect[] = [];
+  const canyonChanges = (journal: ChangeJournal): readonly ChangeRect[] | null => {
+    const serial = journal.serialOf(...CANYON_KINDS);
+    if (journal === canyonJournal && serial === canyonSerial) return NOTHING_CHANGED;
+    const entries = journal === canyonJournal && canyonSerial >= 0 ? journal.since(canyonSerial, CANYON_KINDS) : null;
+    canyonJournal = journal;
+    canyonSerial = serial;
+    if (!entries || entries.some((e) => e.rects === null)) return null;
+    // The ground moved under a building's floor (it reads the ground round it) lifts the whole building:
+    // its rectangle grown by a building's reach.
+    const grow = (r: ChangeRect, d: number): ChangeRect => [r[0] - d, r[1] - d, r[2] + d, r[3] + d];
+    return entries.flatMap((e) => e.kind === 'buildings' ? e.rects! : e.rects!.map((r) => grow(r, CANYON_GROUND_REACH)));
+  };
   const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt), floorBox, FLOOR_READ_REACH);
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
@@ -3047,7 +3070,7 @@ export function createSceneRenderer(
         townSolids = () => cameraSolidsKept.solids();
       }
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
-      post.followTown(rig.target.x, -rig.target.z, townSolids, cameraSolidsKept.key);
+      post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
       const plantMap = rig.viewport.zoom < PLANT_MAP_ZOOM;
       // Keep the full facade at street zoom: the planar far mesh loses frames

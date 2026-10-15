@@ -69,10 +69,11 @@ export interface PostChain {
    */
   setDirectShare(share: number): void;
   /**
-   * The view's centre (map x, y) and the town's solids with their key: the
-   * light the buildings shut out of the streets follows (`canyonLight.ts`).
+   * The view's centre (map x, y), the town's solids and where they changed
+   * since the last call (null: anywhere): the light the buildings shut out of
+   * the streets follows (`canyonLight.ts`).
    */
-  followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, key: string): void;
+  followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
   /**
    * The sky the player set (`Atmosphere`) and the light it is lit by; the
    * map is seen as a model over the void, the air round it drawn too: the
@@ -565,8 +566,8 @@ export function createPostChain(
       (u['uGroundFog']!.value as Vector4).set(fog.density, 0, 0, 1);
       (u['uGroundFogSlab']!.value as Vector2).set(fog.low - 2, fog.high);
     },
-    followTown(cx, cy, solids, key) {
-      canyon?.follow(cx, cy, solids, key);
+    followTown(cx, cy, solids, changed) {
+      canyon?.follow(cx, cy, solids, changed);
     },
     setAtmosphere(atmosphere, sun, skyColor, sunLight, eyeShift = 0) {
       canyon?.setSun(sun, directShare);
