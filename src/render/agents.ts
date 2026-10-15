@@ -58,6 +58,7 @@ import { HELMET_SEGMENTS, STEER_FULL } from './riderPoses';
 import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { createBlobShadows } from './blobShadows';
+import { LEVELS, levelFor, partLevels, type Weld } from './vehicleLevels';
 
 /** Vehicles and riders use the original instanced batches. */
 
@@ -83,6 +84,8 @@ const VEHICLE_HYSTERESIS = 0.1;
 const CAR_LENGTH = m(4.5);
 /** At most this many vehicles whole at once: past it, the smallest on the screen are drawn a level down. */
 const VEHICLE_NEAR_CAP = 200;
+/** A coarser level's first instance buffers (`Ladder`): they grow with what is drawn (`growPart`). */
+const LADDER_CAPACITY = 16;
 
 const SIDES = [1, -1] as const;
 
@@ -120,6 +123,8 @@ interface AgentRenderOptions {
   readonly personPixels?: (x: number, y: number, z: number, height: number) => number;
   /** Pixels a world unit across the screen at (x, y, z): each vehicle's level of detail. */
   readonly screenScale?: (x: number, y: number, z: number) => number;
+  /** Pixels drawn per CSS pixel (the canvas's buffer over its size): a part's level is chosen by its error in pixels drawn. */
+  readonly pixelRatio?: number;
   /** Whether shadows are drawn at all (the quality tier): the far ones' soft discs follow it. */
   readonly shadows?: boolean;
 }
@@ -419,6 +424,25 @@ function instanced(
   return { mesh, n: 0, tinted: false };
 }
 
+/** A part at each level (`vehicleLevels.ts`): `parts[k]` within `LEVEL_ERRORS[k - 1]`, `route[k]` the part drawn at level k (-1: none), the model's own until made. */
+interface Ladder {
+  readonly parts: readonly Part[];
+  readonly route: number[];
+}
+
+/** The largest scale a road wheel's unit tyre and rim are drawn at (`placeWheels`): their levels are chosen by it. */
+const tyreSize = (plan: BodyPlan): number => Math.max(plan.wheelRadius * 2, plan.tread);
+const rimSize = (plan: BodyPlan): number => Math.max(plan.wheelRadius * 2 * 0.52, plan.tread * 1.1);
+/** Every level a vehicle's parts are drawn at, as one number: a parked car's copied writes hold while it stays the same. */
+const levelsKey = (plan: BodyPlan, pixels: number): number =>
+  levelFor(pixels) + LEVELS * (levelFor(pixels * tyreSize(plan)) + LEVELS * levelFor(pixels * rimSize(plan)));
+
+/** The part of `ladder` for `level`; null when nothing of it is left to draw there. */
+function rung(ladder: Ladder, level: number): Part | null {
+  const at = ladder.route[level]!;
+  return at < 0 ? null : ladder.parts[at]!;
+}
+
 /** `groundAt`: what a walker off the streets stands on (a yard, a terrace, the paving, the land); `roughGroundAt` */
 export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () => void = () => {},
   groundAt?: (x: number, y: number) => number,
@@ -490,10 +514,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** One set of instanced meshes per car class, built from its own model (`vehicleModels.ts`) */
   interface CarParts {
     readonly model: VehicleModel;
-    /** The body, glazing and cabin with every door shut: one instance each. */
-    readonly shell: Part;
-    readonly glass: Part;
-    readonly interior: Part;
+    /** The body, glazing and cabin with every door shut: one instance each, at the level its size on the screen allows. */
+    readonly shell: Ladder;
+    readonly glass: Ladder;
+    readonly interior: Ladder;
     /** The same while a door moves: the pieces, and each leaf on its own. */
     readonly openShell: Part;
     readonly openGlass: Part;
@@ -501,15 +525,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     readonly doors: readonly Part[];
     readonly doorGlass: readonly Part[];
     readonly doorCards: readonly (Part | null)[];
-    readonly trim: Part;
+    readonly trim: Ladder;
     /** The roof panel in paint, or in glass on a car with a panoramic roof. */
-    readonly roof: Part | null;
+    readonly roof: Ladder | null;
     readonly roofGlass: Part | null;
-    readonly accent: Part | null;
+    readonly accent: Ladder | null;
     /** The body, roof and accent of the middle level: the same, casting no shadow (a soft disc instead). */
-    readonly shellLite: Part;
-    readonly roofLite: Part | null;
-    readonly accentLite: Part | null;
+    readonly shellLite: Ladder;
+    readonly roofLite: Ladder | null;
+    readonly accentLite: Ladder | null;
     readonly far: Part;
     readonly steering: Part | null;
   }
@@ -522,6 +546,41 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return `${a.id}:${carStyleOf(a, agentHash(vehicle.id ^ 0x57e1))}`;
   };
   const modelGeometries: BufferGeometry[] = [];
+  /** Each source geometry's levels, made once (off the main thread) and shared by every ladder drawn from it. */
+  const levelsOf = new Map<BufferGeometry, Promise<(BufferGeometry | null)[]>>();
+  /** Moves when levels arrive: a parked car's copied writes name the parts it was drawn with (`parkedDraws`). */
+  let levelsVersion = 0;
+  const ladderParts: Part[] = [];
+  /** `base` and a part per coarser level, empty until drawn (they grow, `growPart`), routed to `base` until the levels are made. */
+  const ladder = (base: Part, weld: Weld): Ladder => {
+    const parts = [base];
+    for (let k = 1; k < LEVELS; k++) {
+      const part = instanced(`${base.mesh.name}@${k}`, base.mesh.geometry, base.mesh.material as Material, LADDER_CAPACITY, base.mesh.castShadow);
+      parts.push(part);
+      ladderParts.push(part);
+    }
+    const made: Ladder = { parts, route: new Array<number>(LEVELS).fill(0) };
+    const source = base.mesh.geometry;
+    let levels = levelsOf.get(source);
+    if (!levels) {
+      levels = partLevels(source, weld);
+      levelsOf.set(source, levels);
+      void levels.then((all) => { for (const g of new Set(all)) if (g && g !== source) modelGeometries.push(g); });
+    }
+    void levels.then((all) => {
+      for (let k = 1; k < all.length; k++) {
+        const geometry = all[k];
+        if (!geometry) made.route[k] = -1;
+        else if (geometry === all[k - 1]) made.route[k] = made.route[k - 1]!;
+        else { parts[k]!.mesh.geometry = geometry; made.route[k] = k; }
+      }
+      levelsVersion++;
+      onAssetsReady();
+    }, (error: unknown) => console.error(`[vehicles] ${base.mesh.name}: levels not made, drawn whole`, error));
+    return made;
+  };
+  const wheelLevels = ladder(wheels, 'boxes');
+  const hubLevels = ladder(hubs, 'boxes');
   // One set per class and body style: a sedan may be drawn as an estate and an SUV as a pick-up
   const bodies: { key: string; model: VehicleModel }[] = [];
   for (const archetype of ARCHETYPES) {
@@ -540,22 +599,22 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     modelGeometries.push(...own);
     carParts.set(key, {
       model,
-      shell: instanced(`car-${id}-shell`, model.shell, paint, MAX_VEHICLES),
-      glass: instanced(`car-${id}-glass`, model.glass, glassMaterial, MAX_VEHICLES, false),
-      interior: instanced(`car-${id}-interior`, model.interior, cabinMaterial, MAX_VEHICLES, false),
+      shell: ladder(instanced(`car-${id}-shell`, model.shell, paint, MAX_VEHICLES), 'smooth'),
+      glass: ladder(instanced(`car-${id}-glass`, model.glass, glassMaterial, MAX_VEHICLES, false), 'smooth'),
+      interior: ladder(instanced(`car-${id}-interior`, model.interior, cabinMaterial, MAX_VEHICLES, false), 'boxes'),
       openShell: instanced(`car-${id}-openshell`, model.openShell, paint, MAX_VEHICLES),
       openGlass: instanced(`car-${id}-openglass`, model.openGlass, glassMaterial, MAX_VEHICLES, false),
       openInterior: instanced(`car-${id}-openinterior`, model.openInterior, cabinMaterial, MAX_VEHICLES, false),
       doors: model.doors.map((d, i) => instanced(`car-${id}-door${i}`, d.panel, paint, MAX_VEHICLES)),
       doorGlass: model.doors.map((d, i) => instanced(`car-${id}-doorglass${i}`, d.glass, glassMaterial, MAX_VEHICLES, false)),
       doorCards: model.doors.map((d, i) => d.card ? instanced(`car-${id}-doorcard${i}`, d.card, cabinMaterial, MAX_VEHICLES, false) : null),
-      trim: instanced(`car-${id}-trim`, model.trim, trim, MAX_VEHICLES, false),
-      roof: model.roof ? instanced(`car-${id}-roof`, model.roof, paint, MAX_VEHICLES) : null,
+      trim: ladder(instanced(`car-${id}-trim`, model.trim, trim, MAX_VEHICLES, false), 'boxes'),
+      roof: model.roof ? ladder(instanced(`car-${id}-roof`, model.roof, paint, MAX_VEHICLES), 'smooth') : null,
       roofGlass: model.roof ? instanced(`car-${id}-roofglass`, model.roof, glassMaterial, MAX_VEHICLES, false) : null,
-      accent: model.accent ? instanced(`car-${id}-accent`, model.accent, paint, MAX_VEHICLES) : null,
-      shellLite: instanced(`car-${id}-shell-lite`, model.shell, paint, MAX_VEHICLES, false),
-      roofLite: model.roof ? instanced(`car-${id}-roof-lite`, model.roof, paint, MAX_VEHICLES, false) : null,
-      accentLite: model.accent ? instanced(`car-${id}-accent-lite`, model.accent, paint, MAX_VEHICLES, false) : null,
+      accent: model.accent ? ladder(instanced(`car-${id}-accent`, model.accent, paint, MAX_VEHICLES), 'smooth') : null,
+      shellLite: ladder(instanced(`car-${id}-shell-lite`, model.shell, paint, MAX_VEHICLES, false), 'smooth'),
+      roofLite: model.roof ? ladder(instanced(`car-${id}-roof-lite`, model.roof, paint, MAX_VEHICLES, false), 'smooth') : null,
+      accentLite: model.accent ? ladder(instanced(`car-${id}-accent-lite`, model.accent, paint, MAX_VEHICLES, false), 'smooth') : null,
       // A car under twelve pixels: its shadow is the soft disc under it.
       far: instanced(`car-${id}-far`, model.far, paint, MAX_VEHICLES, false),
       steering: model.steering ? instanced(`car-${id}-wheel`, model.steering.geometry, cabinMaterial, MAX_VEHICLES, false) : null,
@@ -569,20 +628,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       modelGeometries.push(coarse);
       c.far.mesh.geometry = coarse;
     });
-    // The body without its cabin the middle band, from the far proxy's nine pixels up to the occupants' zoom, a hundred or
-    for (const part of [c.shellLite, c.roofLite, c.accentLite]) {
-      if (!part) continue;
-      void simplified(part.mesh.geometry, 0.25, 0.005).then((lighter) => {
-        if (lighter === part.mesh.geometry) return;
-        modelGeometries.push(lighter);
-        part.mesh.geometry = lighter;
-      });
-    }
   }
+  // Each ladder's own level (its `parts[0]`); the coarser ones are in `ladderParts`.
   const carPartList: Part[] = [...carParts.values()].flatMap((c) => [
-    c.shell, c.glass, c.interior, c.openShell, c.openGlass, c.openInterior, ...c.doors, ...c.doorGlass,
-    ...c.doorCards.filter((p): p is Part => p !== null), c.trim, c.far, c.shellLite,
-    ...[c.roof, c.roofGlass, c.accent, c.steering, c.roofLite, c.accentLite].filter((p): p is Part => p !== null),
+    c.shell.parts[0]!, c.glass.parts[0]!, c.interior.parts[0]!, c.openShell, c.openGlass, c.openInterior, ...c.doors, ...c.doorGlass,
+    ...c.doorCards.filter((p): p is Part => p !== null), c.trim.parts[0]!, c.far, c.shellLite.parts[0]!,
+    ...[c.roofGlass, c.steering].filter((p): p is Part => p !== null),
+    ...[c.roof, c.accent, c.roofLite, c.accentLite].flatMap((l) => (l ? [l.parts[0]!] : [])),
   ]);
 
   interface TwoWheelerParts {
@@ -608,7 +660,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   }
   const twoWheelerPartList: Part[] = [...twoWheelerParts.values()].flatMap((t) =>
     [t.body, t.trim, t.steering, ...(t.cranks ? [t.cranks] : [])]);
-  const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList];
+  const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList, ...ladderParts];
 
   // The scenery's people: the few bodies of the scenery cast
   const pedestrians = createRiggedCitizens(CROWD_IDS, onAssetsReady);
@@ -1085,7 +1137,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** `linear`: the tint as the working colour space holds it, worked out once */
   interface Written { readonly part: Part; readonly m: Float32Array; readonly tint: number; readonly linear: Color | null }
   let recording: Written[] | null = null;
-  const parkedDraws = new Map<number, { x: number; y: number; angle: number; deck: number; band: number; paint: number; writes: Written[]; seen: number; blob: Matrix4 | null }>();
+  const parkedDraws = new Map<number, { x: number; y: number; angle: number; deck: number; band: number; levels: number; version: number; paint: number; writes: Written[]; seen: number; blob: Matrix4 | null }>();
+  /** Pixels a metre where the vehicle being drawn stands (`screenScale`): its parts' levels (`vehicleLevels.ts`). */
+  let drawPixels = Number.POSITIVE_INFINITY;
   const replay = (writes: readonly Written[]): void => {
     for (const rec of writes) {
       const part = rec.part;
@@ -1103,6 +1157,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** Road wheels, plus their hubs at the closest band. */
   const placeWheels = (plan: BodyPlan, band: number): void => {
     const d = plan.wheelRadius * 2;
+    // Each at the level its size on the screen allows: the unit tyre and rim scaled by the wheel (its largest scale).
+    const wheels = rung(wheelLevels, levelFor(drawPixels * tyreSize(plan)));
+    const hubs = rung(hubLevels, levelFor(drawPixels * rimSize(plan)));
     plan.axleAlong.forEach((along, axle) => {
       // Only the front axle steers; every hub turns with the distance driven
       const steer = axle === 0 ? lamp.steer : 0;
@@ -1112,15 +1169,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         return;
       }
       if (plan.axleSide === 0) {
-        place(wheels, along, 0, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
-        if (band >= 1) {
+        if (wheels) place(wheels, along, 0, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
+        if (band >= 1 && hubs) {
           place(hubs, along, 0, plan.wheelRadius, d * 0.45, d * 0.45, plan.tread * 1.1, HUB, lamp.spin, steer);
         }
         return;
       }
       for (const side of SIDES) {
-        place(wheels, along, side * plan.axleSide, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
-        if (band >= 1) {
+        if (wheels) place(wheels, along, side * plan.axleSide, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
+        if (band >= 1 && hubs) {
           place(
             hubs,
             along,
@@ -1150,14 +1207,20 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       return;
     }
     const doorsMoving = vehicle.doors.length > 0;
+    // The parts that do not move, each at the level whose error is under half a pixel at this car's size (`vehicleLevels.ts`).
+    const detail = levelFor(drawPixels);
+    const whole = (l: Ladder | null, tint: number): void => {
+      const part = l ? rung(l, detail) : null;
+      if (part) place(part, 0, 0, 0, 1, 1, 1, tint);
+    };
     // Real shadows from the whole vehicle only; the middle level's is a soft disc (`sync`).
     const shell = band >= 2 ? car.shell : car.shellLite;
     if (!doorsMoving && look.windowsDown === 0) {
-      place(shell, 0, 0, 0, 1, 1, 1, paintHex);
-      place(car.glass, 0, 0, 0, 1, 1, 1, -1);
+      whole(shell, paintHex);
+      whole(car.glass, -1);
     } else if (!doorsMoving) {
       // A window down: the fixed glazing, then each door's window, lowered into its door
-      place(shell, 0, 0, 0, 1, 1, 1, paintHex);
+      whole(shell, paintHex);
       place(car.openGlass, 0, 0, 0, 1, 1, 1, -1);
       model.doors.forEach((door, i) => {
         const down = (look.windowsDown & (door.side === -1 ? 1 : 2)) !== 0 && door.kind === 'hinge';
@@ -1188,12 +1251,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const accent = band >= 2 ? car.accent : car.accentLite;
     if (roof && car.roofGlass) {
       if (look.glassRoof) place(car.roofGlass, 0, 0, 0, 1, 1, 1, -1);
-      else place(roof, 0, 0, 0, 1, 1, 1, look.blackRoof ? 0x15171a : paintHex);
+      else whole(roof, look.blackRoof ? 0x15171a : paintHex);
     }
-    if (accent) place(accent, 0, 0, 0, 1, 1, 1, look.accent);
+    whole(accent, look.accent);
     placeWheels(plan, band);
 
-    place(car.trim, 0, 0, 0, 1, 1, 1, -1);
+    whole(car.trim, -1);
     for (const l of model.headlamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.head);
     for (const l of model.taillamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.tail);
     for (const l of model.indicators) {
@@ -1203,7 +1266,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
     }
     if (band < 2) return;
-    if (!doorsMoving) place(car.interior, 0, 0, 0, 1, 1, 1, -1);
+    if (!doorsMoving) whole(car.interior, -1);
     else {
       place(car.openInterior, 0, 0, 0, 1, 1, 1, -1);
       model.doors.forEach((door, i) => {
@@ -1623,6 +1686,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       rowsDrawn = zoom >= occupantZoom * 1.6 ? Infinity : 0;
 
       const screenScale = options.screenScale;
+      const pixelRatio = options.pixelRatio ?? 1;
       const softShadows = options.shadows !== false;
       let whole = 0;
       nearCandidates.length = 0;
@@ -1664,12 +1728,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (twoWheeled && level === 2) bikesWholeNow = true;
         if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
+        drawPixels = pixels * pixelRatio;
         // Standing where it stood, drawn as it was: its instances copied, none of the sums.
         const still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
+        const levels = still ? levelsKey(plan, drawPixels) : 0;
         if (still) {
           const kept = parkedDraws.get(vehicle.id);
           if (kept && kept.x === pose.p.x && kept.y === pose.p.y && kept.angle === pose.angle && kept.deck === deck
-            && kept.band === level && kept.paint === hexOf(vehicle.color)) {
+            && kept.band === level && kept.levels === levels && kept.version === levelsVersion && kept.paint === hexOf(vehicle.color)) {
             replay(kept.writes);
             kept.seen = suspensionFrame;
             if (ride) { ride.seen = suspensionFrame; ride.lod = own; }
@@ -1756,7 +1822,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             break;
         }
         if (still && recording) {
-          parkedDraws.set(vehicle.id, { x: pose.p.x, y: pose.p.y, angle: pose.angle, deck, band: level, paint: paintHex, writes: recording, seen: suspensionFrame, blob: null });
+          parkedDraws.set(vehicle.id, { x: pose.p.x, y: pose.p.y, angle: pose.angle, deck, band: level, levels, version: levelsVersion, paint: paintHex, writes: recording, seen: suspensionFrame, blob: null });
           recording = null;
         }
         // Below the whole level, its shadow is a soft disc (the body casts none); a two-wheeler's too while none is drawn whole
@@ -1770,7 +1836,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
       for (const t of twoWheelerParts.values()) { t.body.mesh.castShadow = bikesCast; t.trim.mesh.castShadow = bikesCast; }
       thinWheels.mesh.castShadow = bikesCast;
-      wheels.mesh.castShadow = bikesCast || carsWheeled;
+      for (const part of wheelLevels.parts) part.mesh.castShadow = bikesCast || carsWheeled;
       bikesWhole = bikesWholeNow;
       // Next frame's floor for the whole level: the cap's smallest of this frame.
       if (nearCandidates.length > VEHICLE_NEAR_CAP) {

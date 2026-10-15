@@ -21,6 +21,25 @@ export interface IndexRequest {
   readonly triangles: number;
 }
 
+/** One welded mesh simplified once per error (`ladderIndices`): a vehicle part's levels (`vehicleLevels.ts`). */
+export interface LadderRequest {
+  readonly id: number;
+  readonly kind: 'ladder';
+  readonly positions: Float32Array;
+  readonly attributes: Float32Array;
+  readonly weights: readonly number[];
+  readonly index: Uint32Array;
+  /** Absolute errors, in the mesh's own units, finest first. */
+  readonly errors: readonly number[];
+}
+
+/** `index` simplified to the fewest triangles each error allows (meshoptimizer README: `ErrorAbsolute`, `Prune`), finest first. */
+export function ladderIndices(req: Omit<LadderRequest, 'id' | 'kind'>): Uint32Array[] {
+  const stride = req.weights.length;
+  return req.errors.map((error) => MeshoptSimplifier.simplifyWithAttributes(req.index, req.positions, 3, req.attributes, stride,
+    [...req.weights], null, 3, error, ['ErrorAbsolute', 'Prune'])[0]);
+}
+
 export interface LodLevel {
   readonly index: Uint32Array;
   readonly groups: { start: number; count: number; materialIndex: number }[];
@@ -62,11 +81,16 @@ export function simplifyIndex(source: Uint32Array, positions: Float32Array, tria
 
 /** The people's levels' service of the job system (`jobs/job.worker.ts`): each request answered. */
 export function serve(self: JobScope): void {
-  self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest>) => {
+  self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest | LadderRequest>) => {
     const req = e.data;
     // Every request answered, a failure too (`lodPool.ts` rejects it)
     try {
       await MeshoptSimplifier.ready;
+      if ('kind' in req && req.kind === 'ladder') {
+        const ladder = ladderIndices(req);
+        self.postMessage({ id: req.id, ladder }, ladder.map((l) => l.buffer));
+        return;
+      }
       if ('kind' in req) {
         const index = simplifyIndex(req.index, req.positions, req.triangles);
         // The source comes back when it was kept whole: transferred, not copied.

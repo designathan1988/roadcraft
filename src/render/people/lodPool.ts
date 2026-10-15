@@ -1,10 +1,11 @@
 import { jobPort } from '../../jobs/jobPool';
-import type { IndexRequest, LodLevel, LodRequest } from './lodWorker';
+import type { IndexRequest, LadderRequest, LodLevel, LodRequest } from './lodWorker';
 
-/** The simplifier worker (`lodWorker.ts`), started once and shared: a built person's levels */
+/** The simplifier worker (`lodWorker.ts`), started once and shared: a built person's levels, a vehicle part's */
 interface Pool {
   levels(req: Omit<LodRequest, 'id'>): Promise<LodLevel[]>;
   index(req: Omit<IndexRequest, 'id' | 'kind'>): Promise<Uint32Array | null>;
+  ladder(req: Omit<LadderRequest, 'id' | 'kind'>): Promise<Uint32Array[]>;
 }
 let pool: Pool | null | undefined;
 
@@ -12,7 +13,7 @@ export function lodPool(): Pool | null {
   if (pool !== undefined) return pool;
   if (typeof Worker === 'undefined' || typeof window === 'undefined') return (pool = null);
   const worker = jobPort('peopleLod', 0);
-  type Answer = { id: number; levels?: LodLevel[]; index?: Uint32Array | null; error?: string };
+  type Answer = { id: number; levels?: LodLevel[]; index?: Uint32Array | null; ladder?: Uint32Array[]; error?: string };
   const waiting = new Map<number, { resolve: (answer: Answer) => void; reject: (error: Error) => void }>();
   let next = 1;
   worker.onmessage = (e: MessageEvent<Answer>) => {
@@ -46,6 +47,9 @@ export function lodPool(): Pool | null {
     // The positions and the index are made for the request: sent, not copied.
     async index(req) {
       return (await ask({ kind: 'index', ...req }, [req.positions.buffer, req.index.buffer])).index ?? null;
+    },
+    async ladder(req) {
+      return (await ask({ kind: 'ladder', ...req }, [req.positions.buffer, req.attributes.buffer, req.index.buffer])).ladder ?? [];
     },
   };
   return pool;
