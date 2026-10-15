@@ -68,9 +68,21 @@ export function orderAlong(doc: RoadDoc, ids: ReadonlySet<SegmentId>, startAt: V
   }
   const out: { id: SegmentId; reversed: boolean }[] = [];
   const used = new Set<SegmentId>();
+  // The segments of the set at each node, in the set's order: the next one is
+  // the first unused there. DO NOT search the whole set at every step (a
+  // road's pieces squared, on every preview of the draft).
+  const atNode = new Map<NodeId, SegmentId[]>();
+  for (const id of ids) {
+    const seg = doc.segment(id);
+    if (!seg) continue;
+    for (const n of seg.a === seg.b ? [seg.a] : [seg.a, seg.b]) {
+      const list = atNode.get(n);
+      if (list) list.push(id); else atNode.set(n, [id]);
+    }
+  }
   while (current !== null && out.length < ids.size) {
     const node: NodeId = current;
-    const next = [...ids].find((id) => !used.has(id) && (doc.segment(id)?.a === node || doc.segment(id)?.b === node));
+    const next = atNode.get(node)?.find((id) => !used.has(id));
     if (next === undefined) break;
     const seg = doc.segment(next)!;
     used.add(next);
