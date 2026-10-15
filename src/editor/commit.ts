@@ -155,6 +155,18 @@ function terrainIndexOf(doc: RoadDoc): TerrainIndex {
   return terrainIndex;
 }
 
+/** The last solve on the terrain's index (no ground handed in): the next one on the same index starts from it. */
+let indexSolve: { readonly index: TerrainIndex; readonly elevation: RoadElevation } | null = null;
+/** A solve of `net` over `ground`: from the game's last on the same natural ground, or from the last on the same index */
+function solveOver(net: Network, ground: (x: number, y: number) => number, sampled: boolean, index: TerrainIndex | null,
+  previous: RoadElevation | null): RoadElevation {
+  if (sampled) return buildRoadElevation(net, ground, previous);
+  // DO NOT solve every road of the map for each road laid without the game's ground (the blocks tool).
+  const elevation = buildRoadElevation(net, ground, indexSolve?.index === index ? indexSolve!.elevation : null);
+  indexSolve = { index: index!, elevation };
+  return elevation;
+}
+
 function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?: (x: number, y: number) => number,
   previous: RoadElevation | null = null): { bored: boolean; elevation: RoadElevation | null } {
   const fresh = segmentsNewIn(before, work).filter((seg) => seg.structure === 'ground');
@@ -174,7 +186,7 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   const index = sampled ? null : terrainIndexOf(work);
   const ground = sampled ?? ((x: number, y: number): number => sampleTerrainHeight(index!, x, y));
   // From the game's last solve on the same ground, when there is one
-  const elevation = buildRoadElevation(workNet, ground, sampled ? previous : null);
+  const elevation = solveOver(workNet, ground, sampled !== undefined, index, previous);
   let changed = false;
   for (const seg of fresh) {
     const ribbon = workNet.ribbons.get(seg.id);
@@ -234,7 +246,7 @@ function draftStations(
   const ground = sampled ?? ((x: number, y: number): number => sampleTerrainHeight(index!, x, y));
   const elevation = bore.elevation && !bore.bored
     ? bore.elevation
-    : buildRoadElevation(workNet, ground, sampled ? (bore.elevation ?? previous) : null);
+    : solveOver(workNet, ground, sampled !== undefined, index, bore.elevation ?? previous);
   return stationsAlong(workNet, elevation, ground, orderAlong(work, laid, startAt), STATION_STEP);
 }
 

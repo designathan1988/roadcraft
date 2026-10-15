@@ -51,13 +51,21 @@ export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRef
   }
   const changed = changedSegments(before.doc, after.doc);
   if (!changed.length) return null;
-  if (tooSteep(before, after, changed)) return 'steep';
+  const solves = flatSolves(before, after);
+  if (tooSteep(before, after, changed, solves)) return 'steep';
   // The decks as the game solves them, over flat land (two roads at one map point stand on the same ground, so it cancels)
-  let solved: RoadElevation | null = null;
-  const deck = (id: SegmentId, p: Vec2): number =>
-    (solved ??= buildRoadElevation(after.net, FLAT_GROUND)).onSegment(id, p.x, p.y);
+  const deck = (id: SegmentId, p: Vec2): number => solves.after().onSegment(id, p.x, p.y);
   if (changed.some((id) => overlapsAnother(before, after, id, deck))) return 'overlap';
   return null;
+}
+
+/** The roads' heights before and after, over flat land, each solved once and only when a rule asks */
+function flatSolves(before: RoadState, after: RoadState): { before(): RoadElevation; after(): RoadElevation } {
+  let solvedBefore: RoadElevation | null = null;
+  let solvedAfter: RoadElevation | null = null;
+  const beforeSolve = (): RoadElevation => (solvedBefore ??= buildRoadElevation(before.net, FLAT_GROUND));
+  // DO NOT solve every road of the map for each edit: the solve after starts from the one before, where the edit reached.
+  return { before: beforeSolve, after: () => (solvedAfter ??= buildRoadElevation(after.net, FLAT_GROUND, beforeSolve())) };
 }
 
 /** The marks of `after` that may differ from `before`'s: on a working copy of it (`Network.fork`), only those the copy wrote */
@@ -162,7 +170,8 @@ function grade(state: RoadState, id: SegmentId, solved: () => RoadElevation): nu
 }
 
 /** Whether the edit leaves a ramp steeper than any street, on a road it laid or on one meeting it */
-function tooSteep(before: RoadState, after: RoadState, changed: readonly SegmentId[]): boolean {
+function tooSteep(before: RoadState, after: RoadState, changed: readonly SegmentId[],
+  solves: { before(): RoadElevation; after(): RoadElevation }): boolean {
   const touched = new Set<SegmentId>(changed);
   for (const id of changed) {
     const seg = after.doc.segment(id);
@@ -171,10 +180,7 @@ function tooSteep(before: RoadState, after: RoadState, changed: readonly Segment
     }
   }
   // Solved over flat land, once per state and only when a ramp asks for it
-  let solvedAfter: RoadElevation | null = null;
-  let solvedBefore: RoadElevation | null = null;
-  const afterElevation = (): RoadElevation => (solvedAfter ??= buildRoadElevation(after.net, FLAT_GROUND));
-  const beforeElevation = (): RoadElevation => (solvedBefore ??= buildRoadElevation(before.net, FLAT_GROUND));
+  const afterElevation = solves.after, beforeElevation = solves.before;
   for (const id of touched) {
     const now = grade(after, id, afterElevation);
     if (now <= MAX_BUILT_GRADE) continue;

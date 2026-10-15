@@ -4,6 +4,7 @@ import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { m } from '@world/units';
 import { guardRoadEdit } from '@editor/editRules';
+import { buildRoadElevation, elevationWork } from '@world/elevation';
 
 /** THE JUDGMENT OF A ROAD EDIT (`editRules.ts`) READS WHAT THE EDIT TOUCHED, NOT EVERY ROAD OF THE MAP (`edit.spec.ts`'s rule) */
 const BLOCK = m(120);
@@ -51,5 +52,41 @@ describe('the judgment of a road edit', () => {
   it('reads no mark of the junctions the edit did not touch', () => {
     expect(marksRead(3)).toBe(0);
     expect(marksRead(12)).toBe(0);
+  });
+});
+
+const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
+
+/** The roads' heights made again by one road laid beside a grid of n x n blocks, rising to a node 3 m up (a ramp to judge) */
+function solveWork(n: number): { judged: number; solved: number } {
+  const doc = grid(n);
+  const net = new Network(doc);
+  net.rebuild();
+  let elevation = buildRoadElevation(net, ground);
+  const x = BLOCK * (n / 2 + 2);
+  const lay = (y: number): void => {
+    const result = guardRoadEdit(doc, net, (work) => {
+      const a = work.addNode({ x, y }), b = work.addNode({ x: x + m(60), y });
+      work.setNodeHeightOffset(b.id, m(3));
+      work.addSegment(a.id, b.id, 1);
+      return true;
+    });
+    expect(result.changed).toBe(true);
+  };
+  // The first judgment solves the map once on level ground; the second starts from it.
+  lay(0);
+  elevation = buildRoadElevation(net, ground, elevation);
+  const before = elevationWork.profiles + elevationWork.nodes;
+  lay(m(40));
+  const judged = elevationWork.profiles + elevationWork.nodes - before;
+  const from = elevationWork.profiles + elevationWork.nodes;
+  // The game's solve on its ground, from the one before the edit.
+  elevation = buildRoadElevation(net, ground, elevation);
+  return { judged, solved: elevationWork.profiles + elevationWork.nodes - from };
+}
+
+describe('the heights of the roads after a road edit', () => {
+  it('are made again for the roads the edit reached, whatever the size of the map', () => {
+    expect(solveWork(12)).toEqual(solveWork(3));
   });
 });

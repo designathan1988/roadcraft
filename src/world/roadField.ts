@@ -106,7 +106,14 @@ export function heightAtArc(profile: { readonly h: ArrayLike<number>; readonly s
 
 // ------------------------------------------------------------ spatial index
 
-const cellKeyOf = (x: number, y: number): number => x * 73_856_093 + y * 19_349_663;
+export const cellKeyOf = (x: number, y: number): number => x * 73_856_093 + y * 19_349_663;
+/** A box over more cells than this is filed apart, read by every query (a road across the whole map would fill the grid). */
+export const OVERSIZED_CELLS = 4096;
+
+/** What the field's reads ask of an index: the roads a point may read. */
+interface NearIndex<P> {
+  near(x: number, y: number): readonly P[];
+}
 
 /** A uniform grid over the segments' influence boxes. */
 export class SpatialIndex<P extends { readonly bbox: Aabb }> {
@@ -129,7 +136,7 @@ export class SpatialIndex<P extends { readonly bbox: Aabb }> {
       const y0 = Math.floor(box.minY / this.cell);
       const y1 = Math.floor(box.maxY / this.cell);
       // A pathological box (a road across the whole map) would fill the grid
-      if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4096) {
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) > OVERSIZED_CELLS) {
         this.oversized.push(profile);
         this.oversizedSet.add(profile);
         continue;
@@ -368,8 +375,8 @@ export class PointHeights {
 
 /** The reads of a solved field over `profiles` (`index` built over them, in that order). */
 export function roadField<P extends FieldProfile>(
-  index: SpatialIndex<P>,
-  byId: ReadonlyMap<SegmentId, P>,
+  index: NearIndex<P>,
+  byId: { get(id: SegmentId): P | undefined },
   terrainAt: (x: number, y: number) => number,
 ): Required<RoadReads> {
   const hit = { s: 0, distance: 0 };

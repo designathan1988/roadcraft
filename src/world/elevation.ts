@@ -3,11 +3,15 @@ import { type Aabb, expand as expandBox } from '@core/aabb';
 import type { Polyline } from '@core/polyline';
 import type { NodeId, SegmentId } from './ids';
 import type { Network } from './network';
+import type { NetworkDelta } from './networkDelta';
+import { RerootMap } from '@core/rerootMap';
 import { CASING_BAND, FOOTWAY_RISE, Level, type RoadType, casingHalf, footwayOn } from './roadTypes';
 import { m } from './units';
 import {
   BLEND_TAU,
   INDEX_CELL,
+  OVERSIZED_CELLS,
+  cellKeyOf,
   PROFILE_FADE,
   PROFILE_REACH,
   SpatialIndex,
@@ -168,7 +172,10 @@ const SHAPE_DROP = m(0.6);
 /** How far under the carriageway the ground beside a road is laid */
 const BESIDE_DROP = m(0.1);
 
-/** Solves the height of every road surface in the network. */
+/** The work of the solves, counted (`tests/scale`): profiles made and nodes whose inputs were read. */
+export const elevationWork = { profiles: 0, nodes: 0 };
+
+/** Solves the height of every road surface in the network: from nothing, or from a solve before it, where the network changed. */
 export function buildRoadElevation(
   net: Network,
   terrainAt: (x: number, y: number) => number,
@@ -176,33 +183,78 @@ export function buildRoadElevation(
   previous?: RoadElevation | null,
 ): RoadElevation {
   const started = performance.now();
-  const profiles: Profile[] = [];
-  /** DO NOT gather them from `profiles` at the question (a walk of every road, or a new list of every box, per call). */
-  const present = new Set<RoadStructure>();
-  const boxes: Aabb[] = [];
-  const byId = new Map<SegmentId, Profile>();
-  const prior = previous ? memos.get(previous) : terrainAt === FLAT_GROUND && lastFlat ? memos.get(lastFlat) : undefined;
+  const flat = terrainAt === FLAT_GROUND;
   // Never level ground for real ground or the other way round, whatever the caller says.
-  const reuse = prior && (prior.terrainAt === FLAT_GROUND) === (terrainAt === FLAT_GROUND) ? prior : null;
-  const stationsById = new Map<SegmentId, Stations>();
-  /** Profiles whose stations were taken from `reuse` (the line, the width and the ground the same). */
-  const keptStations = new Set<SegmentId>();
+  const asked = (previous ? [memos.get(previous)] : flat ? flatSolvesOf(net) : [])
+    .filter((memo): memo is SolveMemo => memo !== undefined && (memo.terrainAt === FLAT_GROUND) === flat);
+  // DO NOT compare every road of the map with the solve before: the network's diary says what changed since (`changesSince`).
+  let reuse: SolveMemo | null = null;
+  let delta: NetworkDelta | null = null;
+  if (net.revision === net.doc.revision) {
+    for (const memo of asked) {
+      delta = net.changesSince(memo.state);
+      if (delta) { reuse = memo; break; }
+    }
+  }
+  // A solve of every road still reads the ground only where a line or a width moved.
+  const stationsFrom = reuse ?? asked[0] ?? null;
+
+  // Persistent (`RerootMap`): this solve writes the roads it made, the one reused keeps reading as it was.
+  const profiles = reuse ? reuse.profiles.derive() : new RerootMap<SegmentId, Profile>();
+  const settledNodes = reuse ? reuse.nodes.derive() : new RerootMap<NodeId, SettledNode>();
+  const summaries = reuse ? reuse.summaries.derive() : new RerootMap<SegmentId, Summary>();
+  const index = reuse ? reuse.index.derive() : ProfileIndex.empty();
+  const before = reuse?.profiles ?? null;
+  /** The structures the roads are built as, counted (`has`): DO NOT gather them from every road at the question. */
+  const present = new Map<RoadStructure, number>(reuse?.present ?? []);
+  let total = reuse?.total ?? 0;
+  const count = (structure: RoadStructure, by: number): void => {
+    const n = (present.get(structure) ?? 0) + by;
+    if (n > 0) present.set(structure, n); else present.delete(structure);
+    total += by;
+  };
+  /** The profiles this solve made (its own, written freely); every other is the solve reused's, never written. */
+  const own = new Set<SegmentId>();
+  /** The roads the change reached, and the nodes whose inputs are read again. */
+  const touched = new Set<SegmentId>();
+  const keyed = new Set<NodeId>();
+  if (delta) {
+    for (const id of delta.segments) touched.add(id);
+    for (const node of delta.nodes) {
+      keyed.add(node);
+      for (const id of net.doc.node(node)?.incident ?? []) touched.add(id);
+    }
+  } else {
+    for (const id of net.ribbons.keys()) touched.add(id);
+  }
+  /** Nodes at the ends of a road whose inputs changed. */
+  const changedEnds = new Set<NodeId>();
 
   // ---------------------------------------------------------------- stations
-  for (const [id, ribbon] of net.ribbons) {
+  for (const id of [...touched].sort((p, q) => p - q)) {
+    const old = before?.get(id);
+    if (old) {
+      keyed.add(old.a);
+      keyed.add(old.b);
+      index.remove(old);
+      count(old.structure, -1);
+    }
+    const ribbon = net.ribbons.get(id);
     const segment = net.doc.segment(id);
-    if (!segment) continue;
+    if (!ribbon || !segment) {
+      if (old) { profiles.delete(id); summaries.delete(id); }
+      continue;
+    }
+    elevationWork.profiles++;
     const line = ribbon.full;
     const length = Math.max(1e-3, line.length);
-    const count = Math.max(2, Math.min(MAX_STATIONS, Math.ceil(length / STATION) + 1));
-    const step = length / (count - 1);
+    const stationCount = Math.max(2, Math.min(MAX_STATIONS, Math.ceil(length / STATION) + 1));
+    const step = length / (stationCount - 1);
     const half = casingHalf(ribbon.road);
     // The ground under a road is read at 7 points across every 4 units of it, and its grade line smoothed: most of a solve.
-    const known = reuse?.stations.get(id);
+    const known = stationsFrom?.profiles.get(id);
     const kept = known !== undefined && known.half === half && sameLine(known.line, line);
-    const { ceil, base } = kept ? known : readStations(line, half, count, step, terrainAt);
-    if (kept) keptStations.add(id);
-    stationsById.set(id, { line, half, ceil, base });
+    const { ceil, base } = kept ? known : readStations(line, half, stationCount, step, terrainAt);
 
     const trims = net.trims.get(id);
     // A taper where one road carries on at another width is not a junction plate.
@@ -255,74 +307,100 @@ export function buildRoadElevation(
       reach: half + PROFILE_FADE,
       bbox: box,
     };
-    profiles.push(profile);
-    byId.set(id, profile);
-    present.add(profile.structure);
-    boxes.push(box);
+    profiles.set(id, profile);
+    index.add(profile);
+    count(profile.structure, 1);
+    own.add(id);
+    keyed.add(profile.a);
+    keyed.add(profile.b);
+    if (reuse && (!old || !sameProfile(old, profile))) { changedEnds.add(profile.a); changedEnds.add(profile.b); }
   }
 
   // ------------------------------------------------------------ node heights
-  const incident = new Map<NodeId, Profile[]>();
-  for (const profile of profiles) {
-    for (const node of [profile.a, profile.b]) {
-      const list = incident.get(node);
-      if (list) list.push(profile);
-      else incident.set(node, [profile]);
+  const profileOf = (id: SegmentId): Profile => profiles.get(id)!;
+  /** The roads meeting at a node, in id order (a road from a node to itself twice), asked of the document, not of every road. */
+  const incidentIds = new Map<NodeId, readonly SegmentId[]>();
+  const incident = (node: NodeId): readonly SegmentId[] => {
+    let list = incidentIds.get(node);
+    if (!list) {
+      const out: SegmentId[] = [];
+      for (const id of [...new Set(net.doc.node(node)?.incident ?? [])].sort((p, q) => p - q)) {
+        const profile = profiles.get(id);
+        if (!profile) continue;
+        if (profile.a === node) out.push(id);
+        if (profile.b === node) out.push(id);
+      }
+      incidentIds.set(node, list = out);
     }
-  }
-
-  // ------------------------------------------------- what is solved again Each node's inputs, as text
-  const nodeKeys = new Map<NodeId, string>();
-  for (const [node, list] of incident) {
+    return list;
+  };
+  /** A node's inputs as text: where it stands, its authored height, its roads. */
+  const keyOf = (node: NodeId): string => {
     const point = net.doc.node(node);
-    nodeKeys.set(node, `${point?.x},${point?.y}|${point?.heightOffset}|${list.map((p) => p.id).join(',')}`);
+    return `${point?.x},${point?.y}|${point?.heightOffset}|${incident(node).join(',')}`;
+  };
+
+  // ------------------------------------------------- what is solved again
+  const solvedNodes = new Set<NodeId>(changedEnds);
+  for (const node of keyed) {
+    if (!incident(node).length) { settledNodes.delete(node); continue; }
+    elevationWork.nodes++;
+    if (!reuse || reuse.nodes.get(node)?.key !== keyOf(node)) solvedNodes.add(node);
   }
   // DO NOT go back to solving every connected piece a change touches
-  const solvedNodes = new Set<NodeId>(incident.keys());
   if (reuse) {
-    solvedNodes.clear();
-    for (const profile of profiles) {
-      const before = reuse.profiles.get(profile.id);
-      if (!before || !keptStations.has(profile.id) || !sameProfile(before, profile)) { solvedNodes.add(profile.a); solvedNodes.add(profile.b); }
-    }
-    for (const [node, key] of nodeKeys) if (reuse.nodes.get(node)?.key !== key) solvedNodes.add(node);
-    for (const node of [...solvedNodes]) for (const profile of incident.get(node) ?? []) { solvedNodes.add(profile.a); solvedNodes.add(profile.b); }
+    for (const node of [...solvedNodes]) for (const id of incident(node)) { const p = profileOf(id); solvedNodes.add(p.a); solvedNodes.add(p.b); }
     const queue = [...solvedNodes];
     while (queue.length) {
       const node = queue.pop() as NodeId;
-      for (const profile of incident.get(node) ?? []) {
+      for (const id of incident(node)) {
+        const profile = profileOf(id);
         const other = profile.a === node ? profile.b : profile.a;
         if (solvedNodes.has(other)) continue;
         // Unchanged (or it would be solved already): its memo stands for it, and so does the road's.
         const settledThere = reuse.nodes.get(other) as SettledNode;
         if (settledThere.height <= settledThere.start + 1e-6) continue;
-        const before = (reuse.profiles.get(profile.id) as Profile).h;
-        const end = before[profile.a === other ? 0 : before.length - 1] as number;
+        const was = (before!.get(id) as Profile).h;
+        const end = was[profile.a === other ? 0 : was.length - 1] as number;
         if (end < settledThere.height - 1e-6) continue;
         solvedNodes.add(other);
         queue.push(other);
       }
     }
   }
-  const solvedProfiles = new Set<Profile>();
-  for (const profile of profiles) {
-    if (solvedNodes.has(profile.a) || solvedNodes.has(profile.b)) { solvedProfiles.add(profile); continue; }
-    const before = (reuse as SolveMemo).profiles.get(profile.id)!.h;
-    for (let i = 0; i < profile.h.length; i++) profile.h[i] = before[i] as number;
+  /** A profile made this solve's own before it is written: from its grade line (`fresh`), or with the heights it had. */
+  const mine = (id: SegmentId, fresh: boolean): Profile => {
+    const profile = profileOf(id);
+    if (own.has(id)) return profile;
+    const copy: Profile = { ...profile, h: fresh ? profile.base.slice() : profile.h.slice() };
+    own.add(id);
+    profiles.set(id, copy);
+    index.remove(profile);
+    index.add(copy);
+    return copy;
+  };
+  const solvedSet = new Set<SegmentId>();
+  for (const node of solvedNodes) for (const id of incident(node)) solvedSet.add(id);
+  const solvedProfiles = [...solvedSet].sort((p, q) => p - q).map((id) => mine(id, true));
+  // A road made again from the same inputs, at nodes that stand: the heights of the solve reused.
+  for (const id of own) {
+    if (solvedSet.has(id)) continue;
+    const h = profileOf(id).h, was = (before!.get(id) as Profile).h;
+    for (let i = 0; i < h.length; i++) h[i] = was[i] as number;
   }
   /** A node's figures: solved here, or as it settled in the solve reused (its inputs did not change). */
   const settledAt = (node: NodeId): SettledNode | undefined => (solvedNodes.has(node) ? undefined : reuse?.nodes.get(node));
+  const roadsAt = (node: NodeId): Profile[] => incident(node).map(profileOf);
 
   /** The mean ground over a junction's own disc, for a node no road at grade reaches. */
   const balancedAtNode = new Map<NodeId, number>();
-  for (const [node, list] of incident) {
-    if (!solvedNodes.has(node)) continue;
+  for (const node of solvedNodes) {
     const point = net.doc.node(node);
     if (!point) continue;
     let sum = terrainAt(point.x, point.y);
-    let count = 1;
+    let samples = 1;
     let radius = m(2.4);
-    for (const profile of list) {
+    for (const profile of roadsAt(node)) {
       const plate = profile.a === node ? profile.plateA : profile.plateB;
       radius = Math.max(radius, plate, profile.reach - m(8));
     }
@@ -331,35 +409,34 @@ export function buildRoadElevation(
       for (let k = 0; k < 8; k++) {
         const angle = (k / 8) * Math.PI * 2 + ring * 0.4;
         sum += terrainAt(point.x + Math.cos(angle) * r, point.y + Math.sin(angle) * r);
-        count++;
+        samples++;
       }
     }
-    balancedAtNode.set(node, sum / count + ROAD_GROUND_CLEARANCE);
+    balancedAtNode.set(node, sum / samples + ROAD_GROUND_CLEARANCE);
   }
 
   /** Grade height of a node: where the roads meeting there WANT to be. */
   const gradeHeight = new Map<NodeId, number>();
-  for (const [node, list] of incident) {
-    if (!solvedNodes.has(node)) continue;
+  for (const node of solvedNodes) {
     let sum = 0;
-    let count = 0;
-    for (const profile of list) {
+    let n = 0;
+    for (const profile of roadsAt(node)) {
       // ONLY roads built at grade.
       if (isRaised(profile.structure) || isSunken(profile.structure)) continue;
       // At the PLATE EDGE, not at the segment's endpoint.
       const edge = profile.a === node ? profile.plateA : profile.length - profile.plateB;
       sum += profile.base[stationIndex(profile, edge)] as number;
-      count++;
+      n++;
     }
     gradeHeight.set(node,
-      (count > 0 ? sum / count : (balancedAtNode.get(node) ?? 0)) +
+      (n > 0 ? sum / n : (balancedAtNode.get(node) ?? 0)) +
       (net.doc.node(node)?.heightOffset ?? 0));
   }
 
   // A node every one of whose roads is raised stays UP
   const aloft = new Set<NodeId>();
-  for (const [node, list] of incident) {
-    if (!solvedNodes.has(node)) continue;
+  for (const node of solvedNodes) {
+    const list = roadsAt(node);
     if (list.length > 1 && list.every((profile) => isRaised(profile.structure))) aloft.add(node);
   }
   // A node kept from the solve reused answers with what it settled with: its inputs did not change.
@@ -382,7 +459,6 @@ export function buildRoadElevation(
       };
       wantedA.set(profile.id, ends(0, profile.plateA));
       wantedB.set(profile.id, ends(profile.length - profile.plateB, profile.length));
-      continue;
     }
   }
   /** Free height a sunken span wants, before the ramps are fitted. */
@@ -392,29 +468,26 @@ export function buildRoadElevation(
     return Math.min(floor, Math.min(gradeOf(profile.a), gradeOf(profile.b))) + roadStructure(profile.structure).clearance;
   };
 
-  const nodeHeight = new Map<NodeId, number>();
+  /** The heights this solve gave; a node it did not reach stands where the solve reused left it. */
+  const heights = new Map<NodeId, number>();
+  const nodeHeight: NodeHeights = { get: (node) => heights.get(node) ?? reuse?.nodes.get(node)?.height };
   /** Each solved node's height before the rounds below: what a kept node's memo holds as `start`. */
   const startHeight = new Map<NodeId, number>();
   const upperReach = new Map<NodeId, number>();
-  for (const [node] of incident) {
-    const kept = settledAt(node);
-    if (kept) {
-      nodeHeight.set(node, kept.height);
-      continue;
-    }
+  for (const node of solvedNodes) {
     if (!aloft.has(node)) {
-      nodeHeight.set(node, gradeHeight.get(node) ?? 0);
+      heights.set(node, gradeHeight.get(node) ?? 0);
       startHeight.set(node, gradeHeight.get(node) ?? 0);
       continue;
     }
     let height = gradeHeight.get(node) ?? 0;
-    for (const profile of incident.get(node) ?? []) {
+    for (const profile of roadsAt(node)) {
       const end = profile.a === node ? wantedA.get(profile.id) : wantedB.get(profile.id);
       height = Math.max(height, end ?? height);
     }
     // No higher than a ramp from a land end can climb within the span.
     let reachable = Infinity;
-    for (const profile of incident.get(node) ?? []) {
+    for (const profile of roadsAt(node)) {
       if (!isRaised(profile.structure)) continue;
       const other = profile.a === node ? profile.b : profile.a;
       if (isAloft.has(other)) continue;
@@ -425,7 +498,7 @@ export function buildRoadElevation(
     }
     if (Number.isFinite(reachable)) upperReach.set(node, Math.max(gradeHeight.get(node) ?? 0, reachable));
     if (reachable < height) height = Math.max(gradeHeight.get(node) ?? 0, reachable);
-    nodeHeight.set(node, height);
+    heights.set(node, height);
     startHeight.set(node, height);
   }
   const capOf = (node: NodeId): number | undefined => { const kept = settledAt(node); return kept ? kept.cap : upperReach.get(node); };
@@ -439,69 +512,68 @@ export function buildRoadElevation(
     else solveGround(profile, nodeHeight);
   };
   // The nodes at the ends of the roads just solved, and only those
-  let dirty: Iterable<Profile> = solvedProfiles;
+  let dirty: Iterable<SegmentId> = solvedProfiles.map((profile) => profile.id);
   let solvedCount = 0;
   /** Every road solved here: the others hold the heights of the solve reused, and its summaries. */
-  const resolved = new Set<Profile>();
+  const resolved = new Set<SegmentId>();
   for (let pass = 0; pass < MAX_SOLVE_PASSES; pass++) {
     const ends = new Set<NodeId>();
-    for (const profile of dirty) { solve(profile); solvedCount++; resolved.add(profile); ends.add(profile.a); ends.add(profile.b); }
-    const next = new Set<Profile>();
+    for (const id of dirty) {
+      const profile = mine(id, false);
+      solve(profile);
+      solvedCount++;
+      resolved.add(id);
+      ends.add(profile.a);
+      ends.add(profile.b);
+    }
+    const next = new Set<SegmentId>();
     for (const node of ends) {
-      const list = incident.get(node) ?? [];
-      const previous = nodeHeight.get(node) ?? 0;
-      let height = previous;
-      for (const profile of list) {
+      const list = incident(node);
+      const was = nodeHeight.get(node) ?? 0;
+      let height = was;
+      for (const id of list) {
+        const profile = profileOf(id);
         const end = profile.a === node ? (profile.h[0] as number) : (profile.h[profile.h.length - 1] as number);
-        if (end > height + 1e-6) {
-          height = end;
-        }
+        if (end > height + 1e-6) height = end;
       }
       const cap = capOf(node);
       if (cap !== undefined) height = Math.min(height, cap);
-      nodeHeight.set(node, height);
-      if (height > previous + 1e-6) for (const profile of list) next.add(profile);
+      heights.set(node, height);
+      if (height > was + 1e-6) for (const id of list) next.add(id);
     }
     dirty = next;
     if (next.size === 0) break;
   }
-  for (const profile of dirty) { solve(profile); solvedCount++; resolved.add(profile); }
+  for (const id of dirty) { solve(mine(id, false)); solvedCount++; resolved.add(id); }
   // A road kept is pinned already: its nodes kept the heights it was pinned to.
-  for (const profile of resolved) {
+  for (const id of resolved) {
+    const profile = profileOf(id);
     pinPlates(profile, nodeHeight.get(profile.a) ?? 0, nodeHeight.get(profile.b) ?? 0);
   }
 
-  // --------------------------------------------------------------- the index
-  const index = new SpatialIndex(profiles);
-  /** Each road's whole solved profile as a digest, with its box (`differences`). */
-  const profileSummaries = new Map<SegmentId, { digest: number; box: Aabb; oversized: boolean }>();
-  for (const profile of profiles) {
-    // A road kept whole (the same line, width and heights) keeps its summary: DO NOT digest every station of the town per edit.
-    const kept = resolved.has(profile) ? undefined : reuse?.summaries.get(profile.id);
-    if (kept) { profileSummaries.set(profile.id, kept); continue; }
+  // --------------------------------------------------------------- the summaries
+  // A road kept whole (the same line, width and heights) keeps its summary: DO NOT digest every station of the town per edit.
+  for (const id of resolved) {
+    const profile = profileOf(id);
     const d = new Digest().add(profile.id).addText(profile.structure).add(profile.manualVertical ? 1 : 0).add(profile.type)
       .add(profile.half).add(profile.median).add(profile.sidewalk).add(profile.step).addAll(profile.h).addAll(profile.line.xy);
     if (profile.sidewalkLeft !== profile.sidewalkRight || profile.look) d.add(profile.sidewalkLeft).add(profile.sidewalkRight).add(profile.look);
-    profileSummaries.set(profile.id, { digest: d.value(), box: profile.bbox, oversized: index.isOversized(profile) });
+    summaries.set(id, { digest: d.value(), box: profile.bbox, oversized: ProfileIndex.oversized(profile) });
   }
+  // What each node settled with, for the next solve: those this one solved or moved.
+  for (const node of new Set([...solvedNodes, ...heights.keys()])) {
+    const kept = settledAt(node);
+    const cap = capOf(node);
+    settledNodes.set(node, {
+      key: keyOf(node), height: nodeHeight.get(node) ?? 0, start: kept ? kept.start : startHeight.get(node) ?? 0,
+      grade: gradeOf(node), aloft: isAloft.has(node), ...(cap !== undefined ? { cap } : {}),
+    });
+  }
+  profiles.seal();
+  settledNodes.seal();
+  summaries.seal();
+  index.seal();
 
-  /** Everything a query reads from one profile, digested once per build. */
-
-  /** Where each station of a profile lies (`h[i]` at arc `i * step`), measured once. */
-  const stationsOf = new Map<Profile, Float64Array>();
-  const stations = (profile: Profile): Float64Array => {
-    let xy = stationsOf.get(profile);
-    if (!xy) {
-      xy = new Float64Array(profile.h.length * 2);
-      for (let i = 0; i < profile.h.length; i++) {
-        const p = profile.line.sampleAt(Math.min(profile.length, i * profile.step)).p;
-        xy[i * 2] = p.x;
-        xy[i * 2 + 1] = p.y;
-      }
-      stationsOf.set(profile, xy);
-    }
-    return xy;
-  };
   const near = { s: 0, distance: 0 };
   const quantum = (h: number): number => Math.round(h * 1000);
   /** What a profile can give any point of a rectangle */
@@ -514,7 +586,7 @@ export function buildRoadElevation(
     const digest = new Digest().add(profile.id).addText(profile.structure).add(profile.manualVertical ? 1 : 0)
       .add(profile.type).add(profile.half).add(profile.median).add(profile.sidewalk).add(profile.step).add(profile.h.length);
     if (profile.sidewalkLeft !== profile.sidewalkRight || profile.look) digest.add(profile.sidewalkLeft).add(profile.sidewalkRight).add(profile.look);
-    const at = stations(profile);
+    const at = stationsAt(profile);
     for (let i = 0; i < profile.h.length; i++) {
       const dx = at[i * 2]! - cx, dy = at[i * 2 + 1]! - cy;
       if (dx * dx + dy * dy > reach2) continue;
@@ -538,7 +610,10 @@ export function buildRoadElevation(
   };
 
   /** The reads of the field, the same code a road tile worker runs over the roads handed to it (`roadField.ts`). */
-  const field = roadField(index, byId, terrainAt);
+  const field = roadField(index, profiles, terrainAt);
+  /** Every road's summary and box, gathered only when a whole-map reader asks (`summaries`, `shapeBounds`). */
+  let allSummaries: ReadonlyMap<SegmentId, Summary> | null = null;
+  let boxes: readonly Aabb[] | null = null;
   const result: RoadElevation = {
     solved: solvedCount,
     at: field.at,
@@ -548,30 +623,39 @@ export function buildRoadElevation(
     surfaceFrameAt: field.surfaceFrameAt,
     fieldFor(rects, also) {
       const chain: Profile[] = [];
-      for (const id of also) { const p = byId.get(id); if (p) chain.push(p); }
+      for (const id of also) { const p = profiles.get(id); if (p) chain.push(p); }
       const { profiles: meet, cells } = index.meeting(rects, chain);
       return packField(meet, cells);
     },
     differences(other) {
-      const mine = profileSummaries;
-      const theirs = other.summaries?.();
-      if (!theirs) return null;
       const out: { minX: number; minY: number; maxX: number; maxY: number }[] = [];
-      const take = (s: { box: Aabb; oversized: boolean }): boolean => {
+      const take = (s: Summary): boolean => {
         if (s.oversized) return false;
         const box = s.box;
         out.push({ minX: box.minX - INDEX_CELL, minY: box.minY - INDEX_CELL, maxX: box.maxX + INDEX_CELL, maxY: box.maxY + INDEX_CELL });
         return true;
       };
-      for (const [id, s] of mine) {
+      // From the solve this one was made from, only the roads it made can differ: DO NOT compare every road of the map.
+      if (reuse && memos.get(other) === reuse) {
+        for (const id of new Set([...touched, ...resolved])) {
+          const s = summaries.get(id), t = reuse.summaries.get(id);
+          if (s && t && s.digest === t.digest) continue;
+          if ((s && !take(s)) || (t && !take(t))) return null;
+        }
+        return out;
+      }
+      const mineAll = result.summaries!();
+      const theirs = other.summaries?.();
+      if (!theirs) return null;
+      for (const [id, s] of mineAll) {
         const t = theirs.get(id);
         if (t && t.digest === s.digest) continue;
         if (!take(s) || (t && !take(t))) return null;
       }
-      for (const [id, t] of theirs) if (!mine.has(id) && !take(t)) return null;
+      for (const [id, t] of theirs) if (!mineAll.has(id) && !take(t)) return null;
       return out;
     },
-    summaries: () => profileSummaries,
+    summaries: () => (allSummaries ??= new Map(summaries.entries())),
     digest: (minX, minY, maxX, maxY, reach) => {
       const known = new Map<Profile, number | null>();
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -588,32 +672,24 @@ export function buildRoadElevation(
       });
     },
     nodeHeight(node) {
-      return nodeHeight.get(node) ?? terrainAt(net.doc.node(node)?.x ?? 0, net.doc.node(node)?.y ?? 0) + ROAD_GROUND_CLEARANCE;
+      return settledNodes.get(node)?.height ?? terrainAt(net.doc.node(node)?.x ?? 0, net.doc.node(node)?.y ?? 0) + ROAD_GROUND_CLEARANCE;
     },
-    shapeBounds: () => boxes,
+    // Whole-map readers only (the ground shaped everywhere): gathered once.
+    shapeBounds: () => (boxes ??= [...profiles.entries()].map(([, profile]) => profile.bbox)),
     shapeAt: (x, y, naturalGround) => roadShapeAt(index.near(x, y), x, y, naturalGround),
     shapeCut(rects) {
       const { profiles: meet, cells } = index.meeting(rects);
       return { field: packField(meet, cells).data, walls: Uint8Array.from(meet, (profile) => (profile.walls ? 1 : 0)) };
     },
     has(structures) {
-      if (!structures) return profiles.length > 0;
-      // The structures the roads are built as, gathered with the profiles
+      if (!structures) return total > 0;
       for (const structure of structures) if (present.has(structure)) return true;
       return false;
     },
   };
-  const settled = new Map<NodeId, SettledNode>();
-  for (const [node, key] of nodeKeys) {
-    const kept = settledAt(node);
-    const cap = capOf(node);
-    settled.set(node, {
-      key, height: nodeHeight.get(node) ?? 0, start: kept ? kept.start : startHeight.get(node) ?? 0,
-      grade: gradeOf(node), aloft: isAloft.has(node), ...(cap !== undefined ? { cap } : {}),
-    });
-  }
-  memos.set(result, { terrainAt, stations: stationsById, profiles: byId, nodes: settled, summaries: profileSummaries });
-  if (terrainAt === FLAT_GROUND) lastFlat = result;
+  const memo: SolveMemo = { terrainAt, state: net.state, profiles, nodes: settledNodes, summaries, index, present, total };
+  memos.set(result, memo);
+  if (flat) flatSolves.set(net, memo);
   if (typeof performance.measure === 'function') {
     performance.measure(reuse ? 'hitch:elevation/incremental' : 'hitch:elevation/full', { start: started, end: performance.now() });
   }
@@ -698,23 +774,27 @@ const noGround = (x: number, y: number): number => { throw new Error(`no ground 
 
 // ------------------------------------------------------------ incremental
 
-/** What a road's stations read from the ground: its ceiling and its designed grade line. Never written after. */
-interface Stations {
-  readonly line: Polyline;
-  readonly half: number;
-  readonly ceil: number[];
-  readonly base: number[];
+/** A road's summary (`RoadElevation.summaries`): its whole solved profile as a digest, with its box. */
+interface Summary {
+  readonly digest: number;
+  readonly box: Aabb;
+  readonly oversized: boolean;
 }
 
-/** What a solve keeps for the next one on the same ground (`previous`). */
+/** What a solve keeps for the next one on the same ground (`previous`): persistent, each solve a version of the one before. */
 interface SolveMemo {
   readonly terrainAt: (x: number, y: number) => number;
-  readonly stations: ReadonlyMap<SegmentId, Stations>;
-  readonly profiles: ReadonlyMap<SegmentId, Profile>;
+  /** The network's state the solve was made from (`Network.changesSince`). */
+  readonly state: object;
+  readonly profiles: RerootMap<SegmentId, Profile>;
   /** Each node's inputs as text, and what it settled with. */
-  readonly nodes: ReadonlyMap<NodeId, SettledNode>;
+  readonly nodes: RerootMap<NodeId, SettledNode>;
   /** Each road's summary (`RoadElevation.summaries`): a road kept whole keeps its own. */
-  readonly summaries: ReadonlyMap<SegmentId, { readonly digest: number; readonly box: Aabb; readonly oversized: boolean }>;
+  readonly summaries: RerootMap<SegmentId, Summary>;
+  readonly index: ProfileIndex;
+  /** The roads by structure, counted, and in all. */
+  readonly present: ReadonlyMap<RoadStructure, number>;
+  readonly total: number;
 }
 
 
@@ -731,11 +811,163 @@ interface SettledNode {
   readonly cap?: number;
 }
 
+/** The nodes' heights as the solvers read them. */
+interface NodeHeights {
+  get(node: NodeId): number | undefined;
+}
+
 const memos = new WeakMap<RoadElevation, SolveMemo>();
 
 /** Level ground everywhere: the editing rules solve on it */
 export const FLAT_GROUND = (): number => 0;
-let lastFlat: RoadElevation | null = null;
+/** Each network's last solve on level ground: the next one on it, or on a working copy of it (`Network.fork`), starts there. */
+const flatSolves = new WeakMap<Network, SolveMemo>();
+
+/** The solves on level ground a solve of `net` may start from: its own last, then those of the networks it is a copy of. */
+function flatSolvesOf(net: Network): (SolveMemo | undefined)[] {
+  const out: (SolveMemo | undefined)[] = [];
+  for (let at: Network | null = net; at; at = at.forkedFrom) out.push(flatSolves.get(at));
+  return out;
+}
+
+/** Where each station of a profile lies (`h[i]` at arc `i * step`), measured once per profile (a profile is shared by solves). */
+const stationPoints = new WeakMap<Profile, Float64Array>();
+function stationsAt(profile: Profile): Float64Array {
+  let xy = stationPoints.get(profile);
+  if (!xy) {
+    xy = new Float64Array(profile.h.length * 2);
+    for (let i = 0; i < profile.h.length; i++) {
+      const p = profile.line.sampleAt(Math.min(profile.length, i * profile.step)).p;
+      xy[i * 2] = p.x;
+      xy[i * 2 + 1] = p.y;
+    }
+    stationPoints.set(profile, xy);
+  }
+  return xy;
+}
+
+const NO_PROFILES: readonly never[] = Object.freeze([]);
+
+/** The profiles in id order with `profile` put in its place (replacing the one of its id): a new list, the old one kept. */
+function withProfile(list: readonly Profile[], profile: Profile): Profile[] {
+  let at = 0;
+  while (at < list.length && list[at]!.id < profile.id) at++;
+  const out = list.slice();
+  if (at < list.length && list[at]!.id === profile.id) out[at] = profile;
+  else out.splice(at, 0, profile);
+  return out;
+}
+
+/** THE PROFILES BY THE CELLS THEIR BOXES COVER (`INDEX_CELL`), persistent: a solve files the roads it made, not every road */
+class ProfileIndex {
+  private constructor(
+    private readonly buckets: RerootMap<number, readonly Profile[]>,
+    /** Profiles over too many cells (`OVERSIZED_CELLS`), in id order: read by every query. */
+    private oversizedList: readonly Profile[],
+    /** How many profiles the cells hold. */
+    private bucketed: number,
+  ) {}
+
+  static empty(): ProfileIndex {
+    return new ProfileIndex(new RerootMap(), NO_PROFILES, 0);
+  }
+
+  /** The cells a box covers, or null when it covers too many to be filed in them. */
+  private static cells(box: Aabb): readonly [number, number, number, number] | null {
+    const x0 = Math.floor(box.minX / INDEX_CELL), x1 = Math.floor(box.maxX / INDEX_CELL);
+    const y0 = Math.floor(box.minY / INDEX_CELL), y1 = Math.floor(box.maxY / INDEX_CELL);
+    return (x1 - x0 + 1) * (y1 - y0 + 1) > OVERSIZED_CELLS ? null : [x0, x1, y0, y1];
+  }
+
+  static oversized(profile: Profile): boolean {
+    return ProfileIndex.cells(profile.bbox) === null;
+  }
+
+  /** The next version, to be written; this one keeps answering as it did. */
+  derive(): ProfileIndex {
+    return new ProfileIndex(this.buckets.derive(), this.oversizedList, this.bucketed);
+  }
+
+  seal(): void {
+    this.buckets.seal();
+  }
+
+  add(profile: Profile): void {
+    const cells = ProfileIndex.cells(profile.bbox);
+    if (!cells) { this.oversizedList = withProfile(this.oversizedList, profile); return; }
+    const [x0, x1, y0, y1] = cells;
+    this.bucketed++;
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const key = cellKeyOf(x, y);
+        this.buckets.set(key, withProfile(this.buckets.get(key) ?? NO_PROFILES, profile));
+      }
+    }
+  }
+
+  remove(profile: Profile): void {
+    const cells = ProfileIndex.cells(profile.bbox);
+    if (!cells) { this.oversizedList = this.oversizedList.filter((p) => p.id !== profile.id); return; }
+    const [x0, x1, y0, y1] = cells;
+    this.bucketed--;
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const key = cellKeyOf(x, y);
+        const list = this.buckets.get(key);
+        if (!list) continue;
+        const rest = list.filter((p) => p.id !== profile.id);
+        if (rest.length) this.buckets.set(key, rest); else this.buckets.delete(key);
+      }
+    }
+  }
+
+  near(x: number, y: number): readonly Profile[] {
+    if (this.bucketed === 0) return this.oversizedList;
+    const bucket = this.buckets.get(cellKeyOf(Math.floor(x / INDEX_CELL), Math.floor(y / INDEX_CELL)));
+    if (this.oversizedList.length === 0) return bucket ?? NO_PROFILES;
+    return bucket ? [...bucket, ...this.oversizedList] : this.oversizedList;
+  }
+
+  /** Digest of every profile `near` can return for a point of the rectangle, in its order; a profile `of` gives null for is left out. */
+  digest(minX: number, minY: number, maxX: number, maxY: number, of: (profile: Profile) => number | null): number {
+    const digest = new Digest();
+    for (let x = Math.floor(minX / INDEX_CELL); x <= Math.floor(maxX / INDEX_CELL); x++) {
+      for (let y = Math.floor(minY / INDEX_CELL); y <= Math.floor(maxY / INDEX_CELL); y++) {
+        const key = cellKeyOf(x, y);
+        digest.add(key);
+        for (const profile of this.buckets.get(key) ?? NO_PROFILES) {
+          const value = of(profile);
+          if (value !== null) digest.add(value);
+        }
+      }
+    }
+    digest.add(-1);
+    for (const profile of this.oversizedList) {
+      const value = of(profile);
+      if (value !== null) digest.add(value);
+    }
+    return digest.value();
+  }
+
+  /** Every profile `near` can return for a point of the rectangles, and `also`, in id order; with the cells read. */
+  meeting(rects: readonly (readonly [number, number, number, number])[], also: readonly Profile[] = []): { profiles: Profile[]; cells: number[] } {
+    const picked = new Map<SegmentId, Profile>();
+    for (const profile of this.oversizedList) picked.set(profile.id, profile);
+    for (const profile of also) picked.set(profile.id, profile);
+    const cells = new Set<number>();
+    for (const [minX, minY, maxX, maxY] of rects) {
+      for (let x = Math.floor(minX / INDEX_CELL); x <= Math.floor(maxX / INDEX_CELL); x++) {
+        for (let y = Math.floor(minY / INDEX_CELL); y <= Math.floor(maxY / INDEX_CELL); y++) {
+          const key = cellKeyOf(x, y);
+          if (cells.has(key)) continue;
+          cells.add(key);
+          for (const profile of this.buckets.get(key) ?? NO_PROFILES) picked.set(profile.id, profile);
+        }
+      }
+    }
+    return { profiles: [...picked.values()].sort((p, q) => p.id - q.id), cells: [...cells] };
+  }
+}
 
 function sameLine(a: Polyline, b: Polyline): boolean {
   if (a === b) return true;
@@ -792,7 +1024,7 @@ function readStations(line: Polyline, half: number, count: number, step: number,
 // ---------------------------------------------------------------- solvers
 
 /** A continuous authored vertical alignment, including ground, bridge and bore. */
-function solveVariable(profile: Profile, nodeHeight: Map<NodeId, number>): void {
+function solveVariable(profile: Profile, nodeHeight: NodeHeights): void {
   const { h, base, step, length } = profile;
   const hA = nodeHeight.get(profile.a) ?? 0;
   const hB = nodeHeight.get(profile.b) ?? 0;
@@ -822,7 +1054,7 @@ function solveVariable(profile: Profile, nodeHeight: Map<NodeId, number>): void 
 }
 
 /** A road at grade: it follows the ground, flat over its junction plates. */
-function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
+function solveGround(profile: Profile, nodeHeight: NodeHeights): void {
   const { h, base, step, length } = profile;
   const hA = nodeHeight.get(profile.a) ?? 0;
   const hB = nodeHeight.get(profile.b) ?? 0;
@@ -936,7 +1168,7 @@ function roundGradeBreaks(profile: Profile, mode: 'both' | 'raise', intoPlates =
 /** A raised structure: a level deck between two short ramps. */
 function solveRaised(
   profile: Profile,
-  nodeHeight: Map<NodeId, number>,
+  nodeHeight: NodeHeights,
   aloft: { has(node: NodeId): boolean },
   upperReach: { has(node: NodeId): boolean; get(node: NodeId): number | undefined },
 ): void {
@@ -1031,7 +1263,7 @@ function smoothMin(a: number, b: number, k: number): number {
 /** A tunnel: a flat floor below the ground, with a ramp up to each end. */
 function solveSunken(
   profile: Profile,
-  nodeHeight: Map<NodeId, number>,
+  nodeHeight: NodeHeights,
   /** The floor's height it wants (`wantedOf`). */
   wanted: number,
 ): void {
