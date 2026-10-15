@@ -937,13 +937,7 @@ class BankerPass {
   }
 }
 
-/**
- * Work of the Banker's tests, counted as `tickWork` is: tests made and the
- * processes they read.
- */
-export const admissionWork = { bankerTests: 0, bankerProcesses: 0 };
-
-/** Each Banker's verdict with the applicant and the movements asked for: for the specs only. */
+/** Each Banker's verdict with the applicant and the movements asked for: for the specs only (`tests/sim/admissionGroup.spec.ts`). */
 export const admissionProbe: {
   banker: ((w: SimWorld, applicant: Vehicle, proposal: readonly Connector[], safe: boolean) => void) | null;
 } = { banker: null };
@@ -986,7 +980,6 @@ function bankerSafeInGroup(
   proposal: readonly ConnectorReservation[],
   banker: BankerPass,
 ): boolean {
-  admissionWork.bankerTests++;
   const processes: BankerProcess[] = [];
   const owners = new Map<ResourceKey, number>();
   const universe = new Set<ResourceKey>();
@@ -1039,7 +1032,6 @@ function bankerSafeInGroup(
       }
     }
   }
-  admissionWork.bankerProcesses += group.length;
 
   for (let g = 0; g < group.length; g++) {
     const { allocation, maximum } = group[g]!;

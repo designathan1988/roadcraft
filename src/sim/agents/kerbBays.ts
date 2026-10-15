@@ -188,7 +188,7 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
 }
 
 /** Whether two lists of a street's bays are the same bays, field by field. */
-export function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
+function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {

@@ -53,9 +53,6 @@ export function cyclesOf(w: SimWorld, lanelet: LaneletId): readonly RoadCycle[] 
   return indexOf(w).byLanelet.get(lanelet) ?? [];
 }
 
-/** Vehicles the ring meter read, counted for the work counters (`tickWork` and kin). */
-export const cycleWork = { vehiclesRead: 0 };
-
 /**
  * Whether a movement onto a small loop it is not already on has to wait for
  * room on it. Traffic already on a loop is never metered onto it.
@@ -75,7 +72,6 @@ export function cycleFull(w: SimWorld, from: LaneletId, to: LaneletId, need: num
       for (const id of w.rt(lane).order) {
         const v = w.veh(id);
         if (!v) continue;
-        cycleWork.vehiclesRead++;
         used += v.archetype.length + Math.max(JAM_GAP, v.driver.s0);
       }
     }
