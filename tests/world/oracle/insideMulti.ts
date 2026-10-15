@@ -2,12 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import type { MultiPoly } from '@core/clipper';
 import { m } from '@world/units';
 
-/**
- * A ring's edges filed by horizontal band: the crossing test of
- * `pointInPolygon` (the same arithmetic, so the same answer) on only the
- * edges at a point's height - the paving of a whole town is one polygon of
- * thousands of edges, and every point test walked all of them.
- */
+/** A ring's edges filed by horizontal band: the crossing test of `pointInPolygon` */
 interface BandedRing { readonly points: readonly Vec2[]; readonly bands: Map<number, number[]> }
 const BAND = m(3.2);
 function bandRing(points: readonly Vec2[]): BandedRing {
@@ -48,13 +43,7 @@ const INDEX_CELL = m(25.6);
 const bucketOf = (bx: number, by: number): number => (bx + 32768) * 65536 + (by + 32768);
 const indexes = new WeakMap<MultiPoly, MultiIndex>();
 
-/**
- * The polygons of a MultiPoly as points, bounded and bucketed, once per
- * MultiPoly (per network revision, as `poleLines` is cached): a point test
- * used to turn every polygon of the town into new point arrays and test them
- * all, for every point - the zoning grid asked millions, and an edit froze
- * the game for seconds (the profile of 2026-10-05).
- */
+/** The polygons of a MultiPoly as points, bounded and bucketed, once per MultiPoly */
 function indexOf(polys: MultiPoly): MultiIndex {
   const known = indexes.get(polys);
   if (known) return known;

@@ -137,21 +137,13 @@ const clearBulbs = bulbClearing();
 
 type Alignment = 'straight' | 'curve' | 'free';
 
-// The interface language is resolved and applied BEFORE anything reads a label,
-// so no frame is ever painted in the wrong language.
-// The road tool's rebindable keys, named in every sentence that mentions them (docs/VIAS.md V3).
+// The interface language is resolved and applied BEFORE anything reads a label
 setGlobalParams(roadKeyParams);
 initLanguage();
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
-/**
- * The game's health (`core/health.ts`): what broke and what was slow, with
- * what the player was doing. Watched from here on, before the boot, so a map
- * that fails to load or a worker that dies while opening is written down too
- * (`ui/healthWatch.ts`); shown by the top bar's health button and F9
- * (`ui/healthPanel.ts`); `__health()` in the console.
- */
+/** The game's health (`core/health.ts`): what broke and what was slow, with what the player was doing. */
 const health = new HealthLog();
 const frameTimer = new FrameTimer();
 const healthWatch = watchHealth({
@@ -160,8 +152,7 @@ const healthWatch = watchHealth({
   canvas,
   context: () => {
     const last = doc.changes.latest(1)[0];
-    // Shown to the player in the F9 monitor: every word from the dictionaries;
-    // the gestures are dictionary keys (`currentGesture`).
+    // Shown to the player in the F9 monitor: every word from the dictionaries; the gestures are dictionary keys
     return [
       t('health.context.tool', { tool: game.tool }),
       game.gesture ? t(game.gesture) : '',
@@ -180,11 +171,7 @@ const newNature = (region = DEFAULT_REGION): NatureSettings => ({ region, seed: 
 doc.nature = newNature();
 const net = new Network(doc);
 const camera = new Camera();
-/**
- * Whether the whole module has run. The boot awaits (the surface bake, the
- * crowd) let a resize draw a frame half-way through it, before the buildings
- * and the rest exist; no frame is drawn until the end, which asks for one.
- */
+/** Whether the whole module has run. */
 let booted = false;
 const surface = new CanvasSurface(canvas, () => { if (booted) requestDraw(); });
 const history = new History();
@@ -194,31 +181,19 @@ surface.observe();
 
 // ------------------------------------------------------------------ boot
 const surfaceBake = startSurfaceBake();
-/**
- * The conflict zones measured in earlier sessions (`ConflictIndex.seed`),
- * filed under the fingerprint of the code that measures them: every opening
- * measured every pair of movements of the town again, 0.6 s of the test
- * city's opening. Read while the rest of the opening goes on.
- */
+/** The conflict zones measured in earlier sessions */
 const ZONES_PREFIX = typeof __CONFLICT_ZONES_HASH__ !== 'undefined' && __CONFLICT_ZONES_HASH__ ? `zones:${__CONFLICT_ZONES_HASH__}:` : null;
 if (ZONES_PREFIX) forgetOtherDerived('zones', ZONES_PREFIX.slice('zones:'.length, -1));
 const keptZones = ZONES_PREFIX ? readDerivedAll<Float64Array | null>(ZONES_PREFIX) : Promise.resolve(new Map<string, Float64Array | null>());
 clearOldMapsOnce();
-// The autosave: the small key, or IndexedDB for a map too large for it
-// (`Persistence.loadSessionAsync`); the opening waits for it (a module's
-// top-level await, ES2022).
+// The autosave: the small key, or IndexedDB for a map too large for it (`Persistence.loadSessionAsync`)
 const savedSession = await persistence.loadSessionAsync();
-// The game opens on an empty map - zoning starts from nothing - unless the
-// player has a map of their own. An autosave that is still an earlier build's
-// untouched starter scenario is dropped too.
+// The game opens on an empty map - zoning starts from nothing - unless the player has a map of their own.
 const saved = savedSession?.document && !isUntouchedStarter(savedSession.document)
   ? savedSession.document
   : null;
 
-/**
- * The cities saved before 2026-10-04 (the shipped town, the player's own maps,
- * the copies set aside) are removed, once: the player asked for a clean start.
- */
+/** The cities saved before 2026-10-04 (the shipped town, the player's own maps, the copies set aside) are removed, once */
 function clearOldMapsOnce(): void {
   const MARK = 'roadcraft.mapsCleared';
   try {
@@ -234,9 +209,7 @@ function clearOldMapsOnce(): void {
     // Storage blocked: nothing was kept to clear.
   }
 }
-// A saved map that validates and still fails to load must not take the game
-// down with it - on every reload. It is set aside (never deleted) and the game
-// opens on an empty map instead, saying so.
+// A saved map that validates and still fails to load must not take the game down with it - on every reload.
 let bootFailed = false;
 if (saved) {
   try {
@@ -258,19 +231,13 @@ if (saved) {
 }
 
 const sim = new SimWorld(doc, net, 0x2024);
-// The lots' bays worked out on the other cores (`bayPool.ts`): a lot's grid and ways out are a
-// millisecond each, and a generated city's thousands held a simulation step for seconds on the page.
+// The lots' bays worked out on the other cores (`bayPool.ts`)
 useBayWorkers(sim, new BayPool());
 sim.auditEnabled = true;
 sim.auditLevel = 'cheap';
-// The status bar's alerts: checked once a second of play, not on every one
-// of its sixty ticks - a whole pass over the fleet and the signals each tick.
+// The status bar's alerts: checked once a second of play, not on every one of its sixty ticks
 sim.auditEvery = 60;
-/**
- * The population the machine sustains (`sim/populationGovernor.ts`), never
- * more than the device's own share. The simulation never reads the screen;
- * the screen's size is handed to it.
- */
+/** The population the machine sustains (`sim/populationGovernor.ts`), never more than the device's own share. */
 const populationGovernor = new PopulationGovernor(1);
 function syncPopulationShare(): void {
   populationGovernor.setMax(window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1);
@@ -278,15 +245,7 @@ function syncPopulationShare(): void {
 }
 syncPopulationShare();
 
-/**
- * The zoom range the renderer we are about to boot can actually represent.
- *
- * Before the viewport exists there is nothing to ask, so this mirrors what
- * `createThreeRenderer` does with the same canvas: the iso rig takes its initial
- * half-height from `canvas.clientHeight`, so its range is
- * `isoZoomBounds(that height)`. Under `?render=2d` the flat camera's own range
- * applies instead. `view.zoomBounds` is used once a viewport exists.
- */
+/** The zoom range the renderer we are about to boot can actually represent. */
 function bootZoomBounds(): { min: number; max: number } {
   return isoZoomBounds(Math.max(1, canvas.clientHeight || window.innerHeight));
 }
@@ -295,23 +254,15 @@ if (savedSession && saved) {
   camera.x = savedSession.settings.camera.x;
   camera.y = savedSession.settings.camera.y;
   // Clamped against the ACTIVE renderer's range, not always the flat camera's.
-  // A 3D session can legitimately sit at ~7.3 zoom at an 800 px viewport, and
-  // the flat bounds (0.18-3.2) snapped every reload of one back to 3.2. The
-  // clamp stays: it is the guard against a hand-edited or corrupt save file.
   const limits = bootZoomBounds();
   camera.zoom = clamp(savedSession.settings.camera.zoom, limits.min, limits.max);
 } else {
   camera.fit(worldBounds(), surface.cssW, surface.cssH);
 }
 
-/**
- * Whether an autosave is exactly one of the starter scenarios an earlier build
- * seeded, never edited. Such a save carries nothing of the player's, so the
- * game opens on an empty map instead.
- */
+/** Whether an autosave is exactly one of the starter scenarios an earlier build seeded, never edited. */
 function isUntouchedStarter(saved: ReturnType<RoadDoc['toJSON']>): boolean {
-  // Declared here, not at module level: boot calls this before any `const`
-  // below it is initialised.
+  // Declared here, not at module level: boot calls this before any `const` below it is initialised.
   const OLD_STARTERS: readonly { readonly segments: number; readonly nodes: ReadonlySet<string> }[] = [
     // A 3x3 grid with four approach stubs.
     {
@@ -351,18 +302,10 @@ function worldBounds() {
   return { minX, minY, maxX, maxY };
 }
 
-// ------------------------------------------------------------------ state
-// The tool in hand, the pause, the speed and the selection are the game's
-// state (`gameState` below, read as `game.tool`...), and so is what each tool
-// is set to (road class, brush, zone, lot cut...): there is no copy here.
+// ------------------------------------------------------------------ state The tool in hand, the pause
 /** The terrain brush: a land stamp (`TerrainMode`), or painting the ground (`terrainPaint.ts`). */
 type BrushMode = TerrainMode | 'paint' | 'fog' | 'cloud' | 'elements' | 'gully' | 'trees' | 'weather' | Landform;
-/**
- * The landforms: a shape and its ROCK in one tool, so a chapada stands in
- * sandstone and a sugarloaf in granite without the player painting the rock
- * (a biome layer of a terrain auto-material, laid as the land is sculpted).
- * Each dab also lays a geology dab of its rock (`world/terrainPaint.ts`).
- */
+/** The landforms: a shape and its ROCK in one tool */
 type Landform = 'mesa' | 'canyon' | 'escarpment' | 'sugarloaf';
 const LANDFORMS: Readonly<Record<Landform, { readonly mode: 'raise' | 'lower'; readonly rock: GeologyKind; readonly hardness: number; readonly profile?: 'dome' }>> = {
   mesa: { mode: 'raise', rock: 'sandstone', hardness: 85 },
@@ -377,17 +320,9 @@ sim.clock.speed = savedSession?.settings.speed ?? 1;
 sim.trafficIntensity = savedSession?.settings.trafficIntensity ?? 1;
 sim.pedestrianIntensity = savedSession?.settings.pedestrianIntensity ?? 1;
 // How many cars and people the panel asks for: they come in at the ends of the roads (`sim/ambient` source 'edges').
-// Cars and people as the city's own density asks (`SimWorld.followCity`), the panel's shares on it.
 sim.followCity = true;
 sim.demandMultiplier = savedSession?.settings.demandMultiplier ?? 1;
-/**
- * The game's state - the tool in hand, the pause and speed, the quality, the
- * selection - owned here and every change written down with why
- * (`core/gameState.ts`, `__state()` in the console). It is the only copy:
- * read through `game` (read-only), written only by `gameState.set` with the
- * cause, and whoever reacts to a change `watch`es it (told once a frame,
- * `frame` → `gameState.flush`). The game opens with nothing in hand.
- */
+/** The game's state - the tool in hand, the pause and speed, the quality, the selection */
 const gameState = new GameState({
   tool: 'inspect' as Tool,
   paused: sim.clock.paused,
@@ -402,8 +337,7 @@ const gameState = new GameState({
   roadHeightOffset: 0,
   roadLanePreset: null as number | null,
   roundaboutRadius: 100,
-  // The terrain brush. Hardness, 0..95: how hard the raise/lower brush's edge
-  // is (`TerrainStamp.hardness`), 0 the smooth dome; each mode keeps its own.
+  // The terrain brush.
   terrainMode: 'raise' as BrushMode,
   terrainRadius: 80,
   terrainStrength: 24,
@@ -429,10 +363,7 @@ const gameState = new GameState({
 }, () => { if (booted) requestDraw(); });
 /** The game's state, read-only: `game.tool`, `game.paused`, `game.selectedSegment`... */
 const game = gameState.values;
-/**
- * The tool in hand (`editor/toolMachine.ts`): the only way it changes. It
- * writes `game.tool` through `takeTool`, and lets go of what Inspect picked.
- */
+/** The tool in hand (`editor/toolMachine.ts`): the only way it changes. */
 const tools = createToolMachine(game.tool, {
   take: takeTool,
   letGo: () => { if (game.selectedSegment !== null || game.selectedNode !== null) closeInspectorPanel(); },
@@ -464,7 +395,7 @@ const roadTool = new RoadTool({
   settings: () => ({
     typeIndex: game.roadTypeIndex, lanes: game.roadLanePreset, alignment: game.alignment,
     heightOffset: game.roadHeightOffset, parking: roadParking(), width: roadWidth(), grid: roadGridShown(),
-    // The profile chosen in the profile editor for new roads (docs/VIAS.md V2).
+    // The profile chosen in the profile editor for new roads.
     profile: drawProfile(),
     cutWalls: cutWallsChosen(),
     furniture: furnitureChosen(),
@@ -525,11 +456,7 @@ const barrierTool = new BarrierTool({
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
 });
-/**
- * The Zoning tool (`editor/lotTool.ts`): the lots the player draws, edits and
- * zones, with its gestures' own state. Buildings grow on the zoned lots; the
- * roads neither make, change nor show them (the player, 2026-10-06).
- */
+/** The Zoning tool (`editor/lotTool.ts`): the lots the player draws, edits and zones, with its gestures' own state. */
 const lotTool = new LotTool({
   doc,
   net,
@@ -577,20 +504,12 @@ const mover = new NodeMover({
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
 });
-/**
- * The terrain brush (`editor/terrainBrush.ts`): the stroke in progress and
- * what each dab does. The flatten's level is captured ONCE, when the stroke
- * starts, so a drag across a slope brings the whole swept area to the height
- * it started from instead of each dab chasing the ground under itself.
- */
+/** The terrain brush (`editor/terrainBrush.ts`): the stroke in progress and what each dab does. */
 const terrainBrush = new TerrainBrush({
   doc,
   settings: () => dabSettings(),
   heightAt: (at) => sceneHeightAt(at),
-  // The cost-aware rate limit: every dab that moves the land re-solves the
-  // roads on it, and dabbing on every pointer sample queued rebuilds until the
-  // player let go. During a stroke only the ground is rebuilt (`holdRoads`),
-  // so it is the ground's own cost that paces the brush.
+  // The cost-aware rate limit: every dab that moves the land re-solves the roads on it
   interval: (stroking) => Math.max(TERRAIN_MIN_MS, (stroking ? scene.stats.terrainMs : scene.stats.rebuildMs) * 1.4),
   record: () => { history.begin(doc); updateHistoryButtons(); },
   redraw: () => requestDraw(),
@@ -616,16 +535,7 @@ canvas.dataset['tool'] = game.tool;
 let view: Viewport = flatViewport(camera);
 
 
-/**
- * The editor's overlay gets its OWN canvas, and must.
- *
- * Reusing the flat canvas looked free — a canvas hands out one context for its
- * whole life, so `getContext('2d')` would return the very context the flat
- * painter holds. But that context was created with `{ alpha: false }`
- * (`render/surface.ts`), and on an opaque context `clearRect` does not clear to
- * transparent, it clears to BLACK. Measured: the entire 3D scene disappeared
- * behind a black rectangle the moment the overlay drew its first frame.
- */
+/** The editor's overlay gets its OWN canvas, and must. */
 const overlayCanvas = document.createElement('canvas');
 let overlayCtx: CanvasRenderingContext2D | null = null;
 let previewAsphaltPattern: CanvasPattern | null = null;
@@ -669,17 +579,12 @@ function savedQualityLevel(): QualityLevel {
   }
 }
 
-// The graphics are what the player chose (High until they choose): the game
-// never lowers them on its own.
+// The graphics are what the player chose (High until they choose): the game never lowers them on its own.
 primeSurfaceBake(await surfaceBake);
 sim.conflicts.seed(await keptZones);
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
-/**
- * The simulation's products derived from the roads, in the engine (its ledger names any that computes
- * with nothing changed): the residents' walkways and the lanes by place, each brought up to what the
- * lane graph changed (`Walkways.update`, `LaneGrid.follow`). Refreshed once the topology stands.
- */
+/** The simulation's products derived from the roads, in the engine */
 function registerSimProducts(): void {
   engine.register({
     name: 'walkways',
@@ -700,8 +605,7 @@ function registerSimProducts(): void {
 }
 registerSimProducts();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw, engine);
-// The surgical profiler (`core/profiler.ts`): its hooks into three and WebGL, the engine's refreshes
-// timed and checked against the diary, its HUD shown from the start (Shift+F9).
+// The surgical profiler (`core/profiler.ts`)
 const profileFrameEnd = wireProfiler();
 function wireProfiler(): () => void {
   hookProfiler(scene.gl);
@@ -733,29 +637,16 @@ function wireProfiler(): () => void {
   };
 }
 
-// The traffic's topology is not built here: it is built a slice a frame while
-// the opening puts the town together (`TopologyCatchUp`, its frames not yet
-// shown), the traffic held until it is in. Built here, its conflict zones
-// held the first frame 423 ms.
-// The people walk with the agents' engine (`sim/agents/walk.ts`), on lanes of
-// the footways - the only pedestrian engine the game has (the People, Detour
-// crowd and sidewalk-graph engines were taken out, the player's decision of
-// 2026-10-08).
+// The traffic's topology is not built here: it is built a slice a frame while the opening puts the town together
 const engineFlags = new URLSearchParams(location.search);
 sim.usePedestrianEngine((await import('@sim/agents/walk')).createAgentWalkEngine());
-// The scenery's life (`sim/ambient`): nobody lives here; cars and people come
-// in at the ends of the roads, as many as the panel says, cross the map and
-// leave at another road end - never anywhere else (the player's order of
-// 2026-10-06). People walk with the agents' walking engine. `?ambient=view`
-// brings back GTA's way (made and taken away round the view) to compare. The
-// residents' days are kept apart (`src/backup/residents`).
+// The scenery's life (`sim/ambient`): nobody lives here
 sim.ambient.enabled = true;
 sim.ambient.source = engineFlags.get('ambient') === 'view' ? 'view' : 'edges';
 view = scene.viewport;
 restoreOrbit(savedSession?.settings.camera);
 canvas.style.opacity = '0';
-// No loading screen (player, 2026-10-02): the town plays at once and each
-// person appears as their body is ready (cooked ahead, read back on demand).
+// No loading screen (player, 2026-10-02): the town plays at once and each person appears as their body is ready
 
 overlayCanvas.id = 'game-overlay';
 overlayCanvas.setAttribute('aria-hidden', 'true');
@@ -767,8 +658,7 @@ overlayCtx = overlayCanvas.getContext('2d');
 window.addEventListener('resize', () => { scene.resize(); syncPopulationShare(); }, { passive: true });
 canvas.dataset['render'] = 'webgl';
 
-// Modular buildings (docs/buildings.md): the tool, its palette, its overlay
-// and the road-wins rule, wired in `buildingsWiring.ts`.
+// Modular buildings
 const buildings = createBuildingWiring({
   doc,
   net,
@@ -850,12 +740,7 @@ function mutate(fn: () => boolean): void {
   mutateBuilt(fn);
 }
 
-/**
- * A road edit made in place (a split, a class, lanes, parking, a section, a
- * direction, a bend, a join, a copy, a node's height), judged by the editing
- * rules as a drawn road is (`editor/editRules.ts`): a refused edit is undone
- * and its reason shown.
- */
+/** A road edit made in place a split, a class, lanes, parking, a section, a direction, a bend, a join, a copy, a node's */
 function mutateRoads(fn: () => boolean): boolean {
   let refused = null as RoadEditRefusal | null;
   const changed = mutateBuilt(() => {
@@ -877,16 +762,10 @@ const transitEditor = new TransitTool({
 });
 setTransitTool(transitEditor);
 
-/**
- * The document as text for the autosave, kept while nothing in it has moved
- * (undo no longer takes text: `editor/history.ts`).
- */
+/** The document as text for the autosave, kept while nothing in it has moved */
 let docText: { key: string; text: string } | null = null;
 function serializedDoc(): string {
   // Keyed by the diary, every kind of change to the document (`DOC_CHANGE_KINDS`).
-  // A hand-kept list of revisions missed the weather, fog, nature, gullies,
-  // clouds, trees, clearings and elements: the rain and fog sliders were left
-  // out of the autosave, and an undo after them put them back as they were.
   const key = `${doc.changes.serialOf(...DOC_CHANGE_KINDS)}:${doc.buildings.revision}:${doc.buildings.size}`;
   if (docText?.key === key) return docText.text;
   const text = serialize(doc);
@@ -904,13 +783,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   doc.changes.causeNext(`ferramenta ${game.tool}`);
   const changed = fn();
   if (changed) {
-    // What the edit brings with it, INSIDE its undo step (before `history.end`):
-    // run after the step was closed, the buildings a road demolished were taken
-    // into the history with no step of their own, and undoing the road did not
-    // give them back. DO NOT move these below `history.end`.
-    // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
-    // network is unchanged, and rebuilding it (and, behind it, the simulation
-    // topology) cost about 330 ms per pole on a large map.
+    // DO NOT move these below `history.end`.
     if (net.revision !== doc.revision) net.rebuild();
     // A road over a building demolishes it (where the network changed only).
     buildings.afterRoadEdit();
@@ -918,15 +791,11 @@ function mutateBuilt(fn: () => boolean): boolean {
     clearBulbs(doc, net);
   }
   doc.changes.causeNext('jogo');
-  // An edit that reports success without changing anything - the same lane
-  // count, a split on an existing endpoint, a pole line traced over itself -
-  // used to push an undo step and throw away the redo stack: the step is the
-  // records it changed (`editor/history.ts`), none is none.
+  // An edit that reports success without changing anything
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
   performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
   // The simulation catches up in the frame AFTER the one that draws the edit
-  // (see `topologyAfterDraw`), so the player sees the road first.
   topologyAfterDraw = topologyAfterDraw || sim.topologyRevision !== net.trafficRevision;
   persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
@@ -937,10 +806,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   return true;
 }
 
-/**
- * `snapshot`: the model's own undo/redo state, restored exactly. `import`:
- * data from outside (a file, the debug surface), where legacy repairs apply.
- */
+/** `snapshot`: the model's own undo/redo state, restored exactly. */
 function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot'): void {
   if (!data) return;
   roadTool.cancel();
@@ -952,17 +818,7 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
   } else {
     restoreSnapshot(doc, data, net);
   }
-  // A map opened: its traffic built now, the old simulation gone. An undo or a
-  // redo is an edit like any other: its traffic is brought up to date a few
-  // milliseconds a frame (`TopologyCatchUp`, the simulation held meanwhile)
-  // - built here, inside the key press, each Ctrl+Z on a road held the game
-  // 164-244 ms (web.dev, "Optimize long tasks": the input handler does what
-  // is seen, the rest after).
-  // A map opened is put together behind the loading curtain, whole, and
-  // shown at once (`SceneHandle.beginLoad`): its traffic too, a slice a frame
-  // with the load's time (`TopologyCatchUp`). Built here, inside the click,
-  // the city of 1 530 buildings held it 3 s, and its roads, zones, plants and
-  // buildings then came on frames of their own over 24 s (2026-10-09).
+  // A map opened: its traffic built now, the old simulation gone.
   if (source === 'import') scene.beginLoad();
   buildings.restored();
   select(null, game.selectedSegmentS, null, 'outro mapa');
@@ -980,27 +836,8 @@ function rebuildSimulationTopology(): void {
 }
 
 // ---------------------------------------------------------------- input
-/**
- * The one conversion that differs between renderers.
- *
- * Everything downstream of it — `findAnchor`, `snapEndpoint`, every editor
- * command — already works in world coordinates, so this is the entire seam
- * between a flat view and an isometric one. `src/editor` needs no change at all.
- */
-/**
- * The world point under a screen position, ON THE SURFACE THAT IS THERE.
- *
- * A tilted camera projects anything raised away from the ground beneath it: a
- * deck fifteen units up lands about thirteen units off, so solving on the
- * `y = 0` plane picked open ground thirteen units from the node plainly drawn
- * under the cursor. That is why an elevated road could not be extended — the
- * snap was looking in the wrong place, and no snap radius fixes an error that
- * grows with height.
- *
- * Two or three iterations settle it: solve on the ground plane, read how high
- * the scene is there, solve again on that plane. Under an orthographic camera
- * the correction is exactly linear in height, so it converges immediately.
- */
+/** The one conversion that differs between renderers. */
+/** The world point under a screen position, ON THE SURFACE THAT IS THERE. */
 function worldAtScreen(px: number, py: number, heightOffset?: number): Vec2 {
   let point = view.toWorld(px, py, surface.cssW, surface.cssH);
   if (view.kind === '2d') return point;
@@ -1015,13 +852,7 @@ function worldAtScreen(px: number, py: number, heightOffset?: number): Vec2 {
   return point;
 }
 
-/**
- * The height of what is drawn under a screen point: the ray marched down from
- * over the highest mountain until it meets a surface, then bisected (the
- * cursor pick's own method, reaching the whole relief). A fixed point of
- * "the height under the cursor at that height" wandered off on a tilted view
- * over hills, and the zoom and the turn slid away from the pointer.
- */
+/** The height of what is drawn under a screen point */
 function groundHeightUnder(at: Vec2): number {
   const point = (h: number): Vec2 => view.toWorldAt(at.x, at.y, h, surface.cssW, surface.cssH);
   const below = (h: number): boolean => { const p = point(h); return scene.surfaceHeightAt(p.x, p.y) >= h; };
@@ -1044,34 +875,15 @@ function sceneHeightAt(p: Vec2): number {
 const PICK_TOP = m(64);
 const PICK_STEP = m(0.8);
 
-/**
- * The highest surface drawn anywhere - the ground's corners (the mesh is flat
- * between them, so its top is one of them) and every road's height at its
- * nodes (`editor/roadTop.ts`, kept by cell from the diary) - with a margin for
- * the decks between nodes and the platforms graded under buildings. The picks
- * march down the ray from here: from a fixed ceiling over the highest possible
- * mountain they sampled the scene a hundred times and more on every pointer
- * move above nothing at all.
- * DO NOT walk `doc.nodes` here on each road edit: `RoadTop` reads only the
- * cells the edit reached.
- */
+/** DO NOT walk `doc.nodes` here on each road edit: `RoadTop` reads only the cells the edit reached. */
 const roadTop = new RoadTop(doc, net, (x, y) => scene.elevationAt(x, y));
 function surfaceTop(): number {
-  // The land as drawn (`SceneHandle.landTop`, read again by the renderer when
-  // it rewrites the ground); a road's cut and fill only brings the ground to
-  // its deck, which the nodes' heights cover.
+  // The land as drawn (`SceneHandle.landTop`, read again by the renderer when it rewrites the ground)
   const top = Math.max(scene.landTop(), roadTop.height());
   return Number.isFinite(top) ? top + 12 : PICK_TOP;
 }
 
-/**
- * Where the ray under the cursor first meets what is drawn - a deck, or the
- * ground - marched down from above. It used to be solved as a fixed point of
- * "the height at the point under the cursor at that height" over the nearest
- * road's deck height, which is defined everywhere: beside a raised road the
- * equation had a second answer on the far side of the deck, and a corner
- * clicked on the grass landed tens of metres away.
- */
+/** Where the ray under the cursor first meets what is drawn - a deck, or the ground - marched down from above. */
 function firstSurfaceAt(px: number, py: number): Vec2 | null {
   const at = (h: number): Vec2 => view.toWorldAt(px, py, h, surface.cssW, surface.cssH);
   const below = (h: number): boolean => {
@@ -1100,25 +912,14 @@ function pointerWorld(e: PointerEvent, rect?: DOMRect): Vec2 {
   return worldAtScreen(e.clientX - r.left, e.clientY - r.top, authoredHeight);
 }
 
-/**
- * Every position a move went through since the last event, CSS px of the
- * canvas, at its own time stamp (Pointer Events 3 `getCoalescedEvents`, in
- * time order); undefined where the browser does not give them.
- */
+/** Every position a move went through since the last event, CSS px of the canvas, at its own time stamp */
 function coalescedPath(e: PointerEvent, r: DOMRect): PointerSample[] | undefined {
   const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
   return list.length > 0 ? list.map((c) => ({ x: c.clientX - r.left, y: c.clientY - r.top, t: c.timeStamp })) : undefined;
 }
 
 
-/**
- * Ends every gesture in progress without committing it: a road being drawn or
- * chained, a pole line, a terrain stroke, a node drag, a pan, the Builder's
- * press. ONE list for every way a gesture can be cut short - a tool switch,
- * undo/redo, Escape, the right button, a pinch - where there used to be six
- * lists that disagreed (Ctrl+Z mid-drag kept moving a node of the restored
- * map; Escape left a terrain stroke stamping).
- */
+/** Ends every gesture in progress without committing it */
 function cancelGestures(): void {
   roadTool.cancel();
   poleTool.cancel();
@@ -1133,15 +934,7 @@ function cancelGestures(): void {
   requestDraw();
 }
 
-/**
- * The gesture in progress, named by its dictionary key (`gesture.*`, translated
- * where it is shown, the F9 monitor's context): what the player is in the middle of
- * doing, read from the same variables `cancelGestures` ends. Written to the
- * game's state after every pointer and key event (`syncGesture`): since a
- * value set to what it already is writes nothing, the record holds where
- * each gesture began and ended, with the tool in hand - so a defect can be
- * traced back to what the player was doing when it happened.
- */
+/** The gesture in progress, named by its dictionary key */
 function currentGesture(): string | null {
   const camera = cameraHand.gesture();
   if (camera) return camera;
@@ -1166,20 +959,11 @@ function syncGesture(): void {
   gameState.set('gesture', currentGesture(), `ferramenta ${game.tool}`);
 }
 // After the event's own handlers: a task of its own, after the whole dispatch.
-// (A microtask would not do: the browser runs them after each listener, so one
-// queued from this capturing listener ran BEFORE the handlers it was to follow.)
-// One task for every event since the last one ran: a pointer reporting many
-// moves a frame queued a timer per move.
 const syncGestureSoon = coalescedTask(syncGesture);
 for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'] as const) {
   window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
-/**
- * What the diary says a change came from (`world/changes.ts` `causeNext`):
- * during a click or a key, the tool in hand and the gesture, set before any
- * handler runs and put back after the event; between events, the game
- * itself ("jogo"), unless the work says what it is (`caused`).
- */
+/** What the diary says a change came from (`world/changes.ts` `causeNext`) */
 const NO_CAUSE = 'jogo';
 for (const type of ['pointerdown', 'pointerup', 'click', 'dblclick', 'keydown'] as const) {
   window.addEventListener(type, () => {
@@ -1216,11 +1000,7 @@ function gestureInProgress(): boolean {
   return roadTool.inProgress() || poleTool.inProgress() || terrainBrush.stroking || mover.dragging || lotTool.gesture() !== null || bulldozer.inProgress();
 }
 
-/**
- * A press whose release will never arrive - the window lost focus, the pointer
- * capture was taken - ends what the held button was doing. A terrain stroke
- * kept stamping every 110 ms after an alt-tab with the button down.
- */
+/** A press whose release will never arrive - the window lost focus, the pointer capture was taken */
 function releaseHeld(): void {
   endTerrainStroke();
   cancelMove();
@@ -1233,10 +1013,7 @@ function cancelMove(): void {
 }
 
 
-// THE CLOUD TOOL (Paisagem > Terreno > Nuvens): a click puts a cloud in the
-// sky right under the pointer, drags one to move it, sets one to the tool's
-// size, height and density, or takes one away (`world/clouds.ts`). Each is
-// one undo step. A cloud is found where the pointer's ray crosses its body.
+// THE CLOUD TOOL (Paisagem > Terreno > Nuvens)
 const cloudTool = new CloudTool({
   doc,
   mode: () => cloudMode(),
@@ -1254,8 +1031,7 @@ const cloudTool = new CloudTool({
 /** Ends the brush stroke (`TerrainBrush.end`), warning when the land's stamps near their cap. */
 function endTerrainStroke(): void {
   const wasPainting = terrainBrush.end();
-  // Past the cap the oldest sculpting is dropped to make room. Say so before
-  // it happens rather than erase the player's first hills in silence.
+  // Past the cap the oldest sculpting is dropped to make room.
   if (wasPainting && doc.terrainStamps.length >= MAX_TERRAIN_STAMPS * 0.9) {
     flashHint(doc.terrainStamps.length >= MAX_TERRAIN_STAMPS ? 'hint.terrain.capReached' : 'hint.terrain.capNear');
   }
@@ -1263,14 +1039,8 @@ function endTerrainStroke(): void {
   requestDraw();
 }
 
-// See inside a building by clicking it, with nothing in hand: two clicks open
-// it (two on open ground close it); while one is open, a click on another
-// opens that one instead.
-/**
- * The canvas's input, taken as the browser dispatches it and handled at the
- * start of the next frame, in order (`core/events.ts`): the event, the
- * canvas's box then, and the positions a move went through.
- */
+// See inside a building by clicking it, with nothing in hand: two clicks open it (two on open ground close it)
+/** The canvas's input, taken as the browser dispatches it and handled at the start of the next frame, in order */
 type CanvasInput =
   | { readonly type: 'dblclick' | 'click'; readonly e: MouseEvent; readonly r: DOMRect }
   | { readonly type: 'down' | 'up' | 'cancel' | 'leave' | 'lost'; readonly e: PointerEvent; readonly r: DOMRect }
@@ -1296,8 +1066,7 @@ function handleInput(input: CanvasInput): void {
 canvas.addEventListener('dblclick', (e) => take({ type: 'dblclick', e, r: canvas.getBoundingClientRect() }));
 canvas.addEventListener('click', (e) => take({ type: 'click', e, r: canvas.getBoundingClientRect() }));
 canvas.addEventListener('pointerdown', (e) => {
-  // The mouse's back and forward buttons are not a click: they used to fall
-  // through to the tool as if they were the left button.
+  // The mouse's back and forward buttons are not a click
   if (e.pointerType === 'mouse' && e.button > 2) return;
   // Captured while dispatched: the capture is set only then.
   canvas.setPointerCapture(e.pointerId);
@@ -1327,20 +1096,14 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
   // The event's own time, as every time the camera's hand reads (`cameraGestures.ts`).
   cameraHand.press(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top }, e.timeStamp);
 
-  // A second finger promotes the gesture to pinch and cancels any draft. A
-  // third finger is part of the pinch too: at size 3 it used to fall through to
-  // the tool, and Bulldoze demolished the road under it.
+  // A second finger promotes the gesture to pinch and cancels any draft.
   if (cameraHand.touches >= 2) {
     cancelGestures();
     cameraHand.startPinch();
     return;
   }
 
-  // The mouse, as city builders have it: the right button dragged swings
-  // the camera round and over the centre of the view (Shift with it pans);
-  // a right CLICK - pressed and let go without moving - cancels whatever is
-  // in progress. The middle button dragged pans. Both work mid-gesture, so a
-  // road half placed can still be looked round.
+  // The mouse, as city builders have it: the right button dragged swings the camera round and over the centre of the view
   if (e.pointerType === 'mouse' && e.button === 2 && !e.shiftKey) {
     if (game.tool === 'building' && buildings.cancelOperation()) {
       requestDraw();
@@ -1420,8 +1183,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
       break;
 
     case 'pole':
-      // A stretch starts (at the line's last pole, if there is one); Shift-click
-      // or the Remove verb takes a pole away (`editor/poles.ts` `PoleTool`).
+      // A stretch starts (at the line's last pole, if there is one); Shift-click or the Remove verb takes a pole away
       poleTool.down(world, e.shiftKey);
       break;
 
@@ -1452,9 +1214,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
       break;
 
     case 'bulldoze':
-      // The Actions' bomb and pistol: what they leave behind (bodies, blood,
-      // blasts, ruins) is loaded the first time either is used
-      // (`SceneHandle.effects`), then the blow or the shot lands.
+      // The Actions' bomb and pistol: what they leave behind
       if (strikeChoice.mode === 'strike') {
         const sx = e.clientX - r.left, sy = e.clientY - r.top, at = { ...world };
         void scene.effects().then(() => actions.strikeAt(sx, sy, at));
@@ -1465,8 +1225,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
         void scene.effects().then(() => actions.shootAt(sx, sy));
         break;
       }
-      // A click removes what is under it; a drag draws a box and removes
-      // everything inside it, as SimCity's bulldozer does (on release).
+      // A click removes what is under it; a drag draws a box and removes everything inside it, as SimCity's bulldozer does
       bulldozer.down(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top }, world, anchor);
       break;
 
@@ -1493,8 +1252,7 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
 
     case 'inspect': {
       const box = canvas.getBoundingClientRect();
-      // A click on a building is for seeing inside it (the click handlers
-      // above), not for the street that happens to run past it.
+      // A click on a building is for seeing inside it
       const hitBuilding = buildings.tool.buildingAt({ x: e.clientX - box.left, y: e.clientY - box.top });
       if (hitBuilding !== null) {
         // Shift+click: maintenance - the building is renovated, as new.
@@ -1524,17 +1282,14 @@ function captureLost(e: PointerEvent): void {
 }
 
 function pointerMove(e: PointerEvent, r: DOMRect, path: PointerSample[] | undefined): void {
-  // A mouse whose button is no longer down has ended its stroke, whether or
-  // not the release reached us.
+  // A mouse whose button is no longer down has ended its stroke, whether or not the release reached us.
   if (e.pointerType === 'mouse' && e.buttons === 0 && terrainBrush.stroking) endTerrainStroke();
   const screen: Vec2 = { x: e.clientX - r.left, y: e.clientY - r.top };
   if (game.tool === 'road') roadTool.pointerAt(screen);
   // The pointer's look (`app.css`): a closed hand while it turns or drags the camera.
   const held = cameraHand.active ? 'held' : '';
   if (canvas.dataset['camera'] !== held) canvas.dataset['camera'] = held;
-  // A pinch, an orbit or a pan takes the move first; the hand's speed is read
-  // from every position the pointer went through since the last event, at
-  // their own times (`getCoalescedEvents`: Chrome sends one move a frame).
+  // A pinch, an orbit or a pan takes the move first
   if (cameraHand.move(e.pointerId, screen, e.timeStamp, cameraHand.active ? path : undefined)) return;
 
   const world = pointerWorld(e, r);
@@ -1595,10 +1350,7 @@ function pointerMove(e: PointerEvent, r: DOMRect, path: PointerSample[] | undefi
     : game.tool === 'road'
       ? anchorForHeight(doc, net, hovered, game.roadHeightOffset)
       : hovered;
-  // A frame only where the hover is drawn (`drawOverlayScreen`: the road's
-  // node ring and block grid, the roundabout, the brush, the junction badges,
-  // the info ribbon): paused, every move of the mouse drew the whole town,
-  // its shadows and its post-processing again for nothing.
+  // A frame only where the hover is drawn
   if (HOVER_DRAWN.has(game.tool)) requestDraw();
 }
 /** The tools whose overlay follows the hover. */
@@ -1660,9 +1412,7 @@ canvas.addEventListener(
 );
 function wheel(e: WheelEvent, r: DOMRect): void {
   {
-    // The wheel zooms, whatever tool is in hand (the player, 2026-10-06); with
-    // the landscape tool, Shift+wheel sizes the brush and Alt+wheel sets its
-    // strength. With Shift held a browser may scroll sideways: either axis.
+    // The wheel zooms, whatever tool is in hand (the player, 2026-10-06)
     if (game.tool === 'terrain' && (e.shiftKey || e.altKey)) {
       const notches = -Math.sign(e.deltaY || e.deltaX);
       if (e.altKey) setTerrainStrength(game.terrainStrength + notches);
@@ -1670,9 +1420,7 @@ function wheel(e: WheelEvent, r: DOMRect): void {
       return;
     }
     const at = { x: e.clientX - r.left, y: e.clientY - r.top };
-    // About the ground under the pointer at its real height: on the plane at
-    // zero a hill or a chapada under the pointer slid away as the view zoomed.
-    // Spent over the next frames, a glide rather than a jump per notch.
+    // About the ground under the pointer at its real height
     const lines = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
     cameraMotion.wheel(-e.deltaY * lines * 0.0013, at);
     requestDraw();
@@ -1680,11 +1428,7 @@ function wheel(e: WheelEvent, r: DOMRect): void {
 }
 
 
-// -------------------------------------------------------------------- ui
-// The interface (`ui/v2/shell.ts`) reads the game's state and calls the
-// commands below, handed to it in `mountInterface`: the page holds no control
-// of the game's own (it held a second, hidden interface that the visible one
-// read and clicked four times a second, docs/PLANO.md 5g).
+// -------------------------------------------------------------------- ui The interface
 
 /** Each class's picture, drawn once (`roadSwatch` paints a canvas). */
 const roadClassPictures: string[] = [];
@@ -1699,11 +1443,7 @@ function roadClasses(): ShellRoadClass[] {
   }));
 }
 
-/**
- * The lanes a road is laid at. The count is stored per segment, so a street
- * can be four lanes wide while the avenue beside it is six; the last choice
- * is the class that carries a central reservation (`game.roadLanePreset`).
- */
+/** The lanes a road is laid at. */
 const MEDIAN_CLASS = ROAD_TYPES.findIndex((rt) => rt.median > 0);
 const LANE_CHOICES: readonly { readonly id: string; readonly lanes: number | null }[] = [
   { id: '2', lanes: 2 },
@@ -1773,11 +1513,7 @@ function setTerrainMode(next: BrushMode): void {
   updateHint();
 }
 
-/**
- * One writer for each brush number: the slider, the wheel and the bracket
- * keys all go through these, so the slider, its readout and the ring on the
- * map never disagree about the brush.
- */
+/** One writer for each brush number */
 const TERRAIN_RADIUS_RANGE = [30, 300] as const;
 const TERRAIN_STRENGTH_RANGE = [1, 160] as const;
 function setTerrainRadius(value: number): void {
@@ -1789,11 +1525,7 @@ function setTerrainStrength(value: number): void {
   requestDraw();
 }
 
-/**
- * A slider of the map's own settings (the fog over the map, the weather, the
- * gullies of the land): saved with the map, one undo step a drag - recorded
- * at its first move, `end` at its release.
- */
+/** A slider of the map's own settings (the fog over the map, the weather, the gullies of the land) */
 function mapSlider(min: number, max: number, step: number, get: () => number, set: (v: number) => void): ShellSlider {
   let recorded = false;
   return {
@@ -1811,17 +1543,12 @@ function mapSlider(min: number, max: number, step: number, get: () => number, se
 const brushSlider = (min: number, max: number, step: number, get: () => number, set: (v: number) => void): ShellSlider =>
   ({ min, max, step, get, set: (v) => { set(v); requestDraw(); } });
 
-// THE WEATHER (Paisagem > Céu, `world/weather.ts`) and the water under the
-// river brush: the map's, one undo step a drag. The thunder is heard at every
-// strike, as late as sound takes to come.
+// THE WEATHER (Paisagem > Céu, `world/weather.ts`) and the water under the river brush: the map's, one undo step a drag.
 scene.onStrike((_x, _y, distance) => playThunder(distance / UNITS_PER_METER, doc.weather.thunder));
 const weatherSlider = (key: keyof typeof doc.weather, min: number, max: number, step: number, scale: number): ShellSlider =>
   mapSlider(min, max, step, () => Math.round(doc.weather[key] * scale * 10) / 10, (v) => doc.setWeather({ [key]: v / scale }));
 
-// The sky the player sets: the mist over everything, and (from before every
-// cloud was the map's) the cloud cover. Kept between sessions; heights in
-// metres. v5: the flat map (the planet was taken out, the player's decision
-// of 2026-10-08). An older choice is not read.
+// The sky the player sets: the mist over everything, and (from before every cloud was the map's) the cloud cover.
 const ATMOSPHERE_KEY = 'roadcraft.atmosphere.v5';
 const atmosphere = { atmoClouds: 40, atmoCloudBase: 180, atmoCloudThickness: 150, atmoFog: 0, atmoFogHeight: 60 };
 try {
@@ -1845,9 +1572,7 @@ function applyAtmosphere(redraw = true): void {
   // Not at boot: the frame loop is not set up yet then.
   if (redraw) requestDraw();
 }
-// The sky made no clouds of its own any more (every cloud is the map's, to
-// move or take away): a cover kept from before becomes clouds of the map
-// where it has none, once, and the setting goes to nought.
+// The sky made no clouds of its own any more (every cloud is the map's, to move or take away)
 if (atmosphere.atmoClouds > 0) {
   if (doc.clouds.length === 0) {
     doc.addClouds(scatterClouds(Math.round((atmosphere.atmoClouds / 100) * 12), {
@@ -1859,11 +1584,7 @@ if (atmosphere.atmoClouds > 0) {
 }
 applyAtmosphere(false);
 
-/**
- * Every slider the interface shows, by name: its range and how the game
- * reads and takes it. The brushes' are kept between sessions
- * (`ui/toolChoices.ts`), the map's own are the map's (one undo step a drag).
- */
+/** Every slider the interface shows, by name: its range and how the game reads and takes it. */
 const SLIDERS: Readonly<Record<string, ShellSlider>> = {
   // The terrain brush (Paisagem > Relevo).
   terrainRadius: { min: TERRAIN_RADIUS_RANGE[0], max: TERRAIN_RADIUS_RANGE[1], step: 10, get: () => game.terrainRadius, set: setTerrainRadius },
@@ -1953,8 +1674,7 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   clearClouds: () => {
     if (doc.clouds.length > 0) wholeMapEdit('confirm.clearClouds', () => { for (const cloud of [...doc.clouds]) doc.removeCloud(cloud.id); });
   },
-  // Spread clouds over the sky: as many as asked, about the tool's size,
-  // height and density, varied - each one then to move, set or take away.
+  // Spread clouds over the sky: as many as asked, about the tool's size, height and density, varied
   scatterClouds: () => wholeMapEdit(null, () => {
     const brush = cloudBrush();
     const laid = scatterClouds(cloudScatter.count, {
@@ -1964,12 +1684,7 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   }),
 };
 
-/**
- * Puts a tool in hand: what it does to the game (gestures dropped, the
- * selection let go, the Builder switched on or off). Called only by the tool
- * machine (`tools`), on entering a tool's state. How the interface shows it
- * is `showTool`, told by the game's state at the next frame.
- */
+/** Puts a tool in hand: what it does to the game (gestures dropped, the selection let go, the Builder switched on or off). */
 function takeTool(next: Tool): void {
   cancelGestures();
   gameState.set('tool', next, 'ferramenta escolhida');
@@ -1996,11 +1711,7 @@ function setTool(next: Tool): void {
   tools.send({ type: 'pick', tool: next });
 }
 
-/**
- * Puts everything down: no tool in hand, nothing picked, no panel. The game
- * always held some tool (Roads, Terrain...) and its panel stayed on screen;
- * this is the free hand, where a click on the map inspects what it hits.
- */
+/** Puts everything down: no tool in hand, nothing picked, no panel. */
 function freeSelection(): void {
   tools.send({ type: 'putDown' });
 }
@@ -2012,12 +1723,7 @@ function pickTool(next: Tool): void {
 
 /** The interface's handle: the road inspector's eyedropper opens the road tool through it. */
 let shell: ShellHandle | null = null;
-/**
- * The interface (`ui/v2/shell.ts`): its HUD, dock, drawer and selection
- * panel, handed the game's state and its commands. The tools' own settings
- * are the editor's: handed to the interface here, the one place that may
- * wire the layers.
- */
+/** The interface (`ui/v2/shell.ts`): its HUD, dock, drawer and selection panel, handed the game's state and its commands. */
 function mountInterface(): void {
   showTool(game.tool);
   shell = mountShell({
@@ -2068,8 +1774,7 @@ function mountInterface(): void {
       if ((ROAD_PARKING_PRESETS as readonly string[]).includes(preset)) setRoadParkingPreset(preset as RoadParkingPreset);
     },
     transitTool,
-    // Junctions that cannot be built (`Network.impossible`): counted in the
-    // top bar, and the first one shown in the inspector on a click.
+    // Junctions that cannot be built (`Network.impossible`)
     showImpossible: () => {
       const id = net.impossible.keys().next().value;
       const node = id === undefined ? undefined : doc.node(id);
@@ -2109,9 +1814,7 @@ let compass: Compass | null = null;
 function updateCompass(): void {
   compass?.point(northOnScreen(view, surface.cssW, surface.cssH));
 }
-// Mounted after this module has finished evaluating: building the interface
-// is a layout change, and a pointer already over the canvas can fire a move
-// event mid-evaluation - before the run loop's own state exists.
+// Mounted after this module has finished evaluating
 setTimeout(mountInterface, 0);
 
 function setPaused(paused: boolean): void {
@@ -2146,11 +1849,7 @@ trackFocusModality();
 onRoadGridChange(requestDraw);
 mountAbout();
 
-/**
- * A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the
- * map replaced (one undo step), the planned streets laid, the lots cut and
- * zoned, then every lot built on, a slice of each frame until all stand.
- */
+/** A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the map replaced */
 let cityGrowth: { left: number; total: number; started: number; guard: number;
   /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
   layout?: Generator<void, { zoned: number; squares: number; pieces: number }> } | null = null;
@@ -2160,23 +1859,16 @@ function generateCity(options: CityOptions): { roads: number; lots: number; zone
   history.begin(doc);
   // The footways wide enough for street trees before the lots are cut (V7).
   widenCityFootways(cityDoc);
-  // On the level plain, as every new map (a document made fresh reads the
-  // relief of the maps of before, and the town stood on its lumps).
+  // On the level plain, as every new map
   applySnapshot({ ...cityDoc.toJSON(), relief: NEW_RELIEF }, 'import');
   if (net.revision !== doc.revision) net.rebuild();
-  // The lots, the squares, the power lines, the furniture and the zones a
-  // slice a frame (`growCity`), then the buildings: done in the call, they
-  // froze the page 0.8-1.5 s (2026-10-14; the power lines were half of it).
+  // The lots, the squares, the power lines, the furniture and the zones a slice a frame (`growCity`), then the buildings
   cityGrowth = { left: 0, total: 0, started: performance.now(), guard: 0, layout: layoutSteps(plan, options.seed) };
   fitView();
   requestDraw();
   return { roads: doc.segments.size, lots: 0, zoned: 0, squares: 0, pieces: 0 };
 }
-/**
- * The generated city's layout after its roads: lots cut, squares and
- * streets dressed (`greenCitySteps`), lots zoned. Yields between slices;
- * returns what it laid and how many lots the growth will build on.
- */
+/** The generated city's layout after its roads: lots cut, squares and streets dressed (`greenCitySteps`), lots zoned. */
 function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: number; squares: number; pieces: number }> {
   applyLots(doc, yield* planLotsSteps(doc, net));
   yield;
@@ -2188,10 +1880,7 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   lotTool.refusedNow();
   return { zoned, ...green };
 }
-/**
- * Builds on the generated city's lots, `GROW_SLICE_MS` a frame: each building
- * graded and drawn in the frame it grows, its own site and cell only.
- */
+/** Builds on the generated city's lots, `GROW_SLICE_MS` a frame */
 const cityProgress = document.createElement('div');
 cityProgress.className = 'city-progress';
 cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:50;display:none;'
@@ -2199,13 +1888,7 @@ cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:transla
 document.body.appendChild(cityProgress);
 function growCity(): void {
   if (!cityGrowth) return;
-  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame, so
-  // the page answers and the notice counts up. Built in one go, 1 348 lots
-  // froze the page for 3 s (2026-10-13). Each building is graded and drawn in
-  // the frame it grows, its own site and cell only (`changedSites`, the
-  // layer's diary). DO NOT hold the buildings from the renderer until the
-  // last one: every site of the city was graded and every building put in
-  // the layer in the one frame they were let go, 5.6 s at 2 560 m (2026-10-15).
+  // DO NOT hold the buildings from the renderer until the last one
   const growing = cityGrowth;
   if (cityProgress.style.display !== 'block') {
     cityProgress.style.display = 'block';
@@ -2241,12 +1924,7 @@ function growCity(): void {
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
 }
-/**
- * One slice of the generated city's growth: lots built until `GROW_SLICE_MS`
- * is spent; true when none is left. Its work is the city's zoned lots, each
- * built once; a frame of play never reaches it.
- * @rebuild Run only while a generated city is being built (`cityGrowth`), a slice a frame.
- */
+/** @rebuild One slice of the generated city's growth: lots built until `GROW_SLICE_MS` is spent; true when none is left. */
 function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
   const until = performance.now() + GROW_SLICE_MS;
   let done = false;
@@ -2255,10 +1933,7 @@ function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
       if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
       const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
       if (id === null) {
-        // A lot refused (nothing fits it) is set aside; done when none is left
-        // open, as the document's index of open lots counts them (zoned, no
-        // building standing, not set aside). DO NOT filter `doc.lots` here: it
-        // ran once per lot refused, every lot each time.
+        // DO NOT filter `doc.lots` here: it ran once per lot refused, every lot each time.
         if (doc.openLots.count(lotTool.refused) === 0) { done = true; break; }
         continue;
       }
@@ -2276,11 +1951,9 @@ let cityBuiltIn = 0;
 
 function newMap(): void {
   if (!window.confirm(t('confirm.newMap'))) return;
-  // Discarding the whole map is the largest edit the editor can make, so it is
-  // the one that most needs to be undoable. Opening a file already records;
-  // this did not, which left Ctrl+Z unable to recover a map cleared by mistake.
+  // Discarding the whole map is the largest edit the editor can make, so it is the one that most needs to be undoable.
   history.begin(doc);
-  // A new map is empty, painted to the Brazilian standard (docs/VIAS.md V6).
+  // A new map is empty, painted to the Brazilian standard.
   applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
   roadTool.reset();
   fitView();
@@ -2301,20 +1974,12 @@ try {
 gameState.watch(['sky'], () => { scene.setSkyMode(game.sky); requestDraw(); });
 scene.setSkyMode(game.sky);
 
-/**
- * Save map: the map offered as a file, and the player told which way it went.
- * DO NOT say "saved" without asking `exportToFile`: a map too large for one
- * string failed in the click and the player read "Map saved to a file".
- */
+/** DO NOT say "saved" without asking `exportToFile` */
 function saveMap(): void {
   const offered = exportToFile(doc, sessionSettings(), undefined, () => flashHint('hint.exportFailed'));
   if (offered) flashHint('hint.saved');
 }
-/**
- * Loads a picked map. The undo entry is recorded only once the map has
- * actually loaded: recording first left a bogus step (and cleared redo) when
- * the file then failed.
- */
+/** Loads a picked map. */
 function openImported(result: ImportResult): boolean {
   if (result.status === 'cancelled') return false;
   if (result.status === 'invalid') {
@@ -2344,9 +2009,6 @@ async function openMap(): Promise<void> {
 }
 
 // Perspective or the isometric (orthographic) view, the player's choice, kept.
-// Perspective unless the player turns the isometric view on (the player,
-// 2026-10-06: "a vista isométrica deve ficar desligada por padrão"); a new key,
-// so a choice kept under the old default does not hold the isometric view on.
 const PERSPECTIVE_KEY = 'roadcraft.perspective.v2';
 function setPerspective(on: boolean): void {
   gameState.set('perspective', on, 'câmera');
@@ -2357,8 +2019,7 @@ function showPerspective(): void {
   scene.setPerspective(game.perspective);
 }
 gameState.watch(['perspective'], showPerspective);
-// At boot, once the whole file has run: switching the camera asks for a
-// frame, and the frame loop is set up further down.
+// At boot, once the whole file has run: switching the camera asks for a frame, and the frame loop is set up further down.
 queueMicrotask(() => {
   let kept: string | null = null;
   try { kept = localStorage.getItem(PERSPECTIVE_KEY); } catch { /* storage blocked: the default */ }
@@ -2385,8 +2046,7 @@ function cameraCommand(command: string): void {
 
 // An undo can change something far off screen, so the game says it happened.
 function undo(): void {
-  // A drag or stroke in progress ends first: undoing mid-drag used to go on
-  // moving a node of the restored map, and record the half-done state as redo.
+  // A drag or stroke in progress ends first
   cancelGestures();
   doc.changes.causeNext('desfazer');
   const done = history.undo(doc);
@@ -2402,11 +2062,7 @@ function redo(): void {
   doc.changes.causeNext('jogo');
   if (done) flashHint('hint.redone');
 }
-/**
- * The game after an undo or a redo put records back (`editor/history.ts`): the
- * network rebuilt only when the roads moved (a storey, a pole or a brush dab
- * leaves it, and everything built on it, alone), the rest as after a snapshot.
- */
+/** The game after an undo or a redo put records back (`editor/history.ts`): the network rebuilt only when the roads moved */
 function afterRestore(): void {
   roadTool.cancel();
   followNetwork(doc, net);
@@ -2434,8 +2090,7 @@ function restoreSettings(settings: SavedSettings): void {
   camera.zoom = clamp(settings.camera.zoom, limits.min, limits.max);
   syncViewFromFlatCamera();
   restoreOrbit(settings.camera);
-  // Through the game's state: setting the clock alone left `game.speed` and the
-  // speed buttons showing the speed before the map was loaded.
+  // Through the game's state: setting the clock alone left `game.speed` and the speed buttons showing the speed before the
   gameState.set('speed', settings.speed, 'mapa carregado');
   sim.clock.speed = settings.speed;
   setPaused(settings.paused);
@@ -2462,19 +2117,7 @@ function closeInspector(): void {
 // Open or closed, by a command or by itself (what it showed is gone): in the game's state.
 onInspectorChange((open) => gameState.set('inspectorOpen', open, open ? 'inspetor aberto' : 'inspetor fechado'));
 
-/**
- * Junction control, as a tool rather than as a form field.
- *
- * A player asked for signals to be OPTIONAL at a crossing, which they already
- * were — the setting lived in the inspector, three clicks away behind a select
- * nobody opens. Making it a tool is the difference between a setting and a
- * decision you can take while looking at the junction. The inspector's select
- * stays: it names the modes, which a cycling tool cannot.
- *
- * The order is the one a player reasons in, from "leave it to the game" through
- * the increasingly permissive real devices to nothing at all. Shift walks it
- * backwards, because the mode you want is as often the previous one as the next.
- */
+/** Junction control, as a tool rather than as a form field. */
 const CONTROL_CYCLE: readonly JunctionControl[] = [
   'auto',
   'signal',
@@ -2488,9 +2131,7 @@ const CONTROL_CYCLE: readonly JunctionControl[] = [
 function cycleNodeControl(id: NodeId, direction: 1 | -1): void {
   const node = doc.node(id);
   if (!node) return;
-  // A node with fewer than three legs is not a junction: it is a kerb line or a
-  // change of class, and no control device belongs there. Saying so is better
-  // than silently cycling a setting that will never be read.
+  // A node with fewer than three legs is not a junction
   if (node.incident.length < 3) {
     flashHint('hint.control.notJunction');
     return;
@@ -2511,28 +2152,18 @@ function cycleNodeControl(id: NodeId, direction: 1 | -1): void {
 const hintListeners: ((text: string, flash: boolean) => void)[] = [];
 /** The answers said before anyone listened (a map that failed to open at boot): told to the first listener. */
 const earlyFlashes: string[] = [];
-/**
- * A transient answer of the game - saved, refused, undone, a road that
- * cannot be laid - shown a moment by the interface over the dock.
- */
+/** A transient answer of the game - saved, refused, undone, a road that cannot be laid */
 function flashHint(key: string, params?: Readonly<Record<string, string | number>>): void {
   const text = t(key, params);
   if (hintListeners.length === 0) earlyFlashes.push(text);
   for (const listen of hintListeners) listen(text, true);
 }
 
-/**
- * The tool's hint: what a click does now.
- *
- * The key is derived from the tool and its current mode rather than chosen from
- * a table of sentences, so adding a language is a dictionary entry and adding a
- * tool is one key in each dictionary.
- */
+/** The tool's hint: what a click does now. */
 function hintKey(prefix: string): string {
   if (game.tool === 'road' && game.alignment === 'curve') return `${prefix}.road.curve`;
   if (game.tool === 'road' && game.alignment === 'free') return `${prefix}.road.free`;
-  // Each sculpting operation gets its own sentence. Four modes behind one hint
-  // meant the bar told the player nothing about the one they had selected.
+  // Each sculpting operation gets its own sentence.
   if (game.tool === 'terrain') return `${prefix}.terrain.${game.terrainMode}`;
   if (game.tool === 'building') return buildings.hintKey(prefix);
   return `${prefix}.${game.tool}`;
@@ -2601,8 +2232,7 @@ const gameKeys = createGameKeys({
       return true;
     });
   },
-  // A button the player reached with the keyboard keeps Space for itself; one
-  // merely clicked with the mouse (and so still focused) must not swallow it.
+  // A button the player reached with the keyboard keeps Space for itself; one merely clicked with the mouse
   keyboardOnButton: (e) => e.target instanceof HTMLButtonElement && focusCameFromKeyboard(),
   // The focused control is let go by the listener below.
   togglePause: () => setSpeed(game.paused ? game.speed : 0),
@@ -2614,8 +2244,7 @@ const gameKeys = createGameKeys({
   terrainRadius: (step) => setTerrainRadius(game.terrainRadius + step * 10),
   terrainStrength: (step) => setTerrainStrength(game.terrainStrength + step),
   roadClassCount: ROAD_TYPES.length,
-  // The class palette is shown only with the road tool, so choosing a class
-  // from another tool also picks up the tool that draws it.
+  // The class palette is shown only with the road tool
   pickRoadClass: (index) => {
     if (game.tool !== 'road') setTool('road');
     selectRoadType(index);
@@ -2629,9 +2258,7 @@ const gameKeys = createGameKeys({
     pickTool(next);
     shell?.toolKeyed(next);
   },
-  // Escape ends whatever is being drawn (a pole line is traced in stretches:
-  // this is "that is the end of this line"), then puts down what Inspect
-  // picked up, then the tool itself: the free hand.
+  // Escape ends whatever is being drawn
   escape: () => {
     if (gestureInProgress()) cancelGestures();
     else if (game.selectedSegment !== null || game.selectedNode !== null) closeInspectorPanel();
@@ -2645,10 +2272,7 @@ window.addEventListener('keydown', (e) => {
   const rule = gameKeys.press({ code: e.code, key: e.key, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, alt: e.altKey }, e);
   if (!rule) return;
   if (rule.prevent !== false) e.preventDefault();
-  // A control merely clicked keeps the focus, and a key makes the browser ring
-  // it (`:focus-visible`): the Roads button stayed ringed beside the tool the
-  // key took, two buttons that looked chosen. The game's key lets it go; one
-  // reached with Tab keeps its ring.
+  // A control merely clicked keeps the focus, and a key makes the browser ring it (`:focus-visible`)
   if (e.target instanceof HTMLElement && e.target !== document.body && !focusCameFromKeyboard()) e.target.blur();
 });
 window.addEventListener('keyup', (e) => { cameraMotion.release(e.code, e.shiftKey); });
@@ -2667,18 +2291,7 @@ const zonesDue = new Periodic(5);
 /** The Actions' physics asked for (`frame`). */
 let actionsWarm = false;
 
-/**
- * Set by an edit: draw the new geometry first, rebuild the simulation after.
- *
- * Both are rebuilt from scratch and both block the page. `mutate` used to
- * rebuild the simulation's topology inside the pointer event, and the scene
- * was rebuilt in the frame after it, so a drawn road stayed a draft line on
- * screen for the SUM of the two — measured on a 144-segment map, 2.0 s of
- * topology and then 1.7 s of meshes before anything changed. The frame that
- * draws the edit now holds the simulation still, as a node drag already does,
- * and the next one brings its topology up to date: the road appears after the
- * mesh rebuild alone, and the traffic pauses for the topology afterwards.
- */
+/** Set by an edit: draw the new geometry first, rebuild the simulation after. */
 let topologyAfterDraw = false;
 /** The traffic's topology catching up with an edit, a slice a frame (`frameLoop.ts`). */
 // The new junctions' conflict pairs measured on the other cores (`conflictPool.ts`).
@@ -2688,27 +2301,17 @@ function requestDraw(): void {
   frameClock.request();
 }
 
-/**
- * Buildings grow on zoned lots on their own, one at a time, twice a second of
- * the city's time: the city fills in as the player watches, as in every city
- * builder. Lots that did not take a building are skipped until the land or the
- * roads change. Run by the frame loop on the simulation's clock (`SimPeriodic`):
- * not while paused, faster at a higher speed, never with the tab hidden.
- * DO NOT go back to a `setInterval` on the wall clock.
- */
+/** DO NOT go back to a `setInterval` on the wall clock. */
 const growthDue = new SimPeriodic(0.5);
 /** Nothing grows before this simulation time (rubble of a collapse lying, `strikeAt`); `at` the time it was set. */
 let zoneGrowthHold = { at: 0, until: 0 };
 function growZones(): void {
   // Buildings on zoned lots (`world/lots.ts`).
-  // A road edit can make room on a lot refused before: try them again.
   const lotRefused = lotTool.refusedNow();
   const now = sim.clock.time;
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
-  // `growOnLot` finds the open lots by the document's own index (`doc.openLots`):
-  // none open, none grown. DO NOT read `doc.lots` here (`lots.some` walked
-  // every lot twice a second).
+  // DO NOT read `doc.lots` here (`lots.some` walked every lot twice a second).
   const grown = caused('crescimento da zona', () => {
     const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
     const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
@@ -2722,11 +2325,7 @@ function growZones(): void {
   }
 }
 
-/**
- * The loading curtain: over the page while a town is put together unseen
- * (`scene.opening`, the opening and every map opened), so a load is a
- * loading screen and not a frozen picture or a town arriving in pieces.
- */
+/** The loading curtain: over the page while a town is put together unseen */
 const loadingCurtain = document.createElement('div');
 loadingCurtain.className = 'loading-curtain';
 loadingCurtain.setAttribute('role', 'status');
@@ -2741,10 +2340,7 @@ function syncLoadingCurtain(): void {
 /** A frame has been drawn, and the first world has been put in place (the opening builds it in parts). */
 let drawnOnce = false;
 let worldShown = false;
-/**
- * One frame: input, the topology catching up, the simulation, the drawing, the panels.
- * @perFrame `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
- */
+/** @perFrame One frame: input, the topology catching up, the simulation, the drawing, the panels. */
 function frame(now: number): void {
   if (!booted) return;
   profiler.beginFrame();
@@ -2759,32 +2355,25 @@ function frame(now: number): void {
   const wall = frameClock.tick(now);
   // The camera's glide: keys held, the wheel's notches being spent.
   if (cameraMotion.step(now)) persistence.saveSettingsSoon(sessionSettings);
-  // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's
-  // time on the events' clock: it starts at the release itself.
+  // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's time on the events' clock
   cameraHand.advance(now);
   // A flatten held still levels on, a dab when its interval allows (`terrainBrush.ts` tick).
   if (terrainBrush.tick(performance.now())) requestDraw();
   frameTimer.mark('camera');
 
-  // The opening puts the town together in parts (`SceneHandle.worldBusy`):
-  // the traffic waits for the roads it drives on to be drawn.
+  // The opening puts the town together in parts (`SceneHandle.worldBusy`)
   if (!worldShown && drawnOnce && !scene.worldBusy) worldShown = true;
-  // Moving a node is an authoring preview. Freeze simulation time until the
-  // gesture finishes so agents never rebuild against every intermediate shape.
-  // The frame that first draws an edit is held the same way.
+  // Moving a node is an authoring preview.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
   // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
   growCity();
   frameTimer.mark('growCity');
-  // The pistol or the bomb chosen: their effects and the physics the bodies
-  // fall with loaded now, while the player aims (`SceneHandle.effects`), not
-  // in every session.
+  // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
     void scene.effects();
   }
-  // The traffic's topology catching up with an edit, the simulation held
-  // while the workers measure the new junctions' pairs (`TopologyCatchUp`).
+  // The traffic's topology catching up with an edit, the simulation held while the workers measure the new junctions' pairs
   if ((!holdSim || scene.opening) && topology.step(sim, net.trafficRevision, scene.worldBusy)) {
     holdSim = true;
     requestDraw();
@@ -2804,22 +2393,16 @@ function frame(now: number): void {
   frameTimer.mark('simulation');
 
   if (net.revision !== doc.revision) {
-    // Geometry is still refreshed during a drag, but a 20 Hz preview is more
-    // than smooth enough and avoids repeatedly rebuilding routes, signals and
-    // spatial indexes for pointer samples that will be superseded immediately.
+    // Geometry is still refreshed during a drag
     if (!mover.dragging || mover.previewDue(now, scene.stats.rebuildMs)) {
-      // The traffic's topology is brought up by `TopologyCatchUp` from the next frame, the simulation held
-      // meanwhile: its turns and conflict pairs chosen by the workers (`conflictPool.ts`). DO NOT rebuild it
-      // here, whole and on the page: every frame of a generated city that laid lots or furniture rebuilt
-      // the town's topology in that frame (5.8 s at 2 560 m, 2026-10-15), and the workers never ran.
+      // DO NOT rebuild it here, whole and on the page
       net.rebuild();
     }
   }
   frameTimer.mark('roadNetwork');
   buildings.beforeDraw(game.tool === 'building');
   frameTimer.mark('buildings');
-  // The pole run under the pointer, planned once per frame: the 3D preview
-  // shows it as it will stand, the overlay marks only what cannot be built.
+  // The pole run under the pointer, planned once per frame
   framePolePlan = poleTool.plan();
   scene.setPolePreview(net, framePolePlan && !framePolePlan.refused && framePolePlan.poles.length >= 2
     ? { poles: framePolePlan.poles.map((pole) => ({ x: pole.at.x, y: pole.at.y, lamp: pole.lamp, standing: pole.existing !== null })) }
@@ -2841,8 +2424,7 @@ function frame(now: number): void {
 
   if (panelsDue.due(wall)) {
     updateStatus();
-    // Safe while the player is using the panel: an unchanged selection only
-    // rewrites the statistics block, never the control under the pointer.
+    // Safe while the player is using the panel
     refreshInspector();
     noteSimulationIssues();
   }
@@ -2853,12 +2435,7 @@ function frame(now: number): void {
   for (const [system, ms] of timed.systems) profiler.step(`quadro ${system}`, ms);
   profileFrameEnd();
 
-  // Keep animating while anything is moving; otherwise settle. The clock
-  // running over a town where nothing the simulation moves can be seen (no
-  // vehicle, person, signal or line) asks only the slower frame the clouds
-  // do: every frame of the display was drawn for a still picture - a map
-  // with no streets yet held the CPU and the GPU at sixty
-  // frames a second (three.js manual, "Rendering on Demand").
+  // Keep animating while anything is moving; otherwise settle.
   const simMoving = !game.paused && simShowsMotion();
   if (!document.hidden && (simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
   // Only the clouds moving (they drift, form and fade), or the clock alone: a slower frame.
@@ -2870,36 +2447,14 @@ function simShowsMotion(): boolean {
   return sim.vehicles.size > 0 || sim.pedViews.length > 0 || sim.city.lots.moving() > 0 || sim.controllers.size > 0 || hasTransit(doc.transit);
 }
 
-/**
- * The same hints as `drawOverlay`, projected instead of transformed.
- *
- * Under the isometric renderer there is no canvas transform that maps world to
- * screen, so every point goes through `view.toScreen` and everything is stroked
- * in CSS pixels. Widths are pixels here for the same reason: a hairline must
- * stay a hairline at any zoom, and there is no uniform scale left to divide by.
- *
- * The flat canvas sits above the 3D one and is cleared to full transparency
- * every frame, so it contributes only these strokes.
- */
-/**
- * Draws a planned pole run onto the overlay.
- *
- * Taken out of `drawOverlayScreen` because it is the only part of that
- * function that has a model behind it, and because the preview and the commit
- * now share one plan - keeping the drawing beside the rest of the hairlines
- * hid that.
- */
-/**
- * The map's rectangle the screen can show: its corners and the middles of its
- * sides on the ground and on the highest surface (`surfaceTop`), within the
- * map; the whole map when a corner looks past the horizon.
- */
+/** The same hints as `drawOverlay`, projected instead of transformed. */
+/** Draws a planned pole run onto the overlay. */
+/** The map's rectangle the screen can show */
 function groundOnScreen(w: number, h: number): ChangeRect {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const top = surfaceTop();
   for (const [px, py] of [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]] as const) {
-    // The pixel's line of sight where the view has one: a ray level with or
-    // above the horizon meets no ground (`toWorldAt` then reads the view's centre).
+    // The pixel's line of sight where the view has one: a ray level with or above the horizon meets no ground
     const ray = view.rayAt?.(px, py, w, h);
     for (const z of [0, top]) {
       let p: Vec2;
@@ -3020,8 +2575,7 @@ function drawPolePlan(
     return;
   }
   if (plan && plan.poles.length) {
-    // The run itself is drawn in 3D as it will stand (`setPolePreview`); here
-    // only a ring round each standing pole the run will tie into.
+    // The run itself is drawn in 3D as it will stand (`setPolePreview`)
     for (const pole of plan.poles) if (pole.existing !== null) ring(at(pole.at), HOVER, 9);
     return;
   }
@@ -3044,12 +2598,7 @@ const CHANGE_COLOURS: Record<ChangeKind, string> = {
   gullies: '#8d5524', economy: '#2a9d8f', buildingWear: '#a26769', elevation: '#ff6b6b', ground: '#f4a261', light: '#ffe066', surfaces: '#4361ee',
 };
 
-/**
- * The rectangles of the changes of the last seconds, each in its kind's
- * colour and labelled with what it was and why, fading out: what an edit
- * touched in the document, and what the game worked out again from it - the
- * roads' heights, the ground cut and filled, the land relit, the road tiles.
- */
+/** The rectangles of the changes of the last seconds, each in its kind's colour and labelled with what it was and why */
 function drawChanges(ctx: CanvasRenderingContext2D, at: (p: Vec2) => Vec2): void {
   const now = performance.now();
   const recent = doc.changes.latest(200).filter((c) => now - c.at < CHANGE_SHOWN);
@@ -3098,11 +2647,6 @@ function drawOverlayScreen(): void {
   ctx.clearRect(0, 0, w, h);
 
   // Project at the height of whatever is UNDER the point, not at zero.
-  //
-  // A tilted view puts a raised deck well away from the ground directly below
-  // it, so a draft line or a snap ring drawn on the ground plane floated off
-  // the viaduct it belonged to — the on-screen feedback disagreed with what the
-  // editor was about to build.
   const at = (p: Vec2): Vec2 => view.toScreen(p, w, h, sceneHeightAt(p));
 
   if (showChanges) drawChanges(ctx, at);
@@ -3124,20 +2668,8 @@ function drawOverlayScreen(): void {
   }
 
   // The pole run being drawn.
-  //
-  // What was here before was a dashed line ON THE GROUND with a small ring at
-  // each pole, and it was useless for the one thing a preview has to do: a
-  // pole is nine metres of vertical mast, and a ground line says nothing
-  // about where the masts, the arms or the wires will be. It also disagreed
-  // with the commit, because it drew the RAW drag while the commit snapped.
-  //
-  // This draws the plan: every mast at its real height, the wire that will
-  // hang between them with its real sag, and a ring round any pole the run is
-  // about to tie into. If it looks right here it is right when built.
   drawPolePlan(framePolePlan, ctx, at);
-  // The universal grid (`world/grid.ts`) on the ground while roads are built:
-  // 10 m cells, and their 1 m subdivisions close up - what the grid snap lands on.
-  // The grid is drawn in the scene, on the ground, over the whole map (`SceneHandle.setGrid`).
+  // The universal grid (`world/grid.ts`) on the ground while roads are built
   scene.setGrid(roadGridShown());
   if (game.tool === 'road' && blockGridChoice.armed && hoverAnchor) {
     // The grid the next click lays, on the ground.
@@ -3161,18 +2693,13 @@ function drawOverlayScreen(): void {
   // The metro seen through the ground and the track being laid, in the scene.
   scene.setTransitXray(game.tool === 'transit');
   scene.setTransitPreview(game.tool === 'transit' ? transitEditor.preview() : null);
-  // The zoning grid is shown while a road is being drawn too, so a street can
-  // be laid out to the blocks it will make.
-  // The lots, laid on the ground in the scene (`render/lotOverlay.ts`): in
-  // the Zoning tool, and while roads are being built (unless the player
-  // turned that off); zoned ones faintly with the other tools.
+  // The zoning grid is shown while a road is being drawn too, so a street can be laid out to the blocks it will make.
   const showLots = game.tool === 'zone' || (lotTool.anyZoned() && zoneColoursShown());
   if (showLots) {
     // What the Zoning tool draws (`editor/lotTool.ts`), in the scene; its labels on the 2D layer.
     const overlay = lotTool.overlayKeyed(game.tool === 'zone');
     const labels = overlay.labels;
-    // All of them from the next frame: the ground's shaders draw them (`lotOverlay.ts`);
-    // the diary for the built lots' levels.
+    // All of them from the next frame: the ground's shaders draw them (`lotOverlay.ts`); the diary for the built lots' levels.
     scene.setLotOverlay(overlay, doc.changes);
     // Labels stay on the 2D layer, projected at the ground's real height.
     const ground = (p: Vec2): Vec2 => view.toScreen(p, w, h, scene.surfaceHeightAt(p.x, p.y));
@@ -3254,13 +2781,9 @@ function drawOverlayScreen(): void {
     ctx.stroke();
   };
 
-  // The road's centre line, picked or under the pointer, only with the
-  // Information tool in hand (the player's order of 2026-10-05): with any
-  // other tool a white line down the middle of the street is noise.
+  // The road's centre line, picked or under the pointer, only with the Information tool in hand
   const infoTool = game.tool === 'inspect' && document.body.dataset['infoTool'] === 'on';
-  // Drawn as a translucent band the width of the carriageway, not a line
-  // down its middle: seen close, a thin white line over the median read as a
-  // wire across the screen (the coordinator, 2026-10-09).
+  // Drawn as a translucent band the width of the carriageway, not a line down its middle
   const roadBand = (id: SegmentId, colour: string): void => {
     const ribbon = net.ribbons.get(id);
     if (!ribbon) return;
@@ -3280,22 +2803,11 @@ function drawOverlayScreen(): void {
   }
 
   // The node a road would start from, when the cursor is snapping to one.
-  //
-  // Only then. It was drawn wherever the cursor rested - a white circle on the
-  // grass, and on a road on its centre line, where a segment anchor sits -
-  // with the Road tool up, which is the tool the game starts in. Players
-  // reported it, twice, as a debug marker left on screen.
   if (game.tool === 'road' && !roadTool.draft && hoverAnchor?.kind === 'node') {
     ring(hoverAnchor.at, 9, HOVER, 2);
   }
 
   // The brush, drawn where it will land.
-  //
-  // Two rings rather than one: the outer is the radius, the inner marks where
-  // the smoothstep falloff still has most of its strength, which is the part
-  // the player is actually aiming. The height readout is there because
-  // levelling needs a number — you cannot match one slope to another by eye in
-  // an isometric projection.
   if (game.tool === 'terrain' && hoverAnchor) {
     const brush = terrainBrush.at ?? hoverAnchor.at;
     const centre = at(brush);
@@ -3314,10 +2826,7 @@ function drawOverlayScreen(): void {
     ctx.fill();
     ctx.stroke();
 
-    // Inner ring: the half-strength contour, scaled by the strength setting so
-    // a heavier brush visibly bites deeper. Scaled against the slider's own
-    // range, not against a hard-coded 10: a ring drawn past the outer one is
-    // not a heavier bite, it is a second radius the brush does not have.
+    // Inner ring: the half-strength contour, scaled by the strength setting so a heavier brush visibly bites deeper.
     const strengthMax = TERRAIN_STRENGTH_RANGE[1];
     const bite = 0.3 + 0.35 * (game.terrainStrength / strengthMax);
     ctx.setLineDash([]);
@@ -3352,15 +2861,12 @@ function drawOverlayScreen(): void {
     ctx.restore();
   }
 
-  // With the control tool up, every junction states what it is doing. The
-  // setting is invisible otherwise, so choosing one meant clicking each node in
-  // turn to read it back.
+  // With the control tool up, every junction states what it is doing.
   if (game.tool === 'control') {
     ctx.font = '600 10px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    // The junctions on screen only (`net.junctionCells`), never every node of
-    // the map each frame.
+    // The junctions on screen only (`net.junctionCells`), never every node of the map each frame.
     for (const id of net.junctionCells.idsMeeting(groundOnScreen(w, h))) {
       const node = doc.node(id);
       if (!node || node.incident.length < 3) continue;
@@ -3402,9 +2908,7 @@ function drawOverlayScreen(): void {
     let previewHeight = roadPreview.startHeightOffset;
     let limited = false;
     for (const [pieceIndex, piece] of pieces.entries()) {
-      // Sampled every couple of metres, so the preview lies on the ground as
-      // the road will: a straight piece was two points and drew a straight
-      // line through any hill between them (the player's order of 2026-10-05).
+      // Sampled every couple of metres, so the preview lies on the ground as the road will
       const flattened = densify(flattenSegment(piece.start.at, piece.end.at, piece.curve), m(2));
       const pieceLength = flattened.reduce((sum, p, i) =>
         i === 0 ? 0 : sum + dist(p, flattened[i - 1] as Vec2), 0);
@@ -3425,9 +2929,7 @@ function drawOverlayScreen(): void {
       }
       previewHeight = nextHeight;
     }
-    // Once the draft is judged, the road as it will be built (docs/VIAS.md V3):
-    // the dry run's stations, solved by the same code as the commit, in place
-    // of the estimate above - deck, ground and the way each stretch is built.
+    // Once the draft is judged, the road as it will be built
     const exact = settling ? null : roadTool.stations();
     const modes: BuildMode[] = [];
     if (exact && exact.length > 1) {
@@ -3443,14 +2945,11 @@ function drawOverlayScreen(): void {
     }
     const pathLength = points.reduce((sum, point, i) =>
       i === 0 ? 0 : sum + Math.hypot(point.x - (points[i - 1] as Vec2).x, point.y - (points[i - 1] as Vec2).y), 0);
-    // A draft the editing rules would refuse, named before it is let go
-    // (`RoadTool.verdict`, judged once the pointer rests).
+    // A draft the editing rules would refuse, named before it is let go (`RoadTool.verdict`, judged once the pointer rests).
     const refusal = settling ? null : roadTool.verdict();
     const ok = pathLength >= MIN_LINK_LENGTH * 0.25 &&
       !(limited && roadPreview.snap.guide === 'network') && refusal === null;
-    // Use the length of both projected world axes. Reading only the horizontal
-    // component made the preview several pixels thinner than the committed 3D
-    // road in an isometric view, especially at the far zoom. Measured where the road is.
+    // Use the length of both projected world axes.
     const here = points[0] ?? { x: 0, y: 0 };
     const origin = at(here);
     const xAxis = at({ x: here.x + 100, y: here.y });
@@ -3464,10 +2963,7 @@ function drawOverlayScreen(): void {
     const footwayWidth = Math.max(kerbWidth + 2, (rt.width + 1.8 + rt.sidewalk * 2) * pixelsPerUnit);
     const casingWidth = Math.max(footwayWidth + 2, footwayWidth + 3 * pixelsPerUnit);
 
-    // The editor used to paint one translucent class-colour stroke here. At a
-    // distance that blended into the grass and looked like a broken, untextured
-    // road even though the committed mesh was sound. Draw the same visual stack
-    // as the 3D road and keep validity as a slim outer halo instead.
+    // The editor used to paint one translucent class-colour stroke here.
     ctx.save();
     if (modes.length > 1) drawBuildModes(ctx, projected, groundProjected, modes);
     else if (points.length > 1 && offsets.some((offset) => Math.abs(offset) > UNITS_PER_METER * 0.5)) {
@@ -3480,10 +2976,7 @@ function drawOverlayScreen(): void {
       ctx.fillStyle = previewHeight >= 0 ? 'rgba(101, 229, 195, 0.16)' : 'rgba(244, 184, 103, 0.20)';
       ctx.fill();
     }
-    // Each band of the road as it will be laid: its two edges worked out on
-    // the ground at their real width and projected point by point, ends cut
-    // square - not strokes of a fixed pixel width with round caps, which in
-    // perspective swelled a short road into a ball (the player, 2026-10-06).
+    // Each band of the road as it will be laid
     const band = (half: number, fill: string | CanvasPattern): void => {
       if (points.length < 2) return;
       const left: Vec2[] = [], right: Vec2[] = [];
@@ -3526,7 +3019,6 @@ function drawOverlayScreen(): void {
       {
         const tens = Math.round((pathLength * METERS_PER_UNIT) / 10) * 10;
         // With the reason a refused draft would be refused, beside its length.
-        // And what it costs (`world/economy.ts`), once the draft has been judged.
         const cost = settling ? null : roadTool.cost();
         const built = exact && exact.length > 1 ? buildSummary(exact) : '';
         const priced = (cost === null ? `${tens} m` : `${tens} m · ${formatCost(cost)}`) + (built ? ` · ${built}` : '');
@@ -3599,11 +3091,7 @@ function drawOverlayScreen(): void {
   }
 }
 
-/**
- * How each stretch of the road in hand will be built (docs/VIAS.md V3), drawn
- * between its deck and the natural ground: an embankment's earth, a cutting's
- * held sides, a bridge's piers. Behind the road bands.
- */
+/** How each stretch of the road in hand will be built, drawn between its deck and the natural ground */
 const BUILD_FILL: Readonly<Record<BuildMode, string | null>> = {
   ground: null,
   embankment: 'rgba(164, 120, 74, 0.62)',
@@ -3716,13 +3204,7 @@ const TERRAIN_BRUSH_FILL: Readonly<Record<BrushMode, string>> = {
   sugarloaf: 'rgba(201,196,187,0.10)',
 };
 
-/**
- * One glyph and one colour per control mode.
- *
- * Letters rather than icons: the overlay is a 2D canvas over an isometric
- * scene, a ten-pixel icon at that size is a smudge, and a letter survives the
- * zoom the player actually reads the map at.
- */
+/** One glyph and one colour per control mode. */
 const CONTROL_GLYPH: Readonly<Record<JunctionControl, string>> = {
   auto: 'A',
   signal: 'S',
@@ -3807,8 +3289,7 @@ function showInspector(): void {
           return true;
         });
       },
-      // A profile or template applied to the road in place (docs/VIAS.md V1):
-      // judged and paid for as every road edit (`mutateRoads`).
+      // A profile or template applied to the road in place: judged and paid for as every road edit
       onApplyProfile: (id, profile, type) => {
         if (!doc.segment(id)) return;
         let problem: string | undefined;
@@ -3958,7 +3439,7 @@ function showInspector(): void {
         });
       },
       project: (x, y) => view.toScreen({ x, y }, surface.cssW, surface.cssH),
-      // Each leg's rule and the signal's settings (docs/VIAS.md V5).
+      // Each leg's rule and the signal's settings.
       onSetApproachRules: (node, rules) => {
         if (!doc.node(node)) return;
         mutate(() => { doc.setNodeApproachRules(node, rules); return true; });
@@ -3970,7 +3451,7 @@ function showInspector(): void {
       onSetSignals: (settings) => {
         mutate(() => { for (const [node, s] of settings) doc.setNodeSignal(node, s); return true; });
       },
-      // The player's lane connections at a junction (docs/VIAS.md V4).
+      // The player's lane connections at a junction.
       onSetLaneLinks: (node, links) => {
         if (!doc.node(node)) return;
         mutate(() => {
@@ -4075,15 +3556,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-/**
- * Closing the game saves it. In the desktop window (`desktop/main.cjs`, the
- * `app:` scheme) the close waits for the save to be written: a value set in
- * `beforeunload` cancels Electron's close without asking anything
- * (electronjs.org, BrowserWindow 'close'), and once the write settled - or
- * after `CLOSE_WAIT_MS`, if storage hangs - the window is closed again. A tab
- * gets no such wait (a browser would ask the player to leave): it saves and
- * goes, as IndexedDB promises nothing to a page being unloaded (MDN).
- */
+/** Closing the game saves it. */
 const CLOSE_WAIT_MS = 8000;
 function saveOnClose(): (event: BeforeUnloadEvent) => void {
   let saved = false;
@@ -4106,8 +3579,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => persistence.saveSession(doc, sessionSettings()));
 
-// A failed write says so, at most once a minute, instead of losing the map at
-// the next reload in silence.
+// A failed write says so, at most once a minute, instead of losing the map at the next reload in silence.
 let saveWarnedAt = -Infinity;
 persistence.onSaveFailed = () => {
   const now = performance.now();
@@ -4118,15 +3590,12 @@ persistence.onSaveFailed = () => {
 
 requestDraw();
 
-// The flat camera put where the view is before the first frame (the loop
-// stops as soon as nothing moves, so the frame cannot be the only place).
+// The flat camera put where the view is before the first frame
 syncFlatCameraFromView();
 
 // ------------------------------------------------------------- language & quality
 
-// Anything rendered from script rather than from markup has to be re-rendered
-// when the language changes; `applyTranslations` only reaches elements that
-// carry a key, and these were built by hand.
+// Anything rendered from script rather than from markup has to be re-rendered when the language changes
 onLanguageChange(() => {
   buildings.languageChanged();
   hintShown = '';
@@ -4136,10 +3605,7 @@ onLanguageChange(() => {
   requestDraw();
 });
 
-/**
- * The map's road paint (docs/VIAS.md V6, `world/roads/markingStyle.ts`): a
- * property of the map, saved with it and undone like any edit.
- */
+/** The map's road paint (`world/roads/markingStyle.ts`) */
 function setMarkingStyle(value: string): void {
   if (!isMarkingStyle(value) || value === doc.markingStyle) return;
   history.begin(doc);
@@ -4169,10 +3635,7 @@ function setQuality(value: string): void {
   }
   requestDraw();
 }
-/**
- * The game's state in the console (`core/gameState.ts`): `__state()` its
- * values now and the last changes - what, from what to what, why - newest first.
- */
+/** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
 (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
   now: gameState.snapshot(),
   changes: gameState.latest(count).map((c) => `#${c.serial} ${c.key}: ${String(c.from)} → ${String(c.to)} (${c.cause})`),
@@ -4180,25 +3643,11 @@ function setQuality(value: string): void {
 });
 /** The game's health in the console (`core/health.ts`): what broke or was slow, newest first. */
 (window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
-/**
- * The last frames per system (`core/health.ts` `frameStats`): median, 95th
- * percentile and largest of each, and how many were long - the numbers the
- * baseline of each scenario and every "after" are taken from.
- */
+/** The last frames per system (`core/health.ts` `frameStats`) */
 (window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
   frameStats(frameTimer.recent().filter((f) => f.start >= since));
-/**
- * The GPU time of the frames drawn since the last `__gpu(true)` (or the last
- * 40 s): p50/p95/p99/largest ms, how many frames went over two 59 Hz periods,
- * the frames not measured and the rounds thrown away, and the GPU's name
- * (`render/gpuTimer.ts`; never compared across GPUs: the headless Chrome
- * may draw on the Intel iGPU). `reset` starts a new window.
- */
-/**
- * The F9 monitor's GPU lines (state tab, the whole width): the frames' GPU
- * time over the last 40 s, and the GPU's name out of ANGLE's renderer string
- * ("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x…) Direct3D11 …)").
- */
+/** The GPU time of the frames drawn since the last `__gpu(true)` (or the last 40 s) */
+/** The F9 monitor's GPU lines (state tab, the whole width) */
 function gpuLines(): string[] {
   const t = scene.gpu;
   const name = t.label.replace(/^ANGLE \([^,]*,\s*/, '').replace(/\s*\(0x[0-9A-Fa-f]+\).*$/, '').replace(/\s*Direct3D.*$/, '');
@@ -4213,11 +3662,7 @@ function gpuLines(): string[] {
   return out;
 };
 
-/**
- * The simulation's own checks (`sim/invariants.ts`, run every 60 ticks) in
- * the health log: a check that did not hold is a warning with where and
- * when. Each issue once (they stay in `sim.issues` until it is cleared).
- */
+/** The simulation's own checks (`sim/invariants.ts`, run every 60 ticks) in the health log */
 const issuesSeen = new WeakSet<object>();
 function noteSimulationIssues(): void {
   for (const issue of sim.issues) {
@@ -4246,12 +3691,7 @@ const healthPanel = mountHealthPanel({
     changes: gameState.latest(n).map((c) => `${c.key}: ${valueText(c.from)} → ${valueText(c.to)} (${c.cause})`),
   }),
 });
-/**
- * The diary of changes in the console (`world/changes.ts`): `__changes()`
- * lists the last ones - what, why, after what, where, how long it took -
- * newest first; `__changes(n, serial)` the chain back from one entry to the
- * edit it follows from.
- */
+/** The diary of changes in the console (`world/changes.ts`): `__changes()` lists the last ones */
 (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
@@ -4283,7 +3723,7 @@ const healthPanel = mountHealthPanel({
   DT,
   exportMap: () => exportToFile(doc, sessionSettings()),
   importMap: async () => openImported(await importFromFile()),
-  /** The public transport tool, for the probes (`scripts/transit-shots.mjs`). */
+  /** The public transport tool. */
   transit: transitEditor,
   setTraffic: (enabled: boolean) => {
     if (!game.paused !== enabled) setSpeed(game.paused ? game.speed : 0);
@@ -4303,11 +3743,7 @@ const healthPanel = mountHealthPanel({
     history.begin(doc);
     applySnapshot(data, 'import');
   },
-  /**
-   * Centres the play camera on a world point, so the next frame builds what
-   * is there (the crowd and the shadow frustum follow the play view). The
-   * inspection camera then photographs that frame (`scene().inspect`).
-   */
+  /** Centres the play camera on a world point, so the next frame builds what is there */
   /** The transport tool, for the browser checks. */
   transitTool: () => transitEditor,
   lookAt: (x: number, y: number, zoom = camera.zoom) => {
@@ -4317,14 +3753,7 @@ const healthPanel = mountHealthPanel({
     syncViewFromFlatCamera();
     requestDraw();
   },
-  /**
-   * The camera put at a centre, zoom, bearing and tilt (radians) exactly, as
-   * `view()` reads them (`scripts/look.mjs`): the same view on both sides of a
-   * change. A drag's turn depends on the frames it spans, so the same gestures
-   * gave a different view on every run (2026-10-14). The zoom first (it keeps
-   * the ground under the middle of the screen and moves the centre), then the
-   * bearing and the tilt asked (the zoom bounds the tilt), then the centre.
-   */
+  /** The camera put at a centre, zoom, bearing and tilt (radians) exactly, as `view()` reads them (`scripts/look.mjs`) */
   setView: (at: { x: number; y: number; zoom: number; azimuth: number; elevation: number }) => {
     camera.x = at.x;
     camera.y = at.y;
@@ -4336,16 +3765,8 @@ const healthPanel = mountHealthPanel({
   },
   /** Forces one frame. Used by the browser verification harness. */
   redraw: () => requestDraw(),
-  /**
-   * What the scene holds in memory, in MB (`render/memoryCounters.ts`): read
-   * at the same view before and after a performance change. `heap` is
-   * Chromium's `performance.memory`, rough and non-standard; null elsewhere.
-   */
-  /**
-   * Everything the scene holds, by layer and kind of mesh (`render/inventory.ts`): meshes, instances, vertices,
-   * triangles, GPU and CPU bytes, and the flags that show where a layer is out of proportion. `text: true`: the table.
-   * What the document and the simulation hold is under `doc` and `sim`.
-   */
+  /** What the scene holds in memory, in MB (`render/memoryCounters.ts`) */
+  /** Everything the scene holds, by layer and kind of mesh (`render/inventory.ts`) */
   inventory: (options: { text?: boolean; top?: number } = {}) => {
     const inv = sceneInventory(scene.scene);
     const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
@@ -4376,11 +3797,7 @@ ${JSON.stringify(counts)}`;
       drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles,
     };
   },
-  /**
-   * The running game against the city plan's budgets (`core/perfBudget.ts`
-   * `cityBudgetTable`), at the view now on screen, which the caller names:
-   * the rows furthest over first. Performance work starts here.
-   */
+  /** The running game against the city plan's budgets */
   budget: (view: CityView) => {
     if (!(view in VIEW_BUDGETS)) throw new Error(`vista: ${Object.keys(VIEW_BUDGETS).join(' | ')}`);
     const c = countMemory(scene.scene);
@@ -4400,15 +3817,7 @@ ${JSON.stringify(counts)}`;
     console.table(rows);
     return rows;
   },
-  /**
-   * Runs the simulation for `seconds` of SIMULATION time, immediately.
-   *
-   * The clock deliberately refuses to catch up more than `MAX_SUBSTEPS` per
-   * frame, which is right for a game and useless for a harness: on a software
-   * rasteriser at seven frames a second, waiting in wall time for a junction to
-   * fill with traffic or for a signal to reach green takes minutes and is not
-   * reproducible. This runs the fixed steps directly.
-   */
+  /** Runs the simulation for `seconds` of SIMULATION time, immediately. */
   runSim: (seconds: number) => {
     sim.clock.run(Math.max(0, Math.round(seconds / DT)), () =>
       step(sim, { traffic: true, pedestrians: true }),
@@ -4422,9 +3831,7 @@ ${JSON.stringify(counts)}`;
       worldAtScreen(x, y),
       view.zoom,
     ),
-  // The pole tool, as the tool itself runs it: plan from two raw points, then
-  // commit that plan. A harness that called the geometry directly would be
-  // testing something the player cannot reach.
+  // The pole tool, as the tool itself runs it: plan from two raw points, then commit that plan.
   utilities: {
     plan: (from: Vec2, to: Vec2, reach = POLE_PICK_PIXELS / view.zoom) =>
       planPoleRun(doc, net, from, to, reach),
@@ -4463,17 +3870,13 @@ function refreshShell(): void {
   if (host) { const t = host.dataset['tool'] ?? ''; host.dataset['tool'] = ''; host.dataset['tool'] = t; }
 }
 
-// Buildings run down without maintenance (`world/buildings/decayWatch.ts`): each looked at only
-// when its next tenth is due, the diary saying what came, changed or was replaced.
+// Buildings run down without maintenance (`world/buildings/decayWatch.ts`)
 const decayLook = createDecayWatch(doc, (id, decay) => caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)));
 const decayWatch = (): void => { if (decayLook(sim.city.minutes(sim))) requestDraw(); };
 /** The buildings' decay looked at every 3 s of the city's time (`frame`), not on the wall clock. */
 const decayDue = new SimPeriodic(3);
 
-/**
- * The Actions (`actionsWiring.ts`): the pistol, the bomb, the buildings it
- * breaks and the fires it leaves.
- */
+/** The Actions (`actionsWiring.ts`): the pistol, the bomb, the buildings it breaks and the fires it leaves. */
 const actions = createActions({
   doc,
   net,

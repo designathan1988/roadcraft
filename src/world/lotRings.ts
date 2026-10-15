@@ -1,16 +1,8 @@
 import type { Vec2 } from '@core/vec2';
 
-/**
- * A LOT'S RING, pure geometry (`lots.ts`): the points of a cut lot thinned,
- * the hull of a block and the rectangle round it. No document, no network.
- */
+/** A LOT'S RING, pure geometry (`lots.ts`) */
 
-/**
- * A ring with the points that lie within `tol` of the line through their
- * neighbours taken out, again and again (a footway's corner curve in many
- * short pieces becomes a few): a lot is a handful of sides, and what is built
- * to its shape (`zoning.ts` `fitToLot`) takes at most 64.
- */
+/** A ring with the points that lie within `tol` of the line through their neighbours taken out, again and again */
 export function simplifyRing(ring: readonly Vec2[], tol: number): Vec2[] {
   const out = [...ring];
   for (let changed = true; changed && out.length > 3;) {

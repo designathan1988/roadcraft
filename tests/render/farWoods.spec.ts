@@ -5,12 +5,7 @@ import { TERRAIN_BASE, TERRAIN_CELL, TERRAIN_HALF } from '@render/terrain';
 import { farWoods, type FarWoods, type FarWoodsAsk } from '@render/farWoods';
 import { FarWoodsBook, type FarWoodsReader } from '@render/farForest';
 
-/**
- * THE WOODS OF THE WHOLE MAP (`farWoods.ts`, `farForest.ts`): every plate,
- * not only the ones drawn in full, grows its trees; each plate's woods are
- * worked out once per land and ecosystem, never per frame; and a plate costs
- * the same wherever it lies on the map. Counted, never timed.
- */
+/** THE WOODS OF THE WHOLE MAP (`farWoods.ts`, `farForest.ts`) */
 
 const GRID = { side: Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: 32 };
 const NATURE = { region: 'cerrado' as const, seed: 4242 };

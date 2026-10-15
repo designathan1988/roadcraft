@@ -1,13 +1,4 @@
-/**
- * Graphics quality tiers.
- *
- * Every expensive feature is named here once, so a tier is a table entry rather
- * than a set of conditionals scattered across the renderer. `auto` draws at
- * `high`: the governor below (`QualityGovernor.sample`) that would step it
- * down by the measured frame time has NO caller - a tier change lowers
- * quality, which is the player's call. DO NOT describe `auto` as adaptive
- * until it is wired.
- */
+/** DO NOT describe `auto` as adaptive until it is wired. */
 
 import { m, perM } from '@world/units';
 
@@ -21,14 +12,7 @@ export interface QualitySettings {
   readonly postProcessing: boolean;
   readonly ambientOcclusion: boolean;
   readonly smaa: boolean;
-  /**
-   * AMD FidelityFX Contrast Adaptive Sharpening on the final image, 0 (off)
-   * to 1 (strongest). Switched off on 2026-10-08 because, run on the display
-   * image's sRGB values, it sharpened the jaggies and the moiré of brick,
-   * tile and grass; the town lost its definition with it (the player,
-   * 2026-10-09: "piorou a nitidez"). Back, on linear colour as AMD requires
-   * (`postprocess.ts` GRADE), and gentler than the 0.55 it had.
-   */
+  /** AMD FidelityFX Contrast Adaptive Sharpening on the final image, 0 (off) to 1 (strongest). */
   readonly sharpen: number;
   /** Maximum anisotropic filtering taps requested for ground textures. */
   readonly anisotropy: number;
@@ -44,19 +28,11 @@ export interface QualitySettings {
   readonly detailCutoffZoom: number;
   /** Crowd detail ceiling: silhouette, wardrobe, or full facial animation. */
   readonly pedestrianDetail: 0 | 1 | 2;
-  /**
-   * Zoom from which the people inside vehicles are drawn. Below it a seated
-   * torso is under two or three pixels behind tinted glass; above twice it
-   * every seat is drawn, between the two only the front row.
-   */
+  /** Zoom from which the people inside vehicles are drawn. */
   readonly occupantZoom: number;
   /** Soft shadows of drifting clouds over the land (`postprocess.ts`, needs post-processing). */
   readonly cloudShadows: boolean;
-  /**
-   * The ecosystem's vegetation (`render/nature/`): how far from the camera's
-   * focus, in world units, plants are drawn as models; beyond it they are
-   * impostors (or, with `impostors` off, only the ground's canopy tint).
-   */
+  /** The ecosystem's vegetation (`render/nature/`) */
   readonly vegetationDistance: number;
   /** Far plants as impostors - billboards baked from each species. */
   readonly impostors: boolean;
@@ -126,8 +102,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   high: {
     pixelRatio: 1.5,
     shadows: true,
-    // Half the texel of 2048: a balcony's shadow stepped in squares of a
-    // hand's width at the middle distance (the player, 2026-10-13).
+    // Half the texel of 2048: a balcony's shadow stepped in squares of a hand's width at the middle distance
     shadowMapSize: 4096,
     postProcessing: true,
     ambientOcclusion: true,
@@ -182,22 +157,7 @@ export const QUALITY_LEVELS: readonly QualityLevel[] = ['low', 'medium', 'high',
 export const isQualityLevel = (value: unknown): value is QualityLevel =>
   value === 'low' || value === 'medium' || value === 'high' || value === 'ultra';
 
-/**
- * Watches frame time and reports when the tier should change.
- *
- * Hysteresis on both sides, and a cooldown after every change, because a tier
- * switch itself costs a frame: without them the monitor oscillates between two
- * tiers for ever, which is far worse than sitting on the slower one.
- *
- * DOWN on frame time: a median frame slower than 34 fps. UP on the frame's own
- * CPU cost: under vsync a frame never measures faster than the display, so the
- * old test - a median frame under 9 ms - could never pass on a 60 Hz screen,
- * and one slow stretch (assets arriving, a big edit) left the game on the low
- * tier, grass and shadows gone, for the rest of the session. It climbs back
- * now when frames keep up with the display and the work in them is small, no
- * higher than the tier it started on, and it stops climbing for a while if a
- * climb was undone at once.
- */
+/** Watches frame time and reports when the tier should change. */
 export class QualityGovernor {
   private samples: number[] = [];
   private costs: number[] = [];
@@ -222,10 +182,7 @@ export class QualityGovernor {
     this.cooldown = 2.5;
   }
 
-  /**
-   * Returns the tier to switch to, or null to stay put. `costMs` is the CPU
-   * time the frame's own work took; without it the tier only ever goes down.
-   */
+  /** Returns the tier to switch to, or null to stay put. */
   sample(deltaSeconds: number, costMs = Infinity): QualityLevel | null {
     this.clock += deltaSeconds;
     if (this.holdRaise > 0) this.holdRaise -= deltaSeconds;

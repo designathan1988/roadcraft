@@ -19,10 +19,7 @@ const GAIT_LIBRARY = [
   'walkDrunk',
 ] as const satisfies readonly (LibraryClipName & GaitClipName)[];
 
-/**
- * Every gait clip of one sex at scale 1, straight from the library: what the
- * renderer bakes, without a body to bake it on. The tests measure with this.
- */
+/** Every gait clip of one sex at scale 1, straight from the library: what the renderer bakes, without a body to bake it on. */
 export function gaitClipsOf(library: Readonly<Record<LibraryClipName, LibraryClip>>, sex: WalkSex): GaitClips {
   const out = {} as Record<GaitClipName, GaitClip>;
   for (const name of GAIT_LIBRARY) {

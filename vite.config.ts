@@ -8,15 +8,10 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export default defineConfig({
   root: '.',
-  // `modelUrlsPlugin`: the model files' URLs, a module per folder, never
-  // inlined (`model-urls-plugin.ts`).
+  // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
   plugins: [buildStampPlugin(), cookPlugin(), modelUrlsPlugin()],
   publicDir: false,
-  // The dependencies are found from the game's own pages only. By default
-  // Vite crawls every `.html` under the root (vite.dev/config/
-  // dep-optimization-options), and the labs' apps (`labs/building/forma`)
-  // import packages installed only in their own folder: the crawl failed,
-  // pre-bundling was skipped, and the first load answered 504 and reloaded.
+  // The dependencies are found from the game's own pages only.
   optimizeDeps: { entries: ['*.html'] },
   resolve: {
     alias: {
@@ -34,23 +29,18 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     // 5300, this repository's port (CLAUDE.md "Servers"): the old origins
-    // (4180, 5173, 5175-5178, 4181-4183) hold the player's maps, and a game
-    // opened there may migrate and rewrite them. Strict: never another port.
     port: Number(process.env['PORT'] ?? 5300),
     strictPort: true,
-    // Lets the page sample its own JavaScript (`new Profiler`), to find what
-    // a frame spends its time on in the running game.
+    // Lets the page sample its own JavaScript (`new Profiler`), to find what a frame spends its time on in the running game.
     headers: { 'Document-Policy': 'js-profiling' },
-    // Test and coverage artefacts live under the project root. They must not
-    // trigger a full application reload while a browser smoke test is running.
+    // Test and coverage artefacts live under the project root.
     watch: {
       ignored: [
         '**/coverage/**',
         '**/dist/**',
         '**/playwright-report/**',
         '**/test-results/**',
-        // Parallel agent worktrees live inside the project folder; an edit
-        // there must not reload the game being inspected here.
+        // Parallel agent worktrees live inside the project folder; an edit there must not reload the game being inspected here.
         '**/.claude/**',
       ],
     },
@@ -59,12 +49,7 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     outDir: 'dist',
-    // three.js is most of the bundle and never changes between releases of the
-    // game, so it gets its own chunk: a rebuild of the game invalidates ~280 kB
-    // rather than ~920 kB of a returning player's cache. The renderer is not
-    // lazy-loaded behind a dynamic import, because there is no frame of this
-    // game that does not need it — deferring it would only add a round trip
-    // before the first paint.
+    // three.js is most of the bundle and never changes between releases of the game, so it gets its own chunk
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {

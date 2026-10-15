@@ -3,35 +3,9 @@ import { makeRoster } from '@people/roster';
 import type { PersonSpec } from '@people/spec';
 import { m } from '@world/units';
 
-/**
- * WHO IS DRAWN AS WHOM - the only door into the citizen roster.
- *
- * Every figure the game draws - a walker alone or in a party, a driver, a
- * passenger, a rider, somebody stepping out at the kerb, a figure recycled
- * from the pool or brought back by loading a save - gets its body from
- * `pickCitizenModel`, and nothing else reads the roster
- * (`tests/arch/citizenCasting.spec.ts` fails if another module does).
- *
- * The roster is the reviewed manifest (`citizens.manifest.json`), classified
- * BY EYE from the contact sheets (`scripts/contact-sheet.mjs`): what a model
- * is dressed in, its apparent age and sex, and whether it may be in the
- * street at all. The whitelist FAILS CLOSED: a model with no entry, a missing
- * tag, a uniform (police, security, navy, pilot, medical, site worker, chef,
- * gardener, a football kit, a waiter's waistcoat) or a rejected model is not
- * in it, is never loaded, and is never drawn.
- *
- * A group is dressed to ONE code - a set of wardrobes that go together -
- * and every member is drawn from inside it, never outside: a suit beside a
- * track jacket, or a nurse beside a man in a T-shirt, cannot happen. When a
- * member cannot be dressed in a code, the code changes; the wardrobe never
- * relaxes.
- */
+/** WHO IS DRAWN AS WHOM - the only door into the citizen roster. */
 
-/**
- * `traditional`: everyday dress of a tradition - a headscarf and tunic, a
- * shalwar kameez, a thobe and keffiyeh. Street clothes, not a uniform; it
- * stands only with itself, so a party dressed so is dressed so throughout.
- */
+/** `traditional`: everyday dress of a tradition - a headscarf and tunic, a shalwar kameez, a thobe and keffiyeh. */
 export type Wardrobe = 'casual' | 'smart-casual' | 'business' | 'sport-casual' | 'traditional';
 type AgeBand = 'child' | 'young' | 'adult' | 'senior';
 type Sex = 'f' | 'm';
@@ -51,23 +25,12 @@ export interface CitizenModel {
   readonly rides?: boolean;
 }
 
-/**
- * The street roster: MakeHuman people, each dressed for a wardrobe
- * (`people/roster.ts`). The Rocketbox bodies it replaced are gone; their
- * motion captures stay, and play on these bodies (`render/people/personRig.ts`).
- */
+/** The street roster: MakeHuman people, each dressed for a wardrobe (`people/roster.ts`). */
 export const CROWD: readonly CitizenModel[] = sceneryCast(makeRoster().map((entry) => ({
   id: entry.id, wardrobe: entry.wardrobe, ageBand: entry.ageBand, gender: entry.gender, person: entry.person, rides: entry.rides,
 })));
 
-/**
- * The few bodies the scenery is played by (the player's order of 2026-10-05:
- * not eighty-four loads, as few as still give variety): per sex, an adult in
- * each everyday wardrobe (casual, sport, smart, business), a young person, an
- * elder and two children - sixteen, those that can ride first, so every
- * bicycle and motorbike has somebody on it. Each is fetched only when
- * somebody drawn needs it.
- */
+/** The few bodies the scenery is played by */
 function dressedForSex(c: CitizenModel): boolean {
   const look = c.person?.look;
   if (!look) return true;
@@ -95,11 +58,7 @@ function sceneryCast(all: readonly CitizenModel[]): CitizenModel[] {
 /** Their ids, in the same order: the renderer's model indices. */
 export const CROWD_IDS: readonly string[] = CROWD.map((model) => model.id);
 
-/**
- * Which wardrobes may stand together. Casual goes with sport-casual and with
- * smart-casual; business only with business and smart-casual; traditional
- * dress only with itself.
- */
+/** Which wardrobes may stand together. */
 export function compatible(a: Wardrobe, b: Wardrobe): boolean {
   if (a === b) return true;
   const pair = (x: Wardrobe, y: Wardrobe): boolean => (a === x && b === y) || (a === y && b === x);
@@ -124,11 +83,7 @@ const CODES = {
 export type Company = 'solo' | 'family' | 'couple' | 'friends' | 'colleagues' | 'elders' | 'tourists'
   | 'car' | 'bus' | 'truck' | 'rider';
 
-/**
- * The codes a kind of company may be dressed in, in order of preference. A
- * code that has no body for one of the members is skipped for the next;
- * `office` is never offered to a party with a child in it.
- */
+/** The codes a kind of company may be dressed in, in order of preference. */
 function codesFor(company: Company, hash: number, hasChild: boolean): DressCode[] {
   const rotate = (list: DressCode[]): DressCode[] => {
     const k = hash % list.length;
@@ -198,18 +153,11 @@ const hashOf = (n: number): number => {
 
 interface Entry { index: number; size: number; x: number; y: number; group: string; code: DressCode; company: Company; companyId: number }
 
-/**
- * The casting registry: who wears which body, chosen once and kept while the
- * person is about, so a passenger who gets out keeps their body on foot.
- */
+/** The casting registry: who wears which body, chosen once and kept while the person is about */
 export class CastingRegistry {
   private readonly cast = new Map<number, Entry>();
   private readonly wearers = new Map<number, Set<number>>();
-  /**
-   * Each company's members, by `group`: what a company's code is checked and
-   * changed over. DO NOT walk every person ever cast for one company (it
-   * was, on every member who joined one or changed company).
-   */
+  /** DO NOT walk every person ever cast for one company (it was, on every member who joined one or changed company). */
   private readonly members = new Map<string, Set<number>>();
   /** Each company's dress code, settled by its first member drawn. */
   private readonly codes = new Map<string, DressCode>();
@@ -217,28 +165,10 @@ export class CastingRegistry {
   private drawn: { seed: number; index: number; company: Company; companyId: number; code: DressCode }[] = [];
   recordCensus = false;
 
-  /**
-   * A person's body is theirs for good: the first casting depends on where
-   * they stood and who was near (`CAST_NEAR`), so a person forgotten and cast
-   * again comes back in other clothes and another haircut (the player,
-   * 2026-10-13: "se trocam de roupa e cabelo"). DO NOT forget anybody by a
-   * count or by time out of sight: the renderer passed 3600 as that count,
-   * and past 3600 people drawn the longest unseen were re-dressed. An entry
-   * is a few numbers; the entries grow with the people drawn on the cooked
-   * bodies (occupants, riders, people at the kerb, the player - walkers are
-   * procedural). Their end is the simulation's to tell, never a guess here:
-   * a vehicle gone from the world takes its company with it (`forgetCompany`,
-   * called by `agents.ts` when the fleet no longer holds it).
-   */
+  /** DO NOT forget anybody by a count or by time out of sight */
   constructor(private readonly roster: readonly CitizenModel[] = CROWD) {}
 
-  /**
-   * Everybody cast in this company forgotten: the vehicle they rode in is
-   * gone from the world (`agents.ts`). Their entries, their bodies' wearers
-   * and the company's code go; without it the registry grew by every person
-   * ever drawn in a vehicle, and every new person walked every wearer of a
-   * body ever cast.
-   */
+  /** Everybody cast in this company forgotten: the vehicle they rode in is gone from the world (`agents.ts`). */
   forgetCompany(company: Company, companyId: number): void {
     const group = `${company}:${companyId}`;
     const seeds = this.members.get(group);
@@ -276,11 +206,7 @@ export class CastingRegistry {
     this.drawn.length = 0;
   }
 
-  /**
-   * The bodies a person may be drawn as under one code, best age first; an
-   * empty pool if none. Children only use models built with child anatomy;
-   * repeating one is preferable to shrinking an adult into a child.
-   */
+  /** The bodies a person may be drawn as under one code, best age first; an empty pool if none. */
   candidates(ctx: CastingContext, code: DressCode, helmetFits: (id: string) => boolean = () => true):
     { pool: number[]; size: number; spare: number[]; spareSize: number } {
     const of = (band: AgeBand): number[] => {
@@ -291,8 +217,7 @@ export class CastingRegistry {
       });
       return out;
     };
-    // An adult is any grown body; an elder a senior's first, a grown one when
-    // every senior's is worn. A child always has a real child body.
+    // An adult is any grown body; an elder a senior's first, a grown one when every senior's is worn.
     if (ctx.ageClass === 'adult') return { pool: [...of('young'), ...of('adult')], size: 1, spare: [], spareSize: 1 };
     if (ctx.ageClass === 'child') return { pool: of('child'), size: 1, spare: [], spareSize: 1 };
     const [first, second] = [of('senior'), of('adult')];
@@ -302,30 +227,20 @@ export class CastingRegistry {
     return { pool: [], size: 1, spare: [], spareSize: 1 };
   }
 
-  /**
-   * THE function: the body `ctx` is drawn as. The same person gets the same
-   * body for as long as they are about; a company gets one dress code; no
-   * two members of one company, and nobody within `CAST_NEAR`, wear the same
-   * body while the roster allows. Returns null only if the roster is empty.
-   */
+  /** THE function: the body `ctx` is drawn as. */
   pickCitizenModel(ctx: CastingContext, helmetFits: (id: string) => boolean = () => true): Casting | null {
     const known = this.cast.get(ctx.seed);
     if (known) {
-      // The two fields, not the string built from them: this is the path every
-      // drawn figure takes every frame, and it was building a template string
-      // per figure per frame only to compare it with the one it already had.
+      // The two fields, not the string built from them
       if (known.company !== ctx.company || known.companyId !== ctx.companyId) {
         const group = `${ctx.company}:${ctx.companyId}`;
-        // A walker boarding a car keeps their body. That known wardrobe must
-        // settle the car's code before its generated occupants are cast.
+        // A walker boarding a car keeps their body.
         const wardrobe = this.roster[known.index]!.wardrobe;
         const options = codesFor(ctx.company, hashOf(ctx.companyId ^ 0x51ce),
           ctx.hasChild ?? ctx.ageClass === 'child');
         const code: DressCode = options.find((candidate) => candidate.includes(wardrobe)) ?? [wardrobe];
         this.codes.set(group, code);
-        // The generated occupants of a vehicle are re-dressed to match (they are
-        // barely seen inside it); a party on foot keeps every member's clothes:
-        // re-cast in view, they changed clothes in front of the player.
+        // The generated occupants of a vehicle are re-dressed to match (they are barely seen inside it)
         const vehicle = ctx.company === 'car' || ctx.company === 'bus' || ctx.company === 'truck';
         for (const seed of [...(this.members.get(group) ?? [])]) {
           if (seed === ctx.seed) continue;
@@ -350,9 +265,7 @@ export class CastingRegistry {
     const group = `${ctx.company}:${ctx.companyId}`;
     const hash = hashOf(ctx.seed);
     const groupHash = hashOf(ctx.companyId ^ 0x51ce);
-    // The company's code: its first member settles it, taking the first code
-    // of its kind that dresses them; a later member who cannot be dressed in
-    // it moves the whole company on to a code that dresses everyone so far.
+    // The company's code: its first member settles it, taking the first code of its kind that dresses them
     const shared = ctx.company !== 'solo' && ctx.company !== 'bus' && ctx.company !== 'rider';
     let options = codesFor(ctx.company, shared ? groupHash : hash, ctx.hasChild ?? ctx.ageClass === 'child');
     const settled = shared ? this.codes.get(group) : undefined;

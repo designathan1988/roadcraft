@@ -2,19 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
-/**
- * THE URLS OF THE MODEL FILES, one module per folder of `public/models`
- * (`virtual:model-urls/<folder>?ext=a,b`): its files by their path inside
- * the folder. The game serves no public folder (`publicDir: false`), so each
- * file was reached through an eager `import.meta.glob(..., { query: '?url' })`:
- * every file a module of its own - 2 086 requests through the dev server at
- * every opening - and in a build every small file inlined as base64 into the
- * main chunk (1.8 MB of its 4.2 MB). Here the dev server is handed the
- * files' own paths (what `?url` gave there: it serves the project's files),
- * and a build emits each as an asset of its own and writes its URL the way
- * Vite's `?url` does (`__VITE_ASSET__<referenceId>__`, replaced when the
- * chunk is rendered), never inlined.
- */
+/** THE URLS OF THE MODEL FILES, one module per folder of `public/models` (`virtual:model-urls/<folder>?ext=a,b`) */
 const PREFIX = 'virtual:model-urls/';
 
 function filesUnder(dir: string, extensions: ReadonlySet<string>, prefix = ''): string[] {

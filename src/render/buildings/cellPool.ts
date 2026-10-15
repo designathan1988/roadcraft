@@ -6,19 +6,7 @@ import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
 
-/**
- * THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`,
- * `cell.worker.ts`): a cell always goes to the same worker, which emits its
- * buildings and keeps nothing of them; the page answers the readings of the ground a job asks
- * for, and is handed the cell's batches as arrays. Cesium's
- * `TaskProcessor`: a worker made on the first task, the result handed back
- * with its buffers transferred. The workers are as many as the cores the
- * browser reports, one left to the page, at most `MOST_LANES`.
- *
- * Where no worker runs (a test, a browser without them) the same work is done
- * on the page, and a job is done before `run` returns: what the layer waits for
- * is the same either way. A worker that fails hands its jobs to the page.
- */
+/** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`) */
 
 /** What a job reads on the page: the ground as drawn and as it was, and the paving (with `pack`: read by the worker itself). */
 export interface CellEnv {
@@ -27,10 +15,7 @@ export interface CellEnv {
   readonly pavedAt?: PavingSource;
 }
 
-/**
- * How far past its cell a job's buildings read the paving off the roads handed to its worker
- * (`PavingData`): their lots and frontages. A point farther is asked of the page, as before.
- */
+/** How far past its cell a job's buildings read the paving off the roads handed to its worker (`PavingData`) */
 const PAVING_REACH = m(64);
 
 /** The rectangle a cell's worker reads the paving in: the cell (`BATCH_CELL`, key "x,y") and `PAVING_REACH` round it. */
@@ -40,11 +25,7 @@ function pavingRect(cell: string): [number, number, number, number] | null {
   return [cx * BATCH_CELL - PAVING_REACH, cy * BATCH_CELL - PAVING_REACH, (cx + 1) * BATCH_CELL + PAVING_REACH, (cy + 1) * BATCH_CELL + PAVING_REACH];
 }
 
-/**
- * A job asked for. Its message is written when it is handed to a worker (`job()`), not when asked:
- * DO NOT write each record's text into a job waiting its turn - a town's masses asked at its opening
- * held every building's JSON text while they waited (109 MB of a 2 560 m city's live heap, 2026-10-15).
- */
+/** Its message is written when it is handed to a worker (`job()`), not when asked */
 interface Running { readonly id: number; readonly job: (worker: boolean) => { readonly job: CellJob; readonly transfer: ArrayBuffer[] }; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
 
 /** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
@@ -52,13 +33,7 @@ interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; r
 
 /** Most workers the pool opens. */
 const MOST_LANES = 4;
-/**
- * Jobs a worker works on at once; the rest wait on the page (Cesium's
- * `TaskProcessor` `maximumActiveTasks`). DO NOT post every job at once: a
- * worker reads its messages in order, so the readings a job waited for queued
- * behind every other job's first round, and no cell landed until the worker had
- * been through them all (36 cells asked, none landed in 8 s, 2026-10-14).
- */
+/** DO NOT post every job at once: a worker reads its messages in order */
 const ACTIVE_PER_LANE = 1;
 /** Which jobs a lane begins first (lower first). */
 const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, mass: 1, summary: 2 };
@@ -83,19 +58,13 @@ export class CellPool {
     return n;
   }
 
-  /**
-   * A cell's job: its batches ('cell'), its masses ('mass') or its buildings' summaries
-   * ('summary'), `done` called with the result - at once where no worker runs.
-   * The id it returns cancels it.
-   */
+  /** A cell's job: its batches ('cell'), its masses ('mass') or its buildings' summaries */
   run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void): number {
     // Each record taken now and written as text for this job's message alone, when it is sent (`CellJobEntry`).
     const id = this.nextId++;
     const writers = entries.map((e) => this.text(e));
     const paved = env.pavedAt !== undefined;
-    // For a worker, the roads near the cell, so it reads the paving itself (`world/paving.ts`): the page answers
-    // only the ground. DO NOT ask the page for each point of the paving: a 2,560 m city's cells asked
-    // it 2.3 s of the page's time (`pavedHeightAt` -> `roadAt`/`query`, 2026-10-15).
+    // DO NOT ask the page for each point of the paving: a 2,560 m city's cells asked it 2.3 s of the page's time
     const job = (worker: boolean): { job: CellJob; transfer: ArrayBuffer[] } => {
       const base = { id, kind, cell, entries: entries.map((e, i) => ({ ...e, record: writers[i]!() })), paved };
       const rect = worker && paved && env.pavedAt?.pack ? pavingRect(cell) : null;
@@ -113,11 +82,7 @@ export class CellPool {
     return id;
   }
 
-  /**
-   * The lane's next jobs begun while it has room: a cell's detail first, then masses, then the far
-   * flags (`PRIORITY`), each kind in the order asked. DO NOT take them only in the order asked: the
-   * masses of a whole town asked at its opening kept the near cells' detail waiting behind them.
-   */
+  /** DO NOT take them only in the order asked */
   private pump(lane: Lane): void {
     while (lane.jobs.size < ACTIVE_PER_LANE && lane.queue.length) {
       let at = 0;
@@ -129,19 +94,12 @@ export class CellPool {
     }
   }
 
-  /**
-   * The workers made now, ahead of the first job: each loads its code while the
-   * town is being laid out, not when the first cell is asked for.
-   */
+  /** The workers made now, ahead of the first job */
   warm(): void {
     this.start();
   }
 
-  /**
-   * A job whose result is no longer wanted (a newer one for its cell, the layer gone): out of its
-   * lane's queue, or, begun, dropped by its worker, which takes the next. DO NOT only mark it: the
-   * worker went through every round of a cell nobody wanted, and the cells behind it waited.
-   */
+  /** DO NOT only mark it: the worker went through every round of a cell nobody wanted, and the cells behind it waited. */
   cancel(id: number): void {
     for (const lane of this.lanes ?? []) {
       const waiting = lane.queue.findIndex((r) => r.id === id);
@@ -155,10 +113,7 @@ export class CellPool {
     }
   }
 
-  /**
-   * A job a newer one for its cell replaces: dropped, waiting or begun (`cancel`). The worker keeps
-   * nothing of a job (`cellWork.ts`), so one finished for nobody would only keep the newer one waiting.
-   */
+  /** A job a newer one for its cell replaces: dropped, waiting or begun (`cancel`). */
   supersede(id: number): void {
     this.cancel(id);
   }

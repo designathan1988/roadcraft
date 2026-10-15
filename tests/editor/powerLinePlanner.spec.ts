@@ -7,13 +7,7 @@ import { layPowerLines } from '@editor/roads/powerLine';
 import { planPoleRun } from '@editor/poles';
 import { m } from '@world/units';
 
-/**
- * A GENERATED CITY'S POWER LINES ARE THE SAME planned over shared tiles
- * (`poleRunPlanner`) as planned street by street over a region round each
- * run (the pole tool's way, the oracle): the same poles, each within the
- * millimetres Clipper rounds a kerb line to where a region cuts it, the same
- * lamps, and the same spans.
- */
+/** A GENERATED CITY'S POWER LINES ARE THE SAME planned over shared tiles */
 function city(seed: number, size: CitySize): { doc: RoadDoc; net: Network } {
   const doc = layCity(planCity({ ...DEFAULT_CITY, seed, size }));
   const net = new Network(doc);

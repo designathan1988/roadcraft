@@ -1,31 +1,7 @@
 import { m } from '../units';
 import type { BuildingUse } from './types';
 
-/**
- * WHAT STANDS ON A FLAT ROOF, chosen and packed per building.
- *
- * Every flat roof of 8 x 8 m or more carried the same set - a water tank, a
- * hatch, two condensers, solar panels, a mast, a dish, two skylights - with
- * only the corner changing among four, and nothing kept one piece out of
- * another (the player, 2026-10-09: "placas solares e caixa d'água azul em
- * TODOS"). Here, as a city builder's prop rules do (CityEngine's `scatter`
- * with per-asset probability, Cities: Skylines' building props by service
- * and level):
- *
- * - a CATALOGUE of roof plant, each kind with how likely it is by the
- *   building's use, its size (storeys, roof area) and its age - an old block
- *   has a TV mast and no solar panels, a new one the other way round; a
- *   works hall has vents and skylights in rows, an office a big air
- *   handler, a tall block its lift room and a concrete water tank;
- * - a SEED per building and roof, so the same building always carries the
- *   same plant and its neighbour other plant;
- * - PACKED on an occupancy grid of the roof inside its parapet, with a
- *   clearance round each piece (maintenance access): a piece that finds no
- *   free place is left out, so no two pieces ever cross.
- *
- * Pure: the renderer draws what this returns (`render/buildings/buildingMesh.ts`).
- * Sizes in world units, the roof's local frame (the volume's).
- */
+/** WHAT STANDS ON A FLAT ROOF, chosen and packed per building. */
 
 type RoofPlantKind =
   | 'tank' | 'tankBox' | 'hatch' | 'condenser' | 'airHandler' | 'solar' | 'mast' | 'dish' | 'skylight' | 'vent' | 'liftRoom' | 'chimney';
@@ -59,11 +35,7 @@ export interface RoofSite {
   readonly age: number;
   /** A lift core drawn by the building itself (no machine room to add). */
   readonly hasCore: boolean;
-  /**
-   * The blocks standing on this roof (a setback, a tower on its podium), in
-   * the same frame: nothing is put in them or against their walls - a
-   * skylight stood in a block's wall, the two faces fighting (2026-10-13).
-   */
+  /** The blocks standing on this roof (a setback, a tower on its podium), in the same frame */
   readonly blocked?: readonly { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }[];
 }
 
@@ -77,12 +49,7 @@ interface Kind {
   readonly most: number;
   /** Chance of one (and of each further one), by the site. */
   readonly chance: (s: RoofSite, area: number) => number;
-  /**
-   * Plant that grows with the floor it serves: one piece for this many square
-   * metres of roof, times its chance - a big roof carries a field of
-   * condensers and fans, not the same three as a small one (the player,
-   * 2026-10-13: "o topo dos prédios são todos iguais"). Up to `most` x 6.
-   */
+  /** Plant that grows with the floor it serves: one piece for this many square metres of roof, times its chance */
   readonly perArea?: number;
 }
 

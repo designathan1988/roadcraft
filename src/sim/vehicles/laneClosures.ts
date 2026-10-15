@@ -2,17 +2,7 @@ import type { LaneletId } from '@world/lanelets';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
 
-/**
- * Stretches of lane closed for a while by something off the lanes standing
- * on them: a lorry swinging across the street into a works' gate, or out of
- * it (`agents/lorryTraffic.ts`). The traffic stops short of a closed stretch
- * as it stops short of a level crossing whose barriers are down
- * (`transit.closedOn`, read in `obstacles.ts`), and goes on when it opens:
- * the drivers wait while the lorry turns, as they do in a street.
- *
- * Whoever closes a stretch first makes sure nobody is on it nor too near to
- * stop (`laneClear`), and opens it again when done (`openLanes`).
- */
+/** Stretches of lane closed for a while by something off the lanes standing on them */
 export interface Closure {
   readonly lanelet: LaneletId;
   /** The stretch closed, arc positions along the lane. */
@@ -56,22 +46,14 @@ export function anyClosed(w: SimWorld): boolean {
 /** Kept between a closed stretch and the nearest body on it or past it. */
 const CLEAR_MARGIN = m(2);
 
-/**
- * Whether a stretch of lane may be closed now: no body on it, and nobody
- * coming along it, or along the lanes into it, too near to stop short of it
- * in comfort (`CLOSURE_STOP` before it, `obstacles.ts`).
- */
+/** Whether a stretch of lane may be closed now */
 export function laneClear(w: SimWorld, lanelet: LaneletId, from: number, to: number, stopShort: number, margin = CLEAR_MARGIN): boolean {
   const stopping = (v: { v: number; driver: { b: number } }): number => (v.v * v.v) / (2 * Math.max(1e-3, v.driver.b)) + margin;
   for (const body of w.bodiesIn(lanelet)) {
     const rear = body.s - body.vehicle.archetype.length;
     if (rear < to + margin && body.s > from - stopShort - stopping(body.vehicle)) return false;
   }
-  // Those bound onto it a lane or two on: on the lanes into it, and the lanes
-  // into those (a route runs lane, connector, lane, so it reaches `lanelet`
-  // within two only from there). DO NOT walk `w.vehicles` for them: a lorry
-  // asked it of the whole fleet for every stretch it closes, every tick it
-  // waited for the street to clear.
+  // DO NOT walk `w.vehicles` for them
   const near = new Set<LaneletId>();
   for (const before of lanesInto(w, lanelet)) {
     near.add(before);

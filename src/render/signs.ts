@@ -13,12 +13,7 @@ import type { SignType } from '@world/landscape';
 import type { Network } from '@world/network';
 import { m } from '@world/units';
 
-/**
- * Signs on the streets: the ones placed with the sign tool (a kind and, for
- * some, the player's words) and the name plates of every named street, at its
- * corners. Each plate is painted once on a canvas - as a real sign is a
- * printed sheet on a post - and stood on the footway it was placed on.
- */
+/** Signs on the streets: the ones placed with the sign tool */
 
 /** Plate size by type, metres, and its centre's height above the footway. */
 export const PLATE: Readonly<Record<SignType, { w: number; h: number; z: number }>> = {
@@ -44,35 +39,14 @@ export const BLADE_HALF = m(0.005);
 /** Whether the plate stands on top of its post (a street's name, two blades) rather than on its front. */
 export const onTopOfPost = (type: SignType): boolean => type === 'street';
 
-/**
- * The faces of a plate whose face looks along world (sin yaw, -cos yaw):
- * where each stands, off the post's axis, and the way it looks. A plate was
- * one quad through the post's axis: half the post stood in front of its
- * face, a grey band across the middle of a street's name (seen 2026-10-11,
- * "Rua Cast|ro Alves"), and a name plate read from behind was mirrored. A
- * face stands in front of the post, as a sign is bolted to the front of its
- * post; a street's name plate, read from both sides of the street, is two
- * blades back to back on top of its post (`onTopOfPost`), each face the
- * right way round - apart by the post's width, the gap between them showed
- * the other blade's back from the side.
- */
+/** The faces of a plate whose face looks along world (sin yaw, -cos yaw) */
 export function plateFaces(type: SignType, x: number, y: number, yaw: number): { x: number; y: number; yaw: number }[] {
   const out = onTopOfPost(type) ? BLADE_HALF : FACE_OUT;
   const face = (turn: number) => ({ x: x + Math.sin(turn) * out, y: y - Math.cos(turn) * out, yaw: turn });
   return type === 'street' ? [face(yaw), face(yaw + Math.PI)] : [face(yaw)];
 }
 
-/**
- * The size a plate's words are written at: the first of `size`, `size - 2`,
- * `size - 4`... whose width (`widthAt`) fits `max`, or the first at or under
- * 10 px - what stepping down 2 px at a time and measuring each size gave. A
- * street's name was measured at every size from the top, each with its font
- * set again (`measureText`, in the frame its plate was first stood: every name
- * of a generated city in one frame). A word's width grows with its size, so
- * the size the first measure scales to is the boundary or a step from it: a
- * step or two either way finds the same size with two or three measures.
- * DO NOT measure every size from the top.
- */
+/** DO NOT measure every size from the top. */
 export function fitSize(max: number, size: number, widthAt: (px: number) => number): number {
   const top = widthAt(size);
   if (top <= max || size <= 10) return size;
@@ -175,9 +149,7 @@ function plateCanvas(type: SignType, text: string): HTMLCanvasElement {
 /** The segments a street's name runs along: the one under the point, carried straight on through its nodes. */
 export function streetChain(net: Network, at: Vec2): SegmentId[] {
   let seed: SegmentId | null = null, best = Infinity;
-  // Only the ribbons within the reach a seed may be found at, filed by place,
-  // in the order of `ribbons` (the first of equals is the same one): NOT every
-  // ribbon of the map for every name sign (docs/AUDITORIA-2026-10-14.md C3).
+  // Only the ribbons within the reach a seed may be found at, filed by place, in the order of `ribbons`
   const reach = m(30);
   for (const ribbon of net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
     const d = ribbon.full.distanceTo(at);
@@ -220,25 +192,7 @@ export function streetChain(net: Network, at: Vec2): SegmentId[] {
   return [...chain];
 }
 
-/**
- * The plates' pictures on sheets (a texture atlas: the three.js manual's
- * "Optimize Lots of Objects" merges what shares a material), each plate in a
- * cell of its own, painted once and kept from one build of the signs to the
- * next. Every plate was its own mesh and material, transparent and two-sided:
- * two draws for the picture and one for the shadow, about 2 draws a plate
- * (audit S1: +237 draws for 113 plates). The plates are now one mesh, a group
- * a sheet: opaque, cut by `alphaTest` as before (a two-sided transparent
- * material is drawn twice by three, back faces then front; an opaque one
- * once: `Material.forceSinglePass`, `WebGLRenderer.renderObject`).
- *
- * A sheet is at most `PAGE` pixels on a side, and a full one is followed by
- * another: one sheet whose rows only doubled was 16,384 px tall past 256 names
- * and 32,768 past 512, more than a graphics card or a canvas takes, and every
- * plate went blank. WebGL 2 guarantees textures of 2,048 and every device
- * reports at least 4,096 (web3dsurvey.com, MAX_TEXTURE_SIZE); a canvas past its
- * browser's limit is unusable (MDN, `<canvas>`, "Maximum canvas size").
- * DO NOT let a sheet grow past `PAGE`: add a sheet.
- */
+/** DO NOT let a sheet grow past `PAGE`: add a sheet. */
 /** A cell is 256 wide (a plate canvas's width), with a gutter so the mipmaps do not bleed into the neighbours. */
 const CELL = 256;
 const GUTTER = 8;
@@ -246,11 +200,7 @@ const PITCH = CELL + 2 * GUTTER;
 const COLUMNS = 8;
 /** A sheet's largest side: eight cells across, as many rows as fit down (2,176 px, under 4,096). */
 const PAGE = COLUMNS * PITCH;
-/**
- * The heights a cell comes in: a street's or a direction's name plate (72 to 80
- * px tall, most of the plates) on sheets of low cells, the rest on cells of
- * 256 - a name in a 256 px cell left two thirds of the sheet empty.
- */
+/** The heights a cell comes in: a street's or a direction's name plate */
 const CELL_HEIGHTS = [80, CELL] as const;
 /** Rows a new sheet starts with; it doubles up to the rows `PAGE` holds. */
 const FIRST_ROWS = 4;
@@ -283,12 +233,7 @@ function sheetTexture(canvas: HTMLCanvasElement): CanvasTexture {
   return texture;
 }
 
-/**
- * The sheets and the plates on them, owned by whoever keeps them from one build
- * of the signs to the next (`buildSigns`' `sheets`). DO NOT keep them in the
- * module: state loose in a module has no owner to let it go
- * (`eslint-rules/no-module-state.js`).
- */
+/** DO NOT keep them in the module: state loose in a module has no owner to let it go (`eslint-rules/no-module-state.js`). */
 export class SignSheets {
   private readonly sheets: Sheet[] = [];
   /** Each plate on its sheet, by type and words. */
@@ -400,19 +345,12 @@ export class SignSheets {
   }
 }
 
-/**
- * A sheet's material. The same parameters on every sheet: the same program
- * (three keys it by them, not by the texture), the one compiled ahead from a
- * plate made with this (`signLayer.ts` warm).
- */
+/** A sheet's material. */
 export function plateMaterial(texture: Texture): MeshStandardMaterial {
   return new MeshStandardMaterial({ map: texture, alphaTest: 0.5, side: DoubleSide, roughness: 0.5, metalness: 0.1 });
 }
 
-/**
- * A cell's corners on its sheet as it stands, uv. Read once every plate of a
- * build is on it: the sheet may grow while they are painted.
- */
+/** A cell's corners on its sheet as it stands, uv. */
 export function cellUv({ sheet, cell, h }: Placed): { u0: number; v0: number; u1: number; v1: number } {
   const W = sheet.canvas.width, H = sheet.canvas.height;
   const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * pitchOf(sheet) + GUTTER;

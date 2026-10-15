@@ -10,34 +10,7 @@ import { m } from '@world/units';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 import { type CoverBox, openRunsAlong } from './lotBoundaryRuns';
 
-/**
- * A grown lot, composed the way a plot in a real street is: street, footway,
- * gate, front garden or forecourt, the building, a side drive or passage, and
- * behind it a yard, a service court or a car park - each area with a purpose,
- * laid with its own surface, and joined to the others.
- *
- * The plan is made FIRST and the building is made for what it leaves (its
- * envelope), so the back of a lot is never the remainder of a building that
- * happened to be shallow. The depth of each zone comes from what it holds:
- *
- * - a car park is a row of stalls 5 m deep and a 6 m aisle (two rows: 16 m),
- *   reached by a 3.5 m drive down the side from a car gate, with a 1.2 m
- *   footpath beside the drive; parking-lot codes give 9 x 18 ft stalls and
- *   20-24 ft two-way aisles (2.5 x 5 m and 6 m here);
- * - a house's yard: a terrace on the back door, a lawn, a service corner by
- *   the side passage, sometimes a pool, a shed, beds and trees;
- * - a shop's service court: concrete, bins, the back door, a drain, a lamp;
- * - a works' loading yard: the truck lane down the side, docks at the hall.
- *
- * A side is either built on the boundary (a shop's party walls, a semi-
- * detached house) or wide enough to be used - a passage, a drive, a side
- * garden - never a strip of grass between a wall and a wall. Boundaries are
- * walls, railings on low walls, fences or hedges, by kind; gates stand where
- * the paths and drives cross them, and nowhere else.
- *
- * Metres in the lot's frame: x across from the left boundary, y back from the
- * street (the front boundary is y = 0).
- */
+/** A grown lot, composed the way a plot in a real street is */
 
 export type LotKind = 'house' | 'flats' | 'tower' | 'shop' | 'office' | 'industry';
 
@@ -74,11 +47,7 @@ const STALL = 5, AISLE = 6;
 /** A lorry's dock: wider than a car's bay (`sim/agents/parking.ts` LORRY_DOCK, 3.2 m). */
 const DOCK = 3.6;
 
-/**
- * The loading doors on the ground floor's back faces that stand at `back`
- * (local y, the yard's front edge): each one's middle across the building
- * and its face, local - where a lorry backs up to unload.
- */
+/** The loading doors on the ground floor's back faces that stand at `back` (local y, the yard's front edge) */
 function loadingDoors(b: Building, back: number): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   for (const v of b.volumes) {
@@ -117,9 +86,7 @@ export function planLot(kind: LotKind, W: number, D: number, rng: Rng, corner?: 
       front = D >= 22 ? (narrow ? { use: 'carpad', depth: 5.5 } : { use: 'garden', depth: half(between(rng, 3.5, 5.5)) })
         : { use: 'garden', depth: D >= 14 ? 3 : 0 };
       if (front.depth === 0) front = { use: 'street', depth: 0 };
-      // A house stands free of its neighbours: a passage on both sides, the
-      // boundary walls meeting on the line between (two different houses
-      // glued side by side read as one broken building).
+      // A house stands free of its neighbours: a passage on both sides, the boundary walls meeting on the line between
       const passage = { use: 'path' as const, width: 1.1 };
       if (narrow) sides({ use: 'path', width: FOOTPATH }, passage);
       else sides({ use: 'drive', width: HOUSE_DRIVE }, W >= 16 ? { use: 'garden', width: half(between(rng, 3, 4)) } : W >= 13 ? { use: 'path', width: FOOTPATH } : passage);
@@ -165,32 +132,25 @@ export function planLot(kind: LotKind, W: number, D: number, rng: Rng, corner?: 
       break;
     }
     case 'industry': {
-      // Deep enough for a row of visitors' stalls and the aisle before them
-      // (5 + 6 m) behind the gate, else a paved forecourt.
+      // Deep enough for a row of visitors' stalls and the aisle before them (5 + 6 m) behind the gate, else a paved forecourt.
       front = D >= 22 ? { use: 'apron', depth: D >= 40 ? STALL + AISLE : 6 } : { use: 'street', depth: 0 };
       if (W >= 20 && D >= 30) {
         sides({ use: 'drive', width: TRUCK_LANE }, W >= 26 ? { use: 'path', width: 1.5 } : attached);
-        // Deep enough for a lorry to back square onto a dock: the dock (12 m)
-        // and an apron before it of about twice a rigid lorry's length (ATA,
-        // as dock planners give it: Rite-Hite "Loading dock design"), so
-        // 22 m where the hall keeps 14 m of depth; else as deep as it may.
+        // Deep enough for a lorry to back square onto a dock: the dock
         const room = D - front.depth;
         back = { use: 'loading', depth: half(room >= YARD_FULL + 14 ? YARD_FULL : Math.min(16, Math.max(12, room * 0.35))), rows: 0 };
       }
       break;
     }
   }
-  // A car park is reached from the street: without a drive down a side to
-  // it, the back is a paved service yard instead (bays nobody could drive
-  // into were laid out on closed-in lots).
+  // A car park is reached from the street: without a drive down a side to it, the back is a paved service yard instead
   if (back.use === 'parking' && left.use !== 'drive' && left.use !== 'drivePath' && right.use !== 'drive' && right.use !== 'drivePath') {
     back = { use: 'service', depth: Math.min(6, back.depth), rows: 0 };
   }
   // The building keeps a usable width: what it cannot keep, the sides give up.
   if (W - left.width - right.width < 6 && kind === 'house' && W >= 8.5) { left = { use: 'path', width: 1 }; right = { use: 'path', width: 1 }; }
   else if (W - left.width - right.width < 6) { left = attached; right = attached; if (back.use === 'parking') back = { use: 'service', depth: Math.min(6, back.depth), rows: 0 }; }
-  // A corner lot's side on the second street is a garden strip, not a party
-  // wall: a building on a corner looks onto both streets.
+  // A corner lot's side on the second street is a garden strip, not a party wall
   if (corner) {
     const side = corner === 'left' ? left : right;
     const other = corner === 'left' ? right : left;
@@ -202,18 +162,7 @@ export function planLot(kind: LotKind, W: number, D: number, rng: Rng, corner?: 
   return { kind, W, D, front, left, right, back, building, ...(corner ? { corner } : {}) };
 }
 
-/**
- * How far a car park's or a loading yard's drive may climb or fall from the
- * street to the yard: the drive is level for its first `RAMP_LANDING` metres
- * behind the gate (a car crosses the footway and stops at the gate on the
- * flat: the first 6 m of a non-domestic drive at no more than 1 in 20, Tweed
- * Shire's standard drawing after AS/NZS 2890.1), then a ramp to the back of
- * the building at the grade its traffic takes - cars 1 in 8 (12.5 %, the
- * steepest ramp Vancouver's parking bulletin allows past its first 6.1 m),
- * lorries 1 in 10 (a declined dock approach no steeper than 10 %, Blue
- * Giant's dock design guide). Null when the lot's back is no yard reached by
- * a drive. Metres, the lot's frame (y back from the street).
- */
+/** How far a car park's or a loading yard's drive may climb or fall from the street to the yard */
 const RAMP_LANDING = 6;
 export function yardRamp(plan: LotPlan): { readonly start: number; readonly end: number; readonly grade: number } | null {
   if (plan.back.use !== 'parking' && plan.back.use !== 'loading') return null;
@@ -225,15 +174,7 @@ export function yardRamp(plan: LotPlan): { readonly start: number; readonly end:
   return { start, end, grade: plan.kind === 'industry' ? 0.1 : 0.125 };
 }
 
-/**
- * The drive of a house down (or up) to a garage in its lower ground floor
- * (`world/buildings/splitLevel.ts` `garageUnder`): level across the front
- * garden from the gate and a metre past it (a change of grade spread over a
- * metre at least: Brisbane's driveway standard), then a ramp beside the
- * house to its back at no more than 1 in 4 - the steepest a drive inside the
- * property may be under that standard; a Brazilian code's 20 % for a
- * residential garage ramp is within it. Null when the lot has no drive.
- */
+/** The drive of a house down (or up) to a garage in its lower ground floor (`world/buildings/splitLevel.ts` `garageUnder`) */
 export const GARAGE_GRADE = 0.25;
 export function garageRamp(plan: LotPlan): { readonly start: number; readonly end: number; readonly grade: number } | null {
   if (plan.kind !== 'house' || ![plan.left, plan.right].some((s) => s.use === 'drive')) return null;
@@ -287,34 +228,15 @@ interface Lot {
   busy(x: number, y: number, r?: number): boolean;
 }
 
-/**
- * Lays the plan on a body whose building already stands in its envelope (the
- * body's local frame: x = m(lot x - W/2), y = m(lot y)). Returns false when
- * the lot could not be laid.
- */
+/** Lays the plan on a body whose building already stands in its envelope */
 export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuilding, rng: Rng,
-  /**
-   * The lot's slope: the natural ground in the middle of the back yard less
-   * at the street front, metres; and, when the building steps with the slope
-   * (`world/buildings/splitLevel.ts`), where its back level starts (metres
-   * back from the street) and how far above (below) the street floor it is.
-   * Everything laid behind that line on the building's side - the back
-   * terrace, the yard, the courts left in the envelope, the rear of a side
-   * garden or passage - is laid at that level, as each tier of a split-level
-   * house opens onto its own part of the garden.
-   */
+  /** The lot's slope: the natural ground in the middle of the back yard less at the street front, metres */
   hill?: {
     readonly yard: number;
     readonly split?: { readonly y: number; readonly lift: number };
     /** How the land falls (-) or rises (+) across the back zone, from its front to the lot's back, metres. */
     readonly backFall?: number;
-    /**
-     * A garage under the back, in the lower ground floor of a house a whole
-     * storey down (`splitLevel.ts` `garageUnder`): its door's middle across
-     * the lot (metres from the left), the back face it is in (metres from
-     * the street) and its width. Its drive is a ramp down to the back level
-     * and ends in an apron before the door.
-     */
+    /** A garage under the back, in the lower ground floor of a house a whole storey down (`splitLevel.ts` `garageUnder`) */
     readonly garage?: { readonly x: number; readonly y: number; readonly w: number };
     /** The natural ground about the street floor at a point of the lot, metres (where a drive's ramp is walled). */
     readonly landAt?: (x: number, y: number) => number;
@@ -329,11 +251,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   const elements: BuildingElement[] = (body.elements ??= []);
   let nextElement = Math.max(0, ...elements.map((e) => e.id)) + 1;
   const taken: Rect[] = [];
-  /**
-   * The car's way: each drive from its gate to the back, and its mouth into
-   * the car park's aisle. Nothing solid stands in it (a lamp, a bin, a crate
-   * left in the drive kept every stall of 13 lots in 30 out of reach).
-   */
+  /** The car's way: each drive from its gate to the back, and its mouth into the car park's aisle. */
   const keepClear: Rect[] = [];
   /** A boundary run is being laid (`runX`, `runY`): its pieces may stand along the drive. */
   let laying = false;
@@ -367,29 +285,19 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       }
     },
     fits(kind, x, y, facing, w, d, h, z = 0, material) {
-      // The boundary - walls, fences, hedges, gates - is laid last, so the
-      // budget keeps room for it: dressing that used it up left holes in the
-      // front wall (the player's order of 2026-10-05).
+      // The boundary - walls, fences, hedges, gates - is laid last, so the budget keeps room for it
       const boundary = kind === 'wall' || kind === 'fence' || kind === 'hedge' || kind === 'gate' || kind === 'railing';
       if (elements.length >= MAX_ELEMENTS - (boundary ? 2 : BOUNDARY_RESERVE) || w < 0.1 || d < 0.1 || h < 0.1) return false;
-      // Only the boundary's own runs and the gates may stand at the drive's
-      // edge: a cabinet or a shed is a `wall` too, and one stood in the drive.
+      // Only the boundary's own runs and the gates may stand at the drive's edge
       if (!(laying || kind === 'gate') && z < 2 && !FLAT_KINDS.has(kind)) {
         const [hw, hd] = facing === 1 || facing === 3 ? [d / 2, w / 2] : [w / 2, d / 2];
         if (keepClear.some((r) => x + hw > r.x0 && x - hw < r.x1 && y + hd > r.y0 && y - hd < r.y1)) return false;
-        // The way from a people's gate to the door: nothing in the opening
-        // and half a metre either side, across the front (a bollard in a
-        // tower's gate left it no way in; a walking surface is 915 mm clear
-        // at the least, ADA 403.5.1).
+        // The way from a people's gate to the door: nothing in the opening and half a metre either side, across the front
         if (y - hd < Math.max(F, 1) && gateWays.some((g) => x + hw > g.x0 && x - hw < g.x1)) return false;
       }
       const el: BuildingElement = { id: nextElement, kind, x: X(x), y: Y(y), facing, w: m(Math.min(w, 40)), d: m(d), z: m(z), h: m(h) };
       if (elementClash(probe(), el)) return false;
-      // Nothing solid in another's footprint (Etapa 5a: a bench in a bench,
-      // a bin in the rocks, a shed's roof through a crown - 2 949 in a
-      // generated city). The lot's structure - its boundary, laid last, and
-      // its earthworks - wins: what dressing stands in its way is cleared
-      // when it is laid (`put`).
+      // Nothing solid in another's footprint
       return laying || isStructure(material ? { ...el, material } : el) || !elements.some((o) => elementsMeet(el, o));
     },
     put(kind, x, y, facing, w, d, h, z = 0, material) {
@@ -410,8 +318,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
         const to = Math.min(g0, x1);
         const n = Math.ceil((to - from) / 20);
         const thick = kind === 'fence' ? 0.12 : kind === 'hedge' ? 0.7 : 0.2;
-        // A piece that meets something (a porch, a step) is split, and only
-        // the part that really meets it is left out - not the whole length.
+        // A piece that meets something (a porch, a step) is split, and only the part that really meets it is left out
         const piece = (a: number, b: number): void => {
           laying = true;
           const ok = lot.put(kind, (a + b) / 2, y, 0, b - a, thick, h, z);
@@ -450,12 +357,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   };
 
   const maxTerrace = MAX_TERRACE / m(1) - 0.1;
-  /**
-   * Everything laid since (`fromVolume`, `fromElement`) raised (negative:
-   * lowered) `rise` metres - its open blocks as terraces (`Volume.terrace`),
-   * the parts that do not follow the ground with them - or, with `behind`,
-   * only what lies that far back from the street or further.
-   */
+  /** Everything laid since (`fromVolume`, `fromElement`) raised (negative: lowered) `rise` metres */
   const lift = (fromVolume: number, fromElement: number, rise: number, behind = -Infinity): void => {
     if (Math.abs(rise) < 1e-6) return;
     for (const v of body.volumes) {
@@ -466,12 +368,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
     for (const el of elements) if (el.id >= fromElement && !FOLLOWS_GROUND.has(el.kind) && el.y >= Y(behind) - 1e-6) el.z += m(rise);
   };
-  /**
-   * A retaining wall in stone from (x0, y0) to (x1, y1) (along x or along y)
-   * between the street floor's level and the back level: up to a hand's
-   * breadth over the back when the back is higher, a parapet's height over
-   * the drop when it is lower (as `stepYard`'s walls).
-   */
+  /** A retaining wall in stone from (x0, y0) to (x1, y1) */
   const retain = (x0: number, y0: number, x1: number, y1: number): void => {
     const h = backLevel > 0 ? backLevel + 0.15 : 0.95;
     const alongY = Math.abs(x1 - x0) < Math.abs(y1 - y0);
@@ -492,17 +389,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     else lot.put('stair', x, y + run / 2, 2, width, run, -backLevel, backLevel, RETAINING);
   };
 
-  /**
-   * The yard from `y0` back to `y1` laid as a terrace `fall` metres above (or
-   * below) the floor, rounded to whole risers: its open blocks raised or
-   * lowered (`Volume.terrace`), the parts on it that do not follow the
-   * ground lifted with it, a retaining wall in stone along its edge with a
-   * parapet on the high side, and a flight of steps at `stairX` between the
-   * two levels (risers of 17 cm, treads of 30 cm: twice the rise and the
-   * going, 64 cm, within the 55-70 cm of the stair rule). `base`: the level
-   * the yard starts from (the back level of a split-level house), which the
-   * terrace may not take past `MAX_TERRACE`.
-   */
+  /** The yard from `y0` back to `y1` laid as a terrace `fall` metres above (or below) the floor, rounded to whole risers */
   const stepYard = (y0: number, y1: number, fall: number, fromVolume: number, fromElement: number, stairX: number, base = 0): void => {
     const room = maxTerrace - Math.max(0, Math.sign(fall) * base);
     const risers = Math.min(TERRACE_MAX_RISERS, Math.round(Math.abs(fall) * 0.85 / STEP_RISE_M), Math.floor(room / STEP_RISE_M));
@@ -510,12 +397,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     const rise = risers * STEP_RISE_M * Math.sign(fall);
     const run = (risers + 1) * STEP_RUN_M;
     if (y1 - y0 < run + 2 || W < 6) return;
-    // The flight lands on open lawn, as near the building's middle as it can:
-    // never in the pool, on a path or a paved corner (`taken`), and where the
-    // lot takes it (the drive's way, the gates, the building: `fits`). Put at
-    // the middle whatever lay there, it ran into the pool (the player,
-    // 2026-10-09). With nowhere clear, the yard is not stepped: a platform
-    // with no way up to it is no better.
+    // The flight lands on open lawn, as near the building's middle as it can: never in the pool, on a path or a paved corner
     const flightClear = (x: number): boolean => {
       const fx0 = x - 1.05, fx1 = x + 1.05, fy0 = y0 + 0.05, fy1 = y0 + run + 0.5;
       if (taken.some((t) => fx0 < t.x1 && t.x0 < fx1 && fy0 < t.y1 && t.y0 < fy1)) return false;
@@ -530,7 +412,6 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     const inYard = (yy: number): boolean => yy >= Y(y0) - 1e-6;
     for (const v of body.volumes) if (v.open && v.id >= fromVolume && inYard(v.y)) v.terrace = m(rise);
     // What stands on the platform and is not laid on the ground as it goes
-    // (a table, a slab roof, a post) goes up or down with it.
     for (const el of elements) if (el.id >= fromElement && inYard(el.y) && !FOLLOWS_GROUND.has(el.kind)) el.z += m(rise);
     // The steps' place and the wall's line cleared of the garden's parts.
     const clear = (el: BuildingElement): boolean => {
@@ -543,14 +424,10 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     };
     elements.splice(0, elements.length, ...elements.filter((el) => !clear(el)));
     const stone = RETAINING;
-    // The flight first, into the higher platform: up the slope (it goes down
-    // to the front, `facing` 0), or down it (to the back, from the floor's
-    // level). Laid after the wall, the wall's pieces used up the lot's part
-    // budget and the flight was refused: a platform with no way up to it.
+    // The flight first, into the higher platform: up the slope (it goes down to the front, `facing` 0), or down it
     if (rise > 0) lot.put('stair', sx, y0 + run / 2, 0, 1.3, run, rise, 0, stone);
     else lot.put('stair', sx, y0 + run / 2, 2, 1.3, run, -rise, rise, stone);
-    // The wall: from the lower platform up to the higher one and a hand's
-    // breadth over it; a guard rail's height over a drop.
+    // The wall: from the lower platform up to the higher one and a hand's breadth over it; a guard rail's height over a drop.
     const wallH = rise > 0 ? rise + 0.15 : 0.95;
     for (const [a, b] of [[0.15, sx - 0.75], [sx + 0.75, W - 0.15]] as const) {
       if (b - a < 0.4) continue;
@@ -583,17 +460,14 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   const garage = split && hill?.garage ? hill.garage : null;
   const ramp = split ? yardRamp(plan) ?? (garage ? garageRamp(plan) : null) : null;
   for (const r of drives) {
-    // The drive less a hand's width each side (a carport's posts stand there),
-    // then its mouth into the car park, through the aisle. A ramp keeps half
-    // a metre on its outer side, where its retaining wall stands.
+    // The drive less a hand's width each side
     const outer = ramp ? 0.5 : 0.35;
     keepClear.push({ x0: r.x0 + (r.x0 < W / 2 ? outer : 0.35), y0: 0, x1: r.x1 - (r.x0 < W / 2 ? 0.35 : outer), y1: Bk });
     if (back.use === 'parking') keepClear.push({ x0: r.x0, y0: Bk - 0.5, x1: r.x1 + 0.5, y1: Math.min(D, Bk + (back.rows === 2 ? STALL + AISLE : AISLE)) });
   }
   const door = env.x0 + made.entrance;
   const backDoor = made.backDoor !== undefined ? env.x0 + made.backDoor : null;
-  // The people's gates as the boundary will place them: on the path to the
-  // door when there is a front, at each passage when there is none.
+  // The people's gates as the boundary will place them
   const peopleGate = plan.kind === 'shop' || plan.kind === 'office' ? 2 : plan.kind === 'house' ? 1.2 : 1.6;
   if (F > 0) gateWays.push({ x0: door - peopleGate / 2 - 0.5, x1: door + peopleGate / 2 + 0.5 });
   else for (const w of walks) gateWays.push({ x0: w.x0 - 0.5, x1: w.x1 + 0.5 });
@@ -603,8 +477,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   // ---- what the building leaves of its envelope: a terrace, a court garden
   for (const f of made.free) {
     const r = { x0: env.x0 + f.x0, y0: env.y0 + f.y0, x1: env.x0 + f.x1, y1: env.y0 + f.y1 };
-    // A court behind the step of a split-level building is at its back level,
-    // walled where it meets a side strip at the street floor's.
+    // A court behind the step of a split-level building is at its back level
     const raised = split !== null && r.y0 >= split.y - 1e-6;
     const fromVolume = nextVolume, fromElement = nextElement;
     furnishFree(r);
@@ -689,9 +562,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     } else if (front.use === 'apron') {
       // A works' front: visitors' stalls off the apron, the walk to the office painted across it.
       lot.path({ x0: door - 0.8, y0: 0, x1: door + 0.8, y1: F }, CONCRETE_PATH);
-      // The stalls along the building, the aisle between them and the gate:
-      // only on an apron deep enough for both (stalls with no aisle could
-      // not be driven into from behind the fence).
+      // The stalls along the building, the aisle between them and the gate: only on an apron deep enough for both
       if (F >= STALL + AISLE - 1e-6) {
         for (let px = env.x0 + 0.3; px + 2.5 <= env.x1; px += 2.5) {
           if (Math.abs(px + 1.25 - door) < 2.2) continue;
@@ -702,12 +573,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
   }
 
-  // ---- side strips: the drives at the street floor's level all the way back
-  // (a car drives in off the street); a passage and a side garden behind the
-  // step of a split-level building at its back level, a flight and a
-  // retaining wall where they change level. A car park or a loading yard at
-  // a level of its own (the building's back level) is reached by its drive
-  // as a ramp: level behind the gate, then straight down or up to the yard.
+  // ---- side strips: the drives at the street floor's level all the way back (a car drives in off the street)
   for (const s of [L, R]) {
     if (s.drive) {
       const r = { ...s.drive, y0: Math.max(F, s.drive.y0) };
@@ -715,9 +581,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
         const r0 = Math.max(r.y0, ramp.start);
         lot.surface({ ...r, y1: ramp.start }, driveSurface);
         lot.ramp({ ...r, y0: r0 }, driveSurface, 0, backLevel);
-        // Its outer side walled where it runs in a cut or on a fill (a
-        // retaining wall as `retain`'s: a hand over the land it holds back,
-        // a parapet over a drop), in lengths of two metres down the slope.
+        // Its outer side walled where it runs in a cut or on a fill
         const land = hill?.landAt;
         if (land) {
           const wx = r.x0 < W / 2 ? r.x0 + 0.35 : r.x1 - 0.35;
@@ -734,7 +598,6 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       // A house with its garage under the back has no carport on its ramp.
       if (isHouse && Bk - F >= 6 && !garage) {
         // A carport: a roof on four posts over the car, beside the house.
-        // Its posts at the drive's very edges, clear of the car's way.
         const y0 = F + 0.3, y1 = F + 5.8, x0 = r.x0 + 0.05, x1 = r.x1 - 0.05;
         lot.put('slab', (x0 + x1) / 2, (y0 + y1) / 2, 0, x1 - x0, y1 - y0, 0.15, 2.4, mat('concrete', 0xd0ccc4));
         for (const [px, py] of [[x0 + 0.15, y0 + 0.15], [x1 - 0.15, y0 + 0.15], [x0 + 0.15, y1 - 0.15], [x1 - 0.15, y1 - 0.15]] as const) lot.put('pillar', px, py, 0, 0.18, 0.18, 2.4);
@@ -745,11 +608,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   const stripVolumes = nextVolume, stripElements = nextElement;
   for (const s of [L, R]) {
     if (s.walk) {
-      // A passage between buildings is an alley, used as one (the player's
-      // order of 2026-10-05): old cobbles - its one paving; laid over the
-      // pavers of a path as well, the two lay in one plane and flickered -
-      // a drain down the middle, bins and crates against the wall, a lamp on
-      // a bracket.
+      // A passage between buildings is an alley, used as one (the player's order of 2026-10-05): old cobbles - its one paving
       lot.path(s.walk, isHouse ? CONCRETE_PATH : ALLEY_COBBLES);
       if (!isHouse && s.walk.y1 - s.walk.y0 > 12) lot.put('lamp', s.walk.x0 + 0.3, (s.walk.y0 + s.walk.y1) / 2, 0, 0.3, 0.3, 3.5);
       if (!isHouse) {
@@ -765,8 +624,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
     if (s.garden) {
       const g = s.garden;
-      // In two lawns where the building steps: the front one at the street
-      // floor's level, the back one at the back level.
+      // In two lawns where the building steps: the front one at the street floor's level, the back one at the back level.
       const cut = split && split.y > g.y0 + 2 && split.y < g.y1 - 2 ? split.y : null;
       if (cut !== null) { lot.surface({ ...g, y1: cut }, 'grass'); lot.surface({ ...g, y0: cut }, 'grass'); }
       else lot.surface(g, 'grass');
@@ -780,10 +638,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       if (s.walk && split.y > s.walk.y0 + 1 && split.y < s.walk.y1 - 1) flightBack((s.walk.x0 + s.walk.x1) / 2, split.y, Math.max(0.8, s.walk.x1 - s.walk.x0 - 0.1));
       // The side garden: a retaining wall across it at the step.
       if (s.garden && split.y > s.garden.y0 + 2 && split.y < s.garden.y1 - 2) retain(s.garden.x0 + 0.1, split.y, s.garden.x1 - 0.1, split.y);
-      // The drive, at the street floor to its end: a wall across its end where
-      // the back of the lot is at its own level (the way down or up to the
-      // garden is the passage's flight, or through the house). A yard's
-      // ramp meets the yard at its level: nothing across it.
+      // The drive, at the street floor to its end: a wall across its end where the back of the lot is at its own level
       if (s.drive && D - Bk > 0 && !ramp) retain(s.drive.x0 + 0.1, Bk + 0.15, s.drive.x1 - 0.1, Bk + 0.15);
     }
   }
@@ -795,8 +650,6 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     case 'yard': {
       const yardVolumes = nextVolume, yardElements = nextElement;
       // The terrace on the back door, the lawn, a service corner, a pool or beds, a shed.
-      // The apron before a garage under the back: from the drive to the
-      // garage door, deep enough for a car to turn in; the terrace beside it.
       const drive = drives[0];
       const apronY = garage ? Math.min(by0, garage.y) : by0;
       const apron = garage && drive && by1 - apronY >= GARAGE_APRON + 1
@@ -806,13 +659,9 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
         ? (apron.x0 > W / 2 ? { x0: env.x0, y0: by0, x1: Math.max(env.x0, apron.x0), y1: Math.min(by1, by0 + 3) } : { x0: Math.min(env.x1, apron.x1), y0: by0, x1: env.x1, y1: Math.min(by1, by0 + 3) })
         : { x0: env.x0, y0: by0, x1: env.x1, y1: Math.min(by1, by0 + 3) };
       const lawnY0 = terrace.y1, depth = by1 - lawnY0;
-      // On a hillside the lawn is stepped below (`stepYard`) with its flight
-      // at the building's middle: a pool there sat under the steps and the
-      // retaining wall (the player, 2026-10-09). It goes to one side of the
-      // flight's way then, or the stepped yard has none.
+      // On a hillside the lawn is stepped below (`stepYard`) with its flight at the building's middle
       const stepped = !!hill && Math.abs(hill.yard - backLevel) >= TERRACE_MIN;
-      // With a garage's apron behind the house, the garden is stepped from
-      // behind the apron: a terrace stepped beside it left a drop with no wall.
+      // With a garage's apron behind the house, the garden is stepped from behind the apron
       const stepFrom = apron ? Math.max(lawnY0, apron.y1) : lawnY0;
       const poolW = Math.min(8, W - 5);
       const stairMid = (env.x0 + env.x1) / 2;
@@ -860,9 +709,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       if (depth >= 5) {
         for (const px of [2.6, W - 2.6]) if (!lot.busy(px, by1 - 2.8, 1.5)) lot.put('tree', px, by1 - 2.8, 0, 3, 3, 5);
       }
-      // A yard that is lived in (the player's order of 2026-10-05: "quintais
-      // muito pobres"): a garden shed in a back corner, a table on the
-      // terrace, a vegetable patch, shrubs along the side walls.
+      // A yard that is lived in (the player's order of 2026-10-05: "quintais muito pobres")
       if (depth >= 7 && W >= 9) {
         const shedX = rng.float() < 0.5 ? 1.6 : W - 1.6;
         if (!lot.busy(shedX, by1 - 1.4, 1.4)) {
@@ -880,9 +727,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
         const vx = W * (0.35 + rng.float() * 0.3);
         for (let k = 0; k < 3; k++) if (!lot.busy(vx + k * 1.3, lawnY0 + 3, 0.7)) lot.put('planter', vx + k * 1.3, lawnY0 + 3, 0, 0.9, 2.6, 0.35, undefined, mat('wood', 0x6b4f35));
       }
-      // No barbecue in the yard (the player, 2026-10-14). DO NOT drop this
-      // draw: it was the barbecue's, and without it every later piece of the
-      // yard (the clothes line, the sink, the far corner) would draw anew.
+      // DO NOT drop this draw: it was the barbecue's, and without it every later piece of the yard
       rng.float();
       // A clothes line across the lawn: two posts and the line between.
       if (depth >= 6 && W >= 8 && rng.float() < 0.55) {
@@ -904,14 +749,9 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       for (const px of [1.5, W - 1.5]) {
         for (let py = lawnY0 + 1.5; py < by1 - 3; py += 3.2) if (!lot.busy(px, py, 0.9)) lot.put('shrub', px, py, 0, 1.3, 1.3, 1.4);
       }
-      // The rest of a long back yard, filled the way back yards are (the
-      // player asked four times): an edicula (a small outbuilding) in the
-      // far corner reached by stepping stones, fruit trees along the back
-      // wall, a vegetable garden in raised beds, a dog house, a swing, a
-      // garden table with chairs, a pile of firewood.
+      // The rest of a long back yard, filled the way back yards are (the player asked four times): an edicula
       if (depth >= 10 && W >= 8) {
-        // Each yard its own: a character drawn for the lot and its pieces
-        // laid out from it, mirrored at random, so no two neighbours match.
+        // Each yard its own: a character drawn for the lot and its pieces laid out from it, mirrored at random
         const far = by1 - 0.4;
         const flip = rng.float() < 0.5;
         const fx = (x: number): number => (flip ? W - x : x);
@@ -977,20 +817,12 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       }
       // Potted plants along the terrace edge.
       for (let px = terrace.x0 + 0.6; px < terrace.x1 - 0.5; px += 1.6) if (!lot.busy(px, terrace.y1 - 0.4, 0.3)) lot.put('planter', px, terrace.y1 - 0.4, 0, 0.5, 0.5, 0.55);
-      // On a hillside, the garden beyond the terrace is a platform of its
-      // own, stepped up or down the slope (terracing: level platforms held
-      // by a retaining wall, a flight of steps between), instead of the whole
-      // yard cut down or filled up to the floor with banks spilling over the
-      // boundary.
-      // From the back level, on a split-level house (raised with the rest of the back below).
+      // On a hillside, the garden beyond the terrace is a platform of its own, stepped up or down the slope
       if (stepped) stepYard(stepFrom, by1, hill!.yard - backLevel, yardVolumes, yardElements, (env.x0 + env.x1) / 2, backLevel);
       break;
     }
     case 'parking': {
-      // At its back level, a car park on a hillside keeps falling with the
-      // land at up to 1 in 20 across its depth: stalls are laid at no more
-      // than 5 % (Site Planning and Design, as the parking-slope rule of
-      // thumb has it), so its far rows meet the land closer.
+      // At its back level, a car park on a hillside keeps falling with the land at up to 1 in 20 across its depth
       const fall = split && hill?.backFall !== undefined ? Math.max(-PARK_SLOPE, Math.min(PARK_SLOPE, hill.backFall / Math.max(1, by1 - by0))) * (by1 - by0) : 0;
       if (Math.abs(fall) >= 0.1) lot.ramp({ x0: 0, y0: by0, x1: W, y1: by1 }, 'asphalt', 0, fall);
       else lot.surface({ x0: 0, y0: by0, x1: W, y1: by1 }, 'asphalt');
@@ -1026,12 +858,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       const aisleY = back.rows === 2 ? by0 + STALL + AISLE / 2 : by0 + AISLE / 2;
       lot.put('drain', W / 2, aisleY, 0, 0.5, 0.5, 0.1);
       for (const px of [0.6, W - 0.6]) lot.put('lamp', px, aisleY, 0, 0.3, 0.3, 5);
-      // What the back of a car park holds, a little of it on each lot: a
-      // skip, a bicycle rack, a cart bay, a covered smoking corner, an
-      // electrical cabinet, a stack of pallets - chosen per lot. Along the
-      // building's back wall, so only where no row of stalls stands there,
-      // and never in the drive's mouth (`keepClear`). A bin beside the mouth
-      // stood in the first stall and across the turn into the aisle.
+      // What the back of a car park holds, a little of it on each lot
       if (back.rows === 1) {
         const spots: [number, number][] = [[1.2, by0 + 0.8], [W - 1.4, by0 + 0.8], [W / 2, by0 + 0.6]];
         const props: ((x: number, y: number) => void)[] = [
@@ -1056,8 +883,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       lot.put('slab', Math.max(0.8, bd - 3), by0 + 1, 0, 0.6, 0.6, 0.45, 0.14, mat('wood', 0x7f6040));
       lot.put('drain', bd, by0 + (by1 - by0) / 2, 0, 0.5, 0.5, 0.1);
       lot.put('lamp', Math.max(0.6, bd - 1.6), by0 + 0.4, 0, 0.3, 0.3, 3.2);
-      // A caged store of gas cylinders, a water tank on a stand, crates and
-      // a stack of empty drink crates, a mop bucket by the back door.
+      // A caged store of gas cylinders, a water tank on a stand, crates and a stack of empty drink crates
       if (W >= 8 && by1 - by0 >= 4) {
         const gx = 1.2, gy = by1 - 1;
         lot.put('fence', gx, gy, 0, 1.6, 0.9, 1.4, undefined, mat('metal', 0x7a8084));
@@ -1085,10 +911,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
     case 'loading': {
       lot.surface({ x0: 0, y0: by0, x1: W, y1: by1 }, 'concrete');
-      // Lorry bays at the loading doors - each square in front of a door of
-      // the hall's back, so a lorry reversed into it stands at the door
-      // (a dock is laid out from the door it serves: Blue Giant's dock
-      // planning) - bollards between them, lamps over the yard.
+      // Lorry bays at the loading doors
       const dockDepth = Math.min(12, by1 - by0 - 0.5);
       const doors = loadingDoors(body as Building, Y(by0)).map((d) => ({ x: d.x / m(1) + W / 2, y: d.y / m(1) })).sort((p, q) => p.x - q.x);
       let last = -Infinity;
@@ -1113,18 +936,12 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
     default: break;
   }
-  // Behind a split-level building the back zone is at its back level: a car
-  // park or a loading yard too, its drive a ramp down or up to it (above).
+  // Behind a split-level building the back zone is at its back level
   if (split) lift(backVolumes, backElements, backLevel);
 
-  // ---- boundaries and gates
-  // The boundary walls stand right on the lot's edge: the neighbour's wall
-  // meets this one, with no strip between two properties.
+  // ---- boundaries and gates The boundary walls stand right on the lot's edge
   const inset = 0.1;
-  // Along the street the boundary stands as close to the footway as a part
-  // may (`touchesRoad`: 2 cm), whatever its thickness: a hedge set at the
-  // walls' line reached onto the footway and was refused, leaving the front
-  // open - the holes in the facades.
+  // Along the street the boundary stands as close to the footway as a part may (`touchesRoad`: 2 cm), whatever its thickness
   const frontAt = (kind: ElementKind | 'gate'): number => (kind === 'hedge' ? 0.7 : kind === 'fence' || kind === 'gate' ? 0.12 : 0.2) / 2 + 0.04;
   const boundary = ((): { front: ElementKind | null; frontH: number; frontBase: number; sides: ElementKind; sidesH: number } => {
     switch (plan.kind) {
@@ -1137,10 +954,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       case 'flats':
       case 'tower': return { front: 'fence', frontH: 1.6, frontBase: 0.45, sides: 'wall', sidesH: 2.2 };
       case 'industry': return { front: 'fence', frontH: 2.4, frontBase: 0, sides: 'fence', sidesH: 2.4 };
-      // A shop's forecourt behind a low railing, an office's plaza behind a
-      // railing on a low wall: closed as every lot is (the player, 2026-10-09:
-      // "COMPLETE walls or fences, with an entrance gate for residents and
-      // one for cars"), wide open at the door.
+      // A shop's forecourt behind a low railing, an office's plaza behind a railing on a low wall: closed as every lot is
       case 'shop': return { front: 'railing', frontH: 1, frontBase: 0, sides: 'wall', sidesH: 2.2 };
       default: return { front: 'fence', frontH: 1.4, frontBase: 0.45, sides: 'wall', sidesH: 2.2 };
     }
@@ -1148,19 +962,14 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   // Front: across the whole frontage where nothing is built on it; gates at the path and the drives.
   const frontGaps: [number, number][] = [];
   const gates: { x: number; w: number }[] = [];
-  // The people's gate on the path to the door, whatever is in front of it; a
-  // shop's and an office's as wide as a shop door.
-  // (under 2.2 m: wider is a car's gate, `sim/agents/parking.ts` `CAR_GATE`).
+  // The people's gate on the path to the door, whatever is in front of it; a shop's and an office's as wide as a shop door.
   if (F > 0) gates.push({ x: door, w: peopleGate });
-  // A works' apron has its visitors' stalls: a wide car gate onto it, beside
-  // the people's (closed in by the fence, the stalls could not be reached).
+  // A works' apron has its visitors' stalls: a wide car gate onto it, beside the people's
   if (front.use === 'apron') gates.push({ x: door > W / 2 ? Math.max(3.4, door - 4.6) : Math.min(W - 3.4, door + 4.6), w: 6 });
   for (const r of drives) gates.push({ x: (r.x0 + r.x1) / 2, w: r.x1 - r.x0 - 0.4 });
   if (front.use === 'carpad') gates.push({ x: door > W / 2 ? 1.8 : W - 1.8, w: 2.8 });
   for (const w of walks) if (F === 0) gates.push({ x: (w.x0 + w.x1) / 2, w: w.x1 - w.x0 - 0.2 });
-  // The gates first, and a gap in the wall only where a gate really went in:
-  // a gate refused (it met a carport post, a drain) left an empty hole in the
-  // front wall - the holes the player found in the facades.
+  // The gates first, and a gap in the wall only where a gate really went in: a gate refused
   for (const g of gates) {
     if (lot.put('gate', g.x, frontAt('gate'), 0, g.w, 0.12, plan.kind === 'industry' ? 2.2 : g.w > 2 ? 1.8 : 1.4)) frontGaps.push([g.x, g.w + 0.1]);
   }
@@ -1179,14 +988,9 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   };
   if (builtFront) { frontRun(0, builtFront[0]); frontRun(builtFront[1], W); } else frontRun(0, W);
   // Sides: full depth, except where the building stands on the boundary.
-  // The side walls' outer face on the boundary itself: the neighbour's wall
-  // stands against it, face to face, with nothing between.
   const sideHalf = (boundary.sides === 'hedge' ? 0.7 : boundary.sides === 'fence' ? 0.12 : 0.2) / 2;
   /** A side on a second street (a corner lot) is closed as the front is: a low wall, a fence on it, a railing. */
-  // Set in from the edge by its own thickness, as the front is (`frontAt`):
-  // laid at the side walls' line, a hedge or a railing of the front's kind
-  // stood half over the cross street's footway and the corner lot was refused
-  // - the bare corner lots of the generated city (2026-10-09).
+  // Set in from the edge by its own thickness, as the front is (`frontAt`)
   const streetSide = (x: number, y0: number, y1: number): void => {
     const kind = boundary.front ?? 'wall';
     const at = (k: ElementKind): number => (x < W / 2 ? frontAt(k) : W - frontAt(k));
@@ -1210,18 +1014,10 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   }
   // Back.
   if (D - Bk > 0) lot.runX(boundary.sides, D - sideHalf, sideHalf, W - sideHalf, boundary.sidesH);
-  // ---- the boundary made whole: every stretch of the lot's edge that no
-  // wall, fence, hedge, railing, gate or the building itself closes gets the
-  // side's boundary. A piece refused where it met a porch, a wing set back
-  // from an attached side, a corner between two runs: each left a gap to the
-  // street or to the neighbour (measured on the grown town before this).
+  // ---- the boundary made whole: every stretch of the lot's edge that no wall, fence, hedge, railing
   {
     const U = m(1);
-    /**
-     * What closes the edge now: each boundary part grown by 0.3 m, the
-     * building's ground floor by 0.45 m (lot metres). Read afresh for each
-     * side: the runs laid on one side close the next.
-     */
+    /** What closes the edge now: each boundary part grown by 0.3 m, the building's ground floor by 0.45 m (lot metres). */
     const covers = (): CoverBox[] => {
       const boxes: CoverBox[] = [];
       for (const e of elements) {
@@ -1258,7 +1054,6 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     }
   }
   // Nothing left in the air: a part whose posts were refused or cleared above
-  // (a carport roof, a pergola, a swing's bar) goes with them.
   const loose = unsupportedElements(probe());
   if (loose.size) elements.splice(0, elements.length, ...elements.filter((el) => !loose.has(el.id)));
   (body as { nextVolumeId?: number }).nextVolumeId = nextVolume;

@@ -9,15 +9,7 @@ import { type PairMeasurer, type SweepSamples, pairTable } from '@world/conflict
 import type { NodeId } from '@world/ids';
 import { fixtureDoc } from '../sim/support/bodies';
 
-/**
- * The conflict index reuses the zones of every pair of movements whose swept
- * geometry did not change since the previous build.
- *
- * That cache is only a cache if it can never change an answer: claims, signal
- * stages and the pose agreement all read these zones. So an index rebuilt
- * THROUGH the cache after an edit must agree exactly — every zone, every
- * reference, every diverge — with an index built cold on the same graph.
- */
+/** The conflict index reuses the zones of every pair of movements whose swept geometry did not change since the previous */
 
 function graphOf(doc: RoadDoc): LaneletGraph {
   const net = new Network(doc);
@@ -76,11 +68,7 @@ function addLeg(doc: RoadDoc): NodeId {
   return busiest.id;
 }
 
-/**
- * What a worker of `conflictPool.ts` does, here: the sweeps rebuilt from
- * their samples alone with empty caches, `pairTable` on them, the answer by
- * promise and the tables' buffers copied as a transfer would hand them over.
- */
+/** What a worker of `conflictPool.ts` does, here */
 const offPage: PairMeasurer = {
   measure(pairs) {
     const fresh = (s: SweepSamples): SweepSamples => ({
@@ -151,10 +139,7 @@ describe('conflict zone cache', () => {
     expect(index.measured.build).toBe(0);
   });
   it('measures no pair again when nothing changed, in a town laid out symmetrically', () => {
-    // The parking town is symmetric about the origin. Hashed with a plain
-    // FNV-1a, every movement shared its key with its mirror image, the two
-    // threw each other out of the cache, and every rebuild measured some six
-    // hundred pairs again - a third of a second on every road edit.
+    // The parking town is symmetric about the origin.
     const doc = Doc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const graph = graphOf(doc);
     const index = new ConflictIndex();

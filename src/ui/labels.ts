@@ -1,14 +1,7 @@
 import type { RoadType } from '@world/roadTypes';
 import { plural, t } from './i18n';
 
-/**
- * Turns model values into text for the interface.
- *
- * The model stores translation KEYS, never sentences — see `RoadType.nameKey`
- * and `RoadStructureSpec.key`. This module is the one place those keys become
- * words, which is what lets the language change without touching the document,
- * the network, the simulation or any saved map.
- */
+/** Turns model values into text for the interface. */
 
 export const roadTypeName = (type: RoadType): string => t(type.nameKey);
 

@@ -7,19 +7,7 @@ import { deriveSpaces, flatPlan } from './spaces';
 import { type Building, type BuildingFunction, type Volume, volumeTop, type PlacedFurniture } from './types';
 import { identityMemo } from '@core/identityMemo';
 
-/**
- * What is inside a building, floor by floor: rooms, the walls between them
- * with their doorways, and the furniture people use - beds, sofas, tables,
- * desks, shelves, counters, pews, seats, beds of a ward, cells.
- *
- * Derived, never stored: from the building's function, its blocks and its
- * cores, the same every time, so a building edited is furnished anew and a
- * saved city stays small. The renderer draws it when a building is seen
- * inside; residents will use the same pieces as the places they go to (a
- * bed to sleep in, a desk to work at, a seat in the cinema).
- *
- * All in the building's local frame, world units.
- */
+/** What is inside a building, floor by floor */
 
 export const FURNITURE_KINDS = [
   'bed', 'singleBed', 'sofa', 'armchair', 'table', 'chair', 'desk', 'officeChair', 'shelf', 'bookshelf', 'counter',
@@ -76,11 +64,7 @@ export const isFurnitureKind = (v: unknown): v is FurnitureKind => (FURNITURE_KI
 
 const RIGHT = Math.PI / 2;
 
-/**
- * The building as drawn cut open at `level`: every block that reaches it
- * stops there, with no roof, and the floor's inside is drawn (`cutaway`).
- * Blocks that start above the level are gone; lots stay.
- */
+/** The building as drawn cut open at `level` */
 export function cutOpen(b: Building, level: number, view?: { x: number; y: number }): Building {
   const top = Math.max(0, ...b.volumes.map((v) => volumeTop(v) - 1));
   const at = Math.max(0, Math.min(level, top));
@@ -94,15 +78,7 @@ export function cutOpen(b: Building, level: number, view?: { x: number; y: numbe
   };
 }
 
-/**
- * A flight of stairs between two blocks of a building standing at floors of
- * their own (a split level, `Volume.lift`): inside the lower block, square to
- * the line where the two meet, rising from the lower floor to the higher -
- * the short flight that joins a split-level house's levels (Wikipedia,
- * "Split-level home": two or three short sets of stairs; a half storey of
- * 1.4-1.8 m is eight to ten risers), or a whole storey's from a lower ground
- * floor. Local frame; heights over the building's ground floor.
- */
+/** A flight of stairs between two blocks of a building standing at floors of their own (a split level, `Volume.lift`) */
 export interface LevelFlight {
   /** The middle of its foot, on the lower floor, and of its top, on the line the blocks meet at. */
   readonly foot: Vec2;
@@ -120,11 +96,7 @@ const FLIGHT_TREAD_MIN = m(0.24);
 /** A flight's width: a house's stair, less where the blocks meet along a shorter line. */
 const FLIGHT_WIDTH = m(1);
 
-/**
- * The flights between the blocks that have a storey on `level` at different
- * heights and stand side by side - one for each pair, in the lower block,
- * at the middle of the line they meet along. Rectangular blocks only.
- */
+/** The flights between the blocks that have a storey on `level` at different heights and stand side by side */
 export function levelFlights(b: Building, level: number): LevelFlight[] {
   const blocks = b.volumes.filter((v) => !v.open && isMass(v) && !v.outline && v.base <= level && volumeTop(v) > level);
   const out: LevelFlight[] = [];
@@ -169,12 +141,7 @@ function flightBox(f: LevelFlight): [number, number, number, number] {
     : [f.foot.x - h, Math.min(f.foot.y, f.top.y) - m(0.2), f.foot.x + h, Math.max(f.foot.y, f.top.y) + m(0.2)];
 }
 
-/**
- * Each record's floors as furnished, by level, worked out once (a stored
- * record is never changed in place, `BuildingStore` OWNERSHIP). The cut-open
- * view, the room lamps and the meshes asked the same floor again and again,
- * every plan and piece made anew. The floor handed out is shared: read it.
- */
+/** Each record's floors as furnished, by level, worked out once */
 const floorsOf = identityMemo((_b: Building) => new Map<number, FloorInterior>());
 
 /** One floor of a building, inside. */
@@ -197,13 +164,10 @@ function furnishFloor(b: Building, level: number): FloorInterior {
     out.push(...plan.items);
     walls.push(...plan.walls);
   }
-  // Nothing made for the floor stands on the flight between its levels (a
-  // table, a desk across the steps): its footprint and a hand's breadth
-  // round it kept clear.
+  // Nothing made for the floor stands on the flight between its levels (a table, a desk across the steps)
   const flights = levelFlights(b, level).map(flightBox);
   const clear = out.filter((f) => !flights.some((r) => f.x + f.w / 2 > r[0] && f.x - f.w / 2 < r[2] && f.y + f.d / 2 > r[1] && f.y - f.d / 2 < r[3]));
-  // The player's own arrangement, where there is one; otherwise the one made
-  // for the function, with a light over each room.
+  // The player's own arrangement, where there is one; otherwise the one made for the function, with a light over each room.
   const stored = b.furnishing?.[String(level)];
   const furniture = stored ? stored.filter((p) => isFurnitureKind(p.kind)).map(placed) : [...clear, ...roomLights(clear)];
   return { level, furniture, partitions: walls };
@@ -258,12 +222,7 @@ class Plan {
   readonly x1: number;
   readonly y1: number;
   private readonly cores: [number, number, number, number][];
-  /**
-   * The pieces standing, filed by the `ITEM_CELL` cells their padded boxes
-   * cover (`free`, `put`): a new piece is asked only against those near it.
-   * Asked against every piece before it, an office floor of desks was a
-   * square of tests, 0.12 s of the buildings made in one pan (2026-10-14).
-   */
+  /** The pieces standing, filed by the `ITEM_CELL` cells their padded boxes cover (`free`, `put`) */
   private readonly filed = new Map<number, Furniture[]>();
   /** A corner asked inside the walls (`free`), the same object each time. */
   private readonly corner = { x: 0, y: 0 };
@@ -514,12 +473,7 @@ function lobby(p: Plan): void {
   p.put('plant', p.x1 - m(1), p.y0 + m(1));
 }
 
-/**
- * A floor of flats, from its plan (`spaces.ts`): the corridor's two walls with
- * a door into every home, the walls between homes on the boundaries between
- * window bays, and in each home a living room with its kitchen, a bedroom and
- * a bathroom, furnished.
- */
+/** A floor of flats, from its plan (`spaces.ts`) */
 function flatFloor(p: Plan, b: Building): boolean {
   const plan = flatPlan(b, p.v);
   if (!plan.corridor && plan.flats.length < 2) return false;
@@ -557,8 +511,7 @@ function flatFloor(p: Plan, b: Building): boolean {
       const at = P(u, s);
       p.put(kind, at.x, at.y, angle);
     };
-    // Living room: the TV on the side wall, the sofa facing it, a table by
-    // the window, the kitchen along the corridor wall.
+    // Living room: the TV on the side wall, the sofa facing it, a table by the window, the kitchen along the corridor wall.
     put('tv', m(0.35), D * 0.42, facing(1, 0));
     put('sofa', Math.min(living - m(0.6), m(3.4)), D * 0.42, facing(-1, 0));
     put('table', living * 0.5, m(1.5), facing(0, -1));
@@ -592,11 +545,7 @@ interface RoomCell {
   wall(u0: number, s0: number, u1: number, s1: number): void;
 }
 
-/**
- * A floor as rooms off a corridor, like the flats (`spaces.flatPlan`): rooms
- * `groupBays` window bays wide, walls between them on the bay boundaries, a
- * door from each to the corridor; `fill` furnishes each room for what it is.
- */
+/** A floor as rooms off a corridor, like the flats (`spaces.flatPlan`) */
 function roomsFloor(p: Plan, b: Building, groupBays: number, fill: (room: RoomCell) => void): boolean {
   const plan = flatPlan(b, p.v, groupBays);
   if (!plan.corridor && plan.flats.length < 2) return false;
@@ -627,11 +576,7 @@ function roomsFloor(p: Plan, b: Building, groupBays: number, fill: (room: RoomCe
   return true;
 }
 
-/**
- * An office room: rows of desks from the windows back, chairs behind them, a
- * shelf on the side wall; the first room a meeting room, the last the toilets
- * (cubicles along the corridor end, basins by the door).
- */
+/** An office room: rows of desks from the windows back, chairs behind them, a shelf on the side wall */
 function officeRoom(r: RoomCell): void {
   if (r.index === 0) {
     const s = Math.min(r.depth / 2, m(4));
@@ -709,11 +654,7 @@ function hotelRoom(r: RoomCell): void {
 /** The way a piece faces, as a direction in the floor's own axes (+y is the back). */
 const face = (dx: number, dy: number): number => Math.atan2(dx, -dy);
 
-/**
- * A room across the back of the floor, `depth` deep, behind a wall with a
- * door near its end: a stockroom, a kitchen. Returns where the wall stands
- * (the floor's back, when the floor is too shallow for one).
- */
+/** A room across the back of the floor, `depth` deep, behind a wall with a door near its end: a stockroom, a kitchen. */
 function backRoom(p: Plan, depth: number): number {
   if (p.y1 - p.y0 < depth + m(6)) return p.y1;
   const y = p.y1 - depth;
@@ -730,13 +671,7 @@ function kitchen(p: Plan, wall: number): void {
   p.put('table', (p.x0 + p.x1) / 2, (wall + p.y1) / 2 - m(0.3), 0, 0.8);
 }
 
-/**
- * A floor of a house: walls on the bays' boundaries, so no wall cuts a
- * window. Downstairs the living room at the front (the sofa facing the TV
- * across it), the kitchen and the table behind; upstairs two bedrooms over
- * the front and a bathroom behind. A one-storey house has it all on one
- * floor; a garage holds its shelves; a small wing is a study.
- */
+/** A floor of a house: walls on the bays' boundaries, so no wall cuts a window. */
 function houseFloor(p: Plan, b: Building, level: number): void {
   const v = p.v;
   const bays = Object.values(v.storeys[level - v.base]?.facade.bays ?? {});
@@ -758,8 +693,7 @@ function houseFloor(p: Plan, b: Building, level: number): void {
   const mid = Math.min(p.x1 - m(2.5), Math.max(p.x0 + m(2.5), v.x + Math.max(1, Math.round(n / 2)) * bay));
   const single = v.storeys.length === 1;
   const top = level === v.base + v.storeys.length - 1;
-  // The stairs: along the back wall of the right-hand side, the foot towards
-  // the middle; the same place on every floor, the opening over it above.
+  // The stairs: along the back wall of the right-hand side, the foot towards the middle
   const stairs0 = p.x1 - m(3.7);
   const stairX = p.x1 - m(1.85), stairY = p.y1 - m(0.6);
   const stairs = (): void => {
@@ -796,9 +730,7 @@ function houseFloor(p: Plan, b: Building, level: number): void {
     }
     return;
   }
-  // Upstairs: two bedrooms at the front, each with its door on the landing
-  // across the middle; behind it the bathroom (its door on the landing too)
-  // and the stairs.
+  // Upstairs: two bedrooms at the front, each with its door on the landing across the middle; behind it the bathroom
   const split = p.y0 + D * 0.5;
   const hall = split + m(1.2);
   const DOOR = m(0.5);
@@ -847,8 +779,7 @@ function homeUnits(p: Plan, b: Building, hotel: boolean): void {
     }
     // Living room at the front, bedroom at the back, kitchen and bath on the side.
     p.wallAcross(mid, ux0, ux1, ux0 + w * 0.3);
-    // The sofa's back to the wall behind it, facing the television on the
-    // front wall, which faces it back (angle 0 faces -y).
+    // The sofa's back to the wall behind it, facing the television on the front wall, which faces it back (angle 0 faces -y).
     p.put('sofa', ux0 + w * 0.45, mid - m(1.1), 0);
     p.put('tv', ux0 + w * 0.45, uy0 + m(0.4), Math.PI);
     p.put('table', ux0 + w * 0.75, uy0 + (mid - uy0) / 2, 0);

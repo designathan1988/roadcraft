@@ -2,14 +2,7 @@ import { reliefHeight, type ReliefVersion } from '@world/terrain';
 import { buildPlateMesh } from './plateMesh';
 import { cornerLand, woodsBase } from './woodsBase';
 
-/**
- * A plate of the map's land off the page's thread (`flatGroundPool.ts`): the
- * land's height at each of the plate's grid corners (rows from its north edge
- * down, as the terrain's grid), sent back as a transferred buffer with the
- * job's id, and the plate's first build from them (`plateMesh.ts`): its
- * normals and steepness, which were most of a plate's frame on the page
- * (profiled 2026-10-11).
- */
+/** A plate of the map's land off the page's thread (`flatGroundPool.ts`) */
 interface Ask { readonly id: number; readonly relief: ReliefVersion; readonly cx: number; readonly cy: number; readonly half: number; readonly cell: number; readonly side: number; readonly base: number }
 
 self.onmessage = (event: MessageEvent<Ask>) => {

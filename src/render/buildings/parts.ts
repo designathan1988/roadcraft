@@ -21,17 +21,7 @@ import { loadLot, loadedLot } from '@world/buildings/lotLibrary';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { forgetOtherDerived, readDerivedAll, writeDerived } from '../derivedCache';
 
-/**
- * Pictures of the things the galleries offer - a model, a window, a roof, a
- * stair - built by the same mesh builder that will build them on the map and
- * photographed from the game camera's own angle.
- *
- * A gallery of glyphs names the options; a gallery of pictures shows them. It
- * is a studio rather than a function because a picture costs a few
- * milliseconds: an interface that photographs eighty of them in one go freezes
- * for a third of a second (measured), so the pictures are taken a few per frame
- * and handed over as they are ready.
- */
+/** Pictures of the things the galleries offer - a model, a window, a roof, a stair */
 const SIZE = 224;
 /** Pictures per frame: enough to fill a row, small enough to hold 60 fps. */
 const PER_FRAME = 3;
@@ -70,11 +60,7 @@ function blank(): Building | null {
   return { ...instantiate(blueprint.body, { x: 0, y: 0 }, 0), id: -1 } as Building;
 }
 
-/**
- * The record a part is photographed from: the wall of a small block for a
- * window, that block under the roof in question, or a pad with one element
- * standing on it.
- */
+/** The record a part is photographed from */
 function partSample(id: string): Building | null {
   // A lot of the lot lab, once read (`ThumbnailStudio.request` reads it first).
   if (id.startsWith('lot:')) {
@@ -106,8 +92,7 @@ function partSample(id: string): Building | null {
 
   // A composition is photographed on the wall it composes.
   if ((FACADE_PATTERNS as readonly string[]).includes(id)) {
-    // Applied as the panel applies it - shopfronts, glazing, piers - or every
-    // pattern photographed as the same plain block.
+    // Applied as the panel applies it - shopfronts, glazing, piers - or every pattern photographed as the same plain block.
     applyFacadePattern(sample, { scope: 'building' }, id as FacadePattern);
     return sample;
   }
@@ -135,18 +120,11 @@ function partSample(id: string): Building | null {
 }
 
 export interface ThumbnailStudio {
-  /**
-   * Photographs the ids that are worth a picture, a few per frame, calling
-   * back with each batch. Ids already taken or already queued are ignored.
-   */
+  /** Photographs the ids that are worth a picture, a few per frame, calling back with each batch. */
   request(ids: readonly string[], onBatch: (images: ReadonlyMap<string, string>) => void): void;
   /** Releases the second GPU context at once. */
   dispose(): void;
-  /**
-   * While held (the Builder in use) the studio keeps its context between
-   * galleries: let go after four idle seconds, it was made again - a context,
-   * a kit and every shader of it - each time the player came back to a gallery.
-   */
+  /** While held (the Builder in use) the studio keeps its context between galleries */
   hold(on: boolean): void;
   /** How long the studio holds its context after the last picture. */
   IDLE_MS?: number;
@@ -162,11 +140,7 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
   const waiting: { id: string; onBatch: (images: ReadonlyMap<string, string>) => void }[] = [];
   let frame: number | null = null;
   let held = false;
-  /**
-   * The pictures taken in earlier sessions (`derivedCache.ts`), read once:
-   * a picture is the same while the code that makes it is the same, and
-   * taking it costs a building built and drawn.
-   */
+  /** The pictures taken in earlier sessions (`derivedCache.ts`), read once */
   let kept: Promise<Map<string, Blob>> | null = null;
   const keptPictures = (): Promise<Map<string, Blob>> => {
     if (!kept) {
@@ -215,14 +189,10 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
     if (!sample || !renderer || !kit || !scene || !camera) return;
     try {
       const meshes = buildBuildingMeshes([sample], () => 0, kit);
-      // A signature building's body is drawn with its own parts, as in the
-      // town (`layer.ts`); the shared kit drew only its lot - nothing at all
-      // for a landmark, which has no lot parts (`landmarks.ts`).
+      // A signature building's body is drawn with its own parts, as in the town (`layer.ts`); the shared kit drew only its lot
       const floor = drawsSignature(sample) ? emitChunk(sample, () => 0).signatureFloor : undefined;
       const signature = floor !== undefined ? buildSignature(sample, floor) : null;
       // A part that builds nothing keeps its glyph: an empty tile is a defect.
-      // (Read from the meshes: reading the picture's pixels back stopped the
-      // frame until the GPU had finished - MDN, "WebGL best practices".)
       if (meshes.triangles === 0 && !signature) {
         meshes.dispose();
         return;
@@ -231,19 +201,11 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       if (signature) meshes.group.add(signature);
       const box = buildingBounds(sample);
       const height = Math.max(buildingHeight(sample), 3);
-      // An element on its own stands on nothing: it is framed round itself,
-      // or the camera looks over its head and the picture clips its feet.
+      // An element on its own stands on nothing
       const alone = sample.volumes.length === 0;
       const span = Math.max(box.maxX - box.minX, box.maxY - box.minY, height * 0.9) + (alone ? 2 : 4);
       const focus = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
-      // One preset per kind of thing, as engines give each asset type its own
-      // thumbnail renderer: a roof is seen from above, so it is the roof that
-      // differs between pictures; a window or door from in front, close, so
-      // the opening fills the frame; a model and an element in 3/4.
-      // Every picture is fitted the same way: the thing's bounding sphere fills
-      // ~85% of the frame, so a kiosk and a tower read at the same size.
-      // The drawn meshes' own box, not the record's plan: models stand rotated
-      // and on plinths, and the plan's centre left them in a corner.
+      // One preset per kind of thing, as engines give each asset type its own thumbnail renderer
       const view = ROOF_PARTS[id] ? 'roof' : WALL_PARTS[id] ? 'wall' : 'model';
       const bounds = new Box3().setFromObject(meshes.group);
       const centre = bounds.getCenter(new Vector3());
@@ -267,8 +229,7 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       camera.lookAt(centre);
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
-      // The picture is taken now and encoded off the frame (`toBlob`); it is
-      // kept for the next sessions (`derivedCache.ts`).
+      // The picture is taken now and encoded off the frame (`toBlob`); it is kept for the next sessions (`derivedCache.ts`).
       renderer.domElement.toBlob((blob) => {
         if (!blob) return;
         if (KIT_HASH) writeDerived(`thumb:${KIT_HASH}:${id}`, blob);
@@ -288,9 +249,7 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       waiting.length = 0;
       return;
     }
-    // At least one a frame, and no more once the frame's share is spent: a
-    // picture costs from a few to forty milliseconds, and three of the dear
-    // ones in a frame were a 130 ms stall.
+    // At least one a frame, and no more once the frame's share is spent
     const started = performance.now();
     for (let i = 0; i < PER_FRAME && waiting.length > 0 && (i === 0 || performance.now() - started < FRAME_SHARE_MS); i++) {
       const next = waiting.shift();
@@ -302,10 +261,7 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       frame = requestAnimationFrame(step);
       return;
     }
-    // Nothing left to shoot and the Builder put down: hand the second GPU
-    // context back rather than holding two of them open for the rest of the
-    // session. The pictures already on screen are the ones the studio was
-    // holding.
+    // Nothing left to shoot and the Builder put down
     if (!held) idle = setTimeout(release, IDLE_MS);
   };
 
@@ -330,8 +286,7 @@ export function createThumbnailStudio(gl: WebGLRenderer): ThumbnailStudio {
       const fresh = ids.filter((id) => !done.has(id) && !queued.has(id));
       for (const id of fresh) queued.add(id);
       if (!fresh.length) return;
-      // The pictures kept from earlier sessions go up at once, with no GPU;
-      // only the others are taken. A lot is read before its picture.
+      // The pictures kept from earlier sessions go up at once, with no GPU; only the others are taken.
       const lots = fresh.filter((id) => id.startsWith('lot:')).map((id) => loadLot(id.slice(4)));
       void Promise.all(lots).then(() => keptPictures()).then((pictures) => {
         const ready = new Map<string, string>();

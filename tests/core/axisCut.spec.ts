@@ -3,11 +3,7 @@ import { cutAtAxis } from '@core/axisCut';
 import { area, intersection, type MultiPoly, type Poly, type Ring } from '@core/clipper';
 import { Rng } from '@core/rng';
 
-/**
- * `cutAtAxis` replaces a general boolean intersection in `splitToSpan`, so it
- * is held to the same answer: the two sides together are the polygon, each side
- * is what the clipper would have cut, and the two meet at the same points.
- */
+/** `cutAtAxis` replaces a general boolean intersection in `splitToSpan`, so it is held to the same answer */
 
 const square = (x0: number, y0: number, x1: number, y1: number): Ring => [
   [x0, y0], [x1, y0], [x1, y1], [x0, y1],
@@ -34,14 +30,12 @@ function check(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, MultiPoly] {
   const whole = area([polygon]);
   // Together, exactly the polygon.
   expect(area(below) + area(above)).toBeCloseTo(whole, 6);
-  // Each side is the clipper's side, up to the few thousandths the cut may
-  // have been moved off a vertex (times the polygon's extent across it).
+  // Each side is the clipper's side, up to the few thousandths the cut may have been moved off a vertex
   const tolerance = 0.04 * 60;
   expect(Math.abs(area(below) - area(clipSide(polygon, axis, at, 0)))).toBeLessThan(tolerance);
   expect(Math.abs(area(above) - area(clipSide(polygon, axis, at, 1)))).toBeLessThan(tolerance);
 
-  // The line actually cut: the cut may have moved off a vertex, and every
-  // point below it is strictly below except the ones made on it.
+  // The line actually cut: the cut may have moved off a vertex
   let line = -Infinity;
   for (const p of below) for (const ring of p) for (const q of ring) line = Math.max(line, q[axis] as number);
   expect(Math.abs(line - at)).toBeLessThan(0.04);
@@ -59,8 +53,7 @@ function check(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, MultiPoly] {
   expect(onLine(below).length).toBeGreaterThan(0);
   expect(onLine(below)).toEqual(onLine(above));
 
-  // The clipper's winding in world axes, on both sides and for both axes:
-  // outer rings anticlockwise, holes clockwise.
+  // The clipper's winding in world axes, on both sides and for both axes: outer rings anticlockwise, holes clockwise.
   for (const side of [below, above]) {
     for (const p of side) {
       p.forEach((ring, r) => {

@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WOODS_SLOPE_STEP, WOODS_SPACING, cornerLand, woodsBase } from '@render/woodsBase';
 import { natureDensity } from '@render/natureNoise';
 
-/**
- * THE WOODS' DENSITY MADE OFF THE PAGE (`render/woodsBase.ts`): with the
- * ecosystem's share added, the density the tree sweep works out itself
- * (`renderer.ts` natureSweep) - and the plate's land read from its corners
- * as the terrain reads it.
- */
+/** THE WOODS' DENSITY MADE OFF THE PAGE (`render/woodsBase.ts`) */
 describe("the woods' base", () => {
   it('is the sweep\'s own density less the ecosystem\'s share', () => {
     const half = 160, cx = 3840, cy = -1920;

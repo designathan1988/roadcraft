@@ -5,19 +5,7 @@ import { GB_NX, GB_NY, GB_SIDE, GB_WIDTH, GB_X, GB_Y, GB_Z, GROUND_BAY_STRIDE, g
 import { pointInPolygon } from '@core/polygon';
 import type { BayComponent, Building } from './types';
 
-/**
- * The doors of a building that open straight onto the street: a shop or a
- * bar built up to the footway (a lot with no front garden or forecourt,
- * `editor/lotPlan.ts` front 'street'), whose front door is the people's way
- * in - there is no gate in front of it, so the way through a lot to its door
- * (`sim/agents/lotDoors.ts`, from a people's gate) never found it.
- *
- * A door of the ground floor on the front face (the side the lot fronts the
- * street with, local -y) with nothing of the building in front of it: no lot
- * laid there (a forecourt, a garden), no block. Its threshold is on the
- * facade line; a person steps out of it onto the footway along its normal.
- * World units; the doors in the order of the facade's bays.
- */
+/** The doors of a building that open straight onto the street: a shop or a bar built up to the footway */
 export interface StreetDoor {
   /** The middle of the threshold, on the facade line. */
   readonly x: number;
@@ -45,8 +33,7 @@ export function streetDoors(b: Building): StreetDoor[] {
     if (bays[o + GB_SIDE] !== 0 || !PEOPLE_DOORS.has(groundBayComponent(bays, i))) continue;
     const x = bays[o + GB_X]!, y = bays[o + GB_Y]!, nx = bays[o + GB_NX]!, ny = bays[o + GB_NY]!;
     const foot: Vec2 = worldToLocal(b, { x: x + nx * STEP_OUT, y: y + ny * STEP_OUT });
-    // Something of the building in front of it - a forecourt, a garden, a
-    // porch block - means the door is reached through the lot, by its gate.
+    // Something of the building in front of it - a forecourt, a garden, a porch block
     if (rings.some((ring) => pointInPolygon(foot, ring))) continue;
     out.push({ x, y, nx, ny, width: bays[o + GB_WIDTH]!, z: bays[o + GB_Z]! });
   }

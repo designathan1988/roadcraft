@@ -10,23 +10,7 @@ import { leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { m } from '@world/units';
 
-/**
- * THE TREES of the countryside and the planted ones: the cypress, the palm
- * and the oak the player drew (2026-10-08), grown by the game's one tree
- * style (`lowPolyTrees.ts`), the same the city's street and garden trees
- * are - low-poly, faceted, each face its own shade.
- *
- * One model a tree, whatever the distance: the levels of detail of the old
- * kit changed a tree's shape before the player's eyes ("ainda tem lod"), and
- * few trees stand on a map now (`renderer.ts` NATURE_TREES), so the whole
- * model is drawn everywhere.
- *
- * Each stands as its neighbours let it, as trees in a stand grow competing
- * for light and space (Runions et al., "Modeling Trees with a Space
- * Colonization Algorithm"; Palubicki et al., "Self-organizing tree models",
- * SIGGRAPH 2009): in the heart of a wood taller and narrower, at its edge and
- * alone broader, the crown leaning out towards the open side.
- */
+/** THE TREES of the countryside and the planted ones: the cypress, the palm and the oak the player drew */
 
 /** The models, in seed order: each takes its share of the seed's range (`world/trees.ts` KIND_SLOTS). */
 export const TREE_MODELS = ['oak', 'oak', 'cypress', 'cypress', 'palm', 'palm'] as const;
@@ -92,12 +76,7 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
 
 export interface NatureForest {
   readonly meshes: readonly InstancedMesh[];
-  /**
-   * Takes these trees in place of the ones it holds, written into the meshes
-   * it already has: a buffer cannot be resized, but its content can be
-   * rewritten (three's manual, "How to update things"). False when a variety
-   * has more trees than its meshes hold: a new forest is built then.
-   */
+  /** Takes these trees in place of the ones it holds, written into the meshes it already has */
   update(trees: readonly TreePlacement[]): boolean;
   /** Writes the trees into their meshes when the camera has moved (one level: the same model at every distance). */
   updateLod(x: number, y: number, z: number): void;
@@ -117,19 +96,12 @@ function forestRoom(trees: readonly { readonly seed: number }[], kit: NatureTree
 /** A cell of the stand grid as one number (a string key per tree and neighbour was most of the cost). */
 const standKey = (cx: number, cy: number): number => cx * 100_003 + cy;
 
-/**
- * How each tree stands among its neighbours: how crowded it is (0 alone .. 1
- * deep in a wood) and which way the open ground lies (unit, map axes).
- */
+/** How each tree stands among its neighbours: how crowded it is */
 function stands(trees: readonly TreePlacement[]): { crowd: Float32Array; openX: Float32Array; openY: Float32Array } {
   return standsAmong(trees, trees);
 }
 
-/**
- * How each of `trees` stands among `among` (which holds them, and every tree
- * within `STAND_REACH` of one of them): what a forest kept cell by cell reads
- * of its neighbours (`plantCells.ts`).
- */
+/** How each of `trees` stands among `among` (which holds them, and every tree within `STAND_REACH` of one of them) */
 export function standsAmong(trees: readonly TreePlacement[], among: readonly TreePlacement[]): { crowd: Float32Array; openX: Float32Array; openY: Float32Array } {
   const cell = STAND_REACH;
   const grid = new Map<number, number[]>();
@@ -163,12 +135,7 @@ export function standsAmong(trees: readonly TreePlacement[], among: readonly Tre
   return { crowd, openX, openY };
 }
 
-/**
- * A tree's matrix, into `m` at `o`: deep in a wood taller and narrower; at
- * its edge and alone broader, the crown leaning out over the open side (a
- * shear, the foot kept). World = translate * shear * rotateY * scale, column by
- * column as three keeps a matrix (`Matrix4.elements`).
- */
+/** A tree's matrix, into `m` at `o`: deep in a wood taller and narrower */
 export function treeMatrixInto(item: TreePlacement, crowd: number, openX: number, openY: number, m: { [i: number]: number }, o: number): void {
   const tall = item.size * (0.92 + 0.22 * crowd);
   const wide = item.size * (1.12 - 0.3 * crowd) * (0.94 + ((item.seed * 5.3) % 1) * 0.12);
@@ -181,11 +148,7 @@ export function treeMatrixInto(item: TreePlacement, crowd: number, openX: number
   m[o + 12] = item.x; m[o + 13] = item.z; m[o + 14] = -item.y; m[o + 15] = 1;
 }
 
-/**
- * A tree's own green, into `col` at `o` (it multiplies the model's linear
- * colours, three's color_vertex): a little lighter or darker, and leaning
- * yellow or blue, so a wood is many trees and not one copied.
- */
+/** A tree's own green, into `col` at `o` (it multiplies the model's linear colours, three's color_vertex) */
 export function treeColourInto(item: TreePlacement, col: { [i: number]: number }, o: number): void {
   const t = 0.9 + ((item.seed * 3.77) % 1) * 0.2;
   const hue = ((item.seed * 1.3) % 1) - 0.5;
@@ -194,11 +157,7 @@ export function treeColourInto(item: TreePlacement, col: { [i: number]: number }
   col[o + 2] = t * (0.96 - hue * 0.12);
 }
 
-/**
- * The trees, instanced per variety: one mesh each, the whole model at every
- * distance. `room`: how many trees each variety's mesh holds (at least the
- * trees given; more lets `update` take a larger forest without new meshes).
- */
+/** The trees, instanced per variety: one mesh each, the whole model at every distance. */
 export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTreeKit, room: readonly number[] = forestRoom(trees, kit)): NatureForest {
   const varieties = kit.variants.length;
   const meshes: InstancedMesh[] = [];
@@ -227,10 +186,7 @@ export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTr
     if (variant.cards) {
       cards = new InstancedMesh(variant.cards, kit.cardMaterial, capacity);
       cards.name = `nature-tree-${TREE_MODELS[k] ?? k}-${k}-cards`;
-      // The crown's heart throws the tree's shadow; alpha-cut cards in the
-      // shadow pass cost far more than they add. A palm has no heart: its
-      // few frond strips are its crown, and throw its shadow (wind and the
-      // alpha cut in the depth pass, three: customDepthMaterial).
+      // The crown's heart throws the tree's shadow; alpha-cut cards in the shadow pass cost far more than they add.
       cards.castShadow = TREE_MODELS[k] === 'palm';
       cards.customDepthMaterial = kit.cardDepth;
       cards.receiveShadow = false;

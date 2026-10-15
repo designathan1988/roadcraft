@@ -36,16 +36,7 @@ import { createBlast } from './blast';
 import { createDestruction } from './destruction';
 import { compileAhead } from './uploads';
 
-/**
- * What shots and blows leave behind: the bodies they throw (`ragdoll.ts`,
- * Jolt), the blood and guts, explosions and their debris, buildings broken
- * block by block, the tracers and the muzzle flash. Wanted by the dock's
- * Actions (a shot, a bomb) and by walking the city as a person (`src/play.ts`).
- *
- * Loaded the first time one of them is wanted (`SceneHandle.effects`, a
- * dynamic import in `renderer.ts`): until somebody shoots or drops a bomb none
- * of it is in the game's bundle, made at the opening or run in a frame.
- */
+/** What shots and blows leave behind: the bodies they throw */
 export interface PlayEffectsContext {
   readonly scene: Scene;
   readonly exhaust: Exhaust;
@@ -60,13 +51,7 @@ export interface PlayEffectsContext {
   readonly pavedHeightAt: (x: number, y: number) => number;
   readonly camera: () => Camera;
   readonly onAssetsReady: () => void;
-  /**
-   * The muzzle's flash and the blast's: made by the renderer with the scene,
-   * in it from the start at no intensity. A light is part of every lit
-   * material's program (three's `numPointLights`): added on the first shot,
-   * two lights recompiled every shader in the scene at once - the game
-   * stopped for over ten seconds (the player, 2026-10-08).
-   */
+  /** The muzzle's flash and the blast's: made by the renderer with the scene, in it from the start at no intensity. */
   readonly lights: { readonly muzzle: PointLight; readonly blast: PointLight };
 }
 
@@ -116,15 +101,7 @@ export interface Tracers {
   dispose(): void;
 }
 
-/**
- * THE TRACERS: one set of line segments made once, a slot a shot (the oldest
- * taken again past `TRACER_SLOTS`), each faded out by its vertices' alpha
- * (three's `vertexAlphas`: a colour attribute of four) - one draw call, and
- * nothing made or thrown away a shot (three's BufferAttribute: written in
- * place, `needsUpdate` uploads it, `DynamicDrawUsage` says it changes).
- * Before, every shot made its own geometry, line and cloned material, and
- * disposed of them a tenth of a second later.
- */
+/** THE TRACERS: one set of line segments made once, a slot a shot */
 export function createTracers(scene: Scene): Tracers {
   const positions = new BufferAttribute(new Float32Array(TRACER_SLOTS * 2 * 3), 3).setUsage(DynamicDrawUsage);
   const colours = new BufferAttribute(new Float32Array(TRACER_SLOTS * 2 * 4), 4).setUsage(DynamicDrawUsage);
@@ -209,14 +186,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   const ragdollGround = new Map<number, number>();
   /** The document's serial of what the ground found is read from (`wallsNear`). */
   let ragdollGroundSerial = '';
-  /**
-   * The buildings whose box (their volumes, lots included, and elements such
-   * as parking bays) reaches a point, grown a little: the store's own index
-   * (`BuildingStore.near`, the same box, `buildingBounds`), each candidate then
-   * asked exactly (`lotHeightAt`), in the store's order. DO NOT file the town's
-   * buildings again here: the grid made from `buildings.all()` was made again
-   * for the first body after every change of a road, the land or a lot.
-   */
+  /** DO NOT file the town's buildings again here */
   const LOT_GROW = m(2);
   const lotsAt = (x: number, y: number): readonly Building[] =>
     ragdollSim?.doc.buildings.near(x - LOT_GROW, y - LOT_GROW, x + LOT_GROW, y + LOT_GROW) ?? [];
@@ -226,10 +196,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     const known = ragdollGround.get(key);
     if (known !== undefined) return known;
     const cx = ix / 5, cy = iy / 5;
-    // Only the lots whose box covers this cell of the grid (`lotsAt`): a cell
-    // no longer depends on which lots came near the bodies, so a lot coming
-    // near does not throw away every height found, and a miss is not a walk
-    // over every lot of the town.
+    // Only the lots whose box covers this cell of the grid (`lotsAt`)
     let h = NaN;
     for (const b of lotsAt(cx, cy)) {
       h = buildings.lotHeightAt(b.id, cx, cy);
@@ -243,11 +210,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   };
   /** A vehicle as a body sees it: where it stands and the box it fills. */
   interface VehicleBox { x: number; y: number; angle: number; hl: number; hw: number; height: number }
-  /**
-   * Every vehicle's box at one tick of one world: made once for all the bodies born in it (a blast
-   * throws dozens at once), not for each body. DO NOT walk and pose the whole fleet for every body
-   * that falls: ~700-1,200 vehicles a body, a hundred thousand objects in the frame of a blast.
-   */
+  /** DO NOT walk and pose the whole fleet for every body that falls */
   const vehicleBoxes = { sim: null as SimWorld | null, tick: -1, list: [] as VehicleBox[] };
   const poseScratch = newPose();
   const boxesAtThisTick = (sim: SimWorld): readonly VehicleBox[] => {
@@ -268,12 +231,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   };
   const ragdollWorld: RagdollWorld = {
     groundAt(x, y) {
-      // Between the heights at the corners of its cell, as a physics
-      // engine's heightfield is a surface between its samples (PhysX): one
-      // height a cell, read where it was first asked, a cell across a
-      // footway's edge held the footway's height or the grass's by turns, and
-      // a hand lying still on the grass was thrown up the 28 cm between them
-      // (measured 2026-10-06).
+      // Between the heights at the corners of its cell, as a physics engine's heightfield is a surface between its samples
       const gx = x * 5, gy = y * 5, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
       const a = ragdollCorner(ix, iy), b = ragdollCorner(ix + 1, iy), c = ragdollCorner(ix, iy + 1), d = ragdollCorner(ix + 1, iy + 1);
       return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
@@ -281,13 +239,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     wallsNear(x, y, reach) {
       // The buildings standing (not a ruin) and the walls, fences and hedges of their lots.
       const out: RagdollWall[] = [];
-      // The heights found stand until the ground under them changes (as a
-      // physics engine's heightfield is made once and modified in place,
-      // PhysX): a road, the terrain or a lot edited, a building gone or
-      // broken. Forgotten at every call, every body asking every frame, they
-      // were found again and again - the dead after a bomb cost milliseconds a
-      // frame. Not every building edit: the city's ageing replaces records
-      // every few seconds without moving any ground.
+      // The heights found stand until the ground under them changes
       const land = ragdollSim?.doc;
       const serial = land ? `${land.changes.serialOf('roads', 'terrain', 'lots')}:${land.buildings.size}:${destruction.ruined.size}` : '';
       if (serial !== ragdollGroundSerial) {
@@ -309,9 +261,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
           if ((e.kind === 'wall' || e.kind === 'fence' || e.kind === 'hedge') && e.z <= 0.01) out.push({ ring: elementRing(b, e), top: floor + e.h });
         }
       }
-      // Everything else standing there (the player, 2026-10-06: a body goes
-      // through nothing): poles, trees, benches, bins, drawn walls and
-      // fences, and the cars - each a ring up to its height.
+      // Everything else standing there (the player, 2026-10-06: a body goes through nothing)
       const doc = ragdollSim?.doc;
       if (doc) {
         for (const s of solidsOf(doc).near(x, y, reach)) {
@@ -340,11 +290,9 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       return out.filter((w) => w.ring.length >= 3);
     },
   };
-  // A body torn apart: a limb or two and what was inside thrown over the
-  // street, where they stay; blood spraying off them as they fly.
+  // A body torn apart: a limb or two and what was inside thrown over the street, where they stay
   ragdolls.onGore = (x, y, z, dx, dy, speed, kind) => {
     // The limbs themselves are the person's own, thrown by the ragdolls (`detach`).
-    // Scraps of flesh: small, dark with blood, not bright cubes.
     const organs = kind === 'torn' ? 4 + Math.floor(Math.random() * 4) : 1;
     for (let k = 0; k < organs; k++) {
       const s0 = m(0.04 + Math.random() * 0.07);
@@ -544,8 +492,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
         const push = away(v.x, v.y, m(9)).add(new Vector3(0, m(3), 0));
         const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), v.angle);
         const spin = new Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 3);
-        // The burnt shell of its own body (each model its own wreck, buckled
-        // its own way), burning; a two-wheeler, light, thrown further.
+        // The burnt shell of its own body (each model its own wreck, buckled its own way), burning
         const own = v.archetype && v.id !== undefined ? agents.carcass({ id: v.id, archetype: v.archetype }) : null;
         if (own) {
           own.computeBoundingBox();
@@ -572,8 +519,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
         const g = ground(item.x, item.y);
         const push = away(item.x, item.y, m(6));
         if (item.kind === 'tree') {
-          // Split: a broken stump left standing, charred; the top - trunk
-          // and crown - torn off at the break and thrown over, burning.
+          // Split: a broken stump left standing, charred; the top - trunk and crown
           const tall = m(6 + Math.random() * 3), cut = tall * (0.25 + Math.random() * 0.25);
           const axis = new Vector3(push.z, 0, -push.x).normalize();
           blast.debris({ shape: 'cylinder', kind: 'char', color: 0x2b211a, at: new Vector3(item.x, g + cut / 2, -item.y), size: new Vector3(m(0.22), cut, m(0.22)),

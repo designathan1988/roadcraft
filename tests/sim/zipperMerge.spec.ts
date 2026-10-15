@@ -5,18 +5,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { collisions, simOf } from './support/bodies';
 
-/**
- * TWO LANES INTO ONE ZIP.
- *
- * An avenue narrowing into a street merges its two lanes into one at the
- * taper. The merge zone was claimed by one car at a time until its body had
- * left the junction, and a stream from one lane kept it for as long as it kept
- * rolling (each follower joined the claim ahead of it), so the head of the
- * other lane stood at the taper for over twenty seconds. Now the car nearer
- * the shared lane is FOLLOWED across movements (`mergeObstacle`), the next
- * car may merge in behind it (`mergeFollows`), and the lanes take turns
- * (`zipperHolds`).
- */
+/** TWO LANES INTO ONE ZIP. */
 function laneDrop(): RoadDoc {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: -700, y: 0 });

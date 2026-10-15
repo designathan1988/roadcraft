@@ -38,14 +38,7 @@ function gameCity(groundAt: (x: number, y: number) => number): { doc: ReturnType
   return { doc, net };
 }
 
-/**
- * NOBODY SPINS ON THE SPOT (Etapa 5a). In the generated city a walker on a
- * short stretch of a back yard's path, a little aside of it, steered for the
- * stretch's end at more than 60°, stood, turned and circled it at 4 rad/s,
- * never reaching the end (2026-10-10, by a barbecue). A spin is the heading
- * round more than a whole turn within 2 s (turning back is half a turn) while the body stays within half a
- * metre. Run on the city `main.ts` generates, with the scenery's people.
- */
+/** NOBODY SPINS ON THE SPOT (Etapa 5a). */
 describe('walkers in the generated city', () => {
   it('never spin on the spot', () => {
     // A gentle hillside, as new maps are born (the yards terraced, with steps).

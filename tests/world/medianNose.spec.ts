@@ -5,9 +5,7 @@ import { medianAt, medianNose } from '@world/landscape';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 
-// A boulevard's median island stops short of the crossing at a junction: the
-// zebra is crossed on the road, never over a kerbed, planted island
-// (2026-10-09: people stood on the grass halfway across).
+// A boulevard's median island stops short of the crossing at a junction
 describe('median nose', () => {
   it('stands back of the crossing, and nothing is planted on the zebra', () => {
     const doc = new RoadDoc();

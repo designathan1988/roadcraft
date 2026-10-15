@@ -111,9 +111,7 @@ describe('a MakeHuman person rigged for the crowd', () => {
 
 
 it('separates adult sex profile mesh distributions at 95%', () => {
-  // Anatomy is measured on the generated body, before clothes or hair can
-  // provide clues. Fixed topology regions are selected once on the neutral
-  // base; no per-person slider value participates in measurement or scoring.
+  // Anatomy is measured on the generated body, before clothes or hair can provide clues.
   const centre = (positions: Float32Array, name: string, axis: number): number => {
     let sum = 0, count = 0;
     for (const [a, b] of base.vertexGroups[name]!) for (let v = a; v <= b; v++) {
@@ -125,11 +123,7 @@ it('separates adult sex profile mesh distributions at 95%', () => {
   for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) bodyVertices.add(v);
   const localIndices = new Uint16Array(packs.localBin, packs.local.layout.indices.byteOffset, packs.local.entryCount);
   const localDeltas = new Int16Array(packs.localBin, packs.local.layout.deltas.byteOffset, packs.local.entryCount * 3);
-  // Broad support-region extrema were invalid: untouched peripheral vertices
-  // owned the measured width/height, so even a full chin-width or lip-volume
-  // target changed those measurements by zero. Fix anatomical landmarks once
-  // from the authored target's strongest positive/negative axis displacement.
-  // Selection never reads a generated body, label, seed or desired test result.
+  // Broad support-region extrema were invalid
   const landmarks = (name: string, axis: number): [number, number] => {
     const target = packs.local.targets.find(t => t.name === name)!;
     let lo = Infinity, hi = -Infinity, lowVertex = -1, highVertex = -1;
@@ -169,9 +163,7 @@ it('separates adult sex profile mesh distributions at 95%', () => {
     expect(measures.every(Number.isFinite)).toBe(true);
     return { sex, measures };
   });
-  // Direct pairwise rank separation: no classifier, fitted threshold or
-  // parameter signs. Direction is specified before sampling. This measures
-  // geometric distributions, not recognition of a rendered person's sex.
+  // Direct pairwise rank separation: no classifier, fitted threshold or parameter signs.
   const female = cohort.filter(row => row.sex === 0);
   const male = cohort.filter(row => row.sex === 1);
   const dimensions = ['lower jaw width / height', 'chin projection / height', 'lip thickness / height'];
@@ -191,9 +183,7 @@ it('separates adult sex profile mesh distributions at 95%', () => {
       rankSeparation: ordered / (female.length * male.length) };
   });
   console.log('Natural adult mesh profile distributions', JSON.stringify(distributions));
-  // Jaw and chin carry the sex; lips overlap between the sexes in real
-  // people. Pushing lip volume until it separated at 95% (lips at 85% of the
-  // slider) drew caricatured mouths - the player's "monsters".
+  // Jaw and chin carry the sex; lips overlap between the sexes in real people.
   const floor: Record<string, number> = { 'lip thickness / height': 0.75 };
   for (const result of distributions) {
     expect(result.rankSeparation, result.dimension).toBeGreaterThanOrEqual(floor[result.dimension] ?? 0.95);

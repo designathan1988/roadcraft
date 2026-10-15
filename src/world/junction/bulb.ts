@@ -12,45 +12,18 @@ import { m } from '../units';
 import { buildLegs } from './legs';
 import type { Junction } from './build';
 
-/**
- * A TURNING CIRCLE AT A ROAD'S END (docs/source/VIAS.md V8, balão de retorno): the
- * player marks an end as one (`RoadNode.end`), and traffic turns round there
- * instead of leaving the map.
- *
- * The carriageway is a circle of `BULB_RADIUS` round the end: fire codes ask
- * 13-15 m (Chico, CA: a 48 ft outside radius; Hebron, OH: a 44 ft pavement
- * radius), and smaller bulbs of 10-14 m serve houses (Center for Watershed
- * Protection). Cars and vans turn round in it; a bus or a lorry fits it alone,
- * but one following another round at the closest gap would stand in it, so
- * the turn is not offered to them (`turnPaths.ts` sweep). Every outer surface - kerb,
- * footway, verge - is that circle carried out by its own width, as the
- * levels of a road are, so the painter stacks them as it stacks a junction's.
- * The road's ribbon stops where its edge meets the circle; the circle covers
- * the rest of it.
- */
+/** A TURNING CIRCLE AT A ROAD'S END (balão de retorno): the player marks an end as one */
 export const BULB_RADIUS = m(13);
-/**
- * The radius traffic turns round it at: a body on this line keeps inside the
- * circle and its kerb returns, a 12 m bus included (measured).
- */
+/** The radius traffic turns round it at */
 export const BULB_TURN_RADIUS = BULB_RADIUS - m(3);
 
-/**
- * The kerb's return from the road's edge into the circle (Silverton, OR:
- * a 25 ft curb radius at a bulb's transition): without it the edge met the
- * circle in a notch a car keeping right swept out of.
- */
+/** The kerb's return from the road's edge into the circle (Silverton, OR: a 25 ft curb radius at a bulb's transition) */
 const BULB_RETURN = m(7.5);
 
 /** A bulb's outline at some lateral reach, in its leg's frame at the node. */
 interface Outline { readonly ring: Ring; readonly mouth: number }
 
-/**
- * The outline `grow` outside the carriageway's (a kerb, a footway, a walking
- * line), whose road edges stand `hwL` and `hwR` off the centreline: the
- * circle grown by `grow` and its kerb returns shrunk by it, so every outline
- * runs parallel to the carriageway's. `mouth` is where the returns begin.
- */
+/** The outline `grow` outside the carriageway's */
 function outline(c: Vec2, dir: Vec2, nrm: Vec2, hwL: number, hwR: number, grow: number): Outline | null {
   const r = BULB_RADIUS + grow;
   const rf = Math.max(m(0.5), BULB_RETURN - grow);
@@ -104,11 +77,7 @@ export function buildBulb(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId, le
   };
 }
 
-/**
- * A line round a bulb `offset` from its road's centreline on both sides (a
- * footway's walking line), from its left end round the far side to its
- * right: the walk that joins a cul-de-sac's two footways.
- */
+/** A line round a bulb `offset` from its road's centreline on both sides */
 export function bulbLine(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId, offset: number): Vec2[] | null {
   const node = doc.node(nodeId);
   if (!node || node.incident.length !== 1 || node.end !== 'bulb') return null;
@@ -121,24 +90,7 @@ export function bulbLine(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId, off
   return [...flat.slice(1), flat[0]!];
 }
 
-/**
- * Whatever stands in a turning circle's carriageway is taken away - a pole,
- * a tree, a bench set on the footway of a road's end before it was made a
- * circle (a pole stood in the middle of one, 2026-10-10), an element laid
- * there: nothing stands on the road. The number taken.
- *
- * Only the circles the network changed since the last clearing are looked
- * at (`Network.changesSince`: a node made a circle, moved, its road changed),
- * and in each only what stands round it, by place (`RoadDoc.polesIn`,
- * `landscapeIn`). DO NOT walk every junction of the map, and every pole and
- * element of the map for each, after every edit (it ran after every road
- * drawn, `main.ts`).
- *
- * A clearing reads the network's changes since its own last call: one
- * clearing for one game (`main.ts` keeps it), its cursor its own. DO NOT keep
- * the cursor in the module by network: the network changes in place, and
- * which caller last read it is the caller's to know.
- */
+/** DO NOT walk every junction of the map, and every pole and element of the map for each, after every edit */
 export function bulbClearing(): (doc: RoadDoc, net: Network) => number {
   let read: { net: Network; state: object } | null = null;
   return (doc, net) => {
@@ -172,8 +124,7 @@ function clearBulbsOf(doc: RoadDoc, net: Network, delta: ReturnType<Network['cha
       if (inside(item) && doc.removeLandscape(item.id)) taken++;
     }
   }
-  // The elements round each circle by place (`RoadDoc.elementsIn`), taken
-  // away together in one pass.
+  // The elements round each circle by place (`RoadDoc.elementsIn`), taken away together in one pass.
   const inside = new Set<ElementItem>();
   for (const bulb of bulbs) {
     for (const item of doc.elementsIn(bulb.box)) {

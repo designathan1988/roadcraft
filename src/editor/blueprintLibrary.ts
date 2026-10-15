@@ -4,25 +4,14 @@ import { migrateBuilding } from '@world/buildings/serialize';
 import { rescaleBuilding, unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT } from '@world/units';
 
-/**
- * The player's own blueprints: a building saved from the map, reusable on any
- * map. Kept in `localStorage`, beside the autosave, and read through the same
- * `migrateBuilding` door as every stored building, so a blueprint written by
- * an older build loads repaired rather than not at all.
- *
- * Stored as a `KeptList` (`core/keptList.ts`): saving or removing one blueprint
- * writes every other back as it was, one this build cannot read included, and a
- * save or removal that did not happen says so (null/false). DO NOT drop the
- * oldest past a count: the 49th save erased the first without a word; the
- * browser's quota is the limit, and a save past it is told.
- */
+/** DO NOT drop the oldest past a count: the 49th save erased the first without a word */
 const KEY = 'roadcraft.blueprints.v1';
 
 interface StoredBlueprint {
   readonly key: string;
   readonly name: string;
   readonly body: unknown;
-  /** Metres per world unit it was saved in; absent: 0.4, before 2026-10-10 (docs/source/ESCALA.md). */
+  /** Metres per world unit it was saved in; absent: 0.4, before 2026-10-10. */
   readonly unit?: number;
 }
 

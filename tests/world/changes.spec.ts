@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type Change, type ChangeKind, ChangeJournal, journalWork } from '@world/changes';
 
-/**
- * The diary's readers of some kinds (`since` with kinds): a kind is forgotten
- * only by entries of its own, and a kind that did not move costs nothing to
- * ask about. In one ring of 2.048 for all, a city growing (thousands of
- * building entries) told the ground's readers "everything changed", and they
- * laid the whole map again (docs/AUDITORIA-2026-10-14.md D8/C1).
- */
+/** The diary's readers of some kinds (`since` with kinds) */
 const R = [0, 0, 1, 1] as const;
 
 describe('the diary read by kind', () => {
@@ -25,8 +19,7 @@ describe('the diary read by kind', () => {
   });
 
   it('forgets a kind by its own entries', () => {
-    // The last 2,048 of a kind are always kept; older ones are let go (in a batch, past twice that) when
-    // no reader that follows the diary still needs them (`ChangeJournal.follow`).
+    // The last 2,048 of a kind are always kept; older ones are let go
     const j = new ChangeJournal();
     for (let i = 0; i < 4097; i++) j.record('ground', [R]);
     expect(j.since(0, ['ground'])).toBeNull();

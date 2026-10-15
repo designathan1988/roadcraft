@@ -5,17 +5,7 @@ import type { CarriagewayMaterial } from '../roadSection';
 import type { ProfileElement, RoadProfileSpec } from './profile';
 import { type RoadTemplate, classTemplates } from './templates';
 
-/**
- * THE ROAD CATALOGUE (docs/source/VIAS.md, the player's order of 2026-10-09): ready
- * roads to pick and draw with at once, by category, as Cities: Skylines
- * offers them (its roads menu: small, medium, large roads and highways, each
- * road with its lanes, speed and price per cell; Cities: Skylines II the same
- * categories with two-lane, one-way, parking, alley and divided variants -
- * skylines.paradoxwikis.com/Roads, cs2.paradoxwikis.com/Roads). Every road
- * here is a profile of the free profile (V1) on one of the game's classes, so
- * it builds with the same code as any road; the six classes are here too,
- * as they always were.
- */
+/** THE ROAD CATALOGUE (the player's order of 2026-10-09) */
 export type CatalogCategory = 'streets' | 'avenues' | 'highways' | 'special' | 'mine';
 export const CATALOG_CATEGORIES: readonly CatalogCategory[] = ['streets', 'avenues', 'highways', 'special', 'mine'];
 

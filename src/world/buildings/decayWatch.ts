@@ -3,22 +3,7 @@ import type { RoadDoc } from '../doc';
 import { JournalCursor } from '../derived';
 import { type Building, type BuildingId, DECAY_GRACE, DECAY_SPAN, decayOf } from './types';
 
-/**
- * THE BUILDINGS' DECAY (`decayOf`), each building looked at only when its next
- * tenth is due. A record changes only when its decay moves a tenth.
- *
- * - What came or changed is read from the diary (`JournalCursor`). An
- *   entry without ids is the whole store replaced - cleared, a map loaded
- *   (`BuildingStore.changed(null, ...)`) - and, like a diary that forgot or a
- *   clock that went back, files the town again. DO NOT read `change.ids ?? []`:
- *   after a load the new town never ran down and the old one stayed due.
- * - The due times are a min-heap (`core/heap.ts`) with the current time of each
- *   building beside it; an entry that no longer matches is skipped when it
- *   comes up (Python heapq, "Priority Queue Implementation Notes": mark the
- *   entry removed, push the new one). A look costs the buildings due, not the
- *   town. DO NOT walk every building's due time on every look: that was the
- *   whole town every three seconds, cost by the map's size.
- */
+/** DO NOT read `change.ids ?? []`: after a load the new town never ran down and the old one stayed due. */
 export function createDecayWatch(doc: RoadDoc, wear: (id: BuildingId, decay: number) => void): (now: number) => boolean {
   /** Each built record's next tenth, city minutes; absent: fully run down or gone. */
   const due = new Map<BuildingId, number>();

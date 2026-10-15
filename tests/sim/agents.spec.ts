@@ -14,16 +14,7 @@ import {
 } from '@render/agents';
 import { METERS_PER_UNIT } from '@world/units';
 
-/**
- * The fleet's data, and the deterministic variation the renderer builds on.
- *
- * The renderer itself needs a GL context and is covered by the visual run; what
- * can be checked headlessly is that every archetype is physically sane, that
- * the spawn shares still form a distribution, and that the per-agent hash is
- * stable, bounded and actually spread — the three properties a frame-to-frame
- * appearance depends on. A hash that is stable but collapses onto one palette
- * entry produces a crowd of identical people and no test would notice.
- */
+/** The fleet's data, and the deterministic variation the renderer builds on. */
 
 const metres = (units: number): number => units * METERS_PER_UNIT;
 
@@ -39,9 +30,7 @@ describe('vehicle archetypes', () => {
         expect(Number.isFinite(value), `${a.id}.${field}`).toBe(true);
         expect(value, `${a.id}.${field}`).toBeGreaterThan(0);
       }
-      // Nothing in the fleet is wider than it is long, and nothing is taller
-      // than a low bridge; both would come out of a units mistake rather than a
-      // design choice.
+      // Nothing in the fleet is wider than it is long, and nothing is taller than a low bridge
       expect(a.width, a.id).toBeLessThan(a.length);
       expect(metres(a.height), a.id).toBeLessThan(4.2);
       expect(metres(a.width), a.id).toBeLessThanOrEqual(2.6);
@@ -54,8 +43,7 @@ describe('vehicle archetypes', () => {
     for (const a of ARCHETYPES) {
       expect(a.a, a.id).toBeGreaterThan(0);
       expect(a.b, a.id).toBeGreaterThan(0);
-      // Emergency braking must be harder than comfortable braking, or the safe
-      // speed cap is looser than the interaction term and vehicles tailgate.
+      // Emergency braking must be harder than comfortable braking
       expect(a.bEmergency, a.id).toBeGreaterThan(a.b);
       expect(a.T, a.id).toBeGreaterThan(0.5);
       expect(a.T, a.id).toBeLessThan(3);
@@ -103,8 +91,7 @@ describe('vehicle archetypes', () => {
 
   it('keeps the heavy classes heavy and the two-wheelers light', () => {
     const by = (id: string): Archetype => archetypeById(id);
-    // A bus and a truck pull away slowly and want a long headway; a bicycle is
-    // slow enough to be overtaken and needs almost no standstill gap.
+    // A bus and a truck pull away slowly and want a long headway
     for (const id of ['bus', 'truck']) {
       expect(by(id).a, id).toBeLessThan(by('hatch').a);
       expect(by(id).T, id).toBeGreaterThan(by('sedan').T);
@@ -135,8 +122,7 @@ describe('archetypeById', () => {
   });
 
   it('falls back to a real class on an id this build no longer ships', () => {
-    // A saved document can name a class that has since been removed; the
-    // alternative to substituting one is a crash on load.
+    // A saved document can name a class that has since been removed; the alternative to substituting one is a crash on load.
     for (const missing of ['compact', '', 'tram', 'SEDAN']) {
       const fallback = archetypeById(missing);
       expect(ARCHETYPES).toContain(fallback);
@@ -160,9 +146,7 @@ describe('agentHash', () => {
     const seen = new Set<number>();
     for (let id = 0; id < 4096; id++) seen.add(agentHash(id));
     expect(seen.size).toBe(4096);
-    // The low byte is what every palette index is taken from, so it is the byte
-    // that has to be spread: a hash that only mixes the high bits would give a
-    // whole crowd the same skin tone.
+    // The low byte is what every palette index is taken from, so it is the byte that has to be spread
     const lowBytes = new Set<number>();
     for (let id = 0; id < 4096; id++) lowBytes.add(agentHash(id) & 0xff);
     expect(lowBytes.size).toBe(256);
@@ -191,9 +175,7 @@ describe('vehicleLook', () => {
   });
 
   it('gives every car a solid roof, one in five of them black', () => {
-    // Glass roofs showed the whole cabin from the isometric camera and read
-    // as a car with no roof; the people inside show through the dark side
-    // glass close up instead.
+    // Glass roofs showed the whole cabin from the isometric camera and read as a car with no roof
     let glass = 0;
     let black = 0;
     let passengers = 0;
@@ -228,8 +210,7 @@ describe('vehicleLook', () => {
       if (down === 0) allUp++;
       if (down === 3) bothDown++;
     }
-    // Most cars shut (about seven in ten), some with one window down, a few
-    // with both.
+    // Most cars shut (about seven in ten), some with one window down, a few with both.
     expect(anyDown).toBeGreaterThan(160);
     expect(anyDown).toBeLessThan(320);
     expect(allUp).toBeGreaterThan(480);

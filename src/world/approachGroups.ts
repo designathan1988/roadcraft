@@ -10,30 +10,17 @@ export interface ApproachGroup {
   readonly meanAngle: number;
 }
 
-/**
- * Angular tolerance for merging two legs into one approach group.
- *
- * Only legs entering from nearly the same direction are merged. Opposite legs
- * deliberately remain separate signal groups: sharing their green would make
- * their left and right turns look protected while the intersection admission
- * code has to serialize them against each other.
- */
+/** Angular tolerance for merging two legs into one approach group. */
 const GROUP_MERGE_DEG = 35;
 
-/**
- * Clusters approach legs into signal groups.
- *
- * Input order is the caller's; results are sorted by mean angle so group ids are
- * stable across rebuilds and do not depend on segment insertion order.
- */
+/** Clusters approach legs into signal groups. */
 export function computeApproachGroups(
   legs: readonly { readonly segment: SegmentId; readonly dir: Vec2 }[],
 ): ApproachGroup[] {
   if (legs.length === 0) return [];
 
   const tolerance = Math.cos((GROUP_MERGE_DEG * Math.PI) / 180);
-  // Geometry, not allocation order, drives clustering. Keep directions in
-  // their original angular space so opposite approaches cannot share a phase.
+  // Geometry, not allocation order, drives clustering.
   const sorted = legs
     .map((leg) => ({ leg, direction: normalize(leg.dir) }))
     .sort(

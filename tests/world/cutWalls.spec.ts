@@ -10,13 +10,7 @@ import { PORTAL_COPING, buildStructureDetails } from '@render/structures';
 import { TUNNEL_ARCH, TUNNEL_BORE, TUNNEL_HEADROOM } from '@world/structures';
 import type { SceneMaterials } from '@render/materials';
 
-/**
- * A CUTTING HELD BY RETAINING WALLS (docs/source/VIAS.md V3, `RoadSegment.cutWalls`):
- * saved with the map and absent from every older one; the ground is cut back
- * no wider than the band the wall's backfill covers; the wall stands from
- * under the road to just over the natural ground, and the backfill meets the
- * ground at its edge - nothing floats, nothing is buried, no step shows.
- */
+/** A CUTTING HELD BY RETAINING WALLS (`RoadSegment.cutWalls`) */
 function hillRoad(walls: boolean, strength = 30, tunnel = false) {
   const doc = new RoadDoc();
   doc.addTerrainStamp({ x: 0, y: 0, radius: 150, strength, mode: 'raise' });

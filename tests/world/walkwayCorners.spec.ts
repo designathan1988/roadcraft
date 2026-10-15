@@ -10,12 +10,7 @@ import { m } from '@world/units';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate } from '../fuzz/support/runner';
 
-/**
- * THE WALKWAYS' CORNERS ROUNDED OFF THE PAGE (`Walkways.updateSteps`, `roundCorners` in the conflict
- * workers): the asks and answers through `structuredClone`, as `postMessage` copies them, must give the
- * walkways `Walkways.update` builds on the page - every walkway, its id, its ends and every point of its
- * line - and an update given up while the workers work must leave the walkways as they were.
- */
+/** THE WALKWAYS' CORNERS ROUNDED OFF THE PAGE (`Walkways.updateSteps`, `roundCorners` in the conflict workers) */
 const lines = (g: WalkGraph): string[] => g.walkways().map((w) => `${w.id} ${w.kind} ${w.a} ${w.b} ${w.segment ?? '-'} ${w.node ?? '-'} `
   + `${w.structure} ${w.kerb} ${w.lo} ${w.hi} ${w.width} ${w.unmarked ?? '-'} ${new Digest().addAll(w.path.xy).value()}`);
 

@@ -3,32 +3,10 @@ import type { RoadDoc } from './doc';
 import type { NodeId } from './ids';
 import type { PolylineCache } from './geometry';
 
-/**
- * How sharply two roads may meet at one node.
- *
- * Below this angle `acuteSetback` — the distance at which two carriageways stop
- * overlapping — grows without bound, the trim goes from about 30 units to about
- * 185, and `legTongue` paints a finger of kerb and footway that long across
- * open grass with no asphalt beside it. Measured by a probe script since removed:
- * a 7-degree hairpin gives trims of 246 and a tongue 16.6 times the road's
- * half-width, against 2.0 for a healthy cross or T.
- *
- * Drawing and dragging used to refuse an edit that made a node sharper than
- * this (a differential check, so an old hairpin elsewhere did not block every
- * road); that refusal went with the freeform roads (e77538b7). The map's
- * offenders are found and reported (`Network`, `impossibleNodes`).
- */
+/** How sharply two roads may meet at one node. */
 export const MIN_LEG_ANGLE = (25 * Math.PI) / 180;
 
-/**
- * Outgoing directions of a node's legs, in radians, sorted.
- *
- * Taken from each segment's own polyline one flattened step in from the node —
- * its TANGENT there — not from the straight line to the far node. On a tight
- * curve those disagree by tens of degrees, and the junction builder uses the
- * tangent, so measuring anything else would condemn nodes that build correctly
- * and pass nodes that do not.
- */
+/** Outgoing directions of a node's legs, in radians, sorted. */
 export function legAngles(doc: RoadDoc, cache: PolylineCache, node: NodeId): number[] {
   const source = doc.node(node);
   if (!source) return [];
@@ -51,12 +29,7 @@ export function legAngles(doc: RoadDoc, cache: PolylineCache, node: NodeId): num
   return out;
 }
 
-/**
- * Smallest angle between any two of these legs, in radians.
- *
- * `Infinity` for a node with fewer than two legs: a stub cannot be too sharp.
- * The angles must arrive sorted, which `legAngles` guarantees.
- */
+/** Smallest angle between any two of these legs, in radians. */
 export function smallestGap(angles: readonly number[]): number {
   if (angles.length < 2) return Infinity;
   let worst = Infinity;

@@ -1,9 +1,4 @@
-// @vitest-environment happy-dom
-// The player's own blueprints (`editor/blueprintLibrary.ts`) are the player's work: saving or
-// removing one must never take the others with it - not one this build cannot read (a newer
-// build's, or one damaged), not a library whose text no longer parses, not the oldest past a count
-// (Protocol Buffers keep what they do not understand: "Proto3 messages preserve unknown fields
-// and include them during parsing and in the serialized output").
+// @vitest-environment happy-dom The player's own blueprints (`editor/blueprintLibrary.ts`) are the player's work
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlueprintLibrary } from '@editor/blueprintLibrary';
 import { BLUEPRINTS } from '@world/buildings/blueprints';

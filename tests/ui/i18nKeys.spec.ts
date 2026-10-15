@@ -7,14 +7,7 @@ import { EN } from '@ui/i18n/en';
 import { isTerrainMode } from '@world/terrain';
 import { TOOLS } from '@editor/toolMachine';
 
-/**
- * Keys the CODE asks for exist.
- *
- * `i18n.spec.ts` checks the markup and that the two dictionaries agree; nothing
- * checked the keys TypeScript builds, which is how the Builder's touch hints
- * and one of its run hints shipped as raw keys (the canvas's
- * aria-describedby read "hint.mobile.builder.select" aloud).
- */
+/** Keys the CODE asks for exist. */
 const root = fileURLToPath(new URL('../../src', import.meta.url));
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((name) => {
@@ -74,15 +67,7 @@ describe('keys used in code', () => {
     expect(missing).toEqual([]);
   });
 
-  /**
-   * Every key of the dictionaries is one the game can ask for: named in a
-   * quote in the code or the page, or built by a template, each `${...}` of
-   * which stands for one segment of the key (`hint.${tool}` asks for
-   * `hint.road`, never `hint.mobile.zone`). 591 keys nothing asked for were
-   * removed on 2026-10-14: a player mode never wired in, the touch hints, the
-   * person editor's - text no player could see, kept translated by hand, and
-   * one of them naming a button by a name it no longer had.
-   */
+  /** Every key of the dictionaries is one the game can ask for */
   it('every key of the dictionaries is asked for by the code', () => {
     const pages = [...sources, fileURLToPath(new URL('../../index.html', import.meta.url))];
     const text = pages.map((path) => readFileSync(path, 'utf8')).join('\n');
@@ -93,8 +78,7 @@ describe('keys used in code', () => {
       // A template with no word of its own (`${prefix}.${tool}`) would stand for any key.
       .filter((template) => template.includes('.') && /[a-z]/i.test(template.replace(/\$\{[^}]*\}/g, '')))
       .map((template) => new RegExp(`^${template.split(/\$\{[^}]*\}/).map(escape).join('([\\w.-]+)')}$`));
-    // What one `${...}` may stand for: one segment, or a dotted text the code
-    // itself writes or builds (`hint.builder.${key}` with key `draw.${action}`).
+    // What one `${...}` may stand for: one segment, or a dotted text the code itself writes or builds
     const fills = (part: string): boolean => !part.includes('.') || quoted.has(part)
       || built.some((pattern) => pattern.exec(part)?.slice(1).every((inner) => !inner.includes('.')) ?? false);
     const asked = (key: string): boolean => quoted.has(key)

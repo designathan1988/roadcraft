@@ -4,12 +4,7 @@ import { DT } from '@sim/params';
 import { BLINK_HZ, MAX_STEER, WheelOdometer, blinkOn, indicatorSide, steerAngle } from '@render/vehicleSignals';
 import { LAYOUTS, layoutDoc, simOf } from '../sim/support/bodies';
 
-/**
- * What a driver shows the road: which way they are about to go, and wheels
- * that steer and roll. The indicator used to be lit only from the leftover
- * offset of a lane change - after the car had started moving across, never
- * for a turn at a junction, and without flashing.
- */
+/** What a driver shows the road: which way they are about to go, and wheels that steer and roll. */
 describe('vehicle signals', () => {
   it('signals a turn before the junction and through it, on the side it turns to', () => {
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 7, 2);

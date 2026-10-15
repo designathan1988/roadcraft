@@ -18,12 +18,7 @@ import {
   LAMP_HEIGHT,
 } from '@render/propGeometry';
 
-/**
- * The prop models' contract. The wind shader reads a plant's local `y` as the
- * fraction of its height, so a plant that is not one unit tall with its root
- * at the origin bends from the wrong place: a tree rooted below zero swings
- * its trunk through the ground.
- */
+/** The prop models' contract. */
 
 function check(geometry: BufferGeometry): { minY: number; maxY: number } {
   const position = geometry.getAttribute('position');
@@ -43,13 +38,7 @@ function check(geometry: BufferGeometry): { minY: number; maxY: number } {
   return { minY, maxY };
 }
 
-/**
- * The top of a plant as drawn: its body, and its foliage cards, whose corners
- * the shader spreads round each card's centre (`aCorner`, invisible to the
- * position attribute). `lowPolyTrees.ts` `finish` sizes a plant "crown and
- * all": a card reaches 0.45 of its size above its centre, and a corner's
- * offset is half the size turned by the card's roll (length size / sqrt 2).
- */
+/** The top of a plant as drawn: its body, and its foliage cards, whose corners the shader spreads round each card's centre */
 function plantTop(parts: { body: BufferGeometry; cards: BufferGeometry | null }): number {
   let top = check(parts.body).maxY;
   if (parts.cards) {

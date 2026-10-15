@@ -3,13 +3,7 @@ import { emitChunk } from '@render/buildings/buildingMesh';
 import { m } from '@world/units';
 import { growCity } from '../world/cityAudit';
 
-/**
- * A PARAPET IS A WALL WITH TWO FACES. Round a flat roof the parapet is seen
- * from the street and from the roof; drawn by its outer face alone (a tower
- * of many sides, 2026-10-13) it was a band floating in the air from above,
- * and a glass tower's was glass inside. Every face of a parapet turned out
- * has a face turned in behind it, at most a parapet's thickness away.
- */
+/** A PARAPET IS A WALL WITH TWO FACES. */
 describe('the parapets', () => {
   it('have an inner face behind every outer one', () => {
     const city = growCity({ size: 'small', seed: 1 });

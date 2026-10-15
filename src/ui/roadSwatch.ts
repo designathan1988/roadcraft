@@ -1,15 +1,6 @@
 import { LANE_LINE, ROAD_TYPES, type RoadType } from '@world/roadTypes';
 
-/**
- * A picture of a road class, drawn from the same numbers the meshes are built
- * from: the footway and its casing, the kerb, the carriageway, the central
- * reservation where the class has one, and the paint between the lanes.
- *
- * Off a 2D canvas rather than the 3D scene, because the palette wants these
- * before the first frame and at tile size a plan view says more than a
- * perspective. Every class shares one scale, so a boulevard's tile is visibly
- * fatter than a ramp's - the width IS the choice.
- */
+/** A picture of a road class, drawn from the same numbers the meshes are built from */
 
 const CASING = 0.9;
 const MARGIN = 6;
@@ -31,11 +22,7 @@ function dashed(ctx: CanvasRenderingContext2D, y: number, width: number, dash: n
   for (let x = 0; x < width; x += dash * 2) ctx.fillRect(x, y, Math.min(dash, width - x), 1.5);
 }
 
-/**
- * Drawn once per class, profile and size. The palette asks for these on every
- * redraw and the road tool redraws every frame: encoding a canvas to PNG is
- * not something to do sixty times a second.
- */
+/** Drawn once per class, profile and size. */
 const CACHE = new Map<string, string>();
 
 export function roadSwatch(rt: RoadType, width = 148, height = 78, dpr = 2): string {
@@ -78,8 +65,7 @@ export function roadSwatch(rt: RoadType, width = 148, height = 78, dpr = 2): str
     band(rt.median / 2 - 0.6, MEDIAN_GREEN);
   }
 
-  // Paint: the centre line of a two-way street, the dividers between the lanes
-  // of a wider one, nothing at all on a residential street.
+  // Paint: the centre line of a two-way street, the dividers between the lanes of a wider one
   const lane = (rt.width - rt.median) / rt.lanes;
   const offsets: number[] = [];
   if (rt.median > 0) {

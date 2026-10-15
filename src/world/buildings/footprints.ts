@@ -39,10 +39,7 @@ function polygonArea(poly: clipping.MultiPolygon): number {
     sum + (index === 0 ? 1 : -1) * Math.abs(signedArea(ring.map(([x, y]) => ({ x, y })))), 0), 0);
 }
 
-/**
- * Two footprints overlapping by less than this area (a square of some 1.3 mm)
- * only touch: the slop the clipper's arithmetic leaves on a shared wall.
- */
+/** Two footprints overlapping by less than this area (a square of some 1.3 mm) only touch */
 export const AREA_EPS = 1e-5 * TUNED_UNIT * TUNED_UNIT;
 
 export const overlapArea = (a: readonly Vec2[], b: readonly Vec2[]): number =>

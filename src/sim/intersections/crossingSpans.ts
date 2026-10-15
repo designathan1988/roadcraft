@@ -20,11 +20,7 @@ export interface CrossingSpan {
   readonly along: number;
 }
 
-/**
- * Clearance kept between a vehicle body and a pedestrian: a heavy vehicle's
- * half width plus a person and a margin, as a distance from the movement's
- * centreline.
- */
+/** Clearance kept between a vehicle body and a pedestrian */
 const REACH = (BODY_ENVELOPE[HEAVY]?.width ?? 0) / 2 + m(0.9);
 const SAMPLE = 0.5;
 /** How far outside its own box a rounded point of a line may fall, u (`measure`). */
@@ -32,35 +28,13 @@ const OUT_OF_BOX = 1e-6;
 /** A walker's clearance from a vehicle body (`PedestrianClearance`), plus margin. */
 const PERSON_CLEAR = m(0.6);
 
-/**
- * The part of each zebra a movement actually drives over.
- *
- * A turning vehicle used to be held while ANYBODY was anywhere on a crossing
- * it touched: a person on the far half of a boulevard zebra, three lanes away
- * from the turn's path, stopped it just as surely as one in front of its
- * bumper. Measured on a four-way of avenues, "pedestrian" was the commonest
- * reason a turn stood still at green. What conflicts is the stretch of the
- * crossing inside the swept path of the vehicle, so that stretch is what is
- * recorded here, once per topology version.
- */
+/** The part of each zebra a movement actually drives over. */
 export class CrossingSpans {
-  /**
-   * By connector, then by crossing: the two ids as they are, never a key
-   * string joined from them on every ask (a new string for each vehicle at
-   * each occupied zebra each tick, hashed again at the look-up).
-   */
+  /** By connector, then by crossing: the two ids as they are, never a key string joined from them on every ask */
   private readonly spans = new Map<ConnectorId, Map<CrossingId, CrossingSpan | null>>();
   /** Earliest safe front stop on an incoming lane near another leg's zebra. */
   private readonly approachStops = new Map<string, number>();
-  /**
-   * Every span of the previous build, with the two paths it was measured on.
-   *
-   * Measuring is a closest-point query against the whole movement for every
-   * half unit of every crossing, for every movement in the map, on every edit:
-   * half a second per road drawn on a 264-segment map, nearly all of it for
-   * junctions the edit never reached. A span depends on nothing but the two
-   * paths, so one whose paths are unchanged is read back instead.
-   */
+  /** Every span of the previous build, with the two paths it was measured on. */
   private measured = new Map<string, Measured>();
 
   /** What each junction measured: its connectors, its approach lanes and the keys of `measured` it made. */
@@ -76,13 +50,7 @@ export class CrossingSpans {
     for (const node of w.graph.junctions.keys()) this.measureJunction(w, node, previous);
   }
 
-  /**
-   * The spans of these junctions measured again (the junctions the lane graph built
-   * again, `LaneletGraph.update`; null: every one), every other junction's kept. A
-   * span depends only on its movement and its zebra, both at its own junction.
-   * DO NOT measure every movement of the map for an edit: every road drawn measured
-   * the town's zebras again.
-   */
+  /** DO NOT measure every movement of the map for an edit: every road drawn measured the town's zebras again. */
   update(w: SimWorld, nodes: ReadonlySet<NodeId> | null): void {
     if (nodes === null) { this.build(w); return; }
     const before: string[] = [];
@@ -108,7 +76,6 @@ export class CrossingSpans {
     const made = { connectors: [] as ConnectorId[], lanes: [] as string[], keys: [] as string[] };
     this.ofJunction.set(node, made);
     const incident = w.doc.node(node)?.incident ?? [];
-    // Each zebra's points sampled once for the junction, every movement and lane measured against them.
     // DO NOT sample a zebra again for each movement: a fifth of the measuring at 2.5 km (2026-10-15).
     const sampled = new Map<Polyline, Float64Array>();
     const samplesOf = (zebra: Polyline, length: number): Float64Array => {
@@ -139,10 +106,7 @@ export class CrossingSpans {
         byCrossing.set(crossing, span);
       }
     }
-    // A long body stopped at a red signal can project across the zebra of an
-    // adjacent acute leg even though its own stop line is correctly placed.
-    // Measure those physical overlaps once per topology, before any pedestrian
-    // enters, so the red-light obstacle holds the front before that zebra.
+    // A long body stopped at a red signal can project across the zebra of an adjacent acute leg even though its own stop line
     rebuildWork.spans++;
     for (const laneId of junction.inbound) {
       const lane = w.lanelet(laneId);
@@ -197,12 +161,7 @@ function sampleZebra(crossing: Polyline, length: number): Float64Array {
 
 /** The stretch of a crossing (its `samples`, `sampleZebra`) that a movement along `path` drives over. */
 function measure(path: Polyline, crossing: Polyline, samples: Float64Array): CrossingSpan | null {
-  // A point farther from the path's box than REACH is farther from the path: no closest point to ask
-  // for. A whole crossing that far (its box from the path's) is never driven over. DO NOT ask the
-  // closest point of every sample of every zebra of the junction against every movement and every
-  // approach lane (a whole road): a second of the frame of the swap at 2.5 km, nearly all of it for
-  // zebras the movement never comes near (2026-10-15). The margin keeps a sample a rounding outside its
-  // segment's box from being dropped.
+  // DO NOT ask the closest point of every sample of every zebra of the junction against every movement and every approach
   const box = path.bbox;
   const gap = (minX: number, minY: number, maxX: number, maxY: number): number =>
     Math.hypot(Math.max(box.minX - maxX, 0, minX - box.maxX), Math.max(box.minY - maxY, 0, minY - box.maxY));
@@ -220,10 +179,7 @@ function measure(path: Polyline, crossing: Polyline, samples: Float64Array): Cro
     s1 = Math.max(s1, s);
     centre = Math.min(centre, hit.s);
   }
-  // Where the FRONT must stop: before the near edge of the painted band
-  // and a person standing on it. Stopping by the zebra centreline put the
-  // bumper inside a walker's clearance; the walker could not pass and the
-  // vehicle would not move until they had — a mutual wait in the box.
+  // Where the FRONT must stop: before the near edge of the painted band and a person standing on it.
   const along = Math.max(0, centre - CROSSWALK_DEPTH / 2 - PERSON_CLEAR);
   return s0 <= s1 ? { s0, s1, along } : null;
 }

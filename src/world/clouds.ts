@@ -1,11 +1,4 @@
-/**
- * PLACED CLOUDS: cumulus the player puts in the sky, moves and takes away,
- * each its own size, height and thickness - as an editor's cloud actors are
- * placed, moved and scaled one by one (CloudScape Actors for Unreal) - over
- * the clouds the sky makes of itself (Paisagem > Céu e clima). Kept in the
- * document, so they save, load and undo; drawn by the atmosphere pass
- * (`render/postprocess.ts`), which ray-marches each as a heap of puffs.
- */
+/** PLACED CLOUDS: cumulus the player puts in the sky, moves and takes away, each its own size, height and thickness */
 
 import { MAP_SIZE } from './bounds';
 import { m } from './units';
@@ -25,11 +18,7 @@ export interface PlacedCloud {
   readonly yaw: number;
 }
 
-/**
- * The most clouds a map keeps (the sky draws `MAX_CLOUDS`, all of them the
- * map's own: since 2026-10-07 the sky invents none the player cannot move or
- * take away).
- */
+/** The most clouds a map keeps the sky draws , all of them the map's own: since 2026-10-07 the sky invents none the player */
 export const MAX_PLACED_CLOUDS = 24;
 
 const CLOUD_LIMITS = {
@@ -56,13 +45,7 @@ export function readCloud(data: unknown): PlacedCloud | null {
   };
 }
 
-/**
- * Clouds spread over the map, as a procedural spawner fills a volume and the
- * placed instances are then edited one by one (Unreal's Procedural Foliage
- * and its Foliage tools): `count` of them, each of about the given size,
- * height and density, varied by `variation` (0..1), kept apart by about
- * their size and off the clouds already there. `random` gives 0..1.
- */
+/** Clouds spread over the map, as a procedural spawner fills a volume and the placed instances are then edited one by one */
 export function scatterClouds(count: number, like: { size: number; height: number; density: number }, variation: number,
   half: number, existing: readonly PlacedCloud[], random: () => number): Omit<PlacedCloud, 'id'>[] {
   const out: Omit<PlacedCloud, 'id'>[] = [];
@@ -83,14 +66,7 @@ export function scatterClouds(count: number, like: { size: number; height: numbe
   return out;
 }
 
-/**
- * The cloud the pointer is on: of the clouds whose body (a sphere about its
- * heap, `render/postprocess.ts` layOne) the pointer's ray passes through, the
- * one it meets first coming from the camera - a big cloud far behind never
- * steals the click from the one in front (2026-10-07). `at(height)` is where
- * the ray crosses the plane at that height; the camera looks down, so the
- * ray meets higher ground first. Null if the ray misses every cloud.
- */
+/** The cloud the pointer is on: of the clouds whose body */
 export function cloudUnder(clouds: readonly PlacedCloud[], at: (height: number) => { x: number; y: number }): PlacedCloud | null {
   // The ray as a line through two of its points, a kilometre of height apart.
   const lo = at(0), hi = at(1000);
@@ -114,20 +90,12 @@ export function cloudUnder(clouds: readonly PlacedCloud[], at: (height: number) 
   return best;
 }
 
-/**
- * Where to keep a cloud that is to be seen at `seen` now: the wind's drift
- * taken off (`driftedCloud`'s inverse).
- */
+/** Where to keep a cloud that is to be seen at `seen` now: the wind's drift taken off (`driftedCloud`'s inverse). */
 export function undriftedCloud(seen: { readonly x: number; readonly y: number }, drift: { readonly x: number; readonly y: number }): { x: number; y: number } {
   return { x: seen.x - drift.x, y: seen.y - drift.y };
 }
 
-/**
- * Where a cloud is now, carried by the wind (`world/weather.ts`): its place
- * plus how far the wind has blown since the map opened, wrapped round the
- * map so the sky never empties; and how much of it shows (1, thinning away
- * as it nears the edge it wraps round, so it never pops).
- */
+/** Where a cloud is now, carried by the wind (`world/weather.ts`) */
 export function driftedCloud(cloud: PlacedCloud, drift: { readonly x: number; readonly y: number }): { x: number; y: number; show: number } {
   const span = MAP_SIZE;
   const wrap = (v: number): number => ((((v + span / 2) % span) + span) % span) - span / 2;

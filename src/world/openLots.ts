@@ -6,39 +6,9 @@ import type { Lot } from './lotRecord';
 import { LotStore } from './lotStore';
 import { m } from './units';
 
-/**
- * THE OPEN LOTS (`RoadDoc.openLots`): the zoned lots with no building
- * standing and not set aside, in the lots' order and by place, for the growth
- * (`editor/zoning.ts` `growOnLot`). Every building grown read every lot four
- * times over - the open ones, the last grown, the nearest, its own place in
- * the list - a city of 80 000 lots 2.6·10¹⁰ reads.
- *
- * - "The k-th open lot" (the one drawn at random) is a descent of a Fenwick
- *   tree of the open flags: O(log n), the k-th in the lots' order (Fenwick,
- *   "A new data structure for cumulative frequency tables", 1994;
- *   cp-algorithms, "Fenwick Tree").
- * - "The open lots round a point" read the cells of a grid of the lots'
- *   centres (Nystrom, "Spatial Partition"), in the lots' order.
- *
- * Kept by the diary, lot by lot: the lots' entries carry their ids
- * (`LotStore`), so a lot zoned, cut or deleted changes its own slot and
- * nothing else; a building gone (the buildings' entries, by id) opens its lot
- * again. A slot is a place in the lots' order: a lot changed where it stands
- * keeps its slot, one put last in the store (`LotStore.orderOf` grew) leaves a
- * hole and takes a new slot at the end, so the slots stay in the store's
- * order and the k-th open lot is the one a fresh index would give. The holes
- * and the room at the end are a dynamic table's (Cormen et al., "Introduction
- * to Algorithms", 17.4): the slots laid again when the holes outnumber the
- * lots or the room runs out, at most once per as many changes as there are
- * lots - O(1) a change.
- * NÃO voltar a filtrar `doc.lots` a cada prédio crescido, nem a refazer o
- * índice inteiro a cada lote mudado.
- */
+/** THE OPEN LOTS (`RoadDoc.openLots`) */
 
-/**
- * What it reads of the document (`RoadDoc.openLots`), handed over by it: the
- * document imports this module, never the other way (no import cycle).
- */
+/** What it reads of the document (`RoadDoc.openLots`), handed over by it */
 export interface LotsHost {
   readonly lots: LotStore;
   /** Whether the building of this id stands; where it stands. */

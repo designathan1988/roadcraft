@@ -17,12 +17,7 @@ function city(): { doc: RoadDoc; net: Network } {
   return { doc, net };
 }
 
-/**
- * Undo puts back the records an edit changed (docs/ARCHITECTURE.md 5). It used
- * to replace the whole document from a text snapshot, bump every revision and
- * rebuild the road network (twice), the lanelets and the simulation topology -
- * for a storey, a pole, a brush dab.
- */
+/** Undo puts back the records an edit changed. */
 describe('undo', () => {
   it('of a building edit leaves the road revisions, and the network, alone', () => {
     const { doc, net } = city();

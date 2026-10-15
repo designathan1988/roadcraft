@@ -1,11 +1,4 @@
-/**
- * Branded id types.
- *
- * These are plain numbers at runtime but distinct types at compile time, so a
- * `SegmentId` can never be silently passed where a `NodeId` is expected. The V6
- * monolith used bare numbers and string keys interchangeably across ~120
- * functions.
- */
+/** Branded id types. */
 declare const NodeIdBrand: unique symbol;
 declare const SegmentIdBrand: unique symbol;
 declare const PoleIdBrand: unique symbol;

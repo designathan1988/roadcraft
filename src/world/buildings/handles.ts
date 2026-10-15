@@ -18,12 +18,7 @@ import {
 } from './geometry';
 import { type Building, type FaceId, volumeById } from './types';
 
-/**
- * Where the edit handles of a selected building stand, in world 3D.
- *
- * Pure geometry, shared by the tool (which hit-tests them) and the overlay
- * (which draws them), so the two can never disagree about where a handle is.
- */
+/** Where the edit handles of a selected building stand, in world 3D. */
 type HandleKind = 'storeys' | 'side' | 'move' | 'rotate' | 'scale' | 'relief' | 'vertex' | 'lift';
 
 /** A rectangle of bays and storeys of one face (see `editor/buildings.ts`, `FaceRegion`). */
@@ -49,21 +44,12 @@ export interface Handle {
 }
 
 const HANDLE_OUT = m(1.6);
-/**
- * How far the move, turn and scale handles stand off the footprint's corner.
- * At 3.2 m they floated so far out that the move handle sat under the status
- * bar and the turn ring beside the next building.
- */
+/** How far the move, turn and scale handles stand off the footprint's corner. */
 const CORNER_OUT = m(1.4);
 /** How far the lift handle stands off its block's corner (the scale handle's 0.8 m). */
 const LIFT_OUT = m(0.6);
 
-/**
- * The lift of the ground block nearest a corner of the footprint's box (local
- * frame): the block the corner belongs to, or - on an L or a T, whose box
- * corner is open ground - the one beside it, whose floor the ground there is
- * graded to.
- */
+/** The lift of the ground block nearest a corner of the footprint's box (local frame) */
 function liftNear(b: Building, x: number, y: number): number {
   let best = Infinity, lift = 0;
   for (const o of b.volumes) {
@@ -77,12 +63,7 @@ function liftNear(b: Building, x: number, y: number): number {
   return lift;
 }
 
-/**
- * `nearest` orders the four footprint corners (front-left, front-right,
- * back-right, back-left in the local frame) by how close each is to the viewer;
- * the move and rotate handles take the first two, so they never land behind
- * the building or on top of the roof arrow. Default: the front corners.
- */
+/** `nearest` orders the four footprint corners */
 export function buildingHandles(
   b: Building,
   volumeId: number,
@@ -117,12 +98,7 @@ export function buildingHandles(
     const p = localToWorld(b, point.x, point.y);
     out.push({ kind: 'vertex', vertex, x: p.x, y: p.y, z: baseZ, dx: 0, dy: 0 });
   }
-  // The block's own floor, raised or lowered (a split level, `Volume.lift`):
-  // a vertical arrow off the block's corner nearest the viewer, halfway up its
-  // bottom storey - over the move handle at the foot of that corner, under
-  // the scale handle at its eaves. In the middle of the plan it stood over
-  // the facade and took the clicks meant for its bays. Only a block on the
-  // ground has one: a block standing on another goes with it.
+  // The block's own floor, raised or lowered (a split level, `Volume.lift`)
   if (v.base === 0 && !v.open) {
     const ring = localFootprint(v);
     const x0 = Math.min(...ring.map((p) => p.x)) - LIFT_OUT, x1 = Math.max(...ring.map((p) => p.x)) + LIFT_OUT;
@@ -141,15 +117,12 @@ export function buildingHandles(
   const order = nearest(corners);
   const move = corners[order[0] ?? 0] as { x: number; y: number };
   const turn = corners[order[1] ?? 1] as { x: number; y: number };
-  // At the foot of the corner's own block: a block lowered or raised (a split
-  // level) has its ground floor there, not at the street's.
+  // At the foot of the corner's own block: a block lowered or raised
   const local = [[f.x0, f.y0], [f.x1, f.y0], [f.x1, f.y1], [f.x0, f.y1]] as const;
   const footOf = (i: number): number => { const q = local[i] ?? local[0]; return floor + liftNear(b, q[0], q[1]); };
   out.push({ kind: 'move', x: move.x, y: move.y, z: footOf(order[0] ?? 0), dx: 0, dy: 0 });
   out.push({ kind: 'rotate', x: turn.x, y: turn.y, z: footOf(order[1] ?? 1), dx: 0, dy: 0 });
-  // Scale: the nearest corner, at the eaves - the corner of the box one pulls
-  // to make the whole plan bigger or smaller. The highest eaves, each block's
-  // own lift included.
+  // Scale: the nearest corner, at the eaves - the corner of the box one pulls to make the whole plan bigger or smaller.
   const masses = b.volumes.filter((o) => !o.open && isMass(o));
   const eaves = floor + (masses.length ? Math.max(...masses.map((o) => volumeHeight(b, o))) : levelElevation(b, topLevel(b)));
   const box = [
@@ -164,8 +137,7 @@ export function buildingHandles(
     dx: out2.x / len, dy: out2.y / len,
   });
   if (region) {
-    // Push-pull: an arrow standing off the middle of the picked region, at the
-    // depth the region is pushed to now.
+    // Push-pull: an arrow standing off the middle of the picked region, at the depth the region is pushed to now.
     const edge = edgeFrame(v, region.side);
     const n = { x: edge.nx, y: edge.ny };
     const s = sideStart(v, region.side);

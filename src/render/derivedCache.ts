@@ -1,19 +1,4 @@
-/**
- * DERIVED DATA kept in the player's browser: what the game makes from its own
- * code the same way every time - the Builder's pictures, the surfaces'
- * texels, the countryside's trees - made once and read back afterwards, as an
- * engine keeps its Derived Data Cache (Unreal: derived data is generated once,
- * cached locally, and can always be generated again).
- *
- * Each entry is filed as `kind:fingerprint:id`, the fingerprint being that of
- * the code that makes it (`cook-plugin.ts`, the import closure of its maker):
- * a change to that code never serves an old one. IndexedDB, not localStorage,
- * because the values are blobs and buffers of megabytes and localStorage is
- * synchronous (MDN, "Web Storage API"). The store is best effort - the browser
- * may evict it under storage pressure (MDN, "Storage quotas and eviction
- * criteria") - so every reader makes the thing itself when it is missing, and
- * every failure here is silent.
- */
+/** DERIVED DATA kept in the player's browser: what the game makes from its own code the same way every time */
 const DB = 'roadcraft-derived';
 const STORE = 'entries';
 
@@ -36,10 +21,7 @@ function database(): Promise<IDBDatabase | null> {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    // A connection closed, refused or blocked is forgotten, and the next read
-    // or write opens one again. DO NOT keep it: closed for another tab's
-    // upgrade, every transaction on it threw (silently) until the page was
-    // reloaded, and the store was dead for the session.
+    // DO NOT keep it: closed for another tab's upgrade, every transaction on it threw
     const forget = (): void => { opening = null; };
     request.onsuccess = () => {
       const db = request.result;
@@ -94,12 +76,7 @@ export async function readDerivedAll<T>(prefix: string): Promise<Map<string, T>>
   });
 }
 
-/**
- * Keeps a value under `key`. Resolves once the store has taken its copy
- * (`put` copies the value as it is called): the caller may then change the
- * value or hand its buffers to another thread. A write that fails is made
- * again next time.
- */
+/** Keeps a value under `key`. */
 async function keepDerived(key: string, value: unknown): Promise<void> {
   const db = await database();
   if (!db) return;
@@ -112,12 +89,7 @@ async function keepDerived(key: string, value: unknown): Promise<void> {
   }
 }
 
-/**
- * As `keepDerived`, and also tells when the write has committed (the
- * transaction's `complete`, MDN) or failed: a worker stopped before then -
- * `terminate()` stops it at once - loses the write. Resolves once the store
- * has taken its copy; `committed` resolves either way, never rejects.
- */
+/** As `keepDerived`, and also tells when the write has committed (the transaction's `complete`, MDN) or failed */
 export async function keepDerivedDurably(key: string, value: unknown): Promise<{ committed: Promise<void> }> {
   const db = await database();
   if (!db) return { committed: Promise.resolve() };
@@ -141,20 +113,12 @@ export function writeDerived(key: string, value: unknown): void {
   void keepDerived(key, value);
 }
 
-/**
- * Keeps many values, each under `prefix` and its own key, in one
- * transaction (MDN, "Using IndexedDB": the example adds every record in one
- * readwrite transaction), without waiting: hundreds of small entries at once
- * - a town's conflict zones - would otherwise open as many transactions.
- */
+/** Keeps many values, each under `prefix` and its own key, in one transaction */
 export function writeDerivedMany(prefix: string, values: ReadonlyMap<string, unknown>): void {
   void keepDerivedMany(prefix, values);
 }
 
-/**
- * As `writeDerivedMany`, resolved once the store has taken its copy of every value (`put` copies by the
- * structured clone when it is called): a worker may then hand the values' buffers over.
- */
+/** As `writeDerivedMany`, resolved once the store has taken its copy of every value */
 export async function keepDerivedMany(prefix: string, values: ReadonlyMap<string, unknown>): Promise<void> {
   if (!values.size) return;
   const db = await database();
@@ -170,10 +134,7 @@ export async function keepDerivedMany(prefix: string, values: ReadonlyMap<string
   }
 }
 
-/**
- * Forgets these entries (each `prefix` + key), without waiting: one readwrite
- * transaction, a `delete` per key (MDN, `IDBObjectStore.delete`).
- */
+/** Forgets these entries (each `prefix` + key), without waiting: one readwrite transaction, a `delete` per key */
 export function forgetDerivedKeys(prefix: string, keys: Iterable<string>): void {
   const list = [...keys];
   if (!list.length) return;

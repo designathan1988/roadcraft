@@ -21,14 +21,7 @@ import { m } from '@world/units';
 import type { Exhaust, PuffKind } from './exhaust';
 import URLS from 'virtual:model-urls/elements?ext=gltf,bin,png';
 
-/**
- * The ELEMENTS the player lays with the brush (`world/elements.ts`), drawn:
- * props as instanced models (Quaternius's "Stylized Nature MegaKit" - rocks,
- * pebbles, grass, ferns, clover, flowers, mushrooms, plants), fallen leaves
- * as cards of leaves lying on the ground, and effects as emitters feeding
- * the map's one particle cloud (`exhaust.ts`) - smoke, fire, steam, dust,
- * soot, sparks and spray - as engines place their particle emitters.
- */
+/** The ELEMENTS the player lays with the brush (`world/elements.ts`), drawn: props as instanced models */
 
 /** Each prop kind's models (several variants, picked by an instance's seed). */
 const MODELS: Readonly<Record<Exclude<ElementKind, EffectKind | 'leaves'>, readonly string[]>> = {
@@ -44,12 +37,7 @@ const MODELS: Readonly<Record<Exclude<ElementKind, EffectKind | 'leaves'>, reado
   mushrooms: ['Mushroom_Common', 'Mushroom_Laetiporus'],
 };
 
-/**
- * The files' served URLs (the game serves no public folder): one module for
- * the folder (`model-urls-plugin.ts`); an eager `import.meta.glob` made each
- * file a module of its own. Each buffer and image a `.gltf` names is looked
- * up here by its file name, not resolved against the `.gltf`'s own URL.
- */
+/** The files' served URLs (the game serves no public folder): one module for the folder (`model-urls-plugin.ts`) */
 const url = (file: string): string => {
   const found = URLS[file];
   if (!found) throw new Error(`element model file missing: ${file}`);
@@ -122,8 +110,7 @@ async function readParts(name: string, materialFor: (uri: string, mask: boolean,
     if (p.attributes['TEXCOORD_0'] !== undefined) g.setAttribute('uv', new BufferAttribute(read(p.attributes['TEXCOORD_0']) as Float32Array, 2));
     const colours = p.attributes['COLOR_0'] !== undefined;
     if (colours) {
-      // Normalised shorts in these files (0..65535 for 0..1): read raw they
-      // were colours far past white, and the grass came out white.
+      // Normalised shorts in these files (0..65535 for 0..1)
       const accessor = json.accessors[p.attributes['COLOR_0']!]!;
       const c = read(p.attributes['COLOR_0']!);
       const scale = accessor.componentType === 5123 ? 1 / 65535 : accessor.componentType === 5121 ? 1 / 255 : 1;
@@ -188,9 +175,7 @@ export async function loadElementKit(anisotropy: number): Promise<ElementKit> {
   const textureOf = (uri: string): Promise<Texture> => {
     let t = textures.get(uri);
     if (!t) {
-      // As the glTF loader reads them: no vertical flip, and repeating (the
-      // format's default sampler) - clamped, UVs past the edge read the
-      // texture's white margin and the grass came out white.
+      // As the glTF loader reads them: no vertical flip, and repeating (the format's default sampler)
       t = loader.loadAsync(url(uri)).then((tex) => {
         tex.colorSpace = SRGBColorSpace;
         tex.anisotropy = anisotropy;

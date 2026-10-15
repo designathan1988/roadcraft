@@ -1,13 +1,4 @@
-/**
- * An exact digest of a stream of numbers: every double is hashed by its bits,
- * so two streams digest alike only if they are the same numbers in the same
- * order (a collision aside, at about one in 2^53).
- *
- * It is what lets a rebuild keep what an edit did not touch: a cached piece of
- * geometry is keyed by the digest of everything it was built from, and is
- * reused only when that digest comes round again. Nothing is quantised, so a
- * reused piece is bit for bit the piece a fresh build would make.
- */
+/** An exact digest of a stream of numbers */
 
 const bits = new Float64Array(1);
 const words = new Uint32Array(bits.buffer);
@@ -36,13 +27,7 @@ export class Digest {
     return this.add(text.length);
   }
 
-  /**
-   * Adds a plain value as JSON would write it (numbers, strings, booleans,
-   * null, arrays, objects in key order; a key holding `undefined` is no key),
-   * without writing its text. `skip` leaves keys of the outermost object out.
-   * DO NOT key a record by `JSON.stringify` kept beside it: that was a string
-   * the size of the record, held for every building of the town.
-   */
+  /** DO NOT key a record by `JSON.stringify` kept beside it */
   addPlain(value: unknown, skip?: (key: string) => boolean): this {
     if (value === null) return this.add(-1).word(0);
     switch (typeof value) {

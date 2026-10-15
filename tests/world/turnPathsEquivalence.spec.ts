@@ -8,16 +8,7 @@ import { HEAVY, type BodyClass } from '@world/conflictPoints';
 import { type JunctionSurface, type RoadEnds, type TurnPathResult, type WaitingLane, turnFits } from '@world/turnPaths';
 import { ReferenceSurface, referenceTurnFits, referenceTurnPath } from './support/turnPathsReference';
 
-/**
- * THE FAST TURN SEARCH IS THE OLD ONE (2026-10-14): `turnPath` stopped
- * sweeping each candidate position by position against every ring and every
- * queued car (`world/turnPaths.ts`: banded crossings test, approach poses
- * shared, the last failure probed first, candidates made once, no second
- * sweep for `maxBodyClass`). Every movement of generated towns of every
- * street style must come out exactly as the old code made it - the same
- * points, bit for bit, and the same largest body - or traffic would drive
- * differently. The old code is kept frozen in `support/turnPathsReference.ts`.
- */
+/** THE FAST TURN SEARCH IS THE OLD ONE (2026-10-14) */
 
 interface Call {
   readonly args: [Polyline, Polyline, JunctionSurface | null, readonly WaitingLane[], RoadEnds];
@@ -59,8 +50,7 @@ describe('turn paths: the fast search gives what the old one gave', () => {
       for (const { args, out } of calls) {
         const want = referenceTurnPath(...args);
         if (!sameBits(out.path.xy, want.path.xy) || out.maxBodyClass !== want.maxBodyClass) differing++;
-        // `turnFits` alone (the turning circle and the median U-turn use it):
-        // every body size on every distinct path, against the old sweep.
+        // `turnFits` alone (the turning circle and the median U-turn use it)
         const [inCentre, outCentre, surface, , ends] = args;
         if (!surface || surface.empty || fitsChecked.has(out.path)) continue;
         fitsChecked.add(out.path);

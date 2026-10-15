@@ -2,21 +2,7 @@ import { m } from '../units';
 import { storedBounds } from './geometry';
 import type { Building, BuildingId } from './types';
 
-/**
- * THE BUILDINGS BY PLACE (`BuildingStore.near`): a grid of cells, each
- * holding the buildings whose box (`storedBounds`, with the anchor point)
- * reaches it, kept by the store's own writers - the only ones there are - so
- * it is never out of step (Nystrom, Game Programming Patterns, "Spatial
- * Partition": an object that moves leaves its old cell and enters the new).
- * A question about one place reads a few cells, not the town: every building
- * grown read every building of the town three times over (`zoning.ts`,
- * `validate.ts`), a city of 80 000 buildings 6·10⁹ times.
- *
- * The answer comes in the order of `BuildingStore.all()` (each building keeps
- * the rank it was put in at), so a search that keeps the first of equals
- * finds what the loop over every building found.
- * NÃO voltar a percorrer `buildings.all()` para achar o que está perto.
- */
+/** THE BUILDINGS BY PLACE (`BuildingStore.near`): a grid of cells, each holding the buildings whose box */
 
 /** Side of a cell, world units: as wide as the largest of the common buildings. */
 const CELL = m(64);
@@ -93,10 +79,7 @@ export class BuildingGrid {
     this.placed.delete(id);
   }
 
-  /**
-   * The ids of the buildings whose box (or anchor) may reach the rectangle,
-   * in the store's order. A superset: the caller keeps its own exact test.
-   */
+  /** The ids of the buildings whose box (or anchor) may reach the rectangle, in the store's order. */
   near(minX: number, minY: number, maxX: number, maxY: number): BuildingId[] {
     const i0 = Math.floor(minX / CELL), i1 = Math.floor(maxX / CELL), j0 = Math.floor(minY / CELL), j1 = Math.floor(maxY / CELL);
     // One cell (the common question): already in order, nothing repeated.
@@ -110,14 +93,7 @@ export class BuildingGrid {
     return [...found].sort((a, b) => this.placed.get(a)!.rank - this.placed.get(b)!.rank);
   }
 
-  /**
-   * The ids of the buildings `meets` keeps for one of `rects`, asked of the
-   * buildings in the cells of that rectangle grown by `pad`, each once, in the
-   * store's order: each cell read once for all the rectangles over it. DO NOT
-   * ask `near` rectangle by rectangle for many: the ground's changes since a
-   * look overlap, and the cells they share were read, made a set of and sorted
-   * again for each (0.8 s in one frame of a 2,560 m city's growth, 2026-10-15).
-   */
+  /** DO NOT ask `near` rectangle by rectangle for many */
   nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
     meets: (id: BuildingId, rect: readonly [number, number, number, number]) => boolean): BuildingId[] {
     const over = new Map<number, (readonly [number, number, number, number])[]>();

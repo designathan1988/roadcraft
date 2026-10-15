@@ -3,12 +3,7 @@ import type { BodyClass } from '@world/conflictPoints';
 import type { RoadDoc } from '@world/doc';
 import type { Connector, GraphChange, Lanelet, LaneletGraph, LaneletId } from '@world/lanelets';
 
-/**
- * What the reach reads of the world (`SimWorld`): the lane graph, its lanes and
- * connectors, the log of its changes and the map's edge. DO NOT import
- * `SimWorld`: `sim/world.ts` imports this file, and the type import closed an
- * import cycle (`tests/arch/imports.spec.ts`).
- */
+/** DO NOT import `SimWorld`: `sim/world.ts` imports this file, and the type import closed an import cycle */
 export interface ReachWorld {
   readonly doc: RoadDoc;
   readonly graph: LaneletGraph;
@@ -17,31 +12,7 @@ export interface ReachWorld {
   connector(id: string): Connector | undefined;
 }
 
-/**
- * THE ROAD ENDS EACH LANE CAN REACH, for a body class: the strongly connected
- * components of the link lanes (a lane's ways out are the movements the body
- * fits and the lane changes beside it, as `drive/tactical.ts` drives them),
- * the condensation between them, and the road ends each component reaches -
- * its own and those of every component it leads to.
- *
- * Kept by what each build of the lane graph changed (`SimWorld.topologyLog`),
- * as a dynamic graph is kept by repairing what an update broke rather than
- * searching it again (Italiano, Nanni and Roditty's decremental reachability
- * keeps the components and checks only what a deletion can split; Tarjan,
- * 1972, finds them where they must be found again):
- * - a way out taken away inside a component, or a lane taken out of one,
- *   leaves it whole when its ends still reach each other: a search both ways
- *   from them (`reaches`) settles it, and only a component that did split is
- *   searched again, alone;
- * - a way out added between two components merges those on a cycle through
- *   it: the components reached from its end that reach back to its start, on
- *   the condensation;
- * - a component's road ends are summed when asked, from those it leads to,
- *   and forgotten for it and for the components upstream of a change.
- * The work is what the edit changed and the components it split or merged,
- * not the map. DO NOT search every lane of the map again for an edit of the
- * roads: every road drawn did, at the first car made after it.
- */
+/** DO NOT search every lane of the map again for an edit of the roads */
 class BodyReach {
   private readonly comp = new Map<LaneletId, number>();
   private readonly members = new Map<number, Set<LaneletId>>();
@@ -90,8 +61,7 @@ class BodyReach {
     const pairs: [LaneletId, LaneletId][] = [];
     const crossing: [LaneletId, LaneletId][] = [];
     const touched = new Set<number>();
-    // Lanes taken away: their ways in and out with them; their component whole only if what led
-    // through them still gets through.
+    // Lanes taken away: their ways in and out with them
     for (const x of lanes) {
       const k = this.comp.get(x);
       if (k === undefined || isLink(x)) continue;

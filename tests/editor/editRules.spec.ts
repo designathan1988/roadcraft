@@ -12,11 +12,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The editing rules (`editor/editRules.ts`): what the player may draw is
- * still drawn, what the traffic cannot use is refused with its reason, and
- * damage already on a map never blocks an edit elsewhere.
- */
+/** The editing rules (`editor/editRules.ts`) */
 function empty(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
   const net = new Network(doc);
@@ -24,11 +20,7 @@ function empty(): { doc: RoadDoc; net: Network } {
   return { doc, net };
 }
 
-/**
- * A straight road drawn as the road tool lays it, anchors resolved under its
- * ends: its ends in U (0.4 m), its heights in world units, the view a pixel
- * every U.
- */
+/** A straight road drawn as the road tool lays it, anchors resolved under its ends: its ends in U */
 function draw(doc: RoadDoc, net: Network, a: [number, number], b: [number, number], type = 1, h0 = 0, h1 = 0): DraftResult {
   const resolve = (p: [number, number], h: number): { anchor: Anchor; height: number } => {
     const at = { x: p[0] * U, y: p[1] * U };
@@ -110,16 +102,14 @@ describe('editing rules: what is refused, and why', () => {
     const { doc, net } = empty();
     draw(doc, net, [0, 0], [300, 0], 3);
     expect(draw(doc, net, [150, 0], [150, 200], 3).committed).toBe(true);
-    // An avenue leaving 40 units on at 53 degrees: its carriageway and the
-    // link's still overlap well past where the link can cut its mouth.
+    // An avenue leaving 40 units on at 53 degrees
     expect(draw(doc, net, [190, 0], [100, -120], 3)).toMatchObject({ committed: false, reason: 'squeezed' });
     // The same avenue at a right angle, a staggered junction: built.
     expect(draw(doc, net, [190, 0], [190, -200], 3).committed).toBe(true);
   });
 
   it('a road at the foot of a ramp, leaving it no run to come down in (P82, fuzz seed 3)', () => {
-    // A curved road set 17.27 units up at one end; a second road out of that
-    // end at 16 degrees made a plate of 45 % of it, and 17 units fell in about 10.
+    // A curved road set 17.27 units up at one end
     const state = freshState();
     expect(applyOp(state, { op: 'path', a: [330.41 * U, 116.68 * U], b: [604.65 * U, 464.51 * U], type: 2,
       curve: { t: 0.51, h: 59.09 * U }, h0: 17.27 * U, h1: 0 })).toBe(true);

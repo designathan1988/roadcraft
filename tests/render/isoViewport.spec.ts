@@ -57,7 +57,6 @@ describe('free-orbit camera', () => {
       const v = rig(az, MAX_ELEVATION);
       const c = v.centre;
       // The camera sits on the +azimuth side, so the ground on the far side
-      // (-azimuth) is "ahead" and must be drawn above the centre of the screen.
       const ahead = { x: c.x - Math.cos(az) * 20, y: c.y + Math.sin(az) * 20 };
       const s = v.toScreen(ahead, W, H);
       expect(s.y).toBeLessThan(H / 2 - 10);
@@ -95,7 +94,7 @@ describe('free-orbit camera', () => {
   });
 });
 
-describe('dragging the view in perspective, close over high ground (docs/PLANO.md, 5d)', () => {
+describe('dragging the view in perspective, close over high ground', () => {
   /** A plateau 80 units up: the perspective camera stands at the height of the ground it looks at. */
   const HIGH = 80;
   function close(elevation = MIN_ELEVATION) {

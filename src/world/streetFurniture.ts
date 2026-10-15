@@ -6,20 +6,7 @@ import { LANDSCAPE_RADIUS, type LandscapeItem, type LandscapeKind, crossingAcces
 
 export { TREE_PIT } from './section';
 
-/**
- * Where every piece of street furniture stands.
- *
- * This used to be written twice: once in `render/scenery.ts`, which drew the
- * lamps, bins and benches, and once, by hand and "at the same positions", in
- * the simulation's pedestrian obstacles (today the footway graph,
- * `sim/peds/sidewalk.ts`).
- * Two copies of a layout drift - adding a street tree to one would have put a
- * tree on the pavement that people walked straight through. It is one list now,
- * derived from the document and the network, and both read it.
- *
- * Positions only. Heights belong to the road field and are the renderer's to
- * look up; the simulation walks in plan.
- */
+/** Where every piece of street furniture stands. */
 
 export type FurnitureKind =
   | 'lamp'
@@ -49,10 +36,7 @@ export interface FurnitureItem {
   readonly halfLength?: number;
   /** Set for a long thing: its half extent along `outward`. */
   readonly halfWidth?: number;
-  /**
-   * Set for a seat: the way somebody sitting on it faces. A bench by the kerb
-   * turns its back on the traffic and faces the footway, as on a street.
-   */
+  /** Set for a seat: the way somebody sitting on it faces. */
   readonly faces?: Vec2;
   /** A per-item number in [0, 1), stable across rebuilds, for variety. */
   readonly seed: number;
@@ -83,17 +67,7 @@ function hash01(a: number, b: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
 }
 
-/**
- * One placed item as the furniture standing where it was put: on the footway
- * under it, or (a tree, a shrub) in a planted median; null when it is not
- * furniture, when no footway or median is under it any more (its road
- * demolished or moved away: neither drawn nor walked round until one is), or
- * when it stands in a zebra's landing (`onAccess`: a crossing built after it
- * was placed hides it rather than block the crossing). What reads one item -
- * the renderer, item by item (`render/streetFurnitureLayer.ts`) - asks this,
- * with the landings near it (`nearCrossingAccess`, the default); what reads
- * every item at once, `streetFurniture`.
- */
+/** One placed item as the furniture standing where it was put: on the footway under it, or */
 export function furnitureOf(
   net: Network,
   placed: LandscapeItem,
@@ -110,7 +84,7 @@ export function furnitureOf(
 function standing(net: Network, placed: LandscapeItem, kind: FurnitureKind): FurnitureItem | null {
   const hit = footwayAt(net, placed, STAND_REACH);
   if (!hit) {
-    // A tree or shrub in a planted median (docs/source/VIAS.md V7): nobody walks there.
+    // A tree or shrub in a planted median: nobody walks there.
     const median = kind === 'streetTree' || kind === 'shrub' ? medianAt(net, placed, m(0.3)) : null;
     if (!median) return null;
     return { kind, x: placed.x, y: placed.y, segment: median.segment,
@@ -136,12 +110,7 @@ function standing(net: Network, placed: LandscapeItem, kind: FurnitureKind): Fur
   return kind === 'bench' ? { ...base, halfLength: m(0.9), halfWidth: m(0.26), faces: outward } : base;
 }
 
-/**
- * Everything standing on the footways: the items the player placed with the
- * landscaping tool (`landscape.ts`), each on the footway under it
- * (`furnitureOf`). Nothing is generated along the streets any more (the
- * player's order of 2026-10-05).
- */
+/** Everything standing on the footways: the items the player placed with the landscaping tool */
 export function streetFurniture(net: Network): FurnitureItem[] {
   // The landings filed once for every item (`crossingAccessTester`).
   const onAccess = crossingAccessTester(net, crossingAccesses(net));

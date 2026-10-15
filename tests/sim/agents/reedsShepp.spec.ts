@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Rng } from '@core/rng';
 import { reedsShepp, sampleReedsShepp } from '@sim/agents/reedsShepp';
 
-/**
- * A REEDS-SHEPP WAY ENDS ON ITS GOAL (`sim/agents/reedsShepp.ts`, after
- * OMPL's ReedsSheppStateSpace): from any pose to any other, the way found
- * driven piece by piece ends at the goal's place and heading, moves no more
- * than a step between two poses, and is no longer than the straight distance
- * plus the turning it must do allows - checked on a thousand pairs.
- */
+/** A REEDS-SHEPP WAY ENDS ON ITS GOAL (`sim/agents/reedsShepp.ts`, after OMPL's ReedsSheppStateSpace) */
 describe('a Reeds-Shepp way', () => {
   it('ends on the goal, in steps, for any two poses', () => {
     const rng = new Rng(0x5eed);

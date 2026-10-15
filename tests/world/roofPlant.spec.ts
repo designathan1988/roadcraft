@@ -3,12 +3,7 @@ import { m } from '@world/units';
 import { planRoofPlant, type RoofSite } from '@world/buildings/roofPlant';
 import type { BuildingUse } from '@world/buildings/types';
 
-/**
- * Roof plant (docs/source/PLANO.md 5f; the player, 2026-10-09: "placas solares e
- * caixa d'água azul em TODOS"): every flat roof carried one set of plant
- * whatever the building. Now a catalogue by use, size and age, seeded per
- * building and packed so no two pieces cross.
- */
+/** Roof plant (the player, 2026-10-09: "placas solares e caixa d'água azul em TODOS") */
 const site = (building: number, use: BuildingUse, storeys: number, w: number, d: number, age: number): RoofSite =>
   ({ building, volume: 1, use, storeys, x0: 0, y0: 0, x1: m(w), y1: m(d), age, hasCore: false });
 

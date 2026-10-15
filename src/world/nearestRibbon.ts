@@ -7,15 +7,7 @@ const FIRST_REACH = m(60);
 /** Wider than any map: the last box holds every road. */
 const LAST_REACH = m(200_000);
 
-/**
- * The road whose centreline is nearest a point, and how far: read from the
- * roads filed round it (`Network.ribbonsMeeting`), in boxes growing four times
- * until the nearest found lies within the box - a road filed outside it is
- * further than its half side, as its whole surface is. The same road the
- * walk over every road finds, the lowest id first among equals (the cells
- * answer in id order, `ribbonsMeeting`). DO NOT walk every road of the map
- * for the street nearest a point: every lot drawn did, for each of its sides.
- */
+/** DO NOT walk every road of the map for the street nearest a point: every lot drawn did, for each of its sides. */
 export function nearestRibbon(net: Network, p: Vec2): { readonly ribbon: SegmentRibbon; readonly distance: number } | null {
   if (!net.ribbons.size || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
   for (let r = FIRST_REACH; ; r *= 4) {

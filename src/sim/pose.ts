@@ -24,90 +24,31 @@ export function newPose(): PoseOut {
   return { p: { x: 0, y: 0 }, angle: 0 };
 }
 
-/**
- * Largest gap, in world units, that two consecutive poses may be apart before
- * the interpolation is abandoned.
- *
- * A topology rebuild can move a vehicle to a lanelet somewhere else entirely,
- * and lerping across that would draw a car sliding over open ground. Ordinary
- * motion is at most `v * DT` plus a lane width, so this is generous enough
- * never to fire on a real step and tight enough to catch a re-seat.
- */
+/** Largest gap, in world units, that two consecutive poses may be apart before the interpolation is abandoned. */
 const POSE_JUMP_LIMIT = m(24);
 
-/**
- * Angle a vehicle points into its own lane change.
- *
- * The change is a curve in distance (`laneChangeOffset`), so the body points
- * exactly along it: the heading is the arctangent of the offset gained per
- * unit of road. It is zero at both ends of the curve, so the car turns into
- * the move and straightens out of it, and it does not depend on speed — a car
- * that stops half way across stays angled across the line, as a real one
- * does, instead of snapping straight while its body is still in two lanes.
- */
+/** Angle a vehicle points into its own lane change. */
 function laneChangeYaw(slope: number): number {
   return slope === 0 ? 0 : Math.atan(slope);
 }
 
-/**
- * Distance from the rear axle to the middle of the body, as a share of its
- * length: the axle sits about a fifth of the length in from the tail.
- */
+/** Distance from the rear axle to the middle of the body, as a share of its length */
 const REAR_AXLE_TO_CENTRE = 0.3;
 
-/**
- * Sideways offset of the body CENTRE during a lane change.
- *
- * `lateral` is the offset of the rear axle, which is what follows the curve.
- * A body used to be rotated about its own centre instead, so a long vehicle
- * swung its tail a metre or more back into the lane it was leaving — a truck
- * pivoting across the line like a compass needle, and measured as body
- * overlaps with whoever was beside it. Steered from the rear axle, the tail
- * tracks the curve and it is the nose that leads into the new lane.
- */
+/** Sideways offset of the body CENTRE during a lane change. */
 function bodyOffset(k: Kinematics, length: number): number {
   if (k.lateralSlope === 0) return k.lateral;
   const sine = k.lateralSlope / Math.sqrt(1 + k.lateralSlope * k.lateralSlope);
   return k.lateral + REAR_AXLE_TO_CENTRE * length * sine;
 }
 
-/**
- * Pose of a vehicle, interpolated between the last two simulation steps.
- *
- * Two things here were making the traffic look mechanical, and both were
- * reported as cars "jumping" or "bugging out" while driving.
- *
- * THE POSITION. This used to return the current pose outright whenever the
- * vehicle had changed lanelet since the last snapshot, on the grounds that
- * there is nothing meaningful to interpolate between two different lanes. But
- * a lanelet change is not a discontinuity: entering a connector, leaving one,
- * or transferring to a sibling lane all leave the vehicle within a metre or
- * two of where it was. Refusing to interpolate meant that at every junction
- * entry, every junction exit and every lane change - the three moments the eye
- * is actually following - the car was drawn snapping to its new centreline.
- * It now interpolates from wherever it actually was, and only gives up if the
- * two poses are implausibly far apart, which means the topology was rebuilt
- * underneath it.
- *
- * THE HEADING. The angle was never interpolated at all: it was read from the
- * tangent at the current arc position, which only changes when the simulation
- * steps. Between two ticks it is constant, so a turning car rotated in
- * sixty-per-second increments rather than sweeping, and at 2x or 4x speed the
- * stepping is plainly visible. It is now interpolated the short way round,
- * which is the only way to interpolate an angle without a car occasionally
- * spinning the long way through 359 degrees.
- */
+/** Pose of a vehicle, interpolated between the last two simulation steps. */
 export function vehiclePose(w: SimWorld, v: Vehicle, alpha: number): Pose | null {
   const out = newPose();
   return vehiclePoseInto(w, v, alpha, out) ? out : null;
 }
 
-/**
- * `vehiclePose` into `out`; false where there is none. The drawing asks it
- * for every vehicle every frame: the pose and its sums were made anew each
- * time (2026-10-11: 48 MB in 10 s with 400 vehicles, the frame's own share
- * after the walkers and the matrices).
- */
+/** `vehiclePose` into `out`; false where there is none. */
 export function vehiclePoseInto(w: SimWorld, v: Vehicle, alpha: number, out: PoseOut): boolean {
   // Off the road (parked, or manoeuvring to or from a bay): its own pose.
   const free = v.free;
@@ -120,12 +61,7 @@ export function vehiclePoseInto(w: SimWorld, v: Vehicle, alpha: number, out: Pos
   const frame = axleFrame(w, v, v, v.archetype.length, AXLE_NOW);
   if (!frame) return false;
 
-  // Simulation arc position is the FRONT of the vehicle. The visible body
-  // centre can still be on the previous lanelet after the front enters a turn.
-  // `lateral` is the unfinished part of a lane change: the simulation has
-  // already moved the vehicle onto the new centreline, and this is how far it
-  // still has to slide across to get there visually.
-  // A bicycle by a cycle lane rides in it (`vehicles/cycleLane.ts`).
+  // Simulation arc position is the FRONT of the vehicle.
   const side = bodyOffset(v, v.archetype.length) + cycleShift(v, w.lanelet(v.lanelet), v.s);
   // Along the frame's left normal (`perp` of its tangent).
   const atX = frame.p.x - frame.t.y * side, atY = frame.p.y + frame.t.x * side;
@@ -162,23 +98,8 @@ export function vehiclePoseNowInto(w: SimWorld, v: Vehicle, out: PoseOut): boole
   return true;
 }
 
-/**
- * The body centre on the path, pointing along a short chord centred on it.
- *
- * The heading used to be the tangent of the path under the centre. Paths are
- * polylines, so that tangent is constant along each piece and jumps at every
- * vertex: a car driving round a junction turned in steps of three to six
- * degrees, each in a single tick - measured as yaw rates up to 13 rad/s, and
- * seen as a body that ticks round a corner instead of sweeping. The chord
- * (`HEADING_CHORD`) turns continuously as the body moves along the path, and on
- * a circular arc it is the tangent at the centre, so the body stays where it
- * was and only the stepping is gone.
- */
-/**
- * The frames `axleFrame` writes and reads (`out` of the two in a pose, and the
- * chord's ends): made once. Every vehicle's pose made three frames and their
- * points anew, for the drawing every frame and for the walkers every tick.
- */
+/** The body centre on the path, pointing along a short chord centred on it. */
+/** The frames `axleFrame` writes and reads (`out` of the two in a pose, and the chord's ends): made once. */
 const AXLE_NOW = newFrame();
 const AXLE_BEFORE = newFrame();
 const AHEAD = newFrame();
@@ -202,10 +123,7 @@ function bodyFrame(w: SimWorld, vehicle: Vehicle, kinematics: Kinematics, behind
   let lane = w.lanelet(kinematics.lanelet);
   if (!lane) return false;
   let s = kinematics.s - behindFront;
-  // The heading chord can reach past the front's lanelet even while the
-  // front is still on it. Sample the following lanelet on both sides of the
-  // transition; clamping the earlier snapshot to the connector's endpoint
-  // made the body snap its heading as soon as the front crossed that point.
+  // The heading chord can reach past the front's lanelet even while the front is still on it.
   if (s > lane.length) {
     const nextId = lane.kind === 'connector' ? lane.toLane
       : kinematics.lanelet !== vehicle.lanelet && w.connector(vehicle.lanelet)?.fromLane === lane.id
@@ -233,23 +151,8 @@ function lerpAngle(from: number, to: number, t: number): number {
   return from + delta * t;
 }
 
-/**
- * Pose of a pedestrian, interpolated between the last two steps in WORLD
- * space.
- *
- * It used to be rebuilt from the edge and arc position each frame, which made
- * every change of footway edge a hard cut to the new edge's centreline frame,
- * and read the heading from the path tangent plus the tick-to-tick sideways
- * step — 42,885 heading snaps of more than 8.6 degrees in one tick in two
- * minutes on the saved player map, and a visible pop at every corner. The
- * simulation now owns a world position and a heading turned at a human rate
- * (`settlePose`), and this only blends them.
- */
-/**
- * `pedPose` written into `out`: the same numbers (`lerpVec`'s sums), no object made. The drawing asks it for every
- * pedestrian drawn, every frame - a pose, two points and a lerp made each (3,000-4,000 objects a frame at
- * `MAX_PEDS`); the vehicles' own was fixed the same way (`vehiclePoseInto`).
- */
+/** Pose of a pedestrian, interpolated between the last two steps in WORLD space. */
+/** `pedPose` written into `out`: the same numbers (`lerpVec`'s sums), no object made. */
 export function pedPoseInto(p: PedView, alpha: number, out: PoseOut): void {
   const t = clamp(alpha, 0, 1);
   const bx = p.prev.x, by = p.prev.y;

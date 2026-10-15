@@ -8,11 +8,7 @@ import { growOnLot } from '@editor/zoning';
 import { SimWorld } from '@sim/world';
 import { type Bay, collectBays } from '@sim/agents/parking';
 
-/**
- * The bays after a building grows are worked out only for the lots its change
- * reaches (audit M3a, `parking.ts` `buildingChangesSince`): they must be the
- * very bays a fresh pass over the whole town finds.
- */
+/** The bays after a building grows are worked out only for the lots its change reaches */
 const strip = (bays: readonly Bay[]): unknown[] => bays.map(({ id, building, x, y, ox, oy, depth, lane, via }) =>
   ({ id, building, x: x.toFixed(4), y: y.toFixed(4), ox: ox.toFixed(4), oy: oy.toFixed(4), depth, lane: lane ? `${lane.lanelet}:${lane.at.toFixed(3)}@${lane.x.toFixed(3)},${lane.y.toFixed(3)}` : null,
     via: via.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ') }));
@@ -48,8 +44,6 @@ describe('bays kept by the diary', () => {
 
   it('roads drawn, moved and taken away beside the lots leave the bays a fresh pass finds', () => {
     // Bays are worked out again only within reach of the lanes an edit of the roads changed
-    // (`LaneGrid.changes`), and kerbs only on the streets the network or the lane graph changed
-    // (`kerbBays.ts` followKerbs): the rest must be what a fresh world finds.
     const doc = new RoadDoc();
     const a = doc.addNode({ x: m(-260), y: 0 }).id, b = doc.addNode({ x: m(260), y: 0 }).id;
     const c = doc.addNode({ x: 0, y: m(-200) }).id, d = doc.addNode({ x: 0, y: m(200) }).id;

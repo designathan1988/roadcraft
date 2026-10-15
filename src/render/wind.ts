@@ -8,28 +8,7 @@ import {
 } from 'three';
 import { m, perM } from '@world/units';
 
-/**
- * Wind: the one moving thing in a scene of static props.
- *
- * Trees, bushes and grass bend in the vertex shader, so a thousand trees cost
- * one uniform write a frame and not one matrix. The motion is layered the way
- * real vegetation moves:
- *
- *  - a slow GUST that travels across the map, so neighbouring trees lean
- *    together and a wave of it can be seen crossing a field;
- *  - a SWAY, each plant at its own phase, bending harder towards the top
- *    (displacement grows with the square of height, as a cantilever does);
- *  - a fast FLUTTER of individual leaves and blades, keyed off the vertex
- *    position, which is what reads as foliage rather than as a rigid shape
- *    rocking.
- *
- * Every mesh here is an `InstancedMesh` whose geometry is authored ONE unit
- * tall with its root at the origin, so the local `y` is already "fraction of
- * height" and the instance's Y scale is the height in world units.
- *
- * The same bend is installed on a depth material, so the shadows move with
- * the trees instead of lying still under them.
- */
+/** Wind: the one moving thing in a scene of static props. */
 
 /** Shared by every material with wind; `renderer.ts` advances the time. */
 export const windUniforms = {
@@ -40,12 +19,7 @@ export const windUniforms = {
   uWindStrength: { value: 1 },
 };
 
-/**
- * The map's wind (`world/weather.ts`): which way it blows, towards (three's
- * x and z), and how fast, metres a second. Still air leaves a breath of a
- * breeze; the plants were tuned to some 4.5 m/s, and a gale bends them
- * about four times as far.
- */
+/** The map's wind (`world/weather.ts`): which way it blows, towards (three's x and z), and how fast, metres a second. */
 export function setWindWeather(dirX: number, dirZ: number, metresPerSecond: number): void {
   const length = Math.hypot(dirX, dirZ);
   if (length > 1e-6) windUniforms.uWindDir.value.set(dirX / length, dirZ / length);
@@ -83,15 +57,13 @@ const WIND_GLSL = /* glsl */ `
     float leaf = sin(uWindTime * 7.3 + dot(local, vec3(37.0, 19.0, 29.0)) + phase * 17.0);
     float leaf2 = cos(uWindTime * 5.1 + dot(local, vec3(23.0, 41.0, 13.0)));
     offset += vec3(leaf, 0.35 * leaf2, leaf2) * uWindFlutter * h * height * (0.4 + gust) * min(uWindStrength, 2.0);
-    // A bent stem is no longer: drop the tip by what it moved sideways, so a
-    // tree leans rather than stretches.
+    // A bent stem is no longer: drop the tip by what it moved sideways, so a tree leans rather than stretches.
     offset.y -= dot(offset.xz, offset.xz) / max(2.0 * height * max(h, 0.2), 0.001);
     return offset;
   }
 `;
 
-// Three's own `project_vertex`, with the wind added before the model-view
-// matrix (read when a program is built).
+// Three's own `project_vertex`, with the wind added before the model-view matrix (read when a program is built).
 const projectWithWind = (): string => ShaderChunk.project_vertex.replace(
   'mvPosition = modelViewMatrix * mvPosition;',
   `#ifdef USE_INSTANCING
@@ -110,14 +82,7 @@ function install(shader: WebGLProgramParametersWithUniforms, response: WindRespo
     .replace('#include <project_vertex>', projectWithWind());
 }
 
-/**
- * Foliage the camera has come into fades out, a pixel at a time (Godot's
- * distance fade "Pixel Dither": a fraction of the pixels drawn, the material
- * kept opaque and its shadow whole): brought down to the street, the camera
- * stood inside a crown and the screen was leaves (2026-10-09). Ordered (a
- * 4x4 Bayer matrix), so it does not crawl from frame to frame. Gone nearer
- * than `NEAR_FADE[0]`, whole beyond `NEAR_FADE[1]`.
- */
+/** Foliage the camera has come into fades out, a pixel at a time */
 const NEAR_FADE = [m(1.5), m(5)] as const;
 const NEAR_FADE_GLSL = /* glsl */ `
   {
@@ -154,8 +119,7 @@ export function windDepthMaterial(response: WindResponse, key: string): MeshDept
 
 /** Advances the wind clock. Called once a frame; costs one uniform write. */
 export function advanceWind(seconds: number): void {
-  // A livelier wind than the first one (the player's order of 2026-10-05:
-  // "vento de verdade", the wires and the trees moving faster).
+  // A livelier wind than the first one
   windUniforms.uWindTime.value = seconds * WIND_PACE;
 }
 
@@ -169,14 +133,7 @@ export const WIRE_WIND_UNIFORMS_GLSL = `
         uniform float uWindStrength;
         uniform float uWireAmp;`;
 
-/**
- * Wires in the wind: a span swings sideways downwind and bobs a little,
- * most at mid-span and not at all at the insulators, each span at its own
- * phase, under the same travelling gust as the trees. GLSL moving
- * `transformed`: `swing` is the weight along the span (4 t (1 - t)),
- * `phase` the span's phase (expressions of the shader that uses it,
- * `render/utilities.ts`); the uniforms are `windUniforms` and `uWireAmp`.
- */
+/** Wires in the wind: a span swings sideways downwind and bobs a little, most at mid-span and not at all at the insulators */
 export function wireWindGlsl(swing: string, phase: string): string {
   return `
         float front = dot(transformed.xz, uWindDir) * ${perM(0.03).toFixed(6)} - uWindTime * 0.42;
@@ -186,13 +143,7 @@ export function wireWindGlsl(swing: string, phase: string): string {
         transformed.y += 0.25 * cos(uWindTime * 1.9 + ${phase}) * gust * ${swing} * uWireAmp * uWindStrength;`;
 }
 
-/**
- * A stiff structure in the wind - a signal post, its arm and heads: it barely
- * moves, a few centimetres at the top in a gust, bending from the foot
- * (displacement with the square of height, as a cantilever). For instanced
- * parts whose instance origin stands `originHeight` above the ground; `tall`
- * is the structure's height and `amplitude` the sway at that height.
- */
+/** A stiff structure in the wind - a signal post, its arm and heads */
 export function applyStructureSway(material: Material, originHeight: number, tall: number, amplitude: number, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {

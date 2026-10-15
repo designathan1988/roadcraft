@@ -12,15 +12,7 @@ import { growOnLot } from '@editor/zoning';
 import { GARAGE_GRADE } from '@editor/lotPlan';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * A house on a lot falling away from its street, stepped a whole storey down
- * at the back (a lower ground floor open on the garden, `splitLevel.ts`),
- * keeps its car there: a garage door in the lower floor on the downhill
- * side, its drive a ramp from the street down the side of the house to an
- * apron before the door (`garageUnder`, `lotPlan.ts` `garageRamp`). Before,
- * the drive stayed at the street's floor to a retaining wall across its end
- * and the car never reached the lower floor (docs/source/ZONEAMENTO.md).
- */
+/** A house on a lot falling away from its street, stepped a whole storey down at the back */
 
 /** Ground rising to the north (-y) at 18 %: the lots south of the street fall away from it. */
 const hill = (_x: number, y: number): number => -y * 0.18;

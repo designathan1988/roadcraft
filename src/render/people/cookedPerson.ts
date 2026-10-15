@@ -2,20 +2,7 @@ import {
   Bone, BufferAttribute, BufferGeometry, Group, Matrix4, MaterialLoader, type Material, type Object3D, Skeleton, SkinnedMesh, Vector3,
 } from 'three';
 
-/**
- * A person's body cooked ahead (`scripts/cook-people.mjs`): the output of
- * building it (shape, garments, rig, face shapes, levels of detail) stored
- * as it is, to be read back instead of built - as engines cook their assets
- * and Unreal's Mutable bakes fixed characters in production.
- *
- * Not glTF: a glTF round trip splits a body's material groups into separate
- * meshes, renames its own attributes and has no place for its levels of
- * detail; the game draws one mesh with groups. The face shapes are stored
- * sparse (glTF's sparse accessor idea): only the vertices that move.
- *
- * Layout: u32 header length, the header as JSON (utf-8), padding to 4, the
- * buffers one after the other (each 4-aligned).
- */
+/** A person's body cooked ahead (`scripts/cook-people.mjs`): the output of building it */
 
 type ArrayKind = 'f32' | 'u32' | 'u16' | 'u8';
 interface BufferRef { readonly at: number; readonly length: number; readonly kind: ArrayKind }
@@ -228,11 +215,7 @@ declare const __PEOPLE_COOK_HASH__: string | undefined;
 /** The fingerprint of how people are built in this build (`cook-plugin.ts`); null in tests. */
 const COOK_HASH = typeof __PEOPLE_COOK_HASH__ !== 'undefined' ? __PEOPLE_COOK_HASH__ : null;
 let manifest: Promise<ReadonlySet<string> | null> | null = null;
-/**
- * A missing or stale cook is looked for again a little later: once
- * `npm run cook:people` has run, the bodies wanted after that are read from
- * the cook, not built, without reloading the game.
- */
+/** A missing or stale cook is looked for again a little later */
 function lookAgain(): void {
   if (typeof setTimeout === 'function') setTimeout(() => { manifest = null; }, 20_000);
 }
@@ -251,16 +234,14 @@ function cookedIds(): Promise<ReadonlySet<string> | null> {
       }
       const m = (await response.json()) as { hash?: string; ids?: string[] };
       if (m.hash !== COOK_HASH) {
-        // Named rather than silent: a stale cook is how a rebuild turned into
-        // a stutter nobody could explain.
+        // Named rather than silent: a stale cook is how a rebuild turned into a stutter nobody could explain.
         console.warn(`The cooked people are stale: they were cooked under ${m.hash ?? '(no hash)'}, this build fingerprints ${COOK_HASH}. Every person is built during play until "npm run cook:people" is run again.`);
         lookAgain();
         return null;
       }
       return Array.isArray(m.ids) ? new Set(m.ids) : null;
     } catch (error) {
-      // Unreadable - an HTML page served in its place, as when the path
-      // missed the build's base: loud, since every person is then built in play.
+      // Unreadable - an HTML page served in its place, as when the path missed the build's base
       console.error(`The cooked people's manifest could not be read (${String(error)}): every person is built during play, which stutters.`);
       return null;
     }

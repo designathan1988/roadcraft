@@ -3,17 +3,7 @@ import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { COLOURED_PARTS } from './buildingMesh';
 import { type BuildingKit, PART_KINDS } from './kit';
 
-/**
- * One instance of every part and piece of furniture as the buildings' layer
- * draws them (`buildingMesh.ts` parts: instanced, a colour per instance for
- * the trims, the shadow where the kit casts one), for their programs to be
- * compiled ahead (`renderer.ts` `warmBlastShaders`, `compileAhead`). The
- * layer makes a kind's mesh only when a cell near the camera has some: a
- * balcony's chairs, bushes and airers compiled in the frame they first came
- * into view, stalls in the middle of a pan (20 programs over a pan across a
- * new town, 2026-10-14). Compiled as plain meshes they were other programs.
- * NÃO trocar por Mesh simples: o programa instanciado é outro e travaria igual.
- */
+/** One instance of every part and piece of furniture as the buildings' layer draws them */
 export function partWarmMeshes(kit: BuildingKit): InstancedMesh[] {
   const out: InstancedMesh[] = [];
   for (const kind of PART_KINDS) {

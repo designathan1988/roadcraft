@@ -13,14 +13,7 @@ import { makeDriver } from '@sim/vehicles/driver';
 import { createVehicle, type Vehicle, type VehicleId } from '@sim/vehicles/state';
 import { seatPerson, stepKerbStops, type KerbStop } from '@sim/vehicles/kerbStops';
 
-/**
- * The walkers' derived products cost what is near, not what the map holds
- * (docs/PLANO-ESPINHA-2026-10-14.md): `hailable` reads the walkers near the
- * lane, the parked cars' zones are filed again only for a car that changed,
- * a route search touches only the nodes it reaches; each gives what the old
- * algorithm (copied here) gave. The walkers step the same wherever the camera
- * is, and a seat emptied leaves no hole in the vehicle's lists.
- */
+/** The walkers' derived products cost what is near, not what the map holds */
 
 /** A grid of `n` x `n` blocks of `block` metres, centred on the origin: the same streets near it at any `n`. */
 function grid(n: number, block = 80): RoadDoc {
@@ -278,9 +271,7 @@ function wayNear(g: WalkGraph, x: number, y: number): { way: Walkway; s: number 
 }
 
 describe('a route search touches the nodes it reaches', () => {
-  // A* (`route`): as short as the old full search (`oldRoute`, Dijkstra with fresh arrays) - on a grid,
-  // one of the routes of the same length, not always the same one - each a chain of ways from the
-  // start to the goal.
+  // A* (`route`): as short as the old full search (`oldRoute`, Dijkstra with fresh arrays)
   it('gives routes as short as the full search gave, search after search on the same graph', () => {
     const g = graphOf(worldOf(grid(6)));
     const rng = new Rng(0x7007e);
@@ -307,8 +298,7 @@ describe('a route search touches the nodes it reaches', () => {
   });
 
   it('looks towards the goal: a route across the town touches an eighth of its nodes at most', () => {
-    // DO NOT search without the estimate: each of the scenery's people, in at the map's edge for the far
-    // side, spread over every footway of the town (1.2 s of a 2,560 m city's growth, 2026-10-15).
+    // DO NOT search without the estimate
     const g = graphOf(worldOf(grid(8)));
     const from = wayNear(g, m(10), m(4)), to = wayNear(g, m(300), m(30));
     const before = walkWork.routeNodes;

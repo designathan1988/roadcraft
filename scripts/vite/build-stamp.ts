@@ -5,15 +5,7 @@ import process from 'node:process';
 import { promisify } from 'node:util';
 import type { Plugin } from 'vite';
 
-/**
- * WHICH BUILD IS ON THE SCREEN. Branch, short commit and commit date of the
- * checkout the server runs from, plus `dirty` when it has uncommitted edits.
- *
- * A round of fixes once lived on a branch while the player ran master, and
- * every "fixed" was false on their screen. The development server answers
- * `/__build` afresh on every request, so the stamp stays right after a
- * fast-forward without a restart; a production build bakes it in.
- */
+/** WHICH BUILD IS ON THE SCREEN. */
 interface BuildStamp {
   readonly branch: string;
   readonly hash: string;
@@ -35,11 +27,7 @@ function git(args: string[]): string {
   return '';
 }
 
-/**
- * Branch and commit read straight from the `.git` files, for when no git
- * binary can be run at all. Handles a linked worktree (`.git` is a file
- * pointing at its gitdir, whose `commondir` holds the refs) and packed refs.
- */
+/** Branch and commit read straight from the `.git` files, for when no git binary can be run at all. */
 function readGitFiles(start = process.cwd()): { branch: string; hash: string } | null {
   let dir = start;
   for (;;) {
@@ -114,10 +102,7 @@ export function buildStampPlugin(): Plugin {
     name: 'roadcraft-build-stamp',
     config: () => ({ define: { __BUILD_STAMP__: JSON.stringify(readBuildStamp()) } }),
     configureServer(server) {
-      // Answered from the last stamp read, read again behind the answer when
-      // it is a few seconds old: four synchronous git runs per request held
-      // the server 0.4 s every five seconds for every open tab, the game's
-      // own modules waiting behind them.
+      // Answered from the last stamp read, read again behind the answer when it is a few seconds old
       let stamp: BuildStamp | null = null;
       let readAt = 0;
       let reading: Promise<void> | null = null;

@@ -1,21 +1,7 @@
 import { EN } from './en';
 import { PT_BR } from './pt-BR';
 
-/**
- * Interface translation.
- *
- * Every string a player can read lives in a dictionary here, never inline in a
- * module or in `index.html`. Two rules make that workable:
- *
- *  1. **The code is English.** Keys, identifiers, comments and documentation are
- *     English whatever language the interface is showing; the dictionaries are
- *     the only place another language appears.
- *  2. **Markup declares its own keys.** An element carries `data-i18n` (text),
- *     `data-i18n-title`, `data-i18n-label` (aria-label) or `data-i18n-html`, and
- *     `applyTranslations` rewrites them. Adding a language therefore never means
- *     touching the markup, and a missing key is visible immediately because it
- *     falls back to the English string rather than to an empty element.
- */
+/** Interface translation. */
 
 export type LanguageCode = 'en' | 'pt-BR';
 
@@ -64,12 +50,7 @@ export function language(): LanguageCode {
   return current;
 }
 
-/**
- * Looks up a key, substituting `{name}` placeholders from `params`.
- *
- * Falls back to English and then to the key itself, so a missing translation
- * degrades to a readable string rather than to a blank.
- */
+/** Looks up a key, substituting `{name}` placeholders from `params`. */
 export function t(key: string, params?: Readonly<Record<string, string | number>>): string {
   const table = DICTIONARIES[current];
   const template = table[key] ?? EN[key] ?? key;
@@ -82,11 +63,7 @@ export function t(key: string, params?: Readonly<Record<string, string | number>
 }
 
 let globalParams: () => Readonly<Record<string, string | number>> = () => ({});
-/**
- * Placeholders any sentence may use without its caller passing them: the
- * road tool's rebindable keys (`{heightUp}`, `editor/roads/keys.ts`), so a
- * hint re-translated on a change of language still names the right key.
- */
+/** Placeholders any sentence may use without its caller passing them: the road tool's rebindable keys */
 export function setGlobalParams(provider: () => Readonly<Record<string, string | number>>): void {
   globalParams = provider;
 }
@@ -97,12 +74,7 @@ export function plural(key: string, count: number): string {
 }
 
 const decimalFormats = new Map<string, Intl.NumberFormat>();
-/**
- * A measure with `digits` decimals, in the interface language's notation
- * ("22,0" in Portuguese, "22.0" in English). One `Intl.NumberFormat` per
- * language and precision, kept: labels drawn every frame use it (MDN,
- * `Number.prototype.toLocaleString`, "Performance").
- */
+/** A measure with `digits` decimals, in the interface language's notation ("22,0" in Portuguese, "22.0" in English). */
 export function formatDecimal(value: number, digits: number, lang: LanguageCode = current): string {
   const key = `${lang}:${digits}`;
   let format = decimalFormats.get(key);
@@ -113,11 +85,7 @@ export function formatDecimal(value: number, digits: number, lang: LanguageCode 
   return format.format(value);
 }
 
-/**
- * A number the player typed, with a decimal comma or point: "3,1" and "3.1"
- * are 3.1. Grouping marks are not accepted (a field holds a measure, not a
- * sum of money). NaN when it is not a number.
- */
+/** A number the player typed, with a decimal comma or point: "3,1" and "3.1" are 3.1. */
 export function parseDecimal(text: string): number {
   const s = text.trim().replace(',', '.');
   return s === '' || !/^[-+]?(\d+\.?\d*|\.\d+)$/.test(s) ? Number.NaN : Number(s);

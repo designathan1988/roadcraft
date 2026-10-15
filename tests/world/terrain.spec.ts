@@ -44,8 +44,7 @@ describe('base relief', () => {
   });
 
   it('stays inside a gradient a road at grade can absorb', () => {
-    // 12% is the ground road's limit; the land must not routinely exceed it or
-    // every road becomes an embankment.
+    // 12% is the ground road's limit; the land must not routinely exceed it or every road becomes an embankment.
     let steepest = 0;
     for (let x = -2000 * U; x < 2000 * U; x += 7 * U) {
       for (let y = -2000 * U; y < 2000 * U; y += 293 * U) {
@@ -87,8 +86,7 @@ describe('terrain stamps', () => {
   });
 
   it('clamps to the height range', () => {
-    // Enough dabs at the brush's own ceiling to overshoot it, so the test
-    // measures the clamp and not the strength of the pile.
+    // Enough dabs at the brush's own ceiling to overshoot it, so the test measures the clamp and not the strength of the pile.
     const tall = Array.from({ length: 60 }, (_, i) => stamp({ id: i, radius: 300, strength: 40 }));
     expect(sampleTerrainHeight(tall, 0, 0)).toBeLessThanOrEqual(TERRAIN_MAX_HEIGHT);
     expect(sampleTerrainHeight(tall, 0, 0)).toBeGreaterThan(TERRAIN_MAX_HEIGHT - 1);
@@ -98,10 +96,7 @@ describe('terrain stamps', () => {
   });
 
   it('allows mountains and pits a town can be planned around', () => {
-    // The whole point of the wide range: a real landform, not a garden
-    // terrace. A painter stacks passes over the same ground (a stroke adds one
-    // dab per 60 units of travel), so four passes is an ordinary minute with
-    // the brush; 250 units is a hundred metres of relief.
+    // The whole point of the wide range: a real landform, not a garden terrace.
     const hill = Array.from({ length: 36 }, (_, i) => stamp({ id: i, radius: 300 * U, strength: 40 * U, x: ((i % 9) * 150 - 600) * U }));
     expect(sampleTerrainHeight(hill, 0, 0) - baseRelief(0, 0)).toBeGreaterThan(250 * U);
     const pit = Array.from({ length: 36 }, (_, i) => stamp({ id: i, radius: 300 * U, strength: 40 * U, mode: 'lower' }));
@@ -156,8 +151,7 @@ describe('levelling', () => {
   });
 
   it('is unchanged for a stamp written before the target existed', () => {
-    // The old rule scaled the ground towards sea level. Levelling towards an
-    // absent target must reproduce it exactly, or every saved map shifts.
+    // The old rule scaled the ground towards sea level.
     const at = { x: -120, y: 65 };
     const base: Omit<TerrainStamp, 'level'> = {
       id: 2,
@@ -218,8 +212,7 @@ describe('a brush stroke', () => {
     ({ id, x, y: 0, radius: 100, strength: 40, mode: 'raise', ...over });
 
   it('moves the ground by its strength however often it passes (opacity, not flow)', () => {
-    // A hundred dabs held on one spot: summed, the ground reached the ceiling
-    // and came out a flat-topped cylinder; as one stroke it rises by 40.
+    // A hundred dabs held on one spot: summed, the ground reached the ceiling and came out a flat-topped cylinder
     const held = Array.from({ length: 100 }, (_, i) => dab(i + 1, 0, { stroke: 1 }));
     expect(sampleTerrainHeight(held, 0, 0) - baseRelief(0, 0)).toBeCloseTo(40, 6);
     // The falloff keeps its shape: half way out, the single dab's height.

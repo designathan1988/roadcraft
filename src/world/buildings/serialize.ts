@@ -55,16 +55,7 @@ import { MIN_SIZE } from './geometry';
 import { isFurnitureKind } from './interior';
 import { migrateBuildingMaterials, migrateMaterial, migrateVolumeMaterials } from './materials';
 
-/**
- * The stored shape of a building is the model itself, as plain JSON, with
- * `schema` naming its version. `migrateBuilding` is the ONE door every stored
- * building comes in through: from `localStorage`, from a file, from an undo
- * snapshot, from a blueprint. It repairs what it can and returns null for what
- * it cannot, so one damaged record never costs the player the rest of the map.
- *
- * Fields it does not know are carried through untouched (the spread below), so
- * data a newer build wrote survives a round trip through this one.
- */
+/** The stored shape of a building is the model itself, as plain JSON, with `schema` naming its version. */
 export type SerializedBuilding = Building;
 
 type Loose = Record<string, unknown>;
@@ -75,10 +66,7 @@ const int = (v: unknown, fallback: number): number => (finite(v) ? Math.round(v)
 const num = (v: unknown, fallback: number): number => (finite(v) ? v : fallback);
 const size = (v: unknown, fallback: number): number => clamp(num(v, fallback), MIN_SIZE, MAX_SIZE);
 
-/**
- * Lengths are stored in world units since schema 2; schema 1 stored whole
- * cells of `module`. `unit` is what one stored length is worth.
- */
+/** Lengths are stored in world units since schema 2; schema 1 stored whole cells of `module`. */
 interface Scale {
   readonly unit: number;
 }
@@ -272,11 +260,6 @@ function migrateElement(raw: unknown): BuildingElement | null {
     h: Math.max(m(0.04), raw.h as number),
   };
   // A traced run (wall, fence, paving, stair) lies along its path at `angle`.
-  // This migrator listed fields rather than keeping them, dropped it, and
-  // every road draw, undo and reload - all of which pass records through here -
-  // turned every traced run back onto the building's axis.
-  // Kept exactly as stored: `BuildingStore.replaceWith` compares records, and a
-  // normalised copy would read as an edit on every clone.
   if (finite(raw.angle) && raw.angle !== 0) element.angle = raw.angle as number;
   const material = migrateMaterial(raw.material);
   if (material) element.material = material;
@@ -331,8 +314,7 @@ export function migrateBuilding(raw: unknown): Building | null {
   for (const entry of raw.volumes) {
     const volume = migrateVolume(entry, scale);
     if (!volume) continue;
-    // Duplicate volume ids would make every "which volume" question
-    // ambiguous; renumber rather than drop.
+    // Duplicate volume ids would make every "which volume" question ambiguous; renumber rather than drop.
     if (seen.has(volume.id)) volume.id = Math.max(nextVolumeId, ...seen) + 1;
     seen.add(volume.id);
     nextVolumeId = Math.max(nextVolumeId, volume.id + 1);
@@ -373,8 +355,6 @@ export function migrateBuilding(raw: unknown): Building | null {
     }
     building.elements = elements;
     // The next free id: past every id in use, and never below the stored one.
-    // It used to add one to the stored value on every migration, so each clone
-    // (every road draw) changed every building with elements and rebuilt them.
     building.nextElementId = Math.max(int(raw.nextElementId, 1), Math.max(...seenIds) + 1);
   } else {
     delete building.elements;

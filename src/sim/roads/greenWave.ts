@@ -4,17 +4,7 @@ import type { SimWorld } from '../world';
 import { fixedCycle } from '../signals/fsm';
 import { m } from '@world/units';
 
-/**
- * A GREEN WAVE along the main road through a junction (docs/VIAS.md V5): the
- * signals of the road, junction by junction, given one common cycle and each
- * an offset equal to the time a platoon takes to reach it at the road's
- * speed, so the platoon meets green at each in turn (the offset is distance
- * over platoon speed, t = L / S, on a common cycle; Wikipedia, "Green wave").
- * Each signal becomes fixed-time: the cycle is stretched to the longest
- * signal's by lengthening the main road's own stage; the player's bus
- * priority is kept. Returns the settings to give each junction, starting
- * with the one asked about; empty when the road has fewer than two signals.
- */
+/** A GREEN WAVE along the main road through a junction */
 export function greenWave(w: SimWorld, start: NodeId): Map<NodeId, SignalSettings> {
   const corridor = corridorFrom(w, start);
   const signals = corridor.filter((c) => w.graph.junctions.get(c.node)?.signalised && w.controllers.get(c.node));
@@ -23,7 +13,6 @@ export function greenWave(w: SimWorld, start: NodeId): Map<NodeId, SignalSetting
   // Each signal's main stage: the one that lets the corridor's through movement go.
   const plans = signals.map((c) => {
     const ctl = w.controllers.get(c.node)!;
-    // The junction's own movements, in the graph's order (`JunctionTopology.connectors`).
     // DO NOT search `w.graph.connectors`: every movement of the map, copied, for each signal.
     const conn = (w.graph.junctions.get(c.node)?.connectors ?? []).map((id) => w.graph.connectors.get(id))
       .find((x) => x !== undefined && x.inSegment === c.from && x.outSegment === c.to);
@@ -55,11 +44,7 @@ interface CorridorStop {
   readonly travel: number;
 }
 
-/**
- * The junctions along the main road through `start`, in the direction of
- * its higher leg, up to a dozen: from each the road goes on along the leg
- * the junction's main road pairs with the one it arrived on.
- */
+/** The junctions along the main road through `start`, in the direction of its higher leg, up to a dozen */
 function corridorFrom(w: SimWorld, start: NodeId): CorridorStop[] {
   const main = mainRoadLegs(w.doc, start);
   if (!main) return [];

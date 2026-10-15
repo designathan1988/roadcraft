@@ -1,8 +1,4 @@
-/**
- * The tower kinds: the buildings drawn by parts of their own
- * (`render/buildings/signature.ts`), saved as a `signature:<kind>` blueprint.
- * The kinds are the lot library's names (`tests/world/lotLibrary.spec.ts`).
- */
+/** The tower kinds: the buildings drawn by parts of their own */
 
 export const TOWER_KINDS = [
   'balconyMid', 'glassOffice', 'glassBalcony', 'beigeClassic', 'darkGlass',

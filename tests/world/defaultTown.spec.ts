@@ -11,12 +11,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The town the game opens on: a planned street grid, commerce on the avenue,
- * residential blocks behind it, the works by the water - every building where
- * it may stand, nothing on a road or on a neighbour, and the land it sits on
- * inside what the terrain field allows.
- */
+/** The town the game opens on: a planned street grid, commerce on the avenue, residential blocks behind it */
 describe('the default town', () => {
   const doc = new RoadDoc();
   const count = buildDefaultTown(doc);
@@ -34,8 +29,7 @@ describe('the default town', () => {
     expect(count).toBeGreaterThan(150);
     expect(count).toBe(all.length);
     const fns = new Set(all.map((b) => b.function));
-    // The avenue's commerce, the civic heart, the works and the houses: if a
-    // district is missing, its own buildings say so.
+    // The avenue's commerce, the civic heart, the works and the houses: if a district is missing, its own buildings say so.
     for (const fn of ['shop', 'bank', 'hotel', 'cityHall', 'church', 'factory', 'warehouse',
       'supermarket', 'school', 'house', 'townhouse', 'apartments', 'gasStation', 'park', 'square']) {
       expect(fns.has(fn as never), fn).toBe(true);
@@ -51,10 +45,7 @@ describe('the default town', () => {
   });
 
   it('leaves no block empty: every block the streets enclose is built on or laid out', () => {
-    // A 4-unit grid over each block; what a footprint (built or open) does not
-    // cover is the walks between buildings - never a whole empty plot. The
-    // blocks between the grid and the works stood at 0% before they were
-    // given their streets, the school block at 14%.
+    // A 4-unit grid over each block; what a footprint (built or open) does not cover is the walks between buildings
     for (const block of townBlocks()) {
       const { x0, y0, x1, y1 } = block.box;
       let inside = 0;
@@ -77,8 +68,7 @@ describe('the default town', () => {
       if (structural !== null) problems.push(`${a.b.function}: ${structural}`);
       for (const c of boxes) {
         if (c === a) continue;
-        // Footprints may TOUCH (terraces stand shoulder to shoulder) but not
-        // share any real area.
+        // Footprints may TOUCH (terraces stand shoulder to shoulder) but not share any real area.
         const overlapX = Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0);
         const overlapY = Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0);
         if (overlapX > 0.6 && overlapY > 0.6) problems.push(`${a.b.function} on ${c.b.function}: ${(overlapX * overlapY).toFixed(1)}`);
@@ -131,8 +121,7 @@ describe('the default town', () => {
     }
     expect(high).toBeLessThanOrEqual(TERRAIN_MAX_HEIGHT);
     expect(low).toBeGreaterThanOrEqual(TERRAIN_MIN_HEIGHT);
-    // The relief the town was planned on is real: hundreds of units of range
-    // across the map, not a garden terrace.
+    // The relief the town was planned on is real: hundreds of units of range across the map, not a garden terrace.
     let mapLow = Infinity;
     let mapHigh = -Infinity;
     for (let i = 0; i < 40; i++) {

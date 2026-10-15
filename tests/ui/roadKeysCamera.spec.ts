@@ -4,12 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bindableKey, resetRoadKeys, roadKey, setRoadKey } from '@ui/roads/keys';
 import { CameraMotion } from '@view/cameraMotion';
 
-/**
- * A ROAD KEY NEVER TAKES THE CAMERA'S. The road tool reads its keys before the
- * camera (`editor/gameKeys.ts`: the tool in hand first), and W, A, S, D, + and
- * - were not kept from it: bound to "raise the road", W stopped moving the
- * camera while the road tool was in hand.
- */
+/** A ROAD KEY NEVER TAKES THE CAMERA'S. */
 afterEach(() => { resetRoadKeys(); });
 
 /** The key a US keyboard gives for a camera key's code, upper and lower case. */

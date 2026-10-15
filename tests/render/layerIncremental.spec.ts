@@ -8,13 +8,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * The buildings layer takes a change of some buildings by their ids in the
- * diary (`townIndex.ts`, AUDITORIA A1): their cells put together again, the
- * rest of the town as it was. What it draws must be what a layer put together
- * from nothing draws on the same town - the same triangles, the same masses
- * from afar, the same ground under the buildings for the plant cull.
- */
+/** The buildings layer takes a change of some buildings by their ids in the diary (`townIndex.ts`, AUDITORIA A1) */
 const SPACING = m(70);
 const flat = (): number => 0;
 

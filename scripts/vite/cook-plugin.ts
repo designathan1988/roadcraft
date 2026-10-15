@@ -3,46 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
-/**
- * The people cooked ahead (`src/render/people/cookedPerson.ts`,
- * `proceduralCook.ts`): THE CAST IS FIXED (the player, 2026-10-13: "deixa
- * essas merdas fixas, pra não ficar mudando de roupa, nem cabelo ... escolhe
- * um grupo e fixa"). The bodies of `cooked/` - 16 people of the cast and 37
- * classes and hairstyles of the crowd - are stamped with a version of the
- * cast (`CAST`), not a fingerprint of the code that builds them: the game
- * reads them under that version whatever code changes, and the build ships
- * them.
- *
- * Before, each cook was stamped with a fingerprint of its maker's import
- * closure, and that closure reached far (every tunable of the simulation,
- * through `DT`): every change to unrelated code made every body stale, the
- * build refused to run until the people were cooked again, and in between
- * the game built them during play - other clothes, other hair. A version is
- * bumped only when the people are changed on purpose, and then the people
- * are cooked again (`npm run cook:people`).
- *
- * Development: `/cooked/...` is served from `cooked/`, and the cook script
- * PUTs its files to `/__cook/...`. Build: `cooked/<dir>` is copied into
- * `dist/cooked/<dir>` when its stamp is the cast's.
- */
+/** The people cooked ahead (`src/render/people/cookedPerson.ts`, `proceduralCook.ts`): THE CAST IS FIXED */
 const CAST = { people: '9e68cf27f80ce3b5', procedural: '72f9109bf47f92b7' } as const;
-/**
- * The cooks: each a folder of `cooked/`, stamped with its version of the
- * cast. `people`: the cast's bodies (`cookedPerson.ts`). `procedural`: the
- * procedural crowd's classes and hairstyles (`proceduralCook.ts`).
- */
+/** The cooks: each a folder of `cooked/`, stamped with its version of the cast. */
 const COOKS = [
   { dir: 'people', stamp: CAST.people, define: '__PEOPLE_COOK_HASH__' },
   { dir: 'procedural', stamp: CAST.procedural, define: '__PROCEDURAL_COOK_HASH__' },
 ] as const;
 type CookDir = typeof COOKS[number]['dir'];
-/**
- * The derived data kept in the player's browser (`src/render/derivedCache.ts`):
- * each kind filed under the fingerprint of the code that makes it - the
- * import closure of its maker and the package files it reads - so a change to
- * that code never serves an old one. Nothing is cooked here: the game makes
- * each the first time and keeps it.
- */
+/** The derived data kept in the player's browser (`src/render/derivedCache.ts`) */
 const DERIVED = [
   { entry: 'src/render/buildings/parts.ts', also: [] as string[], define: '__BUILDING_KIT_HASH__' },
   { entry: 'src/render/surfaceBake.worker.ts', also: [] as string[], define: '__SURFACE_BAKE_HASH__' },
@@ -59,11 +28,7 @@ const ALIASES: readonly [string, string][] = [
   ['@view/', 'src/view/'], ['@editor/', 'src/editor/'], ['@ui/', 'src/ui/'], ['@people/', 'src/people/'],
 ];
 
-/**
- * Every source file `entry` runs, transitively: static imports and exports
- * (not `import type`), dynamic imports and `new URL(...)` workers and data.
- * Packages are left out (their versions are in the lockfile).
- */
+/** Every source file `entry` runs, transitively: static imports and exports */
 export function importClosure(root: string, entry: string): string[] {
   const resolve = (from: string, spec: string): string | null => {
     const alias = ALIASES.find(([key]) => spec.startsWith(key));
@@ -106,16 +71,7 @@ function derivedHash(root: string, entry: string, also: readonly string[] = []):
   return hash.digest('hex').slice(0, 16);
 }
 
-/**
- * Refuses to build a game without the cast's people.
- *
- * The bodies are read back only under the cast's version (`CAST`), and a body
- * that is not there is built during play instead - 21 to 92 ms a person,
- * which is the stutter the player feels and nobody is told about. `cooked/`
- * is not committed (150 MB), so a fresh checkout, or a version bumped on
- * purpose, is the way to get here: this throws, the build stops, and the
- * message says what to run.
- */
+/** Refuses to build a game without the cast's people. */
 function checkCooked(root: string, stampWanted: string, dir: CookDir): void {
   const manifest = path.join(root, DIR, dir, 'manifest.json');
   const fix = 'Run `npm run cook:people` with the development server up (`npm run dev`) and build again.';
@@ -158,9 +114,7 @@ export function cookPlugin(): Plugin {
         },
       };
     },
-    // A release build refuses a missing cast; a dev server must still start,
-    // because cooking it needs one running. There the console says it
-    // instead (`cookedPerson.ts`), and the game builds each body meanwhile.
+    // A release build refuses a missing cast; a dev server must still start, because cooking it needs one running.
     buildStart() {
       if (!building || checked) return;
       checked = true;
@@ -171,10 +125,7 @@ export function cookPlugin(): Plugin {
       building = resolved.command === 'build';
     },
     configureServer(server) {
-      // A change to how a derived kind is made changes its fingerprint: the
-      // server restarts with the new one (kept under the old fingerprint, an
-      // old one would be read back). The cast is fixed (`CAST`): nothing of it
-      // is watched.
+      // A change to how a derived kind is made changes its fingerprint: the server restarts with the new one
       const watched = DERIVED.flatMap((d) => importClosure(root, d.entry));
       server.watcher.on('change', (file) => {
         if (!watched.some((w) => path.resolve(file).startsWith(path.resolve(w)))) return;

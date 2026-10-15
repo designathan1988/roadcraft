@@ -12,12 +12,7 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 
-/**
- * The models of the props on the facades and balconies (`facadeProps.ts`
- * places them): each built once in metres in the component frame - X along
- * the facade, Y up, Z out of the wall - toned per vertex (a condenser's dark
- * grille on its white case) and tinted per instance (`kit.ts`).
- */
+/** The models of the props on the facades and balconies (`facadeProps.ts` places them) */
 
 // ------------------------------------------------------------------ models
 
@@ -48,13 +43,7 @@ function merged(parts: BufferGeometry[]): BufferGeometry {
   return g;
 }
 
-/**
- * A split condenser, centred on its case: the case, the fan behind a round
- * grille of rings and spokes on the left two thirds of its front, the coil's
- * fins at the right, the lid a hair proud of the case and the copper lines
- * into the wall at its right end; two steel arms under it back to the wall,
- * each braced down to a plate on it.
- */
+/** A split condenser, centred on its case */
 function acUnitGeometry(): BufferGeometry {
   const { w, h, d, gap } = AC;
   const front = d / 2;
@@ -82,9 +71,7 @@ function acUnitGeometry(): BufferGeometry {
   for (let k = 0; k < 5; k++) parts.push(block(0.2, 0.014, 0.008, w / 2 - 0.14, -h / 2 + 0.09 + k * 0.07, front + 0.004, grey(0.72)));
   const wall = -front - gap;
   for (const x of [-w / 2 + 0.12, w / 2 - 0.12]) {
-    // The arm under the case, out from the wall, a brace down to a plate on
-    // the wall - the plate's back a hair inside the wall's face, off the
-    // plane the backs of the slabs and surrounds lie in.
+    // The arm under the case, out from the wall, a brace down to a plate on the wall
     parts.push(block(0.035, 0.035, d + gap + 0.07, x, -h / 2 - 0.018, (wall + front + 0.07) / 2 - 0.005, grey(0.38)));
     const brace = new BoxGeometry(0.03, 0.03, 0.36);
     brace.rotateX(-Math.PI / 4);
@@ -127,13 +114,7 @@ function leafStream(seed: number): () => number {
   };
 }
 
-/**
- * A potted plant's leaves from the soil (y 0) up: a rosette of leaves
- * arching out and down (a peace lily, a spider plant, a young dracaena),
- * each a bent, twisted strip narrowing to its tip, over a low clump - a
- * plant's outline, not a green cube. Some 190 triangles; tinted per instance.
- * Half a metre across at most: a balcony's pot, not a palm.
- */
+/** A potted plant's leaves from the soil (y 0) up: a rosette of leaves arching out and down */
 function foliageGeometry(): BufferGeometry {
   const rnd = leafStream(0x1eaf);
   const parts: BufferGeometry[] = [];
@@ -146,8 +127,7 @@ function foliageGeometry(): BufferGeometry {
     const pos: number[] = [];
     const steps = 4;
     const cx = Math.cos(yaw), sz = Math.sin(yaw);
-    // The blade twisted about its spine (40-70 degrees): laid flat, a leaf
-    // seen from the street was an edge, and the plant read as its clump alone.
+    // The blade twisted about its spine (40-70 degrees)
     const twist = 0.7 + rnd() * 0.5;
     const sideX = -sz * Math.cos(twist), sideY = Math.sin(twist), sideZ = cx * Math.cos(twist);
     for (let s = 0; s <= steps; s++) {
@@ -204,11 +184,7 @@ function tableGeometry(): BufferGeometry {
   return merged([tone(top, grey(1)), tone(post, grey(0.85)), tone(foot, grey(0.85))]);
 }
 
-/**
- * A floor-standing clothes airer (the varal de chao), 1.2 m along X: two
- * A-frame ends, the lines between and the washing on them - a towel, a
- * shirt, a pair of trousers, socks.
- */
+/** A floor-standing clothes airer (the varal de chao), 1.2 m along X */
 function airerGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [];
   const half = 0.6, top = 0.92, foot = 0.3;
@@ -249,10 +225,7 @@ function dishGeometry(): BufferGeometry {
   return merged([tone(bowl, grey(1)), arm, mount, feed, lnb]);
 }
 
-/**
- * A condenser from afar (`kit.ts` `far`): its case and the dark round of its
- * fan, some 40 triangles for the 300 of the near one - a town hangs thousands.
- */
+/** A condenser from afar (`kit.ts` `far`) */
 export function acFarGeometry(): BufferGeometry {
   const { w, h, d } = AC;
   const hole = new CircleGeometry(0.19, 8);
@@ -278,11 +251,7 @@ export function createFacadePropGeometries(): Record<FacadePropKind, BufferGeome
   };
 }
 
-/**
- * A round potted shrub (a boxwood, a fern, a geranium): a mound of short
- * leaves over a lumpy core, every leaf a small twisted card standing out of
- * the mound, from the soil (y 0) up, 0.4 m across.
- */
+/** A round potted shrub (a boxwood, a fern, a geranium) */
 function bushGeometry(): BufferGeometry {
   const rnd = leafStream(0xb05);
   const parts: BufferGeometry[] = [];
@@ -322,10 +291,7 @@ function loungerGeometry(): BufferGeometry {
   return merged(parts);
 }
 
-/**
- * A bicycle on its stand, along X, from the floor up: two wheels (tyre and
- * rim, seen from both sides), the diamond frame, saddle and handlebar.
- */
+/** A bicycle on its stand, along X, from the floor up: two wheels */
 function bikeGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [];
   const r = 0.34, base = 0.52;

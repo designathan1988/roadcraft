@@ -10,36 +10,7 @@ import { CAB_WHEEL, DRIVER_WHEEL } from './riderPoses';
 import type { DoorModel, DoorSide, Lamp, SeatModel, VehicleModel } from './vehicleModels';
 import { CabinParts } from './interiorSolids';
 
-/**
- * CARS, BUILT THE WAY A CAR IS DESIGNED.
- *
- * The body is ONE continuous surface lofted through cross-sections: at every
- * station along the car a section - flat underbody, rounded sill, a side that
- * swells a little, the belt, the glasshouse leaning in to the roof, a rounded
- * roof edge and a crowned roof - sized by the side profile (roof, bonnet, boot
- * and bumpers as one smooth line), the plan (rounded corners) and the belt
- * line. Windscreen, side windows, rear window, pillars, roof, door skins and
- * shut lines are REGIONS of that one surface, told apart face by face: the
- * windscreen meets the roof on the same edge and no gap can open between
- * them, no panel can float off the body, and a door leaf is exactly the piece
- * of body it closes.
- *
- * The wheel arches are cut by lifting every vertex of the lower body inside
- * the arch circle onto it: the skin's edge follows the arch and the lifted
- * underbody forms the wheel well. Mirrors grow out of the front doors; the
- * handles sit on the door skins; grille, plates and lamps are set into the
- * surface where it is.
- *
- * The seating is a PACKAGE (`CAR_PACKAGE`), shared with the poses: the hip
- * point over the floor, the heel point, the wheel from the hip, the couple
- * distance to the rear seat. The seats, the floor, the dash and the wheel are
- * built from it, and the anchors the people are posed to (`seatAnchors`) come
- * from it, so a hand on the wheel is on the wheel in every car.
- *
- * Styles share the archetype's size (the simulation's length, width and
- * height, and so its pivot): a sedan may be drawn as an estate, an SUV as a
- * pick-up, without the simulation knowing.
- */
+/** CARS, BUILT THE WAY A CAR IS DESIGNED. */
 
 export type CarStyle = 'hatch' | 'sedan' | 'wagon' | 'suv' | 'pickup' | 'van';
 
@@ -66,11 +37,7 @@ const CHROME = 0xb9bec4;
 
 // ---------------------------------------------------------------- the seating package
 
-/**
- * Where a person sits, relative to the seat's HIP POINT, metres: the one
- * description the seats, the floor, the wheel and the poses are all built
- * from (`riderPoses.ts` reads the same numbers).
- */
+/** Where a person sits, relative to the seat's HIP POINT, metres */
 const CAR_PACKAGE = {
   /** Hip point over the floor (the heel point's floor), every car seat. */
   hipOverFloor: 0.27,
@@ -89,14 +56,7 @@ const CAR_PACKAGE = {
 const CAB_HIP_OVER_FLOOR = 0.45;
 const CAB_HEEL_FORWARD = 0.42;
 
-/**
- * How far an upright seat's cushion (a van's or a truck's cab, a bus's)
- * reaches ahead of the hip point, metres: short of the calves, which hang
- * from the knees 0.34 m ahead of the hip in the upright poses (`cabDrive`,
- * `chairSit`; measured on the roster, `tests/render/interiorSolids.spec.ts`).
- * It reached 0.40-0.42 m, and the front of every bus and cab seat stood 6 cm
- * into its occupant's calves.
- */
+/** How far an upright seat's cushion (a van's or a truck's cab, a bus's) reaches ahead of the hip point, metres */
 export const UPRIGHT_CUSHION_REACH = 0.3;
 
 // ---------------------------------------------------------------- styles
@@ -262,10 +222,7 @@ function extrude(points: readonly P2[], width: number, bevel: number, z = 0): Bu
   return g.translate(0, 0, -depth / 2 + z);
 }
 
-/**
- * Monotone cubic interpolation (Fritsch-Carlson) through points sorted by x:
- * smooth, and never overshooting - a bonnet does not bulge above its line.
- */
+/** Monotone cubic interpolation (Fritsch-Carlson) through points sorted by x: smooth, and never overshooting */
 function monotone(points: readonly P2[]): (x: number) => number {
   const pts = [...points].sort((a, b) => a[0] - b[0]);
   const n = pts.length;
@@ -333,8 +290,7 @@ interface CarShape {
 
 export function carStyleOf(a: Archetype, variant: number): CarStyle {
   const style = (a.style ?? 'sedan') as CarStyle;
-  // An estate in three sedans, a pick-up in four SUVs: the same size and
-  // behaviour to the simulation, another body to the eye.
+  // An estate in three sedans, a pick-up in four SUVs
   if (style === 'sedan' && variant % 3 === 1) return 'wagon';
   if (style === 'suv' && variant % 4 === 3) return 'pickup';
   return style;
@@ -403,8 +359,7 @@ function seatPoints(a: Archetype, styleName: CarStyle): { x: number; z: number; 
   const hipY = M(s.floor + (s.cab ? CAB_HIP_OVER_FLOOR : CAR_PACKAGE.hipOverFloor));
   const z = a.width / 2 - M(0.46);
   const out: { x: number; z: number; y: number; row: number; side: DoorSide }[] = [];
-  // Numbered as the simulation numbers them (`kerbStops.ts`): the driver's
-  // (left) side front to back, then the kerb side (`seatIndex`).
+  // Numbered as the simulation numbers them (`kerbStops.ts`): the driver's (left) side front to back, then the kerb side
   for (const side of [-1, 1] as const) {
     for (let row = 0; row < perSide; row++) {
       out.push({ x: s.hip * a.length - row * M(s.couple), z: side * z, y: hipY, row, side });
@@ -474,7 +429,6 @@ export function buildCarModel(a: Archetype, styleName: CarStyle = (a.style ?? 's
     .filter((x, i, list) => i === 0 || x - list[i - 1]! > M(0.004));
 
   // ---- one section per station: the right half, bottom centre to top centre.
-  // Rows (indices into the half-section):
   const ROW = { bottomCentre: 0, wellInner: 1, well: 2, bottomEdge: 3, corner1: 4, corner2: 5, sideLow: 6, sill: 7,
     lower1: 8, lower2: 9, belt: 10, beltFrame: 11, glass1: 12, glass2: 13, glass3: 14, topFrame: 15, glassTop: 16,
     roof1: 17, roof2: 18, roof3: 19, roofEdge: 20, crown1: 21, crown2: 22, crown3: 23 } as const;
@@ -777,8 +731,7 @@ export function buildCarModel(a: Archetype, styleName: CarStyle = (a.style ?? 's
       const hz = skinAt(handleX, handleY);
       extra.push(tint(box(M(0.17), M(0.028), M(0.03), handleX + M(0.06), handleY, side * (hz + M(0.008))), DARK_TRIM));
       if (d === 0) {
-        // The mirror: an arm out of the door's front corner at the belt, a
-        // housing and its glass facing back. The arm starts inside the skin.
+        // The mirror: an arm out of the door's front corner at the belt, a housing and its glass facing back.
         const mx = x0 - M(0.12);
         const my = belt(mx) + M(0.06);
         const mz = skinAt(mx, belt(mx));

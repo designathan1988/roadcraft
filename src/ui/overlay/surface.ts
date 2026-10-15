@@ -1,12 +1,4 @@
-/**
- * Canvas sizing and device-pixel-ratio handling.
- *
- * The V6 monolith captured `devicePixelRatio` once at module load (defect
- * 5.12). Moving the window to a different-density display, or changing browser
- * zoom, left the backing store at the old scale for the rest of the session.
- * Here it is re-evaluated whenever it actually changes, and because the camera
- * is a transform, a DPR change costs one matrix update and zero geometry.
- */
+/** Canvas sizing and device-pixel-ratio handling. */
 const MAX_DPR = 2;
 
 export class CanvasSurface {
@@ -67,8 +59,7 @@ export class CanvasSurface {
 
     if (this.canvas.width === w && this.canvas.height === h) return false;
 
-    // Assigning width/height resets the entire context state, so anything we
-    // rely on has to be reapplied here rather than set once at construction.
+    // Assigning width/height resets the entire context state
     this.canvas.width = w;
     this.canvas.height = h;
     this.applyDefaults();
@@ -82,13 +73,7 @@ export class CanvasSurface {
   }
 }
 
-/**
- * Calls `cb` whenever the device pixel ratio changes.
- *
- * `resize` does not reliably fire for a monitor switch or an OS scaling change,
- * so this arms a one-shot media query at the current ratio and re-arms itself
- * after each hit.
- */
+/** Calls `cb` whenever the device pixel ratio changes. */
 function watchDpr(cb: (dpr: number) => void): () => void {
   let mq: MediaQueryList | null = null;
   let disposed = false;

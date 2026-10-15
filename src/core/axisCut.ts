@@ -1,35 +1,6 @@
 import type { MultiPoly, Poly, Ring } from './clipper';
 
-/**
- * Cuts a polygon with holes along an axis-parallel line, into the part below
- * the line and the part above it.
- *
- * ## Why not the clipper
- *
- * `splitToSpan` bisects every road band down to mesh-sized pieces, and it used
- * to do each cut as a general boolean intersection with a rectangle. Measured
- * on a 144-segment map that was 46 % of the whole road-surface rebuild: the
- * sweep-line kernel pays for arbitrary input — overlapping rings, coincident
- * edges, snapping — on every level of the recursion, when every cut is a
- * straight line through a polygon the kernel itself has already cleaned.
- *
- * A straight cut needs only a walk round each ring and a sort of the points
- * where it crosses the line. The boundary of each side is the ring stretches on
- * that side, joined along the cut line; because every ring is oriented with the
- * interior on its left, the crossings sorted along the line alternate between a
- * stretch leaving that side and one re-entering it, and pairing them is all
- * the joining there is. Both sides are built from the SAME crossing points, so
- * the two pieces meet vertex for vertex along the cut.
- *
- * ## When it declines
- *
- * The cut is moved off any vertex (by a few thousandths of a unit, which does
- * not matter for where a mesh is split), so no point lies on the line and no
- * edge runs along it. Anything the pairing cannot vouch for — crossings that
- * do not alternate, two at the same place, a hole outside every piece — returns
- * `null`, and the caller does the cut the general way. It is a fast path, not
- * a second kernel.
- */
+/** Cuts a polygon with holes along an axis-parallel line */
 
 /** No vertex is allowed nearer the cut than this, in world units. */
 const CLEAR = 1e-3;
@@ -52,10 +23,7 @@ interface Chain {
   readonly exit: Crossing;
 }
 
-/**
- * The parts of `polygon` below and above the line `axis = at` (`axis` 0 is x,
- * 1 is y), or null when the input is not one this fast path can vouch for.
- */
+/** The parts of `polygon` below and above the line `axis = at` */
 export function cutAtAxis(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, MultiPoly] | null {
   const across = axis;
   const along = axis === 0 ? 1 : 0;
@@ -67,8 +35,7 @@ export function cutAtAxis(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, M
       if (r === 0) return null;
       continue;
     }
-    // Interior on the left in (across, along): outer rings anticlockwise,
-    // holes clockwise, measured in the cut's own frame.
+    // Interior on the left in (across, along): outer rings anticlockwise, holes clockwise, measured in the cut's own frame.
     const twice = signedArea(ring, across, along);
     if (twice === 0) return null;
     rings.push((r === 0) === (twice > 0) ? ring : ring.slice().reverse());
@@ -138,12 +105,10 @@ export function cutAtAxis(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, M
   for (let k = 0; k < crossings.length; k += 2) {
     const low = crossings[k];
     const high = crossings[k + 1];
-    // Inside the polygon between each pair, outside between pairs: the lower
-    // crossing of each pair rises, the upper one falls.
+    // Inside the polygon between each pair, outside between pairs: the lower crossing of each pair rises, the upper one falls.
     if (!low || !high || !low.rising || high.rising || !(low.v < high.v)) return null;
     if (k > 0 && !((crossings[k - 1] as Crossing).v < low.v)) return null;
-    // Below the line the boundary runs up the cut from a rising crossing to
-    // the falling one; above it, down from the falling one to the rising one.
+    // Below the line the boundary runs up the cut from a rising crossing to the falling one
     next.set(low, { below: high, above: low });
     next.set(high, { below: high, above: low });
   }
@@ -164,16 +129,7 @@ export function cutAtAxis(polygon: Poly, axis: 0 | 1, at: number): [MultiPoly, M
   return result;
 }
 
-/**
- * The clipper's winding, in WORLD axes: outer rings anticlockwise, holes
- * clockwise.
- *
- * The rings above are anticlockwise in the cut's own frame, which for a cut
- * along y is the mirror of the world's, so every piece of a horizontal cut came
- * out clockwise. A mesh builder reading the winding to decide which way is up
- * then drew those pieces face down, and whole stretches of road vanished under
- * back-face culling. Give back exactly what the clipper gave.
- */
+/** The clipper's winding, in WORLD axes: outer rings anticlockwise, holes clockwise. */
 function worldWinding(polygon: Poly): Poly {
   return polygon.map((ring, r) => ((r === 0) === (signedArea(ring, 0, 1) > 0) ? ring : ring.slice().reverse()));
 }
@@ -214,9 +170,7 @@ function sideOnly(polygon: Poly, rings: Ring[], across: number, line: number): [
   return below ? [[polygon], []] : [[], [polygon]];
 }
 
-/**
- * The cut position nearest `at` that clears every vertex by `CLEAR`, or null.
- */
+/** The cut position nearest `at` that clears every vertex by `CLEAR`, or null. */
 function clearLine(rings: readonly Ring[], across: number, at: number): number | null {
   for (let k = 0; k < TRIES; k++) {
     const offset = (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * NUDGE;

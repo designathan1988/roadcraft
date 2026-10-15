@@ -7,22 +7,7 @@ import type { PlantedTree } from '../trees';
 import { treeSeed } from '../trees';
 import { UNITS_PER_METER, m } from '../units';
 
-/**
- * THE SQUARES OF A GENERATED CITY (docs/source/VIAS.md V7; the coordinator's order
- * of 2026-10-09: one square per neighbourhood, on a corner block or on an
- * avenue's axis, never loose grass in the middle of a block).
- *
- * A square is a WHOLE block - every lot of a block, the block being the lots
- * that touch one another between the streets - fronting a main road
- * (avenue or collector), chosen per neighbourhood (a cell of
- * `NEIGHBOURHOOD`) as the block of a fitting size nearest the cell's middle.
- * Brazilian practice (the "praça" of the grid town, Lei 6.766/79 art. 4º,
- * public open space in every subdivision): a paved cross of walks from the
- * middle of each side, lawns between, trees round the edge and in the lawns.
- * Its lots go; the walks are painted (concrete) on the ground's grass and the trees are
- * planted trees (`RoadDoc.trees`, drawn instanced), the benches and lamps
- * are the furniture of the streets round it.
- */
+/** THE SQUARES OF A GENERATED CITY */
 
 /** A neighbourhood's side: one square in each. */
 export const NEIGHBOURHOOD = m(420);
@@ -76,12 +61,7 @@ function blocks(lots: readonly Lot[]): Lot[][] {
 /** Side of the cells the main roads are filed in (`mainRoadsNear`). */
 const MAIN_CELL = m(64);
 
-/**
- * Whether a point is within `reach` of a main road (avenue or collector) of
- * the document, the main roads filed once by cell (their straight chords, as
- * measured before). DO NOT measure every road of the city for each lot of each
- * block: it was lots x roads on a generated city.
- */
+/** DO NOT measure every road of the city for each lot of each block: it was lots x roads on a generated city. */
 function mainRoadsNear(doc: RoadDoc): (p: Vec2, reach: number) => boolean {
   const main = new Set(['avenue', 'urban', 'boulevard'].map((id) => ROAD_TYPES.findIndex((t) => t.id === id)));
   const cells = new Map<string, [Vec2, Vec2][]>();

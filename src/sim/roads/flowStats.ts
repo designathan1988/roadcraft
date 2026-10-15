@@ -1,22 +1,7 @@
 import type { NodeId, SegmentId } from '@world/ids';
 import { ROAD_TUNING } from '@world/roads/tuning';
 
-/**
- * THE FLOW AT EACH JUNCTION (docs/VIAS.md V5): vehicles an hour entering each
- * junction from each of its legs, as a trend - an exponential moving average
- * of the count per second, so a burst does not swing the control and a slow
- * change of the town's traffic does (the junction's control is chosen by the
- * trend, the player's decision of 2026-10-09). Counted where a vehicle enters
- * a junction's movement (`SimWorld.enterLanelet`), aged once a second. Fixed
- * memory: one counter and one rate per leg of a junction.
- *
- * Aged lazily: a leg's rate is kept with the second it was last brought up
- * to, and a second with nothing counted only multiplies it by `KEEP` (the
- * average's step with nought counted, rate + (0 - rate) / TAU), so the seconds
- * a leg was quiet are applied at once - a power of `KEEP` - when it is next
- * counted or read. DO NOT age every leg ever seen every second: every leg of
- * every junction of the map, once a second, for the few that were counted.
- */
+/** DO NOT age every leg ever seen every second */
 const TAU = ROAD_TUNING.flow.trendWindow / 3;
 /** What a second with nothing counted leaves of a rate. */
 const KEEP = 1 - 1 / TAU;
@@ -45,8 +30,7 @@ export class FlowStats {
     while (this.carry >= 1) {
       this.carry -= 1;
       this.second++;
-      // The legs counted this second: aged up to it, the count taken in. A leg
-      // seen for the first time starts at its count.
+      // The legs counted this second: aged up to it, the count taken in.
       for (const [node, counted] of this.counts) {
         let legs = this.rates.get(node);
         if (!legs) this.rates.set(node, legs = new Map());

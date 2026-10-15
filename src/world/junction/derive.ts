@@ -15,37 +15,7 @@ import { legTongue, nodeCap, nodeCentre } from './polygon';
 import type { Junction } from './build';
 import { m } from '../units';
 
-/**
- * Every outer surface of a junction, derived from its kerb line.
- *
- * A junction used to be solved four times, once per surface (carriageway,
- * kerb, footway, verge), each with its own trims and its own corner radius,
- * and the four outlines were then unioned. They did not agree: the footway's
- * own return reached its own mouth while the kerb's stopped short of it, a
- * leg was cut at a different distance on each surface, and the square back
- * corner of the footway was a separate kite laid over all of it. What the
- * player saw was a notch in the back of every footway corner, a step where a
- * kerb return met its leg, and lumps of footway standing proud of the corner.
- *
- * Here the junction is solved ONCE, on the carriageway (the kerb face), as a
- * road designer lays it out, and every other surface is an offset of that one
- * outline (procedural junction builders do the same: the curb return is
- * computed once, the curb and the sidewalk are bands along it):
- *
- * - every surface is cut at the SAME distance along each leg, so a mouth is
- *   one straight cut across the whole cross-section;
- * - the kerb stone follows the kerb return concentrically, its own width
- *   further from the carriageway all the way round;
- * - the back of the footway, and the verge beyond it, turn a square corner,
- *   as the building line of a block does, where the two footway edges meet
- *   at a sane angle; elsewhere they follow the kerb return too.
- *
- * When the carriageway is a transition (a taper, a seam, a bend of one road,
- * `transition.ts`) every surface is the same transition: the same axis, cut
- * at the same distance on both legs, each level at its own half-width
- * (`deriveTransitionLevel`). When it is a shallow merge or a hull fallback
- * nothing is derived and each surface is built on its own as before.
- */
+/** Every outer surface of a junction, derived from its kerb line. */
 
 /** Below this wedge, or above its supplement, the footway's back is rounded, not squared. */
 const SQUARE_MIN = Math.PI / 6;
@@ -96,9 +66,7 @@ export function deriveJunctionLevel(
     let fillet: Fillet | null = null;
     let mode: Corner['mode'] = c.mode;
     const kerb = c.fillet;
-    // Squared only where the square leaves the footway its width all round
-    // the kerb return: at an acute bend the two back edges meet beyond the
-    // return and a square corner would cut the footway off at its apex.
+    // Squared only where the square leaves the footway its width all round the kerb return
     const keepsWidth = (): boolean => {
       if (!kerb) return true;
       const mx = (kerb.ta.x - kerb.c.x) + (kerb.tb.x - kerb.c.x);
@@ -197,19 +165,7 @@ export function deriveJunctionLevel(
   };
 }
 
-/**
- * One surface of a transition, as an offset of the carriageway's.
- *
- * Built on its own, each surface took a run of its own and its own cap, and
- * where the footway's longer run was capped short it fell back to a corner
- * plate under a transition carriageway: a strip of footway paving across the
- * road at the mouth of a curved bend, and on a straight bend the kerb stepping
- * out where the footway still ran straight (AT2). Every boundary of a road is
- * an offset of one line at the same stations - OpenDRIVE's lanes, sidewalks
- * included, are cumulative widths from one reference line - so every surface
- * here is the carriageway's own transition axis, cut at its trims, at the
- * surface's half-widths.
- */
+/** One surface of a transition, as an offset of the carriageway's. */
 function deriveTransitionLevel(doc: RoadDoc, cache: PolylineCache, base: Junction, level: SurfaceLevel): Junction | null {
   if (base.legs.length !== 2) return null;
   const trimOf = new Map<SegmentId, number>();

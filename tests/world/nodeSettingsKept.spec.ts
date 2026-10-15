@@ -4,13 +4,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { RoadDoc } from '@world/doc';
 import { layoutDoc } from '../sim/support/bodies';
 
-/**
- * WHAT THE PLAYER SET AT A JUNCTION SURVIVES THE DOCUMENT BEING REPLACED.
- * Every road drawn commits an edited clone (`replaceWith`), and undo and redo
- * restore a snapshot the same way: a node's lane connections, leg rules and
- * signal settings, and a road's retaining walls, must come through it, and
- * an undo of one of them alone must count as a change of the roads.
- */
+/** WHAT THE PLAYER SET AT A JUNCTION SURVIVES THE DOCUMENT BEING REPLACED. */
 function junction(): { doc: RoadDoc; centre: NodeId; legs: SegmentId[] } {
   const { doc, centre } = layoutDoc({ name: 'av', bearings: [0, 90, 180, 270], types: [3, 1, 3, 1] });
   const legs = [...doc.segments.keys()].sort((a, b) => a - b) as SegmentId[];

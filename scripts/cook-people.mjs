@@ -1,21 +1,8 @@
-// Cooks the people ahead (src/render/people/cookedPerson.ts, and the procedural
-// crowd's classes and hairstyles: proceduralCook.ts): every roster
-// person built once in a real browser, packed, and written by the development
-// server to cooked/people/<id>.bin, with a manifest stamped with the build's
-// fingerprint of how people are built (cook-plugin.ts). The game then reads
-// them back instead of building them; `npm run build` copies them into dist.
-// Run again whenever the people code or assets change (the fingerprint
-// changes and stale bodies are never used: they are built instead).
-//
-//   node scripts/cook-people.mjs [--base=http://127.0.0.1:5173]
-//
-// A development server of this checkout must be running. Headless, on the GPU.
+// Cooks the people ahead src/render/people/cookedPerson.ts, and the procedural crowd's classes and hairstyles:
 import { chromium } from '@playwright/test';
 import { constants, setPriority } from 'node:os';
 
-// Low priority, before Chrome is launched (its processes inherit it): this
-// machine is the one the game is played on, and a cook or probe at normal
-// priority took the CPU to 100% and froze it (2026-10-06).
+// Low priority, before Chrome is launched (its processes inherit it)
 try { setPriority(0, constants.priority.PRIORITY_LOW); } catch { /* not allowed here: run as is */ }
 
 const base = (process.argv.find((a) => a.startsWith('--base=')) ?? '--base=http://127.0.0.1:5173').slice(7);

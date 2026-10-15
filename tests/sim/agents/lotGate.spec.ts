@@ -11,13 +11,7 @@ import { SimWorld } from '@sim/world';
 import { type Bay, carGates, collectBays, gateExits, gatedProperty, wallsOf } from '@sim/agents/parking';
 import { arrival, departure } from '@sim/agents/manoeuvre';
 
-/**
- * A lot with a car park behind its building is entered and left by its car
- * gate (the player, 2026-10-09: "the car gate that leads to the parking at
- * the back must be FUNCTIONAL"): every stall is reached from the lane in front
- * of the gate, the way in and out passes through the gate and through no
- * wall or fence, and no kerb bay is painted across the gate.
- */
+/** A lot with a car park behind its building is entered and left by its car gate */
 
 /** Whether a local point lies in a boundary part (wall, fence, hedge, railing) of the building, grown by `pad`. */
 function inBoundary(b: Building, p: { x: number; y: number }, pad: number): boolean {
@@ -123,9 +117,7 @@ describe('a lot car park reached through its car gate', () => {
   it('reaches most stalls from the lane in front of the gate', () => {
     expect(bays.length).toBeGreaterThan(0);
     const reached = bays.filter((bay) => bay.lane?.entryAt !== undefined && bay.via.length > 0);
-    // A lot with a way out through its gate reaches every one of its stalls:
-    // nothing stands in its drive or across the turn into the aisle (a
-    // cabinet left at the drive's mouth cut off all eight stalls of a lot).
+    // A lot with a way out through its gate reaches every one of its stalls
     for (const b of parks) {
       if (!gateExits(w, b, gatedProperty(b)!, wallsOf(w)).length) continue;
       const mine = bays.filter((bay) => bay.building === b.id);

@@ -1,6 +1,4 @@
-// The lorries' yards as made before 2026-10-14 (src/sim/agents/lorryDocks.ts at cb9d123),
-// the buildings near a yard from an index of every building of the town: the
-// oracle of `lorries.spec.ts`. Only its imports and exports were changed.
+// The lorries' yards as made before 2026-10-14
 import { pointInPolygon } from '@core/polygon';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { isDock, lorryDocks, type LorryDock } from '@world/buildings/docks';
@@ -18,25 +16,7 @@ import {
   type Solid, type Steered, type Waypoint, WaySearch,
 } from '@sim/agents/hybridAStar';
 
-/**
- * A works' loading yard as a lorry drives it: what is solid to it, and the
- * way from the street through the yard's gate to each dock - forward, then
- * backing onto the dock - and from the dock out to the street again
- * (`lorryTraffic.ts` drives them).
- *
- * The yards are tight (a 9.8 m lorry in a yard 14.5 m deep, the docks taking
- * 12 of it; a lorry's approach is twice its length by the American Trucking
- * Associations' rule), so a way is found, not drawn: hybrid-state A*
- * (`hybridAStar.ts`) shunts the lorry about as a driver does, never turning
- * tighter than it can. It turns at the radius of AASHTO's single-unit truck
- * SU-30, whose wheelbase (6.1 m) is the drawn lorry's (6.3 m between the front
- * axle and the middle of the rear pair): 38 ft (11.6 m) at the front axle's
- * middle at full lock (TxDOT Roadway Design Manual 4.3.3, Table 4-1), so 9.7 m
- * at the rear axle's.
- *
- * Everything here is in the building's local frame; the ways are given back
- * in the world's. A dock with no way in and out takes no lorry.
- */
+/** A works' loading yard as a lorry drives it */
 
 /** Cell of a yard's grid. */
 const CELL = m(0.1);
@@ -152,12 +132,7 @@ export class Yard {
     }
   }
 
-  /**
-   * Plans on, up to `budget` poses expanded; how many it spent. A dock is
-   * planned through each gate in turn (the nearest first) until one way in
-   * and out is found: in from the stop before the gate, backing onto the
-   * dock; out from the dock to the lane past the same gate.
-   */
+  /** Plans on, up to `budget` poses expanded; how many it spent. */
   plan(dockIndex: number, budget: number): number {
     const dock = this.docks[dockIndex]!;
     let spent = 0;
@@ -258,12 +233,7 @@ interface YardGrid {
   readonly field: Clearance;
 }
 
-/**
- * Cells of work a slice of a yard's making: some 2 ms. A yard's grid (cells
- * of 10 cm, a third of a million) was filled and its clearance worked out in
- * one tick - 30 ms, the simulation's worst tick in the game (2026-10-13); now
- * over a dozen.
- */
+/** Cells of work a slice of a yard's making: some 2 ms. */
 const YARD_SLICE = 40_000;
 
 /** Cell of the grid the lots and buildings near a yard are found by (`yardNeighbours`). */
@@ -278,13 +248,7 @@ interface YardNeighbours {
 
 const neighbourCell = (i: number, j: number): number => i * 100_003 + j;
 
-/**
- * The town's lots and buildings filed by cell, made again only when the
- * buildings or the lots change: a yard asks for the cells over its grid (it
- * went through every lot and every building of the map, each turned into
- * its frame).
- * @rebuild Its work runs when the buildings or the lots changed.
- */
+/** @rebuild The town's lots and buildings filed by cell, made again only when the buildings or the lots change */
 export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardNeighbours {
   const key = `${w.doc.buildings.revision}:${w.doc.lotRevision}`;
   if (known && known.key === key) return known;
@@ -333,11 +297,7 @@ function near(index: YardNeighbours, x0: number, y0: number, x1: number, y1: num
   return { lots, buildings };
 }
 
-/**
- * Makes a yard a slice at a time: what is solid to a lorry filled in its
- * grid - from what is near the yard only (the roads and buildings of the
- * whole map were each turned into the yard's frame) - then its clearance.
- */
+/** Makes a yard a slice at a time: what is solid to a lorry filled in its grid - from what is near the yard only */
 export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
   const prop = gatedProperty(b)!;
   const lot = index.lotOf.get(b.id);
@@ -371,10 +331,7 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
       { x: gx + tx * half + ox * far, y: gy + ty * half + oy * far }, { x: gx - tx * half + ox * far, y: gy - ty * half + oy * far },
     ], 0);
   }
-  // Only the street near a gate: a lorry turns in and out there, and the
-  // search does not wander the whole frontage (each street cell is a few
-  // hundred poses more to try). The lot's own cells by a mask of its ring,
-  // not a point-in-polygon test a cell.
+  // Only the street near a gate: a lorry turns in and out there, and the search does not wander the whole frontage
   const inLot: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny) };
   if (ring.length) fillRing(inLot, ring, 1);
   const mouths = exits.filter((e) => e.outer).map((e) => e.outer!);
@@ -464,11 +421,7 @@ const last = <T>(list: readonly T[]): T => list[list.length - 1]!;
 /** Spacing of the poses on a settling leg. */
 const SETTLE_STEP = m(0.2);
 
-/**
- * A short leg from a pose to another, driven forward or backing: the rear
- * axle along a cubic Hermite curve whose ends point along the two headings
- * (the way `manoeuvre.ts` joins its points), the body along the curve.
- */
+/** A short leg from a pose to another, driven forward or backing */
 function settle(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   const dir = reverse ? -1 : 1;

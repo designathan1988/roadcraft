@@ -16,14 +16,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The elevation field is the single source of height for every road surface, so
- * these are the properties the mesh depends on:
- *
- *  - CONTINUITY, because a step in the field is a crack in the mesh;
- *  - CLEARANCE, because a deck under the terrain is a road cut into plates;
- *  - AGREEMENT AT A NODE, because two legs at different heightsis a visible step.
- */
+/** The elevation field is the single source of height for every road surface */
 
 function flatGround(): (x: number, y: number) => number {
   return () => 0;
@@ -66,16 +59,7 @@ function worstStep(field: RoadElevation, radius: number, step: number): number {
   return worst;
 }
 
-/**
- * Continuity, measured rather than assumed.
- *
- * A continuous field's worst jump shrinks in proportion to the sampling step; a
- * field with a cliff in it keeps the same jump however finely it is sampled.
- * Halving the step and requiring the jump to halve with it is therefore the test
- * that actually distinguishes the two — and the one that caught an 8.8-unit
- * cliff a few tens of units off the kerb, where the road's influence simply
- * stopped and the answer fell to the bare ground.
- */
+/** Continuity, measured rather than assumed. */
 function continuityRatio(field: RoadElevation, radius: number): number {
   const coarse = worstStep(field, radius, 2 * U);
   const fine = worstStep(field, radius, 0.5 * U);
@@ -139,10 +123,7 @@ describe('road elevation over a hill', () => {
   });
 
   it('cuts into what rises above it and fills over what falls away', () => {
-    // The contract a road at grade actually has. It is NOT "stay above the
-    // ground": a road that never cuts has to ride over every hummock, which is
-    // the rippling ribbon a player photographed. It designs a line through the
-    // ground and the terrain is reshaped to meet it, so both signs must appear.
+    // The contract a road at grade actually has.
     let deepestCut = 0;
     let highestFill = 0;
     for (let s = -300 * U; s <= 300 * U; s += 3 * U) {
@@ -157,8 +138,7 @@ describe('road elevation over a hill', () => {
   });
 
   it('keeps the earthwork bounded', () => {
-    // A cut is a design decision, not a licence to excavate the map. Nothing on
-    // an 18-unit hill should move more earth than the hill is tall.
+    // A cut is a design decision, not a licence to excavate the map.
     for (let s = -300 * U; s <= 300 * U; s += 3 * U) {
       for (const [x, y] of [[s, 0], [0, s]] as const) {
         expect(Math.abs(field.at(x, y) - terrain(x, y))).toBeLessThan(10 * U);
@@ -167,8 +147,7 @@ describe('road elevation over a hill', () => {
   });
 
   it('is far smoother than the ground it crosses', () => {
-    // The point of the whole exercise, stated as a number: the designed line
-    // must curve less than the ground does. Second difference, summed.
+    // The point of the whole exercise, stated as a number: the designed line must curve less than the ground does.
     let road = 0;
     let ground = 0;
     const d = 4 * U;
@@ -206,8 +185,7 @@ describe('road elevation over a hill', () => {
   });
 
   it('is decided by the road, not the ground, everywhere a surface is drawn', () => {
-    // The widest casing is 32.5 units (a 24 m boulevard and its verge);
-    // nothing the mesh builds reaches further.
+    // The widest casing is 32.5 units (a 24 m boulevard and its verge); nothing the mesh builds reaches further.
     for (let s = -280 * U; s <= 280 * U; s += 7 * U) {
       for (const across of [-32, -16, 0, 16, 32]) {
         const onRoad = field.at(s, across * U);
@@ -291,18 +269,12 @@ describe('ramps between a raised deck and the ground', () => {
     return { field, heights, span, b: b.id, c: c.id };
   }
 
-  /**
-   * The two ramps and the deck between them. A ramp runs from where the road
-   * leaves its plate to where it stops climbing faster than a deck may
-   * (`DECK_GRADE`, 5 %); the deck is everything between the two ramps.
-   */
+  /** The two ramps and the deck between them. */
   function anatomy(heights: readonly number[]) {
     const grade = (i: number): number => Math.abs((heights[i + 4] as number) - (heights[i] as number)) / (4 * U);
     const foot = heights[0] as number;
     const upStart = heights.findIndex((h) => h > foot + 0.02 * U);
-    // The first units of a ramp are its sag curve, where the grade is still
-    // building up from level and is below a deck's; the ramp does not end
-    // there. `SAG` is the curve's length (`RAMP_CURVE`).
+    // The first units of a ramp are its sag curve, where the grade is still building up from level and is below a deck's
     const SAG = 12;
     let upEnd = upStart;
     while (upEnd < heights.length - 5 && (grade(upEnd) > 0.052 || upEnd - upStart < SAG)) upEnd++;
@@ -326,10 +298,7 @@ describe('ramps between a raised deck and the ground', () => {
   }
 
   it('climbs to its full height in at most 100 units, and is level at full height between', () => {
-    // The player's complaint, twice: "the ramp must be a few metres, not a thing
-    // with no end". Measured on the first version: 262 units to climb 15, a
-    // smoothstep with a mean grade of 5.3 %; on the second, 183 units, and a
-    // deck that followed the land so it never looked level.
+    // The player's complaint, twice: "the ramp must be a few metres, not a thing with no end".
     for (const standalone of [true, false]) {
       const { heights } = elevated(600 * U, flatGround(), standalone);
       const shape = anatomy(heights);
@@ -338,8 +307,7 @@ describe('ramps between a raised deck and the ground', () => {
       expect(shape.rampB).toBeLessThanOrEqual(100);
       expect(shape.deck).toBeGreaterThanOrEqual(0.6);
       expect(shape.steepest).toBeLessThan(0.162);
-      // Level: the deck between the ramps is within the crest's rounding of
-      // its height, and most of the span stands at that height.
+      // Level: the deck between the ramps is within the crest's rounding of its height
       const deck = heights.slice(shape.deckFrom, shape.deckTo);
       expect(Math.max(...deck) - Math.min(...deck)).toBeLessThan(0.25 * U);
       const top = Math.max(...heights);
@@ -378,9 +346,7 @@ describe('ramps between a raised deck and the ground', () => {
       expect(shape.steepest).toBeLessThan(0.162);
       lengths.push(shape.rampA);
     }
-    // The deck starts one clearance over the junction it lands on and runs
-    // straight to the other end, so a lower landing tilts the deck a little
-    // rather than lengthening the ramp.
+    // The deck starts one clearance over the junction it lands on and runs straight to the other end
     for (const length of lengths) expect(length).toBeLessThanOrEqual(100);
   });
 
@@ -433,14 +399,7 @@ describe('where a leg meets its junction plate', () => {
 
   type Layout = 'all-elevated' | 'elevated-over-ground' | 'elevated-landing-on-streets';
 
-  /**
-   * A crossroads whose four arms are CHAINS of `count` segments of `length`:
-   * a boulevard north-south, `typeEW` east-west. A chain is what a player
-   * draws - a road is rarely one segment - and it is what the regression
-   * needed: the lift a deck takes over a rise travels one node along the
-   * chain per round of the solve, and after the third round it simply stopped,
-   * leaving a plate up to two units above the node its junction was solved at.
-   */
+  /** A crossroads whose four arms are CHAINS of `count` segments of `length`: a boulevard north-south, `typeEW` east-west. */
   function crossroads(typeEW: number, count: number, length: number, layout: Layout) {
     const doc = new RoadDoc();
     const centre = doc.addNode({ x: 0, y: 0 });
@@ -463,12 +422,7 @@ describe('where a leg meets its junction plate', () => {
     return { doc, net };
   }
 
-  /**
-   * The worst height difference across every seam between a leg and the
-   * junction plate it ends on: at the junction outline (the casing trim),
-   * half a unit either side of it, at five points across the carriageway, and
-   * against the one height the node has.
-   */
+  /** The worst height difference across every seam between a leg and the junction plate it ends on: at the junction outline */
   function worstSeam(doc: RoadDoc, net: Network, field: RoadElevation): number {
     let worst = 0;
     for (const [id, ribbon] of net.ribbons) {
@@ -482,9 +436,7 @@ describe('where a leg meets its junction plate', () => {
         const node = end === 'a' ? segment.a : segment.b;
         const trim = trims[end][Level.Casing] ?? 0;
         const plate = field.nodeHeight(node);
-        // Where only the structure changes on one road (a ramp landing) the
-        // node is a seam, not a plate: the grade runs on through it, so the
-        // deck is measured against the road it continues, point for point.
+        // Where only the structure changes on one road (a ramp landing) the node is a seam, not a plate
         const seam = net.transitions.has(node);
         for (const delta of [-0.5, 0, 0.5]) {
           const reach = Math.min(line.length, Math.max(0, trim + delta * U));
@@ -519,9 +471,7 @@ describe('where a leg meets its junction plate', () => {
           for (const [count, length] of [[3, 150], [2, 200]] as const) {
             const { doc, net } = crossroads(typeEW, count, length * U, layout);
             const field = buildRoadElevation(net, terrain);
-            // Invariant 3: the plate is flat and every leg is flat over its
-            // reach at the SAME height. Measured before this was fixed: 1.94
-            // units on hilly ground.
+            // Invariant 3: the plate is flat and every leg is flat over its reach at the SAME height.
             expect(worstSeam(doc, net, field)).toBeLessThan(1e-3 * U);
           }
         });
@@ -560,8 +510,7 @@ describe('tunnels', () => {
   });
 
   it('meets the ground at both portals', () => {
-    // The ends are where a tunnel joins the street network, so they must be at
-    // grade. A tunnel solved as one sunken slab left a cliff at each end.
+    // The ends are where a tunnel joins the street network, so they must be at grade.
     const { field, a, b, ground } = throughHill('tunnel');
     for (const node of [a, b]) {
       const height = field.nodeHeight(node);
@@ -571,9 +520,7 @@ describe('tunnels', () => {
   });
 
   it('is solved quite differently from the same road at grade', () => {
-    // A road at grade cuts into the crest by a few units; a tunnel goes under
-    // it by its whole design depth. The gap between the two is the guarantee
-    // that `solveSunken` is doing something a shallow cut could not.
+    // A road at grade cuts into the crest by a few units; a tunnel goes under it by its whole design depth.
     const bored = throughHill('tunnel');
     const surface = throughHill('ground');
     const crest = surface.ground(0, 0);
@@ -582,8 +529,7 @@ describe('tunnels', () => {
   });
 
   it('stays continuous along its whole length', () => {
-    // A step in the field is a crack in the mesh, and the sunken solver is a
-    // second place a discontinuity could be introduced.
+    // A step in the field is a crack in the mesh, and the sunken solver is a second place a discontinuity could be introduced.
     const { field } = throughHill('tunnel');
     let worst = 0;
     for (let x = -600 * U; x <= 600 * U; x += 2 * U) {
@@ -593,13 +539,7 @@ describe('tunnels', () => {
   });
 
   it('gets less deep as the span gets shorter', () => {
-    // Honest failure, stated as a monotone property rather than as a threshold:
-    // the ramps have to fit, so a span that cannot hold them at the design
-    // gradient has its floor raised until they do, and the terrain shaper then
-    // leaves a shallow trench open instead of closing a hill over a road that is
-    // barely below it. Where exactly the crossover falls depends on how deeply
-    // the approach cutting has already taken the road down, which is a property
-    // of the ground, not of the tunnel.
+    // Honest failure, stated as a monotone property rather than as a threshold
     const long = throughHill('tunnel', 900 * U);
     const short = throughHill('tunnel', 180 * U);
     const shorter = throughHill('tunnel', 90 * U);

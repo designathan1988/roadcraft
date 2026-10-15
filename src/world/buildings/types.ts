@@ -2,24 +2,13 @@ import { m } from '../units';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingMaterials, MaterialSpec, VolumeMaterials } from './materials';
 
-/**
- * The modular building model.
- *
- * A building is DATA: volumes of whole grid cells, storeys on levels, facades
- * of bays, each bay a replaceable component. Nothing here is a mesh, and
- * nothing here knows the editor or the renderer exists.
- */
+/** The modular building model. */
 
 declare const BuildingIdBrand: unique symbol;
 export type BuildingId = number & { readonly [BuildingIdBrand]: true };
 export const asBuildingId = (n: number): BuildingId => n as BuildingId;
 
-/**
- * The schema written on every stored building. See `serialize.ts`.
- *
- * 1: volumes, cores and spaces measured in whole cells of `module`.
- * 2: measured in world units, any size (the editor snaps them to `GRID`).
- */
+/** The schema written on every stored building. */
 export const BUILDING_SCHEMA = 2;
 
 const BUILDING_USES = ['residential', 'commercial', 'industrial', 'mixed'] as const;
@@ -41,10 +30,7 @@ export const BAY_COMPONENTS = [
   'shopfront',
   'loadingDoor',
   'pillar',
-  // The facade library of the procedural buildings (`architecture.ts`): a
-  // loggia let into the wall behind a glass parapet, a window behind
-  // vertical sun fins (brise-soleil), a window with louvred shutters folded
-  // back beside it, a deep balcony across the whole bay (varanda gourmet).
+  // The facade library of the procedural buildings (`architecture.ts`)
   'loggia',
   'brise',
   'shutteredWindow',
@@ -83,10 +69,7 @@ export interface RoofDetail {
   flagDesign?: FlagDesign;
 }
 
-/**
- * A face of a volume, in the building's local frame: 0 front (local -y, the
- * street side), 1 right (+x), 2 back (+y), 3 left (-x).
- */
+/** A face of a volume, in the building's local frame: 0 front (local -y, the street side), 1 right (+x), 2 back */
 export type Side = 0 | 1 | 2 | 3;
 export const SIDES: readonly Side[] = [0, 1, 2, 3];
 /** Any edge of an authored footprint. Cardinal `Side` is for oriented parts. */
@@ -98,10 +81,7 @@ export type CoreKind = (typeof CORE_KINDS)[number];
 export const SPACE_KINDS = ['unit', 'shop', 'office', 'workshop', 'corridor', 'lobby'] as const;
 export type SpaceKind = (typeof SPACE_KINDS)[number];
 
-/**
- * A facade: the storey's default component, optional whole-side overrides,
- * and single-bay overrides keyed `"side:index"`. Resolved by `componentAt`.
- */
+/** A facade: the storey's default component, optional whole-side overrides, and single-bay overrides keyed `"side:index"`. */
 export interface Facade {
   fill: BayComponent;
   /** Optional composition for this storey; side compositions take priority. */
@@ -111,11 +91,7 @@ export interface Facade {
   bays?: Record<string, BayComponent>;
 }
 
-/**
- * Extension point: a subdivision of a storey (a flat, a shop, a corridor).
- * Stored and round-tripped; nothing simulates it yet. A rectangle of the
- * building's local frame, world units.
- */
+/** Extension point: a subdivision of a storey (a flat, a shop, a corridor). */
 export interface Space {
   id: number;
   x: number;
@@ -136,14 +112,7 @@ export interface Storey {
   spaces?: Space[];
 }
 
-/**
- * A region of one face pushed in or out: whole bays `bay0..bay1` of `side`,
- * on storeys `storey0..storey1` of the volume, moved `depth` world units
- * along the face's outward normal - negative is a RECESS (a loggia, an inset
- * panel, a porch), positive a PROJECTION (a bay window, a raised panel, a
- * pilaster). Stored in bays and storeys, so it follows the facade when the
- * volume is resized.
- */
+/** A region of one face pushed in or out */
 export interface Relief {
   side: FaceId;
   bay0: number;
@@ -168,17 +137,7 @@ export interface FacadeGeometry {
   pierEvery?: number;
 }
 
-/**
- * The horizontal articulation of a block, as an architectural style draws
- * it (base, body and crown - Sullivan's base, shaft and cornice; the
- * embasamento, corpo and coroamento of a Brazilian facade):
- * - lines: 'every' a moulding at every floor; 'base' one string course over
- *   the ground floor only; 'slab' the floor slabs shown as thin flush
- *   bands; 'none' an unbroken body;
- * - crown: 'cornice' a moulded cornice; 'deco' a stepped double cornice;
- *   'slab' a thin projecting roof slab; 'attic' a deep plain parapet band;
- *   'none' the wall runs to the coping.
- */
+/** The horizontal articulation of a block, as an architectural style draws it */
 export const DRESS_LINES = ['every', 'base', 'slab', 'none'] as const;
 export const DRESS_CROWNS = ['cornice', 'deco', 'slab', 'attic', 'none'] as const;
 export interface VolumeDress {
@@ -212,56 +171,18 @@ export interface Volume {
   dress?: VolumeDress;
   /** Roof pitch in degrees, for pitched roofs; absent = the roof kind's default. */
   pitch?: number;
-  /**
-   * Which way a pitched roof runs. Gable and hip: the ridge along the local x
-   * axis ('x') or y ('y'); absent = along the longer side. Shed: the side it
-   * falls towards (absent = the front).
-   */
+  /** Which way a pitched roof runs. */
   ridge?: 'x' | 'y';
   fall?: Side;
-  /**
-   * How the block combines with the others, never by changing them: absent,
-   * it adds its space (union); 'void' takes its space out of the solid blocks
-   * it overlaps (a cut that stays a block: moved, resized or deleted, the cut
-   * follows); 'intersect' keeps of the solid blocks only what lies inside it;
-   * 'xor' adds where it meets no solid block and removes where it does.
-   * Resolved when drawn (`blocks.ts`), stored as the blocks themselves.
-   */
+  /** How the block combines with the others, never by changing them: absent, it adds its space (union) */
   mode?: BlockMode;
-  /**
-   * An open block: a lot, not a building - no walls, no roof, its plan laid
-   * on the ground as grass, paving, gravel, sand or water (a park, a square,
-   * a schoolyard, a cemetery, a court). Edited like any block.
-   */
+  /** An open block: a lot, not a building */
   open?: LotSurface;
-  /**
-   * An open block laid as a TERRACE of a hillside lot: this far above (or,
-   * negative, below) the building's ground floor, world units, level, held
-   * by a retaining wall where it meets the next platform (a yard stepped up
-   * or down the slope behind a house, `editor/lotPlan.ts`). Absent: the
-   * lot's own rule (`lots.ts`: level with the floor, or falling with the
-   * street it opens onto). At most `MAX_TERRACE` either way.
-   */
+  /** An open block laid as a TERRACE of a hillside lot: this far above */
   terrace?: number;
-  /**
-   * An open block laid as a RAMP: the drive of a hillside lot going down or
-   * up to a car park or a loading yard at a level of its own. Its surface
-   * runs straight along its depth (the local y), from this far above (below)
-   * the building's ground floor at its front edge to its `terrace` (absent:
-   * the floor) at its back edge - a car drives it as it drives a street's
-   * grade. At most `MAX_TERRACE` either way.
-   */
+  /** An open block laid as a RAMP: the drive of a hillside lot going down or up to a car park or a loading yard at a level of */
   ramp?: number;
-  /**
-   * A block standing at a floor of its own on a hillside: this far above (or,
-   * negative, below) the building's ground floor, world units, the whole
-   * block - its storeys, its roof, its plinth - moved with it. A split-level
-   * or a back-split house steps half a storey; a block with a lower ground
-   * floor exposed on the downhill side steps a whole one (`splitLevel.ts`).
-   * The levels stay the building's: storey k of the block is still level
-   * `base + k`, at `lift + levelElevation(base + k)`. Absent: 0. A block
-   * standing on another carries the lift of the block under it.
-   */
+  /** A block standing at a floor of its own on a hillside: this far above */
   lift?: number;
 }
 
@@ -270,21 +191,11 @@ export const MAX_TERRACE = m(5.5);
 /** The farthest a block's own floor stands above or below the building's ground floor. */
 export const MAX_LIFT = m(6);
 
-/**
- * What an open block is laid with. Each area of a lot has its own: a lawn, a
- * stone forecourt, a concrete drive or service yard, an asphalt car park and
- * its aisle, interlocking pavers on a path or a patio, terracotta tiles on a
- * terrace, gravel, sand, a pool.
- */
+/** What an open block is laid with. */
 export const LOT_SURFACES = ['grass', 'paving', 'gravel', 'sand', 'water', 'asphalt', 'concrete', 'pavers', 'tiles'] as const;
 export type LotSurface = (typeof LOT_SURFACES)[number];
 
-/**
- * What a building is FOR, in the city: where people live, work, study, buy,
- * eat, are treated, are buried. It picks the building's first form (a model
- * of blocks, then edited freely), its inside, and its part in the residents'
- * days.
- */
+/** What a building is FOR, in the city: where people live, work, study, buy, eat, are treated, are buried. */
 export const BUILDING_FUNCTIONS = [
   // homes
   'house', 'townhouse', 'apartments', 'residentialTower',
@@ -334,8 +245,7 @@ export const ELEMENT_KINDS = [
   'clock',
   'hedge',
   'shrub',
-  // Lot furniture: a gate in a boundary (a car's or a person's, by its width),
-  // wheelie bins, a lamp post, a bollard, a drain grate.
+  // Lot furniture: a gate in a boundary
   'gate',
   'bin',
   'lamp',
@@ -344,15 +254,7 @@ export const ELEMENT_KINDS = [
 ] as const;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 
-/**
- * A free part of a building: a flight of stairs, a ramp, a pillar, a canopy,
- * a free-standing wall, a slab. A box of the building's local frame - its
- * plan centred on `(x, y)`, `w` across and `d` along the direction it faces
- * (`facing`, a side of the local frame), from `z` above the ground floor up
- * `h`. For a stair or a ramp `facing` is the way it goes DOWN and `h` its
- * rise; for a canopy `facing` is the way it projects and `h` its thickness.
- * It moves, turns and is demolished with its building.
- */
+/** A free part of a building: a flight of stairs, a ramp, a pillar, a canopy, a free-standing wall, a slab. */
 export interface BuildingElement {
   id: number;
   kind: ElementKind;
@@ -363,21 +265,12 @@ export interface BuildingElement {
   d: number;
   z: number;
   h: number;
-  /**
-   * Rotation of the box about its own centre, radians in the building's local
-   * frame. Absent (0) means the box is aligned with `facing`, which is what
-   * every hand-placed part is; a run drawn along a path sets it so a fence or
-   * a wall follows the line it was traced on.
-   */
+  /** Rotation of the box about its own centre, radians in the building's local frame. */
   angle?: number;
   material?: MaterialSpec;
 }
 
-/**
- * Extension point: a vertical circulation shaft, a module square whose
- * corner is at `(x, y)` in the local frame. A lift core is drawn as an
- * overrun box on a flat roof; nothing moves in it yet.
- */
+/** Extension point: a vertical circulation shaft, a module square whose corner is at `(x, y)` in the local frame. */
 export interface Core {
   id: number;
   x: number;
@@ -420,16 +313,9 @@ export interface Building {
   lotPlan?: number;
   /** How run-down it is, 0 (new) to 1 (falling apart), from its age (`decayOf`). */
   decay?: number;
-  /**
-   * The furniture and lights of each floor as the player arranged them, by
-   * level. A floor with none here is furnished for the building's function
-   * (`interior.ts`); the first edit stores that arrangement and changes it.
-   */
+  /** The furniture and lights of each floor as the player arranged them, by level. */
   furnishing?: Record<string, PlacedFurniture[]>;
-  /**
-   * Drawing only, never stored: the building cut open above this level, to
-   * show its inside (the Construction tool's interior view).
-   */
+  /** Drawing only, never stored: the building cut open above this level, to show its inside */
   cutaway?: number;
   /** Drawing only: the way the camera looks (world, horizontal), for which walls of the cut floor come down. */
   cutView?: { readonly x: number; readonly y: number };
@@ -440,8 +326,7 @@ export interface Building {
   blueprint?: string;
 }
 
-// ------------------------------------------------------------------ limits
-// Every figure is written in metres (`m()`, `world/units.ts`).
+// ------------------------------------------------------------------ limits Every figure is written in metres
 
 export const MIN_MODULE = m(2.4);
 export const MAX_MODULE = m(8);
@@ -483,27 +368,7 @@ export function cloneBuilding<T extends Building>(b: T): T {
   return JSON.parse(JSON.stringify(b)) as T;
 }
 
-/**
- * Makes a record the plain JSON data `cloneBuilding` would have made of it,
- * IN PLACE, without copying it: -0 becomes 0, NaN and the infinities null,
- * an `undefined` (or function) member is taken out and an `undefined` item
- * of a list becomes null - exactly what `JSON.parse(JSON.stringify(b))`
- * reads back, the same members in the same order. The store keeps the
- * records it is handed (`store.ts`, OWNERSHIP) and they stay what they were
- * when it copied them.
- *
- * `settled`: the records made plain before (the store's, shared with its
- * clones: `BuildingStore.shareFrom`); one of them handed back (an undo, a
- * clone's records) is returned at once, and this one joins them. `was`: the
- * record this one replaces; a member that is the very object the old record
- * had (`put({ ...stored, decay })`), when that record was settled itself,
- * is plain already and is not walked again. Both lean on stored records
- * never being changed in place (`store.ts`, OWNERSHIP).
- *
- * DO NOT turn this back into a copy (`cloneBuilding`): writing every record
- * out as text and parsing it again was the largest cost of growing a
- * generated city (2.2 s of a 2.5 km one), for records nobody else held.
- */
+/** DO NOT turn this back into a copy (`cloneBuilding`) */
 export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>, was?: object): T {
   if (settled.has(b)) return b;
   const record = b as Record<string, unknown>;

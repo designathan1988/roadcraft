@@ -11,20 +11,7 @@ import { fixtureDoc, simOf } from '../../sim/support/bodies';
 import { gaitClipsOf } from './gaitClips';
 import { rocketboxLibrary } from './rocketboxLibrary';
 
-/**
- * Measures what the player sees a pedestrian's legs do against how the drawn
- * body actually moves, on the real simulation — no browser, no skinned mesh.
- *
- *   glide        the body moves at a visible pace (>= 0.15 m/s) and the legs
- *                are not stepping: an idle pose, a finished stop, anything
- *                whose clip is not advancing.
- *   slow motion  a walk cycle played at under three quarters of the rate it
- *                was captured at.
- *   unstepped    body rotation, while standing or nearly, with no stepping
- *                clip advancing: a figure swivelling on motionless legs.
- *   skate        the vector difference between body velocity and the signed
- *                forward/lateral velocity carried by the stepping legs.
- */
+/** Measures what the player sees a pedestrian's legs do against how the drawn body actually moves, on the real simulation */
 
 const LIBRARY = await rocketboxLibrary();
 const GAIT_CLIPS: Readonly<Record<'male' | 'female', GaitClips>> = {
@@ -61,8 +48,7 @@ export interface GaitAudit {
   cadenceBySpeed: [number, number, number][];
 }
 
-// The new cycles contain measured backward/lateral ankle travel. walkRest
-// carries zero ground and must never be counted as stepping merely by name.
+// The new cycles contain measured backward/lateral ankle travel. walkRest carries zero ground and must never be counted as
 const WALKS = new Set<GaitClipName>(['walk', 'walkElder', 'walkSlow', 'walkShuffle', 'walkBack', 'walkLeft', 'walkRight',
   'walkDrunk', 'walkHandL', 'walkHandR', ...WALK_STYLES]);
 const STEPPING = new Set<GaitClipName>([...WALKS, 'run', 'start', 'stop', 'turnLeft', 'turnRight']);
@@ -162,9 +148,7 @@ export function auditGait<S>(controller: GaitController<S>, seconds: number, see
             breakdown.set(key, (breakdown.get(key) ?? 0) + DT);
           }
         }
-        // Check direction as well as speed: magnitude alone misses a blend
-        // that puts too much distance into its longer forward component.
-        // Fractional weights already account for neutral-pose amplitude.
+        // Check direction as well as speed
         const vx = (pose.p.x - before.x) / m(1) / DT, vy = (pose.p.y - before.y) / m(1) / DT;
         const forward = Math.cos(heading) * vx + Math.sin(heading) * vy;
         const left = -Math.sin(heading) * vx + Math.cos(heading) * vy;
@@ -244,8 +228,7 @@ export function auditFlow(seconds: number, seed = 3, breakdown?: Map<string, num
   const PERSON = m(0.3);
   sim.clock.run(Math.round(seconds / DT), () => {
     step(sim, { traffic: true, pedestrians: true });
-    // What every pedestrian engine publishes (`SimWorld.pedViews`), not the
-    // inner state of one: the legacy engine's walkers this read are gone.
+    // What every pedestrian engine publishes (`SimWorld.pedViews`), not the inner state of one
     const peds = sim.pedViews;
     const cells = new Map<string, PedView[]>();
     for (const p of peds) {

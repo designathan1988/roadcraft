@@ -47,7 +47,6 @@ describe('the terrain brush', () => {
     b.begin(1, { x: 0, y: 0 });
     const first = doc.terrainStamps.length;
     // Held still: the frames level on (`TerrainBrush.tick`, run by the frame loop), half a second of them.
-    // A frame clock well past the press (the brush reads only how long since its last dab).
     const start = 1e12;
     for (let t = 16; t <= 500; t += 16) expect(b.tick(start + t)).toBe(true);
     expect(doc.terrainStamps.length).toBeGreaterThan(first);

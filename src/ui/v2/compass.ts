@@ -2,20 +2,11 @@ import type { Vec2 } from '@core/vec2';
 import type { Viewport } from '@view/viewport';
 import { onLanguageChange, t } from '../i18n';
 
-/**
- * THE COMPASS, a corner of the screen (Google Earth's and Cesium's navigation
- * widget, Cities: Skylines' north arrow): a needle that turns with the camera
- * and always points where north lies on the screen - up the map (+y). A
- * click turns the view to face north, gliding (`CameraMotion.turn`); a drag
- * across it turns the camera, up and down tilts it.
- */
+/** THE COMPASS, a corner of the screen (Google Earth's and Cesium's navigation widget, Cities: Skylines' north arrow) */
 
 const toNorth = (c: Vec2): Vec2 => ({ x: c.x, y: c.y + 10 });
 
-/**
- * Where north lies on the screen from the middle of the view: radians
- * clockwise from straight up.
- */
+/** Where north lies on the screen from the middle of the view: radians clockwise from straight up. */
 export function northOnScreen(view: Viewport, w: number, h: number): number {
   const c = view.centre;
   const a = view.toScreen(c, w, h);
@@ -23,12 +14,7 @@ export function northOnScreen(view: Viewport, w: number, h: number): number {
   return Math.atan2(b.x - a.x, a.y - b.y);
 }
 
-/**
- * The angle on the ground, at the view's centre, from the way the
- * screen's up points to north (radians, counter-clockwise on the map).
- * Measured on the ground, not on the screen, so a tilted view turns by the
- * angle it really needs (on the screen a tilt squeezes it).
- */
+/** The angle on the ground, at the view's centre, from the way the screen's up points to north */
 function groundAngleToNorth(view: Viewport, w: number, h: number): number {
   // The ground the view turns about.
   const c = view.centre;
@@ -41,12 +27,7 @@ function groundAngleToNorth(view: Viewport, w: number, h: number): number {
   return Math.atan2(ux * ny - uy * nx, ux * nx + uy * ny);
 }
 
-/**
- * The turn (`Viewport.orbit`'s azimuth, radians) still wanted to bring north
- * straight up the screen, as the view stands: the orbit turns the map's
- * directions the other way on the screen. Asked again each frame of the
- * glide (`CameraMotion.aim`).
- */
+/** The turn (`Viewport.orbit`'s azimuth, radians) still wanted to bring north straight up the screen, as the view stands */
 export function northTurn(view: Viewport, w: number, h: number): number {
   return -groundAngleToNorth(view, w, h);
 }
@@ -104,8 +85,7 @@ export function mountCompass(host: HTMLElement, handlers: CompassHandlers): Comp
     press.moved = true;
     press.x = e.clientX;
     press.y = e.clientY;
-    // The dial follows the hand: dragged right, north swings clockwise -
-    // the orbit's turn the other way (`northTurn`). Up raises the camera.
+    // The dial follows the hand: dragged right, north swings clockwise - the orbit's turn the other way (`northTurn`).
     handlers.drag(-dx * DRAG_TURN, -dy * DRAG_TILT);
   });
   const end = (e: PointerEvent): void => {

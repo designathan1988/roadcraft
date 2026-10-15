@@ -88,8 +88,7 @@ describe('terrain authoring', () => {
 
 describe('drawing', () => {
   it('hands back a network that already contains the road it drew', async () => {
-    // Found by the fuzzer (`staleNetwork`): commitDraft adopted a network built
-    // before the draft's segments were added, stamped with the new revision.
+    // Found by the fuzzer (`staleNetwork`)
     const { commitDraft } = await import('@editor/commit');
     const doc = new RoadDoc();
     const net = new Network(doc);

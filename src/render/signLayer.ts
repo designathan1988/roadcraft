@@ -13,21 +13,7 @@ import { m } from '@world/units';
 import { createInstanceRuns, RunBuilder, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { PLATE, POST, QUAD, QUAD_ORDER, SignSheets, cellUv, onTopOfPost, plateFaces, plateMaterial, streetChain, type Placed, type Sheet } from './signs';
 
-/**
- * THE SIGNS KEPT SIGN BY SIGN (`signs.ts` paints the plates): every source of
- * signs - a junction (the plates its rules put up, `signsAtNode`), a placed
- * sign, a street's name - is a key of a product of the diary (`Derived`):
- * a change of the roads, the land or the landscaping makes dirty only the
- * keys whose ground it reaches (each key's `reads`, filed by place), and only
- * those are stood again. The posts are runs of an instanced layer
- * (`instanceRuns.ts`); the plates are quads in slots of one mesh a sheet,
- * each written where it lies and sent as that range alone
- * (`BufferAttribute.addUpdateRange`), the mesh grown 1.5 times and 512
- * quads when full (InstancedMesh2, `Capacity.ts`).
- * DO NOT build every sign of the map again: every road drawn, every bump of
- * the land and every bench placed anywhere stood every sign again, each
- * street's name walked along its whole street.
- */
+/** DO NOT build every sign of the map again */
 
 /** One plate standing: where, on what ground, what it says, which way it faces. */
 interface Stand {
@@ -76,11 +62,7 @@ const itemKey = (id: number): number => id * 2 + 1;
 /** The signs as a product of the diary, key by key: a junction's (`nodeKey`), a placed sign's or a street name's (`itemKey`). */
 class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
   readonly name = 'signs';
-  /**
-   * `markingStyle`: the regional standard decides which plates a junction puts up (`signsAtNode`), and
-   * it is written as a kind of its own, never as `roads`. DO NOT leave it out: the plates of the old
-   * standard stood after the style changed.
-   */
+  /** DO NOT leave it out: the plates of the old standard stood after the style changed. */
   readonly kinds: readonly ChangeKind[] = ['roads', 'terrain', 'landscape', 'elevation', 'markingStyle'];
   readonly byId = false;
   /** Each key holding signs, by the ground it reads. */
@@ -101,10 +83,7 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
       return;
     }
     const { net } = source;
-    // A junction's plates read its roads and their heights (`signsAtNode`), never the landscaping: a
-    // bench, a lamp or a street's name placed changes no junction's plates. DO NOT stand the junctions
-    // round a landscaping entry again: a generated city's 11,000 pieces of furniture stood every
-    // junction of the city again.
+    // DO NOT stand the junctions round a landscaping entry again
     if (change.kind === 'landscape') {
       // The entry names its items (`RoadDoc.addLandscapeMany`): those, an item's plates reading only its own record.
       if (change.ids) {
@@ -120,7 +99,6 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
       return;
     }
     // Every rectangle in one look (`idsMeetingAny`, `landscapeInAny`): one at a time read the cells they share again.
-    // What stands already and reads this ground.
     for (const key of this.filing.idsMeetingAny(change.rects)) out.add(key);
     // What may stand now: the junctions at the ends of the segments here, the sign items near.
     for (const id of net.segmentCells.idsMeetingAny(change.rects)) {
@@ -241,12 +219,7 @@ export interface SignLayerKept {
   readonly group: Group;
   /** Brings the signs up to the diary; the keys stood again. */
   sync(net: Network, elevation: RoadElevation): number;
-  /**
-   * A post and a plate as the layer draws them, for their programs to be
-   * compiled before the first sign stands (`uploads.ts` compileAhead): a
-   * sheet's material is made with the sheet, when its first plate is painted,
-   * and its program was linked in the frame a generated city's names stood.
-   */
+  /** A post and a plate as the layer draws them, for their programs to be compiled before the first sign stands */
   warm(): Mesh[];
   /** The posts the camera can see (`InstanceRuns.cull`), every frame. */
   cull(frustum: Frustum, view: Matrix4): void;
@@ -276,10 +249,7 @@ export function createSignLayer(): SignLayerKept {
     },
   });
   const product = signProduct();
-  /**
-   * The plate the programs are compiled ahead with (`warm`), made with the layer and kept while it is: a
-   * program no material holds is let go (`WebGLPrograms.releaseProgram`).
-   */
+  /** The plate the programs are compiled ahead with (`warm`), made with the layer and kept while it is */
   const warmPicture = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   warmPicture.colorSpace = SRGBColorSpace;
   warmPicture.needsUpdate = true;

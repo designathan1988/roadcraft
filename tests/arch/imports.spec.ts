@@ -3,16 +3,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-/**
- * THE IMPORT GRAPH, RESOLVED. The ESLint layer rule (`eslint.config.js`) bans
- * the aliases (`@render/...`) a layer may not import; a relative path
- * (`../../render/x`) went through it. Here every import of `src/` is resolved
- * to its file (TypeScript's own `preProcessFile`, as the migration tool did),
- * and two rules hold on the result:
- * - the layer order of CLAUDE.md, whatever the spelling of the import;
- * - no import cycle beyond those the SOURCE brought, listed in
- *   `cycles.baseline.json`, which may only shrink (to empty by stage F4).
- */
+/** THE IMPORT GRAPH, RESOLVED. */
 const ROOT = process.cwd();
 const SRC = join(ROOT, 'src');
 const ALIASES: readonly [string, string][] = [

@@ -15,17 +15,12 @@ interface Candidate {
   readonly distance: number;
 }
 
-/**
- * Repairs a legacy endpoint that visibly ends inside another road but was saved
- * as a disconnected node.  Only degree-one endpoints and roads on the same
- * structure are considered, so an overpass is never turned into a junction.
- */
+/** Repairs a legacy endpoint that visibly ends inside another road but was saved as a disconnected node. */
 export function repairNearConnections(doc: RoadDoc, net: Network): number {
   let repaired = 0;
   const rejected = new Set<string>();
 
-  // Every split changes segment ids and cached polylines. Rebuild after one
-  // repair and search again from authoritative geometry.
+  // Every split changes segment ids and cached polylines.
   for (let attempt = 0; attempt < 64; attempt++) {
     net.rebuild();
     const candidate = nearestCandidate(doc, net, rejected);
@@ -50,10 +45,7 @@ function nearestCandidate(doc: RoadDoc, net: Network, rejected: ReadonlySet<stri
     const source = doc.segment(sourceId);
     if (!source) continue;
 
-    // Only a road whose casing reaches the end can take it, and its ribbon is
-    // filed over its centreline's box grown by that casing: the roads filed
-    // where the end is (`ribbonsNear`). DO NOT walk `doc.segments` for every
-    // dead end (dead ends × roads, at every load).
+    // DO NOT walk `doc.segments` for every dead end (dead ends × roads, at every load).
     for (const ribbon of ribbonsNear(net, [node.x, node.y, node.x, node.y])) {
       const targetId = ribbon.id;
       const target = doc.segment(targetId);

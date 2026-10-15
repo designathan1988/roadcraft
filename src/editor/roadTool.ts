@@ -70,9 +70,9 @@ export interface RoadToolHost {
   settings(): {
     readonly typeIndex: number; readonly lanes: number | null; readonly alignment: 'straight' | 'curve' | 'free';
     readonly heightOffset: number; readonly parking: SegmentParking | undefined; readonly width: number | null; readonly grid: boolean;
-    /** A profile new roads are laid with (docs/source/VIAS.md V2), over the class, lanes, width and parking; null for those. */
+    /** A profile new roads are laid with, over the class, lanes, width and parking; null for those. */
     readonly profile?: { readonly profile: RoadProfileSpec; readonly type: number } | null;
-    /** Retaining walls in the cuttings of new roads instead of a batter (docs/source/VIAS.md V3). */
+    /** Retaining walls in the cuttings of new roads instead of a batter. */
     readonly cutWalls?: boolean;
     /** The furniture the new roads are built with (V7, `world/roads/furnitureSets.ts`); absent: none. */
     readonly furniture?: FurnitureSet;
@@ -85,10 +85,7 @@ export interface RoadToolHost {
   naturalHeightAt(x: number, y: number): number;
   /** The elevation solved by the commit's tunnel test, offered to the renderer. */
   offerElevation(solution: RoadElevation, revision: number): void;
-  /**
-   * The roads' heights the game last solved on the natural ground as it
-   * stands, or null (the land moved since): the tunnel test starts from them.
-   */
+  /** The roads' heights the game last solved on the natural ground as it stands, or null (the land moved since) */
   groundSolve?(): RoadElevation | null;
   /** The roads just laid blink. */
   flash(ids: readonly SegmentId[]): void;
@@ -98,17 +95,7 @@ export interface RoadToolHost {
   redraw(): void;
 }
 
-/**
- * THE ROAD TOOL: a road drawn by a drag (or a click that starts a chain and
- * a click that ends each stretch), straight, as a curve (end, then the bend:
- * a quadratic Bézier through its two ends, pulled towards the control point)
- * or freehand; at a height set with PageUp/PageDown, carried mid-stroke; on
- * the grid when it is shown. What is being drawn lives here - the drag, the
- * chain's end and its preview, the curve waiting for its bend, the road just
- * laid shown as previewed until the world with it is built - with the
- * handlers that use it (Nystrom, "State"). `main.ts` passes the pointer and
- * draws `preview()`.
- */
+/** THE ROAD TOOL: a road drawn by a drag */
 export class RoadTool {
   /** The drag in progress. */
   draft: RoadDraft | null = null;
@@ -119,11 +106,7 @@ export class RoadTool {
   private curvePending: CurvePending | null = null;
   /** The pointer on the screen while the tool is in hand (the height step carries the stroke from it). */
   private pointerScreen: Vec2 | null = null;
-  /**
-   * How far a drag's stroke is carried, in plan, by the heights changed
-   * during it: raising the road mid-drag moved the plane the cursor is read
-   * on, and the stroke doubled back on itself into a loop.
-   */
+  /** How far a drag's stroke is carried, in plan, by the heights changed during it */
   private shift = { x: 0, y: 0 };
   /** The height was set by hand since the stroke began (a start on a road does not take that road's height then). */
   private heightEdited = false;
@@ -221,9 +204,7 @@ export class RoadTool {
       setGridSnapStep(GRID_CELL, gridOffset);
     } else setGridSnapStep(GRID_STEP);
     let start = this.chain ?? snapRoadStart(anchor);
-    // Drawn from a road with the grid on: from the grid point on that road,
-    // not from wherever the press fell on it - the new road came out askew
-    // and off the grid (the player, 2026-10-06).
+    // Drawn from a road with the grid on: from the grid point on that road, not from wherever the press fell on it
     if (!this.chain && settings.grid && start.kind === 'segment' && start.segment !== undefined) {
       const line = net.polylines.get(doc, start.segment);
       const q = snapToGrid(start.at, GRID_CELL, gridOffset);
@@ -251,10 +232,7 @@ export class RoadTool {
     };
   }
 
-  /**
-   * The pointer moved; true when the curve's bend or the drag took it.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved; true when the curve's bend or the drag took it. */
   move(world: Vec2): boolean {
     const { host } = this;
     if (this.curvePending) {
@@ -272,10 +250,7 @@ export class RoadTool {
     return false;
   }
 
-  /**
-   * The pointer over the map with no drag: the next stretch of a chain, previewed.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer over the map with no drag: the next stretch of a chain, previewed. */
   hover(world: Vec2): void {
     if (!this.chain) return;
     const { host } = this;
@@ -291,13 +266,7 @@ export class RoadTool {
     };
   }
 
-  /**
-   * The pointer let go: a click starts a chain, a curve waits for its bend,
-   * a drag is laid (`commit` false: dropped). `released` is where it was let
-   * go, read once the drag is over (on the plane of a chain or a curve in
-   * hand, otherwise the ground's).
-   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer let go: a click starts a chain, a curve waits for its bend, a drag is laid (`commit` false: dropped). */
   up(released: () => Vec2, commit: boolean): void {
     const d = this.draft;
     if (!d) return;
@@ -307,9 +276,7 @@ export class RoadTool {
     const traveled = d.samples.reduce((sum, sample, i) => (i === 0 ? 0 : sum + dist(sample.at, d.samples[i - 1]!.at)), 0) +
       dist(d.samples[d.samples.length - 1]!.at, d.snap.at);
     const dragged = d.samples.slice(1).some((sample) => dist(sample.at, d.pressedAt) > host.px(7));
-    // A click, by where the pointer itself went: with the snaps on, the start
-    // and the snapped end both jump onto the grid, and a click read as a short
-    // drag that laid nothing.
+    // A click, by where the pointer itself went
     const clicked = !dragged && dist(released(), d.pressedAt) < host.px(7);
     if (!d.chained && (traveled < host.px(7) || clicked)) {
       this.chain = d.start;
@@ -332,13 +299,7 @@ export class RoadTool {
     }
   }
 
-  /**
-   * PageUp/PageDown or the height buttons: the road is drawn a metre higher
-   * or lower, landing on whole metres (a road cut short by the safe grade
-   * leaves the height at a fraction, and stepping from there never came back
-   * to the ground's own level). A drag goes on from where it is: the jump of
-   * the plane the pointer is read on is carried.
-   */
+  /** PageUp/PageDown or the height buttons: the road is drawn a metre higher or lower, landing on whole metres */
   stepHeight(metres: number): void {
     const { host } = this;
     const before = host.settings().heightOffset;
@@ -387,14 +348,7 @@ export class RoadTool {
     return { end, endHeightOffset, pieces: this.pieces(d, endHeightOffset) };
   }
 
-  /**
-   * Why the road in hand would be refused (`editRules.ts`, or a crossing at
-   * the wrong height), or null: the draft judged as laid, on a copy
-   * (`commitRoadPath` dry run), once it has rested `VERDICT_DELAY` ms - a
-   * whole commit per pointer sample would cost a road's worth of work per
-   * frame. The preview paints a refused draft as invalid with its reason,
-   * before the button is let go, as Cities: Skylines does.
-   */
+  /** Why the road in hand would be refused (`editRules.ts`, or a crossing at the wrong height), or null */
   verdict(): RefusalReason | null {
     const road = this.curvePending ? null : this.draft ?? this.chainPreview;
     const key = road ? this.draftKey(road) : null;
@@ -402,8 +356,7 @@ export class RoadTool {
       this.judged = { key, reason: null, cost: null, stations: null };
       this.judgeAt = key === null ? null : performance.now() + VERDICT_DELAY;
     }
-    // Judged in the first frame after it rested, frames asked for until then: DO NOT go back to a
-    // timer of its own, which judged between frames, in the middle of whatever the page was doing.
+    // Judged in the first frame after it rested, frames asked for until then
     if (this.judgeAt !== null && key !== null) {
       if (performance.now() >= this.judgeAt) { this.judgeAt = null; this.judge(key); }
       else this.host.redraw();
@@ -414,22 +367,13 @@ export class RoadTool {
   private judged: { key: string | null; reason: RefusalReason | null; cost: number | null; stations: readonly RoadStation[] | null } =
     { key: null, reason: null, cost: null, stations: null };
 
-  /**
-   * The road in hand as it would be built (docs/source/VIAS.md V3): the dry run's
-   * stations - solved deck, natural ground, way of building - once the draft
-   * is judged, or null until then (the preview estimates meanwhile).
-   */
+  /** The road in hand as it would be built: the dry run's stations */
   stations(): readonly RoadStation[] | null {
     this.verdict();
     return this.judged.stations;
   }
 
-  /**
-   * What the road in hand would cost (`world/economy.ts`), judged with the
-   * verdict on the same dry run, or null until it is: shown in the preview
-   * beside its length, and when it is more than the balance the verdict is
-   * `funds`.
-   */
+  /** What the road in hand would cost (`world/economy.ts`), judged with the verdict on the same dry run, or null until it is */
   cost(): number | null {
     this.verdict();
     return this.judged.cost;
@@ -475,9 +419,6 @@ export class RoadTool {
       // Drawn as it was previewed until the new world is in place.
       if (result.committed) this.settling = { ...d, snap: { ...d.snap, at: end.at } };
       // A chosen total width (Roads > Width): the segments just laid take it.
-      // A profile chosen in the profile editor (V2), or a chosen width: the
-      // segments just laid take it, paid for as the road was (`roads/economy.ts`);
-      // what the balance cannot cover is not laid, and the road keeps its class.
       if (result.committed && (settings.profile || settings.width !== null)) {
         const laid = laidFrom(doc, firstNew);
         const kept = laid.map((id) => ({ ...doc.requireSegment(id) }));
@@ -503,8 +444,7 @@ export class RoadTool {
       if (result.committed && settings.cutWalls) {
         for (const id of laidFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
       }
-      // The furniture of the roads just laid, in the same undo step (V7):
-      // ordinary placed items, edited or removed one by one like any other.
+      // The furniture of the roads just laid, in the same undo step (V7)
       if (result.committed && settings.furniture && settings.furniture !== 'none') {
         if (net.revision !== doc.revision) net.rebuild();
         const laid = laidFrom(doc, firstNew);
@@ -523,8 +463,7 @@ export class RoadTool {
       return false;
     }
     const finalHeight = result.finalHeightOffset ?? endHeightOffset;
-    // Each completed placement ends the gesture. A new road begins only after
-    // the player clicks a start again, including when that start is this node.
+    // Each completed placement ends the gesture.
     this.chain = null;
     this.chainPreview = null;
     this.curvePending = null;
@@ -537,11 +476,7 @@ export class RoadTool {
     return true;
   }
 
-  /**
-   * What the overlay draws: the curve waiting for its bend, the drag, the
-   * chain's next stretch, or the road just laid while the world with it is
-   * built (`settled` says the world is in place: that preview is let go).
-   */
+  /** What the overlay draws: the curve waiting for its bend, the drag, the chain's next stretch */
   preview(settled: boolean): { readonly road: RoadDraft; readonly settling: boolean } | null {
     if (this.settling && settled) this.settling = null;
     const cp = this.curvePending;
@@ -599,12 +534,7 @@ export class RoadTool {
 /** The segment ids an edit made: those from `first` on (`commit.ts` `segmentsFrom`). */
 const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc, first).map((seg) => seg.id);
 
-/**
- * The placed items the furniture of `laid` can meet (`furnitureFor` reads those
- * in its cells of `FURNITURE_CELL` round each road's box grown by its footway
- * and `m(4)`): the items in that box grown by a whole cell more, from the
- * document's cells (`RoadDoc.landscapeIn`), not the whole map.
- */
+/** The placed items the furniture of `laid` can meet */
 function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]): LandscapeItem[] {
   const out = new Map<number, LandscapeItem>();
   for (const id of laid) {

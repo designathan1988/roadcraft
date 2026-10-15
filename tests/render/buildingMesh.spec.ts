@@ -20,12 +20,7 @@ import { m } from '@world/units';
 /** `n` default modules, world units. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
-/**
- * The building meshes (docs/buildings.md section 5). Winding is measured, not
- * assumed (CLAUDE.md trap: world y is mirrored into three's z), so every
- * shell triangle must face the way its normal says - or the back-face cull
- * removes it and the wall is simply not there.
- */
+/** The building meshes (section 5). */
 
 const slope = (x: number, y: number): number => x * 0.05 + y * 0.03;
 
@@ -133,8 +128,7 @@ describe('building shell', () => {
   });
 
   it('stands a house on the back of a footway at the footway, nothing out on it', () => {
-    // A house whose front (y = 100, facing -y) is on the back of a footway,
-    // on land a little higher than the footway.
+    // A house whose front (y = 100, facing -y) is on the back of a footway, on land a little higher than the footway.
     const b = { ...generateBody('residential', bays(4), bays(3), 2), id: asBuildingId(1), x: 100, y: 100, rotation: 0 } as Building;
     const land = (_x: number, y: number): number => (y >= 100 ? 0.8 : 0);
     const footway = (_x: number, y: number): number => (y < 99.7 ? 0 : NaN);
@@ -147,8 +141,7 @@ describe('building shell', () => {
       const chunk = emitChunk({ ...b, rotation }, land, footway);
       expect(wrongWinding(chunk), `rotation ${rotation}`).toBe(0);
     }
-    // Nothing below the floor stands in front of the plinth: no step is out
-    // on the footway. (Three's z is world -y, its y is height; positions are float32.)
+    // Nothing below the floor stands in front of the plinth: no step is out on the footway.
     const p = positions(emitChunk(b, land, footway));
     let onFootway = 0;
     for (let i = 0; i < p.length; i += 3) {
@@ -170,8 +163,7 @@ describe('building shell', () => {
     const meshes = assembleBuildingMeshes([a, b], kit);
     const glass = meshes.group.children.find((m) => m.name === 'building-glass') as unknown as { count: number };
     expect(glass.count).toBe(a.parts.glass.count + b.parts.glass.count);
-    // At most one shell per finish and one batch per part: the draw calls do
-    // not grow with the number of buildings.
+    // At most one shell per finish and one batch per part: the draw calls do not grow with the number of buildings.
     expect(meshes.group.children.length).toBeLessThanOrEqual(FINISHES.length + PART_KINDS.length);
     meshes.dispose();
     kit.dispose();
@@ -184,8 +176,6 @@ describe('buildings layer', () => {
     for (let i = 0; i < 4; i++) doc.buildings.add(placed(i, 0));
     const layer = createBuildingLayer();
     // The layer makes an edit's buildings a few milliseconds a frame
-    // (docs/performance.md #16): frames are run until it is done, and the
-    // question is whether any of them rebuilt it.
     const settle = (ground: string): boolean => {
       let rebuilt = false;
       for (let frame = 0; frame < 200; frame++) {
@@ -214,10 +204,7 @@ describe('building materials', () => {
     for (const [kind, material] of all) {
       const m = material as MeshStandardMaterial;
       expect(m.name, kind).toMatch(/^building-/);
-      // White, untextured and without vertex or instance colours is three's
-      // default: a part that fell through to it. The awning is tinted per
-      // instance, and so are the window frames and railings (in their
-      // building's trim); the shell by its vertex colours.
+      // White, untextured and without vertex or instance colours is three's default: a part that fell through to it.
       const white = m.color.getHex() === 0xffffff;
       if (white && !m.map) expect(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise'].includes(kind) || m.vertexColors, kind).toBe(true);
     }

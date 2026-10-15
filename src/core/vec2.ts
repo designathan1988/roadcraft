@@ -1,23 +1,6 @@
 import { EPS } from './scalar';
 
-/**
- * 2D vector helpers.
- *
- * Convention, fixed once and never fought: the world is a **right-handed frame
- * that renders +Y UP**. The renderer maps `(x, y)` to three's `(x, h, -y)`, so
- * projecting `(0, 100)` lands above the origin on screen, not below it.
- *
- * `perp(v)` returns `(-v.y, v.x)`: a quarter turn counter-clockwise, which is
- * the **left** of `v` when facing along `v`. Every normal in this codebase is
- * that one, and every consequence follows from it — traffic keeps to `-perp`
- * because that is the right-hand side, signal heads stand on `-perp` because
- * that is the right-hand kerb, and a positive heading change is a left turn.
- *
- * This note used to say +Y was down. It was wrong, and `classifyTurn` was
- * written to match it, which mirrored every left and right turn in the
- * simulation. Rings are wound so that signed area is positive
- * (`POSITIVE_AREA`), which with Y up reads visually counter-clockwise.
- */
+/** 2D vector helpers. */
 export interface Vec2 {
   readonly x: number;
   readonly y: number;

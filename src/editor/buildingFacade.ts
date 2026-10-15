@@ -1,3 +1,2 @@
-// Facade patterns live with the building model (`world/buildings/facadePatterns.ts`),
-// where the thumbnails can use them too; the editor keeps its old import path.
+// Facade patterns live with the building model
 export * from '@world/buildings/facadePatterns';

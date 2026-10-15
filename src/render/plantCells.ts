@@ -10,22 +10,10 @@ import { TREE_MODELS, type NatureTreeKit, standsAmong, treeColourInto, treeMatri
 const TREE_SHADOW_REACH = m(48);
 const COVER_SHADOW_REACH = m(8);
 
-/**
- * THE PLANTS AND STONES DRAWN CELL BY CELL (the cells their keeps file them in,
- * `candidateKeep.ts`): each cell's trees, bushes and stones are a run of an
- * instanced layer (`instanceRuns.ts`), written again only when a place in the
- * cell changed - and a tree's neighbours' cells with it, as a tree's shape
- * reads the trees round it (`standsAmong`). Culled by the layer, slot by slot.
- * DO NOT write every tree of the map into its meshes again when one changed
- * (`NatureForest.update`, `buildGroundCover`): every road or building near a
- * wood rewrote and sent every tree of the countryside, all drawn every frame.
- */
+/** DO NOT write every tree of the map into its meshes again when one changed (`NatureForest.update`, `buildGroundCover`) */
 export interface PlantCells {
   readonly group: Group;
-  /**
-   * The cells whose places changed (`CandidateKeep.takeChangedCells`) written
-   * again; null: every cell, those of `cells` and those drawn.
-   */
+  /** The cells whose places changed (`CandidateKeep.takeChangedCells`) written again; null */
   sync(changed: ReadonlySet<number> | null, cells: Iterable<number>): void;
   cull(frustum: Frustum, view: Matrix4): void;
   /** The map zoom: the leaf cards left out (`InstanceRuns.setMap`). */
@@ -33,10 +21,7 @@ export interface PlantCells {
   dispose(): void;
 }
 
-/**
- * A layer of cells, each a run made by `runOf`; `neighbourly`: a change of a cell writes its neighbours
- * again too; `margin`: how far off the view a plant is still drawn (the longest shadow it throws in).
- */
+/** A layer of cells, each a run made by `runOf`; `neighbourly`: a change of a cell writes its neighbours again too */
 function plantLayer(name: string, stores: readonly RunStore[], runOf: (cell: number, builder: RunBuilder) => void, neighbourly: boolean, margin: number): PlantCells {
   const runs = createInstanceRuns(name, stores, margin);
   const drawn = new Map<number, Run>();

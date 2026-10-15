@@ -13,13 +13,7 @@ import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { m } from '@world/units';
 
-/**
- * THE PERFORMANCE BUDGETS, COUNTED (`core/perfBudget.ts` COUNT_BUDGETS): the
- * work of the hot paths that broke before, in exact counts that are the same
- * on every run, and the detail of a fixed scene with a floor as well as a
- * ceiling. A change that makes any of them worse fails `npm run check`; a
- * budget is only ever lowered (CLAUDE.md, "Performance budgets").
- */
+/** THE PERFORMANCE BUDGETS, COUNTED (`core/perfBudget.ts` COUNT_BUDGETS) */
 
 const materials = new Proxy({}, { get: (_t, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial() }) as unknown as SceneMaterials;
 const report = (name: string, value: number, budget: Budget): void => {

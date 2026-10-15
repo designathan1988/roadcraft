@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BarrierTool, type BarrierToolHost } from '@editor/barriers';
 
-/**
- * SHIFT-CLICK REMOVES, AND ONLY REMOVES. With no wall under the pointer the
- * Shift-click fell through to "put a point down" and began a fence the player
- * never asked for.
- */
+/** SHIFT-CLICK REMOVES, AND ONLY REMOVES. */
 function tool(removes: boolean): { tool: BarrierTool; hints: string[] } {
   const hints: string[] = [];
   const host: BarrierToolHost = {

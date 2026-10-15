@@ -45,12 +45,7 @@ export function createBuildingLayer(): BuildingLayer {
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
-  /**
-   * Each record's digest (`Digest.addPlain`), once per record object (MDN, WeakMap: kept while the
-   * object lives). The store never changes a record in place, so a record seen before has the digest
-   * it had. DO NOT keep each record's JSON text instead: a string the size of the record, for every
-   * building of the town; the text is written only for the message to a worker (`textOf`).
-   */
+  /** DO NOT keep each record's JSON text instead: a string the size of the record, for every building of the town */
   const sigs = new WeakMap<Building, number>();
   const sigOf = (b: Building): number => {
     let sig = sigs.get(b);
@@ -65,19 +60,12 @@ export function createBuildingLayer(): BuildingLayer {
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
-  /**
-   * Each cell's batch as shown, and the buildings it was made of. A cell coming in or going tells the
-   * far level (`massCells.setDetailed`): its mass stands in while it is near with no detail. DO NOT
-   * set that for every cell of the town every frame (`levelOfDetail` did): it changes only here.
-   */
+  /** DO NOT set that for every cell of the town every frame (`levelOfDetail` did): it changes only here. */
   const cells: CellCache = watchedCells((key, has) => massCells.setDetailed(key, has));
   const detailCells: CellCache = new Map();
   let details: BuildingMeshes | null = null;
   let dimmed: BuildingId | null | undefined = undefined;
-  /**
-   * "Ocultar outros" as the cells were last set (`fadeMeshes`), and the building left solid, drawn on its
-   * own (`solo`, out of its cell) under `soloKey`.
-   */
+  /** "Ocultar outros" as the cells were last set (`fadeMeshes`), and the building left solid, drawn on its own */
   let storedDimmed: BuildingId | null | undefined = undefined;
   let solo: BuildingMeshes | null = null;
   let soloKey = '';
@@ -89,10 +77,7 @@ export function createBuildingLayer(): BuildingLayer {
   let version = 0;
   let far = false;
   let shadowFar = false;
-  /**
-   * HLOD streaming (see the file's comment). The eye as `levelOfDetail` last
-   * had it says which cells are near; until it is known, every cell is.
-   */
+  /** HLOD streaming (see the file's comment). */
   const eyeNow = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, reach: Infinity };
   let eye: typeof eyeNow | null = null;
   const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
@@ -112,26 +97,11 @@ export function createBuildingLayer(): BuildingLayer {
   let townCells = new Map<string, Building[]>();
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
-  /**
-   * The cells shown in detail as `levelOfDetail` last set them: a cell gone far is hidden, its buffers
-   * kept on the GPU, and shown again as it nears - only the cells whose nearness changed are touched.
-   * DO NOT let a far cell's detail go: coming back to it emitted the cell again and held it on its masses
-   * for the seconds that took. NOR walk every detailed cell each frame for its visibility.
-   */
+  /** DO NOT let a far cell's detail go */
   let shownNear = new Set<string>();
-  /**
-   * Where the resident cells were last checked from (`levelOfDetail`): a cell's detail stays on the GPU,
-   * hidden when far, while it is within `RESIDENT_REACH` times the ground the screen takes in, and is let
-   * go past it - the loading range of a streamed world (Unreal's World Partition, by distance from the
-   * source), so what is kept grows with the view, never with the town or the ground already seen. Checked
-   * again when the eye has moved a quarter of that ground.
-   */
+  /** Where the resident cells were last checked from (`levelOfDetail`) */
   let residentFrom = { x: Infinity, y: Infinity, reach: -1 };
-  /**
-   * Each detail cell's centre (map x/y) and whether it is drawn by the far
-   * versions of its parts (`cullDetails`): kept per batch, so the key is read
-   * once, not every frame.
-   */
+  /** Each detail cell's centre (map x/y) and whether it is drawn by the far versions of its parts (`cullDetails`) */
   const detailState = new WeakMap<BuildingMeshes, DetailState>();
   /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
   let lighterNow = false;
@@ -178,12 +148,7 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** Each building as last sent to the workers, by its entry's key: what a summary that comes back is of, and what `textOf` writes. */
   const sent = new Map<string, Building>();
-  /**
-   * A building as the workers are sent it: its key, its record as text and the
-   * ground under it. One cut open sends its record cut open, under a key of its
-   * own (by floor and the side the camera looks from, snapped to eighths of a
-   * turn: the walls that come down change only when the camera has really turned).
-   */
+  /** A building as the workers are sent it: its key, its record as text and the ground under it. */
   const entryFor = (b: Building, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry => {
     const sig = sigOf(b);
     const digest = digestFor(b, sig, groundKey, groundAt, pavedAt);
@@ -193,13 +158,7 @@ export function createBuildingLayer(): BuildingLayer {
     sent.set(key, b);
     return { key, sig: new Digest().add(sig).add(cutaway.level).add(dir).value(), digest };
   };
-  /**
-   * An entry's record as text, for a job's message (`CellPool`): the building as sent, or, under a
-   * key cut open (`id|floor|side`), cut open at that floor from that side. The record is taken when
-   * the job is asked (the store's records are read-only: `store.ts` OWNERSHIP) and written for the
-   * message when it is sent, not kept. DO NOT keep the texts cut open in a map with a cap: a cache that
-   * drops and remakes.
-   */
+  /** DO NOT keep the texts cut open in a map with a cap: a cache that drops and remakes. */
   const textOf = (entry: CellEntry): () => string => {
     const b = sent.get(entry.key)!;
     return () => recordText(b, entry.key);
@@ -214,18 +173,9 @@ export function createBuildingLayer(): BuildingLayer {
   };
   const entriesOf = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] =>
     list.map((b) => entryFor(b, groundAt, groundKey, pavedAt));
-  /**
-   * What the page keeps of each building the workers emitted (flags, how its
-   * lots' ground is made, its signature floor), by id, for the record and
-   * ground it was made for; its lots' ground made again when first read.
-   */
+  /** What the page keeps of each building the workers emitted */
   const kept = new Map<BuildingId, Kept>();
-  /**
-   * The kept buildings that have lots or bays, filed by their bounds in the world's cells
-   * (`world/cells.ts`): what a walker stands on is asked of the buildings round it. DO NOT walk
-   * `kept` for a point: `anyLotHeightAt` is asked for every walker every frame, and every building
-   * of the town was walked for each (O(walkers x buildings) a frame).
-   */
+  /** DO NOT walk `kept` for a point: `anyLotHeightAt` is asked for every walker every frame */
   const lotFiling = new CellFiling<BuildingId, Kept>();
   const putKept = (id: BuildingId, k: Kept): void => {
     kept.set(id, k);
@@ -240,11 +190,7 @@ export function createBuildingLayer(): BuildingLayer {
     lotFiling.remove(id);
   };
   let flagsMoved = false;
-  /**
-   * The flags of the shown buildings, by id, kept as what is kept of them and what is shown changes
-   * (`flagsFor`): the flag layer is given these. DO NOT walk every shown building for its flags at
-   * each summary that lands: the town was walked once a landing while it streamed in.
-   */
+  /** DO NOT walk every shown building for its flags at each summary that lands */
   const flagsOf = new Map<BuildingId, readonly FlagInstance[]>();
   const flagsFor = (id: BuildingId): void => {
     const flags = lastShown.has(id) ? kept.get(id)?.summary.flags : undefined;
@@ -270,11 +216,7 @@ export function createBuildingLayer(): BuildingLayer {
   const pool = new CellPool(() => kitBoxes(kit), (entry) => textOf(entry), true, kit.finishTone);
   pool.warm();
   const requests = new CellRequests(pool, kit, keep);
-  /**
-   * The far buildings flying a flag not emitted yet: their summaries asked of
-   * the workers in the frames' spare slices (`landCells`), so a camera move
-   * finds their flags flying; the opening asks only the cells near.
-   */
+  /** The far buildings flying a flag not emitted yet: their summaries asked of the workers in the frames' spare slices */
   let backlog: Building[] = [];
   /** The buildings shown, as last put together (`update`): the flags are read from what is kept of them. */
   const lastShown = new Map<BuildingId, Building>();
@@ -286,11 +228,7 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** The buildings by coarse cell whose masses stand for them from afar: the shown ones (`update`), the faded included. */
   let massTown = new Map<string, Building[]>();
-  /**
-   * A cell's masses asked of the workers (`cellWork.ts` 'mass') for its buildings now, the cell kept
-   * as it stands until they come; a cell with no building goes. DO NOT mass the buildings on the page:
-   * every building of the town was massed there a slice a frame, and its mass kept there for good.
-   */
+  /** DO NOT mass the buildings on the page */
   const askMass = (cell: string, env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
     if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); return; }
@@ -306,10 +244,7 @@ export function createBuildingLayer(): BuildingLayer {
       version++;
     });
   };
-  /**
-   * The cells a cut-open view reaches (the building asked for, or every building within its radius,
-   * a cell's margin for a building over its cell's edge), among the town's cells.
-   */
+  /** The cells a cut-open view reaches */
   const cutCellsOf = (doc: RoadDoc, spec: CutawaySpec | null): Set<string> => {
     const out = new Set<string>();
     if (!spec) return out;
@@ -349,19 +284,11 @@ export function createBuildingLayer(): BuildingLayer {
     }
     part.setVisible(cellNear(key));
   };
-  /**
-   * One frame's share of the cells: those drawn near with no detail become pending (HLOD
-   * streaming); the pending ones are asked of the workers nearest first, a few
-   * at once (a far one asked first would keep a near one waiting behind it in
-   * its worker), and each is shown whole, once on the GPU, as it lands - its old
-   * batch, or its masses, shown till then. A pending cell drawn far gives up its
-   * request. True when a cell came in or went out.
-   */
+  /** One frame's share of the cells: those drawn near with no detail become pending (HLOD streaming) */
   const landCells = (env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): boolean => {
     let changed = false;
     if (eye) {
-      // The cells drawn near (`massCells`, a cell with buildings but no mass always near): NOT every cell
-      // of the town each frame.
+      // The cells drawn near (`massCells`, a cell with buildings but no mass always near)
       for (const key of massCells.nearKeys()) if (!cells.has(key) && townCells.has(key)) pendingCells.add(key);
     }
     const order = [...pendingCells];
@@ -384,9 +311,7 @@ export function createBuildingLayer(): BuildingLayer {
       let done = true;
       {
         const list = townCells.get(cell) ?? [];
-        // A cell whose shown batch is what the town is now (or that has no buildings left) wants nothing
-        // asked: a request still out for another state of it is dropped. DO NOT leave it: it landed and was
-        // never taken, its meshes sent to the GPU and kept until the cell was asked again (`cellRequests.ts`).
+        // DO NOT leave it: it landed and was never taken, its meshes sent to the GPU and kept until the cell was asked again
         if (list.length === 0) {
           requests.drop('cell', cell);
           if (cells.has(cell)) { patchCell(cell, null, shownAt()); changed = true; }
@@ -398,8 +323,7 @@ export function createBuildingLayer(): BuildingLayer {
             done = false;
             if (requests.isAsked('cell', cell) || requests.asking < STREAM_AHEAD) {
               const got = requests.want('cell', cell, entries, env, true);
-              // On the GPU already (`warmLooseAhead`): taken the frame it is ready. DO NOT hold ready cells
-              // back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
+              // DO NOT hold ready cells back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
               if (got) {
                 requests.take('cell', cell);
                 show(cell, got);
@@ -456,25 +380,16 @@ export function createBuildingLayer(): BuildingLayer {
       const cutKey = cutaway
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
-      // NOT the cut-open view: opening a building costs its cells (below), not the town. NOR the ground,
-      // the building the preview hides or the ruins: each is the buildings it reaches, taken in below as
-      // changed ones. DO NOT put them back in this key: every road edit (the ground cut and filled), every
-      // building picked up and every blow put the whole town together again.
-      // NOR "hide the others": the cells' materials (`fadeMeshes`), the building left solid out of its cell.
-      // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
+      // DO NOT put them back in this key: every road edit
       const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${groundKey}|${hides}|${ruinedSerial}|${String(dimmed)}`;
       /** A building drawn in its cell: not the one the preview stands for, nor a ruin, nor the one left solid while the others fade. */
       const inCell = (b: Building): boolean => b.id !== hides && !ruined.has(b.id) && !(typeof dimmed === 'number' && b.id === dimmed);
       let rebuilt = false;
-      // The masses of the buildings an edit changed (or whose ground it moved) are asked of the cell
-      // workers, cell by cell, each cell standing as it was until its masses come; then the cells drawn
-      // near are asked their detail (`landCells`). The first town too (the opening, a map loaded).
+      // The masses of the buildings an edit changed
       if (key !== storedKey) {
-        // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key:
-        // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
+        // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key
         const since = stored && details && doc === townDoc ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
-        // The buildings the ground moved under since the town was last taken in, found by place;
-        // null when that cannot be said.
+        // The buildings the ground moved under since the town was last taken in, found by place; null when that cannot be said.
         const groundMoved = groundKey === storedGround ? [] : groundMovedUnder?.(storedGround) ?? null;
         const changed = since?.every((e) => e.ids) && groundMoved ? since : null;
         if (changed && groundMoved && stored && details) {
@@ -497,8 +412,7 @@ export function createBuildingLayer(): BuildingLayer {
           townSeen = doc.changes.version;
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
-          // Some buildings changed: their cells' masses asked again and their detail made again, each shown as
-          // it lands (`landCells`), the rest of the town as it is (AUDITORIA A1).
+          // Some buildings changed: their cells' masses asked again and their detail made again, each shown as it lands
           for (const cell of dirty) { askMass(cell, env, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
           chooseNow();
           for (const id of ids) {
@@ -515,9 +429,6 @@ export function createBuildingLayer(): BuildingLayer {
           }
         } else {
           // @rebuild The whole town filed again (a first look, or a diary that cannot say what changed).
-          // The whole town filed again; its near cells made again, each shown as it lands - until then a cell
-          // keeps the batch it had, or its masses. NOT the town held until every cell has landed: one change
-          // after another kept it waiting, and the streaming with it (2026-10-14).
           for (const batch of [stored, details]) {
             if (!batch) continue;
             group.remove(batch.group);
@@ -538,8 +449,7 @@ export function createBuildingLayer(): BuildingLayer {
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
           chooseNow();
-          // Only the cells drawn near have their detail; the rest stand as their masses (`massCells`) and come in
-          // by `landCells` when the eye nears.
+          // Only the cells drawn near have their detail; the rest stand as their masses
           for (const cell of [...cells.keys()]) {
             if (townCells.has(cell) && cellNear(cell)) continue;
             dropCell(cells, cell, null);
@@ -548,8 +458,7 @@ export function createBuildingLayer(): BuildingLayer {
           stored = cellGroup(cells);
           details = cellGroup(detailCells);
           group.add(stored.group, details.group);
-          // The cells pending for the town as it was and no longer: their requests dropped. DO NOT only
-          // clear the set: the requests stayed asked, held `STREAM_AHEAD`, and what landed was never taken.
+          // DO NOT only clear the set: the requests stayed asked, held `STREAM_AHEAD`, and what landed was never taken.
           const wanted = new Set([...townCells.keys()].filter(cellNear));
           for (const cell of pendingCells) if (!wanted.has(cell)) requests.drop('cell', cell);
           pendingCells.clear();
@@ -577,9 +486,7 @@ export function createBuildingLayer(): BuildingLayer {
         version++;
         rebuilt = true;
       }
-      // A building opened or closed ("ver por dentro"): the cells it reaches, before and now, asked again with
-      // it cut open, the rest of the town as it is. DO NOT put the town together again for it: every cell's
-      // masses were asked again and the cut cell waited behind them.
+      // DO NOT put the town together again for it: every cell's masses were asked again and the cut cell waited behind them.
       if (cutKey !== storedCut && stored && details) {
         const was = cutCells;
         cutCells = cutCellsOf(doc, cutaway);
@@ -645,8 +552,6 @@ export function createBuildingLayer(): BuildingLayer {
       eyeNow.x = eyeX; eyeNow.y = eyeY; eyeNow.z = eyeZ; eyeNow.pxAtMetre = pxAtMetre; eyeNow.orthoPx = orthoPx; eyeNow.reach = reach;
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
-      // A cell near with no detail yet (coming by `landCells`) keeps its mass until the detail lands
-      // (`massCells.setDetailed`, told as the cells come and go).
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);

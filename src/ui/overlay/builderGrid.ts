@@ -2,16 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import { GRID } from '@world/buildings/geometry';
 import { m } from '@world/units';
 
-/**
- * The Builder's construction grid on the overlay canvas, laid on the plane
- * the work is happening on (the selected building's floor): the major lines
- * every five cells out to 60 m, the minor ones within 24 m.
- *
- * The handles, the selection and the measures are the building tool's own
- * layer (`buildingOverlay.ts`). DO NOT grow a second layer of gizmos here: one
- * stood in this file, 260 lines of handles, rings, badges and a typed-number
- * box that its only caller handed nothing to draw.
- */
+/** DO NOT grow a second layer of gizmos here */
 export function drawBuilderGrid(ctx: CanvasRenderingContext2D, project: (x: number, y: number, z: number) => Vec2, centre: Vec2, z: number): void {
   const radius = m(24);
   const reach = m(60);

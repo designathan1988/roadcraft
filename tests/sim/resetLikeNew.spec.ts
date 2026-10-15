@@ -33,14 +33,7 @@ function draws(sim: SimWorld): Record<string, number> {
   return out;
 }
 
-/**
- * What a tick writes that a reset world and a new one must share: vehicles,
- * signals and people. A person's manner is drawn from their id, so the new
- * world is told the next person id as it is the next vehicle id
- * (`SimWorld.nextPersonId`); kept inside the walking engine, the ids went on
- * there unseen and a walker of the reset world stood a fraction of a
- * millimetre elsewhere from the fourth tick (2026-10-15).
- */
+/** What a tick writes that a reset world and a new one must share: vehicles, signals and people. */
 function state(sim: SimWorld): string {
   const out: string[] = [];
   for (const v of sim.vehiclesInIdOrder()) out.push(`v${v.id}:${v.archetype.id}:${v.lanelet}:${v.s}:${v.v}:${v.route.join('>')}`);
@@ -74,8 +67,7 @@ describe('a reset world', () => {
     const used = game();
     run(used, 10);
     reopen(used);
-    // The clock and the ids are not rewound by a reset (`SimWorld.reset`):
-    // the new world is given the same, so the rest must be the same.
+    // The clock and the ids are not rewound by a reset (`SimWorld.reset`)
     const fresh = game();
     fresh.clock.tick = used.clock.tick;
     fresh.nextVehicleId = used.nextVehicleId;

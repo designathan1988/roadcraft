@@ -1,14 +1,4 @@
-/**
- * A garment, a hairstyle, eyebrows: a MakeHuman proxy fitted to a body.
- *
- * A `.mhclo` file pins every vertex of a separate mesh to the base mesh: to
- * three base vertices with weights (a point on their triangle), plus an
- * offset scaled by how big the body is along each axis, measured between two
- * named base vertices per axis. Whatever the sliders make of the body, the
- * garment follows it - that is its fit. This module reads the packed form the
- * importer writes and fits it; it is
- * written from the file format, with no MakeHuman or MPFB code.
- */
+/** A garment, a hairstyle, eyebrows: a MakeHuman proxy fitted to a body. */
 
 import type { CommunityKind } from '../wardrobe';
 
@@ -39,10 +29,7 @@ export interface ProxyPack {
   readonly fade?: Float32Array;
 }
 
-/**
- * The proxy's vertices on a body (`base`: the morphed base mesh, decimetres,
- * x y z per vertex). `out` is reused when it is the right size.
- */
+/** The proxy's vertices on a body (`base`: the morphed base mesh, decimetres, x y z per vertex). */
 export function fitProxy(proxy: ProxyPack, base: Float32Array, out?: Float32Array): Float32Array {
   const n = proxy.refs.length / 3;
   const result = out && out.length === n * 3 ? out : new Float32Array(n * 3);
@@ -68,11 +55,7 @@ export function fitProxy(proxy: ProxyPack, base: Float32Array, out?: Float32Arra
   return result;
 }
 
-/**
- * Skin weights for a proxy's vertices, from the base mesh's: each takes its
- * three references' influences in proportion to their weights, the four
- * strongest kept. So a sleeve bends with the arm it is pinned to.
- */
+/** Skin weights for a proxy's vertices, from the base mesh's */
 export function proxySkin(proxy: ProxyPack, joints: Uint8Array, weights: Uint16Array): { joints: Uint16Array; weights: Float32Array } {
   const n = proxy.refs.length / 3;
   const outJ = new Uint16Array(n * 4);
@@ -151,11 +134,7 @@ export interface ProxyItem {
   readonly textureFile: string | null;
 }
 
-/**
- * The colour of a texture at (u, v), RGBA 0..1; null without a texture. The
- * packs' v runs down the image from its top row (the importer turns the
- * .obj's round).
- */
+/** The colour of a texture at (u, v), RGBA 0..1; null without a texture. */
 export function sampleTexture(t: ProxyTexture | null, u: number, v: number): [number, number, number, number] | null {
   if (!t) return null;
   const x = Math.min(t.width - 1, Math.max(0, Math.floor((u - Math.floor(u)) * t.width)));
@@ -176,10 +155,7 @@ const SAMPLE_SIZE = 256;
 
 const ITEMS = new Map<string, Promise<ProxyItem>>();
 
-/**
- * One proxy by name, fetched once (`public/models/people/proxies`). In a
- * browser its texture is read back to pixels for the crowd's vertex colours.
- */
+/** One proxy by name, fetched once (`public/models/people/proxies`). */
 export function loadProxyItem(name: string): Promise<ProxyItem> {
   let item = ITEMS.get(name);
   if (!item) {
@@ -189,13 +165,7 @@ export function loadProxyItem(name: string): Promise<ProxyItem> {
       let texture: ProxyTexture | null = null;
       if (meta.texture && typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function') {
         try {
-          // Read back on the CPU, never from the GPU. A plain 2D canvas is
-          // GPU-backed, and getImageData on it waits for the GPU to hand the
-          // pixels back: with the whole wardrobe loading as the crowd arrives,
-          // that readback was 4.8 s of every 8.8 s on the main thread - the
-          // game at 6 fps for its first minute. `willReadFrequently` makes the
-          // canvas a software one (MDN, getContext), and the downscale is done
-          // by createImageBitmap's own resize, off the main thread.
+          // Read back on the CPU, never from the GPU.
           const full = await createImageBitmap(await (await fetched(proxyUrl(meta.texture))).blob());
           const scale = Math.min(1, SAMPLE_SIZE / Math.max(full.width, full.height));
           const width = Math.max(1, Math.round(full.width * scale)), height = Math.max(1, Math.round(full.height * scale));
@@ -225,12 +195,7 @@ export function loadProxyItem(name: string): Promise<ProxyItem> {
   return item;
 }
 
-/**
- * Every proxy file's URL, by file name, so the dev server serves them and a
- * build carries them - the project serves no public folder. One module for
- * the folder (`model-urls-plugin.ts`): an eager `import.meta.glob` made each
- * file a static import of its own.
- */
+/** Every proxy file's URL, by file name, so the dev server serves them and a build carries them */
 import URLS from 'virtual:model-urls/people/proxies?ext=json,bin,webp';
 
 export function proxyUrl(file: string): string {

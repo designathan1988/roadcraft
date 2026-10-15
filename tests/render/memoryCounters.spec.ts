@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BatchedMesh, BoxGeometry, BufferAttribute, BufferGeometry, DataTexture, Group, InstancedMesh, InterleavedBuffer, InterleavedBufferAttribute, Mesh, MeshBasicMaterial, ShaderMaterial } from 'three';
 import { countMemory } from '@render/memoryCounters';
 
-/**
- * THE SCENE'S MEMORY, COUNTED (`render/memoryCounters.ts`): every buffer and
- * texture once however many objects share it, the buffers let go after
- * upload still on the GPU but no longer on the CPU, and a BatchedMesh's
- * whole capacity on the CPU (the 2026-10-14 regression).
- */
+/** THE SCENE'S MEMORY, COUNTED (`render/memoryCounters.ts`) */
 describe('countMemory', () => {
   it('counts a shared geometry and texture once', () => {
     const geometry = new BufferGeometry();

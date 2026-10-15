@@ -4,17 +4,7 @@ import { createIsoRig } from '@render/isoViewport';
 import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { m } from '@world/units';
 
-/**
- * THE CAMERA'S DRAG AND ITS COAST (`view/cameraGestures.ts`), driven as the
- * browser drives it: the mouse sampled every 8 ms, the samples coalesced into
- * one `pointermove` per animation frame (Chrome aligns them to the frame), the
- * release sent at once, each with its own time stamp; on the game's own rig
- * (`render/isoViewport.ts`), orthographic and perspective.
- *
- * The camera must take the same path whatever the frames: at 60 frames a
- * second, at a ragged 7-50 ms, at 10. And letting go must not change the
- * motion: the view goes on as the hand was moving it, then slows.
- */
+/** THE CAMERA'S DRAG AND ITS COAST (`view/cameraGestures.ts`), driven as the browser drives it */
 const W = 1280;
 const H = 720;
 const MOUSE_MS = 8;
@@ -135,8 +125,7 @@ describe('letting go does not change the motion', () => {
 
   for (const perspective of [false, true]) {
     for (const kind of ['pan', 'orbit'] as const) {
-      // Grabbed low on the screen, off the centre: where the scale under the
-      // hand and the pivot of the turn are not the view's centre's.
+      // Grabbed low on the screen, off the centre
       it(`${kind}, ${perspective ? 'perspective' : 'orthographic'}, grabbed off the centre: the same speed and way just before and just after`, () => {
         const dragMs = 240;
         const up = dragMs + 3;
@@ -181,9 +170,7 @@ describe('letting go does not change the motion', () => {
 
 describe("the hand's speed, read at the events' own times", () => {
   it('a fling at 10 frames a second coasts as at 60, and comes to rest at the same place', () => {
-    // No frame in between: each move carries 100 ms of the mouse's samples, and
-    // the release comes 43 ms after the last frame. Read at the handler's time,
-    // the hand had "stopped" 43 ms before letting go and nothing coasted.
+    // No frame in between: each move carries 100 ms of the mouse's samples, and the release comes 43 ms after the last frame.
     for (const kind of ['pan', 'orbit'] as const) {
       // Both runs draw a frame at 4 s, after either coast has ended (an orbit's by 2.8 s).
       const drag = { perspective: true, kind, from: { x: 640, y: 560 }, v: { x: -900, y: 0 }, dragMs: 240, endMs: 4000 };

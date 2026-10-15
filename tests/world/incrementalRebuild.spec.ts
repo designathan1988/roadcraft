@@ -13,16 +13,7 @@ import { restoreSnapshot } from '@editor/history';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
-/**
- * THE ORACLE of the incremental rebuild (docs/source/VIAS.md V0): after every edit,
- * the network the game keeps (rebuilt incrementally, `Network.rebuild`) and
- * the roads' heights solved from the previous solve (`buildRoadElevation`
- * with `previous`) must be EXACTLY what a network and a solve built from
- * nothing give for the same document - ribbons, junction rings, trims,
- * plates, marks, lanelets, every profile and node height. Over the fuzzer's
- * op sequences (the editor's own commands), every recorded fuzz fixture, and
- * the test town with the edits a player makes there.
- */
+/** THE ORACLE of the incremental rebuild: after every edit, the network the game keeps */
 
 function elevationLines(doc: RoadDoc, elevation: RoadElevation): string[] {
   const out: string[] = [];

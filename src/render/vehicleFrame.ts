@@ -1,13 +1,4 @@
-/**
- * A vehicle's one frame on the road: height, pitch and roll, from the road
- * surface under its wheels. Pure, so the renderer (`agents.ts`) and the
- * contact tests (`tests/render/vehicleFrame.spec.ts`) use the same numbers.
- *
- * The frame is: yaw about the vertical, then pitch about the vehicle's
- * lateral axis (nose up positive), then roll about its forward axis (left
- * side up positive). A point `along` forward and `side` to the left on the
- * frame's ground plane is at `contactHeight`.
- */
+/** A vehicle's one frame on the road: height, pitch and roll, from the road surface under its wheels. */
 export interface RoadFrame {
   readonly deck: number;
   readonly pitch: number;
@@ -25,14 +16,7 @@ export interface RoadFrameOut {
 const MAX_FRAME_PITCH = 0.35;
 const MAX_FRAME_ROLL = 0.25;
 
-/**
- * The frame through the road under the axles and the sides.
- *
- * `heightAt` is the height of the vehicle's OWN road at a point (its deck on a
- * bridge, its bore in a tunnel, never the ground over or under it). `front`
- * and `rear` are the axle stations along the body (rear negative), `track`
- * half the distance between the wheels, 0 for a two-wheeler.
- */
+/** The frame through the road under the axles and the sides. */
 export function roadFrame(
   heightAt: (x: number, y: number) => number,
   cx: number,
@@ -65,8 +49,7 @@ export function roadFrameInto(
   let hRear: number;
   let roll = 0;
   if (track > 0) {
-    // Each axle's height is the mean of its two wheels; the roll is the mean
-    // of the two axles' side-to-side differences. Four contacts, one plane.
+    // Each axle's height is the mean of its two wheels; the roll is the mean of the two axles' side-to-side differences.
     const lx = -uy * track;
     const ly = ux * track;
     const fl = heightAt(cx + ux * front + lx, cy + uy * front + ly);

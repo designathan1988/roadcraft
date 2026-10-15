@@ -3,13 +3,7 @@ import { LineSegments, Scene } from 'three';
 
 import { createTracers, TRACER_SLOTS } from '../../src/render/playEffects';
 
-/**
- * THE TRACERS ARE ONE DRAW AND NOTHING MADE A SHOT (`render/playEffects.ts`,
- * F5 "efeitos ... otimizados"): every shot used to make its own geometry,
- * line and cloned material and dispose of them a tenth of a second later.
- * Now one set of line segments holds every tracer, a slot a shot, faded by
- * its vertices' alpha.
- */
+/** THE TRACERS ARE ONE DRAW AND NOTHING MADE A SHOT (`render/playEffects.ts`, F5 "efeitos ... otimizados") */
 describe('the tracers', () => {
   it('draw every shot from one set of line segments, made once', () => {
     const scene = new Scene();

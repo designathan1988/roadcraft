@@ -15,29 +15,11 @@ const KEY = 'roadcraft.world.v7';
 /** Where storage the loader could not read is kept, rather than deleted. */
 export const QUARANTINE_KEY = `${KEY}.unreadable`;
 const DEBOUNCE_MS = 700;
-/**
- * The longest an edit waits to be saved, however many follow it (lodash
- * `debounce`'s `maxWait`): a zone growing a building every half second reset
- * the 700 ms wait for good, and 13-15 s went by with nothing saved. With the
- * idle callback's own 2 s, an edit is on disk within 5 s.
- */
+/** The longest an edit waits to be saved, however many follow it (lodash `debounce`'s `maxWait`) */
 const MAX_WAIT_MS = 3000;
-/**
- * The camera and simulation settings, on their own. They share the map's
- * entry too (older builds read them there), but a pan, a zoom or a speed change
- * writes only this small key: each one used to serialise the whole map.
- */
+/** The camera and simulation settings, on their own. */
 const SETTINGS_KEY = 'roadcraft.settings.v1';
-/**
- * The largest session text written to `localStorage`, characters. Web
- * Storage holds 5 MiB an origin (MDN, "Storage quotas and eviction
- * criteria"; Chrome counts UTF-16, two bytes a character) and throws
- * `QuotaExceededError` past it: a generated city of 1 530 buildings is
- * 12.7 MB of text, and its autosave failed on every write - a reload opened
- * an old map or none. A larger session goes to IndexedDB (in Chromium up to
- * 60 % of the disk an origin, same page), and the small key keeps only a
- * pointer to it.
- */
+/** The largest session text written to `localStorage`, characters. */
 const LOCAL_LIMIT_CHARS = 2_400_000;
 /** The IndexedDB database and store of the large autosaves. */
 const SAVES_DB = 'roadcraft-saves';
@@ -56,17 +38,12 @@ export interface SavedSettings {
   readonly speed: number;
   readonly trafficIntensity: number;
   readonly pedestrianIntensity: number;
-  /**
-   * Counts of cars and people on foot saved by the builds of 2026-10-06 to
-   * 10-11 (10 at first, 400 at most). Read no more: the panel's Traffic and
-   * People are the shares above (`trafficIntensity`, `pedestrianIntensity`)
-   * of the city's own density (`SimWorld.followCity`).
-   */
+  /** Counts of cars and people on foot saved by the builds of 2026-10-06 to 10-11 (10 at first, 400 at most). */
   readonly cars?: number;
   readonly people?: number;
   readonly demandMultiplier?: number;
   readonly congestionOverlay: boolean;
-  /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10 (docs/source/ESCALA.md). */
+  /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10. */
   readonly unit?: number;
 }
 
@@ -78,24 +55,14 @@ export interface SavedSession {
   readonly settings: SavedSettings;
 }
 
-/**
- * Autosave and file export.
- *
- * The V6 monolith had no persistence at all — not a single `localStorage` call
- * in 1133 lines — so every reload dropped the entire map (defect 5.9). Only the
- * authoring document is stored; everything else is derived.
- */
+/** Autosave and file export. */
 export class Persistence {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pending: (() => void) | null = null;
   /** When the oldest unsaved edit asked to be saved (`MAX_WAIT_MS`). */
   private firstPending: number | null = null;
 
-  /**
-   * Called when a write fails (storage full or refused). The autosave used to
-   * fail in silence and the next reload lost everything since the last write
-   * that worked.
-   */
+  /** Called when a write fails (storage full or refused). */
   onSaveFailed: (() => void) | null = null;
 
   /** The map's parts (`chunkedSave.ts`): what the diary says changed, never one text of the map; null without IndexedDB (the whole text). */
@@ -113,28 +80,10 @@ export class Persistence {
     this.loadedParts = null;
   }
 
-  /**
-   * Set once this instance has rejected the stored entry.
-   *
-   * It exists so that KEEPING unreadable bytes on disk costs nothing: the
-   * loader answers from memory instead of parsing them again. That is what
-   * lets `quarantine` refuse to delete anything it could not copy.
-   *
-   * On the instance rather than the module because the app holds exactly one
-   * `Persistence`, so the lifetime is identical — while a module-level flag
-   * would leak between every instance in the same process, which is both wrong
-   * and untestable.
-   */
+  /** Set once this instance has rejected the stored entry. */
   private rejected = false;
 
-  /**
-   * Stores the document, keeping whatever settings are already saved.
-   *
-   * This and `saveSession` write to the SAME key, so a bare-document write used
-   * to silently discard the user's camera, speed and traffic settings. Reading
-   * the current settings back first makes the two writers compatible instead of
-   * competing.
-   */
+  /** Stores the document, keeping whatever settings are already saved. */
   save(doc: RoadDoc): boolean {
     return this.saveSession(doc, this.loadSession()?.settings ?? defaultSettings());
   }
@@ -148,30 +97,17 @@ export class Persistence {
     }, DEBOUNCE_MS);
   }
 
-  /**
-   * The document as text, when the editor already has it (its undo keeps the
-   * same `JSON.stringify(doc.toJSON())` of the document as it is now): the
-   * autosave wrote it out again, 700 ms after every edit, an 80 ms stall in
-   * the default town (docs/source/performance.md #22).
-   */
+  /** The document as text, when the editor already has it */
   documentText: ((doc: RoadDoc) => string | null) | null = null;
 
-  /**
-   * Which save is the newest: each `saveSession` takes the next. A write that
-   * finishes later than a newer one (the parts or IndexedDB, asynchronous)
-   * points the small key at itself only while it is still the newest.
-   * DO NOT write the pointer unasked: a slow write of the parts came back
-   * after a newer whole map was put in the small key, pointed it at the older
-   * parts, and the reload opened the map as it was before.
-   */
+  /** DO NOT write the pointer unasked */
   private generation = 0;
   /** The last write started (`written`, settled either way): what a closing desktop window waits for. */
   private lastWrite: Promise<unknown> = Promise.resolve();
   written(): Promise<void> { return this.lastWrite.then(() => undefined, () => undefined); }
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
     const generation = ++this.generation;
-    // In parts, whatever the map's size (`chunkedSave.ts`); the small key points there. DO NOT choose by
-    // the count of buildings: below it a map of any size of roads, lots and trees was one text an edit.
+    // DO NOT choose by the count of buildings: below it a map of any size of roads, lots and trees was one text an edit.
     if (this.parted) {
       this.writeSettings(settings);
       const key = this.storageKey, savedAt = Date.now();
@@ -201,8 +137,7 @@ export class Persistence {
         // Full: the large store below.
       }
     }
-    // Too large for Web Storage: IndexedDB, and once it is written the small
-    // key points there (`loadSessionAsync` takes the newer of the two).
+    // Too large for Web Storage: IndexedDB, and once it is written the small key points there
     this.writeSettings(settings);
     const key = this.storageKey;
     const savedAt = Date.now();
@@ -218,21 +153,14 @@ export class Persistence {
   /** Whether parts of a large map may still be stored (`dropParts`). */
   private partsKept = true;
 
-  /**
-   * The parts of a large map removed once the map is saved whole again (it
-   * shrank, or another map was opened): they would only hold space, the
-   * whole copy being newer (`loadSessionAsync`). Once, until parts are written again.
-   */
+  /** The parts of a large map removed once the map is saved whole again (it shrank, or another map was opened) */
   private dropParts(): void {
     if (!this.partsKept || !this.parted) return;
     this.partsKept = false;
     void this.parted.clear();
   }
 
-  /**
-   * Reads the autosave from wherever it is: the small key, or IndexedDB for
-   * a session too large for it - the newer of the two. Never throws.
-   */
+  /** Reads the autosave from wherever it is: the small key, or IndexedDB for a session too large for it */
   async loadSessionAsync(): Promise<SavedSession | null> {
     const local = this.loadSession();
     let localAt = local ? -1 : -Infinity;
@@ -279,14 +207,7 @@ export class Persistence {
   /** The idle callback a debounced save waits in (`flushWhenIdle`). */
   private idle: number | null = null;
 
-  /**
-   * The debounced save, in the browser's idle time - within two seconds -
-   * rather than at a fixed moment: writing the whole map is synchronous (MDN,
-   * "Web Storage API"), and at a fixed 700 ms it fell in the middle of
-   * whatever frame was being drawn, a camera drag or the traffic. Closing or
-   * hiding the page still writes at once (`flush`): an asynchronous store may
-   * lose a write as the browser closes (MDN, "Using IndexedDB").
-   */
+  /** The debounced save, in the browser's idle time - within two seconds - rather than at a fixed moment */
   private flushWhenIdle(): void {
     this.timer = null;
     const host = globalThis as { requestIdleCallback?: (run: () => void, options?: { timeout: number }) => number };
@@ -336,11 +257,7 @@ export class Persistence {
     }
   }
 
-  /**
-   * Writes a debounced save now. The page calls it when it is hidden or torn
-   * down: a phone or a background tab discarded without `beforeunload` used to
-   * lose the last 700 ms of edits.
-   */
+  /** Writes a debounced save now. */
   flush(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -359,20 +276,9 @@ export class Persistence {
     return this.loadSession()?.document ?? null;
   }
 
-  /**
-   * Reads the autosave. Never throws, whatever storage does.
-   *
-   * `localStorage.getItem` can throw outright — Safari private mode, blocked
-   * cookies, a sandboxed frame — and not just on write. The previous shape put
-   * the read inside a `try` whose `catch` called `getItem` a SECOND time, so a
-   * hostile storage threw again from inside the handler and the exception
-   * escaped, taking the whole boot with it. Every storage call now sits in its
-   * own guard, and nothing in the recovery path touches storage again.
-   */
+  /** Reads the autosave. */
   loadSession(): SavedSession | null {
-    // Already rejected once in this page's lifetime. The bytes may still be on
-    // disk — deliberately, so nothing the user made is destroyed — but there is
-    // nothing to gain from parsing them again.
+    // Already rejected once in this page's lifetime.
     if (this.rejected) return null;
 
     let raw: string | null;
@@ -404,11 +310,7 @@ export class Persistence {
     return null;
   }
 
-  /**
-   * Sets the stored map aside after it passed validation but failed to load
-   * (the loader threw). Without this a map that validates and then crashes
-   * `fromJSON` was re-read, and crashed the boot, on every reload.
-   */
+  /** Sets the stored map aside after it passed validation but failed to load (the loader threw). */
   quarantineStored(): void {
     this.rejected = true;
     // A large session that crashed the loader is moved aside in its store too (never deleted).
@@ -437,28 +339,11 @@ export class Persistence {
   }
 }
 
-/**
- * Sets unreadable storage aside — and never destroys it to do so.
- *
- * Three shapes of this function have been wrong. Deleting outright lost the
- * user's map on any schema bump. Copy-then-delete in one `try` meant a full
- * quota skipped the delete, so the bad entry was re-read on every boot. Two
- * independent guards fixed the loop but reintroduced the data loss: the copy
- * failed, the delete ran anyway, and zero bytes survived.
- *
- * Quarantining doubles the stored bytes, so any map past roughly half the quota
- * can never be copied — and a quota-truncated write is one of the causes of
- * unreadability in the first place. So the removal is now conditional on the
- * copy, and the boot loop is prevented in memory rather than by deletion.
- * Nothing the user made is ever thrown away to keep the loader quiet.
- */
+/** Sets unreadable storage aside — and never destroys it to do so. */
 function quarantine(raw: string | null, sourceKey = KEY, quarantineKey = QUARANTINE_KEY): void {
   if (!raw) return;
 
-  // `setItem` replaces what a key holds (MDN): a second map set aside over
-  // the first lost the first (2026-10-08: a map that failed while the code
-  // was half edited, then an empty one set aside over it). A key already
-  // holding another map gets a sibling stamped with the time instead.
+  // `setItem` replaces what a key holds (MDN): a second map set aside over the first lost the first
   let target = quarantineKey;
   try {
     const held = localStorage.getItem(quarantineKey);
@@ -470,10 +355,7 @@ function quarantine(raw: string | null, sourceKey = KEY, quarantineKey = QUARANT
   try {
     localStorage.setItem(target, raw);
   } catch {
-    // No room for a copy. Leave the original exactly where it is: the session
-    // flag above already stops it being re-read, and a later save will replace
-    // it. Losing someone's map to make room for a copy of that same map is not
-    // a trade worth making.
+    // No room for a copy.
     return;
   }
 
@@ -489,11 +371,7 @@ const SPEEDS = [1, 2, 4];
 /** The demand levels the menu offers. */
 const DEMANDS = [0.55, 1, 1.55];
 
-/**
- * Settings as the controls can show them. A file could carry any finite
- * number: a negative speed froze the simulation while it read as playing,
- * with no speed button lit.
- */
+/** Settings as the controls can show them. */
 export function normalizeSettings(settings: SavedSettings): SavedSettings {
   const intensity = (value: number): number => Math.min(MAX_INTENSITY, Math.max(0, value));
   const demand = settings.demandMultiplier;
@@ -508,19 +386,10 @@ export function normalizeSettings(settings: SavedSettings): SavedSettings {
   };
 }
 
-/**
- * The panel's Traffic and People: shares of the city's own density
- * (`SimWorld.followCity`), 1 = 100 %, at most this. The counts of the builds
- * of 2026-10-06 to 10-11 (`cars`, `people`: 10 at first, 400 at most) are
- * read no more: they left every city with ten cars.
- */
+/** The panel's Traffic and People: shares of the city's own density (`SimWorld.followCity`), 1 = 100 %, at most this. */
 export const MAX_INTENSITY = 3;
 
-/**
- * The saved camera in this build's world unit (`world/rescale.ts`): its zoom
- * is pixels a unit. The town shrinks about the origin and the camera's point
- * with it.
- */
+/** The saved camera in this build's world unit (`world/rescale.ts`): its zoom is pixels a unit. */
 function cameraInUnit(settings: SavedSettings): SavedSettings['camera'] {
   const factor = unitFactor(settings.unit);
   const c = settings.camera;
@@ -557,11 +426,7 @@ export type ImportResult =
   | { readonly status: 'cancelled' }
   | { readonly status: 'invalid' };
 
-/**
- * Reads a map file chosen by the user. A bad file and a cancelled dialog used
- * to both come back as `null`, so a file that was not a map did nothing at
- * all, with no word to the player.
- */
+/** Reads a map file chosen by the user. */
 export async function importFromFile(): Promise<ImportResult> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
@@ -588,8 +453,7 @@ export async function importFromFile(): Promise<ImportResult> {
       }
     };
     input.oncancel = () => finish({ status: 'cancelled' });
-    // Browsers without a `cancel` event: the window regains focus when the
-    // dialog closes; a pick that has not arrived shortly after is a cancel.
+    // Browsers without a `cancel` event: the window regains focus when the dialog closes
     window.addEventListener('focus', () => {
       setTimeout(() => { if (!input.files?.length) finish({ status: 'cancelled' }); }, 1000);
     }, { once: true });
@@ -648,10 +512,7 @@ export function isSerializedDoc(value: unknown): value is SerializedDoc {
     segmentIds.add(segment.id);
   }
 
-  // The relief versions the document reads (`terrain.ts` readRelief): a list
-  // of its own here missed one (4, 2026-10-10), and every map with it was set
-  // aside as unreadable on the next reload - the game opened on an empty map
-  // (found 2026-10-11).
+  // The relief versions the document reads (`terrain.ts` readRelief): a list of its own here missed one
   if (value.relief !== undefined && readRelief(value.relief) === null) return false;
   if (value.nature !== undefined && !isNatureSettings(value.nature)) return false;
   if (value.terrain !== undefined) {
@@ -674,10 +535,7 @@ export function isSerializedDoc(value: unknown): value is SerializedDoc {
     }
   }
 
-  // Poles and spans. Never checked before: `poles: {}` passed, then threw
-  // 'not iterable' in `fromJSON` - at boot, at module top level, after the
-  // entry had already been accepted, so it was never quarantined and every
-  // reload crashed the same way.
+  // Poles and spans.
   const poleIds = new Set<number>();
   if (value.poles !== undefined) {
     if (!Array.isArray(value.poles)) return false;
@@ -699,9 +557,7 @@ export function isSerializedDoc(value: unknown): value is SerializedDoc {
     }
   }
 
-  // Buildings: the list itself must be a list. Each record is then repaired
-  // or dropped one by one by `migrateBuilding` on load, so a damaged building
-  // never quarantines the roads around it.
+  // Buildings: the list itself must be a list.
   if (!isSerializedBuildings(value.buildings)) return false;
   // People are normalised one by one on load; the key only has to be a list.
   if (value.people !== undefined && !Array.isArray(value.people)) return false;
@@ -727,17 +583,9 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-/**
- * Ids stay far below 2^53: an allocator reserved past it stops counting
- * (2^53 + 1 === 2^53) and every new node overwrites the last one.
- */
+/** Ids stay far below 2^53: an allocator reserved past it stops counting */
 const MAX_ID = 2 ** 31;
-/**
- * The widest stamp a map may hold: the map itself (4 800 units across). It was
- * 180, the Radius slider's old maximum - the slider now reaches 300 and the
- * town the game opens on is shaped by stamps up to 1 400 wide, so every map
- * holding either was refused on reload and put in quarantine.
- */
+/** The widest stamp a map may hold: the map itself (4 800 units across). */
 const MAX_STAMP_RADIUS = m(1_920);
 
 function isId(value: unknown): value is number {

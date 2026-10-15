@@ -34,29 +34,7 @@ import {
   writePlacement,
 } from './utilities';
 
-/**
- * THE OVERHEAD UTILITY NETWORK ON SCREEN, KEPT BY POLE: masts, cross-arms,
- * lamps and wires, each pole's parts in slots of their own of one instanced
- * mesh a part, each span's wires a block of one instanced tube.
- *
- * An edit places again only the poles it reached (`redo`): the poles in the
- * diary's rectangles of the utilities (`RoadDoc.polesIn`), the poles a road or
- * the ground moved under, and their neighbours along the wires (a pole's
- * arms are framed by the lines leaving it, `poleArmsAt`); the spans reaching
- * them are strung again. A part that goes leaves its slot to the last one
- * (swap-remove), and only the slots written are sent to the GPU
- * (`BufferAttribute.addUpdateRange`; three merges neighbouring ranges,
- * `WebGLAttributes.updateBuffer`). A mesh that fills up is made again at twice
- * the room, so a city laying its lines run by run copies each part a few
- * times in all, not once a run.
- *
- * It replaced a layer made whole at every change - every pole and wire of
- * the map read, framed, placed and sent to the GPU again for one pole
- * placed - which a city laying its power lines did once a frame: 24 s of 120
- * in a city of 2 560 m, held off with a pace (`UTILITY_PACE`) and a hold
- * while the city was laid, neither of which made it smaller.
- * DO NOT build the whole layer again for a change; DO NOT pace or hold it.
- */
+/** DO NOT build the whole layer again for a change; DO NOT pace or hold it. */
 
 /** What a pole layer is built from: the document's poles and spans, or a planned run (`buildPolePreview`). */
 export interface PoleSource {
@@ -159,12 +137,7 @@ class PartStore {
     return moved;
   }
 
-  /**
-   * The drawn count, and the slots written sent to the GPU. The bounds only
-   * grow: the box of every place a part stood, grown by the part's reach at
-   * its largest scale (what `computeBoundingSphere` finds, without its pass
-   * over every instance); a part taken away leaves them as large, never wrong.
-   */
+  /** The drawn count, and the slots written sent to the GPU. */
   flush(): void {
     const mesh = this.mesh;
     if (!mesh) return;
@@ -217,7 +190,6 @@ class WireStore {
     const data = new Float32Array(capacity * WireStore.BLOCK);
     data.set(this.data.subarray(0, this.count * WireStore.BLOCK));
     // One draw for every wire: the tube's template, and each wire's eight numbers as instances
-    // (threejs.org InstancedBufferGeometry, example webgl_buffergeometry_instancing_interleaved).
     const geometry: InstancedBufferGeometry = wireTemplate();
     const buffer = new InstancedInterleavedBuffer(data, WIRE_STRIDE, 1);
     geometry.setAttribute('aStart', new InterleavedBufferAttribute(buffer, 3, 0));
@@ -340,23 +312,14 @@ export class PoleLayer implements Utilities {
     return this.poles.keys();
   }
 
-  /**
-   * Every pole and span of the source, on an empty layer, in the source's
-   * order: the layer a full build makes (a load, the preview, the warm-up).
-   */
+  /** Every pole and span of the source, on an empty layer, in the source's order: the layer a full build makes */
   fill(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource): void {
     for (const pole of source.poles.values()) this.place(net, groundAt, source, pole, undefined);
     for (const span of source.spans.values()) this.string(span);
     this.flush();
   }
 
-  /**
-   * These poles placed again as the source has them (or taken away, gone
-   * from it), with their neighbours along the wires, old and new - a pole's
-   * arms are framed by the lines leaving it - and every span reaching any of
-   * them strung again. A pole of `seeds` reads its way to the kerb again (a
-   * road moved near it); a neighbour keeps its own unless it moved.
-   */
+  /** These poles placed again as the source has them */
   redo(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource, seeds: Iterable<PoleId>): void {
     const fresh = new Set(seeds);
     const dirty = new Set(fresh);
@@ -383,12 +346,7 @@ export class PoleLayer implements Utilities {
     this.flush();
   }
 
-  /**
-   * The diary's changes since the layer was last brought up (none with a
-   * null rectangle: that is a whole build): the poles inside the
-   * rectangles of the utilities, and those within `POLE_REACH` of a change of
-   * the roads, their heights or the ground, placed again (`redo`).
-   */
+  /** The diary's changes since the layer was last brought up (none with a null rectangle: that is a whole build) */
   follow(net: Network, groundAt: (x: number, y: number) => number, doc: RoadDoc, entries: readonly Change[]): void {
     const seeds = new Set<PoleId>();
     for (const entry of entries) {
@@ -408,10 +366,7 @@ export class PoleLayer implements Utilities {
   private place(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource,
     pole: UtilityPole, kept: { x: number; y: number } | null | undefined): void {
     const top = groundAt(pole.x, pole.y) + POLE_HEIGHT;
-    // Towards the carriageway: the nearest kerb, or null off the streets. Read
-    // from the kerb itself rather than from the street the footway belongs
-    // to: a corner's footway belongs to no one street, and a corner pole used
-    // to fall back to its cross-arm and light the block.
+    // Towards the carriageway: the nearest kerb, or null off the streets.
     const kerb = kept !== undefined ? kept : kerbward(net, { x: pole.x, y: pole.y }, m(6));
     // A pole with no wire yet stands square to its street.
     const frame = poleArmsAt(pole, source.spansAt(pole.id), source.poles, () => kerb ?? { x: 0, y: 1 });
@@ -493,12 +448,7 @@ export interface PolePreviewInput {
   readonly poles: readonly { readonly x: number; readonly y: number; readonly lamp: boolean; readonly standing: boolean }[];
 }
 
-/**
- * The run under the pointer, drawn as it will stand: masts, cross-arms framed
- * as built, lamps and the sagging wires, from the same parts as the built
- * layer. A pole the run only ties into is standing already and is not drawn
- * twice; the wires to it are.
- */
+/** The run under the pointer, drawn as it will stand */
 export function buildPolePreview(
   net: Network,
   groundAt: (x: number, y: number) => number,

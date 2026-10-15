@@ -9,12 +9,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { MarkingStyleId } from '@world/roads/markingStyle';
 
-/**
- * THE ROADS' PAINT, MADE AT LOAD (`paintCatalogue`): every colour the roads
- * are painted in is in the catalogue, in every regional standard, on a
- * generated city with its parking and on the fixture's junctions - so the
- * road surfaces read their paint and never make a material in a frame.
- */
+/** THE ROADS' PAINT, MADE AT LOAD (`paintCatalogue`) */
 describe('the paint catalogue', () => {
   const cities = [
     () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small' })),

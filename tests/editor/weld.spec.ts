@@ -20,12 +20,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * Welding: dragging one building against another must fuse them, not leave an
- * "overlaps another building" refusal and a red ghost (the behaviour the mass
- * tools are built on). The weld brings the neighbour's masses into the record,
- * cuts the overlap out of the smaller one and fuses what makes one block.
- */
+/** Welding: dragging one building against another must fuse them */
 
 const flat = (): number => 0;
 
@@ -46,11 +41,7 @@ function place(ctx: BuildingContext, at = { x: 0, y: 60 * U }): Building {
   return ctx.doc.buildings.get(result.id as BuildingId)!;
 }
 
-/**
- * A second building dropped where it overlaps the first - what a drag that
- * ends on top of a neighbour produces. Stored ignoring the neighbour, exactly
- * as the tool's weld path does.
- */
+/** A second building dropped where it overlaps the first - what a drag that ends on top of a neighbour produces. */
 function placeOverlapping(ctx: BuildingContext, against: Building, at: { x: number; y: number }): Building {
   const bp = blueprintByKey('house')!;
   const body = JSON.parse(JSON.stringify(bp.body)) as Omit<Building, 'id'>;
@@ -87,8 +78,7 @@ describe('welding two buildings', () => {
     const absorbed = weldInto(ctx, draft, []);
     const bounds = (b: Building) => footprintRects(b, 0.02 * U).map((r) => [Math.min(...r.map(p => p.x)).toFixed(1), Math.min(...r.map(p => p.y)).toFixed(1), Math.max(...r.map(p => p.x)).toFixed(1), Math.max(...r.map(p => p.y)).toFixed(1)]);
     expect(absorbed, JSON.stringify({ first: bounds(first), second: bounds(second), pos: [second.x, second.y, second.rotation] })).toEqual([first.id]);
-    // Non-destructive: both blocks are kept as they were, overlapping; what
-    // is drawn is their union. The record validates.
+    // Non-destructive: both blocks are kept as they were, overlapping; what is drawn is their union.
     expect(draft.volumes.length).toBe(2);
     expect(planOverlap(draft.volumes[0]!, draft.volumes[1]!)).toBe(true);
     expect(validateBuilding(ctx, draft, [first.id])).toBeNull();

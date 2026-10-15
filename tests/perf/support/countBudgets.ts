@@ -1,9 +1,6 @@
 import type { Budget } from '@core/perfBudget';
 
-/**
- * The specs' counts: exact, the same on every run (`tests/perf`). Measured
- * 2026-10-11.
- */
+/** The specs' counts: exact, the same on every run (`tests/perf`). */
 export const COUNT_BUDGETS = {
   /** Rings measured per corner of the ground graded to the default town's 761 buildings (7.59): the nearest-ring pruning (`pads.ts`). */
   padRingsPerCorner: { max: 9.5, level: 'error', why: 'poda das plataformas (7,59; sem ela ~dezenas)' },

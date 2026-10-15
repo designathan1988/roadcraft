@@ -30,29 +30,7 @@ import { TUNED_UNIT, m } from '@world/units';
 import { pullTowardEye } from './depthConvention';
 import type { Exhaust } from './exhaust';
 
-/**
- * Explosions, and what they throw (the player's order of 2026-10-05: a blow
- * is an explosion - fire, smoke, shrapnel - that wrecks everything near it).
- *
- * An explosion is built the way game effects are, in layers on their own
- * clocks: a white flash and a burst of light (~0.1 s), a fireball of flame
- * puffs (~0.5 s) rising into a column, smoke that starts with the fire,
- * cools to black, rises and spreads (seconds), sparks flung out under
- * gravity, a shockwave ring racing over the ground, a scorch mark - a crater
- * where the ground gives way - debris that falls and lies there, and a
- * shake of the camera.
- *
- * Debris are rigid bodies: chunks of asphalt, kerb, earth and masonry, the
- * pieces of a pole broken at its foot, in the middle or to splinters, the
- * mast and head of a traffic light, the burnt shell of a car. Each moves
- * under gravity and strikes the ground at its corners with an impulse -
- * restitution along the contact normal and friction across it, the impulse
- * turning the body about its centre (the usual impulse response of a game
- * rigid body, with a round inertia) - and comes to rest where it lands.
- * Wires torn from a pole are ropes (Verlet, like the ragdolls): pinned to
- * the pole still standing, their loose end falls and, on the ground, arcs
- * and sparks for a while.
- */
+/** Explosions, and what they throw */
 
 type DebrisKind = 'asphalt' | 'concrete' | 'earth' | 'brick' | 'wood' | 'metal' | 'glass' | 'char' | 'leaf' | 'flesh';
 
@@ -123,8 +101,7 @@ const MAX_SOOT = 600;
 const MAX_WIRES = 40;
 const WIRE_POINTS = 12;
 const GRAVITY = m(9.8);
-/** A hydrant's jet when no length is given (the blast wiring gives none), and its dying down, seconds. DO NOT make it
- * endless: it sprayed 110 particles a second and kept `active()` - every frame drawn - true for the rest of the game. */
+/** DO NOT make it endless: it sprayed 110 particles a second and kept `active()` - every frame drawn */
 const GEYSER_SECONDS = 45, GEYSER_FADE = 6;
 
 interface Piece {
@@ -239,8 +216,7 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
   side.closePath();
   const shellGeometry = new ExtrudeGeometry(side, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
   const shells = new InstancedMesh(shellGeometry, debrisMaterial, 80);
-  // A broken slab of road or footway: an irregular outline with notches and
-  // a torn edge, extruded thin (y), fitting a unit box - not a clean tile.
+  // A broken slab of road or footway: an irregular outline with notches and a torn edge, extruded thin
   const jag = new Shape();
   const corners = 11;
   for (let k = 0; k < corners; k++) {
@@ -306,9 +282,7 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
   ring.visible = false;
   ring.renderOrder = 6;
   group.add(ring);
-  // The flash: one light, reused, and its colour (white-orange for a blast,
-  // blue-white for an arc). Given, already in the scene: made here, it came
-  // in with the effects on the first shot and recompiled every shader.
+  // The flash: one light, reused, and its colour (white-orange for a blast, blue-white for an arc).
   light.castShadow = false;
   const wireGeometry = new BufferGeometry();
   const wirePositions = new Float32Array(MAX_WIRES * (WIRE_POINTS - 1) * 2 * 3);
@@ -334,12 +308,7 @@ export function createBlast(exhaust: Exhaust, light: PointLight): Blast {
   let drawnPieces = -1;
   const o = new Object3D();
 
-  /**
-   * A burnt-out vehicle (as GTA leaves them): the paint gone to grey-brown
-   * ash and soot, rust coming through in patches, a scorched trace of its
-   * colour low on the sides, dull all over. Patterned in the body's own
-   * space, so each wreck carries its burns with it.
-   */
+  /** A burnt-out vehicle (as GTA leaves them) */
   const carcassMaterial = (paint: number): MeshStandardMaterial => {
     const material = new MeshStandardMaterial({ roughness: 0.92, metalness: 0.25, side: DoubleSide });
     material.onBeforeCompile = (shader) => {
@@ -461,11 +430,6 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
     if (deepest > 0) b.p.y += deepest;
     if (touching) { b.w.multiplyScalar(0.985); b.v.x *= 0.995; b.v.z *= 0.995; }
     // At rest as Box2D judges it: the speed of the body's farthest point
-    // (linear, plus the turn times its reach) under the threshold, on the
-    // ground or within a hair of it. Required to be in the ground at every
-    // step, a piece settling bounced a millimetre clear every other step, its
-    // rest went back to zero, and it never slept: ten bombs left their debris
-    // stepping and asking for the ground every frame (1 s of every 8).
     const reach = Math.sqrt(b.corners.reduce((most, c) => Math.max(most, c.lengthSq()), 0));
     const slow = b.v.length() + b.w.length() * reach < m(0.15) + 0.55 * reach;
     const resting = touching || lowest < m(0.05);
@@ -572,10 +536,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
           turn: tilt, velocity: new Vector3(Math.cos(a) * m(0.6), m(0.8), -Math.sin(a) * m(0.6)), spin: new Vector3(),
         });
       }
-      // The ground heaved up in plates round it - slabs of road and footway
-      // metres across, broken off and tipped on edge, half buried, like
-      // plates after a quake - out to well past the hole. They stay.
-      // Not on top of the plates already heaved here: the ground is broken once.
+      // The ground heaved up in plates round it
       const already = pieces.filter((b) => b.still && Math.hypot(b.p.x - x, b.p.z + y) < radius * 1.4).length;
       const plates = already > 25 ? 0 : Math.round(10 + radius / m(1.6));
       for (let i = 0; i < Math.min(plates, 60); i++) {
@@ -661,9 +622,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
           const big = f.piece ? Math.max(f.piece.size.x, f.piece.size.z) * 0.5 : f.size ?? m(1);
           const dying = Math.min(1, left / 3 + 0.3);
           exhaust.burst(at.x, -at.z, at.y + m(0.3), 1, 5, big, (m(1.1) + big * 0.4) * dying, 0.8);
-          // A chimney of smoke off each fire: a narrow dark column leaving
-          // the flames, climbing high and opening out as it rises, the grey
-          // of a car's exhaust curling round its foot.
+          // A chimney of smoke off each fire
           if (Math.random() < 0.55) exhaust.burst(at.x, -at.z, at.y + m(1), 1, 2, m(0.4), m(1.3), 12);
           if (Math.random() < 0.6) exhaust.burst(at.x, -at.z, at.y + m(0.6), 1, 0, big * 0.4, m(1.5), 3.5);
         }
@@ -689,9 +648,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       flash = Math.max(0, flash - (flash / Math.max(0.03, flashLife)) * wall * 2.5);
       // Falls off with the distance in world units: the same flash in metres at any unit.
       light.intensity = flash * TUNED_UNIT ** light.decay;
-      // Always in the scene, dark when off: a light shown and hidden changes the
-      // count of lights, which is part of every lit material's program - each
-      // flash recompiled every shader in the town (three `WebGLPrograms`).
+      // Always in the scene, dark when off
       light.visible = true;
       shakeAmp *= Math.exp(-wall * 4);
       if (shakeAmp < 1e-3) shakeAmp = 0;
@@ -704,8 +661,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
         ring.scale.set(r, 1, r);
         ringMaterial.opacity = 0.55 * (1 - k);
       } else ring.visible = false;
-      // Draw the pieces - rewritten only while one moves or the set changes:
-      // a street of rubble at rest costs nothing a frame.
+      // Draw the pieces - rewritten only while one moves or the set changes: a street of rubble at rest costs nothing a frame.
       const moving = pieces.some((b) => !b.asleep);
       const redraw = moving || pieces.length !== drawnPieces;
       drawnPieces = pieces.length;
@@ -737,8 +693,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
         o.updateMatrix();
         craterMeshes[k]!.setMatrixAt(counts[k]!++, o.matrix);
       }
-      // Only what was written goes up, and nothing when there are none: the
-      // whole crater buffers were sent every frame of the game.
+      // Only what was written goes up, and nothing when there are none
       craterMeshes.forEach((mesh, k) => {
         if (k >= 2 || (counts[k] === 0 && mesh.count === 0)) return;
         mesh.count = counts[k]!;
@@ -758,8 +713,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
         mesh.count = soots.length;
         uploadWritten(mesh);
       }
-      // An empty batch is still a program bind and its uniforms in every pass
-      // (the shadow pass too): seven of them stood in every frame of the game.
+      // An empty batch is still a program bind and its uniforms in every pass (the shadow pass too)
       for (const mesh of [boxes, cylinders, shells, slabs, ...craterMeshes]) mesh.visible = mesh.count > 0;
       let w = 0;
       for (const r of ropes) {
@@ -771,8 +725,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
         }
       }
       wireGeometry.setDrawRange(0, w / 3);
-      // No wires down, nothing drawn and nothing sent: the whole buffer went
-      // to the GPU every frame, and an empty line was a draw in every pass.
+      // No wires down, nothing drawn and nothing sent
       wires.visible = w > 0;
       if (w > 0) {
         const attribute = wireGeometry.getAttribute('position') as BufferAttribute;

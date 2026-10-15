@@ -2,22 +2,7 @@ import type { LandscapeKind } from '../landscape';
 import { BENCH_ZONE, LAMP_ZONE, TREE_KERB_SETBACK, TREE_PIT } from '../section';
 import { m } from '../units';
 
-/**
- * THE STREET FURNITURE CATALOGUE (docs/source/VIAS.md V7), by data: one entry per
- * piece the road system lays, with everything the sets, the rows dragged out
- * and the clear-walk rule read about it. The Etapa 5f catalogue of the main
- * session does not exist yet; when it does, these entries move into it.
- *
- * - `depth`: how far from the kerb face the piece reaches (`section.ts`
- *   zones), what NBR 9050's 1,20 m clear walk is measured behind.
- * - `every`/`first`: the spacing along a street and the first one past the
- *   corner, as Brazilian streets are laid (lamps 30 m, NBR 5101 urban
- *   lighting at 3-4 times an 8-10 m mounting height; hydrants 100 m, fire
- *   brigade rules of 60-120 m; trees 10 m; bins and benches 60 m).
- * - `rowEvery`: the spacing of a row dragged out with the landscaping tool.
- * - `sets`: the sets a new road is built with that include it; `rightOnly`
- *   for the pieces only one side of a street has.
- */
+/** THE STREET FURNITURE CATALOGUE, by data */
 export interface FurnitureEntry {
   readonly kind: LandscapeKind;
   readonly nameKey: string;

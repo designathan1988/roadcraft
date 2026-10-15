@@ -9,11 +9,7 @@ import { Morpher, type PeoplePacks } from '@people/body/morph';
 import { createPersonRig, type SkeletonMeta } from '@render/people/personRig';
 import type { PersonMeshData } from '@render/people/personMesh';
 
-/**
- * The citizen bodies, loaded in node exactly as the game loads them
- * (`GLTFLoader`, then `SkeletonUtils.clone` per bake), minus their textures:
- * node has no image decoder, and nothing measured here reads a pixel.
- */
+/** The citizen bodies, loaded in node exactly as the game loads them */
 
 const root = resolve('public/models/citizens');
 

@@ -4,11 +4,7 @@ import { Network } from '@world/network';
 import { pointInPolygon } from '@core/polygon';
 import { Level, halfWidth } from '@world/roadTypes';
 
-/**
- * P2-26: two roads meeting at a slight bend (under the junction threshold)
- * met square to their own ends and left a wedge of terrain showing on the
- * outside of the bend. Every point of the asphalt across the joint is covered.
- */
+/** P2-26: two roads meeting at a slight bend */
 describe('a slight bend between two roads', () => {
   for (const degrees of [2, 4, 4.9]) {
     it(`has no hole on the outside at ${degrees} degrees`, () => {

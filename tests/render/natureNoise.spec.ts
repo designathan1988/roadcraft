@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { natureNoise, natureDensity } from '@render/natureNoise';
 import * as before from './_natureNoiseReference';
 
-/**
- * THE WOODS' NOISE WITHOUT A CLOSURE A SAMPLE (`render/natureNoise.ts`): the
- * same numbers, to the bit, as when it made its hashes inside each call - so
- * not one tree moves.
- */
+/** THE WOODS' NOISE WITHOUT A CLOSURE A SAMPLE (`render/natureNoise.ts`) */
 describe('the woods noise', () => {
   it('gives the very numbers it gave before', () => {
     let seed = 7;

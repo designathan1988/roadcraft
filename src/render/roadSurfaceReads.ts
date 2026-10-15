@@ -9,56 +9,21 @@ import { m } from '@world/units';
 import type { HeightFn, TileMeshOptions, TintFn, UvFn, UvFrameFn } from './mesh/tileMesh';
 import type { TileSource, TileSpec } from './roadTileShape';
 
-/**
- * WHAT EACH SURFACE OF A ROAD PASS READS PER VERTEX (`roadSurfaces.ts`): the
- * height of its top and bottom, its texture frame, its tint and its place in
- * the section, as functions of the point over a pass's description and its
- * reads. Pure (no three, no page): the page builds the same surfaces from the
- * network and the solved field, a road tile worker from the roads near its
- * tiles handed to it (`roadTileMesh.ts`) - one code, the same numbers.
- */
+/** WHAT EACH SURFACE OF A ROAD PASS READS PER VERTEX (`roadSurfaces.ts`) */
 
-/**
- * Height of the kerb face above the carriageway.
- *
- * A hair ABOVE the footway rather than a hair below it. At 0.34 the kerb sat
- * 0.02 under the footway and read as part of it: nothing on screen said where
- * the kerb was. Standing 0.04 proud, its inner arris catches the light and
- * throws a line of shade, and the granite kerb reads as a separate edge.
- */
+/** Height of the kerb face above the carriageway. */
 const KERB_RISE = FOOTWAY_RISE + m(0.01);
 /** Depth of the verge below the carriageway, where the grass starts. */
 const VERGE_DROP = m(0.04);
-/**
- * Drop of the verge skirt into the ground.
- *
- * Small, because the ground is now shaped to meet the road (`shapeAt` in
- * `world/elevation.ts`): the embankment is real terrain with a forty-five unit
- * batter, not a vertical face hung off the edge of the surface. This is only
- * the seal that stops a hairline of sky showing under the rim.
- */
+/** Drop of the verge skirt into the ground. */
 const VERGE_SKIRT = 0.5;
-/**
- * The verge meets the drawn terrain this far BELOW it: the lawn closes over
- * the batter's outer edge, so no rim of the batter (and no dark line of its
- * skirt) shows where the two meet. Both wear the terrain's material.
- */
+/** The verge meets the drawn terrain this far BELOW it */
 const VERGE_LIFT = -m(0.08);
 /** World size of one UV unit on the ground verge when it wears the terrain's material (and a retaining wall's backfill, `structures.ts`). */
 export const TERRAIN_UV = 64;
-/**
- * A dropped kerb's triangles: its slope is 1.8 m long, its flares 1.5 m. The
- * slope is a plane (rise linear along it), which a few triangles carry
- * exactly: at 0.3 m the ramps of a large city were 2.4 million triangles,
- * more than every window frame in it (measured 2026-10-09).
- */
+/** A dropped kerb's triangles: its slope is 1.8 m long, its flares 1.5 m. */
 const RAMP_MAX_EDGE = m(0.75);
-/**
- * Height of the median island's kerb above the carriageway: the footway's
- * kerb (15 cm). Written as bare numbers of the old 0.4 m unit, it stood 40 cm
- * high, the grass 62 cm, and a band of stone 70 cm wide ran either side - a
- * promenade, not a kerb (the player, 2026-10-13: "meio fio ridículo").
- */
+/** Height of the median island's kerb above the carriageway: the footway's kerb (15 cm). */
 const MEDIAN_KERB = FOOTWAY_RISE;
 /** Height of the planting inside it: the soil a hair over the kerb's top, so the two are never one plane. */
 const MEDIAN_PLANTING = FOOTWAY_RISE + m(0.02);
@@ -94,11 +59,7 @@ export interface PassDesc {
   /** The paint's colours, in the order the network paints them, and its height over the deck. */
   readonly paint: readonly string[];
   readonly paintLift: number;
-  /**
-   * The carriageway's tints against the colour its texture was baked at, made
-   * on the page (three's colour management): per class index (r, g, b), the
-   * reference's own, and per paving.
-   */
+  /** The carriageway's tints against the colour its texture was baked at, made on the page (three's colour management) */
   readonly classTint: readonly number[];
   readonly referenceTint: readonly [number, number, number];
   readonly pavingTint: Readonly<Record<string, readonly [number, number, number]>>;
@@ -191,22 +152,15 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
     return { uv: (x, y, out) => uvFrame(x, y, x, y, out), uvFrame, uvWorld: tile };
   };
 
-  /**
-   * The carriageway's tint, taken from the class of the nearest road and
-   * normalised against the colour the asphalt texture was baked at — so the
-   * reference class comes out exactly as authored and the others shift from
-   * it rather than being multiplied twice.
-   */
+  /** The carriageway's tint, taken from the class of the nearest road and normalised against the colour the asphalt texture */
   const asphaltTint: TintFn = (x, y, out) => {
     const sample = pass.segment === undefined ? field.roadAt(x, y, only, false) : null;
     const type = sample ? sample.type : pass.rootType;
-    // A carriageway paved with something else than the class's asphalt
-    // (docs/VIAS.md V1) takes that material's tone.
+    // A carriageway paved with something else than the class's asphalt takes that material's tone.
     const segment = sample ? sample.segment : segmentAt(x, y);
     const look = segment === undefined ? undefined : reads.look(segment);
     let material = look?.carriageway;
-    // Between its junction mouths only: the junction plate keeps the class's
-    // asphalt, and the paving changes at the mouth line, as it is laid.
+    // Between its junction mouths only
     if (material && sample && look) {
       if (sample.along < look.from || sample.along > look.to) material = undefined;
     }
@@ -219,12 +173,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
 
   const suffix = pass.id === 'ground' ? '' : `-${pass.id}`;
 
-  /**
-   * A point's place in the carriageway's cross-section, for the marks of
-   * its use (`mesh/roadEdges.ts`): signed offset across, half its width
-   * kerb to kerb, a lane's width. None on a junction's plate, where no one
-   * lane runs.
-   */
+  /** A point's place in the carriageway's cross-section, for the marks of its use (`mesh/roadEdges.ts`) */
   const asphaltSection: TintFn = (x, y, out) => {
     const sample = field.roadAt(x, y, only, pass.segment !== undefined);
     const look = sample.segment === undefined ? undefined : reads.look(sample.segment);
@@ -244,7 +193,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
     out[2] = 1;
   };
 
-  /** The footway's tone: its side's material on the road nearest the point (docs/VIAS.md V1). */
+  /** The footway's tone: its side's material on the road nearest the point. */
   const footwayTint: TintFn = (x, y, out) => {
     const sample = field.roadAt(x, y, only, pass.segment !== undefined);
     const look = sample.segment === undefined ? undefined : reads.look(sample.segment);
@@ -255,19 +204,8 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
   /** Where the footway stands: a kerb's rise over the carriageway, or level with it where it is laid flush. */
   const footwayTop: HeightFn = (x, y) => deck(x, y) + FOOTWAY_RISE * reads.footwayShare(x, y);
 
-  /**
-   * The verge on the ground: from the footway's edge, at the footway's
-   * height, down (or up) to the terrain as it is drawn at the verge's outer
-   * edge - a batter, not a wall. Read off the nearest road's own section.
-   */
+  /** The verge on the ground: from the footway's edge, at the footway's height, down */
   // The batter's fall is measured from the footway's OUTER EDGE as drawn
-  // (the union of every footway of this pass), not across the nearest
-  // road's centreline: round a junction's corner the nearest leg's
-  // centreline is far off, and the batter started at the bottom - a grey
-  // wall of footway skirt under the corner's paving. Each straight piece of
-  // the outline is filed by the cells of a grid its padded box covers
-  // (`roadSurfaces.ts` `footwayEdgeGrid`): a point measures only the pieces
-  // within reach of its cell.
   const fromFootway = (x: number, y: number): number => {
     const list = reads.footwayEdges(footwayEdgeCell(x, y));
     if (!list) return Infinity;
@@ -299,15 +237,6 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
 
   const terrainUv = (x: number, y: number, out: number[] | Float32Array): void => { out[0] = x / TERRAIN_UV; out[1] = y / TERRAIN_UV; };
   // Outermost first, so a nearer band's skirt lands on the one outside it.
-  //
-  // The ground verge - the batter from the footway's edge down to the
-  // terrain - is drawn with the TERRAIN's own material when the renderer
-  // passes it (`groundMaterial`). The terrain shader textures by world
-  // position, so the batter is the lawn itself rising to the pavement: no
-  // strip of a second green along every footway (the player's order of
-  // 2026-10-05, "nunca colocar essa manta verde"), and no wall either -
-  // the terrain alone cannot reach the footway's height, being a 6.4 m grid
-  // that would lift through the asphalt of a kerb return.
   const specs: SurfaceRead[] = [
     {
       source: { kind: 'band', band: 'verge' },
@@ -317,9 +246,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
         top: raised ? offset(deck, -VERGE_DROP) : vergeTop,
         bottom: soffit,
         maxEdge,
-        // On the terrain's material the batter takes the terrain plane's UV
-        // frame (world x, y): its normal map is read off UV derivatives, and
-        // a road-framed UV turned the lawn's relief and lit it as a second green.
+        // On the terrain's material the batter takes the terrain plane's UV frame (world x, y)
         ...(raised || !pass.groundMaterial ? uvFor(raised ? pass.scale.deck : pass.scale.verge) : {
           uv: terrainUv,
           uvFrame: (x: number, y: number, _px: number, _py: number, out: number[] | Float32Array) => terrainUv(x, y, out),
@@ -333,12 +260,10 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
       options: {
         name: `footway${suffix}`,
         top: footwayTop,
-        // On the ground the footway's own edge goes down into the terrain:
-        // there is no verge band outside it.
+        // On the ground the footway's own edge goes down into the terrain: there is no verge band outside it.
         bottom: raised ? offset(deck, -VERGE_DROP) : offset(deck, -VERGE_SKIRT),
         maxEdge,
-        // Laid at its true length on each line along a bend, a joint every
-        // few slabs (`surfaceFrameAt`, panels), so pavers keep their size.
+        // Laid at its true length on each line along a bend, a joint every few slabs
         ...uvFor(pass.scale.footway, pass.scale.footway * FOOTWAY_PANEL_TILES),
         tint: footwayTint,
         section: footwaySection,
@@ -346,10 +271,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
       },
     },
     {
-      // The dropped kerbs at the zebras (`world/curbRamps.ts`): the footway
-      // and its kerb sloping down to the carriageway, at the height the
-      // walkers on it read (`walkingRise`). Fine triangles, as the slope is
-      // a metre and a half long.
+      // The dropped kerbs at the zebras (`world/curbRamps.ts`)
       source: { kind: 'band', band: 'curbRamp' },
       options: {
         name: `curb-ramp${suffix}`,
@@ -407,8 +329,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
       },
     },
     {
-      // A median paved instead of planted (docs/VIAS.md V1): the footway's
-      // paving at the planting's height.
+      // A median paved instead of planted: the footway's paving at the planting's height.
       source: { kind: 'median', part: 'paved' },
       options: {
         name: `median-paved${suffix}`,
@@ -426,8 +347,7 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
       options: {
         name: `markings-${color.slice(1)}${suffix}`,
         top: offset(deck, pass.paintLift),
-        // Paint follows the road it is painted on, so it needs the same vertex
-        // density the deck has or it floats over a crest and sinks into a dip.
+        // Paint follows the road it is painted on
         maxEdge: 5,
         uv: (x, y, out) => {
           out[0] = x / 12;

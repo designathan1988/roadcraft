@@ -10,17 +10,7 @@ import type { BuildingKit } from './buildings/kit';
 import { fragmentGeometry, prepareFracture, type Fragment, type StillData } from './buildings/fracture';
 import { interiorFurniture } from './buildings/buildingMesh';
 
-/**
- * Buildings that break for real (the player's order of 2026-10-05): the
- * building's own meshes, pre-fractured into Voronoi fragments
- * (`buildings/fracture.ts`), stand in for it from the first blow - looking
- * exactly like it. A blow knocks the fragments within its reach out of the
- * building, thrown away from the impact; then every fragment no longer joined
- * to the ground through the others falls (the chunk graph's support check), so
- * a building cut low comes down on itself. Pieces tumble, land, settle as a
- * heap of the building's own walls, roof and floors, and stay there for good.
- * Dust rises where pieces break off and where they land.
- */
+/** Buildings that break for real (the player's order of 2026-10-05) */
 
 const GRAVITY = m(9.8);
 /** Milliseconds a frame for cutting out and sending off the pieces of a blow (`release`), and the fewest a frame. */
@@ -33,10 +23,7 @@ interface Piece {
   readonly fragment: Fragment;
   /** Its index among its ruin's fragments (`StillData.slots`, `fragments`). */
   readonly index: number;
-  /**
-   * Its own mesh, in the scene only while it moves (else drawn in its ruin's
-   * `still`), with a geometry of its own only then (`fragmentGeometry`).
-   */
+  /** Its own mesh, in the scene only while it moves (else drawn in its ruin's `still`), with a geometry of its own only then */
   readonly mesh: Mesh;
   readonly floor: number;
   falling: boolean;
@@ -65,10 +52,7 @@ export interface Destruction {
   readonly group: Group;
   /** Buildings now drawn as fragments here (and not by the building layer). */
   readonly ruined: ReadonlySet<number>;
-  /**
-   * A blow on building `b` (its floor at `floor`) at world (x, y, z), force
-   * 1..10. Returns true when the building has come down.
-   */
+  /** A blow on building `b` (its floor at `floor`) at world (x, y, z), force 1..10. */
   hit(b: Building, floor: number, x: number, y: number, z: number, strength: number, eye?: Vector3): boolean;
   /** Called when a building comes down later than its blow (its pieces were still being made in the worker). */
   onDown: ((id: number) => void) | null;
@@ -89,20 +73,12 @@ export function createDestruction(
   const loose: Piece[] = [];
   const owner = new WeakMap<Piece, Ruin>();
 
-  // The fracture runs in a worker (`buildings/fracture.worker.ts`): a building
-  // is struck at once and broken when its pieces are ready, a frame or a few
-  // later, the blows meanwhile kept - a big one froze the game for a second.
-  // A few workers, so the buildings a big blow reaches break together, not
-  // one after another for seconds.
+  // The fracture runs in a worker (`buildings/fracture.worker.ts`)
   const workers: Worker[] = [];
   let nextWorker = 0;
   let nextJob = 1;
   const jobs = new Map<number, { b: Building; floor: number; materials: Material[]; hits: [number, number, number, number, Vector3 | undefined][]; worker?: Worker }>();
-  /**
-   * A job that will not come back (the worker failed it, or failed): let go,
-   * the building left standing and struck again next time. DO NOT keep it:
-   * its blows piled up and the building never broke.
-   */
+  /** DO NOT keep it: its blows piled up and the building never broke. */
   const fail = (id: number, why: string): void => {
     const job = jobs.get(id);
     jobs.delete(id);
@@ -139,22 +115,10 @@ export function createDestruction(
     return workers[nextWorker++ % workers.length]!;
   };
 
-  /**
-   * Static batching (Unity's manual, "Draw call batching": meshes that do not
-   * move and share a material, combined into one buffer in world space): the
-   * pieces of a ruin standing or landed are drawn in one mesh, a group per
-   * material - a draw call per material, not one per piece and material. A
-   * building broken into a few hundred pieces cost as many draws, every frame,
-   * for good (the rubble stays), and each bomb made the game slower. The
-   * buffer is made in the worker (`fracture.ts` `mergeFragments`); a piece
-   * knocked loose is blanked in it and drawn on its own while it flies, and
-   * written back where it landed: only its own ranges are uploaded (three's
-   * `BufferAttribute.addUpdateRange`).
-   */
+  /** Static batching Unity's manual, Draw call batching: meshes that do not move and share a material, combined into one */
   const place = (data: StillData, materials: Material[], floor: number): Ruin => {
     const fragments = data.fragments;
-    // The worker's arrays as they are (`Float32BufferAttribute` would copy
-    // them), bounded by the fragments' own spheres, not a pass over them all.
+    // The worker's arrays as they are
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new BufferAttribute(data.position, 3));
     geometry.setAttribute('normal', new BufferAttribute(data.normal, 3));
@@ -228,8 +192,7 @@ export function createDestruction(
     // It may have landed outside the building's bounds: the ruin is culled by them.
     geometry.boundingSphere?.union(reach.set(mesh.position, piece.fragment.radius));
     group.remove(mesh);
-    // It never moves again (a blow passes over what has fallen): its own
-    // geometry, on the GPU and in memory, is let go (three: `dispose`).
+    // It never moves again (a blow passes over what has fallen): its own geometry, on the GPU and in memory, is let go
     source.dispose();
     mesh.geometry = NO_GEOMETRY;
   };
@@ -257,16 +220,7 @@ export function createDestruction(
     return id;
   };
 
-  /**
-   * Pieces knocked loose, waiting to be cut out and sent flying. A blow is
-   * decided at once (what falls, what collapses), but each piece costs its own
-   * geometry, a buffer upload and a vertex array on its first draw: a bomb on
-   * a block let a few hundred go in one frame, 465 ms of it on the RTX
-   * (2026-10-09). They go a slice of milliseconds a frame (`update`), the
-   * nearest first, as the game spreads its other uploads (`uploads.ts`
-   * `WARM_SLICE_MS`); the rest stand in the still mesh a frame or two longer,
-   * the blast running through the building.
-   */
+  /** Pieces knocked loose, waiting to be cut out and sent flying. */
   const queued: { ruin: Ruin; piece: Piece; from: Vector3; power: number }[] = [];
   let queuedAt = 0;
   const release = (ruin: Ruin, piece: Piece, from: Vector3, power: number): void => {
@@ -276,8 +230,7 @@ export function createDestruction(
     queued.push({ ruin, piece, from, power });
   };
   const loosen = (ruin: Ruin, piece: Piece, from: Vector3, power: number): void => {
-    // Out of the ruin's still mesh, drawn on its own while it flies: its
-    // geometry cut from its ranges first, while they still hold it.
+    // Out of the ruin's still mesh, drawn on its own while it flies
     piece.mesh.geometry = fragmentGeometry(ruin.data, piece.index);
     blank(ruin, piece);
     group.add(piece.mesh);
@@ -297,9 +250,7 @@ export function createDestruction(
 
   const strike = (ruin: Ruin, floor: number, x: number, y: number, z: number, strength: number, eye?: Vector3): boolean => {
       let impact = new Vector3(x, z, -y);
-      // Once broken, the blow lands on the first standing piece along the line
-      // of sight through the point: what is left of the building, not the air
-      // where the rest of it was.
+      // Once broken, the blow lands on the first standing piece along the line of sight through the point
       if (eye) {
         // `eye` is the camera's looking direction (an orthographic camera's rays are parallel).
         const dir = eye.clone().normalize();
@@ -336,13 +287,11 @@ export function createDestruction(
       exhaust.burst(impact.x, -impact.z, impact.y, 20 + strength * 4, 9, reach * 0.4, m(0.3), 18);
       // What hangs on nothing now comes down: it falls, it is not thrown.
       for (const piece of unsupported(ruin)) release(ruin, piece, piece.mesh.position.clone().add(new Vector3(0, m(1), 0)), m(0.5));
-      // Counted over what stands above the ground: the lot's paving and the
-      // plinth are never knocked down by blows above them.
+      // Counted over what stands above the ground: the lot's paving and the plinth are never knocked down by blows above them.
       const upper = ruin.pieces.filter((p) => p.fragment.centre[1] > floor + m(0.6));
       if (upper.filter((p) => !p.falling).length < upper.length * COLLAPSE_BELOW) {
         for (const piece of ruin.pieces) {
-          // What lies on the ground (the lot's paving, the plinth) stays as it
-          // is in the still mesh, and goes with the rubble later.
+          // What lies on the ground (the lot's paving, the plinth) stays as it is in the still mesh, and goes with the rubble later.
           if (piece.fragment.centre[1] < floor + m(0.6)) {
             if (!piece.falling) { piece.falling = true; piece.settled = true; ruin.standing--; }
           } else release(ruin, piece, impact, m(0.6));
@@ -422,9 +371,7 @@ export function createDestruction(
               p.v.multiplyScalar(0.3); p.v.y = Math.abs(p.v.y) * 0.5; p.w.multiplyScalar(0.4);
               if (p.fragment.radius > m(1.2) && Math.random() < 0.3) exhaust.burst(mesh.position.x, -mesh.position.z, p.floor, 3, 3, m(1.5), m(3), 4);
             } else {
-              // Settled: it stays where it fell, a heap of the building, for
-              // good (the player: "não faça os escombros sumirem"); no longer
-              // stepped, and drawn with its ruin again.
+              // Settled: it stays where it fell, a heap of the building, for good (the player: "não faça os escombros sumirem")
               p.settled = true;
               p.v.set(0, 0, 0);
               p.age = 0;
@@ -435,8 +382,7 @@ export function createDestruction(
           }
         }
       }
-      // The rubble stays for good (the player: "não faça os escombros sumirem"):
-      // NO walk over every ruin each frame for pieces that are never gone.
+      // The rubble stays for good (the player: "não faça os escombros sumirem")
     },
     dispose() {
       for (const ruin of ruins.values()) {

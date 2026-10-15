@@ -8,30 +8,7 @@ import type { Junction } from './junction/build';
 import { Level, type SurfaceLevel } from './roadTypes';
 import { levelRingsOf } from './surfaces';
 
-/**
- * The ground a pedestrian may stand on: the footway and its kerb, and never
- * the carriageway or the verge beyond.
- *
- * It is the same outline the road mesh draws (`world/surfaces.ts`), read as
- * rings and answered point by point through a `RegionIndex`: inside the
- * footway level, and outside the carriageway. No clipper union is needed —
- * the rings are combined by winding number.
- *
- * BY CELL OF THE WORLD'S GRID (`cells.ts`): a cell's index is made, when a
- * point in it is first asked about, from the rings of the ribbons and
- * junctions filed over it (`Network.segmentCells`, `junctionCells`), each cut
- * to the cell (a ring cut to a box holds the same points inside the box), and
- * made again only when the versions of those filings over the cell moved. An
- * edit pays for the cells it reaches and that are asked about again.
- * DO NOT go back to one index of every ring of the map made at each network
- * rebuild: every road edit paid for the whole map's footways before the first
- * crossing was placed (`Network.crosswalkDistanceAt`).
- *
- * One per network, kept across its rebuilds and through `Network.adopt`:
- * a cell's version names one change of it, never another filing's
- * (`cells.ts` versionClock), so a cell made before reads as current only
- * when nothing filed over it moved.
- */
+/** DO NOT go back to one index of every ring of the map made at each network rebuild */
 export class WalkableSurface {
   private readonly made = new Map<number, { readonly stamp: string; readonly outer: RegionIndex; readonly road: RegionIndex }>();
 
@@ -92,12 +69,7 @@ export class WalkableSurface {
   }
 }
 
-/**
- * A ring cut to an axis-aligned box (Sutherland and Hodgman, "Reentrant
- * polygon clipping", 1974: one half-plane at a time). For any simple ring,
- * convex or not, the part inside the box is the same region, wound the same
- * way, so the winding number of every point in the box is unchanged.
- */
+/** A ring cut to an axis-aligned box */
 function clipToBox(ring: readonly Vec2[], box: ChangeRect): Vec2[] {
   let pts: Vec2[] = ring.slice();
   const sides: readonly ((p: Vec2) => number)[] = [

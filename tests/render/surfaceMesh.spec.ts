@@ -4,15 +4,7 @@ import { MeshBasicMaterial } from 'three';
 import type { MultiPoly } from '@core/clipper';
 import { buildSurfaceMesh } from './support/surfaceMesh';
 
-/**
- * The mesh builder's contract, stated as tests:
- *
- *  1. no triangle edge longer than `maxEdge`, or a deck chords under the ground;
- *  2. no T-junction, or the surface shows a hairline crack;
- *  3. every top face points UP, or the whole surface is back-face culled and
- *     vanishes — which is exactly what happened when the winding was reversed
- *     for a mirrored axis that had already reversed it.
- */
+/** The mesh builder's contract, stated as tests */
 
 const rect = (w: number, h: number): MultiPoly => [[[
   [-w / 2, -h / 2],
@@ -94,10 +86,7 @@ describe('buildSurfaceMesh', () => {
         seen.set(key, (seen.get(key) ?? 0) + 1);
       }
     }
-    // Interior edges appear twice, boundary edges once. A T-junction shows up
-    // as an edge whose midpoint is a vertex of only one of its two triangles,
-    // which makes the long edge appear once while the two halves appear once
-    // each — so a count of three or more is the signature to catch.
+    // Interior edges appear twice, boundary edges once.
     for (const count of seen.values()) expect(count).toBeLessThanOrEqual(2);
   });
 
@@ -113,9 +102,7 @@ describe('buildSurfaceMesh', () => {
   });
 
   it('winds every top face upwards whatever the winding and whichever way it is cut', () => {
-    // Wide shapes are cut along x, tall ones along y; a cut along y is the
-    // mirror of one along x, and clockwise pieces from it were once drawn face
-    // down — whole stretches of road vanished. Both windings, both cuts, holes.
+    // Wide shapes are cut along x, tall ones along y
     const cw = (polygons: MultiPoly): MultiPoly =>
       polygons.map((polygon) => polygon.map((ring) => [...ring].reverse()));
     const shapes: MultiPoly[] = [rect(160, 70), rect(70, 160), rect(30, 400), withHole()];
@@ -173,8 +160,7 @@ describe('buildSurfaceMesh', () => {
       if (Math.abs(normal.getY(i)) > 0.01) continue;
       const x = position.getX(i);
       const z = position.getZ(i);
-      // On the +x wall the normal must have a positive x, and so on. Corner
-      // vertices belong to two walls, so only the runs between them are tested.
+      // On the +x wall the normal must have a positive x, and so on.
       if (Math.abs(x) > 49.5 && Math.abs(z) < 48) {
         expect(Math.sign(normal.getX(i))).toBe(Math.sign(x));
         checked++;
@@ -193,7 +179,6 @@ describe('buildSurfaceMesh', () => {
 
 describe('texture frames at a junction corner', () => {
   // Two roads meeting at right angles: along X at y = 0, and along Y at x = 0.
-  // A point takes the frame of whichever is nearer, as the road UVs do.
   const frame = (x: number, y: number, pickX: number, pickY: number, out: [number, number]): void => {
     if (Math.abs(pickY) < Math.abs(pickX)) {
       out[0] = y / 10;

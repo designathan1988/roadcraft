@@ -9,41 +9,21 @@ import {
 import { windUniforms } from './wind';
 import { m, TUNED_UNIT } from '@world/units';
 
-/**
- * Smoke and dust: soft puffs that rise, spread, thin out and drift downwind.
- * Exhaust from the tail of a vehicle, dust from its wheels off the road, and
- * the clouds of a building breaking or coming down (`burst`).
- *
- * One `Points` cloud for the whole map, a fixed pool reused as a ring - the
- * way engine particle systems keep a budget: a puff is spawned by writing its
- * birth time, origin, size and life into the next slot, and the vertex shader
- * ages it (rise, growth, wind drift); nothing is allocated per frame.
- */
+/** Smoke and dust: soft puffs that rise, spread, thin out and drift downwind. */
 
 /** Puffs alive at once, map-wide. */
 const POOL = 4000;
 /** Seconds an exhaust puff lives. */
 const EXHAUST_LIFE = 2.6;
 
-/**
- * 0 exhaust, 1 dust (brown-grey, low and wide), 2 dark smoke (rises), 3 concrete dust (pale, billowing),
- * 4 blood spray (thrown up, falls), 5 flame (bright, rising fast, short), 6 sparks (flung, falling, glowing),
- * 7 grit and earth (flung, falling), 8 water (a jet straight up, falling back as spray), 9 paper (flakes thrown up, fluttering slowly down).
- */
+/** 0 exhaust, 1 dust (brown-grey, low and wide), 2 dark smoke (rises), 3 concrete dust (pale, billowing), 4 blood spray */
 export type PuffKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export interface Exhaust {
   readonly points: Points;
-  /**
-   * A vehicle at (x, y) on a deck at height `z`, heading `angle`, `length`
-   * long, moving at `speed` (units/s); `dusty` when its wheels are on
-   * unpaved ground. Spawns puffs at the tail at a rate that rises with speed.
-   */
+  /** A vehicle at (x, y) on a deck at height `z`, heading `angle`, `length` long, moving at `speed` (units/s) */
   emit(x: number, y: number, z: number, angle: number, length: number, speed: number, dusty: boolean): void;
-  /**
-   * `count` puffs of `kind` at once, scattered over `spread` round (x, y, z):
-   * `size` is a puff's starting width in world units, `life` its seconds.
-   */
+  /** `count` puffs of `kind` at once, scattered over `spread` round (x, y, z) */
   burst(x: number, y: number, z: number, count: number, kind: PuffKind, spread: number, size: number, life: number): void;
   /** Advances the clock the shader ages puffs by. */
   tick(seconds: number, halfHeight: number): void;
@@ -59,8 +39,7 @@ export function createExhaust(): Exhaust {
   const life = new Float32Array(POOL).fill(1);
   for (let i = 0; i < POOL; i++) seed[i] = Math.random();
   const geometry = new BufferGeometry();
-  // BufferAttribute (not Float32BufferAttribute, which copies): the pool is
-  // written in place through these same arrays.
+  // BufferAttribute (not Float32BufferAttribute, which copies): the pool is written in place through these same arrays.
   geometry.setAttribute('position', new BufferAttribute(origin, 3));
   geometry.setAttribute('aBorn', new BufferAttribute(born, 1));
   geometry.setAttribute('aKind', new BufferAttribute(kind, 1));
@@ -99,23 +78,20 @@ export function createExhaust(): Exhaust {
           return;
         }
         vec3 p = position;
-        // The motions below are written in steps of 0.4 m (TUNED_UNIT), the
-        // scale they were tuned at: taken to world units once, at the end.
+        // The motions below are written in steps of 0.4 m (TUNED_UNIT), the scale they were tuned at
         vec3 born = position;
         // Rise: smoke climbs, dust hangs low, a collapse cloud billows up and out.
         float rise = aKind < 0.5 ? 2.4 : aKind < 1.5 ? 1.0 : aKind < 2.5 ? 3.5 : 1.8;
         vec2 out2 = vec2(sin(aSeed * 40.0), cos(aSeed * 40.0));
         bool flung = (aKind > 3.5 && aKind < 4.5) || (aKind > 5.5 && aKind < 7.5);
         if (aKind > 8.5) {
-          // Paper: blown up and out by the blast, then drifting down slowly,
-          // swinging side to side, carried by the wind.
+          // Paper: blown up and out by the blast, then drifting down slowly, swinging side to side, carried by the wind.
           float up = 9.0 * (1.0 - exp(-t * 2.0)) - 0.55 * t;
           p.y += up + 0.4 * sin(t * 2.3 + aSeed * 9.0);
           p.xz += out2 * (5.0 + 6.0 * fract(aSeed * 7.0)) * (1.0 - exp(-t * 1.5)) + uWindDir * 0.9 * t
             + vec2(sin(t * 1.7 + aSeed * 13.0), cos(t * 1.3 + aSeed * 5.0)) * 0.8;
         } else if (aKind > 7.5) {
           // A broken hydrant's jet: straight up, fanning a little, falling back.
-          // A hydrant's jet at full size; a burst pipe (a small puff) spurts low.
           p.y += (30.0 + 6.0 * fract(aSeed * 13.0)) * clamp(aSize / ${m(0.8).toFixed(6)}, 0.15, 1.0) * t - 9.8 * t * t;
           p.xz += out2 * (0.6 + 1.6 * fract(aSeed * 7.0)) * t + uWindDir * 0.8 * t;
         } else if (flung) {
@@ -151,7 +127,6 @@ export function createExhaust(): Exhaust {
         vec2 d = gl_PointCoord - 0.5;
         float r = length(d) * 2.0;
         // A soft, round puff: gaussian falloff, a faint unevenness inside it
-        // (an angular wobble on the edge drew five-pointed stars).
         float inner = 0.9 + 0.1 * sin(d.x * 9.0 + vSeed * 20.0) * sin(d.y * 7.0 - vSeed * 13.0);
         float soft = exp(-r * r * 3.2) * inner * smoothstep(1.0, 0.7, r);
         vec3 smoke = vec3(0.55, 0.56, 0.58);
@@ -163,8 +138,6 @@ export function createExhaust(): Exhaust {
         if (vKind > 3.5) soft = smoothstep(1.0, 0.55, r);
         if (vKind > 4.5 && vKind < 5.5) {
           // Flame: white-yellow at the heart, orange, then red at the edge, brighter than white.
-          // A tongue of flame: narrow, pointed upwards, flickering at its edge,
-          // yellow-white at the root, orange, red, then going to soot.
           vec2 q = vec2(d.x * (1.6 + 0.8 * (0.5 - d.y)), d.y * 1.1 + 0.08);
           float flick = 0.75 + 0.25 * sin(d.y * 14.0 + vSeed * 40.0 + vAge * 25.0) * sin(d.x * 11.0 - vSeed * 17.0);
           float rf = length(q) * 2.0 / flick;
@@ -220,11 +193,7 @@ export function createExhaust(): Exhaust {
     size[i] = s;
     life[i] = l;
     seed[i] = Math.random();
-    // Only the slot written goes to the graphics card: flagged with no range,
-    // the whole pool - six attributes of four thousand puffs, 128 KB - was
-    // re-sent every frame that any engine anywhere puffed (`BufferAttribute
-    // .needsUpdate` alone means the whole buffer; three uploads the update
-    // ranges and clears them, `WebGLAttributes.updateBuffer`).
+    // Only the slot written goes to the graphics card: flagged with no range, the whole pool
     for (const pool of pools) {
       pool.addUpdateRange(i * pool.itemSize, pool.itemSize);
       pool.needsUpdate = true;
@@ -236,14 +205,10 @@ export function createExhaust(): Exhaust {
       const dt = frameDt;
       const moving = Math.abs(speed) > 0.5;
       // A running engine puffs a little standing still, more pulling away.
-      // A faint puff now and then: a modern car's exhaust is barely visible.
       owed += dt * (moving ? 0.5 + Math.min(1, Math.abs(speed) * 0.02) : 0.15);
       const cos = Math.cos(angle), sin = Math.sin(angle);
       const tailX = x - cos * length * 0.5, tailY = y - sin * length * 0.5;
-      // The puff's place and size in steps of 0.4 m (`TUNED_UNIT`), as the
-      // shader's motions: read as metres they were 2.5 times too wide, a
-      // 2.4 m puff growing to 6 m at every tailpipe, and two milliseconds of
-      // the GPU's frame in blended smoke (measured 2026-10-13).
+      // The puff's place and size in steps of 0.4 m (`TUNED_UNIT`), as the shader's motions
       const u = TUNED_UNIT;
       while (owed >= 1) {
         owed -= 1;

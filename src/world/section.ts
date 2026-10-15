@@ -2,33 +2,7 @@ import { m } from './units';
 import { CURB_BAND, type RoadSide, type SegmentDirection, flushOn, footwayOn, laneOffset, laneWidth, symmetric, travelLanes, type RoadType } from './roadTypes';
 import { carriesPedestrians } from './pedestrianAccess';
 
-/**
- * THE CROSS-SECTION OF A ROAD: what lies where across it, from the centreline
- * out, as named bands. The one description every consumer reads.
- *
- * It used to exist only implicitly. The carriageway, kerb and footway were
- * drawn as rings of decreasing half-width (`roadTypes.halfWidth`), unioned
- * per surface level and subtracted one from another (`surfaces.bands`); the
- * footway was what was LEFT OVER. Every pedestrian model then had to
- * reconstruct a walking path from that leftover - the sidewalk graph by
- * sampling its corners (centimetre reversals), the navigation mesh by eroding
- * it (an 11 cm sliver strip of kerb stone along every footway) - and both
- * walked erratically for it (study of 2026-10-01).
- *
- * Here the footway is an object with zones, as street design guides describe
- * a sidewalk (NACTO Urban Street Design Guide, "Sidewalks": frontage zone,
- * pedestrian through zone, street furniture/curb zone): the kerb stone at the
- * carriageway edge, a furnishing zone beside it where lamp columns, street
- * trees, benches and bins stand, the through zone people walk in, and a
- * frontage zone along the outer edge where the footway is wide enough to have
- * one. Vehicle lanes are bands of the
- * same section (OpenDRIVE lanes, Cities: Skylines lanes).
- *
- * Offsets are distances from the road centreline, world units, measured
- * outward on either side; each side has its own `SideZones` (`left`,
- * `right`): a footway may be wider, or laid flush, on one side only
- * (docs/source/VIAS.md V1).
- */
+/** THE CROSS-SECTION OF A ROAD: what lies where across it, from the centreline out, as named bands. */
 
 /** A band across one side of the road: from `inner` to `outer`, measured from the centreline. */
 export interface Band {
@@ -62,10 +36,7 @@ export interface CrossSection {
   readonly median: number;
   /** Lanes of the forward (a to b) direction; a two-way road mirrors them for the other. */
   readonly lanes: readonly TravelLane[];
-  /**
-   * The zones of a side when both sides are the same; on an asymmetric road
-   * (docs/source/VIAS.md V1) the right one. Read `left`/`right`, or `zonesOn`.
-   */
+  /** The zones of a side when both sides are the same; on an asymmetric road the right one. */
   readonly side: SideZones;
   /** The footway zones left and right of a -> b. */
   readonly left: SideZones;
@@ -114,24 +85,16 @@ function sideZones(rt: RoadType, sidewalk: number, flush: boolean, walkable: boo
   const edge = half + sidewalk;
   // A flush footway has no kerb stone: the edge zone starts at the carriageway's edge.
   const curb: Band = { inner: half, outer: half + (flush ? 0 : CURB_BAND) };
-  // The edge zone: kerb stone and clearance together, measured from the kerb
-  // FACE whatever the stone's width, so nothing stands where an opening car
-  // door or a passing mirror reaches (NACTO "Sidewalks": the edge zone).
+  // The edge zone: kerb stone and clearance together, measured from the kerb FACE whatever the stone's width
   const edgeZone = Math.max(curb.outer, half + EDGE_ZONE);
   const footway = Math.max(0, edge - edgeZone);
-  // Street furniture stands in ONE zone beside the kerb, as on a real street:
-  // lamp columns always, street trees where the footway is wide enough for
-  // them, benches and bins where they still leave the through zone its
-  // minimum. Lamps, bins and benches used to stand along the OUTER edge, the
-  // bins and benches set a further 0.9-1.1 m out - beyond the footway, inside
-  // the buildings (audit P1-16).
+  // Street furniture stands in ONE zone beside the kerb, as on a real street
   const trees = sidewalk >= TREE_MIN_FOOTWAY ? TREE_KERB_SETBACK + TREE_PIT : 0;
   const seats = footway - BENCH_ZONE >= MIN_THROUGH ? BENCH_ZONE : 0;
   const furnishingDepth = walkable ? Math.min(Math.max(LAMP_ZONE, trees, seats), Math.max(0, footway - MIN_THROUGH)) : 0;
   // The edge zone is part of the furnishing (curb) zone, as NACTO draws it.
   const furnishing: Band = { inner: curb.outer, outer: edgeZone + furnishingDepth };
-  // A frontage zone along the outer edge only where the through zone already
-  // has its full width and enough is left over to use.
+  // A frontage zone along the outer edge only where the through zone already has its full width and enough is left over to
   const spare = footway - furnishingDepth - THROUGH_GOAL;
   const frontage = spare >= MIN_FRONTAGE ? spare : 0;
   const through: Band = { inner: furnishing.outer, outer: edge - frontage };

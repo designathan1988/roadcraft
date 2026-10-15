@@ -1,11 +1,4 @@
-/**
- * THE MAP'S WEATHER (Paisagem > Terreno > Clima): how hard it rains, how
- * strong the wind blows and which way, how often lightning strikes and how
- * loud the thunder. Kept in the document, so it saves, loads and undoes; the
- * renderer draws it - the rain (`render/rain.ts`), the wind carrying the
- * clouds and swaying the trees, the lightning (`render/lightning.ts`) - and
- * the interface plays the thunder.
- */
+/** THE MAP'S WEATHER (Paisagem > Terreno > Clima) */
 
 export interface Weather {
   /** 0 dry .. 1 a downpour. */

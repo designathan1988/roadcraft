@@ -20,8 +20,7 @@ import {
 } from './ids';
 import type { UtilityPole, UtilitySpan } from './utilities';
 import { type Barrier, type BarrierKind, isBarrierKind } from './barriers';
-// Runtime imports, and safe: `geometry` and `legAngles` take `RoadDoc` as a
-// TYPE only, so nothing here is part of a runtime cycle.
+// Runtime imports, and safe: `geometry` and `legAngles` take `RoadDoc` as a TYPE only
 import { TUNNEL_HEADROOM, type RoadStructure, migrateStructure } from './structures';
 import { MAX_TERRAIN_STAMPS, RELIEF_LEGACY, readRelief, type ReliefVersion, type TerrainStamp } from './terrain';
 import { clampToMap } from './bounds';
@@ -63,7 +62,7 @@ export function fitRoadCurve(
 export type { SegmentDirection };
 
 /** Explicit junction policy. `auto` retains the class-based default policy. */
-/** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
+/** 'mini': a mini-roundabout: every entry gives way to whoever is in it or comes from the left. */
 export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' | 'none' | 'mini';
 
 /** Stable segment-pair key for a movement through a junction (`roads/connectors.ts`). */
@@ -84,50 +83,21 @@ export interface RoadNode {
   heightOffset: number;
   /** An internal control point of one continuous road gesture. */
   smooth: boolean;
-  /**
-   * Materialized incidence list.
-   *
-   * The V6 monolith recomputed this with a linear `filter` over every segment,
-   * from inside `nodeDegree`, `intersectionRadius`, `junctionReach`,
-   * `crosswalkDistance` and `approachSetback` — roughly six full scans per
-   * vehicle per frame (defect 5.7). Here it is maintained on mutation.
-   */
+  /** Materialized incidence list. */
   readonly incident: SegmentId[];
   control: JunctionControl;
   blockedMovements: string[];
-  /**
-   * A pedestrian crossing placed mid-block, on a node that joins exactly two
-   * roads. `segment` is the piece the paint lies on (its downstream edge is
-   * this node). Dropped as soon as the node stops being a two-road node or the
-   * segment leaves it: a real junction draws its own crossings.
-   */
+  /** A pedestrian crossing placed mid-block, on a node that joins exactly two roads. */
   crossing?: NodeCrossing;
-  /**
-   * The player's own lane connections at this node (docs/source/VIAS.md V4,
-   * `roads/connectors.ts`): for each arriving lane listed, exactly these.
-   * Absent: every connection derived. A link to a lane that is gone is left
-   * out of the build.
-   */
+  /** The player's own lane connections at this node (`roads/connectors.ts`) */
   laneLinks?: readonly LaneLink[];
-  /** Each leg's rule under 'priority' control (docs/source/VIAS.md V5, `roads/rules.ts`); absent legs: derived. */
+  /** Each leg's rule under 'priority' control (`roads/rules.ts`); absent legs: derived. */
   approachRules?: readonly ApproachRuleEntry[];
   /** A signal's settings (V5): fixed time, greens, offset, bus priority; absent: adaptive. */
   signal?: SignalSettings;
-  /**
-   * What a road's end is (docs/source/VIAS.md V8): absent, the map's edge, where
-   * traffic leaves and comes in; 'bulb', a turning circle where it turns
-   * round (the player's choice per end, 2026-10-10). Read only while the
-   * node is the end of one road.
-   */
+  /** What a road's end is: absent, the map's edge, where traffic leaves and comes in */
   end?: RoadEnd;
-  /**
-   * A U-turn through an opening in the median (docs/source/VIAS.md V8, retorno): a
-   * piece the player puts on a road with a median, on a node joining two
-   * pieces of it - the piece whose traffic, arriving here, turns round. One
-   * direction per opening: two facing ones, each waiting at its own lane's
-   * end, stood in each other's half circle (2026-10-10). Read only while the
-   * node joins exactly two roads.
-   */
+  /** A U-turn through an opening in the median (retorno) */
   uturn?: SegmentId;
 }
 
@@ -147,13 +117,7 @@ export interface RoadSegment {
   /** Null means a straight segment; see `CurveShape` for why `h` is absolute. */
   curve: CurveShape | null;
   type: number;
-  /**
-   * Arc-length offset of this segment's start within the road it was drawn as.
-   *
-   * Dash phase is anchored to this rather than to a render chain, so splitting
-   * a road (which happens automatically whenever one crosses another) leaves
-   * every dash boundary at the same world position (defect 1.10).
-   */
+  /** Arc-length offset of this segment's start within the road it was drawn as. */
   dashOrigin: number;
   direction: SegmentDirection;
   /** Optional total travel-lane count; omitted means the class default. */
@@ -164,24 +128,11 @@ export interface RoadSegment {
   parking?: SegmentParking;
   /** Vertical construction mode. Ground is the legacy/default value. */
   structure: RoadStructure;
-  /**
-   * The sides of its cutting held by retaining walls instead of a batter
-   * (docs/source/VIAS.md V3): the ground is cut back only as far as a portal's
-   * cutting (`elevation.ts` `CUT_SHOULDER`) and a concrete wall stands at
-   * each edge up to the natural ground (`render/structures.ts`). Absent: the
-   * batter, as every road before it.
-   */
+  /** The sides of its cutting held by retaining walls instead of a batter */
   cutWalls?: true;
 }
 
-/**
- * The authoring document: what the user drew, before any derived geometry.
- *
- * Mutations are applied here and written in the diary (`changes`);
- * `Network.rebuild()` then rebuilds what is derived from what changed (see
- * `markNode`). Nothing in this file knows about lanes,
- * vehicles or rendering.
- */
+/** The authoring document: what the user drew, before any derived geometry. */
 /** The place a run of points (a wall, a span of wire) covers, for the diary of changes: one box round them all. */
 function rectsAlong(points: readonly { readonly x: number; readonly y: number }[], pad: number): ChangeRect[] {
   const r = rectAround(points, pad);
@@ -191,52 +142,27 @@ function rectsAlong(points: readonly { readonly x: number; readonly y: number }[
 export class RoadDoc {
   readonly nodes = new Map<NodeId, RoadNode>();
   readonly segments = new Map<SegmentId, RoadSegment>();
-  /**
-   * The nodes that may have been left with no road (`pruneOrphanNodes`): a
-   * node made, a road's end taken away, a node put back by undo. A superset,
-   * kept by the writers of `incident` here; each is tested when pruned.
-   */
+  /** The nodes that may have been left with no road (`pruneOrphanNodes`) */
   private loose = new LooseNodes();
 
-  /**
-   * The overhead utility network: poles and the wire runs between them.
-   *
-   * A second drawable graph, and deliberately a much simpler one. A pole has
-   * no width, so none of the road machinery applies to it - no casing, no
-   * junction, no trim, no elevation solve. It stands on whatever the ground
-   * under it turns out to be.
-   */
-  // Written only through `putPoleRecord`/`deletePoleRecord`/`putSpanRecord`/`deleteSpanRecord`/`clearPoleRecords`,
-  // which keep `poleIndex` in step. DO NOT write these maps directly.
-  // A working copy (`fork`) lays its own maps over the original's, and reads the original's index until it writes a pole.
+  /** The overhead utility network: poles and the wire runs between them. */
+  // DO NOT write these maps directly.
   private poleMap: Map<PoleId, UtilityPole> = new Map();
   private spanMap: Map<SpanId, UtilitySpan> = new Map();
   private poleIndex = new PoleIndex();
   get poles(): ReadonlyMap<PoleId, UtilityPole> { return this.poleMap; }
   get poleSpans(): ReadonlyMap<SpanId, UtilitySpan> { return this.spanMap; }
 
-  /**
-   * Walls, fences and hedges drawn along paths (`barriers.ts`). Like the poles
-   * they are not part of the road network and keep their own revision,
-   * `barrierRevision`: a fence drawn must not rebuild the roads.
-   */
-  // Written only through `putBarrierRecord`/`deleteBarrierRecord`/`clearBarrierRecords`,
-  // which keep `barrierCells` in step. DO NOT write this map directly.
+  /** Walls, fences and hedges drawn along paths (`barriers.ts`). */
+  // DO NOT write this map directly.
   private barrierMap: Map<number, Barrier> = new Map();
   get barriers(): ReadonlyMap<number, Barrier> { return this.barrierMap; }
   /** The barriers by place (`barriersIn`), filed over the box of their points. */
   private barrierCells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
   private barrierIds = new IdAllocator(1);
 
-  /**
-   * Street landscaping the player placed on the footways: trees, shrubs,
-   * benches, bins, street lights, hydrants, post boxes (`landscape.ts`).
-   * Nothing on a street is generated; this is all there is. It moves
-   * `utilityRevision`, the gate of everything standing on a footway (the
-   * renderer's furniture and the pedestrians' obstacles), never `revision`.
-   */
-  // Written only through `putLandscapeRecord`/`deleteLandscapeRecord`/`clearLandscapeRecords`,
-  // which keep `landscapeCells` in step. DO NOT write this map directly.
+  /** Street landscaping the player placed on the footways: trees, shrubs, benches, bins, street lights, hydrants, post boxes */
+  // DO NOT write this map directly.
   private landscapeMap: Map<number, LandscapeItem> = new Map();
   get landscape(): ReadonlyMap<number, LandscapeItem> { return this.landscapeMap; }
   /** The street furniture by place (`landscapeIn`), in cells a few items wide. */
@@ -246,12 +172,7 @@ export class RoadDoc {
   get streetNamesInUse(): ReadonlyMap<string, number> { return this.streetNameCount; }
   private landscapeIds = new IdAllocator(1);
 
-  /**
-   * Public transport the player laid out: bus stops and terminals, train and
-   * metro tracks and stations, lines (`transit.ts`). Plain data, replaced
-   * whole by each edit (`setTransit`), with its own revision: a bus stop
-   * placed never rebuilds the roads.
-   */
+  /** Public transport the player laid out: bus stops and terminals, train and metro tracks and stations, lines */
   transit: TransitData = emptyTransit();
 
   /** The public transport replaced by an edit of it. */
@@ -266,25 +187,11 @@ export class RoadDoc {
   private nextTerrainId = 1;
 
   readonly terrainStamps: TerrainStamp[] = [];
-  /**
-   * The land this map was made on (`world/terrain.ts` `ReliefVersion`). A
-   * document starts on the old field, as every map saved before the natural
-   * landform did and as the tests and tools that build one expect; the game
-   * puts a NEW map on the natural land (`main.ts`). A saved map without the
-   * key loads on the old field, so its roads stay where they were.
-   */
+  /** The land this map was made on (`world/terrain.ts` `ReliefVersion`). */
   terrainRelief: ReliefVersion = RELIEF_LEGACY;
-  /**
-   * The regional standard of the map's road paint (docs/source/VIAS.md V6,
-   * `roads/markingStyle.ts`). 'classic' for every map saved before the
-   * regions, so it opens identical; a new map from the game is Brazilian.
-   */
+  /** The regional standard of the map's road paint */
   markingStyle: MarkingStyleId = 'classic';
-  /**
-   * The map's ecosystem (`world/ecology.ts`): its biome and seed. Null on a
-   * map made before it, which keeps its ground as it was; the game gives a
-   * NEW map one (`main.ts`), and the player can give an old one one.
-   */
+  /** The map's ecosystem (`world/ecology.ts`): its biome and seed. */
   nature: NatureSettings | null = null;
   /** Ground painted over the terrain (`terrainPaint.ts`), oldest first. */
   readonly terrainPaint: PaintDab[] = [];
@@ -298,22 +205,11 @@ export class RoadDoc {
   readonly clouds: PlacedCloud[] = [];
   /** The map's weather (`weather.ts`). */
   weather: Weather = DEFAULT_WEATHER;
-  /**
-   * The money the roads are paid from (`economy.ts`, docs/source/VIAS.md V0). Part
-   * of the document, so undo gives back what an edit took; saved only when it
-   * is not the starting balance, so a map from before it reads the same.
-   */
+  /** The money the roads are paid from (`economy.ts`). */
   economy: Economy = DEFAULT_ECONOMY;
-  /**
-   * Trees the player planted (`trees.ts`), oldest first. Written only by the
-   * methods below (and `restore`), which keep `treeCells` in step.
-   */
+  /** Trees the player planted (`trees.ts`), oldest first. */
   readonly trees: PlantedTree[] = [];
-  /**
-   * The planted trees by place (`treesIn`), made when first asked and then
-   * kept by the writers; null after the whole list is replaced (a copy, a
-   * load, an edited copy taken back), as `BuildingStore`'s grid.
-   */
+  /** The planted trees by place (`treesIn`), made when first asked and then kept by the writers */
   private treeGrid: ItemGrid<PlantedTree> | null = null;
   /** @rebuild The whole list filed only on the first ask after it was replaced whole; the writers keep it after. */
   private get treeCells(): ItemGrid<PlantedTree> {
@@ -332,11 +228,7 @@ export class RoadDoc {
   }
   /** Where trees were cut away, the woods' own too (`trees.ts`), oldest first. */
   readonly treeClearings: TreeClearing[] = [];
-  /**
-   * The elements the player laid with the brush (`elements.ts`), oldest first.
-   * Written only by the methods below (and `restore`), which keep
-   * `elementCells` in step. DO NOT push or splice it from outside.
-   */
+  /** DO NOT push or splice it from outside. */
   readonly elements: ElementItem[] = [];
   /** The elements by place (`elementsIn`): made when first asked, null after the whole list is replaced (as `treeGrid`). */
   private elementGrid: ItemGrid<ElementItem> | null = null;
@@ -355,54 +247,24 @@ export class RoadDoc {
     return this.elementCells.near(rect);
   }
 
-  /**
-   * What changed in this document, where and why (`changes.ts`): every
-   * method below that changes it writes an entry, and `replaceWith` - every
-   * road drawn and every undo - writes what differs. It is the document's
-   * only clock: every revision below is the serial of the latest entry of
-   * its kind (Fowler, "Event Sourcing": every change goes through an event,
-   * and what is derived is derived from them), so nothing changes without
-   * the diary knowing where and why.
-   */
+  /** What changed in this document, where and why (`changes.ts`) */
   readonly changes = new ChangeJournal();
-  /**
-   * The document this one was copied from (`clone`) and that document's
-   * diary serial then: `replaceWith` trusts the copy's diary for what moved
-   * only while the original still stands at that serial.
-   */
+  /** The document this one was copied from (`clone`) and that document's diary serial then */
   private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
-  /**
-   * The document this one is a working copy OVER (`fork`): its records,
-   * lists and indices are that one's, read through, until this copy writes
-   * them. Null: a document of its own (or an independent `clone`).
-   */
+  /** The document this one is a working copy OVER (`fork`) */
   private below: RoadDoc | null = null;
   /** The lists still the original's (`fork`): each copied the first time this copy writes it (`ownList`). */
   private sharedLists = new Set<DocListPart>();
   /** The indices by place still the original's (`fork`): copied when this copy first writes their kind (`ownIndex`). */
   private sharedIndices = new Set<IndexKind>();
 
-  /**
-   * The document this working copy was made from (`clone`), while that one
-   * still stands as it was then (its diary at the serial of the copy); null
-   * otherwise. What is derived from documents may take the original's as it
-   * stood and read only the copy's own changes (`economy.ts` `roadValue`).
-   */
+  /** The document this working copy was made from (`clone`), while that one still stands as it was then */
   get forkOrigin(): RoadDoc | null {
     const fork = this.forkedFrom;
     return fork && fork.doc.changes.version === fork.version ? fork.doc : null;
   }
 
-  /**
-   * The ids (of nodes and of segments: they share the roads' entries) the
-   * diary names in the road changes that turned `before` into this document,
-   * read from this document's diary; null when it cannot say. It can when the
-   * two stood equal at a serial this diary goes on from: this a copy of
-   * `before` as it still stands (`fork`, `clone`), `before` an untouched copy
-   * of this one (a snapshot an edit in place is judged against), or both
-   * copies of one document at one serial, `before` untouched. A road whose
-   * shape, class or ends changed is named, or one of its end nodes is.
-   */
+  /** The ids (of nodes and of segments: they share the roads' entries) the diary names in the road changes that turned */
   roadIdsChangedFrom(before: RoadDoc): Set<number> | null {
     const mine = this.forkedFrom, theirs = before.forkedFrom;
     let since: number | null = null;
@@ -412,38 +274,17 @@ export class RoadDoc {
     return since === null ? null : this.changes.idsSince(since, ROAD_KINDS);
   }
 
-  /**
-   * Modular buildings. They keep their OWN revision,
-   * `buildings.revision` (the diary's `buildings` kind): a building edit must
-   * not move `revision`, which would rebuild the road network and the
-   * simulation for nothing.
-   */
+  /** Modular buildings. */
   readonly buildings = new BuildingStore(this.changes);
 
   /** Authored land-use strokes, separate from the buildings they generated. */
   readonly zones: Zone[] = [];
   nextZoneId = 1;
-  /**
-   * The zoned cells of the street grid (`world/zoneGrid.ts`), stored by
-   * place. `zones` above are the rectangles of the first zoning tool, kept
-   * only so old maps load; nothing makes them any more.
-   */
+  /** The zoned cells of the street grid (`world/zoneGrid.ts`), stored by place. */
   readonly zoneMarks: ZoneMark[] = [];
-  /**
-   * The land's lots (`world/lots.ts`): the cadastre the player zones and
-   * edits, with its owner (`lotStore.ts`): by id, by place, every change in
-   * the diary with its ids. Written only through it.
-   */
+  /** The land's lots (`world/lots.ts`): the cadastre the player zones and edits, with its owner (`lotStore.ts`) */
   readonly lotStore = new LotStore(this.changes);
-  /**
-   * The lots as an array, in their order: made again after each change, for
-   * the readers that still walk the whole list (`editor/lotTool.ts`,
-   * `editor/bulldozer.ts`, `editor/cityGenerator.ts`, `sim/agents/lorryDocks.ts`,
-   * `render/renderer.ts`, `main.ts`).
-   * @deprecated Pending: ask by place (`lotsIn`, `lotAt`) or by id (`lot`),
-   * the count by `lotStore.size`; the whole list only where the whole map is
-   * the work (`lotStore.all()`).
-   */
+  /** @deprecated The lots as an array, in their order: made again after each change, for the readers that still walk the whole list */
   get lots(): readonly Lot[] {
     return this.lotStore.list();
   }
@@ -479,19 +320,12 @@ export class RoadDoc {
     });
   }
 
-  /**
-   * The zoning changed there (`zoneRevision`): the way in for the tools that
-   * change it in place (`editor/zoning.ts`), so the overlay and the growth
-   * notice it. The lots are written by their owner (`lotStore`).
-   */
+  /** The zoning changed there (`zoneRevision`): the way in for the tools that change it in place */
   zonesChanged(rects: readonly ChangeRect[] | null, cause?: string): void {
     this.changes.record('zones', rects, cause ? { cause } : {});
   }
 
-  /**
-   * The people made in the Person Creator, saved with the city. Their own
-   * revision, `peopleRevision`: a person is not part of any network.
-   */
+  /** The people made in the Person Creator, saved with the city. */
   readonly people: PersonSpec[] = [];
 
   /** Adds a person, or replaces the one with the same id. */
@@ -514,23 +348,14 @@ export class RoadDoc {
     return this.people.reduce((m, p) => Math.max(m, p.id), 0) + 1;
   }
 
-  // ------------------------------------------------------------ revisions
-  // Each is the serial of the latest diary entry of its kind (`changes`):
-  // read-only, moved only by writing the change down.
+  // ------------------------------------------------------------ revisions Each is the serial of the latest diary entry of
 
   /** The roads' geometry: every structural change; consumers use it to invalidate caches. */
   get revision(): number { return this.changes.serialOf('roads'); }
   /** Horizontal road and junction topology read by vehicles and pedestrians. */
   get trafficRevision(): number { return this.changes.serialOf('traffic'); }
   get terrainRevision(): number { return this.changes.serialOf('terrain'); }
-  /**
-   * Pole and wire edits and the street landscaping, which do NOT move
-   * `revision`: a pole is not part of the road network, and moving
-   * `revision` for one rebuilt the network, the lanelets, the whole
-   * simulation topology and every road mesh - about 330 ms per pole on a
-   * 180-segment map (measured then) - to draw a post. The renderer's utility
-   * layer and the footway graph (`sim/peds/sidewalk.ts`) watch this instead.
-   */
+  /** Pole and wire edits and the street landscaping, which do NOT move `revision` */
   get utilityRevision(): number { return this.changes.serialOf('utilities', 'landscape'); }
   /** Walls, fences and hedges: a fence drawn must not rebuild the roads. */
   get barrierRevision(): number { return this.changes.serialOf('barriers'); }
@@ -735,14 +560,7 @@ export class RoadDoc {
     return this.addLandscapeMany([{ kind, at, extra }])[0]!;
   }
 
-  /**
-   * Places many items at once (a generated city's furniture and street names), in their order, written
-   * in the diary as ONE entry with each item's rectangle and id. DO NOT place a batch item by item with
-   * `addLandscape`: each wrote its own entry, a generated city's 11,000 overflowed the diary's kept
-   * entries of the kind (`changes.ts` KEPT), and every reader of the landscaping was told "everything
-   * changed" and worked out the whole map again - the street furniture, the signs, the poles, the
-   * walkers' footways - instead of the items placed.
-   */
+  /** DO NOT place a batch item by item with `addLandscape` */
   addLandscapeMany(list: readonly { readonly kind: LandscapeKind; readonly at: { x: number; y: number };
     readonly extra?: { signType?: SignType; text?: string; planted?: number } }[]): LandscapeItem[] {
     const items = list.map(({ kind, at, extra = {} }) => {
@@ -766,11 +584,7 @@ export class RoadDoc {
     return true;
   }
 
-  /**
-   * The street furniture standing in the cells a rectangle reaches (a
-   * superset: test each), in increasing id order. What asks about one place
-   * asks this, never `landscape.values()`.
-   */
+  /** The street furniture standing in the cells a rectangle reaches (a superset: test each), in increasing id order. */
   landscapeIn(rect: ChangeRect): LandscapeItem[] {
     return this.landscapeCells.idsMeeting(rect).map((id) => this.landscapeMap.get(id)!);
   }
@@ -853,11 +667,7 @@ export class RoadDoc {
     return this.nodes.get(id)?.incident.length ?? 0;
   }
 
-  /**
-   * Whether a node is the map's edge: the end of one road, where traffic and
-   * people come in from outside and leave - not a turning circle the player
-   * made of it (`RoadNode.end`, docs/source/VIAS.md V8).
-   */
+  /** Whether a node is the map's edge: the end of one road, where traffic and people come in from outside and leave */
   mapEdge(id: NodeId): boolean {
     const node = this.nodes.get(id);
     return !!node && node.incident.length === 1 && node.end !== 'bulb';
@@ -865,15 +675,7 @@ export class RoadDoc {
 
   // ---------------------------------------------------------------- mutation
 
-  /**
-   * Adds a node, ON THE MAP.
-   *
-   * The ground is a finite plate, and every position authored here is clamped
-   * to it. Nothing else could enforce it: a node is what a road, its footway,
-   * its junction, its lamps, its bins and its lanelets are all derived from,
-   * so a node past the rim takes all of them with it — a road hanging over the
-   * void, which is what "nothing may leave the map" was reported against.
-   */
+  /** Adds a node, ON THE MAP. */
   addNode(p: Vec2, heightOffset = 0, smooth = false): RoadNode {
     const at = clampToMap(p);
     const id = asNodeId(this.nodeIds.take());
@@ -937,8 +739,7 @@ export class RoadDoc {
     detach(this.nodeToWrite(s.b), id);
     this.loose.add(s.a);
     this.loose.add(s.b);
-    // A turn ban naming a road that is gone bans nothing - until the id is
-    // handed out again and it silently bans a movement onto an unrelated road.
+    // A turn ban naming a road that is gone bans nothing
     for (const end of [s.a, s.b]) {
       const n = this.nodeToWrite(end);
       if (!n) continue;
@@ -950,12 +751,7 @@ export class RoadDoc {
     this.segments.delete(id);
   }
 
-  /**
-   * Re-applies the turn bans `saved` at `node` that named segment `from`, naming
-   * `to` instead. Splitting a road (which happens whenever a new road crosses
-   * it) and joining two replace its segment ids; the player's bans used to be
-   * left naming the old id, so they silently stopped applying.
-   */
+  /** Re-applies the turn bans `saved` at `node` that named segment `from`, naming `to` instead. */
   carryMovements(node: NodeId, saved: readonly string[], from: SegmentId, to: SegmentId): void {
     const n = this.nodeToWrite(node);
     if (!n) return;
@@ -969,11 +765,7 @@ export class RoadDoc {
     this.changes.record('traffic', this.rectsOrMap(this.nodeRect(node)), { ids: [node], detail: 'turn bans carried' });
   }
 
-  /**
-   * Re-applies a crossing `saved` at `node` that lay on segment `from` to the
-   * segment `to` that replaced it there (a split or a join), exactly as
-   * `carryMovements` does for turn bans.
-   */
+  /** Re-applies a crossing `saved` at `node` that lay on segment `from` to the segment `to` that replaced it there */
   carryCrossing(node: NodeId, saved: NodeCrossing | undefined, from: SegmentId, to: SegmentId): void {
     if (!this.nodes.has(node) || !saved || saved.segment !== from) return;
     const n = this.nodeToWrite(node)!;
@@ -991,11 +783,7 @@ export class RoadDoc {
     this.roadsChanged(where, true, { ids: [id], detail: 'node removed' });
   }
 
-  /**
-   * Rewires every segment from `source` into `target`, then removes `source`.
-   * Used by legacy-map repair after a visually touching endpoint is projected
-   * onto and split into the road it was meant to join.
-   */
+  /** Rewires every segment from `source` into `target`, then removes `source`. */
   mergeNodes(target: NodeId, source: NodeId): boolean {
     if (target === source) return true;
     const kept = this.nodes.get(target);
@@ -1016,9 +804,7 @@ export class RoadDoc {
       const segment = this.segments.get(id);
       if (!segment) continue;
       const other = segment.a === source ? segment.b : segment.a;
-      // A road to the node being kept folds to nothing; a road to a neighbour
-      // the kept node already reaches would become a second road between the
-      // same two nodes - overlapping ribbons and doubled lanes. Both go.
+      // A road to the node being kept folds to nothing
       if (other === target || this.connects(target, other, segment.structure)) {
         this.removeSegment(id);
         continue;
@@ -1043,15 +829,11 @@ export class RoadDoc {
   moveNode(id: NodeId, to: Vec2): boolean {
     const was = this.nodes.get(id);
     if (!was) return false;
-    // Dragging a node off the plate is the same offence as building one there,
-    // and is caught in the same place.
+    // Dragging a node off the plate is the same offence as building one there, and is caught in the same place.
     const p = clampToMap(to);
     if (was.x === p.x && was.y === p.y) return true;
 
-    // Where the junction and its roads stood: a move changes the place it
-    // leaves as much as the one it reaches. DO NOT write only the rectangle
-    // after the move: whatever is derived where the node was (paving, ground,
-    // lots, the network's candidates) would keep the old road.
+    // DO NOT write only the rectangle after the move: whatever is derived where the node was
     const before = this.roadAreas(id);
     const n = this.nodeToWrite(id)!;
     n.x = p.x;
@@ -1076,18 +858,7 @@ export class RoadDoc {
     return out;
   }
 
-  /**
-   * A curve is never tighter than its road is wide.
-   *
-   * Every band of a road is an offset of its centreline, and an offset larger
-   * than the radius folds back on itself: the inner kerb crosses over, the
-   * junction mouth tears open (`open-mouth-seam-after-move`: an elevated
-   * spur dragged to a 16.8-unit bend on a 30-unit-wide casing), and an inner
-   * lane that should start past the mouth starts behind it
-   * (`open-lane-end-inside-mouth-after-joint-scaling`). So whatever sets a
-   * curve, moves an end or widens a road, the bulge is flattened until the
-   * tightest bend clears the outermost band.
-   */
+  /** A curve is never tighter than its road is wide. */
   private fitCurve(s: RoadSegment): void {
     if (!s.curve) return;
     const a = this.nodes.get(s.a);
@@ -1101,9 +872,7 @@ export class RoadDoc {
     }
   }
 
-  // The setters below write where the road was as well as where it is
-  // (`markSegment`'s `before`): a road made narrower, straighter or with
-  // fewer lanes leaves ground its new rectangle no longer covers.
+  // The setters below write where the road was as well as where it is (`markSegment`'s `before`)
   setSegmentType(id: SegmentId, type: number): void {
     const was = this.segments.get(id);
     if (!was || was.type === type) return;
@@ -1193,17 +962,11 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /** The regional standard of the road paint (docs/source/VIAS.md V6): every road painted again. */
+  /** The regional standard of the road paint: every road painted again. */
   setMarkingStyle(style: MarkingStyleId): void {
     if (this.markingStyle === style) return;
     this.markingStyle = style;
-    // Its own kind, the whole map: every road's paint and the plates the
-    // regional standard puts up change, and nothing else. DO NOT write it as a
-    // change of the roads again: `revision` moved, and the network, the lanes,
-    // the conflict table, the simulation and the roads' heights were worked
-    // out again for every road of the map, for a coat of paint. What draws the
-    // paint reads this kind (`render/renderer.ts`: the road surfaces and the
-    // signs).
+    // DO NOT write it as a change of the roads again
     this.changes.record('markingStyle', null, { detail: 'paint style' });
   }
 
@@ -1273,10 +1036,7 @@ export class RoadDoc {
     this.nature = next ? { ...next } : null;    this.changes.record('nature', null);
   }
 
-  // The lists below keep at most so many items (`MAX_PAINT_DABS`...): the
-  // oldest dropped changes the land where IT lay, and that place is written
-  // with the new one's. DO NOT write `null` (the whole map) for it: on a map
-  // at the cap every dab, stamp or tree laid the whole map again.
+  // DO NOT write `null` (the whole map) for it: on a map at the cap every dab, stamp or tree laid the whole map again.
   addPaintDab(dab: PaintDab): void {
     this.ownList('terrainPaint');
     this.terrainPaint.push({ ...dab });
@@ -1298,8 +1058,7 @@ export class RoadDoc {
     this.changes.record('gullies', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
   }
 
-  // A list cleared is written where its items lay (one box round them all),
-  // not as the whole map: the land outside them did not change.
+  // A list cleared is written where its items lay (one box round them all), not as the whole map
   clearGullies(): void {
     if (this.gullyDabs.length === 0) return;
     this.ownList('gullyDabs');
@@ -1337,17 +1096,12 @@ export class RoadDoc {
     this.changes.record('trees', goneRect ? [rectAround(trees, ITEM_PAD)!, goneRect] : [rectAround(trees, ITEM_PAD)!]);
   }
 
-  /**
-   * Cuts the trees away within `radius` of (x, y): the planted ones there go,
-   * and a clearing is kept so none of the woods' own grows there either.
-   */
+  /** Cuts the trees away within `radius` of (x, y) */
   cutTrees(x: number, y: number, radius: number): void {
     this.ownList('trees');
     this.ownList('treeClearings');
     const before = this.trees.length;
-    // The ones there, by place; then one pass, the kept moved down in order.
-    // DO NOT splice each one out (trees x trees cut), nor walk every tree of
-    // the map for each dab of the brush.
+    // DO NOT splice each one out (trees x trees cut), nor walk every tree of the map for each dab of the brush.
     const there = new Set(this.treeCells.near([x - radius, y - radius, x + radius, y + radius]).filter((t) => Math.hypot(t.x - x, t.y - y) <= radius));
     if (there.size) keepWhere(this.trees, (t) => !there.has(t));
     for (const t of there) this.treeCells.remove(t);
@@ -1513,11 +1267,7 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /**
-   * Puts a mid-block pedestrian crossing on a two-road node, painted on
-   * `segment`. A signal crossing is a signalised node; a zebra gives the
-   * pedestrian priority. Returns false when the node cannot carry one.
-   */
+  /** Puts a mid-block pedestrian crossing on a two-road node, painted on `segment`. */
   setNodeCrossing(id: NodeId, kind: NodeCrossingKind, segment: SegmentId): boolean {
     const was = this.nodes.get(id);
     if (!was || was.incident.length !== 2 || !was.incident.includes(segment)) return false;
@@ -1548,12 +1298,7 @@ export class RoadDoc {
     this.markNode(id);
   }
 
-  /**
-   * Drops nodes with no incident segment. Returns how many were removed.
-   * Only the nodes that may have lost their last road are looked at
-   * (`loose`). DO NOT walk every node of the map for it: every road taken
-   * away ends here.
-   */
+  /** DO NOT walk every node of the map for it: every road taken away ends here. */
   pruneOrphanNodes(): number {
     const rects: ChangeRect[] = [];
     const ids: number[] = [];
@@ -1561,9 +1306,7 @@ export class RoadDoc {
     for (const id of this.loose.sorted()) {
       const n = this.nodes.get(id);
       if (!n || n.incident.length !== 0) continue;
-      // Its rectangle before it goes: DO NOT write `null` (the whole map)
-      // for a few loose nodes - every road removed ends here, and the whole
-      // network, its paving and the ground were worked out again for it.
+      // Its rectangle before it goes: DO NOT write `null` (the whole map) for a few loose nodes
       const rect = this.nodeRect(id);
       if (rect) rects.push(rect);
       ids.push(id);
@@ -1576,38 +1319,15 @@ export class RoadDoc {
 
   // ------------------------------------------------------------ change marking
 
-  /**
-   * Writes a node's change in the diary (`roads`, and `traffic` unless only
-   * its height moved without crossing the tunnel line). The diary is the
-   * document's only clock: `revision` is its latest `roads` entry, and every
-   * consumer - `Network`, `LaneletGraph`, `SimWorld`, the renderer - reads what
-   * changed from it. `Network.rebuild()` takes the ids and rectangles written
-   * here as its candidates and compares each one's sources with what its last
-   * rebuild recorded (docs/source/VIAS.md V0).
-   *
-   * There were also two "dirty" sets here (`dirtyNodes`, `dirtySegments`):
-   * nothing read them, and every road drawn and every map loaded filled them
-   * with every node and segment of the map. DO NOT bring them back: what
-   * changed is the diary's to say.
-   */
+  /** DO NOT bring them back: what changed is the diary's to say. */
   markNode(id: NodeId, traffic = true, also: readonly ChangeRect[] = []): void {
-    // Every real edit is written, even of a node edited before: the diary is
-    // the mutation clock (`revision` is its latest `roads` entry). `also`:
-    // where the change reached besides the node as it stands (where it stood,
-    // its roads). A node gone with nothing else known: the whole map.
+    // Every real edit is written, even of a node edited before: the diary is the mutation clock
     const rect = this.nodeRect(id);
     const rects = rect ? [rect, ...also] : also;
     this.roadsChanged(rects.length ? rects : null, traffic, { ids: [id] });
   }
 
-  /**
-   * `before`: the segment's rectangle before the change, written with the one
-   * after (a road narrowed or moved leaves ground). With them, the junctions
-   * at its two ends (`nodeRect`): a road added, taken away, widened or bent
-   * changes the mouth of every other road there, out to the widest of them -
-   * further than its own rectangle reaches. DO NOT write only the segment's
-   * rectangle: what is derived round a junction would keep the old mouths.
-   */
+  /** DO NOT write only the segment's rectangle: what is derived round a junction would keep the old mouths. */
   markSegment(id: SegmentId, before: ChangeRect | null = null): void {
     const rects: ChangeRect[] = [];
     const rect = this.segmentRect(id);
@@ -1615,8 +1335,7 @@ export class RoadDoc {
     if (before) rects.push(before);
     const s = this.segments.get(id);
     if (s) for (const end of [s.a, s.b]) { const r = this.nodeRect(end); if (r) rects.push(r); }
-    // With its two ends: their records (`incident`) change with it, and a reader
-    // by id (the undo image, `docImage.ts`) must be told so.
+    // With its two ends: their records (`incident`) change with it, and a reader by id
     this.roadsChanged(rects.length ? rects : null, true, { ids: s ? [id, s.a, s.b] : [id] });
   }
 
@@ -1625,12 +1344,7 @@ export class RoadDoc {
     return rect ? [rect] : null;
   }
 
-  /**
-   * The roads changed there: their geometry (`roads`, read as `revision`)
-   * and, when the plan the traffic runs on changes with it, `traffic` (read
-   * as `trafficRevision`; a node raised without changing how it is crossed
-   * leaves it).
-   */
+  /** The roads changed there: their geometry */
   private roadsChanged(rects: readonly ChangeRect[] | null, traffic: boolean, extra: { readonly ids?: readonly number[]; readonly detail?: string } = {}): void {
     const roads = this.changes.record('roads', rects, extra);
     if (traffic) this.changes.record('traffic', rects, { ...extra, parent: roads });
@@ -1638,45 +1352,14 @@ export class RoadDoc {
 
   // ------------------------------------------------------------ working copy
 
-  /**
-   * A WORKING COPY FOR ONE EDIT that costs what the edit writes, not the map:
-   * every keyed collection is a map laid over this document's (`ForkMap`),
-   * every list and index by place this document's own until the copy writes
-   * it, the buildings and lots stores laid over theirs (`forkFrom`), and the
-   * diary going on from this one's, keeping every entry it writes
-   * (`ChangeJournal.forkFrom`). An edit made on it reads exactly as the same
-   * edit made here would; `replaceWith(copy)` then writes into this document
-   * only the records the copy wrote, and the copy's own diary entries - the
-   * ones the same edits made here would have written (`takeFork`).
-   *
-   * It was `clone`: every node, segment, pole, span, landscaping item,
-   * barrier, stamp, dab, cloud, element, tree, zone, person and the transit
-   * copied, on every road drawn and on every pause of the pointer while one
-   * is drawn (the road tool's dry run), and every one of them compared and
-   * copied back on the commit (`replaceContents`). DO NOT go back to copying
-   * the document for an edit (CLAUDE.md, "Refazer tudo quando uma parte muda").
-   *
-   * THE RULES. Only this document's own writers write a copy (they take a
-   * record's own copy first, `nodeToWrite`/`segmentToWrite`, `ownList`,
-   * `ownIndex`): nothing outside changes a record or a list of a working copy
-   * in place. This document must not change while a copy of it is read or
-   * taken back: a copy lives within one edit (made, edited, then taken back
-   * or dropped). Taking back a copy of this document as it stood before a
-   * later change is refused (an error). `clone` stays the independent copy,
-   * for what must outlive changes here (a snapshot to judge an edit made in
-   * place against, `editRules.ts` `snapshotRoads`).
-   */
+  /** DO NOT go back to copying the document for an edit (CLAUDE.md, "Refazer tudo quando uma parte muda"). */
   fork(): RoadDoc {
     const copy = new RoadDoc();
     this.layOver(copy);
     return copy;
   }
 
-  /**
-   * Takes back an edit made on a working copy of this document (`fork`): what
-   * it wrote and its diary entries (`takeFork`). What an edit commits with;
-   * `replaceWith` stays for any other document (an undo, a map loaded).
-   */
+  /** Takes back an edit made on a working copy of this document (`fork`): what it wrote and its diary entries (`takeFork`). */
   takeBack(copy: RoadDoc): void {
     if (copy.below !== this) throw new Error('RoadDoc.takeBack: not a working copy of this document');
     this.takeFork(copy);
@@ -1727,13 +1410,7 @@ export class RoadDoc {
     copy.below = this;
   }
 
-  /**
-   * A working copy (`fork`) of this document taken back: what it wrote, and
-   * only that, written here through this document's own writers (so every
-   * index by place stays in step), and its diary entries written here as
-   * they are (`ChangeJournal.take`). Then the copy starts again over this
-   * document as it now stands.
-   */
+  /** A working copy (`fork`) of this document taken back */
   private takeFork(copy: RoadDoc): void {
     if (copy.forkedFrom?.doc !== this || copy.forkedFrom.version !== this.changes.version) {
       throw new Error('RoadDoc.replaceWith: a working copy of this document as it stood before a later change');
@@ -1833,22 +1510,9 @@ export class RoadDoc {
     }
   }
 
-  /**
-   * Makes an independent working copy, including allocator high-water marks.
-   *
-   * Copying only the serialized ids is insufficient after a high id has been
-   * deleted: a speculative edit could otherwise recycle it. What outlives a
-   * change of this document takes this copy (a snapshot); an edit's working
-   * copy is a `fork`, which costs what the edit writes.
-   */
+  /** Makes an independent working copy, including allocator high-water marks. */
   clone(): RoadDoc {
-    // Field by field, each record copied as `replaceContents` copies it. It
-    // was `fromJSON(this.serialized(false))`: the whole document written to
-    // JSON and read back, with every check a loaded file needs, on every road
-    // drawn - 18-20 ms of the edit on the player's map (docs/PROBLEMS.md R27).
-    // The buildings are shared, not copied: their records are replaced, never
-    // changed in place (docs/source/performance.md #19).
-    // NÃO voltar a clonar por JSON.
+    // Field by field, each record copied as `replaceContents` copies it.
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
     copy.loose = this.loose.copy();
@@ -1889,9 +1553,7 @@ export class RoadDoc {
     copy.barrierIds = new IdAllocator(this.barrierIds.peek);
     copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
     copy.nextTerrainId = this.nextTerrainId;
-    // At the same revisions as this document, every one of them: the copy's
-    // diary goes on from this one's (what loading the copy wrote is not a
-    // change), so the live network is taken over as it stands (`adopt`).
+    // At the same revisions as this document, every one of them: the copy's diary goes on from this one's
     copy.changes.continueFrom(this.changes);
     copy.forkedFrom = { doc: this, version: this.changes.version };
     return copy;
@@ -1903,13 +1565,7 @@ export class RoadDoc {
     this.replaceWith(restored);
   }
 
-  /**
-   * Replaces this instance from another valid document - every road drawn
-   * (an edited clone, `commitDraft`) and every undo - and writes in the diary
-   * what differs: the roads and junctions by id with their rectangles, the
-   * land's stamps, the poles, the landscaping and the barriers where they
-   * stand, and every other kind whose content moved.
-   */
+  /** Replaces this instance from another valid document - every road drawn (an edited clone, `commitDraft`) and every undo */
   replaceWith(source: RoadDoc): void {
     // A working copy over this document (`fork`): what it wrote, and its own diary entries.
     if (source.below === this) {
@@ -1926,16 +1582,12 @@ export class RoadDoc {
     const items = itemDifferences(this, source, moved);
     const changed = this.replaceContents(source, moved, buildingIds, lotIds);
     const where = (rects: readonly ChangeRect[] | undefined): readonly ChangeRect[] | null => rects && rects.length ? rects : null;
-    // The traffic's plan only when it moved (`roadDifferences`): a node only
-    // raised leaves it, as `setNodeHeightOffset` does.
+    // The traffic's plan only when it moved (`roadDifferences`): a node only raised leaves it, as `setNodeHeightOffset` does.
     if (changed.roads || roads.rects.length) this.roadsChanged(where(roads.rects), roads.traffic, { ids: roads.ids });
     if (changed.land || (stamps !== null && stamps.rects.length)) {
       this.changes.record('terrain', where(stamps?.rects), stamps?.ids ? { ids: stamps.ids } : {});
     }
-    // The poles and wires where they differ, and only they: DO NOT read the
-    // landscaping into the poles' comparison again - a bench moved wrote the
-    // utilities with no rectangle (the whole map), and every pole line, lamp
-    // and wire of the map was worked out again.
+    // The poles and wires where they differ, and only they: DO NOT read the landscaping into the poles' comparison again
     if (items.utilities.length) this.changes.record('utilities', items.utilities);
     if (items.landscape.length) this.changes.record('landscape', items.landscape);
     if (changed.barriers || items.barriers.length) this.changes.record('barriers', where(items.barriers));
@@ -1943,30 +1595,14 @@ export class RoadDoc {
     for (const kind of changed.others) this.changes.record(kind, null);
   }
 
-  /**
-   * Whether `source` changed any of these kinds since it was copied from
-   * this document, read from its diary instead of comparing the contents.
-   * A working copy's diary goes on from this one's (`clone`,
-   * `ChangeJournal.continueFrom`) and every method that changes the copy
-   * writes an entry, so a kind whose serial did not move in the copy holds
-   * the same content as here, and comparing it text by text (docs/PROBLEMS.md
-   * R27: the whole map on every road drawn) finds nothing. Any other source
-   * - a map loaded from JSON, a copy of a copy, a copy of this document as
-   * it stood before a later edit - is compared in full, as before.
-   */
+  /** Whether `source` changed any of these kinds since it was copied from this document */
   private movedIn(source: RoadDoc): MovedKinds {
     const fork = source.forkedFrom;
     if (!fork || fork.doc !== this || fork.version !== this.changes.version) return () => true;
     return (...kinds) => source.changes.serialOf(...kinds) > this.changes.serialOf(...kinds);
   }
 
-  /**
-   * The ids of the buildings a working copy of this document changed since
-   * it was copied (`movedIn`), from the copy's diary: what
-   * `BuildingStore.replaceWith` reads instead of every record. Null when it
-   * cannot say (not a copy of this document as it stands, or entries without
-   * ids or forgotten): then every record is compared.
-   */
+  /** The ids of the buildings a working copy of this document changed since it was copied (`movedIn`), from the copy's diary */
   private buildingsMovedIn(source: RoadDoc): readonly BuildingId[] | null {
     const fork = source.forkedFrom;
     if (!fork || fork.doc !== this || fork.version !== this.changes.version) return null;
@@ -1980,12 +1616,7 @@ export class RoadDoc {
     return source.lotStore.changedSince(fork.version);
   }
 
-  // --------------------------------------------------- undo by records
-  // `world/docImage.ts` keeps the document as last committed and hands back,
-  // for undo and redo, the records, list stretches and values as they were;
-  // `restore` puts them back and writes the diary as `replaceWith` does: the
-  // roads, stamps, poles, landscaping, barriers and buildings where they were
-  // and are, every other kind of the map as a whole.
+  // --------------------------------------------------- undo by records `world/docImage.ts` keeps the document as last
 
   /** The id allocators' next ids: nodes, segments, poles, spans, barriers, landscaping, terrain stamps, buildings. */
   allocatorMarks(): number[] {
@@ -1994,12 +1625,10 @@ export class RoadDoc {
 
   restore(r: Restoration): void {
     const roads: ChangeRect[] = [], utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [];
-    // The kinds changed as a whole (a value: the relief, the weather...), and
-    // those of the lists where their items left and came (`listBox`).
+    // The kinds changed as a whole (a value: the relief, the weather...)
     const kinds = new Set<DocChangeKind>();
     const listRects = new Map<DocChangeKind, ChangeRect[] | null>();
     let roadsTouched = false;
-    // The traffic's plan only when it moved: a segment, or a node by more than its height (`nodeMovesTraffic`).
     // DO NOT write `traffic` for every road record: an undo of a node raised rebuilt the simulation's plan.
     let traffic = false;
     const roadIds: number[] = [];
@@ -2066,9 +1695,7 @@ export class RoadDoc {
         for (const t of gone as PlantedTree[]) this.treeGrid?.remove(t);
         for (const t of put as PlantedTree[]) this.treeGrid?.add(t);
       }
-      // Where the items that left lay and where those that came lie: one box
-      // each. DO NOT write `null` (the whole map) for a stretch of a list
-      // whose items have places.
+      // DO NOT write `null` (the whole map) for a stretch of a list whose items have places.
       if (listRects.has(kind) && listRects.get(kind) === null) continue;
       const rects = listRects.get(kind) ?? [];
       const left = listBox(part, gone), came = listBox(part, items);
@@ -2157,28 +1784,15 @@ export class RoadDoc {
     }
   }
 
-  /**
-   * Takes `source`'s contents and says what differed: the roads, the land,
-   * the poles and the barriers (written with their places by `replaceWith`),
-   * and every other kind whose content moved. A kind `moved` says the
-   * source did not change (`movedIn`) is neither compared nor copied: it
-   * holds what this document holds.
-   */
+  /** Takes `source`'s contents and says what differed: the roads, the land, the poles and the barriers */
   private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null): {
     roads: boolean; land: boolean; barriers: boolean; others: DocChangeKind[];
   } {
     const others: DocChangeKind[] = [];
     let barriersChanged = false;
-    // The land moves only when its stamps do. Drawing a road replaces the whole
-    // document with an edited clone (`commitDraft`), and moving the terrain
-    // for it rewrote all 90 601 terrain corners, their normals and
-    // the rivers on every road drawn, for ground that had not changed.
+    // The land moves only when its stamps do.
     const landMoved = moved('terrain') && (!sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief);
-    // Likewise the roads and the utility network: undoing a storey or a
-    // brush dab replaced the whole document and moved both revisions, which
-    // rebuilt every road mesh, the lanelets and the simulation topology for a
-    // network that had not changed (CLAUDE.md: a building edit never moves
-    // `doc.revision`).
+    // Likewise the roads and the utility network
     const roadsMoved = moved('roads', 'traffic');
     const roadsChanged = roadsMoved && !sameRoads(this, source);
 
@@ -2206,13 +1820,9 @@ export class RoadDoc {
       for (const barrier of source.barriers.values()) this.putBarrierRecord({ ...barrier, points: barrier.points.map((p) => ({ ...p })) });
       barriersChanged = true;
     }
-    // Writes a change only of the buildings that differ; of a working copy,
-    // reads only those its diary names (`BuildingStore.replaceWith`).
+    // Writes a change only of the buildings that differ; of a working copy, reads only those its diary names
     this.buildings.replaceWith(source.buildings, buildingIds);
-    // The zones and the lots moved only when their content did: every road
-    // drawn replaces the document, and moving their revisions for it made
-    // every reader of them redo its work for nothing (the dirty flag set
-    // only when the primary data changes).
+    // The zones and the lots moved only when their content did
     this.nextZoneId = source.nextZoneId;
     if (moved('zones') && (JSON.stringify(this.zones) !== JSON.stringify(source.zones) || JSON.stringify(this.zoneMarks) !== JSON.stringify(source.zoneMarks))) {
       this.ownList('zones');
@@ -2329,14 +1939,10 @@ export class RoadDoc {
     return this.serialized(true);
   }
 
-  /**
-   * `JSON.stringify(this.toJSON())`, the same text, with the buildings' text
-   * kept per record (`BuildingStore.toText`) instead of written again.
-   */
+  /** `JSON.stringify(this.toJSON())`, the same text, with the buildings' text kept per record */
   toText(): string {
     if (this.buildings.size === 0) return JSON.stringify(this.serialized(false));
-    // The keys in `toJSON`'s order: those before the buildings, the buildings,
-    // those after.
+    // The keys in `toJSON`'s order: those before the buildings, the buildings, those after.
     const head: Record<string, unknown> = {};
     const tail: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(this.serialized(false))) {
@@ -2357,12 +1963,7 @@ export class RoadDoc {
       version: 1,
       unit: METERS_PER_UNIT,
       nodes: [...this.nodes.values()].map((n) => ({
-        // Copied, never aliased. `setMovementBlocked` mutates this array in
-        // place (`push`/`splice`), so handing out the live reference made every
-        // history snapshot taken "before" an edit pick up that edit: the
-        // snapshot recorded as the pre-block state already contained the block,
-        // and one undo restored it unchanged. `History` promises snapshots hold
-        // the document as it was; an alias cannot.
+        // Copied, never aliased.
         id: n.id, x: n.x, y: n.y, heightOffset: n.heightOffset, smooth: n.smooth,
         control: n.control, blockedMovements: [...n.blockedMovements],
         ...(n.crossing ? { crossing: { kind: n.crossing.kind, segment: n.crossing.segment } } : {}),
@@ -2412,8 +2013,7 @@ export class RoadDoc {
       ...(this.barriers.size > 0 ? {
         barriers: [...this.barriers.values()].map((b) => ({ id: b.id, kind: b.kind, points: b.points.map((p) => ({ x: p.x, y: p.y })) })),
       } : {}),
-      // Only when there are any, so a map without buildings serialises
-      // exactly as it did before buildings existed.
+      // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
       ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
       ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
@@ -2430,29 +2030,16 @@ export class RoadDoc {
     };
   }
 
-  /**
-   * Builds a document from its serialized form.
-   *
-   * `repair` (the default) is for data entering the model from outside - an
-   * autosave, an imported file: coincident nodes are merged and positions are
-   * clamped onto the map. A clone or an undo snapshot is the model's own state
-   * and must come back EXACTLY (`repair: false`): merging there deleted a road
-   * the player could see the next time they drew, undid or reloaded.
-   */
+  /** Builds a document from its serialized form. */
   static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore } = {}): RoadDoc {
-    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's (docs/source/ESCALA.md).
+    // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's.
     const data = rescaleSerializedDoc(saved);
     const repair = options.repair ?? true;
     const doc = new RoadDoc();
     const canonicalNode = new Map<number, NodeId>();
     const nodeAt = new Map<string, RoadNode>();
     for (const n of data.nodes) {
-      // Maps produced before cross-structure snapping was fixed can contain two
-      // endpoint records at the exact same world position.  They render as one
-      // junction but remain two disconnected graphs, so raised spans never see
-      // the ground road they are meant to ramp into.  New edits cannot create
-      // this state; repair it at the serialization boundary where legacy maps
-      // enter the model.
+      // Maps produced before cross-structure snapping was fixed can contain two endpoint records at the exact same world
       doc.nodeIds.reserve(n.id);
       const heightOffset = Number.isFinite(n.heightOffset) ? (n.heightOffset as number) : 0;
       const key = `${coordinateKey(n.x, n.y)}\u0000${heightOffset}`;
@@ -2497,8 +2084,7 @@ export class RoadDoc {
         lanes: normaliseLaneCount(s.lanes ?? null, s.direction ?? 'both'),
         ...(section ? { section } : {}),
         ...(parking ? { parking } : {}),
-        // Through the migration, so a level that has since been merged into
-        // another (`viaduct`) loads as the one it became.
+        // Through the migration, so a level that has since been merged into another (`viaduct`) loads as the one it became.
         structure: migrateStructure(s.structure) ?? 'ground',
         ...(s.cutWalls === true ? { cutWalls: true as const } : {}),
       });
@@ -2507,8 +2093,7 @@ export class RoadDoc {
       doc.segIds.reserve(s.id);
     }
     for (const [id, node] of doc.nodes) if (node.incident.length === 0) doc.loose.add(id);
-    // Crossings last: they name a segment, and only a two-road node that still
-    // holds that segment may carry one. A merged (repaired) record has none.
+    // Crossings last: they name a segment, and only a two-road node that still holds that segment may carry one.
     for (const n of data.nodes) {
       const node = doc.nodes.get(asNodeId(n.id));
       const crossing = n.crossing;
@@ -2517,8 +2102,7 @@ export class RoadDoc {
       node.crossing = { kind: crossing.kind, segment: asSegmentId(crossing.segment) };
       dropStaleCrossing(node);
     }
-    // The player's lane connections: kept as stored (a link to a lane that
-    // is gone is left out of the build, `lanelets.ts`).
+    // The player's lane connections: kept as stored (a link to a lane that is gone is left out of the build, `lanelets.ts`).
     for (const n of data.nodes) {
       const node = doc.nodes.get(asNodeId(n.id));
       if (!node || canonicalNode.get(n.id) !== node.id) continue;
@@ -2594,8 +2178,7 @@ export class RoadDoc {
       doc.nextTerrainId = Math.max(doc.nextTerrainId, stamp.id + 1);
     }
 
-    // The utility network, if the map has one. A map saved before poles
-    // existed simply has no such key, and must load exactly as it did before.
+    // The utility network, if the map has one.
     for (const p of data.poles ?? []) {
       const id = asPoleId(p.id);
       const at = repair ? clampToMap(p) : p;
@@ -2605,8 +2188,7 @@ export class RoadDoc {
     for (const s of data.poleSpans ?? []) {
       const a = asPoleId(s.a);
       const b = asPoleId(s.b);
-      // A span whose poles did not survive is dropped rather than restored as
-      // a wire hanging off nothing.
+      // A span whose poles did not survive is dropped rather than restored as a wire hanging off nothing.
       if (!doc.poles.has(a) || !doc.poles.has(b)) continue;
       const id = asSpanId(s.id);
       doc.putSpanRecord({ id, a, b });
@@ -2639,9 +2221,7 @@ export class RoadDoc {
     // Buildings, if the map has any; each one through `migrateBuilding`.
     if (options.shareBuildings) doc.buildings.shareFrom(options.shareBuildings);
     else if (data.buildings) doc.buildings.load(data.buildings);
-    // The ids already read by a set, NOT `doc.lots.some(...)` per record: a
-    // whole-list search per record was O(n²) on every map loaded and every
-    // undo through JSON (a city's 20 000 lots, 2·10⁸ comparisons).
+    // The ids already read by a set, NOT `doc.lots.some(...)` per record
     const zoneIds = new Set<number>();
     for (const zone of data.zones ?? []) {
       if (!Number.isInteger(zone.id) || zone.id < 1 || !isZoneUse(zone.use) || !isZoneDensity(zone.density)) continue;
@@ -2682,13 +2262,7 @@ export class RoadDoc {
   }
 }
 
-/**
- * The nodes that may have been left with no road (`RoadDoc.pruneOrphanNodes`):
- * a node made, a road's end taken away, a node put back by undo - those since
- * the last prune, which empties it, so it holds what the edits since touched.
- * A working copy's (`RoadDoc.fork`) reads the original's with its own until
- * it prunes, and is taken back by what it holds then (`take`).
- */
+/** The nodes that may have been left with no road (`RoadDoc.pruneOrphanNodes`) */
 class LooseNodes {
   private own = new Set<NodeId>();
   constructor(private below: LooseNodes | null = null) {}
@@ -2772,9 +2346,9 @@ export interface SerializedDoc {
     id: number; x: number; y: number; heightOffset?: number; smooth?: boolean;
     control?: JunctionControl; blockedMovements?: readonly string[];
     crossing?: { kind: NodeCrossingKind; segment: number };
-    /** The player's lane connections (docs/source/VIAS.md V4); absent on every older map. */
+    /** The player's lane connections; absent on every older map. */
     laneLinks?: readonly { from: number; fromLane: number; to: number; toLane: number }[];
-    /** Each leg's rule (docs/source/VIAS.md V5); absent on every older map. */
+    /** Each leg's rule; absent on every older map. */
     approachRules?: readonly { segment: number; rule: string }[];
     /** A signal's settings (V5); absent on every older map. */
     signal?: unknown;
@@ -2796,21 +2370,17 @@ export interface SerializedDoc {
     parking?: SegmentParking;
     /** A current structure id, or a legacy one `migrateStructure` maps. */
     structure?: RoadStructure | 'viaduct';
-    /** Retaining walls in its cutting (docs/source/VIAS.md V3); absent on every older map. */
+    /** Retaining walls in its cutting; absent on every older map. */
     cutWalls?: boolean;
   }[];
   readonly terrain?: readonly TerrainStamp[];
   /** `ReliefVersion`; absent on maps made before the natural landform. */
   readonly relief?: number;
-  /** The regional standard of the road paint (docs/source/VIAS.md V6); absent: 'classic'. */
+  /** The regional standard of the road paint; absent: 'classic'. */
   readonly markingStyle?: string;
   /** The ecosystem (`NatureSettings`); absent on maps made before it. */
   readonly nature?: { readonly region: string; readonly seed: number };
-  /**
-   * The utility network. OPTIONAL, and it has to stay that way: every map
-   * saved before poles existed has no such key, and loading one must not
-   * fail or silently drop the roads around it.
-   */
+  /** The utility network. */
   readonly poles?: readonly { id: number; x: number; y: number; lamp?: boolean }[];
   readonly poleSpans?: readonly { id: number; a: number; b: number }[];
   /** Ground painted over the terrain (`terrainPaint.ts`); OPTIONAL. */
@@ -2828,10 +2398,7 @@ export interface SerializedDoc {
   readonly transit?: unknown;
   /** Walls, fences and hedges (`barriers.ts`); OPTIONAL like the poles. */
   readonly barriers?: readonly { id: number; kind: string; points: readonly { x: number; y: number }[] }[];
-  /**
-   * Modular buildings. OPTIONAL, for the same reason as
-   * the poles: every map saved before buildings existed has no such key.
-   */
+  /** Modular buildings. */
   readonly buildings?: readonly SerializedBuilding[];
   /** Roadside land-use strokes; absent in maps saved before zoning. */
   readonly zones?: readonly Zone[];
@@ -2876,11 +2443,7 @@ function sameSegment(p: RoadSegment, q: RoadSegment): boolean {
 }
 
 /** Whether two documents hold the same nodes and segments, field for field. */
-/**
- * A node's record copied whole, nothing aliased (`clone`, `replaceContents`).
- * The player's settings at the junction (V4, V5) come along: dropped once,
- * every road drawn anywhere wiped them all (`replaceWith` of the edited clone).
- */
+/** A node's record copied whole, nothing aliased (`clone`, `replaceContents`). */
 function copyNode(node: RoadNode): RoadNode {
   return {
     id: node.id, x: node.x, y: node.y, heightOffset: node.heightOffset, smooth: node.smooth,
@@ -2938,22 +2501,14 @@ function circlesBox(items: readonly { readonly x: number; readonly y: number; re
   return minX <= maxX ? [[minX, minY, maxX, maxY]] : [];
 }
 
-/**
- * The box round elements, grown by the largest one's size; null for none.
- * A loop, NOT `Math.max(...sizes)`: tens of thousands of arguments pass the
- * engine's limit (MDN, `Function.prototype.apply`).
- */
+/** The box round elements, grown by the largest one's size; null for none. */
 function elementsBox(items: readonly ElementItem[]): ChangeRect | null {
   let pad = ITEM_PAD;
   for (const e of items) pad = Math.max(pad, e.size);
   return rectAround(items, pad);
 }
 
-/**
- * The box round a stretch of one of the document's lists (`RoadDoc.restore`):
- * null for no item, undefined when the list's items have no place (lot keys,
- * zones, people) and the whole map is what the diary is told.
- */
+/** The box round a stretch of one of the document's lists (`RoadDoc.restore`) */
 function listBox(part: ListPart, items: readonly unknown[]): ChangeRect | null | undefined {
   if (items.length === 0) return null;
   switch (part) {
@@ -2970,12 +2525,7 @@ function listBox(part: ListPart, items: readonly unknown[]): ChangeRect | null |
   }
 }
 
-/**
- * `list.splice(start, remove, ...items)` without spreading `items` into
- * arguments: a stretch of tens of thousands (an undo of a cleared brush
- * layer) passes the engine's limit on arguments (MDN,
- * `Function.prototype.apply`). Returns what was removed.
- */
+/** `list.splice(start, remove, ...items)` without spreading `items` into arguments: a stretch of tens of thousands */
 function spliceIn<T>(list: T[], start: number, remove: number, items: readonly T[]): T[] {
   const tail = list.splice(start + remove);
   const gone = list.splice(start, remove);
@@ -2984,11 +2534,7 @@ function spliceIn<T>(list: T[], start: number, remove: number, items: readonly T
   return gone;
 }
 
-/**
- * Whether a node's change moves the plan the traffic runs on: anything of it
- * but its height, or a height across the tunnel line (as `setNodeHeightOffset`
- * writes it). A node new or gone does.
- */
+/** Whether a node's change moves the plan the traffic runs on */
 function nodeMovesTraffic(p: RoadNode | undefined, q: RoadNode | undefined): boolean {
   if (!p || !q) return true;
   if ((p.heightOffset < -TUNNEL_HEADROOM) !== (q.heightOffset < -TUNNEL_HEADROOM)) return true;
@@ -2998,16 +2544,11 @@ function nodeMovesTraffic(p: RoadNode | undefined, q: RoadNode | undefined): boo
 /** Whether a source document changed any of these kinds since it was copied (`RoadDoc.movedIn`). */
 type MovedKinds = (...kinds: readonly DocChangeKind[]) => boolean;
 
-/**
- * Where two documents' roads differ: every segment and node that is new,
- * gone or changed (a segment whose end moved counts as changed), as it was
- * and as it is, with their ids.
- */
+/** Where two documents' roads differ: every segment and node that is new, gone or changed */
 function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; ids: number[]; traffic: boolean } {
   const rects: ChangeRect[] = [];
   const ids: number[] = [];
-  // Every segment that differs moves the traffic's plan (`markSegment`); a
-  // node only by more than its height (`nodeMovesTraffic`).
+  // Every segment that differs moves the traffic's plan (`markSegment`); a node only by more than its height
   let traffic = false;
   const add = (rect: ChangeRect | null): void => { if (rect) rects.push(rect); };
   const endsMoved = (s: RoadSegment): boolean => {
@@ -3109,10 +2650,7 @@ function sameBarriers(a: RoadDoc, b: RoadDoc): boolean {
   return true;
 }
 
-/**
- * Things standing at a point (an element of the brush), by the cell of their
- * point: the same item object put in and taken out (they have no id).
- */
+/** Things standing at a point (an element of the brush), by the cell of their point */
 class ItemGrid<T extends { readonly x: number; readonly y: number }> {
   private readonly cells = new Map<number, Set<T>>();
   constructor(private readonly side: number) {}
@@ -3174,8 +2712,7 @@ function dropStaleCrossing(node: RoadNode | undefined): void {
   if (node.incident.length === 2 && node.incident.includes(node.crossing.segment)) return;
   const placed = node.crossing.kind === 'signal' ? 'signal' : 'priority';
   delete node.crossing;
-  // The control the crossing put there goes with it, so the new junction picks
-  // its own; a control the player changed since is theirs and stays.
+  // The control the crossing put there goes with it, so the new junction picks its own
   if (node.control === placed) node.control = 'auto';
 }
 

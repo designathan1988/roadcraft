@@ -16,15 +16,7 @@ import {
   volumeTop,
 } from './types';
 
-/**
- * Every spatial question about a building, answered from the record.
- *
- * The local frame: origin at `(b.x, b.y)`, +x along `rotation`, +y a quarter
- * turn anticlockwise of it. A volume is a rectangle of that frame in world
- * units - any size, snapped to `GRID` by the editor - standing on a level. Its
- * facades are divided into BAYS of about `module` each (`baysOn`), so a facade
- * of any length keeps its rhythm.
- */
+/** Every spatial question about a building, answered from the record. */
 
 /** The step every horizontal dimension snaps to in the editor: half a metre. */
 export const GRID = m(0.5);
@@ -42,15 +34,7 @@ export function localToWorld(b: Frame, lx: number, ly: number): Vec2 {
   return { x: b.x + lx * c - ly * s, y: b.y + lx * s + ly * c };
 }
 
-/**
- * A building's frame - its origin, the cosine and the sine of its rotation -
- * worked out once for the many points of one building (`frameX`, `frameY`,
- * `frameToLocal`): the same numbers `localToWorld` and `worldToLocal` give,
- * without a cosine and a sine a point. DO NOT call `localToWorld` point by
- * point in a building's loops: grading the sites of a growing city, a floor's
- * samples and its lots' heights at every corner of the ground were 1.4 s of
- * cosines and sines in one frame (2026-10-15).
- */
+/** DO NOT call `localToWorld` point by point in a building's loops */
 export interface BuildingFrame {
   readonly x: number;
   readonly y: number;
@@ -131,10 +115,7 @@ export const volumeLift = (v: Volume): number => v.lift ?? 0;
 /** Height of the floor of a block's level `level` above the building's ground floor, its lift included. */
 export const volumeElevation = (b: Building, v: Volume, level: number): number => volumeLift(v) + levelElevation(b, level);
 
-/**
- * The lift of the block a point of the plan is in, on `level`: where a
- * floor's furniture, partitions and cores stand (0 where no block has it).
- */
+/** The lift of the block a point of the plan is in, on `level`: where a floor's furniture, partitions and cores stand */
 export function liftAt(b: Building, level: number, x: number, y: number): number {
   let best: Volume | null = null;
   for (const v of b.volumes) {
@@ -145,22 +126,13 @@ export function liftAt(b: Building, level: number, x: number, y: number): number
   return best ? volumeLift(best) : 0;
 }
 
-/**
- * The heights a block stands against, above the building's ground floor:
- * from its floor to its eaves - and, for a block on the ground, from below:
- * its plinth and the earth under it are as solid as its walls.
- */
+/** The heights a block stands against, above the building's ground floor: from its floor to its eaves */
 function solidSpan(b: Building, o: Volume): [number, number] {
   const top = volumeElevation(b, o, volumeTop(o));
   return [o.base === 0 ? -Infinity : volumeElevation(b, o, o.base), top];
 }
 
-/**
- * How much of storey `level` of block `v` another block `o` stands against,
- * by height: 2 the whole storey, 1 part of it, 0 none. Blocks on one lift
- * compare by level as they always did; blocks at floors of their own (a
- * split-level) by the heights they span.
- */
+/** How much of storey `level` of block `v` another block `o` stands against, by height */
 function standsAgainst(b: Building, o: Volume, v: Volume, level: number): 0 | 1 | 2 {
   if (Math.abs(volumeLift(o) - volumeLift(v)) < EPS) return occupiesLevel(o, level) ? 2 : 0;
   const z0 = volumeElevation(b, v, level), z1 = z0 + levelHeight(b, level);
@@ -194,11 +166,7 @@ export const groundVolumes = (b: Building): Volume[] => b.volumes.filter((v) => 
 /** A block that is mass (solid or exclusive), not a cut or a clip of others. */
 export const isMass = (v: Volume): boolean => v.mode !== 'void' && v.mode !== 'intersect';
 
-/**
- * World corner rings of the BUILT ground volumes: what a person cannot walk
- * through. Open lots - a front garden, a car park, a square - are left out:
- * they are walked across to the door.
- */
+/** World corner rings of the BUILT ground volumes: what a person cannot walk through. */
 export function solidFootprints(b: Building, grow = 0): Vec2[][] {
   return groundVolumes(b).filter((v) => !v.open).map((v) => volumeCorners(b, v, grow));
 }
@@ -238,8 +206,7 @@ export function elementRect(e: BuildingElement): [number, number, number, number
   const sx = alongY ? e.w : e.d;
   const sy = alongY ? e.d : e.w;
   if (!e.angle) return [e.x - sx / 2, e.y - sy / 2, e.x + sx / 2, e.y + sy / 2];
-  // A turned box (a run drawn along a path): its own bounding rectangle, which
-  // is what collisions and picking can answer exactly.
+  // A turned box (a run drawn along a path)
   const cs = Math.abs(Math.cos(e.angle));
   const sn = Math.abs(Math.sin(e.angle));
   const hx = (sx * cs + sy * sn) / 2;
@@ -276,15 +243,7 @@ export function buildingBounds(b: Building, grow = 0): { minX: number; minY: num
 
 type Bounds = { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number };
 const STORED_BOUNDS = new WeakMap<Building, Map<number, Bounds>>();
-/**
- * `buildingBounds` of a record held by the store, worked out once per record
- * and margin. The store never changes a record in place (`put` keeps a copy,
- * the same promise `recordText` and the layer's footprints stand on), so a
- * record's box is its box for good. Each grown building asked for the box of
- * every building in town a few times over - its validation, the renderer's
- * banks (`bankBox`), the bays - 2 460 boxes per building grown (audit M3a).
- * Never for a draft being edited in place: those call `buildingBounds`.
- */
+/** `buildingBounds` of a record held by the store, worked out once per record and margin. */
 export function storedBounds(b: Building, grow = 0): Bounds {
   let byGrow = STORED_BOUNDS.get(b);
   if (!byGrow) STORED_BOUNDS.set(b, byGrow = new Map());
@@ -301,18 +260,11 @@ export const planOverlap = (a: Volume, c: Volume): boolean =>
   a.outline || c.outline ? overlapArea(localFootprint(a), localFootprint(c)) > EPS :
   a.x < c.x + c.w - EPS && c.x < a.x + a.w - EPS && a.y < c.y + c.d - EPS && c.y < a.y + a.d - EPS;
 
-/**
- * Whether a volume above the ground has something under every part of it:
- * its rectangle is covered by the volumes that have a storey on the level
- * below its base.
- */
+/** Whether a volume above the ground has something under every part of it */
 export function isSupported(b: Building, v: Volume): boolean {
   // A cut or a clip carries nothing and needs nothing under it.
   if (v.base === 0 || !isMass(v)) return true;
-  // A block may overhang - a cantilever, a balcony block, a brick set half
-  // over the edge - as long as a good part of it bears on what is under it.
-  // What it bears on: a block whose height spans the floor it stands at (on
-  // one lift, a block with a storey on the level below).
+  // A block may overhang - a cantilever, a balcony block, a brick set half over the edge
   const floor = volumeElevation(b, v, v.base);
   const bears = (o: Volume): boolean => Math.abs(volumeLift(o) - volumeLift(v)) < EPS
     ? occupiesLevel(o, v.base - 1)
@@ -347,21 +299,12 @@ export function sideStart(v: Volume, side: FaceId): { x: number; y: number; tx: 
   }
 }
 
-/**
- * Stretches of a side, in its along coordinate, that another volume stands
- * against on `level`: shared walls, where no facade is built.
- */
+/** Stretches of a side, in its along coordinate, that another volume stands against on `level` */
 export function coveredSpans(b: Building, v: Volume, side: FaceId, level: number): [number, number][] {
   return spansAgainst(b, v, side, level, 2);
 }
 
-/**
- * Stretches of a side another block stands against over PART of storey
- * `level`'s height (a split-level: the lower block's wall half against the
- * upper block's floor). Built, but as plain wall: a window there would open
- * into the neighbour (CityEngine's `touches` occlusion makes such a tile a
- * wall; `inside` drops it, as `coveredSpans` does).
- */
+/** Stretches of a side another block stands against over PART of storey `level`'s height */
 function partlyCoveredSpans(b: Building, v: Volume, side: FaceId, level: number): [number, number][] {
   if (!b.volumes.some((o) => Math.abs(volumeLift(o) - volumeLift(v)) > EPS)) return [];
   return spansAgainst(b, v, side, level, 1);
@@ -377,8 +320,7 @@ function spansAgainst(b: Building, v: Volume, side: FaceId, level: number, want:
       for (const edge of volumeSides(o)) {
         const c = edgeFrame(o, edge);
         const facing = a.nx * c.nx + a.ny * c.ny;
-        // Back to back (a shared wall), or - fully covered only - the same
-        // wall face of a block of a lower id, which builds it once.
+        // Back to back (a shared wall), or - fully covered only
         const against = facing <= -.9999;
         const same = want === 2 && facing >= .9999 && o.id < v.id;
         if (!against && !same) continue;
@@ -401,12 +343,7 @@ function spansAgainst(b: Building, v: Volume, side: FaceId, level: number, want:
     if (side === 0 || side === 2) {
       const line = side === 0 ? v.y : v.y + v.d;
       touches = side === 0 ? Math.abs(o.y + o.d - v.y) < EPS * 10 : Math.abs(o.y - (v.y + v.d)) < EPS * 10;
-      // Fully covered only (CityEngine's `inside`, which drops what lies
-      // completely inside or on the surface of another mass): the face in the
-      // middle of the other block, or the same wall face of a block of a lower
-      // id, which builds it once - two blocks building one wall stacked two
-      // facades and two panes in each window, fighting in the depth buffer
-      // (the player's striped windows, 2026-10-09).
+      // Fully covered only (CityEngine's `inside`, which drops what lies completely inside or on the surface of another mass)
       if (want === 2) {
         const inside = line > o.y + EPS * 10 && line < o.y + o.d - EPS * 10;
         const same = o.id < v.id && (side === 0 ? Math.abs(o.y - v.y) < EPS * 10 : Math.abs(o.y + o.d - (v.y + v.d)) < EPS * 10);
@@ -430,11 +367,7 @@ function spansAgainst(b: Building, v: Volume, side: FaceId, level: number, want:
   return out.sort((p, q) => p[0] - q[0]);
 }
 
-/**
- * The stretches of an edge (its along coordinate) that run strictly inside a
- * polygon: sampled a few centimetres out from the edge, so a point on the
- * polygon's own boundary does not count.
- */
+/** The stretches of an edge (its along coordinate) that run strictly inside a polygon */
 function insideSpans(a: { x: number; y: number; tx: number; ty: number; nx: number; ny: number; length: number }, poly: readonly Vec2[]): [number, number][] {
   const out: [number, number][] = [];
   const step = Math.max(EPS * 20, a.length / 64);
@@ -477,10 +410,7 @@ export function reliefAt(v: Volume, side: FaceId, index: number, storey: number)
   return null;
 }
 
-/**
- * The plan rectangle a relief's region occupies in front of its face, local
- * frame, world units: [x0, y0, x1, y1]. Only a projection has one.
- */
+/** The plan rectangle a relief's region occupies in front of its face, local frame, world units: [x0, y0, x1, y1]. */
 export function projectionRect(b: Building, v: Volume, r: Relief): [number, number, number, number] | null {
   if (r.depth <= 0) return null;
   if (v.outline) {
@@ -507,11 +437,7 @@ export function projectionRect(b: Building, v: Volume, r: Relief): [number, numb
   }
 }
 
-/**
- * World rings of the projections that stand on the ground (from the first
- * storey of a ground volume): part of the footprint for the road and
- * neighbour tests, like the volumes themselves.
- */
+/** World rings of the projections that stand on the ground (from the first storey of a ground volume) */
 export function groundProjections(b: Building, grow = 0): Vec2[][] {
   const out: Vec2[][] = [];
   for (const v of groundVolumes(b)) {
@@ -570,16 +496,7 @@ export interface FacadeBay {
   readonly height: number;
 }
 
-/**
- * A building's bays, worked out when asked: the emission of its meshes (once
- * per build of the record) and its foundation then. NOT kept: a list of bay
- * objects held for every building of the town was 150 MB of a city of 5 400
- * (2026-10-14). What is asked again and again - the ground floor's height
- * (`foundation.ts` `floorHeight`, also by frame) and the street doors - reads
- * the ground storey's bays packed by record (`groundBays`). DO NOT keep
- * this list by record again, nor put a cap on such a cache: a cache that
- * drops and remakes hides the cost, which comes back with the bigger town.
- */
+/** DO NOT keep this list by record again, nor put a cap on such a cache */
 export function facadeBays(b: Building): FacadeBay[] {
   return workOutFacadeBays(b);
 }
@@ -589,19 +506,10 @@ export const GROUND_BAY_STRIDE = 8;
 export const GB_X = 0, GB_Y = 1, GB_NX = 2, GB_NY = 3, GB_Z = 4, GB_SIDE = 5, GB_WIDTH = 6;
 const GB_COMPONENT = 7;
 
-/**
- * The ground storey's bays (level 0) of a building, packed: `GROUND_BAY_STRIDE`
- * numbers a bay, at the `GB_*` offsets, the component as its index in
- * `BAY_COMPONENTS`. One typed array per record, no object per bay.
- */
+/** The ground storey's bays (level 0) of a building, packed */
 export type GroundBays = Float64Array;
 
-/**
- * Each record's ground storey bays (`GroundBays`), by the record itself: a
- * stored record is never changed in place (`BuildingStore`, OWNERSHIP), so the
- * same object has the same bays, and a record replaced or removed lets them go
- * (a WeakMap).
- */
+/** Each record's ground storey bays (`GroundBays`), by the record itself: a stored record is never changed in place */
 const GROUND_BAYS = new WeakMap<Building, GroundBays>();
 export function groundBays(b: Building): GroundBays {
   let known = GROUND_BAYS.get(b);
@@ -628,11 +536,7 @@ export function groundBays(b: Building): GroundBays {
 export const groundBayComponent = (table: GroundBays, i: number): BayComponent =>
   BAY_COMPONENTS[table[i * GROUND_BAY_STRIDE + GB_COMPONENT]!]!;
 
-/**
- * Every bay that is an OUTSIDE wall. A stretch of a side that another volume
- * stands against on the same level is a shared wall and is left out; a bay
- * only partly against one keeps its exposed piece, as plain wall.
- */
+/** Every bay that is an OUTSIDE wall. */
 function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
   const out: FacadeBay[] = [];
   const elevations: number[] = [];

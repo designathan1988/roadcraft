@@ -1,5 +1,4 @@
-// @vitest-environment happy-dom
-// The Builder's modules belong to the interface and touch the page when they load.
+// @vitest-environment happy-dom The Builder's modules belong to the interface and touch the page when they load.
 import { describe, expect, it } from 'vitest';
 
 import { BUILDER_CATALOG } from '@ui/builder/catalog';
@@ -9,12 +8,7 @@ import { ELEMENT_KINDS } from '@world/buildings/types';
 import { EN } from '../../src/ui/i18n/en';
 import { PT_BR } from '../../src/ui/i18n/pt-BR';
 
-/**
- * Every button in the Builder Workspace carries a dictionary key: its label,
- * and the sentence the hint bar shows when it is the active tool. A tool added
- * to the catalogue without both would show a raw key on screen, which is the
- * one failure mode the workspace cannot see for itself.
- */
+/** Every button in the Builder Workspace carries a dictionary key */
 describe('builder catalogue', () => {
   it('names every category and tool in both dictionaries, with a hint each', () => {
     const problems: string[] = [];
@@ -44,10 +38,7 @@ describe('builder catalogue', () => {
     expect(repeated).toEqual([]);
   });
 
-  /**
-   * The Snap menu showed five raw keys for weeks: it is built from the mode
-   * list rather than from the catalogue, so nothing was checking it.
-   */
+  /** The Snap menu showed five raw keys for weeks */
   it('names every snap mode in both dictionaries', () => {
     const problems: string[] = [];
     for (const mode of SNAP_MODES) {
@@ -58,10 +49,7 @@ describe('builder catalogue', () => {
     expect(problems).toEqual([]);
   });
 
-  /**
-   * A gallery of identical blank squares names the options without picturing
-   * them: every id a button can carry has a glyph of its own.
-   */
+  /** A gallery of identical blank squares names the options without picturing them */
   it('pictures every button the catalogue or a gallery can show', () => {
     const fallback = builderIcon('__no-such-icon__');
     const ids = new Set<string>();

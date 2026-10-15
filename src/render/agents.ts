@@ -59,79 +59,25 @@ import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { createBlobShadows } from './blobShadows';
 
-/**
- * Vehicles and riders use the original instanced batches. Citizens use
- * rigged Rocketbox meshes with baked animation palettes in separate batches.
- *
- * At the far band only vehicles are drawn. The middle band includes citizens;
- * the near band adds the finest detail. Citizen stride follows distance travelled rather
- * than a shared clock, so each gait has its own phase.
- *
- * Buffers start at the simulation's ceilings and double when a frame writes
- * past them (`growPart`), as a growing array does: the town's parked cars are
- * not bounded by the fleet's ceiling. Only their written prefixes are uploaded.
- */
+/** Vehicles and riders use the original instanced batches. */
 
-/**
- * The fleet the vehicles' buffers START at: the moving fleet's ceiling. The
- * town's parked cars come on top of it (`world.ambient.parked`), as many as the
- * lots hold; the buffers grow for them.
- * DO NOT stop drawing at this number again: past 1,200 parked cars, the rest
- * vanished from the town.
- */
+/** DO NOT stop drawing at this number again: past 1,200 parked cars, the rest vanished from the town. */
 const MAX_VEHICLES = FLEET_CEILING;
 const MAX_PEDS = PED_CEILING;
-/**
- * What a car off the road stands on (`offRoadDeck`): the terrain and the
- * ground as cut and filled, the roads' heights (a drive's crossing of the
- * footway), and the lots and buildings whose yards it parks in.
- */
+/** What a car off the road stands on (`offRoadDeck`): the terrain and the ground as cut and filled, the roads' heights */
 const OFF_ROAD_GROUND: readonly ChangeKind[] = ['terrain', 'ground', 'elevation', 'roads', 'lots', 'buildings'];
 /** Two-wheeler riders' own batches (frames, wheels, helmets). */
 const MAX_RIDERS = 400;
 
-/**
- * Zoom at which the closest band switches on.
- *
- * This was 0.9, and that number was reasoned about against a viewport running
- * from 0.18 to 3.2. The isometric rig's own range at an 800-pixel canvas is
- * `height / (halfHeight * 2)` over a half-height clamped to [55, 950], which
- * is 0.42 to 7.27 - so 0.9 sits above twice the minimum and the game is played
- * well below it. The practical effect was that mirrors, number plates, wheel
- * hubs, pillars AND THE PEOPLE INSIDE THE CARS existed in the code, were
- * placed correctly, and were almost never drawn. Reported, reasonably, as
- * "the cars have no detail at all" and "you didn't put anyone in the cars".
- *
- * 0.55 puts the close band just above the detail cutoff, so detail appears as
- * soon as anything is worth looking at. It costs about ten more matrix writes
- * per vehicle, which the update-range fix below more than pays for.
- */
+/** Zoom at which the closest band switches on. */
 const NEAR_DETAIL_ZOOM = perM(1.375);
 
-/**
- * Below this zoom a vehicle is its far proxy (`VehicleModel.far`): one opaque
- * low-poly instance with the glass and wheels painted on. A car is then under
- * nine pixels long; the whole body's bevels and the transparent glass pass
- * cost as much there as at a close zoom and show nothing.
- */
+/** Below this zoom a vehicle is its far proxy (`VehicleModel.far`) */
 const FAR_BODY_ZOOM = perM(1.75);
-/**
- * From this zoom the cabin and the people in it are drawn (the tier may ask
- * for more, `QualitySettings.occupantZoom`). A seated person is a skinned body
- * of thousands of triangles; below about 1.2 their head is under a pixel.
- */
+/** From this zoom the cabin and the people in it are drawn (the tier may ask for more, `QualitySettings.occupantZoom`). */
 const OCCUPANT_ZOOM = perM(3);
 
-/**
- * Each vehicle's own level, by the screen's scale where it stands (`screenScale`,
- * CSS pixels a world unit: the zoom, there) against the same bands the zoom
- * draws by - so in the view from above it is drawn as before, and in
- * perspective the far ones are coarser - as three's `LOD` switches each
- * object by its own distance, with a tenth of hysteresis (going up a level
- * needs the edge passed by that much): whole (its cabin, plates and the people
- * in it) from the occupant zoom, the body, glass, wheels and lamps from
- * `FAR_BODY_ZOOM`, the far proxy while a car is 2 px long; nothing below.
- */
+/** Each vehicle's own level, by the screen's scale where it stands */
 const VEHICLE_HYSTERESIS = 0.1;
 /** A car's length, for the smallest scale anything is drawn at (2 px). */
 const CAR_LENGTH = m(4.5);
@@ -140,18 +86,7 @@ const VEHICLE_NEAR_CAP = 200;
 
 const SIDES = [1, -1] as const;
 
-/**
- * Lamp state for the vehicle currently being drawn.
- *
- * The tail lamp used to be a constant, so every car on the map was drawn with
- * its lights in exactly the same state whatever it was doing - the single
- * biggest thing standing between the traffic and being readable, because a
- * queue forming is a line of brake lights coming on one after another.
- *
- * It is a closure variable rather than a parameter because the four body
- * builders each place lamps from several call sites; threading it through all
- * of them would be a wider change than the thing it expresses.
- */
+/** Lamp state for the vehicle currently being drawn. */
 interface LampState {
   /** Headlamp colour: lit, or the unlit lens of a parked car. */
   head: number;
@@ -181,10 +116,7 @@ interface AgentRenderOptions {
   readonly hiddenPed?: (id: number) => boolean;
   /** Where the camera is: the people nearest it get their hair's strands (`?bodies=proc`). */
   readonly eye?: Vector3;
-  /**
-   * How tall something `height` high standing at (x, y, z) is on the screen,
-   * pixels: the procedural people's level of detail (`people/crowdLod.ts`).
-   */
+  /** How tall something `height` high standing at (x, y, z) is on the screen, pixels */
   readonly personPixels?: (x: number, y: number, z: number, height: number) => number;
   /** Pixels a world unit across the screen at (x, y, z): each vehicle's level of detail. */
   readonly screenScale?: (x: number, y: number, z: number) => number;
@@ -194,38 +126,16 @@ interface AgentRenderOptions {
 
 export interface AgentMeshes {
   readonly meshes: readonly Object3D[];
-  /**
-   * Whether the last `sync` switched the two-wheelers between casting into
-   * the shadow map and a soft disc under them: the map is drawn again then.
-   */
+  /** Whether the last `sync` switched the two-wheelers between casting into the shadow map and a soft disc under them */
   readonly castersChanged: boolean;
-  /**
-   * @param zoom Viewport zoom, used only to pick the closest detail band. It
-   *   defaults to fully zoomed in, so a caller that does not pass it gets the
-   *   richest look rather than a silently stripped one.
-   */
   sync(world: SimWorld, alpha: number, detailed: boolean, zoom?: number, options?: AgentRenderOptions): void;
   /** Every figure drawn last frame and the body it was cast as (`citizenCasting.ts`). */
   census(): ReturnType<ReturnType<typeof createRiggedCitizens>['census']>;
-  /**
-   * The burnt-out shell of this vehicle's own body (the model it is drawn
-   * with: shell, trim and cabin, no glass, the tyres burnt off the rims),
-   * in its frame about the middle of its box; null for a body not built.
-   */
+  /** The burnt-out shell of this vehicle's own body */
   carcass(vehicle: { readonly id: number; readonly archetype: Archetype }, intact?: boolean): BufferGeometry | null;
-  /**
-   * How far each procedural person's drawn skeleton is from a body (the
-   * weapons lab's mesh probe): the bone pulled furthest off its length
-   * against its parent (1 = as built), and the most a bone is scaled; a
-   * skin stretched into blades or a part blown up shows here.
-   */
+  /** How far each procedural person's drawn skeleton is from a body (the weapons lab's mesh probe) */
   meshProbe(): { id: number; stretch: number; stretchBone: string; scale: number; scaleBone: string; held: boolean; clip: string }[];
-  /**
-   * What is posing a procedural person now (the weapons lab): the baked clip
-   * played (this renderer plays baked clips, not three's AnimationMixer - one
-   * clip at full weight, its phase driven here), its time and length, whether
-   * it is frozen, the jolt layered on it, and whether a ragdoll holds the body.
-   */
+  /** What is posing a procedural person now (the weapons lab): the baked clip played */
   animProbe(id: number): { clip: string; time: number; duration: number; weight: number; paused: boolean; layers: string[]; source: 'animation' | 'physics' } | null;
   /** Plays `clip` on a person whatever they are doing (the lab's clip check); null gives them back. */
   forceClip(id: number, clip: ProcClip | null): void;
@@ -247,14 +157,7 @@ type ElevationAt = (world: SimWorld, x: number, y: number, segment?: SegmentId) 
 
 // ---------------------------------------------------------------- variation
 
-/**
- * A cheap integer avalanche hash.
- *
- * This is the only source of per-agent variety in the module. It has to mix
- * into the low bits, because every consumer takes a remainder of a shifted
- * slice, and it has to be exactly reproducible, because how a car looks must
- * not depend on when it was first drawn.
- */
+/** A cheap integer avalanche hash. */
 export function agentHash(id: number): number {
   let h = (id | 0) + 0x9e3779b9;
   h = Math.imul(h ^ (h >>> 16), 0x21f0aaad);
@@ -268,13 +171,7 @@ const pick = (h: number, shift: number, n: number): number => (h >>> shift) % n;
 const from = (palette: readonly number[], h: number, shift: number): number =>
   palette[pick(h, shift, palette.length)] as number;
 
-/**
- * Skin tones, light to dark.
- *
- * Six is the smallest set in which a crowd does not read as one family. They
- * are sampled uniformly: weighting them would encode an assumption about the
- * city the player is building that the engine has no business making.
- */
+/** Skin tones, light to dark. */
 export const SKIN_TONES: readonly number[] = [
   0xf2d3b6, 0xe6b98f, 0xd19a6a, 0xa9714a, 0x7d4e30, 0x4e3120,
 ];
@@ -296,11 +193,7 @@ const PLATE = 0xf0efe6;
 /** A bus's destination blind: amber on black, read as lit amber. */
 const DESTINATION = 0xffb13b;
 
-/**
- * Seconds a change of a person's clip cross-fades over: about half a step at
- * a walk (a gait cycle of 1-1.2 s), the time setting off or stopping takes a
- * foot.
- */
+/** Seconds a change of a person's clip cross-fades over: about half a step at a walk */
 const CLIP_FADE = 0.3;
 /** The gaits, whose phase is the ground covered (one stride a cycle) and runs on from one into another. */
 const gaitClip = (c: ProcClip): boolean => c === 'walk' || c === 'run' || c === 'sprint' || c === 'hurtWalk' || c === 'hurtRun';
@@ -313,20 +206,9 @@ const TAILLAMP_OFF = 0x5e1712;
 const BRAKELAMP = 0xff1a08;
 /** The amber of an indicator, on the side the vehicle is moving towards. */
 const INDICATOR = 0xffa11c;
-/**
- * Deceleration, in units per second per second, at which the brake lights come on.
- *
- * Real brake lights are wired to the pedal rather than to a threshold, but the
- * simulation has no pedal - it has an acceleration, and a driver easing off is
- * not braking. About 1 unit/s^2 is the point where a following driver would
- * see the nose dip.
- */
+/** Deceleration, in units per second per second, at which the brake lights come on. */
 const BRAKE_DECEL = 1.0;
-/**
- * How much brighter each lit lamp burns after dark (`lightLevels.ts`), by its
- * colour: the instance's tint times `1 + gain * dark`. An unlit lamp and a
- * number plate are not here: they do not light up.
- */
+/** How much brighter each lit lamp burns after dark (`lightLevels.ts`), by its colour */
 const LAMP_GAIN: ReadonlyMap<number, number> = new Map([
   [HEADLAMP, nightGain(HEADLAMP, NIGHT_LUMINANCE.headlamp)],
   [TAILLAMP, nightGain(TAILLAMP, NIGHT_LUMINANCE.tailLamp)],
@@ -353,25 +235,13 @@ export interface VehicleLook {
   readonly helmet: number;
   /** Second body colour, for a truck's box and a bus's roof. */
   readonly accent: number;
-  /**
-   * A panoramic glass roof. The camera looks down at 48 degrees, so on a car
-   * with a painted roof the people inside are only ever glimpsed through the
-   * side glass; on these the driver and passengers read from above.
-   */
+  /** A panoramic glass roof. */
   readonly glassRoof: boolean;
   /** A contrasting black roof panel. */
   readonly blackRoof: boolean;
 }
 
-/**
- * How a door's window is drawn with a share `drop` of it lowered (0 shut, 1
- * fully down): the pane shortened from the top about its own bottom edge,
- * as the part still showing above the door; fully down it is inside the
- * door and not drawn at all. Sliding the pane down instead pushed its top
- * edge into the cabin (it leans inboard with the body) or, along its lean,
- * its bottom edge out through the door skin. `up` and `sy` are the vertical
- * offset and scale to place it with, in the door's own frame.
- */
+/** How a door's window is drawn with a share `drop` of it lowered (0 shut, 1 fully down) */
 export function windowPane(door: { glass: BufferGeometry }, drop: number): { visible: boolean; up: number; sy: number } {
   if (drop >= 0.98) return { visible: false, up: 0, sy: 0 };
   if (drop <= 0) return { visible: true, up: 0, sy: 1 };
@@ -397,8 +267,7 @@ export function vehicleLook(id: number, seats: number): VehicleLook {
     passengerShirt: from(SHIRT_COLOURS, g, 12),
     helmet: from(HELMET_COLOURS, g, 18),
     accent: pick(g, 24, 3) === 0 ? BOX_BODY : from(SHIRT_COLOURS, g, 26),
-    // Always a solid roof: a glass one showed the whole cabin from above, and
-    // read as a car with its roof missing. One in five is black.
+    // Always a solid roof: a glass one showed the whole cabin from above, and read as a car with its roof missing.
     glassRoof: false,
     blackRoof: pick(g, 28, 5) === 0,
   };
@@ -415,19 +284,11 @@ const GRAVITY = m(9.81);
 const LEAN_RATE = 6;
 const leans = new WeakMap<SimVehicle, { lean: number; age: number }>();
 
-/**
- * A vehicle's pose and its frame on the road, written in place for each
- * vehicle drawn: made anew per vehicle per frame they were most of the
- * drawing's own allocation (2026-10-11, 400 vehicles).
- */
+/** A vehicle's pose and its frame on the road, written in place for each vehicle drawn */
 const POSE = newPose();
 const WANT = { deck: 0, pitch: 0, roll: 0 };
 
-/**
- * How far a two-wheeler leans into the bend it is on: the angle whose tangent
- * is its sideways acceleration over gravity, which is what balances it, eased
- * so that it rolls into and out of a bend rather than snapping.
- */
+/** How far a two-wheeler leans into the bend it is on */
 function leanOf(world: SimWorld, v: SimVehicle): number {
   const target = Math.max(-MAX_LEAN, Math.min(MAX_LEAN, Math.atan((v.v * v.v * pathCurvature(world, v)) / GRAVITY)));
   const state = leans.get(v);
@@ -463,15 +324,7 @@ function doorOpening(v: SimVehicle, door: number): number {
 
 // ---------------------------------------------------------------- body plans
 
-/**
- * Per-class geometry, derived once at module load.
- *
- * Everything the vehicle loop needs is precomputed here, in world units, so
- * that the loop multiplies rather than decides. The table is keyed by archetype
- * id, but every value comes from the archetype's declared `shape` and
- * proportions — no branch in this file names a class, which is what stops a bus
- * being drawn as a very long hatchback the next time the fleet changes.
- */
+/** Per-class geometry, derived once at module load. */
 interface BodyPlan {
   readonly shape: VehicleShape;
   readonly length: number;
@@ -502,13 +355,10 @@ function bodyPlan(a: Archetype): BodyPlan {
   const truck = a.shape === 'truck';
   const tread = twoWheeler ? a.width * (a.shape === 'bicycle' ? 0.14 : 0.3) : a.width * 0.14;
 
-  // Two axles straddle the body; three put one under the nose and a bogie at
-  // the back, which is what gives a bus its four rear wheels and a truck its
-  // three axles.
+  // Two axles straddle the body; three put one under the nose and a bogie at the back
   const axleAlong: readonly number[] = axleStations(a);
 
-  // Seat heights put the heads inside the glazed band of each body plan, which
-  // is the only place an occupant is visible from outside.
+  // Seat heights put the heads inside the glazed band of each body plan
   const seatY = a.height * (bus ? 0.55 : truck ? 0.5 : 0.46);
   return {
     shape: a.shape,
@@ -556,36 +406,23 @@ function instanced(
   const mesh = new InstancedMesh(geometry, material, count);
   mesh.name = name;
   mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-  // Every part carries a colour per instance, white until tinted. Materials
-  // are shared between tinted and untinted parts, and three builds a
-  // different program for an instanced mesh with colours than without, so a
-  // mix of the two switched programs a dozen times a frame.
+  // Every part carries a colour per instance, white until tinted.
   mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(count * 3).fill(1), 3);
   mesh.instanceColor.setUsage(DynamicDrawUsage);
   mesh.castShadow = castShadow;
   mesh.receiveShadow = false;
-  // Instances move every frame, so a bounding sphere computed once is wrong;
-  // the meshes are few enough that skipping the frustum test is the cheap answer.
+  // Instances move every frame, so a bounding sphere computed once is wrong
   mesh.frustumCulled = false;
   mesh.count = 0;
   return { mesh, n: 0, tinted: false };
 }
 
-/**
- * `groundAt`: what a walker off the streets stands on (a yard, a terrace, the
- * paving, the land); `roughGroundAt`: the land alone, cheap, for the test of
- * whether they are on screen at all before `groundAt` is asked.
- */
+/** `groundAt`: what a walker off the streets stands on (a yard, a terrace, the paving, the land); `roughGroundAt` */
 export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () => void = () => {},
   groundAt?: (x: number, y: number) => number,
   lotAt?: (building: number, x: number, y: number) => number,
   roughGroundAt?: (x: number, y: number) => number): AgentMeshes {
-  // Paint, trim and the cabin read a vertex colour that multiplies the
-  // instance colour: one body geometry carries its black-outs, seams, seats
-  // and carpet in one draw. Every geometry drawn with them is built by
-  // `vehicleModels.merge`, which gives each a colour.
-  // Automotive paint: a base coat under a glossy clear coat, reflecting the
-  // sky's environment map. The plain standard material read as matt plastic.
+  // Paint, trim and the cabin read a vertex colour that multiplies the instance colour
   const paint = new MeshPhysicalMaterial({
     roughness: 0.38, metalness: 0.28, clearcoat: 1, clearcoatRoughness: 0.07,
     envMapIntensity: 1.35, vertexColors: true,
@@ -599,25 +436,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // Keep a cool tint while letting seated people read through the panes.
     opacity: 0.34,
     envMapIntensity: 0.8,
-    // Panes are single sheets seen from both sides: the windscreen from above,
-    // a door's window from inside when it swings open.
+    // Panes are single sheets seen from both sides
     side: DoubleSide,
-    // In ONE pass. three draws a transparent double-sided material twice, back
-    // faces then front, and flags it for a new program before each: with a
-    // glass mesh per vehicle model that was 62 program lookups a frame. A
-    // pane is a single sheet, so there is no back face to order.
+    // In ONE pass. three draws a transparent double-sided material twice, back faces then front
     forceSinglePass: true,
     depthWrite: false,
   });
-  // The cabin: seats, dashboard, wheel. Dark and matt, so the people sitting in
-  // it are what reads through the glass.
+  // The cabin: seats, dashboard, wheel.
   const cabinMaterial = new MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, vertexColors: true });
   const rubber = new MeshStandardMaterial({ roughness: 0.92, metalness: 0.05 });
-  // Unlit, so a lamp stays bright inside a shadow — the only thing in the scene
-  // for which that is correct. One material serves headlights, tail lights,
-  // destination blinds and number plates; the instance colour separates them,
-  // and each instance's `glow` (`LAMP_GAIN`) is how much brighter it burns
-  // after dark: a red lamp reaches its own luminance, not a share of white's.
+  // Unlit, so a lamp stays bright inside a shadow — the only thing in the scene for which that is correct.
   const lampMaterial = new MeshBasicMaterial({ toneMapped: false });
   const lampDark = { value: 0 };
   lampMaterial.onBeforeCompile = (shader) => {
@@ -652,18 +480,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   let lampGlow = new InstancedBufferAttribute(new Float32Array(MAX_VEHICLES * 9), 1);
   lampGlow.setUsage(DynamicDrawUsage);
   unitBox.setAttribute('glow', lampGlow);
-  // A motorcyclist's helmet: a smooth shell, glossy like paint. Its facets
-  // are fine enough that the head it is fitted to stays inside
-  // (`riderPoses.HELMET_SEGMENTS`).
+  // A motorcyclist's helmet: a smooth shell, glossy like paint.
   const helmetGeometry = merge([new SphereGeometry(0.5, HELMET_SEGMENTS.width, HELMET_SEGMENTS.height)]);
   const helmets = instanced('rider-helmets', helmetGeometry, paint, MAX_RIDERS);
 
   const parts: readonly Part[] = [wheels, hubs, thinWheels, spokes, lamps, helmets];
-  /**
-   * One set of instanced meshes per car class, built from its own model
-   * (`vehicleModels.ts`): a class is five to thirteen draws for the whole fleet
-   * of it, whatever its size.
-   */
+  /** One set of instanced meshes per car class, built from its own model (`vehicleModels.ts`) */
   interface CarParts {
     readonly model: VehicleModel;
     /** The body, glazing and cabin with every door shut: one instance each. */
@@ -698,8 +520,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return `${a.id}:${carStyleOf(a, agentHash(vehicle.id ^ 0x57e1))}`;
   };
   const modelGeometries: BufferGeometry[] = [];
-  // One set per class and body style: a sedan may be drawn as an estate and
-  // an SUV as a pick-up (`carBody.carStyleOf`), the same size to the simulation.
+  // One set per class and body style: a sedan may be drawn as an estate and an SUV as a pick-up
   const bodies: { key: string; model: VehicleModel }[] = [];
   for (const archetype of ARCHETYPES) {
     if (archetype.shape === 'car') {
@@ -738,24 +559,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       steering: model.steering ? instanced(`car-${id}-wheel`, model.steering.geometry, cabinMaterial, MAX_VEHICLES, false) : null,
     });
   }
-  // The far proxy is drawn under FAR_BODY_ZOOM, a car under nine pixels long:
-  // the whole surface there was some 12,000 triangles a car, and every one of
-  // them cast a shadow. Simplified once the simplifier is ready (off the frame).
+  // The far proxy is drawn under FAR_BODY_ZOOM, a car under nine pixels long
   for (const c of carParts.values()) {
-    // At most nine pixels long: an error of 5% of the car is under half a
-    // pixel there. At 12% of the triangles the town seen from afar drew some
-    // 1,400 a car, 1.3 million for 943 cars of one to three pixels.
+    // At most nine pixels long: an error of 5% of the car is under half a pixel there.
     void simplified(c.far.mesh.geometry, 0.03, 0.05).then((coarse) => {
       if (coarse === c.far.mesh.geometry) return;
       modelGeometries.push(coarse);
       c.far.mesh.geometry = coarse;
     });
-    // The body without its cabin (the middle band, from the far proxy's nine
-    // pixels up to the occupants' zoom, a hundred or so): it was the whole
-    // shell, 8,500-11,000 triangles a car - 1.9 million a frame in a 3/4
-    // view of the town. A quarter of them within half a percent of the car's
-    // size (meshoptimizer's error is relative to the mesh): under half a
-    // pixel at the largest it is drawn.
+    // The body without its cabin the middle band, from the far proxy's nine pixels up to the occupants' zoom, a hundred or
     for (const part of [c.shellLite, c.roofLite, c.accentLite]) {
       if (!part) continue;
       void simplified(part.mesh.geometry, 0.25, 0.005).then((lighter) => {
@@ -797,23 +609,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList];
 
   // The scenery's people: the few bodies of the scenery cast
-  // (`citizenCasting.ts` `sceneryCast`), each fetched when first needed.
   const pedestrians = createRiggedCitizens(CROWD_IDS, onAssetsReady);
-  // The walkers drawn as procedural people (`people/proceduralCrowd.ts`, the
-  // player's choice of 2026-10-06): one MakeHuman body per class, each person
-  // numbers on it - shape, clothes, hair, face. The player's own body, the
-  // people in vehicles, those indoors and the bodies thrown by a blow stay on
-  // the cooked ones. `?bodies=cooked` draws every walker cooked, to compare.
+  // The walkers drawn as procedural people (`people/proceduralCrowd.ts`, the player's choice of 2026-10-06)
   const procedural = typeof location !== 'undefined' && new URLSearchParams(location.search).get('bodies') === 'cooked'
     ? null : createProceduralCrowd({ unit: m(1) });
   /** Each walker's person; a person whose walker left (at the end of a road) waits in `procSpare` for the next one. */
   const procPeople = new Map<number, { person: ProceduralPerson | null; seen: number; at?: Matrix4; age?: PersonAgeClass; cover?: number }>();
-  /**
-   * Whether a body suits a walker's age (the simulation's child, adult or
-   * elder: their pace, their company): a child is drawn as a child, an elder
-   * as an elder. A body was taken from the pool whatever its age, and a
-   * child walked in an adult's body and the other way round.
-   */
+  /** Whether a body suits a walker's age (the simulation's child, adult or elder: their pace, their company) */
   const procSuits = (person: ProceduralPerson, age: PersonAgeClass | undefined): boolean =>
     age === undefined || (age === 'child' ? person.band === 'child' : age === 'elder' ? person.band === 'senior'
       : person.band === 'young' || person.band === 'adult');
@@ -824,21 +626,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   };
   const procSpare: ProceduralPerson[] = [];
   const PROC_CAP = PED_CEILING;
-  /**
-   * Walkers waiting for a body of their own. A body costs the main thread
-   * some 50-80 ms to build (its shape, its face), so they are built one at a
-   * time, a few frames apart, never several in one frame (the player's
-   * complaint of 2026-10-06: the game stalled while people came in). A
-   * walker whose body is not ready yet is not drawn: they come in at the end
-   * of a road, and every walker who leaves frees a body for the next.
-   */
+  /** Walkers waiting for a body of their own. */
   const procWaiting: number[] = [];
   let procBuilding = false;
   let procBuiltAt = 0;
   const PROC_BUILD_GAP_MS = 120;
-  // Two spare bodies built while the map opens, drawn hidden: the first
-  // procedural body's shaders and classes are made then, not mid-game when the
-  // first walker comes in (a one-time stall of about a second, measured).
+  // Two spare bodies built while the map opens, drawn hidden
   if (procedural) {
     for (const seed of [0x51a7e, 0x2b0d1]) {
       void procedural.add(randomPerson(-seed, seed)).then((person) => {
@@ -846,8 +639,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         procSpare.push(person);
       }, () => {});
     }
-    // And the rest of the classes while the map is still opening, before the
-    // first walkers come in (`warmClasses`).
+    // And the rest of the classes while the map is still opening, before the first walkers come in (`warmClasses`).
     void procedural.warmClasses().catch(() => {});
   }
   const procBuildNext = (): void => {
@@ -865,7 +657,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const target = id;
     procBuilding = true;
     // Bodies of the other ages left over in the pool: the oldest given back
-    // (its rows freed, `untwin`), so the pool does not grow without end.
     while (procSpare.length > 12) procedural!.ragdoll.untwin(procSpare.shift()!);
     // Of the walker's age: a child 5 to 13, an elder 66 to 88, an adult between.
     const age = procPeople.get(target)?.age;
@@ -881,15 +672,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** This frame's measure of a person on the screen (`AgentRenderOptions.personPixels`). */
   let procPixels: AgentRenderOptions['personPixels'] | null = null;
   const procMatrix = new Matrix4(), procTurn = new Matrix4(), procSize = new Matrix4();
-  /**
-   * A person drawn this frame: their pose picked (`procPose`), and a change of
-   * clip made a cross-fade. The clip they leave plays on under the new one,
-   * its weight falling to nothing over `CLIP_FADE` and its phase still going
-   * as it went (by the ground covered, for a gait), so stopping at a kerb or
-   * setting off from it is a step into the new clip, not a pose popping in
-   * one frame (measured on 2026-10-09: 22 such pops a minute with ten people,
-   * nearly all at the kerbs).
-   */
+  /** A person drawn this frame: their pose picked (`procPose`), and a change of clip made a cross-fade. */
   const procDraw = (id: number, x: number, y: number, heading: number, deck: number, speed: number, walking: boolean, dt: number, activity?: string,
     lost?: readonly Severable[], act?: { readonly t: number; readonly hold: number },
     wound?: { readonly part: BodyPart; readonly grave: boolean }, age?: PersonAgeClass): void => {
@@ -940,8 +723,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     person.matrix.copy(procMatrix);
     // How tall they stand on the screen: the level they are drawn at (`crowdLod.ts`).
     person.pixels = procPixels ? procPixels(x, y, deck, m(person.height)) : undefined;
-    // Where they were last drawn: a ragdoll takes them from there when they
-    // drop out of the street (killed, `procRagdoll.capturedPose`).
+    // Where they were last drawn: a ragdoll takes them from there when they drop out of the street
     (entry.at ??= new Matrix4()).copy(procMatrix);
     person.activity = activity;
     person.lost = lost;
@@ -954,16 +736,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     procFrozen.delete(id);
     if (activity === 'flinch' && act) {
       // A first wound (`walk.ts` FLINCH), as GTA's shot peds take it
-      // (Euphoria's shot: the jolt, then reach-for-wound a moment later):
-      // standing, struck back by the bullet (the jolt, `wound`), then bent
-      // over the wound with a hand pressed to it - the standing clip under
-      // the wounded posture. Not a squat (the crouch clips read as somebody
-      // picking a thing up), and its end is not a recovery: the wound goes
-      // on governing how they move (`walk.ts` woundOf).
       person.activity = 'hurt';
-      // The hit itself first, as captured (Quaternius Hit_Chest, a third of a
-      // second); then knocked back (`walk.ts` staggerSpeed): the walk played
-      // backwards at the stagger's pace, the feet stepping, not sliding.
+      // The hit itself first, as captured (Quaternius Hit_Chest, a third of a second); then knocked back
       const hitFor = procedural!.ragdoll.duration(person, 'hit');
       const back = staggerSpeed(act.t) / m(1);
       if (act.t < hitFor) {
@@ -982,17 +756,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       return;
     }
     if ((activity === 'crouch' || activity === 'mourn') && act && !wound) {
-      // Crouching in fear (a `crouch` act): down into it (the crouch-down
-      // clip), held, and up again before the act ends (the stand-up clip) -
-      // never popped into the squat or out of it.
+      // Crouching in fear (a `crouch` act): down into it (the crouch-down clip), held, and up again before the act ends
       const down = 0.5, up = 0.9;
       const next: ProcClip = act.t < down ? 'duck' : act.t > act.hold - up ? 'getUp' : 'cower';
       if (person.clip !== next) { person.clip = next; person.phase = 0; }
       if (next === 'duck') person.phase = Math.min(0.999, act.t / down);
       else if (next === 'getUp') person.phase = Math.min(0.999, (act.t - (act.hold - up)) / up);
       else person.phase += dt / procedural!.clipDuration(person);
-      // Both hands over the head while down (GTA's cower), on as they duck;
-      // grieving beside somebody they walked with (`mourn`), crying instead.
+      // Both hands over the head while down (GTA's cower), on as they duck; grieving beside somebody they walked with
       if (activity === 'mourn') {
         person.activity = 'cry';
         entry.cover = 0;
@@ -1013,38 +784,23 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       return;
     }
     if (activity === 'look' && act && !wound) {
-      // A bystander's first moment after a shot (`walk.ts` frighten): turned
-      // to it, standing scared (the captured nervous idle), before they run.
+      // A bystander's first moment after a shot (`walk.ts` frighten): turned to it, standing scared
       if (person.clip !== 'nervous') { person.clip = 'nervous'; person.phase = 0; }
       person.phase += dt / procedural!.clipDuration(person);
       entry.cover = 0;
       procedural!.ragdoll.posture(person, null);
       return;
     }
-    // Hurt: a hand pressed to the wound over the captured hurt gaits - the
-    // injured run while they flee, the limp after (`walk.ts` sets the pace).
-    // The trunk is bent by the captures themselves; stood still, bent over it.
+    // Hurt: a hand pressed to the wound over the captured hurt gaits - the injured run while they flee, the limp after
     const metres = speed / m(1);
     const hurtRun = wound !== undefined && walking && metres > (person.clip === 'hurtRun' ? 1.3 : 1.7);
-    // Fleeing in panic: both hands over the head as they run (GTA's peds run
-    // from gunfire so; in a plain run they read as somebody jogging), eased
-    // on and off.
+    // Fleeing in panic: both hands over the head as they run
     const panicRun = !wound && activity === 'panic' && walking && metres > 1.6;
     entry.cover = (entry.cover ?? 0) + ((panicRun ? 1 : 0) - (entry.cover ?? 0)) * Math.min(1, dt * 5);
     procedural!.ragdoll.posture(person, wound ? { hunch: wound.grave ? 0.5 : walking && metres > 0.15 ? 0.08 : 0.42, reach: 1, part: wound.part }
       : entry.cover > 0.02 ? { hunch: 0, reach: 0, part: 'torso', cover: entry.cover } : null);
     if (wound) person.activity = 'hurt';
-    // Running from danger runs, past a brisk walk; struck with fear (cowering,
-    // or panicking stood still), they crouch with their arms over their head.
-    // A sprint past a run (fleeing a blow flat out); a little either side
-    // of each speed kept, so a pace near one does not flick between clips.
-    // Panicking stood still is standing (about to run), not a squat: a squat
-    // there popped in for a frame or two whenever someone got up or stopped.
-    // Down (`fall`): the body is drawn by the ragdoll, and the clip waits
-    // standing, no posture over it, for when they are up. (The person is
-    // hidden while their body is down - `hiddenPed` - so this runs in the
-    // frame they fall: a crouch set here showed for a frame when they were
-    // let go.)
+    // Running from danger runs, past a brisk walk; struck with fear
     if (activity === 'fall') {
       if (person.clip !== 'idle') { person.clip = 'idle'; person.phase = 0; }
       procedural!.ragdoll.posture(person, null);
@@ -1076,9 +832,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       if (!entry.person) { if (!live.has(id)) procPeople.delete(id); continue; }
       if (procHeld.has(id)) continue;
       entry.person.matrix.makeScale(0, 0, 0);
-      // Kept a few frames off the street: somebody killed leaves it at once,
-      // and the ragdolls ask for their pose in the same frame (they fell as
-      // nobody, a blow left only blood).
+      // Kept a few frames off the street
       if (!live.has(id) && procFrame - entry.seen > 3) { procPeople.delete(id); procSpare.push(entry.person); }
     }
     // A freed body goes at once to a walker still waiting for one.
@@ -1093,13 +847,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     void eye;
     procFrame++;
   };
-  /**
-   * The ragdolls' view of the people (`ragdoll.ts` RagdollCitizens): a person
-   * drawn by the procedural crowd falls as themself - their skeleton, their
-   * pose, their clothes and face - an index below zero naming them; anyone
-   * else as the cooked bodies. They fell as a body of another look before
-   * (the player, 2026-10-06).
-   */
+  /** The ragdolls' view of the people (`ragdoll.ts` RagdollCitizens) */
   const procHeld = new Set<number>(), procHeldNow = new Set<number>();
   /** The walkers of the simulation this frame (`sync`), one set for every frame. */
   const procLive = new Set<number>();
@@ -1188,15 +936,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const meshes = [...allParts.map((part) => part.mesh), vehicleBlobs.mesh, pedestrians.group, ...(procedural ? [procedural.group] : [])];
 
   const object = new Object3D();
-  // Yaw outermost, so the third Euler component becomes a rotation about the
-  // agent's own lateral axis: a raked windscreen, a leaning rider, a swinging
-  // leg. With this order a positive rake tips a part's top towards the rear.
+  // Yaw outermost, so the third Euler component becomes a rotation about the agent's own lateral axis
   object.rotation.order = 'YXZ';
   const colour = new Color();
 
-  // The palettes hold a few dozen distinct strings between them, so caching by
-  // the string avoids running the CSS parser — which allocates — once per agent
-  // per frame.
+  // The palettes hold a few dozen distinct strings between them, so caching by the string avoids running the CSS parser
   const hexCache = new Map<string, number>();
   const hexOf = (css: string): number => {
     let hex = hexCache.get(css);
@@ -1208,9 +952,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return hex;
   };
 
-  // Frame of the agent currently being written. Held here rather than passed,
-  // so `place` takes offsets in the agent's own frame and allocates nothing.
-  // The detail band the current vehicle and its occupants are drawn at.
+  // Frame of the agent currently being written.
   let occupantBand = 0;
   let fx = 0;
   let fy = 0;
@@ -1218,20 +960,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   let fdy = 0;
   let fyaw = 0;
   let fdeck = 0;
-  // Lean of a two-wheeler into a bend, radians, positive to the left; the
-  // whole frame rolls about the line where the tyres touch the road.
+  // Lean of a two-wheeler into a bend, radians, positive to the left
   let froll = 0;
   let fcos = 1;
   let fsin = 0;
-  /**
-   * THE vehicle's one transform, as a rotation: yaw, then pitch about its
-   * lateral axis, then roll about its own forward axis (road camber less a
-   * two-wheeler's lean). Every part - body, glass, wheels, lamps, the wheel,
-   * the people in it - is placed through it, and nothing samples its own
-   * height. Before, each vehicle had one height at its centre and a frame
-   * with yaw only: on a gradient the body stayed level, one axle's wheels
-   * sank and the other's floated, and raked parts slid against the body.
-   */
+  /** THE vehicle's one transform, as a rotation */
   const fq = new Quaternion();
   const qPitch = new Quaternion();
   const qRoll = new Quaternion();
@@ -1275,36 +1008,17 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** This frame's whole-level candidates' lengths on the screen, and the least one may have (last frame's cap). */
   const nearCandidates: number[] = [];
   let nearFloor = 0;
-  /**
-   * Whether a two-wheeler was drawn whole last frame: then they all cast into
-   * the shadow map; else each has a soft disc under it, as a car below the
-   * whole level has. From the map a bike was the only thing moving in the
-   * shadow pass, which then drew the whole town again every third frame for
-   * shadows of two or three pixels (2026-10-14).
-   * NÃO voltar a projetar sempre: o mapa de sombras volta a ser redesenhado a cada 3 quadros.
-   */
+  /** Whether a two-wheeler was drawn whole last frame: then they all cast into the shadow map */
   let bikesWhole = false;
   let castersChanged = false;
   let suspensionClock = typeof performance !== 'undefined' ? performance.now() : 0;
   let suspensionDt = 0;
-  /**
-   * The simulation's own time between two frames drawn (tick and
-   * interpolation): the stride of the people drawn advances with it. Wall time
-   * made them walk on the spot while paused, each frame the mouse asked for
-   * striding with the last speed they had; and at 4x their feet slid.
-   */
+  /** The simulation's own time between two frames drawn (tick and interpolation) */
   let gaitClock = -1;
   let gaitDt = 0;
   let suspensionFrame = 0;
 
-  /**
-   * Writes one instance, positioned in the current agent's frame.
-   *
-   * `along` runs forward, `side` runs to the agent's left and `up` is height
-   * above the road surface; the world-to-three mapping is (x, y) -> (x, h, -y)
-   * and a world heading is the three yaw directly. `tint` below zero leaves the
-   * instance colour alone, for parts whose material already says everything.
-   */
+  /** Writes one instance, positioned in the current agent's frame. */
   const place = (
     part: Part,
     along: number,
@@ -1317,8 +1031,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     rake = 0,
     yaw = 0,
   ): void => {
-    // Through the vehicle's one transform (`fq`): position and orientation
-    // both, so a lean or a gradient carries every part together.
+    // Through the vehicle's one transform (`fq`)
     toWorld(along, up, side, partPoint);
     object.position.set(partPoint.x, partPoint.h, -partPoint.y);
     eulerScratch.rotation.set(0, yaw, rake);
@@ -1329,14 +1042,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     object.updateMatrix();
     write(part, object.matrix, tint);
   };
-  /**
-   * THE one way an instance of a vehicle's part is written: its matrix, its
-   * tint, a lamp's glow, and the parked car's copy (`recording`). The steering
-   * wheel wrote its own matrix beside this and was not in the copy: every
-   * parked car lost its wheel from its second frame on.
-   * DO NOT write `setMatrixAt` on a part anywhere else: a parked car's copied
-   * frames show only what passed through here.
-   */
+  /** DO NOT write `setMatrixAt` on a part anywhere else: a parked car's copied frames show only what passed through here. */
   const write = (part: Part, matrix: Matrix4, tint: number): void => {
     if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
     part.mesh.setMatrixAt(part.n, matrix);
@@ -1349,20 +1055,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     if (recording) recording.push({ part, m: new Float32Array(matrix.elements), tint, linear: tint >= 0 ? colour.clone() : null });
     part.n++;
   };
-  /**
-   * A part's buffers made at least `needed` instances long, doubling (a
-   * growing array's amortised constant cost): its matrices, colours and, for
-   * the lamps, their glow, with what is written so far carried over. three
-   * cannot resize a buffer attribute (`WebGLAttributes.update`: "Resizing
-   * buffer attributes is not supported"), so they are new attributes, and the
-   * old ones' GPU buffers are freed first: an instanced mesh's `dispose` frees
-   * its `instanceMatrix` and `instanceColor` buffers and its vertex array
-   * states (`WebGLObjects` `onInstancedMeshDispose`), a geometry's its own
-   * attributes (`WebGLGeometries` `onGeometryDispose`); both are uploaded
-   * again on the next draw.
-   * DO NOT go back to dropping what passes the capacity: the town's parked
-   * cars past the fleet's ceiling were not drawn.
-   */
+  /** DO NOT go back to dropping what passes the capacity: the town's parked cars past the fleet's ceiling were not drawn. */
   const growPart = (part: Part, needed: number): void => {
     const mesh = part.mesh;
     let capacity = Math.max(1, mesh.instanceMatrix.count);
@@ -1385,16 +1078,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       lampGlow = glow;
     }
   };
-  /**
-   * A parked car's instances as written (`place`), kept while it stands where
-   * it stood: written again by copying, with none of the sums (the town's
-   * parked cars were worked out afresh every frame).
-   */
-  /**
-   * `linear`: the tint as the working colour space holds it, worked out once
-   * (three's `Color.setHex` converts from sRGB on every call: for the town's
-   * parked cars, every frame, 164 ms in 8 s).
-   */
+  /** A parked car's instances as written (`place`), kept while it stands where it stood */
+  /** `linear`: the tint as the working colour space holds it, worked out once */
   interface Written { readonly part: Part; readonly m: Float32Array; readonly tint: number; readonly linear: Color | null }
   let recording: Written[] | null = null;
   const parkedDraws = new Map<number, { x: number; y: number; angle: number; deck: number; band: number; paint: number; writes: Written[]; seen: number; blob: Matrix4 | null }>();
@@ -1416,8 +1101,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const placeWheels = (plan: BodyPlan, band: number): void => {
     const d = plan.wheelRadius * 2;
     plan.axleAlong.forEach((along, axle) => {
-      // Only the front axle steers; every hub turns with the distance driven,
-      // which is what makes a wheel read as rolling rather than sliding.
+      // Only the front axle steers; every hub turns with the distance driven
       const steer = axle === 0 ? lamp.steer : 0;
       if (plan.shape === 'bicycle') {
         place(thinWheels, along, 0, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
@@ -1451,11 +1135,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     });
   };
 
-  /**
-   * Hatchback, sedan, SUV and van, from the class's model (`vehicleModels.ts`):
-   * a shaped body with its wheel arches, doors on hinges, glass you can see
-   * through, and a cabin with seats and a wheel.
-   */
+  /** Hatchback, sedan, SUV and van, from the class's model (`vehicleModels.ts`) */
   const drawCar = (vehicle: SimVehicle, plan: BodyPlan, paintHex: number, look: VehicleLook, band: number): void => {
     const car = carParts.get(bodyKey(vehicle));
     if (!car) return;
@@ -1473,11 +1153,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       place(shell, 0, 0, 0, 1, 1, 1, paintHex);
       place(car.glass, 0, 0, 0, 1, 1, 1, -1);
     } else if (!doorsMoving) {
-      // A window down: the fixed glazing, then each door's window, lowered
-      // into its door - behind the painted skin and the door card, so it is
-      // never seen outside the door, and the person beside it shows through
-      // the opening. `windowsDown` was worked out for every car and never
-      // read: every window was always shut.
+      // A window down: the fixed glazing, then each door's window, lowered into its door
       place(shell, 0, 0, 0, 1, 1, 1, paintHex);
       place(car.openGlass, 0, 0, 0, 1, 1, 1, -1);
       model.doors.forEach((door, i) => {
@@ -1547,19 +1223,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     for (let i = 0; i < seats; i++) if ((vehicle.seats & (1 << i)) !== 0 && seatPerson(vehicle, i).ageClass === 'child') return true;
     return false;
   };
-  /**
-   * The vehicles whose people were cast (`seatIdentity`), by id: when one is
-   * gone from the world its people are forgotten by the casting (`forgetCast`).
-   */
+  /** The vehicles whose people were cast (`seatIdentity`), by id */
   const castVehicles = new Map<number, SimVehicle>();
   /** The fleet's version `forgetCast` last looked at. */
   let castFleet = -1;
-  /**
-   * The people of the vehicles gone from the world let go by the casting,
-   * when the fleet changed: their end is the simulation's (`CastingRegistry`).
-   * O(vehicles whose people were drawn), never the whole registry. A car
-   * standing in a bay (`ambient.isParked`) is still about.
-   */
+  /** The people of the vehicles gone from the world let go by the casting, when the fleet changed */
   const forgetCast = (world: SimWorld): void => {
     const fleet = world.vehicles.version;
     if (fleet === castFleet) return;
@@ -1581,28 +1249,17 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** The whole person in a seat: its world point, written without allocating. */
   const seatPoint: { x: number; y: number; h?: number } = { x: 0, y: 0, h: 0 };
 
-  /**
-   * The people in a car, each in a seat of the model: the driver at the wheel
-   * on the left, then the front passenger, then the rear bench; on a bus the
-   * passengers upright in its seats.
-   */
+  /** The people in a car, each in a seat of the model */
   const placeCarOccupants = (vehicle: SimVehicle, car: CarParts): void => {
     if (occupantBand < 1) return;
     const model = car.model;
-    // Who is sitting where is the simulation's (`Vehicle.seats`): people get
-    // in and out at the kerb, and somebody on the way in or out is drawn by
-    // `placeKerbPerson`, not in the seat.
+    // Who is sitting where is the simulation's (`Vehicle.seats`)
     const moving = vehicle.kerbStop?.phase === 'transfer' ? vehicle.kerbStop.seat : -1;
     let driverScale = 0;
-    // Only the seats the simulation can fill: `Vehicle.seats` is a 32-bit
-    // mask, and `1 << 32` is 1 again in JavaScript. A bus has more seats than
-    // that, and seats 32 onwards read the bits of seats 0 onwards - seven
-    // phantom passengers in the back of every bus, some of them twins of the
-    // people really aboard.
+    // Only the seats the simulation can fill: `Vehicle.seats` is a 32-bit mask, and `1 << 32` is 1 again in JavaScript.
     const seatCount = Math.min(model.seats.length, vehicle.archetype.seats);
     const hasChild = carriesChild(vehicle);
-    // A person picked up from the street already has a visible identity. Cast
-    // them first so generated seat occupants follow that person's dress code.
+    // A person picked up from the street already has a visible identity.
     for (const pickedFirst of [true, false]) for (let index = 0; index < seatCount; index++) {
       if ((vehicle.seats & (1 << index)) === 0 || index === moving) continue;
       if ((vehicle.people[index] !== undefined) !== pickedFirst) continue;
@@ -1610,10 +1267,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       if (seat.row > rowsDrawn) continue;
       seatWorldInto(seat, seatPoint, seat.hipY);
       const who = seatIdentity(vehicle, seatPerson(vehicle, index), hasChild);
-      // The seat's pose (`riderPoses.ts`) with a glance now and then
-      // (`occupants.ts`). A car seat sizes its occupant to clear the roof
-      // lining; an upright cab or bus seat, whose feet must be on the floor,
-      // draws them at the size the pose was solved at.
+      // The seat's pose (`riderPoses.ts`) with a glance now and then (`occupants.ts`).
       const slain = seat.driver && vehicle.slain === true;
       const plays = occupantPlays(seat, who.seed, frameClock, seatPlays, slain);
       const fixed = seat.pose === 'car' ? 0 : 1;
@@ -1621,8 +1275,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         0, seatFitScale(seat), false, fixed, null, slain ? 'dead' : undefined);
       if (seat.driver) driverScale = drawn;
     }
-    // The wheel where this driver's hands are: at their own size, and turned
-    // with the front wheels.
+    // The wheel where this driver's hands are: at their own size, and turned with the front wheels.
     if (car.steering && model.steering) {
       const seat = model.seats[model.steering.seat]!;
       const wheel = model.steering.wheel;
@@ -1659,10 +1312,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   const seatWorld = (seat: { x: number; z: number }): { x: number; y: number } =>
     ({ x: fx + fdx * seat.x + fdy * seat.z, y: fy + fdy * seat.x - fdx * seat.z });
-  /**
-   * A seat (X forward, Z to the right, `up` above the road) to world, through
-   * the vehicle's transform: on a gradient the people ride with the car.
-   */
+  /** A seat (X forward, Z to the right, `up` above the road) to world, through the vehicle's transform */
   const seatWorldInto = (seat: { x: number; z: number }, out: { x: number; y: number; h?: number }, up = 0): void => {
     toWorld(seat.x, up, -seat.z, partPoint);
     out.x = partPoint.x;
@@ -1679,15 +1329,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return { x: dx * fdx + dy * fdy, z: dx * fdy - dy * fdx };
   };
 
-  /**
-   * Somebody getting out at the kerb, or in. At a hinged door
-   * (`occupants.kerbFigure`): turned on the seat towards the open door, onto
-   * the sill with the feet on the road, up out of the car in the opening, and
-   * round the back of the open door to the footway - or all of it the other
-   * way round. At a bus's plug door, a step up through it. Positions come
-   * from the body model's seat and door, the timing from the simulation
-   * (`kerbTransfer`).
-   */
+  /** Somebody getting out at the kerb, or in. */
   const placeKerbPerson = (vehicle: SimVehicle, model: VehicleModel, stop: KerbStop): void => {
     const progress = kerbTransfer(stop);
     const person = stop.person;
@@ -1735,12 +1377,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     walkTo(outside.x, outside.y, inside.x, inside.y, stop.kind === 'pick' ? t : 1 - t, fdeck + m(0.25) * t);
   };
 
-  /**
-   * A motorcycle or a bicycle from its model: the frame and bodywork, the
-   * steering assembly turned about the head tube, the cranks of a bicycle
-   * turned by the pedalling, and the rider astride it. The frame state
-   * already carries the lean (`frameAt`), so every part tips with it.
-   */
+  /** A motorcycle or a bicycle from its model */
   const drawTwoWheeler = (vehicle: SimVehicle, plan: BodyPlan, paintHex: number, look: VehicleLook, band: number): void => {
     const bike = twoWheelerParts.get(vehicle.archetype.id);
     if (!bike) return;
@@ -1758,13 +1395,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     placeRiderFigure(vehicle, model, plan.shape === 'bicycle', look);
   };
 
-  /**
-   * The person astride: a baked IK pose (`riderPoses.ts`) with the hands on
-   * the grips and the feet on the pegs or pedals, blended towards the stopped
-   * pose (a foot down) as the machine comes to rest and towards the steering
-   * poses as the bars turn; pedalling follows the cranks exactly. The pelvis
-   * is placed on the seat with the frame's lean, and the figure leans with it.
-   */
+  /** The person astride: a baked IK pose */
   const placeRiderFigure = (vehicle: SimVehicle, model: TwoWheelerModel, cyclist: boolean, look: VehicleLook): void => {
     if (occupantBand < 1) return;
     const pelvisUp = model.seatY;
@@ -1789,13 +1420,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       if (steer < 0) plays.push({ key: 'motoRight', phase: 0, weight: moving * -steer });
       plays.push({ key: 'motoStop', phase: 0, weight: 1 - moving });
     }
-    // At the size the pose was solved at: the hands are on the grips and the
-    // feet on the pegs or pedals only there.
+    // At the size the pose was solved at: the hands are on the grips and the feet on the pegs or pedals only there.
     const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, fyaw, plays, froll, Infinity, false, 1,
       cyclist ? null : helmetMatrix);
     if (!cyclist && drawn > 0) {
-      // A motorcyclist's helmet, fitted to this body's head
-      // (`riderPoses.helmetShape`) and put where the pose just drawn has it.
+      // A motorcyclist's helmet, fitted to this body's head (`riderPoses.helmetShape`) and put where the pose just drawn has it.
       write(helmets, helmetMatrix, look.helmet);
     }
   };
@@ -1809,29 +1438,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const lamp: LampState = { head: HEADLAMP, tail: TAILLAMP, indicate: 0, steer: 0, spin: 0, crank: 0 };
   const odometer = new WheelOdometer();
   // One elevation callback for every vehicle and pedestrian drawn this frame.
-  // A closure per entity - `elevationAt(world, x, y, seg)` with the segment
-  // captured - was an allocation per entity per frame, thousands a second in
-  // a busy town. `roadFrame` and `groundGradient` call it synchronously, so a
-  // mutable pair read at call time is the same answer without the garbage.
   let currentWorld: SimWorld | undefined;
   let currentSegment: SegmentId | undefined;
   const elevationOnCurrent = (x: number, y: number): number => elevationAt(currentWorld!, x, y, currentSegment);
-  /**
-   * The height a car off the road stands at: its lot's surface as drawn, or the
-   * road's where it crosses the footway on its way in or out. Kept per car while
-   * it stands still, with the diary's serial it was asked at (`seen`): asked
-   * again only when a change of the ground, the roads' heights or the lots
-   * since then reaches where it stands (`ChangeJournal.touches`), as every
-   * reader of the ground reads it (`groundChanges.ts`, `lotOverlay.ts`).
-   * DO NOT key it by position alone: a parked car kept the height it was first
-   * asked at and floated over (or sank into) the ground edited under it.
-   */
+  /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over */
   const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number; seen: number }>();
-  /**
-   * The diary's new entries of `OFF_ROAD_GROUND`, read once a frame (`sync`) and filed by cell: each
-   * car asks the cell it stands in. DO NOT ask the diary per car (`touches`): every car read every
-   * entry since its serial, cars x entries a frame - 30 s of a 2 560 m city's growing, quadratic.
-   */
+  /** DO NOT ask the diary per car (`touches`): every car read every entry since its serial, cars x entries a frame */
   let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
   const offRoadDeck = (world: SimWorld, v: SimVehicle, x: number, y: number): number => {
@@ -1849,9 +1461,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     offRoadDecks.set(v, { x, y, deck, seen: offRoadSerial });
     return deck;
   };
-  // `vehicleLook` by id: it is a pure function of the id and the seat count,
-  // and it was rebuilding the same ten-field object for every vehicle every
-  // frame. Pruned like the suspension, on the frame counter.
+  // `vehicleLook` by id: it is a pure function of the id and the seat count
   const looks = new Map<number, { seats: number; look: VehicleLook; seen: number }>();
 
   return {
@@ -1870,9 +1480,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (!pal || !sk) continue;
         // At this person's own joints (`skeleton` gives the binds moved to them).
         const bind = sk.inverses.map((m4) => { const e = inv.copy(m4).invert().elements; return [e[12]!, e[13]!, e[14]!] as const; });
-        // Measured against the same person standing (their own proportions,
-        // `refit`): against the class's bind, a broad-hipped body read as a
-        // thigh stretched 2.6 times.
+        // Measured against the same person standing (their own proportions, `refit`)
         const rest = procedural.ragdoll.standing(person, 0);
         if (!rest) continue;
         const atIn = (m: Float32Array, b: number): [number, number, number] => {
@@ -1961,8 +1569,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         }
       }
       const merged = merge(pieces);
-      // Each wreck its own: the panels buckled and the roof sagged by the
-      // heat and the blast, by a pattern of its own (its id).
+      // Each wreck its own: the panels buckled and the roof sagged by the heat and the blast, by a pattern of its own (its id).
       merged.computeBoundingBox();
       const box = merged.boundingBox!;
       const centre = box.getCenter(new Vector3());
@@ -2008,9 +1615,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       procPixels = options.personPixels ?? null;
       for (const part of allParts) part.n = 0;
       const band = !detailed ? 0 : zoom >= NEAR_DETAIL_ZOOM ? 2 : 1;
-      // Vehicles have their own bands: the far proxy below FAR_BODY_ZOOM, the
-      // whole body above it, the cabin and the people in it from the zoom the
-      // quality tier allows them at.
+      // Vehicles have their own bands: the far proxy below FAR_BODY_ZOOM, the whole body above it
       const occupantZoom = options.occupantZoom ?? OCCUPANT_ZOOM;
       const vehicleBand = !detailed || zoom < FAR_BODY_ZOOM ? 0 : zoom >= occupantZoom ? 2 : 1;
       // Between the occupant zoom and 1.6 times it, only the front row.
@@ -2026,10 +1631,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       vehicleBlobs.begin();
       if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot.
-      // Every one of them: the buffers grow past the fleet's ceiling (`growPart`).
       for (const list of [world.vehiclesInIdOrder(), world.ambient.parked]) for (const vehicle of list) {
-        // Off the road and not moving (the town's parked cars): where it is,
-        // with none of the interpolation's sums.
+        // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
         const at = vehicle.free;
         const pose = POSE;
         if (at && at.px === at.x && at.py === at.y && at.pangle === at.angle) { pose.p.x = at.x; pose.p.y = at.y; pose.angle = at.angle; }
@@ -2039,8 +1642,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const plan = planOf(vehicle.archetype);
         const twoWheeled = plan.shape === 'motorcycle' || plan.shape === 'bicycle';
         const deck = free ? offRoadDeck(world, vehicle, pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, lane?.segment);
-        // Off screen, and too far from it for its shadow to fall on it:
-        // nothing of this vehicle is written this frame.
+        // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
         if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.5 + plan.height * 2)) continue;
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
         let ride = suspension.get(vehicle.id);
@@ -2063,8 +1665,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         // Standing where it stood, drawn as it was: its instances copied, none of the sums.
-        // Not with somebody at its kerb (`placeKerbPerson`): a person is drawn by
-        // the crowd's meshes, not through `write`, and is not in the copy.
         const still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
         if (still) {
           const kept = parkedDraws.get(vehicle.id);
@@ -2086,22 +1686,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           // Off the road (a lot, a drive) the wheels raise dust.
           options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
         }
-        // A two-wheeler leans into its bend and, stopped, tilts onto the
-        // rider's foot on the road (`TwoWheelerFit.stopTilt`).
+        // A two-wheeler leans into its bend and, stopped, tilts onto the rider's foot on the road (`TwoWheelerFit.stopTilt`).
         const fit = twoWheeled ? twoWheelerParts.get(vehicle.archetype.id)?.model.fit : undefined;
-        // The road under each axle and each side: pitch from the axles, roll
-        // from the sides, height where the frame's origin sits between them.
-        // Sampled on the vehicle's own road, so a deck or a bore is what it
-        // rides on, never the ground under or over it.
+        // The road under each axle and each side
         const front = plan.axleAlong[0] ?? plan.length * 0.35;
         const rear = plan.axleAlong[plan.axleAlong.length - 1] ?? -plan.length * 0.35;
         const seg = lane?.segment ?? (lane ? world.connector(lane.id)?.inSegment : undefined);
         currentSegment = seg;
         // A car off the road stands level on its lot (lots are laid near flat).
-        // The road's slope under it worked out every frame whole, every other
-        // frame at the middle level (the last one held between), and not at
-        // all far off (level, on the one height sampled): five samples a
-        // vehicle were the frame's biggest share of its heights.
         const slope = !free && (level >= 2 || twoWheeled || !ride || (level === 1 && ((suspensionFrame + vehicle.id) & 1) === 0));
         const want = WANT;
         if (free || (level === 0 && !twoWheeled)) { want.deck = deck; want.pitch = 0; want.roll = 0; }
@@ -2110,12 +1702,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const wantDeck = want.deck;
         const wantPitch = want.pitch;
         const wantRoll = want.roll;
-        // Suspension: pitch and roll ease towards the road over a few
-        // hundredths of a second, so a change of grade is ridden, not jolted.
-        // The HEIGHT follows the road exactly: eased too, it lagged the road
-        // by metres at speed and the wheels sank into a climb (the contact
-        // test, tests/render/vehicleFrame.spec.ts). Grade breaks themselves
-        // are rounded by the road's vertical curves (world/elevation.ts).
+        // Suspension: pitch and roll ease towards the road over a few hundredths of a second, so a change of grade is ridden
         if (!ride || Math.abs(ride.pitch - wantPitch) > 0.2) {
           ride = { deck: wantDeck, pitch: wantPitch, roll: wantRoll, seen: suspensionFrame, lod: own };
           suspension.set(vehicle.id, ride);
@@ -2140,19 +1727,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         occupantBand = twoWheeled ? vehicleBand : level;
         frameClock = vehicle.age;
 
-        // Brakes and indicators, straight off the simulation. `prev` is the
-        // previous step's kinematics, so the difference is this step's
-        // acceleration without storing anything new on the vehicle.
+        // Brakes and indicators, straight off the simulation.
         const decel = (vehicle.prev.v - vehicle.v) / DT;
         // A car standing in its bay with nobody in it has its lamps off.
         lamp.head = parked ? HEADLAMP_OFF : HEADLAMP;
         lamp.tail = parked ? TAILLAMP_OFF : decel >= BRAKE_DECEL ? BRAKELAMP : TAILLAMP;
-        // `lateral` is the unfinished part of a lane change, signed towards
-        // the lane being left - so the vehicle is heading the other way.
-        // Indicators for a turn ahead, a lane change wanted or under way, and
-        // flashing (`vehicleSignals.ts`); the front wheels steer along the
-        // path and every wheel rolls with the distance driven. Far off (the
-        // proxy: no wheels, no indicators drawn) none of it is worked out.
+        // `lateral` is the unfinished part of a lane change, signed towards the lane being left
         if (level >= 1 || twoWheeled) {
           const side = free ? 0 : indicatorSide(world, vehicle);
           lamp.indicate = side !== 0 && blinkOn(vehicle.age, vehicle.id) ? side : 0;
@@ -2160,8 +1740,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           lamp.steer = free ? 0 : steerAngle(world, vehicle, (axles[0] ?? 0) - (axles[axles.length - 1] ?? 0));
           const driven = odometer.advance(vehicle);
           lamp.spin = -driven / Math.max(plan.wheelRadius, 1e-3);
-          // A bicycle's cranks turn a little over half a turn per turn of the
-          // wheel: about 80 rpm at a city cyclist's 18 km/h.
+          // A bicycle's cranks turn a little over half a turn per turn of the wheel: about 80 rpm at a city cyclist's 18 km/h.
           lamp.crank = (driven / (2 * Math.PI * Math.max(plan.wheelRadius, 1e-3))) * CRANK_RATIO * 2 * Math.PI;
         } else { lamp.indicate = 0; lamp.steer = 0; }
         if (still) recording = [];
@@ -2180,16 +1759,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           parkedDraws.set(vehicle.id, { x: pose.p.x, y: pose.p.y, angle: pose.angle, deck, band: level, paint: paintHex, writes: recording, seen: suspensionFrame, blob: null });
           recording = null;
         }
-        // Below the whole level, its shadow is a soft disc (the body casts none);
-        // a two-wheeler's too while none is drawn whole (`bikesWhole`).
+        // Below the whole level, its shadow is a soft disc (the body casts none); a two-wheeler's too while none is drawn whole
         if ((twoWheeled ? !bikesCast : level < 2) && softShadows) {
           blobMatrix.makeRotationY(pose.angle).setPosition(pose.p.x, ride.deck, -pose.p.y);
           vehicleBlobs.add(blobMatrix, plan.length * 0.55, plan.width * 0.62);
         }
       }
       vehicleBlobs.finish();
-      // The two-wheelers cast only while one is drawn whole; the shared tyres
-      // also while a car is drawn with its wheels.
+      // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn with its wheels.
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
       for (const t of twoWheelerParts.values()) { t.body.mesh.castShadow = bikesCast; t.trim.mesh.castShadow = bikesCast; }
       thinWheels.mesh.castShadow = bikesCast;
@@ -2201,9 +1778,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         nearFloor = nearCandidates[VEHICLE_NEAR_CAP - 1]!;
       } else nearFloor = 0;
 
-      // Pedestrians start at band 1: zoomed out past it a whole person is
-      // smaller than a car's wing mirror, and drawing the crowd there costs
-      // more than the entire fleet does.
+      // Pedestrians start at band 1: zoomed out past it a whole person is smaller than a car's wing mirror
       if (band >= 1) {
         let pedCount = 0;
         for (const ped of world.pedViews) {
@@ -2215,15 +1790,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           const segment = ped.segment;
           currentSegment = segment;
           const land = open && groundAt ? groundAt : elevationOnCurrent;
-          // On the paving drawn under the feet (`world/curbRamps.ts`): the
-          // footway's height, the carriageway's, or a dropped kerb's slope
-          // between them - where both read the same, so stepping onto a zebra
-          // is a walk down the ramp, not a 15 cm drop in one frame.
-          // A footway laid flush (docs/VIAS.md V1) has no rise at all (`footwayRiseAt`).
-          // Off screen first, on the ground under them less the kerb's few
-          // centimetres (the test's sphere is metres across): the paving's
-          // rise and a yard's height are asked only of those drawn. DO NOT ask
-          // them of every walker of the simulation before the test.
+          // DO NOT ask them of every walker of the simulation before the test.
           const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, segment);
           if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, below)) continue;
           const rise = open ? m(0.04) : footwayRiseAt(world.net, pose.p.x, pose.p.y) * walkingRise(world.net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
@@ -2242,10 +1809,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
               ped.lost ?? (ped.maimed ? [ped.maimed] : undefined), ped.gesture ? { t: ped.gesture.t, hold: ped.gesture.hold ?? 0 } : undefined, ped.wound, ped.ageClass);
           }
           else {
-            // The rise is the same on both sides of the difference, so the
-            // gradient is the road's own under the walker. (Only the cooked
-            // bodies lean with it: two more height samples a walker, which the
-            // procedural ones never read.)
+            // The rise is the same on both sides of the difference, so the gradient is the road's own under the walker.
             const ground = groundGradient(land,
               pose.p.x, pose.p.y, deck - rise);
             pedestrians.draw(ped, pose.p.x, pose.p.y, pose.angle, deck, alpha, ground);
@@ -2275,16 +1839,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       pedestrians.finish();
 
       // Upload only what was written this frame.
-      //
-      // `needsUpdate = true` with no range makes three re-send the WHOLE
-      // attribute. These buffers start at the population ceilings and grow
-      // by doubling (`growPart`), so uploading their entire capacity wastes
-      // bandwidth on unused instances.
       for (const part of allParts) {
         part.mesh.count = part.n;
-        // An empty instanced mesh still costs a program bind, its uniforms
-        // and a state change in every pass, the shadow pass included: there
-        // are a hundred and fifty of them and most are empty most frames.
+        // An empty instanced mesh still costs a program bind, its uniforms and a state change in every pass
         part.mesh.visible = part.n > 0;
         const matrix = part.mesh.instanceMatrix;
         matrix.clearUpdateRanges();

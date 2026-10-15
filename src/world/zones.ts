@@ -19,11 +19,7 @@ export interface Zone {
 export const isZoneUse = (value: unknown): value is ZoneUse => ZONE_USES.includes(value as ZoneUse);
 export const isZoneDensity = (value: unknown): value is ZoneDensity => ZONE_DENSITIES.includes(value as ZoneDensity);
 
-/**
- * One zoned cell of the street grid (`world/zoneGrid.ts`), stored by where it
- * stands so it survives the road being split or its ids changing: the cell
- * that stands within half a cell of it is the cell it marks.
- */
+/** One zoned cell of the street grid */
 export interface ZoneMark {
   readonly x: number;
   readonly y: number;

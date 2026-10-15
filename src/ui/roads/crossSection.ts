@@ -2,22 +2,7 @@ import type { ProfileElement, RoadProfileSpec } from '@world/roads/profile';
 import { METERS_PER_UNIT } from '@world/units';
 import { formatDecimal } from '../i18n';
 
-/**
- * A road's CROSS-SECTION drawn as a street section (docs/source/VIAS.md V2), the way
- * Streetmix illustrates a street (docs.streetmix.net, "Segments"): each
- * element as itself, at its width - asphalt with its lane lines and the
- * direction it runs, a car seen from behind in each lane, a raised footway
- * with its paving and somebody on it, a planted median with its tree, a
- * parked car in a bay, a cyclist on a green cycle lane - with the width of each
- * element written under it. People, cars and trees are drawn to the same
- * metre scale as the road (a car 1.8 m wide, a person 1.7 m tall), so a
- * narrow lane looks narrow.
- *
- * One SVG string, built in well under a millisecond for a road of a dozen
- * elements: the editor redraws only this picture while a width or an order
- * is dragged, never the panel round it. Each element is a group `data-index`
- * and each boundary a handle `data-edge` (between element i and i + 1).
- */
+/** A road's CROSS-SECTION drawn as a street section, the way Streetmix illustrates a street */
 export interface SectionDrawing {
   readonly svg: string;
   /** Each element's left and right edge, in SVG pixels. */
@@ -77,7 +62,6 @@ export function drawSection(profile: RoadProfileSpec, options: SectionOptions): 
   const scale = options.scale ?? (width - pad * 2) / total;
   const ppm = scale / METERS_PER_UNIT;
   // The road surface line; raised elements stand `rise` above it.
-  // The depth of the road slab drawn under its surface, so its paving reads.
   const depth = compact ? 4 : 12;
   const base = compact ? Math.round(height * 0.66) : height - depth - (labels ? 30 : 4);
   const rise = compact ? 3 : Math.max(5, Math.min(9, 0.15 * ppm));

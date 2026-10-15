@@ -24,20 +24,11 @@ export interface StreetscapeToolHost {
   redraw(): void;
 }
 
-/**
- * THE LANDSCAPING TOOL: benches, bins, street lights, trees, signs... placed
- * on the footways, where `snapLandscape` puts them (the furnishing zone by
- * the kerb), Shift-click to take one away. Where the item would go under the
- * pointer lives here, with the handlers that use it.
- */
+/** THE LANDSCAPING TOOL: benches, bins, street lights, trees, signs... placed on the footways */
 export class StreetscapeTool {
   /** Where the chosen item would go under the pointer: a ring, red where it cannot. */
   hover: LandscapeSnap | null = null;
-  /**
-   * A row being dragged out from the item just placed (docs/source/VIAS.md V7,
-   * placement in line): the pieces that would follow it along the footway,
-   * one every `ROW_SPACING` of its kind, laid when the button is let go.
-   */
+  /** A row being dragged out from the item just placed (placement in line) */
   row: { readonly kind: LandscapeKind; readonly from: LandscapeSnap; pieces: LandscapeSnap[] } | null = null;
 
   constructor(private readonly host: StreetscapeToolHost) {}
@@ -62,7 +53,6 @@ export class StreetscapeTool {
     const kind = host.kind();
     const placed = snapLandscape(host.net, itemsAround(host, world, this.reach()), kind, world, this.reach());
     // A stop or give-way plate at a junction's approach IS that leg's rule
-    // (docs/source/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
     const signType = kind === 'sign' ? host.extra(kind).signType : undefined;
     const approach = placed.ok && placed.hit && (signType === 'stop' || signType === 'yield')
       ? signApproach(host.net, placed.at, placed.hit.segment) : null;
@@ -93,10 +83,7 @@ export class StreetscapeTool {
     host.redraw();
   }
 
-  /**
-   * `pressed`: the button still down, dragging a row out from the item just placed.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput `pressed`: the button still down, dragging a row out from the item just placed. */
   move(world: Vec2, pressed = false): void {
     const { host } = this;
     if (this.row && pressed) {
@@ -153,17 +140,7 @@ function rowPieces(host: StreetscapeToolHost, kind: LandscapeKind, from: Landsca
   return out;
 }
 
-/**
- * The placed items `snapLandscape` can meet for a point `at` and a `reach`, from
- * the document's cells (`RoadDoc.landscapeIn`), never the whole map. It tests an item
- * against the point it would place: on a footway, at most `reach` past the
- * band and a footway's width in from it, so within `reach + 2H` of `at`, `H`
- * the widest casing of the roads it looks at (those within `reach`); in a
- * median or a meadow, nearer. An item counts within its radius and the new
- * one's, and the gap between them, of that point.
- * DO NOT hand it `doc.landscape.values()`: the hover ran over every item of the
- * map on every pointer move, and a row dragged out did it per piece.
- */
+/** DO NOT hand it `doc.landscape.values()` */
 function itemsAround(host: StreetscapeToolHost, at: Vec2, reach: number): LandscapeItem[] {
   let widest = 0;
   for (const ribbon of ribbonsNear(host.net, [at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {

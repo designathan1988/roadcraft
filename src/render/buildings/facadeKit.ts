@@ -1,24 +1,6 @@
 import { BoxGeometry, ConeGeometry, CylinderGeometry, ExtrudeGeometry, Shape, type BufferGeometry } from 'three';
 
-/**
- * The facade kit: architecture built as geometry - a window is a hole in a
- * wall with its reveal, frame, glass set back, sill and head, not a picture
- * of one on a flat face. The facades are composed as a shape grammar does it
- * (Müller, Wonka et al., "Procedural Modeling of Buildings", SIGGRAPH 2006;
- * Esri CityEngine's CGA `split` with floating sizes and repeats): a face is
- * split into storeys, each storey into bays of a target width that share
- * what is left over, and each bay takes a module - a punched window, a
- * glazed bay of a curtain wall, a door, a pier.
- *
- * Every module works on a `Face`: an axis-aligned wall of a mass, `u` running
- * along it left to right as seen from the street side it faces, `o` the
- * distance out of the wall plane (negative: into the wall), `z` up. The
- * pieces go to the same accumulator as the signature buildings
- * (`signature.ts` `Parts`), merged per material: a building is a handful of
- * draws whatever its windows.
- *
- * Metres in the building's frame: x along the front, y back from it, z up.
- */
+/** The facade kit: architecture built as geometry */
 
 /** What the kit draws into (`signature.ts` `Parts`). */
 export interface Sink {
@@ -72,10 +54,7 @@ export function fpoint(f: Face, u: number, o: number): { x: number; y: number } 
 /** The angle (radians about three's up axis) that turns a part made facing -y (the front) to face `f`. */
 const turn = (f: Face): number => (f.side === 'front' ? 0 : f.side === 'back' ? Math.PI : f.side === 'left' ? -Math.PI / 2 : Math.PI / 2);
 
-/**
- * A floating split with repeats (CGA `split(x){ ~w : Bay }*`): as many bays
- * of about `target` as fit, sharing the length exactly. Returns the edges.
- */
+/** A floating split with repeats (CGA `split(x){ ~w : Bay }*`) */
 export function repeat(length: number, target: number, min = 1): number[] {
   const n = Math.max(min, Math.round(length / target));
   return Array.from({ length: n + 1 }, (_, i) => (i * length) / n);
@@ -108,12 +87,7 @@ export interface WindowSpec {
   readonly balconette?: boolean;
 }
 
-/**
- * A punched window in one bay of one storey: the wall round the opening
- * (piers, the panel under the sill, the lintel), the reveal, the glass set
- * back with its frame and bars, a projecting sill, and the dressing a style
- * asks for - a surround, a cornice or pediment over it, an arched head.
- */
+/** A punched window in one bay of one storey: the wall round the opening */
 export function punched(p: Sink, f: Face, u0: number, u1: number, z0: number, z1: number, w: WindowSpec): void {
   const bay = u1 - u0, st = z1 - z0;
   const ow = Math.min(bay - 0.3, bay * w.w), oh = Math.min(st - w.sill - 0.25, st * w.h);
@@ -170,10 +144,7 @@ export function punched(p: Sink, f: Face, u0: number, u1: number, z0: number, z1
   }
 }
 
-/**
- * A flat piece on a face made from a 2D outline in the face's own plane
- * (`u` across, `z` up), extruded from `o0` to `o1` out of it.
- */
+/** A flat piece on a face made from a 2D outline in the face's own plane */
 function extrudeOnFace(p: Sink, f: Face, mat: string, shape: Shape, o0: number, o1: number, segments = 16): void {
   const g = new ExtrudeGeometry(shape, { depth: o1 - o0, bevelEnabled: false, curveSegments: segments });
   g.translate(0, 0, o0);
@@ -224,10 +195,7 @@ export function railFace(p: Sink, f: Face, u0: number, u1: number, o: number, z:
   else p.rail(A.x - 0.03, A.x + 0.03, Math.min(A.y, B.y), Math.max(A.y, B.y), z, h);
 }
 
-/**
- * A cornice: a stepped profile of `steps` courses growing out to `depth`
- * (a cyma's silhouette in boxes), with dentils under it when asked.
- */
+/** A cornice: a stepped profile of `steps` courses growing out to `depth` */
 export function cornice(p: Sink, f: Face, mat: string, u0: number, u1: number, z: number, h: number, depth: number, dentils = false): void {
   const steps = 4;
   for (let k = 0; k < steps; k++) {
@@ -319,10 +287,7 @@ export function awning(p: Sink, f: Face, u0: number, u1: number, z: number, dept
   fbox(p, f, mat, u0, u1, depth - 0.04, depth, z - 0.95, z - 0.7);
 }
 
-/**
- * A door bay: a glazed double door (or a timber one) in a deep frame, a
- * transom light over it, an arched head for a classical portal.
- */
+/** A door bay: a glazed double door */
 export function door(p: Sink, f: Face, u0: number, u1: number, z0: number, h: number, opts: { wall: string; trim: string; leaf?: string; frame?: string; arch?: boolean; portal?: boolean }): void {
   const w = u1 - u0;
   const a = u0 + 0.15, b = u1 - 0.15;
@@ -383,11 +348,7 @@ export function finial(p: Sink, x: number, y: number, z: number, h: number, mat:
   p.pushRaw(cap, point);
 }
 
-/**
- * A curved (bell) mansard over a rectangle: the lower slope bowed out, in
- * `n` frustums whose pitch flattens as they rise, a flat top inside a stone
- * curb. Returns the inset of the top.
- */
+/** A curved (bell) mansard over a rectangle */
 export function bellMansard(p: Sink, x0: number, x1: number, y0: number, y1: number, z: number, h: number, inset: number, mat: string): number {
   // The profile of a bell: steep at the eaves, flattening to the curb (a quarter ellipse).
   const n = 4;
@@ -404,11 +365,7 @@ export function bellMansard(p: Sink, x0: number, x1: number, y0: number, y1: num
   return inset;
 }
 
-/**
- * A dormer through a roof slope on face `f`: a stone frame with a
- * round-headed window, its sides, a small hood, a finial over it. `out` is
- * how far its face stands out of the face's plane (negative: back in the slope).
- */
+/** A dormer through a roof slope on face `f` */
 export function archedDormer(p: Sink, f: Face, c: number, w: number, z: number, h: number, out: number, depth: number, frame: string, glass = 'glassLit'): void {
   const r = w / 2;
   // The cheeks and the face.
@@ -449,10 +406,7 @@ export function consoles(p: Sink, f: Face, mat: string, u0: number, u1: number, 
   }
 }
 
-/**
- * A carved panel (a cartouche) on a face, in relief: a raised frame, an oval
- * boss in the middle and a round boss either side.
- */
+/** A carved panel (a cartouche) on a face, in relief */
 export function cartouche(p: Sink, f: Face, u0: number, u1: number, z0: number, z1: number, mat = 'stoneLight'): void {
   const t = 0.06;
   fbox(p, f, mat, u0, u1, 0, 0.06, z0, z0 + t);

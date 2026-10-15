@@ -3,34 +3,7 @@ import {
   hedge, lampPost, pier, plantedTree, punched, railFace, repeat, span, spire, WALL, type Sink,
 } from './facadeKit';
 
-/**
- * The five buildings of the reference sheet the player gave on 2026-10-09
- * (oldest to newest), modelled after it piece by piece from the facade kit
- * (`facadeKit.ts`):
- *
- * A. a Beaux-Arts hotel: five bays between colossal pilasters and corner
- *    pavilions, carved panels under the windows, a rusticated base of three
- *    arches (awnings either side, the arched entrance in the middle) and an
- *    arcade down the side, an attic of cartouches under a bracketed cornice,
- *    a balustrade with planters, a bell mansard in green copper with arched
- *    dormers, finials and a two-level penthouse;
- * B. an Art Deco office tower: stone wings either side of a recessed middle
- *    strip between massive piers, gilded spandrels, a three-storey gilded
- *    entrance, four setbacks whose piers rise past the parapets, trees on the
- *    terraces, a ribbed crown, a gilded cap and needle;
- * C. a modernist office: light continuous mullions and dark spandrels round a
- *    lit glass box, a double-height lobby in light stone, a thick coping and
- *    a dark plant penthouse;
- * D. contemporary flats: a white gridded block of seven storeys with a glazed
- *    corner, a planted terrace on it, a tower set back with stacked glass
- *    balconies, a terracotta blade, a white stair box and a roof garden;
- * E. a blue glass tower: silver floor bands, white corner frames, a lit strip
- *    up the front carried past the roof, two lower wings ending in planted
- *    terraces, a dark glazed podium.
- *
- * `W` x `D` is the base block (x along the street front at y = 0), `g` the
- * ground storey and `s` the others, `upper` the storeys over the ground.
- */
+/** The five buildings of the reference sheet the player gave on 2026-10-09 */
 
 interface LandmarkSink extends Sink {
   lamp(x: number, y: number, z?: number, h?: number): void;

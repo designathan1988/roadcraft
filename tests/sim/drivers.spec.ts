@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
 
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
@@ -10,14 +9,7 @@ import { ARCHETYPES, archetypeById } from '@sim/vehicles/archetypes';
 import { desiredSpeed, makeDriver } from '@sim/vehicles/driver';
 import { Rng } from '@core/rng';
 
-/**
- * The driver, as distinct from the vehicle.
- *
- * These are the properties the "traffic looks robotic" complaint actually names:
- * that two cars of the same class behave differently, that one of them is
- * willing to pull out and pass, and that neither of those costs the safety the
- * rest of the engine depends on.
- */
+/** The driver, as distinct from the vehicle. */
 
 function fleetOfDrivers(n: number) {
   const rng = new Rng(0x51ce);
@@ -42,9 +34,7 @@ describe('driver variation', () => {
   });
 
   it('barely varies the emergency brake', () => {
-    // The safe-speed cap sizes every following distance from `bEmergency`. A
-    // driver who cannot brake as hard as the cap assumed can be driven into the
-    // car in front by arithmetic, so this one is deliberately almost constant.
+    // The safe-speed cap sizes every following distance from `bEmergency`.
     const drivers = fleetOfDrivers(400);
     expect(spread(drivers.map((d) => d.bEmergency))).toBeLessThan(0.02);
     const sedan = archetypeById('sedan');
@@ -55,9 +45,7 @@ describe('driver variation', () => {
   });
 
   it('keeps one driver internally consistent', () => {
-    // Drawing each parameter independently gives a population that is varied
-    // and individually incoherent: someone who tailgates and then refuses a
-    // forty-metre gap reads as a bug rather than as a person.
+    // Drawing each parameter independently gives a population that is varied and individually incoherent
     for (const driver of fleetOfDrivers(200)) {
       const sedan = archetypeById('sedan');
       const quick = driver.a > sedan.a;
@@ -131,13 +119,7 @@ function run(sim: SimWorld, seconds: number): void {
 
 describe('overtaking', () => {
   it('lets faster vehicles pass slower ones instead of queueing behind them', () => {
-    // Without a discretionary change every vehicle inherits the speed of the
-    // slowest one ahead of it for the length of the block, which is why a
-    // bicycle on an avenue used to gather a silent procession behind it.
-    //
-    // The measurement is an actual OVERTAKE: a pair that swaps order along the
-    // road while travelling the same way. Counting lane changes alone would
-    // pass on a fleet that shuffled sideways and got nowhere.
+    // Without a discretionary change every vehicle inherits the speed of the slowest one ahead of it for the length of the
     const { sim } = avenue();
     run(sim, 60);
 
@@ -147,8 +129,7 @@ describe('overtaking', () => {
       before.set(v.id, { s: v.s, dir: direction(v.lanelet) });
     }
 
-    // Short enough that the pairs sampled above are still on the road: the
-    // avenue is 1800 units and a free-flowing car covers that in about a minute.
+    // Short enough that the pairs sampled above are still on the road
     let attemptedChanges = 0;
     if (process.env['ROADCRAFT_RECORD_OVERTAKES'] === '1') {
       for (let tick = 0; tick < Math.round(25 / DT); tick++) {
@@ -174,17 +155,7 @@ describe('overtaking', () => {
         if (wasA.s > wasB.s && a.s < b.s) youngerOvertakes++;
       }
     }
-    if (process.env['ROADCRAFT_RECORD_OVERTAKES'] === '1') {
-      writeFileSync('docs/audit/overtaking-baseline.json', JSON.stringify({
-        before: before.size, after: after.length, attemptedChanges,
-        olderOvertakes, youngerOvertakes, overtakes: olderOvertakes + youngerOvertakes,
-        vehicles: after.map(vehicle => ({ id: vehicle.id, type: vehicle.archetype.id,
-          s: vehicle.s, speed: vehicle.v, lanelet: vehicle.lanelet, lateral: vehicle.lateral,
-          age: vehicle.age })),
-      }, null, 2) + '\n');
-    }
-    // IDs order spawn time, not driving order. A newly spawned faster car can
-    // pass an older slow one; both directions of an actual order swap count.
+    // IDs order spawn time, not driving order.
     expect(olderOvertakes + youngerOvertakes).toBeGreaterThan(0);
 
     // And the fleet is mixed, so the speeds on an open road must be mixed too.
@@ -194,9 +165,7 @@ describe('overtaking', () => {
   });
 
   it('does not let the fleet accumulate in the inner lane', () => {
-    // MOBIL is perfectly reversible without an asymmetry, so a fleet that drifts
-    // inward stays there. The keep-to-the-kerb bias is what drains it back, and
-    // this is the number that says whether it does.
+    // MOBIL is perfectly reversible without an asymmetry, so a fleet that drifts inward stays there.
     const { sim } = avenue();
     run(sim, 90);
     const byIndex = new Map<number, number>();
@@ -212,8 +181,7 @@ describe('overtaking', () => {
   });
 
   it('does not weave: discretionary changes are rare per driver', () => {
-    // MOBIL without a refractory period flips a driver sitting exactly on the
-    // threshold between two lanes every tick. This is what pins the guard.
+    // MOBIL without a refractory period flips a driver sitting exactly on the threshold between two lanes every tick.
     const { sim } = avenue();
     run(sim, 60);
     const changes = new Map<number, number>();
@@ -230,8 +198,7 @@ describe('overtaking', () => {
       }
     }
     for (const [, count] of changes) {
-      // A lane change every four seconds is the hard floor the cooldown sets;
-      // anything near it over two minutes would be a vehicle weaving.
+      // A lane change every four seconds is the hard floor the cooldown sets
       expect(count).toBeLessThan(seconds / 4);
     }
   });
@@ -251,8 +218,7 @@ describe('overtaking', () => {
   });
 
   it('never overlaps two vehicles in one lane', () => {
-    // The change is decided here and performed by the integrator; a gap test
-    // that passed on stale positions would show up as two bodies in one place.
+    // The change is decided here and performed by the integrator
     const { sim } = avenue();
     run(sim, 90);
     const byLane = new Map<string, { s: number; length: number }[]>();

@@ -4,22 +4,7 @@ import { Heap } from '@core/heap';
 import type { SegmentId } from './ids';
 import { m } from './units';
 
-/**
- * Public transport, as the player lays it out (Cities: Skylines II's order:
- * "Depot -> Stops and stations -> Tracks and roads -> Lines"):
- *
- * - bus STOPS on the streets, beside a road, one of them or more a TERMINAL
- *   where a line's buses turn and wait their time;
- * - TRACKS for trains at grade and for the metro under the ground, drawn as
- *   runs of points; tracks meeting end to end (or end to point) are one
- *   network;
- * - STATIONS on the tracks, of a train line or of the metro;
- * - LINES: the stops or stations in order, a colour, how many vehicles run.
- *   A line runs out along its stops and back the same way.
- *
- * Plain data, saved with the map (`RoadDoc.transit`); the simulation is in
- * `sim/transit/`, the tools in `editor/transitTools.ts`.
- */
+/** Public transport, as the player lays it out */
 
 export type TransitMode = 'bus' | 'train' | 'metro';
 
@@ -70,11 +55,7 @@ export const emptyTransit = (): TransitData => ({ stops: [], tracks: [], lines: 
 const LINE_COLOURS = ['#e8443a', '#2f7de1', '#2fb36b', '#f2a33a', '#9b59d0', '#14a5b8', '#e85d9b', '#7a8a2a'];
 
 const isMode = (v: unknown): v is TransitMode => v === 'bus' || v === 'train' || v === 'metro';
-/**
- * A line's colour as the game writes it (`LINE_COLOURS`): read from a map file it reaches a
- * style property, three's `Color` and a canvas, so only this exact shape passes (OWASP XSS
- * Prevention Cheat Sheet, "strict structural validation"). DO NOT accept any string.
- */
+/** DO NOT accept any string. */
 const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -179,18 +160,12 @@ export interface RailGraph {
   readonly at: Map<number, number[]>;
 }
 
-/**
- * The tracks of one mode as a graph: every point of every track a node, each
- * run between two a stretch; points of different tracks within `JOIN` are
- * one, so tracks drawn end to end, or a branch started on a track, connect.
- */
+/** The tracks of one mode as a graph: every point of every track a node, each run between two a stretch */
 export function railGraph(t: TransitData, mode: 'train' | 'metro'): RailGraph {
   const points: Vec2[] = [];
   const edges: RailEdge[] = [];
   const at = new Map<number, number[]>();
-  // The points by cell of `JOIN`: a point within `JOIN` of another is in its
-  // cell or one beside it. DO NOT search every point for each point: a city's
-  // rails were points² for every line built.
+  // DO NOT search every point for each point: a city's rails were points² for every line built.
   const cells = new Map<number, number[]>();
   const cellOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
   const node = (p: Vec2): number => {
@@ -252,12 +227,7 @@ const trackCells = identityMemo((t: TransitData): Map<number, TrackStretch[]> =>
   return cells;
 });
 
-/**
- * The point of a track nearest `p` within `reach`, and its track; null when
- * none is. The stretches within reach are read by cell (`trackCells`), in the
- * order a walk of every track meets them, so the first of equals is the same.
- * DO NOT walk every point of every track for each move of the pointer.
- */
+/** DO NOT walk every point of every track for each move of the pointer. */
 export function nearestTrack(t: TransitData, p: Vec2, reach: number, mode?: 'train' | 'metro'): { track: number; x: number; y: number; d: number } | null {
   let best: { track: number; x: number; y: number; d: number } | null = null;
   for (const s of stretchesNear(t, p, reach)) {
@@ -283,14 +253,7 @@ function stretchesNear(t: TransitData, p: Vec2, reach: number): TrackStretch[] {
   return [...found].sort((u, v) => u.order - v.order);
 }
 
-/**
- * The first point of a track (an end or a corner) closer than `reach` to `p`,
- * in the order a walk of every track's points meets them; null when none is.
- * A point within reach ends a stretch filed in a cell within reach, and the
- * stretches are walked in order, their start before their end: the same point
- * the walk of every point of every track found. DO NOT walk every point of
- * every track for each move of the pointer (the track tool's snap).
- */
+/** DO NOT walk every point of every track for each move of the pointer (the track tool's snap). */
 export function trackPointNear(t: TransitData, p: Vec2, reach: number, mode: 'train' | 'metro'): Vec2 | null {
   for (const s of stretchesNear(t, p, reach)) {
     if (s.mode !== mode) continue;
@@ -317,11 +280,7 @@ const stopIndex = identityMemo((t: TransitData) => {
 /** A stop by its id, or undefined. DO NOT `stops.find` it: the lines' drawing asked every stop of the map for each stop of each line, every frame. */
 export const stopById = (t: TransitData, id: number): TransitStop | undefined => stopIndex(t).byId.get(id);
 
-/**
- * The stop (or station) nearest `p` closer than `reach`, of a mode if given:
- * the first of equals in the list's order, as a walk of every stop found it.
- * Read in the cells within reach only.
- */
+/** The stop (or station) nearest `p` closer than `reach`, of a mode if given */
 export function stopNear(t: TransitData, p: Vec2, reach: number, mode?: TransitMode): TransitStop | null {
   const { cells } = stopIndex(t);
   const found: { stop: TransitStop; order: number }[] = [];
@@ -339,11 +298,7 @@ export function stopNear(t: TransitData, p: Vec2, reach: number, mode?: TransitM
   return best;
 }
 
-/**
- * The way along the tracks from one point on them to another: the points to
- * pass, from `from` to `to`; null when the two are on tracks that do not
- * meet. Both points are first put on their nearest stretch.
- */
+/** The way along the tracks from one point on them to another: the points to pass, from `from` to `to` */
 export function railPath(g: RailGraph, from: Vec2, to: Vec2): Vec2[] | null {
   const onEdge = (p: Vec2): { e: number; u: number; q: Vec2 } | null => {
     let best: { e: number; u: number; q: Vec2; d: number } | null = null;
@@ -368,9 +323,7 @@ export function railPath(g: RailGraph, from: Vec2, to: Vec2): Vec2[] | null {
   const se = g.edges[s.e]!;
   dist[se.a] = se.length * s.u;
   dist[se.b] = se.length * (1 - s.u);
-  // The nearest point not settled from a binary heap (stale entries skipped).
-  // DO NOT scan every point for the nearest at each step: points² per stretch
-  // of every line.
+  // DO NOT scan every point for the nearest at each step: points² per stretch of every line.
   const queue = new Heap();
   queue.push(se.a, dist[se.a]!);
   queue.push(se.b, dist[se.b]!);
@@ -398,11 +351,7 @@ export function railPath(g: RailGraph, from: Vec2, to: Vec2): Vec2[] | null {
 /** The longest stretch a track may run on a road's carriageway: it crosses streets, it does not run down them. */
 export const ALONG_ROAD = m(12);
 
-/**
- * How far, at most, a run of track lies on a road without leaving it: a
- * level crossing is a few metres; a track laid down a street is the length of
- * the street. `onRoad` says whether a point is on a carriageway.
- */
+/** How far, at most, a run of track lies on a road without leaving it: a level crossing is a few metres */
 export function longestOnRoad(points: readonly Vec2[], onRoad: (p: Vec2) => boolean): number {
   const STEP = m(1);
   let run = 0, worst = 0;

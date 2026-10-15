@@ -3,11 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { coneFrames, direction, hingeFrame, validFrame } from '@render/ragdollAxes';
 import { Rng } from '@core/rng';
 
-/**
- * A joint's frames are rotations whatever the body's particles are
- * (docs/PROBLEMS.md R1): unit, perpendicular axes, also for a thigh's cone
- * leant forwards and for particles left on one point by a limb torn off.
- */
+/** A joint's frames are rotations whatever the body's particles are */
 describe('the frames of a ragdoll joint', () => {
   const side = new Vector3(1, 0, 0);
   const fwd = new Vector3(0, 0, 1);

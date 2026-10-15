@@ -4,14 +4,7 @@ import { sameParking } from '@world/parking';
 import { sameRoadSection } from '@world/roadSection';
 import { type ProfileProblem, type RoadProfileSpec, applyProfile, profileProblems } from '@world/roads/profile';
 
-/**
- * Applying a profile to roads already built (docs/source/VIAS.md V1: "aplicar sem
- * demolir"): the segment keeps its id, its nodes, its curve and everything
- * placed beside it; only its cross-section changes, through the document's
- * own setters, so the network, the lanelets and the markings rebuild from it
- * as from any edit. Run inside `guardRoadEdit` (main.ts `mutateRoads`), it is
- * judged by the editing rules and paid for like every road edit.
- */
+/** Applying a profile to roads already built (: "aplicar sem demolir") */
 export interface ApplyResult {
   readonly changed: boolean;
   readonly problems: readonly ProfileProblem[];

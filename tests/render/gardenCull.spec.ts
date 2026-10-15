@@ -6,12 +6,7 @@ import { SHADOW_REACH, createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
 import { townChanges } from '../support/gardenChange';
 
-/**
- * The gardens are culled cell by cell down a quadtree (`gardens.ts`, audit
- * C7): the plants drawn for a view must be exactly the ones a test of every
- * plant's own sphere keeps, and a cull that sees the same plants must send
- * nothing to the GPU again.
- */
+/** The gardens are culled cell by cell down a quadtree (`gardens.ts`, audit C7) */
 const KINDS: GardenPlant['kind'][] = ['tree', 'shrub', 'hedge', 'flowers'];
 function town(count: number, spread: number, seed: number): GardenPlant[][] {
   const rng = new Rng(seed);

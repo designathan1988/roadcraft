@@ -1,17 +1,6 @@
 import { m } from './units';
 
-/**
- * THE universal grid: every street, footway, junction, lot, zone and piece of
- * street furniture is measured against it.
- *
- * Cells of 10 x 10 m, each cut into ten subdivisions of 1 m. A road's
- * cross-section is laid out in whole subdivisions (a residential street is
- * 2 + 6 + 2 = 10 m: one cell), the zoning grid is made of whole cells, and the
- * road tool's snap places points on the subdivision.
- *
- * Lengths are world units (`units.ts`, one metre); this module only says
- * which world lengths are on the grid.
- */
+/** THE universal grid: every street, footway, junction, lot, zone and piece of street furniture is measured against it. */
 
 /** One cell of the grid, 10 m. */
 export const GRID_CELL = m(10);

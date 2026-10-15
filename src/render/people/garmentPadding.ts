@@ -1,8 +1,4 @@
-/**
- * A sheet to pad: its pixels, or - `pixels` absent - the file the worker
- * fetches and decodes itself (`createImageBitmap` and an OffscreenCanvas, both
- * there in a worker), so no pixel of it passes through the page.
- */
+/** A sheet to pad: its pixels, or - `pixels` absent - the file the worker fetches and decodes itself */
 export interface GarmentPadRequest {
   readonly id: number;
   readonly pixels?: Uint8ClampedArray;
@@ -55,8 +51,7 @@ export function padGarmentPixels(
       }
     }
   }
-  // Grow the islands a ring at a time: each new pixel the mean of its
-  // neighbours already inside.
+  // Grow the islands a ring at a time: each new pixel the mean of its neighbours already inside.
   let ring: number[] = [];
   for (let p = 0; p < W * H; p++) {
     if (!inside[p]) continue;

@@ -10,18 +10,7 @@ import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 import { SimWorld } from '@sim/world';
 import { buildLotGrid as oldGrid } from './oracle/lotNavOld';
 
-/**
- * THE LOT'S GRID IS THE GRID OF BEFORE, CELL FOR CELL.
- *
- * `buildLotGrid` fills the walls by scanline, tests the parts' cells without
- * building arrays per cell and grows only the solid's edge
- * (`sim/agents/lotNav.ts`). The oracle is the grid of before
- * (`oracle/lotNavOld.ts`: every centre against every wall, every solid cell
- * grown). Every grid the game builds for a generated city - each lot's car
- * grid (`parking.ts`) and each gate's walker grid (`lotDoors.ts`) - and
- * random lots of turned parts and walls off the cells' lines must give the
- * same blocked cells, distances and exits.
- */
+/** THE LOT'S GRID IS THE GRID OF BEFORE, CELL FOR CELL. */
 
 type Args = Parameters<typeof oldGrid>;
 const seen = vi.hoisted(() => ({ calls: [] as unknown[][] }));

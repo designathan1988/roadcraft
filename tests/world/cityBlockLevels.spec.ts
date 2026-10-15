@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY, planCity, type CityPlan } from '@world/cityGen/plan';
 import { m } from '@world/units';
 
-/**
- * Every line of the 'blocks' grid is an avenue, a collector or a local street
- * (`plan.ts` `blockGrid`): the edges and every fourth line avenues, a collector
- * halfway between two avenues. The zoning reads the avenues and collectors as
- * the main streets (`editor/cityGenerator.ts` `zoneCity`), so each direction
- * of the grid needs its collector, however many blocks it has.
- */
+/** Every line of the 'blocks' grid is an avenue, a collector or a local street (`plan.ts` `blockGrid`) */
 const BLOCK_LONG = m(120), BLOCK_SHORT = m(72);
 
 /** The levels of the lines running north-south (constant x) and east-west (constant y). */

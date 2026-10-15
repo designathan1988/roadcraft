@@ -23,14 +23,7 @@ import { garageUnder, stepToSlope } from '@world/buildings/splitLevel';
 
 const BOUNDARY_PARTS = new Set(['wall', 'fence', 'hedge', 'railing']);
 
-/**
- * A grown building added, its boundary meeting the neighbours': where a
- * piece of its wall or fence stands against a neighbour's own building or
- * boundary - the neighbour's wall already closes that stretch, as on any
- * party line - the piece is left out and the building added again. The
- * boundary is closed whole on the lot's own side (`lotPlan.ts`), and a
- * neighbour standing on the line was refused the whole building for it.
- */
+/** A grown building added, its boundary meeting the neighbours' */
 function addPlaced(ctx: SiteContext, record: Omit<Building, 'id'>): ReturnType<typeof placeBuilding> {
   const first = addBuildingRecord(ctx, record);
   if (first.ok || first.problem !== 'building') return first;
@@ -54,29 +47,13 @@ function addPlaced(ctx: SiteContext, record: Omit<Building, 'id'>): ReturnType<t
 
 /** The joint left between two neighbouring lots: a hair, so their party walls meet without overlapping. */
 const JOINT = 0;
-/**
- * A lot's side in metres, to the millimetre, for the plans made in metres
- * (`planLot`, `madeToMeasure`, `furnishLot`): they choose by whole metres and
- * bays, and the same lot read 20.400000000000002 m at 0.4 m a unit and
- * 20.400000000000006 at 1 - a shrub more along its front, another house.
- */
+/** A lot's side in metres, to the millimetre, for the plans made in metres (`planLot`, `madeToMeasure`, `furnishLot`) */
 const metresOf = (units: number): number => Math.round(units * METERS_PER_UNIT * 1000) / 1000;
 
-/**
- * The version of the lot generator (`lotPlan.ts`, the yards, walls and
- * facades of grown buildings), stamped on each building grown (`main.ts`).
- * Bumped when it changes.
- */
+/** The version of the lot generator */
 export const LOT_PLAN_VERSION = 13;
 
-/**
- * The ground floor a grown building on a lot will have: its street's paving
- * along the lot's front, and a threshold over it (`foundation.ts`
- * `floorOver`). With no paving to read, the land at the front less the drop
- * the roads shape it by. `front`: how far the plan is set back from the
- * lot's front (a try's margin, `growOnLot`) - the street is read beyond the
- * lot, not beyond the plan.
- */
+/** The ground floor a grown building on a lot will have */
 function streetFloor(ctx: SiteContext, local: (lx: number, ly: number) => Vec2, width: number, ground: (x: number, y: number) => number, front = 0): number {
   let best = -Infinity;
   if (ctx.pavedAt) {
@@ -91,12 +68,7 @@ function streetFloor(ctx: SiteContext, local: (lx: number, ly: number) => Vec2, 
   return ground(p.x, p.y) + m(0.6);
 }
 
-/**
- * Grows one building on a zoned lot without one (`world/lots.ts`): the lot is
- * planned first - front, sides, back - and the building made for the envelope
- * the plan leaves, as on a grid lot (`growOnce`), but on the lot the player
- * drew: its front middle, its facing, its width and depth.
- */
+/** Grows one building on a zoned lot without one (`world/lots.ts`): the lot is planned first - front, sides, back */
 /** Candidates made for a lot, the least like its neighbours kept (Mitchell's best candidate). */
 const CANDIDATES = 4;
 /** How far round a lot the buildings it should not look like are read: the 100 m of the rule it answers (`tests/world/variety.spec.ts`; at 90 m a twin 95 m off went unseen). */
@@ -129,11 +101,7 @@ function nearSignatures(doc: RoadDoc, at: Vec2): { signature: Signature; distanc
   return out;
 }
 
-/**
- * How unlike its surroundings a building would be: its least distance in
- * looks to any of them, a building farther away counting as more unlike
- * (a twin across the town is no twin).
- */
+/** How unlike its surroundings a building would be */
 function unlikeness(body: Building | Omit<Building, 'id' | 'x' | 'y' | 'rotation'>, near: readonly { signature: Signature; distance: number }[]): number {
   const mine = bodySignature(body);
   let least = Infinity;
@@ -153,18 +121,11 @@ function neighbourStoreys(doc: RoadDoc, anchor: Vec2, width: number): number[] {
   return out;
 }
 
-/**
- * The side of a lot (`left`: along -u from the front's middle) with a street
- * just beyond it over most of its depth: a corner lot. Undefined for none,
- * or with no network to read.
- */
+/** The side of a lot (`left`: along -u from the front's middle) with a street just beyond it over most of its depth */
 function cornerOf(ctx: SiteContext, anchor: Vec2, u: Vec2, n: Vec2, width: number, depth: number): 'left' | 'right' | undefined {
   const net = ctx.net;
   if (!net) return undefined;
-  // The ribbons filed round the point (`Network.ribbonsMeeting`): a ribbon
-  // within its footway and the margin of it has its box, which holds the
-  // footway, within the margin of the point. Not every ribbon of the map,
-  // filtered for each lot grown.
+  // The ribbons filed round the point (`Network.ribbonsMeeting`)
   const onStreet = (p: Vec2): boolean => net.ribbonsMeeting([p.x - STREET_MARGIN, p.y - STREET_MARGIN, p.x + STREET_MARGIN, p.y + STREET_MARGIN]).some((r) => {
     if (ctx.doc.segment(r.id)?.structure !== 'ground') return false;
     const bb = r.full.bbox, reach = halfWidth(r.road, Level.Sidewalk) + STREET_MARGIN;
@@ -179,13 +140,7 @@ function cornerOf(ctx: SiteContext, anchor: Vec2, u: Vec2, n: Vec2, width: numbe
   return undefined;
 }
 
-/**
- * The street side and the quarter a lot belongs to, for its building's
- * style (`world/buildings/architecture.ts`): `character` the same for the
- * lots of one side of a street within some 60 m (one frontage reads as one),
- * `era` the same over a quarter of about 220 m - its period, old towards the
- * middle of the map more often, new towards the edges.
- */
+/** The street side and the quarter a lot belongs to, for its building's style (`world/buildings/architecture.ts`) */
 function quarterOf(anchor: Vec2, n: Vec2): { character: number; era: Era } {
   const hash = (a: number, b: number, c: number): number => {
     let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ Math.imul(c | 0, 0x3c6ef372);
@@ -204,22 +159,17 @@ function quarterOf(anchor: Vec2, n: Vec2): { character: number; era: Era } {
 /** @perItem Runs once a building grown (`growSlice`, the 500 ms growth): nothing it reaches may walk the map. */
 export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number): number | null {
   const { doc } = ctx;
-  // The open lots kept by the document (`world/openLots.ts`): the lot drawn,
-  // the last grown and the ones round it without reading every lot.
+  // The open lots kept by the document (`world/openLots.ts`)
   const open = doc.openLots;
   const count = open.count(refused);
   if (!count) return null;
   const rng = new Rng((seed ^ Math.imul(doc.buildings.nextId, 0x9e3779b1)) >>> 0);
-  // The street fills along: the open lot nearest the last building grown,
-  // when one is near (the player sees the street they zoned fill in, one
-  // house after the next); anywhere else, a lot at random.
+  // The street fills along: the open lot nearest the last building grown, when one is near
   let lot = open.at(rng.int(0, count - 1));
   const last = open.lastGrown();
   if (last) {
     let best = GROW_ON_REACH;
-    // Nearer by a millimetre at least: two lots as near (a street's two
-    // sides) are told apart by the list's order, not by rounding - which
-    // took one at 0.4 m a unit and the other at 1.
+    // Nearer by a millimetre at least: two lots as near
     for (const l of open.near(last, GROW_ON_REACH)) {
       const d = apart(lotCentre(l), last);
       if (d < best - m(0.001)) { best = d; lot = l; }
@@ -227,14 +177,9 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
   }
   const use = lot.use!;
   const frame = lotBuildFrame(lot);
-  // Every zoned lot gets a building, whatever its size or shape (the player,
-  // 2026-10-05: "tem que aparecer sempre"). The building first made for the
-  // whole lot; refused (its front over a corner's curved footway, a side over
-  // a neighbour, a slope), it is made again set back from the front and the
-  // sides, then narrower and shallower, then a density lower - until one fits.
+  // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "tem que aparecer sempre").
   const u = { x: Math.cos(frame.rotation), y: Math.sin(frame.rotation) }, n = { x: -u.y, y: u.x };
-  // A corner lot: a street along one of its sides too (the building then
-  // looks onto it, `planLot`).
+  // A corner lot: a street along one of its sides too (the building then looks onto it, `planLot`).
   const corner = cornerOf(ctx, frame.anchor, u, n, frame.width, frame.depth);
   const densities: ZoneDensity[] = lot.density === 'high' ? ['high', 'medium', 'low'] : lot.density === 'medium' ? ['medium', 'low'] : ['low'];
   // A handful of tries, each a building made: a few milliseconds apiece.
@@ -242,8 +187,7 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
     { front: 0, side: 0, shrink: 1 }, { front: m(1.5), side: 0, shrink: 1 }, { front: m(3), side: m(1), shrink: 0.9 },
     { front: m(3), side: m(1), shrink: 0.75 }, { front: m(4), side: m(1.5), shrink: 0.6 }, { front: m(4), side: m(1.5), shrink: 0.45 },
   ];
-  // Read once, not a try: a try writes to the document only when it succeeds,
-  // and then returns, so the buildings round the lot are the same for all.
+  // Read once, not a try: a try writes to the document only when it succeeds, and then returns
   const neighbours = neighbourStoreys(doc, frame.anchor, frame.width);
   const near = nearSignatures(doc, frame.anchor);
   for (const density of densities) for (const t of tries) {
@@ -263,8 +207,6 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
       neighbours: [...neighbours],
     };
     // Of a few candidates, the one least like the buildings round it
-    // (Mitchell's best candidate, in the space of what a building looks
-    // like): drawn at random, a street still came out with twins side by side.
     let made = madeToMeasure(use, density, envelope, rng);
     if (near.length) {
       let score = unlikeness(made.body, near);
@@ -286,19 +228,11 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
     }
     // The lot's front middle, set back by the try's front margin.
     const anchor = { x: frame.anchor.x + n.x * t.front, y: frame.anchor.y + n.y * t.front };
-    // How the land falls or rises from the street to the middle of the back
-    // yard, metres: a yard on a hillside is terraced (`furnishLot`).
+    // How the land falls or rises from the street to the middle of the back yard, metres: a yard on a hillside is terraced
     const ground = ctx.groundAt;
     const yardY = m(D - plan.back.depth / 2);
     const local = (lx: number, ly: number): Vec2 => ({ x: anchor.x + u.x * lx + n.x * ly, y: anchor.y + u.y * lx + n.y * ly });
-    // The building follows its hillside (`splitLevel.ts`): its back a half or
-    // a whole storey from the street floor where the ground under it calls
-    // for it, as CityEngine moves each footprint to the terrain before the
-    // ground is graded round it. A car park or a loading yard behind goes to
-    // the back's level with it, its ground counted in the choice, and only
-    // as far as its drive can reach as a ramp (`yardRamp`): the drive from
-    // the street is level behind the gate, then a ramp no steeper than its
-    // traffic takes.
+    // The building follows its hillside (`splitLevel.ts`)
     let split: { y: number; lift: number } | undefined;
     let garage: { x: number; y: number; w: number } | undefined;
     let landAt: ((x: number, y: number) => number) | undefined;
@@ -314,10 +248,7 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
         ...(ramp ? { yard: { x0: m(-W / 2), y0: m(ramp.end), x1: m(W / 2), y1: m(D) }, maxLift: m(ramp.grade * (ramp.end - ramp.start)) } : {}),
       });
       if (step) split = { y: step.y / m(1), lift: step.lift / m(1) };
-      // A house a whole storey down its hillside, with a drive: its garage in
-      // the lower ground floor, on the drive's side (`garageUnder`), when the
-      // drive can go down that far as a ramp (`garageRamp`) and the garden
-      // has room for the apron before the door.
+      // A house a whole storey down its hillside, with a drive: its garage in the lower ground floor, on the drive's side
       const way = step && step.steps === -2 ? garageRamp(plan) : null;
       const side = driveSideOf(plan);
       const hasGarage = body.volumes.some((v) => v.storeys.some((s) => Object.values(s.facade.bays ?? {}).includes('garageDoor') || s.facade.fill === 'garageDoor'));
@@ -336,8 +267,7 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
     if (!furnishLot(body, plan, made, rng, hill)) continue;
     // The lot in the building's frame: x along the front, y back into it.
     const ring = lot.corners.map((c) => ({ x: (c.x - anchor.x) * u.x + (c.y - anchor.y) * u.y, y: (c.x - anchor.x) * n.x + (c.y - anchor.y) * n.y }));
-    // Set back from the street (a try's margin), its front still reaches the
-    // street (`reachStreet`); the plan as laid is kept in case that is refused.
+    // Set back from the street (a try's margin), its front still reaches the street (`reachStreet`)
     const bare = t.front > 0 ? structuredClone({ volumes: body.volumes, elements: body.elements }) : null;
     if (bare) reachStreet(body, t.front, lotW);
     fitToLot(body, ring);
@@ -363,20 +293,9 @@ export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number):
 
 const BOUNDARY_KINDS = new Set(['wall', 'fence', 'hedge', 'railing', 'gate']);
 
-/**
- * A plan set back `front` from its lot's front (a try's margin, `growOnLot`)
- * carried out to the street: each surface along the plan's front - the
- * forecourt, the garden, the drive - laid on across the strip, and paving
- * where none is (a building up to the plan's front). Left bare, the strip
- * hid the street from the building: with no paving in reach, its ground
- * floor stood on its highest ground (`foundation.ts` `floorOver`), and up a
- * hillside street a shop stood 4-5.6 m over the footway on a stone plinth.
- * A shopfront has its entrance at the footway's grade (form-based codes:
- * Fircrest's shopfront frontage, Santa Clara's first floor at 0 ft).
- */
+/** A plan set back `front` from its lot's front (a try's margin, `growOnLot`) carried out to the street */
 function reachStreet(body: { volumes: Volume[]; elements?: BuildingElement[] }, front: number, width: number): void {
-  // The surfaces along the plan's front, at the street's floor (a drive's
-  // ramp keeps its own run: a strip is laid before it instead).
+  // The surfaces along the plan's front, at the street's floor
   const along = body.volumes.filter((v) => v.open && !v.outline && Math.abs(v.y) < m(0.05)
     && v.ramp === undefined && !v.terrace);
   const covered: [number, number][] = [];
@@ -392,8 +311,7 @@ function reachStreet(body: { volumes: Volume[]; elements?: BuildingElement[] }, 
     el.d += front;
   }
   covered.sort((a, b) => a[0] - b[0]);
-  // Paving across the rest of the front, as deep as a surface may be (it
-  // runs under the plan's front edge where the strip is narrower).
+  // Paving across the rest of the front, as deep as a surface may be
   let next = Math.max(0, ...body.volumes.map((v) => v.id)) + 1;
   const lay = (x0: number, x1: number): void => {
     if (x1 - x0 < MIN_SIZE) return;
@@ -408,19 +326,7 @@ function reachStreet(body: { volumes: Volume[]; elements?: BuildingElement[] }, 
   lay(x, width / 2);
 }
 
-/**
- * A grown building made to its lot's own shape (the player, 2026-10-05: "as
- * construções devem seguir o formato dos lotes"). The plan was laid on the
- * lot's front rectangle; on a lot of another shape - a polygon, a curved
- * side, a lot narrowing or widening at the back:
- * - the ground of the whole lot is laid as a lawn (an open block with the
- *   lot's own outline), the plan's surfaces clipped to the lot over it;
- * - the boundary (walls, fences, hedges) is taken off the rectangle and run
- *   along the lot's own sides, all but the front;
- * - whatever of the plan falls outside the lot (a tree, a shed, a bench, a
- *   surface) is left out.
- * A rectangular lot is left as planned.
- */
+/** A grown building made to its lot's own shape */
 function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, ring: readonly Vec2[]): void {
   const xs = ring.map((p) => p.x), ys = ring.map((p) => p.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -443,10 +349,7 @@ function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, rin
     const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
     const full = Math.hypot(b.x - a.x, b.y - a.y);
     if (full < m(0.5) + thick) continue;
-    // Short of each corner by half its thickness: a square-ended piece met a
-    // corner not quite square (a lot cut to a street a degree off its block)
-    // a few millimetres over the line, into the neighbour's yard, and the
-    // neighbour - or this lot - was refused (the bare corner lots).
+    // Short of each corner by half its thickness: a square-ended piece met a corner not quite square
     const ux = (b.x - a.x) / full, uy = (b.y - a.y) / full;
     const len = full - thick;
     const sx = a.x + ux * thick / 2, sy = a.y + uy * thick / 2;
@@ -460,12 +363,9 @@ function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, rin
     }
   }
   elements.splice(0, elements.length, ...kept.slice(0, MAX_ELEMENTS));
-  // Surfaces clipped to the lot; volumes of the building itself kept where
-  // they stand on it.
+  // Surfaces clipped to the lot; volumes of the building itself kept where they stand on it.
   const clip = (poly: Vec2[]): Vec2[] => {
-    // The lot may be any simple polygon (cut back to a bent street, round a
-    // corner): a boolean intersection, the largest piece kept. Clipping by
-    // each side's half-plane is right only for a convex lot.
+    // The lot may be any simple polygon (cut back to a bent street, round a corner)
     let best: Vec2[] = [], bestArea = 0;
     for (const piece of intersection([[poly.map((p) => [p.x, p.y])]], [[ring.map((p) => [p.x, p.y])]])) {
       const r = (piece[0] ?? []).map(([x, y]) => ({ x: x!, y: y! }));
@@ -484,9 +384,7 @@ function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, rin
   const nextVolume = Math.max(0, ...body.volumes.map((v) => v.id)) + 1;
   // The lawn under everything, the lot's own shape - laid first, drawn under the rest.
   const lawnTemplate = body.volumes.find((v) => v.open);
-  // A surface cut to a sliver (under 2 m across, or an outline the model
-  // cannot hold) is left out: kept, it made the whole building invalid and
-  // the lot was left bare.
+  // A surface cut to a sliver (under 2 m across, or an outline the model cannot hold) is left out
   const sound = (v: Volume): boolean => v.w >= MIN_SIZE && v.d >= MIN_SIZE && (!v.outline || validOutline(v.outline));
   if (lawnTemplate) {
     const lawn: Volume = { ...JSON.parse(JSON.stringify(lawnTemplate)) as Volume, id: nextVolume, open: 'grass' };

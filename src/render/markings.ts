@@ -12,26 +12,7 @@ import { PARKING_PAINT } from '@world/parkingLayout';
 import { m } from '@world/units';
 import { pullTowardEye } from './depthConvention';
 
-/**
- * Painted road markings, as real geometry lifted just off the carriageway.
- *
- * Two things matter here and both were wrong before.
- *
- * **The paint is lit.** Markings used to be `MeshBasicMaterial` with
- * `toneMapped: false`, which makes them the same flat white in sunlight and in
- * shadow — a dead giveaway that the scene is a diagram. Thermoplastic road paint
- * is a rough, slightly raised surface; drawing it with a lit material and a high
- * roughness puts it under the same sun as the asphalt around it, and it darkens
- * with the road when a viaduct passes overhead.
- *
- * **One mesh per colour, not per stroke.** All the white paint in the network is
- * one draw call, all the yellow another.
- *
- * The central reservation is NOT here. It used to be two overlapping strokes at
- * the same height, which is two coplanar surfaces in the depth buffer and the
- * torn green scribble that ran down the middle of every boulevard. It is built
- * as a kerbed island in `roadSurfaces.ts` instead.
- */
+/** Painted road markings, as real geometry lifted just off the carriageway. */
 
 /** How far paint stands above the asphalt. Enough to win the depth test. */
 export const PAINT_RISE = m(0.008);
@@ -112,20 +93,13 @@ export function barQuad(sink: QuadSink, color: string, value: Bar): void {
   quad(sink, color, value.a, value.b, value.width / 2);
 }
 
-/**
- * Every colour the roads are painted in: each class's line, the lane lines, the regional standards'
- * centres and the parking's lines - a closed set, so the paint is made at load (`paintCatalogue`).
- */
+/** Every colour the roads are painted in */
 /** The stop lines' and the zebras' paint. */
 export const STOP_PAINT = '#ece9d9';
 export const ZEBRA_PAINT = '#f4f1e3';
 export const PAINT_COLOURS: readonly string[] = Object.freeze([...new Set([...ROAD_TYPES.map((rt) => rt.line), LANE_LINE, ...STYLE_PAINT, ...PARKING_PAINT, STOP_PAINT, ZEBRA_PAINT])]);
 
-/**
- * The paint of every colour, made once when the scene is (CLAUDE.md: a material made once, never in a
- * rebuild): the road surfaces only read it (`roadSurfaces.ts`). DO NOT make a paint material where a
- * frame reaches: a colour first painted made its material in the frame of the edit.
- */
+/** DO NOT make a paint material where a frame reaches: a colour first painted made its material in the frame of the edit. */
 export function paintCatalogue(): Map<string, Material> {
   return new Map(PAINT_COLOURS.map((color) => [color, paintMaterial(color)]));
 }
@@ -136,16 +110,13 @@ function paintMaterial(color: string): Material {
     color: new Color(color).multiplyScalar(0.88),
     roughness: 0.72,
     metalness: 0,
-    // Paint is applied over the asphalt, so it takes the same light but never
-    // reflects the sky the way wet tarmac does.
+    // Paint is applied over the asphalt, so it takes the same light but never reflects the sky the way wet tarmac does.
     envMapIntensity: 0.25,
     transparent: true,
     depthWrite: false,
   });
   pullTowardEye(material, 2, 2);
-  // Worn paint (the player found the markings flat stickers on the road): the
-  // asphalt's grain shows through, the paint thins in patches where wheels
-  // run, flakes off at the edges, and is a little dirty.
+  // Worn paint (the player found the markings flat stickers on the road)
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPaintWorld;')
@@ -166,11 +137,6 @@ function paintMaterial(color: string): Material {
           float worn = pNoise(w * 0.7) * 0.6 + pNoise(w * 2.3) * 0.4;
           float flake = pNoise(w * 5.0);
           // Pinholes of asphalt through the paint, wider where it is worn.
-          // Mostly whole: fine pinholes, a soft thinning where wheels run, and
-          // only rare small flakes - not blotches.
-          // The fine patterns fade to their average once a pixel covers them
-          // (world units a pixel, from the screen derivatives): seen from afar
-          // they broke the lines into flickering dots (the player, 2026-10-06).
           float px = length(fwidth(w));
           float fineSeen = 1.0 - smoothstep(0.015, 0.045, px);
           float grainSeen = 1.0 - smoothstep(0.04, 0.12, px);
@@ -182,8 +148,7 @@ function paintMaterial(color: string): Material {
           diffuseColor.a *= cover * 0.92;
         }`);
   };
-  // One program for every colour: the colour is a uniform, the code the same. DO NOT key it by the
-  // colour: each new colour of paint built another program, in play.
+  // DO NOT key it by the colour: each new colour of paint built another program, in play.
   material.customProgramCacheKey = () => 'paint-worn-aa';
   return material;
 }

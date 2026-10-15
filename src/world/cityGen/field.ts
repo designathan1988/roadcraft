@@ -1,31 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import { valueNoise } from '../terrain';
 
-/**
- * THE CITY'S GRAIN: the tensor field the streets of a generated city follow.
- *
- * Chen, Esch, Wonka, Müller and Zhang, "Interactive Procedural Street
- * Modeling" (SIGGRAPH 2008): a street network is the two families of
- * hyperstreamlines of a 2D symmetric tensor field - the major eigenvectors
- * give one set of streets, the minor ones the streets across them, always at
- * right angles where they cross. The field is a sum of basis fields, each
- * weighted by a fall-off round its centre:
- *
- * - a GRID field, one direction everywhere: a district laid out on a grid at
- *   its own angle (the Eixample, Manhattan above Houston);
- * - a RADIAL field round a centre: rings and spokes round a square or a hill
- *   (Paris round the Étoile, a Brazilian praça);
- * - a slow angle noise over the sum, so no street is ruler-straight for a
- *   kilometre unless a field says so.
- *
- * A symmetric traceless tensor is [[a, b], [b, -a]]: its major eigenvector
- * lies at half the angle of (a, b). Grid: (cos 2θ, sin 2θ). Radial round
- * (cx, cy), with d = p - c: (dy² - dx², -2 dx dy) / |d|², whose major
- * direction runs round the centre (rings) and the minor out from it (spokes).
- *
- * World units throughout. Pure and deterministic: the same field gives the
- * same city in the game, in a probe and in a test.
- */
+/** THE CITY'S GRAIN: the tensor field the streets of a generated city follow. */
 
 export type BasisField =
   | { readonly kind: 'grid'; readonly x: number; readonly y: number; readonly radius: number; readonly angle: number; readonly weight: number }

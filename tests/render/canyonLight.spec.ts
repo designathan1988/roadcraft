@@ -4,13 +4,7 @@ import { createCanyonLight } from '@render/canyonLight';
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 import { m } from '@world/units';
 
-/**
- * The light the town shuts out of its streets (`canyonLight.ts`) follows the
- * buildings by the rectangles that changed: a building grown is laid into the
- * field in place, with only its rows sent, while the window round the view is
- * laid once. Laid again whole at every building, a growing town's field was
- * never put in place.
- */
+/** The light the town shuts out of its streets (`canyonLight.ts`) follows the buildings by the rectangles that changed */
 
 type Box = { x: number; y: number; w: number; d: number; top: number };
 

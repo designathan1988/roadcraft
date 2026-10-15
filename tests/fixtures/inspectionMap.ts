@@ -5,23 +5,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit this map was laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * THE INSPECTION MAP: every situation a vehicle or a pedestrian has to sit
- * right on, in one document, for the contact tests and the harness shots.
- *
- *  - `slope`: a street over a hill, climbing, cresting and descending (grade
- *    change), crossed at its foot by a signalised junction whose footways
- *    lie on the slope;
- *  - `crossfall`: a street along a hillside, the ground rising to one side;
- *  - `bridge`: a bridge over a river;
- *  - `elevated`: an elevated road ramping up from grade and down again;
- *  - `tunnel`: a tunnel through a hill;
- *  - `acute`: a junction of two streets at 32 degrees;
- *  - `city`: a signalised grid of avenues and streets, for crowds and traffic.
- *
- * Built through the document's public API, so it is geometry the editor can
- * make. Imported by node tests and, through the dev server, by the page.
- */
+/** THE INSPECTION MAP: every situation a vehicle or a pedestrian has to sit right on, in one document */
 export interface InspectionMap {
   readonly doc: RoadDoc;
   readonly segments: Readonly<Record<'slope' | 'crossfall' | 'bridge' | 'elevated' | 'tunnel' | 'acuteA' | 'acuteB' | 'cross' | 'city', SegmentId>>;
@@ -95,9 +79,7 @@ export function buildInspectionMap(doc = new RoadDoc()): InspectionMap {
   doc.addSegment(farC.id, acute.id, 2);
   if (!acuteA || !acuteB) throw new Error('inspection map: acute refused');
 
-  // ---- city: a grid of avenues and streets north of everything else, every
-  // inner junction signalised - the crowd, the groups and the traffic at
-  // their densest, for the census and the close-ups.
+  // ---- city: a grid of avenues and streets north of everything else, every inner junction signalised
   const grid: NodeId[][] = [];
   const COLS = 5;
   const ROWS = 4;

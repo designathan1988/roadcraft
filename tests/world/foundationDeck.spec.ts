@@ -5,12 +5,7 @@ import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, type BuildingId, cloneBuilding } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * A door's street is the paving at the level of the land, not a deck passing
- * overhead. A house placed beside the player's raised road stood on a brick
- * plinth as tall as the road: the deck in front of its door was read as the
- * footway it opens onto.
- */
+/** A door's street is the paving at the level of the land, not a deck passing overhead. */
 
 const flat = (): number => 0;
 

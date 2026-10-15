@@ -21,15 +21,7 @@ export interface CloudToolHost {
   hint(key: string): void;
 }
 
-/**
- * THE CLOUD TOOL (Landscape > Terrain > Clouds): a click puts a cloud in the
- * sky right under the pointer, a drag moves one, a click sets one to the
- * tool's size, height and density or takes it away (`world/clouds.ts`). A
- * cloud is picked where the pointer's ray crosses its body - the ray cast
- * from the camera through the pointer, as a raycaster picks - and where the
- * wind has carried it, so it is picked where it is seen. Each click is one
- * undo step; the drag in progress lives here.
- */
+/** THE CLOUD TOOL (Landscape > Terrain > Clouds) */
 export class CloudTool {
   private drag: { pointer: number; id: number; dx: number; dy: number } | null = null;
 
@@ -76,10 +68,7 @@ export class CloudTool {
     host.changed();
   }
 
-  /**
-   * The pointer moved to (px, py): the cloud being dragged follows it.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved to (px, py): the cloud being dragged follows it. */
   move(px: number, py: number): void {
     const { host } = this;
     const drag = this.drag;

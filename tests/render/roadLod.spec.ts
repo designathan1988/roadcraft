@@ -8,13 +8,7 @@ import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/ro
 import { attachFarLevel, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
 import type { Tile } from '@render/mesh/tileMesh';
 
-/**
- * THE FAR LEVEL OF A BLOCK OF ROAD (`mesh/roadLod.ts`, `mesh/roadResidency.ts`): a block near the camera is
- * its own mesh, one far is a simplified one and gives its own buffers back; the block's outer edge does not
- * move, so two blocks of different level meet without a crack; and a block that comes near has its arrays
- * made again. The road surfaces were 1.04 GB of a 2,560 m city's 1.56 GB of geometry, every block at full
- * detail wherever the camera was (2026-10-15).
- */
+/** THE FAR LEVEL OF A BLOCK OF ROAD (`mesh/roadLod.ts`, `mesh/roadResidency.ts`) */
 const W = 200, H = 12, STEP = 3.2;
 
 /** A flat road strip W x H (world x, y; the mesh's z = -y) as a lattice a surface's refinement would give. */
@@ -135,8 +129,7 @@ describe('the wiring', () => {
     expect(renderer).toMatch(/near: \(x, y\) => isNear\(x, y, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(renderer).toMatch(/updateRoadLevels\(blocks, roadFocus\.x, roadFocus\.y, roadFocus\.reach\)/);
     expect(readFileSync('src/render/mesh/surfaceMesh.ts', 'utf8')).toMatch(/coarse\.geometry\.dispose\(\)/);
-    // The far level is simplified by the workers: the page asks (`coarsen`) and attaches the answer, never simplifies a
-    // block itself (2,000 blocks of a 2,560 m city one after the other in the opening put the town up later).
+    // The far level is simplified by the workers: the page asks
     expect(readFileSync('src/render/roadSurfaces.ts', 'utf8')).not.toMatch(/coarseArrays\(/);
     expect(readFileSync('src/render/roadSurfaces.ts', 'utf8')).toMatch(/tiler\.coarsen\.bind\(tiler\)/);
     expect(readFileSync('src/render/roadTile.worker.ts', 'utf8')).toMatch(/coarseArrays\(data\.coarse\.arrays, data\.coarse\.lock\)/);

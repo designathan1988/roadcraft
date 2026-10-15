@@ -1,16 +1,7 @@
 import type { Vec2 } from './vec2';
 import { segSeg } from './intersect';
 
-/**
- * True when a closed polygon has no self-intersections.
- *
- * This is the hard backstop behind the junction builder. The V6 monolith
- * emitted an angle-sorted "star" polygon with no such check, which is why
- * Y-junctions and skewed T-junctions rendered as bowties.
- *
- * O(n^2); n stays under ~200 after flattening, and in production it only runs
- * for junctions of degree >= 4.
- */
+/** True when a closed polygon has no self-intersections. */
 export function isSimple(points: readonly Vec2[]): boolean {
   const n = points.length;
   if (n < 3) return false;
@@ -52,14 +43,7 @@ export function pointInPolygon(p: Vec2, points: readonly Vec2[]): boolean {
   return inside;
 }
 
-/**
- * Monotone-chain convex hull, wound to positive signed area.
- *
- * This is the junction builder's last-resort fallback: a hull is always simple
- * and always contains every mouth corner, so a validation failure degrades to
- * "slightly too generous" rather than "visibly broken". A fuzz test asserts it
- * never actually fires.
- */
+/** Monotone-chain convex hull, wound to positive signed area. */
 export function convexHull(input: readonly Vec2[]): Vec2[] {
   if (input.length < 4) return input.slice();
   const pts = input

@@ -3,19 +3,7 @@ import { join, relative, sep } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-/**
- * The invariants that are about the SOURCE rather than about the geometry.
- *
- * `core/rng.ts` said `Math.random` was "enforced by a source scan in
- * `tests/arch`". There was no `tests/arch`. Invariant 5 in CLAUDE.md — that
- * `world` and `sim` never call `Math.random`, because determinism is what
- * makes every regression fixture in this suite mean anything — was a paragraph
- * nothing checked, and it has stayed true only by luck.
- *
- * The layer order has a lint rule now (`eslint.config.js`), which is the right
- * place for it because it reports at the import. This file is for the rules a
- * lint rule cannot express.
- */
+/** The invariants that are about the SOURCE rather than about the geometry. */
 
 const SRC = join(process.cwd(), 'src');
 
@@ -46,16 +34,12 @@ describe('determinism', () => {
       }
     }
 
-    // `core/rng.ts` exists for exactly this. A stream is forked by string tag
-    // so a new consumer cannot reshuffle an existing one, which is what keeps
-    // a fixture recorded today valid tomorrow.
+    // `core/rng.ts` exists for exactly this.
     expect(offenders, `use Rng from @core/rng instead:\n${offenders.join('\n')}`).toEqual([]);
   });
 
   it('keeps three.js inside the render layer', () => {
-    // The other rule CLAUDE.md states in bold: nothing outside `src/render/`
-    // may import three. A lint rule covers the project's own aliases; this
-    // covers the one bare package name that matters.
+    // The other rule CLAUDE.md states in bold: nothing outside `src/render/` may import three.
     const offenders: string[] = [];
 
     for (const file of tsFilesUnder(SRC)) {
@@ -71,8 +55,7 @@ describe('determinism', () => {
 
 describe('one writer per number', () => {
   it('declares the footway height once, in world', () => {
-    // It was two constants of one value, `FOOTWAY_RISE` in render and
-    // `FOOTWAY_DEPTH` in world/elevation.ts, free to drift apart.
+    // It was two constants of one value, `FOOTWAY_RISE` in render and `FOOTWAY_DEPTH` in world/elevation.ts
     const declarations = tsFilesUnder(SRC)
       .filter((file) => /const\s+FOOTWAY_(RISE|DEPTH)\s*=/.test(code(readFileSync(file, 'utf8'))))
       .map((file) => relative(SRC, file).split(sep).join('/'));
@@ -82,11 +65,7 @@ describe('one writer per number', () => {
 
 describe('the document changes only through its diary', () => {
   it('keeps no revision counter of its own: every revision is read from the diary', () => {
-    // `RoadDoc.revision`, `terrainRevision`... and `buildings.revision` are the
-    // serial of the latest diary entry of their kind (`world/changes.ts`
-    // `serialOf`). A counter moved beside the diary is the second flag a path
-    // forgets (zones and lots moved theirs from `lots.ts` and `zoning.ts` with
-    // no entry: nothing could tell where they changed).
+    // `RoadDoc.revision`, `terrainRevision`... and `buildings.revision` are the serial of the latest diary entry of their kind
     const owners = ['world/doc.ts', 'world/buildings/store.ts'];
     const offenders: string[] = [];
     for (const file of owners) {
@@ -95,8 +74,7 @@ describe('the document changes only through its diary', () => {
         if (/\b(revision|[a-z]\w*Revision)\s*(\+\+|\+=|-=|=(?!=))/.test(l)) offenders.push(`${file}:${i + 1}: ${l.trim()}`);
       });
     }
-    // Nobody else writes one either (the getters refuse it at compile time;
-    // this names the place if a counter comes back as a field).
+    // Nobody else writes one either the getters refuse it at compile time; this names the place if a counter comes back as a
     for (const layer of ['world', 'editor', 'ui']) {
       for (const path of tsFilesUnder(join(SRC, layer))) {
         const lines = code(readFileSync(path, 'utf8')).split('\n');
@@ -113,9 +91,7 @@ describe('the document changes only through its diary', () => {
 
 describe('the simulation is headless', () => {
   it('never reads window or document in world or sim', () => {
-    // The spawners read `window.innerWidth`, so one seed grew a different city
-    // on a phone and `sim` depended on the DOM. The screen share is injected
-    // by main.ts as `SimWorld.populationShare` now.
+    // The spawners read `window.innerWidth`, so one seed grew a different city on a phone and `sim` depended on the DOM.
     const offenders = tsFilesUnder(SRC)
       .filter((file) => /[/\\](world|sim)[/\\]/.test(file))
       .filter((file) => /\b(window|document)\s*\./.test(code(readFileSync(file, 'utf8'))))
@@ -126,8 +102,7 @@ describe('the simulation is headless', () => {
 
 describe('nothing simulated that cannot be drawn', () => {
   it('sizes the agent buffers from the simulation ceilings', () => {
-    // The sim allowed 3000 vehicles and 1500 people against buffers of 1200
-    // and 1000: the rest existed, took road space and held claims, unseen.
+    // The sim allowed 3000 vehicles and 1500 people against buffers of 1200 and 1000
     const agents = code(readFileSync(join(SRC, 'render', 'agents.ts'), 'utf8'));
     expect(agents).toMatch(/const MAX_VEHICLES = FLEET_CEILING;/);
     expect(agents).toMatch(/const MAX_PEDS = PED_CEILING;/);

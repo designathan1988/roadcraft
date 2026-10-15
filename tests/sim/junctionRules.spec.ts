@@ -13,12 +13,7 @@ import { legRule, mainRoadLegs } from '@world/roads/rules';
 import { RoadDoc } from '@world/doc';
 import { layoutDoc, simOf } from './support/bodies';
 
-/**
- * JUNCTION RULES (docs/VIAS.md V5), run as the traffic drives them: each
- * leg's sign, the CTB's own rule where nothing is signed, a mini-roundabout,
- * the control "automatic" chooses from the flows, fixed-time signals, bus
- * priority and the green wave.
- */
+/** JUNCTION RULES, run as the traffic drives them */
 const STREETS = { name: 'streets', bearings: [0, 90, 180, 270], types: [1, 1, 1, 1] } as const;
 
 function connectorFrom(sim: ReturnType<typeof simOf>, node: number, inSeg: SegmentId, turn = 'through'): Connector {

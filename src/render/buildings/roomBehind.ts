@@ -3,22 +3,7 @@ import { FURNITURE_KINDS, type FloorInterior } from '@world/buildings/interior';
 import type { Building, Volume } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * THE ROOM BEHIND A WINDOW, as the building's own interior has it
- * (`interiorAt`, the rooms the cut-open view draws): how far its side walls,
- * back wall, floor and ceiling are from the pane, what its floor is, and the
- * largest piece of furniture seen through it. The glass draws that box by
- * interior mapping (van Dongen 2008: the view ray traced through the room's
- * planes in the pane's shader, no geometry) - so the room seen through a
- * window is the room that is there, and always the same one.
- *
- * Twelve numbers a pane, in the pane's own frame (x across the pane as its
- * instance's +x runs, depth into the building, heights from the pane's
- * centre), metres:
- *   0 left, 1 right, 2 depth, 3 below,
- *   4 above, 5 floor (`FloorKind`), 6 furniture kind (-1 none), 7 its height,
- *   8 its centre across, 9 its half width across, 10 its near face, 11 its far face.
- */
+/** THE ROOM BEHIND A WINDOW, as the building's own interior has it (`interiorAt`, the rooms the cut-open view draws) */
 export const ROOM_FLOATS = 12;
 
 /** The farthest a wall is looked for: past it the room is closed at this depth. */
@@ -26,12 +11,7 @@ const MOST_DEEP = m(12);
 const MOST_WIDE = m(10);
 /** How far inside the wall the side walls are looked for. */
 const INSIDE = m(0.5);
-/**
- * What a pane shows as its piece: the solid ones, that read as a box from
- * across a room (a bed, a sofa, a wardrobe, a counter). Not lights, stairs,
- * plants or anything on thin legs (a chair, a table, a desk): drawn as a box
- * those read as a block of colour (a plant became a green cube).
- */
+/** What a pane shows as its piece: the solid ones, that read as a box from across a room */
 function seen(kind: string): boolean {
   switch (kind) {
     case 'bed': case 'singleBed': case 'sofa': case 'armchair': case 'shelf': case 'bookshelf': case 'counter': case 'fridge':
@@ -60,13 +40,7 @@ function firstHit(walls: readonly number[], ox: number, oy: number, dx: number, 
 /** A floor's finish: 0 wood, 1 stone, 2 porcelain tiles. */
 export type FloorKind = 0 | 1 | 2;
 
-/**
- * A storey's floor (`buildingMesh.ts` `emitInterior` and the windows alike):
- * stone where people pass (shops, offices, the street floor), and in homes
- * and hotels mostly light porcelain tiles - the floor of most Brazilian flats
- * - some buildings in wood. All wood, every window seen from above showed
- * a brown floor (the player, 2026-10-13).
- */
+/** A storey's floor (`buildingMesh.ts` `emitInterior` and the windows alike): stone where people pass */
 export function floorKind(b: Building, level: number): FloorKind {
   const homely = b.function === 'house' || b.function === 'townhouse' || b.function === 'apartments' ||
     b.function === 'residentialTower' || b.function === 'hotel' || (!b.function && b.use === 'residential');
@@ -75,12 +49,7 @@ export function floorKind(b: Building, level: number): FloorKind {
   return ((Math.imul(b.id + 7, 0x9e3779b1) >>> 0) % 10) < 3 ? 0 : 2;
 }
 
-/**
- * The rooms of one block's storey seen from its facade: `at` gives the room
- * behind a pane whose centre is `a` along a bay face starting at (ax, ay)
- * with direction (tx, ty) and outward normal (nx, ny) (the building's frame),
- * `h` over the storey's floor, under a ceiling `ceiling` over it.
- */
+/** The rooms of one block's storey seen from its facade */
 export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, level: number) {
   const walls: number[] = [];
   for (const p of inside.partitions) walls.push(p.x0, p.y0, p.x1, p.y1);

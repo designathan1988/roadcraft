@@ -6,13 +6,7 @@ import { layCity } from '@editor/cityGenerator';
 import { m } from '@world/units';
 import { SurfaceInputs, surfaceInputWork } from '@render/roadSurfaceInputs';
 
-/**
- * THE ROAD SURFACES' INPUTS COST AN EDIT THE ITEMS IT TOUCHED
- * (`roadSurfaceInputs.ts`): a street drawn far from a generated city makes
- * the rings of that street and its ends, the same on a small city and on one
- * nine times the area - never the whole map, as the passes once gathered it
- * on every road edit (`levelRings(net, level, include)`, `markingQuads`).
- */
+/** THE ROAD SURFACES' INPUTS COST AN EDIT THE ITEMS IT TOUCHED (`roadSurfaceInputs.ts`) */
 function editWork(radius: number): { segments: number; nodes: number; roads: number } {
   const doc = layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small', radius }));
   const net = new Network(doc);

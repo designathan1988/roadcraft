@@ -5,14 +5,7 @@ import { onFootway, poleLines } from '@world/poleLines';
 import { planPoleRun } from '@editor/poles';
 import type { Vec2 } from '@core/vec2';
 
-/**
- * A POLE LINE CROSSES A STREET BY ONE SQUARE SPAN (docs/source/PLANO.md, 5h).
- *
- * The player's report of 2026-10-09: drawing a line from one footway to the
- * one across the road, it went down the street, into the next one and back.
- * In a network of open-ended streets the kerb line is one contour, and the
- * route followed it. Measured: footways 21.6 units apart, a line of 176.
- */
+/** A POLE LINE CROSSES A STREET BY ONE SQUARE SPAN (5h). */
 
 /** A crossroads of four open-ended streets, at 45 degrees, as the town where it was reported. */
 function town(): Network {

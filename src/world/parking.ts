@@ -1,31 +1,8 @@
 import { m } from './units';
 
-/**
- * On-street parking: a native part of a road's cross-section.
- *
- * A parking lane lies between the travel lanes and the kerb, on either side
- * of the road, and is chosen per segment. It is counted into the carriageway
- * (kerb face to kerb face), so a street with parking is wider kerb to kerb and
- * its travel lanes sit where they always did, inside the parking lanes.
- *
- * Cars park along the line of the street, beside the kerb, as they do on a
- * real street: bays are parallel to the kerb and follow the road round its
- * curves (the player's decision of 2026-10-05; bays across the kerb, at 45 or
- * 90 degrees, are not offered). Every measure is in whole metres of the
- * universal grid (`grid.ts`): the lane 2 m deep, bays 6 m long (Brazilian
- * standard 2.3 x 5.5).
- *
- * Bays stop short of every corner (`CORNER_CLEAR`, CTB art. 181 I: no parking
- * within 5 m of the cross street's kerb line), of crossings and of lot
- * entrances; that is laid out in `parkingLayout.ts`.
- */
+/** On-street parking: a native part of a road's cross-section. */
 
-/**
- * A band by the kerb is parking (`parallel`) or a CYCLE LANE (`cycle`): the
- * ciclofaixa of the Brazilian code (CTB, MBST vol. IV), a lane of the
- * carriageway painted red, kept from the traffic by a solid white line, where
- * the bicycles ride (`sim/pose.ts`, `vehicles/leaderIndex.ts`).
- */
+/** A band by the kerb is parking (`parallel`) or a CYCLE LANE (`cycle`): the ciclofaixa of the Brazilian code */
 export const PARKING_KINDS = ['none', 'parallel', 'cycle'] as const;
 export type ParkingKind = (typeof PARKING_KINDS)[number];
 

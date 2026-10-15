@@ -10,27 +10,7 @@ import type { TileMeshOptions } from './tileMesh';
 export {  type TileRect } from './tileShape';
 export { meshTileShape,  type Tile,     } from './tileMesh';
 
-/**
- * Turns a clipped surface band into a solid, watertight mesh.
- *
- * ## The two failures this module exists to prevent
- *
- * **Chords under the ground.** A deck vertex reads the height field only AT
- * ITSELF, and the triangle between two vertices is a straight chord. If that
- * chord is long and the surface it follows is curved, the chord dives beneath
- * the surface: the terrain cuts the road into plates. Densifying only the
- * polygon OUTLINE does not fix it, because ear clipping happily draws a single
- * triangle straight across a 60-unit boulevard. The fix is to refine the
- * TRIANGULATION until no edge is longer than `maxEdge`.
- *
- * **Cracks from a T-junction.** Refining each triangle on its own splits an
- * edge that its neighbour leaves whole, and the two no longer meet: a hairline
- * of background shows through. The refinement below is therefore done with
- * shared, cached edge midpoints and the standard red/green rule — a triangle
- * with one, two or three marked edges is split into two, three or four — so
- * every shared edge is split identically from both sides and no T-junction can
- * ever appear.
- */
+/** Turns a clipped surface band into a solid */
 
 export interface SurfaceMeshOptions extends TileMeshOptions {
   readonly name: string;

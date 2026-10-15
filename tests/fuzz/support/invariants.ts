@@ -14,13 +14,7 @@ import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { BODY_ENVELOPE } from '@world/conflictPoints';
 import { SidewalkGraph } from '@sim/peds/sidewalk';
 
-/**
- * What the fuzzer asserts about a built WORLD after every gesture.
- *
- * Each check returns defects rather than throwing, tagged with a category, so
- * the shrinker can ask "does this sequence still produce THAT defect" and a
- * run can be tallied by kind.
- */
+/** What the fuzzer asserts about a built WORLD after every gesture. */
 export interface Defect {
   readonly category: string;
   readonly subject: string;
@@ -98,10 +92,7 @@ function inside(p: Vec2, ring: readonly Vec2[]): boolean {
 
 const finite = (p: Vec2): boolean => Number.isFinite(p.x) && Number.isFinite(p.y);
 
-/**
- * Every world invariant, in one pass. `graph` and `sidewalks` are built here
- * the same way `SimWorld.rebuildTopology` builds them.
- */
+/** Every world invariant, in one pass. */
 export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
   const out: Defect[] = [];
 
@@ -134,9 +125,7 @@ export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
     const hw = halfWidth(ribbon.road, Level.Asphalt) * 0.8;
     const step = 1.5;
     let first: string | null = null;
-    // The ribbon's own span, plus a band reaching 1.5 units into each junction
-    // plate across its mouth - where a seam would open. Deeper inside a plate
-    // the kerb legitimately curves in (the outer corner of a bend).
+    // The ribbon's own span, plus a band reaching 1.5 units into each junction plate across its mouth
     const trims = net.trims.get(id);
     const from = Math.max(0.5, (trims?.a[Level.Asphalt] ?? 0) - 1.5);
     const to = line.length - Math.max(0.5, (trims?.b[Level.Asphalt] ?? 0) - 1.5);
@@ -144,9 +133,7 @@ export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
       const f = line.sampleAt(s);
       for (const across of [-1, 0, 1]) {
         const p = { x: f.p.x + f.n.x * hw * across, y: f.p.y + f.n.y * hw * across };
-        // The integer clip grid and the point-in-polygon probe can disagree
-        // by micrometres exactly on a mouth boundary. Such a point is on the
-        // road; a visible opening has measurable distance from every edge.
+        // The integer clip grid and the point-in-polygon probe can disagree by micrometres exactly on a mouth boundary.
         if (!asphalt.contains(p) && asphalt.edgeDistance(p) > 0.005) {
           first = `s=${s.toFixed(1)}/${line.length.toFixed(1)} across=${across} at (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`;
           break;
@@ -246,9 +233,7 @@ export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
   sidewalks.build(doc, net, graph);
   for (const [nodeId, node] of doc.nodes) {
     if (node.incident.length < 2) continue;
-    // Limited-access shoulders are not public footways. A junction containing
-    // one is intentionally absent from the pedestrian graph, so its crossings
-    // are not a sidewalk invariant.
+    // Limited-access shoulders are not public footways.
     if (node.incident.some((id) => {
       const segment = doc.segment(id);
       return segment && !carriesPedestrians(roadProfile(segment.type, segment.lanes, segment.direction));
@@ -260,10 +245,7 @@ export function checkWorld(doc: RoadDoc, net: Network): Defect[] {
   return out;
 }
 
-/**
- * How far a body corner may leave the kerb's outer edge, in world units. A
- * corner a few centimetres over the kerb line is paint, not a crash.
- */
+/** How far a body corner may leave the kerb's outer edge, in world units. */
 const TURN_TOLERANCE = Number(process.env['FUZZ_TURN_TOLERANCE'] ?? 0.25);
 
 /** The body corner furthest outside asphalt and kerb over one movement, if any. */
@@ -280,15 +262,11 @@ function worstOffSurface(
   for (let i = 0; i <= samples; i++) {
     const front = ((crossing.length + length) * i) / samples;
     const centre = front - length / 2;
-    // Only where the whole body is on these three lanes: behind a short
-    // inbound lane it is on some upstream lane this check knows nothing of,
-    // and clamping it to the lane's start would hang it off the road.
+    // Only where the whole body is on these three lanes
     if (front - length < -inbound.length || front > crossing.length + outbound.length) continue;
     // A connector where a road simply runs on has no length, and no tangent.
     const frame = frameAt(centre);
-    // Match the rendered body's short-chord heading, including across the
-    // lanelet boundary. A polyline tangent jumps at every vertex and reports
-    // a different swept rectangle from the simulation's actual vehicle pose.
+    // Match the rendered body's short-chord heading, including across the lanelet boundary.
     const heading = chordHeading(frameAt(centre - HEADING_CHORD).p,
       frameAt(centre + HEADING_CHORD).p, frame.t);
     for (const along of [-0.5, 0, 0.5]) {
@@ -306,10 +284,7 @@ function worstOffSurface(
   return worst;
 }
 
-/**
- * Every kerb of a leg with a painted zebra is one end of exactly one crossing
- * the vehicles read, and a kerb of a leg with none is the end of no crossing.
- */
+/** Every kerb of a leg with a painted zebra is one end of exactly one crossing the vehicles read */
 function crossingMismatch(graph: SidewalkGraph, net: Network, node: NodeId): string | null {
   const ends = new Map<string, number>();
   for (const edge of graph.edges.values()) {

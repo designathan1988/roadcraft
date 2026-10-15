@@ -16,12 +16,7 @@ export interface LegFrame {
   readonly length: number;
 }
 
-/**
- * Flattened centreline of a segment, oriented a -> b.
- *
- * Straight segments return their two endpoints exactly — no sampling error is
- * introduced where none is needed.
- */
+/** Flattened centreline of a segment, oriented a -> b. */
 export function segmentPolyline(doc: RoadDoc, seg: RoadSegment): Polyline {
   const a = doc.requireNode(seg.a);
   const b = doc.requireNode(seg.b);
@@ -43,13 +38,7 @@ export function orientedPolyline(
   return seg.a === from ? pl : pl.reversed();
 }
 
-/**
- * Frame at `distance` measured from `nodeId` along `seg`.
- *
- * `dir` always points away from `nodeId`, which is what makes every downstream
- * formula (corners, trims, stop lines, crosswalks) sign-consistent regardless
- * of how the segment happens to be stored.
- */
+/** Frame at `distance` measured from `nodeId` along `seg`. */
 export function frameFromNode(
   pl: Polyline,
   segStartsAtNode: boolean,
@@ -94,14 +83,7 @@ export class PolylineCache {
     this.map.clear();
   }
 
-  /**
-   * Takes over another cache's entries.
-   *
-   * Used when one network adopts another's geometry after the two documents
-   * have been made equal: every polyline in there was flattened from the same
-   * segment id and is still the right answer, so re-flattening it would be work
-   * for an identical result.
-   */
+  /** Takes over another cache's entries. */
   adopt(other: PolylineCache): void {
     this.map.clear();
     for (const [id, pl] of other.map) this.map.set(id, pl);

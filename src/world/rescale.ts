@@ -1,17 +1,7 @@
 import type { SerializedDoc } from './doc';
 import { METERS_PER_UNIT } from './units';
 
-/**
- * A map saved under another world unit, brought to this build's
- * (docs/source/ESCALA.md). Until 2026-10-10 a world unit was 0.4 m and no map said
- * so: a document without `unit` is a 0.4 m map.
- *
- * Every length is multiplied by `factor` (old metres per unit over the new):
- * positions, widths, heights, radii, a building's every measure. Angles,
- * counts, ids, shares (0..1), times and money are left alone.
- *
- * Positions scale about the origin, the map's centre.
- */
+/** A map saved under another world unit, brought to this build's. */
 
 /** The unit every map saved before the field existed was made in. */
 export const LEGACY_METERS_PER_UNIT = 0.4;
@@ -84,10 +74,7 @@ export function rescaleBuilding(raw: unknown, factor: number, place: PlaceFn | n
   return b;
 }
 
-/**
- * A serialized document in this build's unit. Returns `data` itself when it
- * already is; otherwise a copy, every length scaled (see the file's comment).
- */
+/** A serialized document in this build's unit. */
 export function rescaleSerializedDoc(data: SerializedDoc): SerializedDoc {
   const factor = unitFactor((data as { unit?: unknown }).unit);
   if (factor === 1) return data;
@@ -105,7 +92,6 @@ export function rescaleSerializedDoc(data: SerializedDoc): SerializedDoc {
   });
   out.terrain = list(data.terrain, (stamp) => {
     // A stamp's strength is a height (raise, lower, river); a flatten's is a rate, read against a height too (`terrain.ts`).
-    // Its noise's origin (`ox`, `oy`) is a place of the map, moved as the stamp is.
     return lengths(placed(at(stamp), place, 'ox', 'oy'), factor, ['radius', 'strength', 'level']);
   });
   out.paint = list(data.paint, scale(['radius']));

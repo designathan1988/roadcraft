@@ -4,26 +4,7 @@ import femaleSource from './motion/walkFemale.json?raw';
 import maleLibraryUrl from './motion/rocketboxMale.json?url';
 import femaleLibraryUrl from './motion/rocketboxFemale.json?url';
 
-/**
- * The official Rocketbox neutral walks — a man's (m_walk_neutral, captured on
- * Male_Adult_01) and a woman's (f_walk_neutral, on Female_Adult_01), MIT,
- * Copyright (c) 2020 Microsoft — transferred onto any citizen at bake time.
- *
- * The walk every citizen used to play was a Quaternius clip retargeted onto
- * the Rocketbox skeleton offline (`scripts/convert-citizens.mjs`). That rig is
- * a different body — its spine, its shoulders, its rest pose — and the
- * transfer is where the hunched trunk, the crouched knees and the arms that
- * read as broken came from. This is the walk captured FOR the Rocketbox
- * skeleton, extracted by `scripts/extract-citizen-walk.mjs` into
- * `motion/`. A man and a woman walk differently in the capture itself —
- * cadence, hips, arms — so each body walks the walk of its sex.
- *
- * It is stored as world rotations, so it is transferred as a rotation
- * relative to each body's own bind pose: whatever way an exporter happened to
- * orient a bone's local axes, "the thigh swung 25 degrees forward of where it
- * hangs in the bind pose" means the same thing on every body. The pelvis
- * travel is scaled by hip height, so a child's hips bob a child's amount.
- */
+/** The official Rocketbox neutral walks — a man's (m_walk_neutral, captured on Male_Adult_01) and a woman's */
 interface WalkFile {
   readonly duration: number;
   /** A cycle that repeats (the walk); a one-shot holds its last frame. */
@@ -59,11 +40,7 @@ interface Source {
   /** Mean pelvis position over the cycle. */
   readonly pelvisMean: Vector3;
 }
-/**
- * Prepares a capture for transfer. `bindFrom` is the capture whose avatar it
- * was recorded on: the library clips share their sex's walk avatar (see
- * `scripts/extract-rocketbox-clips.mjs`), so they share its bind pose.
- */
+/** Prepares a capture for transfer. */
 function sourceOf(file: WalkFile, bindFrom: WalkFile = file): Source {
   const pelvis = file.bones.indexOf('Bip01_Pelvis');
   const sample = new Quaternion();
@@ -100,22 +77,10 @@ const SOURCES = { male: sourceOf(WALKS.male), female: sourceOf(WALKS.female) } a
 export type WalkSex = keyof typeof SOURCES;
 /** Length of one cycle of each walk, seconds. */
 export const walkDuration = (sex: WalkSex): number => SOURCES[sex].file.duration;
-/**
- * Ground covered by one cycle of each capture, metres, on its own avatar: the
- * forward travel of the packages' `Walk_Forward` clips (1.495864 m for the
- * man's, 1.596625 m for the woman's). Moving a body by anything else over one
- * cycle makes its feet skate.
- */
+/** Ground covered by one cycle of each capture, metres, on its own avatar */
 export const WALK_ADVANCE: Readonly<Record<WalkSex, number>> = { male: 1.495864, female: 1.596625 };
 
-/**
- * How far each part of the body swings, as a share of the capture's own swing
- * about its mean pose. 1 everywhere is the capture untouched.
- *
- * This only ever SHRINKS a swing towards the posture the capture already
- * holds on average, so it can shorten a step or quieten the arms, but it can
- * never bend the trunk into a pose the capture does not have.
- */
+/** How far each part of the body swings */
 export interface WalkAmplitude {
   /** Clavicles, arms, hands, fingers. */
   readonly arms: number;
@@ -138,10 +103,7 @@ export interface NeutralWalk {
   readonly scale: number;
 }
 
-/**
- * Prepares the transfer onto one body. `rig` must be at rest (just cloned),
- * and `mesh` is its skinned mesh, whose skeleton's bind pose is the reference.
- */
+/** Prepares the transfer onto one body. */
 export function neutralWalkFor(rig: Object3D, mesh: SkinnedMesh, sex: WalkSex,
   amplitude: WalkAmplitude = FULL): NeutralWalk {
   return transferOnto(rig, mesh, SOURCES[sex], amplitude);
@@ -153,11 +115,7 @@ export function clipTransferFor(rig: Object3D, mesh: SkinnedMesh, clip: LibraryC
   return transferOnto(rig, mesh, clip.source, amplitude);
 }
 
-/**
- * Where each bone of a capture's avatar stands in its bind pose, metres, world:
- * the posture every transfer measures from. A body built for these captures
- * (`render/people/personRig.ts`) is put in the same posture before it is bound.
- */
+/** Where each bone of a capture's avatar stands in its bind pose, metres, world: the posture every transfer measures from. */
 export function captureBind(sex: WalkSex): ReadonlyMap<string, Vector3> {
   const file = SOURCES[sex].file;
   return new Map(file.bones.map((name, i) => [name, vector(file.bind[i]?.p ?? [0, 0, 0])]));
@@ -172,18 +130,7 @@ export function captureBindRotations(sex: WalkSex): ReadonlyMap<string, Quaterni
 /** The neutral walk of one sex as a transfer source, for `strideShare`. */
 export const walkSource = (sex: WalkSex): Source => SOURCES[sex];
 
-/**
- * The share of a cycle's stride left once its swing is shrunk to
- * `amplitude`: how far the feet reach fore and aft of the hips, against the
- * capture's own reach.
- *
- * Measured on the capture's avatar from its world rotations alone — each leg
- * bone turned from its bind pose, its bind offset to the next joint carried
- * along — so the renderer and the tests answer it the same way, with no
- * skinned body to pose. Scaling a swing about its mean shortens the step in
- * proportion to how far the feet then travel under the body, and moving the
- * body by anything else over a cycle skates the feet.
- */
+/** The share of a cycle's stride left once its swing is shrunk to `amplitude` */
 export function strideShare(source: Source, amplitude: WalkAmplitude): number {
   const { file, bindInverse, mean } = source;
   const reach = (share: number): number => {
@@ -218,9 +165,7 @@ function transferOnto(rig: Object3D, mesh: SkinnedMesh, from: Source, amplitude:
   const untouched = amplitude.arms === 1 && amplitude.legs === 1 && amplitude.hips === 1;
   rig.updateMatrixWorld(true);
   const bones = mesh.skeleton.bones;
-  // The converted citizens keep their bind pose in the source FBX's own space
-  // (Z up, centimetres, identity bind matrix); the mesh's world transform is
-  // what brings it into the scene. Leaving it out laid every walker flat.
+  // The converted citizens keep their bind pose in the source FBX's own space (Z up, centimetres, identity bind matrix)
   const bindWorld = (index: number): Matrix4 =>
     mesh.matrixWorld.clone().multiply(mesh.bindMatrix)
       .multiply(mesh.skeleton.boneInverses[index]!.clone().invert());
@@ -274,11 +219,7 @@ function transferOnto(rig: Object3D, mesh: SkinnedMesh, from: Source, amplitude:
   const hip = new Vector3();
   const foot = new Vector3();
 
-  // World rotations for the current frame, top-down: a node's is its
-  // parent's times its own. The links are posed shallowest first, so every
-  // parent a link asks for is final by then. Asking three for it
-  // (`getWorldQuaternion`) recomposed the whole chain above every bone, every
-  // frame, and that was most of the time a body took to bake.
+  // World rotations for the current frame, top-down: a node's is its parent's times its own.
   const worldQ = new Map<Object3D, Quaternion>();
   const stamp = new Map<Object3D, number>();
   let frame = 0;
@@ -329,8 +270,7 @@ function transferOnto(rig: Object3D, mesh: SkinnedMesh, from: Source, amplitude:
       }
       rig.updateMatrixWorld(true);
       if (untouched || !feet.length) return;
-      // A shorter swing leaves the legs straighter under the hips, which would
-      // sink the feet into the ground; the hips rise by what the feet sank.
+      // A shorter swing leaves the legs straighter under the hips, which would sink the feet into the ground
       let lowest = Infinity;
       for (const bone of feet) lowest = Math.min(lowest, foot.setFromMatrixPosition(bone.matrixWorld).y);
       travel.y += lowestAt(time) - lowest;
@@ -356,20 +296,12 @@ export type LibraryClipName =
   | 'walkN1' | 'walkN2' | 'walkN3' | 'walkStroll' | 'walkCool' | 'walkFast'
   // Hurt and afraid (`people/proceduralCrowd.ts`: the wounded's run and limp, a bystander standing scared).
   | 'runInjured' | 'walkInjured' | 'nervous'
-  // Struck by a round (Quaternius's Universal Animation Library, `scripts/extract-quaternius-clips.mjs`).
+  // Struck by a round (Quaternius's Universal Animation Library).
   | 'hitChest' | 'hitHead'
-  // Off the ground, steps back, a crawl (CMU motion capture, `scripts/extract-cmu-clips.mjs`).
+  // Off the ground, steps back, a crawl (CMU motion capture).
   | 'getUpFront' | 'getUpBack' | 'staggerBack' | 'crawl';
 
-/**
- * One clip of the library, decoded and ready to transfer.
- *
- * Besides the pose, each carries what the game needs to keep the feet planted
- * while it moves the body itself: `travel`, the ground covered by each frame
- * (walk start and stop, the run), and `yaw`, how far the body has turned by
- * each frame (the turns on the spot), both in the capture's own metres and
- * radians, one value per frame.
- */
+/** One clip of the library, decoded and ready to transfer. */
 export interface LibraryClip {
   readonly name: LibraryClipName;
   readonly kind: 'forward' | 'cycle' | 'turn' | 'static' | 'sit';
@@ -396,9 +328,7 @@ interface LibraryFile {
 }
 
 function bytes(base64: string): ArrayBuffer {
-  // The browser's own decoder where it has one (`Uint8Array.fromBase64`): a
-  // character at a time, the clips of one library were a 57 ms frame the
-  // first time a person of that sex came in (docs/performance.md #14).
+  // The browser's own decoder where it has one (`Uint8Array.fromBase64`)
   const native = (Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array }).fromBase64;
   if (native) {
     const decoded = native(base64);
@@ -433,22 +363,11 @@ function decode(file: LibraryFile, walk: WalkFile): Record<LibraryClipName, Libr
   return out;
 }
 
-/**
- * Kept, decoded, for the whole game: about 5 MB a sex. Held only weakly, the
- * library was dropped by the garbage collector between people and fetched and
- * decoded again (12.8 MB of base64, a character at a time) for the next one:
- * a stall each time (docs/performance.md #14).
- */
+/** Kept, decoded, for the whole game: about 5 MB a sex. */
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
 const loadingLibraries: Partial<Record<WalkSex, Promise<RocketboxClips>>> = {};
 
-/**
- * The Microsoft Rocketbox clips the citizens play besides the walk: starting
- * and stopping, running, turning on the spot, standing, looking round, a
- * phone, talking and listening, sitting down, sitting and standing up, for
- * each sex, from `scripts/extract-rocketbox-clips.mjs`. Each library is fetched
- * when a citizen of that sex is first prepared, decoded once and kept.
- */
+/** The Microsoft Rocketbox clips the citizens play besides the walk */
 export function loadRocketboxClips(sex: WalkSex): Promise<RocketboxClips> {
   const cached = libraries[sex];
   if (cached) return Promise.resolve(cached);

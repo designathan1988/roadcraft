@@ -11,12 +11,7 @@ import { PT_BR } from '@ui/i18n/pt-BR';
 import { watchHealth } from '@ui/healthWatch';
 import { CameraGestures } from '@view/cameraGestures';
 
-/**
- * EVERY TEXT THE PLAYER READS COMES FROM THE DICTIONARIES. The F9 monitor's
- * messages and the gestures it names were Portuguese inside the code (an
- * English player read "Erro sem mensagem"), and the Portuguese dictionary
- * carried English words ("Inset", "Offset", "Inspector").
- */
+/** EVERY TEXT THE PLAYER READS COMES FROM THE DICTIONARIES. */
 const src = (path: string): string => readFileSync(resolve(process.cwd(), 'src', path), 'utf8');
 
 afterEach(() => { setLanguage('en'); });

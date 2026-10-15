@@ -4,13 +4,7 @@ import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { buildCarModel } from '@render/carBody';
 import { vehicleLook, windowPane } from '@render/agents';
 
-/**
- * A LOWERED WINDOW STAYS INSIDE ITS DOOR.
- *
- * `agents.ts` draws a part-lowered window as the pane shortened from the top
- * (`windowPane`) and a fully lowered one not at all: whatever is drawn stays
- * inside the window's own opening, so it can never show outside the door.
- */
+/** A LOWERED WINDOW STAYS INSIDE ITS DOOR. */
 describe('car windows', () => {
   it('lower into the door, never out of it', () => {
     for (const a of ARCHETYPES) {
@@ -26,8 +20,7 @@ describe('car windows', () => {
             expect(pane.visible, `${a.id} door ${door.index}`).toBe(false);
             continue;
           }
-          // What is drawn is always within the pane's own shut outline: the
-          // opening in the door, never beside it, below it or outside it.
+          // What is drawn is always within the pane's own shut outline
           const lowest = pane.up + shut.min.y * pane.sy;
           const highest = pane.up + shut.max.y * pane.sy;
           expect(lowest, `${a.id} door ${door.index} drop ${drop}`).toBeGreaterThan(shut.min.y - 1e-6);

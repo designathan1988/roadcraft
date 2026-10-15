@@ -6,11 +6,7 @@ import { m } from '@world/units';
 
 const bandWidth = (b: Band): number => b.outer - b.inner;
 
-/**
- * The cross-section is the one description of what lies across a road. It
- * must reproduce, exactly, the rings every map has been drawn with (so no
- * saved city changes), and give every footway a through zone people can walk.
- */
+/** The cross-section is the one description of what lies across a road. */
 describe('cross-section', () => {
   for (let t = 0; t < ROAD_TYPES.length; t++) {
     const rt = roadProfile(t);

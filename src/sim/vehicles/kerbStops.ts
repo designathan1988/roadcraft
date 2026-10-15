@@ -8,39 +8,7 @@ import type { Boarder } from '../people/engine';
 import { personHash, type PersonAgeClass, type PersonGender } from '../people/view';
 import { lanesInBox } from '../agents/parking';
 
-/**
- * Somebody getting out of a car at the kerb, or getting in.
- *
- * Every occupant used to be born inside a vehicle at the edge of the map and
- * to vanish with it at another edge: nobody was ever seen getting in or out,
- * and no door ever moved. A car now sometimes carries an ERRAND - drop a
- * passenger off, or pick somebody up - and runs it the way a driver does:
- *
- *   1. it picks a place in the kerb lane, well clear of junctions and
- *      crossings, where a footway runs beside the road;
- *   2. it brakes to a stop there (`kerbStopObstacle`, an ordinary obstacle,
- *      so traffic behind simply follows it down or overtakes);
- *   3. it waits until the swing of the door and the spot on the footway are
- *      clear of people - a door is not opened into somebody;
- *   4. the kerb-side door opens, the person moves between the seat and the
- *      footway, the door closes, and the car pulls away.
- *
- * A passenger dropped off becomes a pedestrian on the footway, walking on
- * from where they stood. A pick-up takes a real pedestrian walking alone near
- * the stop: they walk to the door and get in, and are removed from the
- * crowd when they sit down.
- *
- * A bus runs the same machinery as a SERVICE: at a stop, passengers alight
- * through the middle door and people waiting nearby board at the front, one
- * after another with the doors held open. A truck makes a DELIVERY: its mate
- * gets out on the kerb side, is gone for a few seconds with the load, and
- * gets back in. Each person is one task of the stop's queue.
- *
- * Doors and seats are indexed as the renderer's body model numbers them:
- * the driver's (left) side first, front to back, then the kerb (right) side;
- * each door serves the seat behind it. Only kerb-side doors are used here,
- * which in right-hand traffic is the side away from the traffic.
- */
+/** Somebody getting out of a car at the kerb, or getting in. */
 
 export type ErrandKind = 'drop' | 'pick' | 'service' | 'deliver';
 /** What one task of a stop does: somebody gets out, or somebody gets in. */
@@ -108,10 +76,7 @@ const DOOR_CLEAR = m(1.4);
 const GIVE_UP = 25;
 /** How far along the footway a pick-up looks for somebody walking alone. */
 const PICK_REACH = m(40);
-/**
- * How far the person to collect may be from the door when the car stops: they
- * see it pull in and walk to it, so they are not lost by walking on meanwhile.
- */
+/** How far the person to collect may be from the door when the car stops */
 const PICK_FETCH = m(30);
 
 /** How far somebody will walk to catch a bus that has stopped. */
@@ -119,29 +84,17 @@ const BUS_FETCH = m(45);
 
 /** First id of the people who ride in vehicles, clear of any pedestrian id. */
 const PERSON_BASE = 1 << 24;
-/**
- * Seat ids per vehicle: a vehicle's seats are `PERSON_BASE + id * SEAT_STRIDE
- * + seat`, so the stride must be at least the most seats any body has. DO NOT
- * go back to a bare 8: a body of nine seats or more gave its last seats the
- * ids of the next vehicle's first ones (two people with one identity, one
- * look). Never under 8, so the people of the bodies there are keep their ids.
- */
+/** DO NOT go back to a bare 8: a body of nine seats or more gave its last seats the ids of the next vehicle's first ones */
 const SEAT_STRIDE = Math.max(8, ...ARCHETYPES.map((a) => a.seats));
 
-/**
- * Who sits in a seat. A passenger keeps one identity from spawn to wherever
- * they get out: the renderer draws this body in the seat, and the pedestrian
- * created at the kerb takes this id, so the person who walks off is the one
- * who was sitting there. Somebody picked up keeps their pedestrian id.
- */
+/** Who sits in a seat. */
 export function seatPerson(v: Vehicle, seat: number): { seed: number; gender: PersonGender; ageClass: PersonAgeClass } {
   const picked = v.people[seat];
   const seed = picked ?? PERSON_BASE + v.id * SEAT_STRIDE + seat;
   const hash = personHash(seed);
   const gender: PersonGender = (hash >>> 3) & 1 ? 'f' : 'm';
   if (picked !== undefined) return { seed, gender, ageClass: v.peopleAge[seat] ?? 'adult' };
-  // A family car: about one back seat in four carries a child, and never the
-  // driver's seat or the front passenger's.
+  // A family car: about one back seat in four carries a child, and never the driver's seat or the front passenger's.
   const perSide = v.archetype.doorsPerSide;
   const back = perSide > 1 && seat % perSide !== 0;
   return { seed, gender, ageClass: back && ((hash >>> 7) & 3) === 0 ? 'child' : 'adult' };
@@ -203,11 +156,7 @@ function kerbSideSeats(perSide: number): number[] {
   return Array.from({ length: perSide }, (_, i) => perSide + i);
 }
 
-/**
- * Where a door is along the body, from the front of the vehicle, as a share
- * of its length: front row and rear row. Matches the body model closely
- * enough to put a person at the door and to test the door's swing.
- */
+/** Where a door is along the body, from the front of the vehicle, as a share of its length: front row and rear row. */
 function doorAlongFromFront(v: Vehicle, door: number): number {
   const a = v.archetype;
   if (a.shape === 'bus') return door === 0 ? m(0.9) : a.length / 2 + m(0.3);
@@ -228,17 +177,13 @@ export function stepKerbStops(w: SimWorld): void {
     stop.t += DT;
     stop.elapsed += DT;
     const lane = w.lanelet(v.lanelet);
-    // Left the lane it meant to stop in (rerouted, a lane change, a rebuild)
-    // before stopping: the errand is dropped, never run somewhere else.
+    // Left the lane it meant to stop in (rerouted, a lane change, a rebuild) before stopping
     if (!lane || v.lanelet !== stop.lanelet) {
       if (stop.phase === 'approach') abandon(v);
       else finishDoors(v, stop);
       continue;
     }
-    // No phase but the transfer itself may last for ever. A delivery's 'hold'
-    // is planned to take `hold` seconds, and gets them on top. A stop that
-    // runs out its time drives on - shutting its doors first if any is open -
-    // instead of standing in the lane for good (audit P1-26).
+    // No phase but the transfer itself may last for ever.
     if (stop.phase !== 'approach' && stop.phase !== 'transfer' && stop.phase !== 'close' &&
         stop.t > GIVE_UP + (stop.phase === 'hold' ? stop.hold : 0)) {
       if (v.doors.some((open) => open > 0)) finishDoors(v, stop);
@@ -248,10 +193,7 @@ export function stepKerbStops(w: SimWorld): void {
     switch (stop.phase) {
       case 'approach':
         if (v.v < m(0.02) && stop.at - v.s < m(1)) {
-          // Stopped: the stop is where the car stands, and it is held there
-          // until its doors are shut (a bus's door brake interlock). Kept at
-          // the place it aimed for, up to a metre on, the car crept on to it
-          // with its doors opening.
+          // Stopped: the stop is where the car stands, and it is held there until its doors are shut (a bus's door brake interlock).
           stop.at = v.s;
           enter(stop, 'halt');
         }
@@ -267,8 +209,7 @@ export function stepKerbStops(w: SimWorld): void {
         }
         break;
       case 'hold':
-        // Away with the load; then back to the door. Nobody out there to come
-        // back (the person left the world): the doors shut and the car goes.
+        // Away with the load; then back to the door.
         if (stop.t >= stop.hold && !stop.person) {
           finishDoors(v, stop);
         } else if (stop.t >= stop.hold && stop.person) {
@@ -301,9 +242,7 @@ export function stepKerbStops(w: SimWorld): void {
           v.doors = [];
           const next = v.kerbQueue.shift();
           v.kerbStop = next ?? null;
-          // The next task of the same stop, the car still standing there: a
-          // delivery's wait first, or the halt (a pick-up hails, a drop-off
-          // waits for room to open the door again, the doors being shut).
+          // The next task of the same stop, the car still standing there: a delivery's wait first, or the halt
           if (next) enter(next, next.hold > 0 ? 'hold' : 'halt');
           if (next && next.hold > 0) next.person = stop.person;
         }
@@ -338,13 +277,7 @@ function setDoor(v: Vehicle, door: number, open: number): void {
   v.doors[door] = open;
 }
 
-/**
- * Chooses where to stop on the current link, or waits for a later one.
- *
- * Only in the kerb lane, only on a link long enough to stop in the middle of
- * it, only where a footway runs alongside on that side, and never where the
- * vehicle would have to brake harder than comfortably to make it.
- */
+/** Chooses where to stop on the current link, or waits for a later one. */
 function plan(w: SimWorld, v: Vehicle): void {
   const lane = w.lanelet(v.lanelet);
   if (!lane || lane.kind !== 'link' || lane.segment === undefined || lane.laneIndex === undefined) return;
@@ -391,8 +324,7 @@ function plan(w: SimWorld, v: Vehicle): void {
     return;
   }
 
-  // A pick-up needs somebody to pick up: a person walking alone on this
-  // side's footway, ahead of the car.
+  // A pick-up needs somebody to pick up: a person walking alone on this side's footway, ahead of the car.
   const seat = kerbSeats.find((s) => (v.seats & (1 << s)) === 0);
   if (seat === undefined) {
     v.errand = null;
@@ -407,10 +339,7 @@ function plan(w: SimWorld, v: Vehicle): void {
   v.kerbStop = stop;
 }
 
-/**
- * A bus stop: one or two passengers off by the middle door, and whoever is
- * walking alone nearby on by the front door, up to two, into free seats.
- */
+/** A bus stop: one or two passengers off by the middle door, and whoever is walking alone nearby on by the front door */
 function planBusStop(w: SimWorld, v: Vehicle, lanelet: LaneletId, earliest: number, latest: number): void {
   if (v.age - v.lastServiceAge < BUS_HEADWAY) return;
   const at = earliest + (latest - earliest) * 0.3;
@@ -429,8 +358,7 @@ function planBusStop(w: SimWorld, v: Vehicle, lanelet: LaneletId, earliest: numb
     .filter((s) => (v.seats & (1 << s)) === 0 || tasks.some((t) => t.seat === s));
   const taken = new Set<number>();
   for (let i = 0; i < 2 && i < free.length; i++) {
-    // Anybody walking alone along this side of the block may be waiting for
-    // the bus; they walk up to it when it calls (`hail`).
+    // Anybody walking alone along this side of the block may be waiting for the bus; they walk up to it when it calls
     const doorAt = at - doorAlongFromFront(v, 0);
     const walker = w.pedEngine.bridge.hailable(w, lanelet, doorAt - BUS_FETCH * 0.7, doorAt + BUS_FETCH * 0.7, taken);
     if (!walker) break;
@@ -453,10 +381,7 @@ function newStop(kind: TaskKind, lanelet: LaneletId, at: number, seat: number, d
 
 /** Somebody standing still or queued in front of the stop would make it a queue, not a stop. */
 function queuedAhead(w: SimWorld, v: Vehicle, at: number): boolean {
-  // The lane's order is sorted by `s`: from the first car past this one, by a
-  // binary search, up to where no body can reach back to the stop. Every car
-  // with an errand scanned its whole lane every tick - a queue of seventy on
-  // one street was 4 900 looks a tick.
+  // The lane's order is sorted by `s`
   const order = w.rt(v.lanelet).order;
   let lo = 0, hi = order.length;
   while (lo < hi) {
@@ -491,9 +416,7 @@ function footwayBeside(w: SimWorld, lanelet: LaneletId, s: number): { x: number;
   let best: { x: number; y: number; t: { x: number; y: number } } | null = null;
   let bestDistance = m(9);
   if (lane.segment === undefined) return null;
-  // DO NOT walk `sidewalks.edges` here: this runs for every car with an errand
-  // every tick, and the map's edges are thousands. The footways of the lane's
-  // own road, indexed when the graph is built.
+  // DO NOT walk `sidewalks.edges` here
   for (const edge of w.sidewalks.walksBeside(lane.segment)) {
     const hit = edge.path.closestPoint(side.p);
     const dx = hit.point.x - side.p.x;
@@ -526,13 +449,7 @@ function roomToOpen(w: SimWorld, v: Vehicle, stop: KerbStop): boolean {
   const people = w.pedEngine.bridge;
   if (people.anyoneWithin(w, door.x, door.y, DOOR_CLEAR, stop.pedId)) return false;
   if (stop.kind === 'drop' && people.anyoneWithin(w, foot.x, foot.y, m(0.9), stop.pedId)) return false;
-  // Nothing in the lane beside the door either: a cyclist or a motorcycle
-  // squeezing past on the kerb side would ride into it. A vehicle's middle is
-  // on its own lane's centre line, so one near enough to touch the door's
-  // swing is on a lane whose box comes within `DOOR_CLEAR` and the longest
-  // half-body of it: those lanes (`lanesInBox`, the lanes' grid) and their
-  // occupants are read. DO NOT file every vehicle of the town for a door: it
-  // was the whole fleet once a step whenever any door was about to open.
+  // DO NOT file every vehicle of the town for a door
   const reach = DOOR_CLEAR + LONGEST_BODY / 2;
   for (const lane of lanesInBox(w, door.x - reach, door.y - reach, door.x + reach, door.y + reach)) {
     for (const id of w.rt(lane.id).order) {
@@ -567,18 +484,12 @@ function beginTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
     enter(stop, 'transfer');
     return;
   }
-  // A pick-up: they have walked to the open door; now they sit down, or on
-  // a bus simply step aboard.
+  // A pick-up: they have walked to the open door; now they sit down, or on a bus simply step aboard.
   stop.transferTime = stop.seatStage ? SEAT_TIME : STEP_ABOARD;
   enter(stop, 'transfer');
 }
 
-/**
- * The car has stopped for somebody: they see it and walk over. Taken out of
- * the crowd here, where they stand, and walked to the door by the car's own
- * errand, so nothing about pedestrian steering can send them off elsewhere.
- * Somebody who has gone too far, or who is busy, is not collected.
- */
+/** The car has stopped for somebody: they see it and walk over. */
 function hail(w: SimWorld, v: Vehicle, stop: KerbStop): void {
   const { door } = doorPlaces(w, v, stop);
   const reach = v.archetype.shape === 'bus' ? BUS_FETCH : PICK_FETCH;
@@ -595,9 +506,7 @@ function hail(w: SimWorld, v: Vehicle, stop: KerbStop): void {
 
 function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
   if (stop.kind === 'drop') {
-    // Set down only where they walk on from (`PedestrianBridge.alight`): where
-    // nobody can, the passenger stays in the seat and rides on - never gone at
-    // the door (`kerbStops.spec`, the player's map).
+    // Set down only where they walk on from (`PedestrianBridge.alight`)
     const staysAboard = !!stop.person && !stop.keep && !w.pedEngine.bridge.alight(w, stop.person);
     if (!staysAboard) {
       v.seats &= ~(1 << stop.seat);
@@ -613,8 +522,7 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
       setSeat(v.peopleAge, stop.seat, stop.person.ageClass);
     }
   }
-  // A bus's next passenger uses the doors already open; anything that waits
-  // (a delivery) shuts them first.
+  // A bus's next passenger uses the doors already open; anything that waits (a delivery) shuts them first.
   const next = v.kerbQueue[0];
   if (next && next.hold === 0) {
     v.kerbQueue.shift();
@@ -626,13 +534,7 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
   enter(stop, 'close');
 }
 
-/**
- * A seat's entry of `people` or `peopleAge` written, the seats before it
- * filled with `undefined` (nobody picked up there, read as absent by
- * `seatPerson` and the renderer). DO NOT `delete` an entry or write past the
- * end: either leaves a hole, and V8 keeps a holey array holey for good,
- * reading it through the prototype chain (v8.dev/blog/elements-kinds).
- */
+/** DO NOT `delete` an entry or write past the end */
 function setSeat<T>(list: T[], seat: number, value: T | undefined): void {
   const seats = list as (T | undefined)[];
   while (seats.length < seat) seats.push(undefined);
@@ -640,26 +542,16 @@ function setSeat<T>(list: T[], seat: number, value: T | undefined): void {
   else seats[seat] = value;
 }
 
-/**
- * The stop as an obstacle: the front of the vehicle halts at `at`, and holds
- * there until the door has shut again.
- */
+/** The stop as an obstacle: the front of the vehicle halts at `at`, and holds there until the door has shut again. */
 export function kerbStopObstacle(v: Vehicle): { gap: number; speed: number; kind: 'kerbStop' } | null {
   const stop = v.kerbStop;
   if (!stop || v.lanelet !== stop.lanelet) return null;
   if (stop.phase === 'close' && stop.t >= DOOR_SHUT_TIME) return null;
-  // The car-following model stops a standstill gap short of any obstacle;
-  // the stop is a PLACE, not something to keep a gap from, so the gap is
-  // added back and the front comes to rest on `at` itself.
+  // The car-following model stops a standstill gap short of any obstacle
   return { gap: Math.max(0, stop.at - v.s + v.driver.s0), speed: 0, kind: 'kerbStop' };
 }
 
-/**
- * Where the moving person is, for the renderer. `seated` runs from 1 in the
- * seat to 0 standing beside the open door; `walked` from 0 at the door to 1
- * standing on the footway. A drop-off gets up and then walks; a pick-up walks
- * to the door and then sits down.
- */
+/** Where the moving person is, for the renderer. */
 export function kerbTransfer(stop: KerbStop): { seated: number; walked: number } | null {
   if (!stop.person) return null;
   if (stop.kind === 'pick') {

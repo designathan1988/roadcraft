@@ -10,14 +10,7 @@ import type { ZoneUse } from '@world/zones';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * Nothing in a grown lot stands in the air (docs/source/PLANO.md, Etapa 5a): every
- * part rests on the land, on the building, or on parts that do, with its
- * centre over what holds it (`unsupportedElements`). A carport roof whose
- * posts were refused, or a pergola whose posts a retaining wall cleared, is
- * the class this guards against - on the flat and on a hillside, where the
- * terraces lift and clear parts of the yard.
- */
+/** Nothing in a grown lot stands in the air (Etapa 5a) */
 
 const flat = (): number => 0;
 /** Ground rising to the north (-y) at 18 %, as `terrace.spec.ts`. */

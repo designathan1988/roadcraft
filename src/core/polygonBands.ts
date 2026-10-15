@@ -1,13 +1,6 @@
 import type { Vec2 } from './vec2';
 
-/**
- * A ring's edges sorted into horizontal bands: Haines' "bins" for the
- * crossings test (Graphics Gems IV, "Point in Polygon Strategies",
- * https://erich.realtimerendering.com/ptinpoly/). The crossings test toggles on
- * every edge that straddles the point's height, and an edge can straddle only
- * the heights it spans, so the edges of the point's own band are all it needs
- * to look at.
- */
+/** A ring's edges sorted into horizontal bands: Haines' "bins" for the crossings test */
 export interface PolygonBands {
   readonly y0: number;
   /** Bands per world unit. */
@@ -21,12 +14,7 @@ export interface PolygonBands {
   readonly edge: Int32Array;
 }
 
-/**
- * The band a height falls in. Monotone in `y` (a subtraction, a product by a
- * positive scale and a floor all keep order, in floating point too), so an
- * edge listed in every band from its lowest end's to its highest end's is in
- * the band of every height it straddles.
- */
+/** The band a height falls in. */
 const bandAt = (y0: number, scale: number, count: number, y: number): number =>
   Math.min(count - 1, Math.max(0, Math.floor((y - y0) * scale)));
 
@@ -53,12 +41,7 @@ export function polygonBands(points: readonly Vec2[], box: { readonly minY: numb
   return { y0, scale, count, xy, start, edge };
 }
 
-/**
- * `pointInPolygon` (`polygon.ts`) over the edges of the point's band only:
- * the same straddle test and the same crossing arithmetic on the same
- * operands, so the same answer bit for bit - the edges it skips are exactly
- * those that cannot straddle the point's height, which it skipped too.
- */
+/** `pointInPolygon` (`polygon.ts`) over the edges of the point's band only */
 export function insideBands(p: Vec2, b: PolygonBands): boolean {
   const n = b.xy.length >> 1;
   const xy = b.xy;

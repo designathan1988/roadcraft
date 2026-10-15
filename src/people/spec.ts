@@ -3,11 +3,7 @@ import { DEFAULT_MACRO, ageFromYears, yearsFromAge, type MacroParams } from './b
 import { phenotype } from './phenotype';
 import { COMMUNITY, communityItem, itemsOf } from './wardrobe';
 
-/**
- * A person: everything the Person Creator sets, and all a citizen needs to be
- * drawn. Small (a few hundred bytes), saved with the city, and the same record
- * for a pedestrian, a driver and a passenger.
- */
+/** A person: everything the Person Creator sets, and all a citizen needs to be drawn. */
 export interface PersonSpec {
   readonly id: number;
   readonly name: string;
@@ -39,11 +35,7 @@ export interface PersonLook {
   readonly bottom: BottomStyle;
   readonly bottomColour: number;
   readonly shoes: number;
-  /**
-   * MakeHuman garments, fitted to the body (`people/body/proxy.ts`), by
-   * name: what the person wears when set. Without them the older tailored
-   * shells above are drawn, so people saved before still look as they did.
-   */
+  /** MakeHuman garments, fitted to the body (`people/body/proxy.ts`), by name: what the person wears when set. */
   readonly outfit?: string;
   readonly footwear?: string;
   /** A hairstyle, or 'none'. */
@@ -54,10 +46,7 @@ export interface PersonLook {
   readonly hat?: string;
   /** A colour the outfit is dyed, or null for its own colours. */
   readonly outfitTint?: number | null;
-  /**
-   * More community items worn with the outfit (`wardrobe.ts`): trousers or a
-   * skirt under a top, glasses, jewellery, gloves, a beard.
-   */
+  /** More community items worn with the outfit (`wardrobe.ts`) */
   readonly extras?: readonly string[];
 }
 
@@ -104,8 +93,7 @@ export function wornItems(look: PersonLook): string[] {
   if (look.brows) out.push(look.brows);
   if (look.lashes) out.push(look.lashes);
   if (look.hat && look.hat !== 'none') out.push(look.hat);
-  // Trousers or a skirt only under a separate top: a whole outfit (a system
-  // suit, a dress) has its own, and two drawn in one place come out mottled.
+  // Trousers or a skirt only under a separate top: a whole outfit
   const separateTop = !!look.outfit && communityItem(look.outfit)?.kind === 'top';
   if (look.outfit) for (const extra of look.extras ?? []) {
     const kind = communityItem(extra)?.kind;
@@ -137,11 +125,7 @@ export const DEFAULT_LOOK: PersonLook = {
 
 const pick = <T>(r: () => number, list: readonly T[]): T => list[Math.floor(r() * list.length)]!;
 
-/**
- * A plausible stranger, the same one for the same seed: any sex, an age from
- * a toddler to the very old (weighted towards adults, as a street is), every
- * skin tone, and clothes and hair to go with them.
- */
+/** A plausible stranger, the same one for the same seed: any sex, an age from a toddler to the very old */
 export function randomPerson(id: number, seed: number, keep: { body?: Partial<PersonSpec['body']>; look?: Partial<PersonSpec['look']> } = {}): PersonSpec {
   const r = rng(seed);
   const years = r() < 0.12 ? 2 + r() * 14 : r() < 0.82 ? 18 + r() * 47 : 65 + r() * 25;
@@ -153,8 +137,7 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
     age: ageFromYears(years),
     muscle: 0.28 + (keep.body?.gender ?? gender) * 0.1 + r() * 0.3,
     weight: 0.3 + (1 - (keep.body?.gender ?? gender)) * 0.04 + r() * 0.4,
-    // Narrow on purpose: the slider is steep (0.33 to 0.67 is 1.56 to 1.94 m
-    // for a man), and a street of giants and very short people is not a street.
+    // Narrow on purpose: the slider is steep
     height: 0.42 + r() * 0.18,
     proportions: 0.4 + r() * 0.5,
     african: shares[0]! / total,
@@ -184,27 +167,17 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
   };
   const bottoms = CLOTH_COLOURS.filter((c) => c !== look.topColour);
   const coloured: PersonLook = keep.look?.bottomColour !== undefined ? look : { ...look, bottomColour: pick(r, bottoms) };
-  // Dressed in MakeHuman garments: an outfit cut for the body's sex, shoes,
-  // a hairstyle of the length drawn above, brows and lashes; now and then a
-  // hat, and an outfit dyed a colour of the street's.
+  // Dressed in MakeHuman garments: an outfit cut for the body's sex, shoes, a hairstyle of the length drawn above
   const sex = female ? 'female' as const : 'male' as const;
   const streetHair = COMMUNITY.filter((i) => i.kind === 'hair' && i.street && (i.sex === 'any' || i.sex === sex)
     && i.length === (coloured.hairStyle === 'long' ? 'long' : 'short')).map((i) => i.name);
   // System hair that suits the sex (a braid or a ponytail is a woman's here).
   const systemHair = (coloured.hairStyle === 'long' ? WARDROBE.hair.long : WARDROBE.hair.short)
     .filter((h) => female || !['bob01', 'bob02', 'braid01', 'ponytail01'].includes(h));
-  // Curated by eye (the player, 2026-10-05: "pessoas bonitas", no women all
-  // with short hair, no straggly strands): women mostly long and smooth or
-  // braided, a share with a chanel bob, a few with an updo; men with neat,
-  // combed cuts. Only reviewed items, and only ones the crowd can carry.
+  // Curated by eye (the player, 2026-10-05: "pessoas bonitas", no women all with short hair, no straggly strands)
   const available = new Set([...streetHair, ...systemHair, ...COMMUNITY.filter((i) => i.kind === 'hair' && i.street).map((i) => i.name)]);
   const only = (names: readonly string[]): string[] => names.filter((n) => available.has(n) || (WARDROBE.hair.long as readonly string[]).includes(n) || (WARDROBE.hair.short as readonly string[]).includes(n));
-  // Audited by eye on 2026-10-05 (the player: "tudo é horrível"): out went
-  // the see-through straggly long hair (o4saken_long01), the one-sided curls
-  // (elvs_adrienne_hair), the slicked ponytail with a bare hairline
-  // (ponytail01), the helmet bob (littleright_bobcut_hair), the blocky waves
-  // (elvs_wavy_bob); for men the ragged fringe (culturalibre_hair_05), the
-  // slick with a bald brow (short04), the fringe over an eye (short03).
+  // Audited by eye on 2026-10-05 (the player: "tudo é horrível"): out went the see-through straggly long hair
   const FEMALE_LONG = only(['elvs_daisy_hair', 'elvs_hazel_hair', 'elvs_lady_hippy_hair', 'elvs_french_braid_variation']);
   const FEMALE_CHANEL = only(['toigo_blunt_bob', 'toigo_inverted_bob', 'toigo_blunt_bob_with_bangs']);
   const FEMALE_UPDO = only(['elvs_50s_updo', 'rehmanpolanski_hair_bun_brown']);
@@ -215,21 +188,16 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
     : MALE_NEAT;
   const hairCut = !female && roll > 0.96 ? 'none'
     : pick(r, curated.length ? curated : streetHair.length ? streetHair : systemHair);
-  // What to wear: a top with trousers or a skirt (most people), one of the
-  // system outfits, or a dress or a suit; then now and then glasses,
-  // jewellery, and a beard on a man.
+  // What to wear: a top with trousers or a skirt (most people), one of the system outfits, or a dress or a suit
   const dresses = itemsOf('dress', { street: true, sex: 'female' });
   const suits = itemsOf('suit', { street: true, sex });
   const wear = r();
   const extras: string[] = [];
   let outfit: string;
-  // In the street only WHOLE outfits: a top and trousers from different packs
-  // were modelled apart and cut through each other when worn together (a
-  // waistband through the shirt). Separates stay in the Person Creator.
+  // In the street only WHOLE outfits
   if (wear < 0.35 && female && dresses.length) outfit = pick(r, dresses);
   else if (wear < 0.4 && suits.length) outfit = pick(r, suits);
-  // Not the work overalls nor the tank top and shorts, which read as a
-  // costume on a city street (the player); the elegant suits come up more.
+  // Not the work overalls nor the tank top and shorts, which read as a costume on a city street (the player)
   else outfit = pick(r, female ? ['female_casualsuit02', 'female_elegantsuit01', 'female_elegantsuit01']
     : ['male_casualsuit01', 'male_casualsuit02', 'male_casualsuit03', 'male_casualsuit04', 'male_casualsuit05', 'male_casualsuit06', 'male_elegantsuit01', 'male_elegantsuit01']);
   const glasses = itemsOf('glasses', { street: true, sex });
@@ -253,14 +221,11 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
     brows: pick(r, female ? BROW_PROFILES.arched : BROW_PROFILES.straightOrFull),
     lashes: pick(r, WARDROBE.lashes),
     hat: !female && years > 30 && r() < 0.08 ? pick(r, WARDROBE.hats) : 'none',
-    // Dyed more often than not: a dozen outfits make a street of uniforms
-    // in their own colours.
+    // Dyed more often than not: a dozen outfits make a street of uniforms in their own colours.
     outfitTint: r() < 0.65 ? pick(r, CLOTH_COLOURS) : null,
     ...keep.look,
   };
-  // A face with something in it: most people a gentle smile, some at rest,
-  // a few serious; brows set a little differently on everybody. MakeHuman's
-  // neutral face, on everybody, read as a street of masks.
+  // A face with something in it: most people a gentle smile, some at rest, a few serious
   const mood = r();
   const features: Record<string, number> = {
     'mouth-angles-down-up': mood < 0.65 ? 0.2 + r() * 0.4 : mood < 0.9 ? r() * 0.15 : -0.1 - r() * 0.2,
@@ -273,32 +238,22 @@ export function randomPerson(id: number, seed: number, keep: { body?: Partial<Pe
     // The tailored shells follow child anatomy; adult proxies have no reviewed child fit.
     const { outfit: _outfit, footwear: _footwear, extras: _extras, ...childLook } = finished;
     void _outfit; void _footwear; void _extras;
-    // A child's shirt in a clear colour: from the street palette a beige or
-    // white one read as bare skin in the portraits.
+    // A child's shirt in a clear colour: from the street palette a beige or white one read as bare skin in the portraits.
     const topColour = keep.look?.topColour ?? pick(r, CHILD_COLOURS);
     const bottomColour = keep.look?.bottomColour ?? pick(r, CHILD_COLOURS.filter((c) => c !== topColour));
     return { id, name: '', body, features, look: { ...childLook, top: 'tshirt', bottom: 'shorts', hat: 'none', topColour, bottomColour } };
   }
-  // The same temper drives the live face (`render/riggedCitizens.ts`): most a
-  // gentle smile, some at rest, a few serious.
+  // The same temper drives the live face (`render/riggedCitizens.ts`): most a gentle smile, some at rest, a few serious.
   const temper = mood < 0.65 ? 0.25 + r() * 0.35 : mood < 0.9 ? r() * 0.15 : -0.15 - r() * 0.25;
   return { id, name: '', mood: temper, body, features, look: finished };
 }
 
-/**
- * A face of one's own: the head's shape, and the nose, mouth, eyes, chin,
- * cheeks, forehead and ears each set a little differently. Values lean to the
- * middle (the sum of two draws) so most faces are ordinary and a few
- * striking, as in any street. Everybody wore MakeHuman's one default face
- * before - the same face on every body, whatever its build or skin.
- */
+/** A face of one's own: the head's shape, and the nose, mouth, eyes, chin, cheeks */
 function faceShape(r: () => number, body: MacroParams, years: number): Record<string, number> {
-  // Half of each slider's reach: thirty features all drawn wide at once read
-  // as a caricature (the player: 'they look like monsters').
+  // Half of each slider's reach: thirty features all drawn wide at once read as a caricature
   const around = (amp: number): number => (r() + r() - 1) * amp * 0.5;
   const shapes = ['head-oval', 'head-round', 'head-square', 'head-rectangular', 'head-diamond', 'head-triangular', 'head-invertedtriangular'];
-  // Whole-head shape and local contours should tell the same story. Unrelated
-  // large shape presets previously overwhelmed the much smaller jaw profile.
+  // Whole-head shape and local contours should tell the same story.
   const grown = Math.max(0, Math.min(1, (years - 10) / 10));
   const profileShapes = r() < grown * 0.7
     ? (r() < body.gender ? ['head-square', 'head-rectangular', 'head-oval'] : ['head-oval', 'head-round', 'head-invertedtriangular'])
@@ -348,10 +303,7 @@ const colour = (x: unknown, fallback: number): number =>
 const oneOf = <T extends string>(x: unknown, values: readonly T[], fallback: T): T =>
   typeof x === 'string' && (values as readonly string[]).includes(x) ? (x as T) : fallback;
 
-/**
- * A person read from outside (a save, a file): every field brought into range,
- * every unknown dropped. Null when it is not a person at all.
- */
+/** A person read from outside (a save, a file): every field brought into range, every unknown dropped. */
 export function normalizePerson(raw: unknown): PersonSpec | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const o = raw as Record<string, unknown>;

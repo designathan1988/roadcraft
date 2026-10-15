@@ -1,17 +1,10 @@
 import type { NodeId } from './ids';
 
-// The turn's question and answer as a worker reads them live with the measurer's interface
-// (`conflictTable.ts`): here they are only named. DO NOT define them here: `conflictTable.ts`
-// importing this file closed an import cycle through `conflictPoints.ts`.
+// DO NOT define them here: `conflictTable.ts` importing this file closed an import cycle through `conflictPoints.ts`.
 export type { ChosenTurn, SurfaceRings, TurnAsk, TurnChoice } from './conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from './conflictTable';
 
-/**
- * The turns of one build of the lane graph chosen off the page (`LaneletGraph.update` with a plan):
- * while `recording`, a turn its junctions do not know is asked here and stood in for; the junctions
- * that stood one in are built again once `chosen` holds the answers (`LaneletGraph.redoProvisional`).
- * DO NOT sweep a generated city's turns on the page: 25 s of one frame on the whole map (2026-10-15).
- */
+/** DO NOT sweep a generated city's turns on the page: 25 s of one frame on the whole map (2026-10-15). */
 export class TurnPlan {
   recording = true;
   readonly asks = new Map<string, TurnAsk>();
@@ -22,14 +15,7 @@ export class TurnPlan {
   readonly provisional = new Map<NodeId, JunctionTurns>();
 }
 
-/**
- * The turns one junction chose (`turnPath`), by what each was chosen from: the
- * junction's own (`lanelets.ts` keeps one per junction with what it built, and
- * hands the one of its last build to the next), so a turn is kept exactly as
- * long as the junction that made it, and goes with it. DO NOT go back to one
- * memo for the whole map with a ceiling that empties it (`MEMO_LIMIT`, then
- * `clear`): past the ceiling every junction of the city chose its turns again.
- */
+/** DO NOT go back to one memo for the whole map with a ceiling that empties it (`MEMO_LIMIT`, then `clear`) */
 export class JunctionTurns {
   private readonly made = new Map<string, ChosenTurn>();
   /** Whether a turn of this build was left to be chosen off the page (`TurnPlan`): its junction is built again once chosen. */
@@ -37,10 +23,7 @@ export class JunctionTurns {
   /** How many turns this build left to be chosen off the page (`defer`): a movement that left one is shaped again once chosen. */
   deferred = 0;
 
-  /**
-   * `before`: the same junction's turns of the build before, read where a movement is unchanged.
-   * `plan`: the turns chosen off the page for this build, and where the ones still to choose are asked.
-   */
+  /** `before`: the same junction's turns of the build before, read where a movement is unchanged. */
   constructor(private readonly before: JunctionTurns | null = null, readonly plan: TurnPlan | null = null, readonly node: NodeId | null = null) {}
 
   /** The turn chosen for `key`: this build's, else the build before's, else the plan's (then this build's too). */

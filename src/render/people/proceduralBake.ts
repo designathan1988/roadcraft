@@ -12,18 +12,7 @@ import { createPersonRig, type PersonRig } from './personRig';
 import { captureBind, captureBindRotations, loadRocketboxClips, type WalkSex } from '../citizenWalk';
 import { bakeLibraryClip, bakeWalk, breathe, restRig, type ClipFrames } from '../citizenBake';
 
-/**
- * What the procedural crowd (`proceduralCrowd.ts`) is cooked from
- * (`npm run cook:people`, `proceduralCook.ts`): each body class's rig and data
- * - the shape basis, the clips, the joint basis, the face slots, the
- * expressions - and each hairstyle's cards. Pure functions of the code and
- * the assets, in a module of their own: the cook's fingerprint
- * (`cook-plugin.ts`) is this module's import closure, so how the crowd is
- * drawn can change without making the cooked data stale.
- *
- * Moved here unchanged from `proceduralCrowd.ts` (2026-10-08); what they
- * read from the crowd's closure is now `BakeEnv`.
- */
+/** What the procedural crowd (`proceduralCrowd.ts`) is cooked from (`npm run cook:people`, `proceduralCook.ts`) */
 
 /** Principal components carried per body: 16 keep a body within about 1.5 cm of the full model. */
 export const SHAPES = 16;
@@ -173,19 +162,12 @@ export async function classRig(env: BakeEnv, sex: WalkSex, band: AgeBand): Promi
   return { base, shape, eyes, rig };
 }
 
-/**
- * A class's data on its rig: the shape basis, the clips, the joint basis,
- * the face slots and the expressions. Some 250 ms of work, done a few
- * milliseconds a frame (`breathe`) when it has to be done in play - only
- * when the cook is missing or stale.
- */
+/** A class's data on its rig: the shape basis, the clips, the joint basis, the face slots and the expressions. */
 export async function classData(env: BakeEnv, sex: WalkSex, rig: PersonRig, shape: Float32Array): Promise<ClassData> {
   const { assets: a } = await env.setup();
   const components = env.components;
   const vertexCount = a.mesh.vertexCount;
-  // The shape basis on this body: each component as moves of every base
-  // vertex in the bind posture, per unit of its coefficient (a small step,
-  // so the feet-to-ground shift stays linear).
+  // The shape basis on this body: each component as moves of every base vertex in the bind posture
   const shapeRows = Math.ceil(vertexCount * SHAPES / SHAPE_WIDTH);
   const shapePixels = new Float32Array(SHAPE_WIDTH * shapeRows * 4);
   const stepped = new Float32Array(shape.length);
@@ -239,9 +221,7 @@ export async function classData(env: BakeEnv, sex: WalkSex, rig: PersonRig, shap
   await breathe();
   const crawl = await bakeLibraryClip(bakeRig, library.crawl, undefined, 'crawl');
   await breathe();
-  // Joints follow the shape: a MakeHuman bone's head is the mean of a
-  // group of base vertices (its joint cube, `personRig.headOf`), so its
-  // move per coefficient is the mean of theirs in the shape basis.
+  // Joints follow the shape: a MakeHuman bone's head is the mean of a group of base vertices
   const bones = rig.mesh.skeleton.bones.length;
   const jointBasis = new Float32Array(bones * SHAPES * 3);
   a.skeleton.bones.forEach((bone, i) => {
@@ -256,8 +236,7 @@ export async function classData(env: BakeEnv, sex: WalkSex, rig: PersonRig, shap
       jointBasis[(i * SHAPES + k) * 3 + c] = sum / verts.length;
     }
   });
-  // The head's vertices (helpers too: the eyes, brows and lashes are pinned
-  // to them), each a slot in a person's face row.
+  // The head's vertices (helpers too: the eyes, brows and lashes are pinned to them), each a slot in a person's face row.
   const headBone = a.mesh.boneNames.indexOf('head');
   const faceList: number[] = [];
   const faceIndexPixels = new Float32Array(FACE_INDEX_WIDTH * Math.ceil(vertexCount / FACE_INDEX_WIDTH)).fill(-1);
@@ -267,9 +246,7 @@ export async function classData(env: BakeEnv, sex: WalkSex, rig: PersonRig, shap
     if (w > 0.25) { faceIndexPixels[v] = faceList.length; faceList.push(v); }
   }
   const faceRows = Math.ceil(faceList.length / FACE_WIDTH);
-  // Each expression channel on this body, as moves of the head's vertices
-  // in the bind posture: the channel's ARKit shapes on the class body,
-  // posed (`PersonRig.deltas`).
+  // Each expression channel on this body, as moves of the head's vertices in the bind posture
   const expressions = await expressionShapes();
   await breathe();
   const channels = channelShapes(expressions);
@@ -303,8 +280,7 @@ export async function cookAll(env: BakeEnv): Promise<Map<string, ArrayBuffer>> {
       out.set(`class-${sex}-${band}`, packRecord(classRecord(await classData(env, sex, rig, shape))));
     }
   }
-  // The cards of every hairstyle. Not the strands drawn over them close
-  // up (`strandPiece`): those are for the few people nearest the camera.
+  // The cards of every hairstyle.
   const { assets: a, morpher: mo } = await env.setup();
   for (const style of Object.values(HAIR_STYLES)) {
     out.set(`hair-${style.name}`, packRecord(packRecordOf(generateHair(style, hairBase(a, mo)))));
@@ -314,9 +290,7 @@ export async function cookAll(env: BakeEnv): Promise<Map<string, ArrayBuffer>> {
   return out;
 }
 
-// The cook (`scripts/cook-people.mjs`, run by hand): every class and hairstyle
-// built here once, packed and sent to the development server, which writes
-// them to `cooked/procedural/` (`proceduralCook.ts` reads them back).
+// The cook (`scripts/cook-people.mjs`, run by hand)
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as unknown as { __cookProcedural?: () => Promise<{ hash: string | null; names: string[]; bytes: number }> }).__cookProcedural = async () => {
     const files = await cookAll(createBakeEnv());

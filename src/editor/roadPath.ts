@@ -63,12 +63,7 @@ function simplify(points: readonly RoadPathPoint[], tolerance: number): RoadPath
   return [...keep].sort((a, b) => a - b).map((i) => points[i] as RoadPathPoint);
 }
 
-/**
- * Converts a freehand gesture into a chain of tangent-continuous quadratics.
- * A straight gesture stays one exact line. Interior gesture points act as
- * quadratic controls; adjacent pieces meet at their shared control midpoint,
- * where both tangents have the same direction.
- */
+/** Converts a freehand gesture into a chain of tangent-continuous quadratics. */
 export function roadPathFromGesture(
   samples: readonly RoadPathPoint[],
   start: RoadPathPoint,
@@ -82,9 +77,7 @@ export function roadPathFromGesture(
     const previous = raw[raw.length - 1] as RoadPathPoint;
     if (dist(previous.at, sample.at) >= MIN_CONTROL_SPACING) raw.push(sample);
     else if (raw.length > 1 && Math.abs(previous.heightOffset - sample.heightOffset) >= 0.5) {
-      // A height changed where the stroke stood (Page Up/Down mid-drag): the
-      // last control takes it. Pushed as a point of its own, a few units on,
-      // it made a piece too short to be a road, and the road had a gap there.
+      // A height changed where the stroke stood (Page Up/Down mid-drag): the last control takes it.
       raw[raw.length - 1] = { at: previous.at, heightOffset: sample.heightOffset };
     }
   }

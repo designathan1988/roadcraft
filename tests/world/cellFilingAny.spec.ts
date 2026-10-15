@@ -4,13 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChangeRect } from '@world/changes';
 import { CellFiling, cellWork } from '@world/cells';
 
-/**
- * THE THINGS A CHANGE OF MANY RECTANGLES REACHES, IN ONE LOOK
- * (`CellFiling.idsMeetingAny`): the same ids as asking each rectangle on its
- * own and joining them, in increasing order, each cell read once. Asked
- * rectangle by rectangle, the street furniture read the cells an entry's
- * overlapping blocks shared again for each block (2026-10-15).
- */
+/** THE THINGS A CHANGE OF MANY RECTANGLES REACHES, IN ONE LOOK (`CellFiling.idsMeetingAny`) */
 describe('a filing asked for several rectangles at once', () => {
   let seed = 11;
   const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);

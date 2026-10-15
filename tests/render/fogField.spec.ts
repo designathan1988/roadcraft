@@ -3,12 +3,7 @@ import { createFogField, createFogTexture } from '@render/fogLayer';
 import type { FogDab } from '@world/fogPaint';
 import { m } from '@world/units';
 
-/**
- * The painted fog's map is kept by the rectangles that changed
- * (`fogLayer.ts` `createFogField`): a dab laid and the map worked out again
- * only in its rectangle must hold exactly what the whole map worked out from
- * scratch holds, slab included.
- */
+/** The painted fog's map is kept by the rectangles that changed (`fogLayer.ts` `createFogField`) */
 
 const dab = (x: number, y: number, radius: number): FogDab =>
   ({ x, y, radius, strength: 0.8, height: m(20), speed: m(2) }) as FogDab;

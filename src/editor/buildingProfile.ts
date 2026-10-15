@@ -3,12 +3,7 @@ import { baysOn } from '@world/buildings/geometry';
 import { edgeFrame, volumeSides } from '@world/buildings/footprints';
 import { type PlanShape, setVolumePlan, shapePoints } from './buildingPlans';
 
-/**
- * Splits one continuous mass at a floor boundary. The new upper tier starts
- * with exactly the same plan and facade, so the visible building and its total
- * height do not change until the player sculpts that tier. Roof fixtures stay
- * on the physical top. This is the primitive behind an editable silhouette.
- */
+/** Splits one continuous mass at a floor boundary. */
 export function splitVolumeAtFloor(b: Building, volumeId: number, afterFloor: number): number | null {
   const lower = b.volumes.find((volume) => volume.id === volumeId);
   if (!lower || b.volumes.length >= MAX_VOLUMES || !Number.isInteger(afterFloor) ||

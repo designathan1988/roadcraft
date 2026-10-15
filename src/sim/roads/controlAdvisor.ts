@@ -1,19 +1,7 @@
 import type { NodeId } from '@world/ids';
 import { ROAD_TUNING } from '@world/roads/tuning';
 
-/**
- * THE CONTROL A JUNCTION LEFT ON "AUTOMATIC" GETS (docs/VIAS.md V5): chosen
- * from the measured trend of its flows (`flowStats.ts`), stepping up from
- * "give way on the minor road" to a stop on every leg to a signal, and back
- * down, the way the volume warrants of the MUTCD set them (2009, sec. 2B.07,
- * multi-way stop: 300 vehicles an hour on the major road and 200 units on the
- * minor one; sec. 4C.02, Warrant 1 (eight-hour volume), one lane each way:
- * 500 and 150, or 750 and 75). Every threshold is held for the measuring
- * window before it counts, steps down only under 80 % of it, and a junction
- * changes at most once a window: by trend, never by a peak (the player's
- * decision of 2026-10-09). A player's own choice locks the junction; this is
- * asked only while its control is "auto".
- */
+/** THE CONTROL A JUNCTION LEFT ON "AUTOMATIC" GETS: chosen from the measured trend of its flows */
 export type AutoControl = 'signal' | 'stop' | 'priority';
 
 const F = ROAD_TUNING.flow;
@@ -50,11 +38,7 @@ export class ControlAdvisor {
     return true;
   }
 
-  /**
-   * One junction's evaluation; returns true when its choice changed. `now`
-   * is the seconds of traffic measured; nothing changes before a whole
-   * window of it.
-   */
+  /** One junction's evaluation; returns true when its choice changed. */
   evaluate(node: NodeId, major: number, minorMax: number, minorTotal: number, initial: AutoControl, now: number): boolean {
     const current = this.choices.get(node) ?? initial;
     if (!this.choices.has(node)) this.choices.set(node, initial);

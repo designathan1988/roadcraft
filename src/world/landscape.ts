@@ -8,23 +8,7 @@ import { CROSSWALK_DEPTH } from './approach';
 import { carriesPedestrians } from './pedestrianAccess';
 import { BENCH_ZONE, LAMP_ZONE, MIN_THROUGH, TREE_KERB_SETBACK, TREE_PIT, sectionOf, zonesOn } from './section';
 
-/**
- * Street landscaping the PLAYER places: trees, shrubs, benches, bins, street
- * lights, hydrants and post boxes, on the footways.
- *
- * Nothing on a street is generated any more (the player's order of
- * 2026-10-05: "tudo isso será permitido colocar"). The document keeps where
- * each item was put and what it is; which footway it stands on, which way it
- * faces and how high it stands are derived from the roads every rebuild
- * (`streetFurniture.ts`), so an item follows its street when the street is
- * edited and is simply not drawn while no footway is under it.
- *
- * Where an item may go is decided once, here, and both the tool's preview and
- * its commit ask the same function: on a footway of a street that carries
- * pedestrians, in the furnishing zone beside the kerb (the NACTO zone the
- * lamp columns of every real street stand in, `section.ts`), clear of the
- * items already there.
- */
+/** Street landscaping the PLAYER places */
 
 export const LANDSCAPE_KINDS = ['tree', 'shrub', 'bench', 'bin', 'lamp', 'hydrant', 'postbox', 'phone', 'drain', 'meadow', 'sign', 'streetname'] as const;
 export type LandscapeKind = (typeof LANDSCAPE_KINDS)[number];
@@ -54,10 +38,7 @@ export function plantGrowth(planted: number | undefined, now: number): number {
   return PLANTED_SIZE + (1 - PLANTED_SIZE) * (t * t * (3 - 2 * t));
 }
 
-/**
- * The signs the one sign tool makes (the player's order of 2026-10-05): the
- * kind is chosen, and those that carry words carry the player's own.
- */
+/** The signs the one sign tool makes (the player's order of 2026-10-05) */
 export const SIGN_TYPES = ['stop', 'yield', 'speed', 'noParking', 'noEntry', 'pedestrian', 'school', 'direction', 'street', 'info'] as const;
 export type SignType = (typeof SIGN_TYPES)[number];
 export function isSignType(value: unknown): value is SignType {
@@ -104,22 +85,12 @@ export interface FootwayHit {
   readonly frame: { readonly p: Vec2; readonly t: Vec2; readonly n: Vec2 };
 }
 
-/**
- * The ribbons a point within `reach` of a road's surface can be on: those
- * whose surfaces reach `reach` round it, in the order of `net.ribbons`
- * (`Network.ribbonsMeeting`). Every item of street furniture placed asked
- * every road of the map, some 45 ms of each road drawn on the player's map
- * (profile of 2026-10-12).
- */
+/** The ribbons a point within `reach` of a road's surface can be on */
 function ribbonsNear(net: Network, at: Vec2, reach: number): Iterable<SegmentRibbon> {
   return net.ribbonsMeeting([at.x - reach, at.y - reach, at.x + reach, at.y + reach]);
 }
 
-/**
- * The footway a point stands on, or, with `reach`, the nearest one within
- * that distance of the footway's own band. Null on a carriageway, a highway,
- * a junction plate or open ground.
- */
+/** The footway a point stands on, or, with `reach`, the nearest one within that distance of the footway's own band. */
 export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null {
   let best: FootwayHit | null = null;
   let bestMiss = Infinity;
@@ -133,8 +104,7 @@ export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null 
     const pad = road.width / 2 + road.sidewalk + reach;
     if (at.x < box.minX - pad || at.x > box.maxX + pad || at.y < box.minY - pad || at.y > box.maxY + pad) continue;
     ribbon.full.closestInto(at.x, at.y, hit);
-    // The side the point is on, and that side's own footway (an asymmetric
-    // road, docs/source/VIAS.md V1).
+    // The side the point is on, and that side's own footway (an asymmetric road).
     const atFrame = ribbon.full.sampleAt(hit.s);
     const onLeft = (at.x - atFrame.p.x) * atFrame.n.x + (at.y - atFrame.p.y) * atFrame.n.y >= 0;
     const zones = zonesOn(sectionOf(road, segment.direction), onLeft ? 'left' : 'right');
@@ -153,7 +123,7 @@ export function footwayAt(net: Network, at: Vec2, reach = 0): FootwayHit | null 
   return best;
 }
 
-/** A planted median a point stands on (docs/source/VIAS.md V7): trees and shrubs go there too. */
+/** A planted median a point stands on: trees and shrubs go there too. */
 export interface MedianHit {
   readonly segment: SegmentId;
   readonly s: number;
@@ -174,21 +144,11 @@ export function plantedMedian(road: RoadType): boolean {
 /** Room left between a crossing's far edge and a median island's nose, world units. */
 const MEDIAN_NOSE_GAP = m(0.5);
 
-/**
- * How far from `node` along the segment its median island begins: past the
- * crossing there (`crosswalkDistanceAt`, where the zebra is painted), or 0
- * where there is none. Run up to the junction mouth, the island lay kerbed
- * and planted across the zebra and people crossed over grass (2026-10-09).
- * The island drawn (`render/roadSurfaces.ts`) and the trees planted on it
- * (`medianAt`) both stop here.
- */
+/** How far from `node` along the segment its median island begins: past the crossing there */
 export function medianNose(net: Network, segment: SegmentId, node: NodeId): number {
   const crossing = net.crosswalkDistanceAt(segment, node);
   const behindCrossing = crossing > 0 ? crossing + CROSSWALK_DEPTH / 2 + MEDIAN_NOSE_GAP : 0;
-  // A U-turn's opening (docs/source/VIAS.md V8, retorno): the half circle reaches its
-  // radius past the node, on the road beyond the one it serves, and the body
-  // half its length further (`medianUturnPath`); on the road it serves only a
-  // nose's gap, its turners waiting beside the island.
+  // A U-turn's opening (retorno)
   const at = net.doc.node(node);
   if (at?.uturn === undefined || at.incident.length !== 2) return behindCrossing;
   return Math.max(behindCrossing, segment === at.uturn ? MEDIAN_NOSE_GAP * 3 : MEDIAN_UTURN_OPENING);
@@ -234,25 +194,19 @@ function depthFor(kind: LandscapeKind, road: RoadType, direction: 'both' | 'aToB
     case 'hydrant':
     case 'sign':
       return zone.inner + Math.min(LAMP_ZONE, depth) / 2;
-    // A telephone booth is no column: placed as one, half a lamp's depth off
-    // the kerb, its box stood 0.27 m over it. Its own radius off the kerb,
-    // where the furnishing zone is deep enough to hold it.
+    // A telephone booth is no column: placed as one, half a lamp's depth off the kerb, its box stood 0.27 m over it.
     case 'phone':
       if (depth < 2 * LANDSCAPE_RADIUS.phone - 1e-9) return null;
       return zone.inner + LANDSCAPE_RADIUS.phone;
-    // A kerb inlet ("boca de lobo"): its mouth is IN the kerb, its grate in
-    // the gutter in front; the item stands on the kerb's back edge.
+    // A kerb inlet ("boca de lobo"): its mouth is IN the kerb, its grate in the gutter in front
     case 'drain':
       return zone.inner + m(0.05);
-    // Long grass is placed on open ground and a street's name on the street
-    // itself (`snapLandscape`), never by depth.
+    // Long grass is placed on open ground and a street's name on the street itself (`snapLandscape`), never by depth.
     case 'meadow':
     case 'streetname':
       return null;
     case 'tree': {
-      // A pit beside the kerb, so long as the walkers keep their through
-      // width behind it: a 2 m footway takes one (0.95 m pit and setback,
-      // 0.9 m clear), as Brazilian streets plant them.
+      // A pit beside the kerb, so long as the walkers keep their through width behind it: a 2 m footway takes one
       const footway = zones.frontage.outer - zone.inner;
       if (footway - TREE_KERB_SETBACK - TREE_PIT < MIN_THROUGH - 1e-6) return null;
       return zone.inner + TREE_KERB_SETBACK + TREE_PIT / 2;
@@ -279,11 +233,7 @@ export interface CrossingAccess {
   readonly structure: string;
 }
 
-/**
- * Every crossing's approach, including its landing on each footway. Furniture
- * in a zebra's exit leaves a walker neither able to pass it nor to stay in the
- * road.
- */
+/** Every crossing's approach, including its landing on each footway. */
 const accessMemo = new WeakMap<Network, { revision: number; trafficRevision: number; list: CrossingAccess[] }>();
 export function crossingAccesses(net: Network): CrossingAccess[] {
   // Asked once per item placed: the city generator places thousands (V7).
@@ -297,12 +247,7 @@ function crossingAccessesNow(net: Network): CrossingAccess[] {
   return crossingAccessesAt(net, net.doc.nodes.keys());
 }
 
-/**
- * The crossing landings at these nodes only (`poleLines.ts` poleLinesIn: the nodes of one place), in
- * their order: each kept by the network (`Network.crossingLandingAt`). Every item of street furniture
- * asks those of the nodes round it, and each was worked out again for every item that asked. DO NOT
- * work a landing out here again.
- */
+/** DO NOT work a landing out here again. */
 export function crossingAccessesAt(net: Network, nodes: Iterable<NodeId>): CrossingAccess[] {
   const out: CrossingAccess[] = [];
   for (const nodeId of nodes) {
@@ -329,20 +274,10 @@ export function onCrossingAccess(
   });
 }
 
-/**
- * How far from a point a crossing's landing can reach it, besides the item's
- * own radius: the landing runs from the road's centre out past its footway
- * (`across`, the widest road's half and footway) and half a zebra along it.
- */
+/** How far from a point a crossing's landing can reach it, besides the item's own radius */
 export const ACCESS_REACH = m(40);
 
-/**
- * `onCrossingAccess` against the landings near the point only: the crossings
- * of the roads within reach of it (`Network.ribbonsMeeting`), at their ends'
- * nodes. Every item placed - by hand under the pointer, or a road's furniture
- * piece by piece (`roads/furnitureSets.ts`) - tested every crossing of the map.
- * DO NOT test against `crossingAccesses(net)` (every landing of the map) for one point.
- */
+/** DO NOT test against `crossingAccesses(net)` (every landing of the map) for one point. */
 export function nearCrossingAccess(net: Network, segment: SegmentId, x: number, y: number, radius: number): boolean {
   const r = ACCESS_REACH + radius;
   const nodes = new Set<NodeId>();
@@ -357,12 +292,7 @@ export function nearCrossingAccess(net: Network, segment: SegmentId, x: number, 
 /** The side of the cells `crossingAccessTester` files the landings in. */
 const ACCESS_CELL = m(32);
 
-/**
- * `onCrossingAccess` for many items against the same landings: the landings
- * filed once by cell, each item asking the cells within reach of it. Every
- * item of street furniture asked every crossing of the map, some 19 ms of each
- * road drawn on the player's map (profile of 2026-10-12).
- */
+/** `onCrossingAccess` for many items against the same landings */
 export function crossingAccessTester(net: Network, accesses: readonly CrossingAccess[]): (segment: SegmentId, x: number, y: number, radius: number) => boolean {
   const cells = new Map<string, CrossingAccess[]>();
   let reach = 0;
@@ -386,14 +316,7 @@ export type LandscapeSnap =
   | { readonly ok: true; readonly at: Vec2; readonly hit: FootwayHit | null; readonly median?: MedianHit }
   | { readonly ok: false; readonly at: Vec2; readonly reason: LandscapeRefusal };
 
-/**
- * Where an item of `kind` put at `at` would stand, or why it cannot.
- *
- * The item is pulled across onto its line in the furnishing zone of the
- * footway under the pointer (within `reach` of it), keeping its station along
- * the street: a bench goes where it was put along the road, and at the depth
- * a bench belongs at.
- */
+/** Where an item of `kind` put at `at` would stand, or why it cannot. */
 export function snapLandscape(
   net: Network,
   items: Iterable<LandscapeItem>,
@@ -462,12 +385,7 @@ function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: number)
 /** The widest item's radius: what a search round a point grows by to meet every item reaching it. */
 export const MAX_ITEM_RADIUS = Math.max(...Object.values(LANDSCAPE_RADIUS));
 
-/**
- * `landscapeNear` over the document's items round the point only
- * (`RoadDoc.landscapeIn`): what the pointer of the bulldozer and of the
- * landscaping tool asks. DO NOT hand `doc.landscape.values()` to
- * `landscapeNear` for one point: every item of the map, every move.
- */
+/** DO NOT hand `doc.landscape.values()` to `landscapeNear` for one point: every item of the map, every move. */
 export function landscapeNearIn(doc: { landscapeIn(rect: readonly [number, number, number, number]): LandscapeItem[] }, at: Vec2, radius: number): LandscapeItem | null {
   const r = radius + MAX_ITEM_RADIUS;
   return landscapeNear(doc.landscapeIn([at.x - r, at.y - r, at.x + r, at.y + r]), at, radius);

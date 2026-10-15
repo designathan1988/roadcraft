@@ -27,15 +27,7 @@ import { buildingBounds } from '@world/buildings/geometry';
 import { initBuilderWorkspace, type BuilderActions, type BuilderState } from '@ui/builder/workspace';
 import { formatDecimal, plural, t } from '@ui/i18n';
 
-/**
- * The building tool's share of the composition root.
- *
- * This is `main.ts`, split: the one other file allowed to wire every layer
- * together (CLAUDE.md (Layers)), kept apart so the building feature touches
- * `main.ts` in a handful of lines. It builds the `ToolView` from the viewport,
- * the `ToolHost` from the history and the autosave, the Builder Workspace
- * (`ui/builder/`), the overlay and the road-wins rule. See docs/buildings.md.
- */
+/** The building tool's share of the composition root. */
 export interface BuildingWiringDeps {
   readonly doc: RoadDoc;
   readonly net: Network;
@@ -63,11 +55,7 @@ export interface BuildingWiring {
   insideClick(screen: Vec2, double: boolean): boolean;
   pointerMove(screen: Vec2, world: Vec2, shift: boolean): void;
   pointerUp(cancelled: boolean): void;
-  /**
-   * Photographs the parts a gallery is about to show, a few per frame. The
-   * pictures arrive through the workspace as they are ready; nothing here
-   * blocks, and a gallery that is never opened costs nothing.
-   */
+  /** Photographs the parts a gallery is about to show, a few per frame. */
   requestThumbnails(ids: readonly string[]): void;
   /** Returns true when the tool used the key. */
   key(e: KeyboardEvent): boolean;
@@ -77,7 +65,7 @@ export interface BuildingWiring {
   deactivate(): void;
   /** Before each draw: hands the preview to the renderer. */
   beforeDraw(active: boolean): void;
-  /** A building opened from inside at its ground floor (the player went in, `src/play.ts`), or closed. */
+  /** A building opened from inside at its ground floor (the player went in), or closed. */
   openInside(id: BuildingId | null): void;
   drawOverlay(ctx: CanvasRenderingContext2D): void;
   /** After an undo, a redo or a load. */
@@ -102,8 +90,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     planeAt: (s, z) => deps.view().toWorldAt(s.x, s.y, z, deps.size().w, deps.size().h),
     ray(s) {
       const { w, h } = deps.size();
-      // The camera's own line of sight where the view has one (`Viewport.rayAt`):
-      // at street level a pixel over the horizon meets no plane under the eye.
+      // The camera's own line of sight where the view has one (`Viewport.rayAt`)
       const sight = deps.view().rayAt?.(s.x, s.y, w, h);
       if (sight) return sight;
       // Looking straight down: two points on the pixel's line of sight, at two heights, give it.
@@ -144,11 +131,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   let lastHint = '';
   // See inside: one building, the one clicked, cut open at a floor.
   const seeInside: { on: boolean; level: number; target: BuildingId | null } = { on: false, level: 0, target: null };
-  /**
-   * See inside shown as it now is, in the interface's top bar (`workspace.onInside`).
-   * DO NOT add a second bar for it: a floating one (`ui/insideBar.ts`) stood beside
-   * the top bar's, numbering the same floor '1º andar' there and '2º' here.
-   */
+  /** DO NOT add a second bar for it: a floating one */
   function tellInside(): void {
     workspace.showInside(seeInside);
   }
@@ -162,8 +145,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       const result = edit();
       history.end(doc);
       if (!result.ok) return result;
-      // The camera stays where the player put it: placing a building used to
-      // re-frame it, which threw the view across the map mid-gesture.
+      // The camera stays where the player put it
       deps.afterEdit();
       return result;
     },
@@ -173,9 +155,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         lastHint = tool.builderHintKey();
         deps.hintChanged();
       }
-      // The workspace follows the tool at once, not a frame later: the panels
-      // are cheap to re-render (each caches on its own signature) and a click
-      // has to answer immediately.
+      // The workspace follows the tool at once, not a frame later: the panels are cheap to re-render
       refresh();
       deps.requestDraw();
     },
@@ -186,8 +166,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   };
 
   const tool = new BuildingTool(view, host);
-  // Alt held frees a drag from the grid (Windows convention; the key is read
-  // from the window so the pointer handlers need not pass it).
+  // Alt held frees a drag from the grid
   const setFree = (free: boolean): void => {
     const wanted = free || snapMode === 'off';
     if (tool.free === wanted) return;
@@ -202,14 +181,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
 
   // ------------------------------------------------------------ the workspace
 
-  /**
-   * Choosing a tool puts the previous one away: only one thing may be taking
-   * the pointer at a time (the spec's rule, and the reason a plan could never
-   * finish while an opening brush was still armed).
-   */
+  /** Choosing a tool puts the previous one away: only one thing may be taking the pointer at a time */
   function clearArming(keep: 'component' | 'element' | 'detail' | 'model' | 'path' | null): void {
-    // A plan left half-drawn when another tool is chosen is put away, or the
-    // tray would keep offering Finish for a plan nobody is drawing.
+    // A plan left half-drawn when another tool is chosen is put away
     if (tool.planPoints && !tool.pathKind && keep !== 'path') tool.cancelPlan();
     tool.massMoveArmed = false;
     if (keep !== 'component') tool.armComponent(null);
@@ -329,8 +303,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         tool.setCutLevel(Math.min(top, (tool.cutLevel ?? floorInHand()) + 1));
         return;
       }
-      // Modelling, SketchUp's and Blender's verbs on a block of storeys: one
-      // metre a click, typed sizes in the selection panel.
+      // Modelling, SketchUp's and Blender's verbs on a block of storeys: one metre a click, typed sizes in the selection panel.
       case 'extrudeOut': tool.extrudeFace(m(1)); return;
       case 'extrudeIn': tool.extrudeFace(-m(1)); return;
       case 'extrudeBlock': tool.extrudeFaceBlock(m(4)); return;
@@ -399,9 +372,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       return;
     }
     if (id === 'sketch') {
-      // The free plan arms here and starts on the first click: opening the
-      // Draw category used to leave a plan in progress, with the tray locked
-      // on Finish and the shapes unreachable.
+      // The free plan arms here and starts on the first click
       clearArming(null);
       tool.setStage('sketch');
       toolId = id;
@@ -452,16 +423,14 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       toolId = id;
       return;
     }
-    // Runs traced as a path: fence, wall and paving follow the line drawn,
-    // one part per segment, end to end.
+    // Runs traced as a path: fence, wall and paving follow the line drawn, one part per segment, end to end.
     if (id === 'wallRun' || id === 'fenceRun' || id === 'pavementRun' || id === 'stairRun') {
       const kind = id === 'wallRun' ? 'wall' : id === 'fenceRun' ? 'fence' : id === 'stairRun' ? 'stair' : 'pavement';
       tool.startElementRun(kind);
       toolId = id;
       return;
     }
-    // The free parts (stairs, ramps, pillars, canopies, walls, slabs, paving,
-    // and the things that decorate a lot: trees, benches, planters, units).
+    // The free parts stairs, ramps, pillars, canopies, walls, slabs, paving, and the things that decorate a lot: trees,
     if (
       id === 'stair' || id === 'ramp' || id === 'pillar' || id === 'canopy' || id === 'wall'
       || id === 'slab' || id === 'pavement' || id === 'tree' || id === 'bench' || id === 'ac' || id === 'planter'
@@ -484,11 +453,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   /** Tools that make something; once it is made, the pointer selects again. */
   const CREATES = new Set(['sketch', 'place', 'wing', 'stack', 'cut', 'moveMass', ...Object.keys(DRAW_SHAPES)]);
 
-  /**
-   * After a gesture: if a creating tool just made what it makes, it is put
-   * down. Left in hand, the free plan started a second plan when the player
-   * reached for the new building's floor arrow.
-   */
+  /** After a gesture: if a creating tool just made what it makes, it is put down. */
   function afterGesture(revision: number): void {
     if (doc.buildings.revision === revision || !CREATES.has(toolId) || tool.planPoints) return;
     backToSelect();
@@ -512,17 +477,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     notify('builder.styleCopied');
   }
 
-  /**
-   * Photographs the parts a gallery is about to show, a few per frame, and
-   * hands each batch to the workspace as it is ready. Nothing blocks: the
-   * eighty pictures used to be taken in one frame, which cost a third of a
-   * second of freeze the moment the Builder was opened.
-   */
+  /** Photographs the parts a gallery is about to show, a few per frame, and hands each batch to the workspace as it is ready. */
   function requestThumbnails(ids: readonly string[]): void {
-    // The shelves are laid out at boot, Builder open or not: the pictures
-    // waited for nobody and cost the first ten seconds of play a stutter
-    // (each one a building built and drawn in a second context). They are
-    // taken when the Builder is first opened.
+    // The shelves are laid out at boot, Builder open or not
     if (!builderOpen) {
       for (const id of ids) deferredPictures.add(id);
       return;
@@ -540,10 +497,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     redo: () => deps.redo(),
     setCategory: (id) => {
       category = id;
-      // A category is a shelf, not a button: opening it arms nothing. It used
-      // to arm its first tool - the free plan for Create - so the next click
-      // on a house started a plan instead of selecting it. The pointer selects
-      // until a tool is taken up.
+      // A category is a shelf, not a button: opening it arms nothing.
       backToSelect();
       host.changed();
     },
@@ -554,8 +508,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     setFloor: (level) => {
       const building = tool.selected();
       if (!building) return;
-      // The floor selector points the face tools at one level: the bay the
-      // selection carries moves with it.
+      // The floor selector points the face tools at one level: the bay the selection carries moves with it.
       const volume = tool.selection ? volumeById(building, tool.selection.volume) : undefined;
       if (volume && tool.selection?.bay) {
         tool.selectFloor(level - volume.base);
@@ -565,9 +518,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       host.changed();
     },
     floorCommand: (command) => {
-      // The floor in hand is the one the floor chip shows: the picked face's
-      // storey, or the top one. Inserting used to cut the mass in two (and
-      // "below" did nothing); now it adds a storey there.
+      // The floor in hand is the one the floor chip shows: the picked face's storey, or the top one.
       const volume = tool.selected() && tool.selection ? volumeById(tool.selected()!, tool.selection.volume) : undefined;
       const at = tool.selection?.bay?.storey ?? (volume ? volume.storeys.length - 1 : 0);
       if (command === 'insertAbove') tool.insertStorey(at, true);
@@ -608,8 +559,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           const centre = { x: building.x, y: building.y };
           let best: Building | null = null;
           let bestDistance = 60;
-          // Only one whose anchor is within reach can win: the store's grid
-          // files every anchor (`BuildingStore.near`, in the order of `all()`).
+          // Only one whose anchor is within reach can win: the store's grid files every anchor
           for (const other of doc.buildings.near(centre.x - bestDistance, centre.y - bestDistance, centre.x + bestDistance, centre.y + bestDistance)) {
             if (other.id === building.id) continue;
             const d = Math.hypot(other.x - centre.x, other.y - centre.y);
@@ -648,12 +598,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       host.changed();
     },
     choosePreset: (key) => {
-      // A model in hand is placed by the next click; the plan pencil, if it
-      // was the tool, is put down - with it, that click began a plan instead.
+      // A model in hand is placed by the next click; the plan pencil, if it was the tool, is put down
       clearArming(null);
       toolId = 'place';
-      // A lot of the lot lab (`lot:<name>`): read when chosen, then in hand
-      // with its own drawing (`world/buildings/lotLibrary.ts`).
+      // A lot of the lot lab (`lot:<name>`): read when chosen, then in hand with its own drawing
       if (key.startsWith('lot:')) {
         void loadLot(key.slice(4)).then((lot) => {
           if (!lot) return;
@@ -677,9 +625,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       userBlueprints = library.list();
       host.changed();
     },
-    // The finish tools paint the selected free part when there is one (a
-    // stair, a pavement, a canopy), and the model's surface otherwise.
-    // A finish comes in its own colour, and is what the brush carries next.
+    // The finish tools paint the selected free part when there is one
     chooseFinish: (finish) => {
       const colour = FINISH_COLOUR[finish];
       tool.setPaintBrush({ finish, colour });
@@ -748,9 +694,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           seeInside.on = false;
           seeInside.target = null;
         } else {
-          // Switched on from the button: the building in the middle of the view,
-          // from its ground floor. DO NOT switch on with no building: the bar
-          // showed 'Térreo' over the street and climbed to any floor, nothing open.
+          // DO NOT switch on with no building: the bar showed 'Térreo' over the street and climbed to any floor, nothing open.
           const { w, h } = deps.size();
           const target = tool.buildingAt({ x: w / 2, y: h / 2 });
           if (target === null) {
@@ -777,9 +721,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       const { w, h } = deps.size();
       switch (id) {
         case 'frame': {
-          // Asked for: the camera goes to the selection. (A stored edit never
-          // moves it - `host.focus` stays quiet - but this is the player's own
-          // request, and it used to do nothing at all.)
+          // Asked for: the camera goes to the selection.
           const building = tool.selected();
           if (building) deps.focusBuilding?.(building);
           break;
@@ -850,10 +792,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     }
   }
 
-  /**
-   * The sentence the hint bar shows: the plan being drawn wins, otherwise the
-   * tool the tray has chosen.
-   */
+  /** The sentence the hint bar shows: the plan being drawn wins, otherwise the tool the tray has chosen. */
   function hintKey(): string {
     if (tool.planPoints) {
       return tool.planAction === 'new' ? (toolId === 'sketch' ? 'sketch' : 'draw.new') : `draw.${tool.planAction}`;
@@ -880,8 +819,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     );
     if (volume) {
       const area = Math.abs(signedArea(localFootprint(volume))) * metres ** 2;
-      // The block's own plan, in metres, about its centre: a setback is made
-      // exact by typing its width and depth.
+      // The block's own plan, in metres, about its centre: a setback is made exact by typing its width and depth.
       if (!tool.selection?.bay && !tool.selectedElement() && tool.selectedRoofDetail === null) {
         fields.push(
           { id: 'volW', labelKey: 'builder.field.width', value: volume.w * metres, unit: 'm', min: 1, max: 400, step: 0.5 },
@@ -889,8 +827,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         );
       }
       if (!tool.selection?.bay && !tool.selectedElement() && tool.selectedRoofDetail === null) {
-        // Where the block sits: its centre from the centre of the block it
-        // stands on (or the first block), and the level it starts on.
+        // Where the block sits: its centre from the centre of the block it stands on
         const offset = tool.blockOffset();
         if (offset) {
           fields.push(
@@ -1041,11 +978,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   return {
     tool,
     workspace,
-    /**
-     * A click on the map with nothing in hand: two on a building open it (or
-     * close it, on open ground); one, while a building is open, opens the
-     * one clicked instead. Returns whether the click was taken.
-     */
+    /** A click on the map with nothing in hand: two on a building open it (or close it, on open ground) */
     insideClick(screen: { x: number; y: number }, double: boolean): boolean {
       const hit = tool.buildingAt(screen);
       if (double) {
@@ -1054,8 +987,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       } else if (seeInside.on && hit !== null) {
         seeInside.target = hit;
       } else return false;
-      // The floor seen goes on in the building opened, no higher than its top:
-      // the bar named a floor the building did not have.
+      // The floor seen goes on in the building opened, no higher than its top: the bar named a floor the building did not have.
       const b = hit !== null ? doc.buildings.get(hit) : undefined;
       seeInside.level = b ? Math.min(seeInside.level, Math.max(0, topLevel(b) - 1)) : 0;
       tellInside();
@@ -1093,10 +1025,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         dirty = true;
         return;
       }
-      // The free plan starts on the first click of the gesture - and that click
-      // is its first corner. It used to only start the plan and return, so the
-      // press was never armed as a click: three corners clicked gave two
-      // points, and a square came out a triangle.
+      // The free plan starts on the first click of the gesture - and that click is its first corner.
       if (toolId === 'sketch' && !tool.planPoints) tool.startPlan(drawAction);
       tool.pointerDown(screen, world, shift);
       dirty = true;
@@ -1147,8 +1076,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       }
       const revision = doc.buildings.revision;
       const used = tool.key(e.key, ctrl, e.shiftKey);
-      // Escape with nothing left to put down: the pointer selects; with the
-      // pointer already selecting, the key is the game's (the tool put down).
+      // Escape with nothing left to put down: the pointer selects; with the pointer already selecting, the key is the game's
       const back = e.key === 'Escape' && toolId !== 'select' && !tool.planPoints;
       if (used || back) {
         afterGesture(revision);
@@ -1159,17 +1087,14 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     },
     activate() {
       dirty = true;
-      // The pointer selects on arrival: the tool used to wake up holding the
-      // first model, whose ghost then followed every other tool around.
+      // The pointer selects on arrival: the tool used to wake up holding the first model
       if (toolId === 'select' && !tool.planPoints) tool.armModelTool('select');
       // Nothing in hand: open on the models, the shapes a tab away.
       if (!tool.selected() && !tool.planPoints) workspace.showGallery('models');
       refresh();
     },
     deactivate() {
-      // A stroke or a shape drag left running across a tool switch came back to
-      // life on return: hovering painted faces with no button held, and the
-      // next release built a shape from a stale corner.
+      // A stroke or a shape drag left running across a tool switch came back to life on return
       if (painting) {
         painting = false;
         tool.endPaintStroke();
@@ -1198,10 +1123,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
           requestThumbnails(ids);
         }
       }
-      // A gesture's ghost wins; otherwise, in the interior view, the building
-      // cut open at its floor.
-      // See inside, city-wide: the buildings around the middle of the view,
-      // re-centred in steps so a pan does not rebuild them every frame.
+      // A gesture's ghost wins; otherwise, in the interior view, the building cut open at its floor.
       const { w, h } = deps.size();
       const c = deps.view().toWorld(w / 2, h / 2, w, h);
       const ahead = deps.view().toWorld(w / 2, h / 2 - 100, w, h);
@@ -1262,9 +1184,7 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       host.changed();
     },
     afterRoadEdit() {
-      // Where the roads changed since the last look (`Network.changesSince`):
-      // only the buildings there can have started touching one. Nothing moved:
-      // nothing to look at.
+      // Where the roads changed since the last look (`Network.changesSince`)
       const delta = net.changesSince(roadsSeen);
       roadsSeen = net.state;
       const razed = clearBuildingsOnRoads({ doc, net, groundAt: null }, delta === null ? null : delta.rects);
@@ -1306,9 +1226,5 @@ const PRIMITIVE_OF_TOOL: Readonly<Record<string, Primitive>> = {
 };
 
 /** Every tool the catalogue lists, all of them wired to the engine. */
-/**
- * Every tool the catalogue lists is wired to the engine. Derived from the
- * catalogue itself, so a tool added there can never sit in the tray disabled
- * with no reason - which is exactly what happened to the first family menus.
- */
+/** Every tool the catalogue lists is wired to the engine. */
 const READY: ReadonlySet<string> = new Set(BUILDER_CATALOG.flatMap((category) => category.tools.map((tool) => tool.id)));

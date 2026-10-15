@@ -10,8 +10,7 @@ import { m } from '../../src/world/units';
 const town = new BuildingStore();
 const block = (): Building => town.add(instantiate(BLUEPRINTS.find((b) => b.key === 'block')!.body, { x: 100, y: 50 }, 0.4));
 
-// The camera is lifted out of a building smoothly and never kept inside it
-// (`render/isoViewport.ts` `setSolids`).
+// The camera is lifted out of a building smoothly and never kept inside it (`render/isoViewport.ts` `setSolids`).
 describe('camera solids', () => {
   const b = block();
   // Filed as the renderer files them (`render/renderer.ts`): the keeper, the ground never moved.

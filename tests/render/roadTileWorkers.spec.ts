@@ -18,16 +18,7 @@ import type { Building } from '@world/buildings/types';
 import { TileMesher, type TileMeshes } from '@render/roadTileMesh';
 import type { RoadTiler, TileJob } from '@render/roadTilePool';
 
-/**
- * THE ROADS' TILES MADE OFF THE PAGE (`roadTilePool.ts`): the steps with a
- * tiler that does what the workers do - each share handed the roads near its
- * tiles (`TileJob.dataFor`) copied as `postMessage` copies them
- * (`structuredClone`), shaped AND meshed there (`TileMesher`, every vertex's
- * height, frame, tint and section read off those roads alone), the ground's
- * heights asked of the page at the points read, the tiles copied back - build
- * the same surfaces as the page building every tile itself: every attribute
- * and index, byte for byte.
- */
+/** THE ROADS' TILES MADE OFF THE PAGE (`roadTilePool.ts`): the steps with a tiler that does what the workers do */
 const materials = new Proxy({}, {
   get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
 }) as unknown as SceneMaterials;
@@ -83,10 +74,7 @@ function workerTiler(): RoadTiler & { asked: number; groundAsked: number } {
   return tiler;
 }
 
-/**
- * The grid and bends with what only some maps have: a node lifted by the player (its roads drawn as an
- * alignment of their own, read by segment), a footway laid flush with stone and a cobbled carriageway.
- */
+/** The grid and bends with what only some maps have: a node lifted by the player */
 function authored(): RoadDoc {
   const file = JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')) as { document: {
     nodes: { id: number; heightOffset?: number }[]; segments: { id: number; structure: string; section?: unknown }[] } };
@@ -147,13 +135,7 @@ describe('road surface tiles made off the page', () => {
   });
 });
 
-/**
- * THE INPUTS KEPT BETWEEN BUILDS (`roadSurfaceInputs.ts`): after each edit the
- * passes read the rings of the roads and nodes it touched, made again, and
- * every other kept from before - and the roads built so are the roads a build
- * from nothing makes, every attribute and index, byte for byte, the blocks
- * kept from the build before included.
- */
+/** THE INPUTS KEPT BETWEEN BUILDS (`roadSurfaceInputs.ts`) */
 describe('road surface inputs kept between builds', () => {
   // Materials that stay the same between builds, so a block whose tiles did not change keeps its mesh.
   const stable = new Map<PropertyKey, unknown>();
@@ -178,10 +160,7 @@ describe('road surface inputs kept between builds', () => {
   buildRoadSurfaces(net, elevation, kept, ground, reuse);
   const roads = doc.segments.size;
 
-  /**
-   * The edit, the network and the solve brought up to it, then the kept build against one from nothing.
-   * `everywhere`: an edit of every road (the paint's standard), whose items are all made again.
-   */
+  /** The edit, the network and the solve brought up to it, then the kept build against one from nothing. */
   const after = (edit: () => void, everywhere = false): RoadSurfaces => {
     edit();
     net.rebuild();

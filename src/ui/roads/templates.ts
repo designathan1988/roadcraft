@@ -4,15 +4,7 @@ import { type RoadTemplate, normalizeTemplate } from '@world/roads/templates';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT } from '@world/units';
 
-/**
- * The player's own road templates (docs/source/VIAS.md V1), kept in this browser for
- * every map, as Cities: Skylines keeps a player's roads apart from any one
- * city. Read back through `normalizeTemplate`: a damaged entry is not built.
- * Stored as a `KeptList` (`core/keptList.ts`): saving or deleting one template
- * writes every other back as it was, one this build cannot read included, and a
- * change that was not written says so. Storage can be refused (a private
- * window): then nothing is kept, the player is told, and the game goes on.
- */
+/** The player's own road templates, kept in this browser for every map, as Cities */
 const kept = new KeptList('roadcraft.roadTemplates', 'road template');
 
 /** A stored entry as a template in this build's unit, or null when this build cannot read it (it stays stored). */
@@ -45,7 +37,7 @@ function readable(entry: unknown): RoadTemplate | null {
   }
 }
 
-/** A template as stored: with the world unit its widths are in (docs/source/ESCALA.md). */
+/** A template as stored: with the world unit its widths are in. */
 const withUnit = (t: RoadTemplate): RoadTemplate & { unit: number } => ({ ...t, unit: METERS_PER_UNIT });
 
 /** A stored template's widths in this build's unit; absent `unit`: 0.4 m, every template before 2026-10-10. */

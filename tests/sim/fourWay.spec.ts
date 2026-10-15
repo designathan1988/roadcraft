@@ -7,17 +7,7 @@ import { METERS_PER_UNIT } from '@world/units';
 import type { SimWorld } from '@sim/world';
 import { bodyOf, collisions, layoutDoc, simOf, type Layout } from './support/bodies';
 
-/**
- * A CROSSROADS OF FOUR STREETS, RUN AS A PLAYER SEES IT.
- *
- * Reported: two opposing lights green together, a car turning left across the
- * stream the other light had released, and that stream not stopping for it.
- * The plan put both movements on green; whether the gap logic then held was
- * luck. Signal stages are now built from the conflict matrix, and this file
- * checks the result the way it is seen: vehicles going straight on and
- * turning at the same time, queues at red, people on the crossings, and how
- * fast a free car actually takes a corner.
- */
+/** A CROSSROADS OF FOUR STREETS, RUN AS A PLAYER SEES IT. */
 
 const LAYOUTS: readonly Layout[] = [
   { name: 'avenues', bearings: [0, 90, 180, 270], types: [3, 3, 3, 3] },
@@ -27,11 +17,7 @@ const LAYOUTS: readonly Layout[] = [
 ];
 
 const SECONDS = 240;
-/**
- * The traffic demand of each layout: the lightest under which every approach
- * both goes straight on and turns within the run (measured 2026-10-13: the
- * local streets need 2, the rest 1; at 2 everywhere the run took 9 s a layout).
- */
+/** The traffic demand of each layout */
 const DEMAND: Record<string, number> = { locals: 2 };
 const kmh = (u: number): number => u * METERS_PER_UNIT * 3.6;
 
@@ -136,7 +122,6 @@ function run(layout: Layout, seconds = SECONDS): RunReport {
     }
 
     // A vehicle body over somebody walking on a crossing.
-    // The people as every pedestrian engine publishes them (`SimWorld.pedViews`).
     for (const p of sim.pedViews) {
       if (p.ground !== 'crossing') continue;
       for (const v of inBox) {
@@ -198,18 +183,11 @@ describe('four-way signalised crossroads', () => {
 });
 
 describe('turning speed', () => {
-  /**
-   * A free car - nothing ahead, a green light - takes a corner at a speed set
-   * by its radius and a comfortable sideways pull, not at a crawl. Measured
-   * before the rounder turn paths and the speed-dependent comfort figure:
-   * 12 km/h round a right turn and 14 km/h round a left on these avenues.
-   */
+  /** A free car - nothing ahead, a green light */
   it('takes a free corner at a realistic speed and never stops in it', () => {
     const { doc } = layoutDoc({ name: 'avenues', bearings: [0, 90, 180, 270], types: [3, 3, 3, 3] });
     const sim = simOf(doc, 0x7e57, 1);
-    // A trace starts on the approach and ends on the exit. It is free when the
-    // car arrived at speed - not discharging from a queue - and nothing but
-    // the bend itself slowed it: no vehicle, light or crossing ahead of it.
+    // A trace starts on the approach and ends on the exit.
     const traces = new Map<number, { turn: string; min: number; free: boolean; inBox: boolean }>();
     const done: { turn: string; min: number }[] = [];
     for (let i = 0; i < Math.round(1500 / DT); i++) {

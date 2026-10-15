@@ -6,30 +6,8 @@ import { MIN_SIZE } from './geometry';
 import type { Building, Volume } from './types';
 import { identityMemo } from '@core/identityMemo';
 
-/**
- * A building is blocks put together like bricks, and the blocks are never
- * changed by being put together. What is DRAWN is resolved from them here:
- *
- * - solid blocks (no `mode`) add their space - two overlapping blocks read as
- *   one mass, and either can be moved away again;
- * - a 'void' block takes its space out of the solid blocks it overlaps, on the
- *   levels it spans - a notch, a courtyard, an arcade, a hole through a tower;
- * - an 'intersect' block keeps, of the solid blocks it overlaps, only what lies
- *   inside it, on its levels.
- *
- * The stored record keeps every block whole; this returns a copy whose
- * volumes are the result, cut by polygon difference/intersection per range of
- * levels. A block nothing touches is passed through untouched, with all its
- * facade work. Pure and deterministic, so the renderer can call it on every
- * rebuild.
- */
-/**
- * Each record resolved, once (a stored record is never changed in place,
- * `BuildingStore` OWNERSHIP): the meshes, the massing and the floor read it
- * several times a building, and a new object each time also missed every cache
- * kept by record after it (`facadeBays`). The building handed out is shared:
- * read it, never change it.
- */
+/** A building is blocks put together like bricks, and the blocks are never changed by being put together. */
+/** Each record resolved, once (a stored record is never changed in place, `BuildingStore` OWNERSHIP) */
 export const resolveBlocks: (b: Building) => Building = identityMemo(resolve);
 
 function resolve(b: Building): Building {
@@ -43,9 +21,7 @@ function resolve(b: Building): Building {
   const top = (v: Volume): number => v.base + v.storeys.length;
   const levelsMeet = (a: Volume, l0: number, l1: number): boolean => a.base < l1 && top(a) > l0;
 
-  // An exclusive block cuts the solids where it meets them, and stands as a
-  // solid where it meets none: it is resolved as a void for the solids and
-  // as a solid cut by the solids.
+  // An exclusive block cuts the solids where it meets them, and stands as a solid where it meets none
   const cutters = [...voids, ...xors];
   const xorIds = new Set(xors.map((x) => x.id));
   const asSolid = (x: Volume): Volume => {
@@ -64,8 +40,7 @@ function resolve(b: Building): Building {
       out.push(isXor ? { ...s, id: nextId++ } : s);
       continue;
     }
-    // Cut the block into ranges of levels inside which the same voids and
-    // clips apply.
+    // Cut the block into ranges of levels inside which the same voids and clips apply.
     const breaks = new Set<number>([s.base, top(s)]);
     for (const o of [...myVoids, ...myClips]) {
       if (o.base > s.base && o.base < top(s)) breaks.add(o.base);
@@ -86,9 +61,7 @@ function resolve(b: Building): Building {
       const whole = activeClips.length === 0 && activeVoids.length === 0;
       const storeys = s.storeys.slice(l0 - s.base, l1 - s.base);
       if (whole) {
-        // The range nothing cuts keeps the block's own plan and facade: its
-        // parts shared, not cloned (a stored record and what is resolved from
-        // it are read-only, `BuildingStore` OWNERSHIP).
+        // The range nothing cuts keeps the block's own plan and facade: its parts shared, not cloned
         out.push({ ...s, id: nextId++, base: l0, storeys, roof: l1 === top(s) ? s.roof : 'flat' });
         continue;
       }
@@ -142,14 +115,12 @@ function volumeOf(s: Volume, ring: readonly Vec2[], base: number, storeys: Volum
   if (w < MIN_SIZE / 4 || d < MIN_SIZE / 4) return null;
   const outline = ring.map((p) => ({ x: (p.x - minX) / w, y: (p.y - minY) / d }));
   if (!validOutline(outline)) return null;
-  // The block's own fields shared (read-only); its storeys copied, as their
-  // bay-by-bay facade is taken off below.
+  // The block's own fields shared (read-only); its storeys copied, as their bay-by-bay facade is taken off below.
   const v: Volume = {
     ...s,
     id, x: minX, y: minY, w, d, outline, base, storeys: structuredClone(storeys), roof,
   };
-  // Bay-by-bay work belongs to the block's own sides; on a cut piece the
-  // sides are new, so the piece keeps the block's look and pattern only.
+  // Bay-by-bay work belongs to the block's own sides
   delete v.reliefs;
   delete v.facadeGeometry;
   for (const storey of v.storeys) {

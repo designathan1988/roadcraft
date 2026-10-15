@@ -5,12 +5,7 @@ import { CellPool } from '@render/buildings/cellPool';
 import type { KitBoxes } from '@render/buildings/cellArrays';
 import { cancelWarm, drainWarm, warmLooseAhead } from '@render/uploads';
 
-/**
- * A CELL NOBODY WANTS IS LET GO, NOT WORKED THROUGH (`cellPool.ts`, `uploads.ts`):
- * a job cancelled while it waits never starts; one cancelled while a worker
- * works on it is dropped by that worker, and the next job of its lane starts;
- * a mesh let go while it waits for the GPU is never drawn to send it.
- */
+/** A CELL NOBODY WANTS IS LET GO, NOT WORKED THROUGH (`cellPool.ts`, `uploads.ts`) */
 type Sent = { readonly type: string; readonly job?: number | { readonly id: number } };
 
 /** A stand-in for a module worker: what the page posts to it, kept. */

@@ -31,11 +31,7 @@ import { MAP_HALF } from '@world/bounds';
 /** `n` default modules, world units. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
-/**
- * The modular building model: a building is data, and
- * every question about it - what is an outside wall, where the floor is on a
- * slope, whether it may stand here - is answered from that data.
- */
+/** The modular building model: a building is data, and every question about it */
 
 const flat = (): number => 0;
 
@@ -142,8 +138,7 @@ describe('foundations', () => {
 
   it('stands a ground floor on the pavement it opens onto, with no steps up', () => {
     const b = building();
-    // The land under the building higher than the pavement in front: the
-    // site is cut down to the street, as a town on a slope stands.
+    // The land under the building higher than the pavement in front
     const land = (_x: number, y: number): number => (y >= 100 ? 0.5 : 0);
     for (const edge of [0.3, 1]) {
       const f = foundationOf(b, land, undefined, pavingFrom(edge));
@@ -284,16 +279,14 @@ describe('picking', () => {
   });
 
   it('takes a yard for the ground it is drawn as, not a block a storey high', () => {
-    // A house with a lawn (an open block) in front of it and beside it, and
-    // another house further north, beyond the lawn's side.
+    // A house with a lawn (an open block) in front of it and beside it, and another house further north
     const base = building({ x: 0, y: 0 });
     const body = base.volumes[0]!;
     const right = body.x + body.w;
     const lawn = { ...body, id: 99, x: body.x, y: -40, w: right - body.x + 40, d: 40, open: 'grass' as const };
     const near = { ...base, volumes: [...base.volumes, lawn] };
     const far = building({ id: asBuildingId(2), x: right + 10, y: 200 });
-    // A pedestrian's eye on the pavement south of the lawn, looking north
-    // over it, beside the near house, at the far one's front.
+    // A pedestrian's eye on the pavement south of the lawn, looking north over it, beside the near house
     const ray = { ox: right + 20, oy: -60, oz: 1.6, dx: 0, dy: 1, dz: 0 };
     expect(pickBuilding([near, far], ray, () => 0)?.building).toBe(far.id);
     // Looking down at the lawn: the lawn's top, at the ground.
@@ -329,8 +322,7 @@ describe('serialisation', () => {
     const run = { id: 1, kind: 'wall', x: 4, y: -6, facing: 0, w: 5, d: 0.5, z: 0, h: 2, angle: 0.7 };
     doc.buildings.add({ ...body, elements: [run], nextElementId: 2, x: 0, y: 0, rotation: 0 } as unknown as Building);
     const angleOf = (d: RoadDoc): number | undefined => [...d.buildings.all()][0]?.elements?.[0]?.angle;
-    // `clone` is what every road draw does, and the history snapshot and the
-    // autosave go through the same migration.
+    // `clone` is what every road draw does, and the history snapshot and the autosave go through the same migration.
     expect(angleOf(doc.clone())).toBe(0.7);
     expect(angleOf(RoadDoc.fromJSON(JSON.parse(JSON.stringify(doc.toJSON()))))).toBe(0.7);
     // And an unchanged record reads as unchanged: no rebuild on every clone.

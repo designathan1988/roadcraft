@@ -1,10 +1,4 @@
-// Knip with a baseline that can only shrink (docs/research/protections.md).
-// Knip has no suppression file: the unused exports, types and enum members the
-// SOURCE brought are listed in `knip.baseline.json`. The check fails on any
-// issue not in it (something new left unused) and on any entry no longer
-// reported (fixed: take it out). `--update` writes the baseline (only when
-// the count falls, by the rule of CLAUDE.md).
-// node scripts/knip-check.mjs [--update]
+// Knip with a baseline that can only shrink.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 

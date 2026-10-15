@@ -4,18 +4,7 @@ import { Derived } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 
-/**
- * THE HIGHEST ROAD OF THE MAP, kept by cell (`world/derived.ts` `Derived`):
- * each world cell (`world/cells.ts`) holds the highest height of the road nodes
- * standing in it, computed again only for the cells the diary says a road edit
- * or a new solve of the roads' heights reached (`roads`, `elevation`); the top
- * of the map is read from a count of the cells by whole height, its distinct
- * heights and not its cells. The pointer's picks march down their ray from
- * there (`main.ts` `surfaceTop`).
- * DO NOT walk `doc.nodes` on a road edit for the top: every street drawn read
- * every node of the city again (`main.ts`, keyed on `doc.revision`, before
- * 2026-10-14).
- */
+/** DO NOT walk `doc.nodes` on a road edit for the top: every street drawn read every node of the city again */
 const KINDS: readonly ChangeKind[] = ['roads', 'elevation'];
 
 interface Source {
@@ -53,10 +42,7 @@ export class RoadTop {
     });
   }
 
-  /**
-   * The highest road node's height (rounded up to a whole unit); -Infinity
-   * with no roads. Brought up to the diary first: only the cells it names.
-   */
+  /** The highest road node's height (rounded up to a whole unit); -Infinity with no roads. */
   height(): number {
     if (this.cells.refresh(this.source).size > 0) {
       let top = -Infinity;

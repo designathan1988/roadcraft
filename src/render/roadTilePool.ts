@@ -5,25 +5,7 @@ import type { SurfaceData, TileMeshes } from './roadTileMesh';
 import type { PassDesc } from './roadSurfaceReads';
 import type { TilePolys } from './roadTileShape';
 
-/**
- * THE ROADS' SURFACE TILES MADE ON THE OTHER CORES (`roadTile.worker.ts`).
- * A tile's bands - unions and differences of the rings that reach it, then
- * clipped, cut into compact pieces, ear-clipped and refined - and then each
- * vertex's height, texture frame, tint and section, read off the roads near
- * the tile (`roadTileMesh.ts`): the whole of a road surface's build, 20 s of
- * a 2 560 m city's opening for the shapes and 15 s more for the reads on the
- * page (profiled 2026-10-15). They are split across workers as
- * `conflictPool.ts` splits the conflict pairs, sized by the cores the browser
- * reports (MDN, `navigator.hardwareConcurrency`), one left to the page; each
- * share is handed the roads near its tiles (`TileJob.dataFor`), and the page
- * answers the ground's height at the points a worker asks (`need`), then only
- * uploads the arrays. No workers (a test, an old browser): `tiles` rejects,
- * and the tiles are built on the page as before.
- *
- * Whoever waits on it calls `check` while it waits (`roadSurfaceSteps`, once a
- * frame): a worker silent for `SILENCE_MS` with tiles waiting fails the pool,
- * its jobs rejected and built on the page. DO NOT wait without a deadline.
- */
+/** DO NOT wait without a deadline. */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { readonly job: TileJob; resolve(tiles: TileMeshes[]): void; reject(error: Error): void }>;
@@ -54,10 +36,7 @@ export interface RoadTiler {
   tiles(job: TileJob): Promise<Map<string, Tile>[]>;
   /** Called while waiting: fails the pool if a worker with tiles waiting has been silent too long. */
   check(now?: number): void;
-  /**
-   * A block's far level (`mesh/roadLodPure.ts`) made off the page: `arrays` are handed over (copy them first to keep
-   * them), `lock` the block's outer box. Null: too small to have one. Rejected when it cannot be made off the page.
-   */
+  /** A block's far level (`mesh/roadLodPure.ts`) made off the page: `arrays` are handed over */
   coarsen?(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null>;
 }
 

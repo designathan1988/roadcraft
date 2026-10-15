@@ -9,11 +9,7 @@ const LANE_CELL = m(30);
 
 const cellKey = (gx: number, gy: number): number => (gx + 32768) * 65536 + (gy + 32768);
 
-/**
- * Whether the grid finds a lane of these bounds for a box (`LaneGrid.near`,
- * `lanesIn`): the cells the lane is filed in meet the cells the box covers.
- * For a worker holding a few lanes and no grid (`lotBays.ts` `baysOfShare`).
- */
+/** Whether the grid finds a lane of these bounds for a box (`LaneGrid.near`, `lanesIn`) */
 export function cellsMeet(box: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number },
   x0: number, y0: number, x1: number, y1: number): boolean {
   return Math.floor(box.minX / LANE_CELL) <= Math.floor(x1 / LANE_CELL) && Math.floor(box.maxX / LANE_CELL) >= Math.floor(x0 / LANE_CELL)
@@ -28,17 +24,7 @@ interface Filed {
   digest: number;
 }
 
-/**
- * The lanes of the graph by place (a fixed grid of their bounds) and each
- * lane's digest (`digest`), kept by what each build of the lane graph changed
- * (`SimWorld.topologyLog`): the lanes an edit made or took filed in or out,
- * the others as they were. What it finds comes in lane id order, whatever
- * order the edits filed them in. The boxes of the lanes that changed, before
- * and after, are logged (`changes`) for what was worked out from the lanes
- * near it (`parking.ts`: a lot's bays). DO NOT file every lane of the map
- * again when the graph moves: every road drawn filed the town's lanes, and
- * every lot of the town was worked out again.
- */
+/** DO NOT file every lane of the map again when the graph moves */
 export class LaneGrid {
   private readonly filed = new Map<LaneletId, Filed>();
   private readonly cells = new Map<number, LaneletId[]>();
@@ -67,10 +53,7 @@ export class LaneGrid {
     if (boxes.length) this.changes.push(boxes);
   }
 
-  /**
-   * Every lane filed again.
-   * @rebuild A world's first topology, or a lane graph built whole.
-   */
+  /** @rebuild Every lane filed again. */
   private fileAll(graph: LaneletGraph): void {
     this.filed.clear();
     this.cells.clear();
@@ -116,19 +99,13 @@ export class LaneGrid {
     return [...picked].map((id) => this.filed.get(id)!.lane).sort(byId);
   }
 
-  /**
-   * The lanes whose bounds come within `reach` of a point (their cells), in
-   * id order (the tie-break); every lane for a point that is not one.
-   */
+  /** The lanes whose bounds come within `reach` of a point (their cells), in id order (the tie-break) */
   near(x: number, y: number, reach: number): readonly Lanelet[] {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return [...this.filed.values()].map((f) => f.lane).sort(byId);
     return this.lanesIn(x - reach, y - reach, x + reach, y + reach);
   }
 
-  /**
-   * The lanes whose bounds meet a box, in id order: what a loop over every
-   * lane with the same bounds test keeps.
-   */
+  /** The lanes whose bounds meet a box, in id order: what a loop over every lane with the same bounds test keeps. */
   inBox(x0: number, y0: number, x1: number, y1: number): Lanelet[] {
     const out: Lanelet[] = [];
     for (const lane of this.lanesIn(x0, y0, x1, y1)) {
@@ -139,13 +116,7 @@ export class LaneGrid {
     return out;
   }
 
-  /**
-   * A lane's part of a lot's key (`parking.ts` lotBaysOf): its id, its length
-   * and its centre line, digested once per lane filed. A lane is never
-   * changed in place (`Lanelet` is read-only, its `Polyline` immutable): a
-   * rebuilt lane is filed again and digested again, to the same number when
-   * it is the same lane, so a lot whose lanes were only rebuilt keeps its bays.
-   */
+  /** A lane's part of a lot's key (`parking.ts` lotBaysOf) */
   digest(lane: Lanelet): number {
     const filed = this.filed.get(lane.id);
     if (!filed || filed.lane !== lane) return digestOf(lane);
@@ -161,12 +132,7 @@ function boxOf(lane: Lanelet): ChangeRect {
   return [b.minX, b.minY, b.maxX, b.maxY];
 }
 
-/**
- * What the lane grid reads of the world (`SimWorld`): its lane graph, the log of
- * the graph's changes and the grid kept with it. DO NOT import `SimWorld`:
- * `sim/world.ts` imports this file, and the type import closed an import
- * cycle (`tests/arch/imports.spec.ts`).
- */
+/** DO NOT import `SimWorld`: `sim/world.ts` imports this file, and the type import closed an import cycle */
 export interface LaneGridWorld {
   readonly graph: LaneletGraph;
   readonly topologyLog: ChangeLog<GraphChange>;
@@ -189,11 +155,7 @@ export function lanesInBox(w: LaneGridWorld, x0: number, y0: number, x1: number,
   return laneGrid(w).inBox(x0, y0, x1, y1);
 }
 
-/**
- * The boxes of the lanes the lane graph changed since `seen` (`LaneGrid.changes`,
- * before and after; null: every lane), and the state now: for what was worked out
- * from the lanes near a place (a bus stop's lane, a train's level crossings).
- */
+/** The boxes of the lanes the lane graph changed since `seen` */
 export function laneChangesSince(w: LaneGridWorld, seen: object | null): { readonly state: object; readonly boxes: readonly ChangeRect[] | null } {
   const grid = laneGrid(w);
   const since = grid.changes.since(seen);

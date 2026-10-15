@@ -16,13 +16,7 @@ import { emitChunk } from '@render/buildings/buildingMesh';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * Buildings follow their hillside as in real life (the player, 2026-10-09):
- * on a slope the back of a house stands a half storey (a split level) or a
- * whole storey (a lower ground floor on the garden) from its street floor,
- * each part on its own platform, instead of the whole building on one floor
- * with the land cut and filled under it (`world/buildings/splitLevel.ts`).
- */
+/** Buildings follow their hillside as in real life (the player, 2026-10-09) */
 
 const WINDOWS = new Set(['window', 'sashWindow', 'frenchWindow', 'bayWindow', 'ribbon', 'wideWindow', 'balcony', 'shopfront']);
 
@@ -135,9 +129,7 @@ describe('split-level buildings on a hillside', () => {
         const c = localToWorld(h, v.x + v.w / 2, v.y + v.d / 2);
         const s = pads.shapeAt(c.x, c.y, hill(c.x, c.y));
         const graded = s.weight ? s.height : hill(c.x, c.y);
-        // Never above the block's own platform: within a terrain cell of a
-        // lower block, the lower one's excavation runs on under it (hidden
-        // under its floor), so no bank of earth rises inside the lower room.
+        // Never above the block's own platform
         expect(graded, `house ${h.id} block ${v.id}`).toBeLessThanOrEqual(floor + volumeLift(v) - PLINTH_MIN + 1e-6);
         // A pool's basin is cut deeper still round it (`pads.ts`).
         if (volumeLift(v) === lowest && !h.volumes.some((o) => o.open === 'water')) expect(graded, `house ${h.id} block ${v.id}`).toBeCloseTo(floor + lowest - PLINTH_MIN, 4);

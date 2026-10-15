@@ -26,8 +26,7 @@ describe('placed clouds', () => {
   });
 
   it('is the one nearest the camera where the ray passes through two', () => {
-    // A slanting ray (the camera up and to the -x side) through a small cloud
-    // in front and a huge one behind it.
+    // A slanting ray (the camera up and to the -x side) through a small cloud in front and a huge one behind it.
     const ray = (h: number): { x: number; y: number } => ({ x: 600 - h, y: 0 });
     const front = { id: 1, x: 0, y: 0, height: 500, size: 300, density: 1, yaw: 0 };
     const behind = { id: 2, x: 900, y: 0, height: 0, size: 1000, density: 1, yaw: 0 };

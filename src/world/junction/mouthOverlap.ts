@@ -8,21 +8,7 @@ const STEP = 0.5;
 /** Shortest strip worth adding, world units. */
 const SHORTEST = 0.25;
 
-/**
- * The strip of a curved road's full width across one of its junction mouths.
- *
- * A curved leg's offset edge is not the straight mouth chord the junction
- * plate is cut with, and a tight two-leg corner left a triangular gap of bare
- * ground between them. The drawn surface closes it with this strip, a short
- * exact-width overlap round the mouth taken from the road's full centreline
- * (`surfaces.ts levelRings`); the ground a turn is swept over has to see it
- * too (`turnPaths.ts JunctionSurface`): left out, a body running into a curved
- * mouth was "off the road" on the asphalt the player sees (fuzz
- * `turnOffSurface`, seed 60 of 60 operations).
- *
- * `mouth` is the arc length along `full` where the mouth is cut. Null when the
- * strip would be shorter than `SHORTEST`.
- */
+/** The strip of a curved road's full width across one of its junction mouths. */
 export function mouthOverlapStrip(full: Polyline, halfWidth: number, mouth: number): Vec2[] | null {
   const length = full.length;
   const from = Math.max(0, mouth - REACH);

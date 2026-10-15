@@ -26,49 +26,14 @@ import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type Far
 import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, FRAME_PX, hemiOctaDirection, frameBasis } from './impostorShaders';
 import { gpuOnlyAttributes } from './mesh/gpuOnly';
 
-/**
- * THE WOODS OF THE WHOLE MAP FROM AFAR: on every plate not drawn in full
- * (`flatAtlas.ts`), the trees its ecosystem grows (`farWoods.ts`, worked out
- * in the ecology's worker once per land and ecosystem) drawn as OCTAHEDRAL
- * IMPOSTORS - each tree a single quad facing the eye, painted from a picture
- * of the same low-poly model (`lowPolyTrees.ts`) taken from the nearest of 64
- * directions over the upper hemisphere and blended between the three nearest
- * (Ryan Brucks' octahedral impostors for Fortnite, shaderbits.com; the
- * hemi-octahedral mapping and the three-frame blend as
- * github.com/agargaro/octahedral-impostor and
- * github.com/SIsilicon/Godot-Octahedral-Impostors write them). The pictures
- * hold the model's colours and its normals, so the far trees are lit by the
- * scene's own sun as the near ones are, the same greens.
- *
- * A mesh a plate, instanced, its trees and no empty slot, with the plate's
- * woods' bounds: a plate out of the view, or drawn in full with its far trees
- * faded out, is not drawn at all (three's frustum test of a mesh's sphere).
- * DO NOT go back to one mesh of the map: its 102,400 instances (25 plates of
- * 4,096 slots) went through the vertex shader every frame, empty slots and
- * plates behind the eye included (`frustumCulled = false`). Per plate a
- * fade: a plate brought in full keeps
- * its far trees until its own (the near ones, the same trees at the same
- * places) have had time to grow, then dissolves them (alpha to coverage, no
- * pop); a plate let go shows them again at once. The woods thin with the
- * distance by the same number that picks them (`pick`), each survivor grown
- * to keep the cover (the area kept constant) and each tree at the margin
- * shrinking away rather than vanishing: a wood reads as a wood to the
- * horizon. They cast no shadow (beyond the cascades' reach) and are never
- * drawn under a plate in full.
- *
- * The pictures are taken once, on the first frame (`update`), with
- * materials made with the rest at load; nothing is made or compiled in play.
- */
+/** DO NOT go back to one mesh of the map: its 102,400 instances */
 
 /** Most trees a plate draws: its budget at the map's scale with room (`farWoods.ts` HEADROOM). */
 const SLOT = 4_096;
 /** How long after a plate's own trees could grow its far ones start to go, and how long they take, seconds. */
 const NEAR_GROWS = 0.7;
 const DISSOLVE = 0.6;
-/**
- * Under this share of the screen's height a tree's wood thins (about 6 px at
- * 1080): at most to `THIN_LEAST` of it, each survivor larger.
- */
+/** Under this share of the screen's height a tree's wood thins (about 6 px at 1080) */
 const THIN_SHARE = 0.006;
 const THIN_LEAST = 0.3;
 
@@ -98,11 +63,7 @@ interface PlateState {
   fade: number;
 }
 
-/**
- * The far woods' bookkeeping, no `three`: which plates' woods to ask, which
- * are in, each plate's fade. `sync` asks only what changed; `step` moves the
- * fades and says whether any moved.
- */
+/** The far woods' bookkeeping, no `three`: which plates' woods to ask, which are in, each plate's fade. */
 export class FarWoodsBook {
   readonly plates: PlateState[];
   private landKey = '';
@@ -149,11 +110,7 @@ export class FarWoodsBook {
     this.scale = n ? woodsScale(sum / n, this.grid.half, this.budget) : 1;
   }
 
-  /**
-   * The vegetation the quality tier allows, as the near sweep reads it
-   * (`renderer.ts` natureSweep: its budget scaled by `vegetation / 2600`,
-   * none at 0): the far woods as thick as the near ones.
-   */
+  /** The vegetation the quality tier allows, as the near sweep reads it */
   setVegetation(amount: number): void {
     const budget = FAR_WOODS_BUDGET * Math.min(1, Math.max(0, amount) / 2_600);
     if (budget === this.budget) return;
@@ -170,12 +127,7 @@ export class FarWoodsBook {
     else if (Number.isNaN(p.nearSince)) p.nearSince = now;
   }
 
-  /**
-   * Moves the fades to `now`, seconds; true when any changed. In full, a
-   * plate's far trees dissolve over `DISSOLVE` once its own have had
-   * `NEAR_GROWS` to grow; let go, they are back at once (its near trees go
-   * as it does).
-   */
+  /** Moves the fades to `now`, seconds; true when any changed. */
   step(now: number): boolean {
     let moved = false;
     for (const p of this.plates) {
@@ -241,19 +193,13 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   const models = variants();
   const blocksX = 3, blocksY = Math.ceil(models.length / blocksX);
   const block = FRAMES * FRAME_PX;
-  // Two pictures per view: the colour (premultiplied, gamma-encoded, so the
-  // dark greens keep their steps in 8 bits) and the normal in the model's
-  // frame with the coverage. Mipmapped once all are taken.
+  // Two pictures per view: the colour
   const atlas = new WebGLRenderTarget(blocksX * block, blocksY * block, { count: 2, depthBuffer: true, generateMipmaps: true });
   for (const t of atlas.textures) { t.minFilter = LinearMipmapLinearFilter; t.magFilter = LinearFilter; }
   const bake = bakeMaterials();
 
   const plates = regions.length;
-  /**
-   * How far a tree's picture reaches from its foot, over its height: the model's
-   * sphere (its centre and the quad's corner, `IMPOSTOR_VERTEX`) grown as the
-   * thinned woods grow each survivor (at most by 1 / sqrt(THIN_LEAST)).
-   */
+  /** How far a tree's picture reaches from its foot, over its height: the model's sphere */
   let reachPerSize = 0;
   for (const v of models) reachPerSize = Math.max(reachPerSize, v.centre.length() + 2 * Math.SQRT2 * v.radius);
   reachPerSize /= Math.sqrt(THIN_LEAST);
@@ -294,9 +240,7 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     geometry.instanceCount = spot.count;
     return geometry;
   };
-  // One empty tree (a pick of 2 is never under the scale: no triangle) always in the group, so the
-  // program is there to be compiled with the scene at load (`renderer.ts`), before any plate's woods
-  // come in: made with them, it was built in the frame they were first drawn.
+  // One empty tree (a pick of 2 is never under the scale: no triangle) always in the group
   const program = new Mesh(quadOf(new InstancedBufferAttribute(new Float32Array(4), 4), new InstancedBufferAttribute(Float32Array.of(0, 2, 0, 1), 4)), material);
   program.name = 'far-forest-program';
   program.frustumCulled = false;
@@ -309,18 +253,14 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     baked = true;
     const camera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10);
     const scene = new Scene();
-    // Each picture's square set on the atlas itself: a target's own viewport
-    // and scissor are in its pixels (three's setViewport would scale them by
-    // the screen's pixel ratio).
+    // Each picture's square set on the atlas itself: a target's own viewport and scissor are in its pixels
     const was = {
       target: renderer.getRenderTarget(), autoClear: renderer.autoClear, alpha: renderer.getClearAlpha(),
       shadows: renderer.shadowMap.autoUpdate, colour: renderer.getClearColor(new Color()),
     };
     atlas.scissorTest = false;
     atlas.viewport.set(0, 0, atlas.width, atlas.height);
-    // Made with every mip level (three allocates them by `generateMipmaps` when the target is first
-    // set), the mipmaps then made only after the last picture: three makes a target's mipmaps at the
-    // end of every render into it, and each of the pictures made the whole atlas' mipmaps again.
+    // Made with every mip level (three allocates them by `generateMipmaps` when the target is first set)
     renderer.setRenderTarget(atlas);
     for (const t of atlas.textures) t.generateMipmaps = false;
     renderer.setClearColor(0x000000, 0);

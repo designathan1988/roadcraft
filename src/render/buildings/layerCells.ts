@@ -10,21 +10,9 @@ import type { BuildingMeshes } from './buildingMesh';
 import type { CellEntry } from './chunk';
 import { PART_KINDS, type PartKind } from './kit';
 
-/**
- * THE CELLS OF THE BUILDINGS LAYER (`layer.ts`): the constants of the grid and
- * of its slices, the ground fingerprint, the plant cull's footprint index and the batching
- * of a list of buildings by cell. Pure helpers, no state of the layer.
- */
+/** THE CELLS OF THE BUILDINGS LAYER (`layer.ts`) */
 
-/**
- * A fingerprint of the ground under and around a building: a 6 x 6 grid over
- * its bounds grown by two modules (the entrance steps land out there), of the
- * land and of the paving. Any change the foundation could see changes this.
- * `b` is a record of the store (the layer's town): its box is worked out once
- * (`storedBounds`). DO NOT work it out again here: every building the ground
- * moved near turned its corners into the world again, 3 s of a 2,560 m city's
- * growth (2026-10-15).
- */
+/** DO NOT work it out again here: every building the ground moved near turned its corners into the world again, 3 s of a 2 */
 export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt): number {
   const box = storedBounds(b, b.module * 2);
   // To the centimetre, as the text it replaced was; a number, never a string kept per building.
@@ -53,12 +41,7 @@ const DETAIL_HYSTERESIS = 0.1;
 export const DETAIL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['frame', 'railing', 'roofRailing', 'louvre']));
 export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind))));
 
-/**
- * The buildings batched cell by cell, each cell its own meshes: a cell out of
- * the view (and out of the shadow's) is not drawn at all. One batch for the
- * whole town sent every window frame and railing in it to the GPU, twice a
- * frame (picture and shadow), wherever the camera looked.
- */
+/** The buildings batched cell by cell, each cell its own meshes: a cell out of the view */
 /** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
 export type CellCache = Map<string, CellBatch>;
 interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes }
@@ -113,16 +96,7 @@ const PLANT_MARGIN = m(1);
 /** Side of the footprint index's buckets, world units. */
 const COVER_CELL = m(25.6);
 
-/**
- * Where the buildings stand, for the scenery's plant cull: the built parts
- * with a margin for the crowns and the open lots as they are (grown round the
- * lots too, every street tree on a pavement a facade stands on was taken away
- * and left its pit empty), bucketed on a coarse grid (a cell as one number: a
- * string per query was most of a plant pass). Each record's footprints are
- * worked out once per record object, not for the whole town at every change of
- * one building. `version` moves only when what `covers` answers changes: a
- * building drawn again for its paint or its age leaves the plants round it alone.
- */
+/** Where the buildings stand, for the scenery's plant cull */
 export interface CoverIndex {
   /** The whole town filed again (the opening, a map opened). */
   index(buildings: Iterable<Building>): void;
@@ -135,12 +109,7 @@ export interface CoverIndex {
 
 export function createCoverIndex(): CoverIndex {
   const footprints = new WeakMap<Building, Vec2[][]>();
-  /**
-   * Each building's rectangles, the buckets they are filed in and their
-   * digest: taken out and filed again by id (Nystrom, "Spatial Partition":
-   * an object that moves is removed from its cell and added to the new one).
-   * NOT the town filed again for one building (docs/AUDITORIA-2026-10-14.md A5).
-   */
+  /** Each building's rectangles, the buckets they are filed in and their digest: taken out and filed again by id */
   const filed = new Map<BuildingId, { digest: number; at: [number, Vec2[]][] }>();
   const buckets = new Map<number, Set<Vec2[]>>();
   const bucketKey = (i: number, j: number): number => i * 100_003 + j;
@@ -223,11 +192,7 @@ export function createCoverIndex(): CoverIndex {
 /** A detail cell's centre (map x/y), whether it is drawn by the far versions of its parts, and its coarse cell. */
 export interface DetailState { x: number; y: number; far: boolean; parent: string }
 
-/**
- * Each detail cell shown with its coarse cell, and its frames and railings
- * whole or by their street faces (`applyFar`) by their size on the screen
- * (`layer.ts` `cullDetails`).
- */
+/** Each detail cell shown with its coarse cell, and its frames and railings whole or by their street faces */
 export function cullDetailCells(detailCells: CellCache, states: WeakMap<BuildingMeshes, DetailState>, coarseNear: (key: string) => boolean,
   eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, applyFar: (part: BuildingMeshes, far: boolean) => void): void {
   for (const [key, cell] of detailCells) {
@@ -243,16 +208,9 @@ export function cullDetailCells(detailCells: CellCache, states: WeakMap<Building
       states.set(cell.part, state);
     }
     const cx = state.x - eyeX, cy = state.y - eyeY;
-    // Drawn while its coarse cell is drawn in detail: the far level takes
-    // over by the error on the screen (`massCells.ts`). A fixed reach of
-    // 500 m from the eye, its height counted, took every frame, railing and
-    // shutter off the town in any overview - windows as dark holes, the
-    // detail only with the camera at the wall (the player, 2026-10-13).
+    // Drawn while its coarse cell is drawn in detail: the far level takes over by the error on the screen (`massCells.ts`).
     cell.part.group.visible = coarseNear(state.parent);
-    // Its frames and railings whole while a frame's side spans
-    // `FULL_DETAIL_PIXELS` or more, by their street faces (`kit.far`)
-    // beyond - the projected size, as the far level is chosen, and back
-    // nearer by `DETAIL_HYSTERESIS` (three's `LOD.update`).
+    // Its frames and railings whole while a frame's side spans `FULL_DETAIL_PIXELS` or more, by their street faces
     const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
     const near = Math.max(Math.hypot(nx, ny, eyeZ), 1);
     const pixels = orthoPx !== null ? FRAME_SIDE * orthoPx : (FRAME_SIDE * pxAtMetre) / near;

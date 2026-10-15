@@ -3,16 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { highestGroundUnder } from '@render/buildings/lawnGround';
 import { Rng } from '@core/rng';
 
-/**
- * NOTHING ON A LAWN SINKS INTO THE DRAWN GROUND (Etapa 5a). A part is seated
- * at the highest the drawn ground rises under it (`buildingMesh.ts`
- * `emitLots`). The drawn ground is triangles on a grid, each cell split along
- * one diagonal or the other (`render/terrain.ts` `sampleGrid`); here a rough
- * one, every corner at random and every cell's diagonal at random, and the
- * highest point read for footprints of every size and turn, against the
- * ground swept on a fine grid. Four corners and the centre missed ridges by
- * centimetres to decimetres.
- */
+/** NOTHING ON A LAWN SINKS INTO THE DRAWN GROUND (Etapa 5a). */
 const CELL = 16, HALF = 160, SEG = 20, GRID = SEG + 1;
 
 function roughGround(seed: number): (x: number, y: number) => number {

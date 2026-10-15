@@ -8,8 +8,7 @@ export function clashes(b: Building): [number, number][] {
     const a = b.volumes[i] as Volume;
     for (let j = i + 1; j < b.volumes.length; j++) {
       const c = b.volumes[j] as Volume;
-      // By height: two blocks on the same levels at floors of their own (a
-      // block under another's lifted floor) do not meet.
+      // By height: two blocks on the same levels at floors of their own (a block under another's lifted floor) do not meet.
       const meet = Math.abs(volumeLift(a) - volumeLift(c)) < EPS
         ? a.base < volumeTop(c) && c.base < volumeTop(a)
         : volumeElevation(b, a, a.base) < volumeElevation(b, c, volumeTop(c)) - EPS &&

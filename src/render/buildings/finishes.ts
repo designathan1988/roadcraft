@@ -5,17 +5,7 @@ import { m } from '@world/units';
 import { type SurfaceRecipe, bakeSurface, fbm, makeNoise } from '../mesh/textureBaker';
 import { applyLotOverlay } from '../lotOverlay';
 
-/**
- * The building finishes (docs/buildings.md, "Materials"): one material per
- * finish, each with its own baked texture, shared by every building's shell.
- *
- * The textures are NEUTRAL - greys with the finish's pattern and relief - and
- * the shell's vertex colour tints them, so one brick texture makes a red brick
- * wing and a yellow brick one. Shell UVs are in world units on the face's own
- * plane (see `Shell` in `buildingMesh.ts`), so each map is scaled here to the
- * size of its tile, and brick courses run level on every wall. Baked ONCE per
- * renderer and cached by key (CLAUDE.md: never inside a rebuild).
- */
+/** The building finishes ("Materials") */
 
 type Shade = SurfaceRecipe['shade'];
 
@@ -47,11 +37,7 @@ const grey = (out: { r: number; g: number; b: number }, t: number): void => {
   out.b = t;
 };
 
-/**
- * A running-bond masonry pattern: `rows` courses and `across` units per
- * course in one tile, each course shifted by half a unit. Returns the unit's
- * indices and the distance, in texels, to its nearest joint.
- */
+/** A running-bond masonry pattern: `rows` courses and `across` units per course in one tile */
 function bond(u: number, v: number, size: number, across: number, rows: number): { col: number; row: number; edge: number } {
   const h = size / rows;
   const w = size / across;
@@ -75,12 +61,10 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
       const granules = makeNoise(0x4e1f);
       const blotch = makeNoise(0x0a77);
       return (x, y, out) => {
-        // A membrane laid in 1 m sheets: a lapped seam every sheet, mineral
-        // granules too fine to see from above, and slow weathering.
+        // A membrane laid in 1 m sheets: a lapped seam every sheet, mineral granules too fine to see from above
         const sheet = size / 4;
         const fv = y % sheet;
-        // Seams faint and granules quiet: a dark line every metre and a
-        // strong relief turned into stripes and sparkle from above (moiré).
+        // Seams faint and granules quiet: a dark line every metre and a strong relief turned into stripes and sparkle from above
         const seam = fv < 2.2 ? 0.975 + fv * 0.01 : 1;
         const g = granules((x / size) * 128, (y / size) * 128, 128);
         const b = fbm(blotch, (x / size) * 3, (y / size) * 3, 3, 3);
@@ -93,9 +77,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
   stucco: {
     size: 256,
     worldSize: m(3),
-    // A coarse trowel render: a heavy grain the light catches, and the sweep
-    // of the trowel running across it.
-    // Fine and flat: a heavy relief read as the wall of a cave (the player).
+    // A coarse trowel render: a heavy grain the light catches, and the sweep of the trowel running across it.
     relief: 0.8,
     metalness: 0,
     envMapIntensity: 0.5,
@@ -115,8 +97,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
   panel: {
     size: 256,
     worldSize: m(2.4),
-    // Composite cladding: wide panels two courses high, thin open joints, a
-    // touch of tone from panel to panel.
+    // Composite cladding: wide panels two courses high, thin open joints, a touch of tone from panel to panel.
     relief: 1.2,
     metalness: 0.15,
     envMapIntensity: 0.9,
@@ -142,8 +123,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
   slate: {
     size: 256,
     worldSize: m(2),
-    // Hanging slates: eight courses, each lapping the one below, every slate
-    // its own shade of grey.
+    // Hanging slates: eight courses, each lapping the one below, every slate its own shade of grey.
     relief: 3.5,
     metalness: 0,
     envMapIntensity: 0.45,
@@ -168,8 +148,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
   plaster: {
     size: 256,
     worldSize: m(4),
-    // A smooth render, not a stucco: close up, a heavy grain read as rough
-    // cast. The tone moves slowly; the relief is barely there.
+    // A smooth render, not a stucco: close up, a heavy grain read as rough cast.
     relief: 0.45,
     metalness: 0,
     envMapIntensity: 0.6,
@@ -274,9 +253,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
       const n1 = makeNoise(0x44c1);
       const n2 = makeNoise(0x1b7e);
       return (x, y, out) => {
-        // Smooth cast concrete: a slow cloudy tone, fine pores, faint
-        // trowel marks; no formwork joints or tie holes (they read as a
-        // perforated sheet on every slab and canopy).
+        // Smooth cast concrete: a slow cloudy tone, fine pores, faint trowel marks; no formwork joints or tie holes
         const n = fbm(n1, (x / size) * 6, (y / size) * 6, 6, 4);
         const f = n2((x / size) * 120, (y / size) * 120, 120);
         const pore = f > 0.82 ? -0.05 : 0;
@@ -340,10 +317,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
     size: 256,
     worldSize: m(3),
     relief: 2,
-    // Glass is a dielectric and the mullions are aluminium: metalness is all
-    // but binary (Filament, "Metallic"; three's MeshStandardMaterial), so the
-    // map says which texel is which. One metalness of 0.6 over both made the
-    // panes a grey mirror and the frames as dull as the glass.
+    // Glass is a dielectric and the mullions are aluminium: metalness is all but binary
     metalness: 1,
     metallic: true,
     envMapIntensity: 1.4,
@@ -363,8 +337,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
           out.metal = 1;
           return;
         }
-        // The pane: dark, as the light goes through it into a dim room; what
-        // it shows is its reflection (4 % head on, more towards grazing).
+        // The pane: dark, as the light goes through it into a dim room; what it shows is its reflection
         const tint = cellHash(Math.floor(x / pane), Math.floor(y / pane), 0x12) * 0.05;
         grey(out, 0.16 + tint + (n((x / size) * 6, (y / size) * 6, 6) - 0.5) * 0.03);
         out.h = 0.4;
@@ -382,8 +355,7 @@ const LOOKS: Readonly<Record<Finish, FinishLook>> = {
     shade: (size) => {
       const grain = makeNoise(0x0bb5);
       return (x, y, out) => {
-        // Eight 250 mm courses of ten barrel tiles; each course laps the one
-        // below, which throws a line of shade along its edge.
+        // Eight 250 mm courses of ten barrel tiles; each course laps the one below, which throws a line of shade along its edge.
         const course = size / 8;
         const row = Math.floor(y / course);
         const fv = (y - row * course) / course;
@@ -408,8 +380,7 @@ export function createFinishMaterials(anisotropy = 8): Record<Finish, MeshStanda
   const out = {} as Record<Finish, MeshStandardMaterial>;
   for (const finish of FINISHES) {
     const look = LOOKS[finish];
-    // The shell is not a closed solid (openings, no underside), so it casts
-    // from both sides.
+    // The shell is not a closed solid (openings, no underside), so it casts from both sides.
     const material = new MeshStandardMaterial({
       vertexColors: true,
       roughness: 1,
@@ -427,8 +398,7 @@ export function createFinishMaterials(anisotropy = 8): Record<Finish, MeshStanda
       for (const map of [bake.map, bake.normalMap, bake.roughnessMap]) map.repeat.set(repeat, repeat);
       material.map = bake.map;
       material.normalMap = bake.normalMap;
-      // Relief in proportion to the real surface: at a building's scale a
-      // strong normal map turns render into popcorn and joints into trenches.
+      // Relief in proportion to the real surface
       material.normalScale.set(look.normalScale, look.normalScale);
       material.roughnessMap = bake.roughnessMap;
       if (look.metallic) material.metalnessMap = bake.roughnessMap;
@@ -439,22 +409,14 @@ export function createFinishMaterials(anisotropy = 8): Record<Finish, MeshStanda
     }
     material.name = `building-${finish}`;
     applyWeathering(material, finish);
-    // A built lot's yard - the paving and paths are this shell's level faces
-    // at the lot's ground - coloured with the lot in the Zoning tool
-    // (`lotOverlay.ts`); walls and roofs never.
+    // A built lot's yard - the paving and paths are this shell's level faces at the lot's ground
     applyLotOverlay(material, `building-${finish}`, { building: true });
     out[finish] = material;
   }
   return out;
 }
 
-/**
- * Buildings that are not maintained run down (the player's order of
- * 2026-10-05): rain streaks down the walls, grime rises from the foot, paint
- * peels off in patches to the render under it, roofs go dark with moss.
- * `aDecay` (0 new, 1 falling apart) comes per vertex from the building's
- * record; the marks are laid by world position so no two walls match.
- */
+/** Buildings that are not maintained run down (the player's order of 2026-10-05) */
 function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
   const roof = finish === 'roofing' || finish === 'tile' || finish === 'slate';
   const glassy = finish === 'glass' || finish === 'metal';
@@ -477,19 +439,12 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
       .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 w = vDecayWorld;
-          // MACRO VARIATION, on every building: the finish's own texture
-          // averages to one flat tint once its texels are under a pixel, and
-          // a whole facade read as one sheet of plastic from the middle
-          // distance (the player, 2026-10-13). Grey noise at a few large
-          // scales multiplied into the colour, at half strength (Unreal's
-          // macro variation; Quilez, "Texture Repetition"): panels of render
-          // a shade apart, a storey a little darker, nothing that repeats.
+          // MACRO VARIATION, on every building
           float macro = dNoise(w * 0.045) * 0.55 + dNoise(w * 0.17) * 0.3 + dNoise(w * 0.6) * 0.15;
           diffuseColor.rgb *= 0.9 + 0.2 * macro;
         }
         {
-          // After the texture: the stains darken the finish as painted. A
-          // town's walls are never new: a light weathering on every one (rain
+          // After the texture: the stains darken the finish as painted.
           // streaks, grime), heavier as a building runs down (\`aDecay\`).
           float d = max(vDecay, ${glassy ? '0.0' : '0.3'});
           vec3 w = vDecayWorld;
@@ -512,11 +467,7 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
           float peel = smoothstep(0.8 - d * 0.12, 0.83 - d * 0.12, dNoise(w * 1.3 + 7.0));
           if (wall) diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.68, 0.62), peel * d);`}
         }`)
-      // The relief faded as a texel shrinks under a pixel: a normal map does
-      // not average down its mips like colour does, so from the middle
-      // distance each pixel caught a random bump and the walls sparkled
-      // (specular aliasing; Toksvig, "Mipmapping Normal Maps"). Full relief
-      // up close, none once a texel is a third of a pixel.
+      // The relief faded as a texel shrinks under a pixel
       .replace('mapN.xy *= normalScale;', `mapN.xy *= normalScale;
         {
           vec2 texelsPerPixel = fwidth(vNormalMapUv) * vec2(textureSize(normalMap, 0));
@@ -526,16 +477,7 @@ function applyWeathering(material: MeshStandardMaterial, finish: Finish): void {
   material.customProgramCacheKey = () => `building-weathering-v3-${finish}`;
 }
 
-/**
- * Each finish's colour as it reads from afar, three numbers to multiply a
- * wall's tint by: the mean of its texture (the same recipe baked above,
- * sampled on a lattice) and the light weathering every wall has
- * (`applyWeathering`: about 9 % darker on average, none on glass). The far
- * level of the buildings (`massing.ts`) paints its walls with it, as an HLOD
- * proxy takes its colour from the materials it stands for (Unreal's merged
- * materials): with the bare tint the town changed colour - brighter, more
- * saturated - wherever a cell went far (the player, 2026-10-13).
- */
+/** Each finish's colour as it reads from afar, three numbers to multiply a wall's tint by: the mean of its texture */
 export function finishAlbedo(): Record<Finish, readonly [number, number, number]> {
   const out = {} as Record<Finish, readonly [number, number, number]>;
   const STEPS = 48;

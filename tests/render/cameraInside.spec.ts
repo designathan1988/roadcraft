@@ -3,13 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createIsoRig } from '@render/isoViewport';
 import { m } from '@world/units';
 
-/**
- * THE VIEW DRAGGED ONTO A TOWER: the eye and the point it looks at both
- * inside one building. The eye was lifted over the roof alone and looked
- * down into it from a metre above - a grey screen (seen 2026-10-14, a view
- * set on a tower and a building grown where the view looked). The point goes
- * onto the roof with the eye, and the view looks across it at its own tilt.
- */
+/** THE VIEW DRAGGED ONTO A TOWER: the eye and the point it looks at both inside one building. */
 const W = 1280;
 const H = 720;
 const HALF = m(40), TALL = m(60), REACH = m(2), CLEAR = m(1);

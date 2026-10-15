@@ -2,13 +2,7 @@ import { ROAD_KEY_ACTIONS, type RoadKeyAction, bindableKey, keyLabel, resetRoadK
 import { t } from '../i18n';
 import './roads.css';
 
-/**
- * THE ROAD TOOL'S KEYS, in a small panel beside the tool's options
- * (docs/source/VIAS.md V3): each action with its key as a chip; a chip clicked
- * waits for the next key pressed and takes it (Esc gives up), a key the
- * game keeps for itself is refused with the reason, and "Restore" puts the
- * defaults back. The keys live in `editor/roads/keys.ts`.
- */
+/** THE ROAD TOOL'S KEYS, in a small panel beside the tool's options */
 /** The open panel, and what lets go of its key listener when it closes (MDN, addEventListener `signal`). */
 let open: { readonly root: HTMLElement; readonly listening: AbortController } | null = null;
 
@@ -89,8 +83,7 @@ export function openRoadKeys(anchor?: HTMLElement): void {
     note = '';
     render();
   };
-  // Removed with the panel (`closeRoadKeys`), not on the next key: a panel opened
-  // and closed many times left one listener each until a key was pressed.
+  // Removed with the panel (`closeRoadKeys`), not on the next key
   const listening = new AbortController();
   // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
   window.addEventListener('keydown', onKey, { capture: true, signal: listening.signal });

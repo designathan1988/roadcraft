@@ -1,14 +1,6 @@
 import type { SimWorld } from '@sim/world';
 
-/**
- * A stable fingerprint of simulation state.
- *
- * Quantized so that meaningless last-bit differences do not register, and taken
- * over id-sorted agents so it cannot depend on map insertion order. Used to
- * assert that the same seed and the same inputs produce the same run — and that
- * stepping one tick at a time is identical to stepping five, which is the real
- * test of a fixed timestep.
- */
+/** A stable fingerprint of simulation state. */
 export function hashSim(w: SimWorld): number {
   let h = 2166136261;
 

@@ -10,11 +10,7 @@ import { area } from '@core/clipper';
 import { buildWalkways } from './oracle/buildWalkways';
 import { junctionDetail } from '@world/markings';
 
-/**
- * A ROAD'S END CAN BE A TURNING CIRCLE (docs/source/VIAS.md V8, the player's choice
- * per end, 2026-10-10): a circle of carriageway round the end, every outer
- * surface carried out round it, the road cut where its edge meets it.
- */
+/** A ROAD'S END CAN BE A TURNING CIRCLE (the player's choice per end, 2026-10-10) */
 function street(): { doc: RoadDoc; net: Network; end: number } {
   const doc = new RoadDoc();
   const a = doc.addNode({ x: m(-120), y: 0 }).id, b = doc.addNode({ x: m(60), y: 0 }).id;

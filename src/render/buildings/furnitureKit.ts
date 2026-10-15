@@ -9,17 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FurnitureKind } from '@world/buildings/interior';
 
-/**
- * The furniture people use inside buildings, as models: rounded cushions,
- * turned legs, shelves with goods on them, books of every colour, a fridge
- * with its handle, a bed made with pillows and a cover. Each kind is ONE
- * geometry built here once, vertex-coloured, drawn instanced for every
- * piece of that kind in view - a city of rooms costs one draw per kind.
- *
- * Built in metres at the size `FURNITURE_SIZE` gives (across x, up y, deep
- * z), standing on y = 0, its front towards +z; the renderer scales it to the
- * piece and turns it to face where the piece faces.
- */
+/** The furniture people use inside buildings, as models */
 
 type RGB = readonly [number, number, number];
 
@@ -277,11 +267,9 @@ function build(kind: FurnitureKind): BufferGeometry[] {
         rbox(W, 0.12, 0.25, 0, 1.15, back + 0.15, BLACK, 0.03)];
     case 'pallet':
       return [rbox(W, 0.14, D, 0, 0, 0, hex(0xb08a5a), 0.01), rbox(W - 0.1, H - 0.18, D - 0.1, 0, 0.14, 0, hex(0xc9a777), 0.03)];
-    // Lights: a shade lit warm from inside (the room's light is placed where
-    // these are), on a ceiling rose, a pole or a small base.
+    // Lights: a shade lit warm from inside
     case 'stairs': {
-      // Fourteen treads rising from the front (+z) to the back, a stringer
-      // and a handrail on posts.
+      // Fourteen treads rising from the front (+z) to the back, a stringer and a handrail on posts.
       const steps = 14;
       const out: BufferGeometry[] = [];
       for (let i = 0; i < steps; i++) {
@@ -332,13 +320,7 @@ export function createFurnitureMaterial(): MeshStandardMaterial {
   return material;
 }
 
-/**
- * Each kind's colour as the eye takes it in from across a room: its model's
- * vertex colours averaged over its surface, three numbers a kind in
- * `FURNITURE_KINDS` order. The windows draw the piece behind them in it
- * (`kit.ts`, the room seen through the glass), the same piece the cut-open
- * view draws.
- */
+/** Each kind's colour as the eye takes it in from across a room */
 export function furnitureTones(geometry: Readonly<Record<FurnitureKind, BufferGeometry>>): Float32Array {
   const out = new Float32Array(FURNITURE_KINDS.length * 3);
   FURNITURE_KINDS.forEach((kind, k) => {

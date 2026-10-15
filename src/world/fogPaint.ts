@@ -1,21 +1,5 @@
 import { m } from './units';
-/**
- * PAINTED FOG: banks of mist the player lays where they want them - over a
- * valley, along a river, round a hill - and takes away again with the
- * eraser. Like the painted ground (`terrainPaint.ts`) the document keeps the
- * DABS, so a fogged map saves, loads and undoes as any other edit; the
- * renderer rasterises them into a map over the land and marches the view's
- * rays through it (`render/fogLayer.ts`, `render/postprocess.ts`), as
- * engines draw local fog volumes over an exponential height fog (Unreal's
- * Local Fog Volumes: a density falling off with height above the ground,
- * soft at its edges).
- *
- * Each dab carries the BRUSH's settings at the time it was laid - how thick,
- * how high the bank rises, how fast the wind carries it - so one valley can
- * hold a low, still mist and the next a tall bank streaming past (the
- * player, 2026-10-07: "as configurações têm que ser do pincel"). The map
- * adds one setting of its own over all of them (`FogSettings`).
- */
+/** PAINTED FOG: banks of mist the player lays where they want them - over a valley, along a river, round a hill */
 
 export interface FogDab {
   readonly x: number;
@@ -80,12 +64,7 @@ export interface FogSample {
   speed: number;
 }
 
-/**
- * The fog the dabs leave at a point: each dab in turn, a smooth falloff from
- * its centre to its rim, adding towards one or (erasing) taking away towards
- * none; its height and speed those of the dabs that laid it, each by what it
- * added. The renderer rasterises this per texel.
- */
+/** The fog the dabs leave at a point: each dab in turn, a smooth falloff from its centre to its rim, adding towards one or */
 export function fogAt(dabs: readonly FogDab[], x: number, y: number, out: FogSample = { density: 0, height: 0, speed: 0 }): FogSample {
   let d = 0, weight = 0, height = 0, speed = 0;
   for (const dab of dabs) {
@@ -98,8 +77,7 @@ export function fogAt(dabs: readonly FogDab[], x: number, y: number, out: FogSam
       continue;
     }
     d += (1 - d) * w;
-    // Repainting over a bank with new settings moves it towards them, as
-    // far as the dab is strong there.
+    // Repainting over a bank with new settings moves it towards them, as far as the dab is strong there.
     if (weight === 0) { height = dab.height; speed = dab.speed; } else { height += (dab.height - height) * w; speed += (dab.speed - speed) * w; }
     weight += w;
   }

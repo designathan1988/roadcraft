@@ -1,37 +1,4 @@
-/**
- * THE GAME'S STATE: what the player has in hand and how the game runs - the
- * tool, the pause and speed, the quality, the selection - owned in one place,
- * and every change of it written down: what changed, from what to what, and
- * why (the player, 2026-10-08: "o jogo precisa ter um controlador global de
- * estados, eventos"). Before it these were loose variables of `main.ts`,
- * written from some thirty places with no record.
- *
- * The world's own changes are in the document's diary (`world/changes.ts`).
- * This one is apart on purpose: an entry here has no place on the map, and a
- * reader of the diary takes an entry with no place as the whole map changed;
- * and the interface changes far more often than the world, which would push
- * the world's entries out of the diary's ring.
- *
- * An entry is an event - what already happened, its values captured when it
- * is written - in a ring of fixed size (Nystrom, "Event Queue"). `set` is
- * the one way in, and a value set to what it already is writes nothing;
- * `values` is a read-only view, so there is no second copy to drift.
- *
- * Whoever reacts to a change `watch`es its keys. Nobody is called inside
- * `set`: `flush` runs once in a microtask after the code that changed the
- * state (MDN `queueMicrotask`: after the current task, before the browser
- * renders), so a click's changes are told together, and the frame calls it
- * too. Each watcher gets the changes of its keys since the serial it last
- * saw (Nystrom, "Event Queue": decouple when an event is sent from when it
- * is processed; "Observer": a watcher that changes state while being told of
- * a change starts a loop, so what it sets is told in the next flush). It is
- * not tied to frames: a hidden page draws none and its panels still follow.
- * A watcher that throws does not stop the others: its error is thrown again
- * on its own, where the page's error handler sees it. `watch` returns the way
- * out, so a panel that goes away stops being told (the lapsed listener).
- *
- * Pure: no three, no DOM.
- */
+/** THE GAME'S STATE: what the player has in hand and how the game runs */
 
 export interface StateChange<V> {
   /** Order of writing; every entry has its own. */
@@ -105,10 +72,7 @@ export class GameState<V extends object> {
     this.wake();
   }
 
-  /**
-   * Tells `fn`, at every `flush`, the changes of `keys` it has not seen.
-   * Starts having seen everything; returns the function that stops it.
-   */
+  /** Tells `fn`, at every `flush`, the changes of `keys` it has not seen. */
   watch(keys: readonly (keyof V & string)[], fn: (changes: StateChange<V>[] | null) => void): () => void {
     const watcher: Watcher<V> = { keys: new Set(keys), seen: this.serial, fn };
     this.watchers.push(watcher);
@@ -118,14 +82,9 @@ export class GameState<V extends object> {
     };
   }
 
-  /**
-   * Tells every watcher what changed of its keys since it was last told, once,
-   * up to the serial the flush started at: what a watcher sets meanwhile is
-   * told in the next flush, never inside this one. Called once a frame.
-   */
+  /** Tells every watcher what changed of its keys since it was last told, once, up to the serial the flush started at */
   flush(): void {
-    // Called every frame: with nothing written since the last flush no watcher
-    // is behind (a new one starts at the serial it was added at).
+    // Called every frame: with nothing written since the last flush no watcher is behind
     if (this.flushing || this.serial === this.flushedUpTo) return;
     this.flushing = true;
     const upTo = this.serial;

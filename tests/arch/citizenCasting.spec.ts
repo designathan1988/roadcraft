@@ -4,14 +4,7 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CastingRegistry, CROWD, compatible, type CitizenModel } from '@render/citizenCasting';
 
-/**
- * ONE DOOR INTO THE ROSTER. The street had a footballer, a pilot and a man in
- * a suit walking as one party because four code paths each picked bodies from
- * the whole roster. Now only `citizenCasting.ts` reads the reviewed manifest
- * and the catalog of shipped models; every figure the game draws - walker,
- * party member, driver, passenger, rider, somebody at the kerb - is cast by
- * its `pickCitizenModel`. Any other module reaching for the roster fails here.
- */
+/** ONE DOOR INTO THE ROSTER. */
 const SRC = join(process.cwd(), 'src');
 const ALLOWED = new Set(['render/citizenCasting.ts', 'render/citizenCatalog.ts']);
 const ROSTER = /citizens\.manifest|citizenCatalog|CITIZEN_CATALOG|CITIZEN_MODELS/;
@@ -76,11 +69,7 @@ describe('citizen casting', () => {
   });
 
   it('keeps a person in their clothes for good, however long out of sight and wherever they come back', () => {
-    // A walker seen, then out of sight for minutes while the street fills
-    // with others; back on screen elsewhere, the same body (the player,
-    // 2026-10-13: people changed clothes and hair).
-    // Cast in a street where the body the person would take is worn close by,
-    // so another is chosen; back on screen in an empty street, minutes later.
+    // A walker seen, then out of sight for minutes while the street fills with others
     const roster: CitizenModel[] = ['a', 'b', 'c'].map((id) => ({ id, wardrobe: 'casual' as const, ageBand: 'adult' as const, gender: 'f' as const }));
     const walker = { seed: 1, gender: 'f' as const, ageClass: 'adult' as const, company: 'solo' as const, companyId: 1, x: 0, y: 0 };
     const plain = new CastingRegistry(roster).pickCitizenModel({ ...walker, x: 9000, y: 9000 })!.index;

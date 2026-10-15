@@ -8,24 +8,7 @@ import { Network } from '@world/network';
 import { isSimple } from '@core/polygon';
 import type { NodeId } from '@world/ids';
 
-/**
- * The junction builder had no test file at all.
- *
- * Several comments in `src/world/junction/` cite measurements from a fuzz
- * sweep, a `trim-equality` spec and a `probe-tongues.mjs` script — none of
- * which exist in the repository. Every claim in them was therefore
- * unverifiable, and two critical defects lived in that blind spot:
- *
- *   1. `buildLegs` consumed its trim guesses in SEGMENT-ID order and returned
- *      the legs in ANGLE order, so each refinement pass framed every leg at
- *      another leg's trim distance.
- *   2. The parallel-boundary test could not tell a straight road (psi near PI)
- *      from a hairpin fork (psi near 0) and gave both a ZERO setback, so two
- *      legs three degrees apart had completely overlapping carriageways.
- *
- * These are properties rather than examples: a property keeps holding when the
- * numbers move, and neither defect above is visible in any single case.
- */
+/** The junction builder had no test file at all. */
 
 const DEG = Math.PI / 180;
 /** Far enough that the trim solver is never the thing under length pressure. */
@@ -59,15 +42,7 @@ function junctionAt(arms: readonly Arm[]): {
 /** Casing, sidewalk, curb, asphalt — the four levels that carry a surface. */
 const LEVELS = SURFACE_LEVELS;
 
-/**
- * Smallest gap between any two bearings, in degrees.
- *
- * The sweeps below only assert over shapes the editor would actually let a
- * player build. Under `MIN_LEG_ANGLE` the builder degrades on purpose — a map
- * may still contain such a node, from a file or an undo, and refusing to draw
- * it would destroy the player's work — so asserting a clean ring there would
- * be asserting against a documented decision rather than against a defect.
- */
+/** Smallest gap between any two bearings, in degrees. */
 const smallestGapDeg = (bearings: readonly number[]): number => {
   const sorted = [...bearings].map((d) => ((d % 360) + 360) % 360).sort((p, q) => p - q);
   let smallest = 360;
@@ -84,15 +59,12 @@ const MIN_GAP_DEG = 25;
 
 describe('junction geometry', () => {
   describe('the ring is a simple polygon', () => {
-    // A self-intersecting ring is what a "defective crossing" looks like on
-    // screen: the boundary folds through itself and the clipper either drops
-    // the shape or paints the slivers that fan across the asphalt.
+    // A self-intersecting ring is what a "defective crossing" looks like on screen
     it('never self-intersects over a full sweep of the fourth leg', () => {
       const failures: string[] = [];
 
       for (let bearing = 5; bearing < 360; bearing += 5) {
-        // Three fixed legs plus one swept leg, so the swept leg passes through
-        // every relationship with each of them.
+        // Three fixed legs plus one swept leg, so the swept leg passes through every relationship with each of them.
         if (smallestGapDeg([0, 120, 240, bearing]) < MIN_GAP_DEG) continue;
         const { doc, cache, centre } = junctionAt([
           { deg: 0 },
@@ -127,10 +99,7 @@ describe('junction geometry', () => {
     });
 
     it('never falls back to a convex hull on a well-formed sweep', () => {
-      // The hull fallback is the builder admitting it could not trace the
-      // boundary. It may exist, but it must not be how ordinary junctions are
-      // drawn — and on collinear mouths it can emit an EMPTY ring, which
-      // draws nothing whatsoever.
+      // The hull fallback is the builder admitting it could not trace the boundary.
       const fellBack: number[] = [];
       for (let bearing = 30; bearing <= 330; bearing += 5) {
         if (smallestGapDeg([0, 150, bearing]) < MIN_GAP_DEG) continue;
@@ -143,17 +112,7 @@ describe('junction geometry', () => {
   });
 
   describe('the trim is a continuous function of the leg angle', () => {
-    /**
-     * The test that actually distinguishes a smooth solver from a cliff.
-     *
-     * A continuous function's worst jump between neighbouring samples shrinks
-     * in proportion to the sampling step; a function with a step keeps the
-     * same jump however finely it is sampled. So sweep, halve the step, sweep
-     * again, and require the jump to come down with it.
-     *
-     * Same technique as `tests/world/elevation.spec.ts`, and it is what
-     * catches the defect where 2.99 degrees gave a trim of 0 and 3.01 gave 428.
-     */
+    /** The test that actually distinguishes a smooth solver from a cliff. */
     const worstJumpOver = (from: number, to: number, step: number): number => {
       let previous: number | null = null;
       let worst = 0;
@@ -168,8 +127,7 @@ describe('junction geometry', () => {
     };
 
     it('has no cliff across the parallel-boundary threshold', () => {
-      // SIN_EPS is 3 degrees: the band where `lineLine` stops finding a
-      // crossing. Both sides of it have to agree.
+      // SIN_EPS is 3 degrees: the band where `lineLine` stops finding a crossing.
       const coarse = worstJumpOver(1, 8, 0.5);
       const fine = worstJumpOver(1, 8, 0.25);
       expect(fine).toBeLessThan(coarse * 0.75 + 1);
@@ -184,9 +142,7 @@ describe('junction geometry', () => {
 
   describe('a hairpin fork is separated, not collapsed', () => {
     it('gives two nearly-parallel legs a real setback', () => {
-      // Two legs 2 degrees apart overlap almost completely, so a zero trim
-      // puts each mouth deep inside the other's carriageway. This is the
-      // shape that used to be classified as "collinear".
+      // Two legs 2 degrees apart overlap almost completely, so a zero trim puts each mouth deep inside the other's carriageway.
       const { doc, cache, centre } = junctionAt([{ deg: 0 }, { deg: 2 }]);
       const junction = buildJunction(doc, cache, centre, Level.Asphalt);
 
@@ -198,8 +154,7 @@ describe('junction geometry', () => {
     });
 
     it('still gives a straight road through the node no setback at all', () => {
-      // The other side of the same test: two legs 180 degrees apart of equal
-      // width are one road, and one road needs no junction setback.
+      // The other side of the same test
       const { doc, cache, centre } = junctionAt([{ deg: 0 }, { deg: 180 }]);
       const junction = buildJunction(doc, cache, centre, Level.Asphalt);
       for (const trim of junction?.trims ?? []) {
@@ -209,16 +164,7 @@ describe('junction geometry', () => {
   });
 
   describe('trims stay inside the road they are cut from', () => {
-    /**
-     * Note what is NOT asserted here.
-     *
-     * A raw junction trim may legitimately exceed its own leg: a shallow fork
-     * really does need a long gore, and `corners.ts` says so explicitly. The
-     * bound that actually has to hold is applied globally, by
-     * `Network.reconcile`, after both ends of a segment have bid for it. So
-     * the property is measured on the reconciled network, not on the solver's
-     * intermediate answer.
-     */
+    /** Note what is NOT asserted here. */
     it('always leaves a drivable ribbon once the network has reconciled', () => {
       const offenders: string[] = [];
       for (let bearing = 10; bearing <= 350; bearing += 10) {
@@ -257,9 +203,7 @@ describe('junction geometry', () => {
     });
 
     it('keeps a ribbon on every segment of a tightly-spaced grid', () => {
-      // The whole-network guarantee as opposed to the per-junction one: two
-      // junctions pulling on the same short segment must still leave road
-      // between them.
+      // The whole-network guarantee as opposed to the per-junction one
       const doc = new RoadDoc();
       const a = doc.addNode({ x: -70, y: 0 });
       const b = doc.addNode({ x: 0, y: 0 });
@@ -285,16 +229,7 @@ describe('junction geometry', () => {
   });
 
   describe('legs are solved by identity, not by position', () => {
-    /**
-     * The regression guard for the leg-index defect.
-     *
-     * `buildLegs` returns legs sorted by angle while the document lists them
-     * by segment id. If anything downstream still pairs those two orders
-     * positionally, then relabelling the SAME geometry — building the very
-     * same arms in a different creation order — changes the answer.
-     *
-     * Geometry does not depend on the order the player drew things in.
-     */
+    /** The regression guard for the leg-index defect. */
     const solveStraight = (order: readonly number[]): number[] => {
       const bearings = [0, 95, 190, 285];
       const doc = new RoadDoc();
@@ -308,8 +243,7 @@ describe('junction geometry', () => {
         doc.addSegment(centre.id, far.id, 3);
       }
       const junction = buildJunction(doc, new PolylineCache(), centre.id, Level.Asphalt);
-      // Keyed by each leg's own bearing so the two runs are comparable
-      // regardless of the order the builder happened to emit them in.
+      // Keyed by each leg's own bearing so the two runs are comparable regardless of the order the builder happened to emit them
       return (junction?.legs ?? [])
         .map((leg, i) => ({ ang: leg.ang, trim: junction?.trims[i] ?? 0 }))
         .sort((p, q) => p.ang - q.ang)
@@ -324,9 +258,7 @@ describe('junction geometry', () => {
     });
 
     it('is stable for curved legs too, where the refinement pass actually bites', () => {
-      // The refinement loop exists for curves: the mouth must be cut
-      // perpendicular to the tangent AT the trim distance. That is the pass
-      // that was consuming mis-indexed trims.
+      // The refinement loop exists for curves: the mouth must be cut perpendicular to the tangent AT the trim distance.
       const specs = [
         { deg: 0, curve: 40 },
         { deg: 100, curve: -55 },
@@ -360,10 +292,7 @@ describe('junction geometry', () => {
 
   describe('a width step is tapered, not butt-jointed', () => {
     it('classifies a degree-2 node between different lane counts as a junction', () => {
-      // `surfaceMode` compared only the road CLASS, but width comes from
-      // class, lane count and direction together. Two segments of one class
-      // with very different lane counts were merged into a single render
-      // chain, so a large width step was drawn as a butt joint with no taper.
+      // `surfaceMode` compared only the road CLASS, but width comes from class, lane count and direction together.
       const doc = new RoadDoc();
       const a = doc.addNode({ x: -ARM, y: 0 });
       const b = doc.addNode({ x: 0, y: 0 });

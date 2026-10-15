@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { renderTargetBytes, renderTargetsBytes } from '@render/targetBytes';
 
-/** THE FIGURES OF docs/AUDITORIA-2026-10-15.md 4.1, from the code that counts them. */
+/** THE FIGURES OF from the code that counts them. */
 describe('renderTargetBytes', () => {
   it('counts the scene target: half-float colour and float depth, eight samples, at 2880 x 1620', () => {
     const w = 2880, h = 1620;

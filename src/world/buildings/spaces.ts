@@ -3,15 +3,7 @@ import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
 import { identityMemo } from '@core/identityMemo';
 
-/**
- * Extension point for interiors and occupants.
- *
- * A storey that stores its own `spaces` is authoritative. One that does not
- * gets the default subdivision below: one space per volume per storey, split
- * along the long axis into flats of up to four modules for residential use.
- * A future occupancy model, lift or service simulation reads this; nothing in
- * the game does yet.
- */
+/** Extension point for interiors and occupants. */
 export interface StoreySpaces {
   readonly volume: number;
   readonly storey: number;
@@ -28,12 +20,7 @@ const KIND: Readonly<Record<BuildingUse, SpaceKind>> = {
   mixed: 'unit',
 };
 
-/**
- * Each record's spaces, worked out once (a stored record is never changed in
- * place, `BuildingStore` OWNERSHIP): the list handed out is shared, read it and
- * never change it. A floor's furniture (`interior.ts` `homeUnits`) asked the
- * whole building's for each of its volumes and floors.
- */
+/** Each record's spaces, worked out once (a stored record is never changed in place, `BuildingStore` OWNERSHIP) */
 export const deriveSpaces: (b: Building) => StoreySpaces[] = identityMemo(workOutSpaces);
 
 function workOutSpaces(b: Building): StoreySpaces[] {
@@ -43,9 +30,7 @@ function workOutSpaces(b: Building): StoreySpaces[] {
       const level = v.base + k;
       const use = storey.use ?? (b.use === 'mixed' ? (level === 0 ? 'commercial' : 'residential') : b.use);
       let spaces = storey.spaces;
-      // Flats on a residential floor are laid out as its plan has them (a
-      // corridor down the middle, homes either side, two or three windows
-      // each), so the homes, the walls and the windows agree.
+      // Flats on a residential floor are laid out as its plan has them
       if ((!spaces || spaces.length === 0) && (use === 'residential' || use === 'mixed') && !(level === 0 && b.volumes.some((o) => o.storeys.length > 1) && use === 'mixed')) {
         const plan = flatPlan(b, v);
         if (plan.flats.length > 1 || plan.corridor) {
@@ -103,12 +88,7 @@ export interface FlatPlan {
 const CORRIDOR = m(1.6);
 const DOUBLE_LOADED = m(11);
 
-/**
- * A residential floor of one block as homes: a corridor down its long axis
- * (when it is deep enough) with homes either side, each two or three window
- * bays wide, so every wall between homes stands between two windows, never
- * across one.
- */
+/** A residential floor of one block as homes: a corridor down its long axis */
 export function flatPlan(b: Building, v: Volume, groupBays = 2): FlatPlan {
   const alongX = v.w >= v.d;
   const L = alongX ? v.w : v.d;
@@ -119,8 +99,7 @@ export function flatPlan(b: Building, v: Volume, groupBays = 2): FlatPlan {
   const groups: number[] = [];
   let left = bays;
   while (left > 0) {
-    // Rooms of `groupBays` bays; what is left over too narrow for one more
-    // goes to the last.
+    // Rooms of `groupBays` bays; what is left over too narrow for one more goes to the last.
     const take = left < groupBays * 2 ? left : groupBays;
     groups.push(take);
     left -= take;

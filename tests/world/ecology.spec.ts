@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { REGIONS, computeEcology, isNatureSettings, type EcologyInput, type RegionId } from '@world/ecology';
 
-/**
- * A small land: a plateau at 100 with a river valley down the middle column
- * and a cliff along the north edge (rows 0-3 high above the rest).
- */
+/** A small land: a plateau at 100 with a river valley down the middle column and a cliff along the north edge */
 const SIDE = 41;
 const CELL = 16;
 function land(region: RegionId, painted: Float32Array | null = null, valleyDepth = 30): EcologyInput {

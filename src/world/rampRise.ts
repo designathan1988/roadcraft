@@ -1,17 +1,9 @@
 import type { SegmentId } from './ids';
 import { m } from './units';
 
-/**
- * How high the walking surface stands over a dropped kerb (`curbRamps.ts`),
- * from the ramps near a point alone. Pure (no network): the page reads it over
- * the network's ramps, a road tile worker over the ramps near its tiles
- * (`render/roadTileMesh.ts`), the same numbers.
- */
+/** How high the walking surface stands over a dropped kerb (`curbRamps.ts`), from the ramps near a point alone. */
 
-/**
- * A dropped kerb: at each end of every zebra the footway ramps down to the
- * carriageway (`curbRamps.ts`).
- */
+/** A dropped kerb: at each end of every zebra the footway ramps down to the carriageway (`curbRamps.ts`). */
 export interface CurbRamp {
   /** The middle of the ramp's foot, on the kerb face (the carriageway's edge). */
   readonly x: number;
@@ -37,10 +29,7 @@ export interface CurbRamp {
 const ROAD_REACH = m(0.6);
 /** Bucket size of the lookup grid. */
 export const RAMP_CELL = m(20);
-/**
- * A grid cell's key as a number: `walkingRise` is asked for every walker drawn
- * every frame, and a string key there was a string per person per frame.
- */
+/** A grid cell's key as a number: `walkingRise` is asked for every walker drawn every frame */
 export const rampCellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
 
 /** Calls `visit` with the key of every cell a ramp reaches. */
@@ -58,10 +47,7 @@ export function rampGrid(ramps: readonly CurbRamp[]): Map<number, CurbRamp[]> {
   return grid;
 }
 
-/**
- * The walking surface's share of the footway's rise at (x, y), from the
- * ramps filed in its cell of `grid` (`walkingRise`).
- */
+/** The walking surface's share of the footway's rise at (x, y), from the ramps filed in its cell of `grid` (`walkingRise`). */
 export function rampRiseIn(grid: ReadonlyMap<number, readonly CurbRamp[]>, x: number, y: number, onFootway: boolean, structure: string): number {
   const list = grid.get(rampCellKey(Math.floor(x / RAMP_CELL), Math.floor(y / RAMP_CELL)));
   let share = onFootway ? 1 : 0;

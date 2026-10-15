@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadFixtures, replay } from './support/runner';
 
-/**
- * Every defect the fuzzer ever shrank, replayed for ever.
- *
- * A fixture with `open` is a defect that is recorded but not fixed: it runs
- * as `it.fails`, so the day it is fixed the suite says so and the flag must
- * be removed. The name says what broke; `detail` is what it looked like.
- */
+/** Every defect the fuzzer ever shrank, replayed for ever. */
 describe('fuzz regressions', () => {
   for (const fixture of loadFixtures()) {
     const test = fixture.open ? it.fails : it;

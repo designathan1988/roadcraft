@@ -3,12 +3,7 @@ import { ChangeLog } from '@core/changeLog';
 import { DeltaLog, type NetworkDelta } from '@world/networkDelta';
 import type { NodeId, SegmentId } from '@world/ids';
 
-/**
- * NO HISTORY FORGETS BY AGE (`ChangeLog`, `DeltaLog`): a reader holding its
- * token through thousands of changes is never told "everything changed" for
- * being behind - that sent the lane graph, the conflicts, the walkways, the
- * zebras and the lots' bays of a whole city to be built again from nothing.
- */
+/** NO HISTORY FORGETS BY AGE (`ChangeLog`, `DeltaLog`) */
 const delta = (k: number): NetworkDelta => ({ segments: new Set([k as SegmentId]), nodes: new Set([(k % 13) as NodeId]), rects: [[k, k, k + 1, k + 1]] });
 
 describe('a reader behind thousands of changes', () => {

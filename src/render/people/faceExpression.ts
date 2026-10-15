@@ -1,21 +1,6 @@
 import { personHash } from '@sim/people/view';
 
-/**
- * A person's face this instant.
- *
- * The vocabulary is ARKit's 52 blendshapes (`expressions.ts`), but a face is
- * driven through a few CHANNELS - emotions, mouth shapes, blink, brows, gaze -
- * each one a fixed mix of ARKit shapes. The crowd's bodies carry one morph
- * per channel (13, built from the ARKit shapes by `channelShapes`): every
- * morph is read for every vertex of every instanced body each frame, and 54
- * of them made the town crawl. A single close-up body (the lab, the
- * creator) may carry all 52 and gets the channels expanded into them.
- *
- * Emotions are the Facial Action Coding System's prototypes (Ekman & Friesen,
- * EMFACS) as ARKit shapes, themselves FACS action units: joy AU6+12, sadness
- * AU1+4+15, anger AU4+5+7+23, surprise AU1+2+5+26. Speech is a run of visemes
- * (the Oculus/MPEG-4 set) folded into five mouth shapes, one per syllable.
- */
+/** A person's face this instant. */
 export type FaceWeights = Record<string, number>;
 
 /** Each channel as ARKit shapes. */
@@ -94,12 +79,9 @@ export function faceAt(seed: number, time: number, activity?: string, mood = 0):
     if (personHash(hash ^ (syllable * 7)) % 5 === 0) add('faceBrowRaise', 0.4 * open);
   }
   if (act?.laugh) add('mouthOpen', 0.7 * (0.5 + 0.5 * Math.sin(time * 9 + (hash & 63))));
-  // Turned to a gunshot a moment before running (`walk.ts` frighten: the
-  // `look` act, and a crouch with the hands over the head): the same terror.
+  // Turned to a gunshot a moment before running
   if (activity === 'panic' || activity === 'look' || activity === 'crouch') {
-    // Terror (FACS fear, AU1+2+4+5+20+26): brows up and drawn together, eyes
-    // wide, lips stretched back, the jaw dropped - screaming, a breath between
-    // screams.
+    // Terror (FACS fear, AU1+2+4+5+20+26): brows up and drawn together, eyes wide, lips stretched back, the jaw dropped
     for (const k of Object.keys(out)) if (k !== 'lookLeft' && k !== 'lookRight') delete out[k];
     add('faceSurprise', 1);
     add('faceSadness', 0.45);
@@ -109,8 +91,7 @@ export function faceAt(seed: number, time: number, activity?: string, mood = 0):
     add('mouthSpread', 0.7);
   }
   if (activity === 'cry') {
-    // Sobbing (FACS sadness AU1+4+15 with the jaw catching): brows up and
-    // knitted, mouth corners down, eyes squeezed, the mouth opening in sobs.
+    // Sobbing (FACS sadness AU1+4+15 with the jaw catching)
     for (const k of Object.keys(out)) if (k !== 'lookLeft' && k !== 'lookRight') delete out[k];
     add('faceSadness', 1);
     add('faceBrowRaise', 0.35);
@@ -119,9 +100,7 @@ export function faceAt(seed: number, time: number, activity?: string, mood = 0):
     add('faceBlink', 0.55 + 0.3 * sob);
   }
   if (activity === 'hurt') {
-    // Pain (FACS AU4+6+7+9+10+43, Prkachin's pain face): brows down, eyes
-    // squeezed, the lip drawn up off clenched teeth; groaning, the mouth
-    // opening on each breath.
+    // Pain (FACS AU4+6+7+9+10+43, Prkachin's pain face): brows down, eyes squeezed, the lip drawn up off clenched teeth
     for (const k of Object.keys(out)) if (k !== 'lookLeft' && k !== 'lookRight') delete out[k];
     add('faceAnger', 0.75);
     add('faceSadness', 0.35);
@@ -139,10 +118,7 @@ export function faceAt(seed: number, time: number, activity?: string, mood = 0):
   return out;
 }
 
-/**
- * Writes a face into a mesh's morph influences: straight into channel
- * morphs (the crowd), or expanded into ARKit shapes when the mesh has those.
- */
+/** Writes a face into a mesh's morph influences: straight into channel morphs */
 export function applyFace(influences: number[], dictionary: Record<string, number>, face: FaceWeights): void {
   influences.fill(0);
   const channels = dictionary['faceBlink'] !== undefined;

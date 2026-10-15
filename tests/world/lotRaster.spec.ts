@@ -9,13 +9,7 @@ import { DEFAULT_CITY, planCity, type CityOptions } from '@world/cityGen/plan';
 import { m } from '@world/units';
 import { planLots as planLotsOld } from './oracle/lotsOld';
 
-/**
- * The lots' raster scan-converted (`zoneGrid.ts` `markPaved`) and labelled by spans,
- * against the raster that asked `pavedTester` at every cell and kept every
- * piece's cells (`oracle/lotsOld.ts`, `lots.ts` at 8434df1): the very same
- * plan - lots, corners, keys, their order - on generated cities, and the very
- * same paved cells.
- */
+/** The lots' raster scan-converted */
 
 function city(options: Partial<CityOptions>): { doc: RoadDoc; net: Network } {
   const doc = layCity(planCity({ ...DEFAULT_CITY, ...options }));

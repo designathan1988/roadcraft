@@ -5,12 +5,7 @@ import { DECAY_GRACE, DECAY_SPAN, type Building, type BuildingId } from '@world/
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * THE BUILDINGS RUN DOWN AFTER A MAP IS LOADED, AND A LOOK COSTS WHAT IS DUE
- * (`world/buildings/decayWatch.ts`): a store cleared or loaded writes one diary
- * entry without ids, which files the town again; and the due times are a heap,
- * so a look with nothing due touches nothing.
- */
+/** THE BUILDINGS RUN DOWN AFTER A MAP IS LOADED, AND A LOOK COSTS WHAT IS DUE (`world/buildings/decayWatch.ts`) */
 const house = (i: number, builtAt: number): Omit<Building, 'id'> =>
   ({ ...JSON.parse(JSON.stringify(BLUEPRINTS[0]!.body)), x: (i % 40) * m(30), y: Math.floor(i / 40) * m(30), rotation: 0, builtAt } as Omit<Building, 'id'>);
 

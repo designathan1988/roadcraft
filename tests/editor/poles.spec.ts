@@ -15,11 +15,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The wire tool, judged by what it BUILDS (the player's order of 2026-10-05):
- * poles only on footways, following the street round its curves and its
- * corners, and cross-arms framed the way a line crew frames them.
- */
+/** The wire tool, judged by what it BUILDS (the player's order of 2026-10-05) */
 
 function street(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
@@ -121,13 +117,11 @@ describe('pole runs', () => {
   it('turns the corner along the footways instead of cutting across the block', () => {
     const { doc, net } = corner();
     const want = poleLine(doc);
-    // The inside of the corner: south of the west street... no, NORTH of it,
-    // and WEST of the north street: the same corner footway.
+    // The inside of the corner: south of the west street... no, NORTH of it, and WEST of the north street
     const plan = planPoleRun(doc, net, { x: -300 * U, y: want }, { x: -want, y: 300 * U }, 20 * U);
     expect(plan.refused).toBeUndefined();
     for (const pole of plan.poles) {
-      // On the pavement: never in the block's interior, never on the asphalt
-      // of the corner's kerb return...
+      // On the pavement: never in the block's interior, never on the asphalt of the corner's kerb return...
       expect(onFootway(net, pole.at), `${pole.at.x.toFixed(1)}, ${pole.at.y.toFixed(1)}`).toBe(true);
       // ...and a kerb's depth behind it all the way round.
       const kerbLine = Math.min(Math.abs(pole.at.y - want), Math.abs(pole.at.x + want));

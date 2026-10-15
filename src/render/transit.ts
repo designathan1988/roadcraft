@@ -9,12 +9,7 @@ import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 import type { TrainView } from '@sim/transit/transit';
 
-/**
- * The materials of the transport, made once and shared by every rebuild:
- * one made afresh on each rebuild (every road edit rebuilds the transport)
- * had its shader program dropped with the old one and linked again, a stall
- * on every road drawn (docs/performance.md). Keyed by everything set on them.
- */
+/** The materials of the transport, made once and shared by every rebuild: one made afresh on each rebuild */
 const sharedMaterials = new Map<string, MeshStandardMaterial>();
 function sharedMaterial(colour: number, roughness: number, metalness: number, opacity: number,
   transparent = opacity < 1, depthTest = true, order = 0): MeshStandardMaterial {
@@ -29,25 +24,11 @@ function sharedMaterial(colour: number, roughness: number, metalness: number, op
   return mat;
 }
 
-/**
- * Public transport on screen (`world/transit.ts`, `sim/transit/transit.ts`):
- * the train's tracks on their ballast with sleepers and two rails; its
- * stations, a platform beside the track under a canopy; the metro's
- * entrances (its tracks and trains run under the ground and are not drawn);
- * bus stops, a shelter and a sign in the colour of the first line that calls
- * there, a terminal's longer; and the trains, their cars in their line's
- * colour, moved every frame.
- *
- * Every piece is a unit box, instanced, as the walls and fences are
- * (`barriers.ts`).
- */
+/** Public transport on screen (`world/transit.ts`, `sim/transit/transit.ts`) */
 export interface TransitMeshes {
   readonly group: Group;
   readonly triangles: number;
-  /**
-   * The metro under the ground, seen as a cut (the transit tool): its tunnels
-   * with their tracks and its stations' platforms, drawn through the ground.
-   */
+  /** The metro under the ground, seen as a cut (the transit tool) */
   setXray(on: boolean): void;
   /** The trains where the simulation has them now. */
   update(trains: readonly TrainView[], groundAt: (x: number, y: number) => number): void;
@@ -67,13 +48,7 @@ const CAR = { length: m(17.5), width: m(2.9), height: m(3.6) };
 const METRO_DEPTH = m(12);
 const TUNNEL = { width: m(9), height: m(6) };
 
-/**
- * A run of track as boxes: ballast, sleepers and two rails, in pieces each on
- * what is under it - over open ground on its ballast; across a street (a
- * level crossing) the rails alone, flush with the paving. The metro's lies at
- * `METRO_DEPTH` under the ground in its tunnel: a floor, two walls and a roof
- * slab, so the cut shows the bore.
- */
+/** A run of track as boxes: ballast, sleepers and two rails, in pieces each on what is under it */
 function trackBoxes(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
   groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number = () => NaN): Record<'ballast' | 'sleepers' | 'rails' | 'tunnel' | 'roof', Box[]> {
   const out = { ballast: [] as Box[], sleepers: [] as Box[], rails: [] as Box[], tunnel: [] as Box[], roof: [] as Box[] };
@@ -159,8 +134,7 @@ function stopParts(doc: RoadDoc, stop: TransitStop, groundAt: (x: number, y: num
       }
       roofs.push({ x: px, y: py, z: z + m(4), yaw, length: m(56), width: m(4.4), height: m(0.25) });
       signs.push({ x: px + nx * m(1.8), y: py + ny * m(1.8), z: z + m(2.6), yaw, length: m(2.4), width: m(0.1), height: m(0.7), colour });
-      // The station building behind the platform: a hall with a glazed front
-      // to the forecourt, its roof, and the line's sign over the door.
+      // The station building behind the platform
       const hx = px + nx * m(8), hy = py + ny * m(8);
       halls.push({ x: hx, y: hy, z, yaw, length: m(22), width: m(10), height: m(6.5) });
       roofs.push({ x: hx, y: hy, z: z + m(6.5), yaw, length: m(24), width: m(12), height: m(0.4) });
@@ -171,16 +145,13 @@ function stopParts(doc: RoadDoc, stop: TransitStop, groundAt: (x: number, y: num
       return;
     }
     if (s.mode === 'metro') {
-      // The way down: a glazed entrance with the sign of the line - off the
-      // carriageway (a station clicked on a street opens onto the nearest
-      // ground beside it, clear of the kerb).
+      // The way down: a glazed entrance with the sign of the line - off the carriageway
       const at = s.entrance ? { x: s.entrance.x, y: s.entrance.y, yaw: Math.atan2(s.entrance.y - s.y, s.entrance.x - s.x) + Math.PI / 2 } : entranceSpot(s.x, s.y, onRoad);
       const ez = groundAt(at.x, at.y);
       const ex = at.x, ey = at.y, yaw = at.yaw;
       const ux = Math.cos(yaw), uy = Math.sin(yaw);
       glass.push({ x: ex, y: ey, z: ez, yaw, length: m(4), width: m(2.6), height: m(2.6) });
-      // The station below: an island platform between the two tracks... or,
-      // on one track, platforms either side, and its hall, all in the cut.
+      // The station below: an island platform between the two tracks... or, on one track, platforms either side, and its hall
       {
         const track = t.tracks.find((k) => k.id === s.track);
         let tyaw = 0;
@@ -215,8 +186,7 @@ function stopParts(doc: RoadDoc, stop: TransitStop, groundAt: (x: number, y: num
       signs.push({ x: ex + ux * m(2.6), y: ey + uy * m(2.6), z: ez + m(3.4), yaw, length: m(0.9), width: m(0.9), height: m(0.9), colour });
       return;
     }
-    // A bus stop: a shelter on two posts along the street, its glass at the
-    // back (away from the road), a pole with the sign at its end.
+    // A bus stop: a shelter on two posts along the street, its glass at the back
     const seg = s.segment !== undefined ? doc.segments.get(s.segment) : undefined;
     const na = seg ? doc.nodes.get(seg.a) : undefined, nb = seg ? doc.nodes.get(seg.b) : undefined;
     let yaw = 0, bx = 0, by = 1;
@@ -229,8 +199,7 @@ function stopParts(doc: RoadDoc, stop: TransitStop, groundAt: (x: number, y: num
     }
     const long = s.terminal ? m(9) : m(3.2);
     const ux = Math.cos(yaw), uy = Math.sin(yaw);
-    // At the kerb, as a shelter stands, clear of the shop awnings over the
-    // footway: from the stop (the middle of the footway) towards the road.
+    // At the kerb, as a shelter stands, clear of the shop awnings over the footway: from the stop
     const kx = s.x - bx * m(0.9), ky = s.y - by * m(0.9);
     s = { ...s, x: kx, y: ky };
     for (const k of [-1, 1]) {
@@ -285,7 +254,6 @@ class TransitProduct implements DerivedSpec<TransitSource, number, TransitPlace>
     }
     for (const key of this.filing.idsMeetingAny(change.rects)) out.add(key);
     // A change of the transport itself may make a new track or stop: the transport's own items in its rectangles
-    // (a handful on a map; the other kinds reach only what stands, through the filing).
     if (change.kind !== 'transit') return;
     const meets = (x0: number, y0: number, x1: number, y1: number): boolean => change.rects!.some((r) => r[0] <= x1 && r[2] >= x0 && r[1] <= y1 && r[3] >= y0);
     for (const track of source.doc.transit.tracks) {
@@ -350,11 +318,7 @@ function pointsBox(points: readonly { readonly x: number; readonly y: number }[]
   return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
 }
 
-/**
- * The transport kept item by item from the diary (`TransitProduct`): a track or a stop made again only
- * when it changed or what it stands on did, each a run of the layer's instanced stores. DO NOT build the
- * whole transport again on its revision or a change of the ground under any piece of it.
- */
+/** DO NOT build the whole transport again on its revision or a change of the ground under any piece of it. */
 export function createTransit(): TransitMeshes & {
   /** Brings the tracks and stops up to the diary; the items made again. */
   sync(doc: RoadDoc, groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number, onRoad: (p: { x: number; y: number }) => boolean): number;
@@ -379,9 +343,7 @@ export function createTransit(): TransitMeshes & {
     shown('transit-signs', material(0xffffff, 0.5), true),
     shown('transit-halls', material(0xc9b79a, 0.85)),
   ];
-  // The metro in its cut: drawn through the ground (no depth test against it)
-  // in its own order, the bore's concrete a little see-through so the tracks
-  // read inside; shown only while the transit tool is on.
+  // The metro in its cut: drawn through the ground
   const through = (name: string, colour: number, opacity: number, order: number): RunStore => {
     const mat = sharedMaterial(colour, 0.8, 0, opacity, true, false, order);
     return { name, geometry: unit, material: mat, castShadow: false, receiveShadow: false, tinted: false, cards: false, renderOrder: 20 + order };
@@ -413,8 +375,7 @@ export function createTransit(): TransitMeshes & {
   const cars = new InstancedMesh(unit, material(0xffffff, 0.45, 0.3), MAX_CARS);
   cars.name = 'transit-trains';
   cars.castShadow = true;
-  // Its instances move all over the map: the bounds of the one unit box at the
-  // origin would cull them all whenever the camera is elsewhere.
+  // Its instances move all over the map
   cars.frustumCulled = false;
   cars.count = 0;
   group.add(cars);
@@ -459,9 +420,7 @@ export function createTransit(): TransitMeshes & {
           n++;
         }
       }
-      // The cars there are, uploaded and drawn: with no train running the mesh
-      // went through both render lists every frame and its whole buffer
-      // (16 KiB) was uploaded again.
+      // The cars there are, uploaded and drawn
       cars.count = n;
       cars.visible = n > 0;
       if (!n) return;
@@ -484,12 +443,7 @@ export function createTransit(): TransitMeshes & {
   };
 }
 
-/**
- * Where a metro entrance stands for a station at (x, y): the point itself when
- * it is off the roads, else the nearest point off the carriageway (searched
- * in rings), a metre and a half further on so it clears the kerb; turned
- * along the kerb.
- */
+/** Where a metro entrance stands for a station at (x, y) */
 function entranceSpot(x: number, y: number, onRoad: (p: { x: number; y: number }) => boolean): { x: number; y: number; yaw: number } {
   if (!onRoad({ x, y })) return { x, y, yaw: 0 };
   for (let r = m(1); r <= m(30); r += m(1)) {
@@ -524,16 +478,7 @@ const PREVIEW_LAYERS = [
   { boxes: 'roof', colour: 0x8d8a84, opacity: 0.18, order: 4, roughness: 0.8, metalness: 0 },
 ] as const;
 
-/**
- * The run of track being laid (the transit tool's preview): the real track,
- * as it will be built - the train's on its ballast, the metro's in its bore
- * under the ground, seen through it - not a line. ONE set of instanced meshes
- * for the tool's life, written again as the track changes, growing by
- * doubling when it needs more room: the preview follows the pointer, and a new
- * geometry and new instanced meshes per move were new GPU buffers per move,
- * and the instance buffers were never freed (`dispose` freed the box only).
- * DO NOT build the preview again per move.
- */
+/** DO NOT build the preview again per move. */
 export function createTrackPreview(): TrackPreview {
   const group = new Group();
   group.name = 'transit-preview';

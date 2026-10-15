@@ -7,15 +7,7 @@ import { m } from '@world/units';
 import { localFootprint } from '@world/buildings/footprints';
 import type { Building } from '@world/buildings/types';
 
-/**
- * A block standing at a floor of its own (a split level, `Volume.lift`) is
- * worked on at its own height: a mass stacked on its roof is drawn on that
- * roof, not half a storey above or below it.
- *
- * The view is oblique: a point drawn at height z lands z further up the
- * screen (screen y = world y - z), so a drag read at the wrong height lands
- * displaced by exactly the height it was wrong by.
- */
+/** A block standing at a floor of its own (a split level, `Volume.lift`) is worked on at its own height */
 
 function setup(): { tool: BuildingTool; doc: RoadDoc } {
   const doc = new RoadDoc();

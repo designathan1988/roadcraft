@@ -5,13 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * THE ACCUSER'S RULES ON A PROJECT OF ONE FILE (`scripts/acusar.mjs`), as
- * typescript-eslint's RuleTester checks a rule: lines that must be accused
- * (`// espera <regra>`), lines that must not (`// não <regra>`), and a lead
- * marked right with a reason is no longer accused. Each rule fires on the
- * declared three.js type, not on a variable's name.
- */
+/** THE ACCUSER'S RULES ON A PROJECT OF ONE FILE (`scripts/acusar.mjs`), as typescript-eslint's RuleTester checks a rule */
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const three = join(root, 'node_modules', '@types', 'three', 'index.d.ts').split('\\').join('/');
 

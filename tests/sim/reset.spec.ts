@@ -18,11 +18,7 @@ function asTheGameRuns(sim: SimWorld): SimWorld {
   return sim;
 }
 
-/**
- * Loading a different map starts a clean simulation. Lanelet and footway ids
- * coincide between maps, so the old rebind-after-load kept vehicles of the
- * previous map - with their routes and claims - on unrelated roads.
- */
+/** Loading a different map starts a clean simulation. */
 describe('a simulation reset', () => {
   it('forgets every agent and everything learned about the old map, and runs on', () => {
     const sim = asTheGameRuns(simOf(fixtureDoc(), 0x5eed, 1));

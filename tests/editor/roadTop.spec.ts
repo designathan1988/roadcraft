@@ -4,11 +4,7 @@ import { Network } from '@world/network';
 import { RoadTop } from '@editor/roadTop';
 import { m } from '@world/units';
 
-/**
- * The highest road of the map (`editor/roadTop.ts`): always the highest node
- * there is, and an edit reads again only the cells it reached, never every
- * node of the city.
- */
+/** The highest road of the map (`editor/roadTop.ts`) */
 function town(): { doc: RoadDoc; net: Network; top: RoadTop; ids: number[] } {
   const doc = new RoadDoc();
   const net = new Network(doc);

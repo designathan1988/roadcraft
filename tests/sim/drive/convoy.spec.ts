@@ -12,13 +12,7 @@ import { physicalSpeed } from '@sim/drive/physicalMotion';
 import { DT } from '@sim/params';
 import { m } from '@world/units';
 
-/**
- * P1-21: a movement with no conflict point - the way on at a bend, a right
- * turn crossing nothing - is admitted as a `movement:` token. Two cars one
- * behind the other both hold it, and the deadlock test counted that as two
- * owners of one resource and refused the second: the queue went through one
- * car at a time, each stopping at the line until the one ahead had cleared.
- */
+/** P1-21: a movement with no conflict point - the way on at a bend, a right turn crossing nothing */
 describe('a convoy through a movement that crosses nothing', () => {
   it('brakes inside the preferred standing gap without an instantaneous stop', () => {
     const archetype = ARCHETYPES.find(candidate => candidate.id === 'hatch')!;

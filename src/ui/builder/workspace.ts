@@ -9,18 +9,7 @@ import { applyTranslations, formatDecimal, onLanguageChange, parseDecimal, t } f
 import { builderIconSvg } from './icons';
 import './workspace.css';
 
-/**
- * The Builder's side of the interface: its state (`BuilderState`, published
- * to the interface's panels, `ui/v2/shell.ts`, which draw its tabs, tools and
- * catalogue), its commands (`BuilderActions`), the pictures of its parts, and
- * the selection panel - the numbers of what is selected and the actions on it
- * (duplicate, mirror, join, save, demolish). It drew a whole interface of its
- * own once (a bar, a rail, a panel), hidden since the redesign and taken out
- * in docs/source/PLANO.md 5g.
- *
- * This module only renders state and reports clicks: `buildingsWiring.ts` and
- * `main.ts` turn every one of them into a command.
- */
+/** The Builder's side of the interface: its state */
 
 type ChromeMode = 'road' | 'builder';
 
@@ -127,10 +116,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, h
 export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace {
   const root = document.getElementById('builder') as HTMLElement;
 
-  // ------------------------------------------------------------ the selection
-  // The numbers of what is selected, and what can be done to it: on the panel
-  // itself, not on a bar floating over the map (it covered the building and
-  // stayed on screen in every other mode).
+  // ------------------------------------------------------------ the selection The numbers of what is selected
   const inspector = el('aside', 'bw-inspector');
   inspector.hidden = true;
   const inspectorHead = el('div', 'bw-inspector-head');
@@ -161,8 +147,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
   inspector.append(inspectorHead, inspectorActions, inspectorBody);
 
   root.append(inspector);
-  // Built after the language was applied: translate its own titles now, and
-  // again whenever the language changes.
+  // Built after the language was applied: translate its own titles now, and again whenever the language changes.
   applyTranslations(root);
   onLanguageChange(() => applyTranslations(root));
 
@@ -189,8 +174,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
     const signature = `${info.titleKey}|${info.name}|${info.material ?? ''}|${info.fields.map((f) => `${f.id}:${f.text ?? f.value}`).join(',')}`;
     if (inspectorBody.dataset['signature'] === signature) return;
     const focused = document.activeElement;
-    // What is being typed, read before the redraw: removing the field fires
-    // its blur, which writes the value out in full.
+    // What is being typed, read before the redraw: removing the field fires its blur, which writes the value out in full.
     const typed = focused instanceof HTMLInputElement && focused.dataset['field'] ? { id: focused.dataset['field'], text: focused.value } : null;
     inspectorBody.dataset['signature'] = signature;
     inspectorBody.innerHTML = '';
@@ -225,10 +209,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
         inspectorBody.appendChild(row);
         continue;
       }
-      // A text field, not `type=number`: Chrome writes a number field's
-      // decimal in the system's notation whatever the page's language ("3,10"
-      // in English); here it is the interface language's, and a comma or a
-      // point is read (ctrl.blog, "HTML5 input number localization").
+      // A text field, not `type=number`
       const input = el('input', 'bw-field-input');
       input.type = 'text';
       input.inputMode = field.unit === 'count' ? 'numeric' : 'decimal';
@@ -237,12 +218,10 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
       const step = field.step ?? (field.unit === 'count' ? 1 : 0.05);
       const shown = (v: number): string => (field.unit === 'count' ? String(Math.round(v)) : formatDecimal(v, 2));
       const clamp = (v: number): number => Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, v));
-      // The field being typed in keeps what was typed through the redraw each
-      // change causes: "3," is not rewritten to "3,00" under the cursor.
+      // The field being typed in keeps what was typed through the redraw each change causes
       input.value = typed?.id === field.id ? typed.text : shown(field.value);
       input.dataset['field'] = field.id;
-      // Live: every key, arrow step or wheel step shows on the building at
-      // once, not only when the field is left.
+      // Live: every key, arrow step or wheel step shows on the building at once, not only when the field is left.
       const nudge = (sign: number): void => {
         const now = parseDecimal(input.value);
         const next = clamp(Math.round(((Number.isFinite(now) ? now : field.value) + sign * step) / step) * step);
@@ -322,8 +301,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
     setMode(next) {
       mode = next;
       root.dataset['mode'] = next;
-      // The selection panel belongs to Construction: it stayed on screen over
-      // the road tools.
+      // The selection panel belongs to Construction: it stayed on screen over the road tools.
       if (next !== 'builder') inspector.hidden = true;
       else if (lastState) renderInspector(lastState);
     },

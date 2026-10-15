@@ -3,13 +3,7 @@ import { CARRIAGEWAY_MATERIALS, CENTRE_LINES, type CarriagewayMaterial, type Cen
 import { ROAD_TYPES } from '../roadTypes';
 import { type ProfileElement, type RoadProfileSpec, profileOf, profileProblems } from './profile';
 
-/**
- * ROAD TEMPLATES (docs/source/VIAS.md V1): a profile with a name, to lay or apply
- * again. The classes of the road tool are the built-in templates (their
- * profile as a road is drawn with them); the player's own are saved by the
- * editor (`editor/roads/templates.ts`) and read back through
- * `normalizeTemplate`, which refuses anything that is not a template.
- */
+/** ROAD TEMPLATES: a profile with a name, to lay or apply again. */
 export interface RoadTemplate {
   readonly id: string;
   /** A translation key for a built-in template; a player's template has a `name`. */
@@ -82,8 +76,7 @@ export function normalizeTemplate(raw: unknown): RoadTemplate | null {
   if (typeof speed !== 'number' || speed < ROAD_SECTION_LIMITS.speedKmh[0] || speed > ROAD_SECTION_LIMITS.speedKmh[1]) return null;
   if (typeof priority !== 'number' || priority < ROAD_SECTION_LIMITS.priority[0] || priority > ROAD_SECTION_LIMITS.priority[1]) return null;
   if (carriageway !== undefined && !(CARRIAGEWAY_MATERIALS as readonly unknown[]).includes(carriageway)) return null;
-  // The centre line chosen in the profile editor (`RoadProfileSpec.centreLine`):
-  // left out here, a template saved with one came back without it.
+  // The centre line chosen in the profile editor (`RoadProfileSpec.centreLine`)
   const centreLine = profile['centreLine'];
   if (centreLine !== undefined && !(CENTRE_LINES as readonly unknown[]).includes(centreLine)) return null;
   const spec: RoadProfileSpec = {

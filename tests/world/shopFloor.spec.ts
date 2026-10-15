@@ -13,21 +13,7 @@ import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
-/**
- * A building up a hillside street opens onto its footway at the footway's
- * level, its site cut into the hill behind (`foundation.ts` `floorOver`): a
- * shopfront's entrance is at the footway's grade (form-based codes:
- * Fircrest's shopfront frontage, "an at-grade entrance along the public
- * way"; Santa Clara's first floor at 0 ft over the sidewalk).
- *
- * The ground here is the game's: the hill, and the road's own earthworks
- * pulling it down to the street beside the road (`world/elevation.ts`
- * `shapeAt`). On that ground a shop up the street was refused at the
- * footway for its slope - read as one floor though its back steps up the
- * hill - and grown 1.5-4 m back from it, where no paving was in reach of its
- * door: its ground floor stood on its highest ground, 4-5.6 m over the
- * footway on a stone plinth (the coordinator's photo, 2026-10-11).
- */
+/** A building up a hillside street opens onto its footway at the footway's level, its site cut into the hill behind */
 
 /** Ground rising to the north (-y), `grade` a metre. */
 const rising = (grade: number) => (_x: number, y: number): number => -y * grade;
@@ -62,9 +48,7 @@ function grow(use: ZoneUse, density: ZoneDensity, grade: number) {
 }
 
 describe('a building up a hillside street stands at its footway', () => {
-  // At 28 % a building on one floor is still refused at the footway and
-  // grown set back and smaller (`growOnLot`'s tries): its lot is carried out
-  // to the footway (`reachStreet`), its floor read from it.
+  // At 28 % a building on one floor is still refused at the footway and grown set back and smaller (`growOnLot`'s tries)
   const CASES: [string, ZoneUse, ZoneDensity, number][] = [
     ['shops', 'commercial', 'low', 0.18], ['flats', 'residential', 'medium', 0.18], ['shops, steeper', 'commercial', 'low', 0.28],
   ];
@@ -109,8 +93,7 @@ describe('a building up a hillside street stands at its footway', () => {
 
   it('measures the slope under a split level from the floor of each block', () => {
     const doc = new RoadDoc();
-    // Two blocks of 15 m, one behind the other, on ground rising 22 % back
-    // from the front: 6.6 m across the two, more than a plinth takes.
+    // Two blocks of 15 m, one behind the other, on ground rising 22 % back from the front
     const body = generateBody('commercial', m(12), m(30), 2);
     const whole = body.volumes[0]!;
     const front: Volume = { ...structuredClone(whole), id: 1, d: m(15) };

@@ -13,16 +13,7 @@ import {
 import { FLAG_PATTERNS, type FlagDesign } from '@world/buildings/flags';
 import { windUniforms } from '../wind';
 
-/**
- * Every flag in the city, one instanced draw: a cloth that waves in the wind.
- *
- * The cloth is a plane cut 24 x 12, hoist at local x = 0, top at y = 0. The
- * vertex shader lays a travelling wave along it - none at the mast, growing to
- * the fly - on the same clock and wind direction as the trees (`wind.ts`), so a
- * flag and the crowns beside it move together. The design is drawn in the
- * fragment shader from a pattern number and three colours per instance: any
- * flag the player composes costs the same, and nothing is a texture.
- */
+/** Every flag in the city, one instanced draw: a cloth that waves in the wind. */
 
 /** One flag, in three's frame (y up): the top of the hoist, and its size. */
 export interface FlagInstance {
@@ -81,8 +72,7 @@ function material(): MeshStandardMaterial {
         varying vec2 vFlagUv;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vPattern = aPattern; vC0 = aC0; vC1 = aC1; vC2 = aC2; vFlagUv = uv;
-        // A wave travelling from the hoist to the fly, none at the mast; a
-        // second, shorter one on top so the cloth does not read as a sine.
+        // A wave travelling from the hoist to the fly, none at the mast
         float fly = uv.x;
         #ifdef USE_INSTANCING
           float seed = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.07;
@@ -123,8 +113,7 @@ export function createFlagLayer(): FlagLayer {
     set(flags) {
       if (mesh) {
         group.remove(mesh);
-        // Its geometry is its own clone (the instance attributes ride on it): three's
-        // `InstancedMesh.dispose` lets go of the instance buffers only, never the geometry.
+        // Its geometry is its own clone (the instance attributes ride on it)
         mesh.geometry.dispose();
         mesh.dispose();
         mesh = null;

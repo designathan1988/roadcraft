@@ -8,13 +8,7 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * A shop built up to the footway (no front garden, no forecourt: the lot's
- * front is the street) has no people's gate - its front door IS the way in.
- * `streetDoors` gives that door, on the facade, opening onto the footway, so
- * the people's way to the lot (`sim/agents/lotDoors.ts`) can start there
- * (docs/source/ZONEAMENTO.md: "a porta dele não é usada pelas pessoas").
- */
+/** A shop built up to the footway (no front garden, no forecourt: the lot's front is the street) has no people's gate */
 
 const flat = (): number => 0;
 const paved = (x: number, y: number): number =>

@@ -14,10 +14,7 @@ import type { NetworkDelta } from './networkDelta';
 import { type SegmentRibbon, type SegmentTrims, bendAt, junctionBounds, makeRibbon, ribbonBounds } from './ribbons';
 import { networkWork } from './rebuildWork';
 
-/**
- * What the build writes: the network's own derived maps (`Network`), named
- * here so this module does not import the class it serves.
- */
+/** What the build writes: the network's own derived maps */
 interface Network {
   readonly doc: RoadDoc;
   readonly polylines: PolylineCache;
@@ -33,12 +30,7 @@ interface Network {
   readonly flushCells: CellFiling<SegmentId, SegmentRibbon>;
 }
 
-/**
- * A mouth cut this little short of where its carriageway separates from the
- * neighbouring leg's is the solver's own rounding (the legs of the last pass
- * are framed at the capped trims), not a junction that cannot hold its lanes:
- * 0.4 m, a tenth of a lane.
- */
+/** A mouth cut this little short of where its carriageway separates from the neighbouring leg's is the solver's own */
 const SQUEEZE_NOISE = m(0.4);
 
 /** A junction solved for one pass, with what the pass handed it (`junctionKey`) and the plate it reaches. */
@@ -55,12 +47,7 @@ interface RibbonMemo {
   readonly bendB: number;
 }
 
-/**
- * Everything a segment's polyline, ribbon and junction legs are built from:
- * its record and where its two ends stand. Spelled out field by field, so
- * the same road copied by `replaceWith` (its keys in another order) reads
- * the same.
- */
+/** Everything a segment's polyline, ribbon and junction legs are built from: its record and where its two ends stand. */
 function segmentSourceKey(doc: RoadDoc, s: RoadSegment): string {
   const a = doc.node(s.a), b = doc.node(s.b);
   return `${s.a}>${s.b}|${s.type}|${s.curve ? `${s.curve.t},${s.curve.h}` : '-'}|${s.dashOrigin}|${s.direction}|${s.lanes}|` +
@@ -83,37 +70,7 @@ function nodeRecordKey(n: RoadNode): string {
 /** A point's rectangle, for filing a node by where it stands. */
 const pointRect = (x: number, y: number): ChangeRect => [x, y, x, y];
 
-/**
- * THE NETWORK'S BUILD, INCREMENTAL (docs/VIAS.md V0, stage F3): each rebuild
- * looks at what the edit changed and at what depends on it, never at the
- * whole map.
- *
- * What changed is read from the document's diary (`world/changes.ts`): the
- * ids and rectangles of the road entries since the last rebuild name the
- * candidates, and each candidate's sources (its record, where its ends
- * stand) are compared with what the last rebuild recorded - a verifying
- * trace (Mokhov, Mitchell and Peyton Jones, "Build systems à la carte"). A
- * diary that forgot entries, or an entry over the whole map, makes every
- * record a candidate: still compared, still built only where it differs.
- *
- * Each product is a function of a few neighbours, so the work spreads from
- * what changed by at most three steps along the roads, and stops where a
- * result comes out as it was (early cutoff, Salsa's "backdating"):
- *
- *   pass 1   junction of an active node: the node and its roads
- *   reconcile 1   a road's scale: the pass-1 junctions at its two ends
- *   pass 2   junction of a node under length pressure: pass 1 and the scales of its roads
- *   reconcile 2   a road's trims and scale: the pass-2 junctions at its ends
- *   pass 3   capped junction: pass 2, and the scales and trims of its roads
- *   trims    reconcile 2 lowered to the final junctions at both ends
- *   plates, ribbons, marks: a road's trims and ends, a node's junction and roads
- *
- * so the result is the full rebuild's BY CONSTRUCTION: every product is
- * computed by the same function of the same inputs, and one whose inputs did
- * not move keeps its value. `tests/world/incrementalRebuild.spec.ts` holds
- * the two equal after every edit of the fuzzer; `tests/scale/edit.spec.ts`
- * counts the work.
- */
+/** THE NETWORK'S BUILD, INCREMENTAL */
 export class NetworkBuild {
   /** The diary's serial the last rebuild read up to; -1: never built. */
   private seen = -1;
@@ -164,11 +121,7 @@ export class NetworkBuild {
     this.junctionMax = -Infinity;
   }
 
-  /**
-   * Takes another build's state as its own (`Network.adopt`, `seedJunctions`):
-   * `upToDate`, the documents are equal and the next rebuild starts from this
-   * document's diary as it stands; else from where the other one read its own.
-   */
+  /** Takes another build's state as its own (`Network.adopt`, `seedJunctions`) */
   copyFrom(other: NetworkBuild, upToDate: boolean): void {
     this.seen = upToDate ? this.net.doc.changes.version : other.seen;
     this.segmentSource = new Map(other.segmentSource);
@@ -196,11 +149,7 @@ export class NetworkBuild {
     return this.seen < 0;
   }
 
-  /**
-   * Brings the network up to the document; returns what changed (`null`:
-   * everything, a build from nothing).
-   * @rebuild Called when the document's revision moved (an edit, a load), never every frame.
-   */
+  /** @rebuild Brings the network up to the document; returns what changed (`null`: everything, a build from nothing). */
   rebuild(): NetworkDelta | null {
     const net = this.net, doc = net.doc;
     const fromNothing = this.seen < 0;
@@ -402,13 +351,7 @@ export class NetworkBuild {
     return { segments, nodes, rects };
   }
 
-  /**
-   * The segments and nodes whose sources differ from what the last rebuild
-   * recorded, and the nodes whose record does (`records`, a superset of the
-   * nodes); the recorded sources brought up to date. The candidates are the
-   * ids and places of the diary's road entries since the last rebuild, and
-   * the roads of every candidate node.
-   */
+  /** The segments and nodes whose sources differ from what the last rebuild recorded, and the nodes whose record does */
   private findChanges(): { segments: Set<SegmentId>; nodes: Set<NodeId>; records: Set<NodeId> } {
     const doc = this.net.doc;
     const entries = this.seen < 0 ? null : doc.changes.since(this.seen, ['roads', 'traffic']);
@@ -421,8 +364,7 @@ export class NetworkBuild {
       for (const id of this.nodePlaces.idsMeetingAny(entry.rects)) candNodes.add(id);
     }
     if (everything) {
-      // In increasing id order: what is built from nothing is filed in the
-      // order an edit files what it adds (`keepInIdOrder`).
+      // In increasing id order: what is built from nothing is filed in the order an edit files what it adds (`keepInIdOrder`).
       for (const id of [...new Set([...doc.segments.keys(), ...this.segmentSource.keys()])].sort((p, q) => p - q)) candSegs.add(id);
       for (const id of [...new Set([...doc.nodes.keys(), ...this.nodeSource.keys()])].sort((p, q) => p - q)) candNodes.add(id);
     } else {
@@ -514,11 +456,7 @@ export class NetworkBuild {
     return entry && entry.byLevel.size ? entry.byLevel : this.junction2(node);
   }
 
-  /**
-   * One node's junction for one pass: the entry made for the same key before
-   * when there is one (the node and its roads are as recorded, or the entry
-   * would have been dropped), else built.
-   */
+  /** One node's junction for one pass: the entry made for the same key before when there is one */
   private solveNode(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean, known: MemoEntry | undefined): MemoEntry {
     networkWork.junctions++;
     const net = this.net, doc = net.doc;
@@ -534,9 +472,7 @@ export class NetworkBuild {
         ...(maxTrimBySegment ? { maxTrimBySegment } : {}),
       });
     };
-    // Solved once, on the carriageway; every outer surface is that outline
-    // carried out to its own edge (`junction/derive.ts`). Only a junction
-    // the carriageway cannot draw as one (a taper, a merge) is built per surface.
+    // Solved once, on the carriageway; every outer surface is that outline carried out to its own edge (`junction/derive.ts`).
     const carriageway = build(Level.Asphalt);
     const footprint = build(Level.Casing);
     footprint?.legs.forEach((leg, i) => plate.push([leg.seg, footprint.trims[i] as number]));
@@ -549,11 +485,7 @@ export class NetworkBuild {
     return { key, byLevel, plate };
   }
 
-  /**
-   * What a pass hands a node's junction beyond the node and its roads: the
-   * radius scale of each road and, on the capped pass, the trim each road was
-   * reconciled to at this end.
-   */
+  /** What a pass hands a node's junction beyond the node and its roads */
   private junctionKey(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean): string {
     const doc = this.net.doc;
     const source = doc.node(node);
@@ -587,11 +519,7 @@ export class NetworkBuild {
     return caps;
   }
 
-  /**
-   * One segment's two ends reconciled against its length, per level, from
-   * the junctions at its ends: the trims, and the curb-radius scale the next
-   * pass should use (1: the clamp did not bite).
-   */
+  /** One segment's two ends reconciled against its length, per level, from the junctions at its ends */
   private reconcileSegment(id: SegmentId, junctionAt: (node: NodeId) => ReadonlyMap<SurfaceLevel, Junction> | null): { trims: SegmentTrims; scale: number } {
     const doc = this.net.doc;
     const seg = doc.requireSegment(id);
@@ -607,10 +535,7 @@ export class NetworkBuild {
           side[level] = Math.max(side[level] ?? 0, junction.trims[i] as number);
         });
       }
-      // The part of a mouth no length budget may take: as far out as the
-      // carriageway's edges of two neighbouring legs still cross (`Corner.x`).
-      // Nearer the node than that the two legs are one another's carriageway,
-      // and a link cut there has the traffic of the next leg driving through it.
+      // The part of a mouth no length budget may take
       const junction = byLevel.get(Level.Asphalt);
       if (!junction || junction.transition) continue;
       for (const corner of junction.corners) {
@@ -635,8 +560,7 @@ export class NetworkBuild {
       const clamped = clampSegmentTrims({ a, b, length });
       let ca = clamped.a, cb = clamped.b;
       if (floor && clamped.scale < 1) {
-        // The budget may squeeze the kerb returns, never the overlap itself,
-        // as long as the segment can hold both ends' overlaps at all.
+        // The budget may squeeze the kerb returns, never the overlap itself
         const fa = Math.min(a, floor.a), fb = Math.min(b, floor.b);
         if (fa + fb <= length - MIN_RIBBON) { ca = Math.max(ca, fa); cb = Math.max(cb, fb); }
       }
@@ -647,13 +571,7 @@ export class NetworkBuild {
     return { trims: t, scale: worst };
   }
 
-  /**
-   * The reconciled trims lowered to what the final junctions actually used:
-   * the mouth and the ribbon read the same number BY CONSTRUCTION. Only
-   * lowers - raising would push a ribbon back out past a mouth deliberately
-   * capped. A randomised sweep found a five-leg node where the trims said
-   * 20.25 while the junction had settled at 15.91 (the fuzzer's `trimOrder`).
-   */
+  /** The reconciled trims lowered to what the final junctions actually used */
   private finalTrims(id: SegmentId, seg: RoadSegment): SegmentTrims {
     const base = this.trims2.get(id)!;
     const t = { a: { ...base.a }, b: { ...base.b } };
@@ -671,11 +589,7 @@ export class NetworkBuild {
     return t;
   }
 
-  /**
-   * A road's plate reaches (`Network.plateReach`), reconciled against its
-   * length the way the trims are, so two plates never claim more of a short
-   * link than it has.
-   */
+  /** A road's plate reaches (`Network.plateReach`), reconciled against its length the way the trims are */
   private writePlate(id: SegmentId, seg: RoadSegment): void {
     const net = this.net;
     for (const key of this.plateKeys.get(id) ?? []) net.plateReach.delete(key);
@@ -690,12 +604,7 @@ export class NetworkBuild {
     this.plateKeys.set(id, keyA === keyB ? [keyA] : [keyA, keyB]);
   }
 
-  /**
-   * How far the worst mouth of a junction is cut short of where two of its
-   * legs' carriageways stop overlapping (`Network.squeezed`): for every corner
-   * whose two edges still cross, along each leg, against the trim the leg's
-   * mouth was finally cut at.
-   */
+  /** How far the worst mouth of a junction is cut short of where two of its legs' carriageways stop overlapping */
   private squeeze(node: NodeId): number {
     const net = this.net;
     const junction = net.junctions.get(node)?.get(Level.Asphalt);
@@ -732,15 +641,7 @@ export class NetworkBuild {
   }
 }
 
-/**
- * Sets entries of a map kept in increasing key order: an id new to the map
- * goes at its end, and when one lands before an id already there (an undo
- * bringing back a road that was taken away) the map is laid out again in
- * order once the rebuild is done. Whatever reads the ribbons or the
- * junctions in a loop (the heights' solve, the surfaces' union) then meets
- * them in the same order whatever the edits that made them - the order a
- * build from nothing files them in - and adds its floats up the same way.
- */
+/** Sets entries of a map kept in increasing key order */
 function insertionWatch<V>(map: Map<number, V>, largest: number): { set(id: number, value: V): void; done(): number } {
   let max = largest;
   let unordered = false;

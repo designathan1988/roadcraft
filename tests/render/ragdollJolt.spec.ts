@@ -2,15 +2,7 @@ import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { JoltRagdoll, JoltWorld, type JointSpec } from '@render/ragdollJolt';
 
-/**
- * ONE OWNER FOR EVERY JOINT (docs/PROBLEMS.md R1). A body torn apart (a limb
- * off at a blow, `ragdoll.ts` detach -> `JoltRagdoll.tear`) gave the piece the
- * joints inside it and left them with the body too: both halves then took the
- * same joint out of Jolt when destroyed, and Jolt's `ConstraintManager::Remove`
- * on a constraint already out pops another constraint off its list, or reads
- * freed memory, in a release build. The game then broke inside `Step` ("table
- * index is out of bounds") and the page hung, after a bomb or a shot.
- */
+/** ONE OWNER FOR EVERY JOINT. */
 
 /** A world that records what the ragdolls ask of it: each joint must leave it exactly once. */
 function countingWorld() {

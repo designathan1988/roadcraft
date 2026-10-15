@@ -10,30 +10,7 @@ import type { Building } from './buildings/types';
 import { CORNER_CLEAR, CROSSING_CLEAR, PARKING_PITCH, type ParkingKind } from './parking';
 import { m, stepsIn } from './units';
 
-/**
- * Where the parking bays of every street lie, and the paint that marks them.
- *
- * A bay is laid out on the road's own centreline frame, so it follows a curve
- * as the kerb does: its kerb edge on the kerb face, its inner edge on the
- * parking lane's line, both stationed along the road. Runs of bays stop
- *
- * - 5 m short of a junction's kerb line (CTB art. 181 I) and clear of the
- *   crossing in front of it, so no bay reaches a corner, a zebra or the
- *   junction itself;
- * - in front of a lot that has parking of its own: that frontage is its
- *   entrance and stays clear for the cars going in and out.
- *
- * Bays lie along the kerb, as cars park on a real street, and are whole: a
- * run is a whole number of 6 m bays, centred in the room it has. The paint is
- * the MER of the Brazilian manual (MBST vol. IV, 7.3, "estacionamento simples
- * paralelo ao meio-fio com demarcação ao longo do trecho"): a DASHED white line
- * along the lane's inner edge (the player's order of 2026-10-05), closed
- * across the lane at each end of the run, and a continuous division line
- * across the lane between every two bays ("com delimitação de cada vaga"),
- * which the player also asked for. Where
- * parking is forbidden beside a parking lane, a continuous yellow line (LPP) is
- * painted along the kerb.
- */
+/** Where the parking bays of every street lie, and the paint that marks them. */
 
 interface ParkingBay {
   readonly segment: SegmentId;
@@ -79,21 +56,13 @@ const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
 
-/**
- * One building's entrances: its car gates and the edges of its parking, once
- * per record. The one definition: `sim/agents/kerbBays.ts` keeps a copy of
- * it (to be replaced by this).
- */
+/** One building's entrances: its car gates and the edges of its parking, once per record. */
 export const entrancesOf: (b: Building) => readonly [Vec2, Vec2][] = identityMemo(workOutEntrances);
 
 /** Each record's entrances, worked out once (`entrancesOf`: records are never changed, only replaced). */
 function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
   const out: [Vec2, Vec2][] = [];
-  // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the
-  // kerb is lowered for vehicles to go in or out): its span stays clear,
-  // whatever is behind it. Read off the back car park alone, the frontage
-  // was 20 m and more from the street, and bays were painted - and cars
-  // parked - across the drive's gate.
+  // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the kerb is lowered for vehicles to go in or out)
   for (const el of b.elements ?? []) {
     if (el.kind !== 'gate' || el.w < CAR_GATE_WIDTH) continue;
     const alongY = el.facing === 1 || el.facing === 3;
@@ -114,13 +83,7 @@ function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
   return out;
 }
 
-/**
- * The bays and paint of every street. `entrances`: the lot entrances to keep
- * clear; null (the way to call it), those of the buildings near each street,
- * found by place (`BuildingStore.near`). DO NOT hand every entrance of the
- * map to every street: each street with parking tested every gate of the
- * city.
- */
+/** DO NOT hand every entrance of the map to every street: each street with parking tested every gate of the city. */
 export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLayout {
   const bays: ParkingBay[] = [];
   const lines: ParkingLine[] = [];
@@ -128,10 +91,7 @@ export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] |
   return { bays, lines };
 }
 
-/**
- * The paint of one street's parking (`parkingLayout`): what the road surfaces paint of it again when an
- * edit reaches it, or a building near it changes (`render/roadSurfaceInputs.ts`).
- */
+/** The paint of one street's parking (`parkingLayout`) */
 export function parkingLinesOf(net: Network, ribbon: SegmentRibbon): ParkingLine[] {
   const lines: ParkingLine[] = [];
   parkingOf(net, ribbon, null, [], lines);
@@ -164,8 +124,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
     const depth = side === 1 ? rt.parkingLeft : rt.parkingRight;
     if (kind === 'none' || depth <= 0) continue;
     if (kind === 'cycle') {
-      // A cycle lane: red from mouth to mouth, a solid white line on the
-      // side of the traffic. No bays.
+      // A cycle lane: red from mouth to mouth, a solid white line on the side of the traffic.
       const run = [Math.max(0, mouthA), Math.min(length, mouthB)] as const;
       if (run[1] - run[0] < m(4)) continue;
       const along = (offset: number): Vec2[] => {
@@ -195,8 +154,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
     for (const [lo, hi] of runs) {
       const count = Math.floor((hi - lo) / pitch + 1e-6);
       if (count < 1) continue;
-      // Bays along the kerb, following the road's line: each one stationed
-      // on the centreline, so on a curve it bends with the kerb.
+      // Bays along the kerb, following the road's line
       const first = lo + (hi - lo - count * pitch) / 2;
       for (let k = 0; k < count; k++) {
         const a = first + k * pitch, b = a + pitch;

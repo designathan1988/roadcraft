@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createExhaust } from '@render/exhaust';
 import { m } from '@world/units';
 
-/**
- * A CAR'S EXHAUST IS A FAINT PUFF OF ABOUT A METRE, LEAVING AT THE TAILPIPE'S
- * HEIGHT. The puff's size and height were written in steps of the old 0.4 m
- * unit and read as metres after the map moved to 1 m units: a 2.4 m puff
- * growing to 6 m at every car, two milliseconds of the GPU's frame in blended
- * smoke (measured 2026-10-13).
- */
+/** A CAR'S EXHAUST IS A FAINT PUFF OF ABOUT A METRE, LEAVING AT THE TAILPIPE'S HEIGHT. */
 describe('exhaust', () => {
   it('puffs at the size and height it was tuned at, in metres', () => {
     const exhaust = createExhaust();

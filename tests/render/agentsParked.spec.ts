@@ -10,12 +10,7 @@ import { ChangeJournal } from '@world/changes';
 import { FLEET_CEILING } from '@sim/params';
 import { m } from '@world/units';
 
-/**
- * Parked cars as the renderer draws them: written once, then copied each
- * frame (`parkedDraws`). These check what the copy shows against what was
- * worked out, and that the town's parked cars past the fleet's ceiling are
- * drawn.
- */
+/** Parked cars as the renderer draws them: written once, then copied each frame (`parkedDraws`). */
 
 /** A car standing in its bay with nobody in it: what `sync` takes as parked. */
 function parkedCar(id: number, x: number, y: number, lot: number | null = 1): Vehicle {

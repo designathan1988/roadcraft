@@ -6,30 +6,7 @@ import { m } from '@world/units';
 import type { Building } from '@world/buildings/types';
 import { growCity } from '../world/cityAudit';
 
-/**
- * NO TWO SURFACES OF A BUILDING IN ONE PLANE. Two faces drawn in the same
- * plane over each other - a balcony's floor on the roof slab under it, a band
- * on its wall, a wall standing on a lot's kerb - fight for the depth buffer
- * pixel by pixel and flicker as the camera moves (z-fighting; the player,
- * 2026-10-12 and 2026-10-13: "objetos se sobrepondo e piscando"). Every face
- * of a sample of a generated town's buildings - the shells of each finish and
- * every instanced part, in the world - is filed by its plane (normal and
- * distance, to 1 mm); faces of different looks in one plane, facing the same
- * way, that overlap are summed by area. A part on the shell wins by its
- * polygon offset (`kit.ts`), so shell is measured against shell and part
- * against part. The sum only shrinks: some 5,000 m² over 150 buildings before
- * the layers of `buildingMesh.ts` (kerbs, pavings, plinth ledges, pinwheel
- * aprons and bands, boundary walls), some 5 m² after.
- *
- * The town is grown on flat land but its buildings are laid on rolling
- * ground (`ROLLING`): on flat land no door has a flight, and the landing of
- * every flight lay in the plane of the yard round it unseen (the player,
- * 2026-10-14, the doorstep: 2.6 m² over the sample). Faces are filed by
- * plane to `PLANE_EPS` and each is held against its own file and the next,
- * so two faces a hair apart are not missed for falling either side of a
- * file's edge. Faces a few millimetres apart (the layers) are told apart by
- * the reversed float depth buffer at any distance (`depthConvention.ts`).
- */
+/** NO TWO SURFACES OF A BUILDING IN ONE PLANE. */
 type V3 = [number, number, number];
 type P2 = [number, number];
 interface Face { kind: string; look: string; rgb: V3; n: V3; d: number; pts: V3[] }
@@ -41,15 +18,7 @@ const COLOUR_APART = 0.07;
 const MIN_OVERLAP = m(0.02) * m(0.02);
 /** The buildings measured: the first of the town, with their lots, walls, gates and pavings. */
 const SAMPLE = 100;
-/**
- * The overlapping area over the sample, m²; it only shrinks. On flat land:
- * 3.59 on 2026-10-13, 0.38 after the fences, gates, walls, bands, canopies
- * and machine rooms were parted. On rolling land, files' edges counted
- * (2026-10-14): about 81 with every flight's landing in its yard's plane, 2.09
- * with the landing at `LANDING_RISE`, 0.66 with the lots' parts set on the
- * paving over the lawn (`hostAt`). Left: lamp posts flush with a flight's
- * cheek (metal x stone 0.23), the rest slivers under 0.11 each.
- */
+/** The overlapping area over the sample, m²; it only shrinks. */
 const BUDGET = 0.67;
 
 /** The land the sample's buildings are laid on: rolling, a metre or so, so doors have flights. */
@@ -185,11 +154,7 @@ function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[]
 /** What three hands a draw as the renderer (`depthConvention.ts`). */
 interface DepthOwner { readonly capabilities: { readonly reversedDepthBuffer: boolean } }
 
-/**
- * Whether a material is drawn pulled towards the eye in both terms by a
- * renderer whose depth buffer is `reversed` or not, as three hands its offset
- * to WebGL (the factor negated under the reversed buffer).
- */
+/** Whether a material is drawn pulled towards the eye in both terms by a renderer whose depth buffer is `reversed` or not */
 function pulledTowardEye(material: Material, reversed: boolean): boolean {
   if (!material.polygonOffset) return false;
   const kept = material.polygonOffsetUnits;
@@ -203,11 +168,7 @@ function pulledTowardEye(material: Material, reversed: boolean): boolean {
 
 describe('building surfaces', () => {
   it('draws every instanced part over the shell it is set on', () => {
-    // The parts (frames, shutters, balcony slabs) lie on the shell's faces by
-    // design; a polygon offset towards the camera makes them win the depth
-    // test there - both terms towards the eye, in the standard buffer
-    // (negative) and in the reversed one the game draws with (positive; three
-    // r186 turns only the factor itself: `depthConvention.ts`).
+    // The parts (frames, shutters, balcony slabs) lie on the shell's faces by design
     const kit = createBuildingKit();
     for (const reversed of [false, true]) {
       const loose = PART_KINDS.filter((kind) => !pulledTowardEye(kit.material[kind], reversed));

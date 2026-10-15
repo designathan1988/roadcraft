@@ -2,37 +2,7 @@ import { Heap } from '@core/heap';
 import { reedsShepp, reedsSheppLength, sampleReedsShepp } from './reedsShepp';
 import { m } from '@world/units';
 
-/**
- * A long vehicle's way through a tight yard: forward and in reverse, never
- * turning tighter than it can, its body clear of everything solid - a lorry
- * shunting to a loading dock.
- *
- * Hybrid-state A* (Dolgov, Thrun, Montemerlo and Diebel, "Practical Search
- * Techniques in Path Planning for Autonomous Driving", STAIR 2008: the
- * planner Stanford's Junior drove the Urban Challenge's car parks with). The
- * search runs over cells of (x, y, heading) like A*, but each cell keeps the
- * continuous pose that reached it, so the way found is drivable and not a
- * chain of cell centres. A pose is the REAR AXLE's (the bicycle model: the
- * rear axle moves along its heading, and turns at most at `radius`); each
- * step drives an arc a little longer than a cell's diagonal, forward or in
- * reverse, at one of five curvatures - full lock either way, half lock, and
- * straight. Reversing and changing direction cost extra, as the paper's
- * search penalises them, and so does turning the wheel, as PythonRobotics'
- * `hybrid_a_star.py` weighs its steer and steer-change terms.
- *
- * Guided by the paper's "holonomic-with-obstacles" heuristic: the shortest
- * way for the rear axle alone round the obstacles, by Dijkstra over the cells
- * from the goal, which turns the search away from dead ends. The body is
- * tested as discs and points that cover its rectangle, against a clearance field
- * (the distance from every cell to the nearest solid one, Felzenszwalb and
- * Huttenlocher, "Distance Transforms of Sampled Functions", 2012): one look
- * per disc.
- *
- * Near the goal it tries the paper's analytic expansion, a Reeds-Shepp shot
- * to the goal (`reedsShepp.ts`, `WaySearch.shot`), taken when nothing stands
- * on it; otherwise the goal is reached within a tolerance, and the caller
- * settles the last few centimetres with a short leg.
- */
+/** A long vehicle's way through a tight yard */
 
 /** A vehicle as the planner sees it. World units. */
 export interface Steered {
@@ -76,12 +46,7 @@ export function clearanceOf(solid: Solid): Clearance {
   }
 }
 
-/**
- * `clearanceOf` in slices: it yields after about `slice` cells of work, so
- * a yard's field (a third of a million cells) is worked out over several
- * ticks, not in one (a 30 ms tick in the game, 2026-10-13). The work is
- * counted in cells, so the slicing is the same on every machine.
- */
+/** `clearanceOf` in slices: it yields after about `slice` cells of work, so a yard's field */
 export function* clearanceSteps(solid: Solid, slice: number): Generator<void, Clearance, void> {
   const { nx, ny, blocked, cell } = solid;
   const INF = Infinity;
@@ -108,12 +73,7 @@ export function* clearanceSteps(solid: Solid, slice: number): Generator<void, Cl
   return { ...solid, clear };
 }
 
-/**
- * One row of the squared distance transform (Felzenszwalb and Huttenlocher's
- * Algorithm 1, the lower envelope of the parabolas rooted at each sample):
- * `f` in, `d` out, the first `n` of each. Samples at infinity root no
- * parabola (their sums would lose the squares).
- */
+/** One row of the squared distance transform */
 function transform1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Float64Array): void {
   let k = -1;
   for (let q = 0; q < n; q++) {
@@ -137,15 +97,7 @@ function transform1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array,
   }
 }
 
-/**
- * What a body is tested with: discs along its axis as wide as the body and a
- * little, between the points half a width in from either end, and at each end
- * two discs a quarter width either side of the axis, half a width in, whose
- * radius reaches the corners - together they cover the rectangle and reach
- * no more than a quarter of a width past its ends. `at` are the axis discs'
- * offsets ahead of the rear axle; `pu`, `pv` the end discs' offsets ahead and
- * to the left.
- */
+/** What a body is tested with: discs along its axis as wide as the body and a little */
 export interface Discs {
   readonly at: Float64Array;
   readonly r: number;
@@ -203,11 +155,7 @@ function clearAt(field: Clearance, px: number, py: number): number {
   return field.clear[j * field.nx + i]!;
 }
 
-/**
- * Whether the body's rectangle at the pose covers no solid cell: every cell
- * under it looked at, for the last few centimetres into a dock where the
- * discs' margins would not let it go.
- */
+/** Whether the body's rectangle at the pose covers no solid cell */
 export function bodyClearExact(field: Solid, body: Steered, x: number, y: number, angle: number, margin = 0): boolean {
   const c = Math.cos(angle), s = Math.sin(angle);
   const back = body.length / 2 - body.rear + margin, front = body.length / 2 + body.rear + margin, hw = body.width / 2 + margin;
@@ -253,10 +201,7 @@ export interface PlanOptions {
   readonly turn?: number;
   /** Whether the goal is to be reached backing (true), driving forward (false), or either (absent). */
   readonly arriveReversing?: boolean;
-  /**
-   * A goal that is a region (through a gate, say) rather than a pose: whether
-   * a pose reached is in it. `goal` then only guides the search there.
-   */
+  /** A goal that is a region (through a gate, say) rather than a pose: whether a pose reached is in it. */
   readonly arrived?: (x: number, y: number, angle: number, reverse: boolean) => boolean;
 }
 
@@ -272,10 +217,7 @@ interface Node {
 /** Poses expanded and searches made, all told (for probes and measures). */
 const searchStats = { expanded: 0, searches: 0, found: 0 };
 
-/**
- * The search, run a slice at a time: the simulation gives it a few hundred
- * poses a tick (`run`) instead of stalling a frame on a whole yard.
- */
+/** The search, run a slice at a time: the simulation gives it a few hundred poses a tick */
 export class WaySearch {
   state: 'running' | 'found' | 'failed' = 'running';
   way: Waypoint[] | null = null;
@@ -333,9 +275,7 @@ export class WaySearch {
         searchStats.found++;
         return;
       }
-      // The analytic expansion (Dolgov et al.): the shortest Reeds-Shepp way
-      // from here to the goal, taken if nothing stands on it - the search then
-      // ends exactly on the goal, not near it. Tried more often nearer.
+      // The analytic expansion (Dolgov et al.)
       if (!this.options.arrived) {
         const far = Math.hypot(n.x - goal.x, n.y - goal.y);
         if (far <= SHOT_NEAR || (far <= SHOT_REACH && this.expanded % SHOT_EVERY === 0)) {
@@ -401,11 +341,7 @@ export class WaySearch {
     return (j * this.nx + i) * HEADINGS + k;
   }
 
-  /**
-   * The cost still to go, at least: the paper's two heuristics' larger -
-   * round the obstacles for the axle alone, and (near the goal, where the
-   * heading matters) the Reeds-Shepp length, which knows the turning.
-   */
+  /** The cost still to go, at least: the paper's two heuristics' larger - round the obstacles for the axle alone, and */
   private hAt(x: number, y: number, a: number): number {
     const h = this.h!;
     const i = Math.floor((x - this.field.x0) / h.cell), j = Math.floor((y - this.field.y0) / h.cell);
@@ -448,11 +384,7 @@ function trace(nodes: readonly Node[], id: number): Waypoint[] {
   return out;
 }
 
-/**
- * Shortest distance from every cell to the goal for the rear axle alone (a
- * disc of the body's half width), round the obstacles: Dijkstra over the
- * search cells, eight neighbours.
- */
+/** Shortest distance from every cell to the goal for the rear axle alone */
 function holonomic(field: Clearance, goal: AxlePose, half: number): { nx: number; ny: number; cell: number; dist: Float64Array } {
   const cell = XY_CELL;
   const nx = Math.ceil((field.nx * field.cell) / cell), ny = Math.ceil((field.ny * field.cell) / cell);
@@ -496,11 +428,7 @@ const wrap = (a: number): number => {
   return r;
 };
 
-/**
- * Sets every cell of the grid whose centre lies inside the polygon (its rings
- * in the grid's frame, holes by the even-odd rule) to `value`: a scanline
- * fill, each row's crossings sorted and filled between pairs.
- */
+/** Sets every cell of the grid whose centre lies inside the polygon */
 export function fillRings(grid: Solid, rings: readonly (readonly { readonly x: number; readonly y: number }[])[], value: 0 | 1): void {
   const { x0, y0, cell, nx, ny } = grid;
   const blocked = grid.blocked;

@@ -5,13 +5,7 @@ import { BuildingTool, type ToolHost, type ToolView } from '@editor/buildingTool
 import { localToWorld } from '@world/buildings/geometry';
 import { localFootprint } from '@world/buildings/footprints';
 
-/**
- * A footprint shape dragged on the ground is built in the rectangle drawn.
- *
- * Beside a road it was snapped like a model - pulled onto the kerb and turned
- * to face it - and the cursor was read off the drawn world, which put the far
- * corner on the ghost's own roof as it grew: neither landed where dragged.
- */
+/** A footprint shape dragged on the ground is built in the rectangle drawn. */
 
 function setup(): { tool: BuildingTool; doc: RoadDoc } {
   const doc = new RoadDoc();
@@ -39,8 +33,7 @@ describe('dragging a footprint shape', () => {
     const { tool, doc } = setup();
     const start = { x: 20, y: 40 }, end = { x: 70, y: 75 };
     tool.beginShapeDrag('rectangle', start, 'new', start);
-    // The world the scene reports under the cursor is somewhere else (a roof):
-    // the drag reads the ground under the screen point.
+    // The world the scene reports under the cursor is somewhere else (a roof)
     tool.updateShapeDrag({ x: 30, y: 50 }, end);
     tool.endShapeDrag(false);
     expect(doc.buildings.size).toBe(1);

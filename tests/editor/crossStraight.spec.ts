@@ -7,15 +7,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * A STRAIGHT CROSS STREET STAYS STRAIGHT (the player, 2026-10-09).
- *
- * Lengthening a road and then drawing a street across it near the joint, or
- * drawing a street across a road near its dead end, bent the new street into
- * a V through the old node: a crossing within a link's length of a node was
- * joined through that node. Now the node comes onto the drawn line, along its
- * own road, where that keeps the road's shape.
- */
+/** A STRAIGHT CROSS STREET STAYS STRAIGHT (the player, 2026-10-09). */
 
 const ROAD = 1;
 

@@ -22,12 +22,7 @@ function tee(): { doc: RoadDoc; net: Network; centre: NodeId; west: SegmentId; e
 
 const bansAt = (doc: RoadDoc, node: NodeId): string[] => doc.node(node)!.blockedMovements;
 
-/**
- * A turn ban names segment ids. Splitting a road - which happens every time a
- * new road crosses it - replaced the ids and left the ban naming a segment
- * that no longer existed: the player's junction control silently stopped
- * applying.
- */
+/** A turn ban names segment ids. */
 describe('turn bans', () => {
   it('follow the road when a leg is split', () => {
     const { doc, net, centre, west, stem } = tee();

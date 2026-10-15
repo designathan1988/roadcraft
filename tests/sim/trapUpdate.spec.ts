@@ -9,13 +9,7 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE TRAP LANES KEPT BY WHAT CHANGED (`router.ts` TrapIndex, from the
- * world's topology log): after every edit, for every body class, the traps
- * must be those the whole map peeled from nothing finds - every lane's
- * reverse movements gathered, the lanes with exits none of which fit peeled
- * first, then every lane all of whose fitting movements lead into traps.
- */
+/** THE TRAP LANES KEPT BY WHAT CHANGED (`router.ts` TrapIndex, from the world's topology log) */
 function fromNothing(w: SimWorld, body: number): string[] {
   const into = new Map<LaneletId, LaneletId[]>();
   const links: LaneletId[] = [];

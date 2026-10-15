@@ -35,14 +35,7 @@ const MERGE_EPS = m(1.04);
 const HEIGHT_JOIN_EPS = m(0.3);
 /** Vertical room required before two crossing carriageways can pass independently. */
 const CROSSING_CLEARANCE = ROAD_TUNING.clearance.elevated;
-/**
- * Cover over a road at grade past which it is bored as a tunnel instead of
- * cut: eighteen metres, the sixty feet past which railway and road builders
- * have found a tunnel cheaper than a cutting (thirty metres is about the
- * deepest cutting built at all). A road dragged over a mountain was held to
- * its grade and dug a slot eighty metres deep, and from the game's camera the
- * road simply disappeared into it.
- */
+/** Cover over a road at grade past which it is bored as a tunnel instead of cut */
 const AUTO_TUNNEL_COVER = ROAD_TUNING.tunnel.autoCover;
 
 export interface DraftResult {
@@ -50,34 +43,18 @@ export interface DraftResult {
   readonly reason?: 'tooShort' | 'duplicate' | 'degenerate' | 'clearance' | RoadEditRefusal;
   readonly heightLimited?: boolean;
   readonly finalHeightOffset?: number;
-  /**
-   * The roads' heights solved for the tunnel test on the ground the renderer
-   * reads, when no tunnel was bored: the network the edit left, so the
-   * renderer takes it instead of solving it again (`SceneHandle.offerElevation`).
-   */
+  /** The roads' heights solved for the tunnel test on the ground the renderer reads, when no tunnel was bored */
   readonly elevation?: RoadElevation;
-  /**
-   * What the edit costs (`world/economy.ts`): money taken, negative when
-   * money comes back. Set once the edit has been judged, and on a refusal
-   * for `funds` (what it would have cost).
-   */
+  /** What the edit costs (`world/economy.ts`): money taken, negative when money comes back. */
   readonly cost?: number;
-  /**
-   * A dry run's road as it would be built (docs/source/VIAS.md V3): a station every
-   * couple of metres with the solved deck, the natural ground and the way it
-   * is built, from the same network and the same height solve as the commit.
-   * What the road tool's preview draws once the draft is judged.
-   */
+  /** A dry run's road as it would be built */
   readonly stations?: readonly RoadStation[];
 }
 
 /** Spacing of a dry run's stations (`DraftResult.stations`). */
 export const STATION_STEP = m(2);
 
-/**
- * Commits one freehand gesture as one undoable, atomic road. The gesture may
- * contain many tangent-continuous quadratics and vertical control points.
- */
+/** Commits one freehand gesture as one undoable, atomic road. */
 export function commitRoadPath(
   doc: RoadDoc,
   net: Network,
@@ -89,24 +66,12 @@ export function commitRoadPath(
   lanes: number | null = null,
   /** Parking left and right of the drawing direction, for every segment laid. */
   parking?: SegmentParking,
-  /**
-   * The ground as already sampled for the roads' heights (the renderer's
-   * natural terrain); read analytically from the stamps without it, which
-   * cost 20 ms per road drawn in the default town (docs/source/performance.md #21).
-   */
+  /** The ground as already sampled for the roads' heights (the renderer's natural terrain) */
   ground?: (x: number, y: number) => number,
-  /**
-   * `dryRun`: everything is worked out and judged on the copy, and the live
-   * map is left alone - what the road tool's preview asks of a draft before
-   * it is let go (`roadTool.ts` `verdict`).
-   */
+  /** `dryRun`: everything is worked out and judged on the copy, and the live map is left alone */
   options: {
     readonly dryRun?: boolean;
-    /**
-     * The roads' heights the game last solved on this same natural ground
-     * (`ground`): the tunnel test solves only what the gesture changed
-     * (`buildRoadElevation` with `previous`, docs/source/VIAS.md V0).
-     */
+    /** The roads' heights the game last solved on this same natural ground (`ground`) */
     readonly groundSolve?: RoadElevation | null;
   } = {},
 ): DraftResult {
@@ -114,15 +79,10 @@ export function commitRoadPath(
     return { committed: false, reason: 'degenerate' };
   }
   pieces = joinShortPieces(pieces);
-  // Each step of a road drawn timed (`hitch:` entries; docs/source/performance.md).
+  // Each step of a road drawn timed (`hitch:` entries).
   let lap = performance.now();
   const timed = (what: string): void => { const now = performance.now(); performance.measure(`hitch:commit/${what}`, { start: lap, end: now }); lap = now; };
-  // The live network brought up to the map first (only what the diary says
-  // changed since it was built): the copy's network takes it over as it
-  // stands (`adopt`), not built again - a whole network rebuild in every road
-  // drawn (docs/source/performance.md #35) - and the edit is judged against it.
-  // DO NOT copy the map to judge against when the network is behind
-  // (`snapshotRoads`): the whole document copied on a pause of the pointer.
+  // DO NOT copy the map to judge against when the network is behind (`snapshotRoads`)
   if (net.revision !== doc.revision) net.rebuild();
   const work = doc.fork();
   timed('fork');
@@ -171,9 +131,7 @@ export function commitRoadPath(
   const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet });
   timed('rules');
   if (refused) return { committed: false, reason: refused };
-  // Paid for on the copy, so the live map takes the balance with the roads
-  // and undo gives it back (`editor/roads/economy.ts`); refused when it
-  // cannot be paid, the preview naming why.
+  // Paid for on the copy, so the live map takes the balance with the roads and undo gives it back
   const charge = settleRoadEdit(roadsBefore(doc), work, !options.dryRun);
   if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
   if (options.dryRun) {
@@ -188,15 +146,7 @@ export function commitRoadPath(
     ...(!bore.bored && ground && bore.elevation ? { elevation: bore.elevation } : {}) };
 }
 
-/**
- * Turns the roads just laid at grade into tunnels wherever their profile would
- * run deeper than `AUTO_TUNNEL_COVER` under the land (see there). The whole
- * segment takes the structure: the terrain shaper still opens a cutting where
- * the cover is shallow and closes the hill over the bore where it is deep, and
- * the portals stand where the cover crosses the threshold
- * (`render/structures.ts`), so the road reads as a cutting, a portal, a bore
- * and a portal - and only the roads this gesture made are touched.
- */
+/** Turns the roads just laid at grade into tunnels wherever their profile would run deeper than `AUTO_TUNNEL_COVER` under */
 /** The terrain's index as last built; a road edit does not move the land, so the next one reuses it. */
 let terrainIndex: TerrainIndex | null = null;
 function terrainIndexOf(doc: RoadDoc): TerrainIndex {
@@ -210,10 +160,7 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   previous: RoadElevation | null = null): { bored: boolean; elevation: RoadElevation | null } {
   const fresh = segmentsNewIn(before, work).filter((seg) => seg.structure === 'ground');
   if (!fresh.length || !work.terrainStamps.length) return { bored: false, elevation: null };
-  // A cut that deep needs relief under the new roads, and the land is flat
-  // outside the stamps (the test just above): with no stamp reaching them,
-  // the whole network's heights were solved for nothing, 20 ms of every road
-  // drawn in the default town (docs/source/performance.md #21).
+  // A cut that deep needs relief under the new roads, and the land is flat outside the stamps (the test just above)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const seg of fresh) {
     const box = workNet.ribbons.get(seg.id)?.full.bbox;
@@ -227,8 +174,7 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   if (!reached) return { bored: false, elevation: null };
   const index = sampled ? null : terrainIndexOf(work);
   const ground = sampled ?? ((x: number, y: number): number => sampleTerrainHeight(index!, x, y));
-  // From the game's last solve on the same ground, when there is one: only
-  // the analytic field is another ground than the one that solve read.
+  // From the game's last solve on the same ground, when there is one
   const elevation = buildRoadElevation(workNet, ground, sampled ? previous : null);
   let changed = false;
   for (const seg of fresh) {
@@ -254,15 +200,7 @@ const SEGMENT_MARK = 1;
 /** The id the next segment of `doc` will take: read before an edit, to find its own segments after it. */
 export const nextSegmentId = (doc: RoadDoc): number => doc.allocatorMarks()[SEGMENT_MARK]!;
 
-/**
- * The segments of `doc` standing whose id is `first` or later: the ones an
- * edit made, ids being handed out in increasing order and never again (a
- * working copy goes on from its original's allocator). Read from the ids the
- * edit handed out, never from the map; the one place this is read (the road
- * tool's too). DO NOT copy `doc.segments.keys()` before an edit, or filter
- * `work.segments` against `before.segments`, and compare every segment after
- * it: each road drawn and each dry run read the whole map.
- */
+/** DO NOT copy `doc.segments.keys()` before an edit, or filter `work.segments` against `before.segments` */
 export function segmentsFrom(doc: RoadDoc, first: number): RoadSegment[] {
   const out: RoadSegment[] = [];
   for (let id = first, end = nextSegmentId(doc); id < end; id++) {
@@ -275,12 +213,7 @@ export function segmentsFrom(doc: RoadDoc, first: number): RoadSegment[] {
 /** The segments of the working copy `work` that its original `before` does not hold. */
 const segmentsNewIn = (before: RoadDoc, work: RoadDoc): RoadSegment[] => segmentsFrom(work, nextSegmentId(before));
 
-/**
- * The stations of the road a gesture laid, on the copy it was laid on: the
- * new segments that lie on the drawn pieces (not the halves of a road it
- * split), walked from its start, at the heights solved for the copy - the
- * tunnel test's solve when it found no tunnel, else solved again from it.
- */
+/** The stations of the road a gesture laid, on the copy it was laid on: the new segments that lie on the drawn pieces */
 function draftStations(
   before: RoadDoc, work: RoadDoc, workNet: Network, pieces: readonly RoadPathPiece[], type: number, startAt: Vec2,
   sampled: ((x: number, y: number) => number) | undefined,
@@ -306,11 +239,7 @@ function draftStations(
   return stationsAlong(workNet, elevation, ground, orderAlong(work, laid, startAt), STATION_STEP);
 }
 
-/**
- * A piece too short to be a road is folded into the next one (the last into
- * the one before): left alone it was refused, and the pieces either side of
- * it ended a few metres apart - a road with a gap in it.
- */
+/** A piece too short to be a road is folded into the next one (the last into the one before) */
 function joinShortPieces(pieces: readonly RoadPathPiece[]): readonly RoadPathPiece[] {
   const out: RoadPathPiece[] = [];
   let carry: RoadPathPiece['start'] | null = null;
@@ -352,13 +281,7 @@ interface TaggedCut<Tag> {
   readonly tag: Tag;
 }
 
-/**
- * Commits a drafted road atomically, splitting anything it crosses.
- *
- * All topology work happens on a working copy (`RoadDoc.fork`). A failed duplicate,
- * degenerate anchor or split therefore leaves the live map byte-for-byte
- * unchanged. The optional shape is the quadratic captured by curve mode.
- */
+/** Commits a drafted road atomically, splitting anything it crosses. */
 export function commitDraft(
   doc: RoadDoc,
   net: Network,
@@ -384,8 +307,7 @@ export function commitDraft(
     return { committed: false, reason: 'degenerate' };
   }
 
-  // Flattened as a whole BEFORE it is cut at crossings, so the pieces stay
-  // one smooth curve instead of each being fitted on its own.
+  // Flattened as a whole BEFORE it is cut at crossings
   const shape = fitRoadCurve(start.at, end.at, curve, type);
 
   const work = doc.fork();
@@ -396,12 +318,6 @@ export function commitDraft(
   const result = commitDraftInPlace(work, workNet, start, end, type, shape, structure);
   if (!result.committed) return result;
   // `workNet` was last built BEFORE the draft's segments were added
-  // (`commitDraftInPlace` rebuilds after materialising the endpoints, then only
-  // adds segments). Adopting it as it stood handed back a network stamped with
-  // the new revision but without the new road - no ribbon, no trim, no
-  // junction - which only the caller's own later rebuild hid. The fuzzer's
-  // `staleNetwork` check found it on every draw. Rebuilt once here, judged by
-  // the editing rules as it will stand, and then adopted.
   workNet.rebuild();
   const refused = refuseRoadEdit(before, { doc: work, net: workNet });
   if (refused) return { committed: false, reason: refused };
@@ -431,9 +347,7 @@ function commitDraftInPlace(
   }
   const [startNode, endNode] = endpoints;
 
-  // Splitting an endpoint changes existing segment ids. Free or node anchors
-  // only add nodes, so the cached polylines remain current and a full rebuild
-  // per quadratic would make a long freehand gesture needlessly expensive.
+  // Splitting an endpoint changes existing segment ids.
   if (start.kind === 'segment' || end.kind === 'segment') net.rebuild();
 
   const a = start.at;
@@ -444,13 +358,7 @@ function commitDraftInPlace(
   /** Existing nodes the draft crossed near, which may come onto it (`slideOntoCrossing`). */
   const slides: { node: NodeId; segment: SegmentId; at: Vec2 }[] = [];
 
-  // The roads the draft can cross: those filed in the network's cells over
-  // the draft's box (a ribbon is filed over its centreline's box grown by its
-  // casing; two lines that cross have boxes that meet), in increasing id. The
-  // network is current here: free and node anchors only add nodes, a split
-  // anchor rebuilt it above. DO NOT walk `doc.segments`: every piece of every
-  // road drawn, and every pause of the pointer (the dry run), read every road
-  // of the map point by point.
+  // DO NOT walk `doc.segments`: every piece of every road drawn, and every pause of the pointer
   const box = draft.bbox;
   for (const { id } of ribbonsNear(net, [box.minX - MERGE_EPS, box.minY - MERGE_EPS, box.maxX + MERGE_EPS, box.maxY + MERGE_EPS])) {
     const seg = doc.segment(id);
@@ -479,10 +387,7 @@ function commitDraftInPlace(
             (heights.end - heights.start) * (draftS / Math.max(1e-6, draft.length));
           const gap = Math.abs(drafted - segmentOffsetAt(doc, seg, existingS, existing.length));
           if (gap > CROSSING_CLEARANCE) continue;
-          // Too far apart in height to meet, too close to pass over: refused,
-          // as moving a node already is. It was joined, and the junction had
-          // a step in it - or, drawn between the two, a deck a few metres
-          // over the other road with no room under it.
+          // Too far apart in height to meet, too close to pass over: refused, as moving a node already is.
           if (gap > HEIGHT_JOIN_EPS) return { committed: false, reason: 'clearance' };
         }
 
@@ -492,25 +397,6 @@ function commitDraftInPlace(
         const draftQ = (di + hit.t) / Math.max(1, draft.n - 1);
 
         // A crossing NEAR an existing endpoint reuses that junction node.
-        //
-        // The threshold used to be `MERGE_EPS`, 2.6 units, which only caught a
-        // second node landing a fraction of a unit beside the first. That left
-        // every cut between 2.6 and `MIN_LINK_LENGTH` free to create a stub too
-        // short to be a road: at 36 units a link is already the bare minimum for
-        // two approaches and a drivable middle, and both junctions on a shorter
-        // one are squeezed until their geometry degenerates. Measured on a map
-        // where this happened: a 10.51-unit segment between two junctions each
-        // asking for about 25 units of setback, drawn as pale slivers fanning
-        // across the asphalt.
-        //
-        // Moving the contact up to a road's length onto the existing node is
-        // visible, and it is the right trade: the alternative is a junction
-        // that cannot be built. This is what every city builder does with a
-        // near-miss connection, and for this reason.
-        //
-        // Unless the node can come to the line instead (`slideOntoCrossing`):
-        // the joint left by lengthening a road, or a road's dead end, bent a
-        // straight cross street drawn over it into a V through the node.
         if (existingS <= MIN_LINK_LENGTH) {
           draftCuts.push({ node: seg.a, q: draftQ, s: draftS });
           slides.push({ node: seg.a, segment: id, at: hit.point });
@@ -536,17 +422,14 @@ function commitDraftInPlace(
     }
   }
 
-  // The near nodes the draft is joined through, brought onto it where they
-  // can be, before any segment is split (the cuts on other segments are not
-  // touched: a node is slid only when neither of its roads is cut).
+  // The near nodes the draft is joined through, brought onto it where they can be, before any segment is split
   const slid = new Set<NodeId>();
   for (const slide of slides) {
     if (slid.has(slide.node)) continue;
     if (slideOntoCrossing(doc, slide.node, slide.segment, slide.at, splitBySegment)) slid.add(slide.node);
   }
 
-  // One existing segment can be crossed more than once. Reconstruct it in a
-  // single pass so every cut is expressed in the original arc coordinate.
+  // One existing segment can be crossed more than once.
   for (const [id, cuts] of splitBySegment) {
     const tagged = cuts.map((cut) => ({ at: cut.at, s: cut.s, tag: cut }));
     const nodes = splitSegmentAtCuts(doc, net, id, tagged);
@@ -591,18 +474,7 @@ function commitDraftInPlace(
 /** How far a node may stand off the straight line of its two roads and still be a joint of one straight road. */
 const JOINT_STRAIGHT = 0.5;
 
-/**
- * Brings an existing node the draft crossed near onto the crossing, along its
- * own road, so the drawn road stays straight through it instead of being bent
- * into a V through the node.
- *
- * Only where the existing road keeps its shape: the node is the dead end of a
- * straight road (the stub past the crossing goes, a T is left), or the joint
- * of two straight roads in one line (the joint lengthening a road leaves: it
- * slides along that line). A real junction, a bend, a curve or a node with a
- * crossing painted at it stays put and the draft is joined through it, as
- * before; so does a slide that would leave either road shorter than a link.
- */
+/** Brings an existing node the draft crossed near onto the crossing, along its own road */
 function slideOntoCrossing(doc: RoadDoc, id: NodeId, segment: SegmentId, at: Vec2,
   cut: ReadonlyMap<SegmentId, readonly ExistingCut[]>): boolean {
   const node = doc.node(id);
@@ -631,8 +503,7 @@ function normalizeDraftStops(stops: readonly DraftStop[]): DraftStop[] {
   for (const stop of sorted) {
     const previous = out[out.length - 1];
     if (previous?.node === stop.node) continue;
-    // Flattened curve vertices can report the same crossing from both adjacent
-    // pieces. Prefer the first materialized node for a zero-length interval.
+    // Flattened curve vertices can report the same crossing from both adjacent pieces.
     if (previous && Math.abs(previous.s - stop.s) < COARSE_EPS) continue;
     out.push(stop);
   }
@@ -658,8 +529,7 @@ function alreadyJoined(
     }
     if (!candidate || Math.abs(candidate.h) < COARSE_EPS) return false;
 
-    // Compare both shapes in the a->b orientation. Reversing a quadratic
-    // changes t to 1-t and flips the signed normal offset.
+    // Compare both shapes in the a->b orientation.
     const storedForward = seg.a === a;
     const t = storedForward ? existing.t : 1 - existing.t;
     const h = storedForward ? existing.h : -existing.h;
@@ -720,21 +590,10 @@ function materializeEndpoints(
   return a === undefined || b === undefined ? null : [a, b];
 }
 
-/**
- * The node a free anchor lands on.
- *
- * A pre-existing node within `MERGE_EPS` is reused whatever structure its roads
- * are: a road has to be able to meet a road of another level, and skipping such
- * a node is what left elevated roads as islands joined to nothing. The height
- * difference at the meeting point is the deck's problem, not the document's —
- * the raised span ramps down to the adjoining surface.
- */
+/** The node a free anchor lands on. */
 function materializeFree(doc: RoadDoc, net: Network, at: Vec2, heightOffset = 0, smooth = false,
   /** Nodes this draft has already put down, with no road yet (the other end). */
   fresh: readonly NodeId[] = []): NodeId {
-  // A node within `MERGE_EPS` is the end of a road filed in the network's cells
-  // round the point (orphans are pruned by every edit), or one this draft put
-  // down; the smallest id first, the first the walk over `doc.nodes` met.
   // DO NOT walk `doc.nodes`: every free end of every piece read every node.
   const candidates = new Set<NodeId>(fresh);
   for (const { id } of ribbonsNear(net, [at.x - MERGE_EPS, at.y - MERGE_EPS, at.x + MERGE_EPS, at.y + MERGE_EPS])) {
@@ -768,33 +627,13 @@ export function splitSegment(
   return splitSegmentAtCuts(doc, net, id, [{ at, s, tag }]).get(tag) ?? null;
 }
 
-/**
- * Makes the topology agree with a node the Move tool has just dropped.
- *
- * Drawing a road reconciles it with the network - crossings become junctions,
- * a near endpoint is reused, a stub too short to be a road is refused. A node
- * drop did none of it: it could land on its neighbour (a zero-length road), on
- * another node (two junctions at one point), or carry a road across another
- * with no junction, where no conflict zone exists and cars drive through each
- * other. Here, in order:
- *  - dropped on another node at its level: the two become one;
- *  - an incident road now shorter than a quarter of `MIN_LINK_LENGTH`: refused;
- *  - an incident road now crossing another road at its level: both are split
- *    there and joined by one node. A crossing between the join tolerance and
- *    a deck's clearance can be neither, and is refused.
- * Returns `committed: false` with a reason when the drop must be undone.
- * `net` is the network as it stood before the move (`moveNodeChecked`'s
- * caller keeps it built): the nodes and roads near the drop are read from its
- * cells, where the roads that did not move are filed.
- */
+/** Makes the topology agree with a node the Move tool has just dropped. */
 export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth = 0): DraftResult {
   if (depth > 16) return { committed: true };
   const node = doc.node(id);
   if (!node) return { committed: false, reason: 'degenerate' };
 
-  // A node it lands on is the end of a road filed in the network's cells round
-  // it (roads that did not move are filed where they are), the smallest id
-  // first as the walk over `doc.nodes` met them. DO NOT walk `doc.nodes`.
+  // DO NOT walk `doc.nodes`.
   const near = new Set<NodeId>();
   for (const { id: sid } of ribbonsNear(net, [node.x - MERGE_EPS, node.y - MERGE_EPS, node.x + MERGE_EPS, node.y + MERGE_EPS])) {
     const seg = doc.segment(sid);
@@ -823,8 +662,7 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
     const moved = doc.segment(sid);
     if (!moved) continue;
     const path = net.polylines.get(doc, sid);
-    // The roads it can cross: filed over boxes that meet its own (the network
-    // was rebuilt just above). DO NOT walk `doc.segments`.
+    // DO NOT walk `doc.segments`.
     const pb = path.bbox;
     for (const { id: otherId } of ribbonsNear(net, [pb.minX - MERGE_EPS, pb.minY - MERGE_EPS, pb.maxX + MERGE_EPS, pb.maxY + MERGE_EPS])) {
       const other = doc.segment(otherId);
@@ -853,8 +691,7 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
           break;
         }
         if (crossed) {
-          // The moved road is now two pieces; what is left of it is handled
-          // by a fresh pass rather than on stale arc lengths.
+          // The moved road is now two pieces; what is left of it is handled by a fresh pass rather than on stale arc lengths.
           return reconcileMovedNode(doc, net, id, depth + 1);
         }
       }
@@ -863,20 +700,9 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
   return { committed: true };
 }
 
-/**
- * A node dropped by the Move tool at `to`, reconciled with the network
- * (`reconcileMovedNode`) and judged by the editing rules against the map as
- * it was before the drop (`editRules.ts`), as a drawn road is. Not committed:
- * nothing moved (`duplicate`) or refused with a reason - the map and its
- * network are then left as they were.
- */
+/** A node dropped by the Move tool at `to`, reconciled with the network */
 export function moveNodeChecked(doc: RoadDoc, net: Network, id: NodeId, to: Vec2): DraftResult {
-  // Made on a working copy (`RoadDoc.fork`) and judged against the map as it
-  // stands, as a drawn road is: a refused move leaves the map untouched, an
-  // accepted one is taken back as it was made. It was made on the map itself
-  // against a copy of the whole map taken first, which a refusal put back
-  // (docs/PLANO-ESPINHA-2026-10-14.md, C3, the F2 debt).
-  // `net` is built for `doc` as it stands (the Move tool's `putBack` keeps it so): the copy's network takes it over.
+  // Made on a working copy (`RoadDoc.fork`) and judged against the map as it stands, as a drawn road is
   if (net.revision !== doc.revision) throw new Error('moveNodeChecked: the network is not built for the document as it stands');
   const work = doc.fork();
   const workNet = new Network(work);
@@ -899,8 +725,7 @@ export function moveNodeChecked(doc: RoadDoc, net: Network, id: NodeId, to: Vec2
 /** Joins two compatible straight segments meeting at an otherwise unused node. */
 export function joinSegments(doc: RoadDoc, nodeId: NodeId): boolean {
   const node = doc.node(nodeId);
-  // A node carrying a pedestrian crossing is the crossing; joining it away
-  // would erase what the player placed.
+  // A node carrying a pedestrian crossing is the crossing; joining it away would erase what the player placed.
   if (!node || node.incident.length !== 2 || node.crossing) return false;
   const [firstId, secondId] = node.incident;
   if (firstId === undefined || secondId === undefined) return false;
@@ -910,13 +735,11 @@ export function joinSegments(doc: RoadDoc, nodeId: NodeId): boolean {
     first.direction !== 'both' || second.direction !== 'both') return false;
   const a = first.a === nodeId ? first.b : first.a;
   const b = second.a === nodeId ? second.b : second.a;
-  // Sections read along a -> b on both pieces, as the parking below: a piece
-  // stored the other way round has its two sides swapped (docs/source/VIAS.md V1).
+  // Sections read along a -> b on both pieces, as the parking below
   const sectionFirst = first.a === a ? first.section : flipSection(first.section);
   const sectionSecond = second.b === b ? second.section : flipSection(second.section);
   if (!sameRoadSectionIgnoringArrows(sectionFirst, sectionSecond)) return false;
-  // Parking read along a -> b on both pieces: a piece stored the other way
-  // round has its sides swapped.
+  // Parking read along a -> b on both pieces: a piece stored the other way round has its sides swapped.
   const parkingFirst = first.a === a ? first.parking : flipParking(first.parking);
   const parkingSecond = second.b === b ? second.parking : flipParking(second.parking);
   if (!sameParking(parkingFirst, parkingSecond)) return false;
@@ -929,8 +752,7 @@ export function joinSegments(doc: RoadDoc, nodeId: NodeId): boolean {
   doc.removeSegment(first.id);
   doc.removeSegment(second.id);
   doc.removeNode(nodeId);
-  // The joined road keeps the arrows of its two ends: what arrives at `b`
-  // came along `second`, what arrives at `a` along `first`.
+  // The joined road keeps the arrows of its two ends
   const towardB = second.b === b ? second.section?.turnsForward : second.section?.turnsBackward;
   const towardA = first.a === a ? first.section?.turnsBackward : first.section?.turnsForward;
   const base = sectionForPiece(sectionFirst, false, false);
@@ -949,15 +771,7 @@ export function joinSegments(doc: RoadDoc, nodeId: NodeId): boolean {
   return true;
 }
 
-/**
- * Creates a disconnected parallel copy of a road for rapid layout iteration.
- *
- * The copy deliberately owns new endpoints: duplicating onto the original
- * junctions would instantly create a second overlapping carriageway. Keeping
- * the same curve parameters after a lateral translation preserves the exact
- * road shape, direction and lane profile while leaving the user free to join
- * either endpoint where needed.
- */
+/** Creates a disconnected parallel copy of a road for rapid layout iteration. */
 export function duplicateSegment(doc: RoadDoc, net: Network, id: SegmentId): SegmentId | null {
   const segment = doc.segment(id);
   if (!segment) return null;
@@ -990,19 +804,13 @@ export function duplicateSegment(doc: RoadDoc, net: Network, id: SegmentId): Seg
   if (copy && segment.cutWalls) doc.setSegmentCutWalls(copy.id, true);
   if (copy) return copy.id;
 
-  // Source validation above makes this defensive branch unlikely, but keep
-  // document invariants intact if a future segment policy rejects the copy.
+  // Source validation above makes this defensive branch unlikely
   doc.removeNode(copyA.id);
   doc.removeNode(copyB.id);
   return null;
 }
 
-/**
- * Splits one original segment at any number of positions.
- *
- * Curves are reconstructed from de Casteljau sub-curves, so the two (or more)
- * resulting segments trace the same quadratic instead of becoming chords.
- */
+/** Splits one original segment at any number of positions. */
 function splitSegmentAtCuts<Tag>(
   doc: RoadDoc,
   net: Network,

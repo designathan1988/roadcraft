@@ -1,15 +1,6 @@
 import type { BlockDigestAsk, GroundJob, GroundJobAnswer, GroundShapeAsk, PlateShapeAnswer } from './groundShape';
 
-/**
- * THE GROUND'S WORK ON THE OTHER CORES (`groundShape.worker.ts`): each job
- * handed to the worker with the fewest waiting, as `roadTilePool.ts` hands its
- * tiles, the workers sized by the cores the browser reports (MDN,
- * `navigator.hardwareConcurrency`). No workers (a test, an old browser):
- * `available` is false and the page shapes the ground itself, as before; a
- * worker failing or silent with jobs waiting for `SILENCE_MS` fails the pool,
- * its jobs rejected (their asker does them on the page). DO NOT wait without a
- * deadline: whoever waits calls `check`.
- */
+/** DO NOT wait without a deadline: whoever waits calls `check`. */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { resolve(answer: GroundJobAnswer): void; reject(error: Error): void }>;

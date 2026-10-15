@@ -6,17 +6,11 @@ import { nextSpeed } from './operational';
 /** The standstill gap that physically stops a body: a hand's breadth, not the driver's preferred one. */
 const PHYSICAL_GAP = m(0.1);
 
-/**
- * Separate the driver's preferred standing gap from physical stopping room.
- * A newly denied movement inside that preferred gap must not instantaneously
- * stop the body while metres of collision-free braking room still remain.
- */
+/** Separate the driver's preferred standing gap from physical stopping room. */
 export function physicalSpeed(p: DriverParams, speed: number, wanted: number, acceleration: number,
   obstacles: readonly Obstacle[], dt: number): number {
   const comfort = nextSpeed(p, speed, wanted, acceleration, obstacles, dt);
-  // The physical gap is passed to the safe speed, the driver as it is. DO NOT
-  // build a driver with the physical gap here: that was an object per vehicle
-  // with a hard obstacle, every tick.
+  // DO NOT build a driver with the physical gap here: that was an object per vehicle with a hard obstacle, every tick.
   let limit = Infinity;
   for (const obstacle of obstacles) {
     if (obstacle.hard === false) continue;

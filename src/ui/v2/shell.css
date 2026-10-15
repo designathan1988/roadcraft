@@ -1,11 +1,4 @@
-/* Roadcraft interface v2 - see shell.ts. One stylesheet, one set of tokens.
-
-   Three pieces, as Cities: Skylines II lays them out:
-   - the dock of categories, bottom centre (icons, names in tooltips);
-   - above it the asset panel: the tool's modes as tabs, its things as cards;
-   - the tool options, bottom left: one row per setting, its short name at the
-     left and its controls beside it, the whole map's settings under a divider.
-   Every target is at least 24 x 24 px (WCAG 2.2, 2.5.8); most are 30-32 px. */
+/* Roadcraft interface v2 - see shell.ts. */
 :root {
   --v-bg: rgba(14, 22, 24, 0.9);
   --v-bg-solid: #10191b;
@@ -108,9 +101,7 @@
 .v2-pop-body.icons { display: flex; gap: 2px; }
 .v2-pop:has(> .v2-pop-body.icons) { min-width: 0; padding: 4px; }
 .v2-pop-body.icons .v2-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-/* Help: keys and what they do, the keys of every section in one column: each
-   section's own grid sized it to its own keys, and the three columns of
-   descriptions stood at three places (MDN, CSS subgrid). */
+/* Help: keys and what they do, the keys of every section in one column */
 .v2-pop-body.help { gap: 6px; grid-template-columns: auto 1fr; column-gap: 10px; }
 .v2-pop-body.help > * { grid-column: 1 / -1; }
 .v2-pop-body.help > .v2-keys { display: grid; grid-template-columns: subgrid; }
@@ -196,9 +187,7 @@
   position: relative; display: grid; grid-template-rows: var(--v-card) auto; width: var(--v-card-w); padding: 0; overflow: hidden;
   border: 1px solid var(--v-line); border-radius: 8px; background: var(--v-raise); text-align: center;
 }
-/* The thing's name under its picture: two lines at most, the rest in the
-   tooltip; a word is never broken (it was, where it met the card's edge:
-   "Mediterrâne / o") - the card grows to it (`fitDrawer`, `shell.ts`). */
+/* The thing's name under its picture: two lines at most, the rest in the tooltip; a word is never broken */
 .v2-card-name {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   height: 2.4em; margin: 3px 4px; font-size: 10.5px; line-height: 1.2; font-weight: 600; color: var(--v-muted);
@@ -289,15 +278,13 @@
 .v2-transit-count { min-width: 18px; text-align: center; font-weight: 700; }
 
 /* ---------------------------------------------------------------- selection */
-/* The panel holds still; the inspector scrolls inside it, and its end fades
-   out while there is more past it (`fadeEnds`, `shell.ts`). */
+/* The panel holds still; the inspector scrolls inside it, and its end fades out while there is more past it */
 .v2-side { position: absolute; right: 12px; top: calc(12px + var(--v-hud-h) + 10px); width: 340px; max-height: calc(100dvh - var(--v-hud-h) - var(--v-dock-h) - 60px); display: flex; flex-direction: column; overflow: hidden; padding: 12px; border-radius: 16px; }
 .v2-side .inspector { position: static !important; display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; width: 100% !important; max-height: none !important; padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; transform: none !important; backdrop-filter: none !important; font-size: 13px; }
 .v2-side .inspector[data-more-y="bottom"] { mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent); }
 .v2-side .inspector[data-more-y="top"] { mask-image: linear-gradient(to top, #000 calc(100% - 48px), transparent); }
 .v2-side .inspector[data-more-y="both"] { mask-image: linear-gradient(to bottom, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
-/* The road inspector's fields: the number boxes were left in the browser's
-   white, the only light control on the dark panel. */
+/* The road inspector's fields: the number boxes were left in the browser's white */
 .v2-side .inspect-select { font-size: 11.5px; }
 .v2-side .inspect-select input[type="number"], .v2-side .inspect-select select {
   width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--v-line); border-radius: var(--v-r-s);
@@ -326,11 +313,7 @@
 @media (max-width: 1100px) {
   .v2-stats { display: none; }
 }
-/* The centred dock (~490 px) and the tool options (300 px at the left) meet
-   below ~1140 px: the dock then stands right of the options' place, scrolling
-   if it must, so neither covers a control of the other (seen at 1024 × 768).
-   Always there, options open or not: a dock that moved when a tool opened
-   left the cursor on the next tool. */
+/* The centred dock (~490 px) and the tool options (300 px at the left) meet below ~1140 px */
 @media (781px <= width < 1160px) {
   .v2 > .v2-dock {
     left: calc(24px + var(--v-opts-w)); transform: none; max-width: calc(100vw - var(--v-opts-w) - 36px);
@@ -384,8 +367,7 @@
   background: var(--v-bg-solid) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3b4b0' stroke-width='2'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E") no-repeat right 4px center / 14px;
   border: 1px solid var(--v-line); color: var(--v-text);
 }
-/* A choice has no unit: it takes the unit's column too and is as wide as its
-   longest option, so "Prédio residencial" is not cut to "Prédio re…". */
+/* A choice has no unit: it takes the unit's column too and is as wide as its longest option */
 .v2-shell #builder .bw-field:has(> .bw-field-select) { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-shell #builder .bw-field-select { grid-column: 2 / -1; width: auto; min-width: 100px; max-width: 200px; }
 

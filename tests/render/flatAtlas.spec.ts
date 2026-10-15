@@ -4,11 +4,7 @@ import { RELIEF_NATURAL, reliefHeight } from '@world/terrain';
 import { TERRAIN_BASE, TERRAIN_HALF } from '@render/terrain';
 import { buildFlatFar, farIndexInto } from '@render/flatAtlas';
 
-/**
- * THE MAP'S GROUND (`render/flatAtlas.ts`): one terrain plate per plate of the
- * map, and the far ground stands on the land's own heights and is never drawn
- * under a plate drawn in full.
- */
+/** THE MAP'S GROUND (`render/flatAtlas.ts`) */
 
 describe('the map in plates', () => {
   it('draws each plate of the map with one terrain plate', () => {

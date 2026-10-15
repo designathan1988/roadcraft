@@ -8,14 +8,7 @@ import { createSceneryKit } from '@render/scenery';
 import { buildUtilities } from '@render/poleLayer';
 import { m } from '@world/units';
 
-/**
- * THE POLE LAYER'S WIRES AS INSTANCES: each wire is eight numbers - its ends
- * in three's axes, its sag and its phase - drawn from one tube template the
- * vertex shader bends along the wire (`render/utilities.ts` `WIRE_GLSL`). The
- * instances must lay every wire where `sampleWire` lays it, the way the tubes
- * were built on the CPU before; the tube round each point is the shader's
- * (seen in the game).
- */
+/** THE POLE LAYER'S WIRES AS INSTANCES: each wire is eight numbers - its ends in three's axes, its sag and its phase */
 function line(doc: RoadDoc, n: number, y: number): void {
   const ids = Array.from({ length: n }, (_, i) => doc.addPole({ x: i * m(30), y: y + (i % 2) * m(2) }, i % 2 === 0).id);
   for (let i = 1; i < n; i++) doc.addPoleSpan(ids[i - 1]!, ids[i]!);

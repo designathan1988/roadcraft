@@ -2,27 +2,7 @@ import { Plane, Vector3 } from 'three';
 
 import type { PersonLook } from '@people/spec';
 
-/**
- * A person as a mesh: the morphed MakeHuman body and the helper shells that
- * morph with it (Person track, first visible step).
- *
- * The base mesh carries, in the same vertex space as the skin, MakeHuman's
- * fitting shells: a close "tights" layer over the whole body, a skirt, a hair
- * shell, the eyes and the eyelashes. They follow every target the body
- * follows, so a garment cut from the tights fits whatever body the sliders
- * make. Until proper garments are imported (proxies, H3) the clothes ARE those
- * shells, cut where a tailor would cut them: at the neck, the waist, along the
- * arm and the leg. The cuts are measured from MakeHuman's joint cubes on the
- * base mesh, so they run along the mesh's own edge loops - straight hems -
- * and, being read once on the base, they stay put on any body.
- *
- * Hair is the scalp, coloured per vertex with a soft hairline; long hair adds
- * the part of the hair shell that stays clear of the face.
- *
- * One geometry for the person, the morphed positions shared, one index group
- * per material. Positions go from the packs' decimetres (+Y up, +Z forward)
- * to metres, feet on y = 0.
- */
+/** A person as a mesh: the morphed MakeHuman body and the helper shells that morph with it */
 
 export interface PersonMeshData {
   readonly vertexCount: number;
@@ -78,8 +58,7 @@ export function tailor(data: PersonMeshData, base: Float32Array): Tailoring {
   const legs = (['l', 'r'] as const).map((s) => chain(s, ['upper-leg', 'knee', 'ankle']));
   const neckY = centre('joint-neck')[1] - 0.25;
   const pelvisY = centre('joint-pelvis')[1];
-  // A waistband sits below the navel: 40 % of the way from the hip joints to
-  // the lowest spine joint (which is at the bottom of the ribs).
+  // A waistband sits below the navel: 40 % of the way from the hip joints to the lowest spine joint
   const waistY = centre('joint-pelvis')[1] + (centre('joint-spine-1')[1] - centre('joint-pelvis')[1]) * WAIST_SHARE;
   const eyes = [centre('joint-l-eye'), centre('joint-r-eye')];
   const eyeY = (eyes[0]![1] + eyes[1]![1]) / 2;
@@ -111,8 +90,7 @@ export function tailor(data: PersonMeshData, base: Float32Array): Tailoring {
   const longHair = new Set<number>();
   for (let f = 0; f < faceCount; f++) {
     const g = data.faceGroup[f]!;
-    // The skin is measured the same way as the cloth over it, so the skin a
-    // garment hides can be left out (`facesFor`).
+    // The skin is measured the same way as the cloth over it, so the skin a garment hides can be left out (`facesFor`).
     if (g !== tights && g !== hairShell && g !== skin) continue;
     let px = 0, py = 0, pz = 0;
     for (let c = 0; c < 4; c++) {
@@ -140,8 +118,7 @@ export function tailor(data: PersonMeshData, base: Float32Array): Tailoring {
     let best = 0;
     for (let b = 1; b < boneWeight.length; b++) if (boneWeight[b]! > boneWeight[best]!) best = b;
     const name = data.boneNames[best] ?? 'Root';
-    // The thigh weighs on the lower belly too: above the hip joints a face is
-    // trunk whatever its weights say, or a skirt left the belly bare.
+    // The thigh weighs on the lower belly too
     const kind: Limb = /arm|hand|thumb|index|middle|ring|pinky/.test(name) ? 'arm'
       : /thigh|calf|foot|ball/.test(name) ? (p[1]! > pelvisY ? 'trunk' : 'leg')
       : /head|neck/.test(name) ? 'head' : 'trunk';
@@ -154,8 +131,7 @@ export function tailor(data: PersonMeshData, base: Float32Array): Tailoring {
     }
   }
 
-  // The scalp, per vertex, with a soft hairline: about 6 cm above the eyes at
-  // the front, down to the nape at the back, round the ears.
+  // The scalp, per vertex, with a soft hairline
   const hair = new Float32Array(data.vertexCount);
   const headBone = data.boneNames.indexOf('head');
   const neckBone = data.boneNames.indexOf('neck_01');
@@ -163,16 +139,14 @@ export function tailor(data: PersonMeshData, base: Float32Array): Tailoring {
     const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
     return t * t * (3 - 2 * t);
   };
-  // Only the head: nothing below the jaw, so a hand raised to the face or a
-  // shoulder is never painted.
+  // Only the head: nothing below the jaw, so a hand raised to the face or a shoulder is never painted.
   for (const [a, b] of data.vertexGroups['body'] ?? []) {
     for (let v = a; v <= b; v++) {
       let w = 0;
       for (let k = 0; k < 4; k++) if (data.joints[v * 4 + k] === headBone || data.joints[v * 4 + k] === neckBone) w += data.weights[v * 4 + k]! / 65535;
       if (w < 0.2) continue;
       const x = base[v * 3]!, y = base[v * 3 + 1]!, z = base[v * 3 + 2]!;
-      // The hairline drops from the forehead to the nape as the head is
-      // followed back; the ears stay clear.
+      // The hairline drops from the forehead to the nape as the head is followed back; the ears stay clear.
       const back = smooth(eyeZ - 0.4, eyeZ - 1.1, z);
       const hairline = eyeY + 0.62 - back * 1.55;
       const earBand = smooth(eyeY - 0.8, eyeY - 0.6, y) * (1 - smooth(eyeY + 0.2, eyeY + 0.35, y));
@@ -192,17 +166,11 @@ export function facesFor(data: PersonMeshData, look: PersonLook, cut: Tailoring)
   const hairShell = groupIndex('helper-hair');
   const eyes = new Set([groupIndex('helper-l-eye'), groupIndex('helper-r-eye')]);
   const lashes = new Set(data.faceGroups.map((g, i) => (g.includes('eyelashes') ? i : -1)).filter((i) => i >= 0));
-  // How far down the arm a sleeve reaches, and down the leg a leg: 1 is the
-  // elbow or the knee, 2 the wrist or the ankle.
-  // Faces are taken a little past each cut; the clipping planes
-  // (`hemPlanes`) make the edge itself, straight across.
+  // How far down the arm a sleeve reaches, and down the leg a leg: 1 is the elbow or the knee, 2 the wrist or the ankle.
   const sleeve = sleeveEnd(look) + HEM_MARGIN;
   const leg = legEnd(look) + HEM_MARGIN;
 
-  /**
-   * Skin a garment covers whole: never seen, so never drawn. Kept back from
-   * every hem by a margin, so no gap shows where the cloth ends.
-   */
+  /** Skin a garment covers whole: never seen, so never drawn. */
   const hidden = (f: number): boolean => {
     const limb = LIMBS[cut.limb[f]!]!;
     const t = cut.along[f]!;
@@ -240,16 +208,13 @@ export function facesFor(data: PersonMeshData, look: PersonLook, cut: Tailoring)
         if (t > 1.97) add('shoes', f);
         else if (t <= leg) add('bottom', f);
       } else if (limb === 'arm') {
-        // The sleeves are their own material: a plane across an arm, being
-        // infinite, would cut the trunk too. A tank top has none: its
-        // armholes are cut on the trunk.
+        // The sleeves are their own material: a plane across an arm, being infinite, would cut the trunk too.
         if (look.top === 'tank') {
           // The shoulder's cloth goes with the trunk; the armhole planes cut it.
           if (t <= 0.35) add('top', f);
         } else if (t <= sleeve) add('sleeves', f);
       } else {
-        // Trunk and neck together, cut by height alone: the neckline and the
-        // waistband run along the mesh's horizontal loops.
+        // Trunk and neck together, cut by height alone: the neckline and the waistband run along the mesh's horizontal loops.
         const y = cut.height[f]!;
         if (y < cut.waistY + 0.35) add('bottom', f);
         if (y > cut.waistY - 0.35 && y < cut.neckY + 0.35 && look.top !== 'none') add('top', f);
@@ -274,12 +239,7 @@ function legEnd(look: PersonLook): number {
   return look.bottom === 'trousers' ? 1.93 : look.bottom === 'shorts' ? 0.62 : 0.12;
 }
 
-/**
- * The hems, as clipping planes in the mesh's metres: the neck and the waist
- * across the trunk, a sleeve's end across each arm, a leg's end across each
- * leg, each plane perpendicular to its limb. Measured on the MORPHED joints,
- * so they move with the body.
- */
+/** The hems, as clipping planes in the mesh's metres */
 export function hemPlanes(data: PersonMeshData, metres: Float32Array, look: PersonLook): { top: Plane[]; sleeves: Plane[]; bottom: Plane[] } {
   const centre = (group: string): Vector3 => {
     const c = new Vector3();
@@ -311,15 +271,12 @@ export function hemPlanes(data: PersonMeshData, metres: Float32Array, look: Pers
   const sleeves: Plane[] = [];
   const bottom: Plane[] = [];
   if (look.top !== 'none') {
-    // The waist is ONE cut: the top above it, the bottoms below, meeting
-    // exactly. An overlap put two copies of the same cloth in one place and
-    // they flickered against each other.
+    // The waist is ONE cut: the top above it, the bottoms below, meeting exactly.
     top.push(new Plane(new Vector3(0, -1, 0), neck), new Plane(new Vector3(0, 1, 0), -waist));
     const s = sleeveEnd(look);
     for (const side of ['l', 'r']) sleeves.push(across([`joint-${side}-shoulder`, `joint-${side}-elbow`, `joint-${side}-hand`], s));
   }
-  // A tank top's armholes: through the shoulder, slanting out as they go down
-  // so the armpit stays covered. Only the trunk's cloth carries them.
+  // A tank top's armholes: through the shoulder, slanting out as they go down so the armpit stays covered.
   if (look.top === 'tank') {
     for (const side of ['l', 'r']) {
       const shoulder = centre(`joint-${side}-shoulder`);

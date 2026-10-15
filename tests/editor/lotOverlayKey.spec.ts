@@ -6,13 +6,7 @@ import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import { LotTool } from '@editor/lotTool';
 
-/**
- * THE FAINT ZONES ARE NOT MADE AGAIN ON EVERY FRAME. With the other tools the
- * overlay of the zoned lots was made, and turned to JSON for the key the scene
- * compares, on every frame (`main.ts` `drawOverlayScreen`; found by
- * `scripts/check-code.mjs`). It reads only the lots and the buildings: it is
- * the same object until one of them changes, and the same drawing as made fresh.
- */
+/** THE FAINT ZONES ARE NOT MADE AGAIN ON EVERY FRAME. */
 describe('the lots overlay with the other tools', () => {
   it('is kept while the lots stand, and made again when they change', () => {
     const doc = new RoadDoc();

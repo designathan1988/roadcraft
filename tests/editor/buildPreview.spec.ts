@@ -18,12 +18,7 @@ function buildTotals(runs: readonly BuildRun[]): Record<BuildMode, number> {
   return out;
 }
 
-/**
- * THE PREVIEW IS THE BUILD (docs/source/VIAS.md V3): the road tool's preview draws
- * the stations of the dry run (`DraftResult.stations`); the same road
- * committed and solved afresh stands at the same heights and is built the
- * same way at every station.
- */
+/** THE PREVIEW IS THE BUILD: the road tool's preview draws the stations of the dry run */
 function world(hill = false): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
   if (hill) doc.addTerrainStamp({ x: 700, y: 0, radius: 160, strength: 6, mode: 'raise' });

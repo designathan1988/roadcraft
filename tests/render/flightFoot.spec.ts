@@ -6,22 +6,7 @@ import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 import { growCity } from '../world/cityAudit';
 
-/**
- * THE APRON AND THE LOT'S PATHS STOP AT THE FOOT OF THE STEPS. The paved
- * apron round a building's base and the paths its lot lays to a door were
- * laid on the land across the flights at the doors, and where the land in
- * front of a door rises over the foot of the steps they came up through the
- * lower treads (the player, 2026-10-14: "o piso do caminho atravessando o
- * degrau de baixo"). Every building of a town, laid on rolling land so its
- * doors have flights, with its lot's paths and none of its other lot parts:
- * down the middle of each flight no face looking up stands over the tread
- * there (and under a hand's height over it: a canopy is not in the way).
- *
- * Not measured here, each its own cause: a door set back in a recess (its
- * flight starts at the door, across the recess's floor), a paved yard over
- * a door (`foundationOf` is given the street's paving, not the building's own
- * yards), a lot part the planner set where a flight stands (a flower bed).
- */
+/** THE APRON AND THE LOT'S PATHS STOP AT THE FOOT OF THE STEPS. */
 const ROLLING = (x: number, y: number): number => m(0.6) * Math.sin(x * 0.05) + m(0.4) * Math.cos(y * 0.07);
 const SAMPLE = 100;
 const HAND = m(0.3);

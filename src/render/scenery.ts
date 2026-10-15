@@ -46,29 +46,7 @@ import {
 
 export { LAMP_HEIGHT, LAMP_OUTREACH } from './propGeometry';
 
-/**
- * Everything standing on the ground that is not a road: street furniture,
- * street trees, vegetation and grass.
- *
- * There used to be a gantry arch at every map-edge stub, to mark where traffic
- * entered. It was a piece of scenery nobody asked for standing in the middle of
- * open country, and it is gone: a road that ends simply ends.
- *
- * Vegetation is here for a reason beyond decoration. An isometric view of an
- * open plain gives the eye nothing to judge distance or scale by, so the scene
- * reads as a flat map however good the ground material is. Objects of a KNOWN
- * height, scattered at a known density, are what turn the same image into a
- * landscape: they cast shadows across the terrain, they occlude one another with
- * distance, and they make a hill's far side legible.
- *
- * WHERE the furniture stands is not decided here: `world/streetFurniture.ts`
- * owns the layout, because the pedestrians have to walk around the same list.
- *
- * Everything is instanced — one draw call per model, whatever the count — and
- * every mesh carries a real bounding sphere so the frustum can reject it.
- * Models and materials live in a `SceneryKit` built once; a rebuild only
- * writes instance matrices.
- */
+/** Everything standing on the ground that is not a road: street furniture, street trees, vegetation and grass. */
 
 
 /** How each kind of plant answers the wind; see `wind.ts`. */
@@ -78,23 +56,9 @@ const GRASS_WIND: WindResponse = { sway: 0.22, flutter: 0.04 };
 
 /** Radius of the bright core under a street lamp (the cone's foot). */
 export const LAMP_POOL_RADIUS = m(4.6);
-/**
- * The light a street lamp lays on the road: not a spotlight's disc but the
- * long patch of a road luminaire's spread (the IES "type II/III"
- * distributions), some 1.6 mounting heights each way along the road and the
- * carriageway's width across it, so the pools of neighbouring lamps overlap
- * and the whole road is lit, as street lighting is designed to be (ABNT NBR
- * 5101, CIE 115: an overall uniformity of about 0.4). Discs of 4.6 m left the
- * road dark between the lamps (the player, 2026-10-13: "a via toda fica
- * iluminada, não é?").
- */
+/** The light a street lamp lays on the road: not a spotlight's disc but the long patch of a road luminaire's spread */
 export const POOL_ALONG = 1.6;
-/**
- * A lamp's visible cone of light, drawn as Volumetric Light Beam draws one
- * (saladgamer.com/vlb-doc/comp-lightbeam-sd/): an open cone, additive, its
- * light falling off down its length and softened at its edges by the angle
- * it is seen at, its apex cut at the size of the source.
- */
+/** A lamp's visible cone of light, drawn as Volumetric Light Beam draws one (saladgamer.com/vlb-doc/comp-lightbeam-sd/) */
 /** The cone's radius at the ground: the bright core of the pool. */
 export const LAMP_BEAM_RADIUS = LAMP_POOL_RADIUS * 0.8;
 /** Radius of the cut apex, over the radius at the ground: the lens (about 0.28 m of 3.7). */
@@ -102,39 +66,17 @@ const BEAM_SOURCE = 0.075;
 /** Sides and segments of the cone (VLB: 18 sides; 3 segments at least, for a smooth falloff). */
 const BEAM_SIDES = 18;
 const BEAM_SEGMENTS = 4;
-/**
- * Brightness of the air lit at the lens, at full dark: well below a lit
- * surface, as light scattered by clear night air is, so the road reads
- * through it; its brightest (0.26 at the lens) stays under the bloom threshold.
- */
+/** Brightness of the air lit at the lens, at full dark */
 const BEAM_INTENSITY = 0.4;
 /** How hard the cone's edges are seen from the side (VLB's Side Thickness): higher, softer. */
 const BEAM_SIDE_SOFTNESS = 1.6;
-/**
- * VLB's Fade Out: the cone dims from `BEAM_FADE[0]` from the eye and is gone
- * at `BEAM_FADE[1]`. Air lit by a lamp shows close by; from over the
- * neighbourhood each cone, seen down its length, was a pale drop the size of
- * a house over every lamp in town (2026-10-11), where a night photograph
- * from above shows the pools on the ground only.
- */
+/** VLB's Fade Out: the cone dims from `BEAM_FADE[0]` from the eye and is gone at `BEAM_FADE[1]`. */
 const BEAM_FADE = [m(60), m(140)] as const;
 
-/**
- * The street lights' colour: white LED, some 4500 K. The orange of sodium
- * lamps (0xffc98a) is gone from Brazilian streets - 90 % of São Paulo's
- * public lighting was LED in 2021 (Prefeitura de São Paulo, "Parque de
- * iluminação da cidade") - and with every window as warm the night town was
- * one yellow (the player, 2026-10-13).
- */
+/** The street lights' colour: white LED, some 4500 K. */
 const STREET_LED = 0xffe2c4;
 
-/**
- * The cone's material. Front faces only: the far side of an open cone added
- * again doubled the light down its middle. The light along it is VLB's
- * "Blend" of linear and quadratic falloff, from the lens (1) to the ground
- * (0); across it, the cosine between the surface and the eye, so the
- * silhouette fades out instead of ending in a line.
- */
+/** The cone's material. */
 function beamMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     name: 'street-light-beam',
@@ -208,23 +150,14 @@ export interface SceneryKit {
   /** The warm pool of light under a street lamp, seen only after dark. */
   readonly pool: BufferGeometry;
   readonly poolGlow: MeshBasicMaterial;
-  /**
-   * The cone of light from a street lamp's lens down to its pool, seen only
-   * after dark: a unit cone, apex (cut at the lens's size) at the origin,
-   * base of radius 1 at y = -1; scaled by the radius at the ground (x, z)
-   * and the drop (y).
-   */
+  /** The cone of light from a street lamp's lens down to its pool, seen only after dark: a unit cone, apex */
   readonly beam: BufferGeometry;
   readonly beamGlow: ShaderMaterial;
   /** Where a street lamp's lens is, from its column's foot: out over the road and up. */
   readonly lens: { readonly reach: number; readonly height: number };
   /** Lamps lit as night falls: 0 by day, 1 at night. */
   setNight(dark: number): void;
-  /**
-   * How thick the air is, 0 clear to 1 rain or fog: a lamp's cone of light is
-   * seen only in air that scatters it. In a clear night only the lit ground
-   * shows (the cones over a dry street, 2026-10-13).
-   */
+  /** How thick the air is, 0 clear to 1 rain or fog: a lamp's cone of light is seen only in air that scatters it. */
   setHaze(haze: number): void;
   dispose(): void;
 }
@@ -258,8 +191,7 @@ export function createSceneryKit(): SceneryKit {
   const tuft = grassTuftGeometry();
   const flower = wildflowerGeometry();
 
-  // The trunk and the crown's shaded heart, faceted, under the foliage cards:
-  // the countryside's trees exactly (`lowPolyTrees.ts`), one style in the game.
+  // The trunk and the crown's shaded heart, faceted, under the foliage cards: the countryside's trees exactly
   const foliage = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, flatShading: true, envMapIntensity: 0.35 });
   applyWind(foliage, TREE_WIND, 'tree');
   const shrubs = new MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0, flatShading: true, envMapIntensity: 0.35 });
@@ -351,15 +283,7 @@ export function createSceneryKit(): SceneryKit {
   };
 }
 
-/**
- * One of every plant as the gardens and the street draw them, with and
- * without a tint of their own (an instance colour is a program variant), and
- * each as its shadow pass draws it (its depth material), for compiling their
- * programs ahead (three's `compileAsync`: objects to be added later are
- * precompiled before they are drawn). The first lots painted grew gardens
- * whose programs were built in that frame: some 600 ms on the first stroke of
- * the zone brush.
- */
+/** One of every plant as the gardens and the street draw them, with and without a tint of their own */
 export function plantSamples(kit: SceneryKit): { readonly group: Group; readonly depth: Group; dispose(): void } {
   const meshes: InstancedMesh[] = [];
   const models: [BufferGeometry, Material, MeshDepthMaterial][] = [];
@@ -396,48 +320,21 @@ export interface Scenery {
   /** Grass tufts and wildflowers, shown only at close zoom. */
   readonly grass: Group;
   readonly triangles: number;
-  /**
-   * Swaps every plant between its close-up model and its map-zoom model. A
-   * geometry reference per mesh; nothing is rebuilt.
-   */
+  /** Swaps every plant between its close-up model and its map-zoom model. */
   setNear(near: boolean): void;
-  /**
-   * The map zoom (`PLANT_MAP_ZOOM`): the leaf cards are not drawn at all, a
-   * shrub or a length of hedge being a pixel or two; the crown under them
-   * gives its colour and shape. Called every frame, after `visible` is set.
-   */
+  /** The map zoom (`PLANT_MAP_ZOOM`): the leaf cards are not drawn at all, a shrub or a length of hedge being a pixel or two */
   setMap(map: boolean): void;
-  /**
-   * Keeps only the instances the camera can see, or whose shadow it can.
-   * `view` is the camera's projection times its inverse world matrix; nothing
-   * is done while it is unchanged. Call it after setting the meshes'
-   * `visible`: a hidden mesh may be left as it was until it is shown.
-   */
+  /** Keeps only the instances the camera can see, or whose shadow it can. */
   cull(frustum: Frustum, view: Matrix4): void;
-  /**
-   * Drops every tree and shrub whose trunk stands where `covered` says -
-   * under a building (docs/buildings.md section 5) - from the instance cull.
-   * Nothing is rebuilt; the next `cull` simply skips them. Null clears it.
-   */
+  /** Drops every tree and shrub whose trunk stands where `covered` says - under a building (section 5) */
   exclude(covered: ((x: number, y: number) => boolean) | null): void;
   dispose(): void;
 }
 
-/**
- * How far outside the view an instance is still drawn, world units: the
- * longest shadow a tree can throw into the picture from beyond its edge.
- */
+/** How far outside the view an instance is still drawn, world units */
 export const SHADOW_REACH = m(28);
 
-/*
- * Each species used to be ONE instanced mesh spread over the whole map, so
- * its bounding sphere was the map and nothing was ever off screen: zoomed in
- * on a crossroads, every bush on the map went to the GPU in close-up detail,
- * three times over (picture, shadow map, occlusion). The instances in view
- * are copied to the front of the buffer when the camera moves, and only
- * those are drawn, found cell by cell down a quadtree of the ground
- * (`instanceRuns.ts`, `gardens.ts`).
- */
+/* Each species used to be ONE instanced mesh spread over the whole map */
 
 /** Zoom at and above which plants are drawn with their close-up models. */
 export const PLANT_NEAR_ZOOM = perM(3.5);

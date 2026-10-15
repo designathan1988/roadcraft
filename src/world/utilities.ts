@@ -3,21 +3,7 @@ import type { PoleId, SpanId } from './ids';
 import { m } from './units';
 import { ROAD_TUNING } from './roads/tuning';
 
-/**
- * The overhead utility network: poles, the wires strung between them, and the
- * lamps they carry.
- *
- * It is a SECOND drawable graph, deliberately much simpler than the road one.
- * A pole has no width, so there is no casing, no junction, no trim and no
- * elevation solve — a pole stands on whatever is under it and a wire hangs
- * between two of them. Everything in this file is pure geometry and numbers;
- * the meshes live in `src/render/utilities.ts`, and nothing here knows what
- * three.js is.
- *
- * The one piece of real modelling is the wire. A cable hanging under its own
- * weight is a CATENARY, not a straight line and not a parabola, and the sag is
- * the whole reason a pole line reads as wiring rather than as a row of sticks.
- */
+/** The overhead utility network: poles, the wires strung between them, and the lamps they carry. */
 
 /** Height of a pole's mast, from the ground to the crown. */
 export const POLE_HEIGHT = m(8.5);
@@ -41,23 +27,12 @@ export const POLE_LAMP_LONG = m(0.5);
 export const POLE_LAMP_TALL = m(0.14);
 export const POLE_LAMP_WIDE = m(0.26);
 
-/**
- * Default distance between poles along a drawn run, in world units.
- *
- * Real distribution poles sit 30 to 45 m apart; the middle of that range
- * keeps the sag readable without turning a short run into a single span.
- */
+/** Default distance between poles along a drawn run, in world units. */
 export const DEFAULT_POLE_SPACING = ROAD_TUNING.poles.spacing;
 export const MIN_POLE_SPACING = ROAD_TUNING.poles.minSpacing;
 export const MAX_POLE_SPACING = ROAD_TUNING.poles.maxSpacing;
 
-/**
- * Sag of a span, as a fraction of its length.
- *
- * Measured off real distribution lines: a 40 m span sags about 0.6 m, which is
- * 1.5%. Below about 1% the wire reads as a taut wire rather than a hanging
- * one, and above about 4% it starts to look like washing line.
- */
+/** Sag of a span, as a fraction of its length. */
 const WIRE_SAG_RATIO = 0.018;
 /** However long the span, the sag stops growing past this. */
 export const WIRE_MAX_SAG = m(1.4);
@@ -79,50 +54,25 @@ export interface UtilitySpan {
   b: PoleId;
 }
 
-/**
- * Sag at the middle of a span of this length.
- *
- * Proportional to length, then capped: a long span over a river should droop
- * more than a short one between two kerbs, but not without limit.
- */
+/** Sag at the middle of a span of this length. */
 export function spanSag(length: number): number {
   return Math.min(WIRE_MAX_SAG, length * WIRE_SAG_RATIO);
 }
 
-/**
- * Height of a catenary above the chord, at normalised position `t` in [0, 1].
- *
- * The exact curve is `a * cosh((x - b) / a)`, which has to be solved for `a`
- * from the sag. For the shallow sags a power line actually has, the difference
- * between that and the quadratic through the same three points is far under a
- * pixel — and the quadratic needs no solve, no `cosh` per vertex and no
- * special case when the two ends are level. What matters visually is that the
- * curve is smooth, symmetric, zero at both ends and deepest in the middle.
- */
+/** Height of a catenary above the chord, at normalised position `t` in [0, 1]. */
 export function wireDrop(t: number, sag: number): number {
   const u = t * 2 - 1;
   return sag * (1 - u * u);
 }
 
-/**
- * Which poles of a run carry a lamp.
- *
- * Not all of them: a lamp on every pole at 15 m spacing would be twice the
- * lighting a street needs and would read as decoration. Every other pole is
- * the usual arrangement, and it is decided by position along the run rather
- * than by an RNG so that redrawing the same line gives the same answer.
- */
+/** Which poles of a run carry a lamp. */
 export const poleCarriesLamp = (index: number): boolean => index % 2 === 0;
 
 /** What the poles of a new run carry: a street light on none, every other one, or all of them. */
 export const POLE_LAMP_MODES = ['none', 'alternate', 'all'] as const;
 export type PoleLampMode = (typeof POLE_LAMP_MODES)[number];
 
-/**
- * Deflection at and above which a pole is a CORNER: each line leaving it gets
- * its own cross-arm, square to that line (the double dead-end, "buck arm"
- * corner of distribution standards), instead of one arm on the bisector.
- */
+/** Deflection at and above which a pole is a CORNER: each line leaving it gets its own cross-arm, square to that line */
 const CORNER_DEFLECTION = (60 * Math.PI) / 180;
 
 /** The cross-arms of one pole: every distinct arm, and the one each span hangs from. */
@@ -139,22 +89,7 @@ const unit = (v: Vec2): Vec2 => {
   return l > 1e-9 ? { x: v.x / l, y: v.y / l } : { x: 0, y: 1 };
 };
 
-/**
- * Which way every pole's cross-arm lies, as line construction standards frame
- * a pole (USDA RUS distribution drawings; We Energies three-phase framing):
- *
- * - on a straight line (tangent) the arm is square to the line;
- * - on a small angle the arm lies on the BISECTOR of the angle, so the wires
- *   pull evenly on both halves of it;
- * - at a corner (`CORNER_DEFLECTION` and over), at a junction of three or more
- *   lines, each line has its own arm, square to it;
- * - a pole with nothing strung on it yet takes `idle(pole)`, square to its street.
- *
- * The old renderer summed the two span directions LEAVING a pole, which on a
- * straight line cancel out: every pole in the middle of a run fell back to an
- * arbitrary north-south arm, which is the "arms across the wrong way" the
- * player saw.
- */
+/** Which way every pole's cross-arm lies, as line construction standards frame a pole */
 export function poleArms(
   poles: ReadonlyMap<PoleId, UtilityPole>,
   spans: ReadonlyMap<SpanId, UtilitySpan>,
@@ -174,11 +109,7 @@ export function poleArms(
   return out;
 }
 
-/**
- * One pole's arms (`poleArms`), from the spans reaching it in the order they
- * were strung: all it depends on is those spans and the poles at their other
- * ends, so a pole layer frames again only the poles an edit reached.
- */
+/** One pole's arms (`poleArms`), from the spans reaching it in the order they were strung */
 export function poleArmsAt(
   pole: UtilityPole,
   reaching: Iterable<UtilitySpan>,

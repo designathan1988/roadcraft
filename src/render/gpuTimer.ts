@@ -1,24 +1,7 @@
 import type { WebGLRenderer } from 'three';
 import { SampleRing } from '@core/sampleRing';
 
-/**
- * THE GPU TIME OF A FRAME (docs/pesquisa/fase-0-medida.md 3.1): one
- * `TIME_ELAPSED` query of `EXT_disjoint_timer_query_webgl2` round what the
- * game draws once a frame (the shadow, the scene and every pass of the post
- * chain, `PostChain.render`). Built for the frame loop, so nothing is made
- * per frame:
- * - a ring of queries made once; a frame with no free query (or one already
- *   running) is not measured, and counted (`skipped`), never waited for;
- * - only the oldest query is asked whether its result is in: results come in
- *   order (Khronos), so when it is not, none is;
- * - `GPU_DISJOINT_EXT` read once a round, AFTER the results it vouches for:
- *   set, the whole round is thrown away (`disjoint`). three r186's own pool
- *   handed back its last value on a disjoint; stats-gl read the flag per
- *   query, and the second read no longer sees the event.
- * The renderer's name goes with the numbers: the headless Chrome draws on the
- * Intel iGPU, about 5x slower than the player's RTX 3060, and the two are
- * never compared (CLAUDE.md).
- */
+/** THE GPU TIME OF A FRAME */
 export interface GpuTimer {
   /** Whether the extension is there (Chrome/Edge on desktop; not every browser). */
   readonly supported: boolean;
@@ -56,13 +39,7 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
   for (let i = 0; i < size; i++) queries.push(gl.createQuery()!);
   /** Issued queries waiting for their result: `first` the oldest, `waiting` how many. */
   let first = 0, waiting = 0, running = false;
-  /**
-   * A lost context takes every query with it; restored, the old ones belong to
-   * no context ("getQueryParameter: object does not belong to this context",
-   * every frame, seen 2026-10-14 after a forced loss): "resources ... created
-   * before the context was lost are no longer valid" (MDN, webglcontextrestored).
-   * DO NOT keep a query or the extension across a context loss.
-   */
+  /** DO NOT keep a query or the extension across a context loss. */
   let lost = false;
   const canvas = renderer.domElement;
   canvas.addEventListener('webglcontextlost', () => { lost = true; running = false; first = 0; waiting = 0; });

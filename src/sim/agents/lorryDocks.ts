@@ -17,25 +17,7 @@ import {
   type Solid, type Steered, type Waypoint, WaySearch,
 } from './hybridAStar';
 
-/**
- * A works' loading yard as a lorry drives it: what is solid to it, and the
- * way from the street through the yard's gate to each dock - forward, then
- * backing onto the dock - and from the dock out to the street again
- * (`lorryTraffic.ts` drives them).
- *
- * The yards are tight (a 9.8 m lorry in a yard 14.5 m deep, the docks taking
- * 12 of it; a lorry's approach is twice its length by the American Trucking
- * Associations' rule), so a way is found, not drawn: hybrid-state A*
- * (`hybridAStar.ts`) shunts the lorry about as a driver does, never turning
- * tighter than it can. It turns at the radius of AASHTO's single-unit truck
- * SU-30, whose wheelbase (6.1 m) is the drawn lorry's (6.3 m between the front
- * axle and the middle of the rear pair): 38 ft (11.6 m) at the front axle's
- * middle at full lock (TxDOT Roadway Design Manual 4.3.3, Table 4-1), so 9.7 m
- * at the rear axle's.
- *
- * Everything here is in the building's local frame; the ways are given back
- * in the world's. A dock with no way in and out takes no lorry.
- */
+/** A works' loading yard as a lorry drives it */
 
 /** The rear axle's least turning radius (SU-30, above). */
 const LORRY_RADIUS = m(9.7);
@@ -120,11 +102,7 @@ export class Yard {
   /** What it was made from, near it (`yardInputs`): it stands while these do, whatever changed elsewhere. */
   readonly inputs: number;
 
-  /**
-   * Made by `buildYard`, whose grid and clearance it takes; here its gates
-   * and docks are worked out. `key`: the roads it was last known good for
-   * (`yardKey`), moved on by `knownYard` while its own inputs stand.
-   */
+  /** Made by `buildYard`, whose grid and clearance it takes; here its gates and docks are worked out. */
   constructor(readonly building: Building, public key: string, w: SimWorld, body: Steered, made: YardGrid) {
     this.body = body;
     this.inputs = made.inputs;
@@ -173,12 +151,7 @@ export class Yard {
     }
   }
 
-  /**
-   * Plans on, up to `budget` poses expanded; how many it spent. A dock is
-   * planned through each gate in turn (the nearest first) until one way in
-   * and out is found: in from the stop before the gate, backing onto the
-   * dock; out from the dock to the lane past the same gate.
-   */
+  /** Plans on, up to `budget` poses expanded; how many it spent. */
   plan(dockIndex: number, budget: number): number {
     const dock = this.docks[dockIndex]!;
     let spent = 0;
@@ -280,12 +253,7 @@ interface YardGrid {
   readonly field: Clearance;
 }
 
-/**
- * Cells of work a slice of a yard's making: some 2 ms. A yard's grid (cells
- * of 10 cm, a third of a million) was filled and its clearance worked out in
- * one tick - 30 ms, the simulation's worst tick in the game (2026-10-13); now
- * over a dozen.
- */
+/** Cells of work a slice of a yard's making: some 2 ms. */
 const YARD_SLICE = 40_000;
 
 /** Cell of the grid the lots and buildings near a yard are found by (`yardNeighbours`). */
@@ -300,15 +268,7 @@ export interface YardNeighbours {
 
 const neighbourCell = (i: number, j: number): number => i * 100_003 + j;
 
-/**
- * The town's lots filed by cell, made again only when the lots change: a
- * yard asks for the cells over its grid (it went through every lot and every
- * building of the map, each turned into its frame). The buildings near are
- * asked of the store's own index (`BuildingStore.near`), kept by its
- * writers: NOT the town's buildings filed again here at every building grown
- * (docs/AUDITORIA-2026-10-14.md B14; `building+1:yards`).
- * @rebuild Its work runs when the lots changed.
- */
+/** @rebuild The town's lots filed by cell, made again only when the lots change: a yard asks for the cells over its grid */
 export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardNeighbours {
   const key = `${w.doc.lotRevision}`;
   if (known && known.key === key) return known;
@@ -343,11 +303,7 @@ function near(index: YardNeighbours, w: SimWorld, x0: number, y0: number, x1: nu
   return { lots, buildings: w.doc.buildings.near(x0, y0, x1, y1) };
 }
 
-/**
- * Makes a yard a slice at a time: what is solid to a lorry filled in its
- * grid - from what is near the yard only (the roads and buildings of the
- * whole map were each turned into the yard's frame) - then its clearance.
- */
+/** Makes a yard a slice at a time: what is solid to a lorry filled in its grid - from what is near the yard only */
 export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
   const prop = gatedProperty(b)!;
   const inputs = yardInputs(w, b, index);
@@ -375,10 +331,7 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
       { x: gx + tx * half + ox * far, y: gy + ty * half + oy * far }, { x: gx - tx * half + ox * far, y: gy - ty * half + oy * far },
     ], 0);
   }
-  // Only the street near a gate: a lorry turns in and out there, and the
-  // search does not wander the whole frontage (each street cell is a few
-  // hundred poses more to try). The lot's own cells by a mask of its ring,
-  // not a point-in-polygon test a cell.
+  // Only the street near a gate: a lorry turns in and out there, and the search does not wander the whole frontage
   const inLot: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny) };
   if (ring.length) fillRing(inLot, ring, 1);
   const mouths = exits.filter((e) => e.outer).map((e) => e.outer!);
@@ -433,13 +386,7 @@ function yardBox(b: Building, prop: { x: number; y: number; w: number; d: number
 /** How far from a yard's grid the lanes its gates may be joined to are read (`parking.ts` gateLane's reach, and a margin). */
 const GATE_LANES_READ = m(45) + m(5);
 
-/**
- * What a yard is made from, near it, as one number: the lanes its gates may
- * be joined to (their ids, lengths and lines), the carriageway pieces over
- * its grid, the lots and the buildings near it (their places and blocks).
- * The building's own record is the yard's `building`. A yard whose inputs are
- * the same is the same yard (`knownYard`).
- */
+/** What a yard is made from, near it, as one number: the lanes its gates may be joined to */
 function yardInputs(w: SimWorld, b: Building, index: YardNeighbours): number {
   const prop = gatedProperty(b);
   if (!prop) return 0;
@@ -460,11 +407,7 @@ function yardInputs(w: SimWorld, b: Building, index: YardNeighbours): number {
   return d.value();
 }
 
-/**
- * The yards of a world, made when first asked and again when their building
- * or the roads change, and the lots near each place for their checks
- * (`yardNeighbours`).
- */
+/** The yards of a world, made when first asked and again when their building or the roads change */
 interface WorldYards { readonly byBuilding: Map<number, Yard>; neighbours: YardNeighbours | null }
 const YARDS = new WeakMap<SimWorld, WorldYards>();
 function yardsOf(w: SimWorld): WorldYards {
@@ -476,14 +419,7 @@ function yardsOf(w: SimWorld): WorldYards {
 /** The roads as they stand: a yard known good for them needs no look (`knownYard`). */
 export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
 
-/**
- * A building's yard as already made: null when it has none, undefined when it
- * must be made (`buildYard`). Made for this record and, once the roads moved,
- * still the same yard while what it was made from near it is the same
- * (`yardInputs`). DO NOT throw a yard away on `yardKey` alone: a road drawn
- * anywhere in the town made every yard again - a grid of a third of a million
- * cells and some 50 000 poses of search a dock.
- */
+/** DO NOT throw a yard away on `yardKey` alone: a road drawn anywhere in the town made every yard again */
 export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
   if (!gatedProperty(b) || !lorryDocks(b).length) return null;
   const known = YARDS.get(w)?.byBuilding.get(b.id);
@@ -534,14 +470,7 @@ export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
 /** The carriageways' polygons, each with its box in the world: a yard takes in only those near it. */
 type AsphaltPiece = { readonly rings: MultiPoly[number]; readonly box: { x0: number; y0: number; x1: number; y1: number } };
 
-/**
- * The carriageway pieces whose box meets a box of the world: the ribbons and the junction plates
- * filed there (`Network.ribbonsMeeting`, `junctionCells`), each its own ring, in the order of the
- * ribbons then the junctions. A yard fills them in one by one, so they need no merging: a block
- * the roads ring round is in no piece, as it is in no hole of the merged ones.
- * DO NOT merge the whole map's carriageways for a yard (`levelPolygons`): every road drawn
- * anywhere merged them all again at the next yard asked.
- */
+/** DO NOT merge the whole map's carriageways for a yard (`levelPolygons`) */
 function asphaltNear(net: Network, x0: number, y0: number, x1: number, y1: number): AsphaltPiece[] {
   const box: readonly [number, number, number, number] = [x0, y0, x1, y1];
   const junctions = net.junctionCells.idsMeeting(box).flatMap((id) => {
@@ -590,11 +519,7 @@ const last = <T>(list: readonly T[]): T => list[list.length - 1]!;
 /** Spacing of the poses on a settling leg. */
 const SETTLE_STEP = m(0.2);
 
-/**
- * A short leg from a pose to another, driven forward or backing: the rear
- * axle along a cubic Hermite curve whose ends point along the two headings
- * (the way `manoeuvre.ts` joins its points), the body along the curve.
- */
+/** A short leg from a pose to another, driven forward or backing */
 function settle(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   const dir = reverse ? -1 : 1;

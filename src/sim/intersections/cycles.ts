@@ -5,20 +5,7 @@ import { JAM_GAP } from '../params';
 import type { SimWorld } from '../world';
 import { m } from '@world/units';
 
-/**
- * Small closed loops of road: rings of streets, roundabouts drawn as polygons.
- *
- * "Don't block the box" keeps a junction clear, but it cannot stop a CYCLE of
- * links from filling: every car let onto a ring takes a place the cars
- * already circulating need, and once every link of the ring holds a car
- * waiting for the next one, none of them can move - gridlock, measured on a
- * one-way ring of eight streets with four arms at 0.4 vehicles a minute out
- * and the whole fleet frozen for over three minutes. A real roundabout avoids
- * it because entering traffic gives way to the ring AND the ring is never
- * allowed to fill: here an entry onto a small cycle is refused while the
- * cycle is already `METER_SHARE` full. Traffic that is already on the cycle
- * is never metered, so it can always get round to its exit.
- */
+/** Small closed loops of road: rings of streets, roundabouts drawn as polygons. */
 
 /** A small closed loop of road: its lanelets and the queue it can hold. */
 export interface RoadCycle {
@@ -47,17 +34,7 @@ export function cyclesOf(w: SimWorld, lanelet: LaneletId): readonly RoadCycle[] 
   return indexOf(w).byLanelet.get(lanelet) ?? [];
 }
 
-/**
- * Whether a movement onto a small loop it is not already on has to wait for
- * room on it. Traffic already on a loop is never metered onto it.
- *
- * The cars on the loop are read from the occupancy of the loop's own lanes
- * (`SimWorld.rt(id).order`, kept by `enterLanelet`/`exitLanelet`, which also
- * set `v.lanelet`): exactly the vehicles whose `lanelet` is on the loop. The
- * work is the loop's (at most `MAX_CYCLE_STORAGE` of road), whatever the size
- * of the city. DO NOT go back to walking `w.vehicles` here: that was the whole
- * fleet for every request onto a ring, every tick.
- */
+/** DO NOT go back to walking `w.vehicles` here: that was the whole fleet for every request onto a ring, every tick. */
 export function cycleFull(w: SimWorld, from: LaneletId, to: LaneletId, need: number): boolean {
   for (const cycle of cyclesOf(w, to)) {
     if (cycle.lanelets.has(from)) continue;
@@ -74,25 +51,7 @@ export function cycleFull(w: SimWorld, from: LaneletId, to: LaneletId, need: num
   return false;
 }
 
-/**
- * The shortest loop through each link, without U-turns.
- *
- * The loops used to be the strongly connected components of the graph. But a
- * U-turn connector closes every two-way street on itself, so on any connected
- * city the whole network was ONE component, far larger than a ring can be,
- * and it was dropped: the breaker never acted (audit P1-22). Now each link
- * looks for its own shortest way back to itself, never by turning round, and
- * no longer than `MAX_CYCLE_STORAGE`: a roundabout, a ring of one-way streets,
- * a block driven round by its turns. A link may lie on several (the blocks
- * either side of a street); each is metered on its own. Ties broken by id.
- *
- * Each link's search reads only the road within `MAX_CYCLE_STORAGE` of it:
- * the links it reached, their exits and the junctions at their ends are
- * filed as what it read, and an edit (`SimWorld.topologyLog`) searches again
- * only the links whose reads it changed, and the links it made. DO NOT search
- * every link of the map again for an edit: every road drawn did the town's
- * searches again.
- */
+/** DO NOT search every link of the map again for an edit: every road drawn did the town's searches again. */
 export class CycleIndex {
   readonly byLanelet = new Map<LaneletId, RoadCycle[]>();
   /** Each link searched: the loop it found (its key), and what the search read. */
@@ -124,10 +83,7 @@ export class CycleIndex {
     for (const start of [...starts].sort()) if (graph.lanelets.get(start)?.kind === 'link') this.search(graph, start);
   }
 
-  /**
-   * Everything forgotten, and every link to search.
-   * @rebuild The first build of a world, or a lane graph built whole.
-   */
+  /** @rebuild Everything forgotten, and every link to search. */
   private restart(graph: LaneletGraph): Set<LaneletId> {
     this.byLanelet.clear();
     this.ofStart.clear();
@@ -224,8 +180,7 @@ export class CycleIndex {
       const known = this.loops.get(key);
       if (known) known.finders++;
       else {
-        // The connectors between the loop's links belong to it too: a car in the
-        // box between two of them is on the loop.
+        // The connectors between the loop's links belong to it too: a car in the box between two of them is on the loop.
         const members = new Set<LaneletId>(loop);
         for (const link of loop) {
           for (const c of graph.exitsOf(link)) {
@@ -259,14 +214,7 @@ function unfile<K>(lists: Map<K, Set<LaneletId>>, key: K, start: LaneletId): voi
   if (!set.size) lists.delete(key);
 }
 
-/**
- * The search's open links as a binary min-heap (Wikipedia, "Binary heap":
- * sift-up on insert, sift-down on extract, O(log n) each), ordered by cost,
- * then by id: the order the open list was sorted in before every pop, which
- * made each pop O(n log n). A link is pushed again only at a strictly lower
- * cost, so no two entries tie on both and the pops come in the same order.
- * DO NOT go back to sorting the open list for every pop.
- */
+/** DO NOT go back to sorting the open list for every pop. */
 class OpenSet {
   private readonly items: { id: LaneletId; cost: number }[] = [];
 

@@ -9,11 +9,7 @@ import { buildStructureDetails, onAnotherCasing } from '@render/structures';
 import type { SceneMaterials } from '@render/materials';
 import { m } from '@world/units';
 
-/**
- * A viaduct over a road: no pier of it stands on the road under it. The
- * road under it is one long straight segment, its two nodes far from the
- * viaduct, so the piers fall on the middle of a segment, between its nodes.
- */
+/** A viaduct over a road: no pier of it stands on the road under it. */
 function viaductOverRoad() {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: m(-400), y: 0 }), east = doc.addNode({ x: m(400), y: 0 });

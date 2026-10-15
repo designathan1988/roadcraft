@@ -90,8 +90,7 @@ describe('structures', () => {
   });
 
   it('load a merged level as the one it became', () => {
-    // `viaduct` was a second raised level players could not tell from
-    // `elevated`; a map saved with one must load, as elevated.
+    // `viaduct` was a second raised level players could not tell from `elevated`; a map saved with one must load, as elevated.
     expect(isRoadStructure('viaduct')).toBe(false);
     expect(migrateStructure('viaduct')).toBe('elevated');
     expect(migrateStructure('bridge')).toBe('bridge');
@@ -129,9 +128,7 @@ describe('surface bands', () => {
   it('partition the casing exactly, with no overlap and no gap', () => {
     const total =
       area(band.casing) + area(band.footway) + area(band.kerb) + area(band.carriageway);
-    // Clipper works on a fixed-point grid, so the sum agrees to its rounding
-    // and no closer. A relative tolerance is the honest bound; an absolute one
-    // would simply encode the size of this fixture.
+    // Clipper works on a fixed-point grid, so the sum agrees to its rounding and no closer.
     expect(Math.abs(total - area(layer.casing)) / area(layer.casing)).toBeLessThan(1e-5);
   });
 

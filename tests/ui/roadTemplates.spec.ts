@@ -1,7 +1,4 @@
-// @vitest-environment happy-dom
-// The player's own road templates (`ui/roads/templates.ts`, a `core/keptList.ts`): saving or
-// deleting one never takes the others with it - not one this build cannot read, not a list whose
-// text no longer parses - and a change the browser would not keep says so.
+// @vitest-environment happy-dom The player's own road templates (`ui/roads/templates.ts`, a `core/keptList.ts`)
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteTemplate, saveTemplate, savedTemplates } from '@ui/roads/templates';
 import { classTemplates } from '@world/roads/templates';

@@ -4,47 +4,15 @@ import { m } from '@world/units';
 import type { SimWorld } from '../world';
 import { tripLowerBound } from '../routing/lowerBound';
 
-/**
- * Drive v2, tactical layer: which LANE a trip is driven in.
- *
- * The legacy trip planner searched the lanelet graph from the lane a vehicle
- * happened to be in, over connectors only. Lane discipline makes each turn
- * legal from one lane, so a car in the wrong lane for its turn found no way
- * to it at all and was sent round the block, or into a U-turn - the audit's
- * P1-19. A driver does the opposite: they know the turn is coming and move
- * across in time.
- *
- * Here the search carries lane changes as edges of their own. From any link
- * lane the car may cross to a sibling lane of the same carriageway, at a cost
- * per lane crossed, and only where the lane leaves room to make the change.
- * The cheapest trip then says where the changes are, and the plan is split
- * at the first one:
- *
- *  - a change on the lane the car is in now is published as `changeTo`, for
- *    `laneChange.ts` to execute as a mandatory change, while `route` stays
- *    the trip the car can drive from where it is, should the change fail;
- *  - a change further on ends `route` at the lane where it is to be made.
- *    The route runs out there, the planner is asked again from that lane,
- *    and the change becomes that lane's `changeTo`.
- *
- * Only one change is taken per lane: two in a row are one move to a lane
- * further across, which the edge already prices by the lanes it crosses.
- */
+/** Drive v2, tactical layer: which LANE a trip is driven in. */
 
 /** Seconds a lane change costs the trip, per lane crossed. Also the hysteresis. */
 const CHANGE_COST = 4;
-/**
- * Road a change needs, per lane crossed. The driver eases off to fit a change
- * (`positioningSpeedCap`), so this is the room at a slow approach speed, not at
- * the limit; the lane-change stage itself gives up if even a crawl misses.
- */
+/** Road a change needs, per lane crossed. */
 const ROOM_PER_LANE = m(24);
 
 export interface TripPlan {
-  /**
-   * Drivable from the start lane: links joined by their connectors, ending at
-   * the goal or at the lane where the next change is to be made.
-   */
+  /** Drivable from the start lane: links joined by their connectors */
   readonly route: LaneletId[];
   /** The sibling lane to move into before leaving the start lane, or null. */
   readonly changeTo: LaneletId | null;
@@ -106,7 +74,7 @@ function connectorCost(w: SimWorld, connectorId: LaneletId, body: BodyClass, sha
   const connector = w.connector(connectorId);
   const out = connector && w.lanelet(connector.toLane);
   if (!connector || connector.maxBodyClass < body || !out || out.kind !== 'link' || w.rt(out.id).ghost) return Infinity;
-  // A bus lane is buses only (docs/VIAS.md V4).
+  // A bus lane is buses only.
   if (!w.graph.laneUsable(out.id, shape)) return Infinity;
   const density = w.rt(out.id).order.length / Math.max(1, out.length / m(4.8));
   const travel = out.length / Math.max(m(0.2), out.speedLimit) * (1 + density * 2.6);
@@ -114,22 +82,7 @@ function connectorCost(w: SimWorld, connectorId: LaneletId, body: BodyClass, sha
   return connector.length / Math.max(m(0.2), out.speedLimit * 0.65) + travel + turn;
 }
 
-/**
- * The cheapest trip from `start` (the car at `startS` along it) to `goal`,
- * lane changes included. `startChange` false plans the trip as driven from
- * the start lane without leaving it first - the fallback while a change is
- * pending. Null when the goal cannot be reached at all.
- *
- * A* (Hart, Nilsson and Raphael, 1968): the nodes are taken by their cost so
- * far plus a lower bound of the cost still to go (`tripLowerBound`: the
- * straight line from the end of the lane to the end of the goal at the
- * fastest lane's limit, which no way there can beat), so the search reaches
- * towards the goal instead of round every lane nearer the start than it - the
- * cheapest trip all the same (an admissible bound; amitp's "Heuristics":
- * "A* is guaranteed to find a shortest path"). DO NOT go back to Dijkstra's
- * order (cost alone): the goal is a road end anywhere on the map, and each
- * trip planned searched the whole town - each car made, each lane change.
- */
+/** DO NOT go back to Dijkstra's order (cost alone) */
 export function planTrip(
   w: SimWorld,
   start: LaneletId,
@@ -137,7 +90,7 @@ export function planTrip(
   goal: LaneletId,
   body: BodyClass,
   startChange = true,
-  /** The vehicle's shape (`VehicleShape`): who may drive a bus lane, docs/VIAS.md V4. */
+  /** The vehicle's shape (`VehicleShape`): who may drive a bus lane. */
   shape = 'car',
 ): TripPlan | null {
   const startLane = w.lanelet(start);
@@ -171,7 +124,7 @@ export function planTrip(
 
     if (node.changed || lane.laneIndex === undefined) continue;
     const room = node.lane === start ? lane.length - startS : lane.length;
-    // Only across dashed lines, into lanes this vehicle may drive (docs/VIAS.md V4).
+    // Only across dashed lines, into lanes this vehicle may drive.
     for (const sibling of w.graph.changeTargets(node.lane, shape)) {
       const other = w.lanelet(sibling);
       if (!other || other.kind !== 'link' || other.laneIndex === undefined || w.rt(sibling).ghost) continue;

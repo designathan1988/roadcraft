@@ -10,16 +10,7 @@ import { SimWorld } from '@sim/world';
 import { type Bay, collectBays } from '@sim/agents/parking';
 import { collectBays as oldCollectBays } from './oracle/parkingOld';
 
-/**
- * THE BAYS KEPT FROM THE DIARY ARE THE BAYS OF THE OLD PASS.
- *
- * `collectBays` keeps the lots and the kerbs from the diary: a building
- * changed works out only the lots within its reach and the streets its
- * entrances face, in the store's order kept by rank. The oracle is the
- * implementation of before (`oracle/parkingOld.ts`, every building and every
- * street read on each pass): the same bays, in the same order, through
- * buildings grown, aged, altered, taken away and put back, and roads drawn.
- */
+/** THE BAYS KEPT FROM THE DIARY ARE THE BAYS OF THE OLD PASS. */
 const strip = (bays: readonly Bay[]): string[] => bays.map(({ id, building, x, y, ox, oy, depth, lane, via, room, kerb }) =>
   [id, building, x, y, ox, oy, depth, room, kerb ? 'k' : '-',
     lane ? `${lane.lanelet}:${lane.at}@${lane.x},${lane.y}>${lane.tx},${lane.ty}:${lane.entryAt ?? '-'}` : 'null',

@@ -19,17 +19,7 @@ import {
   bayKey,
 } from './types';
 
-/**
- * The city's buildings - homes, public services, shops, places to eat and go
- * out, places of work and of leisure - each built of the same blocks as any
- * building the player draws, so every one of them is edited the same way:
- * pulled, cut, stacked, repainted, given other windows. A model is only a
- * first form.
- *
- * Sizes are in metres. Each model is a few blocks with a function, a facade
- * pattern and materials of its kind; parks, squares, yards and cemeteries
- * are open blocks (lots) with trees, benches, paths and fences on them.
- */
+/** The city's buildings - homes, public services, shops, places to eat and go out, places of work and of leisure */
 
 type CityCategory = 'homes' | 'public' | 'commerce' | 'leisure' | 'work';
 
@@ -177,11 +167,7 @@ export class Model {
 }
 
 export const mat = (finish: MaterialSpec['finish'], colour: number): MaterialSpec => ({ finish, colour });
-/**
- * A retaining wall's stone, and the flights cut through one (`editor/lotPlan.ts`
- * terraces): an earthwork held at the lot's levels, which the lot's drawing
- * does not set down on the grass like a thing (`render/buildings/buildingMesh.ts`).
- */
+/** A retaining wall's stone, and the flights cut through one (`editor/lotPlan.ts` terraces) */
 export const RETAINING_STONE = mat('stone', 0x9a948a);
 /** Whether a material is the retaining wall's stone. */
 export const isRetainingStone = (spec: MaterialSpec | undefined): boolean =>
@@ -211,9 +197,7 @@ function make(fn: BuildingFunction, category: CityCategory, model: Model): CityB
 export const CITY_BUILDINGS: readonly CityBuilding[] = [
   // ------------------------------------------------------------ homes
   make('house', 'homes', new Model('house', 'residential', 0).look(PLASTER, TILE)
-    // The house alone (player, 2026-10-03): the front garden and its fence it
-    // came with kept it six metres off the pavement. Walls and fences are
-    // drawn along a path with their own tool (`world/barriers.ts`).
+    // The house alone (player, 2026-10-03): the front garden and its fence it came with kept it six metres off the pavement.
     .block({ x: 0, y: 0, w: 9, d: 9, storeys: 2, roof: 'gable', door: 1 })),
   make('townhouse', 'homes', new Model('townhouse', 'residential', 1).look(BRICK, SLATE)
     .block({ x: 0, y: 0, w: 6, d: 12, storeys: 3, roof: 'gable', door: 0 })),

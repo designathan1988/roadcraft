@@ -25,16 +25,7 @@ const TOWN = m(260);
 /** A smaller one, where the town's size is not what is checked. */
 const SMALL_TOWN = m(200);
 
-/**
- * THE TRAFFIC'S TOPOLOGY PREPARED OFF THE PAGE (`SimWorld.prepareVehicleTopology` with workers,
- * `conflictPool.ts`): the turns chosen, the movements' sweeps sampled and the pairs measured by
- * workers, and the pairs finished by them (their centreline crossings and their zones' facts), and a whole build's junctions built by
- * them (`junctionsOffPage`: surfaces, keys, every movement shaped) - here answered as a worker answers,
- * every ask and answer through `structuredClone` as `postMessage` copies them - must give the lane
- * graph, the sweeps, the pair tables and the conflict index that the same preparation done wholly on
- * the page gives, to the last bit; and no sweep is sampled, nor pair finished, nor turn shaped, on the page while
- * there are workers.
- */
+/** THE TRAFFIC'S TOPOLOGY PREPARED OFF THE PAGE (`SimWorld.prepareVehicleTopology` with workers, `conflictPool.ts`) */
 interface Workers extends PairMeasurer {
   /** Every frame a worker sampled, as the page received it. */
   readonly frames: Set<Float64Array>;
@@ -112,18 +103,12 @@ async function catchUp(w: SimWorld, measurer?: PairMeasurer): Promise<void> {
 
 const internals = (w: SimWorld) => w as unknown as { prepGraph: LaneletGraph };
 
-/**
- * The graph the agents run on and the conflict index, taken over from the preparation (`LaneletGraph.adopt`),
- * must be what a world that never prepared builds on its own (`rebuildTopology`, `LaneletGraph.update`).
- */
+/** The graph the agents run on and the conflict index, taken over from the preparation */
 function expectAsBuiltHere(off: SimWorld, here: SimWorld, where: string): void {
   expect(graphLines(off.graph), `${where}: graph taken over`).toEqual(graphLines(here.graph));
   expect(conflictLines(off.conflicts).sort(), `${where}: conflicts taken over`).toEqual(conflictLines(here.conflicts).sort());
 }
-/**
- * The graph's maps in their own order, and each junction's lists: a whole build placed off the page in the page's
- * order (`junctionsOffPage`). Only for whole builds: after edits the order follows each graph's own history.
- */
+/** The graph's maps in their own order, and each junction's lists: a whole build placed off the page in the page's order */
 const orderOf = (g: LaneletGraph): string[] => [
   [...g.lanelets.keys()].join(','), [...g.connectors.keys()].join(','),
   [...g.junctions].map(([node, j]) => `${node}:${j.connectors.join('/')}:${j.inbound.join('/')}`).join(','),
@@ -228,11 +213,7 @@ describe('the traffic topology prepared off the page', () => {
     expectSame(off, page, off.conflicts.takeMeasured(), page.conflicts.takeMeasured(), 'city, junctions and sweeps on the page');
   });
 
-  /**
-   * A MAP OPENED (`main.ts` `applySnapshot`: the document replaced, the network built whole, the world reset):
-   * its graph built whole off the page as a new city's, the junctions of the map before not read back - and
-   * the same map opened again, its junctions handed back from the cache by the keys the workers found.
-   */
+  /** A MAP OPENED (`main.ts` `applySnapshot`: the document replaced, the network built whole, the world reset) */
   it('opens a map, and the same map again, as the page does, no turn shaped on the page', async () => {
     const { off, page, net } = pair(layCity(planCity({ ...DEFAULT_CITY, seed: 6, size: 'small', radius: SMALL_TOWN })));
     const measurer = workers();
@@ -281,12 +262,7 @@ describe('the traffic topology prepared off the page', () => {
     expect(edits).toBeGreaterThan(0);
   });
 
-  /**
-   * A PREPARATION GIVEN UP while the workers choose its turns (`TopologyCatchUp` starts another when the
-   * network is edited meanwhile) left junctions on stand-in turns in the preparation graph: the next one
-   * must finish them, so no stand-in ever reaches a graph - the graph, the one taken over and the conflicts
-   * as a world that prepared nothing builds them.
-   */
+  /** A PREPARATION GIVEN UP while the workers choose its turns */
   it('finishes the junctions of a preparation given up while its turns were chosen', async () => {
     let givenUp = 0;
     for (let seed = 1; seed <= 3; seed++) {
@@ -306,7 +282,6 @@ describe('the traffic topology prepared off the page', () => {
         let step = prep.next();
         while (!step.done && step.value !== WAITING) step = prep.next();
         // Run to its end without waiting (nothing for the workers): its walkways were brought up, so are the page's
-        // (their ids follow the updates they were built in).
         if (step.done) page.walkwaysNow();
         const plan = internals(off).prepGraph.turnPlan;
         if (plan && plan.provisional.size > 0) givenUp++;

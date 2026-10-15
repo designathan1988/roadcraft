@@ -1,10 +1,6 @@
 import { t } from './i18n';
 
-/**
- * The build stamp: branch, short commit and date of what is running
- * (`build-stamp.ts` at the project root), shown in the About dialog; in
- * development re-read from the server each time the dialog opens.
- */
+/** The build stamp: branch, short commit and date of what is running */
 export interface BuildStamp {
   readonly branch: string;
   readonly hash: string;

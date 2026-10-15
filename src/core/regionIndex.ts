@@ -1,46 +1,10 @@
 import { Digest } from './digest';
 import type { Vec2 } from './vec2';
 
-/**
- * How overlapping rings combine.
- *
- *   evenodd  inside when a ray crosses the boundary an odd number of times: a
- *            polygon with holes, as a clipper union returns it.
- *   nonzero  inside when the winding number is not zero: the union of rings
- *            that may overlap one another, as they come from the ribbons and
- *            junctions before anything merges them. Rings are wound CCW first.
- */
+/** How overlapping rings combine. evenodd inside when a ray crosses the boundary an odd number of times */
 export type FillRule = 'evenodd' | 'nonzero';
 
-/**
- * Point location, boundary distance and line spans over a set of rings, in
- * constant time per query.
- *
- * The boundary segments are bucketed into a uniform grid, and every cell
- * stores the winding number at its own centre, computed once by a scanline.
- * A query then only has to walk from the centre of its cell to the point —
- * across the cell horizontally, then vertically — counting the crossings of
- * the segments in that one cell. No allocation after the build, no clipper,
- * and the answer is the same as a ray cast over every ring on the map.
- *
- * Built for the pedestrian navigation (which asks, thousands of times while a
- * network is being built, where the footway begins and ends along a line
- * across it) and for the audits that check whether a body is standing on
- * what the renderer draws.
- *
- * ONE GRID PER CLUSTER of rings. A single dense grid over the rings' bounds
- * paid for every empty cell between them: rings kilometres apart made the
- * player's map (1 130 segments) build two grids of 3.3 million cells each,
- * 200 ms of every road edit and 50 MB thrown away (2026-10-11) - the cost of a
- * uniform grid over sparse data, which a hashed or compact grid stores only
- * where it is occupied (Ihmsen et al., "SPH Fluids in Computer Graphics";
- * Lagae and Dutré, compact grids). Rings whose bounds come within
- * `CLUSTER_GAP` cells of each other share one dense grid, exactly as before;
- * clusters lie farther apart than that. A ring winds nothing outside its own
- * bounds, so a point's winding is its cluster's alone, and the queries that
- * reach out (a distance, a line, a box) ask every cluster they reach: the
- * answers are the single grid's. One town is one cluster, the old grid itself.
- */
+/** Point location, boundary distance and line spans over a set of rings, in constant time per query. */
 export class RegionIndex {
   private readonly rule: FillRule;
   private readonly grids: readonly Grid[];
@@ -83,8 +47,7 @@ export class RegionIndex {
         for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
           area += (ring[j]!.x - ring[i]!.x) * (ring[j]!.y + ring[i]!.y);
         }
-        // Wound counter-clockwise, so that for `nonzero` overlapping rings add
-        // up instead of cancelling.
+        // Wound counter-clockwise, so that for `nonzero` overlapping rings add up instead of cancelling.
         const flip = rule === 'nonzero' && area < 0;
         for (let i = 0; i < ring.length; i++) {
           const a = ring[flip ? ring.length - 1 - i : i]!;
@@ -130,33 +93,12 @@ export class RegionIndex {
     return this.inside(this.winding(x, y));
   }
 
-  /**
-   * An exact digest of every segment whose cell the box touches (a collision
-   * aside, at about one in 2^53).
-   *
-   * What a cached piece of work built from this region is keyed by: a query
-   * inside the box reads only the segments in and around it, so two builds
-   * that digest alike over the box answer every query in it identically, and
-   * the answer may be reused as it is.
-   *
-   * The per-segment hashes are combined with XOR, not chained cell by cell:
-   * the grid is anchored to the map's bounds, so adding a road anywhere moves
-   * the whole grid, and a chained digest then changed for geometry that had
-   * not moved at all — exactly the case this is asked about after an edit.
-   */
+  /** An exact digest of every segment whose cell the box touches (a collision aside, at about one in 2^53). */
   digest(minX: number, minY: number, maxX: number, maxY: number): number {
-    // Two running sums and a count, not an XOR: XOR cancels two identical
-    // segments, so a box holding two of the same edge would digest the same as
-    // an empty one. A sum does not cancel its own terms, and the count says
-    // how many were added without depending on the order they came in.
+    // Two running sums and a count, not an XOR
     const acc = { count: 0, sum: 0, cross: 0 };
     for (const g of this.grids) if (g.overlaps(minX, minY, maxX, maxY)) g.digestInto(minX, minY, maxX, maxY, acc);
-    // And how many times the box's own middle is wound round. The segments a
-    // box touches say nothing about a ring that goes AROUND it: a band added
-    // round a corner leaves every segment in the box where it was, and only
-    // moves what the box's middle is - which is exactly the change a corner
-    // path must not sleep through. The NUMBER of turns, not inside-or-out:
-    // a ring added round one already there leaves the middle inside twice.
+    // And how many times the box's own middle is wound round.
     const midX = (minX + maxX) / 2;
     const midY = (minY + maxY) / 2;
     return new Digest()
@@ -175,13 +117,7 @@ export class RegionIndex {
     return best <= reach ? best : Infinity;
   }
 
-  /**
-   * Along the line through `p` in direction `d` (a unit vector), the stretch
-   * either side of `p`, within `reach`, that is on the same side of the
-   * boundary as `p`: writes `lo` (<= 0) and `hi` (>= 0) into `out`, and
-   * returns whether `p` is inside. A bound that is not met within `reach` is
-   * written as the reach itself.
-   */
+  /** Along the line through `p` in direction `d` */
   run(px: number, py: number, dx: number, dy: number, reach: number, out: { lo: number; hi: number }): boolean {
     const w0 = this.winding(px, py);
     const start = this.inside(w0);
@@ -248,12 +184,7 @@ const CLUSTER_GAP = 4;
 const COARSE = 64;
 const coarseKey = (i: number, j: number): number => (i + 1_048_576) * 2_097_152 + (j + 1_048_576);
 
-/**
- * The rings in clusters: those whose bounds, grown by half of `gap` each,
- * overlap, and so on through every chain of such rings. Filed by coarse
- * cells of the gap's size so only near rings are compared. Each cluster's
- * rings in their order; the clusters in the order of their first ring.
- */
+/** The rings in clusters: those whose bounds, grown by half of `gap` each, overlap */
 function clusters(rings: readonly (readonly Vec2[])[], gap: number): number[][] {
   const n = rings.length;
   if (n === 0) return [];
@@ -289,9 +220,7 @@ function clusters(rings: readonly (readonly Vec2[])[], gap: number): number[][] 
       list.push(r);
     }
   }
-  // A cluster's bounds can reach another cluster's ring that no single ring
-  // of it overlaps (an L of rings round a corner): their grids would meet.
-  // Merged until no two clusters' bounds overlap.
+  // A cluster's bounds can reach another cluster's ring that no single ring of it overlaps (an L of rings round a corner)
   for (;;) {
     const roots = new Map<number, [number, number, number, number]>();
     for (let r = 0; r < n; r++) {
@@ -418,9 +347,7 @@ class Grid {
   /** The winding number at every cell centre, one scanline per row. */
   private scanReference(): void {
     const s = this.segs;
-    // A scanline needs each crossing edge once. Walking every grid cell in a
-    // row to rediscover those edges repeated the same bucket lookup hundreds
-    // of times during the cold city build; the cell buckets remain for queries.
+    // A scanline needs each crossing edge once.
     const rowStart = new Int32Array(this.ny + 1);
     const eachCrossingRow = (visit: (row: number, segment: number) => void): void => {
       for (let k = 0; k < this.count; k++) {
@@ -553,10 +480,7 @@ class Grid {
     return best;
   }
 
-  /**
-   * The crossings of the line through `p` along `d`, within `reach`, with its
-   * segments: appended to `hits` from `n` (grown as needed), the new count returned.
-   */
+  /** The crossings of the line through `p` along `d`, within `reach`, with its segments: appended to `hits` from `n` */
   crossings(px: number, py: number, dx: number, dy: number, reach: number, hits: { t: Float64Array; w: Int8Array }, n: number): number {
     const ax = px - dx * reach, ay = py - dy * reach;
     const bx = px + dx * reach, by = py + dy * reach;

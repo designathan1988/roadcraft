@@ -9,12 +9,7 @@ export function markAll(attribute: BufferAttribute): void {
   attribute.needsUpdate = true;
 }
 
-/**
- * Marks columns x0..x1 of rows y0..y1 (inclusive) of a row-major attribute as changed
- * (`BufferAttribute.addUpdateRange`, three.js manual "How to update things"): the GPU gets those
- * bytes, not the whole array. A box covering most of its rows goes as one run.
- * DO NOT set `needsUpdate` alone for a corner edit: a 301 x 301 plate is resent whole.
- */
+/** DO NOT set `needsUpdate` alone for a corner edit: a 301 x 301 plate is resent whole. */
 export function markBox(attribute: BufferAttribute, itemSize: number, rowLength: number, x0: number, x1: number, y0: number, y1: number): void {
   attribute.needsUpdate = true;
   const rows = y1 - y0 + 1;

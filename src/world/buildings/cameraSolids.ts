@@ -3,40 +3,16 @@ import { isMass, roofRise, volumeHeight } from './geometry';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
-/**
- * THE LOWEST THE CAMERA'S EYE MAY STAND OVER THE BUILDINGS, a continuous
- * function of the map point (`render/isoViewport.ts` `setSolids`).
- *
- * Over each solid volume it is the volume's roof plus a clearance; round it,
- * within `REACH`, it eases down to the building's floor. The rig pulls the
- * eye forward along its line of sight until it is clear of this floor
- * (Cinemachine's Deoccluder, "Pull Camera Forward", with a small camera
- * radius), so the camera is never inside the walls; a continuous floor, so
- * the pull is too.
- */
+/** THE LOWEST THE CAMERA'S EYE MAY STAND OVER THE BUILDINGS, a continuous function of the map point */
 
 /** How far over a roof the eye keeps, world units. */
 const CLEARANCE = m(1);
-/**
- * How far round a volume its floor eases down to the building's foot, world
- * units: the camera's radius (Cinemachine's "Camera Radius", kept small). The
- * rig pulls the eye forward out of this, so a street between towers stays
- * open to the camera.
- */
+/** How far round a volume its floor eases down to the building's foot, world units: the camera's radius */
 const REACH = m(2);
 /** The grid the volumes are filed in, world units a cell. */
 const CELL = m(40);
 
-/**
- * The solid volumes, packed: `STRIDE` numbers a volume - its building's
- * frame (`S_BX`, `S_BY`, `S_COS`, `S_SIN`), its box in that frame (`S_X0` ..
- * `S_Y1`) and the world heights of the building's floor and of the eye's floor
- * over the roof (`S_FOOT`, `S_TOP`) - in pages of `PAGE` volumes: volume
- * `slot` lives in page `slot >>> PAGE_BITS` at `slot & (PAGE - 1)`. Pages are
- * added as the town grows and never moved or copied; a building taken out
- * gives its slots back to the free list. DO NOT go back to an object per
- * volume and a set per building: 29 MB of a city of 5 400.
- */
+/** DO NOT go back to an object per volume and a set per building: 29 MB of a city of 5 400. */
 const STRIDE = 10;
 const S_BX = 0, S_BY = 1, S_COS = 2, S_SIN = 3, S_X0 = 4, S_Y0 = 5, S_X1 = 6, S_Y1 = 7, S_FOOT = 8, S_TOP = 9;
 const PAGE_BITS = 12;
@@ -76,19 +52,9 @@ const at = (slot: number): number => (slot & (PAGE - 1)) * STRIDE;
 export interface CameraSolids {
   /** The lowest the eye may stand at (x, y), world height; -Infinity away from every building. */
   floorAt(x: number, y: number): number;
-  /**
-   * The roof over (x, y) when the point is inside a solid volume's plan (its
-   * highest, no margin round it), world height; -Infinity outside every one:
-   * where the point the camera looks at goes when it falls inside a building.
-   */
+  /** The roof over (x, y) when the point is inside a solid volume's plan (its highest, no margin round it), world height */
   roofAt(x: number, y: number): number;
-  /**
-   * Every solid volume filed in the cells over a map rectangle, as its
-   * building's frame (origin, cos, sin), its box in that frame and its roof's
-   * world height (no clearance): for the light the town shuts out of its
-   * streets (`render/canyonLight.ts`). A volume over several cells comes more
-   * than once.
-   */
+  /** Every solid volume filed in the cells over a map rectangle, as its building's frame */
   forEachIn(x0: number, y0: number, x1: number, y1: number,
     visit: (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void): void;
 }
@@ -106,11 +72,7 @@ export interface GroundSince {
   rectsSince(since: number): readonly Rect[] | null;
 }
 
-/**
- * The town's solids as filed for the camera (`render/renderer.ts` asks them
- * every frame, `canyonLight.ts` reads the same filing). Out of the renderer so
- * the work of one building more can be counted (`tests/scale/buildingEdit.spec.ts`).
- */
+/** The town's solids as filed for the camera */
 export interface CameraSolidsKeeper {
   /** Moves whenever the filing changed: what the canyon light's picture stands for. */
   readonly key: string;
@@ -120,20 +82,7 @@ export interface CameraSolidsKeeper {
   solids(): CameraSolids;
 }
 
-/**
- * A keeper of the camera's solids, filed once and kept: a building the diary
- * names (`BuildingStore.changedSince`) is taken out of its cells and filed
- * again, and so is each building whose `boxOf` a change of the ground reached
- * (found by place, `BuildingStore.near` over the change grown by `reach`, how
- * far `boxOf` goes past a building's own bounds) - Nystrom, "Spatial
- * Partition": an object that moves leaves its cell and enters the new one, the
- * grid is not built again. The whole town is filed only when the diary cannot
- * say what changed (the first ask, a map opened).
- * DO NOT file the town again for one building: keyed on the store's revision,
- * every building grown filed the whole town again in the next frame (16 s of a
- * 2,560 m city's growth, 2026-10-14). `floorAt` is a building's ground-floor
- * world height on the ground as it stands.
- */
+/** DO NOT file the town again for one building */
 export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: Building) => Rect, reach: number): CameraSolidsKeeper {
   const filing = new SolidFiling();
   let buildings: BuildingStore | null = null;

@@ -1,24 +1,7 @@
 import { clamp } from '@core/scalar';
 import { m } from '@core/units';
 
-/**
- * THE CAMERA'S SHAPE BY DISTANCE: how the perspective camera looks at the
- * town as it comes closer, one continuous function of how much ground the
- * view takes in (`halfHeight`, world units: half the height of the ground
- * seen at the centre of the view).
- *
- * Far away the town reads as a map: the default tilt (48 degrees), a long
- * lens, never lower than 20 degrees. Close up it reads as a street: the
- * tilt eases towards the horizon, the lens widens, the point looked at rises
- * to a person's eye height and the camera may look up at a facade. Each of
- * these is blended on the logarithm of `halfHeight`, as the wheel zooms by
- * factors, with a smoothstep, so no zoom step brings a jump (Google Earth's
- * and Cities: Skylines II's tilt with distance; the player, 2026-10-09:
- * "inclinação até próximo do nível da rua ... transição suave").
- *
- * Pure numbers, no three.js: the rig (`render/isoViewport.ts`) applies them,
- * the tests read them.
- */
+/** THE CAMERA'S SHAPE BY DISTANCE: how the perspective camera looks at the town as it comes closer */
 
 /** The ground seen at and below which the view is a street view, world units. */
 const NEAR_HALF = m(1.2);
@@ -63,14 +46,7 @@ export function fieldOfView(halfHeight: number): number {
   return lerp(NEAR_FOV, FAR_FOV, blend(halfHeight, NEAR_HALF, m(24)));
 }
 
-/**
- * How much of the pull in front of a building the camera takes at this
- * distance, 0..1 (`render/isoViewport.ts`): all of it in the street, where a
- * wall between the eye and the point looked at would fill the screen; none
- * from the rooftops out, where the overview must never be held among the
- * towers (a tower hiding a street behind it is how a city builder's
- * overview looks).
- */
+/** How much of the pull in front of a building the camera takes at this distance, 0..1 (`render/isoViewport.ts`) */
 export function pullWeight(halfHeight: number): number {
   return 1 - blend(halfHeight, NEAR_HALF * 4, NEAR_HALF * 16);
 }

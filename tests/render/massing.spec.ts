@@ -5,19 +5,7 @@ import { drawsSignature } from '@render/buildings/signature';
 import { m } from '@world/units';
 import { growCity } from '../world/cityAudit';
 
-/**
- * A BUILDING FROM AFAR KEEPS ITS SHAPE. The far level (`massing.ts`) is
- * drawn in place of the detailed building once what it leaves out spans
- * under a couple of pixels (`massCells.ts` FAR_ERROR, 1.5 m): its blocks,
- * roofs, machine rooms and roof plant must stand where the detailed ones
- * do, or the town changes shape as the camera moves. Measured as 3D Tiles
- * defines a level's geometric error - how far its surface strays from the
- * full one: both surfaces sampled every 75 cm, and the share of each one's
- * area farther than the error from the other (a one-sided Hausdorff
- * distance each way). A balcony 1.3 m out of a wall is within it;
- * a mast or a pergola's slat is a handful of samples; a block of the wrong
- * height is a wall of them.
- */
+/** A BUILDING FROM AFAR KEEPS ITS SHAPE. */
 const FAR_ERROR = m(1.5);
 /** How far apart the samples of each level are: the far level is a few faces, sampled finer. */
 const STEP = m(0.75);
@@ -27,11 +15,7 @@ const SLACK = FINE * Math.SQRT1_2;
 /** The share of a level's samples that may lie farther than the error from the other. */
 const MOST_OFF = 0.03;
 
-/**
- * Points on a mesh's surface, about `STEP` apart (each triangle's corners and
- * a lattice over the large ones), each with the share of the triangle's area
- * it stands for: x, y, z, area.
- */
+/** Points on a mesh's surface, about `STEP` apart */
 function samples(position: Float32Array, index: Uint32Array, out: number[], step = STEP): void {
   for (let t = 0; t + 2 < index.length; t += 3) {
     const a = index[t]! * 3, b = index[t + 1]! * 3, c = index[t + 2]! * 3;
@@ -97,8 +81,7 @@ describe('the far level of a building', () => {
     let checked = 0;
     // A sample of the town's buildings, of every kind it grows.
     for (const whole of [...city.doc.buildings.all()].filter((_, i) => i % 10 === 0)) {
-      // Its blocks: its lots and their parts left out (their walls and paving
-      // reach past the building), and none drawn by a design of its own.
+      // Its blocks: its lots and their parts left out
       if (drawsSignature(whole)) continue;
       const b = { ...whole, volumes: whole.volumes.filter((v) => !v.open), elements: [] };
       const mass = emitMassing(b, () => 0);

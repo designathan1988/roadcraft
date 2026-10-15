@@ -2,37 +2,8 @@ import { type FrameTimer, type HealthEntry, type HealthLog, LONG_FRAME_MS, syste
 import { stepBudget } from '@core/perfBudget';
 import { t } from './i18n';
 
-/**
- * The page's own signals wired into the game's health log (`core/health.ts`):
- * every way a failure or a hitch shows itself in a browser, in one place.
- *
- * - Errors thrown and promises rejected with nobody to catch them (the
- *   window's `error` and `unhandledrejection`).
- * - `console.error`: the game's own failures are logged there (a map that
- *   cannot load, a worker that failed, an asset that did not come) and so
- *   are three.js's; the call still reaches the console (Sentry's
- *   CaptureConsole does the same).
- * - Workers: an error inside one fires on the Worker object and never
- *   reaches the window (MDN, Worker `error` event), so every Worker made
- *   from here on is listened to.
- * - The WebGL context lost and restored (MDN, `webglcontextlost`).
- * - Long frames, over 50 ms, with the scripts that ran in them (MDN, Long
- *   Animation Frames) and the systems of the frame loop that took them
- *   (`FrameTimer`), with the `hitch:` steps the code measures inside them.
- *
- * Each entry carries what the player was doing (`context`). The last ones
- * are kept in the browser, to be read after the page is reloaded.
- *
- * The F9 monitor shows these messages to the player: every one comes from the
- * dictionaries (`health.msg.*`), in the language of the moment it was
- * written. DO NOT write a message's text here: they were Portuguese in the
- * code, and an English player read "Erro sem mensagem".
- */
-/**
- * A frame system's name in the game's language (`health.system.<id>`,
- * `core/health.ts` `FrameSystem`); its id where the dictionary has none (an
- * entry of an earlier session, written under the old names).
- */
+/** DO NOT write a message's text here: they were Portuguese in the code, and an English player read "Erro sem mensagem". */
+/** A frame system's name in the game's language (`health.system.<id>`, `core/health.ts` `FrameSystem`) */
 export function systemName(system: string): string {
   const key = systemKey(system);
   const name = t(key);
@@ -57,25 +28,14 @@ export interface LongFrameEntry {
   readonly scripts?: readonly { readonly duration: number }[];
 }
 
-/**
- * The work in a long frame, ms: its scripts and its rendering (Chrome,
- * "Long animation frames": render from `renderStart` to the end), or what
- * blocked input if more. A frame the browser held open with nothing to do -
- * the page in the background, the machine asleep - is no work: 57 s entries
- * with no script reached the F9 monitor as long frames (2026-10-09).
- */
+/** The work in a long frame, ms: its scripts and its rendering */
 export function longFrameWork(entry: LongFrameEntry): number {
   const scripts = (entry.scripts ?? []).reduce((sum, s) => sum + s.duration, 0);
   const render = entry.renderStart ? entry.startTime + entry.duration - entry.renderStart : 0;
   return Math.max(Math.min(entry.duration, scripts + render), entry.blockingDuration ?? 0);
 }
 
-/**
- * The code's measured steps that ran IN a frame: begun and ended within it,
- * as a synchronous step does. A step with an `await` in it spans frames (a
- * person fitted over a second, `proceduralCrowd.ts`) and was blamed for
- * every long frame it overlapped.
- */
+/** The code's measured steps that ran IN a frame: begun and ended within it, as a synchronous step does. */
 export function stepsWithin<T extends { readonly start: number; readonly end: number }>(steps: readonly T[], start: number, end: number): T[] {
   return steps.filter((h) => h.start >= start - 1 && h.end <= end + 1);
 }
@@ -120,8 +80,7 @@ export function watchHealth(options: {
   setInterval(save, 5000);
   window.addEventListener('pagehide', save);
 
-  // A worker's error, once told by the worker's own listener below, is also
-  // passed on to the window by the browser: it is written once.
+  // A worker's error, once told by the worker's own listener below, is also passed on to the window by the browser
   let workerError: { message: string; at: number } | null = null;
   window.addEventListener('error', (event) => {
     if (workerError && workerError.message === event.message && performance.now() - workerError.at < 1000) return;
@@ -139,7 +98,6 @@ export function watchHealth(options: {
     if (inside) return;
     inside = true;
     // three.js reports a shader that does not link through `console.error`
-    // (r186 `WebGLProgram` `onFirstUse`, with no `debug.onShaderError`).
     const text = textOf(args);
     const kind = text.startsWith('THREE.WebGLProgram: Shader Error') ? 'shader' : 'console';
     try { write(kind, 'broken', kind === 'shader' ? text.split('\n')[0]! : text, kind === 'shader' ? text.slice(0, 2000) : stackOf(args)); } finally { inside = false; }
@@ -164,12 +122,7 @@ export function watchHealth(options: {
 
   // The code's own measured steps (`performance.measure('hitch:...')`), kept to explain a long frame.
   const hitches: { name: string; start: number; end: number }[] = [];
-  // The browser's buffer of measures has no limit (Performance Timeline:
-  // `measure` buffer size infinite) and the game measures four steps a frame:
-  // 57 000 entries after 4.5 minutes, an hour's worth 14 MB and 133 ms to
-  // read. Each entry reaches this observer when it is queued, before the
-  // buffer (User Timing), so the buffer is emptied every few thousand; the
-  // probes reading it still find the recent ones.
+  // The browser's buffer of measures has no limit
   let buffered = 0;
   try {
     new PerformanceObserver((list) => {
@@ -179,9 +132,7 @@ export function watchHealth(options: {
         if (!m.name.startsWith('hitch:')) continue;
         hitches.push({ name: m.name.slice(6), start: m.startTime, end: m.startTime + m.duration });
         if (hitches.length > 300) hitches.shift();
-        // Over its performance budget (`core/perfBudget.ts`): told in the
-        // monitor as it happens, with the step and its time - a regression
-        // seen while playing, not found later.
+        // Over its performance budget (`core/perfBudget.ts`): told in the monitor as it happens, with the step and its time
         const over = stepBudget(m.name);
         if (over && m.duration > over.budget.max) {
           log.record('budget', 'warning', t('health.msg.budget', { step: over.key }), {
@@ -226,9 +177,7 @@ export function watchHealth(options: {
       }).observe({ type: 'long-animation-frame', buffered: true });
     }
   } catch { longFrames = false; }
-  // A hidden page draws no frames, so no long frame is reported for it; a
-  // task over 50 ms still is (MDN, Long Tasks): written only then, so a hitch
-  // seen on screen is not told twice.
+  // A hidden page draws no frames, so no long frame is reported for it; a task over 50 ms still is (MDN, Long Tasks)
   try {
     if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
       new PerformanceObserver((list) => {

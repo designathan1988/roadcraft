@@ -1,20 +1,6 @@
 import { DataTexture, FloatType, NearestFilter, RGBAFormat } from 'three';
 
-/**
- * The bodies of a class baked once (`proceduralCrowd.ts`): a person's body
- * shape never changes in the game, yet its sixteen principal components were
- * summed again at every vertex, every frame, in the colour and the shadow
- * passes. Each class keeps up to `BODIES` bodies, made the first time a body
- * that far from the others comes in; anybody after that is drawn with the
- * nearest. A crowd hides its repeats by what changes from person to person -
- * colour, facing, movement (McDonnell et al., "Clone Attack! Perception of
- * Crowd Variety", SIGGRAPH 2008) - and here each still has their own clothes,
- * dyes, hair, height and face.
- *
- * `texture`: each body's move of every base vertex, `rowsPerBody` rows of
- * `WIDTH` texels a body (vertex v of body b at b * stride + v). `joints`: each
- * body's bone heads moved with it, a row of `bones` texels a body.
- */
+/** The bodies of a class baked once (`proceduralCrowd.ts`) */
 const BODIES = 16;
 /** Texels across the bodies texture (the shader's divisor). */
 export const BODY_WIDTH = 4096;
@@ -31,11 +17,7 @@ export interface ClassBodies {
   dispose(): void;
 }
 
-/**
- * `shapePixels`: the class's shape basis (`proceduralCrowd.ts` classData),
- * component k of vertex v at texel v * shapes + k; `jointBasis`: each bone's
- * head per unit of each component, [bone][k][xyz].
- */
+/** `shapePixels`: the class's shape basis (`proceduralCrowd.ts` classData), component k of vertex v at texel v * shapes + k */
 export function createClassBodies(shapePixels: Float32Array, vertexCount: number, shapes: number,
   jointBasis: Float32Array, bones: number): ClassBodies {
   const rowsPerBody = Math.ceil(vertexCount / WIDTH);
@@ -76,9 +58,7 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
       jointPixels[(b * bones + i) * 4 + a] = s;
     }
     jointsOf.push(d);
-    // Only this body's rows go to the GPU - a range a row: three uploads each
-    // update range as one row of the image (WebGLTextures.js, texSubImage2D
-    // of height 1), so a range across rows would spill.
+    // Only this body's rows go to the GPU - a range a row: three uploads each update range as one row of the image
     for (let r = 0; r < rowsPerBody; r++) texture.addUpdateRange(at + r * WIDTH * 4, WIDTH * 4);
     texture.needsUpdate = true;
     joints.addUpdateRange(b * bones * 4, bones * 4);

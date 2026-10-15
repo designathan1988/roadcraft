@@ -12,13 +12,7 @@ import { deckOf, type WalkGraph } from '@world/walkways';
 import { buildWalkways } from './oracle/buildWalkways';
 import { fixtureDoc, LAYOUTS, layoutDoc } from '../sim/support/bodies';
 
-/**
- * The pedestrian network (`walkways.ts`) as a player's city has it: footways
- * down the middle of the through zone, corners on the paving round every
- * kind of corner the junction builder draws, crossings over the road, every
- * piece joined to the next without a kink - and exactly as connected as the
- * paving drawn: one walking loop for each island of footway.
- */
+/** The pedestrian network (`walkways.ts`) as a player's city has it */
 const ring = (r: number[][]) => r.map(([x, y]) => ({ x: x!, y: y! }));
 const insidePoly = (poly: number[][][], x: number, y: number): boolean => {
   const [outer, ...holes] = poly;
@@ -83,9 +77,7 @@ describe('walkways', () => {
       const where: string[] = [];
       for (const w of g.walkways()) {
         if (w.kind === 'footway') {
-          // Construction: the footway is its road's centreline offset to the
-          // middle of the through zone - check it is (the paving of crossing
-          // decks cannot tell a viaduct's footway from the road under it).
+          // Construction: the footway is its road's centreline offset to the middle of the through zone - check it is
           const seg = doc.requireSegment(w.segment!);
           const through = sectionOf(roadProfile(seg.type, seg.lanes, seg.direction), seg.direction).side.through;
           const centre = net.ribbons.get(w.segment!)!.full;
@@ -167,12 +159,7 @@ describe('walkways', () => {
     });
   }
 
-  // A shallow merge (two legs under 25 degrees apart) has no carriageway
-  // corners (`junction/build.ts`); its footways still join round the node in
-  // angular order, as SUMO's walking areas do (`NBNode::buildWalkingAreas`).
-  // The test city has one: with the footways read off the carriageway
-  // corners, everything past it was an island and nobody came in on foot
-  // between its two road ends.
+  // A shallow merge (two legs under 25 degrees apart) has no carriageway corners (`junction/build.ts`)
   for (const [name, make] of [
     ['shallow fork', () => {
       const doc = new RoadDoc();

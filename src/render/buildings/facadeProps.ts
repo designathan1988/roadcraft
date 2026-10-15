@@ -1,26 +1,7 @@
 import type { BayComponent, BuildingUse } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * WHAT HANGS ON A FACADE AND STANDS ON ITS BALCONIES: the life of a
- * Brazilian block of flats (the player, 2026-10-13: the same bare balcony on
- * every storey). Split air-conditioner condensers on brackets under part of
- * the windows (never on a balcony's floor: the player, 2026-10-13), and on
- * the balconies the life of the flat behind - mostly little or nothing - by
- * the kind of building: a table and a lounger on a block's varandas
- * gourmet; the washing, a plastic chair and a pot on a plain block's
- * balconies; next to nothing on an office's. A satellite dish beside a
- * window. Each bay draws its own from its hash, so no two flats match and no
- * column or row repeats.
- *
- * Each prop is ONE instanced part (`kit.ts`), its model built once
- * (`facadePropModels.ts`) and tinted per instance (a white, a beige or an
- * aged case; a terracotta, a cement or a glazed pot).
- *
- * Sizes: a 9,000 BTU/h split condenser is 717 x 483 x 230 mm (LG Smile,
- * https://www.lg.com/br/ar-condicionado-residencial/lg-TS-C092W4W0; Samsung's
- * 660 x 475 x 242 mm), held off the wall on a pair of steel brackets.
- */
+/** WHAT HANGS ON A FACADE AND STANDS ON ITS BALCONIES: the life of a Brazilian block of flats */
 
 export type FacadePropKind = 'acUnit' | 'pot' | 'foliage' | 'bush' | 'chair' | 'table' | 'airer' | 'dish' | 'lounger' | 'bike';
 export const FACADE_PROP_KINDS: readonly FacadePropKind[] = ['acUnit', 'pot', 'foliage', 'bush', 'chair', 'table', 'airer', 'dish', 'lounger', 'bike'];
@@ -64,11 +45,7 @@ const BIKES = [0xc0392b, 0x2c3e50, 0x16a085, 0xf1c40f, 0x9a9a9a, 0x2b2b2b];
 /** The bay's opening, in its own frame: `a0`..`a1` along, `h0`..`h1` up, `depth` into the wall. */
 export interface PropOpening { a0: number; a1: number; h0: number; h1: number; depth: number }
 
-/**
- * Which flats a balcony belongs to: a block's varandas gourmet are its
- * better flats; a plain block's balconies (most of all an old one's) its
- * popular ones; an office's balconies are a meeting room's.
- */
+/** Which flats a balcony belongs to: a block's varandas gourmet are its better flats; a plain block's balconies */
 type Standard = 'high' | 'middle' | 'popular' | 'office';
 function standardOf(component: BayComponent, use: BuildingUse, old: number): Standard {
   if (use === 'commercial' || use === 'industrial') return 'office';
@@ -76,18 +53,7 @@ function standardOf(component: BayComponent, use: BuildingUse, old: number): Sta
   return use === 'mixed' || old > 0.35 ? 'popular' : 'middle';
 }
 
-/**
- * The props of one bay. `hash` is the bay's own (`buildingMesh.ts`
- * `bayHash`): the same bay always carries the same, its neighbour other.
- * `W` is the bay's width; `old` the building's decay.
- *
- * A balcony draws ONE arrangement for its flat (the player's numbers,
- * 2026-10-13): some 45 % bare; 25 % one thing (a chair, a small pot or the
- * washing); 15 % two or three (a table and two chairs, a chair and a pot);
- * 10 % the thing of its kind of flat (a lounger, a bicycle, the
- * washing); 5 % at most a small garden of three or four pots.
- * A pot on one balcony in five at most; an office's balconies all but bare.
- */
+/** The props of one bay. */
 export function facadeProps(component: BayComponent, level: number, use: BuildingUse, old: number, hash: number, W: number, o: PropOpening): FacadeProp[] {
   const out: FacadeProp[] = [];
   let state = hash >>> 0;
@@ -101,12 +67,7 @@ export function facadeProps(component: BayComponent, level: number, use: Buildin
   const one = (kind: FacadePropKind, a: number, h: number, o0: number, turn: number, colour: number, s = 1): void => {
     out.push({ kind, a, h, out: o0, turn, sx: m(s), sy: m(s), sz: m(s), colour });
   };
-  // A split under a window, by the window: some 15-20 % of Brazilian homes
-  // have an air conditioner at all, 0.4 units a home on average (EPE, via
-  // IDEC "Eficiência do ar-condicionado: uma emergência"), and a flat has three or four windows -
-  // one window in fourteen or so. A third of them (0.32) put a condenser
-  // under nearly every window of a block (the player, 2026-10-13). Offices
-  // cool mostly from plant on the roof.
+  // A split under a window, by the window
   const acShare = use === 'residential' ? 0.07 : use === 'mixed' ? 0.06 : use === 'commercial' ? 0.04 : 0.02;
   const acCase = (): number => (rnd() < old * 0.8 ? AC_CASES[4]! : pick(AC_CASES.slice(0, 4)));
   /** A pot of 30 to 55 cm and its plant: a rosette (a lily, a spider plant) or a round shrub. */
@@ -160,9 +121,7 @@ export function facadeProps(component: BayComponent, level: number, use: Buildin
     if (r < 0.95) {
       // The thing of its kind of flat.
       const t = rnd();
-      // No barbecue on any balcony (the player, 2026-10-14): where one stood,
-      // the balcony is bare; the draws are those of before, so every other
-      // balcony of the city keeps what it had.
+      // No barbecue on any balcony (the player, 2026-10-14): where one stood, the balcony is bare
       if (standard === 'high') {
         // A lounger on a varanda gourmet: on two in five, and on every narrow one.
         if (t >= 0.6 || a1 - a0 <= m(1.8)) one('lounger', mid, m(0.002), deep * 0.5, 0, pick(LOUNGERS));

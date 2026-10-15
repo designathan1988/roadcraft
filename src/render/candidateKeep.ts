@@ -1,20 +1,7 @@
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 
-/**
- * WHICH OF A SWEEP'S PLACES STAND, KEPT PLACE BY PLACE (`renderer.ts`, the
- * plants and stones): each place of a sweep - a tree, a bush, a stone where
- * one may stand - is tested once, and again only when a change of what the
- * test reads (the roads, the buildings' ground, the clearings, the land)
- * reached it: the places are filed by cell once per sweep, and a change's
- * rectangles find theirs. Whether a place stands is its own test alone - no
- * count over the map - so a change far from it never moves it.
- * DO NOT keep the whole sweep again on a global key (the roads' revision, the
- * covers' version): every road drawn and every building grown tested every
- * plant and stone of the map. NOR cap the places kept by a count of the map
- * (FOREST_MAX, SCRUB_MAX, ROCK_MAX before): which ones stood depended on the
- * order of the whole map, and a building grown anywhere moved a stone elsewhere.
- */
+/** DO NOT keep the whole sweep again on a global key (the roads' revision, the covers' version) */
 
 /** The places' cells, world units: also the cells their drawing is kept in (`plantCells.ts`). */
 const KEEP_CELL = m(64);
@@ -44,11 +31,7 @@ export class CandidateKeep<C extends { readonly x: number; readonly y: number }>
     });
   }
 
-  /**
-   * The places a change reached tested again (`rects`, grown by `pad`: how far
-   * round a place its test reads; null: every place). True when what stands
-   * changed.
-   */
+  /** The places a change reached tested again */
   refresh(rects: readonly ChangeRect[] | null, pad: number): boolean {
     let changed = false;
     const retest = (k: number): void => {
@@ -76,10 +59,7 @@ export class CandidateKeep<C extends { readonly x: number; readonly y: number }>
     return changed;
   }
 
-  /**
-   * The cells whose places changed since the last call, and the call itself the new start; null:
-   * every cell (the first call after a sweep). What a drawing kept by cell draws again.
-   */
+  /** The cells whose places changed since the last call, and the call itself the new start; null: every cell */
   takeChangedCells(): Set<number> | null {
     const changed = this.changedNow;
     this.changedNow = new Set();

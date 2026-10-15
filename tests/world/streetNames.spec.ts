@@ -5,11 +5,7 @@ import { Network } from '@world/network';
 import { nameFor, streetNameOf, streetNumbers } from '@world/roads/streetNames';
 import { METERS_PER_UNIT } from '@world/units';
 
-/**
- * STREET NAMES AND NUMBERS (docs/source/VIAS.md V8): one name per street, none
- * twice; the numbers run in metres from the end nearer the map's centre and
- * carry on through the junctions.
- */
+/** STREET NAMES AND NUMBERS: one name per street, none twice */
 function town() {
   const doc = new RoadDoc();
   const n = [100, 200, 300, 400].map((x) => doc.addNode({ x, y: 0 }).id);

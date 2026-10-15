@@ -29,8 +29,7 @@ export async function attachFacialMorphs(input: PersonRigInput, rig: PersonRig,
   const attributes: BufferAttribute[] = [];
   for (const [name, deltas] of Object.entries(shapes)) {
     const positions = input.positions.map((value, i) => value + deltas[i]!);
-    // A dressed body knows its expressions as moves of its own vertices
-    // (`PersonRig.morph`): no second build of the person.
+    // A dressed body knows its expressions as moves of its own vertices (`PersonRig.morph`): no second build of the person.
     if (rig.morph) {
       const attribute = new BufferAttribute(rig.morph(positions), 3);
       if (attribute.count !== base.count) throw new Error(`Expression ${name} changes body topology`);

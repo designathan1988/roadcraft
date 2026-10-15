@@ -10,30 +10,7 @@ import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
 import { emitMassing, type MassingChunk } from './massing';
 import { drawsSignature } from './signature';
 
-/**
- * THE BUILDINGS' CELLS PUT TOGETHER AWAY FROM THE PAGE (`cell.worker.ts`; on
- * the page itself where no worker runs, the tests). A worker emits the
- * buildings of a cell sent to it and hands back the cell's batches - or its
- * masses from afar - as arrays
- * (`cellArrays.ts`), ready to be wrapped in meshes: Cesium's `combineGeometry`
- * worker, which combines a primitive's geometries and transfers the packed
- * result. What an emission reads that lives on the page - the ground as drawn
- * and as it was, the footways' paving - is asked of the page: emitted once with
- * the readings unknown, a building says which points it read, the page reads
- * them, and the next emission, with them all known, reads nothing else (a point
- * that depends on an answer is asked in the next round). A window's light
- * needs nothing of the page: its space's seed is a hash (`lightSlots.ts`).
- *
- * DO NOT send the page a chunk per building: rebuilding each one's dozens of
- * arrays on the page cost as much as emitting it there (2026-10-14,
- * OTIMIZACAO pendente 16). The page gets one message a cell. DO NOT make the
- * masses on the page either: every building of the town was massed there, a
- * slice a frame, and each one's mass kept there for good (`layer.ts` before).
- * DO NOT keep the chunks or the masses in the worker between jobs: a cache of
- * every building's arrays under a byte budget (128 MB a pool) held on the CPU
- * what was already on the GPU, and expelled and made again what went past it.
- * A cell asked again is emitted again, that cell alone.
- */
+/** DO NOT send the page a chunk per building */
 
 /** Which reading a point asks for. */
 export const GROUND = 0;
@@ -42,12 +19,7 @@ export const PAVED = 2;
 
 export type { CellEntry,  } from './chunk';
 
-/**
- * What a job makes: a cell's detail (its coarse batch and its detail cells'),
- * a cell's buildings faded (the editor's "hide the others"), a cell's
- * buildings from afar (their masses, `massing.ts`), or only what the page reads
- * of far buildings (their flags, lots' ground, signature floor).
- */
+/** What a job makes: a cell's detail (its coarse batch and its detail cells'), a cell's buildings faded */
 export type JobKind = 'cell' | 'mass' | 'summary';
 
 export interface CellJob {
@@ -131,10 +103,7 @@ export class CellWork {
   /** `tone`: each finish's colour from afar (`kit.ts` `finishTone`), for the masses. */
   constructor(private readonly boxes: KitBoxes, private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
-  /**
-   * A job begun: what the page must answer first, or done at once.
-   * @rebuild Asked only for a cell whose entries changed (`cellRequests.ts`).
-   */
+  /** @rebuild A job begun: what the page must answer first, or done at once. */
   start(job: CellJob): WorkReply {
     const emitting: Emitting[] = job.entries.map((entry) => ({
       entry, building: JSON.parse(entry.record) as Building, known: new Map(), asked: [], done: false, chunk: null, mass: null,

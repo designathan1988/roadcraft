@@ -10,12 +10,7 @@ import { DT, JAM_GAP } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { trafficTarget } from '@sim/vehicles/spawn';
 
-/**
- * A map opened is already lived in (the player, 2026-10-09: "sempre que abrir
- * a cidade tem que já ter carros e pessoas"): the numbers of the panel are on
- * the streets within a second, and a closed town - no road leading off the
- * map - keeps them, its lots sending cars and people out and taking them in.
- */
+/** A map opened is already lived in (the player, 2026-10-09: "sempre que abrir a cidade tem que já ter carros e pessoas") */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },
@@ -126,8 +121,7 @@ describe('a map opened is already lived in', () => {
     if (!w) return;
     // To 91 s: the first car leaves a lot at 83 s (measured 2026-10-13).
     run(w, 30, sample(w));
-    // Held round the number: cars parking are replaced by cars leaving a lot,
-    // people going in by people coming out.
+    // Held round the number: cars parking are replaced by cars leaving a lot, people going in by people coming out.
     expect(seen.fewestCars).toBeGreaterThanOrEqual(32);
     expect(seen.fewestPeople).toBeGreaterThanOrEqual(30);
     expect(seen.sumCars / seen.samples).toBeGreaterThanOrEqual(36);
@@ -141,9 +135,7 @@ describe('a map opened is already lived in', () => {
     const w = town;
     expect(w, 'the town of the test before').not.toBeNull();
     if (!w) return;
-    // Thirty seconds on (the first person comes out of a gate at 105 s): people
-    // who went in at a gate are replaced by people coming out of one, and the
-    // numbers still hold. It ran five minutes more, in no check, until 2026-10-13.
+    // Thirty seconds on (the first person comes out of a gate at 105 s)
     let laterCars = Infinity, laterPeople = Infinity, mostCars = 0;
     run(w, 30, (t) => {
       if (Math.round(t / DT) % 60 !== 0) return;

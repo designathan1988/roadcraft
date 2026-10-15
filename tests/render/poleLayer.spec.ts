@@ -10,12 +10,7 @@ import type { RoadDoc } from '@world/doc';
 import type { PoleId } from '@world/ids';
 import { m } from '@world/units';
 
-/**
- * THE POLE LAYER KEPT BY POLE (`render/poleLayer.ts`): after any edit it must
- * draw what a layer built whole from the document draws - the same parts and
- * wires, in whatever slots - while placing again only the poles the diary
- * says the edit reached.
- */
+/** THE POLE LAYER KEPT BY POLE (`render/poleLayer.ts`) */
 
 /** Each mesh's drawn instances as sorted rows, and the wires' instances likewise: the picture, whatever the slots. */
 function picture(layer: PoleLayer): Map<string, string[]> {

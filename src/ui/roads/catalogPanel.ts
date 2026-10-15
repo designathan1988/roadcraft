@@ -12,17 +12,7 @@ import { openProfileEditor, profileEditorOpen, closeProfileEditor } from './prof
 import { savedTemplates } from './templates';
 import './roads.css';
 
-/**
- * THE ROAD CATALOGUE in the road tool's drawer (the player's order of
- * 2026-10-09): the main way to choose a road, as in Cities: Skylines' roads
- * menu - tabs by category (streets, avenues, highways, special, the player's
- * own), a large card for each road with its cross-section drawn
- * (`crossSection.ts`), its name, its total width and its price a metre; a
- * click picks it and the tool draws with it at once; the picked one stands
- * out, and carries "Customise...", which opens the profile editor docked
- * above the drawer, never over it. Saving a profile there puts it under
- * "My roads".
- */
+/** THE ROAD CATALOGUE in the road tool's drawer (the player's order of 2026-10-09) */
 export interface CatalogHost {
   /** The class the road tool has in hand (when no catalogue road is picked, its own card is the picked one). */
   readonly classIndex: () => number;
@@ -87,8 +77,7 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
   const grid = document.createElement('div');
   grid.className = 'rc-cards';
   const shown = roads.filter((r) => r.category === category);
-  // A profile in hand that no card is (an edited one, or one picked from a
-  // road with the eyedropper, V8): its own card first, picked, on every tab.
+  // A profile in hand that no card is (an edited one, or one picked from a road with the eyedropper, V8)
   const loose = drawProfile();
   const looseRoad: CatalogRoad | null = loose && !picked
     ? { id: 'drawProfile', name: loose.name, category, type: loose.type, profile: loose.profile } : null;

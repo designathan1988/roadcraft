@@ -18,8 +18,7 @@ describe('hair pinning: nearest three head vertices', () => {
   it('finds exactly what the search over every anchor found, ties included', () => {
     const rng = new Rng(7);
     const rnd = (): number => rng.float();
-    // A mirrored head (x and -x): points on the middle plane are equally far
-    // from both sides, as on the MakeHuman head.
+    // A mirrored head (x and -x): points on the middle plane are equally far from both sides, as on the MakeHuman head.
     const P: number[] = [];
     for (let i = 0; i < 1500; i++) {
       const x = rnd() * 1.2, y = rnd() * 2.4 - 1.2, z = rnd() * 2 - 1;

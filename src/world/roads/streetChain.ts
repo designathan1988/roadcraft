@@ -4,13 +4,7 @@ import { orientedPolyline } from '../geometry';
 import type { RoadProfileSpec } from './profile';
 import { m } from '../units';
 
-/**
- * THE WHOLE STREET a segment belongs to (docs/source/VIAS.md V8, bulk edit): the
- * segments carried straight on through each node (within `STRAIGHT` of
- * straight ahead, the straightest when several are), as a player sees one
- * street running through its junctions. Each with whether it runs against
- * the first (its a -> b the other way), for a profile laid along it.
- */
+/** THE WHOLE STREET a segment belongs to (bulk edit) */
 const STRAIGHT = Math.cos((25 * Math.PI) / 180);
 const PROBE = m(4.8);
 
@@ -52,8 +46,7 @@ export function streetChain(doc: RoadDoc, first: SegmentId): ChainPiece[] {
       }
       if (next === null) return;
       const s = doc.segment(next)!;
-      // The seed runs a -> b: past its b, `next` agrees when it starts at
-      // `node`; behind its a, when it ends there.
+      // The seed runs a -> b: past its b, `next` agrees when it starts at `node`; behind its a, when it ends there.
       const agrees = forward ? s.a === node : s.b === node;
       seen.add(next);
       out.push({ id: next, flipped: !agrees });

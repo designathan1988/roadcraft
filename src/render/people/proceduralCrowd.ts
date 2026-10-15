@@ -35,38 +35,7 @@ import { createBlobShadows } from '../blobShadows';
 
 ;
 
-/**
- * Procedural people (`people-lab.html`, then the game): one MakeHuman body
- * per class - sex and age band - rigged and animated once; every person is
- * numbers on it.
- *
- * - Body shape: the macro model's first `SHAPES` principal components, baked
- *   once per class (`proceduralBake.ts`). A person's shape never changes in
- *   the game, so it is not summed again every frame: each class bakes up to
- *   16 bodies (`crowdBodies.ts`) and a person is drawn with the nearest to
- *   their own coefficients, one fetch a vertex. Height is the instance's
- *   scale, so the skeleton stays the class's.
- * - Clothes, shoes, hair, brows, lashes, hats: separate instanced pieces, one
- *   set of vertices per class and item, fitted once to the class body
- *   (`PersonRig.wear`). A piece vertex is pinned to three body vertices (the
- *   MakeHuman proxy `refs`), so it follows the body it is on.
- * - Skin under a garment: the item's `deleteVerts` as a row of a cover
- *   texture; a body vertex any worn garment covers sinks under it.
- * - Skeleton: the class's clips baked into one texture and blended, with each
- *   person's joints, on the GPU (`crowdAnimation.ts`, GPU Gems 3 ch. 2): a row
- *   of the palette a person. Only somebody held, bent over a wound, jolted by
- *   a shot or missing a limb is worked out here, as before.
- * - Levels of detail by how tall a person stands on the screen
- *   (`crowdLod.ts`): every level an index over the same vertices; the far
- *   level is one mesh a class and outfit; shadows from the next level's
- *   index, and a soft disc for the far ones (`blobShadows.ts`).
- *
- * Shapes as principal components follow "Crowd Rendering" in Assassin's
- * Creed Unity (GDC 2015); pieces bound to one skeleton follow Unreal's
- * modular characters (Leader Pose); hiding the skin under clothes by the
- * clothes' own list is MakeHuman's `delete_verts`; a few baked bodies told
- * apart by colour, facing and movement is "Clone Attack!" (SIGGRAPH 2008).
- */
+/** Procedural people (`people-lab.html`, then the game): one MakeHuman body per class - sex and age band */
 
 /** Wounds kept a person (`procWounds`): bullet holes and where blood soaks out of them. */
 const WOUND_SLOTS = 8;
@@ -85,8 +54,7 @@ function woundSpotsOf(mesh: { geometry: BufferGeometry; skeleton: { bones: { nam
   const names = mesh.skeleton.bones.map((b) => CAPTURE_NAME[b.name] ?? b.name);
   const partOf = names.map((n) => (Object.keys(WOUND_BONES) as BodyPart[]).find((part) => WOUND_BONES[part].includes(n)) ?? null);
   known = { head: [], torso: [], armL: [], armR: [], legL: [], legR: [] };
-  // Not the hidden helpers (joint cubes inside the body, the tights and skirt
-  // shells): a wound is on the skin.
+  // Not the hidden helpers (joint cubes inside the body, the tights and skirt shells): a wound is on the skin.
   const hidden = new Set<number>();
   for (const [name, ranges] of Object.entries(groups ?? {})) {
     if (!name.startsWith('joint-') && !name.startsWith('helper-')) continue;
@@ -127,12 +95,7 @@ type Kind = 'skin' | 'cloth' | 'hair' | 'face';
 /** The attributes a piece has an entry of per person drawn. */
 const INSTANCED = new Set(['aPerson', 'aDye', 'aWorn', 'aSkin', 'aOut', 'aShoe']);
 
-/**
- * One level of an item on a class, or the far mesh of a class and outfit: an
- * instanced mesh of the people drawn at that level wearing it. `aPerson` an
- * entry is their row, their baked body, whether they are wounded, whether
- * they are burnt.
- */
+/** One level of an item on a class, or the far mesh of a class and outfit */
 interface Piece {
   readonly item: Item | null;
   readonly level: number;
@@ -248,11 +211,7 @@ export interface ProceduralPerson {
   readonly matrix: Matrix4;
   clip: ProcClip;
   phase: number;
-  /**
-   * The clip they are leaving, still playing under the new one at `weight`
-   * (1 down to 0), so a change of clip is a cross-fade and not a pose that
-   * pops in one frame (three.js `AnimationAction.crossFadeFrom`). Set by the caller.
-   */
+  /** The clip they are leaving, still playing under the new one at `weight` */
   fade?: { clip: ProcClip; phase: number; weight: number } | undefined;
   /** What they are doing, as the face shows it (`faceAt`): 'talk', 'panic'... */
   activity?: string | undefined;
@@ -296,13 +255,7 @@ function plainTexture(): DataTexture {
   return plain;
 }
 
-/**
- * What a person wears here: their own look, or - for a child, whom the
- * generator dresses in the old tailored shells - a casual outfit for their
- * sex and shoes, dyed their shirt colour. MakeHuman garments fit any body by
- * their reference vertices and scale axes, so an outfit sits on a child body
- * as on an adult one.
- */
+/** What a person wears here: their own look, or - for a child, whom the generator dresses in the old tailored shells */
 function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
   const look = spec.look;
   const female = spec.body.gender < 0.5;
@@ -314,15 +267,12 @@ function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
     footwear: ['shoes01', 'shoes02', 'shoes05'][(h >>> 8) % 3]!,
     outfitTint: look.topColour,
   };
-  // Half the people in a grown style, half in a stock one that passed the
-  // audit (`randomPerson`'s curated lists).
+  // Half the people in a grown style, half in a stock one that passed the audit (`randomPerson`'s curated lists).
   const mouth = (l: PersonLook): PersonLook => ({ ...l, extras: [...(l.extras ?? []), 'acc:teeth', 'acc:tongue'] });
   if (!hair || ((h >>> 20) & 1) === 0) return mouth(dressed);
-  // Children keep the stock styles (the player: the grown ones on a child
-  // "nem usa isso").
+  // Children keep the stock styles (the player: the grown ones on a child "nem usa isso").
   if (yearsFromAge(spec.body.age) < 14) return mouth(dressed);
-  // Hair grown procedurally (`people/hair/procedural.ts`): older women
-  // shorter or up, girls never in a bun, older men short.
+  // Hair grown procedurally (`people/hair/procedural.ts`): older women shorter or up, girls never in a bun, older men short.
   const years = yearsFromAge(spec.body.age);
   const styles: readonly string[] = female
     ? years > 60 ? ['bob', 'midLayered', 'bun', 'bobFringe', 'shoulderBob']
@@ -345,11 +295,7 @@ interface Variant {
   readonly lash: boolean;
 }
 
-/**
- * The vertex half every program shares: the person's row of the palette pass
- * (`procBones`), their baked body (`procBodies`), their own face at the close
- * levels and its expression at the closest.
- */
+/** The vertex half every program shares: the person's row of the palette pass (`procBones`), their baked body */
 function vertexPars(v: Variant): string {
   const face = v.kind !== 'far' && v.level <= 1;
   const expr = v.kind !== 'far' && v.level === 0;
@@ -414,11 +360,7 @@ float procCovered(float item) {
   return texelFetch(procCover, ivec2(v % ${COVER_WIDTH}, int(item) * int(procCoverRows) + v / ${COVER_WIDTH}), 0).r;
 }`;
 
-/**
- * The far levels skin with each vertex's two strongest bones (sorted first,
- * `crowdLod.ts` sortSkinWeights), their weights renormalised: three's
- * `skinbase`, `skinnormal` and `skinning` chunks with two terms.
- */
+/** The far levels skin with each vertex's two strongest bones */
 const TWO_BONES_BASE = `
 mat4 boneMatX = getBoneMatrix( skinIndex.x );
 mat4 boneMatY = getBoneMatrix( skinIndex.y );
@@ -454,14 +396,7 @@ function uniformsInto(shader: { uniforms: Record<string, unknown> }, cls: BodyCl
   if (widen !== undefined) shader.uniforms['procWiden'] = { value: widen };
 }
 
-/**
- * Wounds (as GTA's ped damage decals): blood soaking out from each bullet
- * hole through the clothes and over the skin, spreading for a while and
- * running further down than up, the hole itself dark at the middle. A start
- * time past 1e8 is a body drenched (shot to pieces): blood all over. Only for
- * somebody wounded (`aPerson.z`): the eight fetches a fragment were paid by
- * everybody.
- */
+/** Wounds (as GTA's ped damage decals) */
 const WOUND_BLOCK = `
   if (vProcWounded > 0.5) {
     float blood = 0.0, hole = 0.0;
@@ -484,26 +419,14 @@ const WOUND_BLOCK = `
     texel.rgb = mix(texel.rgb, vec3(0.04, 0.0, 0.0), hole);
   }`;
 
-/**
- * `grown`: a procedural hair item, its texture a strand atlas (`hairTexture.ts`:
- * R coverage, G root to tip, B strand seed) shaded as the open-source Three.js
- * hair shader does - roots darker, each strand its own brightness, cards
- * seen edge-on darker (deep in the hair), coverage as alpha resolved by
- * multisampling (alpha to coverage) rather than cut at a threshold, and each
- * vertex's own fade (`aFade`) feathering the hairline.
- */
+/** `grown`: a procedural hair item, its texture a strand atlas */
 function pieceMaterial(cls: BodyClass, v: Variant, map: Texture | null, eyes: Texture | null, widen: number): Material {
   const { level, grown, lash } = v;
   const kind = v.kind as Kind;
   const material = new MeshStandardMaterial({ roughness: kind === 'skin' ? 0.5 : grown ? 0.6 : 0.85, metalness: 0, side: DoubleSide });
   material.defines = { USE_SKINNING: '' };
   if (grown) { material.alphaTest = 0.02; material.alphaToCoverage = true; }
-  // Brows and lashes: a soft edge (alpha to coverage over a low cut) - at
-  // 0.35 their hairs merged into one hard black band.
-  // Brows and lashes stay where the item puts them, on the skin: winning
-  // the depth test by a depth bias only (polygon offset, a decal's), never
-  // by moving them - pushed 4 mm towards the camera, from the side the brow
-  // stood off the face.
+  // Brows and lashes: a soft edge (alpha to coverage over a low cut) - at 0.35 their hairs merged into one hard black band.
   else if (kind === 'face') {
     material.alphaTest = 0.08; material.alphaToCoverage = true;
     pullTowardEye(material, 2, 8);
@@ -537,8 +460,7 @@ ${shader.fragmentShader}`
 {
   vec4 texel = texture2D(procMap, vProcUv);
   ${grown ? `
-  // Thinning towards a card's long edges (each a quarter of the atlas
-  // across), so overlapping cards blend instead of showing as shingles.
+  // Thinning towards a card's long edges
   float across = fract(vProcUv.x * 4.0);
   float sides = smoothstep(0.0, 0.22, min(across, 1.0 - across));
   float coverage = clamp(texel.r * 2.5 * vFade * mix(0.35, 1.0, sides), 0.0, 1.0);
@@ -549,8 +471,7 @@ ${shader.fragmentShader}`
   texel = vec4(tone, coverage);` : kind === 'skin' ? `
   if (vSkinMask < 0.5) {
     texel = texture2D(procEyes, vProcUv);
-    // Iris less garish (the packs' are oversaturated: cat's eyes), sclera
-    // off-white, never paper white.
+    // Iris less garish (the packs' are oversaturated: cat's eyes), sclera off-white, never paper white.
     float l = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));
     texel.rgb = mix(vec3(l), texel.rgb, 0.62) * vec3(0.93, 0.9, 0.88);
   }
@@ -568,8 +489,7 @@ ${shader.fragmentShader}`
   texel.rgb = texel.rgb * 1.35 + vec3(0.035, 0.028, 0.022);
   texel.a = smoothstep(0.22, 0.95, texel.a) * 0.8;`}` : ''}`}
   ${WOUND_BLOCK}
-  // Burnt black (a bomb's direct hit, see char): soot over everything, a few
-  // embers still glowing in the cracks.
+  // Burnt black (a bomb's direct hit, see char): soot over everything, a few embers still glowing in the cracks.
   if (vProcDye.a > 1.5) {
     float soot = fract(sin(dot(floor(vProcUv * vec2(90.0, 90.0)), vec2(12.9898, 78.233))) * 43758.5453);
     texel.rgb = mix(vec3(0.028, 0.022, 0.018), vec3(0.1, 0.07, 0.05), soot * soot) + vec3(0.35, 0.08, 0.0) * step(0.985, soot);
@@ -593,9 +513,7 @@ ${grown ? 'roughnessFactor = max(0.55, roughnessFactor + (texture2D(procMap, vPr
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 reflectedLight.indirectSpecular *= personIndirect();
 ${kind === 'skin' && level <= 1 ? `
-// The eye's wet cornea: a sharp catchlight of the key light and a soft one
-// of the sky above - without an environment to mirror the eye had none, and
-// read as dead.
+// The eye's wet cornea: a sharp catchlight of the key light and a soft one of the sky above
 if (vSkinMask < 0.5) {
   vec3 R = reflect(-normalize(vViewPosition), normal);
   vec3 key = normalize((viewMatrix * vec4(-0.45, 0.8, 0.5, 0.0)).xyz);
@@ -621,8 +539,7 @@ varying vec3 vProcBind; varying float vProcRow; varying float vProcWounded; vary
 ${shader.vertexShader}`
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 {
-  // Skin and shoes in the person's colours; the outfit its own, dyed as the
-  // close pieces dye it; another garment its own.
+  // Skin and shoes in the person's colours; the outfit its own, dyed as the close pieces dye it; another garment its own.
   float region = aFar.w;
   float l = dot(aFar.rgb, vec3(0.2126, 0.7152, 0.0722));
   vec3 outfit = aOut.w > 0.5 ? aOut.rgb * (0.45 + 1.1 * l) : aFar.rgb;
@@ -696,11 +613,7 @@ function rowTexture(pixels: Float32Array, width: number, rows: number): DataText
   return texture;
 }
 
-/**
- * Rows `first`..`first + count` of a row texture to the GPU, a range a row
- * (three sends each update range as one row of the image, WebGLTextures.js);
- * the whole texture while it has never been sent.
- */
+/** Rows `first`..`first + count` of a row texture to the GPU, a range a row */
 function touchRows(texture: DataTexture, first: number, count: number): void {
   const row = texture.image.width * 4;
   if (texture.userData['uploaded']) for (let r = 0; r < count; r++) texture.addUpdateRange((first + r) * row, row);
@@ -719,10 +632,7 @@ function textureSampler(texture: Texture | null): ((u: number, v: number) => rea
     const image = texture.image as (CanvasImageSource & { width?: number; height?: number }) | null;
     const W = 128, H = 128;
     let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
-    // A canvas drawn in software (MDN `willReadFrequently`): on the GPU's,
-    // each `getImageData` waited for the card to hand the pixels back -
-    // 1.3 to 2.2 s of a generated city's first 25 s (2026-10-14).
-    // NÃO tirar willReadFrequently: a leitura volta a parar a thread na GPU.
+    // A canvas drawn in software (MDN `willReadFrequently`)
     if (typeof OffscreenCanvas !== 'undefined') ctx = new OffscreenCanvas(W, H).getContext('2d', { willReadFrequently: true });
     else if (typeof document !== 'undefined') {
       const canvas = document.createElement('canvas');
@@ -766,11 +676,7 @@ function meanColour(texture: Texture | null, geometry: BufferGeometry, keep?: (v
 
 declare const __CROWD_LOD_HASH__: string | undefined;
 declare const __PROCEDURAL_COOK_HASH__: string | undefined;
-/**
- * The fingerprint the pieces' levels are kept under (`derivedCache.ts`): the
- * code that plans them (`crowdLod.ts`, `cook-plugin.ts` DERIVED) and the
- * code and items the pieces are fitted from (the procedural cook's).
- */
+/** The fingerprint the pieces' levels are kept under (`derivedCache.ts`): the code that plans them */
 const LOD_PLAN_HASH = typeof __CROWD_LOD_HASH__ !== 'undefined' && typeof __PROCEDURAL_COOK_HASH__ !== 'undefined'
   && __CROWD_LOD_HASH__ && __PROCEDURAL_COOK_HASH__ ? `${__CROWD_LOD_HASH__}-${__PROCEDURAL_COOK_HASH__}` : null;
 if (LOD_PLAN_HASH) forgetOtherDerived('crowd-lod', LOD_PLAN_HASH);
@@ -794,22 +700,11 @@ interface LodPlan {
 export interface ProceduralCrowd {
   readonly group: Group;
   add(spec: PersonSpec): Promise<ProceduralPerson>;
-  /**
-   * Every person's level, pose and place: once a frame, after setting
-   * `matrix`, `clip`, `phase` (and `pixels`). `eye`: where the camera is, so
-   * the people nearest it get their hair's strands. `time`: the simulation's
-   * seconds, which the faces live by (still while paused); wall time without it.
-   * `shadows`: whether shadows are drawn at all (the quality tier) - the far
-   * people's soft discs follow it.
-   */
+  /** Every person's level, pose and place: once a frame, after setting `matrix`, `clip`, `phase` (and `pixels`). */
   update(eye?: Vector3, time?: number, shadows?: boolean): void;
   /** The skeletons worked out on the GPU (`crowdAnimation.ts`): once a frame, after `update`, before the scene is drawn. */
   renderPalettes(renderer: WebGLRenderer): void;
-  /**
-   * The ragdolls' side (`agents.ts`, `ragdoll.ts`): a person's skeleton (its
-   * bones by the capture's names, as the ragdoll knows them), their pose now,
-   * the standing pose they get up into, and a pose the ragdoll holds them in.
-   */
+  /** The ragdolls' side (`agents.ts`, `ragdoll.ts`): a person's skeleton */
   readonly ragdoll: {
     skeleton(person: ProceduralPerson): { names: string[]; parents: number[]; inverses: Matrix4[]; local: Matrix4; bind: Matrix4 } | null;
     pose(person: ProceduralPerson): Float32Array | null;
@@ -820,12 +715,7 @@ export interface ProceduralCrowd {
     duration(person: ProceduralPerson, clip: ProcClip): number;
     /** A bullet hole in this part of them, blood soaking out of it from now on. */
     wound(person: ProceduralPerson, part: BodyPart): void;
-    /**
-     * The jolt of a bullet (Euphoria's shot: the spine giving way along the
-     * shot for a moment, then recovering): the upper body thrown back along
-     * world (dirX, dirY) and coming back over half a second, laid over
-     * whatever they are playing.
-     */
+    /** The jolt of a bullet (Euphoria's shot: the spine giving way along the shot for a moment, then recovering) */
     jolt(person: ProceduralPerson, dirX: number, dirY: number, strength: number): void;
     /** The layers over the clip now (a jolt and its weight), for probes. */
     layers(person: ProceduralPerson): string[];
@@ -835,11 +725,7 @@ export interface ProceduralCrowd {
     drench(person: ProceduralPerson): void;
     /** Their wounds gone (the person drawn as somebody new). */
     heal(person: ProceduralPerson): void;
-    /**
-     * Another of this person - their row's shape, face, clothes and colours -
-     * for a piece of them torn off (an arm, a leg, the head) drawn apart from
-     * the body (`ragdoll.ts` detach); `untwin` gives it back.
-     */
+    /** Another of this person - their row's shape, face, clothes and colours - for a piece of them torn off */
     twin(person: ProceduralPerson): ProceduralPerson | null;
     untwin(twin: ProceduralPerson): void;
     /** Burnt black (a bomb's direct hit), skin, clothes and hair; given back by `hold(person, null)`. */
@@ -855,12 +741,7 @@ export interface ProceduralCrowd {
   readonly people: readonly ProceduralPerson[];
   /** Drops an item and its pieces, so it is built again on next use (a hairstyle being edited). */
   forget(name: string): void;
-  /**
-   * Every class's rig made ahead, one at a time with a pause between: each is
-   * a single stretch of 50-100 ms (`createPersonRig`) that nothing can be
-   * cooked for, and made when the first person of the class came in, it was
-   * a stall in play (docs/performance.md #8).
-   */
+  /** Every class's rig made ahead, one at a time with a pause between: each is a single stretch of 50-100 ms */
   warmClasses(): Promise<void>;
   /** Every class and hairstyle built here, packed for the cook (`proceduralCook.ts`, `scripts/cook-people.mjs`). */
   cook(): Promise<Map<string, ArrayBuffer>>;
@@ -911,15 +792,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const levelCount = [0, 0, 0, 0];
   let trianglesDrawn = 0;
 
-  /**
-   * The class's pose on this person's own joints. A skin matrix M = W B^-1
-   * (W the bone's world, B its bind). Their bind is the class's moved by d,
-   * B' = T(d) B, with the same turns; holding each bone's turn from the
-   * clip and its length from their body, W' = T(delta) W with
-   * delta = delta(parent) + R(M parent) (d - d parent) - so
-   * M' = T(delta) M T(-d): a translation per bone, parents first. (The
-   * palette pass does the same sums on the GPU, `crowdAnimation.ts`.)
-   */
+  /** The class's pose on this person's own joints. */
   const shift = new Float32Array(512 * 3);
   const refit = (cls: BodyClass, person: ProceduralPerson, at: number): void => {
     const m = cls.palette, d = person.joints;
@@ -944,10 +817,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     }
   };
 
-  /**
-   * A limb lost: every bone from its joint down shrunk to that joint, so the
-   * stump closes there (as `riggedCitizens` maim does on the cooked bodies).
-   */
+  /** A limb lost: every bone from its joint down shrunk to that joint, so the stump closes there */
   const limbBones = new WeakMap<BodyClass, Record<string, { bones: number[]; parent: number; joint: Vector3 } | null>>();
   const limbTmp = new Matrix4(), limbAt = new Vector3();
   const LIMB_ROOT: Record<Severable, string> = { armL: 'lowerarm_l', armR: 'lowerarm_r', legL: 'calf_l', legR: 'calf_r', head: 'head' };
@@ -1002,9 +872,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return loaded;
       }
       if (name === 'acc:teeth' || name === 'acc:tongue') {
-        // The base mesh's own teeth and tongue (its helper groups), each
-        // vertex pinned to itself: so the jaw and the mouth's expressions,
-        // which move those vertices too, carry them.
+        // The base mesh's own teeth and tongue (its helper groups), each vertex pinned to itself
         loaded = Promise.all([env.setup(), item('eyes')]).then(([{ assets: a }, eyes]) => {
           const groups = (name === 'acc:teeth' ? ['helper-upper-teeth', 'helper-lower-teeth'] : ['helper-tongue'])
             .map((g) => a.mesh.faceGroups.indexOf(g)).filter((g) => g >= 0);
@@ -1028,8 +896,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return loaded;
       }
       if (name === 'acc:headband') {
-        // From the cook, like the hairstyles: grown here it was the biggest
-        // share of the game's script while people arrived (docs/performance.md #29).
+        // From the cook, like the hairstyles: grown here it was the biggest share of the game's script while people arrived
         loaded = loadProcedural('acc-headband').then(async (cooked) => {
           if (cooked) return { pack: packFromRecord(cooked), texture: null, transparent: false, textureFile: null };
           const { assets: a, morpher: mo } = await env.setup();
@@ -1039,9 +906,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return loaded;
       }
       if (!style && /^eyebrow|^eyelash/.test(name)) {
-        // Brows and lashes nearer the skin than their files place them: the
-        // brow stood off the face as a slab, the lashes stuck out like legs.
-        // Each vertex's offset from the skin it is pinned to, shortened.
+        // Brows and lashes nearer the skin than their files place them
         loaded = loadProxyItem(name).then((it) => {
           const k = name.startsWith('eyebrow') ? 0.2 : 0.62;
           return { ...it, pack: { ...it.pack, offsets: it.pack.offsets.map((o) => o * k) } };
@@ -1107,8 +972,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const order: number[] = [];
     const visit = (i: number): void => { order.push(i); for (let j = 0; j < bones; j++) if (parent[j] === i) visit(j); };
     for (let i = 0; i < bones; i++) if (parent[i] === -1) visit(i);
-    // The bodies baked from the shape basis (made as people come in), and
-    // every clip in one texture with the pass that blends it.
+    // The bodies baked from the shape basis
     const bodies = createClassBodies(shapePixels, vertexCount, SHAPES, jointBasis, bones);
     const anim = buildClassAnimation(clips, bones);
     const pass = createPalettePass(anim, parent, () => bodies.joints, ROW_START);
@@ -1215,13 +1079,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return attribute;
   };
 
-  /**
-   * A piece: an instanced mesh over `geometry` (an index over its item's
-   * vertices), with its own entries a person. `proxy`: the next level's index,
-   * which the shadow pass draws it with (`onBeforeShadow`: the shadow of a
-   * level-0 person is cast by their level-1 triangles, and so on); null, it
-   * casts none.
-   */
+  /** A piece: an instanced mesh over `geometry` (an index over its item's vertices), with its own entries a person. */
   const makePiece = (cls: BodyClass, owner: Item | null, v: Variant, geometry: BufferGeometry, material: Material,
     attrs: Readonly<Record<string, number>>, proxy: BufferAttribute | null, depth: MeshDepthMaterial | null, triangles: number): Piece => {
     const capacity = PIECE_START;
@@ -1236,17 +1094,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     mesh.count = 0;
     mesh.visible = false;
     mesh.frustumCulled = false;
-    // Never moved (the people are placed by their instances): not recomposed
-    // every frame. three's `updateMatrixWorld` visits every piece, hidden or
-    // not, and recomposes each one whose `matrixAutoUpdate` is on - up to
-    // 1 900 pieces, 0.6 ms a frame.
+    // Never moved (the people are placed by their instances)
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = true;
     mesh.castShadow = !!(proxy && depth);
     if (proxy && depth) {
-      // As the shadow pass sets it on every draw (three's WebGLShadowMap
-      // getDepthMaterial): the main material's side and alpha test - so the
-      // program compiled ahead below is the one the shadow pass uses.
+      // As the shadow pass sets it on every draw (three's WebGLShadowMap getDepthMaterial)
       const main = material as MeshStandardMaterial;
       depth.alphaTest = main.alphaToCoverage ? 0.5 : main.alphaTest;
       depth.side = main.side;
@@ -1257,12 +1110,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     }
     mesh.name = `${cls.key}/${owner?.name ?? v.kind}/L${v.level}`;
     mesh.userData['cls'] = cls.key;
-    // Into the scene only once its shaders are built, in parallel and off the
-    // frame (`uploads.ts` compileAhead): a mesh in the scene builds its program
-    // the first frame it is drawn, even with no instance, and each new piece
-    // (a garment, a hairstyle, a class's skin) stopped the game for up to a
-    // second on the first person wearing it (profiled 2026-10-06). Its shadow
-    // program too, through a stand-in drawn with the depth material.
+    // Into the scene only once its shaders are built, in parallel and off the frame (`uploads.ts` compileAhead)
     const jobs: Promise<void>[] = [compileAhead(mesh)];
     if (mesh.customDepthMaterial) jobs.push(compileAhead(new InstancedMesh(geometry, mesh.customDepthMaterial, 1), true));
     const piece: Piece = {
@@ -1273,16 +1121,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return piece;
   };
 
-  /**
-   * Room for twice the people in a piece, what is written kept. three cannot
-   * resize an attribute, so they are new ones; the old `instanceMatrix`'s GPU
-   * buffer and the mesh's vertex array states are freed first (`WebGLObjects`
-   * `onInstancedMeshDispose`). DO NOT dispose the geometry for its old
-   * per-person attributes: its vertex data is shared with the piece's other
-   * levels, and three deletes a shared buffer under their vertex arrays
-   * (`WebGLGeometries` `onGeometryDispose`). Those old attributes are left to
-   * three, a doubling's worth at most (less than the piece's size now).
-   */
+  /** DO NOT dispose the geometry for its old per-person attributes */
   const growPiece = (piece: Piece): void => {
     piece.mesh.dispose();
     const capacity = piece.capacity * 2;
@@ -1303,10 +1142,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const lodPlan = (key: string, geometry: BufferGeometry, kind: Kind, role: PieceRole): Promise<LodPlan> => {
     const known = lodPlans.get(key);
     if (known) return known;
-    // Kept in the browser between sessions (`derivedCache.ts`), under the
-    // fingerprint of the code and the items it is made from: the worker's
-    // simplifying done once, not on the first person wearing a piece in
-    // every session.
+    // Kept in the browser between sessions
     const stored = LOD_PLAN_HASH ? `crowd-lod:${LOD_PLAN_HASH}:${role}:${key}` : null;
     const plan = (async (): Promise<LodPlan> => {
       if (stored) {
@@ -1385,10 +1221,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const ENTRIES = { aPerson: 4, aDye: 4 } as const;
   const ENTRIES_FAR = { aPerson: 4, aSkin: 4, aOut: 4, aShoe: 4 } as const;
 
-  /**
-   * An item fitted to a class, drawn at every level it has: its vertices
-   * (`source`) once, an index and a mesh a level (`crowdLod.ts`).
-   */
+  /** An item fitted to a class, drawn at every level it has: its vertices (`source`) once, an index and a mesh a level */
   const makeItem = async (cls: BodyClass, name: string, kind: Kind, role: PieceRole, source: BufferGeometry,
     map: Texture | null, eyes: Texture | null, grown: boolean): Promise<Item> => {
     await lodReady;
@@ -1430,10 +1263,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return own;
   };
 
-  /**
-   * The skin for a person: never one of the made-up skins - their painted
-   * eye shadow and dark lipstick gave every woman red, sore-looking eyes.
-   */
+  /** The skin for a person: never one of the made-up skins */
   const bareSkin = (person: PersonSpec): ReturnType<typeof skinChoice> => skinChoice({ ...person, look: { ...person.look, makeup: 0 } });
   const skinsMaking = new Map<string, Promise<Item>>();
   const skinItem = (cls: BodyClass, person: PersonSpec): Promise<Item> => {
@@ -1473,10 +1303,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         const n = fitted.positions.length / 3;
-        // The pack's own arrays (uvs, weights, fade) are the cached item's
-        // (`item`), worn by every class: kept, not copied, by each class's
-        // attribute - nothing writes them. DO NOT write these attributes in
-        // place: it would change the item for every class at once.
+        // DO NOT write these attributes in place: it would change the item for every class at once.
         geometry.setAttribute('uv', new BufferAttribute(it.pack.uvs ?? new Float32Array(n * 2), 2));
         geometry.setAttribute('skinIndex', new BufferAttribute(fitted.joints, 4));
         geometry.setAttribute('skinWeight', new BufferAttribute(fitted.weights, 4));
@@ -1497,12 +1324,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return making;
   };
 
-  /**
-   * The far mesh of a class and clothes (level 3): the skin the clothes leave
-   * bare - their own `deleteVerts`, the eyes left out - and each garment,
-   * simplified and merged, a colour a vertex (`crowdLod.ts` farMesh). Made in
-   * the background; until it is ready its people are drawn a level closer.
-   */
+  /** The far mesh of a class and clothes (level 3): the skin the clothes leave bare */
   const requestFar = (cls: BodyClass, key: string, garments: readonly { item: Item; pack: ProxyItem; outfit: boolean }[]): void => {
     if (cls.far.has(key)) return;
     cls.far.set(key, null);
@@ -1608,12 +1430,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     }
   };
 
-  /**
-   * Strands close up: a grown hairstyle's strands (`generateHairStrands`)
-   * drawn as lines over its cards on the few people nearest the camera,
-   * fitted to the class body and moved by the same skeleton and shape as
-   * the cards. The rest of the crowd has the cards alone.
-   */
+  /** Strands close up: a grown hairstyle's strands */
   const NEAR = 8, NEAR_RANGE = 14;
   let strandTexture: DataTexture | null = null;
   /** A strand ribbon's texture: solid across (its edges fade in the shader), root to tip in G. */
@@ -1729,13 +1546,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const joltRot = new Matrix4(), joltDir = new Vector3();
   const joltSpine = new Map<BodyClass, { root: number; bind: Vector3; bones: number[] } | null>();
   const joltM = new Matrix4(), joltT = new Matrix4(), joltP = new Vector3();
-  /**
-   * A wounded body's posture over its clip (Euphoria's reach-for-wound and a
-   * body guarding a wound): the trunk bent over it by `hunch` radians and
-   * one hand pressed on it - the arm put there by a two-bone solve (the
-   * elbow's angle from the law of cosines, then the whole arm turned at the
-   * shoulder onto the target), blended in by `reach`.
-   */
+  /** A wounded body's posture over its clip (Euphoria's reach-for-wound and a body guarding a wound) */
   interface Posture { hunch: number; reach: number; part: BodyPart; cover?: number; miss?: number; hand?: 'L' | 'R' }
   const postures = new Map<ProceduralPerson, Posture>();
   interface PostureRig {
@@ -1793,14 +1604,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const applyPosture = (cls: BodyClass, at: number, pose: Posture): void => {
     const rig = postureRig(cls);
     if (!rig) return;
-    // Bent over: the upper body tipped forward about the lower spine. (The
-    // limp is the captured one now, the clip's own: `hurtWalk`.)
+    // Bent over: the upper body tipped forward about the lower spine.
     if (pose.hunch > 1e-3) {
       const p = posed(cls, at, rig.spine, rig.spineBind, pA);
       turnAbout(cls, at, rig.upper, p, pR.makeRotationAxis(pB.crossVectors(rig.up, rig.forward).normalize(), pose.hunch));
     }
-    // Both hands over the head (somebody under fire, running or crouched:
-    // GTA's peds flee and cower so), blended in by `cover`.
+    // Both hands over the head (somebody under fire, running or crouched: GTA's peds flee and cower so)
     if ((pose.cover ?? 0) > 1e-3 && rig.head >= 0) {
       const pelvis = posed(cls, at, rig.pelvis, rig.bindOf(rig.pelvis), pC);
       const chest = posed(cls, at, rig.chest, rig.bindOf(rig.chest), pD);
@@ -1818,8 +1627,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       return;
     }
     if (pose.reach < 1e-3) return;
-    // The hand on the wound: the other hand when an arm is hit; for the
-    // trunk, the right; on the belly, the chest or the thigh, in front.
+    // The hand on the wound: the other hand when an arm is hit; for the trunk, the right
     const side: 'L' | 'R' = pose.part === 'armR' ? 'L' : pose.part === 'armL' ? 'R' : pose.part === 'legL' ? 'L' : 'R';
     const arm = rig.arm[side];
     if (!arm) return;
@@ -1837,9 +1645,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       target = thigh >= 0 ? posed(cls, at, thigh, rig.bindOf(thigh), new Vector3()).addScaledVector(fwd, torsoLen * 0.35).addScaledVector(rig.up, -torsoLen * 0.4) : pelvis.clone();
     } else if (pose.part === 'armL' || pose.part === 'armR') {
       const other = rig.arm[pose.part === 'armL' ? 'L' : 'R'];
-      // The wrist at the middle of the hurt upper arm, in front of it and a
-      // little in from it: the hand beyond the wrist then lies over the wound
-      // (aimed at the arm itself, the hand stuck up past the shoulder).
+      // The wrist at the middle of the hurt upper arm, in front of it and a little in from it
       target = other ? posed(cls, at, other.shoulder, other.bind[0], new Vector3()).lerp(posed(cls, at, other.elbow, other.bind[1], new Vector3()), 0.6) : chest.clone();
       target.addScaledVector(fwd, torsoLen * 0.2).lerp(chest, 0.22);
     } else {
@@ -1854,12 +1660,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   };
 
   type PostureArm = NonNullable<PostureRig['arm']['L']>;
-  /**
-   * One arm's hand sent towards `target` by `weight` (0..1), a two-bone
-   * solve: the elbow's angle from the law of cosines, then the whole arm
-   * turned at the shoulder onto the target. Returns how far the hand ended
-   * from where it was sent, against the arm's length.
-   */
+  /** One arm's hand sent towards `target` by `weight` (0..1), a two-bone solve */
   const reachTo = (cls: BodyClass, at: number, rig: PostureRig, arm: PostureArm, target: Vector3, weight: number): number => {
     const fwd = rig.forward.clone();
     pM.fromArray(cls.palette, at + rig.chest * SKIN_BONE_FLOATS);
@@ -1874,9 +1675,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const want = Math.acos(Math.min(1, Math.max(-1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2))));
     const a = S.clone().sub(E), b = H.clone().sub(E);
     const now = a.angleTo(b);
-    // The elbow bends in the arm's natural plane, the forearm coming forward:
-    // taken from the arm's own bend, a nearly straight arm (hanging at rest)
-    // gave no plane, or the wrong side of one, and the hand flew up.
+    // The elbow bends in the arm's natural plane, the forearm coming forward
     let n = new Vector3().crossVectors(a, fwd);
     if (n.lengthSq() < 1e-10) n = new Vector3().crossVectors(a, b);
     n.normalize();
@@ -1919,11 +1718,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   /** Whether a person's palette is worked out here this frame rather than by the GPU pass. */
   const overridden = (person: ProceduralPerson): boolean =>
     holds.has(person) || postures.has(person) || jolts.has(person) || (person.lost?.length ?? 0) > 0;
-  /**
-   * A person's palette row worked out here: held by a ragdoll (the limbs lost
-   * still closed), or their clip on their joints with the layers over it -
-   * a limb lost, a wounded posture, a bullet's jolt.
-   */
+  /** A person's palette row worked out here: held by a ragdoll */
   const poseRow = (cls: BodyClass, person: ProceduralPerson, at: number, time: number): void => {
     const width = cls.bones * SKIN_BONE_FLOATS;
     const held = holds.get(person);
@@ -1998,25 +1793,15 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
 
       await breathe();
       if (epoch !== started) throw new Error('crowd cleared');
-      // A row given back (`untwin`: a twin, or a spare body let go) first. DO
-      // NOT take a new row for every body made: the rows grew with every
-      // body of the session, and with them every texture by row and the
-      // palette pass, which works out every row ever taken each frame.
+      // DO NOT take a new row for every body made
       const row = takeRow(cls, true);
       // Their shape on the class body: their sliders at the class's height
-      // (height is the instance's scale), less the class's own - drawn with
-      // the class's baked body nearest it.
       const level = { ...spec.body, height: cls.base.height };
       const c = mo.coefficients(level);
       const coef = new Float32Array(SHAPES);
       for (let k = 0; k < SHAPES; k++) coef[k] = (c[k] ?? 0) - (cls.coefficients[k] ?? 0);
       const body = cls.bodies.pick(coef);
-      // Their own face: the regional sliders on the class body, posed as it
-      // is - the shape basis carries the macro build, this the features.
-      // The sliders are sparse targets added to the class body (MakeHuman's
-      // `Target.apply`), so only their moves are made, and posed at the head's
-      // vertices alone (`deltasAt`): the whole body shaped and posed for them
-      // was some 10 ms of the main thread a person.
+      // Their own face: the regional sliders on the class body, posed as it is
       const faceRows = cls.uniforms.procFaceRows.value;
       // A reused row holds the last person's face: theirs replaces it, or none.
       cls.face.fill(0, row * faceRows * FACE_WIDTH * 4, (row + 1) * faceRows * FACE_WIDTH * 4);
@@ -2044,8 +1829,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const covers = worn.filter(([nm, it]) => COVERING.has(it.pack.kind) && !it.transparent && !nm.startsWith('acc:'))
         .map(([nm, it]) => coverRow(cls, nm, it)).slice(0, 4);
       const hair = new Color(spec.look.hair);
-      // The outfit itself is dyed, never its shoes or glasses; hair, brows
-      // and lashes take the hair colour.
+      // The outfit itself is dyed, never its shoes or glasses; hair, brows and lashes take the hair colour.
       const tint = look.outfitTint == null ? null : new Color(look.outfitTint);
       const skinTint = bareSkin(spec).tint;
       const wears: Wear[] = [{ item: skin, dye: skinTint }];
@@ -2075,11 +1859,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         if (!cls) return null;
         const mesh = cls.rig.mesh;
         const bones = mesh.skeleton.bones;
-        // Each bone's bind moved to this person's own joint (`joints`, the
-        // offsets `refit` places them by): a ragdoll turns each part about
-        // the joint it shares with the next - at the class body's joints, a
-        // child's limbs pivoted centimetres off theirs and the skin between
-        // stretched. inverse' = inverse * T(-d), so bind' = T(d) * bind.
+        // Each bone's bind moved to this person's own joint (`joints`, the offsets `refit` places them by)
         const d = person.joints;
         const shiftBy = new Matrix4();
         return {
@@ -2226,8 +2006,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const time = simTime ?? performance.now() / 1000;
       levelCount.fill(0);
       trianglesDrawn = 0;
-      // Each person's level from their height on the screen: hidden (a zero
-      // scale) or too small, none.
+      // Each person's level from their height on the screen: hidden (a zero scale) or too small, none.
       close.length = 0;
       let close0 = 0, close1 = 0;
       for (const cls of ready) {
@@ -2246,8 +2025,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           if (level === 0 || level === 1) close.push(person);
         }
       }
-      // The safety caps (a street-level camera in a packed square): past
-      // them, those smallest on the screen go a level down.
+      // The safety caps (a street-level camera in a packed square): past them, those smallest on the screen go a level down.
       if (close0 > LEVEL_CAPS[0] || close1 > LEVEL_CAPS[1]) {
         close.sort((p, q) => (q.pixels ?? 0) - (p.pixels ?? 0));
         let n0 = 0, n1 = 0;
@@ -2269,8 +2047,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           cls.drawn++;
           levelCount[st.level] = (levelCount[st.level] ?? 0) + 1;
           st.drawn.multiplyMatrices(person.matrix, scaled.makeScale(person.scale, person.scale, person.scale));
-          // Their skeleton: the GPU pass plays their clip on their joints;
-          // somebody held, bent, jolted or maimed is worked out here.
+          // Their skeleton: the GPU pass plays their clip on their joints; somebody held, bent, jolted or maimed is worked out here.
           if (overridden(person)) {
             const at = person.row * width;
             poseRow(cls, person, at, time);
@@ -2282,8 +2059,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
             const whole = Math.min(clip.frames, Math.floor(f));
             play.row = cls.anim.rowOf(person.clip) + whole;
             play.t = f - whole;
-            // A cross-fade: the clip being left under the new one, the two
-            // weights summing to one (the palette pass adds them as given).
+            // A cross-fade: the clip being left under the new one, the two weights summing to one
             const out = person.fade;
             const left = out && out.weight > 0 ? cls.clips[out.clip] : undefined;
             if (out && left) {
@@ -2299,14 +2075,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
               cls.pass.setPlays(person.row, plays, st.variant);
             }
           }
-          // The face of the moment - blinking, mood, talk, fright (`faceAt`) -
-          // only where a face is big enough to show it.
+          // The face of the moment - blinking, mood, talk, fright (`faceAt`) - only where a face is big enough to show it.
           if (st.level === 0) {
             const w = faceAt(person.spec.id, time, person.activity, person.spec.mood ?? 0);
             const at = person.row * EXPR_SLOTS;
             for (let c = 0; c < EXPR.length; c++) cls.exprW[at + c] = Math.min(1, w[EXPR[c]!] ?? 0);
-            // Their row alone to the GPU. DO NOT send the whole texture: a row
-            // for every body of the class, for the few faces close enough to show.
+            // DO NOT send the whole texture: a row for every body of the class, for the few faces close enough to show.
             touchRows(cls.uniforms.procExprW.value, person.row, 1);
           }
           // The far ones' shadow: a soft disc under them.

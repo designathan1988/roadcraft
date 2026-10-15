@@ -16,13 +16,7 @@ import { refillArrays } from '@render/mesh/gpuOnly';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The road surfaces are built a tile at a time, and a tile an edit does not
- * reach is copied from the build before. That is only safe if the copy is
- * exactly what building it again would give, so this compares an edited
- * network rebuilt from the cache with the same network built from nothing,
- * bit for bit.
- */
+/** The road surfaces are built a tile at a time, and a tile an edit does not reach is copied from the build before. */
 
 const materials = new Proxy({}, {
   get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
@@ -108,9 +102,7 @@ describe('road surface tiles', () => {
   });
 
   it('draws a road raised in one stroke as one surface, not a piece at a time', () => {
-    // Four pieces at authored heights, bending a little at each node: one
-    // alignment pass. A pass per segment closed every piece's ends, and the
-    // joins showed as lines across the road and notched kerbs.
+    // Four pieces at authored heights, bending a little at each node: one alignment pass.
     const doc = new RoadDoc();
     const pts: [number, number, number][] = [[0, 0, 0], [60, 4, 5], [120, 0, 9], [180, 6, 5], [240, 0, 0]];
     const nodes = pts.map(([x, y, h]) => doc.addNode({ x, y }, h));
@@ -122,10 +114,7 @@ describe('road surface tiles', () => {
     expect([...reuse.tiles.keys()].filter((id) => id.startsWith('alignment-'))).toHaveLength(1);
   });
   it('builds again only the tiles a street reaches, when it changes the order the lines are painted in', () => {
-    // A street of a new class at the east end of the parking town: its centre
-    // line made the town's paint colours come in another order, and with the
-    // order in every tile's key all hundred tiles were built again (a second's
-    // stall in the game for one street). The new street reaches eight.
+    // A street of a new class at the east end of the parking town
     const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const net = new Network(doc);
     net.rebuild();
@@ -143,9 +132,7 @@ describe('road surface tiles', () => {
   });
 
   it('sends the GPU only the blocks of tiles an edit reaches, keeping the mesh of every other block', () => {
-    // Every tile used to be merged into one mesh per surface on every edit and
-    // sent whole: 50-80 MB and a 400-850 ms frame for a short street in the
-    // default town (docs/performance.md #9).
+    // Every tile used to be merged into one mesh per surface on every edit and sent whole
     const stable = new Map<PropertyKey, unknown>();
     const kept = new Proxy({}, {
       get: (_target, key) => {
@@ -174,10 +161,7 @@ describe('road surface tiles', () => {
     const fresh = buildRoadSurfaces(net, elevation, kept, ground, reuseFor(() => elevation));
     expect(fingerprint(after.group)).toBe(fingerprint(fresh.group));
 
-    // The roads still drawn keep every block they share until the swap: built
-    // in steps, the next roads take the kept blocks only at `adopt` (seen in
-    // the game, 2026-10-09: a bomb's rebuild took 166 of 176 blocks off the
-    // screen, and the streets showed as grass while it ran).
+    // The roads still drawn keep every block they share until the swap
     const drawn = after.group.children.length;
     town.addSegment(end.id, town.addNode({ x: end.x + 40, y: end.y - 50 }).id, 1);
     net.rebuild();
@@ -196,9 +180,7 @@ describe('road surface tiles', () => {
   });
 
   it('changes the solve only near a short street joined to a long one, and the cache stays exact over many edits', () => {
-    // A street's whole profile was in the digest of every block it passes, so
-    // a junction made at one end built again every tile along it (9 to 34
-    // tiles for a 16 m street in the default town, docs/performance.md #10).
+    // A street's whole profile was in the digest of every block it passes
     const town = new RoadDoc();
     buildDefaultTown(town);
     const net = new Network(town);
@@ -225,8 +207,7 @@ describe('road surface tiles', () => {
   });
 
   it('keeps no tile arrays between builds, and a lost context gets every block back the same from the rings', () => {
-    // The tiles were kept whole (`reuse.tiles`, and again by the blocks they were merged into, and
-    // by each block's refill): a second copy of every road on the GPU, 330 MB of a 1,280 m city.
+    // The tiles were kept whole (`reuse.tiles`, and again by the blocks they were merged into, and by each block's refill)
     const net = new Network(fixture());
     net.rebuild();
     const elevation = buildRoadElevation(net, ground);

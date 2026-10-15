@@ -1,20 +1,10 @@
-/**
- * THUNDER (`world/weather.ts`): the sound of a strike, made with the Web
- * Audio API - noise filtered low into a rumble, a sharp crack when the
- * strike is near and a long low roll when it is far, heard as long after the
- * flash as sound takes to come that far (343 m/s).
- */
+/** THUNDER (`world/weather.ts`): the sound of a strike, made with the Web Audio API */
 
 /** The longest clap (far off), in seconds: `length` below at `near` 0. */
 const LONGEST = 5.6;
 /** Seconds of noise kept: the longest clap, and room to start it anywhere in the first part. */
 const NOISE_SECONDS = LONGEST + 4;
-/**
- * The rumble's brown noise, made once for the context and played by every clap
- * from a different point of it. DO NOT make it per strike: that was 125 to 270
- * thousand samples of `Math.random` on the page at each bolt; a buffer is meant
- * to be reused by many cheap source nodes (MDN, AudioBufferSourceNode).
- */
+/** DO NOT make it per strike: that was 125 to 270 thousand samples of `Math.random` on the page at each bolt */
 interface Audio { readonly ctx: AudioContext; noise: AudioBuffer | null }
 let audio: Audio | null = null;
 function noiseOf(state: Audio): AudioBuffer {

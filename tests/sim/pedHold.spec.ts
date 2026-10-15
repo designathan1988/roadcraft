@@ -5,16 +5,7 @@ import { DT } from '@sim/params';
 import { stepController } from '@sim/signals/fsm';
 import { simOf } from './support/bodies';
 
-/**
- * A GREEN IS NOT HELD FOR EVER BY SOMEBODY WHO NEVER FINISHES CROSSING.
- *
- * `stepController` never cuts a green over people still on its crossings,
- * because walkers always finish. Two walkers deadlocked face to face at a kerb
- * - one on the zebra, one on the footway - never did, and the stage that had
- * released the first held green for minutes while every other approach of the
- * junction starved (`groupStarved`, 512 times in five minutes on a one-way
- * couplet). The hold is now bounded.
- */
+/** A GREEN IS NOT HELD FOR EVER BY SOMEBODY WHO NEVER FINISHES CROSSING. */
 describe('a signal stage with somebody stuck on its crossing', () => {
   it('still ends', () => {
     const doc = new RoadDoc();

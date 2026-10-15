@@ -17,43 +17,18 @@ export interface CameraGesturesHost {
 
 /** Camera turn and tilt per CSS pixel of an orbit drag, rad: a full turn in ~1000 px. */
 const ORBIT_PER_PX = 0.0063;
-/**
- * Which way a twist of two fingers turns the camera, so the map turns with
- * them: a positive orbit turns the map anticlockwise on screen, and a
- * clockwise twist grows the angle between the fingers.
- */
+/** Which way a twist of two fingers turns the camera, so the map turns with them */
 const TWIST_SIGN = -1;
 /** How far a press may travel, CSS px, and still be a click rather than a drag. */
 const CLICK_SLOP = 5;
 /** Below this many CSS px between the fingers a twist is noise, not a turn. */
 const TWIST_MIN_SPREAD = 40;
-/**
- * The camera's coast after a drag is let go (three's OrbitControls
- * `enableDamping`, Cesium's `inertiaSpin`): it goes on at the speed the hand
- * left it with and slows by e every this many seconds - per second of wall
- * time, not per frame, so it coasts alike at any frame rate.
- */
+/** The camera's coast after a drag is let go (three's OrbitControls `enableDamping`, Cesium's `inertiaSpin`) */
 const COAST_DECAY_S = 0.45;
 /** Below this the coast is over: orbit rad/s, pan CSS px/s of the hand. */
 const COAST_MIN_ORBIT = 0.02;
 const COAST_MIN_PAN = 6;
-/**
- * How the hand's speed is read when a drag is let go, as Android's
- * VelocityTracker reads a fling (AOSP libs/input/VelocityTracker.cpp): a line
- * fitted to the samples of the last `SPEED_HORIZON_MS` (one event's move over
- * its own interval read 10 px coalesced into one millisecond as 10 000 px/s),
- * none if the hand had stopped `SPEED_STOPPED_MS` before letting go, and never
- * above `MAX_FLING_PX_S` (its maxVelocity).
- *
- * Every time here is the EVENT's (`PointerEvent.timeStamp`, and each of
- * `getCoalescedEvents()`), as VelocityTracker reads `getHistoricalEventTime`.
- * DO NOT read `performance.now()` in the handler instead: Chrome holds
- * `pointermove` until the next animation frame (Chrome 60, "Aligning input
- * events") while `pointerup` is sent at once, so on a 100 ms frame the last
- * move was handled 60-100 ms before the release and every fling read as
- * "stopped" - the camera coasted at 60 fps and stopped dead at 10 fps
- * (measured in the town of seed 1, 2026-10-14).
- */
+/** DO NOT read `performance.now()` in the handler instead: Chrome holds `pointermove` until the next animation frame */
 const SPEED_HORIZON_MS = 100;
 const SPEED_STOPPED_MS = 40;
 const MAX_FLING_PX_S = 4000;
@@ -67,38 +42,13 @@ export interface PointerSample {
   readonly t: number;
 }
 
-/**
- * A drag let go, still moving: THE SAME MOTION THE HAND WAS MAKING, slowing
- * (Cesium's `maintainInertia` runs the drag's own action again with the
- * decayed movement). An orbit turns about the drag's own pivot at its
- * angular speed (rad/s); a pan moves the view's centre at the speed the
- * drag was moving it (world units/s: the hand's screen speed taken through
- * the view at the pointer); a slide goes on by the drag's own rule (CSS
- * px/s). `pxSpeed` is the hand's speed decayed alike, which ends it; `at`
- * the time the coast has been taken to, ms.
- *
- * DO NOT coast an orbit about the view's centre or a pan by the scale at the
- * centre: the drag turned about the point pressed and held the ground under
- * the hand, and the coast that did otherwise changed the motion at the very
- * moment of release - the view swung onto another pivot, or ran on two to
- * three times faster or slower than the hand had moved it (2026-10-14).
- */
+/** DO NOT coast an orbit about the view's centre or a pan by the scale at the centre */
 type Coast =
   | { kind: 'orbit'; vx: number; vy: number; pxSpeed: number; at: number; pivot: { px: number; py: number; height: number } }
   | { kind: 'pan'; vx: number; vy: number; pxSpeed: number; at: number }
   | { kind: 'slide'; vx: number; vy: number; pxSpeed: number; at: number };
 
-/**
- * THE CAMERA'S GESTURES: the pointers on the canvas, a pan, an orbit, a
- * two-finger pinch - with the handlers that move the view by them. Each
- * pointer's last position is kept by its id and taken away on release
- * (MDN, "Pinch zoom gestures"); two at once are a pinch whose spread zooms,
- * whose twist turns and whose middle holds the ground under it.
- *
- * A pan holds the GROUND POINT that was grabbed under the pointer, not a
- * screen delta over the zoom: the two agree only looking straight down,
- * and holding the point is one rule for every view (`Viewport.panTo`).
- */
+/** THE CAMERA'S GESTURES: the pointers on the canvas, a pan, an orbit, a two-finger pinch */
 export class CameraGestures {
   private readonly pointers = new Map<number, Vec2>();
   /** A pan: the ground point held, or none (`grabbed` null) when it slides by the drag; `last` the pointer, CSS px. */
@@ -133,11 +83,7 @@ export class CameraGestures {
     return this.pointers.has(id);
   }
 
-  /**
-   * The gesture in progress, as a dictionary key, or null. The view may not
-   * import the interface (eslint layers): the reader translates it. DO NOT
-   * write the player's text here.
-   */
+  /** DO NOT write the player's text here. */
   gesture(): string | null {
     if (this.pinch) return 'gesture.camera.pinch';
     if (this.orbit) return 'gesture.camera.orbit';
@@ -167,18 +113,13 @@ export class CameraGestures {
   private track(x: number, y: number, t: number): void {
     const list = this.samples;
     const last = list[list.length - 1];
-    // The coalesced list is in time order (Pointer Events 3); a clock that
-    // stepped back would make a slope of nothing.
+    // The coalesced list is in time order (Pointer Events 3); a clock that stepped back would make a slope of nothing.
     const time = last && t < last.t ? last.t : t;
     list.push({ x, y, t: time });
     while (list.length > 2 && time - list[0]!.t > SPEED_HORIZON_MS) list.shift();
   }
 
-  /**
-   * The hand's speed as it let go, CSS px/s: the slope of a line fitted by
-   * least squares to the last samples; zero when they span too little time
-   * to say.
-   */
+  /** The hand's speed as it let go, CSS px/s: the slope of a line fitted by least squares to the last samples */
   private handSpeed(): { x: number; y: number } {
     const list = this.samples;
     if (list.length < 2) return { x: 0, y: 0 };
@@ -194,10 +135,7 @@ export class CameraGestures {
     return { x: (n * stx - st * sx) / d, y: (n * sty - st * sy) / d };
   }
 
-  /**
-   * A drag let go at `time` (the release's own time stamp, ms): the camera
-   * goes on with the motion the hand was making, if it was still moving.
-   */
+  /** A drag let go at `time` (the release's own time stamp, ms) */
   private throwCoast(time: number): void {
     const list = this.samples;
     const newest = list[list.length - 1];
@@ -222,9 +160,7 @@ export class CameraGestures {
       this.coast = { kind: 'slide', vx, vy, pxSpeed, at: time };
       return;
     }
-    // The ground under the hand moved at J v (J: the ground point under a
-    // pointer per pixel, on the plane held), and the drag kept it under the
-    // hand by moving the view's centre the other way: -J v.
+    // The ground under the hand moved at J v
     const view = this.host.view();
     const { w, h } = this.host.size();
     const p = pan.last;
@@ -236,19 +172,11 @@ export class CameraGestures {
     this.coast = { kind: 'pan', vx: -gx, vy: -gy, pxSpeed, at: time };
   }
 
-  /**
-   * Takes the coast to `now` (ms, the frame's time on the events' clock):
-   * true when the camera moved. The step is the exact integral of the speed
-   * v e^(-t/tau) over the time since the last step, tau (1 - e^(-dt/tau)) v,
-   * so the path is the same whatever the frames in between - and it starts
-   * at the release itself, not at the frame before it.
-   */
+  /** Takes the coast to `now` (ms, the frame's time on the events' clock): true when the camera moved. */
   advance(now: number): boolean {
     const coast = this.coast;
     if (!coast) return false;
-    // It ends when the hand's speed has decayed to the least one, at a time of
-    // its own (tau ln(v / least)), not at whichever frame first finds it below:
-    // the same coast covers the same ground whatever the frames.
+    // It ends when the hand's speed has decayed to the least one, at a time of its own
     const least = coast.kind === 'orbit' ? COAST_MIN_ORBIT / ORBIT_PER_PX : COAST_MIN_PAN;
     const left = COAST_DECAY_S * Math.log(Math.max(1, coast.pxSpeed / least));
     const seconds = Math.min(COAST_MAX_STEP_S, left, Math.max(0, (now - coast.at) / 1000));
@@ -265,9 +193,7 @@ export class CameraGestures {
       const c = view.centre;
       view.moveTo({ x: c.x + coast.vx * span, y: c.y + coast.vy * span });
     } else {
-      // The slide's own sense and scale (`move`): the ground follows the
-      // hand, so the view's centre goes the other way across the screen and
-      // away down it.
+      // The slide's own sense and scale (`move`)
       const units = span / Math.max(1e-6, view.scaleAtCentre ?? view.zoom);
       view.slide(-coast.vx * units, coast.vy * units);
     }
@@ -279,17 +205,7 @@ export class CameraGestures {
     return true;
   }
 
-  /**
-   * The point a pan or pinch holds under the pointer: what is drawn there,
-   * on the plane at its own height, which `panTo` then solves on too. On the
-   * plane at zero - as orthographic views allow, every plane moving alike -
-   * the perspective view, which stands at the height of the ground it looks
-   * at, moved too far over a hill and jumped when the pointer's ray passed
-   * that plane's horizon (the player, 2026-10-09: the middle-button drag
-   * failed close up). Grabbed and solved on the same plane, the first move
-   * does not jerk (comparing a deck-plane point with a zero-plane one jerked
-   * every drag by `height / tan(48°)`).
-   */
+  /** The point a pan or pinch holds under the pointer */
   private anchor(px: number, py: number): { world: Vec2; height: number } {
     const { w, h } = this.host.size();
     const height = this.host.heightUnder({ x: px, y: py });
@@ -320,23 +236,13 @@ export class CameraGestures {
   startPan(id: number, at: Vec2): void {
     const held = this.anchor(at.x, at.y);
     const { w, h } = this.host.size();
-    // Close over the ground, looking along the street, the pointer may be over
-    // the horizon or on ground far down the road: there is no point to hold
-    // (the stand-in the view gave, its own centre, pulled it back at the
-    // first move - the player, 2026-10-10). The view then slides by the drag,
-    // at the scale of the point looked at, as three's MapControls pans.
+    // Close over the ground, looking along the street, the pointer may be over the horizon or on ground far down the road
     const holds = this.host.view().holds(at.x, at.y, held.height, w, h);
     this.pan = { id, grabbed: holds ? held.world : null, height: held.height, last: at };
     this.startTrack(at);
   }
 
-  /**
-   * Pointer `id` moved to `screen` at `time` (the event's time stamp, ms):
-   * true when the camera took the move. `path`: every position the pointer
-   * went through since the last event, with its own time
-   * (`getCoalescedEvents()`), for the hand's speed; the camera moves once, to
-   * where the pointer is now.
-   */
+  /** Pointer `id` moved to `screen` at `time` (the event's time stamp, ms): true when the camera took the move. */
   move(id: number, screen: Vec2, time = performance.now(), path?: readonly PointerSample[]): boolean {
     if (this.pointers.has(id)) this.pointers.set(id, screen);
     const { host } = this;
@@ -349,8 +255,7 @@ export class CameraGestures {
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const limits = view.zoomBounds;
       const targetZoom = clamp((pinch.zoom0 * d) / Math.max(1, pinch.d0), limits.min, limits.max);
-      // A twist of the two fingers turns the camera with them; the pan below
-      // then keeps the ground between the fingers where it was.
+      // A twist of the two fingers turns the camera with them
       const angle = Math.atan2(b.y - a.y, b.x - a.x);
       const twist = Math.atan2(Math.sin(angle - pinch.angle), Math.cos(angle - pinch.angle));
       pinch.angle = angle;
@@ -373,8 +278,7 @@ export class CameraGestures {
       const dx = screen.x - orbit.last.x;
       const dy = screen.y - orbit.last.y;
       orbit.last = screen;
-      // A turntable: the near side of the map follows the hand; dragging
-      // down lifts the camera towards a plan view.
+      // A turntable: the near side of the map follows the hand; dragging down lifts the camera towards a plan view.
       view.orbit(dx * ORBIT_PER_PX, dy * ORBIT_PER_PX, { px: orbit.pressed.x, py: orbit.pressed.y, height: orbit.height });
       host.orbited();
       host.redraw();
@@ -384,8 +288,7 @@ export class CameraGestures {
       const dx = screen.x - pan.last.x, dy = screen.y - pan.last.y;
       if (pan.grabbed) view.panTo(pan.grabbed, screen.x, screen.y, w, h, pan.height);
       else {
-        // The ground follows the hand: dragged right it goes right, dragged
-        // down it comes nearer. `scaleAtCentre` is pixels per unit at the point looked at.
+        // The ground follows the hand: dragged right it goes right, dragged down it comes nearer.
         const unit = 1 / Math.max(1e-6, view.scaleAtCentre ?? view.zoom);
         view.slide(-dx * unit, dy * unit);
       }
@@ -396,12 +299,7 @@ export class CameraGestures {
     return false;
   }
 
-  /**
-   * Pointer `id` let go at `time` (the release's time stamp, ms).
-   * `wasPinching`: a pinch was on when it was let go; `clickCancels`: it was
-   * a right click that stayed a click over a gesture in progress, which that
-   * click cancels.
-   */
+  /** Pointer `id` let go at `time` (the release's time stamp, ms). */
   release(id: number, time = performance.now()): { wasPinching: boolean; clickCancels: boolean } {
     const wasPinching = this.pinch !== null;
     this.pointers.delete(id);

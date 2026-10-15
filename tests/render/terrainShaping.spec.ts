@@ -15,14 +15,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 
-/**
- * THE CORNERS A SHAPING PASS ASKS (`terrainShaping.ts`, `terrain.ts`
- * `shapeToRoads`): with regions - the sites of a generated city's buildings,
- * graded at once - only the regions' corners, each once, and the ground they
- * give is the ground the old walk of every box against every region gave, to
- * the bit. The roads and the platforms are the game's own (`buildRoadElevation`,
- * `siteGrading`), on a plate laid as `terrain.ts` lays it.
- */
+/** THE CORNERS A SHAPING PASS ASKS (`terrainShaping.ts`, `terrain.ts` `shapeToRoads`): with regions */
 const SEGMENTS = 320;
 const N = SEGMENTS + 1;
 const CELL = PLATE_SIZE / SEGMENTS;
@@ -147,14 +140,7 @@ describe('a shaping pass over regions', () => {
   });
 });
 
-/**
- * THE SAME PASSES OFF THE PAGE (`groundShape.ts`, `groundShape.worker.ts`): the
- * corners asked and the roads and platforms they read, copied as `postMessage`
- * copies them (`structuredClone`), shaped by the worker's function and copied
- * back, give the page's pass - the same corners, in the same order, the same
- * heights, to the bit; and two solves compared block by block give the page's
- * digests and the same blocks changed.
- */
+/** THE SAME PASSES OFF THE PAGE (`groundShape.ts`, `groundShape.worker.ts`) */
 describe('a shaping pass off the page', () => {
   const doc = grownCity();
   const net = new Network(doc);

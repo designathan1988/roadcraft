@@ -1,10 +1,4 @@
-/**
- * Packs the desktop build: Electron with `desktop/` as its app, and the
- * production build (`dist/`, without its source maps) beside it as
- * `resources/game` (`desktop/main.cjs` serves it). Run after `npm run build`.
- * The result: `release/Roadcraft-win32-x64/Roadcraft.exe`, a folder to copy
- * anywhere - no installer, no unpacking on every start.
- */
+/** Packs the desktop build: Electron with `desktop/` as its app, and the production build */
 import { packager } from '@electron/packager';
 import fs from 'node:fs';
 import path from 'node:path';

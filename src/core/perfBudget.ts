@@ -1,20 +1,4 @@
-/**
- * THE PERFORMANCE BUDGETS: one table for the game's own watch (the F9 monitor,
- * `ui/healthWatch.ts`), the specs (`tests/perf/budgets.spec.ts`, run by
- * `npm run check`).
- *
- * A ratchet: each number is what the game does now with a margin, and may
- * only go DOWN. Raising one needs the player's yes (CLAUDE.md, "Performance
- * budgets"). A floor (`min`) guards the picture: a change that "speeds up" by
- * dropping detail fails as surely as one that slows down.
- *
- * As mature projects keep performance from rotting: limits measured and
- * enforced in the build (web.dev, "Performance budgets 101"); assertions that
- * fail the run at `error` and only report at `warn`, on the median of several
- * runs (Lighthouse CI); and counts of work rather than wall time where a
- * check must be stable from run to run (Iai/Bencher instruction counts) -
- * the specs count, the browser gate times.
- */
+/** THE PERFORMANCE BUDGETS: one table for the game's own watch (the F9 monitor, `ui/healthWatch.ts`), the specs */
 
 export interface Budget {
   /** The most it may be. */
@@ -27,12 +11,7 @@ export interface Budget {
   readonly why: string;
 }
 
-/**
- * A step the game measures (`performance.measure('hitch:<name>')`), ms of one
- * occurrence, keyed by the name up to its first space. Over it, the F9 monitor
- * writes a warning with the step and its time. Measured 2026-10-11 on the
- * player's map and a generated town (CPU, headless).
- */
+/** A step the game measures (`performance.measure('hitch:<name>')`), ms of one occurrence */
 const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
   'mutate/edit+after': { max: 150, level: 'warn', why: 'o clique de uma edição: commit e texto do desfazer (65-112 ms)' },
   'mutate/after edit': { max: 150, level: 'warn', why: 'o clique de uma edição, com a rede refeita (65-112 ms)' },
@@ -46,13 +25,7 @@ const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
   'draw/Render': { max: 100, level: 'warn', why: 'desenho de um quadro, CPU (até 83 ms)' },
 };
 
-/**
- * The step a measure's name budgets: by its whole name, else by its name up
- * to the first space (a step that adds a detail after it); null when none does.
- * DO NOT cut at the space first: 'mutate/after edit' and 'road-edit/world
- * rebuilt' became 'mutate/after' and 'road-edit/world', which no row holds, and
- * those two steps were never held to a budget.
- */
+/** DO NOT cut at the space first: 'mutate/after edit' and 'road-edit/world rebuilt' became 'mutate/after' and */
 export function stepBudget(name: string): { readonly key: string; readonly budget: Budget } | null {
   const bare = name.startsWith('hitch:') ? name.slice(6) : name;
   const whole = STEP_BUDGETS[bare];
@@ -63,15 +36,7 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
   return budget ? { key, budget } : null;
 }
 
-/**
- * THE CITY PLAN'S BUDGETS: what the whole-map city may cost, from the plan
- * (`docs/PESQUISA-CIDADE-10KM.md` §8.6, `docs/CIDADE-10KM.md`), for an RTX
- * 3060 at 1920×1080. `__roadcraft.budget(view)` measures the running game
- * against them (`cityBudgetTable`): performance work starts from the row
- * furthest over, and a change that mends one row by breaking another is
- * wrong. Change a number here only with the plan, and the plan only with the
- * player's yes.
- */
+/** THE CITY PLAN'S BUDGETS: what the whole-map city may cost, from the plan */
 export type CityView = 'rua' | 'bairro' | 'mapa';
 
 /** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor). */

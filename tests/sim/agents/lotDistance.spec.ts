@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Building } from '@world/buildings/types';
 import { buildLotGrid } from '@sim/agents/lotNav';
 
-/**
- * The lot's distance field is a true shortest distance to the nearest exit:
- * the same as a plain Dijkstra that scans for the nearest open cell (no heap),
- * over the same free cells and the same no-corner-cutting rule.
- */
+/** The lot's distance field is a true shortest distance to the nearest exit */
 function reference(nx: number, ny: number, cell: number, blocked: Uint8Array, sources: number[]): Float64Array {
   const dist = new Float64Array(nx * ny).fill(Infinity);
   const done = new Uint8Array(nx * ny);

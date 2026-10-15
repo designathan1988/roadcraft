@@ -6,18 +6,7 @@ import { junctionDetail } from '@world/markings';
 import { Level } from '@world/roadTypes';
 import { stopLineDistance } from '@world/approach';
 
-/**
- * A WIDE ROAD FORKING INTO TWO NARROWER ONES.
- *
- * An avenue splitting into two streets 50 degrees apart needs no trim on the
- * avenue itself: its corners with the streets fall behind the node. The mouth
- * distance was therefore 0, and 0 is also the network's sentinel for "no
- * junction here" - so the avenue approach got no crossing and a stop line AT
- * THE NODE, while the painter still drew a stop bar a crossing's depth back
- * from it. Cars queued past their own bar, pedestrians walked over bare
- * asphalt where the sidewalk graph put their crossing, and the only zebras
- * were on the two street arms.
- */
+/** A WIDE ROAD FORKING INTO TWO NARROWER ONES. */
 function fork(): { doc: RoadDoc; net: Network; node: number; avenue: number } {
   const doc = new RoadDoc();
   const node = doc.addNode({ x: 0, y: 0 });

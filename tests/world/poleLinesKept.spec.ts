@@ -5,11 +5,7 @@ import { poleLinesIn, poleLinesWork } from '@world/poleLines';
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 
-/**
- * The regional pole lines kept per network (`poleLinesIn`): a rectangle
- * already kept and made again after an edit takes its own place back; it must
- * not let go of another rectangle, which nothing touched.
- */
+/** The regional pole lines kept per network (`poleLinesIn`) */
 describe('regional pole lines kept', () => {
   it('a rectangle made again does not let go of another one', () => {
     const doc = new RoadDoc();

@@ -2,11 +2,7 @@ import { Color, type MeshStandardMaterial } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
 
-/**
- * The window panes' material: the room behind each pane drawn by interior
- * mapping (`roomBehind.ts` gives its box), what hangs in the window, and the
- * room's light at night. Set once on the kit's glass materials.
- */
+/** The window panes' material: the room behind each pane drawn by interior mapping */
 export function roomBehindGlass(
   material: MeshStandardMaterial,
   kind: 'glass' | 'glassDark',
@@ -21,9 +17,7 @@ export function roomBehindGlass(
 ): void {
   const { tones, roomsAwake, roomDaylight, tvClock } = shared;
   const lin = (hex: number): string => { const c = new Color().setHex(hex); return `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`; };
-  // At night not every window is lit, nor all alike: each pane draws its own
-  // lot from where it stands - a third dark, the rest from dim to bright,
-  // some cooler (a television) - so a block reads as rooms, not a lamp.
+  // At night not every window is lit, nor all alike: each pane draws its own lot from where it stands
   const glassy = material;
   glassy.onBeforeCompile = (shader) => {
     shader.uniforms.roomsAwake = roomsAwake;
@@ -48,8 +42,7 @@ varying vec3 vRoomRay;
 varying vec2 vPaneSize;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vPane = position.xy;
-// The room behind the pane (roomBehind.ts), and the view ray in its
-// frame: x across the pane, y up, z into the building, metres.
+// The room behind the pane (roomBehind.ts), and the view ray in its frame
 vRoomA = roomA; vRoomB = roomB; vRoomC = roomC;
 #ifdef USE_INSTANCING
 mat4 paneToWorld = modelMatrix * instanceMatrix;
@@ -68,8 +61,7 @@ vec3 roomAt = instanceMatrix[3].xyz;
 vec3 roomAt = vec3(0.0);
 #endif
 vRoomLot = fract(sin(dot(floor(roomAt * 0.37), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-// The room behind the pane (lightSlots.ts): each space draws its own lot
-// from its seed - every window of a flat with the flat - against the share
+// The room behind the pane (lightSlots.ts): each space draws its own lot from its seed
 // of people awake at this hour (\`roomsAwake\`, ATUS): lit in the evening,
 // most dark after midnight. A pane with no room known draws by where it stands.
 float spaceLot = litSlot > -0.5 ? fract(sin(litSlot * 12.9898 + 4.1414) * 43758.5453) : vRoomLot;
@@ -91,15 +83,7 @@ uniform vec3 furnitureTone[${FURNITURE_KINDS.length}];
 float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }
 ${ROOM_LAMP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-// The room behind the pane. Where the building's interior is known
-// (roomBehind.ts): its own box - side walls, back wall, floor and
-// ceiling where the rooms the cut-open view draws have them - traced by
-// the view ray (interior mapping, van Dongen 2008: the nearest of the
-// room's planes the ray leaves by), its floor wood or stone as that view
-// draws it, and the largest piece of its furniture in that piece's own
-// colours, as a box in the same place. Lit by its window: brighter by the
-// glass, darker deep in, darker in the corners. Elsewhere (a pane with no
-// room known), the painted room of before.
+// The room behind the pane.
 vec3 roomSeen;
 if (vRoomA.z > 0.05) {
   vec3 o = vRoomEye;
@@ -184,10 +168,7 @@ if (vRoomA.z > 0.05) {
   }
   roomSeen = c * shade * 0.9 + diffuseColor.rgb * 0.04;
   {
-    // What hangs in the window, 12 cm behind the glass, each room its
-    // own: curtains drawn to the sides, a roller blind part way down,
-    // venetian slats, a sheer across - or nothing. Lit by the window, so
-    // brighter than the room.
+    // What hangs in the window, 12 cm behind the glass, each room its own
     float h1 = fract(vRoomLot * 13.71), h2 = fract(vRoomLot * 7.37), h3 = fract(vRoomLot * 3.13);
     vec3 cq = o + d * ((0.12 - o.z) / d.z);
     vec2 pu = vec2(cq.x / max(vPaneSize.x, 0.1) + 0.5, cq.y / max(vPaneSize.y, 0.1) + 0.5);
@@ -195,14 +176,11 @@ if (vRoomA.z > 0.05) {
       : h2 < 0.72 ? vec3(0.72, 0.6, 0.45) : h2 < 0.84 ? vec3(0.4, 0.47, 0.58) : h2 < 0.93 ? vec3(0.6, 0.34, 0.26) : vec3(0.42, 0.5, 0.38);
     float cover = 0.0;
     vec3 hung = cloth;
-    // The weave: a fine grain in the cloth, and the light coming through
-    // it brighter at the top of the window than at the foot.
+    // The weave: a fine grain in the cloth
     float weave = 0.94 + 0.06 * roomHash(floor(pu.x * vPaneSize.x * 90.0) + 131.0 * floor(pu.y * vPaneSize.y * 90.0));
     float daylight = 0.85 + 0.25 * clamp(pu.y, 0.0, 1.0);
     if (h1 < 0.36) {
-      // Drawn to the sides: gathered in folds (a pleat every 9 cm), each
-      // fold lit on one flank and shaded on the other, the cloth's edge a
-      // soft wave, its hem a darker band at the foot.
+      // Drawn to the sides: gathered in folds
       float side = 0.14 + 0.2 * h3;
       float sway = 0.03 * sin(pu.y * 7.0 + h2 * 6.0);
       float left = step(pu.x, side + sway), right = step(1.0 - side - sway, pu.x);
@@ -212,8 +190,7 @@ if (vRoomA.z > 0.05) {
       float hem = mix(0.82, 1.0, step(0.04, pu.y));
       hung = cloth * relief * hem * weave * daylight;
     } else if (h1 < 0.56) {
-      // A roller blind part way down: its bar along the bottom, a little
-      // light through the cloth.
+      // A roller blind part way down: its bar along the bottom, a little light through the cloth.
       float down = 0.15 + 0.65 * h3;
       cover = step(1.0 - down, pu.y);
       float bar = step(abs(pu.y - (1.0 - down)), 0.012);
@@ -230,9 +207,7 @@ if (vRoomA.z > 0.05) {
     }
     roomSeen = mix(roomSeen, hung * 0.8, cover);
   }
-  // Seen through the glass, less of the room as the glass turns to a
-  // mirror towards grazing (Schlick's Fresnel, F0 4 %): what is not
-  // transmitted is the sky's reflection, drawn by the lighting.
+  // Seen through the glass, less of the room as the glass turns to a mirror towards grazing (Schlick's Fresnel, F0 4 %)
   float cosView = clamp(abs(vRoomRay.z) / max(length(vRoomRay), 1e-4), 0.0, 1.0);
   roomSeen *= 1.0 - (0.04 + 0.96 * pow(1.0 - cosView, 5.0));
 } else {
@@ -249,32 +224,24 @@ if (vRoomA.z > 0.05) {
   room = mix(room, vec3(0.28, 0.22, 0.18), furniture * 0.85);
   roomSeen = mix(diffuseColor.rgb, room, 0.55);
 }
-// A pane a few pixels across or less: its own room, its dark or light
-// glass and its own reflection averaged into one quiet tone. Each pane
-// drawn as its own random shade was the "chuvisco" over every facade from
-// the middle distance out (the player, 2026-10-09). Measured on screen
+// A pane a few pixels across or less
 // (\`vPane\` spans the pane), so it holds at any zoom and lens.
 float paneTiny = smoothstep(0.12, 0.45, max(fwidth(vPane.x), fwidth(vPane.y)));
 roomSeen = mix(roomSeen, vec3(0.42, 0.45, 0.47), paneTiny);
 // The glass itself scatters next to nothing: what a pane shows is the
 // room through it (sent out below, \`roomDaylight\`) and its Fresnel
-// reflection. Lit as a wall, the room took the sun on the facade and
-// every sunny pane read as a painted beige panel.
+// reflection.
 diffuseColor.rgb *= 0.06;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = mix(roughnessFactor, 0.55, paneTiny);`)
       .replace('#include <envmap_physical_pars_fragment>', `#include <envmap_physical_pars_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-// Not every occupied room shows its light (blinds, a lamp in the next
-// room): about a third stay dark, and the lit ones range from a dim lamp
-// to a bright ceiling light - so a night tower reads as windows, not as a
-// sheet of cream (the player, 2026-10-09: "incandescente").
+// Not every occupied room shows its light (blinds, a lamp in the next room)
 float shown = step(fract(vRoomLot * 5.31), 0.64);
 float level = 0.3 + 0.85 * fract(vRoomLot * 7.13) * fract(vRoomLot * 2.17 + 0.4);
 float roomLit = shown * (vLit >= 0.0 ? vLit * level : step(0.34, vRoomLot) * level);
 // The lamp's colour by the room (\`roomLamps.ts\`): warm or cool white in a
-// home, neutral to daylight in an office or a shop (a stone floor), and in
-// some homes only the television's blue light, jumping at each cut.
+// home, neutral to daylight in an office or a shop
 float office = vRoomA.z > 0.05 && vRoomB.y > 0.5 && vRoomB.y < 1.5 ? 1.0 : 0.0;
 vec3 roomTint = roomLamp(fract(vRoomLot * 17.31), office);
 roomTint = mix(roomTint, tvLight(tvClock, vRoomLot), (1.0 - office) * step(1.0 - ${TV_SHARE.toFixed(2)}, fract(vRoomLot * 3.71)));

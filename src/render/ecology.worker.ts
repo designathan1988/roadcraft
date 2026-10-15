@@ -1,13 +1,7 @@
 import { computeEcology, type EcologyField, type EcologyInput } from '@world/ecology';
 import { farWoods, type FarWoodsAsk } from './farWoods';
 
-/**
- * A plate's ecosystem off the page's thread (`ecologyPool.ts`): the whole
- * field of what grows read from the land sent (its arrays transferred, not
- * copied), and sent back the same way with the job's id. Or, asked `far`, a
- * plate's far woods (`farWoods.ts`): its land, its ecosystem and the trees
- * it grows, worked out here from the land's own field.
- */
+/** A plate's ecosystem off the page's thread (`ecologyPool.ts`): the whole field of what grows read from the land sent */
 self.onmessage = (event: MessageEvent<{ id: number; input?: EcologyInput; far?: FarWoodsAsk }>) => {
   const { id, input, far } = event.data;
   const post = self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void };

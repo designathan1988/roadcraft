@@ -1,14 +1,7 @@
 import { Object3D, Quaternion, SkinnedMesh, Vector3 } from 'three';
 import { clipTransferFor, type LibraryClip, type NeutralWalk, type WalkAmplitude } from './citizenWalk';
 
-/**
- * Bake-time stride warping. The existing slow capture supplies the timing,
- * foot lifts and weight shifts; its ankle paths are turned around each foot's
- * own mean stance position. Two-bone IK preserves the lengths of the legs and
- * the forward bend of the knees. The torso and the foot's captured orientation
- * are preserved. This creates side/back steps without turning the whole body
- * or adding any displacement to the simulation.
- */
+/** Bake-time stride warping. */
 export function directionalWalkFor(rig: Object3D, mesh: SkinnedMesh, clip: LibraryClip,
   amplitude: WalkAmplitude, angle: number): NeutralWalk & { readonly strideScale: number } {
   const walk = clipTransferFor(rig, mesh, clip, amplitude);
@@ -17,8 +10,7 @@ export function directionalWalkFor(rig: Object3D, mesh: SkinnedMesh, clip: Libra
     if (bones.some(bone => !bone)) throw new Error(`Citizen has no ${side} leg for stride warping`);
     return { thigh: bones[0]!, calf: bones[1]!, foot: bones[2]!, mean: new Vector3() };
   });
-  // Use the source sample count so both feet's centres are independent of
-  // the animation phase at which a particular body happens to start walking.
+  // Use the source sample count so both feet's centres are independent of the animation phase at which a particular body
   const samples = clip.source.file.frames.length;
   const feet: Vector3[][] = [];
   for (let i = 0; i < samples; i++) {
@@ -36,9 +28,7 @@ export function directionalWalkFor(rig: Object3D, mesh: SkinnedMesh, clip: Libra
     const clearance = soleClearance(rig);
     const hips = Math.abs(legs[0]!.thigh.getWorldPosition(new Vector3()).x - legs[1]!.thigh.getWorldPosition(new Vector3()).x);
     const centre = (origins[0]!.x + origins[1]!.x) / 2;
-    // A side step needs room for the following foot. Its support stance is
-    // the hip span plus the two inward half-soles, measured on this body.
-    // Shorten the cycle to fit that support instead of crossing the ankles.
+    // A side step needs room for the following foot.
     const stance = Math.max(origins[0]!.x - origins[1]!.x, hips + clearance);
     legs[0]!.mean.x = centre + stance / 2;
     legs[1]!.mean.x = centre - stance / 2;

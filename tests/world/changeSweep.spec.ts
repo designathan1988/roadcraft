@@ -4,11 +4,7 @@ import { type ChangeKind, type ChangeRect, ChangeJournal } from '@world/changes'
 import { ChangeSweep } from '@world/derived';
 import { Rng } from '@core/rng';
 
-/**
- * The sweep (`ChangeSweep`) answers every reader of a point as the diary's
- * own `touches` does, whatever the reader's serial: caught up with the last
- * advance (the cell asked), behind it (the diary asked), or ahead.
- */
+/** The sweep (`ChangeSweep`) answers every reader of a point as the diary's own `touches` does */
 const KINDS: readonly ChangeKind[] = ['ground', 'buildings', 'roads'];
 const OTHER: ChangeKind = 'trees';
 

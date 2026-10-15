@@ -2,14 +2,7 @@ import { difference, intersection, opened, union, type MultiPoly, type Poly } fr
 import { m } from '@world/units';
 import { type SurfaceShape, type TileRect, clipToRect, surfaceShape } from './mesh/tileShape';
 
-/**
- * THE SHAPES OF ONE TILE OF THE ROADS' SURFACES (`roadSurfaces.ts`): the bands
- * cut from the rings that reach it - verge, footway, kerb, asphalt, kerb ramps,
- * medians, paint - each clipped to the tile and triangulated (`tileShape.ts`).
- * Read off x and y alone: made by a worker (`roadTile.worker.ts`) or on the
- * page, the same shapes; the page reads each vertex's height and frame after.
- * Pure: no three, no DOM.
- */
+/** THE SHAPES OF ONE TILE OF THE ROADS' SURFACES (`roadSurfaces.ts`): the bands cut from the rings that reach it */
 
 /** A band thinner than twice this is a sliver of two outlines nearly meeting, not a surface. */
 const SLIVER = m(0.002);
@@ -56,13 +49,9 @@ export function tileShapes(
   const asphalt = merged(into.levels.asphalt);
   const footway = difference(sidewalk, curb);
   const kerb = difference(curb, asphalt);
-  // The dropped kerbs take their piece out of the footway and the kerb and
-  // are a surface of their own, sloping (`world/curbRamps.ts`).
+  // The dropped kerbs take their piece out of the footway and the kerb and are a surface of their own, sloping
   const ramps = merged(into.ramps);
-  // Each band a difference of two outlines that meet edge to edge: where they
-  // nearly do (a leg drawn in a pass of its own, its kerb's end a fraction of
-  // a millimetre off its carriageway's), a sliver joined two strips across
-  // the road and was triangulated over it (AT2): opened (`core/clipper.ts`).
+  // Each band a difference of two outlines that meet edge to edge: where they nearly do
   const bands: Record<'verge' | 'footway' | 'kerb' | 'asphalt' | 'curbRamp', MultiPoly> = {
     verge: opened(difference(casing, sidewalk), SLIVER),
     footway: opened(ramps.length > 0 ? difference(footway, ramps) : footway, SLIVER),

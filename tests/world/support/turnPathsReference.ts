@@ -7,15 +7,7 @@ import { HEADING_CHORD, chordHeading } from '@world/heading';
 import { m } from '@world/units';
 import { bezierTurn, type JunctionSurface, type RoadEnds, type WaitingLane } from '@world/turnPaths';
 
-/**
- * The turn-shape search as it was before it was made fast (2026-10-14), kept
- * frozen as the oracle of `turnPathsEquivalence.spec.ts`: every candidate
- * swept position by position, every corner tested against every ring with
- * the plain crossings test, every body against every queued car, and the
- * chosen path swept again per body size for `maxBodyClass`. The fast search
- * must give the same paths and the same body class, bit for bit.
- * DO NOT "fix" or speed this file up: its whole value is being the old code.
- */
+/** DO NOT "fix" or speed this file up: its whole value is being the old code. */
 
 const HANDLES = [0.39, 0.44, 0.49, 0.54, 0.59, 0.65] as const;
 const FALLBACK_HANDLE = 0.65;

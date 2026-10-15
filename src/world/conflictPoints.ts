@@ -35,37 +35,11 @@ export interface ConflictPoint {
   readonly sB: number;
   readonly kind: ConflictKind;
   readonly at: Vec2;
-  /**
-   * Zone on `a` (or `b`) for a body of class `mine` against a body of class
-   * `theirs` on the other movement, or null when those two sizes never touch.
-   */
+  /** Zone on `a` (or `b`) for a body of class `mine` against a body of class `theirs` on the other movement */
   zone(on: ConnectorId, mine: BodyClass, theirs: BodyClass): Zone | null;
 }
 
-/**
- * Where two movements through a junction physically conflict.
- *
- * This used to be the intersection of two connector CENTRELINES, which is a
- * point on paper and nothing on the road. Measured in seeded traffic on six
- * junction layouts, it missed every conflict that is not a crossing of lines:
- * opposing left turns whose bodies brush as they pass, a bus on a right turn
- * swinging over the left turn beside it, a truck clipping a through movement
- * on a skewed leg — and it released every claim when the REAR passed the
- * crossing point, while the body was still half across the other lane.
- *
- * Each movement is now swept with the real body shape the renderer draws — a
- * rectangle centred on the path and aligned to its tangent — for three size
- * classes, and a zone is the interval of body-centre positions over which that
- * rectangle overlaps the other movement's swept area. Claims are held until
- * the vehicle's centre passes the zone exit for its own size, and a smaller
- * vehicle is only held back by what could actually touch it.
- *
- * Built once per topology version, never per frame. The nesting of the classes
- * (a smaller body at a centre is contained in a larger one at the same centre)
- * is what keeps it cheap: the heavy/heavy overlap is computed first with a
- * spatial grid, and the eight other class pairs only re-test the rectangle
- * pairs that heavy/heavy found.
- */
+/** Where two movements through a junction physically conflict. */
 export class ConflictIndex {
   readonly points: ConflictPoint[] = [];
   /** References held by each connector, sorted by arc position. */
@@ -75,51 +49,20 @@ export class ConflictIndex {
   /** Movements whose zone reaches a body still waiting behind its stop line. */
   readonly queueIntrusions: { a: ConnectorId; b: ConnectorId; mine: BodyClass; theirs: BodyClass }[] = [];
 
-  /**
-   * Conflict ids are resources held by live vehicles, so their meaning must
-   * survive a topology rebuild.  Array positions are deliberately never
-   * recycled: a connector pair that still exists keeps its id, while a new
-   * pair receives a fresh one.  `points` may therefore be sparse after edits.
-   */
+  /** Conflict ids are resources held by live vehicles, so their meaning must survive a topology rebuild. */
   private readonly idByKey = new Map<string, number>();
   private nextId = 0;
 
-  /**
-   * The zones of every pair measured by the previous build, keyed by the two
-   * sweeps' sampled geometry.
-   *
-   * `pairTable` is two thirds of a topology rebuild, and a topology rebuild ran
-   * it for every pair of movements at EVERY junction on every edit. Measured on
-   * a 144-segment grid: 2.0 s per road drawn, of which the one or two junctions
-   * the road actually touched were a few per cent. A pair's zones depend on
-   * nothing but its two sweeps, so an unchanged junction now reads back the
-   * answer it already had — the same object, so the result is identical — and
-   * only the movements whose geometry moved are swept again. Each build keeps
-   * exactly the pairs it used, so the cache never outgrows the map.
-   */
+  /** The zones of every pair measured by the previous build, keyed by the two sweeps' sampled geometry. */
   private pairCache = new Map<string, CachedPair>();
 
-  /**
-   * The sampled frames of the movements, keyed by the three centrelines they
-   * are sampled along.
-   *
-   * `sweepOf` walks the joined path in `SWEEP_STEP` steps, three `sampleAt`
-   * calls each (the position, and the two either side that give the heading),
-   * and it did that for every connector of every junction on every edit —
-   * including the ones whose geometry had not moved. The frame depends on
-   * nothing but the three centrelines, so it is kept and the sweep rebuilt
-   * around it: the lanelets in the returned sweep are the CURRENT ones.
-   */
+  /** The sampled frames of the movements, keyed by the three centrelines they are sampled along. */
   private sweepCache = new Map<string, Float64Array>();
 
   /** Every pair's zones known to this index, kept between sessions by the game (`seed`, `takeMeasured`). */
   private readonly store: KeptZones = { kept: new Map(), fresh: new Map() };
 
-  /**
-   * Zones measured in an earlier session (the game keeps them in the
-   * browser, `main.ts`): a pair found here is read back, not measured. Every
-   * opening measured every pair of the town again - 0.6 s on the test city.
-   */
+  /** Zones measured in an earlier session (the game keeps them in the browser, `main.ts`) */
   seed(kept: ReadonlyMap<string, Float64Array | null>): void {
     for (const [key, table] of kept) if (!this.store.kept.has(key)) this.store.kept.set(key, table);
   }
@@ -131,14 +74,7 @@ export class ConflictIndex {
     return fresh;
   }
 
-  /**
-   * Measures, a pair at a time, the zones the next `build` of `graph` will
-   * need and the caches do not hold yet, and leaves them in the caches; the
-   * index itself is not touched. `pairTable` is about a millisecond a pair
-   * and a new crossroads has a hundred pairs: done here in slices across
-   * frames (`main.ts`), the build that follows reads every pair back and
-   * costs a frame of its own no more.
-   */
+  /** Measures, a pair at a time, the zones the next `build` of `graph` will need and the caches do not hold yet */
   /** Pairs measured (not read from the caches) by the last `build` and the last `prepare`: for the probes. */
   readonly measured = { build: 0, prepare: 0 };
 
@@ -194,10 +130,6 @@ export class ConflictIndex {
   private *measureOffPage(wanted: readonly { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[],
     measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
     // OFF THE PAGE: every new pair at once, across the measurer's workers
-    // (`conflictPool.ts`), the same `pairTable` on the same samples, while
-    // this thread draws and builds the rest of the town. A pair at a time
-    // here, a generated city's 3.4 s of them held its opening (2026-10-14).
-    // While they work this yields `WAITING`: the frame's slice ends there.
     const tables = yield* answered(measurer.measure(wanted.map((w) => ({ a: w.a, b: w.b, key: w.key }))), 'the pairs are measured');
     for (let k = 0; k < wanted.length; k++) {
       const w = wanted[k]!;
@@ -210,15 +142,7 @@ export class ConflictIndex {
     }
   }
 
-  /**
-   * The pairs `prepare` read finished by `measurer`'s workers (`finishPair`), for every pair with zones not
-   * knowing them yet (measured now or read back from an earlier session): where their centrelines first
-   * cross (`firstCrossing`) and what the index makes of their zones (`pairFacts`), kept with the pair for
-   * `buildJunction`; when they fail, the build works them out as before. DO NOT work them out on the page
-   * when there are workers: every segment of one centreline against every segment of the other, every
-   * pair of a generated city, held the frame of the swap onto the new graph over a second at 2.5 km, and
-   * the facts, thirty zones a pair, a quarter of what was left of it (2026-10-15).
-   */
+  /** DO NOT work them out on the page when there are workers */
   private *finishOffPage(read: ReadonlyMap<string, { readonly a: Float64Array; readonly b: Float64Array }>,
     measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
     const pairs: CachedPair[] = [];
@@ -240,13 +164,7 @@ export class ConflictIndex {
     }
   }
 
-  /**
-   * The sweeps of these junctions' movements that `sweepCache` does not hold, sampled OFF THE PAGE by
-   * `measurer`'s workers (`sampleSweep`) from the lanes' own point lists and left in the caches as
-   * `sweepOf` and `shapeOf` leave them: the same frames, keys and shapes. When they fail, `sweepOf`
-   * samples them as before. DO NOT sample them on the page when there are workers: three `sampleAt` a
-   * step, every movement of a generated city, held a frame 0.9 s at 2.5 km (2026-10-15).
-   */
+  /** DO NOT sample them on the page when there are workers */
   private *sampleOffPage(graph: LaneletGraph, junctions: readonly JunctionTopology[], measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
     const asks: SweepAsk[] = [];
     /** The movement lanelet each ask was made from. */
@@ -286,16 +204,8 @@ export class ConflictIndex {
     }
   }
 
-  /**
-   * What each junction made (`buildJunction`): its points, its connectors, and the pair and sweep keys
-   * it read from the caches - what `update` takes away when the junction is built again.
-   */
-  /**
-   * What `prepare` read of each junction it prepared - its movements' sweeps and shapes, its pairs' keys -
-   * taken by `buildJunction` when the junction it builds is that very one (the lane graph taken over from
-   * the preparation's, `LaneletGraph.adopt`). DO NOT read them again at the swap: every movement swept and
-   * every pair looked up a second time, a city's on its first build, in the frame of the swap (2026-10-15).
-   */
+  /** What each junction made (`buildJunction`) */
+  /** DO NOT read them again at the swap */
   private readonly prepared = new Map<NodeId, PreparedJunction>();
 
   /** The junction's record from `prepare` (`prepared`), if it was made from the very junction and lanes built now. */
@@ -336,20 +246,14 @@ export class ConflictIndex {
     this.prepared.clear();
     this.pairCache = next;
     this.sweepCache = nextSweeps;
-    // The zones kept from other maps and from roads since undone stay in
-    // memory only while they are few next to this map's own.
+    // The zones kept from other maps and from roads since undone stay in memory only while they are few next to this map's
     if (this.store.kept.size > 4 * next.size + 4096) {
       for (const key of this.store.kept.keys()) if (!next.has(key) && !this.store.fresh.has(key)) this.store.kept.delete(key);
     }
     for (const list of this.byConnector.values()) list.sort((p, q) => p.s - q.s);
   }
 
-  /**
-   * The conflicts of these junctions only, built again from the graph as it is (`LaneletGraph.update`
-   * names them): their points, references, diverges and intrusions taken out and made again, every other
-   * junction's kept. DO NOT build the index of the whole map for an edit: every pair of every junction
-   * was looked up again, the town's for one road.
-   */
+  /** DO NOT build the index of the whole map for an edit */
   update(graph: LaneletGraph, junctions: ReadonlySet<NodeId>): void {
     const measuredBefore = pairsMeasured;
     /** What the junctions read before: let go once they are built again, so what they read again is kept. */
@@ -371,8 +275,7 @@ export class ConflictIndex {
       this.buildJunction(graph, junction, this.pairCache, this.pairCache, this.sweepCache, this.sweepCache);
       for (const id of this.ofJunction.get(node)?.connectors ?? []) this.byConnector.get(id)?.sort((p, q) => p.s - q.s);
     }
-    // DO NOT let them go before the junctions are built again: a movement the edit did not move lost its
-    // sweep, prepared or not (`prepare`), and was sampled again on the page.
+    // DO NOT let them go before the junctions are built again
     for (const made of released) {
       for (const key of made.pairs) unuse(this.pairUses, this.pairCache, key);
       for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
@@ -461,8 +364,7 @@ export class ConflictIndex {
     facts: PairFacts,
   ): number {
     const [lo, hi] = a < b ? [a, b] : [b, a];
-    // The key is the connector pair: a pair changing from a line crossing to a
-    // swept conflict after an edit is still the same resource.
+    // The key is the connector pair: a pair changing from a line crossing to a swept conflict after an edit is still the same
     const key = `${node}|${lo}|${hi}`;
     let id = this.idByKey.get(key);
     if (id === undefined) {
@@ -532,11 +434,7 @@ function sweepOf(graph: LaneletGraph, c: Connector,
   const path = joinedPath(inbound.centre, crossing.centre, outbound.centre);
   const { c0, count } = sweepSpan(crossing.length);
 
-  // The frame is a function of the three centrelines alone, so a movement
-  // whose road was not touched reads back the samples it already had.
-  // Each centreline's digest is kept with it (a polyline never changes): the
-  // approach lanes are long, and digesting them again for every movement of
-  // every junction on every build was most of a build where nothing moved.
+  // The frame is a function of the three centrelines alone
   const key = sweepKey(lineDigest(inbound.centre.xy), lineDigest(crossing.centre.xy), lineDigest(outbound.centre.xy), count);
   // Sampled off the page beforehand when there are workers (`ConflictIndex.sampleOffPage`): read back here.
   const frame = previous.get(key) ?? next.get(key) ?? sweepFrame(path, c0, count);
@@ -613,11 +511,7 @@ function lineDigest(xy: Float64Array): number {
   return value;
 }
 
-/**
- * The shape of a sweep, kept with its frame: a movement whose frame came back
- * from the cache hands back the same shape object, so its hash is not taken
- * again and a cached pair is confirmed by identity (`sameShape`).
- */
+/** The shape of a sweep, kept with its frame */
 const SHAPES = new WeakMap<Float64Array, SweepShape>();
 function shapeOf(s: Sweep): SweepShape {
   const kept = SHAPES.get(s.frame);
@@ -662,14 +556,7 @@ function sameValues(p: Float64Array, q: Float64Array): boolean {
 /** Pairs measured by `cachedPair` since the module loaded (`ConflictIndex.measured`). */
 let pairsMeasured = 0;
 
-/**
- * The zones kept from earlier sessions and those measured in this one, by
- * pair key (`kept`), and the ones measured since they were last taken to be
- * kept (`fresh`): derived data, made once and read back (Unreal's Derived
- * Data Cache: generated when missing and copied into the cache for next time).
- * The key holds both sweeps' digests (53 bits each) with their sample count,
- * start and length.
- */
+/** The zones kept from earlier sessions and those measured in this one, by pair key */
 interface KeptZones {
   readonly kept: Map<string, Float64Array | null>;
   readonly fresh: Map<string, Float64Array | null>;

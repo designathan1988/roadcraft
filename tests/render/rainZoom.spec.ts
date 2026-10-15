@@ -3,10 +3,7 @@ import { Vector2, Vector3 } from 'three';
 import { advanceRain, createRain, createRainField, dropAt, type RainField } from '@render/rain';
 import { m } from '@world/units';
 
-/**
- * The rain must not jump when the zoom changes (`rain.ts`): the drops'
- * places come from `dropAt`, the function the vertex shader mirrors.
- */
+/** The rain must not jump when the zoom changes (`rain.ts`) */
 
 function seedsOf(count: number): Vector3[] {
   const rain = createRain();
@@ -47,10 +44,7 @@ describe('rain', () => {
     const field = createRainField();
     let span = m(150);
     for (let f = 0; f < 600; f++) advanceRain(field, ground, span, wind, 1 / 60);
-    // Zooming out by a tenth a frame for a second: each frame's move stays a
-    // frame's fall plus the box's own change (its sides half of it, its top
-    // 0.92 of it: the box hangs from 0.08 of its height under the ground to
-    // 0.92 over it), never a reshuffle.
+    // Zooming out by a tenth a frame for a second: each frame's move stays a frame's fall plus the box's own change
     for (let f = 0; f < 60; f++) {
       const before = places(field, seeds);
       const box = field.box.clone();

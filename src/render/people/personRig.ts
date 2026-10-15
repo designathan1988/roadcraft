@@ -32,28 +32,7 @@ const EYE_SLOT = 5;
 
 const COVERING = new Set(['clothes', 'shoes', 'top', 'bottom', 'skirt', 'dress', 'suit', 'gloves']);
 
-/**
- * A MakeHuman person rigged for the crowd (Person track, H2): a SkinnedMesh
- * the existing bake pipeline (`riggedCitizens.ts`) can play every Rocketbox
- * capture on, as it plays them on a Rocketbox model.
- *
- * The clips are transferred as rotations relative to each body's bind pose,
- * by bone name (`citizenWalk.ts`). So the person is:
- *
- *  1. fitted with the game_engine skeleton, from the joint cubes of THIS
- *     morphed body;
- *  2. put in the capture avatar's posture: MakeHuman rests with its arms 50
- *     degrees down and its legs apart, the captures' avatar with its arms at
- *     44 and its feet under the hips. Each limb is turned, parents first, to
- *     the avatar's direction, and the mesh follows by its skin weights;
- *  3. bound there, its bones named as the captures name theirs (Bip01_*).
- *
- * The clothes' hems are cut INTO the geometry here - every triangle that
- * straddles a hem is clipped against it, new vertices on the cut edges, their
- * skin weights blended - because a crowd of instances cannot carry a clipping
- * plane each. All colour is in the vertices, so the crowd's single material
- * draws the whole person.
- */
+/** A MakeHuman person rigged for the crowd (Person track, H2): a SkinnedMesh the existing bake pipeline */
 
 /** The armature's scale: bones in centimetres, as the capture avatars have them. */
 const ARMATURE_SCALE = 0.01;
@@ -123,11 +102,7 @@ export interface PersonRigInput {
   readonly captureAxes?: ReadonlyMap<string, Quaternion>;
   /** The MakeHuman items the look wears, loaded (`loadProxyItem`), by name. */
   readonly proxies?: ReadonlyMap<string, ProxyItem>;
-  /**
-   * A base body for the procedural crowd (`people/proceduralCrowd.ts`): only
-   * the look's eyes on it, no garment and no tailored shell - its clothes,
-   * hair and shoes are drawn as separate pieces (`PersonRig.wear`).
-   */
+  /** A base body for the procedural crowd (`people/proceduralCrowd.ts`) */
   readonly nude?: boolean;
 }
 
@@ -148,23 +123,11 @@ export interface PersonRig {
   readonly height: number;
   /** A changed body shape (decimetres, as \`positions\`) as relative moves of the mesh's vertices, when known. */
   readonly morph?: (positions: Float32Array) => Float32Array;
-  /**
-   * An item fitted to this body as a piece of its own: on the body as built,
-   * or on a changed shape of it (decimetres, as \`positions\`) - through the
-   * same fitting and posture as the garments the body wears itself.
-   */
+  /** An item fitted to this body as a piece of its own: on the body as built, or on a changed shape of it */
   readonly wear?: (item: ProxyItem, shape?: Float32Array) => WornPiece;
-  /**
-   * A changed body shape (decimetres, as `positions`) as moves of every base
-   * mesh vertex in the bind posture, metres - helpers included, so an item
-   * pinned to them follows too.
-   */
+  /** A changed body shape (decimetres, as `positions`) as moves of every base mesh vertex in the bind posture, metres */
   readonly deltas?: (shape: Float32Array) => Float32Array;
-  /**
-   * `deltas(positions + offset)` at the listed vertices only (`offset` in
-   * decimetres, the packs' frame), three numbers per listed vertex: a few
-   * hundred vertices posed instead of the whole mesh.
-   */
+  /** `deltas(positions + offset)` at the listed vertices only */
   readonly deltasAt?: (offset: Float32Array, vertices: ArrayLike<number>) => Float32Array;
 }
 
@@ -252,11 +215,7 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   for (let v = 0; v < data.vertexCount; v++) posed[v * 3 + 1] = posed[v * 3 + 1]! - lowest;
   for (const h of boneHead) h.y -= lowest;
 
-  // 3. Bones in the bind posture, named as the captures name them, and built
-  //    as the capture avatar's are: each bone turned to that avatar's own
-  //    axes for it, in centimetres under an armature scaled to metres. Code
-  //    written for those bodies - the helmet fitted in the head's frame, the
-  //    rider's IK aiming a bone along its own axis - then holds on this one.
+  // 3.
   const armature = new Group();
   armature.name = 'Armature';
   armature.scale.setScalar(ARMATURE_SCALE);
@@ -281,13 +240,11 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   }
   const roots = [armature];
 
-  // Dressed in the look's MakeHuman garments when they are all to hand; the
-  // older tailored shells otherwise.
+  // Dressed in the look's MakeHuman garments when they are all to hand; the older tailored shells otherwise.
   const items = wornItems(look);
   const dressed = items.length > 0 && items.every((name) => input.proxies?.has(name));
   const pose = (dm: Float32Array, skin: { joints: Uint16Array; weights: Float32Array }): Float32Array => {
-    // The steps the body went through: to metres with the body's feet, the
-    // posture turn by the item's own skin weights, feet on the ground.
+    // The steps the body went through
     const out = new Float32Array(dm.length);
     const at = new Vector3(), moved = new Vector3();
     for (let v = 0; v < dm.length / 3; v++) {
@@ -310,8 +267,7 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
     const skin = proxySkin(item.pack, data.joints, data.weights);
     return { name, item, positions: pose(fitProxy(item.pack, positions), skin), skin };
   }) : [];
-  // Child clothing remains tailored to child anatomy. Accessories do not turn
-  // a clothed child into the bare body used underneath an adult outfit.
+  // Child clothing remains tailored to child anatomy.
   const shell = !input.nude && !look.outfit && fitted.length
     ? clothedGeometry(data, posed, fitted.some(w => w.item.pack.kind === 'hair')
       ? { ...look, hairStyle: 'none' } : look, input.texturedSkin) : undefined;
@@ -319,10 +275,7 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
     ? dressedGeometry(data, posed, look, fitted, input.texturedSkin, shell)
     : clothedGeometry(data, posed, look, input.texturedSkin);
   shell?.dispose();
-  // An expression's shape as moves of this mesh's vertices: the same posing
-  // of the changed body and of the garments fitted to it, vertex by vertex
-  // (\`morphSource\` says which each one is). The whole person used to be
-  // built again for every expression - a dozen builds a body.
+  // An expression's shape as moves of this mesh's vertices
   const source = geometry.userData['morphSource'] as { kind: Int16Array; index: Int32Array } | undefined;
   const morph = dressed && source && !shell ? (shape: Float32Array): Float32Array => {
     const inMetres = new Float32Array(shape.length);
@@ -368,9 +321,7 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
   const headBone = data.boneNames.indexOf('head');
   const wear = (item: ProxyItem, shape: Float32Array = positions): WornPiece => {
     const skin = proxySkin(item.pack, data.joints, data.weights);
-    // The skull is rigid for what is worn on it (hair, a hat, brows), as
-    // \`dressedGeometry\` binds them: a vertex the head owns over half moves
-    // with the head alone.
+    // The skull is rigid for what is worn on it (hair, a hat, brows), as \`dressedGeometry\` binds them
     const joints = new Uint16Array(skin.joints), weights = new Float32Array(skin.weights);
     for (let v = 0; v < joints.length / 4; v++) {
       let head = 0;
@@ -391,13 +342,10 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
     }
     return body;
   };
-  // The posture's linear parts: what a move of a vertex (a direction, not a
-  // point) is turned by - MakeHuman skins a target's offsets with the 3x3
-  // part alone (`animation.skinMesh`, "translations do not affect").
+  // The posture's linear parts: what a move of a vertex (a direction, not a point) is turned by
   const linear = correction.map((c) => new Matrix3().setFromMatrix4(c));
   const deltasAt = (offset: Float32Array, vertices: ArrayLike<number>): Float32Array => {
-    // `toMetres` stands the shape on its lowest body vertex: an offset that
-    // moves the feet lifts or drops the whole body.
+    // `toMetres` stands the shape on its lowest body vertex: an offset that moves the feet lifts or drops the whole body.
     let lowestOffset = Infinity;
     for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) lowestOffset = Math.min(lowestOffset, positions[v * 3 + 1]! + offset[v * 3 + 1]!);
     const drop = lowestOffset - lowestDm;
@@ -432,10 +380,7 @@ interface Builder {
   index: number[];
 }
 
-/**
- * The person as one indexed geometry, hems cut in, colours in the vertices,
- * skin weights per vertex (bone indices in the skeleton's order).
- */
+/** The person as one indexed geometry, hems cut in, colours in the vertices, skin weights per vertex */
 function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, texturedSkin = false): BufferGeometry {
   // The tailoring is measured in the packs' decimetres.
   const cut = tailor(data, posed.map((x) => x * 10));
@@ -460,9 +405,7 @@ function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
     if (part === 'eyes') return eyeOf(v);
     return colourOf[part];
   };
-  // The skull is rigid: a vertex the head bone mostly owns moves with the
-  // head alone. Shared with the neck, it flexed when the neck turned, and a
-  // helmet fitted at rest no longer held it.
+  // The skull is rigid: a vertex the head bone mostly owns moves with the head alone.
   const headBone = data.boneNames.indexOf('head');
   const emitOriginal = (part: Part, v: number, uv: number): number => {
     const key = `${part}:${v}${texturedSkin ? `:${uv}` : ''}`;
@@ -487,11 +430,7 @@ function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
     copied.set(key, at);
     return at;
   };
-  /**
-   * A new vertex where a plane crosses the edge between two OUTPUT vertices:
-   * position and colour blended, skin weights merged and the four strongest
-   * kept. Shared by the triangles on both sides of the edge.
-   */
+  /** A new vertex where a plane crosses the edge between two OUTPUT vertices */
   const emitCut = (a: number, b: number, t: number, plane: number): number => {
     const lo = Math.min(a, b), hi = Math.max(a, b);
     const s = a < b ? t : 1 - t;
@@ -533,8 +472,7 @@ function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
       const quad = [data.faces[f * 4]!, data.faces[f * 4 + 1]!, data.faces[f * 4 + 2]!, data.faces[f * 4 + 3]!];
       const triangles = quad[3] === quad[2] ? [[quad[0]!, quad[1]!, quad[2]!]] : [[quad[0]!, quad[1]!, quad[2]!], [quad[0]!, quad[2]!, quad[3]!]];
       for (const tri of triangles) {
-        // Sutherland-Hodgman against every hem of the part, in turn: what is
-        // left of the triangle after each cut is cut by the next.
+        // Sutherland-Hodgman against every hem of the part, in turn
         let polygon = tri.map((v) => emitOriginal(part, v, data.faceUvs?.[f * 4 + quad.indexOf(v)] ?? 0));
         for (const plane of hems) {
           const ds = polygon.map((o) => distance(plane, o));
@@ -573,8 +511,7 @@ function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
   if (texturedSkin) smoothSkinSeams(geometry);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  // Coarser levels for people further off (`riggedCitizens.ts` picks one per
-  // figure): the same vertices, fewer triangles.
+  // Coarser levels for people further off (`riggedCitizens.ts` picks one per figure): the same vertices, fewer triangles.
   setLevels(geometry, out.positions, out.colours, out.index);
   return geometry;
 }
@@ -593,21 +530,14 @@ interface WornItem {
 /** Below this texture opacity a hair or lash card is a gap, not hair, in the crowd. */
 const SOLID = 0.45;
 
-/**
- * The person dressed in MakeHuman garments: the body, less the skin they hide
- * (each item names the base vertices it covers), its eyes, and each item
- * fitted to the body - colours sampled from the items' textures into the
- * vertices, hair dyed the look's colour, an outfit dyed when the look says
- * so. One geometry, skin weights per vertex, as the crowd draws it.
- */
+/** The person dressed in MakeHuman garments: the body, less the skin they hide */
 function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, worn: readonly WornItem[], texturedSkin = false, shell?: BufferGeometry): BufferGeometry {
   const values = (name: string): number[] => shell ? Array.from(shell.getAttribute(name).array) : [];
   const out: Builder = {
     positions: values('position'), colours: values('color'), joints: values('skinIndex'), weights: values('skinWeight'),
     index: shell?.index ? Array.from(shell.index.array) : [],
   };
-  // Texture coordinates and a draw group per item, for drawing it textured
-  // close up (`personPreview.ts`); the crowd draws the vertex colours whole.
+  // Texture coordinates and a draw group per item, for drawing it textured close up (`personPreview.ts`)
   const uvs: number[] = shell?.hasAttribute('uv') ? values('uv') : new Array(out.positions.length / 3 * 2).fill(0);
   const skinMask: number[] = shell?.hasAttribute('skinMask') ? values('skinMask') : new Array(out.positions.length / 3).fill(0);
   const hairMask: number[] = new Array(out.positions.length / 3).fill(0);
@@ -620,9 +550,6 @@ function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
   const headBone = data.boneNames.indexOf('head');
   const pushSkin = (joints: ArrayLike<number>, weights: ArrayLike<number>, o: number, scale: number, rigidSkull = true): void => {
     // The skull is rigid (as in `clothedGeometry`): hair and brows with it.
-    // Never the body's own skin: snapping its vertices over half the head's
-    // weight to the head alone tore the face where the weights cross a half,
-    // and a turned head opened the cheek onto the inside of the mouth.
     let head = 0;
     for (let k = 0; k < 4; k++) if (joints[o + k] === headBone) head += weights[o + k]! / scale;
     for (let k = 0; k < 4; k++) {
@@ -633,11 +560,7 @@ function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
 
   // --- the body: skin where no garment covers it, the scalp under the hair
   const hidden = new Set<number>();
-  // Only solid garments hide the skin under them. A beard (or hair) is cards
-  // with holes, and the crowd draws only its solid parts: the skin its file
-  // deleted left a hole in the cheek, through which the inside of the mouth
-  // and the eyeball showed - the "clown faces" in the cars; glasses cut the
-  // temple by the ear the same way.
+  // Only solid garments hide the skin under them.
   for (const w of worn) {
     if (w.item.transparent || !COVERING.has(w.item.pack.kind)) continue;
     for (const v of w.item.pack.deleteVerts) hidden.add(v);
@@ -710,12 +633,7 @@ function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
       hairMask.push(CARD_SLOT[kind] ?? 0);
       eyeMask.push(kind === 'eyes' ? 1 : 0);
       garmentSlot.push(garmentSlotOf(look, w.name, kind));
-      // Texture pixels are sRGB; vertex colours are drawn as linear (as
-      // `Color` converts the look's colours). Taken raw, every garment came
-      // out pale and washed out.
-      // Read a little inside the vertex's own triangles: on a seam the
-      // vertex sits on its island's edge, and the scaled-down texture there
-      // is the background - the brown line along every shoulder seam.
+      // Texture pixels are sRGB; vertex colours are drawn as linear (as `Color` converts the look's colours).
       const raw = sampleTexture(texture, inset?.[v * 2] ?? 0, inset?.[v * 2 + 1] ?? 0) ?? [0.55, 0.55, 0.55, 1];
       const t: [number, number, number, number] = [toLinear(raw[0]), toLinear(raw[1]), toLinear(raw[2]), raw[3]];
       alpha[v] = t[3];
@@ -739,9 +657,6 @@ function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: Person
     for (let i = 0; i + 2 < idx.length; i += 3) {
       const a = idx[i]!, b = idx[i + 1]!, c = idx[i + 2]!;
       // A crowd draws no see-through cloth: of a hair card only what is hair.
-      // Cards drawn with their own texture keep every triangle: the alpha is
-      // per pixel. Thinned to their solid triangles, beards and brows were
-      // drawn as black spikes.
       if (transparent && texture && !(texturedSkin && CARD_SLOT[pack.kind] !== undefined) && (alpha[a]! + alpha[b]! + alpha[c]!) / 3 < SOLID) continue;
       out.index.push(base + a, base + b, base + c);
     }
@@ -799,10 +714,7 @@ function smoothSkinSeams(geometry: BufferGeometry): void {
 /** Cell sizes of the coarser levels, metres. */
 const LOD_CELLS = [0.03, 0.08, 0.2] as const;
 
-/**
- * The coarser levels of a person: per level, the share of the triangles kept
- * and the error allowed, as a share of the body's size.
- */
+/** The coarser levels of a person: per level, the share of the triangles kept and the error allowed */
 /** The last is for a body a few pixels tall: the seams between garments may move, nobody sees them. */
 const LOD_LEVELS: readonly (readonly [number, number, boolean?])[] = [[0.3, 0.008], [0.1, 0.03], [0.015, 0.12, true]];
 
@@ -813,15 +725,7 @@ export const personSimplifier: Promise<void> = MeshoptSimplifier.ready.then(() =
   console.error('[people] meshoptimizer did not load; bodies are simplified by clustering', error);
 });
 
-/**
- * The coarser levels, on the same vertices: `lodIndices` (and `lodGroups`,
- * a material group per range, when the body has groups).
- *
- * Simplified edge by edge with meshoptimizer, keeping the shape, the colour
- * boundaries (a hem, a collar, the lips) and every open border (a hair card,
- * the lashes, a sleeve's edge). Grid clustering took the first vertex of each
- * cell and crushed the face into shards - what the player saw as monsters.
- */
+/** The coarser levels, on the same vertices: `lodIndices` */
 function setLevels(geometry: BufferGeometry, positions: readonly number[], colours: readonly number[], index: readonly number[],
   groups?: readonly { start: number; count: number }[]): void {
   if (!simplifierReady) {
@@ -836,12 +740,10 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
     geometry.userData['lodIndices'] = levels.map((l) => new BufferAttribute(l.index, 1));
     if (groups && groups.length) geometry.userData['lodGroups'] = levels.map((l) => l.groups);
   };
-  // In the browser the work is done by a worker, and the body is shown when
-  // its levels are ready (\`lodReady\`); elsewhere (tests) it is done here.
+  // In the browser the work is done by a worker, and the body is shown when its levels are ready (\`lodReady\`); elsewhere
   const worker = lodPool();
   if (worker) {
-    // A failure is said, and the body is drawn on its full level alone: DO NOT
-    // let it reject into the load (the body was never drawn) or swallow it.
+    // A failure is said, and the body is drawn on its full level alone: DO NOT let it reject into the load
     geometry.userData['lodReady'] = worker.levels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }).then(store, (error: unknown) => {
       console.error('[people] the levels of detail of a body failed; drawn at full detail', error);
     });
@@ -850,12 +752,7 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
   store(simplifyLevels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }));
 }
 
-/**
- * Vertex clustering: every vertex is replaced by the first one in its cell
- * of a grid (a cell per colour, so a hem keeps its edge), and the triangles
- * that collapse are dropped. The result indexes the same vertex buffers, so
- * skinning and colours are untouched.
- */
+/** Vertex clustering: every vertex is replaced by the first one in its cell of a grid */
 function clusterIndex(positions: readonly number[], colours: readonly number[], index: readonly number[], cell: number): Uint32Array {
   const representative = new Map<string, number>();
   const map = new Uint32Array(positions.length / 3);
@@ -915,10 +812,7 @@ function eyeColourer(data: PersonMeshData, posed: Float32Array, iris: Color): (v
   };
 }
 
-/**
- * Each vertex's UV moved `reach` (UV units) towards the middle of the
- * triangles around it: a point inside its own island of the texture.
- */
+/** Each vertex's UV moved `reach` (UV units) towards the middle of the triangles around it */
 function insetUvs(uvs: ArrayLike<number>, index: ArrayLike<number>, n: number, reach: number): Float32Array {
   const out = new Float32Array(n * 2);
   for (let v = 0; v < n; v++) { out[v * 2] = uvs[v * 2] ?? 0; out[v * 2 + 1] = uvs[v * 2 + 1] ?? 0; }

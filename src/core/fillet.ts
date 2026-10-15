@@ -15,17 +15,7 @@ export interface Fillet {
   readonly run: number;
 }
 
-/**
- * Rounds the corner at `x` where the boundary leaves along `dirA` on one side
- * and `dirB` on the other. Both directions point *away* from the corner.
- *
- * This works whether the corner sits in front of the node or behind it. A
- * reflex wedge (two legs meeting at an obtuse turn) puts `x` behind the node,
- * and that is correct — it is the outer corner of an elbow.
- *
- * Returns `null` for wedges too acute to round, or for a straight-through
- * corner; callers fall back to a bevel in those cases.
- */
+/** Rounds the corner at `x` where the boundary leaves along `dirA` on one side and `dirB` on the other. */
 export function filletCorner(
   x: Vec2,
   dirA: Vec2,
@@ -54,58 +44,19 @@ export function filletCorner(
   };
 }
 
-/**
- * Small relative clearance added to the acute setback.
- *
- * The exact separation distance leaves the two mouths precisely tangent. Exact
- * tangency is numerically fragile: a simplicity test treats a touching pair of
- * edges as an intersection, so the junction ring would be rejected and fall
- * back to a convex hull for what is in fact a valid shape. Nudging the mouths
- * apart makes the configuration robust.
- */
+/** Small relative clearance added to the acute setback. */
 const ACUTE_CLEARANCE = 1.02;
 
-/**
- * Distance from the corner at which two rays separated by `psi`, carrying
- * half-widths `hwA` and `hwB`, stop overlapping.
- *
- * This is the bevel setback for an acute wedge. In the equal-width case it
- * reduces to `hw / sin(psi/2)`, which is also the closed form of the corner
- * point's distance from the node — so the acute case and the exact corner are
- * the same quantity, not two competing heuristics.
- */
+/** Distance from the corner at which two rays separated by `psi`, carrying half-widths `hwA` and `hwB`, stop overlapping. */
 export function acuteSetback(psi: number, hwA: number, hwB: number): number {
   const s = Math.sin(Math.max(psi, COARSE_EPS) / 2);
   return (ACUTE_CLEARANCE * (hwA + hwB)) / (2 * s);
 }
 
-/**
- * Default curb-return radius for a corner between two half-widths.
- *
- * Sized from real practice rather than from what merely avoids a defect. A
- * residential corner is turned at 3 to 5 m, a collector at 5 to 8, an arterial
- * at 10 to 15. The previous coefficients produced 1.4 to 3.6 m - a MEDIAN
- * radius of 1.9 m, a quarter of the tightest real kerb return, and it read as
- * a square corner at every zoom.
- *
- * The narrower of the two footways still governs, because the kerb line has to
- * meet that footway tangentially; a radius chosen from the wider road would
- * overshoot the narrow one's own kerb. The upper clamp is what keeps a
- * boulevard-to-boulevard corner from eating the block, and the trim solver
- * scales the radius down per segment (`radiusScaleBySegment`) whenever the run
- * does not fit the available length, so a short block degrades smoothly instead
- * of being rejected.
- */
+/** Default curb-return radius for a corner between two half-widths. */
 const CURB_R_MIN = m(2.8);
 
-/**
- * Widest return we will hand out: 7.2 m.
- *
- * Also the honesty bound on the over-miter path in `resolveCorner`. When even
- * the radius needed to reach the separation setback exceeds this, the corner is
- * not a kerb return any more and pretending otherwise draws a fifty-metre arc;
- * the chord is the truthful shape there.
- */
+/** Widest return we will hand out: 7.2 m. */
 export const CURB_R_MAX = m(7.2);
 
 export function curbRadius(hwA: number, hwB: number): number {

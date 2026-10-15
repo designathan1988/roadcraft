@@ -11,14 +11,7 @@ import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 import { graphLines } from './support/graphLines';
 
-/**
- * THE TURNS CHOSEN OFF THE PAGE (`TurnPlan`, `conflictPool.ts`): a build that
- * stands in the turns it does not know, has them chosen as a worker would -
- * the asks through `structuredClone`, as `postMessage` copies them, answered by
- * `chooseTurnOf` - and builds those junctions again, makes the graph a build
- * that chose every turn on the page makes: every lanelet and connector, every
- * turn's points to the last bit.
- */
+/** THE TURNS CHOSEN OFF THE PAGE (`TurnPlan`, `conflictPool.ts`) */
 function update(graph: LaneletGraph, doc: RoadDoc, net: Network): { asked: number; redone: number } {
   graph.turnPlan = new TurnPlan();
   graph.update(doc, net);

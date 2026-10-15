@@ -7,11 +7,7 @@ import { placeBuilding } from '@editor/buildings';
 import { BuildingFloors } from '@editor/buildingFloors';
 import { m } from '@world/units';
 
-/**
- * The Builder's floors (`editor/buildingFloors.ts`): a floor is measured
- * again only when the diary says something it reads changed - its record,
- * the land or the roads near it - never because something changed anywhere.
- */
+/** The Builder's floors (`editor/buildingFloors.ts`) */
 function town(): { doc: RoadDoc; near: Building; far: Building } {
   const doc = new RoadDoc();
   const net = new Network(doc);

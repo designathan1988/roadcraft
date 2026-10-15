@@ -21,40 +21,11 @@ import { m } from '@world/units';
 export interface StepOptions {
   readonly traffic?: boolean;
   readonly pedestrians?: boolean;
-  /**
-   * Milliseconds spent per stage, ADDED to on every step when given
-   * (`scripts/bench-sim.mjs`). Off by default: no clock is read otherwise.
-   */
+  /** Milliseconds spent per stage, ADDED to on every step when given. */
   readonly timings?: Map<string, number>;
 }
 
-/**
- * One fixed simulation step.
- *
- * Stage order matters, but not in the way it did in the V6 monolith.
- *
- * Stages 3 to 6 are PURE PRODUCERS of constraints on a set that stage 7
- * resolves with `min`. Because `min` is commutative and associative, their
- * relative order cannot change whether the result is safe — only how fresh it
- * is. That is the opposite of six serial `if (...) return false` gates, which
- * are order dependent AND non-composable, since the first `false` wins no
- * matter how mild it is and no later condition can soften it.
- *
- * Every field has exactly one writer:
- *
- *   topology, lanelets, conflicts, sidewalks   stage 0
- *   controller stage/sub/elapsed/plan          stage 1
- *   route, spawn and despawn                   stage 2
- *   pedestrian state and position              stage 3
- *   vehicle constraints (append only)          stages 4-5
- *   claims (grant)                             stage 5
- *   vehicle s, v, lanelet, lane order          stage 6
- *   claims (release), ghosts                   stages 6-7 (a ghost back in
- *                                              the graph is unmarked by the
- *                                              topology, stage 0)
- *
- * @perFrame Runs every tick: `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
- */
+/** @perFrame One fixed simulation step. */
 export function step(w: SimWorld, opts: StepOptions = {}): void {
   const traffic = opts.traffic ?? true;
   const pedestrians = opts.pedestrians ?? true;
@@ -81,12 +52,7 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   for (const v of w.vehicles.values()) snapshotInto(v);
   w.pedEngine.beginTick(w);
 
-  // 1. signals: the sole mutator of phase state. A junction with no lights
-  // (stop, priority, roundabout) runs no cycle: every reader of a controller
-  // asks `signalised` first (audit P1-44).
-  // A signal asleep (rested with nobody near, `SimWorld.signalsAsleep`) only
-  // keeps its time: the same sum its step would make, so the result is the
-  // same as stepping every one (`tests/sim/doLess.spec.ts`).
+  // 1. signals: the sole mutator of phase state.
   const deps = w.signalDeps();
   const asleep = w.signalsAsleep(deps);
   for (const c of w.signalisedControllers()) {
@@ -105,18 +71,14 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   w.ambient.step(w);
   ensureVehicleRoutes(w);
   lap('2 dispatch+routes');
-  // Lane choice sits between routing and constraints: it must see a settled
-  // route, and integration must see its verdict. It only decides — see
-  // `stepLaneChange`.
+  // Lane choice sits between routing and constraints: it must see a settled route, and integration must see its verdict.
   if (traffic) stepLaneChange(w);
   lap('2b lane change');
   // Kerb stops: choosing where, and the doors and people once stopped.
   if (traffic) stepKerbStops(w);
   lap('2c kerb stops');
 
-  // 3. Pedestrians arbitrate crossings first.  A vehicle admitted on an
-  // earlier tick owns an explicit connector token and keeps them at the kerb;
-  // otherwise a pedestrian stepping out now is visible to admission below.
+  // 3.
   if (pedestrians) w.pedEngine.step(w);
   lap('3 pedestrians');
 
@@ -160,19 +122,14 @@ export function rebindAgents(w: SimWorld): void {
   rebindPeds(w);
 }
 
-/**
- * The vehicle half of `rebindAgents`, after `SimWorld.rebuildVehicleTopology`.
- * @rebuild Called after a topology rebuild.
- */
+/** @rebuild The vehicle half of `rebindAgents`, after `SimWorld.rebuildVehicleTopology`. */
 export function rebindVehicles(w: SimWorld): void {
   for (const v of w.vehiclesInIdOrder()) {
-    // A shadow is a projection onto a sibling lane that may have been rebuilt
-    // with a different length; the lateral slide finishes without it.
+    // A shadow is a projection onto a sibling lane that may have been rebuilt with a different length
     w.clearShadow(v);
     const lane = w.lanelet(v.lanelet);
     if (!lane) {
-      // The lanelet is gone. Keep the agent alive only if something plausible
-      // remains; otherwise remove it cleanly rather than leaving it frozen.
+      // The lanelet is gone.
       w.removeVehicle(v);
       continue;
     }
@@ -199,27 +156,15 @@ export function rebindVehicles(w: SimWorld): void {
   }
 }
 
-/**
- * The pedestrian half of `rebindAgents`, after `SimWorld.rebuildWalkTopology`.
- * @rebuild Called after a topology rebuild.
- */
+/** @rebuild The pedestrian half of `rebindAgents`, after `SimWorld.rebuildWalkTopology`. */
 export function rebindPeds(w: SimWorld): void {
   w.pedEngine.rebind(w);
 }
 
-/**
- * The work of the ticks: lanes stage 7 looked at, lanes retired, controllers
- * stage 1 ran. Counts for the budgets and the scale test
- * (`core/perfBudget.ts`, `tests/perf/simScale.spec.ts`), as `padsWork`.
- */
+/** The work of the ticks: lanes stage 7 looked at, lanes retired, controllers stage 1 ran. */
 export const tickWork = { cleanupLanes: 0, retired: 0, controllers: 0 };
 
-/**
- * Retires lanelets that no longer exist once their occupants have left.
- * Doing less (`SimWorld.doLess`): only the lanes an edit left behind
- * (`ghostCandidates`) - the whole runtime was copied and walked every tick
- * (1.1 ms of a tick on a 36 x 36 grid, annex B2).
- */
+/** Retires lanelets that no longer exist once their occupants have left. */
 function collectGhosts(w: SimWorld): void {
   if (!w.doLess) {
     for (const [id, rt] of [...w.runtime]) {
@@ -246,28 +191,12 @@ function collectGhosts(w: SimWorld): void {
   }
 }
 
-/**
- * Accumulates, per tick, how long each vehicle has stood still with a green
- * signal and nothing in its way.
- *
- * This has to be integrated rather than inferred, because "time since it last
- * moved" is large for a vehicle that has been waiting through a long red and is
- * about to pull away — inferring from it reports a wedge at the exact moment
- * the light turns green.
- */
+/** Accumulates, per tick, how long each vehicle has stood still with a green signal and nothing in its way. */
 function updateStallCounters(w: SimWorld): void {
   for (const v of w.vehicles.values()) {
     const lane = w.lanelet(v.lanelet);
     if (!lane || lane.kind !== 'link' || !lane.controlled || v.v >= m(0.04)) {
       // BOTH counters reset here.
-      //
-      // `greenDenied` used to be left untouched on this path, so a vehicle
-      // that accumulated a few seconds of denial and then drove away carried
-      // the number for the rest of its life. `invariants.ts` tests it with no
-      // speed guard of its own, so the stale value was reported as a vehicle
-      // blocked at a green while it was moving freely. The only detector for
-      // "held at a green" was therefore unreliable in both directions at once:
-      // false positives from here, false negatives from the exclusions below.
       v.greenStall = 0;
       v.greenDenied = 0;
       continue;
@@ -289,44 +218,20 @@ function updateStallCounters(w: SimWorld): void {
     v.greenStall = green && !impeded ? v.greenStall + DT : 0;
 
     // A second counter, deliberately blind to WHY the vehicle was refused.
-    //
-    // `greenStall` above only accumulates while nothing is in the way, because
-    // a brief yield or conflict wait is ordinary. But "ordinary" has to be
-    // bounded: a driver watching their green go by for fifteen seconds does
-    // not care which internal predicate refused them, and neither does the
-    // person reporting the bug. Measured on a 4x4 grid of four-lane avenues,
-    // vehicles sat at a green for up to 17.8 s while `greenBlocked` reported
-    // nothing, because `conflict` counted as legitimate impedance forever.
-    //
-    // Two exclusions, each because the refusal is by design:
-    //
-    //   - An UNSIGNALISED junction reports a permanent green, so there is no
-    //     green to be denied; a vehicle there is waiting for a gap, correctly.
-    //   - `spillback` is the refusal that stops the network gridlocking. Being
-    //     held out of a full box is right, and its pathological form already
-    //     has `spillbackWedge`.
     const signalised = conn ? w.graph.junctions.get(conn.node)?.signalised === true : false;
-    // A car stopped at the kerb to let somebody out is not waiting for the
-    // green either.
+    // A car stopped at the kerb to let somebody out is not waiting for the green either.
     const heldByDesign = v.constraints.obstacles.some((o) => o.kind === 'spillback' || o.kind === 'kerbStop');
     v.greenDenied = green && signalised && !heldByDesign ? v.greenDenied + DT : 0;
   }
 }
 
-/**
- * Diagnostic only. A passing test suite never triggers this; it exists so that
- * an unforeseen wedge surfaces as a reported issue instead of a silent stall.
- */
+/** Diagnostic only. */
 function runWatchdog(w: SimWorld): void {
   for (const v of w.vehicles.values()) {
-    // Rear-clearance and ahead-of-route reservations can legitimately remain
-    // while a vehicle waits at another signal. Only a connector already
-    // admitted for immediate entry is expected to start moving promptly.
+    // Rear-clearance and ahead-of-route reservations can legitimately remain while a vehicle waits at another signal.
     if (!v.admittedConnector) continue;
     if (w.clock.since(v.lastMovedTick) > STUCK_SECONDS) {
       // Never release a resource while its physical holder is still present.
-      // In cheap-audit mode surface the fault once; full audit reports the
-      // same invariant below with richer checks.
       if (
         w.auditEnabled &&
         w.auditLevel === 'cheap' &&
@@ -349,8 +254,7 @@ function ensureVehicleRoutes(w: SimWorld): void {
     const lane = w.lanelet(v.lanelet);
     if (!lane) continue;
 
-    // A driver who has been stuck long enough reconsiders, against the
-    // congestion as it is now rather than as it was when they set off.
+    // A driver who has been stuck long enough reconsiders
     reconsiderRoute(w, v);
 
     reconcileReservedChain(w, v);
@@ -371,13 +275,7 @@ function ensureVehicleRoutes(w: SimWorld): void {
       v.admittedConnector = null;
     }
 
-    // Arrived: on the lane it is going to, at the end of a road that leads
-    // off the map, nothing left to plan (`planFrom` from here only sets the
-    // route to this lane and clears the intent and the lane wanted, as they
-    // already are). Planned again every tick, every car on its last stretch
-    // searched its trip each frame (`repairRoute` in the browser's profile).
-    // With no destination, the same holds while no lane beside it leads on
-    // either (`planFrom` would look for a movement among theirs).
+    // Arrived: on the lane it is going to, at the end of a road that leads off the map, nothing left to plan
     if (v.route.length === 1 && v.route[0] === lane.id && lane.kind === 'link' &&
         v.movementIntent === null && v.desiredLane === null && w.graph.exitsOf(lane.id).length === 0 &&
         (v.destination === lane.id ||
@@ -396,12 +294,6 @@ function ensureVehicleRoutes(w: SimWorld): void {
     }
 
     // A route that simply RAN OUT while the lane still has somewhere to go.
-    //
-    // `connected` is satisfied by a two-element route, so a vehicle whose plan
-    // ends at the current link was considered healthy and was never re-planned.
-    // It then drove to the stop line and stayed there for the rest of its life,
-    // holding the head of its lane. This is not a broken route - it is a short
-    // one - so it is extended rather than repaired.
     if (v.route.length <= 1 && w.graph.exitsOf(lane.id).some((id) =>
       (w.connector(id)?.maxBodyClass ?? -1) >= bodyClassOfArchetype(v.archetype))) {
       planFrom(w, v);
@@ -409,11 +301,6 @@ function ensureVehicleRoutes(w: SimWorld): void {
     }
 
     // A route that ends on a link too short to stop on (audit P1-46).
-    // Admission only lets a car into a junction when there is somewhere to
-    // stand beyond it, so it asks for the movement after the short link - and
-    // a route that ends there has none. The car waited at the line for ever,
-    // and the route never ran out because the car never moved. It is grown
-    // past the short link instead.
     const tail = w.lanelet(v.route[v.route.length - 1] ?? '');
     if (tail && tail.kind === 'link' && tail.id !== v.destination && tail.id !== lane.id &&
         tail.length < v.archetype.length + Math.max(JAM_GAP, v.driver.s0) &&
@@ -423,11 +310,7 @@ function ensureVehicleRoutes(w: SimWorld): void {
   }
 }
 
-/**
- * Drops a reservation chain as a unit if a live edit broke any of its links.
- * Keeping a valid prefix would reintroduce partial acquisition and could leave
- * the vehicle stranded before the replacement refuge.
- */
+/** Drops a reservation chain as a unit if a live edit broke any of its links. */
 function reconcileReservedChain(w: SimWorld, v: Vehicle): boolean {
   const lane = w.lanelet(v.lanelet);
   if (!lane) return false;
@@ -452,9 +335,7 @@ function reconcileReservedChain(w: SimWorld, v: Vehicle): boolean {
     expectedFrom = connector.toLane;
   }
 
-  // Revalidate the refuge property too. A live geometry edit can keep every
-  // connector id intact while shortening the final link below this vehicle's
-  // physical stopping length.
+  // Revalidate the refuge property too.
   const root = lane.kind === 'connector'
     ? w.connector(lane.id)
     : v.admittedConnector
@@ -475,9 +356,7 @@ function reconcileReservedChain(w: SimWorld, v: Vehicle): boolean {
   }
   if (valid) return true;
 
-  // Once the front entered the compound box, releasing a prefix is unsafe and
-  // acquiring an extension would be partial hold-and-wait. Preserve ownership;
-  // the audit will surface the edited short link for the user to resolve.
+  // Once the front entered the compound box
   if (lane.kind === 'connector' || v.clearingConnectors.length > 0) return false;
 
   for (const id of v.reservedConnectors) {
@@ -485,9 +364,7 @@ function reconcileReservedChain(w: SimWorld, v: Vehicle): boolean {
   }
   v.reservedConnectors = [];
 
-  // Before entry, an admission whose declared safe continuation disappeared
-  // can be cancelled. Once physically on a connector it must retain ownership
-  // until its rear clears.
+  // Before entry, an admission whose declared safe continuation disappeared can be cancelled.
   if (lane.kind === 'link' && v.admittedConnector) {
     w.claims.releaseConnector(v.id, v.admittedConnector, w.conflicts);
     v.admittedConnector = null;
@@ -530,8 +407,7 @@ function pinReservedRoute(w: SimWorld, v: Vehicle): boolean {
   const suffixAt = v.route.indexOf(expectedLink);
   const suffix = suffixAt >= 0 ? v.route.slice(suffixAt + 1) : [];
   v.route = [...prefix, ...suffix];
-  // `repairRoute` deliberately reconstructs connector routes from scratch, so
-  // invoking it while physically inside one would discard the pinned chain.
+  // `repairRoute` deliberately reconstructs connector routes from scratch
   if (lane.kind === 'link') repairRoute(w, v);
   return true;
 }

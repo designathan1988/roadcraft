@@ -11,13 +11,7 @@ import { MAX_TERRAIN_STAMPS } from '@world/terrain';
 import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, cloneBuilding } from '@world/buildings/types';
 
-/**
- * The diary says WHERE each change happened (`changes.ts`): a rectangle
- * `null` is the whole map and makes every reader of the kind work it all
- * out again. These are the writers that wrote only the place after a change,
- * or the whole map, where the place before and after was known
- * (docs/PLANO-ESPINHA-2026-10-14.md, fase 2).
- */
+/** The diary says WHERE each change happened (`changes.ts`) */
 
 const entriesSince = (doc: RoadDoc, seen: number, kind: ChangeKind): Change[] => doc.changes.since(seen, [kind]) ?? [];
 const inside = (r: ChangeRect, x: number, y: number): boolean => r[0] <= x && x <= r[2] && r[1] <= y && y <= r[3];

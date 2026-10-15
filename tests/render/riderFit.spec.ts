@@ -10,20 +10,7 @@ import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { m } from '@world/units';
 import { bonePosition, citizenRig } from './support/citizenRig';
 
-/**
- * PEOPLE ON TWO-WHEELERS ARE ON THEM.
- *
- * Reported: a motorcyclist with a ball stuck in their head - the helmet, one
- * sphere of one size at a fixed height over the seat, through which a tall
- * or leaning rider's head came out. And measured before the fix: the hands
- * 18 to 25 cm off the grips, feet in the air beside a motorcycle that had no
- * footpegs, the right knee bent into the tank, and every contact drifting
- * with the rider's drawn height.
- *
- * Each check poses EVERY adult body of the roster (riders are never children)
- * exactly as the renderer bakes it, in node, and measures on the real
- * skeleton and mesh.
- */
+/** PEOPLE ON TWO-WHEELERS ARE ON THEM. */
 
 /** The largest a helmet may be across any axis, metres. */
 const HELMET_MAX = 0.405;
@@ -82,8 +69,6 @@ describe('two-wheeler riders', () => {
       const world = head.matrixWorld.clone().multiply(shape);
       const size = new Vector3().setFromMatrixScale(world);
       // Diameters, metres: a real helmet is about 26 cm wide and 32 cm long.
-      // A body whose hair needs more is never drawn on a motorcycle, and the
-      // list of them (`NO_HELMET`) is exactly the heads that need more.
       const largest = Math.max(size.x, size.y, size.z);
       expect(NO_HELMET.has(name), `${name}: ${largest.toFixed(2)} m`).toBe(largest > HELMET_MAX);
       if (NO_HELMET.has(name)) continue;

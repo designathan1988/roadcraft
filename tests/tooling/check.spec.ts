@@ -3,9 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/**
- * THE CHECK'S CHOICES: the specs and the steps it picks for a change (`scripts/check.mjs`).
- */
+/** THE CHECK'S CHOICES: the specs and the steps it picks for a change (`scripts/check.mjs`). */
 const ROOT = join(__dirname, '..', '..');
 const load = (f: string): Promise<Record<string, (...args: never[]) => unknown>> =>
   import(pathToFileURL(join(ROOT, 'scripts', f)).href) as Promise<Record<string, (...args: never[]) => unknown>>;

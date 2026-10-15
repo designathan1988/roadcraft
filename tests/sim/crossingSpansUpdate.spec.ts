@@ -8,12 +8,7 @@ import { generate } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE ZEBRA SPANS KEPT BY WHAT CHANGED (`CrossingSpans.update`, from the
- * world's topology log): after every edit of the fuzzer's sequences, the span
- * of every movement over every zebra, and every approach's stop before
- * another leg's zebra, must be those measured from nothing on the same world.
- */
+/** THE ZEBRA SPANS KEPT BY WHAT CHANGED (`CrossingSpans.update`, from the world's topology log) */
 function lines(w: SimWorld, spans: CrossingSpans): string[] {
   const out: string[] = [];
   for (const junction of w.graph.junctions.values()) {

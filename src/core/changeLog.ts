@@ -1,21 +1,4 @@
-/**
- * The states a derived thing has been in, as tokens, and what changed from
- * each to the next: a reader keeps the token it last read and asks what
- * changed since (`since`), an update at a time, in order - the change a build
- * system hands on, item by item, instead of a revision that says only THAT
- * something changed (Mokhov, Mitchell and Peyton Jones, "Build systems à la
- * carte"). A change of `null` is "everything": a reader past it reads the
- * whole thing again.
- *
- * Nothing is forgotten by age: the states are held weakly (the readers hold
- * the tokens they read, the log does not), and a state no reader holds any
- * more is merged away - the changes on either side of it one entry, in order
- * (`merge`) - so the log is as long as the tokens still held, and a reader
- * however far behind is told what changed. DO NOT keep the last N changes
- * only: a reader that fell behind them read the whole thing again (the lots'
- * bays of a whole town, the walkways and zebras of a generated city), as the
- * network's history did (`world/networkDelta.ts`).
- */
+/** DO NOT keep the last N changes only: a reader that fell behind them read the whole thing again */
 interface Entry<T> {
   readonly from: WeakRef<object>;
   readonly to: WeakRef<object>;
@@ -52,11 +35,7 @@ export class ChangeLog<T> {
     }
   }
 
-  /**
-   * Merges away the states no reader holds: collected, or not `held` (tests pass their own; the
-   * current state is always held). The entries either side of such a state become one, their
-   * changes in order; the oldest entry goes with its state when no one holds it.
-   */
+  /** Merges away the states no reader holds: collected, or not `held` */
   merge(held: (state: object) => boolean): void {
     const alive = (ref: WeakRef<object>): boolean => {
       if (ref === this.tokenRef) return true;
@@ -76,10 +55,7 @@ export class ChangeLog<T> {
     this.entries = out;
   }
 
-  /**
-   * What changed since `state`, in order; null when the reader must read it
-   * all again (no state yet, a state this log never had, or a change of everything since).
-   */
+  /** What changed since `state`, in order; null when the reader must read it all again */
   since(state: object | null): readonly T[] | null {
     if (state === this.token) return this.none;
     if (state === null) return null;

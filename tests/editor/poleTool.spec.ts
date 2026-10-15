@@ -8,10 +8,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The pole tool as the player uses it (`editor/poles.ts` `PoleTool`, taken
- * out of `main.ts`): click, click, click along a footway traces a line.
- */
+/** The pole tool as the player uses it (`editor/poles.ts` `PoleTool`, taken out of `main.ts`) */
 function street(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
   const a = doc.addNode({ x: -400 * U, y: 0 });

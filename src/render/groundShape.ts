@@ -4,21 +4,7 @@ import { type PadShapeCut, padShaper } from '@world/buildings/pads';
 import { type RoadElevation, type RoadShapeCut, roadShaper } from '@world/elevation';
 import { type CornerGrid, type TerrainRegion, sampleCorners, shapeBoth, shapeCorners } from './terrainShaping';
 
-/**
- * THE GROUND'S CUT AND FILL WORKED OUT OFF THE PAGE (`groundShape.worker.ts`):
- * the work of every corner a shaping pass asks - the roads' pull
- * (`world/elevation.ts` `roadShapeAt`) and the buildings' platforms
- * (`world/buildings/pads.ts` `shapeOverPads`) - was 9.5 s of the page in the
- * growth of a 2,560 m city (profiled 2026-10-15), and the comparison of two
- * solves of the roads, block by block (`blockDigest`), half a second of its
- * first frame. The page sends plain numbers - the corners asked, where the
- * plate's mesh stands them and their natural height, the roads and the
- * platforms the corners can read (`RoadElevation.shapeCut`, `TownPads.cut`) -
- * and the worker answers with the same functions the page runs, so the
- * answers are the page's to the bit (`tests/render/terrainShaping.spec.ts`).
- * The page puts the heights in place (`terrain.ts` `askShape`); no corner is
- * shaped on the page while the worker is there.
- */
+/** THE GROUND'S CUT AND FILL WORKED OUT OFF THE PAGE (`groundShape.worker.ts`) */
 
 /** One plate's part of a shaping pass: its corners asked, as its mesh stands them. */
 export interface PlateShapeAsk {
@@ -29,10 +15,7 @@ export interface PlateShapeAsk {
   readonly n: number;
   /** The regions shaped, four numbers each (x0, x1, y0, y1, corners, clamped to the plate), in the pass's order. */
   readonly regions: Int32Array;
-  /**
-   * `whole`: `xy` and `natural` hold every corner of the plate; else each
-   * region's corners row by row, one region after the other.
-   */
+  /** `whole`: `xy` and `natural` hold every corner of the plate */
   readonly whole: boolean;
   /** Each corner's x and y where the mesh stands it (`CornerGrid.x`, `y`). */
   readonly xy: Float64Array;
@@ -53,12 +36,7 @@ export interface PlateShapeAnswer {
   readonly heights: Float64Array;
 }
 
-/**
- * A plate's part of a pass as the worker takes it (`terrain.ts` `askShape`): the
- * regions clamped to the plate, and where their corners stand (`grid`) and
- * their natural height, region by region - or the plate's every corner once,
- * when the regions hold as many.
- */
+/** A plate's part of a pass as the worker takes it (`terrain.ts` `askShape`) */
 export function askPlate(grid: CornerGrid, natural: Float64Array, regions: readonly TerrainRegion[]): PlateShapeAsk {
   const n = grid.n;
   const clamped = new Int32Array(regions.length * 4);
@@ -87,11 +65,7 @@ export function askPlate(grid: CornerGrid, natural: Float64Array, regions: reado
   return { cx: 0, cy: 0, n, regions: clamped, whole, xy, natural: lands };
 }
 
-/**
- * The world boxes a pass's corners stand in, a cell round (`cell`, `half`: the
- * plates' grid): what the roads and the platforms are cut to for it
- * (`RoadElevation.shapeCut`, `TownPads.cut`).
- */
+/** The world boxes a pass's corners stand in, a cell round (`cell`, `half`: the plates' grid) */
 export function cornerBoxes(plates: readonly PlateShapeAsk[], cell: number, half: number): [number, number, number, number][] {
   const boxes: [number, number, number, number][] = [];
   for (const plate of plates) {
@@ -166,15 +140,7 @@ export function shapeGroundAsk(ask: GroundShapeAsk, scratch = new ShapeScratch()
 /** What `blockDigest` reads of a solve of the roads: a `RoadElevation`, or a cut's reader (`roadShaper`). */
 type BlockRoads = Pick<RoadElevation, 'shapeAt' | 'at' | 'roadAt'>;
 
-/**
- * What a block of ground reads of a solve, digested (`renderer.ts`
- * `changedBlocks`): at each corner of the terrain grid in it - the only points
- * the ground has - the height and weight the roads pull it to (`shapeAt`,
- * against the natural ground there, as the shaping asks), and on a road the
- * deck's own height and class, which what stands on a deck reads. Heights to a
- * thousandth of a unit, as the solve's own digest had them. The page and the
- * ground's worker digest with this one function.
- */
+/** What a block of ground reads of a solve, digested (`renderer.ts` `changedBlocks`) */
 export function blockDigest(solve: BlockRoads, naturalAt: (x: number, y: number) => number,
   x0: number, y0: number, block: number, cell: number, half: number): number {
   const digest = new Digest();
@@ -213,11 +179,7 @@ export interface BlockDigestAsk {
   readonly half: number;
 }
 
-/**
- * Each solve's blocks digested as the page digests them (`blockDigest`); NaN
- * for a block that reads ground the ask does not hold (a plate not made, or
- * past the map's edge): the page digests that one itself.
- */
+/** Each solve's blocks digested as the page digests them (`blockDigest`) */
 function digestBlocks(ask: BlockDigestAsk): Float64Array[] {
   const plates = new Map(ask.plates.map((p) => [p.index, p]));
   const naturalAt = (x: number, y: number): number => {

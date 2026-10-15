@@ -6,22 +6,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { simOf } from './support/bodies';
 
-/**
- * A TURNING CAR IS NOT LEFT STANDING IN THE BOX FOR PEOPLE ON THE EXIT ZEBRA.
- *
- * Two ways in, both measured on a three-by-three grid of streets:
- *
- *  - the pedestrian gate (`crossingReservedByVehicle`) let a walker step onto
- *    the zebra across a car's EXIT leg because the admitted car, still on its
- *    approach, "could stop comfortably before it" - but that zebra is beyond
- *    the box, so the car stopped inside the junction;
- *  - admission (`crossingBusy`) looked a fixed four seconds ahead of people
- *    already on the far half of that zebra, while the car, standing at its
- *    line, needed longer than that to get there. It met them mid-turn.
- *
- * Either way an admitted car stood in the middle of the junction, across every
- * other movement, for five seconds and more.
- */
+/** A TURNING CAR IS NOT LEFT STANDING IN THE BOX FOR PEOPLE ON THE EXIT ZEBRA. */
 function grid(): RoadDoc {
   const doc = new RoadDoc();
   const at = new Map<string, NodeId>();

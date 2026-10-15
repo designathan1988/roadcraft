@@ -5,24 +5,7 @@ import { Network } from '@world/network';
 import { MAP_HALF, MAP_MARGIN, MAP_REGIONS, MAP_SIZE, PLATE_SIZE, clampToMap, insideMap, plateOf, regionAt } from '@world/bounds';
 import { casingHalf, roadProfile } from '@world/roadTypes';
 
-/**
- * NOTHING LEAVES THE MAP.
- *
- * The ground is finite - a square about 10 km on a side (`world/bounds.ts`) - and
- * anything built past its rim stands on nothing: a road hanging in the void,
- * its footway with it, and the lamps, bins and poles that hang off the road
- * going too.
- *
- * The vegetation was contained already — it was scattered around the network
- * centre with no reference to the plate, and that was fixed when it was caught
- * planting trees off the end of the world. Everything the PLAYER authors was
- * not: a node could be dropped anywhere the camera could reach.
- *
- * The containment is in `RoadDoc`, at the two points a position enters the
- * document, because a node is what roads, junctions, footways, lanelets and
- * street furniture are all derived from. Holding the node holds all of them,
- * and no later pass has to remember to check.
- */
+/** NOTHING LEAVES THE MAP. */
 
 describe('the map edge', () => {
   it('holds a node inside the map wherever it is asked for', () => {
@@ -60,9 +43,7 @@ describe('the map edge', () => {
   });
 
   it('keeps the whole WIDTH of a road on the map, not only its centreline', () => {
-    // A centreline exactly on the rim still puts half a carriageway, a footway
-    // and a casing over the void. The margin exists for that, and this is the
-    // test that says so with the real widths rather than with a guess.
+    // A centreline exactly on the rim still puts half a carriageway, a footway and a casing over the void.
     const doc = new RoadDoc();
     const widest = 3;
     const a = doc.addNode({ x: MAP_HALF * 2, y: MAP_HALF - 400 });
@@ -100,8 +81,7 @@ describe('the map edge', () => {
   });
 
   it('clamps to the nearest point rather than to a corner', () => {
-    // A drag that runs off ONE edge should build up to that edge, keeping the
-    // other coordinate. Clamping both would drag the road sideways.
+    // A drag that runs off ONE edge should build up to that edge, keeping the other coordinate.
     const at = clampToMap({ x: MAP_HALF * 3, y: 100 });
     expect(at.y).toBe(100);
     expect(at.x).toBe(MAP_HALF - MAP_MARGIN);

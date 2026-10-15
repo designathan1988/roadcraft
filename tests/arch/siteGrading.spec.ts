@@ -1,20 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-/**
- * THE SITES GRADED AS THEIR BUILDINGS COME (2026-10-15): what made one frame
- * of a growing 2,560 m city 10 s, checked in the code itself so it cannot
- * come back unseen:
- * - the frames grade the sites while a world job makes its road tiles; only
- *   its own ground steps hold them (`worldJobGround`);
- * - a shaping pass over regions asks the regions' corners (`shapeCorners`),
- *   never every box of the town against every region
- *   (tests/render/terrainShaping.spec.ts counts it);
- * - the camera's solids are not floored again round a graded site: a floor
- *   reads the land and the paving, not the graded ground (`floorGroundSince`);
- * - a site's platform is worked out alone (`padOf`), not filed as a town of
- *   one; a building's frame is turned once, not a cosine and a sine a point.
- */
+/** THE SITES GRADED AS THEIR BUILDINGS COME (2026-10-15) */
 const read = (path: string): string => readFileSync(path, 'utf8');
 /** Comments blanked: a word in a note is not code. */
 const code = (path: string): string => read(path).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');

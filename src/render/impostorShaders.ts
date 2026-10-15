@@ -1,33 +1,11 @@
 import { DoubleSide, GLSL3, ShaderMaterial, Vector3 } from 'three';
 import { foliageAtlas } from './lowPolyTrees';
 
-/**
- * THE OCTAHEDRAL IMPOSTOR'S SHADERS (`farForest.ts`).
- *
- * The pictures: a model seen from `FRAMES` x `FRAMES` directions over the
- * upper hemisphere, laid out by the hemi-octahedral map (a direction d, over
- * |d.x|+|d.y|+|d.z|, unfolded onto a square; Brucks, "Octahedral Impostors",
- * shaderbits.com; the same formulas as github.com/agargaro/octahedral-impostor
- * and github.com/SIsilicon/Godot-Octahedral-Impostors). Each picture holds the
- * model's colour and its normal in the model's own frame.
- *
- * The quad: facing the eye, sized to the model's sphere; for each of the
- * three pictures nearest the eye's direction, the ray from the eye through
- * the corner met with that picture's plane gives where it is read (so the
- * three line up, no ghost), and they are blended by the eye's place between
- * them (the quad's barycentric weights, Godot's `quadBlendWieghts`).
- *
- * The cover is kept at every mip (Castaño, "Computing Alpha Mipmaps",
- * ludicon.com: the alpha raised with the level read) and the edge sharpened
- * to a pixel for alpha to coverage (the leaf cards' own, `lowPolyTrees.ts`).
- */
+/** THE OCTAHEDRAL IMPOSTOR'S SHADERS (`farForest.ts`). */
 
 /** Pictures along each side of a model's square. */
 export const FRAMES = 8;
-/**
- * Pixels of one picture on the atlas: a power of two, so every mip level's
- * texels lie each within one picture down to a texel a picture (`atlasUv`).
- */
+/** Pixels of one picture on the atlas */
 export const FRAME_PX = 64;
 
 /** The direction of the picture at (u, v), each 0..1, on the hemi-octahedron (y up). */
@@ -114,8 +92,7 @@ export const IMPOSTOR_VERTEX = /* glsl */ `
       vec3 centre = uCentre[model];
       float radius = uRadius[model];
       float c = cos(aLook.z), s = sin(aLook.z);
-      // The eye in the model's frame (unit tall, its sphere's centre at the origin); an orthographic
-      // camera's eye far back along its axis.
+      // The eye in the model's frame (unit tall, its sphere's centre at the origin)
       vec3 eyeWorld = cameraPosition;
       if (projectionMatrix[2][3] == 0.0) eyeWorld = aSpot.xyz + vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]) * 1.0e5;
       vec3 rel = (eyeWorld - aSpot.xyz) / size;
@@ -229,12 +206,7 @@ const BAKE_FRAGMENT_OUT = /* glsl */ `
   layout(location = 1) out vec4 gNormal;
 `;
 
-/**
- * The materials the pictures are taken with, made at load: the body's
- * faceted colour and face normal (as `flatShading` draws it), the cards'
- * leaves cut by their alpha, each with its normal in the model's frame
- * (the view's turned back by the picture camera's own rotation).
- */
+/** The materials the pictures are taken with, made at load: the body's faceted colour and face normal */
 export function bakeMaterials(): { body: ShaderMaterial; cards: ShaderMaterial } {
   const body = new ShaderMaterial({
     glslVersion: GLSL3,

@@ -1,11 +1,6 @@
 import type { SegmentParking } from '@world/parking';
 
-/**
- * The parking a new road is drawn with, chosen in the road tool's options as
- * Cities: Skylines II offers road variants: none, or bays along the kerb on
- * both sides or on one. Left and right are of the drawing direction. Kept for
- * the session, like the snapping.
- */
+/** The parking a new road is drawn with, chosen in the road tool's options as Cities: Skylines II offers road variants */
 export const ROAD_PARKING_PRESETS = ['none', 'parallel', 'parallelRight', 'parallelLeft', 'cycle', 'cycleParking'] as const;
 export type RoadParkingPreset = (typeof ROAD_PARKING_PRESETS)[number];
 

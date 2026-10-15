@@ -1,18 +1,4 @@
-// BROKEN PATHS IN COMMENTS AND DOCS, in seconds. Read-only.
-//
-// A repository path cited in a source file or a document (`src/...`,
-// `scripts/...`, `tests/...`, `docs/...`, `memory/...`, `.claude/...`,
-// `public/...`) must name a file or folder that exists, with the same case.
-// Scanned: .ts .mjs .cjs .js .md, except node_modules, dist, worktrees,
-// public (assets) and the historical copies of the old game (docs/source,
-// docs/research/source).
-//
-// What is already broken is listed in `refs.baseline.json` ({"<file>  <path>": count}),
-// which only shrinks: the check fails on a broken path not in it and on an
-// entry fixed but not taken out.
-// node scripts/check-refs.mjs [--update] [--root <dir>] [--list]
-// (`--root`: another tree; `--list`: its findings printed as JSON, for the
-// script's own test, `tests/arch/checkRefs.spec.ts`.)
+// BROKEN PATHS IN COMMENTS AND DOCS, in seconds.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -23,7 +9,7 @@ const root = rootAt >= 0 ? resolve(process.argv[rootAt + 1]) : process.cwd();
 const BASELINE = join(root, 'scripts/baselines/refs.baseline.json');
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'worktrees', '.git']);
-const SKIP_PATHS = new Set(['public', 'docs/source', 'docs/research/source']);
+const SKIP_PATHS = new Set(['public']);
 const SCANNED = /\.(ts|mjs|cjs|js|md)$/;
 /** A repository path: a known top folder, then path characters, ending on a word character. */
 const PATH = /(?<![\w./@~\\-])((?:src|scripts|tests|docs|memory|\.claude|public)\/[\w./@-]*\w)/g;

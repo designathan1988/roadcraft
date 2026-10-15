@@ -1,22 +1,4 @@
-/**
- * Flags: a generic, customizable flag flown from a mast (a spire, a lantern's
- * mast, a flagpole). The design is a pattern and three colours, drawn in the
- * flag's own shader, so any design costs the same and nothing is a picture.
- *
- * Patterns, as a vexillologist names them (left = the hoist, at the mast):
- *   solid            one field
- *   bicolourH/V      two horizontal / vertical halves
- *   tricolourH/V     three horizontal / vertical bands
- *   cross            a centred cross (St George)
- *   nordic           a cross set towards the hoist
- *   diagonal         split corner to corner
- *   saltire          a diagonal cross (St Andrew)
- *   canton           a field with a block in the upper hoist
- *   stripes          alternating stripes with a canton
- *   border           a field framed by a border
- *   disc             a field with a disc in the middle
- *   chevron          a triangle from the hoist
- */
+/** Flags: a generic, customizable flag flown from a mast (a spire, a lantern's mast, a flagpole). */
 export const FLAG_PATTERNS = [
   'solid', 'bicolourH', 'bicolourV', 'tricolourH', 'tricolourV', 'cross', 'nordic',
   'diagonal', 'saltire', 'canton', 'stripes', 'border', 'disc', 'chevron',

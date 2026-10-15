@@ -7,40 +7,12 @@ import { solidFootprints } from '@world/buildings/geometry';
 import { m } from '@world/units';
 import { kindOf, type Mix } from './demand';
 
-/**
- * The scenery's questions about the map (`ambient.ts`), answered from indexes
- * kept by the diary (`world/changes.ts`) instead of a walk over the whole map:
- *
- * - the walls between the eye and a point (`SightWalls`): a fixed grid of
- *   the buildings' solid rings (Nystrom, "Spatial Partition",
- *   gameprogrammingpatterns.com/spatial-partition.html), the line of sight
- *   reading only the cells it passes through (Amanatides and Woo, "A Fast
- *   Voxel Traversal Algorithm for Ray Tracing", 1987).
- *
- * Each index keeps the serial of the diary it last read and takes in only
- * the buildings the diary names since (`buildingsChangedSince`). A reader the
- * diary has forgotten, or a change of the whole store (a load, a clear),
- * reads the store once again.
- *
- * DO NOT key any of these by `doc.buildings.revision`: the town's ageing
- * writes a building every few seconds, and each index keyed by it was made
- * again from every building of the map that often.
- *
- * Pure: no three, no DOM.
- */
+/** DO NOT key any of these by `doc.buildings.revision` */
 
-/**
- * Work done by the indexes, for the tests: buildings filed, cells read, rings
- * tested, whole reads; lots' ways worked out, lots proposed by a draw, and
- * bounds a worked-out lot broke (always 0: a draw is exact only then).
- */
+/** Work done by the indexes, for the tests: buildings filed, cells read, rings tested, whole reads */
 export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0, verified: 0, proposals: 0, boundBroken: 0 };
 
-/**
- * The buildings the diary names as changed after `serial`; null when they
- * must all be read again (the diary forgot that far back, or an entry names
- * none: a load, a clear, a store shared).
- */
+/** The buildings the diary names as changed after `serial`; null when they must all be read again */
 function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
   if (serial >= journal.version) return new Set();
   const entries = journal.since(serial, ['buildings']);
@@ -67,18 +39,10 @@ interface Wall {
 
 /** The side of a wall cell: a few buildings each, a sight line of 300 m reads some twenty. */
 const WALL_CELL = m(32);
-/**
- * Walls are filed over their box grown by this: a crossing that falls on a
- * cell's edge, where the traversal's arithmetic and the box's can round
- * apart, is found from either side.
- */
+/** Walls are filed over their box grown by this */
 const WALL_SLACK = m(0.01);
 
-/**
- * The buildings' solid rings in a fixed grid, kept by the diary: a sight
- * line asks only the cells it crosses. Answers as the walk over every wall
- * of the map it replaces (`tests/sim/ambientIndex.spec.ts`).
- */
+/** The buildings' solid rings in a fixed grid, kept by the diary: a sight line asks only the cells it crosses. */
 export class SightWalls {
   private serial = -1;
   private readonly byBuilding = new Map<number, Wall[]>();
@@ -147,12 +111,7 @@ export class SightWalls {
     }
   }
 
-  /**
-   * Whether a side of some wall properly crosses the segment a-b. The cells
-   * are visited in the order the segment passes through them (Amanatides and
-   * Woo): a crossing point lies on the segment and inside the wall's box, so
-   * in a cell both reach.
-   */
+  /** Whether a side of some wall properly crosses the segment a-b. */
   blocked(ax: number, ay: number, bx: number, by: number): boolean {
     const mark = ++this.query;
     const lx = Math.min(ax, bx), ly = Math.min(ay, by), hx = Math.max(ax, bx), hy = Math.max(ay, by);
@@ -179,8 +138,7 @@ export class SightWalls {
         }
       }
       if (cx === ex && cy === ey) return false;
-      // The axis whose cell edge comes first; once a column (row) is the
-      // end's, only the other moves - rounding never carries it past the end.
+      // The axis whose cell edge comes first; once a column (row) is the end's, only the other moves
       if (cy === ey || (cx !== ex && maxX < maxY)) { maxX += deltaX; cx += stepX; } else { maxY += deltaY; cy += stepY; }
     }
   }
@@ -207,13 +165,7 @@ const MIX_CELL = m(128);
 /** Rounding room in the test of a whole cell inside or outside the circle: the cells near the edge are counted building by building. */
 const MIX_SLACK = m(0.001);
 
-/**
- * How many buildings of each kind (`demand.ts` kindOf) stand where: counts
- * per cell of a fixed grid and for the whole map, kept by the diary. A
- * circle reads the whole cells inside it by their counts and the buildings
- * of the cells its edge crosses one by one, by the same test as the walk
- * over every building it replaces (`AmbientWorld.mixAround`).
- */
+/** How many buildings of each kind (`demand.ts` kindOf) stand where */
 export class BuildingMix {
   private serial = -1;
   private readonly byBuilding = new Map<number, Filed>();
@@ -273,9 +225,7 @@ export class BuildingMix {
   /** The share of each kind among the buildings within `r * 1.2` of (x, y); r = Infinity, the whole map. */
   around(x: number, y: number, r: number): Mix {
     const reach = r * 1.2;
-    // As the walk's test, `hypot(b - p) > reach` leaves a building out:
-    // nothing is beyond an endless reach or a NaN, and a point at infinity
-    // is beyond every building that has a place.
+    // As the walk's test, `hypot(b - p) > reach` leaves a building out
     const count = reach === Infinity || Number.isNaN(reach) || Number.isNaN(x) || Number.isNaN(y) ? this.all
       : !Number.isFinite(x) || !Number.isFinite(y) ? this.inCircle(0, 0, -1)
         : this.inCircle(x, y, reach);
@@ -327,14 +277,7 @@ export class BuildingMix {
 
 // ------------------------------------------------------------ the street length
 
-/**
- * Street length within `r` of (x, y), world units: the length of every
- * straight piece of a ribbon whose middle is that near, summed in the order
- * of `Network.ribbons` - the same sum, to the last bit, as the walk over every
- * ribbon it replaces (`AmbientWorld.roadAround`). Only the ribbons filed in
- * the cells round the place are read (`Network.ribbonsMeeting`); the whole
- * map (r = Infinity) is summed once per network.
- */
+/** Street length within `r` of (x, y), world units */
 export class StreetLength {
   /** The street length of the whole map (`world/networkLength.ts`). */
   private readonly whole = new NetworkLength();
@@ -354,11 +297,7 @@ export class StreetLength {
     return total;
   }
 
-  /**
-   * The street length of the whole map: the network's, kept by what each
-   * rebuild changed (`world/networkLength.ts`). DO NOT sum every ribbon of the
-   * map when the network moves: every road drawn walked the town's roads.
-   */
+  /** DO NOT sum every ribbon of the map when the network moves: every road drawn walked the town's roads. */
   private wholeMap(net: Network): number {
     return this.whole.of(net);
   }
@@ -384,11 +323,7 @@ export class StreetLength {
 
 // ------------------------------------------------------------ drawing by length
 
-/**
- * The item a roll falls on, items laid end to end: the first `k` with
- * `roll < runningSum[k]` (the last when none), by a binary search - what a
- * walk subtracting each item's length until the roll goes below zero picks.
- */
+/** The item a roll falls on, items laid end to end: the first `k` with `roll < runningSum[k]` */
 export function atRoll(runningSum: Float64Array, roll: number): number {
   let lo = 0, hi = runningSum.length - 1;
   while (lo < hi) {

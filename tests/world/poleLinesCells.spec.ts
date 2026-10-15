@@ -11,13 +11,7 @@ import { planPoleRun, planPoleRunWhole } from '@editor/poles';
 import { m } from '@world/units';
 import { insideMulti } from './oracle/insideMulti';
 
-/**
- * THE POLE LINES BY CELL (docs/source/PROBLEMAS.md P7.7): what is asked about a
- * place is answered from the ribbons and junctions of the cells round it
- * (`poleLinesIn`), and must be exactly what the whole map's lines say there
- * (`poleLines`, the oracle) - before an edit, and after one, when only the
- * cells it reached are made again.
- */
+/** THE POLE LINES BY CELL (7) */
 function town(seed: number): { doc: RoadDoc; net: Network } {
   const doc = layCity(planCity({ ...DEFAULT_CITY, seed, size: 'small' }));
   const net = new Network(doc);
@@ -66,15 +60,7 @@ function kerbwardWhole(lines: PoleLines, p: Vec2, reach: number): Vec2 | null {
   return best;
 }
 
-/**
- * How far two answers about the pole lines may differ: their vertices are on
- * Clipper's grid of 1 mm (3 decimals, `poleLines.ts` `contoursOf`), and in a
- * half-millimetre tie the side a vertex of the offset falls on depends on the
- * order Clipper's offset walks the set it is given (it turns a whole group by
- * its lowest path): the cells' lines and the whole map's agree to that grid,
- * a vertex at most one step off in each axis. Measured on a town of blocks of
- * varied sizes: 0.8 mm (`poles-varied-blocks.json`).
- */
+/** How far two answers about the pole lines may differ: their vertices are on Clipper's grid of 1 mm */
 const GRID_TIE = Math.SQRT2 * 0.001;
 
 /** Distance from a point to the nearest contour of a set of lines (within `reach`, else Infinity). */
@@ -117,8 +103,7 @@ describe('pole lines by cell', () => {
   });
 
   it('answer as the whole map\'s lines do in a town of blocks of varied sizes', () => {
-    // The generated town with its blocks' sides varied (the construction
-    // agent's grid, 2026-10-11), where a contour came out 0.8 mm off.
+    // The generated town with its blocks' sides varied
     const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/poles-varied-blocks.json', 'utf8')));
     const net = new Network(doc);
     net.rebuild();

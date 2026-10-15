@@ -11,19 +11,9 @@ import { m } from '@world/units';
 import type { BuildingDelta } from './buildingOrder';
 import type { Bay, BayLane } from './bay';
 
-/**
- * THE BAYS ALONG THE KERBS, KEPT BY STREET (`parking.ts` `collectBays` hands
- * them out after the lots' stalls). A street's bays are laid out from its line
- * and the entrances of the lots in front of it; a building change lays out
- * again only the streets an entrance of it faces.
- */
+/** THE BAYS ALONG THE KERBS, KEPT BY STREET (`parking.ts` `collectBays` hands them out after the lots' stalls). */
 
-/**
- * What the kerbs read of the world (`SimWorld`): the document's buildings, the
- * roads and the log of the lane graph's changes. DO NOT import `SimWorld`:
- * the world reaches this file, and the type import closed an import cycle
- * (`tests/arch/imports.spec.ts`).
- */
+/** DO NOT import `SimWorld`: the world reaches this file, and the type import closed an import cycle */
 export interface KerbWorld {
   readonly doc: RoadDoc;
   readonly net: Network;
@@ -47,13 +37,7 @@ const FRONTAGE_REACH = m(8);
 const KERB_CELL = m(64);
 const kerbCell = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
 
-/**
- * The bays along the kerbs of the streets that park (`RoadSegment.parking`),
- * kept by street. A street's bays are laid out (`parkingLayout`) from its
- * line and the entrances of the lots in front of it, which keep their kerb
- * clear; they were laid out for every street of the town against every
- * entrance of the town on each pass (`lotEntrances` walks every building).
- */
+/** The bays along the kerbs of the streets that park (`RoadSegment.parking`), kept by street. */
 export interface KerbBook {
   /** The network, its state and the lane graph's the streets were read at (`Network.changesSince`, `SimWorld.topologyLog`). */
   net: Network | null;
@@ -111,16 +95,7 @@ function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[]
   }
 }
 
-/**
- * The kerbs brought up to date: the streets the network changed and those
- * whose lanes the lane graph built again laid out again (a street's bays read
- * its own line, its own ends and its own lanes, `kerbBaysOf`), and the
- * streets an entrance changed in front of (a lot's gate or car park drawn,
- * moved or taken away). The streets whose bays changed - laid out otherwise,
- * or gone - for whoever keeps something by street (`parking.ts`
- * bayChangesSince). DO NOT lay out every street of the town when the roads
- * move: every road drawn laid out the town's kerbs again.
- */
+/** DO NOT lay out every street of the town when the roads move: every road drawn laid out the town's kerbs again. */
 export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
   const dirty = new Set<SegmentId>();
   // The roads: what the network and the lane graph changed since the streets were read (null: read them all).
@@ -273,19 +248,14 @@ function entrancesFacing(book: KerbBook, r: { x0: number; y0: number; x1: number
 /** One street's kerb bays: laid out alone (`parkingLayout` over a network of this one street), against the entrances in front of it. */
 function kerbBaysOf(w: KerbWorld, book: KerbBook, id: SegmentId, rank: (id: BuildingId) => number, laneAt: LaneAt): Bay[] {
   const ribbon = w.net.ribbons.get(id)!;
-  // The network as it is, with only this street in `ribbons`: each street's
-  // bays are laid out from its own line, its own ends and the entrances near
-  // it alone (`parkingLayout`), so one street is laid out as in the whole.
+  // The network as it is, with only this street in `ribbons`
   const one = Object.create(w.net, { ribbons: { value: new Map([[id, ribbon]]) } }) as Network;
   const out: Bay[] = [];
   for (const bay of parkingLayout(one, entrancesFacing(book, book.reach.get(id)!, rank)).bays) {
     const f = bay.facing;
     const ahead = { x: bay.centre.x + f.x * KERB_AHEAD, y: bay.centre.y + f.y * KERB_AHEAD };
     const lane = laneAt(ahead.x, ahead.y, bay.segment);
-    // The lane has to run the way the car faces: the traffic beside the bay;
-    // and its joining point (kept `LANE_END` clear of the junctions) must lie
-    // ahead of the bay. Near the end of a street it falls behind it, and the
-    // car would turn round on the spot, its tail sweeping the footway.
+    // The lane has to run the way the car faces: the traffic beside the bay; and its joining point
     const aligned = lane !== null && lane.tx * f.x + lane.ty * f.y > 0.7
       && (lane.x - bay.centre.x) * f.x + (lane.y - bay.centre.y) * f.y >= KERB_MIN_AHEAD;
     out.push({

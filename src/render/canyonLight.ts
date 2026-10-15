@@ -18,37 +18,7 @@ import type { CameraSolids } from '@world/buildings/cameraSolids';
 import { m } from '@world/units';
 import { DEPTH_GLSL } from './depthConvention';
 
-/**
- * THE LIGHT A TOWN SHUTS OUT, at two scales the shadow map and the small
- * ambient occlusion pass miss (the player, 2026-10-13: a street between
- * buildings lit like an open field; no shadow in the window reveals, under
- * the cornices and sills, the pilasters casting nothing):
- *
- * - The sky a point sees past the buildings round it - a street canyon's
- *   floor, the foot of its walls, a courtyard - from a field of the
- *   buildings' heights round the view: in eight directions the highest
- *   horizon the roofs make, and the cosine-weighted visibility of each pair
- *   of opposite horizons, (cos² e1 + cos² e2) / 2 (Jimenez et al., "Practical
- *   Realtime Strategies for Accurate Indirect Occlusion", 2016, eq. 7 with
- *   the integration axis on the normal; exact for a height field, which a
- *   town of blocks is), and their multi-bounce fit; on a wall, only the
- *   directions it faces. A point with something just over it (a canopy
- *   stamped into the field) loses most of its sky.
- * - The sun's contact shadows: from each pixel a short ray marched towards
- *   the sun through the depth buffer, a fixed number of steps over a short
- *   length (Unreal's Contact Shadows), so a sill, a cornice, a pilaster, a
- *   reveal or an awning shades what lies just behind it, where the shadow
- *   map's texel and its bias are too coarse.
- *
- * The field is a window of `WINDOW` metres round the view's centre in cells
- * of `CELL`, laid whole only when the centre has moved a quarter of it or the
- * diary cannot say what changed - a few hundred volumes a frame, never the
- * whole map - and uploaded once laid (1 MB). A change of the buildings or of
- * the ground under them clears and lays again only its own rectangles, and
- * only their rows go to the GPU. DO NOT lay the window again at every
- * building: in a growing town the key moved before the window was laid, it
- * started over, and the field was never put in place.
- */
+/** DO NOT lay the window again at every building */
 
 /** The field's side, world units, and its cell. */
 const WINDOW = m(2048);
@@ -62,12 +32,7 @@ const VOLUMES_PER_FRAME = 400;
 
 export interface CanyonLight {
   readonly pass: ShaderPass;
-  /**
-   * The view's centre (map x, y), the town's solids, and where they changed
-   * since the last call (the buildings' and the ground's rectangles from the
-   * diary; null: anywhere, the window laid whole; empty: nothing).
-   * @rebuild A few hundred volumes a frame while a new window is laid; a change's own rectangles otherwise.
-   */
+  /** @rebuild The view's centre (map x, y), the town's solids, and where they changed since the last call */
   follow(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
   /** The sun's direction (world, to the sun) and its share of the light on the ground. */
   setSun(direction: Vector3, directShare: number): void;
@@ -108,16 +73,7 @@ const FRAGMENT = /* glsl */ `
   float depthTap(ivec2 p, ivec2 hi) {
     return texelFetch(tDepth, clamp(p, ivec2(0), hi), 0).r;
   }
-  // The surface's normal at a pixel, rebuilt from the depth round it as
-  // three's GTAO rebuilds it (GTAOShader computeNormalFromDepth; Yuwen Wu,
-  // "Accurate Normal Reconstruction from Depth Buffer"): on each axis the side
-  // whose two taps, carried on to the pixel, land nearest its own depth - the
-  // side on the same surface. DO NOT take dFdx/dFdy of the position: they are
-  // differences over a 2x2 block of pixels, and a block straddling an edge (a
-  // plinth's top and its face, a door's moulding, a stain's edge) mixes two
-  // surfaces - every other block along every edge was taken for a wall or a
-  // floor, facing the sun or not, and drawn as a staircase on the plinths and
-  // the steps and as dashes round the doors (2026-10-14).
+  // DO NOT take dFdx/dFdy of the position: they are differences over a 2x2 block of pixels, and a block straddling an edge
   vec3 normalAt(vec2 uv, float c0, vec3 C) {
     ivec2 size = textureSize(tDepth, 0);
     ivec2 hi = size - 1;
@@ -136,14 +92,7 @@ const FRAGMENT = /* glsl */ `
     return normalize(cross(dx, dy));
   }
 
-  // Whether the sun reaches a point by its shadow map, 0..1, tested as three's
-  // lights test it (shadowmap_pars_fragment; the normal offset as
-  // environment.ts slopeScaledShadowOffset scales it), so a contact shadow
-  // is laid only where the sun's light still falls. DO NOT darken what the
-  // shadow map has already shaded: a contact shadow takes away the sun, not
-  // the sky, and laid over the shadow of a parapet or a wall it drew that
-  // shadow a second time, in the steps of its march (2026-10-14: the steps in
-  // a roof's inner corner and on a canopy under a wall).
+  // DO NOT darken what the shadow map has already shaded
   float sunReaches(vec3 P, vec3 N) {
     if (uSunShadowOn < 0.5) return 1.0;
     float grazing = 1.0 - clamp(dot(N, uSunDir), 0.0, 1.0);
@@ -176,9 +125,7 @@ const FRAGMENT = /* glsl */ `
       if (wall) facing = normalize(facing);
       float sum = 0.0, count = 0.0;
       for (int k = 0; k < 8; k++) {
-        // Fixed directions and steps: drawn at random per pixel with no filter
-        // after them (three's GTAO denoises its random taps), the town was
-        // grained all over (the player, 2026-10-13: "ficou tudo com noise").
+        // Fixed directions and steps: drawn at random per pixel with no filter after them
         float a = (float(k) + 0.5) * 0.7853982;
         vec2 d = vec2(cos(a), sin(a));
         if (wall && dot(d, facing) < 0.15) continue;
@@ -273,11 +220,7 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     draw(...args);
   };
 
-  /**
-   * The window being laid, and where: volumes still to lay (bx, by, cos, sin,
-   * x0, y0, x1, y1, top a volume), and the changes that came meanwhile, laid
-   * again over it once it is whole.
-   */
+  /** The window being laid, and where: volumes still to lay */
   let laid = { cx: Number.NaN, cy: Number.NaN, ox: 0, oy: 0 };
   let pending: { cx: number; cy: number; ox: number; oy: number; volumes: number[]; at: number; after: (readonly [number, number, number, number])[] } | null = null;
 
@@ -315,11 +258,7 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     solids().forEachIn(x0, y0, x1, y1, (bx, by, c, s, lx0, ly0, lx1, ly1, top) => { volumes.push(bx, by, c, s, lx0, ly0, lx1, ly1, top); });
     return volumes;
   };
-  /**
-   * The cells of `rect` cleared in `target` and laid again from what stands
-   * there now (a volume reaching out of the rectangle lays its own height,
-   * the same as before, outside it). The rows it spans, or null off the window.
-   */
+  /** The cells of `rect` cleared in `target` and laid again from what stands there now */
   const relay = (target: Uint8Array, solids: () => CameraSolids, rect: readonly [number, number, number, number], ox: number, oy: number): [number, number] | null => {
     const i0 = Math.max(0, Math.floor((rect[0] - ox) / CELL)), i1 = Math.min(SIDE - 1, Math.floor((rect[2] - ox) / CELL));
     const j0 = Math.max(0, Math.floor((rect[1] - oy) / CELL)), j1 = Math.min(SIDE - 1, Math.floor((rect[3] - oy) / CELL));
@@ -372,8 +311,7 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     },
     setSun(direction, directShare) {
       sun.copy(direction).normalize();
-      // The sky's share of the light is what the canyon takes; the sun's
-      // contact shadows are as strong as the sun is.
+      // The sky's share of the light is what the canyon takes; the sun's contact shadows are as strong as the sun is.
       u['uSky']!.value = 0.85 - 0.35 * directShare;
       u['uContact']!.value = 0.55 * directShare * Math.min(1, Math.max(0, direction.y * 4));
     },

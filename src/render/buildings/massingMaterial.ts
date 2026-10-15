@@ -2,26 +2,9 @@ import { Color, MeshStandardMaterial } from 'three';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 import { applyLotOverlay } from '../lotOverlay';
 
-/**
- * The material of buildings seen from afar (`massing.ts`): their walls in the
- * colours of the detailed shells, and their windows drawn by the pixel shader
- * from the bays and storeys of each face - the regular spacing of floors and
- * walls a ray needs no geometry for (van Dongen, "Interior Mapping", CGI
- * 2008) - glazed, glossier than the wall, and lit at night as the detailed
- * panes are: the same rooms awake (`roomsAwake`) and the same glow.
- *
- * The windows are box-filtered over the pixel (Inigo Quilez, "Filterable
- * procedurals": the pattern integrated over the footprint `fwidth` gives),
- * so a facade far off settles to its mean tone instead of shimmering, and
- * which rooms are lit fades to the share awake as the windows shrink under
- * a pixel.
- */
+/** The material of buildings seen from afar (`massing.ts`) */
 
-/**
- * The glass a window is seen as from afar: what the detailed pane shows by
- * day, the room behind it at a fifth of its colour and the sky's sheen
- * (`kit.ts`), a neutral dark grey - not a blue.
- */
+/** The glass a window is seen as from afar */
 const GLASS = new Color(0x585f63);
 /** Where a window sits in its storey, from the floor (shares of the storey height). */
 const SILL = 0.3;
@@ -84,8 +67,7 @@ if (vFacade.y > 0.0) {
     : (roomLamp(0.1, 0.0) * 0.36 + roomLamp(0.45, 0.0) * 0.24 + roomLamp(0.65, 0.0) * 0.1 + roomLamp(0.9, 0.0) * 0.3);
   massLamp = mix(roomLamp(fract(lot * 17.31), office), meanLamp, sub);
   // A curtain wall is its own colour (its finish's mean, \`finishes.ts\` \`finishAlbedo\`):
-  // painted the windows' glass it turned navy blue from afar while the
-  // detailed tower is near black (the player, 2026-10-13: "as cores mudam muito").
+  // painted the windows' glass it turned navy blue from afar while the detailed tower is near black
   if (share < 0.99) diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')

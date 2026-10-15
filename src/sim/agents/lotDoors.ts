@@ -6,27 +6,7 @@ import { streetDoors } from '@world/buildings/streetDoors';
 import { carGates } from './parking';
 import { PEOPLE_GRID, buildLotGrid, sees, wayOut } from './lotNav';
 
-/**
- * The way on foot between a lot's front door and the footway: from the door,
- * down the path to the people's gate in the front boundary, through the gate
- * and out onto the footway (`editor/lotPlan.ts` puts the gate on the path to
- * the door, the same x as the door, in every front with a garden or a
- * forecourt). As SUMO reaches a stop off the lane by its `<access>` (a lane, a
- * position on it, and the distance walked to the stop), the gate's foot on the
- * footway is where a walk from the street turns in, and the way through the
- * lot is walked as one more stretch of the route (`agents/walk.ts`, steps off
- * the walkways).
- *
- * Inside the lot the way is found on a person's grid (`lotNav.ts`
- * `PEOPLE_GRID`): the building, walls, fences, hedges, trees, benches, bins,
- * the car stalls are solid, stairs and ramps are not; the gate must be open to
- * that grid (a line from inside it to the footway crosses only free cells),
- * and the way is pulled taut. The last stretch runs square through the
- * middle of the gate, between its posts.
- *
- * Worked out once per building record (records are replaced on any change)
- * and only when a walker is first sent to or from that lot.
- */
+/** The way on foot between a lot's front door and the footway */
 
 /** A lot's way on foot, world units. */
 export interface DoorWay {
@@ -35,11 +15,7 @@ export interface DoorWay {
   readonly out: readonly Vec2[];
   /** The lot's width along the street, u: how much street it fronts. */
   readonly frontage: number;
-  /**
-   * The way is a street door's step (`streetWay`), not a gate's: whether its
-   * foot is on a footway depends on the roads, which the building record
-   * does not follow - its user checks it (`ambient.ts`, `walk.ts` `joinsFootway`).
-   */
+  /** The way is a street door's step (`streetWay`), not a gate's */
   readonly street?: true;
 }
 
@@ -119,12 +95,7 @@ function workOut(b: Building): DoorWay | null {
   return null;
 }
 
-/**
- * A shop or a bar built up to the footway, with no people's gate: its front
- * door opens onto the street (`world/buildings/streetDoors.ts`), and the way
- * is the step out of it - from where the door's walker stands to its foot on
- * the footway. Without it nobody went into a shop on the footway.
- */
+/** A shop or a bar built up to the footway, with no people's gate: its front door opens onto the street */
 function streetWay(b: Building): DoorWay | null {
   const d = streetDoors(b)[0];
   if (!d) return null;

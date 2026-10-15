@@ -7,18 +7,7 @@ import type { GeologyKind, PaintKind } from '@world/terrainPaint';
 import { UNITS_PER_METER, m } from '@world/units';
 import { editRandom } from './editStream';
 
-/**
- * THE TERRAIN BRUSH: what one dab does, for every brush of the land tool
- * (raise, lower, flatten, river, the landforms, ground paint, fog, gullies,
- * trees, elements), and the stroke that lays dabs along the pointer's path.
- *
- * A stroke is the "Space" stroke of a sculpting brush (Blender, Stroke:
- * dabs laid at a spacing that is a fraction of the radius, so a fast pointer
- * leaves no gaps), and a flatten held still keeps working, as an airbrush
- * does ("keeps applying while the button is held"). Every dab is rate
- * limited by what the last rebuild cost (`TerrainBrushHost.interval`): a dab
- * that moves the land re-solves the roads on it.
- */
+/** THE TERRAIN BRUSH: what one dab does, for every brush of the land tool */
 
 /** Spacing between dabs along a stroke, a fraction of the radius. */
 const TERRAIN_SPACING = 0.2;
@@ -53,11 +42,7 @@ export interface DabSettings {
   readonly paint: PaintKind;
 }
 
-/**
- * How far a dab may be from its stroke's noise origin (`TerrainStamp.ox`)
- * before the stroke takes a new one: kept within the reach a piece's map has
- * past its border, so the origin is always read on the dab's own map.
- */
+/** How far a dab may be from its stroke's noise origin (`TerrainStamp.ox`) before the stroke takes a new one */
 const NOISE_ORIGIN_REACH = m(120);
 
 /** A stroke's noise origin for a dab at `at`, on `at`'s map (moved on to `at` when it has gone too far). */
@@ -69,11 +54,7 @@ function noiseOrigin(stroke: { origin: Vec2 } | null, at: Vec2): Vec2 | null {
   return stroke.origin;
 }
 
-/**
- * One dab at `at`, with no spacing or rate checks of its own; `level` the
- * flatten's target, `stroke` the stroke's id, `origin` its noise origin on
- * `at`'s map (`TerrainStamp.ox`; null: a dab of its own).
- */
+/** One dab at `at`, with no spacing or rate checks of its own */
 function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | null, s: DabSettings, origin: Vec2 | null = null): void {
   if (s.mode === 'elements') {
     // Elements move no height: a dab lays instances (or takes them away).
@@ -83,8 +64,7 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     }
     const { kind, brush } = s.element;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
-    // The elements round the dab only (`RoadDoc.elementsIn`). DO NOT filter
-    // `doc.elements`: every dab of a stroke walked every element of the map.
+    // DO NOT filter `doc.elements`: every dab of a stroke walked every element of the map.
     const nearby = doc.elementsIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
       .filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
     // By chance seeded by the document and the dab (`editStream.ts`), never `Math.random`.
@@ -92,8 +72,7 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     return;
   }
   if (s.mode === 'trees') {
-    // Trees move no height: a dab plants a stand (or one tree), or cuts the
-    // trees away there - the woods' own too (`world/trees.ts`).
+    // Trees move no height: a dab plants a stand (or one tree), or cuts the trees away there - the woods' own too
     if (s.tree.mode === 'cut') {
       doc.cutTrees(at.x, at.y, s.radius);
       return;
@@ -112,8 +91,7 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     return;
   }
   if (s.mode === 'gully') {
-    // Gullies move no height the roads read: the relief the light reads is
-    // cut there (or wiped), `render/terrainRelief.ts`.
+    // Gullies move no height the roads read: the relief the light reads is cut there (or wiped), `render/terrainRelief.ts`.
     doc.addGullyDab({
       x: at.x, y: at.y, radius: s.radius,
       strength: Math.max(0.05, Math.min(1, s.gully.strength / 100)),
@@ -122,8 +100,7 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     return;
   }
   if (s.mode === 'fog') {
-    // Fog moves no height either: a dab of mist laid, or taken away. The
-    // brush's own settings go with the dab.
+    // Fog moves no height either: a dab of mist laid, or taken away.
     doc.addFogDab({
       x: at.x, y: at.y, radius: s.radius,
       strength: Math.max(0.02, Math.min(1, s.fog.strength / 100)),
@@ -155,8 +132,7 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     ...(s.hardness > 0 && !landform?.profile && (mode === 'raise' || mode === 'lower') ? { hardness: s.hardness / 100 } : {}),
     ...(landform?.profile ? { profile: landform.profile } : {}),
   });
-  // The landform's rock, under the whole dab: a little wider than the dab,
-  // so the rock reaches the foot of its cliff.
+  // The landform's rock, under the whole dab: a little wider than the dab, so the rock reaches the foot of its cliff.
   if (landform) doc.addPaintDab({ kind: landform.rock, x: at.x, y: at.y, radius: s.radius * 1.15, strength: 1 });
 }
 
@@ -217,30 +193,16 @@ export class TerrainBrush {
   begin(pointer: number, at: Vec2): void {
     const { host } = this;
     host.record();
-    // The stroke's id: the id its first dab will take (`RoadDoc.allocatorMarks`,
-    // the terrain stamps' allocator). Stamp ids are handed out in increasing
-    // order, never again, and every stroke before had an id no greater than one
-    // of its own stamps' (strokes counted up from 1 while each laid a stamp at
-    // least), so no stamp standing carries it. DO NOT find the next id by
-    // walking every stamp of the map at each press.
+    // DO NOT find the next id by walking every stamp of the map at each press.
     const id = host.doc.allocatorMarks()[TERRAIN_STAMP_MARK]!;
     this.stroke = { pointer, last: at, at, level: host.heightAt(at), applied: 0, id, origin: { x: at.x, y: at.y } };
     this.paint(at, true);
     this.disarm();
-    // Only a flatten works on by being held: it levels a little further with
-    // every dab. A raise, a lower or a river stroke moves the ground by its
-    // strength and no more however long it is held (its dabs are one stroke),
-    // so repeating them would only spend the map's dab budget.
+    // Only a flatten works on by being held: it levels a little further with every dab.
     this.repeat = host.settings().mode === 'flatten';
   }
 
-  /**
-   * A frame of a flatten held still: another dab once its interval has gone
-   * by. True while one is held - the frame loop asks for the next frame.
-   * Run from the frame (`main.ts` frame), as the game's other timed work: DO
-   * NOT go back to a `setInterval` of its own, which dabbed between frames
-   * and in the middle of whatever the frame was doing.
-   */
+  /** Run from the frame (`main.ts` frame), as the game's other timed work */
   tick(now: number): boolean {
     const stroke = this.stroke;
     if (!this.repeat || !stroke) return false;
@@ -253,13 +215,7 @@ export class TerrainBrush {
     return true;
   }
 
-  /**
-   * Paints from the last dab to `at`, laying dabs along the way: a pointer
-   * sample can jump a hundred units at speed, and dabbing only where the
-   * samples landed left gaps a river ran straight through. With no stroke,
-   * one dab where the pointer is.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput Paints from the last dab to `at`, laying dabs along the way */
   paint(at: Vec2, force = false): void {
     const { host } = this;
     const stroke = this.stroke;
@@ -280,8 +236,7 @@ export class TerrainBrush {
     const dx = at.x - stroke.last.x;
     const dy = at.y - stroke.last.y;
     const distance = Math.hypot(dx, dy);
-    // Bounded, because a pointer that re-enters the canvas from far away must
-    // not lay two hundred dabs in one event.
+    // Bounded, because a pointer that re-enters the canvas from far away must not lay two hundred dabs in one event.
     const steps = force ? 1 : Math.min(12, Math.max(1, Math.round(distance / spacing)));
     for (let i = 1; i <= steps; i++) {
       const t = steps === 1 && force ? 1 : i / steps;

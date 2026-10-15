@@ -6,25 +6,7 @@ import { type BayComponent, type Building, type Volume, bayKey } from '@world/bu
 import { m } from '@world/units';
 import type { ReferenceSampler, Triangle } from '@world/buildings/reference';
 
-/**
- * Builds a building from a reference model: the real building's 3D model,
- * read the way a surveyor reads one, and rebuilt of the game's own blocks so
- * every part of it stays editable.
- *
- * 1. Massing: every upward face of the model is a top; the tops at one height
- *    that touch are one block, whose plan is the convex hull of its roof, and
- *    which stands on the highest top under its centre (or on the ground).
- * 2. Colour: each block's walls take the colour the model shows on them; a
- *    base of another colour (a stone plinth) becomes its own block.
- * 3. Facade: every bay of every storey is looked at in the model's pictures:
- *    plain where the model is light, windows where it is dark, a portal where
- *    the ground floor is open, wide openings where most of a bay is dark.
- * 4. Crown: what rises above the highest block (a mast, a lantern, a spire)
- *    becomes a lantern with a flag on that block's roof.
- *
- * Everything is in metres in the reference's plan: x across, y away from the
- * front, z up; the plan centred on the origin.
- */
+/** Builds a building from a reference model */
 
 // The model's geometry types live below both readers (`world/buildings/reference.ts`).
 export type { ReferenceSampler, Triangle };

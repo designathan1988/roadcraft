@@ -6,21 +6,12 @@ import type { Network } from '../network';
 import { RAISED_LIFT, TUNNEL_BORE, isRaised, type RoadStructure } from '../structures';
 import { ROAD_TUNING } from './tuning';
 
-/**
- * HOW A ROAD IS BUILT at each point along it (docs/source/VIAS.md V3): on the
- * ground, on an embankment, in a cutting, on piers, in a tunnel. Read from
- * the solved deck against the natural ground and the road's structure, with
- * the thresholds the renderer builds with: piers past `RAISED_LIFT`
- * (`render/structures.ts` `structureRibbons`), a bore past `TUNNEL_BORE`;
- * an embankment or a cutting past the economy's `fillFrom`. One function, so
- * the preview names what the game will build.
- */
+/** HOW A ROAD IS BUILT at each point along it */
 export type BuildMode = 'ground' | 'embankment' | 'cutting' | 'bridge' | 'tunnel';
 
 /** The way of building at one point: `lift` is the deck over the natural ground (world units). */
 export function buildModeAt(structure: RoadStructure, lift: number): BuildMode {
-  // A tunnel's segment is bored only where it is buried; its approaches are
-  // built as any road is (a cutting, at grade, even on fill).
+  // A tunnel's segment is bored only where it is buried; its approaches are built as any road is
   if (lift < -TUNNEL_BORE) return 'tunnel';
   if (isRaised(structure) || lift > RAISED_LIFT) return 'bridge';
   const fill = ROAD_TUNING.economy.fillFrom;
@@ -49,10 +40,7 @@ export interface BuildRun {
   readonly to: number;
 }
 
-/**
- * The segments of a road laid from `startAt`, in order and each with its
- * direction: walked node to node through `ids` from the node at the start.
- */
+/** The segments of a road laid from `startAt`, in order and each with its direction */
 export function orderAlong(doc: RoadDoc, ids: ReadonlySet<SegmentId>, startAt: Vec2): { id: SegmentId; reversed: boolean }[] {
   let current: NodeId | null = null;
   let best = Infinity;
@@ -68,9 +56,7 @@ export function orderAlong(doc: RoadDoc, ids: ReadonlySet<SegmentId>, startAt: V
   }
   const out: { id: SegmentId; reversed: boolean }[] = [];
   const used = new Set<SegmentId>();
-  // The segments of the set at each node, in the set's order: the next one is
-  // the first unused there. DO NOT search the whole set at every step (a
-  // road's pieces squared, on every preview of the draft).
+  // DO NOT search the whole set at every step (a road's pieces squared, on every preview of the draft).
   const atNode = new Map<NodeId, SegmentId[]>();
   for (const id of ids) {
     const seg = doc.segment(id);
@@ -92,11 +78,7 @@ export function orderAlong(doc: RoadDoc, ids: ReadonlySet<SegmentId>, startAt: V
   return out;
 }
 
-/**
- * The stations of a road every `step` units along it (and at each end of
- * each segment), from the network, the solved heights and the natural
- * ground: what the preview draws and what the build is.
- */
+/** The stations of a road every `step` units along it */
 export function stationsAlong(
   net: Network,
   elevation: RoadElevation,

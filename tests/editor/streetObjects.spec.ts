@@ -89,8 +89,7 @@ describe('authored pedestrian crossing', () => {
     expect(result.committed).toBe(true);
     if (!result.committed) return;
     const owner = doc.requireNode(result.node).crossing!.segment;
-    // A road crossing the painted piece splits it: the crossing follows the
-    // piece that still touches the node, and stays where it was painted.
+    // A road crossing the painted piece splits it
     splitSegment(doc, net, owner, 60, net.polylines.get(doc, owner).sampleAt(60).p);
     net.rebuild();
     const carried = doc.requireNode(result.node).crossing;
@@ -192,8 +191,7 @@ describe('authored pedestrian crossing', () => {
       expect(commitPedestrianCrossing(doc, net, segment.id, 'zebra', s).committed).toBe(false);
       expect(doc.toJSON()).toEqual(before);
     }
-    // An authored section always keeps a footway (`ROAD_SECTION_LIMITS`), so the
-    // road without pedestrians is a class that carries none: the highway.
+    // An authored section always keeps a footway
     doc.setSegmentSection(segment.id, undefined);
     doc.setSegmentType(segment.id, 4);
     net.rebuild();

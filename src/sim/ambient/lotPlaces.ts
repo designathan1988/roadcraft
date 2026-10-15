@@ -7,13 +7,7 @@ import { kindOf } from './demand';
 import { ambientIndexWork, atRoll, cellKey, type Kind } from './ambientIndex';
 
 
-/**
- * Whole-number weights in a Fenwick tree (binary indexed tree; Fenwick, "A
- * new data structure for cumulative frequency tables", 1994;
- * en.wikipedia.org/wiki/Fenwick_tree): a weight set and the item a roll
- * falls on, both in O(log n). Whole numbers, so adding and taking away never
- * leaves a rounding behind.
- */
+/** Whole-number weights in a Fenwick tree */
 class Fenwick {
   private cap = 16;
   private tree = new Float64Array(this.cap + 1);
@@ -69,17 +63,9 @@ const WEIGHT_SCALE = 1e6;
 const weightOf = (frontage: number): number => Math.max(0, Math.round(frontage * WEIGHT_SCALE));
 /** The side of a place cell, for the walk from one lot to another. */
 const PLACE_CELL = m(256);
-/**
- * How far past a building's box (`storedBounds`: its blocks and its lot's
- * parts) the foot of its way can be: a gate's foot is 0.6 m out of the gate,
- * a street door's 1.05 m out of the facade.
- */
+/** How far past a building's box (`storedBounds`: its blocks and its lot's parts) the foot of its way can be */
 const FEET_PAD = m(2);
-/**
- * How far round a road edit a street door's foot is looked at again: past
- * the widest road's half and its footway, the corners of the junctions at
- * its ends, and the 4 m a foot joins a footway within.
- */
+/** How far round a road edit a street door's foot is looked at again */
 const ROAD_REACH = m(60);
 /** Proposals a draw makes before it gives up (`LotPlaces.pick`). */
 const MAX_PROPOSALS = 64;
@@ -124,24 +110,7 @@ interface PlaceCell<W extends PlaceWay> {
   x0: number; y0: number; x1: number; y1: number;
 }
 
-/**
- * The buildings people walk into (`ambient.ts` edgePeople), kept by the
- * diary: one place per building, by its id, and drawn by weight in O(log n)
- * - a Fenwick tree per kind - instead of a walk over every building twice
- * a person made.
- *
- * A lot's way from its door (`lotDoors.ts` doorWay, a millisecond or so: a
- * person's grid round the gate) is worked out only when the lot is drawn,
- * and kept with the record. Until then the lot is drawn by the most
- * frontage its way can have (its blocks across each of its people's gates,
- * or along its facade); the lot drawn is then worked out and taken with the
- * chance of its frontage over that bound, else drawn again - rejection
- * sampling (en.wikipedia.org/wiki/Rejection_sampling): each lot comes out
- * with the chance of its own frontage, as the walk over every worked-out
- * lot drew it. DO NOT go back to working out lots' ways by a time budget a
- * look: the clock decided which lots were known, so where people walked,
- * and a town of 20 000 lots was known after twenty minutes.
- */
+/** DO NOT go back to working out lots' ways by a time budget a look */
 export class LotPlaces<W extends PlaceWay> {
   private serial = -1;
   private readonly byBuilding = new Map<number, Place<W>>();
@@ -177,8 +146,7 @@ export class LotPlaces<W extends PlaceWay> {
       const b = store.get(id as never);
       if (b) this.file(b);
     }
-    // A street door's way holds while a footway is at its foot: the roads
-    // changed near it, it is worked out again when next drawn.
+    // A street door's way holds while a footway is at its foot
     if (everyRoad) { for (const p of [...this.streetish]) this.unknown(p); return; }
     for (const r of rects) {
       const x0 = r[0] - ROAD_REACH, y0 = r[1] - ROAD_REACH, x1 = r[2] + ROAD_REACH, y1 = r[3] + ROAD_REACH;
@@ -222,13 +190,7 @@ export class LotPlaces<W extends PlaceWay> {
     return p.way;
   }
 
-  /**
-   * A lot drawn by `coef[kind] x frontage`, or, given `not` (the other end of
-   * a walk), by that times e^(-d/decay), d the distance between the feet of
-   * their ways, none nearer than `near`. Null when there is none (or when
-   * `MAX_PROPOSALS` were turned down: not one in a billion in a town).
-   * `joins`: whether a street door's foot is on a footway.
-   */
+  /** A lot drawn by `coef[kind] x frontage`, or, given `not` */
   pick(rng: { float(): number }, coef: readonly number[], not: W | null, joins: (p: { x: number; y: number }) => boolean,
     decay: number, near: number): W | null {
     return not ? this.pickFrom(rng, coef, not, joins, decay, near) : this.pickAny(rng, coef, joins);
@@ -264,11 +226,7 @@ export class LotPlaces<W extends PlaceWay> {
   private pickFrom(rng: { float(): number }, coef: readonly number[], not: W, joins: (p: { x: number; y: number }) => boolean,
     decay: number, near: number): W | null {
     const foot = not.out[not.out.length - 1]!;
-    // Each cell drawn by its weight times the nearest its feet can be (a
-    // bound of every member's own distance decay); a member by its weight;
-    // taken with the chance of its frontage, decay and the cell's weight now
-    // over what it was drawn by: each lot comes out with the chance of its
-    // own weight times its own decay, as the walk over every lot drew it.
+    // Each cell drawn by its weight times the nearest its feet can be (a bound of every member's own distance decay)
     const cells: PlaceCell<W>[] = [];
     const bounds: number[] = [];
     let sum = 0;
@@ -400,12 +358,7 @@ export class LotPlaces<W extends PlaceWay> {
     if (!c.members.length) this.cells.delete(p.cell);
   }
 
-  /**
-   * The most frontage the building's way can have (`lotDoors.ts`): through a
-   * people's gate, its blocks' width across that gate, the widest of its
-   * gates; with none, by its street door, its blocks' width along the
-   * facade. At least 6 m, as there.
-   */
+  /** The most frontage the building's way can have (`lotDoors.ts`) */
   private frontageBound(b: Building): number {
     const gates = this.deps.gatesOf(b);
     if (!gates.length) {

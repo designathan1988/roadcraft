@@ -1,19 +1,7 @@
 import type { BufferAttribute, BufferGeometry, Mesh } from 'three';
 import { type BlockLevels, levelsOf } from './roadLod';
 
-/**
- * WHICH LEVEL OF A BLOCK OF ROAD IS ON THE GPU (`roadLod.ts`): the block's own mesh
- * within `reach` of the camera, the coarse one beyond it. A block that goes far
- * gives its full mesh's buffers back (`BufferGeometry.dispose`), its arrays already
- * gone (`mesh/gpuOnly.ts`); one that comes near has its arrays made again from what
- * they were made from (`refillArrays`) and is sent again, the coarse one drawn
- * until it is. The blocks are asked about at a distance with a margin (hysteresis):
- * a camera standing on the line does not send a block back and forth.
- *
- * The road surfaces were every block at full detail, wherever the camera was: 1.04 GB of
- * a 2,560 m city's 1.56 GB of geometry, and a map of 10 km would not have fitted a card.
- * DO NOT keep a far block's full mesh: no pixel of it is resolved from there.
- */
+/** DO NOT keep a far block's full mesh: no pixel of it is resolved from there. */
 
 /** A block goes far when it is this much farther than `reach`, so one near the line is not asked twice. */
 export const FAR_MARGIN = 1.25;
@@ -56,11 +44,7 @@ export function makeNear(mesh: Mesh): void {
   levels.coarse.visible = false;
 }
 
-/**
- * The levels brought up to the camera at (`focusX`, `focusY`) in world units: blocks beyond `reach` times
- * the margin go far, those within `reach` come near - nearest first, `BRING_PER_LOOK` of them. Returns
- * how many blocks changed level.
- */
+/** The levels brought up to the camera at (`focusX`, `focusY`) in world units */
 export function updateRoadLevels(blocks: Iterable<Mesh>, focusX: number, focusY: number, reach: number): number {
   let changed = 0;
   const wanted: { mesh: Mesh; d: number }[] = [];

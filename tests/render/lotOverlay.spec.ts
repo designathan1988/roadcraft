@@ -3,16 +3,7 @@ import { createLotOverlay, type LotOverlayInput } from '@render/lotOverlay';
 import { ChangeJournal } from '@world/changes';
 import { sampleLattice } from './support/latticeSampler';
 
-/**
- * THE LOTS COLOURED INTO THE GROUND (`render/lotOverlay.ts`).
- *
- * Laid as geometry on the ground, a town's lots were 3.5 million vertices,
- * each asking the ground's height: 1.3 s, then spread over frames
- * (`LAY_SLICE_MS`) so it would not hold one (OTIMIZACAO.md item 20). Now the
- * lots are 2D shapes in a lattice the ground's shaders read: all of them
- * there from the first frame, an edit rewriting only the cells it touches,
- * and nothing asked of the ground.
- */
+/** THE LOTS COLOURED INTO THE GROUND (`render/lotOverlay.ts`). */
 
 function lots(n: number, zonedAt = -1, hovered = -1): LotOverlayInput {
   const polygons = Array.from({ length: n }, (_, i) => {

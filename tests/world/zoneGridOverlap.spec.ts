@@ -86,8 +86,6 @@ describe('zone grids of neighbouring streets', () => {
     const { doc, net } = block(60);
     const grid = buildZoneGrid(doc, net);
     // 48 m of land between the footways: each street keeps its first two rows
-    // (40 m) along the middle of the block, as in Cities: Skylines (nearer
-    // row first); the older street takes the row left over.
     const inside = grid.cells.filter((c) => c.centre.y > 0 && c.centre.y < m(60) && Math.abs(c.centre.x) < m(100));
     const rows = (segment: number) => new Set(inside.filter((c) => c.segment === segment).map((c) => c.row));
     const segments = [...new Set(inside.map((c) => c.segment))].sort((a, b) => a - b);

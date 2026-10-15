@@ -16,56 +16,22 @@ import {
 } from './lotBays';
 export { carGates, gatedProperty, stallFits, type LotExit } from './lotBays';
 
-/**
- * The parking bays of the city: where a resident's car stands when it is not
- * on the road.
- *
- * A car used to be made at the kerb when its driver set off and deleted when
- * it arrived, the "pocket car" of Cities: Skylines 1. Cities: Skylines II
- * parks every car in a real space and lets the lack of one change how a
- * citizen travels (Development Diary #11); so does this. Every bay painted on
- * a lot (`parking` elements, `editor/lotPlan.ts`, `world/defaultTown.ts`) is
- * a space for one car, with the side it opens on and the point of the road a
- * car leaves it for and comes back from. A lot's bays are worked out from
- * pure data (`lotBays.ts`), by the workers in the game (`useBayWorkers`).
- */
+/** The parking bays of the city: where a resident's car stands when it is not on the road. */
 
 /** How far from a point the lane beside it is looked for (`laneBeside`), u. */
 export const LANE_BESIDE_REACH = LANE_REACH;
 
 export type { Bay, BayLane } from './bay';
 
-/**
- * Every stall of every parking element, with the way out of its lot and the
- * lane it is reached from, then every bay along the kerbs: handed out as
- * fresh copies (a holder sets `car` on its own).
- *
- * Kept from the diary (`baysNow`): a building changed works out again only
- * the lots within its reach and the streets whose kerbs its gates face. The
- * town's ageing replaces a record every few seconds, and each time every
- * lot, wall and lot entrance of the town was read again (audit M3a).
- */
+/** Every stall of every parking element, with the way out of its lot and the lane it is reached from */
 export function collectBays(w: SimWorld): Bay[] {
   return townBays(baysNow(w)).map((bay) => ({ ...bay, car: null }));
 }
 /** How far a lot's bays read lanes and walls (`LANE_REACH`, the exits' reach), with a margin. */
 const LOT_READS = LANE_REACH + m(12);
-/**
- * How far round a change a lot's box grown by `LOT_READS` may reach: a
- * volume or an element grown by `g` in its own frame moves its corners by up
- * to `g` times root two in the world's.
- */
+/** How far round a change a lot's box grown by `LOT_READS` may reach */
 const LOT_REACHED = LOT_READS * 2;
-/**
- * What a building's bays are worked out from, as text, once per record: the
- * record less its age, its name and its lot plan's version. A record is
- * replaced on any change, and the town's ageing (a record every few seconds)
- * worked out those lots' exits, grids and aisles again for nothing.
- *
- * Beside it, the record's walls (`wallsOf`), each with its digest: a stored
- * record is never changed in place (`world/buildings/store.ts`, OWNERSHIP),
- * so what is read off it once stays true while it is stored.
- */
+/** What a building's bays are worked out from, as text, once per record */
 const RECORD_READS = new WeakMap<Building, { lot?: number; walls?: readonly Wall[] }>();
 function recordReads(b: Building): { lot?: number; walls?: readonly Wall[] } {
   let reads = RECORD_READS.get(b);
@@ -74,11 +40,7 @@ function recordReads(b: Building): { lot?: number; walls?: readonly Wall[] } {
 }
 /** What of a record its bays are worked out from: all of it but its age, name and plan version. */
 const notOfTheLot = (key: string): boolean => key === 'decay' || key === 'builtAt' || key === 'name' || key === 'lotPlan';
-/**
- * The record's lot as a digest of its fields (`Digest.addPlain`), once per
- * record. DO NOT key it by its JSON text: a string the size of the record
- * held for every building with parking.
- */
+/** DO NOT key it by its JSON text: a string the size of the record held for every building with parking. */
 function lotKey(b: Building): number {
   const reads = recordReads(b);
   reads.lot ??= new Digest().addPlain(b, notOfTheLot).value();
@@ -89,40 +51,23 @@ const hasParking = (b: Building): boolean => (b.elements ?? []).some((el) => el.
 
 /** What a lot's bays are worked out from: its record (`lotKey`), and the lanes and walls within reach, digested. */
 interface LotSources { readonly lot: number; readonly key: number }
-/**
- * A lot's bays as last worked out, with what they were worked out from: its
- * record (`lotKey`), and a digest of the lanes within reach (their lines and
- * whether they are ghosts) and of the walls within reach. A lot whose
- * surroundings are the same keeps its bays (docs/performance.md #15). The
- * bays' ids are set when the town's list is put together.
- */
+/** A lot's bays as last worked out, with what they were worked out from: its record */
 interface LotBays extends LotSources { readonly bays: readonly Bay[] }
 
-/**
- * What works lots' bays out off the page (`bayPool.ts`): each lot asked,
- * in order, as `bayRows` would on the page.
- */
+/** What works lots' bays out off the page (`bayPool.ts`): each lot asked, in order, as `bayRows` would on the page. */
 export interface BayWorkers {
   work(asks: readonly LotAsk[]): Promise<readonly (readonly Bay[])[]>;
   /** Called while lots wait (`baysNow`): fails the workers if one with lots waiting has been silent too long. */
   check?(): void;
 }
-/**
- * The workers a world's lots are worked out by (the game's, `main.ts`). A
- * world without (a test) works them out on the page, at once.
- */
+/** The workers a world's lots are worked out by (the game's, `main.ts`). */
 export function useBayWorkers(w: SimWorld, workers: BayWorkers): void {
   bookOf(w).workers = workers;
 }
 
 /** The bays of a world as last worked out, and what they were worked out from. */
 interface BayBook {
-  /**
-   * The bays' sources (`L<building>` a lot, `K<segment>` a street's kerb)
-   * whose bays changed since `logBase`, oldest first, and the serial of the
-   * latest (`bayChangesSince`); emptied, with a new base, when longer than
-   * reading every source would be.
-   */
+  /** The bays' sources (`L<building>` a lot, `K<segment>` a street's kerb) whose bays changed since `logBase`, oldest first */
   log: string[];
   logBase: number;
   serial: number;
@@ -131,12 +76,7 @@ interface BayBook {
   /** The lots (buildings with a `parking` element), in the store's order. */
   readonly lots: BuildingsInOrder;
   readonly known: Map<BuildingId, LotBays>;
-  /**
-   * The lots being worked out by the workers, with what from; until the
-   * answer lands a lot keeps its bays in `known` (none for a new lot). An
-   * answer for sources no longer waited for (the lot changed again, or went)
-   * is dropped.
-   */
+  /** The lots being worked out by the workers, with what from; until the answer lands a lot keeps its bays in `known` */
   readonly waiting: Map<BuildingId, LotSources>;
   readonly kerb: KerbBook;
   /** What works the lots out off the page (`useBayWorkers`); none: on the page. */
@@ -162,20 +102,12 @@ function bookOf(w: SimWorld): BayBook {
 /** A lot asked of the workers, with what it is worked out from. */
 interface Asked { readonly id: BuildingId; readonly sources: LotSources; readonly ask: LotAsk }
 
-/**
- * The bays brought up to date, from the diary: the lots a building change
- * reaches worked out again, the others kept; every lot digested again when
- * the roads moved. Nothing of the town is walked unless the diary cannot say
- * what changed. Each source whose bays changed is logged (`bayChangesSince`);
- * a lot the workers work out, when their answer lands (`land`).
- */
+/** The bays brought up to date, from the diary: the lots a building change reaches worked out again, the others kept */
 function baysNow(w: SimWorld): BayBook {
   const book = bookOf(w);
   // A worker silent too long with lots waiting fails its pool: they are worked out on the page.
   if (book.waiting.size) book.workers?.check?.();
-  // The lanes an edit of the roads made or took, by their boxes before and after (`LaneGrid.changes`;
-  // null: every lane). DO NOT work out every lot of the town again when the roads move: only the lots
-  // within reach of a lane that changed read anything new.
+  // DO NOT work out every lot of the town again when the roads move
   const grid = laneGrid(w);
   const lanes = grid.changes.since(book.lanesSeen);
   book.lanesSeen = grid.changes.state;
@@ -186,8 +118,7 @@ function baysNow(w: SimWorld): BayBook {
   }
   if (!roadsMoved && delta !== null && delta.ids.length === 0) return book;
 
-  // A lot whose reach neither a building change nor a lane that changed
-  // touched keeps its bays without reading anything (the rectangles).
+  // A lot whose reach neither a building change nor a lane that changed touched keeps its bays without reading anything
   const rects = lanes === null || delta === null ? null : [...delta.rects, ...lanes.flat()];
   // Read whole, the store's order may be another: the list is put together again.
   if (delta === null) book.outStale = true;
@@ -255,14 +186,7 @@ function townBays(book: BayBook): readonly Bay[] {
   return out;
 }
 
-/**
- * The sources of bays (`L<building>` a lot's, `K<segment>` a street's
- * kerb) whose bays changed since `serial`, oldest first, and the serial now;
- * `changed` null: every source is to be read (`baySources`) - the first
- * look, or a log forgotten. For whoever keeps something by bay (the scenery's
- * parked cars, `ambient.ts`). DO NOT read the town's list (`collectBays`)
- * at every change: every bay of the town, for each building grown.
- */
+/** DO NOT read the town's list (`collectBays`) at every change: every bay of the town, for each building grown. */
 export function bayChangesSince(w: SimWorld, serial: number): { readonly serial: number; readonly changed: readonly string[] | null } {
   const book = baysNow(w);
   if (serial < 0 || serial < book.logBase || serial > book.serial) return { serial: book.serial, changed: null };
@@ -298,13 +222,7 @@ function lotsReached(w: SimWorld, lots: BuildingsInOrder, rects: readonly Change
 const meets = (r: ChangeRect, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean =>
   r[0] <= box.maxX && r[2] >= box.minX && r[1] <= box.maxY && r[3] >= box.minY;
 
-/**
- * A lot looked at: kept as it is (or as it is being worked out) when its
- * record and its reach are untouched (`rects`, null: the roads moved), or
- * when the lanes and walls within reach digest the same; else worked out
- * again - asked of the workers (`asked`, with the very lanes and walls
- * digested), or here on the page when the world has none (null).
- */
+/** A lot looked at: kept as it is (or as it is being worked out) when its record and its reach are untouched */
 function lookAtLot(w: SimWorld, book: BayBook, b: Building, rects: readonly ChangeRect[] | null, walls: Walls, asked: Asked[] | null): void {
   const was = book.known.get(b.id);
   const waiting = book.waiting.get(b.id);
@@ -314,12 +232,7 @@ function lookAtLot(w: SimWorld, book: BayBook, b: Building, rects: readonly Chan
   const lot = lotKey(b);
   if (rects && aim && aim.lot === lot && !rects.some((r) => meets(r, box))) return;
   const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
-  // The lot's key: each lane and wall within reach by its own digest
-  // (`LaneGrid.digest`, `Wall.digest`), made once per lane or wall, and
-  // whether the lane is a ghost now. DO NOT digest a lane's line or a
-  // wall's ring here: every lot near a long street digested its whole
-  // centre line again, at every building grown near it (2.7 s of a
-  // 2.5 km city's growth).
+  // DO NOT digest a lane's line or a wall's ring here
   const digest = new Digest();
   const grid = laneGrid(w);
   const near = grid.near(cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2);
@@ -368,11 +281,7 @@ export interface Wall extends WallRing {
   readonly digest: number;
 }
 
-/**
- * A record's solid footprints, with their bounds and digests, made once
- * (`recordReads`): a stored record is never changed in place, so its walls -
- * and their digests - stay what they were.
- */
+/** A record's solid footprints, with their bounds and digests, made once (`recordReads`) */
 function recordWalls(b: Building): readonly Wall[] {
   const reads = recordReads(b);
   if (!reads.walls) {
@@ -391,15 +300,7 @@ function recordWalls(b: Building): readonly Wall[] {
   return reads.walls;
 }
 
-/**
- * Every building's solid footprints, found by place: the buildings whose box
- * reaches a box (`BuildingStore.near`, in the store's order), each one's
- * footprints in order. Every building of the town was turned into walls and
- * filed in a grid each time the bays were worked out, and again for each
- * yard made (audit M3a).
- * DO NOT go back to a list of every building's walls: one change of one
- * building made it again.
- */
+/** DO NOT go back to a list of every building's walls: one change of one building made it again. */
 export class Walls {
   constructor(private readonly store: BuildingStore) {}
 

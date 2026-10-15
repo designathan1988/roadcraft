@@ -13,12 +13,7 @@ export type PedestrianCrossingResult =
   | { readonly committed: true; readonly node: NodeId; readonly segments: readonly SegmentId[] }
   | { readonly committed: false; readonly reason: 'unsupported' | 'tooShort' | 'geometry' };
 
-/**
- * Inserts one crossing whose centre is at the selected arc distance (midpoint
- * by default). The split node is its downstream paint edge: the existing
- * crossing adapters can share one positive distance and one crossing ID.
- * Call within the normal history wrapper; all rejected edits leave doc intact.
- */
+/** Inserts one crossing whose centre is at the selected arc distance (midpoint by default). */
 export function commitPedestrianCrossing(
   doc: RoadDoc,
   net: Network,
@@ -37,8 +32,7 @@ export function commitPedestrianCrossing(
   const original = net.polylines.get(doc, segmentId);
   const selected = s ?? original.length / 2;
   const splitAt = selected + CROSSWALK_DEPTH / 2;
-  // Reserve a whole drivable link beyond each approach, including the far
-  // junction's stop line. A crossing never consumes the storage for a queue.
+  // Reserve a whole drivable link beyond each approach, including the far junction's stop line.
   const reserve = MIN_LINK_LENGTH + CROSSWALK_DEPTH + STOP_BAR_SETBACK;
   if (!Number.isFinite(selected) ||
       splitAt < net.stopLineDistance(segmentId, segment.a) + reserve ||
@@ -62,7 +56,6 @@ export function commitPedestrianCrossing(
   work.setNodeCrossing(node, kind, owner);
   workNet.rebuild();
   // Refuse if the new topology cannot carry the crossing the player requested.
-  // Exactly one physical zebra serves both directions; never paint a fake one.
   if (workNet.impossible.has(node) ||
       segments.filter((id) => workNet.crosswalkDistanceAt(id, node) > 0).length !== 1) {
     return { committed: false, reason: 'geometry' };
@@ -76,14 +69,7 @@ export type UturnResult =
   | { readonly committed: true; readonly node: NodeId }
   | { readonly committed: false; readonly reason: 'noMedian' | 'tooShort' | 'narrow' | 'geometry' };
 
-/**
- * Puts a U-turn through the median at the selected arc distance (the middle
- * by default; docs/source/VIAS.md V8, retorno): the road split there, its node
- * marked, the median opened round it (`medianNose`). Refused where the road
- * has no median, is too short to keep a whole link each side, or is too
- * narrow for a car to turn round in (`medianUturnPath`: 12.8 m lane to
- * lane) - never a U-turn nobody can make. Call within the history wrapper.
- */
+/** Puts a U-turn through the median at the selected arc distance (the middle by default, retorno) */
 export function commitUturn(doc: RoadDoc, net: Network, segmentId: SegmentId, toward: 'a' | 'b', s?: number): UturnResult {
   const segment = doc.segment(segmentId);
   if (!segment || segment.structure === 'tunnel') return { committed: false, reason: 'geometry' };

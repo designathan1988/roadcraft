@@ -1,13 +1,6 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 
-/**
- * The coarser levels of a person, simplified off the main thread: building
- * them there took a quarter of every frame while people came into view, and
- * the game stuttered each time a new kind of person appeared.
- *
- * In: positions, colours, the index, its material ranges and the levels
- * (share kept, error allowed). Out: per level, the index and its ranges.
- */
+/** The coarser levels of a person, simplified off the main thread */
 export interface LodRequest {
   readonly id: number;
   readonly positions: Float32Array;
@@ -52,13 +45,7 @@ export function simplifyLevels(req: Omit<LodRequest, 'id'>): LodLevel[] {
   return out;
 }
 
-/**
- * `source` (triangles over `positions`) simplified to about `triangles`
- * triangles over the same vertices; `source` itself when it is within it,
- * null when the simplifier cannot run. No error bound: the budget decides,
- * the cheapest collapses first; attribute seams (UV splits) are kept
- * consistent by the simplifier. Too far over, the sloppy simplifier.
- */
+/** `source` (triangles over `positions`) simplified to about `triangles` triangles over the same vertices */
 export function simplifyIndex(source: Uint32Array, positions: Float32Array, triangles: number): Uint32Array | null {
   if (!Number.isFinite(triangles) || source.length <= triangles * 3) return source;
   if (!MeshoptSimplifier.supported || triangles <= 0) return null;
@@ -77,8 +64,7 @@ const scope = globalThis as unknown as { onmessage: ((e: MessageEvent<LodRequest
 if (typeof scope.document === 'undefined' && typeof scope.postMessage === 'function' && typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== 'undefined') {
   scope.onmessage = async (e) => {
     const req = e.data;
-    // Every request answered, a failure too (`lodPool.ts` rejects it): DO NOT
-    // let an error leave the page waiting for an answer that never comes.
+    // Every request answered, a failure too (`lodPool.ts` rejects it)
     try {
       await MeshoptSimplifier.ready;
       if ('kind' in req) {

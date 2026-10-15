@@ -4,10 +4,7 @@ import { m } from '@world/units';
 import { Rng } from '@core/rng';
 import { SimWorld } from '@sim/world';
 
-/**
- * A seeded town for the index equivalence specs: a jittered grid of roads of
- * mixed classes, and seeded edits (roads taken away, roads drawn across).
- */
+/** A seeded town for the index equivalence specs: a jittered grid of roads of mixed classes, and seeded edits */
 function seededTown(seed: number, n = 5, block = 120, jitter = 8, uniform = false): RoadDoc {
   const rng = new Rng(seed);
   const doc = new RoadDoc();
@@ -33,10 +30,7 @@ function seededTown(seed: number, n = 5, block = 120, jitter = 8, uniform = fals
   return doc;
 }
 
-/**
- * `jitter` 0 and `uniform` (one class of road): a regular grid, whose equal
- * blocks tie (searches that keep the first of equals).
- */
+/** `jitter` 0 and `uniform` (one class of road): a regular grid, whose equal blocks tie */
 export function seededWorld(seed: number, n = 5, jitter = 8, uniform = false): SimWorld {
   const doc = seededTown(seed, n, 120, jitter, uniform);
   const net = new Network(doc);

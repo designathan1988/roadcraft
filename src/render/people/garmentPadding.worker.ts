@@ -5,13 +5,7 @@ const scope = globalThis as unknown as {
   postMessage(message: GarmentPadResponse, transfer?: Transferable[]): void;
 };
 
-/**
- * The texture's pixels, read here when the request names its file: fetched,
- * decoded (`createImageBitmap`) and read back through an OffscreenCanvas, all
- * off the frame. On the page, the draw into a canvas, `getImageData` and
- * `putImageData` of a 2048-pixel sheet were a 100-220 ms task each time a
- * garment came into view.
- */
+/** The texture's pixels, read here when the request names its file: fetched, decoded */
 async function pixelsOf(data: GarmentPadRequest): Promise<{ pixels: Uint8ClampedArray; width: number; height: number }> {
   if (data.pixels) return { pixels: data.pixels, width: data.width, height: data.height };
   const bitmap = await createImageBitmap(await (await fetch(data.url!)).blob());

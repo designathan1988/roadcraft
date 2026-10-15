@@ -1,20 +1,4 @@
-// THE ACCUSER: points at code to look at, never blocks anything. Lists, file
-// and line, each use of three.js that its official manual or docs warn
-// against, each API the installed three.js types mark @deprecated, each
-// occurrence of the patterns that already cost this game (CLAUDE.md), and what the code rules
-// (scripts/check-code.mjs) already hold in their baseline. Each rule carries
-// the sentence of its source, checked against the local copy of the docs
-// (C:/Codex-Shared/referencia): a rule whose sentence is not found there says
-// so instead of citing it. An accusation is a lead to read, not a proof.
-//
-// node scripts/acusar.mjs [--regra <id>] [--arquivo <trecho do caminho>] [--todas] [--json]
-//   [--projeto <pasta>]  another project (its tsconfig, its src/): the rules' own test,
-//                        tests/arch/acusar.spec.ts
-//
-// Types come from the same checker `tsc` uses (TypeScript Compiler API:
-// createProgram, getTypeChecker, getSymbolAtLocation, getTypeAtLocation;
-// github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API), so "a
-// Material" is the declared type, not a guess from a variable's name.
+// @deprecated THE ACCUSER: points at code to look at, never blocks anything.
 import ts from 'typescript';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
@@ -141,11 +125,7 @@ const isA = (node, ...bases) => { const n = typeNames(checker.getTypeAtLocation(
 const resolved = (s) => (s && s.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(s) : s);
 
 const findings = [];
-/**
- * A lead read and found right is marked where it is, with the reason, on its
- * line or the line above: `// acusar-ok <regra>: <motivo>` (as ESLint's
- * disable comments take a `-- reason`). Without a reason the mark does not count.
- */
+/** A lead read and found right is marked where it is, with the reason, on its line or the line above */
 const OK = /acusar-ok\s+([\w-]+)\s*:\s*\S/;
 const silenced = [];
 const accuse = (id, sf, node, fn, extra = '') => {
@@ -227,9 +207,7 @@ for (const sf of program.getSourceFiles()) {
     // `${doc.revision}` as a key
     if (ts.isTemplateExpression(node) && node.templateSpans.some((s) => ts.isPropertyAccessExpression(s.expression) && s.expression.name.text === 'revision')) accuse('chave-revisao-global', sf, node, fn);
 
-    // @deprecated APIs of the installed libraries (three's types, the DOM). A call is judged by the
-    // overload it resolves to (the DOM marks one overload of createElement deprecated, not the
-    // one used); anything else only when every declaration of the symbol is deprecated.
+    // @deprecated APIs of the installed libraries (three's types, the DOM).
     if (ts.isPropertyAccessExpression(node) || ts.isNewExpression(node) || (ts.isIdentifier(node) && ts.isImportSpecifier(node.parent ?? {}))) {
       const at = ts.isPropertyAccessExpression(node) ? node.name : ts.isNewExpression(node) ? node.expression : node;
       const sym = resolved(checker.getSymbolAtLocation(at));

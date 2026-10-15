@@ -2,12 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry, Color, MeshStandardMaterial, Texture, type WebGLProgramParametersWithUniforms, type WebGLRenderer } from 'three';
 import { applySkinAppearance, createFaceCardAtlas, type FaceCardAtlas, type SkinAppearance } from '@render/people/skinAppearance';
 
-/**
- * The face's brows and lashes are copied into layers of one array texture
- * (`skinAppearance.ts` `createFaceCardAtlas`). A layer must be given back when its
- * card's texture is let go, and the array must never run out: a brow with no
- * layer is drawn as an opaque grey card over the face.
- */
+/** The face's brows and lashes are copied into layers of one array texture (`skinAppearance.ts` `createFaceCardAtlas`). */
 
 const SIZE = 256;
 let saved: unknown;
@@ -61,9 +56,7 @@ function compile(atlas: FaceCardAtlas, skin: SkinAppearance): Record<string, { v
 
 describe('face cards', () => {
   it('gives a released card layer back: a long session of people coming and going never runs out', () => {
-    // Each person's brow and lash textures are released when the person
-    // leaves (`releaseSkinAppearance` disposes them); the next person loads
-    // the file again as a new texture.
+    // Each person's brow and lash textures are released when the person leaves (`releaseSkinAppearance` disposes them)
     const atlas = createFaceCardAtlas();
     for (let person = 0; person < 200; person++) {
       const brow = card(), lash = card();
@@ -99,9 +92,7 @@ describe('face cards', () => {
   });
 
   it('sends a grown array whole on its first upload, then only the layers written after', () => {
-    // three allocates a new array texture and, with layer updates listed,
-    // uploads only those layers: the cards copied into a grown array must
-    // not be listed, or they stay blank on the GPU.
+    // three allocates a new array texture and, with layer updates listed, uploads only those layers
     const atlas = createFaceCardAtlas();
     const live: Texture[] = [];
     let array = atlas.uniform.value;

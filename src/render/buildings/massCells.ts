@@ -5,41 +5,15 @@ import { m } from '@world/units';
 import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
 
-/**
- * THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid
- * (`layer.ts` BATCH_CELL) has one mesh of its buildings' masses
- * (`massing.ts`, put together in the cell workers, `cellWork.ts` 'mass'),
- * drawn instead of the detailed cell when the detail would show under a
- * couple of pixels - a hierarchical level of detail as Unreal's HLOD (one
- * proxy mesh and one material a cell, rebuilt only when its buildings
- * changed) chosen as 3D Tiles are refined: by the error the coarser level
- * makes, projected on the screen (Cesium's `Cesium3DTile.getScreenSpaceError`:
- * error * screen height / (distance * 2 tan(fov / 2)) in perspective, error /
- * pixel size in an orthographic view), with a margin each way so a cell at the
- * edge does not flicker (three's `LOD.update` hysteresis).
- */
+/** THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid */
 
-/**
- * The largest thing the far level leaves out, m: a balcony's slab (1.3 m)
- * or a sill and its frame stand out of the wall; railings, frames and the
- * lots' walls are smaller.
- */
+/** The largest thing the far level leaves out, m: a balcony's slab (1.3 m) or a sill and its frame stand out of the wall */
 const FAR_ERROR = m(1.5);
 /** The detail is drawn while what the far level leaves out spans this many pixels or more. */
 const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 const HYSTERESIS = 0.85;
-/**
- * STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along
- * the streets, the cells far down the view were all in detail (a 1.5 m
- * error at 800 m is still 2 px) though nearly all of them stand behind the
- * nearer buildings - a street view drew 28 M triangles in 984 calls
- * (2026-10-14). As Cesium's `dynamicScreenSpaceError` ("for street-level
- * horizon views, use lower resolution tiles far from the camera"), the error
- * a far cell may make grows with its distance while the eye is low: doubled
- * at `HORIZON_HALF`, trebled at twice it. From above (`STREET_EYE` up) the
- * rule is the plain one.
- */
+/** STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along the streets */
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
 
@@ -57,11 +31,7 @@ interface Cell {
 
 export interface MassCells {
   readonly group: Group;
-  /**
-   * A cell whose masses are asked (new, or its buildings changed): kept as it
-   * stands until they come (`land`); a new one stands as its square, near or
-   * far by its distance like any other, with nothing drawn yet.
-   */
+  /** A cell whose masses are asked (new, or its buildings changed): kept as it stands until they come (`land`) */
   plan(key: string): void;
   /** A cell's masses come: its mesh made of them (null: its buildings have no mass, the cell always near). */
   land(key: string, mass: CellMass | null): void;
@@ -69,26 +39,13 @@ export interface MassCells {
   remove(key: string): void;
   /** Every cell there is (the whole town filed again, `layer.ts`). */
   keys(): IterableIterator<string>;
-  /**
-   * Which cells are drawn near (their detail) and which far (their masses),
-   * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
-   * metre spans at a metre's distance in a perspective view, or `orthoPx`
-   * the pixels a metre spans in an orthographic one. `allNear` draws every
-   * cell near (true) or the cells named (a set of keys: the building cut
-   * open, the one being edited) whatever the eye says. `reach`: a cell
-   * farther than this from the eye on the map is far whatever its error (the
-   * ground an orthographic view takes in; Infinity for no limit).
-   */
+  /** Which cells are drawn near (their detail) and which far (their masses), from the eye (map x/y, height) and the screen */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
   /** The cells drawn near now (what the streaming of the detail reads, `layer.ts` `landCells`). */
   nearKeys(): Iterable<string>;
-  /**
-   * Whether a cell's detail is shown (`layer.ts` streaming): a near cell
-   * keeps its mass shown until its detail lands - between the two the cell
-   * stood empty for the seconds its buildings took to come.
-   */
+  /** Whether a cell's detail is shown (`layer.ts` streaming): a near cell keeps its mass shown until its detail lands */
   setDetailed(key: string, detailed: boolean): void;
   dispose(): void;
 }
@@ -96,12 +53,7 @@ export interface MassCells {
 const boxOf = (b: Float64Array): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
 const sphereOf = (b: Float64Array): Sphere => new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
 
-/**
- * A cell's mesh from its masses' arrays, taken as they came (DO NOT wrap them
- * in a Float32BufferAttribute, which copies them), its bounds with them. The
- * mesh keeps no arrays once on the GPU (`gpuOnly`); a lost context asks the
- * workers again (`layer.ts` `refill`).
- */
+/** A cell's mesh from its masses' arrays, taken as they came */
 function cellMesh(mass: CellMass, kit: BuildingKit): Mesh {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(mass.position, 3));
@@ -126,12 +78,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
   const cells = new Map<string, Cell>();
-  /**
-   * The cells drawn near now, and those whose detail is shown: what `choose`
-   * reads besides the cells round the eye. DO NOT walk every cell of the town
-   * each frame to choose: the cells that may change are those near now and
-   * those within reach of the eye (`choose`), a number set by the view.
-   */
+  /** DO NOT walk every cell of the town each frame to choose */
   const nearKeys = new Set<string>();
   const detailed = new Set<string>();
   /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
@@ -181,9 +128,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         cell.x0 = Math.min(x0, box.min.x); cell.x1 = Math.max(x1, box.max.x); cell.y0 = Math.min(y0, -box.max.z); cell.y1 = Math.max(y1, -box.min.z);
         overhang = Math.max(overhang, x0 - cell.x0, cell.x1 - x1, y0 - cell.y0, cell.y1 - y1);
         group.add(mesh);
-        // Sent to the GPU ahead, a few a frame, so its arrays let go at once (`mesh/gpuOnly.ts`). DO NOT wait for
-        // the camera to frame it: a cell of masses out of view was never uploaded and kept its copy on the CPU -
-        // 157 MB of a 2,560 m city's 21,000 buildings (inventory of the scene, 2026-10-15).
+        // DO NOT wait for the camera to frame it: a cell of masses out of view was never uploaded and kept its copy on the CPU
         void warmLooseAhead([mesh]);
       }
       cells.set(key, cell);
@@ -228,9 +173,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       // Those near now may go far; those named stay near.
       for (const key of [...nearKeys]) decide(key, cells.get(key)!);
       if (allNear !== true && allNear !== false) for (const key of allNear) { const cell = cells.get(key); if (cell && !cell.near) decide(key, cell); }
-      // A far cell comes near only within the farthest a near cell may be on the map: within
-      // `reach`, and where what the far level leaves out still spans `NEAR_PIXELS` (the error
-      // allowed only grows with the distance, `HORIZON_HALF`).
+      // A far cell comes near only within the farthest a near cell may be on the map
       const within = allNear === true ? Infinity
         : orthoPx !== null ? (FAR_ERROR * orthoPx >= NEAR_PIXELS ? reach : 0)
           : Math.min(reach, (FAR_ERROR * pxAtMetre) / NEAR_PIXELS);

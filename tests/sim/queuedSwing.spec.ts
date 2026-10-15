@@ -5,20 +5,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { collisions, simOf } from './support/bodies';
 
-/**
- * A BUS TURNING OFF A SHORT LINK, AND THE CAR WAITING BESIDE IT.
- *
- * Two signalised T junctions 50 units apart leave a 25-unit link between them,
- * shorter than a bus. A bus turning right off it still has its rear on the
- * link, swung across the lane beside it, while its front is in the turn - and
- * a car stands in that lane, a few units short of its stop line.
- *
- * The conflict sweep only placed a body where its front had reached the stop
- * line or beyond, so the waiting car was inside no zone at all: nothing held
- * the bus for it, and nothing held it short of the bus. Measured on this map
- * before the fix, with these seeds: a truck over a sedan, a bus over a truck,
- * a truck over a hatch.
- */
+/** A BUS TURNING OFF A SHORT LINK, AND THE CAR WAITING BESIDE IT. */
 function closeTees(): RoadDoc {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: -500, y: 0 });

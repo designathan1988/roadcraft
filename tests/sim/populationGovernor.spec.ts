@@ -1,18 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PopulationGovernor } from '@sim/populationGovernor';
 
-/**
- * THE POPULATION THE MACHINE SUSTAINS (`sim/populationGovernor.ts`): the
- * share of the population ceilings goes down while a step costs too much,
- * back up while it is cheap, a step at a time, held a while after each
- * change, never over the device's share nor under the floor.
- */
+/** THE POPULATION THE MACHINE SUSTAINS (`sim/populationGovernor.ts`) */
 
-/**
- * Feeds `seconds` of frames at 60 a second, one step each at `ms`, from
- * `from`, the town within its ceilings (or `town` agents of each kind);
- * returns the share after.
- */
+/** Feeds `seconds` of frames at 60 a second, one step each at `ms`, from `from`, the town within its ceilings */
 function run(g: PopulationGovernor, ms: number, from: number, seconds: number, town = 0): number {
   let share = g.share;
   for (let f = 0; f < seconds * 60; f++) share = g.feed(1, ms, from + f / 60, town, town);
@@ -36,8 +27,7 @@ describe('the population governor', () => {
   });
 
   it('cuts again only once the town is down to the ceilings the last cut set', () => {
-    // Nobody is removed: the agents leave as their trips end, over minutes,
-    // and until then the cost is still the full town's.
+    // Nobody is removed: the agents leave as their trips end, over minutes, and until then the cost is still the full town's.
     const g = new PopulationGovernor(1);
     expect(run(g, 12, 0, 1.5, 1000)).toBeCloseTo(0.85, 9);
     expect(run(g, 12, 1.5, 60, 1000)).toBeCloseTo(0.85, 9);

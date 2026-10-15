@@ -4,10 +4,7 @@ import type { Building, BuildingId, FaceId } from './types';
 import { m } from '../units';
 import { identityMemo } from '@core/identityMemo';
 
-/**
- * A ray, in WORLD axes: x and y on the map, z up. The editor gets one from
- * the viewport for the pixel under the pointer (see `ToolView.ray`).
- */
+/** A ray, in WORLD axes: x and y on the map, z up. */
 export interface Ray3 {
   readonly ox: number;
   readonly oy: number;
@@ -39,11 +36,7 @@ export interface BuildingHit {
 /** How thick an open block's plate is picked: its kerb and its edge, under its surface. */
 const OPEN_PLATE = m(0.3);
 
-/**
- * How high a building reaches over its ground floor: its tallest volume with
- * its roof, and the parts standing on it (a mast, a sign). Once per record (a
- * stored record is never changed in place).
- */
+/** How high a building reaches over its ground floor: its tallest volume with its roof, and the parts standing on it */
 const heightOf = identityMemo((b: Building): number => {
   let top = 0;
   for (const v of b.volumes) top = Math.max(top, volumeHeight(b, v) + roofRise(b, v));
@@ -51,13 +44,7 @@ const heightOf = identityMemo((b: Building): number => {
   return top;
 });
 
-/**
- * The nearest building face under a ray.
- *
- * `floorOf` gives each building's absolute ground-floor height (its
- * foundation), which the caller caches: sampling the ground for every
- * building on every pointer move would be the slow part.
- */
+/** The nearest building face under a ray. */
 export function pickBuilding(
   buildings: Iterable<Building>,
   ray: Ray3,
@@ -65,18 +52,11 @@ export function pickBuilding(
 ): BuildingHit | null {
   let best: BuildingHit | null = null;
   for (const b of buildings) {
-    // Cheap reject first, before the floor (which samples the ground and the
-    // footways): the ray's footprint over any height. Every building in town
-    // had its floor worked out for every click - 85 ms a click in the default
-    // town (docs/source/performance.md).
-    // The box kept with the record (`storedBounds`): worked out again for
-    // every building on every click it was 83 ms of a bomb's click (2026-10-09).
+    // Cheap reject first, before the floor (which samples the ground and the footways): the ray's footprint over any height.
     const box = storedBounds(b, 1);
     if (!rayNearBox(ray, box, -1e6, 1e6)) continue;
     const floor = floorOf(b);
-    // The ray's footprint over the building's height span.
-    // Up to the building's own top. DO NOT cap it at a fixed height: a
-    // tower taller than the cap could not be clicked above it (160 m was).
+    // DO NOT cap it at a fixed height: a tower taller than the cap could not be clicked above it (160 m was).
     if (!rayNearBox(ray, box, floor - m(0.8), floor + heightOf(b) + m(1))) continue;
     const c = Math.cos(b.rotation);
     const s = Math.sin(b.rotation);
@@ -125,19 +105,10 @@ export function pickBuilding(
       }
       const [x0, y0, x1, y1] = volumeRectLocal(b, v);
       // The block's own heights: a block at a floor of its own (`Volume.lift`) is picked where it is drawn.
-      // An open block (a yard, a drive: `Volume.open`) is drawn as ground,
-      // its plate at the lot's level (`lots.ts`), so it is picked as that
-      // plate. NOT as a block a storey high: a ray from a street-level eye
-      // entered the neighbour's lawn a metre and a half off, under every
-      // pixel, and a click on a house demolished the house behind the camera
-      // (seen in the game, 2026-10-14).
       const z0 = v.open ? floor + Math.min(v.terrace ?? 0, v.ramp ?? 0, 0) - OPEN_PLATE : floor + volumeElevation(b, v, v.base);
       const z1 = v.open ? floor + Math.max(v.terrace ?? 0, v.ramp ?? 0, 0) : floor + volumeHeight(b, v) + roofRise(b, v) * 0.5;
       const hit = slab([o.x, o.y, ray.oz], [dx, dy, ray.dz], [x0, y0, z0], [x1, y1, z1]);
-      // A block the ray starts in (the eye at street level inside a porch or
-      // a yard's block) is not seen: its walls are drawn from outside only
-      // (`FrontSide`), and its exit was taken as a hit at the eye - every
-      // pixel picked it.
+      // A block the ray starts in (the eye at street level inside a porch or a yard's block) is not seen
       if (!hit || hit.inside || (best && hit.t >= best.t)) continue;
       let t = hit.t;
       if (hit.axis === 2 && ray.dz !== 0 && !v.open) {

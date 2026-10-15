@@ -6,11 +6,7 @@ import type { Building } from '@world/buildings/types';
 import { METERS_PER_UNIT } from '@world/units';
 import { normalizeSettings, type SavedSettings } from '@editor/persistence';
 
-/**
- * A map saved in another world unit opens at the same size in metres
- * (docs/source/ESCALA.md): every map before 2026-10-10 was saved at 0.4 m a unit and
- * says nothing; a map saved now says its unit.
- */
+/** A map saved in another world unit opens at the same size in metres */
 describe('a map saved in another world unit', () => {
   const town = (): SerializedDoc => {
     const doc = new RoadDoc();
@@ -32,8 +28,7 @@ describe('a map saved in another world unit', () => {
 
   it('in a unit twice as long opens at the same size in metres', () => {
     const saved = town();
-    // The same town written in a unit of twice the metres: every length
-    // halved (the transform itself, told the numbers are in half units).
+    // The same town written in a unit of twice the metres: every length halved
     const halved = rescaleSerializedDoc({ ...saved, unit: METERS_PER_UNIT / 2 });
     const old = { ...halved, unit: METERS_PER_UNIT * 2 };
     const node = saved.nodes.find((n) => n.x !== 0)!;

@@ -9,16 +9,7 @@ import type { ZoneUse } from '@world/zones';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * ONE WALL IS BUILT ONCE (docs/source/PLANO.md, 5e).
- *
- * A wing overlapping the main block shared its wall face with it: both built
- * a facade there, with their own bays, and every window got two panes in one
- * place - one lit, one dark - fighting in the depth buffer (the player's
- * striped windows, 2026-10-09). A face on another mass's surface, or inside
- * it, is not built (CityEngine's `inside`); of two blocks sharing one wall
- * face, the one of the lower id builds it.
- */
+/** ONE WALL IS BUILT ONCE (5e). */
 
 const flat = (): number => 0;
 const hill = (_x: number, y: number): number => -y * 0.18;
@@ -56,9 +47,7 @@ describe('facades: no wall built twice', () => {
             const p = bays[i]!;
             for (let j = i + 1; j < bays.length; j++) {
               const q = bays[j]!;
-              // Different blocks, overlapping in height (a split level's
-              // storeys stand at their own heights: the level index alone
-              // does not say they meet).
+              // Different blocks, overlapping in height
               if (p.volume === q.volume || p.z >= q.z + q.height - m(0.05) || q.z >= p.z + p.height - m(0.05)) continue;
               if (p.nx * q.nx + p.ny * q.ny < 0.999) continue;
               // The same wall plane.

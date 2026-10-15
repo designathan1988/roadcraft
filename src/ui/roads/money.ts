@@ -1,11 +1,7 @@
 import { ROAD_TUNING } from '@world/roads/tuning';
 import { language, t } from '../i18n';
 
-/**
- * Money as the player reads it (`world/economy.ts`): whole units, grouped
- * the way the interface language groups digits, in that language's
- * template (`economy.money`).
- */
+/** Money as the player reads it (`world/economy.ts`) */
 export function formatMoney(value: number): string {
   const grouped = new Intl.NumberFormat(language(), { maximumFractionDigits: 0 }).format(Math.round(value));
   return t('economy.money', { value: grouped });

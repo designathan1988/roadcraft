@@ -4,15 +4,7 @@ import { m } from '@world/units';
 import { elementsMeet } from '@world/buildings/elements';
 import { growCity } from './cityAudit';
 
-/**
- * NO PART OF A LOT STANDS IN ANOTHER (Etapa 5a). The lot planner checked a
- * part against the building, the drive and the gate's way, never against
- * the parts already laid: in a generated city 2 949 stood in each other - a
- * bin in the rocks, a planter on a gate post, a shed's roof through a crown,
- * a bench in a bench, flowers inside a shed (2026-10-10). A footprint is a
- * part's own (`elementsMeet`); what stands on a surface, the boundary's
- * joints and planting under a crown or against a fence meet by design.
- */
+/** NO PART OF A LOT STANDS IN ANOTHER (Etapa 5a). */
 describe('the parts of a generated city\'s lots', () => {
   it('never stand in each other', () => {
     // A small city: the same yards, a third of the parts (a medium one took 18 s).
@@ -41,7 +33,6 @@ describe('two parts of a lot far apart', () => {
 
   it('are told apart before any footprint, and a near one still meets, a sapling\'s trunk included', () => {
     // A sapling narrower than its trunk's square: the trunk runs 7.5 cm into the post 20 cm away
-    // (its own 10 cm circle and the post's would not meet).
     expect(elementsMeet(part('tree', 0, 0, 0.1, 0.1, 3), part('bollard', 0.2, 0, 0.15, 0.15, 1))).toBe(true);
     // Turned boxes touching corner on: within the circles, decided by their plans.
     expect(elementsMeet(part('bench', 0, 0, 2, 1, 0.5, Math.PI / 4), part('bench', 1.3, 0, 1, 1, 0.5))).toBe(true);

@@ -6,13 +6,7 @@ import noGlobalRevision from './eslint-rules/no-global-revision.js';
 import noWholeMapWalk from './eslint-rules/no-whole-map-walk.js';
 import noLogicTimer from './eslint-rules/no-logic-timer.js';
 
-/**
- * The repository's own rules (`eslint-rules/`). What the SOURCE carried that
- * breaks them is held in `eslint-suppressions.json` (ESLint's bulk
- * suppressions): ESLint fails on any NEW violation, and on a suppression no
- * longer needed, so the count can only fall; it reaches zero by stage F4
- * (docs/PLAN.md).
- */
+/** The repository's own rules (`eslint-rules/`). */
 const roadcraft = {
   rules: {
     'no-silent-catch': noSilentCatch,
@@ -23,28 +17,7 @@ const roadcraft = {
   },
 };
 
-/**
- * THE LAYER ORDER, ENFORCED.
- *
- * CLAUDE.md (Layers) states the dependency order and says never to violate
- * it. Nothing checked, and two violations had grown:
- *
- *   - `world/markings.ts` imported its line colours from `ui/overlay/palette`,
- *     a real cycle - `world` to `ui` and `ui` back to `world`;
- *   - `render` reached `ui` through `view`, because the flat camera sat in
- *     `ui/overlay/` while `view/viewport.ts` imported it.
- *
- * Both are fixed. This is what stops them coming back, and what makes the
- * order a rule rather than a paragraph.
- *
- * Each entry lists the layers that one may import, ITSELF INCLUDED. `main.ts`
- * is the composition root and is deliberately absent: wiring every layer
- * together is its whole job.
- *
- * `ui` may read `sim` because the inspector and the minimap display live
- * simulation state. It is a read of a layer below it, not a cycle: nothing in
- * `sim` knows `ui` exists.
- */
+/** THE LAYER ORDER, ENFORCED. */
 const LAYERS = {
   core: ['core'],
   world: ['core', 'world'],
@@ -83,34 +56,24 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'docs/screenshots/**',
-      // Dropped-in assets and generated output. Both are git-ignored, and a
-      // vendor's own verification script is not this repository's code.
+      // Dropped-in assets and generated output.
       'incoming/**',
       'exports/**',
       'cooked/**',
-      // The desktop build (`npm run desktop:pack`): Electron and the game,
-      // compiled and packed - output, not this repository's source.
+      // The desktop build (`npm run desktop:pack`): Electron and the game, compiled and packed
       'release/**',
-      // Systems taken out of the game, kept for reference only (`src/backup/README.md`).
+      // Systems taken out of the game, kept for reference only.
       'src/backup/**',
-      // The labs (FORMA, `labs/building/forma`): projects of their own, with
-      // their own package.json, tsconfig and tests, not the game; the root lint
-      // was never green over them (127 errors when they came from master).
+      // The labs (FORMA, `labs/building/forma`)
       'labs/**',
-      // Agent worktrees are full checkouts of the repository; they are linted
-      // in their own checkout, never from this one.
+      // Agent worktrees are full checkouts of the repository; they are linted in their own checkout, never from this one.
       '.claude/**',
-      // Scratch space for investigation. Never committed, never linted: a
-      // throwaway probe must not be able to break `npm run check`. Matched at
-      // ANY depth, because a probe is dropped beside what it probes.
+      // Scratch space for investigation.
       'tests/**/_*/**',
       'tests/**/_*',
       'scripts/**/_*/**',
       'scripts/**/_*',
-      // `zz` is this working tree's older scratch prefix for the same kind of
-      // file (a probe or one-off harness dropped beside what it measures). The
-      // runner's exclude carries the same rule; without it here a `zz` probe
-      // breaks `npm run check` exactly as an `_` probe once did.
+      // `zz` is this working tree's older scratch prefix for the same kind of file
       '**/zz*.mjs',
       '**/zz*.ts',
     ],
@@ -119,8 +82,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...layerRules,
   {
-    // One file, one responsibility; none over 800 lines (CLAUDE.md). No error
-    // swallowed anywhere; no mutable state loose in a module of the game.
+    // One file, one responsibility; none over 800 lines (CLAUDE.md).
     files: ['src/**/*.ts', 'tests/**/*.ts', 'scripts/**/*.mjs', '*.ts', '*.js'],
     plugins: { roadcraft },
     rules: {
@@ -137,11 +99,7 @@ export default tseslint.config(
     rules: { 'roadcraft/no-module-state': 'error' },
   },
   {
-    // THE BARRIER AGAINST THE PATTERNS COMING BACK (docs/PLANO-ESPINHA-2026-10-14.md,
-    // Passo 4): no product keyed on a global revision, no walk of the whole map
-    // outside a `@rebuild`, no timer of the game's own. What the code held when
-    // they came is in `eslint-suppressions.json` and may only shrink; DO NOT
-    // suppress them inline.
+    // What the code held when they came is in `eslint-suppressions.json` and may only shrink; DO NOT suppress them inline.
     files: ['src/**/*.ts'],
     ignores: ['src/**/*.d.ts'],
     plugins: { roadcraft },
@@ -152,9 +110,7 @@ export default tseslint.config(
     },
   },
   {
-    // THE HEAVY WORK OFF THE FRAME (OTIMIZACAO.md 60-65, 2026-10-15): what kept a
-    // generated city's work on the page or held its layers, refused where it is
-    // written. tests/arch/asyncPaths.spec.ts checks the same in the code's shape.
+    // THE HEAVY WORK OFF THE FRAME (-65, 2026-10-15)
     files: ['src/**/*.ts'],
     ignores: ['src/**/*.d.ts'],
     rules: {
@@ -175,24 +131,20 @@ export default tseslint.config(
     },
   },
   {
-    // Where a revision or the diary itself is the thing: the engine, the diary
-    // and its cursors, the document's own bookkeeping, the save and the load.
+    // Where a revision or the diary itself is the thing
     files: ['src/core/engine.ts', 'src/core/changeLog.ts', 'src/world/changes.ts', 'src/world/derived.ts',
       'src/editor/persistence.ts', 'src/editor/history.ts', 'src/editor/chunkedSave.ts'],
     rules: { 'roadcraft/no-global-revision': 'off' },
   },
   {
-    // Where waiting on the page is the point: the saves, the interface's
-    // notices and readouts, the workers' watch, a GPU release while nothing
-    // draws, the loading of people's assets, the frame loop itself.
+    // Where waiting on the page is the point
     files: ['src/ui/**/*.ts', 'src/editor/persistence.ts', 'src/editor/mapExport.ts', 'src/conflictPool.ts',
       'src/render/people/**/*.ts', 'src/render/riggedCitizens.ts', 'src/render/citizenBake.ts',
       'src/render/buildings/parts.ts', 'src/frameLoop.ts'],
     rules: { 'roadcraft/no-logic-timer': 'off' },
   },
   {
-    // Plain Node tooling. `eslint .` reaches it, and without globals every
-    // `console` is an error.
+    // Plain Node tooling.
     files: ['scripts/**/*.mjs'],
     languageOptions: {
       globals: {
@@ -204,11 +156,7 @@ export default tseslint.config(
     },
   },
   {
-    // Browser globals inside `page.evaluate` / `addInitScript` callbacks, which
-    // ESLint sees as Node code even though they are serialised and run in
-    // Chromium. Every one of these scripts drives a real page through
-    // Playwright; the callback bodies are browser code by construction.
-    // `scripts/look/*.js`: whole expressions look.mjs runs in the page (`evalFile`).
+    // Browser globals inside `page.evaluate` / `addInitScript` callbacks
     files: [
       'scripts/cook-people.mjs',
       'scripts/look.mjs',
@@ -234,8 +182,7 @@ export default tseslint.config(
     },
   },
   {
-    // The desktop window's main process (`desktop/main.cjs`): CommonJS run
-    // by Electron's Node, where `require` is how modules load.
+    // The desktop window's main process (`desktop/main.cjs`)
     files: ['desktop/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
@@ -269,8 +216,7 @@ export default tseslint.config(
           varsIgnorePattern: '^_',
         },
       ],
-      // Canvas fakes and browser diagnostic surfaces intentionally model
-      // dynamic platform APIs; explicit any is clearer there than casts piled up.
+      // Canvas fakes and browser diagnostic surfaces intentionally model dynamic platform APIs
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },

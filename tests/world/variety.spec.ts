@@ -9,12 +9,7 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
-/**
- * Buildings grown on zoned lots do not repeat (the player, 2026-10-09: "the
- * buildings are practically all the same; nothing prevents identical
- * buildings within a large radius"): many forms and paints for one zone,
- * and no two buildings next to each other that look alike.
- */
+/** Buildings grown on zoned lots do not repeat */
 
 /** A street of zoned lots, grown to the end; the buildings in the order of the street. */
 function grownStreet(use: ZoneUse, density: ZoneDensity): Building[] {

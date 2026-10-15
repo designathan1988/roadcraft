@@ -5,14 +5,7 @@ import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, type BuildingId, cloneBuilding } from '@world/buildings/types';
 import { bayKey } from '@world/buildings/types';
 
-/**
- * Two doors side by side are ONE way in.
- *
- * They used to be two entrances, each with its own narrow flight and a strip of
- * bare wall between them - the chasm a player photographed and called absurd.
- * Contiguous bays sharing a way in (same volume, side, component and flight
- * geometry) are a single entrance as wide as the run.
- */
+/** Two doors side by side are ONE way in. */
 
 const flat = (): number => 0;
 

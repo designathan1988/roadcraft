@@ -1,10 +1,6 @@
 import { FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, DASH, GAP, TEXTURE_WIDTH, TILE_CELLS, type LotLattice } from '@render/lotLattice';
 
-/**
- * The shader of `render/lotOverlay.ts` (`lotOver`) in TypeScript, for the
- * tests: what a pixel of the ground at world (x, y) reads from the lattice.
- * Kept line for line with the GLSL; float32 where the GPU reads float bits.
- */
+/** The shader of `render/lotOverlay.ts` (`lotOver`) in TypeScript, for the tests: what a pixel of the ground at world */
 export interface LatticeHit {
   /** Per shape listed in the cell: its fill and stroke colours, whether the point is inside, the distance to its nearest edge. */
   readonly records: { fill: number; line: number; inside: boolean; distance: number; halfWidth: number; flags: number; level: number | null }[];

@@ -8,13 +8,7 @@ import { m } from '@world/units';
 import { groundGradient, shearMatrix, type Gradient } from '@render/groundShear';
 import { buildInspectionMap } from '../fixtures/inspectionMap';
 
-/**
- * BOTH FEET ON A SLOPED FOOTWAY. Along the footways of the inspection map's
- * hill and hillside, a walker's feet - half a stride ahead and behind, a hip
- * apart - must stand within 1 cm of the paving. Set down level at the height
- * under its centre, as before, one foot sank and the other floated by up to
- * the gradient times half a stride.
- */
+/** BOTH FEET ON A SLOPED FOOTWAY. */
 const TOLERANCE = m(0.01);
 const HALF_STRIDE = m(0.38);
 const HIP = m(0.12);

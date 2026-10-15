@@ -6,16 +6,7 @@ import type { PartKind } from './kit';
 import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
 
-/**
- * A BATCH OF BUILDINGS AS ARRAYS: what `buildingMesh.ts` `meshesOf` wraps in
- * meshes, worked out from the buildings' chunks with no three.js, so it runs
- * where the chunks are - in the emit workers (`cellWork.ts`), as Cesium's
- * `combineGeometry` worker combines a primitive's geometries and hands back
- * the packed arrays - or on the page (the preview, the tests). Each array is
- * new and handed over as it is: the shells of every chunk concatenated (the
- * indices shifted), each part kind's instances in chunk order, and each
- * mesh's bounds as three works them out, so the page never walks a vertex.
- */
+/** A BATCH OF BUILDINGS AS ARRAYS: what `buildingMesh.ts` `meshesOf` wraps in meshes */
 
 /** Parts drawn with a colour per instance: awnings, and the window frames and balcony railings in their building's trim (the materials are white). */
 export const COLOURED_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS]));
@@ -80,9 +71,7 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
     for (const chunk of chunks) count += chunk.parts[kind].count;
     if (count === 0) continue;
     const glassy = !ghost && (kind === 'glass' || kind === 'glassDark');
-    // Faded, every part is drawn with the one faded material (`kit.dimParts`): every part with a colour
-    // (white where it has none), one program variant. DO NOT colour only the trims there: the material
-    // seen with and without instance colours was built again and again (three keys the program by it).
+    // DO NOT colour only the trims there: the material seen with and without instance colours was built again and again
     const coloured = !ghost && (dim || COLOURED_PARTS.has(kind));
     const arrays = partArrays(chunks, kind, count, glassy, coloured);
     parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.instanceMatrix, count, boxes.parts[kind]) };
@@ -102,12 +91,7 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   return { shells, parts, furniture };
 }
 
-/**
- * A cell's buildings from afar as one mesh's arrays (`massCells.ts`): their
- * masses in order, the indices shifted, the box and sphere as three works them
- * out, and the highest point. Put together where the masses are made (the
- * cell workers, `cellWork.ts`): the page keeps no building's mass.
- */
+/** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;
   readonly normal: Float32Array;
@@ -119,11 +103,7 @@ export interface CellMass {
   readonly top: number;
 }
 
-/**
- * The index array a cell's mesh needs: 16 bits where its vertices fit (a cell of 240 m mostly does), else 32. The
- * roads' blocks did this already (`surfaceTiles.ts`); the cells' were always 32, half the index memory and upload
- * for nothing (audit of 2026-10-15, checked in the code).
- */
+/** The index array a cell's mesh needs: 16 bits where its vertices fit (a cell of 240 m mostly does), else 32. */
 export function indexArray(vertices: number, indices: number): Uint16Array | Uint32Array {
   return vertices > 0xffff ? new Uint32Array(indices) : new Uint16Array(indices);
 }
@@ -202,11 +182,7 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
   return { position, normal, colour, uv, decay, index };
 }
 
-/**
- * A batch's own instance arrays from its chunks, in order: the matrices, the
- * colours of a coloured kind (white where a chunk has none), and a pane's
- * light slot (-1: none) and the room behind it.
- */
+/** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
 function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean): {
   instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array;
 } {
@@ -243,11 +219,7 @@ function furnitureMatrices(chunks: readonly BuildingChunk[], kind: FurnitureKind
   return matrices;
 }
 
-/**
- * A shell's box and sphere as three's `BufferGeometry.computeBoundingBox` and
- * `computeBoundingSphere` work them out: the box of the vertices, and a
- * sphere round the box's centre as far as the farthest vertex.
- */
+/** A shell's box and sphere as three's `BufferGeometry.computeBoundingBox` and `computeBoundingSphere` work them out */
 function shellBounds(position: Float32Array): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < position.length; i += 3) {
@@ -264,12 +236,7 @@ function shellBounds(position: Float32Array): Bounds {
   return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, cx, cy, cz, Math.sqrt(most));
 }
 
-/**
- * An instanced batch's box and sphere as three's `InstancedMesh.computeBoundingBox`
- * works the box out - the geometry's box through each instance's matrix
- * (`Box3.applyMatrix4`: its eight corners), all of them united - and the
- * sphere round that box (`Box3.getBoundingSphere`).
- */
+/** An instanced batch's box and sphere as three's `InstancedMesh.computeBoundingBox` works the box out */
 function instanceBounds(matrices: Float32Array, count: number, box: readonly number[]): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   const [bx0, by0, bz0, bx1, by1, bz1] = box as [number, number, number, number, number, number];

@@ -31,11 +31,7 @@ describe('building pads', () => {
   });
 
   it('grades the ground under the building to its designed level, the floor less the plinth', () => {
-    // The floor is designed on the land (every reader passes the natural
-    // ground: the mesh, the effects, the room lights, the pads themselves),
-    // and the ground under the building is cut and filled to it. Recomputed
-    // on the graded ground the floor would read the lots' paving beside it,
-    // which no reader does.
+    // The floor is designed on the land
     const level = floorHeight(b, slope) - PLINTH_MIN;
     for (const ring of solidFootprints(b)) {
       const cx = ring.reduce((sum, p) => sum + p.x, 0) / ring.length;

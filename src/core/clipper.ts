@@ -42,8 +42,7 @@ function input(polygons: MultiPoly): Paths64 {
       if (path.length > 1 && path[0]!.x === path[path.length - 1]!.x &&
           path[0]!.y === path[path.length - 1]!.y) path.pop();
       if (path.length < 3) continue;
-      // NonZero fills overlapping exteriors as a union. Holes have the
-      // opposite winding, regardless of authored input order.
+      // NonZero fills overlapping exteriors as a union.
       const positive = signedDoubleArea(path) > 0;
       if (positive !== (ringIndex === 0)) path.reverse();
       paths.push(path);
@@ -114,12 +113,7 @@ function legacyOutput(polygons: KernelMultiPoly): MultiPoly {
   }));
 }
 
-/**
- * Clipper2's integer kernel first: on the same grid and with every ring
- * oriented by its role (`input`), NonZero gives the regions the Martinez
- * kernel (`polygon-clipping`) gave, several times faster - the union was most
- * of a road edit's surface rebuild. Martinez stays as the fallback.
- */
+/** Clipper2's integer kernel first: on the same grid and with every ring oriented by its role */
 function compatibleRun(kind: ClipType, a: MultiPoly, b: MultiPoly = []): MultiPoly {
   try {
     return run(kind, a, b);
@@ -138,9 +132,7 @@ function martinezRun(kind: ClipType, a: MultiPoly, b: MultiPoly = []): MultiPoly
     if (kind === ClipType.Difference) return legacyOutput(clipping.difference(subjects, clips));
     return legacyOutput(clipping.intersection(subjects, clips));
   } catch {
-    // Martinez can fail to locate a sweep segment or grow its event queue
-    // indefinitely on a valid cluster of nearly coincident road ribbons.
-    // Clipper2's integer kernel is a bounded recovery path for that edit.
+    // Martinez can fail to locate a sweep segment or grow its event queue indefinitely on a valid cluster of nearly coincident
     return run(kind, a, b);
   }
 }
@@ -159,15 +151,7 @@ export function intersection(a: MultiPoly, b: MultiPoly): MultiPoly {
   return compatibleRun(ClipType.Intersection, a, b);
 }
 
-/**
- * The set without its parts thinner than `2 * eps`: shrunk by `eps` and grown
- * back by it (a morphological opening, as Unreal's geometry scripting and
- * Slic3r's `offset2` do it; Clipper2 `InflatePaths`, mitred, so corners come
- * back where they were). A difference of two bands whose edges nearly meet
- * left a sliver a fraction of a millimetre wide joining two strips across
- * whatever lay between (a kerb across a road's mouth, AT2), which ear
- * clipping then covered with triangles; a thing that thin is never meant.
- */
+/** The set without its parts thinner than `2 * eps`: shrunk by `eps` and grown back by it */
 export function opened(polygons: MultiPoly, eps: number): MultiPoly {
   const paths = input(polygons);
   if (!paths.length) return [];

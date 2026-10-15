@@ -4,14 +4,7 @@ import { localToWorld, solidFootprints, worldToLocal } from './geometry';
 import type { Building, BuildingElement } from './types';
 import { identityMemo } from '@core/identityMemo';
 
-/**
- * A works' lorry docks: the wide bays its loading yard is laid with, each
- * square in front of a loading door of the hall (`editor/lotPlan.ts`) - what
- * a lorry is sent to, reverses into and stands in while it is unloaded. A
- * bay wider than a car's (3.2 m, `sim/agents/parking.ts` LORRY_DOCK) is a
- * dock; its door end is the one against the building, its open end the one
- * a lorry backs in from. World units.
- */
+/** A works' lorry docks: the wide bays its loading yard is laid with, each square in front of a loading door of the hall */
 export interface LorryDock {
   /** The dock's element (its stall on the yard). */
   readonly element: number;

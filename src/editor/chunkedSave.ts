@@ -3,34 +3,7 @@ import { type ChangeKind, DOC_CHANGE_KINDS } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { RoadDoc, SerializedDoc } from '@world/doc';
 
-/**
- * THE MAP SAVED IN PARTS. The autosave wrote the whole map as one text
- * (`Persistence.saveSession`); a city over the whole map is some 80 000
- * buildings and 600 MB of it, past the longest string the browser makes
- * (V8: about 512 MB) and minutes of writing for every edit. So the map is kept
- * as parts in IndexedDB: its head (everything but the buildings), and its
- * buildings `BUILDINGS_PER_PART` ids a part, each part gzipped (MDN,
- * `CompressionStream`; records of the same kinds of keys and numbers compress
- * about tenfold), with a manifest naming them, all of a save in one
- * transaction (MDN, "Using IndexedDB": a transaction is all or nothing).
- *
- * A save writes what the diary (`world/derived.ts` `JournalCursor`) says
- * changed since the last save that was written: the parts of the buildings it
- * names (`buildings`, `buildingWear`, by id), and the head only when a kind of
- * the head changed. The first save of a map, a document swapped or a diary
- * that forgot writes every part once. No text of the whole map is ever made,
- * on saving or on loading.
- * DO NOT walk every building of the map to find the parts that changed, nor
- * write the head on every save: a building grown wrote the roads, the lots and
- * the trees of the whole city again and compared every record of it.
- *
- * A building's wear (`decay`, `buildingWear`) is kept beside its part, as the
- * part's ids and wears (`:wear:`), and laid over the records when read: a
- * building aged writes its part's wears, never its part's records again.
- * DO NOT write a part's records for wear: the town ageing made every part of
- * the map turned into text and gzipped again, 512 records for one number each
- * (2026-10-15).
- */
+/** DO NOT walk every building of the map to find the parts that changed, nor write the head on every save */
 
 /** Buildings a part holds, by id. */
 export const BUILDINGS_PER_PART = 512;
@@ -94,11 +67,7 @@ export class PartedSaves {
     return this.queued(() => this.write(doc, settings, savedAt));
   }
 
-  /**
-   * The document just opened from these parts (`Persistence.adoptLoaded`):
-   * what is stored is this document, so the next save writes only what
-   * changes after now, not every part again.
-   */
+  /** The document just opened from these parts (`Persistence.adoptLoaded`) */
   adopt(doc: RoadDoc, parts: readonly number[]): void {
     this.doc = doc;
     this.cursor.read(doc.changes);
@@ -240,11 +209,7 @@ export class PartedSaves {
     });
   }
 
-  /**
-   * The map in parts set aside under a key of its own, never deleted: it
-   * passed validation and the loader threw (`Persistence.quarantineStored`).
-   * Copies and removal in one transaction.
-   */
+  /** The map in parts set aside under a key of its own, never deleted: it passed validation and the loader threw */
   setAside(at: number): Promise<boolean> {
     return this.queued(async () => {
       const keys = await this.savedKeys();

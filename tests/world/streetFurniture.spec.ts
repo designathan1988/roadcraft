@@ -8,11 +8,7 @@ import { roadProfile } from '@world/roadTypes';
 import { sectionOf } from '@world/section';
 import { LANDSCAPE_KINDS, footwayAt, snapLandscape } from '@world/landscape';
 
-/**
- * Nothing on a street is generated (the player's order of 2026-10-05): the
- * footways carry exactly what the player placed with the landscaping tool,
- * each item in the furnishing zone beside the kerb, and nowhere else.
- */
+/** Nothing on a street is generated (the player's order of 2026-10-05) */
 
 function crossroads(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();
@@ -45,8 +41,7 @@ describe('street furniture', () => {
 
   it('places every kind on a footway, in the furnishing zone beside the kerb', () => {
     const { doc, net } = crossroads();
-    // Long grass is planted on open ground, never on a street (`snapLandscape`);
-    // everything else is the street's furniture.
+    // Long grass is planted on open ground, never on a street (`snapLandscape`); everything else is the street's furniture.
     const onFootway = LANDSCAPE_KINDS.filter((kind) => kind !== 'meadow');
     expect(snapLandscape(net, [], 'meadow', onEastFootway(net, 100), 4)).toMatchObject({ ok: false, reason: 'offFootway' });
     expect(snapLandscape(net, [], 'meadow', { x: 300, y: 300 }, 4).ok).toBe(true);
@@ -59,15 +54,13 @@ describe('street furniture', () => {
     }
     const items = streetFurniture(net);
     // Signs and street names stand on the footway too, but are drawn as signs
-    // (`render/signs.ts`), not as furniture the walkers go round.
     expect(items).toHaveLength(onFootway.filter((kind) => kind !== 'sign' && kind !== 'streetname').length);
     for (const item of items) {
       const seg = net.doc.requireSegment(item.segment);
       const zone = sectionOf(roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking), seg.direction).side.furnishing;
       const across = net.ribbons.get(item.segment)!.full.distanceTo({ x: item.x, y: item.y });
       const half = item.halfWidth ?? item.radius;
-      // A kerb inlet's mouth is in the kerb and its grate in the gutter in
-      // front: it stands at the kerb, not inside the furnishing zone.
+      // A kerb inlet's mouth is in the kerb and its grate in the gutter in front
       if (item.kind === 'drain') expect(Math.abs(across - zone.inner), item.kind).toBeLessThan(half);
       else expect(across - half, item.kind).toBeGreaterThanOrEqual(zone.inner - 1e-6);
       if (item.kind !== 'streetTree') expect(across + half, item.kind).toBeLessThanOrEqual(zone.outer + 1e-6);

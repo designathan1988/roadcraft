@@ -1,50 +1,4 @@
-// THE CODE RULES NO LINT RULE CAN SEE, in seconds (docs/research/regression-barrier.md).
-//
-// One TypeScript program does the type check `tsc --noEmit` did (the same
-// diagnostics) and, with the same checker, a call graph of `src/` from the
-// functions that run every frame (JSDoc `@perFrame`). As Clang's function
-// effect analysis does for `nonblocking` (clang.llvm.org/docs/FunctionEffectAnalysis.html),
-// a call is followed into every body the checker can name; a call through an
-// interface goes to every implementation the checker can tie to it, and one it
-// cannot tie goes, by its name, to every method so named (the field-based call
-// graph of Feldthaus et al., ICSE 2013), filtered by the receiver's type. A
-// function marked `@rebuild` does its work only when what it reads changed (an
-// edit, a load) or once; called any other time it returns at its first check.
-// The per-frame rules stop at it, the rules for everything a frame reaches do
-// not. The marks are claims the analysis trusts, as Clang trusts `blocking`.
-//
-// Rules:
-//   material-in-frame      a three.js material made in anything a frame reaches (the closed catalogue, made at load)
-//   compile-in-frame       a shader compile in anything a frame reaches (all compiled at load)
-//   heavy-call-per-frame   JSON, structuredClone, a bounding volume computed, in per-frame code
-//   whole-map-per-frame    a loop over a collection as big as the map, in per-frame code
-//   window-key-listener    a key listener on the window or the document outside `main.ts` (one keyboard listener)
-//   whole-map-nested       a loop over a map-sized collection whose body - or anything it calls - loops over
-//                          one again: the redundant traversal of CLARITY (Olivo, Dillig and Lin, PLDI 2015),
-//                          O(map²) wherever it runs. A `@rebuild` callee is amortized and does not count.
-//   whole-map-per-item     a loop over the map reached from a function marked `@perItem` (it runs once a
-//                          building grown, a pole run, an edit of one thing): O(map) per item
-//   whole-map-per-input    a loop over the map (any collection below) reached from a function marked
-//                          `@perInput` (a pointer move, a hover, a snap, a click on one thing): O(map) per event
-//   whole-map-on-revision  a loop over the map run because a GLOBAL revision moved (`if (x.revision !==
-//                          this.for) { ... }`, `if (key === this.key) return;` with a key holding a revision):
-//                          the whole map redone for any one change. Read the diary (`doc.changes.since`).
-//                          `@rebuild` does not excuse it: it is the rebuild done the wrong way.
-//   derived-map-per-frame, derived-map-nested, derived-map-per-item
-//                          the three rules above, over the collections their lists did not see: a class
-//                          field filled from the map (`this.walls = []` then `this.walls.push(...)` in a
-//                          loop over the map, `this.kept = doc.lots.filter(...)`), followed as CLARITY's
-//                          traversal footprint follows a data structure through fields and assignments;
-//                          a local filled the same way; a member marked `@mapWide` (the simulation's
-//                          vehicles and people, an index as big as the map). The old rules keep their
-//                          own findings exactly; these are where the new ones are counted.
-//
-// What is already there is listed in `code-rules.baseline.json`, which only
-// shrinks: the check fails on anything not in it and on any entry fixed.
-// node scripts/check-code.mjs [--update [--seed <rule>,<rule>]] [--why "<entry>"] [--project <dir> --list]
-// (`--seed <rule>`: a NEW rule's findings as they stand enter the baseline once; never for an old rule.)
-// (`--project` and `--list`: another project, its findings printed as JSON; the
-// rules' own test, `tests/arch/checkCode.spec.ts`.)
+// THE CODE RULES NO LINT RULE CAN SEE, in seconds.
 import ts from 'typescript';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -65,11 +19,7 @@ const ITERATING = new Set(['forEach', 'map', 'filter', 'some', 'every', 'reduce'
 const HEAVY = new Set(['JSON.parse', 'JSON.stringify', 'structuredClone']);
 const BOUNDS = new Set(['computeBoundingSphere', 'computeBoundingBox']);
 
-/**
- * Locals holding a collection as big as the map (`const kept = doc.lots.filter(...)`,
- * `[...net.ribbons.values()]`): a loop over one is a loop over the map, as
- * CLARITY's traversal footprint follows a collection through assignments.
- */
+/** Locals holding a collection as big as the map (`const kept = doc.lots.filter(...)`, `[...net.ribbons.values()]`) */
 const wideLocals = new Map();
 /** Methods that hand back a collection of the receiver's size (or near it). */
 const DERIVING = new Set(['filter', 'map', 'slice', 'sort', 'toSorted', 'concat', 'flatMap', 'reverse', 'values', 'keys', 'entries']);
@@ -114,11 +64,7 @@ function mapWide(expr) {
   return named.list.includes(named.member) ? named.label : null;
 }
 
-/**
- * The collections the fixed list does not name, as big as the map: fields and
- * locals followed from it (`derivedWide`, filled below) and members marked
- * `@mapWide`. Symbol → label.
- */
+/** The collections the fixed list does not name, as big as the map: fields and locals followed from it */
 const derivedWide = new Map();
 const markedMemo = new Map();
 function markedLabel(access) {
@@ -208,14 +154,7 @@ function calleeUnits(callee) {
   return unitsOfSymbol(s);
 }
 
-/**
- * Whether the function given as argument `index` of `call` runs inside the
- * call. A library's runs when that parameter is declared a function
- * (`forEach(callbackfn: (…) => void)`, `sort`, `new Promise`), unless the
- * call is one of the deferring ones; `push(...items: T[])` keeps it. One of
- * ours runs it when its body calls that parameter, or hands it to a call that
- * does; a helper that only stores it (a button's click) does not.
- */
+/** Whether the function given as argument `index` of `call` runs inside the call. */
 function runsNow(call, index, depth = 0) {
   const callee = skipParens(call.expression);
   const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : '';
@@ -263,8 +202,7 @@ function invokesParameter(unit, index, depth) {
   return calls;
 }
 
-// The locals filled from a collection as big as the map, in source order (a later
-// one built from an earlier one is seen; `const`/`let` initialisers only).
+// The locals filled from a collection as big as the map, in source order
 for (const file of sources) {
   const visit = (n) => {
     if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name)) {
@@ -277,11 +215,7 @@ for (const file of sources) {
   visit(file);
 }
 
-// The fields and locals filled from the map, which `wideLocals` does not follow:
-// one assigned a collection as big as the map (`this.kept = doc.lots.filter(...)`,
-// `this.ws = this.walls`), one a loop over the map pushes, sets or adds into
-// (`for (const b of doc.buildings.all()) this.walls.push(...)`), and a local so
-// filled. Repeated until nothing new is found, as one field is built from another.
+// The fields and locals filled from the map, which `wideLocals` does not follow
 const FILLING = new Set(['push', 'unshift', 'set', 'add']);
 /** The class field or the local a collection expression names, with its label. */
 function holderOf(expr) {
@@ -344,9 +278,7 @@ for (let round = 0, grew = true; grew && round < 4; round++) {
   }
 }
 
-// A global revision: a member or a name ending in `revision` (`doc.revision`,
-// `lotRevision`, `topologyRevision`), or a local whose value holds one (a key
-// `${doc.revision}:${zoom}`). The diary (`doc.changes.since(...)`) is what to read instead.
+// A global revision: a member or a name ending in `revision`
 const REVISION = /revision$/i;
 function mentionsRevision(expr, depth = 0) {
   let found = false;
@@ -401,8 +333,7 @@ function factsOf(unit) {
   const nested = [];
   const insideWide = [];
   const wideCallbacks = [];
-  // Two stacks of the loops we are inside: over the fixed list only (the old
-  // rules' view, kept exactly) and over every collection as big as the map.
+  // Two stacks of the loops we are inside: over the fixed list only
   const fixedStack = [];
   const anyStack = [];
   const top = (stack) => stack[stack.length - 1] ?? null;
@@ -446,16 +377,11 @@ function factsOf(unit) {
     }
     const found = s ? unitsOfSymbol(s) : [];
     if (found.length) return found;
-    // A function given as a parameter runs what its callers pass, and those
-    // are followed where they are passed (`visit` below).
+    // A function given as a parameter runs what its callers pass, and those are followed where they are passed
     if (!ts.isPropertyAccessExpression(c)) return [];
-    // A member not tied by the checker (of an interface whose implementations
-    // are returned without a declared type): the members so named on holders
-    // the receiver's type admits.
+    // A member not tied by the checker (of an interface whose implementations are returned without a declared type)
     const receiver = checker.getNonNullableType(checker.getTypeAtLocation(c.expression));
-    // A receiver the checker cannot type (`any`) or a type of a library (three's `InstancedMesh`): no member
-    // of the game runs. DO NOT tie it by name: `any` admits every holder, and a mesh's `dispose()` was tied to
-    // the 65 `dispose` methods of the game, the roads' among them (2026-10-14).
+    // DO NOT tie it by name: `any` admits every holder
     const library = (t) => (t.aliasSymbol ?? t.getSymbol())?.declarations?.every((d) => !inSrc(d)) ?? false;
     if ((receiver.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) || typesOf(receiver).every(library)) { unresolved++; return []; }
     const named = (byName.get(nameNode.text) ?? []).filter((e) => holdsFor(e.holder, receiver));
@@ -599,18 +525,12 @@ const perFrameDerived = (d) => d.derived || d.what.includes('(');
 for (const unit of perFrame.keys()) {
   for (const d of factsOf(unit).does) {
     if (d.kind === 'heavy') note('heavy-call-per-frame', unit, d.what, perFrame);
-    // A loop over a local filled from the map (`kept(RoadDoc.lots)`) counts for the newer rules only:
-    // this rule's baseline was taken without them.
+    // A loop over a local filled from the map (`kept(RoadDoc.lots)`) counts for the newer rules only
     if (d.kind === 'loop' && !d.derived && !d.what.includes('(')) note('whole-map-per-frame', unit, d.what, perFrame);
     else if (d.kind === 'loop' && perFrameDerived(d)) note('derived-map-per-frame', unit, d.what, perFrame);
   }
 }
-// A unit traverses the map when it, or anything it calls, loops over a
-// map-sized collection - a procedure summary, as CLARITY's. A `@rebuild` unit
-// says it does its work only when what it reads changed: amortized, not a
-// traversal for its callers (but it is for `whole-map-on-revision`: `amortized`
-// false). `kind`: the loops counted, 'fixed' (the old rules' list), 'derived'
-// (only the new sources) or 'any'.
+// A unit traverses the map when it, or anything it calls, loops over a map-sized collection
 const traversals = new Map();
 function traversesMap(unit, kind = 'fixed', amortized = true, stack = new Set()) {
   const memoKey = `${kind} ${amortized}`;
@@ -730,7 +650,6 @@ if (process.argv.includes('--update')) {
 }
 for (const key of added) console.error(`novo: ${key}  ×${issues[key]} (linha de base ${baseline[key] ?? 0})\n    ${found.get(key).path}`);
 if (gone.length) console.error(`código: ${gone.length} itens da linha de base resolvidos ou reduzidos; atualize (node scripts/check-code.mjs --update):\n${gone.join('\n')}`);
-// The baseline is the list of known defects to fix (docs/PLANO-ESPINHA-2026-10-14.md), not an
-// acceptance: "0 new" proves nothing about the code. DO NOT word this line as a pass.
+// DO NOT word this line as a pass.
 console.log(`código: ${added.length} novos; ${Object.keys(baseline).length} defeitos conhecidos ainda no código (${total(baseline)} ocorrências na linha de base, a corrigir) (${stats})`);
 process.exit(added.length || gone.length ? 1 : 0);

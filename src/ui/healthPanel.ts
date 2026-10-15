@@ -2,27 +2,12 @@ import type { HealthEntry, HealthLog } from '@core/health';
 import { systemName } from './healthWatch';
 import { t } from './i18n';
 
-/**
- * The game's health in the interface: a button in the top bar whose dot is
- * green, amber or red (nothing wrong / a long frame / something broke, in the
- * last 30 s), and a panel (the button or F9) with three tabs - what broke or
- * was slow (`core/health.ts`), what changed in the world (`world/changes.ts`)
- * and the game's state (`core/gameState.ts`) - each with the cause. Tabs as
- * WAI-ARIA's pattern: `tablist`/`tab`/`tabpanel`, arrows move between them,
- * activation on focus (the panels are already built).
- *
- * No scroll: each tab shows the latest rows; "copy" puts the whole log on
- * the clipboard for a report.
- */
+/** The game's health in the interface: a button in the top bar whose dot is green, amber or red */
 export interface HealthPanelSources {
   readonly log: HealthLog;
   /** The world's latest changes, newest first, as lines. */
   readonly world: (n: number) => readonly string[];
-  /**
-   * The game's state now (short lines, in two columns), lines too long for a
-   * column (`wide`, the whole width: the GPU's time and name), and its latest
-   * changes, newest first.
-   */
+  /** The game's state now (short lines, in two columns), lines too long for a column */
   readonly state: (n: number) => { readonly now: readonly string[]; readonly wide?: readonly string[]; readonly changes: readonly string[] };
 }
 
@@ -250,15 +235,12 @@ export function mountHealthPanel(sources: HealthPanelSources): { readonly button
   button.addEventListener('click', toggle);
   copy.addEventListener('click', () => {
     const text = JSON.stringify({ health: sources.log.latest(256), world: sources.world(60), state: sources.state(40) }, null, 1);
-    // Said on the button either way: a clipboard the page may not write (no
-    // permission, an insecure context, MDN Clipboard.writeText) answered nothing.
+    // Said on the button either way: a clipboard the page may not write
     const said = (key: string): void => { copy.textContent = t(key); setTimeout(label, 1500); };
     if (!navigator.clipboard) { said('health.copyFailed'); return; }
     navigator.clipboard.writeText(text).then(() => said('health.copied'), () => said('health.copyFailed'));
   });
-  // F9 and Escape come through the game's keys (`editor/gameKeys.ts`): a
-  // listener of its own here closed the panel AND let the same Escape put
-  // the tool down.
+  // F9 and Escape come through the game's keys (`editor/gameKeys.ts`)
   const close = (): boolean => {
     if (pop.hidden) return false;
     pop.hidden = true;
@@ -267,9 +249,7 @@ export function mountHealthPanel(sources: HealthPanelSources): { readonly button
   };
   window.addEventListener('resize', () => { if (!pop.hidden) place(); });
 
-  // The button goes in the top bar where the interface puts it (`ShellHandle.addToBar`,
-  // `main.ts` `mountInterface`). DO NOT look for the bar or its Help button here: the
-  // panel waited for it with a timer and found Help by its title, which the tooltip takes away.
+  // DO NOT look for the bar or its Help button here
   document.body.appendChild(pop);
   label();
 

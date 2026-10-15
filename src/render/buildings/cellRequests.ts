@@ -6,16 +6,7 @@ import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import type { BuildingKit } from './kit';
 
-/**
- * THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`): a coarse
- * cell's batches are asked once for the entries it has now (each building's
- * key, record and ground, compared by reference), wrapped in meshes when they
- * come back (`buildingMesh.ts` `meshesOf`: the arrays as they are), sent to the
- * GPU a few a frame (`warmLooseAhead`) and handed to the layer only then. A
- * cell asked again with other entries drops what was asked or landed for the
- * old ones. What the page keeps of each building emitted (flags, lots' ground,
- * signature floor) goes to `onSummaries`.
- */
+/** THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`) */
 
 /** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
@@ -49,11 +40,7 @@ export class CellRequests {
     return n;
   }
 
-  /**
-   * `cell`'s batches made of `entries`, once landed and (with `upload`) on the
-   * GPU; null while they are made - asked now if they were not, for these
-   * entries. The batches stay this module's until `take`n.
-   */
+  /** `cell`'s batches made of `entries`, once landed and (with `upload`) on the GPU; null while they are made */
   want(kind: BatchKind, cell: string, entries: readonly CellEntry[], env: CellEnv, upload: boolean): LandedCell | null {
     const key = `${kind}|${cell}`;
     const got = this.landed.get(key);
@@ -110,10 +97,7 @@ export class CellRequests {
     if (this.pool.isRunning(id)) this.summaries.add(id);
   }
 
-  /**
-   * A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they
-   * come - at once where no worker runs. A cell asked again before they came gives up the old ask.
-   */
+  /** A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they come */
   mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void): void {
     const was = this.masses.get(cell);
     if (was !== undefined) { this.pool.cancel(was); this.masses.delete(cell); }
@@ -169,10 +153,7 @@ function meshesIn(l: LandedCell): Mesh[] {
   return meshes;
 }
 
-/**
- * A landed cell let go: out of the GPU queue first (`cancelWarm`), then disposed. DO NOT dispose
- * first: a mesh still queued was drawn after and its geometry went back to the GPU with no owner.
- */
+/** DO NOT dispose first: a mesh still queued was drawn after and its geometry went back to the GPU with no owner. */
 function disposeLanded(l: LandedCell): void {
   cancelWarm(meshesIn(l));
   l.batch?.dispose();

@@ -3,14 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeEcology, type EcologyField, type EcologyInput } from '@world/ecology';
 import { valueNoise } from '@world/terrain';
 
-/**
- * A TERRAIN STROKE RE-READS ONLY THE LAND IT MOVED (Etapa 5g). The whole
- * map's ecosystem was read again after every stroke (82 ms), and the
- * countryside's trees could change far from the brush. Read over the stroke's
- * corners and as far as a corner's answer reaches, the field is the one read
- * whole; when the lowest ground moves (every altitude is read from it) the
- * whole field is read again.
- */
+/** A TERRAIN STROKE RE-READS ONLY THE LAND IT MOVED (Etapa 5g). */
 const SIDE = 121, CELL = 16;
 
 function land(dig: (ix: number, iy: number) => number): EcologyInput {

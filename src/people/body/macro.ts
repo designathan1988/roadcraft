@@ -1,17 +1,4 @@
-/**
- * MakeHuman's macro sliders, as weights on its macro targets.
- *
- * Everything here is read from the data (`modifiers.json`, which is MPFB2's
- * `macrodetails/macro.json`): each slider is a run of parts, each part a
- * stretch of the slider between two named states - age goes baby, child,
- * young, old - and a target is named by one state of every factor it
- * combines (`universal-female-young-averagemuscle-averageweight`,
- * `african-male-old`, `height/female-child-...-maxheight`). A target's weight
- * is the product of its states' weights; a state's weight is how far the
- * slider sits towards it inside its part.
- *
- * Written from the file format alone: no MakeHuman or MPFB code is used.
- */
+/** MakeHuman's macro sliders, as weights on its macro targets. */
 
 /** The macro sliders, each 0..1 as MakeHuman has them; the three ethnic shares are normalised. */
 export interface MacroParams {
@@ -52,18 +39,12 @@ export interface MacroDefinition {
 
 const RACES = ['african', 'asian', 'caucasian'] as const;
 
-/**
- * Weight of every state of one slider at `value`: the part holding the value
- * splits a weight of one between its two ends. An empty end (the neutral of
- * height and proportions) takes its share with it: at the neutral the slider
- * moves nothing.
- */
+/** Weight of every state of one slider at `value`: the part holding the value splits a weight of one between its two ends. */
 function stateWeights(parts: readonly MacroPart[], value: number): Map<string, number> {
   const out = new Map<string, number>();
   const x = Math.min(1, Math.max(0, value));
   const part = parts.find((p) => x >= p.lowest && x <= p.highest)
-    // The data leaves hairline gaps between parts (0.49998..0.49999): the
-    // nearest part owns them.
+    // The data leaves hairline gaps between parts (0.49998..0.49999): the nearest part owns them.
     ?? parts.reduce((best, p) => (Math.abs(x - (p.lowest + p.highest) / 2) < Math.abs(x - (best.lowest + best.highest) / 2) ? p : best));
   const lo = Math.max(0, part.lowest);
   const hi = Math.min(1, part.highest);
@@ -73,12 +54,7 @@ function stateWeights(parts: readonly MacroPart[], value: number): Map<string, n
   return out;
 }
 
-/**
- * Slider value of an age in years. MakeHuman's states sit at 1, 11, 25 and 90
- * years and its slider is linear between them; but people grow up by about
- * eighteen, and linear from 11 to 25 drew an eighteen-year-old with a
- * thirteen-year-old's build. A knot at 18 puts most of the growing before it.
- */
+/** Slider value of an age in years. */
 const AGE_KNOTS: readonly (readonly [number, number])[] = [[1, 0], [11, 0.1875], [18, 0.44], [25, 0.5], [90, 1]];
 
 export function ageFromYears(years: number): number {
@@ -99,11 +75,7 @@ export function yearsFromAge(age: number): number {
   return 90;
 }
 
-/**
- * The weight of every macro target in `names` (as the packs name them, with
- * or without a `macrodetails/` or `breast/` folder) for `params`. Targets the
- * parameters give no weight are left out.
- */
+/** The weight of every macro target in `names` */
 export function macroTargetWeights(def: MacroDefinition, names: readonly string[], params: MacroParams): Map<string, number> {
   const factor = new Map<string, Map<string, number>>();
   for (const [name, slider] of Object.entries(def.macrotargets)) {

@@ -1,21 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import type { Viewport } from './viewport';
 
-/**
- * THE CAMERA'S MOTION OVER TIME: the keys held and the wheel's notches turned
- * into a glide, frame by frame, instead of a jump per event.
- *
- * A key moved the view one step per `keydown`, so holding W moved it once,
- * stood still for the system's repeat delay (half a second) and then hopped
- * thirty times a second; a notch of the wheel zoomed in one frame. Here a
- * held key sets a velocity the camera eases into and out of, and a notch
- * adds to a pending zoom spent over the next frames, both with an
- * exponential approach measured in seconds, so the glide is the same at any
- * frame rate (three.js OrbitControls applies `dampingFactor` of the pending
- * motion each update; camera-controls and Unity's SmoothDamp spend it over a
- * `smoothTime` in seconds - the form used here). A drag with the mouse stays
- * direct, held to the hand (`cameraGestures.ts`).
- */
+/** THE CAMERA'S MOTION OVER TIME: the keys held and the wheel's notches turned into a glide, frame by frame */
 
 /** The camera's own keys, by `KeyboardEvent.code`. */
 const KEYS: Readonly<Record<string, readonly [Axis, 1 | -1]>> = {
@@ -24,8 +10,7 @@ const KEYS: Readonly<Record<string, readonly [Axis, 1 | -1]>> = {
   KeyA: ['right', -1], ArrowLeft: ['right', -1],
   KeyD: ['right', 1], ArrowRight: ['right', 1],
   KeyQ: ['turn', -1], KeyE: ['turn', 1],
-  // Tilt on Page Up/Down: R and F (Cities: Skylines II's zoom keys) are the
-  // building's rotation and the walls tool here.
+  // Tilt on Page Up/Down: R and F (Cities: Skylines II's zoom keys) are the building's rotation and the walls tool here.
   PageUp: ['tilt', 1], PageDown: ['tilt', -1],
   Equal: ['zoom', 1], NumpadAdd: ['zoom', 1],
   Minus: ['zoom', -1], NumpadSubtract: ['zoom', -1],
@@ -66,30 +51,16 @@ export class CameraMotion {
   private readonly held = new Map<string, readonly [Axis, 1 | -1]>();
   private readonly velocity: Record<Axis, number> = { forward: 0, right: 0, turn: 0, tilt: 0, zoom: 0 };
   private shift = false;
-  /**
-   * Zoom still to spend (log factor), the screen point it is about, and the
-   * ground point it holds there - picked once when the zoom began
-   * (`Viewport.grab`), null over the sky (then it is about the view's
-   * centre, as Cesium zooms with the pointer off the ground).
-   */
+  /** Zoom still to spend (log factor), the screen point it is about, and the ground point it holds there */
   private pendingZoom = 0;
   private zoomAt: { x: number; y: number; height: number; grabbed: Vec2 | null } = { x: 0, y: 0, height: 0, grabbed: null };
   /** Turn still to spend, rad. */
   private pendingTurn = 0;
-  /**
-   * A heading being turned to (`aim`): what is still left of the turn, asked
-   * again each frame, as the view now stands. Null when none.
-   */
+  /** A heading being turned to (`aim`): what is still left of the turn, asked again each frame, as the view now stands. */
   private aiming: (() => number) | null = null;
   /** Seconds the aim has been turning: given up after `AIM_MAX_S`, so a heading never reached cannot hold the frames going. */
   private aimedFor = 0;
-  /**
-   * The time the glide has been taken to, ms (`performance.now()`'s clock);
-   * null while nothing moves. A glide starts at the key, notch or turn that
-   * began it - DO NOT measure its first step from the last frame drawn: the
-   * frame loop stops while nothing moves, and the "frame time" of the first
-   * frame after an idle minute is that minute.
-   */
+  /** A glide starts at the key, notch or turn that began it - DO NOT measure its first step from the last frame drawn */
   private at: number | null = null;
 
   constructor(private readonly host: MotionHost) {}
@@ -144,13 +115,7 @@ export class CameraMotion {
     this.pendingTurn += angle;
   }
 
-  /**
-   * Turns smoothly to a heading (the compass's north): `left` gives the turn
-   * still wanted (rad, `Viewport.orbit`'s azimuth) as the view stands, and is
-   * asked again every frame - a closed loop, as a turn worked out once
-   * misses where a step of the orbit does not turn the ground by just its
-   * angle. Over when less than a milliradian is left.
-   */
+  /** Turns smoothly to a heading (the compass's north): `left` gives the turn still wanted */
   aim(left: () => number, time = performance.now()): void {
     this.wake(time);
     this.aiming = left;
@@ -173,18 +138,7 @@ export class CameraMotion {
       || AXES.some((axis) => this.velocity[axis] !== 0);
   }
 
-  /**
-   * Takes the glide to `now` (ms, the frame's time on `performance.now()`'s
-   * clock): true when the camera moved. Each part is the exact solution over
-   * the time since the last step, so the path is the same whatever the frames
-   * in between (Rory Driscoll, "Frame Rate Independent Damping Using Lerp"):
-   * a held key's speed approaches its goal as g + (v - g) e^(-t/T) and the
-   * ground it covers is that integrated, g t + (v - g) T (1 - e^(-t/T)).
-   * DO NOT step a position by the speed at the end of the step times the
-   * step, nor cut the step to a tenth of a second: both made the glide go
-   * slower in wall time at a low frame rate, and the city runs at 5-15
-   * frames a second.
-   */
+  /** DO NOT step a position by the speed at the end of the step times the step, nor cut the step to a tenth of a second */
   step(now: number): boolean {
     if (!this.moving) {
       this.at = null;

@@ -1,9 +1,4 @@
-/**
- * A cooked record on disk: a JSON header of its fields, then each typed
- * array's bytes, 8-byte aligned. Numbers, strings, booleans and plain number
- * lists go in the header; typed arrays after it, read back as views of the one
- * buffer (no copy).
- */
+/** A cooked record on disk: a JSON header of its fields, then each typed array's bytes, 8-byte aligned. */
 
 type Typed = Float32Array | Float64Array | Int32Array | Uint32Array | Int16Array | Uint16Array | Uint8Array;
 export type PackValue = Typed | number | string | boolean | readonly number[] | null;

@@ -1,25 +1,4 @@
-/**
- * A COPY-ON-WRITE MAP OVER ANOTHER: a working copy of a keyed collection that
- * costs what it writes, not what it holds. Reads fall through to the map
- * below; writes stay in the fork; the map below is never written by it. One
- * level of what persistent maps do (Bagwell, "Ideal Hash Trees": a version
- * shares every entry it did not change with the one it came from).
- *
- * It reads exactly as a `Map` copied from the one below and then given the
- * same writes would (MDN, `Map`: iteration in insertion order; `set` on a key
- * held keeps its place; a key deleted and set again goes last; a new key goes
- * last): the keys below in their order, each with the fork's value where it
- * wrote one, then the keys added, in their order.
- *
- * VALUES ARE SHARED. A value read from the fork is the one below until the
- * fork writes that key: whoever changes a value in place takes its own copy
- * first (`writable`). The map below must not change while the fork is read
- * (a working copy is made, edited and taken back or dropped within one edit).
- *
- * `applyTo` writes what the fork changed into a map that holds what the one
- * below held, so that it then reads as the fork does: what was deleted, what
- * was replaced (in place), what was added (last, in order).
- */
+/** A COPY-ON-WRITE MAP OVER ANOTHER: a working copy of a keyed collection that costs what it writes, not what it holds. */
 export class ForkMap<K, V> implements Map<K, V> {
   /** Keys of the map below given another value; still at their place. */
   private readonly replaced = new Map<K, V>();
@@ -54,10 +33,7 @@ export class ForkMap<K, V> implements Map<K, V> {
     return this.added.has(key) || this.replaced.has(key);
   }
 
-  /**
-   * The value of `key` to change in place: the fork's own, or the one below
-   * copied (`copy`) and set here first. Undefined when there is none.
-   */
+  /** The value of `key` to change in place: the fork's own, or the one below copied (`copy`) and set here first. */
   writable(key: K, copy: (value: V) => V): V | undefined {
     if (this.added.has(key)) return this.added.get(key);
     if (this.replaced.has(key)) return this.replaced.get(key);
@@ -84,10 +60,7 @@ export class ForkMap<K, V> implements Map<K, V> {
     return true;
   }
 
-  /**
-   * Every key gone. DO NOT call it on a working copy for an edit: it marks
-   * every key below (what a whole replacement does, `RoadDoc.replaceContents`).
-   */
+  /** DO NOT call it on a working copy for an edit: it marks every key below */
   clear(): void {
     this.replaced.clear();
     this.added.clear();
@@ -123,11 +96,7 @@ export class ForkMap<K, V> implements Map<K, V> {
     return { gone: this.gone, replaced: this.replaced, added: this.added };
   }
 
-  /**
-   * Writes the fork's changes into `target`, a map holding what the map below
-   * held (the map below itself, or its owner's writers): afterwards it reads
-   * as the fork does, order included. `put`/`drop` default to the map's own.
-   */
+  /** Writes the fork's changes into `target`, a map holding what the map below held */
   applyTo(target: { set(key: K, value: V): unknown; delete(key: K): unknown },
     put: (key: K, value: V) => void = (key, value) => { target.set(key, value); },
     drop: (key: K) => void = (key) => { target.delete(key); }): void {
@@ -137,10 +106,5 @@ export class ForkMap<K, V> implements Map<K, V> {
   }
 }
 
-/**
- * The work of the working copies (`ForkMap.writable`, and the lists and
- * indices a document's fork copies when it writes them): records copied. A
- * count, not a time (`tests/world/docFork.spec.ts`): an edit's copy that
- * copies the map shows at once.
- */
+/** The work of the working copies , and the lists and indices a document's fork copies when it writes them: records */
 export const forkWork = { copied: 0 };

@@ -13,16 +13,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 
-/**
- * A CELL PUT TOGETHER BY A WORKER IS THE ONE PUT TOGETHER ON THE PAGE, BYTE
- * FOR BYTE (`cellWork.ts`, `cellPool.ts`): the rounds of readings the worker
- * asks the page for, the light seeds of the spaces (hashes), the chunks it
- * keeps from one job of a cell to the next, give what emitting every building
- * on the page and joining them (`cellArrays.ts`) gives - the coarse batch, each
- * detail cell's, and what the page keeps of each building (flags, the lots'
- * ground made again from its recipe, the signature floor). Run through the
- * same `CellWork` a worker runs, on the page.
- */
+/** A CELL PUT TOGETHER BY A WORKER IS THE ONE PUT TOGETHER ON THE PAGE, BYTE FOR BYTE (`cellWork.ts`, `cellPool.ts`) */
 const groundAt = (x: number, y: number): number => x * 0.031 - y * 0.017 + Math.sin(x * 0.05) * m(0.4);
 const naturalAt = (x: number, y: number): number => groundAt(x, y) - m(0.3) + Math.cos(y * 0.07) * m(0.2);
 /** A footway along a band of the map, NaN off it. */

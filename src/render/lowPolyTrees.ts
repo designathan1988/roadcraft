@@ -18,53 +18,7 @@ import {
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { UNITS_PER_METER } from '@world/units';
 
-/**
- * THE ONE TREE STYLE of the game: every tree and bush on the map - the
- * countryside's and the planted ones (`natureTrees.ts`), the street, lot and
- * garden trees (`propGeometry.ts`, drawn by `scenery.ts`) and the painted
- * woods' stand-ins (`groundCover.ts`) - is grown here, so a city park and the
- * wood beside it are one family (the player, 2026-10-08: three kits side by
- * side, "não tem padronização alguma").
- *
- * Built as games build light stylized trees (the player, 2026-10-08: "a
- * técnica de alpha, que faz ficar bem leve e bonita"): a low-poly trunk and a
- * small, dark inner crown - the shaded heart - covered by FOLIAGE CARDS:
- * quads of a leaf-cluster texture, alpha-cut, turned to face the eye
- * (billboards, so no card is ever seen edge-on), all lit with normals
- * pointing out from the crown's centre, so the canopy shades as one soft mass
- * (Polycount and SideFX on stylized foliage; the fluffy-tree write-ups of
- * Pontus Karlsson and Michael Dougall). The cut edge is smoothed by alpha to
- * coverage on the multisampled target (three: "smooth aliasing on
- * alphaTest-clipped edges"). Conifers too, their cards smaller towards the
- * tip. The palm's fronds are cards of their own kind: long strips laid along
- * each drooping frond, creased down the middle into a V (a straight centre
- * edge to fold the card along, edges across it to let it droop - Polycount on
- * leaf cards), carrying a pinnate frond cut by the same alpha; they lie in
- * the model, not turned to the eye (the faceted fronds read as the old trees
- * - the player, 2026-10-09).
- *
- * Proportions from a professional low-poly kit (Kenney's Nature Kit,
- * `public/models/nature/`: a crown 0.35 to 0.6 of the height across, a short
- * clear trunk). Colour: sRGB hex read ONCE into the linear working space
- * (three's colour management since r152).
- *
- * Every model is ONE unit tall with its root at the origin (the wind shader,
- * `wind.ts`, reads local y as the fraction of the height). The body is
- * non-indexed with position, normal and colour; the cards carry, besides,
- * a uv into the foliage atlas (`foliageAtlas`: the leaf cluster in its
- * first third, the palm frond in its last) and each corner's offset in the
- * view's plane (`aCorner`, nought on a frond strip).
- *
- * THE LEAVES' LEVEL OF DETAIL, as SpeedTree's ("fewer, bigger leaves" going
- * away - SpeedTree Runtime SDK, Level of detail), carried in the texture,
- * not in the triangles: the atlas' middle third is a NEAR CLUMP, as many
- * times the leaves (`NEAR_LEAVES`), each `1 / sqrt(NEAR_LEAVES)` the size -
- * smaller leaves on the same card - and a card close to the eye dissolves into it through
- * the alpha to coverage (`nearLeaves`, from `LEAF_NEAR` to `LEAF_FAR`). One
- * clump of a few hundred leaves over a card of five metres gave leaves of
- * 40 cm, few, and close up the trees lost their detail (the player,
- * 2026-10-11); the triangles stay the light tree's.
- */
+/** THE ONE TREE STYLE of the game: every tree and bush on the map - the countryside's and the planted ones */
 /** Leaves in the far clump, and the near clump's times as many. */
 const FAR_LEAVES = 300;
 const NEAR_LEAVES = 2.5;
@@ -88,10 +42,7 @@ interface Tone {
 }
 /** Two sRGB hex colours, converted once into the linear working space by `Color`. */
 const tone = (dark: number, lit: number): Tone => ({ dark: new Color(dark), lit: new Color(lit) });
-// Seen in the game's own light (ACES at exposure 1), and DARKER and a touch
-// bluer than the lawn they stand on: at a lit 0x7fa34b the crowns were as
-// light as the grass and melted into it (the player, 2026-10-08: "um tom de
-// verde mais escuro para poder aparecer melhor").
+// Seen in the game's own light (ACES at exposure 1), and DARKER and a touch bluer than the lawn they stand on
 const LEAF = tone(0x24401c, 0x4f7a34);
 const LEAF_TALL = tone(0x203a1e, 0x46703a);
 const NEEDLE = tone(0x22402a, 0x4a7343);
@@ -161,10 +112,7 @@ interface LeafPoint {
   readonly size?: number;
 }
 
-/**
- * Triangles laid out flat - each its own three corners, so each face takes
- * its own normal and colour - and the crown's leaf points, for its cards.
- */
+/** Triangles laid out flat - each its own three corners, so each face takes its own normal and colour */
 class Builder {
   private readonly pos: number[] = [];
   private readonly col: number[] = [];
@@ -177,14 +125,7 @@ class Builder {
 
   constructor(readonly rng: () => number) {}
 
-  /**
-   * A palm frond's card: a strip along `spine` (its rachis, base to tip),
-   * `width` to each side along `side`, its edges `fold` times the width
-   * below the rachis - the V of a frond's leaflets hanging from the midrib.
-   * Mapped onto the atlas' frond (u 0.5 at one edge, 0.75 on the rachis, 1 at
-   * the other; v from base to tip); lit with the normal across the strip,
-   * tipped out at each edge; lighter towards the crown's top by `occlusion`.
-   */
+  /** A palm frond's card: a strip along `spine` */
   frond(spine: readonly Vector3[], side: Vector3, width: number, fold: number, t: Tone, occlusion: Occlusion): void {
     const along = new Vector3(), up = new Vector3(), n = new Vector3();
     const rows: { p: Vector3[]; n: Vector3[]; c: [number, number, number] }[] = [];
@@ -252,13 +193,7 @@ class Builder {
     geometry.dispose();
   }
 
-  /**
-   * A crown mass: an 80-face sphere (non-indexed: three's IcosahedronGeometry)
-   * pushed in and out by a slow noise and a little detail, squashed by
-   * `squash`, at `at`. Below `floor` it is pressed flat (a bush). `leafy`: it
-   * is the shaded heart under foliage cards - drawn darker, its surface
-   * recorded as the cards' leaf points.
-   */
+  /** A crown mass: an 80-face sphere */
   mass(at: Vector3, radius: number, squash: Vector3, t: Tone, seed: number, roughness: number, occlusion: Occlusion,
     leafy: boolean, pick?: (centre: Vector3) => Tone, floor = -Infinity): void {
     const solid = new IcosahedronGeometry(1, 1);
@@ -278,12 +213,9 @@ class Builder {
         this.leaves.push({ p: p.clone(), n, tone: pick ? pick(p) : t, height });
       }
     }
-    // The heart under the cards is their shade: what shows of it between
-    // them reads as depth in the canopy, not as a solid.
+    // The heart under the cards is their shade: what shows of it between them reads as depth in the canopy, not as a solid.
     const heart: Occlusion = leafy ? (c) => occlusion(c) * 0.5 : occlusion;
-    // Under foliage the heart is drawn shrunk towards the crown's middle
-    // (the cards stay on the full surface): at full size, seen close, it
-    // stood out between the cards as a flat-faced dark solid in the tree.
+    // Under foliage the heart is drawn shrunk towards the crown's middle (the cards stay on the full surface)
     const shrink = leafy
       ? new Matrix4().makeTranslation(at.x, at.y, at.z).multiply(new Matrix4().makeScale(HEART_SHRINK, HEART_SHRINK, HEART_SHRINK))
         .multiply(new Matrix4().makeTranslation(-at.x, -at.y, -at.z))
@@ -291,21 +223,14 @@ class Builder {
     this.add(solid, shrink, t, heart, 0.15, pick);
   }
 
-  /**
-   * The body and `count` cards of `size` on the leaf points, both stood on
-   * the origin and scaled to one unit tall. Each card faces out of the crown
-   * and is lit with the crown's normal there; lighter towards the top, each
-   * its own shade.
-   */
+  /** The body and `count` cards of `size` on the leaf points, both stood on the origin and scaled to one unit tall. */
   finish(count: number, size: number): LowPolyParts {
     const body = new BufferGeometry();
     body.setAttribute('position', new BufferAttribute(new Float32Array(this.pos), 3));
     body.setAttribute('color', new BufferAttribute(new Float32Array(this.col), 3));
     body.computeBoundingBox();
     const box = body.boundingBox!;
-    // Where each card goes, before the model is scaled: a little out from
-    // the heart's surface. The tree's height counts the cards' reach above
-    // the heart, so a tree of a given size is that tall, crown and all.
+    // Where each card goes, before the model is scaled: a little out from the heart's surface.
     const placed: { leaf: LeafPoint; s: number; c: Vector3 }[] = [];
     let top = box.max.y;
     for (let k = 0; k < (this.leaves.length > 0 ? count : 0); k++) {
@@ -348,8 +273,7 @@ class Builder {
       const nx = leaf.n.x, ny = leaf.n.y * 0.8 + 0.2, nz = leaf.n.z;
       const nl = Math.hypot(nx, ny, nz) || 1;
       const corner = (u: number, w: number): void => {
-        // Every corner at the card's centre; the shader spreads it in the
-        // view's plane by its own offset, turned by the card's roll.
+        // Every corner at the card's centre
         positions.push(c.x, c.y, c.z);
         const ou = (u - 0.5) * s * scale, ow = (w - 0.5) * s * scale;
         corners.push(ou * cr - ow * sr, ou * sr + ow * cr);
@@ -405,10 +329,7 @@ function oak(seed: number): LowPolyParts {
   const top = new Vector3((b.rng() - 0.5) * 0.04, 0.42, (b.rng() - 0.5) * 0.04);
   trunk(b, top, 0.062, 0.04, BARK);
   limbs(b, new Vector3(top.x, top.y - 0.06, top.z), 3, 0.16, 0.16, 0.024, BARK);
-  // A small heart under large cards (the forest's old card trees: 36 cards
-  // of 0.48 over a heart of 0.19): with the heart as wide as the crown, its
-  // facets showed between the cards and the tree still read as faceted balls
-  // (the player, 2026-10-08: "ainda tá com as árvores antigas").
+  // A small heart under large cards (the forest's old card trees: 36 cards of 0.48 over a heart of 0.19)
   const shade = crownShade(0.3, 0.98, 0.34);
   b.mass(new Vector3(top.x, 0.62, top.z), 0.19, new Vector3(1.05, 0.9, 1.05), LEAF, seed, 0.22, shade, true);
   const a = b.rng() * Math.PI * 2;
@@ -427,23 +348,16 @@ function broadleafTall(seed: number): LowPolyParts {
   return b.finish(34, 0.34);
 }
 
-/**
- * The cypress: a narrow, dark cone of a heart over a short trunk under
- * needle-green foliage cards, smaller towards the tip so the column still
- * narrows to a point (the faceted tiers it had read as the old trees beside
- * the card trees - the player, 2026-10-08).
- */
+/** The cypress: a narrow, dark cone of a heart over a short trunk under needle-green foliage cards */
 function cypress(seed: number): LowPolyParts {
   const b = new Builder(random(seed));
   trunk(b, new Vector3(0, 0.2, 0), 0.034, 0.024, BARK);
   const slim = 0.92 + b.rng() * 0.16;
-  // Only a thin core: a cone as wide as the crown showed through the cards
-  // as a smooth black spike (the player, 2026-10-08).
+  // Only a thin core: a cone as wide as the crown showed through the cards as a smooth black spike (the player, 2026-10-08).
   const base = 0.16, height = 0.8, core = 0.045 * slim, crown = 0.16 * slim;
   const shade: Occlusion = (p) => (0.66 + 0.34 * Math.min(1, Math.max(0, (p.y - base) / height))) * 0.5;
   b.add(new ConeGeometry(core, height, 6, 1, true), new Matrix4().makeTranslation(0, base + height / 2, 0), NEEDLE, shade, 0.12);
-  // The cards' points through a cone round the core, each facing out and a
-  // little up, smaller towards the tip so the column narrows to a point.
+  // The cards' points through a cone round the core, each facing out and a little up
   for (let i = 0; i < 120; i++) {
     const t = Math.pow(b.rng(), 1.3);
     const y = base + 0.03 + t * height * 0.9;
@@ -455,13 +369,7 @@ function cypress(seed: number): LowPolyParts {
   return b.finish(70, 0.3);
 }
 
-/**
- * The palm: a slender, leaning trunk, smooth but for faint rings, a dark
- * crownshaft with a few nuts under it, and a crown of frond cards - the
- * coconut's long pinnate leaves, their leaflets about a sixth of the frond
- * long (Wikipedia, Coconut: fronds 4-6 m, pinnae 60-90 cm) - the old ones
- * drooping, the young ones standing up out of the middle.
- */
+/** The palm: a slender, leaning trunk, smooth but for faint rings, a dark crownshaft with a few nuts under it */
 function palm(seed: number): LowPolyParts {
   const b = new Builder(random(seed));
   const lean = 0.12 + b.rng() * 0.1, turn = b.rng() * Math.PI * 2;
@@ -555,21 +463,12 @@ export function lowPolyTreeParts(kind: LowPolyKind, seed: number): LowPolyParts 
   }
 }
 
-/**
- * The foliage atlas, one for the whole game, grey (the card's vertex colour
- * gives it the species' green), the alpha cut round every leaf. Its left
- * half a cluster of small leaves: many in a rounded clump with ragged gaps,
- * each its own shade. Its right half a palm frond: a rachis up the middle
- * from base (bottom) to tip (top), its leaflets swept towards the tip,
- * longest a third of the way up and gaps between them, so the frond is not a
- * sheet (Polycount on leaf cards).
- */
+/** The foliage atlas, one for the whole game, grey */
 let atlasTexture: CanvasTexture | null | undefined;
 export function foliageAtlas(): CanvasTexture | null {
   if (atlasTexture !== undefined) return atlasTexture;
   if (typeof document === 'undefined') return (atlasTexture = null);
-  // 512 texels a clump (was 256): the leaves, 14-24 texels long, were
-  // magnified over cards several metres wide and read as a blur even up close.
+  // 512 texels a clump (was 256): the leaves, 14-24 texels long
   const size = 512;
   const k = size / 256;
   const canvas = document.createElement('canvas');
@@ -579,9 +478,7 @@ export function foliageAtlas(): CanvasTexture | null {
   if (!ctx) return (atlasTexture = null);
   const rng = random(0xc1a5);
   ctx.clearRect(0, 0, size * 3, size);
-  // The far clump, then the near one: as many times the leaves, each
-  // 1 / sqrt(NEAR_LEAVES) the size (the same share of the clump covered),
-  // over the same round clump - smaller leaves on the same card.
+  // The far clump, then the near one: as many times the leaves, each 1 / sqrt(NEAR_LEAVES) the size
   const clump = (left: number, leaves: number, grow: number): void => {
   for (let i = 0; i < leaves; i++) {
     const a = rng() * Math.PI * 2;
@@ -595,8 +492,7 @@ export function foliageAtlas(): CanvasTexture | null {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rng() * Math.PI * 2);
-    // Each leaf in two tones (its lit half paler) and a darker rim, so it
-    // reads as a leaf and not as a smudge.
+    // Each leaf in two tones (its lit half paler) and a darker rim, so it reads as a leaf and not as a smudge.
     const leaf = new Path2D();
     leaf.moveTo(-len / 2, 0);
     leaf.quadraticCurveTo(0, -wid, len / 2, 0);
@@ -647,17 +543,12 @@ export function foliageAtlas(): CanvasTexture | null {
   ctx.stroke();
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
-  // Sharp at the grazing angles the camera looks at a crown from (three
-  // clamps it to what the GPU allows).
+  // Sharp at the grazing angles the camera looks at a crown from (three clamps it to what the GPU allows).
   texture.anisotropy = 8;
   return (atlasTexture = texture);
 }
 
-/**
- * Turns a material's foliage cards to face the camera - or the light, in a
- * shadow pass: each corner spread from its card's centre in the view's plane
- * by its offset (`aCorner`), scaled by the instance's size.
- */
+/** Turns a material's foliage cards to face the camera - or the light, in a shadow pass */
 function billboardCards(material: Material, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
@@ -678,13 +569,7 @@ function billboardCards(material: Material, key: string): void {
   material.customProgramCacheKey = () => `${cacheKey()}-billboard-${key}`;
 }
 
-/**
- * Keeps the leaves as covered at a distance as up close: a mip averages the
- * leaves' alpha with the gaps between them, so it falls under the cut-off and
- * the clump thins into a haze. The alpha is raised by the mip level the
- * texture is read at (the mip-level alpha scale Ben Golus describes for alpha
- * to coverage); three's alpha-to-coverage then keeps each edge one pixel sharp.
- */
+/** Keeps the leaves as covered at a distance as up close */
 function keepLeafCoverage(material: Material, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
@@ -702,12 +587,7 @@ function keepLeafCoverage(material: Material, key: string): void {
   material.customProgramCacheKey = () => `${cacheKey()}-coverage-${key}`;
 }
 
-/**
- * The near clump on cards close to the eye (`NEAR_LEAVES`): the card's
- * distance in the vertex shader, and in the fragment the far clump and the
- * near one mixed by it - with the alpha to coverage a dissolve, no pop. Both
- * read with the far clump's derivatives, so the near read sits in a branch.
- */
+/** The near clump on cards close to the eye (`NEAR_LEAVES`) */
 function nearLeaves(material: Material, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {

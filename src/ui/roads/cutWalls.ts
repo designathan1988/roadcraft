@@ -1,8 +1,4 @@
-/**
- * Whether the road tool lays new roads with retaining walls in their
- * cuttings (docs/source/VIAS.md V3, `RoadSegment.cutWalls`) instead of a batter: a
- * choice of the tool, like its width, kept in the browser, not in any map.
- */
+/** Whether the road tool lays new roads with retaining walls in their cuttings */
 const STORAGE_KEY = 'roadcraft.cutWalls';
 let chosen = read();
 

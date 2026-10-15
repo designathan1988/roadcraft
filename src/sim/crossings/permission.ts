@@ -11,45 +11,28 @@ import { reservationCoversCrossing } from '../intersections/crossingSpans';
 import { canStopComfortably } from '../vehicles/idm';
 import { vehiclePose } from '../pose';
 
-/*
- * Whether somebody may step onto a zebra: the same rule for every pedestrian
- * engine. It reads the signals, the vehicles and the zebra's geometry, and of
- * the person only how long they have waited.
- */
+/* Whether somebody may step onto a zebra: the same rule for every pedestrian engine. */
 
-/**
- * Whether a pedestrian may step off the kerb.
- *
- * A pedestrian may only start if it can FINISH. That single rule, combined with
- * the plan-level clearance invariant and with crossing occupancy being a hard
- * conflict resource for vehicles, is what guarantees nobody is ever caught in
- * the road.
- */
+/** Whether a pedestrian may step off the kerb. */
 export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: number): boolean {
   const node = crossing.node;
   const segment = crossing.segment;
   if (node === undefined || segment === undefined) return true;
 
   // A signal or accepted gap cannot make an occupied piece of road empty.
-  // Check the actual vehicle bodies before either admission path: a car may
-  // have stopped partly on the zebra without holding a connector token.
   if (vehicleBodyOnCrossing(w, crossing)) return false;
 
   const controller = w.controller(node);
   const junction = w.graph.junctions.get(node);
   const id = makeCrossingId(node, segment);
 
-  // Connector admission is also a crossing reservation.  This closes the
-  // one-tick race where a car reserved a turn and a pedestrian stepped onto
-  // its zebra later in the same simulation tick.
+  // Connector admission is also a crossing reservation.
   if (crossingReservedByVehicle(w, node, segment, id)) return false;
 
   if (controller && junction?.signalised) {
     const state = pedestrianSignalState(controller, id, crossing.length);
     if (state !== 'walk') return false;
-    // A car turning over this zebra at its own green, that has waited its
-    // share while people kept stepping off in front of it: its turn. The
-    // people at the kerb wait for it; those already on the zebra go first.
+    // A car turning over this zebra at its own green, that has waited its share while people kept stepping off in front of it
     if (turnOwedToVehicle(w, node, id, controller)) return false;
     return true;
   }
@@ -58,21 +41,7 @@ export function mayEnterCrossing(w: SimWorld, crossing: SidewalkEdge, waited: nu
   return pedGapAccepted(w, crossing, waited);
 }
 
-/**
- * Every vehicle holding or clearing a connector, filed under the node of that
- * connector. Built once per pedestrian stage (`indexReservations`): vehicles
- * do not move while pedestrians step, and the check used to walk the whole
- * fleet - allocating a set per vehicle - for every pedestrian asking to
- * cross, about 0.76 ms of a 6.9 ms tick with 450 vehicles (measured then).
- * Only the vehicles filed under the crossing's node are examined now, by
- * exactly the same rules.
- *
- * Keyed by the node's number. DO NOT key it by a `node:segment` text again:
- * that spelt a new string for every road of the node of every reservation,
- * and another one (two, with the span) for every pedestrian asking - all
- * hashed afresh. A crossing's road is one of its node's roads, which the
- * query checks (`incident`), as the text key filed it.
- */
+/** DO NOT key it by a `node:segment` text again */
 type Reservation = { readonly v: Vehicle; readonly connector: string };
 const RESERVATIONS = new WeakMap<SimWorld, Map<NodeId, Reservation[]>>();
 /** The connectors one vehicle reserves, this tick: cleared and refilled, never reallocated. */
@@ -89,9 +58,7 @@ export function indexReservations(w: SimWorld): void {
   // Only the vehicles at a junction (`SimWorld.junctionHolders`), not the fleet.
   for (const v of w.junctionHolders()) {
     const lane = w.lanelet(v.lanelet);
-    // A vehicle mid-lane, clearing nothing and admitted nowhere, holds no
-    // reservation: skipping it before building its key list is most of the
-    // fleet on most ticks, and it used to build a `Set` for every one of them.
+    // A vehicle mid-lane, clearing nothing and admitted nowhere, holds no reservation
     if (v.clearingConnectors.length === 0 && !v.admittedConnector && lane?.kind !== 'connector') continue;
     reservedIds.length = 0;
     for (const token of v.clearingConnectors) if (!alreadyReserved(token.connector)) reservedIds.push(token.connector);
@@ -119,13 +86,7 @@ function crossingReservedByVehicle(w: SimWorld, node: NodeId, segment: number, c
   return false;
 }
 
-/**
- * Whether a car at its line, at green, whose movement crosses this zebra has
- * waited longer than `PED_COURTESY` for people stepping off in front of it.
- * Giving way to every new arrival through the whole WALK, a turning car at a
- * busy crossing waited out cycle after cycle - four minutes, measured - and
- * the junction behind it locked.
- */
+/** Whether a car at its line, at green */
 function turnOwedToVehicle(w: SimWorld, node: NonNullable<SidewalkEdge["node"]>, crossing: string, controller: SignalController): boolean {
   for (const laneId of w.graph.junctions.get(node)?.inbound ?? []) {
     const head = w.laneHead(laneId);
@@ -144,33 +105,12 @@ function turnOwedToVehicle(w: SimWorld, node: NonNullable<SidewalkEdge["node"]>,
 /** Seconds a car stands at a zebra giving way to people arriving at its kerb before it is its turn. */
 export const PED_COURTESY = 8;
 
-/**
- * Whether the only thing keeping a car at its line is people at or on a zebra:
- * admission refused it for them, last tick or this one, and for nothing else.
- *
- * A car's turn at a zebra is given only to a car that can take it. People at
- * the kerb used to give way to any car that had stood at the line long
- * enough, whatever held it there - a gap in the cross traffic, a full street
- * beyond: the car could not go, the people would not, and the crowd at the
- * corner grew while the queue behind the car did. SUMO's rule is the same: a
- * pedestrian crosses unless an approaching vehicle would use the crossing in
- * that time; a vehicle standing still is not approaching
- * (sumo.dlr.de/docs/Simulation/Pedestrians.html).
- */
+/** Whether the only thing keeping a car at its line is people at or on a zebra */
 function heldOnlyByPedestrians(w: SimWorld, v: Vehicle): boolean {
   return v.heldByPedestriansTick !== undefined && w.clock.tick - v.heldByPedestriansTick <= 1;
 }
 
-/**
- * Gap acceptance against approaching traffic on the lanes being crossed.
- *
- * At an uncontrolled zebra the pedestrian has priority once on it: admission
- * refuses every movement over an occupied crossing (`crossingBusy`). So the
- * question is not "is the road empty for the whole time I need to cross" —
- * with a crossing of forty units that demanded a seventeen-second gap and
- * held people at the kerb for three minutes — but "can everything coming
- * stop for me, and is nothing about to arrive regardless".
- */
+/** Gap acceptance against approaching traffic on the lanes being crossed. */
 function pedGapAccepted(w: SimWorld, crossing: SidewalkEdge, waited: number): boolean {
   const impatience = Math.min(1.5, 0.05 * waited);
   const critical = Math.max(2.5, PED.criticalGap - impatience);
@@ -180,18 +120,9 @@ function pedGapAccepted(w: SimWorld, crossing: SidewalkEdge, waited: number): bo
     if (!lane || lane.to !== crossing.node) continue;
     const head = w.laneHead(laneId);
     if (!head) continue;
-    // A vehicle standing at its line is not arriving. It has no admission
-    // (`vehicleBodyOnCrossing` and `crossingReservedByVehicle` already refused
-    // this crossing if it physically occupied or reserved it),
-    // and admission will not grant it one while somebody is on the zebra.
-    // Treating it as arriving at walking pace — distance over 0.5 u/s — kept
-    // pedestrians at uncontrolled kerbs for over three minutes behind queues
-    // that could not move until they had crossed.
+    // A vehicle standing at its line is not arriving.
     if (head.v < 0.5 && !head.admittedConnector) {
-      // Its turn: a car that has stood at the zebra this long while people
-      // kept stepping off in front of it goes next. On a busy pavement one
-      // walker after another arrived and the car gave way to each - over a
-      // minute at a bend. Whoever is on the zebra still goes first.
+      // Its turn: a car that has stood at the zebra this long while people kept stepping off in front of it goes next.
       if (head.waited > PED_COURTESY && heldOnlyByPedestrians(w, head)) return false;
       continue;
     }

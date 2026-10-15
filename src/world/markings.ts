@@ -44,17 +44,10 @@ export interface StrokeSpec {
 const DASH: readonly number[] = [m(3.2), m(3.2)];
 const DASH_PERIOD = m(6.4);
 
-/**
- * Lane markings for one segment.
- *
- * Dash phase is anchored to `segment.dashOrigin`, the arc-length offset of this
- * segment within the road it was originally drawn as. The V6 monolith restarted
- * the pattern at each render chain, so building a crossing — which splits the
- * road automatically — visibly reflowed every dash on it (defect 1.10).
- */
+/** Lane markings for one segment. */
 export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0, cutB = 0, styleId: MarkingStyleId = 'classic'): StrokeSpec[] {
   const rt = ribbon.road;
-  // The map's regional standard (docs/source/VIAS.md V6): colours, dash and gap by the speed.
+  // The map's regional standard: colours, dash and gap by the speed.
   const style = markingStyle(styleId);
   const speedKmh = rt.speedLimit / kmh(1);
   const dashPattern = style.id === 'classic' ? DASH : style.dash(speedKmh);
@@ -62,8 +55,7 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
   const centreColour = style.centre ?? markingColor(rt);
   const full = ribbon.centre[Level.Asphalt];
   if (!full || full.n < 2) return [];
-  // Lines along the road stop at the stop line: nothing is painted along the
-  // carriageway across a crossing or into the junction it serves.
+  // Lines along the road stop at the stop line
   const keep = full.length - cutA - cutB;
   if (keep < 1) return laneArrowMarkings(ribbon);
   const centre = cutA > 0 || cutB > 0 ? full.sub(cutA, full.length - cutB) : full;
@@ -76,15 +68,9 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
   const shift = travelShift(rt);
   const middle = Math.abs(shift) > 1e-6 ? offsetPolyline(pts, shift) : pts;
 
-  // No painted edge lines. Two flat 0.5-unit strips ran just inside the
-  // kerbs - one near-black, one grey - and read as a smooth untextured band
-  // between the asphalt and the kerb, covering the gutter. The carriageway's
-  // edge is the concrete gutter now, drawn by the asphalt itself
-  // (`ROAD_SPACE_FRAGMENT` in render/materials.ts).
+  // No painted edge lines.
 
-  // The line between the two directions: dashed (LFO-2), solid (LFO-1) or
-  // double solid (LFO-3), as the road's section says (V6); a road without one
-  // keeps the old rule (dashed on a street, solid on a road of lanes).
+  // The line between the two directions: dashed (LFO-2), solid (LFO-1) or double solid (LFO-3), as the road's section says
   const centreLine = (fallback: 'dashed' | 'solid'): void => {
     const kind = rt.centreLine ?? fallback;
     if (kind === 'double') {
@@ -95,9 +81,7 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
   };
   if (ribbon.direction === 'both' && rt.markings === 'center') centreLine('dashed');
 
-  // The line between lane k and k + 1 of one direction (docs/source/VIAS.md V4):
-  // dashed where a lane change is allowed (MBST vol. IV, LMS-2), solid where
-  // it is not (LMS-1), wide and solid beside a bus lane (MFE, 0.20-0.30 m).
+  // The line between lane k and k + 1 of one direction: dashed where a lane change is allowed
   const divider = (forward: boolean, k: number): Pick<StrokeSpec, 'width' | 'dash' | 'dashOffset'> => {
     const uses = forward ? rt.useForward : rt.useBackward;
     const bus = (uses?.[k] ?? 'all') !== (uses?.[k + 1] ?? 'all');
@@ -115,9 +99,7 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
       });
     }
   } else if (rt.markings === 'lanes') {
-    // A four-lane road without a median still needs a centreline separating the
-    // two directions. The V6 monolith drew only the two lane dividers, so an
-    // avenue had no centre line at all.
+    // A four-lane road without a median still needs a centreline separating the two directions.
     if (rt.median === 0) centreLine('solid');
     const lpd = lanesPerDirection(rt);
     const lw = laneWidth(rt);
@@ -138,13 +120,7 @@ export function segmentMarkings(ribbon: SegmentRibbon, startS: number, cutA = 0,
 const LEGEND_FIRST = m(12);
 const LEGEND_EVERY = m(70);
 
-/**
- * The legend along a bus lane (docs/source/VIAS.md V6; MBST vol. IV, 4.5.1 and 8.3:
- * a legend may be painted along the whole exclusive lane, white, letters
- * 1,60 m tall along the road where it runs at 80 km/h or less): the word,
- * read by the driver coming along the lane, a little after the start of the
- * stretch and then every so often.
- */
+/** The legend along a bus lane MBST vol. IV, 4.5.1 and 8.3: a legend may be painted along the */
 function busLegends(ribbon: SegmentRibbon, centre: Polyline, text: string, height: number): StrokeSpec[] {
   const rt = ribbon.road;
   const out: StrokeSpec[] = [];
@@ -165,11 +141,7 @@ function busLegends(ribbon: SegmentRibbon, centre: Polyline, text: string, heigh
   return out;
 }
 
-/**
- * A word or symbol painted in one lane (`strokes` in a box `width` wide and
- * one long), read by the driver coming along it: its foot `along` from where
- * the lane starts in its own direction, `height` long, letters `letter` wide.
- */
+/** A word or symbol painted in one lane (`strokes` in a box `width` wide and one long), read by the driver coming along it */
 function paintInLane(
   out: StrokeSpec[], ribbon: SegmentRibbon, centre: Polyline, forward: boolean, lane: number, along: number,
   word: { readonly strokes: readonly (readonly (readonly [number, number])[])[]; readonly width: number },
@@ -191,12 +163,7 @@ function paintInLane(
 /** Clear floor between a stop line and the legend before it. */
 const LEGEND_GAP = m(1.5);
 
-/**
- * What a junction's rule paints on each leg before its stop line (docs/source/VIAS.md
- * V6, MBST vol. IV): "PARE" (the region's word) in every lane of a leg that
- * must stop, the give-way triangle ("SIP") in every lane of a leg that gives
- * way. From the same rule the posts' signs come from (`roads/rules.ts`).
- */
+/** What a junction's rule paints on each leg before its stop line (MBST vol. IV): "PARE" */
 export function approachLegends(net: Network, styleId: MarkingStyleId): StrokeSpec[] {
   const out: StrokeSpec[] = [];
   for (const node of net.doc.nodes.keys()) approachLegendsAt(net, node, styleId, out);
@@ -291,12 +258,7 @@ const ZEBRA_BAR = m(0.5);
 const ZEBRA_GAP = m(0.5);
 const ZEBRA_EDGE = m(0.3);
 
-/**
- * Stop bar for one approach, spanning only the lanes entering the junction.
- *
- * The V6 monolith drew no stop bar anywhere, despite the simulation having a
- * stop position.
- */
+/** Stop bar for one approach, spanning only the lanes entering the junction. */
 function stopBar(
   origin: Vec2,
   dir: Vec2,
@@ -306,14 +268,12 @@ function stopBar(
   /** The travel way's offset from the centreline in this frame (`travelShift`, sign by end). */
   shift = 0,
 ): Bar | null {
-  // Beyond the junction mouth, past the crossing: the order an approaching
-  // driver meets is stop line, then zebra, then junction.
+  // Beyond the junction mouth, past the crossing
   const s = stopLineDistance(trim);
   if (s <= 0) return null;
   const cx = origin.x + dir.x * s;
   const cy = origin.y + dir.y * s;
-  // Right-hand traffic: the approaching side is the `+nrm` half. The bar
-  // crosses the travel lanes; a parking lane ends short of it.
+  // Right-hand traffic: the approaching side is the `+nrm` half.
   const inner = shift + rt.median / 2;
   const outer = shift + travelWidth(rt) / 2;
   return {
@@ -323,13 +283,7 @@ function stopBar(
   };
 }
 
-/**
- * Zebra bars for one approach.
- *
- * Bars repeat along the direction of travel over `CROSSWALK_DEPTH`, and each
- * bar crosses the carriageway from kerb to kerb. A central reservation splits
- * every bar into two strokes, leaving the refuge island clear.
- */
+/** Zebra bars for one approach. */
 function crosswalkBars(
   origin: Vec2,
   dir: Vec2,
@@ -342,16 +296,7 @@ function crosswalkBars(
   return zebraBars((along) => ({ p: { x: origin.x + dir.x * along, y: origin.y + dir.y * along }, nrm }), rt, mid);
 }
 
-/**
- * The stripes of one crosswalk centred `mid` along a frame given per distance.
- *
- * A zebra as it is painted on a real street (CTB / MUTCD "continental"
- * markings): bars about half a metre wide, each as long as the crossing is
- * deep and laid ALONG the direction of travel, repeated across the
- * carriageway with gaps the same width - so a driver sees the bars end-on and
- * a walker crosses over them. They used to be laid across the road, kerb to
- * kerb, like a ladder seen from the side.
- */
+/** The stripes of one crosswalk centred `mid` along a frame given per distance. */
 function zebraBars(frameAt: (along: number) => { p: Vec2; nrm: Vec2 }, rt: RoadType, mid: number): Bar[] {
   const outer = rt.width / 2 - ZEBRA_EDGE;
   const inner = rt.median > 0 ? rt.median / 2 + ZEBRA_EDGE : 0;
@@ -385,11 +330,7 @@ function zebraBars(frameAt: (along: number) => { p: Vec2; nrm: Vec2 }, rt: RoadT
   return bars;
 }
 
-/**
- * Collects stop bars and crosswalks for every junction approach (the road
- * surfaces' paint, `render/markings.ts`, when the surfaces are built). A
- * culling by view was here and nobody passed one: taken out.
- */
+/** Collects stop bars and crosswalks for every junction approach */
 export function junctionDetail(net: Network): { stops: Bar[]; zebras: Bar[] } {
   const stops: Bar[] = [];
   const zebras: Bar[] = [];
@@ -405,21 +346,12 @@ export function junctionDetailAt(net: Network, node: NodeId, stops: Bar[], zebra
   if (junction.legs.some((leg) => leg.road.id === 'highway' || leg.road.id === 'ramp')) return;
 
   // A stop line exists because movements conflict, which needs three legs.
-  // A crossing exists on two-leg junctions that are not through transitions:
-  // the footway may need to cross there. A swept bend has no approach zone,
-  // and `crosswalkDistanceAt` returns zero for it.
   const movementsConflict = junction.legs.length >= 3;
 
   junction.legs.forEach((leg, i) => {
     const rt = leg.road;
     const trim = junction.trims[i] as number;
-    // A stop line only means something where traffic arrives. A one-way leg
-    // carrying only departing traffic gets a crossing but no bar.
-    // Ask the network where the crossing is, do not re-derive it from the
-    // trim. On a short link between two junctions the network suppresses the
-    // crossing entirely — there is no room for one a driver would not park
-    // on — and a painter computing its own `crosswalkDistance(trim)` would
-    // cheerfully paint a zebra the model says is not there.
+    // A stop line only means something where traffic arrives.
     const crossing = net.crosswalkDistanceAt(leg.seg, node);
     if (movementsConflict && leg.approaching) {
       const bar = stopBar(leg.origin, leg.dir, leg.nrm, rt, trim, leg.shift);
@@ -431,16 +363,7 @@ export function junctionDetailAt(net: Network, node: NodeId, stops: Bar[], zebra
   });
 }
 
-/**
- * Paint for the mid-block crossings (`RoadNode.crossing`).
- *
- * A two-road node in a straight line has no junction surface, so the pass over
- * `net.junctions` never sees it. The zebra lies on the piece the crossing
- * names, centred where the network says (`crosswalkDistanceAt`); every
- * approach gets its stop bar where its lanes end (`stopLineDistance`), on
- * the half its traffic arrives in. Frames are taken at each distance, so a
- * crossing on a curve follows the curve.
- */
+/** Paint for the mid-block crossings (`RoadNode.crossing`). */
 export function midBlockDetailAt(net: Network, nodeId: NodeId, stops: Bar[], zebras: Bar[]): void {
   const doc = net.doc;
   const node = doc.node(nodeId);
@@ -459,8 +382,7 @@ export function midBlockDetailAt(net: Network, nodeId: NodeId, stops: Bar[], zeb
     const s = net.stopLineDistance(segId, node.id);
     if (!approaching || s <= 0) continue;
     const f = frameAt(s);
-    // Right-hand traffic: the approaching side is the `+nrm` half, across
-    // the travel lanes only.
+    // Right-hand traffic: the approaching side is the `+nrm` half, across the travel lanes only.
     const shift = travelShift(rt) * (startsHere ? 1 : -1);
     const inner = shift + rt.median / 2;
     const outer = shift + travelWidth(rt) / 2;
@@ -472,18 +394,7 @@ export function midBlockDetailAt(net: Network, nodeId: NodeId, stops: Bar[], zeb
   }
 }
 
-/**
- * The paint across a taper where one road carries on at another width.
- *
- * Marked the way a road designer marks a lane gain or a lane drop: the edge
- * lines follow the kerb as it swings out or in, the lanes the two roads share
- * keep their dividers straight through, and the line between the directions is
- * solid - no overtaking while the road changes shape - splitting to either side
- * of a central reservation where one begins. A lane that exists on one side
- * only gets its divider on its own road, starting where the taper ends.
- *
- * It used to be bare asphalt between two zebra crossings.
- */
+/** The paint across a taper where one road carries on at another width. */
 export function transitionMarkings(net: Network, node: NodeId): StrokeSpec[] {
   const junction = net.junctions.get(node)?.get(Level.Asphalt);
   if (!junction || !junction.transition || junction.legs.length !== 2) return [];
@@ -499,7 +410,6 @@ export function transitionMarkings(net: Network, node: NodeId): StrokeSpec[] {
   };
 
   // Travel from `a` to `b` keeps to the right, the negative side of the axis.
-  // (No edge lines: the gutter marks the edge, see `segmentMarkings`.)
 
   if (a.direction !== 'both' || b.direction !== 'both') return out;
   if (ra.markings === 'none' && rb.markings === 'none') return out;
@@ -537,12 +447,7 @@ export function transitionMarkings(net: Network, node: NodeId): StrokeSpec[] {
   return out;
 }
 
-/**
- * A mini-roundabout's painted island (docs/source/VIAS.md V5): a white ring and its
- * filled middle at the junction's centre, traversable (a mini-roundabout's
- * island is painted or a low dome a lorry may drive over). Sized from the
- * junction's nearest mouth, so it sits inside the box.
- */
+/** A mini-roundabout's painted island */
 export function miniRoundaboutAt(net: Network, nodeId: NodeId, out: StrokeSpec[]): void {
   const node = net.doc.node(nodeId);
   if (!node || node.control !== 'mini' || node.incident.length < 3) return;

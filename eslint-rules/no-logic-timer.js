@@ -1,14 +1,4 @@
-/**
- * NO TIMER OF THE GAME'S OWN (docs/PLANO-ESPINHA-2026-10-14.md, Passo 2 and
- * 4): the game's work runs in the frame (`main.ts` frame: the input, the
- * simulation, the engine's products, the drawing) or on the simulation's
- * clock (`frameLoop.ts` `SimPeriodic`), never on a `setTimeout` or
- * `setInterval` of its own, which ran it between frames, in the middle of
- * whatever the page was doing. Allowed where waiting on the page is the point
- * - the saves, the interface's notices, a GPU release while nothing draws,
- * the frame loop itself (`eslint.config.js`); what stands elsewhere is in
- * `eslint-suppressions.json`, which only shrinks. DO NOT suppress it inline.
- */
+/** DO NOT suppress it inline. */
 const TIMERS = new Set(['setTimeout', 'setInterval']);
 
 export default {

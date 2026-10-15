@@ -31,67 +31,13 @@ import {
   type RoadStructure,
 } from './structures';
 
-/**
- * ONE continuous height field for every road surface in the network.
- *
- * ## Why this module exists
- *
- * A road surface is not drawn as a strip per segment: the whole network is
- * clipped into four band polygons (`world/surfaces.ts`) and each band becomes a
- * single mesh. A mesh vertex therefore knows only its own `(x, y)` — it does not
- * know which segment it came from — so the elevation has to be a FUNCTION OF
- * POSITION, and that function must be continuous. Anything else tears the mesh:
- *
- *  - a per-segment profile picked by "nearest segment" steps at every point
- *    where the nearest segment changes, which is exactly the middle of every
- *    junction — the cracks, steps and overlapping plates reported as broken
- *    mesh;
- *  - `max(profile, terrain + clearance)` evaluated per vertex makes the surface
- *    copy the terrain inside junctions while the ribbon stays flat, so a
- *    junction became a dented bowl rather than a plate;
- *  - a raised deck whose height was the nearest span's made two spans of one
- *    chain disagree over the junction between them.
- *
- * The field below is continuous by construction and solves the whole network at
- * once, so every band, every marking and every agent reads the SAME number at
- * the same point. That is what makes the surfaces watertight.
- *
- * ## How it is built
- *
- * 1. Every segment gets a longitudinal profile sampled at fixed stations.
- * 2. The ends of every profile are FLAT over the junction's own reach (the trim
- *    distance the network already computed). That flat piece is the junction
- *    plate: because every leg of a node is flat at the same node height over
- *    that reach, the plate and all its legs agree exactly.
- * 3. Node heights are solved globally, so a node shared by four roads has one
- *    height and a raised span landing on a ground road lands ON it.
- * 4. Profiles are grade-limited (raise-only) so a road never exceeds its class
- *    gradient and never dives under the ground it already cleared.
- *
- * ## How it is queried
- *
- * `at(x, y)` blends the profiles of the segments near the point with weights
- * that fall off smoothly with distance. Far from a junction the nearest segment
- * dominates and the answer is its profile; inside a junction all legs are flat
- * at the node height, so every blend of them is that same height. The blend has
- * no discontinuity anywhere, which is the property the mesh needs.
- */
+/** ONE continuous height field for every road surface in the network. ## Why this module exists A road surface is not drawn */
 
 /** Station spacing along a profile, in world units. */
 const STATION = m(1.6);
 /** Hard cap on stations per segment, so a 4 km road does not allocate 1000. */
 const MAX_STATIONS = 400;
-/**
- * Extra reach past the junction trim that the junction plate has to cover.
- *
- * More than one `STATION`: a profile is read by interpolating between stations,
- * so it is exactly flat only up to the last station INSIDE the plate, which can
- * be a whole station short of the plate's nominal edge. At three units that
- * left the last unit of every junction polygon interpolating towards the ramp
- * or the deck beyond - a few hundredths of a step in the plate, measured on
- * elevated crossroads. One station plus a unit keeps the flat part past the
- * junction outline whatever the spacing.
- */
+/** Extra reach past the junction trim that the junction plate has to cover. */
 const PLATE_MARGIN = STATION + m(0.4);
 /** Lateral samples across the casing when reading the ground under a road. */
 const LATERAL = [-1, -0.62, -0.28, 0, 0.28, 0.62, 1] as const;
@@ -99,88 +45,24 @@ const LATERAL = [-1, -0.62, -0.28, 0, 0.28, 0.62, 1] as const;
 const DILATE = 2;
 /** Steepest gradient of a road at grade (rise / run), from `roads/tuning.ts`. */
 const GROUND_GRADE = ROAD_TUNING.grade.ground;
-/**
- * How far along a road its grade line is averaged, in world units.
- *
- * This is what turns "copy the ground" into "design a road". A road at grade
- * used to take the dilated terrain ceiling as its own profile, so it rode over
- * every hummock the brush left behind: a ribbon rippling along a field, which
- * is exactly what a player means by a road that is not level. A real alignment
- * is a smooth line through the ground with the ground cut away above it and
- * filled in below it, and the length over which it is smooth is what decides
- * how much earth gets moved. Ninety units is about thirty-six metres, long
- * enough to ignore brush-sized bumps and short enough to follow a real hillside.
- */
+/** How far along a road its grade line is averaged, in world units. */
 const SMOOTH_REACH = m(36);
-/**
- * How far past its junction plate a profile is tied back to the node height.
- *
- * The designed line and the junction it ends at are solved separately, so they
- * disagree by whatever the smoothing removed. Correcting that over a transition
- * — rather than at the plate edge — is what keeps the join from becoming a
- * visible kink in an otherwise level road.
- */
+/** How far past its junction plate a profile is tied back to the node height. */
 const TIE_REACH = m(28);
-/**
- * How far past a junction plate the ground floor stops constraining a ramp.
- *
- * The junction is a platform cut into whatever it sits on, so the natural
- * ground there is not a floor the structure landing on it has to respect.
- */
+/** How far past a junction plate the ground floor stops constraining a ramp. */
 const PLATE_BLEND = m(16);
-/**
- * The share of a ramp over which the natural ground stops being a floor.
- *
- * A ramp coming down to a junction on a mound has to pass THROUGH the mound;
- * insisting it stay above the untouched ground meant it could not reach the
- * street at all, and the junction was dragged up to meet it instead. The ground
- * along a ramp is excavated for exactly the same reason it is beside a road at
- * grade — see `shapeAt`, which shapes under a structure wherever the structure
- * has come down to the ground.
- */
+/** The share of a ramp over which the natural ground stops being a floor. */
 const RAMP_RELAX = 0.8;
 /** Lift above the ground at which a structure stops shaping it: piers, not fill. */
 const LIFT_ON = ROAD_TUNING.structure.liftOn;
 const LIFT_OFF = ROAD_TUNING.structure.pierFrom;
-/**
- * Grade of the straight part of a ramp between a raised deck and a road at
- * grade: sixteen per cent.
- *
- * The first ramp was one smoothstep sized so its peak slope was 8 %, a mean of
- * 5.3 %: a fifteen-unit climb took 262 units, and with the deck held at the
- * highest ground under the span the two ramps of a 900-unit span met in the
- * middle, so the whole structure was one hump. The second, at 10 % over
- * 30-unit curves with a deck that followed the land, still took 183 units and
- * still read, from the game's camera, as a road sloping from end to end - the
- * player rejected both: "the ramp must be a few metres, not a thing with no
- * end".
- *
- * Sixteen per cent is steep for a highway and ordinary for what this is: a
- * short urban access ramp at low speed. Parking and service ramps are built at
- * 15-20 %, residential streets in hilly cities run 15 % and more, and the
- * ramp guidance for low design speeds (AASHTO Green Book ch. 10, TxDOT 15.7)
- * rises steeply as the speed falls. Here it buys what the player asked for: the
- * full climb, curves included, inside 100 units - forty metres - so the ramp is
- * a distinct piece of road at each end and the deck between is level.
- */
+/** Grade of the straight part of a ramp between a raised deck and a road at grade: sixteen per cent. */
 const RAMP_GRADE = ROAD_TUNING.grade.ramp;
 /** Maximum authored height change per unit of alignment before a ramp needs more run. */
 export const MAX_AUTHORED_GRADE = ROAD_TUNING.grade.authored;
-/**
- * Length of the vertical curve at the foot of a ramp, where the grade builds up
- * from level, in world units (8 m). The crest at the top is rounded by
- * `RAMP_CREST`.
- *
- * It was 12 units (5 m): the full 16 % arrived within one car length - a kink
- * rather than a curve, 0.11 of grade change inside 3 m on the inspection map.
- * Both curves are as long as the player's rule "the whole climb in at most
- * 100 units" leaves room for: 0.09 at the crest, 0.06 at the sag.
- */
+/** Length of the vertical curve at the foot of a ramp, where the grade builds up from level, in world units (8 m). */
 const RAMP_CURVE = m(8);
-/**
- * Reach of the vertical curves rounded into a road wherever its grade changes
- * (see `roundGradeBreaks`), in world units (5 m each side).
- */
+/** Reach of the vertical curves rounded into a road wherever its grade changes (see `roundGradeBreaks`), in world units */
 const VERTICAL_CURVE_REACH = m(4.8);
 /** Decay length of the grade correction just outside a flat junction plate. */
 const PLATE_TANGENT_REACH = m(16);
@@ -190,34 +72,13 @@ const PLATE_TANGENT_SHARE = 0.55;
 const RAMP_CREST = m(3.2) * RAMP_GRADE;
 /** Steepest gradient with which a deck is carried up to a higher deck it meets in the air. */
 const DECK_TIE = ROAD_TUNING.grade.deckTie;
-/**
- * Steepest grade a deck may take to clear a rise under it. The deck is a
- * straight line between its two ends; only a hill poking up into it bends it,
- * and then no faster than this.
- */
+/** Steepest grade a deck may take to clear a rise under it. */
 const DECK_GRADE = ROAD_TUNING.grade.deck;
-/**
- * Peak-to-mean slope ratio of the smoothstep used for vertical curves.
- *
- * A ramp eased with `t*t*(3-2t)` reaches 1.5x its average slope in the middle,
- * so a ramp sized as `rise / grade` actually climbs at `1.5 * grade`. Sizing it
- * from the peak is what makes the stated gradient the real one.
- */
+/** Peak-to-mean slope ratio of the smoothstep used for vertical curves. */
 const CURVE_PEAK = 1.5;
-/**
- * Most rounds of the profile solve. A node lifted by one of its roads re-solves
- * the others, and along a chain that travels one node per round; the solve
- * stops as soon as nothing moves, which on any map built so far is within a
- * handful of rounds. The cap only bounds a pathological network.
- */
+/** Most rounds of the profile solve. */
 const MAX_SOLVE_PASSES = 64;
-/**
- * How far from a point ON a road any profile can still change what a query
- * there answers: the point is within `PROFILE_REACH` of its own road, and a
- * profile is blended in only while its weight exp(-(d - best) / BLEND_TAU)
- * is over 1e-4 (`blend`). A road surface reads nothing farther, so a profile
- * past this from a tile cannot change the tile (`digest` with a reach).
- */
+/** How far from a point ON a road any profile can still change what a query there answers */
 export const SURFACE_READ_REACH = PROFILE_REACH + BLEND_TAU * Math.log(1e4);
 
 interface Profile {
@@ -235,14 +96,10 @@ interface Profile {
   readonly median: number;
   /** Authored footway width, including the kerb: the wider side's. */
   readonly sidewalk: number;
-  /** Each side's footway, left and right of a -> b (docs/source/VIAS.md V1). */
+  /** Each side's footway, left and right of a -> b. */
   readonly sidewalkLeft: number;
   readonly sidewalkRight: number;
-  /**
-   * A digest of the road's look - its materials, which footway is flush -
-   * or 0 for the class's own: a road query answers for it (`roadAt` names
-   * the segment), so a tile drawn with it must be drawn again when it changes.
-   */
+  /** A digest of the road's look - its materials, which footway is flush - or 0 for the class's own */
   readonly look: number;
   readonly line: Polyline;
   readonly length: number;
@@ -251,17 +108,9 @@ interface Profile {
   readonly h: number[];
   /** Ground under the road at station `i`, plus the surface clearance. */
   readonly ceil: number[];
-  /**
-   * The designed grade line: the BALANCED ground under the road, smoothed and
-   * slope-limited. A road at grade is built from this, not from `ceil`, so it
-   * cuts through what rises above it and is filled up over what falls away.
-   */
+  /** The designed grade line: the BALANCED ground under the road, smoothed and slope-limited. */
   readonly base: number[];
-  /**
-   * For a raised structure, the ground under it plus its clearance: what the
-   * deck would be over each station if nothing else constrained it. Empty for
-   * anything else.
-   */
+  /** For a raised structure, the ground under it plus its clearance */
   readonly deck: number[];
   readonly a: NodeId;
   readonly b: NodeId;
@@ -280,50 +129,19 @@ export interface RoadElevation extends RoadReads {
   nodeHeight(node: NodeId): number;
   /** Whether any road of these structures exists at all. */
   has(structures?: ReadonlySet<RoadStructure>): boolean;
-  /**
-   * How far the ground should be pulled towards the road at a point, and to
-   * what height.
-   *
-   * `weight` is 1 where the terrain must meet the road exactly, eases to 0 over
-   * the shoulder, and is 0 where the road is buried deeply enough to be a
-   * tunnel. See `render/terrain.ts`, which is the only caller.
-   */
+  /** How far the ground should be pulled towards the road at a point, and to what height. */
   shapeAt(x: number, y: number, naturalGround: number): { height: number; weight: number };
-  /**
-   * Boxes outside which `shapeAt` always answers weight 0: every road's
-   * influence box, which is wider than the widest batter it may shape.
-   */
+  /** Boxes outside which `shapeAt` always answers weight 0 */
   shapeBounds(): readonly Aabb[];
-  /**
-   * A digest of everything a height, frame or road query can read at any
-   * point of a rectangle, the terrain aside: the solved profile of every road
-   * the spatial index could hand such a query, in the order it would. Two
-   * builds that agree on it answer every query there identically, which is
-   * what lets the renderer keep the meshes of the parts of the map an edit
-   * did not reach. With `reach`, only for queries at points within reach of
-   * their nearest road (`SURFACE_READ_REACH` for a road surface): a road
-   * whose line passes farther from the rectangle is left out.
-   */
+  /** A digest of everything a height, frame or road query can read at any point of a rectangle, the terrain aside */
   digest(minX: number, minY: number, maxX: number, maxY: number, reach?: number): number;
-  /**
-   * Where this solve and another can differ: the boxes (as the spatial index
-   * files them) of every road whose solved profile is not the same in both,
-   * or that only one has; `null` for everywhere (a road too big to file).
-   * A rectangle no box reaches has the same `digest` in both.
-   */
+  /** Where this solve and another can differ: the boxes */
   differences?(other: RoadElevation): { minX: number; minY: number; maxX: number; maxY: number }[] | null;
   /** Each road's whole solved profile as a digest, with its box (for `differences`). */
   summaries?(): ReadonlyMap<SegmentId, { digest: number; box: Aabb; oversized: boolean }>;
-  /**
-   * The profiles a query at a point of `rects` can read, and the roads `also`
-   * (an alignment's chain, read by id), as arrays to hand a road tile worker
-   * (`roadField.ts` `packField`): the roads near those tiles, never the map's.
-   */
+  /** The profiles a query at a point of `rects` can read, and the roads `also` */
   fieldFor?(rects: readonly (readonly [number, number, number, number])[], also: readonly SegmentId[]): { data: FieldData; transfer: ArrayBuffer[] };
-  /**
-   * The roads `shapeAt` and the reads can meet at a point of `rects`, as plain numbers for the
-   * worker that grades the ground (`roadShaper` answers there as this solve does here).
-   */
+  /** The roads `shapeAt` and the reads can meet at a point of `rects` */
   shapeCut?(rects: readonly (readonly [number, number, number, number])[]): RoadShapeCut;
   /** How many road solves this build ran (a road solved again in a later round counts again): what an edit cost. */
   readonly solved?: number;
@@ -335,105 +153,31 @@ const NO_SHAPE = { height: 0, weight: 0 } as const;
 
 /** Extra width past the casing over which the ground is held at road level. */
 const SHAPE_INNER = m(1.2);
-/**
- * Width of the embankment or cutting that carries the ground back to its
- * natural height.
- *
- * Wide on purpose. A road laid on rolling ground has to sit at ONE height
- * across its full width, so where the ground falls away there is a difference
- * to absorb; absorbing it over a few units is a wall, and a wall is what the
- * verge skirt used to draw. Forty-five units is about eighteen metres of
- * batter, which is what a real embankment looks like and is also wide enough
- * to read smoothly against a sixteen-unit terrain cell.
- */
+/** Width of the embankment or cutting that carries the ground back to its natural height. */
 const SHAPE_SHOULDER = m(18);
-/**
- * Run per unit of rise on a cut or fill batter — a 1:2.5 slope.
- *
- * The shoulder is no longer a fixed width, because a fixed width is a fixed
- * ANGLE only when the height difference is fixed too. A road designed through a
- * hill now cuts several units into it, and forty-five units of shoulder turned a
- * ten-unit cut into a 1:4.5 face and a twenty-five unit one into a cliff. Sizing
- * the batter from the actual difference is what keeps every cut and every
- * embankment at the same believable angle.
- */
+/** Run per unit of rise on a cut or fill batter — a 1:2.5 slope. */
 const BATTER = 2.5;
 /** Cap on the batter, so one deep cut cannot reshape a quarter of the map. */
 const SHAPE_SHOULDER_MAX = m(36);
-/**
- * The same batter for a tunnel's approach cutting, and much narrower.
- *
- * A cutting is not an embankment. An embankment spreads: the fill has to find
- * its angle of repose and a wide batter is what makes it read as landscape
- * rather than as a wall. A cutting is dug, its sides are held, and — decisively
- * for this renderer — the ground it holds down has to STEP back up at the
- * portal, because a heightfield cannot have a hole in it. The wider that band,
- * the wider the step, and the step has to be covered by a headwall wide enough
- * to hide it. Sixteen units is a cutting the portal can close.
- */
+/** The same batter for a tunnel's approach cutting, and much narrower. */
 const CUT_SHOULDER = m(6.4);
-/**
- * How far past a road's casing a cutting held by retaining walls is dug
- * (`RoadSegment.cutWalls`): the ground held at road level beside it, then
- * the portal's narrow batter. The renderer covers that band with the wall's
- * backfill and reads the natural ground just past it (`render/structures.ts`).
- */
+/** How far past a road's casing a cutting held by retaining walls is dug (`RoadSegment.cutWalls`) */
 export const CUT_WALL_REACH = SHAPE_INNER + CUT_SHOULDER;
-/**
- * How far below the road SURFACE the ground beside it is pulled.
- *
- * It was `ROAD_GROUND_CLEARANCE` — three tenths of a unit — and that is not
- * enough. The shaper answers for the nearest profile alone while the road mesh
- * reads the blended field, the terrain is a 16-unit grid whose triangles
- * interpolate between shaped corners, and the lowest road band (the verge) is
- * itself only a tenth of a unit below the deck. The three together left the
- * drawn ground up to seven tenths of a unit ABOVE the drawn verge in places —
- * measured by the visual verifier, which counts road vertices under the terrain
- * and found twenty-one of them on a flat crossroads.
- *
- * A unit and a half of margin absorbs all three, and it costs nothing visually:
- * the verge's skirt is sized from `terrainAt` (`soffit` in
- * `render/roadSurfaces.ts`), so it simply grows to meet the ground, and what the
- * player sees at the rim is a shoulder rather than a hairline of sky.
- */
+/** How far below the road SURFACE the ground beside it is pulled. */
 const SHAPE_DROP = m(0.6);
-/**
- * How far under the carriageway the ground beside a road is laid: 10 cm, so
- * no ground interpolated across a terrain cell can stand above the asphalt.
- */
+/** How far under the carriageway the ground beside a road is laid */
 const BESIDE_DROP = m(0.1);
 
-/**
- * Solves the height of every road surface in the network.
- *
- * `terrainAt` must be the height the terrain is DRAWN at, not the analytic
- * field behind it: a road is laid on the triangles the player sees, and the
- * difference between the two is larger than the clearance a road carries.
- */
+/** Solves the height of every road surface in the network. */
 export function buildRoadElevation(
   net: Network,
   terrainAt: (x: number, y: number) => number,
-  /**
-   * A solve of this network on the SAME ground (`terrainAt` answering the
-   * same heights, through whatever function): what did not change is taken
-   * from it instead of solved again (see `SolveMemo`). The caller vouches for
-   * the ground: the renderer passes its last solve only while the land has not
-   * moved, and the road tool hands the renderer's to the tunnel test of a
-   * commit on the same natural ground. A solve on `FLAT_GROUND` finds the last
-   * flat solve by itself.
-   */
+  /** A solve of this network on the SAME ground (`terrainAt` answering the same heights, through whatever function) */
   previous?: RoadElevation | null,
 ): RoadElevation {
   const started = performance.now();
   const profiles: Profile[] = [];
-  /**
-   * The structures among `profiles` and their boxes, gathered as they are
-   * laid: `has` is asked at every point a pedestrian, a lot's colour or a
-   * paving height is read at (`surfaceHeightAt`, `pavedHeightAt`), and
-   * `shapeBounds` by every terrain patch shaped. DO NOT gather them from
-   * `profiles` at the question (a walk of every road, or a new list of every
-   * box, per call).
-   */
+  /** DO NOT gather them from `profiles` at the question (a walk of every road, or a new list of every box, per call). */
   const present = new Set<RoadStructure>();
   const boxes: Aabb[] = [];
   const byId = new Map<SegmentId, Profile>();
@@ -453,9 +197,7 @@ export function buildRoadElevation(
     const count = Math.max(2, Math.min(MAX_STATIONS, Math.ceil(length / STATION) + 1));
     const step = length / (count - 1);
     const half = casingHalf(ribbon.road);
-    // The ground under a road is read at 7 points across every 4 units of
-    // it, and its grade line smoothed: most of a solve. The same line, as
-    // wide, on the same ground reads the same - taken as it was.
+    // The ground under a road is read at 7 points across every 4 units of it, and its grade line smoothed: most of a solve.
     const known = reuse?.stations.get(id);
     const kept = known !== undefined && known.half === half && sameLine(known.line, line);
     const { ceil, base } = kept ? known : readStations(line, half, count, step, terrainAt);
@@ -463,15 +205,11 @@ export function buildRoadElevation(
     stationsById.set(id, { line, half, ceil, base });
 
     const trims = net.trims.get(id);
-    // A taper where one road carries on at another width is not a junction
-    // plate. Nothing crosses it, so nothing needs it level: holding its whole
-    // length flat put a 150-unit shelf in a road climbing a hill. The two
-    // profiles simply meet at the node, as two spans of one road do.
+    // A taper where one road carries on at another width is not a junction plate.
     const reachOf = (node: NodeId, trim: number | undefined): number => {
       if (net.doc.node(node)?.smooth && !net.junctions.has(node)) return 0;
       if (net.transitions.has(node)) return PLATE_MARGIN;
-      // The plate is flat over the junction's whole footprint, its footways
-      // and verges included (`Network.plateReach`).
+      // The plate is flat over the junction's whole footprint, its footways and verges included (`Network.plateReach`).
       let reach = trim ?? 0;
       const outer = net.junctions.get(node)?.get(Level.Casing);
       const inner = net.junctions.get(node)?.get(Level.Asphalt);
@@ -533,24 +271,13 @@ export function buildRoadElevation(
     }
   }
 
-  // ------------------------------------------------- what is solved again
-  // Each node's inputs, as text: where it stands, its authored height, its roads.
+  // ------------------------------------------------- what is solved again Each node's inputs, as text
   const nodeKeys = new Map<NodeId, string>();
   for (const [node, list] of incident) {
     const point = net.doc.node(node);
     nodeKeys.set(node, `${point?.x},${point?.y}|${point?.heightOffset}|${list.map((p) => p.id).join(',')}`);
   }
-  // What a change reaches is solved again, and nothing else (`SolveMemo`):
-  // the nodes whose start can differ - an end of a road changed, a node
-  // changed, and the nodes one road from those (a node's ramp cap reads the
-  // grade height and the aloft of the node at the other end of each raised
-  // road) - and every node whose settled height was carried up to it by a road
-  // that is solved again (it may come down). The roads with an end among them
-  // are solved; every other node keeps the height it settled at and every
-  // other road its heights, and a node kept is raised by the rounds below as
-  // in a solve from nothing (a road solved again may reach above it).
-  // DO NOT go back to solving every connected piece a change touches: a town
-  // is one piece, and every road edited solved the whole town again.
+  // DO NOT go back to solving every connected piece a change touches
   const solvedNodes = new Set<NodeId>(incident.keys());
   if (reuse) {
     solvedNodes.clear();
@@ -610,34 +337,16 @@ export function buildRoadElevation(
     balancedAtNode.set(node, sum / count + ROAD_GROUND_CLEARANCE);
   }
 
-  /**
-   * Grade height of a node: where the roads meeting there WANT to be.
-   *
-   * The mean of each incident road's own designed grade line at its own end,
-   * rather than the highest ground anywhere near the junction. Taking the
-   * maximum perched every junction on the tallest hummock within its plate and
-   * then made all four legs climb to it — a pimple at every crossroads, and the
-   * reason a network over gentle ground looked like a relief map of itself.
-   * Averaging the legs puts the junction where the roads already are, and each
-   * leg's own tie-in absorbs the small difference.
-   */
+  /** Grade height of a node: where the roads meeting there WANT to be. */
   const gradeHeight = new Map<NodeId, number>();
   for (const [node, list] of incident) {
     if (!solvedNodes.has(node)) continue;
     let sum = 0;
     let count = 0;
     for (const profile of list) {
-      // ONLY roads built at grade. A viaduct's designed grade line exists — it
-      // is computed for every profile — but the viaduct never uses it, and
-      // letting it vote pulled a junction at the foot of a ramp eight units
-      // above the street that actually meets it, which the gradient limiter
-      // then refused to climb and left as a step in the plate.
+      // ONLY roads built at grade.
       if (isRaised(profile.structure) || isSunken(profile.structure)) continue;
-      // At the PLATE EDGE, not at the segment's endpoint. The plate is a flat
-      // platform tens of units across, so the height that matters is the one its
-      // legs actually reach where it begins — reading the line at the geometric
-      // centre instead put the junction on the crest the plate is meant to cut
-      // through, and left every leg with three units to climb in the last four.
+      // At the PLATE EDGE, not at the segment's endpoint.
       const edge = profile.a === node ? profile.plateA : profile.length - profile.plateB;
       sum += profile.base[stationIndex(profile, edge)] as number;
       count++;
@@ -647,16 +356,7 @@ export function buildRoadElevation(
       (net.doc.node(node)?.heightOffset ?? 0));
   }
 
-  // A node every one of whose roads is raised stays UP: the chain runs over the
-  // junction instead of diving to the ground and climbing back out of it. A node
-  // with even one road at grade is a landing, and everything meeting there comes
-  // down to the grade height, which is what makes a ramp join a street.
-  //
-  // A node with ONE road is not aloft, even when that road is raised. It used
-  // to be, and a raised road that simply ended stopped in mid-air at its full
-  // height - thirty units over the grass on a rolling map, with nothing under
-  // its end. A structure that ends comes down to the ground: its free end is a
-  // landing like any other, and the ramp brings it there.
+  // A node every one of whose roads is raised stays UP
   const aloft = new Set<NodeId>();
   for (const [node, list] of incident) {
     if (!solvedNodes.has(node)) continue;
@@ -672,8 +372,7 @@ export function buildRoadElevation(
   const wantedB = new Map<SegmentId, number>();
   for (const profile of solvedProfiles) {
     if (isRaised(profile.structure)) {
-      // What a raised span wants at each of its ends: its clearance over the
-      // ground of the plate. An aloft node takes the highest of these.
+      // What a raised span wants at each of its ends: its clearance over the ground of the plate.
       const ends = (from: number, to: number): number => {
         let top = -Infinity;
         for (let s = from; s <= to + 1e-6; s += profile.step) {
@@ -686,14 +385,7 @@ export function buildRoadElevation(
       continue;
     }
   }
-  /**
-   * Free height a sunken span wants, before the ramps are fitted. A tunnel is
-   * measured against the LOWEST ground it passes under, not the highest.
-   * Against the highest, a bore under a hill would be driven far deeper than
-   * it needs to be and its ramps would never fit; against the lowest, the floor
-   * is level with what a cutting at each end can reach and the hill in the
-   * middle simply provides more cover than the minimum.
-   */
+  /** Free height a sunken span wants, before the ramps are fitted. */
   const wantedOf = (profile: Profile): number => {
     let floor = Infinity;
     for (const value of profile.ceil) if (value < floor) floor = value;
@@ -720,12 +412,7 @@ export function buildRoadElevation(
       const end = profile.a === node ? wantedA.get(profile.id) : wantedB.get(profile.id);
       height = Math.max(height, end ?? height);
     }
-    // No higher than a ramp from a land end can climb within the span. Split
-    // an elevated road near its free end and the new node was held at full
-    // deck height, while the short span beyond it had to ramp down to the
-    // ground in less than a ramp's length: the ramp was cut off at the plate,
-    // a cliff of 124 % (the fuzzer's `elevationStep`). The node comes down to
-    // what the ramp reaches, and the deck on its other side eases down to it.
+    // No higher than a ramp from a land end can climb within the span.
     let reachable = Infinity;
     for (const profile of incident.get(node) ?? []) {
       if (!isRaised(profile.structure)) continue;
@@ -744,30 +431,14 @@ export function buildRoadElevation(
   const capOf = (node: NodeId): number | undefined => { const kept = settledAt(node); return kept ? kept.cap : upperReach.get(node); };
   const caps = { has: (node: NodeId): boolean => capOf(node) !== undefined, get: capOf };
 
-  // ---------------------------------------------------------------- profiles
-  // Solved until the nodes stop moving. A profile can be pushed up at its end by
-  // its own envelope - a deck lifted over a rise, a ramp that had to clear a
-  // mound - which raises the node it ends at, which re-solves every other road
-  // meeting there, which may raise the node at ITS far end. Raising only, so
-  // the sequence is monotone and settles.
-  //
-  // It used to be three passes over everything, whatever had happened. Along a
-  // chain of raised spans over broken ground the lift travels one node per
-  // pass, so after the third the solve simply stopped: a plate left standing
-  // up to two units above the node the other legs had been solved against, which
-  // is the step players saw where an elevated boulevard met its crossroads.
-  // Now only the roads meeting a node that moved are solved again, until none
-  // does; and the plates are pinned to the node at the end whatever happened,
-  // so a leg and its junction agree exactly even if the cap is ever reached.
+  // ---------------------------------------------------------------- profiles Solved until the nodes stop moving.
   const solve = (profile: Profile): void => {
     if (isRaised(profile.structure)) solveRaised(profile, nodeHeight, isAloft, caps);
     else if (isSunken(profile.structure)) solveSunken(profile, nodeHeight, wantedOf(profile));
     else if (profile.manualVertical) solveVariable(profile, nodeHeight);
     else solveGround(profile, nodeHeight);
   };
-  // The nodes at the ends of the roads just solved, and only those: a node
-  // none of whose roads moved has nothing new to rise to. A node kept from the
-  // solve reused rises too, as it would in a solve from nothing.
+  // The nodes at the ends of the roads just solved, and only those
   let dirty: Iterable<Profile> = solvedProfiles;
   let solvedCount = 0;
   /** Every road solved here: the others hold the heights of the solve reused, and its summaries. */
@@ -833,18 +504,7 @@ export function buildRoadElevation(
   };
   const near = { s: 0, distance: 0 };
   const quantum = (h: number): number => Math.round(h * 1000);
-  /**
-   * What a profile can give any point of a rectangle: its own figures, and
-   * only the part of its line and stations a point of the rectangle can be
-   * nearest to. A query takes, for a point, the nearest point of a road's
-   * line (`closestInto`) - at any distance - and the height there. For the
-   * rectangle's centre c, half-diagonal r and distance d from c to the line,
-   * every point of the rectangle has its nearest point of the line within
-   * d + 2r of c: that part, its stations and their neighbours are all a point
-   * of the rectangle can read. The whole profile used to be digested, so a
-   * junction made at one end of a street changed every block along it, and
-   * every road tile and the ground there were built again (docs/source/performance.md #10).
-   */
+  /** What a profile can give any point of a rectangle */
   const localDigest = (profile: Profile, minX: number, minY: number, maxX: number, maxY: number): number => {
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     const r = Math.hypot(maxX - minX, maxY - minY) / 2;
@@ -858,15 +518,12 @@ export function buildRoadElevation(
     for (let i = 0; i < profile.h.length; i++) {
       const dx = at[i * 2]! - cx, dy = at[i * 2 + 1]! - cy;
       if (dx * dx + dy * dy > reach2) continue;
-      // Heights to a thousandth of a unit (0.4 mm): a solve run again after a
-      // street elsewhere moved them by rounding noise, and the noise marked
-      // blocks all over the town as changed (docs/source/performance.md #10).
+      // Heights to a thousandth of a unit (0.4 mm)
       digest.add(i).add(quantum(profile.h[i]!));
       if (i > 0) digest.add(quantum(profile.h[i - 1]!));
       if (i + 1 < profile.h.length) digest.add(quantum(profile.h[i + 1]!));
     }
-    // The line itself where it passes within reach: a piece of it whose
-    // nearest point to c is within reach, with its two ends.
+    // The line itself where it passes within reach: a piece of it whose nearest point to c is within reach, with its two ends.
     const xy = profile.line.xy;
     for (let k = 0; k + 3 < xy.length; k += 2) {
       const ax = xy[k]!, ay = xy[k + 1]!, bx = xy[k + 2]!, by = xy[k + 3]!;
@@ -941,9 +598,7 @@ export function buildRoadElevation(
     },
     has(structures) {
       if (!structures) return profiles.length > 0;
-      // The structures the roads are built as, gathered with the profiles: a
-      // scan of every profile for a structure the town has none of was 0.4 s
-      // of an opening (2026-10-14).
+      // The structures the roads are built as, gathered with the profiles
       for (const structure of structures) if (present.has(structure)) return true;
       return false;
     },
@@ -978,13 +633,7 @@ interface ShapingRoad {
   readonly line: Pick<Polyline, 'closestInto'>;
 }
 
-/**
- * The roads a shaping of the ground can read inside some rectangles, as plain
- * numbers for the worker that grades the ground (`render/groundShape.worker.ts`):
- * the field's own packing (`roadField.ts` `packField`, the roads the index
- * can hand a point there, in its order) and whether each road's cutting is
- * held by retaining walls, in the same order.
- */
+/** The roads a shaping of the ground can read inside some rectangles */
 export interface RoadShapeCut {
   readonly field: FieldData;
   readonly walls: Uint8Array;
@@ -993,56 +642,24 @@ export interface RoadShapeCut {
 /** Scratch of `roadShapeAt`'s nearest-point reads. */
 const shapeHit = { s: 0, distance: 0 };
 
-/**
- * How far the ground should be pulled towards the roads at a point, and to
- * what height (`RoadElevation.shapeAt`), from the roads the index gives there
- * (`candidates`, in its order): the solve's own and a cut's copy off the page
- * (`roadShaper`) answer with this one function, so the two give the same
- * ground to the bit. DO NOT give either side its own copy of it.
- */
+/** DO NOT give either side its own copy of it. */
 function roadShapeAt(candidates: Iterable<ShapingRoad>, x: number, y: number, naturalGround: number): { height: number; weight: number } {
-  // EVERY structure may shape the ground, and which one does is decided by
-  // authority rather than by distance.
-  //
-  // "Only roads at grade" was nearly right and wrong in one case that
-  // matters: a ramp coming down off a viaduct is a road at grade by the time
-  // it reaches the street, and leaving the ground untouched under it meant
-  // the ramp had a hill in its way — so the solver lifted the junction to
-  // clear the hill and the street meeting it was left with a step. What
-  // actually decides whether the ground is shaped is how far the structure
-  // is ABOVE it: on it, cut and fill; well clear of it, piers and nothing.
-  //
-  // Taking the nearest profile and then asking whether it shapes would lose
-  // the answer whenever a flying deck happened to pass closer than the road
-  // that is really on the ground, so every candidate is scored and the one
-  // with the most to say wins.
+  // EVERY structure may shape the ground, and which one does is decided by authority rather than by distance.
   let bestWeight = 0;
   let bestHeight = 0;
   for (const profile of candidates) {
     profile.line.closestInto(x, y, shapeHit);
     const distance = shapeHit.distance;
     const inner = profile.half + SHAPE_INNER;
-    // Cheap bound first: rejecting on the widest batter any road could ask
-    // for keeps a dense network from paying for every road in its cell.
+    // Cheap bound first: rejecting on the widest batter any road could ask for keeps a dense network from paying for every
     if (distance >= inner + SHAPE_SHOULDER_MAX) continue;
     const sunken = isSunken(profile.structure) ||
       (profile.manualVertical && naturalGround - heightAtArc(profile, shapeHit.s) > 0);
     const surface = heightAtArc(profile, shapeHit.s);
-    // Under the road (carriageway and footway) the ground is pulled well
-    // below the deck, where nothing can show through it. Beyond the
-    // footway's back edge it is brought up to just under the carriageway's
-    // level: the verge then carries a gentle 25 cm fall from the footway,
-    // not a 60 cm wall, and the road no longer reads as a slab on the
-    // grass. Not to the footway's level: the terrain is a 6.4 m grid, and
-    // a corner vertex at footway height lifts the interpolated ground
-    // through the asphalt of the kerb return beside it.
+    // Under the road (carriageway and footway) the ground is pulled well below the deck, where nothing can show through it.
     const beside = !sunken && distance > profile.half - CASING_BAND;
     const height = beside ? surface - BESIDE_DROP : surface - SHAPE_DROP;
-    // The batter is sized from the earthwork it has to carry away, so a
-    // shallow fill blends out quickly and a deep cut opens out properly.
-    // A cutting held by retaining walls is dug no wider than a portal's:
-    // the wall at the road's edge stands in front of the step
-    // (`render/structures.ts` `retainingWalls`).
+    // The batter is sized from the earthwork it has to carry away
     const shoulder = sunken || (profile.walls && naturalGround > height)
       ? CUT_SHOULDER
       : Math.min(SHAPE_SHOULDER_MAX, Math.max(SHAPE_SHOULDER, Math.abs(naturalGround - height) * BATTER));
@@ -1050,20 +667,10 @@ function roadShapeAt(candidates: Iterable<ShapingRoad>, x: number, y: number, na
     let weight = 1 - smoothstep(inner, inner + shoulder, distance);
     if (isRaised(profile.structure) ||
       (profile.manualVertical && surface > naturalGround)) {
-      // Lifted clear of the ground: the structure stands on piers and the
-      // landscape passes under it untouched.
+      // Lifted clear of the ground: the structure stands on piers and the landscape passes under it untouched.
       weight *= 1 - smoothstep(LIFT_ON, LIFT_OFF, surface - naturalGround);
     } else if (sunken) {
-      // A road buried under its own hill is a TUNNEL, and a tunnel does not
-      // cut the hill open — it bores through it. Fading the shaping out as
-      // the road goes deeper is what produces an open cutting at each portal
-      // and solid ground over the bore, from one rule and no special case.
-      // The cover is measured to the road's SURFACE, because that is the
-      // number the portal geometry is placed against.
-      //
-      // NOT for a road at grade, which is now allowed to run in a cutting
-      // several units deep: the same test would decide the hill had closed
-      // over it and quietly bury an open road.
+      // A road buried under its own hill is a TUNNEL, and a tunnel does not cut the hill open — it bores through it.
       weight *= 1 - smoothstep(TUNNEL_ROOF, TUNNEL_BORE, naturalGround - surface);
     }
     if (weight > bestWeight) {
@@ -1074,13 +681,7 @@ function roadShapeAt(candidates: Iterable<ShapingRoad>, x: number, y: number, na
   return bestWeight <= 0 ? NO_SHAPE : { height: bestHeight, weight: bestWeight };
 }
 
-/**
- * The roads of a cut (`RoadElevation.shapeCut`) read as the solve reads its own:
- * `shapeAt` (`roadShapeAt`) and the field's reads (`roadField`) over an index
- * built over them (`SpatialIndex`, answering for the cut's cells alone) - the
- * same numbers to the bit. `terrainAt` is the ground the solve was laid on,
- * read where the roads have no say.
- */
+/** The roads of a cut (`RoadElevation.shapeCut`) read as the solve reads its own: `shapeAt` */
 export function roadShaper(cut: RoadShapeCut, terrainAt: (x: number, y: number) => number = noGround):
   Pick<RoadElevation, 'shapeAt' | 'at' | 'roadAt'> {
   const profiles = unpackField(cut.field).map((p, k) => ({ ...p, walls: cut.walls[k] === 1 }));
@@ -1105,21 +706,7 @@ interface Stations {
   readonly base: number[];
 }
 
-/**
- * What a solve keeps for the next one on the same ground (`previous`).
- *
- * The solve splits exactly along the network's connected pieces: a profile
- * reads only its own stations and the heights of its two nodes, a node only
- * the profiles meeting there, and the rounds raise each piece until IT stops
- * moving (Jacobi rounds, so the order is irrelevant). A piece whose every
- * road has the same line, width, plates, ends, class and structure, and
- * whose every node stands where it stood at the same authored height with
- * the same roads, settles where it settled: its heights are taken whole.
- * Any other piece is solved from scratch as before. That is a verifying
- * trace with early cutoff (Mokhov, Mitchell and Peyton Jones, "Build
- * systems à la carte"), and `tests/world/incrementalRebuild.spec.ts` holds
- * it equal to a solve from nothing.
- */
+/** What a solve keeps for the next one on the same ground (`previous`). */
 interface SolveMemo {
   readonly terrainAt: (x: number, y: number) => number;
   readonly stations: ReadonlyMap<SegmentId, Stations>;
@@ -1146,11 +733,7 @@ interface SettledNode {
 
 const memos = new WeakMap<RoadElevation, SolveMemo>();
 
-/**
- * Level ground everywhere: the editing rules solve on it, where two roads at
- * one point stand on the same ground and it cancels (`editor/editRules.ts`).
- * It never changes, so every solve on it starts from the last one.
- */
+/** Level ground everywhere: the editing rules solve on it */
 export const FLAT_GROUND = (): number => 0;
 let lastFlat: RoadElevation | null = null;
 
@@ -1194,20 +777,12 @@ function readStations(line: Polyline, half: number, count: number, step: number,
       sum += value;
     }
     ceil.push(ground + ROAD_GROUND_CLEARANCE);
-    // The MEAN, not the maximum. Taking the maximum across the casing is
-    // right for a deck that has to fly over the ground and wrong for a road
-    // built into it: on any side slope it perches the carriageway on the high
-    // kerb and leaves the low one hanging, which reads as a road tilted for
-    // no reason. The mean is the level at which the cut on one side pays for
-    // the fill on the other.
+    // The MEAN, not the maximum.
     mid.push(sum / LATERAL.length + ROAD_GROUND_CLEARANCE);
   }
-  // A chord between two stations must clear the ground at BOTH of its ends or
-  // it dives under the terrain in between. Raising every station to the
-  // highest within its neighbourhood is what makes the clearance a guarantee.
+  // A chord between two stations must clear the ground at BOTH of its ends or it dives under the terrain in between.
   dilate(ceil, DILATE);
-  // The designed grade line, solved once and independently of any junction:
-  // smooth the balanced ground, then limit its gradient in both directions.
+  // The designed grade line, solved once and independently of any junction
   const base = mid.slice();
   smoothProfile(base, step, SMOOTH_REACH);
   slopeLimit(base, step, GROUND_GRADE);
@@ -1236,12 +811,7 @@ function solveVariable(profile: Profile, nodeHeight: Map<NodeId, number>): void 
       h[i] = (base[i] as number) + liftA * (1 - eased) + liftB * eased;
     }
   }
-  // The ramp's grade unless the heights set at its two ends ask for more (as
-  // `solveGround`): held to it, the limiter left the difference as a cliff
-  // against the pinned plate - a road set 17 units up at one end and at
-  // grade 100 units on dropped 2.5 units a unit in its last few (fuzz seed 3).
-  // The least grade that joins the plates, and a tenth more, makes one ramp;
-  // pinned and limited by turns, so no step is left against either plate.
+  // The ramp's grade unless the heights set at its two ends ask for more (as `solveGround`)
   const grade = Math.max(RAMP_GRADE, (Math.abs(hB - hA) / run) * 1.1);
   for (let round = 0; round < 3; round++) {
     slopeLimit(h, step, grade);
@@ -1251,24 +821,12 @@ function solveVariable(profile: Profile, nodeHeight: Map<NodeId, number>): void 
   pinPlates(profile, hA, hB);
 }
 
-/**
- * A road at grade: it follows the ground, flat over its junction plates.
- *
- * The plate is what keeps the junction watertight. Every leg of a node is held
- * at exactly the node's height over its plate reach, so the junction polygon —
- * which lies inside that reach — is a plane whatever leg the query lands on.
- */
+/** A road at grade: it follows the ground, flat over its junction plates. */
 function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
   const { h, base, step, length } = profile;
   const hA = nodeHeight.get(profile.a) ?? 0;
   const hB = nodeHeight.get(profile.b) ?? 0;
   // Anchored at the PLATE EDGE, not at the segment's end.
-  //
-  // The plate is held flat at the node height and the designed line is not, so
-  // the offset has to make them agree exactly where they meet. Anchoring it at
-  // station zero instead left the first free station a plate-length of gradient
-  // away from the plate it adjoins — a step of nearly two units on a crossroads
-  // over a hill, which the gradient test caught at 0.92 per unit.
   const edgeA = stationIndex(profile, profile.plateA);
   const edgeB = stationIndex(profile, length - profile.plateB);
   const shiftA = hA - (base[edgeA] as number);
@@ -1282,13 +840,6 @@ function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
   const slopeA = (baseAt(profile.plateA + step) - baseAt(profile.plateA - step)) / (2 * step);
   const slopeB = (baseAt(length - profile.plateB + step) - baseAt(length - profile.plateB - step)) / (2 * step);
   // The transition is sized from the correction it has to carry.
-  //
-  // A fixed length adds `1.5 * shift / TIE_REACH` to the profile's own gradient
-  // at the steepest point of the ease, so a big correction over a short tie
-  // breaks the gradient limit — and the limiter then flattens the approach and
-  // leaves the difference as a step against the plate, which is precisely the
-  // defect this was meant to remove. Spending half the budget on the tie keeps
-  // the sum inside the limit whatever the correction turns out to be.
   const tieFor = (shift: number): number =>
     Math.min(
       Math.max(m(0.4), length * 0.4),
@@ -1307,32 +858,12 @@ function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
       h[i] = hB;
       continue;
     }
-    // The designed line, translated towards each junction over a transition
-    // rather than snapped to it at the plate edge. Applying the correction as a
-    // fading OFFSET keeps the shape of the alignment — the crest and the dip the
-    // smoothing kept — instead of replacing it with a straight run to the node.
+    // The designed line, translated towards each junction over a transition rather than snapped to it at the plate edge.
     const wA = 1 - smoothstep(profile.plateA, profile.plateA + tieA, s);
     const wB = 1 - smoothstep(profile.plateB, profile.plateB + tieB, length - s);
     h[i] = (base[i] as number) + shiftA * wA + shiftB * wB;
   }
-  // Both directions: a designed line is allowed to descend, so an envelope that
-  // only raises would quietly fill in every cut it was asked to make.
-  //
-  // Alternated with the plate pins, because the two constraints argue: the
-  // limiter treats the plate as ordinary samples and will flatten it, and the
-  // pin puts it back. Three rounds settle it, and they only have anything to
-  // argue about when the junction and its legs disagree — which, with the node
-  // height now read at the plate edge, they barely do.
-  //
-  // The limit is the class's grade unless the two pinned plates ask for more:
-  // heights the player set at both ends of a short road may need a steeper
-  // ramp than the class allows. Held to the class's grade then, the limiter
-  // flattened the road from one end, the pin put the plate back, and the
-  // whole difference was left as a cliff against it (108 % and 250 % in the
-  // fuzzer, seeds 1 and 3). The least grade that joins the two plates, with a
-  // tenth more for the vertical curves rounded in below, makes it one
-  // continuous ramp instead - as steep as real short streets are (Grade
-  // (slope): 23-37 % on short urban stretches), never a step.
+  // Both directions: a designed line is allowed to descend
   const free = Math.max(step, length - profile.plateA - profile.plateB);
   const grade = Math.max(GROUND_GRADE, (Math.abs(hB - hA) / free) * 1.1);
   for (let round = 0; round < 3; round++) {
@@ -1341,10 +872,7 @@ function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
   }
   pinPlates(profile, hA, hB);
   roundGradeBreaks(profile, 'both');
-  // The height tie above has zero derivative at its end, so the designed
-  // line's own slope survives against the flat plate. A short derivative
-  // correction rounds that join; d*exp(-d/reach) starts with unit slope and
-  // fades without moving either node's pinned height.
+  // The height tie above has zero derivative at its end, so the designed line's own slope survives against the flat plate.
   for (let i = 0; i < h.length; i++) {
     const s = step * i;
     if (s <= profile.plateA || s >= length - profile.plateB) continue;
@@ -1357,15 +885,7 @@ function solveGround(profile: Profile, nodeHeight: Map<NodeId, number>): void {
   roundPlateJoins(profile);
 }
 
-/**
- * The join of a level plate and the grade beyond it, rounded into a vertical
- * curve. `roundGradeBreaks` narrows its window to nothing at a plate edge so
- * as not to move the plate, which leaves the join itself a corner - level,
- * then the full grade from one station to the next (0.062 of grade change
- * inside 3 m on the inspection map). Here the window reaches into the plate,
- * which is level, over one curve's reach beyond its edge only; the plate is
- * never written.
- */
+/** The join of a level plate and the grade beyond it, rounded into a vertical curve. */
 function roundPlateJoins(profile: Profile): void {
   const { h, step, length } = profile;
   const radius = Math.max(1, Math.round(VERTICAL_CURVE_REACH / Math.max(1e-3, step)));
@@ -1373,8 +893,7 @@ function roundPlateJoins(profile: Profile): void {
   const last = source.length - 1;
   const edgeA = profile.plateA / step;
   const edgeB = (length - profile.plateB) / step;
-  // Only where the slope limiter took hold right at the edge: there the grade
-  // turns from level to near its limit in one station.
+  // Only where the slope limiter took hold right at the edge
   const steep = (from: number, dir: 1 | -1): boolean => {
     const i0 = Math.round(from), i1 = i0 + dir * radius;
     if (i1 < 0 || i1 > last) return false;
@@ -1392,20 +911,7 @@ function roundPlateJoins(profile: Profile): void {
   }
 }
 
-/**
- * Vertical curves wherever a road's grade changes.
- *
- * The slope limiter and the grade envelopes leave a CORNER where they take
- * hold - level, then 12 %, from one station to the next - and a car on it
- * pitched from one to the other between its axles. A moving average turns each
- * corner into a parabola as long as its window, which is exactly a vertical
- * curve, and cannot steepen anything (a mean of gradients is no steeper than
- * the steepest). The window narrows to nothing at each plate edge, so the
- * plate and its leg still meet at the same height (invariant 3).
- *
- * `raise` keeps only what the rounding lifts: a deck must not sink towards
- * what it clears, so its sags are rounded and its crests left to `smoothMin`.
- */
+/** Vertical curves wherever a road's grade changes. */
 function roundGradeBreaks(profile: Profile, mode: 'both' | 'raise', intoPlates = false): void {
   const { h, step, length } = profile;
   const radius = Math.max(1, Math.round(VERTICAL_CURVE_REACH / Math.max(1e-3, step)));
@@ -1415,10 +921,7 @@ function roundGradeBreaks(profile: Profile, mode: 'both' | 'raise', intoPlates =
   const edgeB = (length - profile.plateB) / step;
   for (let i = 0; i <= last; i++) {
     if (i <= edgeA || i >= edgeB) continue;
-    // On a road at grade the window reaches INTO a plate: the plate is level,
-    // so averaging over it rounds the join of plate and grade into a vertical
-    // curve instead of leaving a corner there (level, then 11 %, between two
-    // stations), and the plate itself, which is never written, stays pinned.
+    // On a road at grade the window reaches INTO a plate
     const r = intoPlates
       ? Math.min(radius, i, last - i)
       : Math.min(radius, Math.floor(i - edgeA), Math.floor(edgeB - i));
@@ -1430,28 +933,7 @@ function roundGradeBreaks(profile: Profile, mode: 'both' | 'raise', intoPlates =
   }
 }
 
-/**
- * A raised structure: a level deck between two short ramps.
- *
- * ```
- *          deck: a straight line between its two ends
- *        .--------------------------------.      crest: RAMP_CREST
- *       / RAMP_GRADE                        \
- *  ----'  sag: RAMP_CURVE                    '----
- *  plate  |<-- at most ~100 -->|             plate
- * ```
- *
- * The deck is a STRAIGHT line from one end to the other: at a landing it
- * starts one clearance over the junction it lands on, at an aloft end it is
- * the node's height. It does not follow the land up and down - a deck that did
- * read from above as a road sloping from end to end, with no telling where the
- * ramp stopped. Only ground that rises into it lifts it, and then gently.
- *
- * Each landing contributes a ramp that is level at the plate edge, bends up
- * over `RAMP_CURVE` and climbs at `RAMP_GRADE` until it meets the deck, over a
- * rounded crest. Where the span is too short for two ramps they meet over a
- * crest of their own below the deck: the deck is lowered, never steepened.
- */
+/** A raised structure: a level deck between two short ramps. */
 function solveRaised(
   profile: Profile,
   nodeHeight: Map<NodeId, number>,
@@ -1472,16 +954,14 @@ function solveRaised(
   // The straight deck, from end to end.
   const startH = landA ? hA + spec.clearance + RAMP_CREST * 0.25 : hA;
   const endH = landB ? hB + spec.clearance + RAMP_CREST * 0.25 : hB;
-  // Nothing under the deck may come closer than this to its surface: the
-  // structure's own depth and a margin of daylight under the soffit.
+  // Nothing under the deck may come closer than this to its surface
   const underside = spec.deck + FOOTWAY_RISE + m(0.4);
   for (let i = 0; i < h.length; i++) {
     const t = Math.min(1, Math.max(0, (step * i - profile.plateA) / run));
     const line = startH + (endH - startH) * t;
     h[i] = Math.max(line, (ceil[i] as number) + underside);
   }
-  // A rise that pushed into the deck lifts it, and the lift is eased out along
-  // the deck rather than left as a bump.
+  // A rise that pushed into the deck lifts it, and the lift is eased out along the deck rather than left as a bump.
   gradeEnvelope(h, step, nearLanding ? RAMP_GRADE : DECK_GRADE);
   if (!landA || !landB) {
     for (let i = 0; i < h.length; i++) {
@@ -1505,13 +985,6 @@ function solveRaised(
   for (let i = 0; i < h.length; i++) {
     const s = step * i;
     // The ground floor is RELAXED towards each junction.
-    //
-    // `ceil` is the natural ground, and a ramp must clear it — except where it
-    // lands, because the junction it lands on is a flat platform cut into that
-    // ground. Holding the full floor right up to the plate made a ramp landing
-    // on a mound insist on staying above the mound, which dragged the junction
-    // up with it and left the street meeting it with eight units to climb in
-    // one cell. Near a plate the floor is the node's own level instead.
     const reachA = Math.max(PLATE_BLEND, rampA * RAMP_RELAX);
     const reachB = Math.max(PLATE_BLEND, rampB * RAMP_RELAX);
     const nearA = 1 - smoothstep(profile.plateA, profile.plateA + reachA, s);
@@ -1525,10 +998,7 @@ function solveRaised(
   }
   gradeEnvelope(h, step, RAMP_GRADE);
   roundGradeBreaks(profile, 'raise');
-  // A raised junction next to a short landing can be lower than the span's
-  // free deck. The raise-only envelopes above cannot pull that deck DOWN, and
-  // pinning the low node afterward made the last station a near-vertical drop.
-  // Shape the approach from that fixed node before the plate is pinned.
+  // A raised junction next to a short landing can be lower than the span's free deck.
   if (nearLanding) {
     for (let i = 0; i < h.length; i++) {
       const s = step * i;
@@ -1540,11 +1010,7 @@ function solveRaised(
 }
 
 
-/**
- * Height a ramp has gained `d` units past the plate edge: level at the edge, a
- * parabolic sag over `RAMP_CURVE`, then `RAMP_GRADE` for ever. The deck it
- * climbs to is what stops it (`smoothMin` in `solveRaised`).
- */
+/** Height a ramp has gained `d` units past the plate edge */
 function rampRise(d: number): number {
   if (d <= 0) return 0;
   if (d < RAMP_CURVE) return (RAMP_GRADE * d * d) / (2 * RAMP_CURVE);
@@ -1556,38 +1022,13 @@ function rampLength(rise: number): number {
   return rise <= 0 ? 0 : rise / RAMP_GRADE + RAMP_CURVE;
 }
 
-/**
- * The smaller of two heights with the corner between them rounded over a band
- * `k` high (a quadratic smooth minimum). Never above either input, continuous
- * and with a continuous slope, which is what turns the top of a ramp into a
- * crest curve instead of a kink.
- */
+/** The smaller of two heights with the corner between them rounded over a band `k` high (a quadratic smooth minimum). */
 function smoothMin(a: number, b: number, k: number): number {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.min(a, b) - h * h * k * 0.25;
 }
 
-/**
- * A tunnel: a flat floor below the ground, with a ramp up to each end.
- *
- * The exact mirror of `solveRaised`, and deliberately so — the two shapes are
- * the same shape with the sign of the clearance flipped, and writing them as one
- * function with a sign would have made both harder to read than either is on its
- * own. Two differences matter and both are inherent:
- *
- *  - The ground envelope is NOT applied. `ceil` is the floor a road at grade
- *    must stay above, and a tunnel is defined by going under it.
- *  - The gradient envelope runs the other way. `gradeEnvelope` only ever raises,
- *    which is right for keeping a road clear of the ground and wrong here: a
- *    step that is too steep on a descent has to be fixed by LOWERING the higher
- *    sample, or the fix undoes the tunnel.
- *
- * Where the span is too short to hold both ramps at the design gradient the
- * floor is raised until they fit — the same concession `solveRaised` makes — so
- * a short segment becomes an open cutting rather than a cliff. That is honest:
- * the terrain only closes over the road where there is real cover, so a trench
- * that never got deep enough is drawn as the trench it is.
- */
+/** A tunnel: a flat floor below the ground, with a ramp up to each end. */
 function solveSunken(
   profile: Profile,
   nodeHeight: Map<NodeId, number>,
@@ -1623,9 +1064,7 @@ function solveSunken(
     const back = run - along;
     const down = rampA <= 0 ? floor : hA + (floor - hA) * ease(along / rampA);
     const up = rampB <= 0 ? floor : hB + (floor - hB) * ease(back / rampB);
-    // The HIGHER of the two ends wins, for the reason the raised solver takes
-    // the lower: at the end that climbs out, the other ramp is already at full
-    // depth, and taking the deeper one cancelled the climb.
+    // The HIGHER of the two ends wins, for the reason the raised solver takes the lower
     h[i] = Math.max(down, up);
   }
   descentEnvelope(h, step, TUNNEL_GRADE);
@@ -1649,13 +1088,7 @@ function flattenPlates(profile: Profile, hA: number, hB: number): void {
   }
 }
 
-/**
- * Raises samples until no step between them exceeds the gradient.
- *
- * Raise-only, so a profile that already cleared the ground still clears it.
- * Both directions, repeated, because raising a sample can make its other
- * neighbour too steep. Plates are raised as a block so they stay flat.
- */
+/** Raises samples until no step between them exceeds the gradient. */
 function gradeEnvelope(h: number[], step: number, grade: number): void {
   const limit = grade * step;
   for (let pass = 0; pass < 4; pass++) {
@@ -1664,12 +1097,7 @@ function gradeEnvelope(h: number[], step: number, grade: number): void {
   }
 }
 
-/**
- * Lowers samples until no step between them exceeds the gradient.
- *
- * The mirror of `gradeEnvelope`: lower-only, so a tunnel that already has its
- * cover keeps it.
- */
+/** Lowers samples until no step between them exceeds the gradient. */
 function descentEnvelope(h: number[], step: number, grade: number): void {
   const limit = grade * step;
   for (let pass = 0; pass < 4; pass++) {
@@ -1678,14 +1106,7 @@ function descentEnvelope(h: number[], step: number, grade: number): void {
   }
 }
 
-/**
- * A moving average over a fixed length of road, in place.
- *
- * Symmetric and clamped at the ends, so the profile does not sag towards zero
- * where the window runs off the segment. This is the whole of what makes a road
- * "designed" rather than "draped": everything shorter than the window is earth
- * to be moved, everything longer than it is landscape to be followed.
- */
+/** A moving average over a fixed length of road, in place. */
 function smoothProfile(values: number[], step: number, reach: number): void {
   const radius = Math.max(1, Math.round(reach / Math.max(1e-3, step)));
   if (values.length < 3) return;
@@ -1701,15 +1122,7 @@ function smoothProfile(values: number[], step: number, reach: number): void {
   }
 }
 
-/**
- * Limits the gradient between neighbouring stations, in BOTH directions.
- *
- * `gradeEnvelope` only ever raises, which is right for a profile that must stay
- * above the ground and wrong for one that is allowed to cut into it: raising to
- * fix a descent would undo the cut. Clamping each sample against both of its
- * neighbours, alternating direction, settles on a profile within the gradient
- * that stays as close to the input as the limit allows.
- */
+/** Limits the gradient between neighbouring stations, in BOTH directions. */
 function slopeLimit(h: number[], step: number, grade: number): void {
   const limit = grade * Math.max(1e-3, step);
   for (let pass = 0; pass < 6; pass++) {

@@ -15,33 +15,7 @@ import { m } from '@world/units';
 import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
 import { trianglesOf } from './propGeometry';
 
-/**
- * INSTANCES KEPT THING BY THING: a layer of instanced meshes spread over the
- * whole map (the street furniture, the street plants, the long grass) in
- * which every thing - one placed item - holds a RUN of slots in each mesh it
- * draws into. A thing changed or gone leaves its runs dead (never drawn)
- * and its new ones are appended; a store half dead is packed again, a store
- * full grows into a new mesh of twice the room. An edit pays for the things
- * it reached, never for the map: the layer used to be built again, every
- * instance of the town, at every bench placed and every road drawn near one.
- *
- * Fixed capacity and a live count, a new mesh only to grow (threejs.org,
- * InstancedMesh: "count ... the number of rendered instances"; three's GPU
- * buffer is made at the array's size, `WebGLAttributes.createBuffer`), and
- * only the slots a cull writes go to the GPU (`BufferAttribute.addUpdateRange`).
- * The same design as the buildings' gardens (`gardens.ts`, which keeps a run
- * per garden list): DO NOT go back to building the whole layer again for one
- * thing that changed.
- *
- * Culled by the cells of the ground: every slot sits in a leaf of a sparse
- * quadtree, and the cull walks it from its roots with the plane masks of
- * bvh.js `BVH.frustumCulling` (what InstancedMesh2 culls with): a node out of
- * view is dropped with all it holds, a node wholly in view is taken without
- * testing anything under it, only the leaves across the view's edge test
- * their slots one by one. Only the stores drawn this frame are culled (a
- * hidden store is culled when it is shown, for that frame's view).
- * DO NOT go back to a pass over every instance of the town per camera move.
- */
+/** The same design as the buildings' gardens (`gardens.ts`, which keeps a run per garden list) */
 
 /** One mesh of the layer: a model, its material, how it is drawn. */
 export interface RunStore {
@@ -134,11 +108,7 @@ export interface InstanceRuns {
   update(change: RunChange): void;
   /** The map zoom: the leaf cards are left out, neither culled nor drawn. Only a change of mode does anything. */
   setMap(map: boolean): void;
-  /**
-   * Keeps the instances of each shown store the camera can see, or see the
-   * margin round. `view` is the camera's projection times its inverse world
-   * matrix: a store already culled for it is left as it is.
-   */
+  /** Keeps the instances of each shown store the camera can see, or see the margin round. */
   cull(frustum: Frustum, view: Matrix4): void;
   dispose(): void;
 }
@@ -190,12 +160,7 @@ const ALL_PLANES = 0b111111;
 /** Integer cell coordinates as one key (exact while |cell| < 2^24). */
 const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
 
-/**
- * A store's mesh of `capacity` slots, none drawn: as the layer draws it - its
- * program's variant (instanced, with instance colours or not) and its shadow's
- * depth material. What compiles a layer's programs ahead makes its meshes here
- * (`warmMeshes`), so they are the variants the layer draws.
- */
+/** A store's mesh of `capacity` slots, none drawn: as the layer draws it - its program's variant */
 function runMesh(spec: RunStore, capacity: number): InstancedMesh {
   const mesh = new InstancedMesh(spec.geometry, spec.material, capacity);
   mesh.name = spec.name;
@@ -215,13 +180,7 @@ function runMesh(spec: RunStore, capacity: number): InstancedMesh {
   return mesh;
 }
 
-/**
- * Meshes of each of these stores, one slot each, as the layer draws them: what
- * compiles the layer's programs ahead (`uploads.ts` compileAhead) is handed
- * these. A store's mesh was made the first time a thing of it came, and its
- * program built in the frame it was first drawn (`getProgramInfoLog`, 377 ms
- * in the frame a generated city's furniture stood, 2026-10-15).
- */
+/** Meshes of each of these stores, one slot each, as the layer draws them: what compiles the layer's programs ahead */
 export function warmMeshes(specs: readonly RunStore[]): InstancedMesh[] {
   return specs.map((spec) => {
     const mesh = runMesh(spec, 1);
@@ -230,10 +189,7 @@ export function warmMeshes(specs: readonly RunStore[]): InstancedMesh[] {
   });
 }
 
-/**
- * The layer over these stores. `margin`: how far outside the view an
- * instance is still drawn (the longest shadow it throws into the picture).
- */
+/** The layer over these stores. */
 export function createInstanceRuns(name: string, specs: readonly RunStore[], margin: number): InstanceRuns {
   const group = new Group();
   group.name = name;
@@ -367,13 +323,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
   const drawnNow = (s: Store): boolean => !(s.spec.cards && mapMode === true);
   const probe = new Sphere();
   let cullFrustum: Frustum | null = null;
-  /**
-   * The node and what it holds against the planes of `mask` still unsettled
-   * for it (0: wholly in view, nothing under it tested). A node's sphere
-   * holds its slots' spheres, so a node out of view by the margin has every
-   * slot out by it, and one in view by it has every slot in: the slots kept
-   * are exactly those the per-slot test keeps.
-   */
+  /** The node and what it holds against the planes of `mask` still unsettled for it */
   const visit = (node: CellNode, mask: number): void => {
     if (node.r < 0) return;
     let inner = mask;
@@ -466,10 +416,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
             group.add(s.mesh);
           }
         }
-        // What the GPU buffer holds is unknown only where the slots moved (a
-        // repack) or the buffer is new: there the next cull writes every
-        // position it draws. DO NOT forget every store's positions at every
-        // edit: one thing more sent every instance in view to the GPU again.
+        // DO NOT forget every store's positions at every edit: one thing more sent every instance in view to the GPU again.
         if (moved || was !== s.mesh) {
           if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
           s.shown.fill(-1);
@@ -495,9 +442,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
         culledFor = (culledFor ?? new Matrix4()).copy(view);
         for (const s of stores) s.current = false;
       }
-      // Only the stores drawn this frame: one hidden (zoomed out past the
-      // props, the leaves at map zoom) is culled when it is shown again, for
-      // the view of that frame. DO NOT cull every store at every move whatever is shown.
+      // DO NOT cull every store at every move whatever is shown.
       let any = false;
       for (const s of stores) {
         s.active = s.mesh !== null && !s.current && s.mesh.visible && drawnNow(s);

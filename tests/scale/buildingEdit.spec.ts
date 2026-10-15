@@ -17,19 +17,7 @@ import { type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSol
 import { siteGrading } from '@world/buildings/siteGrading';
 import { gardenLists } from '@render/gardenLists';
 
-/**
- * ONE MORE BUILDING COSTS THE SAME IN A SMALL TOWN AND A LARGE ONE (the same
- * rule as `edit.spec.ts` for a road): a town of 16 buildings and one of 64,
- * one building added beside each, and what each derived product read of the
- * town's buildings to take it in. Counted as incremental engines track their
- * inputs (Salsa logs every query it re-executes after an input changes): each
- * building `all()` hands out, each `has` and `get`, by the product reading.
- *
- * Products that still read the whole town for one building are listed in
- * `baseline.json` under `building+1:` with the ratio measured (large /
- * small): one NOT listed must not grow with the town, and a listed ratio may
- * only fall (each is brought to 1 and taken out).
- */
+/** ONE MORE BUILDING COSTS THE SAME IN A SMALL TOWN AND A LARGE ONE (the same rule as `edit.spec.ts` for a road) */
 const SPACING = m(60);
 
 /** A blueprint's building at a place of the grid; `planted`: with a tree in its garden. */
@@ -94,11 +82,7 @@ function groundSince(doc: RoadDoc): GroundSince {
   };
 }
 
-/**
- * A thing drawn on the ground: built again only when its own key changes or
- * the ground changes under its area. `stale` says whether to build it now,
- * and takes the build as done when it says so.
- */
+/** A thing drawn on the ground: built again only when its own key changes or the ground changes under its area. */
 class GroundDependant {
   private key: string | null = null;
   private seen = -1;
@@ -116,13 +100,7 @@ class GroundDependant {
 /** The box a building's bank reaches, as the renderer's `bankBox` (a square round it here). */
 const bankBox = (b: Building): Rect => [b.x - m(40), b.y - m(40), b.x + m(40), b.y + m(40)];
 
-/**
- * A thing standing on the ground under the whole town (the walls, the
- * transport, the gardens: `renderer.ts` `onGround`), reading the diary as the
- * renderer does: built again when a change of the ground since the serial of
- * the last one it saw reaches it. What it costs a frame: the entries the
- * diary looked at, and the whole town when it is built again.
- */
+/** A thing standing on the ground under the whole town */
 function groundReader(doc: RoadDoc, area: Rect): () => number {
   const dependant = new GroundDependant(groundRecord(doc));
   return () => {
@@ -141,17 +119,13 @@ function addWork(n: number): Record<string, number> {
   // Built on the town as it stands: the serial of the ground it saw is the opening's.
   const ground = groundReader(doc, [-SPACING, -SPACING, (side + 2) * SPACING, (side + 2) * SPACING]);
   ground();
-  // The simulation's products of the buildings: the bays the parked cars
-  // stand in (`agents/parking.ts`, read by the scenery and the lots'
-  // traffic) and the yards' neighbours (`agents/lorryDocks.ts`).
+  // The simulation's products of the buildings: the bays the parked cars stand in
   const net = new Network(doc);
   net.rebuild();
   const w = new SimWorld(doc, net, 0x5ca1e);
   collectBays(w);
   const yards = yardNeighbours(w, null);
-  // The renderer's products of the buildings, out of it in modules of their
-  // own: the camera's solids (`cameraSolids.ts`), the sites graded and the
-  // town's platforms (`siteGrading.ts`), the gardens' plants (`gardenLists.ts`).
+  // The renderer's products of the buildings, out of it in modules of their own: the camera's solids
   const solids = cameraSolidsKeeper(() => 0, bankBox, m(40));
   const solidsGround = groundSince(doc);
   solids.follow(doc.buildings, solidsGround);
@@ -159,8 +133,7 @@ function addWork(n: number): Record<string, number> {
   const sites = siteGrading(flat, undefined, m(9.6), bankBox);
   sites.changedSites(doc.buildings);
   sites.rebuild(doc.buildings);
-  // The gardens on a town of the same buildings with a tree in each garden:
-  // with none, nothing is ever planted and the gardens read only their key.
+  // The gardens on a town of the same buildings with a tree in each garden
   const garden = town(n, true);
   const plants = gardenLists(groundRecord(garden.doc), bankBox, () => []);
   plants.update(garden.doc.buildings, true);
@@ -181,14 +154,11 @@ function addWork(n: number): Record<string, number> {
     layer: layerReads,
     bays: work(() => collectBays(w)),
     yards: work(() => yardNeighbours(w, yards)),
-    // As the renderer asks them a frame (`draw`): the solids filed again when
-    // the camera asks; the sites that changed graded, the town's platforms
-    // put together again for the ground's shaping (`shapeGround`, sites).
+    // As the renderer asks them a frame (`draw`): the solids filed again when the camera asks
     solids: work(() => { if (solids.follow(doc.buildings, solidsGround)) solids.solids(); }),
     pads: work(() => { if (sites.changedSites(doc.buildings)) sites.rebuild(doc.buildings); }),
     gardens: workOf(garden.reads, () => plants.update(garden.doc.buildings, true)),
-    // The frame after it, and the next one with nothing new: a building is
-    // no change of the ground, and neither should cost more in a larger town.
+    // The frame after it, and the next one with nothing new
     ground: ground(),
     'ground:idle': ground(),
   };

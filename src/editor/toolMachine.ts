@@ -1,20 +1,4 @@
-/**
- * THE TOOL IN HAND as a state machine (docs/ARCHITECTURE.md 4.2,
- * `core/statechart.ts`): the only way the tool changes.
- * - Each tool is a state; the road tools (draw, upgrade, split, control, move,
- *   roundabout) are the children of `roads`, which is what the Roads button
- *   and the road key hold. `inspect` is the free hand: nothing in hand, a click
- *   inspects what it hits.
- * - `pick(tool)` takes a tool in hand (a panel's own choice, a road class key).
- * - `toggle(tool)` is a tool button or key: it takes the tool, or puts it down
- *   when that tool (or, for `road`, any road tool) is already in hand. Before
- *   this machine the rule was a function in `main.ts` (`pickTool`) and the
- *   road family a list (`heldTool`); here it is one transition each, which a
- *   test walks.
- * - `putDown`: the free hand, and whatever Inspect had picked is let go.
- * Entering a state takes that tool (`ToolHands.take`); the boot's entry takes
- * nothing, the store already holds the starting tool.
- */
+/** THE TOOL IN HAND as a state machine (`core/statechart.ts`): the only way the tool changes. */
 import { Machine, type StateSpec, type TransitionRecord } from '@core/statechart';
 
 export type Tool =
@@ -86,8 +70,7 @@ export function createToolMachine(start: Tool, hands: ToolHands, now?: () => num
       parent: road ? 'roads' : 'hand',
       // The boot enters with no event: the store already holds the tool.
       entry: (e) => { if (e) hands.take(tool); },
-      // The free hand put down again only lets go of what it picked; another
-      // tool's button pressed twice puts that tool down.
+      // The free hand put down again only lets go of what it picked; another tool's button pressed twice puts that tool down.
       on: tool === 'inspect'
         ? { putDown: [{ actions: () => hands.letGo() }], toggle: [{ guard: (e) => e.type === 'toggle' && e.tool === 'inspect', actions: () => hands.letGo() }] }
         : road ? {} : { toggle: [{ guard: (e) => e.type === 'toggle' && e.tool === tool, ...putDown }] },

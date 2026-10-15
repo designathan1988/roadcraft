@@ -1,17 +1,4 @@
-/**
- * THE SURGICAL PROFILER: what each frame disposed of, built and uploaded,
- * who called it, and how the heap moved - counted where it happens, shown
- * live by the HUD (`ui/profilerHud.ts`), dumped as JSON by
- * `__roadcraft.profiler()`.
- *
- * Counts are exact; call sites are read from a stack (`new Error().stack`),
- * which costs microseconds each: every call of the first `SITES_EXACT` of a
- * frame, then one in `SITE_STRIDE`, scaled back up - so a frame disposing
- * of ten thousand geometries is not slowed tenfold by being watched.
- *
- * Pure: no three, no DOM. The hooks into three and WebGL are in
- * `render/profilerHooks.ts`.
- */
+/** THE SURGICAL PROFILER: what each frame disposed of, built and uploaded, who called it, and how the heap moved */
 
 /** What is counted. */
 export type ProfiledEvent =

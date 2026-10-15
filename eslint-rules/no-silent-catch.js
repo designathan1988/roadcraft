@@ -1,15 +1,4 @@
-/**
- * NO ERROR SWALLOWED (CLAUDE.md: "Never silence errors"). A `catch` clause, or
- * a promise's `.catch(handler)`, must throw again or report: `no-empty` lets a
- * block holding only a comment through (ESLint docs: "This rule ignores block
- * statements which contain a comment"), and a `catch { /* not kept *\/ }` is how
- * the cooked people went unloaded for weeks at the SOURCE (PL53).
- *
- * Reporting is a call whose name says so: `console.error`/`console.warn`, a
- * function or method named report*, record*, warn*, error*, fail*, reject*,
- * notify*, or `queueMicrotask` (the pattern that throws again outside the
- * current task). A `throw` anywhere in the handler counts.
- */
+/** NO ERROR SWALLOWED (CLAUDE.md: "Never silence errors"). */
 const REPORTS = /^(report|record|warn|error|fail|reject|notify|onError|onSaveFailed)/i;
 
 function calleeName(callee) {

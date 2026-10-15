@@ -25,15 +25,7 @@ import {
   volumeTop,
 } from './types';
 
-/**
- * Free parts of a building.
- *
- * Every element is a box of the building's local frame (`BuildingElement`),
- * so collisions with the volumes are exact box tests, and it snaps to what it
- * is put against: a canopy over the bay it is put on, a stair or a ramp from
- * that bay's floor down to the ground, a pillar on a bay line, a wall or a
- * slab on the grid.
- */
+/** Free parts of a building. */
 
 /** A ramp's slope: one in twelve, the usual limit for a wheelchair ramp. */
 const RAMP_RUN_PER_RISE = 12;
@@ -72,12 +64,7 @@ export const ELEMENT_DEFAULTS: Readonly<Record<ElementKind, readonly [number, nu
 /** Parts hung on a facade rather than standing on the ground. */
 export const ON_FACADE: ReadonlySet<ElementKind> = new Set<ElementKind>(['canopy', 'ac', 'awning', 'clock']);
 
-/**
- * Parts that dress a lot rather than raise a building. They may stand on the
- * paving - a footpath beside the kerb, a fence along the frontage, a tree pit
- * on the pavement - so they are not footprint: the road tests ignore them and
- * a road drawn over one does not condemn the building.
- */
+/** Parts that dress a lot rather than raise a building. */
 const GROUND_DRESSING: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'pavement',
   'fence',
@@ -97,12 +84,7 @@ const GROUND_DRESSING: ReadonlySet<ElementKind> = new Set<ElementKind>([
 /** Whether an element's foot stands on the ground (rather than on a floor, or hung on a wall). */
 export const onGround = (e: BuildingElement): boolean => e.z <= EPS && !ON_FACADE.has(e.kind);
 
-/**
- * Parts that stand on the land itself and follow it: on a slope each is laid
- * on the ground under it, never at the building's floor. A wall, a fence, a
- * hedge or a path long enough to cross a slope goes in steps (`followPieces`),
- * the way a real fence is stepped down a hillside.
- */
+/** Parts that stand on the land itself and follow it */
 export const FOLLOWS_GROUND: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'wall', 'fence', 'railing', 'pavement', 'hedge', 'bin', 'lamp', 'bollard', 'drain', 'planter', 'bench', 'rocks',
   'flowers', 'shrub', 'tree', 'gate',
@@ -167,15 +149,10 @@ export function elementClash(b: Building, e: BuildingElement): Volume | null {
   for (const v of b.volumes) {
     // A lot is ground to stand things on, and a cut or a clip is no mass.
     if (v.open || v.mode === 'void' || v.mode === 'intersect') continue;
-    // Its own heights (a block at a floor of its own, `Volume.lift`); a block
-    // on the ground is solid from the ground floor's level down - a raised
-    // block's foundation wall retains the earth under it.
+    // Its own heights (a block at a floor of its own, `Volume.lift`)
     const vz0 = v.base === 0 ? Math.min(0, volumeLift(v)) : volumeElevation(b, v, v.base);
     const vz1 = volumeElevation(b, v, volumeTop(v));
-    // A canopy, an awning or a unit hangs ON the wall: its back meets the
-    // face, and on a face that is not square to the frame its box cuts a
-    // corner of the wall. What matters is that it hangs outside - its centre
-    // is not inside the mass. Tested as boxes, every one was refused.
+    // A canopy, an awning or a unit hangs ON the wall
     if (ON_FACADE.has(e.kind)) {
       if (z0 < vz1 - EPS && vz0 < z1 - EPS && pointInPolygon({ x: e.x, y: e.y }, localFootprint(v))) return v;
       continue;
@@ -187,18 +164,7 @@ export function elementClash(b: Building, e: BuildingElement): Volume | null {
   return null;
 }
 
-/**
- * The parts nothing holds up: a carport roof whose posts were refused, a
- * pergola whose posts a retaining wall cleared, a trampoline drawn without
- * legs. A part stands when it is on the land (at the floor's level, laid on
- * the ground as it goes, or on the terrace under it), when it is held by the
- * building itself (hung on a wall, laid on a roof), or when it rests on,
- * hangs from or is tied to parts that stand, with its centre over what
- * touches it: the horizontal member is held up by the vertical ones (post and
- * lintel), and a body is still only while its centre of mass lies over the
- * convex hull of its contacts (its support polygon). Worked up from the
- * ground until nothing more is held; whatever is left is the answer, by id.
- */
+/** The parts nothing holds up: a carport roof whose posts were refused, a pergola whose posts a retaining wall cleared */
 export function unsupportedElements(b: Building): Set<number> {
   const els = b.elements ?? [];
   const out = new Set<number>();
@@ -210,11 +176,7 @@ export function unsupportedElements(b: Building): Set<number> {
     [{ x: x0! - grow, y: y0! - grow }, { x: x1! + grow, y: y0! - grow }, { x: x1! + grow, y: y1! + grow }, { x: x0! - grow, y: y1! + grow }];
   const onLand = (e: BuildingElement): boolean => {
     if (onGround(e) || FOLLOWS_GROUND.has(e.kind)) return true;
-    // On a terrace (an open block raised or lowered with the slope) it
-    // touches at its own base: a flight between two platforms stands on the
-    // lower one by its foot while its middle is over the higher one (asked
-    // under its centre alone, every flight of a split-level yard was taken
-    // for a part in the air and removed).
+    // On a terrace (an open block raised or lowered with the slope) it touches at its own base
     const box = square(rects.get(e.id)!, tol);
     for (const v of b.volumes) {
       if (!v.open || v.terrace === undefined) continue;
@@ -222,8 +184,7 @@ export function unsupportedElements(b: Building): Set<number> {
     }
     return false;
   };
-  // Hung on the building's wall, or laid on one of its roofs or floors: its
-  // box, a hand's breadth larger, meets a mass across the height it stands at.
+  // Hung on the building's wall, or laid on one of its roofs or floors
   const heldByMass = (e: BuildingElement): boolean => {
     const box = square(rects.get(e.id)!, m(0.3));
     for (const v of masses) {
@@ -244,9 +205,7 @@ export function unsupportedElements(b: Building): Set<number> {
       const contacts: Vec2[] = [];
       for (const s of els) {
         if (s === e || !held.has(s.id)) continue;
-        // Touching across a height they share: under it (its top at e's
-        // underside), over it (e hangs from it) or beside it (a line tied to
-        // the side of a post).
+        // Touching across a height they share: under it (its top at e's underside), over it (e hangs from it) or beside it
         if (s.z > e.z + e.h + tol || e.z > s.z + s.h + tol) continue;
         const [sx0, sy0, sx1, sy1] = rects.get(s.id)!;
         const ix0 = Math.max(ex0, sx0), iy0 = Math.max(ey0, sy0), ix1 = Math.min(ex1, sx1), iy1 = Math.min(ey1, sy1);
@@ -262,14 +221,7 @@ export function unsupportedElements(b: Building): Set<number> {
   return out;
 }
 
-/**
- * The objects a lot's parts make: parts that touch (by the same contact
- * `unsupportedElements` reads) are one thing - a table and its post, a
- * carport's roof and its four posts, two crates stacked - and are laid on
- * the land as one (`render/buildings/buildingMesh.ts` `emitLots`). Parts laid
- * on the ground as they go (`FOLLOWS_GROUND`) are each their own. Returns a
- * group number by element id.
- */
+/** The objects a lot's parts make: parts that touch (by the same contact `unsupportedElements` reads) are one thing */
 export function partGroups(b: Building): Map<number, number> {
   const els = (b.elements ?? []).filter((e) => !FOLLOWS_GROUND.has(e.kind));
   const tol = m(0.05);
@@ -310,16 +262,11 @@ export interface BayRef {
 
 const snap = (v: number, step = GRID): number => Math.round(v / step) * step;
 
-/**
- * Candidate placements of an element of `kind` against a picked bay, best
- * first. The caller keeps the first one that validates - so a stair that has
- * no room to run straight out from the facade turns and runs along it.
- */
+/** Candidate placements of an element of `kind` against a picked bay, best first. */
 export function elementsAgainstBay(b: Building, v: Volume, bay: BayRef, kind: ElementKind): Omit<BuildingElement, 'id'>[] {
   const made = elementsAgainstBayAxis(b, v, bay, kind);
   if (!ON_FACADE.has(kind)) return made;
-  // Hung on a face that is not square to the frame, it is turned to lie flat
-  // on the wall rather than standing at a corner of it.
+  // Hung on a face that is not square to the frame
   const frame = edgeFrame(v, bay.side);
   return made.map((e) => {
     const fn = FACING_NORMAL[e.facing];
@@ -410,8 +357,7 @@ function elementsAgainstBayAxis(b: Building, v: Volume, bay: BayRef, kind: Eleme
       return [{ kind, x: c.x, y: c.y, facing, w: Math.max(width * 2, dw), d: run, z: 0, h: dh }];
     }
     case 'pavement': {
-      // A paved apron on the ground in front of the bay: its depth runs out
-      // from the wall, its width along it.
+      // A paved apron on the ground in front of the bay: its depth runs out from the wall, its width along it.
       const run = Math.max(dd, m(3));
       const c = at(along, run / 2);
       return [{ kind, x: c.x, y: c.y, facing, w: Math.max(width, dw), d: run, z: 0, h: dh }];
@@ -479,11 +425,7 @@ const MEET = m(0.03);
 const TRUNK = m(0.4);
 const CROWN_FROM = 0.35;
 
-/**
- * The yard's earthworks - a flight, a ramp, a retaining wall in its stone:
- * shaped with the land, they meet each other and the boundary by design (a
- * flight through its retaining wall), and dressing gives way to them.
- */
+/** The yard's earthworks - a flight, a ramp, a retaining wall in its stone */
 function isEarthwork(e: BuildingElement): boolean {
   return e.kind === 'stair' || e.kind === 'ramp' || (e.kind === 'slab' && isRetainingStone(e.material));
 }
@@ -524,25 +466,13 @@ const planReach = (e: BuildingElement): number => Math.hypot(Math.max(e.w, TRUNK
 /** Heights running into each other by more than a contact (a flush joint of two plates is a contact). */
 const heightsMeet = (a0: number, a1: number, b0: number, b1: number): boolean => Math.min(a1, b1) - Math.max(a0, b0) > MEET + m(0.001);
 
-/**
- * Whether two parts of a lot stand in each other (Etapa 5a): a bench in a
- * bench, a bin in the rocks, a shed's roof through a tree's crown. A part's
- * footprint is its own, as in The Sims' placement: nothing solid shares it,
- * and only what stands ON something - a surface, a joint of the boundary -
- * meets it by design. A tree is its trunk to the ground and its crown above:
- * planting grows under the crown, a roof does not go through it.
- */
+/** Whether two parts of a lot stand in each other (Etapa 5a) */
 export function elementsMeet(a: BuildingElement, b: BuildingElement): boolean {
-  // Apart for any turn: the circles round their footprints do not meet (each
-  // footprint below - a trunk's `TRUNK` square, a crown's - within it). Most
-  // pairs of a lot, answered before any footprint is made: a lot furnished
-  // asked every part against every part laid, 2.8 s of a city's growth
-  // (2026-10-15).
+  // Apart for any turn: the circles round their footprints do not meet
   if (Math.hypot(b.x - a.x, b.y - a.y) > planReach(a) + planReach(b)) return false;
   if (SURFACE_KINDS.has(a.kind) || SURFACE_KINDS.has(b.kind)) return false;
   if (isStructure(a) && isStructure(b)) return false;
-  // A plant against a thin run of the boundary grows through it (a shrub
-  // through a fence); a shed or a cabinet (a `wall` box) is no run.
+  // A plant against a thin run of the boundary grows through it (a shrub through a fence); a shed or a cabinet
   const thinRun = (e: BuildingElement): boolean => (e.kind === 'wall' || e.kind === 'fence' || e.kind === 'railing') && Math.min(e.w, e.d) <= m(0.3);
   if ((PLANT_KINDS.has(a.kind) && thinRun(b)) || (PLANT_KINDS.has(b.kind) && thinRun(a))) return false;
   // Foliage into foliage: a shrub grown into a hedge.

@@ -6,18 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { EN } from '@ui/i18n/en';
 import { PT_BR } from '@ui/i18n/pt-BR';
 
-/**
- * THE OLD INTERFACE IS GONE, AND EVERYTHING IT DID IS IN THE NEW ONE
- * (docs/source/PLANO.md 5g, "interface v2 sem a antiga").
- *
- * The old interface's markup and code left in 5g (a268a2ff); what it left
- * behind was its styling (rules for a top bar, a toolbar, palettes, a status
- * bar, a minimap, the Builder's own bars), its words, and a few hooks only it
- * listened to. A rule that needs a class or an id no code or page makes can
- * never match: none may be left. And each thing the old interface could do -
- * its controls, read off its last index.html - has its control in the v2
- * shell (`ui/v2/shell.ts`) or in the game's commands it is handed.
- */
+/** THE OLD INTERFACE IS GONE, AND EVERYTHING IT DID IS IN THE NEW ONE */
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
@@ -56,12 +45,7 @@ function selectorsOf(css: string): string[] {
   block(false);
   return out;
 }
-/**
- * The words that can be a class or an id: those inside the code's strings
- * (quoted, templated) and the pages' attribute values - not identifiers: a
- * class named like a variable (`tool`, `hint`) is alive only if a string
- * carries it.
- */
+/** The words that can be a class or an id: those inside the code's strings */
 const words = new Set<string>();
 for (const m of corpus.matchAll(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g)) {
   for (const w of m[0].split(/[^\w-]+/)) if (w) words.add(w);

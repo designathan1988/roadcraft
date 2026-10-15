@@ -12,29 +12,7 @@ const HORIZON = 24;
 /** Bounded network lookahead used when comparing alternate turns. */
 const LOOKAHEAD = 5;
 
-/**
- * THE LANES A BODY CAN NEVER LEAVE (a trap): every way on from them, however
- * far, ends at a movement too tight for it, never at a road off the map nor
- * in a loop it can keep driving. SUMO calls such edges "disconnected" for the
- * vehicle class and its router never routes over them; here the search looked
- * only five lanes ahead, so a car took a street whose way out lay six lanes
- * on through a bend no car fits, and stood at the end of its route for good,
- * the street queued behind it (defects.spec, player-city, 75 s at a junction).
- *
- * Worked out by peeling (SUMO's "disconnected" edges, by their complement):
- * a lane with exits none of whose movements the body fits is a trap (a SEED),
- * and so is a lane whose every movement it fits leads into traps; a road off
- * the map (no exits) never is, and what stays reaches one or a cycle it can
- * keep driving round. The peel walks back from the seeds only, over the
- * movements into each trap (its junction's connectors): its work is the
- * trapped region's, however big the town. A lane is a seed or not by its own
- * exits, so the seeds are kept by what each edit changed
- * (`SimWorld.topologyLog`): the lanes it made and the lanes into the
- * junctions it built again. DO NOT go back to the reverse edges of every lane
- * of the map built for each topology: every road drawn walked the town's
- * lanes again (`tests/scale/edit.spec.ts`, x15 between a small map and a
- * large one).
- */
+/** DO NOT go back to the reverse edges of every lane of the map built for each topology */
 class TrapIndex {
   /** Per body class asked for: the seeds, and the traps peeled from them (null: to peel again). */
   private readonly bodies = new Map<number, { readonly seeds: Set<LaneletId>; traps: ReadonlySet<LaneletId> | null }>();
@@ -70,10 +48,7 @@ class TrapIndex {
   }
 }
 
-/**
- * Every lane with exits none of which this body fits.
- * @rebuild A body class asked for the first time on this graph: every lane looked at once.
- */
+/** @rebuild Every lane with exits none of which this body fits. */
 function seedsOf(w: SimWorld, body: number): Set<LaneletId> {
   const seeds = new Set<LaneletId>();
   for (const lane of w.graph.lanelets.values()) {
@@ -127,29 +102,12 @@ export function trapLanes(w: SimWorld, body: number): ReadonlySet<LaneletId> {
   return index.traps(w, body);
 }
 
-/**
- * Route planning over the lanelet graph. Spawned vehicles normally follow a
- * reachable boundary destination (`destination.ts`); the local planner below
- * is the fallback for a disconnected map or a destination invalidated by an
- * edit.
- *
- * Routes are stored as a LANELET sequence that already contains the connectors,
- * so lookahead across a junction needs no special case anywhere else in the
- * engine.
- *
- * The hard invariant this module upholds: a vehicle ALWAYS has a route with at
- * least one lanelet. When planning fails it falls back to any legal exit, and
- * only when there is genuinely nowhere to go does the vehicle stop and despawn.
- * That is what removes the V6 monolith's silent freeze, where a stale next-edge
- * key left a vehicle pinned on a green with no recovery path (defect 2.1).
- */
+/** Route planning over the lanelet graph. */
 export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
   const body = bodyClassOfArchetype(v.archetype);
   const shape = v.archetype.shape;
   if (v.destination && w.lanelet(v.lanelet)?.kind === 'link') {
-    // The trip is planned over the whole carriageway, lane changes
-    // included (`drive/tactical.ts`), so the lane the car is in never decides
-    // which way it can go.
+    // The trip is planned over the whole carriageway, lane changes included
     const plan = planTrip(w, v.lanelet, v.s, v.destination, body, true, shape);
     if (plan) {
       v.desiredLane = plan.changeTo;
@@ -160,8 +118,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
         return plan.route[1]!;
       }
       if (plan.changeTo) {
-        // No way on from this lane towards the goal: whatever exit it has is
-        // the route until the change lands, and the change stays wanted.
+        // No way on from this lane towards the goal
         const own = w.graph.exitsOf(v.lanelet).filter((id) => (w.connector(id)?.maxBodyClass ?? -1) >= body);
         const pick = own.length ? chooseExit(w, own, body, new Set([v.lanelet]), shape) : null;
         const conn = pick ? w.connector(pick) : undefined;
@@ -182,23 +139,13 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
       v.desiredLane = null;
       return first.id;
     }
-    // A live edit may disconnect the original destination. Keep the vehicle
-    // moving on legal roads until a reachable trip can be assigned again.
+    // A live edit may disconnect the original destination.
     if (!trip) v.destination = null;
   }
   const own = w.graph.exitsOf(v.lanelet).filter((id) => (w.connector(id)?.maxBodyClass ?? -1) >= body &&
     w.graph.laneUsable(w.connector(id)!.toLane, shape));
 
-  // Lane discipline makes each turn legal from exactly one lane, so the choice
-  // of MOVEMENT has to be made over the whole carriageway and the choice of
-  // LANE has to follow it. Planning only over this lane's own exits would make
-  // a right turn permanently invisible to anyone in an inner lane.
-  //
-  // This is the ONLY place a lane-change desire is born. A vehicle whose route
-  // is already settled never acquires one, so nothing re-decides underneath a
-  // driver who has a plan — that oscillation is what makes discretionary lane
-  // changing unshippable.
-  // Only lanes it may change into: across dashed lines, not into a bus lane (docs/VIAS.md V4).
+  // Lane discipline makes each turn legal from exactly one lane
   const siblings = w.graph.changeTargets(v.lanelet, shape);
   const union = siblings.length
     ? [...own, ...siblings.flatMap((id: LaneletId) => w.graph.exitsOf(id))]
@@ -219,9 +166,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
     v.desiredLane = null;
   }
 
-  // The route itself always starts where the vehicle actually IS. If the lane
-  // change lands, `planFrom` runs again from the new lane and picks the wanted
-  // movement then; if it never lands, this fallback is what the vehicle drives.
+  // The route itself always starts where the vehicle actually IS.
   if (!own.length) return null;
   const best = wantedConnector?.fromLane === v.lanelet
     ? wantedConnector.id : chooseExit(w, own, body, new Set([v.lanelet]), shape);
@@ -245,8 +190,7 @@ export function extend(w: SimWorld, v: Vehicle): void {
     const lane = tail ? w.lanelet(tail) : undefined;
     if (lane?.kind === 'link') {
       const plan = planTrip(w, tail!, 0, v.destination, body, true, shape);
-      // A change due on the tail lane is planned when the car gets there: the
-      // route ends at that lane, runs out, and `planFrom` is asked again.
+      // A change due on the tail lane is planned when the car gets there
       if (plan) {
         if (!plan.changeTo) v.route.push(...plan.route.slice(1));
         return;
@@ -288,7 +232,7 @@ function chooseExit(
   exits: readonly string[],
   body: ReturnType<typeof bodyClassOfArchetype>,
   visited = new Set<LaneletId>(),
-  /** The vehicle's shape: a bus lane is buses only (docs/VIAS.md V4). */
+  /** The vehicle's shape: a bus lane is buses only. */
   shape = 'car',
 ): string | null {
   const scored: { id: string; cost: number }[] = [];
@@ -305,9 +249,7 @@ function chooseExit(
   if (!scored.length) return null;
   scored.sort((a, b) => a.cost - b.cost || (a.id < b.id ? -1 : 1));
 
-  // Spread the fleet only across genuinely comparable exits. Choosing the
-  // third-ranked route unconditionally used to send vehicles into a clearly
-  // saturated street even when an open alternative was already visible.
+  // Spread the fleet only across genuinely comparable exits.
   const bestCost = scored[0]!.cost;
   const tolerance = Math.max(0.5, bestCost * 0.18);
   const comparable = scored
@@ -317,10 +259,7 @@ function chooseExit(
   return pick ? pick.id : null;
 }
 
-/**
- * A small bounded search keeps the fallback moving without inventing a goal
- * it cannot reach. Normal trips use the global shortest route instead.
- */
+/** A small bounded search keeps the fallback moving without inventing a goal it cannot reach. */
 function routeCost(
   w: SimWorld,
   connectorId: LaneletId,
@@ -344,17 +283,11 @@ function routeCost(
   const next = w.graph.exitsOf(out.id);
   // The road ends: the vehicle leaves the map there.
   if (!next.length) return here;
-  // A lane it could enter and never leave: every way on is too tight for this
-  // body (SUMO's "disconnected" for its vehicle class, a gridlock it can only
-  // teleport out of). Priced as the lane it ends on, a truck took a ring of
-  // short one-way streets whose bends only cars fit, stood at the end of its
-  // route for good, and every vehicle on the ring stood behind it.
+  // A lane it could enter and never leave: every way on is too tight for this body
   if (!next.some((id) => (w.connector(id)?.maxBodyClass ?? -1) >= body)) return Infinity;
   if (remaining <= 1) return here;
 
-  // One set for the whole search, the lane added on the way down and taken
-  // out on the way back (it was not in it: checked above): a copy of the set
-  // at every node of a five-deep search was thousands of sets a decision.
+  // One set for the whole search, the lane added on the way down and taken out on the way back
   visited.add(out.id);
   let continuation = Infinity;
   for (const nextConnector of next) {
@@ -364,37 +297,16 @@ function routeCost(
     );
   }
   visited.delete(out.id);
-  // Keep the immediate choice meaningful even when a far-away branch is a
-  // marginally better fit; local congestion and speed still dominate.
+  // Keep the immediate choice meaningful even when a far-away branch is a marginally better fit
   return here + (Number.isFinite(continuation) ? continuation * 0.72 : 0);
 }
 
-/**
- * Lets a driver who has been held up look for another way round.
- *
- * The router already prices congestion — `routeCost` weighs a lane's occupancy
- * — but it only ever asked the question at a junction, when the route ran short.
- * A driver who joins the back of a queue two hundred units before the junction
- * has already committed, and will sit there however long it takes, because
- * nothing re-asks. That is what makes a jam look like a parked queue rather
- * than like traffic: real drivers reconsider.
- *
- * So a vehicle that has been crawling for longer than its own patience re-plans
- * from where it is, against the densities as they are NOW. `heldUp` is reset
- * whether or not the answer changes, which is the cooldown: without it a
- * vehicle at the front of a jam re-plans every tick and the fleet's routing
- * cost becomes proportional to how stuck it is.
- *
- * It cannot cause a vehicle to turn round or to abandon a movement it has been
- * admitted to — both are refused below — so the worst it can do is pick the
- * same exit again.
- */
+/** Lets a driver who has been held up look for another way round. */
 export function reconsiderRoute(w: SimWorld, v: Vehicle): void {
   if (v.heldUp < v.driver.patience) return;
   v.heldUp = 0;
 
-  // A granted movement is a transaction in progress; a rear still inside a
-  // junction is the same. Neither may be re-planned out from under.
+  // A granted movement is a transaction in progress; a rear still inside a junction is the same.
   if (v.admittedConnector || v.clearingConnectors.length > 0) return;
   const lane = w.lanelet(v.lanelet);
   if (!lane || lane.kind !== 'link') return;
@@ -414,9 +326,7 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
     return;
   }
 
-  // A connector has exactly one legal continuation.  Reconstruct it directly
-  // instead of asking `exitsOf`, which is intentionally defined only for link
-  // lanelets.
+  // A connector has exactly one legal continuation.
   if (current.kind === 'connector') {
     const connector = w.connector(current.id);
     const to = connector ? w.lanelet(connector.toLane) : undefined;
@@ -443,7 +353,6 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
 
   v.route = valid;
   // A bare link route is valid data but not a usable junction intention.
-  // Plan immediately so admission never has to invent an arbitrary exit.
   if (v.route.length < 2) {
     planFrom(w, v);
     return;

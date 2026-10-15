@@ -8,11 +8,7 @@ import { BODY_ENVELOPE, HEAVY } from '@world/conflictPoints';
 import { CROSSWALK_DEPTH } from '@world/approach';
 import { m } from '@world/units';
 
-/**
- * THE ZEBRA SPANS MEASURED ONLY WHERE A MOVEMENT COMES NEAR (`crossingSpans.ts` `measure`): every span
- * of every movement over every zebra of a generated city, and every approach's stop before another leg's
- * zebra, must be what asking the closest point of every sample gives (the measuring as it was, here).
- */
+/** THE ZEBRA SPANS MEASURED ONLY WHERE A MOVEMENT COMES NEAR (`crossingSpans.ts` `measure`) */
 const REACH = (BODY_ENVELOPE[HEAVY]?.width ?? 0) / 2 + m(0.9);
 function oracle(path: Polyline, crossing: Polyline, length: number): { s0: number; s1: number; along: number } | null {
   let s0 = Infinity, s1 = -Infinity, centre = Infinity;

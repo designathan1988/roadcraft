@@ -1,14 +1,6 @@
 import type { BufferAttribute, InterleavedBuffer, Object3D, Texture } from 'three';
 
-/**
- * What the scene holds in memory, counted from the scene itself, in bytes:
- * a before-and-after for a performance change in seconds, at one view, no
- * game run against an old build. `renderer.info.memory` only counts
- * geometries and textures, not their size.
- *
- * The 2026-10-14 regression (a `BatchedMesh` keeping its whole capacity on
- * the CPU, ~1 GB of the heap) shows as `geometryCpuBytes` going up.
- */
+/** What the scene holds in memory, counted from the scene itself, in bytes */
 export interface MemoryCounters {
   /** Distinct vertex and index buffers in the scene (an interleaved buffer once). */
   readonly buffers: number;
@@ -45,8 +37,7 @@ export function countMemory(root: Object3D): MemoryCounters {
     if (buffers.has(owner)) return;
     buffers.add(owner);
     const array = owner.array as (ArrayLike<number> & { byteLength?: number }) | null;
-    // Let go after upload: `count` stays (a plain field in three r186). The
-    // arrays let go are the shells' Float32/Uint32, 4 bytes a value.
+    // Let go after upload: `count` stays (a plain field in three r186).
     const bytes = array ? array.byteLength ?? array.length * 4 : owner.count * (owner.stride ?? owner.itemSize ?? 1) * 4;
     geometryBytes += bytes;
     bytesByName.set(holder, (bytesByName.get(holder) ?? 0) + bytes);

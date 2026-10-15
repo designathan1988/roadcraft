@@ -3,11 +3,7 @@ import { CATALOG_CATEGORIES, catalogRoads } from '@world/roads/catalog';
 import { classTemplates } from '@world/roads/templates';
 import { profileIssues, profileRoad } from '@world/roads/profile';
 
-/**
- * THE ROAD CATALOGUE (the player's order of 2026-10-09): twenty and more
- * ready roads by category, every one buildable as it stands, the six classes
- * among them.
- */
+/** THE ROAD CATALOGUE (the player's order of 2026-10-09) */
 describe('the road catalogue', () => {
   const roads = catalogRoads();
   it('has more than twenty roads, each in a category, with distinct ids', () => {

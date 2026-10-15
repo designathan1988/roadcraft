@@ -22,18 +22,7 @@ vi.mock('@sim/agents/lorryDocks', async (importOriginal) => {
   return { ...real, buildYard };
 });
 
-/**
- * THE LORRIES' OWN WORK IS NOT THROWN AWAY, AND A NEW MAP DRAWS AS THE FIRST.
- *
- * - A yard is made a slice a tick (`buildYard`) while a dock of it is being
- *   planned. A look for a lorry that drew another yard began that one in its
- *   place: the yard in hand was thrown away and begun again from nothing on
- *   the next tick, and the one drawn with it, back and forth.
- * - The lorries' own random draws (which yard, which dock, the driver, the
- *   time at the dock) start from their seed again when the world is reset (a
- *   different map, `AmbientWorld.reset`): what happens on a map does not
- *   depend on how many draws the map before it took.
- */
+/** THE LORRIES' OWN WORK IS NOT THROWN AWAY, AND A NEW MAP DRAWS AS THE FIRST. - A yard is made a slice a tick */
 function works(): { doc: RoadDoc; w: SimWorld } {
   const doc = new RoadDoc();
   const n = 2, block = 120, ids: number[][] = [];

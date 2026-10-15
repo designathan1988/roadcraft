@@ -10,12 +10,7 @@ import { planFrom } from '@sim/routing/router';
 import { planTrip } from '@sim/drive/tactical';
 import { step } from '@sim/pipeline';
 
-/**
- * P1-19: a car with a destination, in the wrong lane for its turn. The legacy
- * planner searched from the car's own lane over connectors only, found the
- * turn unreachable, and sent it round the block or into a U-turn. Drive v2
- * plans the lane change as part of the trip.
- */
+/** P1-19: a car with a destination, in the wrong lane for its turn. */
 function crossroads() {
   const doc = new RoadDoc();
   const centre = doc.addNode({ x: 0, y: 0 });

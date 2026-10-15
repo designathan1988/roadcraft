@@ -11,13 +11,7 @@ import { createAgentWalkEngine } from '@sim/agents/walk';
 import type { Bay } from '@sim/agents/parking';
 import type { Vehicle } from '@sim/vehicles/state';
 
-/**
- * The lots' traffic asks the scenery who stands where (`AmbientWorld.isParked`,
- * `sceneryCarAt`) instead of walking every parked car of the map: the same
- * answers as the walks it replaced, copied here as the oracle, every tick of
- * a closed town whose lots send cars in and out, with buildings taken away
- * and put back on the way.
- */
+/** The lots' traffic asks the scenery who stands where */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },
@@ -110,8 +104,7 @@ describe('the cars standing in bays, asked by the lots', () => {
         const bay = byKey.get(bayKey(body.free));
         if (bay) oldPool.push({ bay, body });
       }
-      // In the order of the bays (the list of parked cars keeps none: a car
-      // taken out of it leaves its place to the last, `AmbientWorld.removeParked`).
+      // In the order of the bays the list of parked cars keeps none: a car taken out of it leaves its place to the last,
       const rank = new Map([...lots.bays.values()].map((bay, i) => [bay, i] as const));
       oldPool.sort((p, q) => rank.get(p.bay)! - rank.get(q.bay)!);
       expect(lots.sceneryInBays(w)).toEqual(oldPool);

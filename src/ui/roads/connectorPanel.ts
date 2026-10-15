@@ -4,21 +4,7 @@ import { type LaneLink, type NodeLanes, linkKey, toggleLaneLink } from '@world/r
 import { t } from '../i18n';
 import './roads.css';
 
-/**
- * THE LANE CONNECTOR EDITOR of a junction (docs/source/VIAS.md V4), in the
- * inspector: the node drawn as a plan, every arriving lane as a blue dot at
- * its stop line and every leaving lane as a green dot where it starts, the
- * connections the game built as curves between them. Click an arriving lane
- * to pick it (its connections light up), click a leaving lane to add or take
- * away that connection - the way Traffic Manager: President Edition's lane
- * connector works (github.com/CitiesSkylinesMods/TMPE, `LaneConnectorTool`).
- * A lane is never left without a way on; "Restore" gives the node back to
- * the game's own connections.
- *
- * Drawn from the lane graph the traffic runs on (`sim.graph`), which is
- * rebuilt a moment after an edit: the panel redraws itself when it changes
- * (`refreshConnectorPanel`).
- */
+/** THE LANE CONNECTOR EDITOR of a junction, in the inspector */
 export interface ConnectorPanelHost {
   readonly graph: () => LaneletGraph;
   readonly links: () => readonly LaneLink[] | undefined;

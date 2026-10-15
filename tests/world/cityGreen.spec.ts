@@ -7,11 +7,7 @@ import { footwayAt, LANDSCAPE_RADIUS, medianAt } from '@world/landscape';
 import { applyLots, insideLot, planLots, type Lot } from '@world/lots';
 import { Network } from '@world/network';
 
-/**
- * THE GENERATED CITY'S GREEN (docs/source/VIAS.md V7): no street trees (the
- * player, 2026-10-09), the streets' furniture, one square per neighbourhood made
- * of a whole block (no loose lawn inside a block), its trees inside it.
- */
+/** THE GENERATED CITY'S GREEN: no street trees */
 describe('a generated city is planted', () => {
   it('small city: squares of whole blocks, one per neighbourhood at most, street trees and medians planted', () => {
     const plan = planCity({ ...DEFAULT_CITY, size: 'small', seed: 5 });
@@ -33,8 +29,7 @@ describe('a generated city is planted', () => {
     const cells = new Map<string, number>();
     const removed = lotsBefore.filter((l) => !lotsAfter.some((k) => k.id === l.id));
     expect(removed.length).toBeGreaterThan(0);
-    // No street trees (the player, 2026-10-09): none on a footway or in a
-    // median, while the rest of the furniture is laid.
+    // No street trees (the player, 2026-10-09): none on a footway or in a median, while the rest of the furniture is laid.
     const items = [...doc.landscape.values()];
     expect(items.filter((i) => i.kind === 'tree')).toEqual([]);
     expect(items.some((i) => i.kind !== 'tree' && i.kind !== 'streetname' && (footwayAt(net, i) !== null || medianAt(net, i) !== null))).toBe(true);

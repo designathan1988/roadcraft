@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BLADE_HALF, FACE_OUT, onTopOfPost, plateFaces } from '@render/signs';
 import { m } from '@world/units';
 
-/**
- * A SIGN'S FACE IS NEVER CROSSED BY ITS POST (`render/signs.ts` plateFaces).
- * A plate was one quad through the post's axis: the post stood across the
- * middle of its face ("Rua Cast|ro Alves", 2026-10-11) and a street's name
- * read from behind was mirrored. A traffic sign stands in front of its post;
- * a street's name is two blades back to back on top of it.
- */
+/** A SIGN'S FACE IS NEVER CROSSED BY ITS POST (`render/signs.ts` plateFaces). */
 
 /** The post's radius at the top. */
 const POST = m(0.04);
@@ -40,8 +34,7 @@ describe('the faces of a plate on its post', () => {
     expect(onTopOfPost('street')).toBe(true);
     const faces = plateFaces('street', 0, 0, 1.1);
     expect(faces).toHaveLength(2);
-    // Opposite ways, each on the side it looks to, a plate's thickness apart:
-    // no gap between them to see the other blade's back through.
+    // Opposite ways, each on the side it looks to, a plate's thickness apart
     expect(Math.cos(faces[0]!.yaw - faces[1]!.yaw)).toBeCloseTo(-1, 9);
     for (const f of faces) {
       expect(Math.hypot(f.x, f.y)).toBeCloseTo(BLADE_HALF, 9);

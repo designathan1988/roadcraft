@@ -3,28 +3,7 @@ import type { Rng } from '@core/rng';
 import type { TensorField } from './field';
 import { m } from '../units';
 
-/**
- * THE STREETS OF A GENERATED CITY: hyperstreamlines of the city's tensor
- * field (`field.ts`), traced level by level, then cut into a street graph.
- *
- * As in Chen et al. 2008 and in MapGenerator (ProbableTrain, the tensor-field
- * city generator, `impl/streamlines.ts`):
- * - a level is traced in both families (major and minor eigenvectors); a
- *   streamline starts at a seed no nearer than `dsep` to a street of its own
- *   family and runs both ways, a step `dstep` at a time (second-order
- *   integration), until it leaves the city, comes within `dtest` of a street
- *   of its own family, closes on itself, or grows too long;
- * - the levels go from the widest spacing to the closest: main avenues, then
- *   collectors, then local streets, each level kept apart from the coarser
- *   ones it meets;
- * - a dangling end looks ahead `dlookahead` along its way and is carried on to
- *   the street it would meet (a T junction), as real streets end on others.
- *
- * Then the lines are cut where they cross into a planar graph: a node at every
- * crossing and every end, the nodes nearer than `merge` made one, dead ends
- * shorter than `prune` taken away, and two streets leaving a node at less than
- * `minAngle` reduced to one. Units are world units.
- */
+/** THE STREETS OF A GENERATED CITY: hyperstreamlines of the city's tensor field */
 
 export interface StreetLevel {
   /** Spacing of the streets that run along the major way, and along the minor way. */
@@ -88,10 +67,6 @@ export function traceStreets(
       const dsep = family === 0 ? L.dsepMajor : L.dsepMinor;
       const dtest = dsep * L.testFraction;
       let fails = 0;
-      // Seeds, as in Jobard and Lefer's evenly spaced streamlines: every
-      // street of this family laid offers seeds one spacing away on both
-      // sides, so the streets fill the city row by row at even spacing; a
-      // random point only when the queue runs dry.
       // Read from `head` on: DO NOT `shift()` it, a copy of the queue for every seed taken.
       const queue: Vec2[] = [];
       let head = 0;
@@ -116,9 +91,7 @@ export function traceStreets(
       }
     }
   }
-  // Dangling ends carried on to the street they would meet. The stretches
-  // are filed by cell (`StretchGrid`): every end read every point of every
-  // street, ends x points on a city.
+  // Dangling ends carried on to the street they would meet.
   const stretches = new StretchGrid(m(80));
   lines.forEach((line, k) => stretches.addLine(line, k));
   lines.forEach((line, k) => {
@@ -178,11 +151,7 @@ function oriented(d: Vec2 | null, prev: Vec2): Vec2 | null {
 /** A street's stretch as filed: its ends, its street, and its place in the order a walk of every street meets it. */
 interface Stretch { readonly line: StreetLine; readonly a: Vec2; readonly b: Vec2; readonly rank: number }
 
-/**
- * The streets' stretches by cell, kept as ends are carried on (`traceStreets`):
- * a stretch put before a street's first keeps its place in the order a walk
- * of every street meets them (each street a range of ranks).
- */
+/** The streets' stretches by cell, kept as ends are carried on (`traceStreets`) */
 class StretchGrid {
   private readonly cells = new Map<number, Stretch[]>();
   private readonly front = new Map<StreetLine, number>();
@@ -308,9 +277,7 @@ export function planarize(lines: readonly StreetLine[], o: GraphOptions): Street
       cuts[r.line]!.push({ seg: r.seg, t: hit.u, p });
     }
   }
-  // Ends that stop on another street (a T, from the look-ahead) are cuts on it
-  // too: the stretches of the cells round the end (`hash`), in their order. DO
-  // NOT read every stretch of the city for each end.
+  // DO NOT read every stretch of the city for each end.
   polys.forEach((pl, line) => {
     for (const end of [pl.points[0]!, pl.points[pl.points.length - 1]!]) {
       let best: { line: number; seg: number; t: number; d: number } | null = null;

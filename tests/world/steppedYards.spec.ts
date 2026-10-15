@@ -18,16 +18,7 @@ import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
-/**
- * Shops, blocks of flats, offices and works with a car park or a loading
- * yard behind them follow their hillside (`docs/source/ZONEAMENTO.md`): the yard is
- * a platform of its own nearer the natural ground, at the level of the
- * building's back, reached by its drive as a ramp no steeper than its
- * traffic takes - where before the whole lot was cut or filled to the
- * street's floor and its far corners stood metres off the land. And nothing
- * of it floats or is buried: each surface lies on the ground graded under
- * it, and no earth rises over a block's floor.
- */
+/** Shops, blocks of flats, offices and works with a car park or a loading yard behind them follow their hillside */
 
 /** Ground rising to the north (-y) at 18 %. */
 const hill = (_x: number, y: number): number => -y * 0.18;
@@ -63,11 +54,7 @@ const isYard = (b: Building, v: Building['volumes'][number]): boolean => {
   return v.y >= back - m(0.5) && v.w > m(8);
 };
 
-/**
- * Earth moved at the yard and the building, metres: the mean of |natural
- * ground - level| at the corners of the car park or loading yard and of the
- * blocks - as they stand, and as they would at the street's floor.
- */
+/** Earth moved at the yard and the building, metres: the mean of |natural ground */
 function earthworks(b: Building): { now: number; flat: number } {
   const floor = floorHeight(b, hill, paved);
   let now = 0, flat = 0, n = 0;
@@ -91,13 +78,7 @@ function earthworks(b: Building): { now: number; flat: number } {
   return { now: (now / n) * METERS_PER_UNIT, flat: (flat / n) * METERS_PER_UNIT };
 }
 
-/**
- * Each kind, and the least share of its car parks and loading yards stepped
- * (measured 2026-10-11: shops 10/10, offices 7/24, flats 14/17, works 30/30).
- * An office whose tower has a shaped plan is not stepped (`stepToSlope`
- * takes rectangular blocks only), nor a yard whose drive is too short to
- * reach a level that saves earth.
- */
+/** Each kind, and the least share of its car parks and loading yards stepped */
 const KINDS: [string, ZoneUse, ZoneDensity, number][] = [
   ['shops', 'commercial', 'low', 0.8],
   ['offices', 'commercial', 'high', 0.25],
@@ -118,9 +99,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
       console.log(`${name.toUpperCase()}: ${stepped.length}/${withYard.length} em degrau; terra no pátio e nos blocos ${(flat / Math.max(1, stepped.length)).toFixed(2)} m -> ${(now / Math.max(1, stepped.length)).toFixed(2)} m`);
       expect(stepped.length).toBeGreaterThan(0);
       expect(now).toBeLessThan(flat * 0.8);
-      // The car parks and loading yards themselves (before: none stepped -
-      // cars and lorries came in at the street's floor): at their own level,
-      // each reached by its drive's ramp.
+      // The car parks and loading yards themselves (before: none stepped - cars and lorries came in at the street's floor)
       const parks = withYard.filter((b) => b.elements?.some((e) => e.kind === 'parking' && e.y > Math.max(...b.volumes.filter((o) => !o.open).map((o) => o.y + o.d)) - m(0.5)));
       const steppedParks = parks.filter((b) => b.volumes.some((v) => isYard(b, v) && Math.abs(v.ramp ?? v.terrace ?? 0) > 1e-6));
       console.log(`  estacionamentos e pátios de carga em degrau: ${steppedParks.length}/${parks.length}`);
@@ -137,10 +116,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
           expect(v.ramp).toBeCloseTo(0, 6);
           expect(back.some((l) => Math.abs(l - (v.terrace ?? 0)) < 1e-6), `ramp of building ${b.id} meets the back`).toBe(true);
         }
-        // Nothing buried: the ground drawn under each paving - the terrain's
-        // cells, each flat between its corners - never over it. Every corner
-        // of a cell the paving lies in at or under the paving's plane there
-        // (the plane extended), so the cell's ground is under it all across.
+        // Nothing buried: the ground drawn under each paving - the terrain's cells, each flat between its corners - never over it.
         const pads = buildingPads([b], hill, paved, TERRAIN_CELL * 1.5);
         const graded = (p: { x: number; y: number }): number => { const s = pads.shapeAt(p.x, p.y, hill(p.x, p.y)); return s.weight ? s.height : hill(p.x, p.y); };
         for (const s of lotSurfaces(b, floor, paved)) {
@@ -167,9 +143,7 @@ describe('car parks and loading yards stepped on a hillside', () => {
   }
 
   it('leaves no earth over the paving of any lot along a street cut into its hill, every building graded together', () => {
-    // The ground as the game shapes it: the hill, pulled down to the street
-    // beside the road (`world/elevation.ts` `shapeAt`); every building's
-    // platform graded on it at once, as the terrain is drawn.
+    // The ground as the game shapes it: the hill, pulled down to the street beside the road (`world/elevation.ts` `shapeAt`)
     const wrong: string[] = [];
     let surfaces = 0, worst = 0;
     for (const [use, density] of [['industrial', 'low'], ['commercial', 'low'], ['residential', 'medium']] as [ZoneUse, ZoneDensity][]) {
@@ -207,17 +181,14 @@ describe('car parks and loading yards stepped on a hillside', () => {
             }
           }
           worst = Math.max(worst, over);
-          // Open (docs/source/PROBLEMAS.md AC7): a drive's ramp beside a neighbour's
-          // floor keeps up to half a metre of earth on its outer edge, behind
-          // its retaining wall - the cell corner under the neighbour is not dug.
+          // Open (AC7)
           const allowed = s.volume.ramp !== undefined ? m(0.5) : m(0.02);
           if (over > allowed) wrong.push(`${use}: ${b.function} ${b.id}, ${s.volume.open} ${s.volume.id}${s.volume.ramp !== undefined ? ' (rampa)' : s.volume.terrace ? ' (degrau)' : ''}: terra ${(over * METERS_PER_UNIT).toFixed(2)} m acima`);
         }
       }
     }
     console.log(`TERRA SOBRE O PISO: ${wrong.length} de ${surfaces} superfícies, pior ${(worst * METERS_PER_UNIT).toFixed(2)} m\n${wrong.join('\n')}`);
-    // Before (27a7cb48): 23 of 290 surfaces, up to 7.46 m - flat car parks
-    // under the bank of the street's cutting, shops grown set back on it.
+    // Before (27a7cb48): 23 of 290 surfaces, up to 7.46 m
     expect(wrong).toEqual([]);
   });
 

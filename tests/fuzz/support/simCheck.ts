@@ -10,16 +10,7 @@ import { type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { roadStructure } from '@world/structures';
 import type { Defect } from './invariants';
 
-/**
- * What the fuzzer asserts about TRAFFIC on a network that built cleanly.
- *
- * Audit codes (`sim/invariants.ts`, full level) are reported under their own
- * code; the rest are measured here from the drawn bodies:
- *  - `bodyOverlap`  two vehicle rectangles intersecting (tests/sim/support/bodies.ts);
- *  - `poseJump`     a body moving further in one tick than its speed allows;
- *  - `nonFinite`    a NaN position or speed;
- *  - `stalled`      a vehicle standing still longer than `STALL_LIMIT`.
- */
+/** What the fuzzer asserts about TRAFFIC on a network that built cleanly. */
 export interface SimRun {
   readonly seconds: number;
   readonly seed: number;
@@ -29,18 +20,11 @@ export interface SimRun {
 /** Ten times the longest a driver will hold out for a comfortable gap. */
 const STALL_LIMIT = 10 * WAIT_CEILING;
 
-/**
- * Audit codes that are congestion diagnostics rather than defects on their
- * own; `stalled` below is the measured form of the same question.
- */
+/** Audit codes that are congestion diagnostics rather than defects on their own */
 const DIAGNOSTIC = new Set(['shortLink']);
 
 /** The structural levels and road nodes a vehicle's body spans. */
-/**
- * The solved deck height under a body: a road's height is authored on its
- * nodes and its piers derived from it (src/world/CLAUDE.md), so a road labelled
- * `ground` can stand on an overpass - the label alone told two levels for one.
- */
+/** The solved deck height under a body: a road's height is authored on its nodes and its piers derived from it */
 function deckOf(sim: SimWorld, v: Vehicle, elevation: RoadElevation): number {
   const lane = sim.lanelet(v.lanelet);
   const segment = lane?.kind === 'link' ? lane.segment : lane ? sim.connector(v.lanelet)?.inSegment : undefined;
@@ -130,8 +114,7 @@ export function checkSim(doc: RoadDoc, run: SimRun): Defect[] {
       for (const hit of collisions(sim)) {
         const a = placeOf(sim, hit.a);
         const b = placeOf(sim, hit.b);
-        // A deck over a road: two levels, no contact - by the label, or by the
-        // solved heights a clearance apart.
+        // A deck over a road: two levels, no contact - by the label, or by the solved heights a clearance apart.
         if (![...a.structures].some((s) => b.structures.has(s))) continue;
         const ha = deckOf(sim, hit.a, elevation), hb = deckOf(sim, hit.b, elevation);
         if (Number.isFinite(ha) && Number.isFinite(hb) && Math.abs(ha - hb) >= PASS_CLEARANCE) continue;

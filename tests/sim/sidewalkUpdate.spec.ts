@@ -12,13 +12,7 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE KERBS AND ZEBRAS KEPT BY WHAT CHANGED (`SidewalkGraph.update`): after
- * every edit of the fuzzer's sequences and fixtures - read one at a time, and
- * two at a time from the topology's log - the kerb nodes, zebras and footway
- * lines brought up by the lane graph's changes must be those built from
- * nothing.
- */
+/** THE KERBS AND ZEBRAS KEPT BY WHAT CHANGED (`SidewalkGraph.update`) */
 function lines(g: SidewalkGraph): string[] {
   const out: string[] = [];
   for (const n of g.nodes.values()) out.push(`node ${n.id} ${n.at.x} ${n.at.y}`);

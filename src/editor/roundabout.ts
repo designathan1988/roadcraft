@@ -15,13 +15,7 @@ export type RoundaboutResult =
   | { readonly committed: true; readonly ring: readonly SegmentId[]; readonly entrances: readonly SegmentId[] }
   | { readonly committed: false; readonly reason: 'size' | 'bounds' | 'occupied' | 'geometry' };
 
-/**
- * Places a single-lane roundabout on vacant ground. The four two-way arms are
- * ordinary roads: extend their outer nodes with the road tool to join the city.
- * The caller records history once, before this atomic command, like commitDraft.
- * A quadrant uses two tangent-continuous quadratic arcs, rather than straight
- * chords; the same stored curves feed road meshes, lanelets and driving.
- */
+/** Places a single-lane roundabout on vacant ground. */
 export function commitRoundabout(
   doc: RoadDoc,
   net: Network,
@@ -38,12 +32,9 @@ export function commitRoundabout(
       !insideMap({ x: centre.x + reach, y: centre.y + reach }, MAP_MARGIN)) {
     return { committed: false, reason: 'bounds' };
   }
-  // Refuse instead of silently burying existing roads or leaving unconnected
-  // geometric crossings. Connecting existing junctions is a separate operation.
+  // Refuse instead of silently burying existing roads or leaving unconnected geometric crossings.
   const width = casingHalf(roadProfile(type, 2, 'both'));
-  // The roads whose casing can come that near: filed (centreline box grown by
-  // their width) in the network's cells over the square of the reach and this
-  // road's half width. DO NOT measure every road of the map for one placement.
+  // DO NOT measure every road of the map for one placement.
   const near = reach + width;
   for (const ribbon of net.ribbonsMeeting([centre.x - near, centre.y - near, centre.x + near, centre.y + near])) {
     const segment = doc.segment(ribbon.id);
@@ -66,9 +57,7 @@ export function commitRoundabout(
   for (let i = 0; i < 8; i++) {
     const node = work.addNode(point(i * step, radius), 0, i % 2 !== 0);
     nodes.push(node.id);
-    // `yield` on a node would stop the circulating stream as well. Priority
-    // policy uses the tangent-continuous ring as the main road; incoming arms
-    // yield through the existing connector right-of-way classification.
+    // `yield` on a node would stop the circulating stream as well.
     if (i % 2 === 0) work.setNodeControl(node.id, 'priority');
   }
   for (let i = 0; i < 8; i++) {

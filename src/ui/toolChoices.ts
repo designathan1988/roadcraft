@@ -4,12 +4,7 @@ import { POLE_LAMP_MODES, type PoleLampMode } from '@world/utilities';
 import { PAINT_KINDS, type PaintKind } from '@world/terrainPaint';
 import { DEFAULT_TREE_BRUSH, type TreeBrush, type TreeKind } from '@world/trees';
 
-/**
- * What the player has chosen in the tools' panels and the game reads when
- * the tool acts: the landscaping item the next click places, and the street
- * lights a new run of wire poles carries. Kept for the session, like the road
- * tool's parking.
- */
+/** What the player has chosen in the tools' panels and the game reads when the tool acts */
 
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -76,11 +71,7 @@ export function setFogErase(next: boolean): void {
   fogErasing = next;
 }
 
-/**
- * The tree brush (Paisagem > Terreno > Árvores, `world/trees.ts`): which
- * trees it plants, whether it plants a stand, one tree a click, or cuts trees
- * away, and its settings (kept between sessions).
- */
+/** The tree brush (Paisagem > Terreno > Árvores, `world/trees.ts`) */
 export const TREE_MODES = ['plant', 'one', 'cut'] as const;
 export type TreeMode = (typeof TREE_MODES)[number];
 let treeModeNow: TreeMode = 'plant';
@@ -108,12 +99,7 @@ export function setGullyErase(next: boolean): void {
   gullyErasing = next;
 }
 
-/**
- * The element brush (Paisagem > Terreno > Elementos, `world/elements.ts`):
- * which kind it lays, whether it lays or erases (this kind, or every kind),
- * and each kind's own settings - a stone's brush is not a blade of grass's -
- * kept between sessions.
- */
+/** The element brush (Paisagem > Terreno > Elementos, `world/elements.ts`): which kind it lays, whether it lays or erases */
 export type ElementBrushMode = 'lay' | 'eraseKind' | 'eraseAll';
 let elementKindNow: ElementKind = 'stones';
 let elementModeNow: ElementBrushMode = 'lay';
@@ -218,11 +204,7 @@ export function setRoadWidth(next: number | null): void {
   width = next === null ? null : Math.max(ROAD_WIDTH_RANGE[0], Math.min(ROAD_WIDTH_RANGE[1], Math.round(next)));
 }
 
-/**
- * The block grid the road tool lays in one click (`editor/blocks.ts`):
- * columns, rows, centreline spacing in whole metres, and whether the next
- * click places it.
- */
+/** The block grid the road tool lays in one click (`editor/blocks.ts`) */
 export const blockGridChoice = { cols: 3, rows: 2, blockMetres: 100, angle: 0, armed: false };
 
 /** What the sign tool puts down next: its kind and its words; and the next street name. */
@@ -240,11 +222,7 @@ export function setZoneColoursShown(on: boolean): void { zoneColours = on; keep(
 const ROAD_GRID_KEY = 'roadcraft.roadGrid';
 let roadGrid = stored(ROAD_GRID_KEY, ['on', 'off'] as const, 'off') === 'on';
 const gridListeners = new Set<() => void>();
-/**
- * Whether the universal grid (`world/grid.ts`) is drawn over the whole map,
- * with any tool (the top bar's toggle, and the road panel's Grid); the road
- * snap lands in its cells while it is.
- */
+/** Whether the universal grid (`world/grid.ts`) is drawn over the whole map, with any tool */
 export function roadGridShown(): boolean { return roadGrid; }
 export function setRoadGridShown(on: boolean): void {
   roadGrid = on;

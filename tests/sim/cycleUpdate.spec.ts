@@ -10,12 +10,7 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE SMALL LOOPS KEPT BY WHAT CHANGED (`CycleIndex.follow`, from the world's
- * topology log): after every edit, each lanelet's loops - their links,
- * connectors and storage - must be those every link's search finds from
- * nothing.
- */
+/** THE SMALL LOOPS KEPT BY WHAT CHANGED (`CycleIndex.follow`, from the world's topology log) */
 function lines(index: CycleIndex): string[] {
   const out: string[] = [];
   for (const [lane, cycles] of index.byLanelet) {

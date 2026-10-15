@@ -8,15 +8,7 @@ import { pedestrianAffectsSpan, reservationCoversCrossing } from './intersection
 import { m } from '@world/units';
 import type { Vehicle } from './vehicles/state';
 
-/**
- * Runtime invariant checks.
- *
- * `full` runs every tick in tests with `SIM_STRICT=1`; `cheap` runs
- * periodically in the app to feed a diagnostics readout. Several of these
- * detect conditions that should now be unrepresentable — they are kept as
- * sentinels precisely so that a regression announces itself instead of
- * degrading quietly.
- */
+/** Runtime invariant checks. */
 /** When demand was first seen waiting at each group's red, per controller (`groupStarved`). */
 const DEMAND_ONSET = new WeakMap<SignalController, Map<number, number>>();
 
@@ -35,25 +27,16 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     if (!anyGreen(c) && c.sub === 'GREEN' && !currentStage?.exclusivePed) {
       out.push(issue('planCoverageGap', tick, c.node, 'green stage serves no group'));
     }
-    // Against the stage's own yellow and all-red: a stage releasing a fast
-    // approach has a longer yellow (`plan.ts` `withAmbers`, ITE).
+    // Against the stage's own yellow and all-red: a stage releasing a fast approach has a longer yellow
     const stageDark = currentStage ? currentStage.amber + currentStage.allRed + 0.5 : maxDark;
     if (c.sub !== 'GREEN' && c.elapsed > Math.max(maxDark, stageDark)) {
       out.push(
         issue('allRedTooLong', tick, c.node, `${c.sub} for ${c.elapsed.toFixed(1)}s`),
       );
     }
-    // A busy stage is allowed to extend from its target to maxGreen. Measure
-    // starvation against that legal worst-case cycle, not the nominal target
-    // cycle, otherwise a healthy long platoon falsely starves later demand.
+    // A busy stage is allowed to extend from its target to maxGreen.
     const limit = SIGNAL.starvationCycles * maxSignalCycle(c) + maxDark;
-    // Starved is demand left waiting, not a group long unused: measured from
-    // when it was last served or, later, from when somebody came to wait at
-    // its red (SUMO's actuated lights count how long a detector's demand
-    // has gone unserved, `inactive-threshold`). Counted from the last
-    // service alone, a group nobody used for five minutes was "starved" the
-    // second its first car arrived (the test city, 300 cars: "red for 324 s",
-    // served a few seconds later).
+    // Starved is demand left waiting, not a group long unused
     let onsets = DEMAND_ONSET.get(c);
     if (!onsets) DEMAND_ONSET.set(c, onsets = new Map());
     for (const g of c.plan.groups) {
@@ -72,10 +55,6 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     }
   }
 
-  // ---- vehicles ---------------------------------------------------------
-  // A wedge is held for two of the town's longest signal cycles. Worked out
-  // once an audit: the controllers do not change during one, and every car
-  // stopped at a light went through every controller of the town for it.
   // DO NOT move this back into the loop.
   const wedgeLimit = 2 * maxCycle(w);
   for (const v of w.vehicles.values()) {
@@ -95,30 +74,12 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
       out.push(issue('routeless', tick, v.id, 'empty route'));
     }
 
-    // Standing still on a green with nothing in the way: the exact symptom the
-    // rewrite exists to eliminate. The counter is integrated per tick by the
-    // pipeline, not inferred from "time since it last moved" — that would flag
-    // every vehicle at the instant a long red turns green.
+    // Standing still on a green with nothing in the way: the exact symptom the rewrite exists to eliminate.
     if (v.greenStall > 5) {
       out.push(issue('greenBlocked', tick, v.id, `${v.greenStall.toFixed(1)}s stalled on green`));
     }
 
-    // `greenStall` above is the UNEXPLAINED stall: it resets whenever something
-    // is in the way, so it fires only when a vehicle stands at a green with an
-    // empty obstacle list. `greenDenied` is the complement — it counts seconds
-    // held at a green for any reason at all, legitimate ones included.
-    //
-    // Each individual denial can be perfectly correct and the outcome still be
-    // a failure: a driver who watches an entire signal cycle go by from the
-    // stop line has not been served, whatever the internal predicate that
-    // refused them. So the threshold is the junction's own worst-case cycle,
-    // not a fixed number of seconds. Below it, waiting is traffic; above it,
-    // the junction is not delivering the movement it advertises.
-    //
-    // This is why the threshold is derived and not tuned: measured on a 4x4
-    // grid of four-lane avenues the longest legitimate wait is 14.3 s, all of
-    // it turning traffic yielding to pedestrians on a permissive green, and the
-    // cycle is far longer than that. Anything reaching a full cycle is real.
+    // `greenStall` above is the UNEXPLAINED stall
     if (lane.kind === 'link' && lane.controlled && lane.to !== undefined) {
       const controller = w.controller(lane.to);
       if (controller && v.greenDenied > maxSignalCycle(controller)) {
@@ -136,13 +97,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     if (lane.kind === 'link' && lane.controlled && v.v < m(0.04)) {
       const stalled = w.clock.since(v.lastMovedTick);
 
-      // Being held out of a full lane is correct behaviour — it is what stops
-      // the network gridlocking — and under heavy demand a queue can hold a
-      // vehicle for cycles on end. That is congestion, not a wedge.
-      //
-      // The two are distinguished by whether the queue AHEAD is moving. If the
-      // downstream lane is discharging, this vehicle's turn is coming. If it
-      // has been frozen just as long, nothing is draining and that is a wedge.
+      // Being held out of a full lane is correct behaviour — it is what stops the network gridlocking
       if (
         stalled > wedgeLimit &&
         v.constraints.obstacles.some((o) => o.kind === 'spillback')
@@ -154,21 +109,14 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
         }
       }
 
-      // Cross-node compact reservations can keep one access blocked while the
-      // same junction continues serving other directions. Track this request,
-      // not aggregate node throughput, or directional starvation is invisible.
+      // Cross-node compact reservations can keep one access blocked while the same junction continues serving other directions.
       const requestWait =
         v.firstRequestTick === null ? 0 : w.clock.since(v.firstRequestTick);
       const ownsCompoundAllocation =
         v.reservedConnectors.length > 0 &&
         (v.admittedConnector !== null ||
           v.clearingConnectors.length > 0);
-      // `firstRequestTick` deliberately spans the complete compact-box
-      // transaction so admission can preserve FIFO priority between nodes.
-      // It therefore cannot, by itself, mean that the current access has been
-      // motionless for that whole time. Combine it with actual lack of motion,
-      // and only diagnose vehicles that already hold physical box resources;
-      // an ordinary saturated approach is queueing, not a cross-node wedge.
+      // `firstRequestTick` deliberately spans the complete compact-box transaction so admission can preserve FIFO priority
       const currentAccessWait = Math.min(
         requestWait,
         w.clock.since(v.lastMovedTick),
@@ -211,8 +159,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     }
   }
 
-  // Claims must belong to a live vehicle. A short block can make one vehicle
-  // hold points from both its admitted and rear-clearing connectors.
+  // Claims must belong to a live vehicle.
   for (const v of w.vehicles.values()) {
     for (const p of v.claims) {
       if (!w.claims.holds(v.id, p)) {
@@ -237,13 +184,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
   // ---- pedestrians ------------------------------------------------------
   w.pedEngine.audit(w, out);
 
-  // Nobody the pedestrian engine has put on a crossing may be inside the
-  // stretch a vehicle's reservation still protects. Read from what vehicles
-  // themselves read (`crossingStates`), whichever engine published it.
-  // The vehicles holding or clearing a movement, filed once by the node of
-  // each (in the fleet's order, each with its movements in the order they
-  // were read): a crossing asks only those at its own node. DO NOT walk the
-  // fleet for each person on each crossing (people x vehicles an audit).
+  // DO NOT walk the fleet for each person on each crossing (people x vehicles an audit).
   const holding = new Map<number, { v: Vehicle; ids: string[] }[]>();
   for (const v of w.vehicles.values()) {
     const lane = w.lanelet(v.lanelet);
@@ -254,8 +195,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     for (const id of connectorIds) {
       const node = w.connector(id)?.node;
       if (node === undefined) continue;
-      // The vehicles are filed one after another: its entry at a node, if it
-      // has one, is that node's last.
+      // The vehicles are filed one after another: its entry at a node, if it has one, is that node's last.
       const list = holding.get(node);
       const last = list?.[list.length - 1];
       if (last?.v === v) last.ids.push(id);

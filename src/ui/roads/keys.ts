@@ -1,13 +1,6 @@
 import { CameraMotion } from '@view/cameraMotion';
 
-/**
- * THE ROAD TOOL'S KEYS, rebindable (docs/source/VIAS.md V3; read by `main.ts`): raise and lower the
- * road being drawn, and cycle its plan (straight, curve, freehand). Kept in
- * the browser like the snap choice (`snap.ts`), not in any map. Network
- * Multitool keeps each mode's shortcut in its settings the same way
- * (github.com/MacSergey/NetworkMultitool, `Settings.cs`); a key given to one
- * action is taken from the other that had it, so no key does two things.
- */
+/** THE ROAD TOOL'S KEYS, rebindable (read by `main.ts`) */
 export type RoadKeyAction = 'heightUp' | 'heightDown' | 'alignment';
 export const ROAD_KEY_ACTIONS: readonly RoadKeyAction[] = ['heightUp', 'heightDown', 'alignment'];
 
@@ -19,27 +12,15 @@ const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'D
   'u', 'm', 'x', 'b', 'c', 't', 'i', 'p', 'g', 'f', 'z', 'h', 'o', 'Home',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
 
-/**
- * The `KeyboardEvent.code`s that type a key on a US keyboard: the camera's
- * keys are codes (`CameraMotion.owns`), the road tool's are keys.
- */
+/** The `KeyboardEvent.code`s that type a key on a US keyboard: the camera's keys are codes */
 const CODES_OF_KEY: Readonly<Record<string, readonly string[]>> = {
   '=': ['Equal'], '+': ['Equal', 'NumpadAdd'], '-': ['Minus', 'NumpadSubtract'], '_': ['Minus'],
 };
 const codesOfKey = (key: string): readonly string[] =>
   CODES_OF_KEY[key] ?? (/^[a-z]$/.test(key) ? [`Key${key.toUpperCase()}`] : /^\d$/.test(key) ? [`Digit${key}`, `Numpad${key}`] : [key]);
-/**
- * Page Up and Page Down tilt the camera, and are the road's own raise and
- * lower by default: the road tool reads its keys first (`editor/gameKeys.ts`),
- * as Inspect's node height does.
- */
+/** Page Up and Page Down tilt the camera, and are the road's own raise and lower by default */
 const lentByTheCamera = (key: string): boolean => key === 'PageUp' || key === 'PageDown';
-/**
- * Whether a key moves the camera. Read from the camera's own table: the road
- * tool reads its keys before the camera, and W, A, S, D, + and - left out of
- * a list written here once let "raise the road" take W from the camera.
- * DO NOT list the camera's keys here by hand.
- */
+/** DO NOT list the camera's keys here by hand. */
 function cameraKey(key: string): boolean {
   return !lentByTheCamera(key) && codesOfKey(key).some((code) => CameraMotion.owns(code));
 }

@@ -2,14 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ChangeJournal, type ChangeKind, type JournalReader } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 
-/**
- * THE DIARY KEEPS WHAT ITS READERS HAVE NOT READ (`ChangeJournal.follow`): a
- * reader that follows it is told every entry of its kinds since it last read,
- * however many came meanwhile - a city growing while the simulation waited
- * wrote thousands of building entries, and the lots' bays were told
- * "everything changed" and read every lot again. What every reader has read
- * is let go; a reader gone holds nothing.
- */
+/** THE DIARY KEEPS WHAT ITS READERS HAVE NOT READ (`ChangeJournal.follow`) */
 const R = [0, 0, 1, 1] as const;
 const kept = (j: ChangeJournal, kind: ChangeKind): number =>
   ((j as unknown as { byKind: Map<ChangeKind, { entries: unknown[] }> }).byKind.get(kind)?.entries.length) ?? 0;

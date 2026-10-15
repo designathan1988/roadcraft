@@ -7,12 +7,7 @@ import { DT } from '@sim/params';
 import { HEAVY } from '@world/conflictPoints';
 import { simOf } from './support/bodies';
 
-/**
- * TRAFFIC TURNS ROUND IN A TURNING CIRCLE (docs/VIAS.md V8). A road from the
- * map's edge to an end marked as a circle: cars come in at the edge, the only
- * way out is back where they came from, so every one of them turns round in
- * the circle - none leaves the map there, none is made there.
- */
+/** TRAFFIC TURNS ROUND IN A TURNING CIRCLE. */
 function cul(): { doc: RoadDoc; edge: number; end: number } {
   const doc = new RoadDoc();
   const edge = doc.addNode({ x: m(-300), y: 0 }).id, end = doc.addNode({ x: m(60), y: 0 }).id;
@@ -22,9 +17,7 @@ function cul(): { doc: RoadDoc; edge: number; end: number } {
 }
 
 describe('a turning circle', () => {
-  // A car or a van turns round; a bus or a lorry fits the circle on its own,
-  // but a second one following it round at the closest gap would stand in it
-  // (the sweep's fold-back check), so none is routed into a street it cannot leave.
+  // A car or a van turns round; a bus or a lorry fits the circle on its own
   it('turns cars and vans round, and keeps buses and lorries out', () => {
     const { doc, end } = cul();
     const sim = simOf(doc, 11, 2);

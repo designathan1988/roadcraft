@@ -67,22 +67,13 @@ export interface SiteContext {
 
 /** Nothing the player builds may come closer than this to the map's rim. */
 const BUILDING_MAP_MARGIN = m(3.2);
-/**
- * Gap kept between a footprint and the back of a footway: next to nothing.
- * A town's facades stand ON the back of the pavement; at 0.3 (and the snap's
- * own 0.2 on top) every building stood behind a strip of grass, the road's
- * verge, which read as a gap between the pavement and the wall.
- */
+/** Gap kept between a footprint and the back of a footway: next to nothing. */
 export const ROAD_CLEARANCE = m(0.008);
 /** How far two buildings' volumes may run into each other at a shared party wall, world units (20 cm). */
 const PARTY_WALL = m(0.2);
 /** Only floating-point noise at an exactly touching road edge, never a visible overlap. */
 const ROAD_CONTACT_EPS = 1e-9;
-/**
- * Area a footprint may share with a junction's carriageway and kerb and still
- * only touch it, square units (0.16 m2): rounding where an edge meets it. The
- * junction's footway plate is not an obstacle any more (`touchesRoad`).
- */
+/** Area a footprint may share with a junction's carriageway and kerb and still only touch it, square units (0.16 m2) */
 const JUNCTION_TOUCH = m(0.4) * m(0.4);
 /** Overlap two footprints may have and still count as touching (terraces). */
 const TOUCH = m(0.02);
@@ -128,10 +119,7 @@ export function structuralProblem(b: Building): BuildingProblem | null {
       if (geometry.pierEvery !== undefined && (!Number.isInteger(geometry.pierEvery) || geometry.pierEvery < 1 || geometry.pierEvery > 16)) return 'size';
     }
   }
-  // Blocks may stand in each other's space: a building is blocks put
-  // together like bricks, and what is drawn is their union. Refusing an
-  // overlap forced every joined block to be cut, and nothing could be moved
-  // back out again.
+  // Blocks may stand in each other's space: a building is blocks put together like bricks, and what is drawn is their union.
   if (groundVolumes(b).length === 0) return 'footprint';
   for (const v of b.volumes) if (!isSupported(b, v)) return 'support';
   const elements = b.elements ?? [];
@@ -146,14 +134,7 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   return null;
 }
 
-/**
- * What a stored building puts on the ground - its volumes, projections and
- * ground elements - as world rings with their boxes, once per record (a record
- * of the store is never changed in place). DO NOT turn a neighbour's corners
- * into the world again at each check: every building tried while a city grows
- * turned every neighbour's again, 3.8 s of `localToWorld` in a 2,560 m city's
- * growth (2026-10-15).
- */
+/** DO NOT turn a neighbour's corners into the world again at each check */
 const obstaclesOf = identityMemo((other: Building): readonly { readonly ring: readonly Vec2[]; readonly box: ReturnType<typeof ringBox> }[] =>
   [...footprintRects(other), ...groundProjections(other), ...groundElements(other)].map((ring) => ({ ring, box: ringBox(ring) })));
 
@@ -179,36 +160,26 @@ function ringBox(ring: readonly Vec2[]): { minX: number; minY: number; maxX: num
   return { minX, minY, maxX, maxY };
 }
 
-/**
- * The first reason `b` cannot stand, or null. `ignore` is the building being
- * edited, which must not collide with its own previous self.
- */
+/** The first reason `b` cannot stand, or null. */
 export function validateBuilding(
   ctx: SiteContext,
   b: Building,
   ignore?: BuildingId | readonly BuildingId[],
 ): BuildingProblem | null {
-  // One building (an edit of it) or several (the neighbours a weld is about to
-  // absorb): either way they are not obstacles to what is being checked.
+  // One building (an edit of it) or several (the neighbours a weld is about to absorb)
   const ignored = ignore === undefined ? undefined : Array.isArray(ignore) ? new Set(ignore) : new Set([ignore as BuildingId]);
   const structural = structuralProblem(b);
   if (structural) return structural;
 
   const box = buildingBounds(b);
-  // On the world: the plates of the ground are one plane, so a building may
-  // stand across the line between two of them.
+  // On the world: the plates of the ground are one plane, so a building may stand across the line between two of them.
   if (!insideMap({ x: box.minX, y: box.minY }, BUILDING_MAP_MARGIN) || !insideMap({ x: box.maxX, y: box.maxY }, BUILDING_MAP_MARGIN)) return 'bounds';
 
   const rects = [...footprintRects(b, -TOUCH), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as Network, rect))) return 'road';
 
-  // The buildings by place (`BuildingStore.near`): this walked the town, up to 18 times a building grown.
-  // Asked over everything this building puts on the ground - its projections
-  // reach past its volumes' box - and grown by the deepest a projection may be,
-  // for the neighbours' own (the store files a building by its volumes' box,
-  // `storedBounds`). DO NOT ask over `buildingBounds` alone: a bay window run
-  // into the neighbour's wall, or the neighbour's into this one, went unseen.
+  // DO NOT ask over `buildingBounds` alone
   const reach = ringsBox(party.concat(rects));
   const partyBoxes = party.map(ringBox);
   for (const other of ctx.doc.buildings.near(reach.minX - MAX_PROJECTION, reach.minY - MAX_PROJECTION,
@@ -217,12 +188,7 @@ export function validateBuilding(
     const ob = storedBounds(other, MAX_PROJECTION);
     if (ob.minX > reach.maxX || ob.maxX < reach.minX || ob.minY > reach.maxY || ob.maxY < reach.minY) continue;
     const others = obstaclesOf(other);
-    // Two buildings may share a party wall: their volumes meet, and may run a
-    // few centimetres into each other, as terraced houses and a row of shops
-    // do. Measured with each volume shrunk by `PARTY_WALL`, so a joint is
-    // never a gap (the player's order of 2026-10-05).
-    // Clipped only where the two rectangles' boxes meet: apart, they share no
-    // area. Clipped every pair, it was 0.5 s of a generated city's growth (2026-10-14).
+    // Two buildings may share a party wall
     for (let i = 0; i < party.length; i++) {
       const a = party[i]!, pa = partyBoxes[i]!;
       for (const { ring: c, box: pc } of others) {
@@ -233,28 +199,14 @@ export function validateBuilding(
   }
 
   if (ctx.groundAt) {
-    // Each block's ground about its own floor: a split level stepping down
-    // its hillside (`splitLevel.ts`) is not refused for the slope its steps
-    // take up. Read as one floor, a shop up a street cut into its hill was
-    // refused at the footway and grown 1.5-4 m back from it on a 5 m plinth.
+    // Each block's ground about its own floor: a split level stepping down its hillside
     const { levelLowest, levelHighest } = sampleFootprint(b, ctx.groundAt);
     if (levelHighest - levelLowest > MAX_PLINTH) return 'slope';
   }
   return null;
 }
 
-/**
- * Whether a footprint rectangle reaches any road's footway or junction plate.
- *
- * The roads and junctions near it are read from the network's own cells
- * (`Network.segmentCells`, `junctionCells`, kept by its build): a ribbon is
- * filed over its casing, which reaches past the footway this keeps off. Each
- * road's line and each junction's ring are flattened once per ribbon and
- * junction object (a new object when it is built again).
- * DO NOT go back to a grid of every road and junction of the map made again
- * at each network revision (`RoadContacts`): every building checked after a
- * road edit, a lot tried or a weld paid for the whole map first.
- */
+/** DO NOT go back to a grid of every road and junction of the map made again at each network revision (`RoadContacts`) */
 export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
   const box = boundsOf(rect);
   const area: readonly [number, number, number, number] = [box.minX, box.minY, box.maxX, box.maxY];
@@ -267,14 +219,7 @@ export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
     if (polylineDistance(lineOf(ribbon), rect) < reach - ROAD_CONTACT_EPS) return true;
   }
   for (const node of net.junctionCells.idsMeeting(area)) {
-    // The carriageway and kerb of the junction, not its footway plate. The
-    // footways along each road are kept clear by the distance test above,
-    // carried through the junction (`ribbon.full` runs to the node); what
-    // lies beyond them at a corner is the plate's square reaching into the
-    // block, and buildings were held back off it, leaving an empty corner of
-    // paving at every crossroads (player, 2026-10-03). A building may stand
-    // on it now, flush with the two footways; the people's walkable ground
-    // has the building's footprint cut out of it (`nav.ts`, solids).
+    // The carriageway and kerb of the junction, not its footway plate.
     const junction = net.junctions.get(node)?.get(Level.Curb);
     if (!junction || junction.ring.isEmpty) continue;
     const jb = junction.ring.bbox;

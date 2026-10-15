@@ -6,12 +6,7 @@ import { m } from '@world/units';
 import { componentAt, type Volume } from '@world/buildings/types';
 import type { BlueprintBody } from '@world/buildings/blueprints';
 
-/**
- * Detectors for the classes of ugliness the player rejected in the grown
- * buildings (2026-10-09): blocks stacked in two skins ("prédios
- * empilhados"), openings that do not stand over each other, a city of one
- * style, flat roofs laid with tiles, a moulding at every floor of everything.
- */
+/** Detectors for the classes of ugliness the player rejected in the grown buildings (2026-10-09) */
 
 type Use = 'residential' | 'commercial' | 'industrial';
 const KINDS: readonly [Use, 'low' | 'medium' | 'high', number, number][] = [

@@ -1,24 +1,7 @@
 import { mulberry32 as random } from '@core/rng';
 import type { ProxyPack } from '../body/proxy';
 
-/**
- * Procedural hairstyles, as MakeHuman hair items (`ProxyPack`), so the crowd
- * draws, fits and dyes them as it does any other hair.
- *
- * The pipeline games use for hair cards (Houdini's Hair Card Generate,
- * Unreal's Hair Card Generator): guide strands grown from the scalp, each
- * the centre of a clump, and each clump drawn as a strip or two of polygons
- * - cards - carrying a texture of many strands (`render/people/hairTexture`).
- * Here the guides are grown by the style's parameters instead of groomed:
- * combed away from a parting, pulled down by gravity, sliding over the skull
- * and the shoulders (an ellipsoid and a tapered body), waved, cut to length,
- * a fringe brushed forwards, or gathered into a ponytail or a bun.
- *
- * Built once per style on the MakeHuman base mesh (decimetres, +Y up, +Z
- * forwards, +X the body's left); every card vertex is pinned to the scalp
- * vertices nearest it, so on each body it follows that body's head
- * (`fitProxy`), as the stock hair does.
- */
+/** Procedural hairstyles, as MakeHuman hair items */
 
 export interface HairStyle {
   readonly name: string;
@@ -32,10 +15,7 @@ export interface HairStyle {
   readonly gravity: number;
   readonly wave?: { readonly amplitude: number; readonly wavelength: number };
   readonly fringe?: { readonly length: number; readonly width: number };
-  /**
-   * Gathered at a point of the head, then a tail (plaited when `braid`) or a
-   * bun; at two points (`also`, mirrored across the head) for pigtails.
-   */
+  /** Gathered at a point of the head, then a tail (plaited when `braid`) or a bun; at two points */
   readonly gather?: { readonly at: readonly [number, number, number]; readonly tail: number; readonly bun?: number; readonly braid?: boolean; readonly twin?: boolean };
   /** Each strand wound in a helix: corkscrew curls. */
   readonly curl?: { readonly radius: number; readonly pitch: number };
@@ -47,11 +27,7 @@ export interface HairStyle {
   readonly quiff?: number;
   /** Worn with a headband (`acc:headband`, `generateHeadband`). */
   readonly headband?: boolean;
-  /**
-   * Length by region of the head, as multipliers of `length` - front, crown,
-   * temples, back of the head, nape - blended by where the root is: how a
-   * fade, a crop or a bob's shape is set (as Mirage Mane's hair catalogue does).
-   */
+  /** Length by region of the head, as multipliers of `length` - front, crown, temples, back of the head, nape */
   readonly regions?: { readonly front?: number; readonly crown?: number; readonly temple?: number; readonly occipital?: number; readonly nape?: number };
   /** Guides (clumps), and the width of each clump's card, decimetres. */
   readonly clumps: number;
@@ -94,10 +70,7 @@ export const HAIR_STYLES: Record<string, HairStyle> = {
   shortSide: { name: 'shortSide', regions: { front: 1.25, crown: 1.05, temple: 0.55, occipital: 0.72, nape: 0.42 }, length: 0.95, part: 0.5, volume: 0.08, gravity: 0.15, clumps: 160, cardWidth: 0.34, layers: 1, strands: 'straight' },
 };
 
-/**
- * Drawn for the crowd: straight hair only (the player, 2026-10-05: "faça
- * cabelo liso, nada de afro"); the wavy and curly styles stay for the editor.
- */
+/** Drawn for the crowd: straight hair only (the player, 2026-10-05: "faça cabelo liso, nada de afro") */
 export const FEMALE_HAIR = ['longStraight', 'midLayered', 'bob', 'bobFringe', 'ponytail', 'bun',
   'pigtails', 'braid', 'twinBraids', 'sideSwept', 'pixie', 'topKnot',
   'ponytailFringe', 'longFringe', 'longHeadband', 'shoulderBob'] as const;
@@ -129,11 +102,7 @@ interface Skull { readonly c: V3; readonly r: V3 }
 /** Where the hair grows: above a hairline that runs low at the nape, high on the brow. */
 function hairlineY(theta: number): number {
   const a = Math.abs(theta);
-  // Low at the temples and over the ears (down to the top of the ear), as a
-  // real hairline: set higher, the sides read as shaved (the player: "mulher
-  // não usa cabeça com lateral raspada").
-  // Sideburn down to mid-ear (1.3), over the ear just above it (1.55),
-  // behind it down to the lobe, the nape at the lobe's height.
+  // Low at the temples and over the ears (down to the top of the ear), as a real hairline
   const knots: [number, number][] = [[0, 0.36], [0.6, 0.3], [1.0, 0.0], [1.3, -0.35], [1.55, -0.1], [1.85, -0.35], [2.2, -0.62], [2.6, -0.78], [Math.PI, -0.82]];
   // Never a perfect curve: a little irregular, as a real hairline is.
   const wobble = 0.035 * Math.sin(theta * 9 + 0.7) + 0.02 * Math.sin(theta * 23 + 2.1);
@@ -155,8 +124,7 @@ function headOf(base: HairBase) {
     if (!inBody(v)) continue;
     let w = 0;
     for (let k = 0; k < 4; k++) if (base.joints[v * 4 + k] === head) w += base.weights[v * 4 + k]! / 65535;
-    // Half the head's is enough: the nape's skin is shared with the neck
-    // bone, and left out the hair stopped above it.
+    // Half the head's is enough: the nape's skin is shared with the neck bone, and left out the hair stopped above it.
     if (w >= 0.5) headVerts.push(v);
   }
   // The cranium: the head's box less the face's jut (nose, chin).
@@ -173,22 +141,12 @@ function headOf(base: HairBase) {
   return { P, at, headVerts, skull, local, outward };
 }
 
-/**
- * The three anchors nearest a point, as [squared distance, vertex], nearest
- * first; equal distances go to the anchor earlier in the list. A k-d tree
- * (Friedman, Bentley and Finkel 1977): a hairstyle pins tens of thousands of
- * vertices to some three thousand head vertices, and the search over all of
- * them stalled the game 70-225 ms on each new hairstyle. A uniform grid was
- * tried first: hair standing well off the scalp (an afro) made it sweep most
- * of its cells per point, and a NaN point never ended it (docs/source/performance.md #5).
- */
+/** The three anchors nearest a point, as [squared distance, vertex], nearest first */
 export function nearestThree(P: ArrayLike<number>, anchors: readonly number[]): (p: V3) => [number, number][] {
-  // The tree: anchors (as their order in the list) laid out in place, each
-  // node the median of its range on the axis of its depth.
+  // The tree: anchors (as their order in the list) laid out in place
   const order = Int32Array.from(anchors.keys());
   const coord = (o: number, axis: number): number => P[anchors[o]! * 3 + axis]!;
-  // Each subtree's box, kept at its median's slot: a point far from the head
-  // has every anchor about as far, and only the boxes tell the subtrees apart.
+  // Each subtree's box, kept at its median's slot
   const box = new Float64Array(order.length * 6);
   const build = (lo: number, hi: number, axis: number): void => {
     if (hi <= lo) return;
@@ -205,8 +163,7 @@ export function nearestThree(P: ArrayLike<number>, anchors: readonly number[]): 
     build(mid + 1, hi, (axis + 1) % 3);
   };
   build(0, order.length, 0);
-  // The search's state, reused (no allocation per candidate): the three best
-  // as (distance, order), sorted by both.
+  // The search's state, reused (no allocation per candidate): the three best as (distance, order), sorted by both.
   let d0 = 0, d1 = 0, d2 = 0, o0 = 0, o1 = 0, o2 = 0, px = 0, py = 0, pz = 0;
   const less = (d: number, o: number, e: number, q: number): boolean => d < e || (d === e && o < q);
   const consider = (o: number): void => {
@@ -222,8 +179,7 @@ export function nearestThree(P: ArrayLike<number>, anchors: readonly number[]): 
   const visit = (lo: number, hi: number, axis: number): void => {
     if (hi <= lo) return;
     const mid = (lo + hi) >> 1;
-    // Nothing in this subtree is nearer than its box (an equally near one
-    // can still win on its place in the list).
+    // Nothing in this subtree is nearer than its box (an equally near one can still win on its place in the list).
     const b = mid * 6;
     const ex = box[b]! - px > 0 ? box[b]! - px : px - box[b + 3]! > 0 ? px - box[b + 3]! : 0;
     const ey = box[b + 1]! - py > 0 ? box[b + 1]! - py : py - box[b + 4]! > 0 ? py - box[b + 4]! : 0;
@@ -236,8 +192,7 @@ export function nearestThree(P: ArrayLike<number>, anchors: readonly number[]): 
     if (gap < 0) { visit(lo, mid, next); visit(mid + 1, hi, next); } else { visit(mid + 1, hi, next); visit(lo, mid, next); }
   };
   return (p) => {
-    // A point that is not a number is nearest to nothing, as the search over
-    // every anchor found.
+    // A point that is not a number is nearest to nothing, as the search over every anchor found.
     if (!Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return [[Infinity, 0], [Infinity, 0], [Infinity, 0]];
     px = p[0]; py = p[1]; pz = p[2];
     d0 = d1 = d2 = Infinity; o0 = o1 = o2 = Infinity;
@@ -252,9 +207,7 @@ function pinned(head: ReturnType<typeof headOf>, name: string, kind: ProxyPack['
   positions: readonly number[], uvs: readonly number[], index: readonly number[], fade?: readonly number[],
   via?: { readonly of: Int32Array; readonly points: readonly V3[] }): ProxyPack {
   const { P, at, headVerts } = head;
-  // Pinned to the three nearest scalp (and head) vertices - of the vertex
-  // itself, or of the point `via` names for it (a strand's guide point:
-  // thousands of strand vertices share a few hundred searches).
+  // Pinned to the three nearest scalp (and head) vertices - of the vertex itself, or of the point `via` names for it
   const n = positions.length / 3;
   const refs = new Uint32Array(n * 3), weights = new Float32Array(n * 3), offsets = new Float32Array(n * 3);
   const nearest = nearestThree(P, headVerts);
@@ -285,13 +238,7 @@ function pinned(head: ReturnType<typeof headOf>, name: string, kind: ProxyPack['
   };
 }
 
-/**
- * The same style as strands to draw as lines over its cards, close up: about
- * a dozen fine strands round each guide, spread over its card's width and
- * drawn in to it towards the tip (the clumping of Blender's Clump Hair
- * Curves and Mirage Mane's groom), each its own shade, darker at the root.
- * `fade` carries each vertex's shade. Its index is line segments.
- */
+/** The same style as strands to draw as lines over its cards, close up */
 export function generateHairStrands(style: HairStyle, base: HairBase, seed = 1): ProxyPack {
   return generateHair(style, base, seed, true);
 }
@@ -305,8 +252,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   // Not the ears: they stand out of the skull's ellipsoid.
   const scalp = headVerts.filter((v) => {
     const q = local(at(v));
-    // The ear only: what stands out past the side of the head (the
-    // outermost centimetre), from its top to its lobe - not the skin above it.
+    // The ear only: what stands out past the side of the head (the outermost centimetre), from its top to its lobe
     const ear = Math.abs(at(v)[0]) > skull.r[0] * 1.0 && q[1] < 0.12 && q[1] > -0.85;
     return !ear && len(q) > 0.75 && len(q) < 1.25 && q[1] > hairlineY(Math.atan2(q[0], q[2]));
   });
@@ -325,8 +271,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   }
 
   const neckY = skull.c[1] - skull.r[1] * 1.55;
-  // The shoulders and back the hair falls over: an ellipse in plan that
-  // widens from the neck to the shoulders.
+  // The shoulders and back the hair falls over: an ellipse in plan that widens from the neck to the shoulders.
   const body = (y: number): { rx: number; rz: number; cz: number } => {
     const t = Math.max(0, Math.min(1, (neckY - y) / (skull.r[1] * 0.9)));
     return { rx: 0.45 + 1.35 * t, rz: 0.45 + 0.35 * t, cz: skull.c[2] - 0.15 - 0.1 * t };
@@ -336,12 +281,10 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
     const s = len(q), inflate = 1 + lift / skull.r[1];
     let out = p;
     if (s < inflate) out = [skull.c[0] + q[0] / s * inflate * skull.r[0], skull.c[1] + q[1] / s * inflate * skull.r[1], skull.c[2] + q[2] / s * inflate * skull.r[2]];
-    // The face: hair from the front of the head goes round it, to the
-    // sides, never down over the eyes (a fringe stops short of them).
+    // The face: hair from the front of the head goes round it, to the sides, never down over the eyes
     const f = local(out);
     if (f[2] > 0.15 && f[1] < 0.45 && f[1] > -1.7) {
-      // Eased in below the hairline, so the hair parts round the brow
-      // instead of being cut square across it.
+      // Eased in below the hairline, so the hair parts round the brow instead of being cut square across it.
       const clear = 0.8 * Math.min(1, (0.45 - f[1]) / 0.35);
       if (Math.abs(f[0]) < clear) out = [Math.sign(f[0] || 1) * clear * skull.r[0] + skull.c[0], out[1], out[2]];
     }
@@ -355,9 +298,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   };
 
   const partX = style.part * skull.r[0] * 0.55;
-  // Which way a card faces: out of the skull over the head; below it, out of
-  // the body's vertical axis, a curtain round it - facing out of the skull
-  // there, the cards lay flat on the shoulders as planks.
+  // Which way a card faces: out of the skull over the head; below it, out of the body's vertical axis, a curtain round it
   const facing = (p: V3): V3 => {
     const below = (skull.c[1] - p[1]) / skull.r[1];
     if (below <= 0.2) return outward(p);
@@ -393,16 +334,13 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
     const fringe = style.fringe && q[2] > 0.25 && Math.abs(q[0]) < style.fringe.width && q[1] > 0.2;
     const length = (fringe ? style.fringe!.length : style.length * regional(q)) * (0.8 + 0.35 * rnd());
     // Combed away from the parting and back; a fringe brushed forwards.
-    // Sideways from the parting only on the crown and the front; from the
-    // back of the head the hair falls straight, or it parts down the nape.
     const sideways = Math.max(0, Math.min(1, (q[2] + 0.35) / 0.6)) * (0.4 + 0.8 * Math.max(0, q[1]));
     let comb: V3 = fringe ? [0, -0.15, 1]
       : style.back ? [0, q[1] > 0.3 ? 0.1 : -0.7, -1]
       : style.quiff && q[2] > 0.3 ? [0, 1, -0.4]
       : [Math.sign(root[0] - partX || 1) * sideways + (style.sweep ?? 0) * Math.max(0.3, sideways), -0.7, -0.55 * Math.max(0, q[1]) - 0.25 - 0.5 * Math.max(0, q[2])];
     comb = norm(sub(comb, [n[0] * dot(comb, n), n[1] * dot(comb, n), n[2] * dot(comb, n)]));
-    // Rooted on the skin; the lift (volume) builds over the first steps, or
-    // the root ends of the cards stood off the brow as a step.
+    // Rooted on the skin; the lift (volume) builds over the first steps
     let p = add(root, n, 0.004);
     let dir = comb;
     const pts: V3[] = [p];
@@ -417,9 +355,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
         const toward = sub(g, p);
         if (!gathered && len(toward) > step * 1.1) dir = norm(add(norm(toward), outward(p), 0.15));
         else {
-          // At the tie the strand takes the tail's direction at once: one
-          // rooted right at it still pointed where it was combed, and rose
-          // over the head in a loop before falling.
+          // At the tie the strand takes the tail's direction at once
           if (!gathered) dir = norm([0, -1, -0.15]);
           gathered = true;
           if (style.gather.bun || style.gather.braid) break;
@@ -432,18 +368,14 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
       }
       const layerLift = lift * Math.min(1, (i + 1) / 3);
       p = collide(add(p, dir, step), layerLift);
-      // Over the top half of the skull hair lies on it, at the style's
-      // volume: grown along the tangent alone it left the curving head, and
-      // short or slicked hair (little gravity) stood out in spikes.
+      // Over the top half of the skull hair lies on it, at the style's volume
       const lq = local(p);
       if (lq[1] > -0.1 && !(style.gather && gathered)) {
         const k = (1 + layerLift / skull.r[1]) / Math.max(1e-6, len(lq));
         if (k < 1) p = [skull.c[0] + lq[0] * k * skull.r[0], skull.c[1] + lq[1] * k * skull.r[1], skull.c[2] + lq[2] * k * skull.r[2]];
         const o = outward(p);
         dir = norm(sub(dir, [o[0] * dot(dir, o), o[1] * dot(dir, o), o[2] * dot(dir, o)]));
-        // On the front of the skull hair goes back or to the side, never
-        // forwards and down over the brow (only a fringe does): gravity along
-        // the forehead pulled the hairline's strands down into dark teeth.
+        // On the front of the skull hair goes back or to the side, never forwards and down over the brow (only a fringe does)
         if (!fringe && lq[2] > 0 && dir[2] > 0) dir = norm([dir[0], Math.max(dir[1], -0.2), -0.05]);
       }
       pts.push(p);
@@ -505,10 +437,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   }
 
   if (strands) {
-    // Ribbons a millimetre and a bit wide, lying on the hair's surface, a
-    // couple of dozen round each guide: each spread over the card's width
-    // at the root and drawn in to the guide towards the tip (a clump), its
-    // own length, thinning out at the tip.
+    // Ribbons a millimetre and a bit wide, lying on the hair's surface, a couple of dozen round each guide
     const positions: number[] = [], uvs: number[] = [], index: number[] = [], shades: number[] = [];
     const points: V3[] = [];
     const of: number[] = [];
@@ -546,16 +475,12 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
     return pinned(head, `strands:${style.name}`, 'hair', positions, uvs, index, shades, { of: Int32Array.from(of), points });
   }
 
-  // Cards: a strip along each guide facing out of the head; a second,
-  // turned and lifted, for body. UVs: one of four strand strips across, root
-  // (v = 0) to tip.
+  // Cards: a strip along each guide facing out of the head; a second, turned and lifted, for body.
   const positions: number[] = [], uvs: number[] = [], index: number[] = [], fades: number[] = [];
   for (const [g, pts] of guides.entries()) {
-    // The hairline's own clumps are drawn as strands and the painted cap
-    // only: as cards their root ends stood on the brow as dark teeth.
+    // The hairline's own clumps are drawn as strands and the painted cap only
     if (edgeFront[g]) continue;
-    // A strand rooted at a braid's tie stops there at once: one point is no
-    // card (t = 0 / 0 made its corners NaN, and the whole mesh's bounds).
+    // A strand rooted at a braid's tie stops there at once: one point is no card
     if (pts.length < 2) continue;
     for (let layer = 0; layer < style.layers; layer++) {
       const strip = Math.floor(rnd() * 4);
@@ -570,8 +495,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
         let side = norm(cross(along, out));
         let centre = add(p, out, 0.015);
         if (layer === 1) {
-          // Flat on the head at the root, turning out along the length:
-          // turned from the root, the cards stood up on the crown like fins.
+          // Flat on the head at the root, turning out along the length
           const open = Math.min(1, t * 2.5);
           side = norm(add(side, out, 0.5 * open));
           centre = add(p, out, 0.015 + 0.035 * open);
@@ -580,10 +504,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
         const a = add(centre, side, -w), b = add(centre, side, w);
         positions.push(...a, ...b);
         uvs.push(u0, t * 0.98 + 0.01, u1, t * 0.98 + 0.01);
-        // At the hairline the strands thin in from the root: a feathered
-        // edge, not the straight root ends of the cards (a visor).
-        // Every card's root feathered (the cap shows through), more so at
-        // the hairline: hard root ends read as shingles on the crown.
+        // At the hairline the strands thin in from the root: a feathered edge, not the straight root ends of the cards (a visor).
         const rootFade = Math.min(0.4, Math.max(0.3, Math.min(1, inside[g]! / 0.22)));
         const f = Math.min(1, rootFade + t * 6);
         fades.push(f, f);
@@ -595,20 +516,15 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
     }
   }
 
-  // The cap: the scalp itself under the cards, lifted a little and painted
-  // with the solid band at the top of the strand texture - as hair cards
-  // sit on a painted scalp in games, or the skin shows through the parting.
+  // The cap: the scalp itself under the cards
   const capOf = new Map<string, number>();
   const scalpSet = new Set(scalp);
   const capStart = positions.length / 3;
-  // Each cap point's own fade from where it is (not interpolated across the
-  // mesh's squares), and the cap's triangles split twice where the fade
-  // changes, so its edge follows the hairline's curve, not the mesh's steps.
+  // Each cap point's own fade from where it is
   const capFade = (p: V3): number => {
     const q = local(p);
     if (Math.abs(p[0]) > skull.r[0] * 1.0 && q[1] < 0.12 && q[1] > -0.85) return 0;
-    // A soft, wide edge only on the brow; over the ears and at the nape hair
-    // is full right to its edge (a wide fade there read as shaved sides).
+    // A soft, wide edge only on the brow; over the ears and at the nape hair is full right to its edge
     const theta = Math.atan2(q[0], q[2]);
     const width = 0.12 + 0.25 * Math.max(0, 1 - Math.abs(theta) / 0.9);
     const t = Math.max(0, Math.min(1, (q[1] - hairlineY(theta)) / width));
@@ -652,9 +568,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   }
   void capStart;
 
-  // A plait: a chain of lobes from the tie down, each a short tube tilted
-  // alternately left and right - the chevrons of a three-strand braid seen
-  // from behind - narrowing to the end, strands running along each lobe.
+  // A plait: a chain of lobes from the tie down, each a short tube tilted alternately left and right
   if (style.gather?.braid) {
     const ties: V3[] = [[...style.gather.at] as V3];
     if (style.gather.twin) ties.push([-style.gather.at[0], style.gather.at[1], style.gather.at[2]]);
@@ -697,11 +611,7 @@ export function generateHair(style: HairStyle, base: HairBase, seed = 1, strands
   return pinned(head, `hair:${style.name}`, 'hair', positions, uvs, index, fades);
 }
 
-/**
- * A headband: a band over the crown from ear to ear, a little forward of the
- * top, standing on the hair (so above any style's volume), slightly rounded
- * in section. Dyed as an accessory, not as the hair.
- */
+/** A headband: a band over the crown from ear to ear, a little forward of the top, standing on the hair */
 export function generateHeadband(base: HairBase): ProxyPack {
   const head = headOf(base);
   const { skull } = head;

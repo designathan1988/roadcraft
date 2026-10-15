@@ -1,29 +1,8 @@
 import type { Change, ChangeJournal, ChangeKind, ChangeRect, JournalReader } from './changes';
 
-/**
- * THE SPINE OF EVERY PRODUCT DERIVED FROM THE DOCUMENT (docs/PLANO-ESPINHA-2026-10-14.md,
- * "Arquitetura alvo"): what a product reads is declared, a change makes only the
- * keys it reaches dirty, only those are computed again, and a value computed equal
- * to the old one changes nothing downstream.
- *
- * - Salsa ("algorithm"): a derived value is re-executed only when an input it
- *   read changed; "we can backdate the result, meaning that we say that, even
- *   though the inputs changed, the output didn't".
- * - Bevy `Changed<T>`: change is marked where it is written, and "Bevy does not
- *   compare components to their previous values" - hence `equals`, Salsa's backdating.
- *
- * DO NOT key a product on a global revision (`${doc.buildings.revision}`) and
- * build the map again: every edit of one item paid for the whole city.
- */
+/** DO NOT key a product on a global revision (`${doc.buildings.revision}`) and build the map again */
 
-/**
- * ONE WAY TO READ THE DIARY (the cursor every reader shares, instead of fourteen
- * hand-written `since` calls each with its own idea of "everything changed").
- * Everything changed - `null` - when: the first read; the diary is another one
- * (the document was swapped: `changes.since` answers [] for an old serial of a
- * newer diary); the diary forgot entries; or, for a reader of ids, an entry of
- * its kinds has no ids (a store cleared or loaded writes one such entry).
- */
+/** ONE WAY TO READ THE DIARY the cursor every reader shares, instead of fourteen hand-written  calls each with its own */
 export class JournalCursor implements JournalReader {
   private journal: ChangeJournal | null = null;
   private seen = -1;
@@ -65,12 +44,7 @@ export interface DerivedSpec<D, K, V> {
   readonly kinds: readonly ChangeKind[];
   /** Whether an entry without ids makes everything dirty (a product by item). */
   readonly byId: boolean;
-  /**
-   * Every key there is now: read only when everything changed (the first refresh, the diary
-   * forgotten, the document swapped). The ONE place a product may walk the whole map: mark each
-   * implementation `@rebuild` (scripts/check-code.mjs stops there). DO NOT walk the map anywhere
-   * else in a product: `dirty` and `compute` work on what one change touched.
-   */
+  /** DO NOT walk the map anywhere else in a product: `dirty` and `compute` work on what one change touched. */
   allKeys(source: D): Iterable<K>;
   /** The keys one change makes dirty, added to `out`. */
   dirty(change: Change, out: Set<K>, source: D): void;
@@ -90,11 +64,7 @@ export interface DerivedWork {
   last: number;
 }
 
-/**
- * A product derived from the document, key by key. `refresh` once a frame (or a
- * step, or an edit) computes only the dirty keys and returns those whose value
- * really changed; a refresh with nothing new computes nothing (`work.last === 0`).
- */
+/** A product derived from the document, key by key. */
 export class Derived<D extends { readonly changes: ChangeJournal }, K, V> {
   private readonly values = new Map<K, V>();
   private readonly cursor: JournalCursor;
@@ -149,21 +119,7 @@ const SWEEP_CELL = 64; // world units (1 m)
 /** A rectangle covering more cells than this is taken as the whole map: the sweep answers "changed" everywhere. */
 const SWEEP_MAX_CELLS = 4096;
 
-/**
- * The diary's new entries of some kinds read ONCE for many readers of
- * points (every parked car, every placed thing): `advance` files the
- * rectangles written since the last advance by cell; a reader that had
- * caught up with the last advance asks only the cell of its point.
- *
- * `touches(seen, x, y)` answers as `ChangeJournal.touches(seen, [x, y, x, y],
- * kinds)` does; a reader behind the last advance is answered by the journal
- * itself (once: it is caught up after).
- *
- * DO NOT ask the journal per reader per frame: each asked for every entry
- * since its serial - readers x entries a frame, 30 s of a 2 560 m city's
- * growing (`render/agents.ts` `offRoadDeck`, 2026-10-15), quadratic in the
- * city.
- */
+/** DO NOT ask the journal per reader per frame: each asked for every entry since its serial */
 export class ChangeSweep implements JournalReader {
   private from = -1;
   private now = -1;

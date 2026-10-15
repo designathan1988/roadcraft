@@ -1,25 +1,4 @@
-/**
- * Roadcraft's interface, redesigned (2026-10-04).
- *
- * A new layout, not the old panels restyled:
- * - a HUD across the top: the city (clock, sky, residents, traffic) on the
- *   left, the speed in the centre, menu / camera / history / help on the right;
- * - a dock of categories at the bottom centre, icon and name, as Cities:
- *   Skylines II lays its toolbar;
- * - above it, the tool's drawer: its modes as tabs, its options in a column,
- *   its catalogue as a strip of big cards (one picture per thing, a row with a
- *   name per verb);
- * - the selection on the right.
- *
- * It reads the game's state and calls the game's commands, nothing else: the
- * tool in hand, the speed, the history and every tool's setting come from
- * the game's state (`core/gameState.ts`, `watch`ed: told once a frame what
- * changed - Nystrom, "Observer"); the city's numbers and the game's answers
- * are handed to it as they are computed (`onStatus`, `onHint`); and each
- * control calls the command `main.ts` hands it (`ShellDeps`), the Builder
- * through its actions. It once read and clicked a second, hidden interface
- * four times a second (docs/source/PLANO.md 5g).
- */
+/** Roadcraft's interface, redesigned (2026-10-04). */
 import { furnitureChosen, setFurnitureChosen } from '../roads/furnitureChoice';
 import { FURNITURE_SETS } from '@world/roads/furnitureSets';
 import { EFFECT_KINDS, type ElementKind } from '@world/elements';
@@ -261,7 +240,7 @@ const ICON: Record<string, string> = {
   m_about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/>',
   m_quality: '<path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><path d="M12 12h9"/>',
   m_language: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
-  // A road's cross-section: the bands across it (the profile editor, docs/source/VIAS.md V2).
+  // A road's cross-section: the bands across it (the profile editor).
   profile: '<path d="M3 7h18M3 17h18"/><path d="M7 7v10M12 9v2m0 2v2M17 7v10"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M7 14h10"/>',
 };
@@ -296,16 +275,8 @@ interface ShellTransitTool {
   removeLine(line: number): void;
 }
 
-/**
- * What the shell needs from the rest of the game. The tools' own settings -
- * the road snaps, the parking a road is laid with, the transit tool - are
- * the editor's, which the interface layer may not import (CLAUDE.md, Layers):
- * `main.ts`, which wires the layers together, hands them over here.
- */
-/**
- * The game's state as the shell reads it (`main.ts` `gameState`): the values
- * now, and `watch` to be told, once a frame, that some of them changed.
- */
+/** What the shell needs from the rest of the game. */
+/** The game's state as the shell reads it (`main.ts` `gameState`) */
 interface ShellGameValues {
   readonly tool: string;
   readonly paused: boolean;
@@ -362,11 +333,7 @@ export interface ShellStatus {
   /** The money in hand (`world/economy.ts`). */
   readonly balance: number;
 }
-/**
- * The map's own numbers the old status bar showed (`main.ts`): its roads and
- * nodes, the zoom (pixels a unit, times 100) and the world point in the
- * middle of the view.
- */
+/** The map's own numbers the old status bar showed (`main.ts`): its roads and nodes, the zoom */
 interface ShellReadouts {
   readonly roads: number;
   readonly nodes: number;
@@ -454,11 +421,7 @@ export interface ShellDeps {
   transitTool(): ShellTransitTool | null;
   /** Takes the camera and the inspector to the first junction that cannot be built. */
   showImpossible(): void;
-  /**
-   * The map's numbers (`ShellReadouts`), read while the Simulation or the
-   * Camera menu is open: the old status bar's roads, nodes, zoom and centre.
-   * Absent, those rows are not shown.
-   */
+  /** The map's numbers (`ShellReadouts`), read while the Simulation or the Camera menu is open */
   readouts?(): ShellReadouts;
 }
 
@@ -466,11 +429,7 @@ export interface ShellDeps {
 export interface ShellHandle {
   /** Opens a tool's panel with that tool in hand (the road inspector's eyedropper). */
   openTool(tool: string): void;
-  /**
-   * A tool's key was pressed (`editor/gameKeys.ts`), after the tool machine
-   * took it or put it down: the drawer opens on the tool in hand, closes when
-   * the key put it down (as the dock's second click), and I opens Information.
-   */
+  /** A tool's key was pressed (`editor/gameKeys.ts`), after the tool machine took it or put it down */
   toolKeyed(tool: string): void;
   /** Puts a control of the game's own in the top bar, before Help (F9's button, `ui/healthPanel.ts`). */
   addToBar(control: HTMLElement): void;
@@ -488,9 +447,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   // ================================================================ HUD
   const hud = el('header', 'v2-hud');
   const city = el('div', 'v2-city');
-  // The sky: always day, always night, or the residents' clock - the three
-  // side by side, the one in use lit (it was one button naming the current
-  // sky, the others unseen until clicked through).
+  // The sky: always day, always night, or the residents' clock - the three side by side, the one in use lit
   const SKY_MODES_HUD = [['day', 'sun'], ['night', 'moon'], ['cycle', 'cycle']] as const;
   const sky = el('div', 'v2-seg v2-sky');
   sky.setAttribute('role', 'group');
@@ -506,14 +463,12 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       if (b.classList.contains('on') !== on) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
     }
   };
-  // The clock and the counts change every second: their text nodes are
-  // rewritten in place, not replaced (no node churn under the HUD).
+  // The clock and the counts change every second: their text nodes are rewritten in place, not replaced
   const clock = el('strong', 'v2-clock');
   const clockText = clock.appendChild(document.createTextNode(''));
   const stats = el('div', 'v2-stats');
   const statsText = stats.appendChild(document.createTextNode(''));
-  // Junctions that cannot be built (legs meeting under 25°): a warning with
-  // their count, a click away from the first one. It was computed and never shown.
+  // Junctions that cannot be built (legs meeting under 25°): a warning with their count, a click away from the first one.
   const impossibleB = button('v2-warn', '', () => {
     open = true;
     deps.showImpossible();
@@ -530,7 +485,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     impossibleN.textContent = String(n);
     impossibleB.title = plural('status.impossible', n);
   };
-  // The money in hand (docs/source/VIAS.md V0): roads are paid from it.
+  // The money in hand: roads are paid from it.
   const money = el('strong', 'v2-money');
   const moneyText = money.appendChild(document.createTextNode(''));
   let moneyShown = NaN;
@@ -564,15 +519,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   const simB = button('v2-pill', t('builder.menu.simulation'), () => toggle('sim', simB), svg('advanced', 18));
   const camB = button('v2-pill', t('camera.label'), () => toggle('camera', camB), svg('camera', 18));
   const helpB = button('v2-icon', t('builder.help'), () => toggle('help', helpB), svg('help', 18));
-  // What the map shows over itself - the grid, the zones' colours, the
-  // congestion, the inside of the buildings - in one menu of switches, as
-  // Cities: Skylines II gathers its info views. They were a grid button
-  // here, a show/hide pair in the zoning panel and a switch in the
-  // simulation menu.
+  // What the map shows over itself - the grid, the zones' colours, the congestion, the inside of the buildings
   const layersB = button('v2-pill', t('v2.layers'), () => toggle('layers', layersB), svg('layers', 18));
-  // See inside the buildings (the Builder's command, `buildingsWiring.ts`):
-  // its switch is a layer; while it is on, the floor and a step down and up
-  // stay in the bar. A building opened by a click on the map is told here too.
+  // See inside the buildings (the Builder's command, `buildingsWiring.ts`): its switch is a layer
   let inside = workspace.inside();
   const seeInside = (command: 'toggle' | 'up' | 'down'): void => { inside = actions.seeInside(command); syncInside(); };
   const insideDownB = button('v2-icon', t('inside.down'), () => seeInside('down'), builderIconSvg('floorDown', 16));
@@ -590,8 +539,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   ];
   const syncInside = (): void => {
     if (insideBar.hidden === inside.on) insideBar.hidden = !inside.on;
-    // The dictionary's own floor names (Térreo, 1º andar; Ground, Floor 1). DO NOT
-    // number it here: `level + 1` named the floor above the ground '2º'.
+    // DO NOT number it here: `level + 1` named the floor above the ground '2º'.
     const level = inside.level === 0 ? t('inside.ground') : t('inside.floor', { n: inside.level });
     if (insideLevelEl.textContent !== level) insideLevelEl.textContent = level;
   };
@@ -732,8 +680,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     if (readoutBox) {
       syncReadouts();
-      // Kept current while open (the view moves without the city's numbers
-      // being told), written only when a number changes.
+      // Kept current while open (the view moves without the city's numbers being told), written only when a number changes.
       readoutTimer = window.setInterval(syncReadouts, 250);
     }
     tipCheck();
@@ -799,8 +746,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         body.appendChild(b);
       }
     } else if (id === 'help') {
-      // The keys of the tool in hand, the camera's and the game's: keys and
-      // what they do, in two columns. It held only the Builder's paragraphs.
+      // The keys of the tool in hand, the camera's and the game's: keys and what they do, in two columns.
       body.classList.add('help');
       const current = tool();
       const own = TOOL_KEYS[categoryOf(current) === 'roads' ? 'road' : current];
@@ -829,8 +775,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
 
   // ================================================================ dock
   const dock = el('nav', 'v2-dock');
-  // Each tool named under its icon (a short word; the full name and the key
-  // in the tooltip): icons alone made the player hover each one to find a tool.
+  // Each tool named under its icon (a short word; the full name and the key in the tooltip)
   const CATS: readonly { id: Category; tool: string; key: string; label: () => string }[] = [
     { id: 'roads', tool: 'road', key: '1', label: () => t('tool.road') },
     { id: 'zones', tool: 'zone', key: 'Z', label: () => t('tool.zone') },
@@ -884,11 +829,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   const options = el('div', 'v2-options');
   const strip = el('div', 'v2-strip');
   body.append(strip);
-  /**
-   * A row that scrolls sideways - the strip, a catalog's row of cards - fades
-   * out at the side with more in it (`shell.css`, MDN mask-image): the card at
-   * the edge reads as the next of many, not as a name cut in half.
-   */
+  /** A row that scrolls sideways - the strip, a catalog's row of cards - fades out at the side with more in it */
   const fadeEdges = (box: HTMLElement): void => {
     const more = box.scrollWidth - box.clientWidth;
     const left = more > 1 && box.scrollLeft > 1;
@@ -904,14 +845,12 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   };
   // A scroll does not bubble: caught on its way down to the row that scrolled.
   strip.addEventListener('scroll', (e) => { if (e.target instanceof HTMLElement) fadeEdges(e.target); }, { passive: true, capture: true });
-  // A catalog redraws its own cards (another group of roads): the panel's
-  // width and the fades follow, once a frame at most.
+  // A catalog redraws its own cards (another group of roads): the panel's width and the fades follow, once a frame at most.
   let refit = 0;
   new MutationObserver(() => {
     if (!refit) refit = requestAnimationFrame(() => { refit = 0; fitDrawer(); });
   }).observe(strip, { childList: true, subtree: true });
-  // The tool's options stand on their own at the bottom left, as Cities:
-  // Skylines II lays its tool options: modes, elevation, snapping, as icons.
+  // The tool's options stand on their own at the bottom left, as Cities: Skylines II lays its tool options
   const toolOptions = el('section', 'v2-toolopts');
   toolOptions.append(options, tools);
   // One row: the modes, the options, the things, the pointer's switches, close.
@@ -930,11 +869,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   if (deps.inspectorPanel) {
     const panel = deps.inspectorPanel;
     side.appendChild(panel);
-    /**
-     * The inspector scrolls inside the panel and fades out at the end with
-     * more past it (`shell.css`): the row under the edge was cut in half with
-     * nothing saying the panel went on ("Altura inicial", 1280 x 720).
-     */
+    /** The inspector scrolls inside the panel and fades out at the end with more past it (`shell.css`) */
     const fadeEnds = (): void => {
       const more = panel.scrollHeight - panel.clientHeight;
       const top = more > 1 && panel.scrollTop > 1;
@@ -953,15 +888,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
 
   root.append(hud, pop, drawer, toolOptions, side, dock);
 
-  // The interface's own tooltip: every control is an icon and its name shows
-  // here on hover - the browser's tooltip is slow and out of style. A control's
-  // `title` is moved to `data-tip` the first time it is pointed at.
+  // The interface's own tooltip: every control is an icon and its name shows here on hover
   const tip = el('div', 'v2-tip');
-  /**
-   * Whether a control's name is on screen: an icon's button keeps its name in
-   * a span clipped to nothing (for screen readers), which `innerText` still
-   * reads.
-   */
+  /** Whether a control's name is on screen: an icon's button keeps its name in a span clipped to nothing */
   const nameShown = (control: HTMLElement): boolean => {
     for (const part of control.querySelectorAll<HTMLElement>('span')) {
       const r = part.getBoundingClientRect();
@@ -987,9 +916,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     const text = target.dataset['tip'] ?? '';
     if (!text) return;
-    // A control that already shows its whole name: the tip would only say it
-    // again, over the controls beside it (the menu's "English" over the
-    // Graphics row's "Low", 2026-10-11). Shown when the name is cut short.
+    // A control that already shows its whole name: the tip would only say it again, over the controls beside it
     if (nameShown(target) && target.innerText.trim() === text && !cutShort(target)) return;
     tipFor = target;
     tip.textContent = text;
@@ -1011,7 +938,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   });
   root.addEventListener('pointerdown', () => { tip.hidden = true; });
   // A control rebuilt or removed under the pointer takes its tooltip with it.
-  // Checked after each redraw of the panels, the only thing that removes them.
   const tipCheck = (): void => {
     if (tipFor && (!tipFor.isConnected || tipFor.getBoundingClientRect().width === 0)) {
       tipFor = null;
@@ -1023,11 +949,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   let open = false;
   let builder: BuilderState | null = null;
 
-  /**
-   * A list of choices in the theme, in place of the browser's white `select`:
-   * a button naming the choice, and under it (above it, near the bottom of the
-   * screen) the list. Escape or a click elsewhere closes it.
-   */
+  /** A list of choices in the theme, in place of the browser's white `select`: a button naming the choice, and under it */
   let ddOpen: { list: HTMLElement; anchor: HTMLElement } | null = null;
   /** A render asked for while a list was open: done when it closes. */
   let renderHeld = false;
@@ -1042,9 +964,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const target = e.target as Node;
     if (ddOpen && !ddOpen.list.contains(target) && !ddOpen.anchor.contains(target)) closeDropdown();
   }, true);
-  // The keys of a select (WAI-ARIA APG, select-only combobox): the arrows,
-  // Home and End move between the choices, Escape closes and gives the focus
-  // back to the button. They stop here: the camera's keys must not move too.
   // own key listener: the open list's keys (WAI-ARIA select), held before the game sees them.
   window.addEventListener('keydown', (e) => {
     if (!ddOpen) return;
@@ -1155,7 +1074,6 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const art = picture ? `<img class="v2-card-art" src="${picture}" alt="" />` : `<span class="v2-card-art glyph">${iconHtml ?? ''}</span>`;
     b.innerHTML = `${art}<span class="v2-card-name"></span>`;
     // The name under the picture, its aside in brackets left to the tooltip.
-    // A short name under the picture when the full one does not fit two lines.
     (b.querySelector('.v2-card-name') as HTMLElement).textContent = shortName ?? label.replace(/\s*\([^)]*\)\s*$/, '');
     b.setAttribute('aria-label', label);
     b.onclick = run;
@@ -1178,11 +1096,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   const note = (text: string): void => {
     drawer.setAttribute('aria-description', text);
   };
-  /**
-   * One row of the tool options: a short name at the left, its controls at the
-   * right - the name beside what it names (proximity), never a heading over a
-   * column, so a tool's options fit the screen without scrolling.
-   */
+  /** One row of the tool options: a short name at the left, its controls at the right - the name beside what it names */
   const orow = (label: string, ...controls: (HTMLElement | null | undefined)[]): HTMLElement => namedRow(label, label, ...controls);
   /** A row whose short name stands at the left and whose whole name is its tooltip and its accessible name. */
   function namedRow(short: string, label: string, ...controls: (HTMLElement | null | undefined)[]): HTMLElement {
@@ -1209,10 +1123,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     );
     return s;
   };
-  /**
-   * A slider row driving one of the game's own inputs: its name (the unit in
-   * the dictionary's brackets moves to the number), the bar, the value.
-   */
+  /** A slider row driving one of the game's own inputs: its name */
   /** A slider's number in the interface's language, with at most the decimals of its step. */
   const numberFormats = new Map<string, Intl.NumberFormat>();
   const numberText = (value: number, step: number): string => {
@@ -1279,17 +1190,14 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     if (deps.roundabout) modes.push(['roundabout', t('tool.roundabout'), 'roundabout']);
     for (const [id, label, icon] of modes) {
       tabs.appendChild(tab(label, current === id, () => {
-        // Taken in hand, never picked: picking the road tool from one of its
-        // own modes puts it away (`pickTool`), and Draw from Improve closed the panel.
+        // Taken in hand, never picked: picking the road tool from one of its own modes puts it away
         if (current !== id) deps.setTool(id);
         render();
       }, false, svg(icon, 18)));
     }
     if (current === 'road') {
       const g = blockGridChoice;
-      // How the road is traced - straight, curved, free - or a whole grid of
-      // blocks in one click, as Cities: Skylines II lists Grid among its
-      // drawing modes (`editor/blocks.ts`). Picking a trace puts the grid down.
+      // How the road is traced - straight, curved, free - or a whole grid of blocks in one click, as Cities
       const traces = (['straight', 'curve', 'free'] as const).map((a) => ({
         label: t(`palette.alignment.${a}`),
         on: !g.armed && game.alignment === a,
@@ -1308,15 +1216,13 @@ export function mountShell(deps: ShellDeps): ShellHandle {
           stepper(t('palette.blocks.angle'), `${Math.round((g.angle * 180) / Math.PI)}°`, (d) => { g.angle += (d * 15 * Math.PI) / 180; })));
       }
       // Snapping, as Cities: Skylines II offers it: all of it, then each kind.
-      // The grid drawn on the ground is the top bar's (one switch, one place).
       const snap = roadSnap();
       options.appendChild(orow(t('v2.snap.title'), choices([
         { label: t('v2.snap.on'), on: snap.on, run: () => { setRoadSnap({ on: !snap.on }); render(); }, icon: svg('magnet', 18) },
         { label: t('v2.snap.angles'), on: snap.on && snap.angles, run: () => { setRoadSnap({ angles: !snap.angles }); render(); }, disabled: !snap.on, icon: svg('angle', 18) },
         { label: t('v2.snap.grid'), on: snap.on && snap.grid, run: () => { setRoadSnap({ grid: !snap.grid }); render(); }, disabled: !snap.on, icon: svg('cells', 18) },
       ])));
-      // Lanes, width and parking tune a class's own road; a road picked from
-      // the catalogue carries its own (its card's "Customise..." changes them).
+      // Lanes, width and parking tune a class's own road; a road picked from the catalogue carries its own
       const fromCatalog = drawProfile() !== null;
       // Lanes: the count the next road is laid with.
       if (!fromCatalog) options.appendChild(orow(t('v2.row.lanes'), choices(deps.laneChoices().map((c) => ({
@@ -1338,7 +1244,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       const heightRow = orow(t('v2.row.height'), stepper(t('palette.height'), heightText, (d) => deps.stepRoadHeight(d)));
       heightRow.title = `${t('palette.height')}: ${t(offset > 1e-6 ? 'palette.height.above' : offset < -1e-6 ? 'palette.height.below' : 'palette.height.ground')}`;
       options.appendChild(heightRow);
-      // The sides of a cutting: a batter, or retaining walls (docs/source/VIAS.md V3).
+      // The sides of a cutting: a batter, or retaining walls.
       const walls = cutWallsChosen();
       const cutRow = el('div', 'v2-seg');
       for (const on of [false, true]) {
@@ -1348,7 +1254,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         cutRow.appendChild(b);
       }
       options.appendChild(orow(t('cutSides.row'), cutRow));
-      // The furniture the new road is built with (docs/source/VIAS.md V7).
+      // The furniture the new road is built with.
       const furnitureNow = furnitureChosen();
       const furnitureRow = el('div', 'v2-seg rp-seg-tight');
       for (const set of FURNITURE_SETS) {
@@ -1360,7 +1266,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       const furnitureLine = orow(t('roadFurniture.row'), furnitureRow);
       furnitureLine.title = t('roadFurniture.tip');
       options.appendChild(furnitureLine);
-      // The tool's keys, rebindable (docs/source/VIAS.md V3).
+      // The tool's keys, rebindable.
       const keysB = button('v2-pill rp-open', `${keyLabel(roadKey('heightUp'), true)} · ${keyLabel(roadKey('heightDown'), true)} · ${keyLabel(roadKey('alignment'), true)}`,
         () => (roadKeysOpen() ? closeRoadKeys() : openRoadKeys(keysB)), svg('keyboard', 16));
       options.appendChild(orow(t('roadKeys.row'), keysB));
@@ -1374,8 +1280,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
       })))));
     }
     if (current === 'road') {
-      // The road catalogue (the player's order of 2026-10-09): tabs by
-      // category, a large card for each ready road; the main way to choose.
+      // The road catalogue (the player's order of 2026-10-09): tabs by category, a large card for each ready road
       strip.appendChild(catalogStrip({
         classIndex: () => game.roadTypeIndex,
         pickClass: (index) => deps.selectRoadType(index),
@@ -1397,11 +1302,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   }
 
   // ------------------------------------------------------------ zones
-  /**
-   * Zoning in two tabs, one per job: paint a use on the lots, or make and
-   * shape the lots (`world/lots.ts`). Each lot verb is a card of its own, so
-   * the rectangle and the polygon are two cards, not a tool and a shape option.
-   */
+  /** Zoning in two tabs, one per job: paint a use on the lots, or make and shape the lots (`world/lots.ts`). */
   let lastLotMode = 'add';
   function renderZones(): void {
     title.textContent = t('tool.zone');
@@ -1447,15 +1348,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   }
 
   // ------------------------------------------------------------ landscape
-  /**
-   * Landscape, by what the player is making - as Cities: Skylines II splits
-   * its Landscaping into terraforming, vegetation and paths: the land's shape,
-   * its ground, what grows on it, the sky, and what stands along the street.
-   * Each tab's things are cards (a picture each, the name in the tooltip); the
-   * brush of the one in hand is at the bottom left, and the whole map's
-   * settings under it. The game's tools are unchanged: terrain modes, the
-   * landscaping, wall and pole tools, driven through their own controls.
-   */
+  /** Landscape, by what the player is making - as Cities */
   type LandTab = 'relief' | 'ground' | 'nature' | 'sky' | 'street';
   const RELIEF_MODES = [['raise', 'raise'], ['lower', 'lower'], ['flatten', 'flatten'], ['river', 'river'], ['gully', 'gully']] as const;
   const LANDFORMS = ['mesa', 'canyon', 'escarpment', 'sugarloaf'] as const;
@@ -1677,8 +1570,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const kinds: [TransitToolKind, 'train' | 'metro' | undefined, string, string][] = [
       ['stop', undefined, t('transit.tool.stop'), 'tr_stop'],
       ['terminal', undefined, t('transit.tool.terminal'), 'tr_terminal'],
-      // The bus bay is not in the transport tool yet (`editor/transitTools.ts`):
-      // its tab showed the raw key "transit.tool.bay" and did nothing.
+      // The bus bay is not in the transport tool yet (`editor/transitTools.ts`)
       ['track', 'train', t('transit.tool.trainTrack'), 'tr_track'],
       ['station', 'train', t('transit.tool.trainStation'), 'tr_station'],
       ['track', 'metro', t('transit.tool.metroTrack'), 'tr_metro'],
@@ -1712,9 +1604,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   function renderSimple(current: string): void {
     title.textContent = t(`tool.${current}`);
     if (current === 'bulldoze') {
-      // One tool, three ways to bring things down: demolish at once, the
-      // pistol, the bomb with a force (things breaking piece by piece). They
-      // were a dock button and a menu of their own beside Demolish.
+      // One tool, three ways to bring things down: demolish at once, the pistol, the bomb with a force
       for (const [mode, key, icon] of [['demolish', 'tool.bulldoze', 'demolish'], ['shoot', 'actions.pistol', 'actions'], ['strike', 'actions.bomb', 'bomb']] as const) {
         tabs.appendChild(tab(t(key), strikeChoice.mode === mode, () => { strikeChoice.mode = mode; render(); }, false, svg(icon, 18)));
       }
@@ -1835,8 +1725,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     if (s.shelf === 'patterns') {
       const { items } = section(label);
-      // Until its picture comes (`requestThumbnails`), a pattern shows the facade glyph:
-      // the patterns have none of their own, and nine blank squares stood in a row.
+      // Until its picture comes (`requestThumbnails`), a pattern shows the facade glyph
       for (const p of FACADE_PATTERNS) items.appendChild(card(t(`creator.pattern.${p}`), state.pattern === p, () => actions.choosePattern(p), workspace.thumbnail(p), builderIconSvg('face', 30)));
       return;
     }
@@ -1930,9 +1819,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   // ================================================================ render
   let lastSignature = '';
   function render(): void {
-    // Not while a list is open: the panel rebuilt under it (a picture
-    // arriving, the Builder's state) took its button away and closed it
-    // within a quarter of a second. Rendered as soon as it closes.
+    // Not while a list is open: the panel rebuilt under it
     if (ddOpen) { renderHeld = true; return; }
     const current = tool();
     const cat = categoryOf(current);
@@ -1948,8 +1835,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     drawer.hidden = !showDrawer;
     toolOptions.hidden = !showDrawer;
     root.dataset['tool'] = current;
-    // Whether the player has the Information tool open (not merely no tool in
-    // hand, which is also 'inspect'): the game draws road gizmos only then.
+    // Whether the player has the Information tool open (not merely no tool in hand, which is also 'inspect')
     document.body.dataset['infoTool'] = open && cat === 'info' ? 'on' : 'off';
     syncSide();
     if (!showDrawer) { tipCheck(); return; }
@@ -1969,22 +1855,16 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     else renderSimple(current);
     options.hidden = options.childElementCount === 0;
     tabs.hidden = tabs.childElementCount === 0;
-    // A tool with nothing to choose (demolish, inspect) opens no drawer: its
-    // icon is lit in the dock and its help is in the tooltip.
-    // Sections left with nothing in them are no content: with no transit line
-    // yet the panel kept an empty band under its tabs, its words unshown.
+    // A tool with nothing to choose (demolish, inspect) opens no drawer
     for (const box of [...strip.querySelectorAll(':scope > .v2-section')]) {
       if (box.querySelector('.v2-section-items')?.childElementCount === 0) box.remove();
     }
     drawer.hidden = tabs.hidden && strip.childElementCount === 0;
-    // A mode with nothing to pick (move, split, no transit line yet, a
-    // Builder tab that needs a building): what to do, said in the panel, not
-    // left to a screen reader only.
+    // A mode with nothing to pick (move, split, no transit line yet, a Builder tab that needs a building)
     const help = drawer.getAttribute('aria-description');
     if (!drawer.hidden && strip.childElementCount === 0 && help) strip.appendChild(el('p', 'v2-note', help));
     toolOptions.hidden = options.hidden && tools.childElementCount === 0;
-    // Many things: two rows of cards, more of them in view, rather than one
-    // row whose end (the weather, the landforms) hid past the panel's edge.
+    // Many things: two rows of cards, more of them in view, rather than one row whose end
     strip.classList.toggle('two-rows', strip.querySelectorAll('.v2-card').length > 10);
     if (lastSignature === `${cat}|${current}|${builder?.category ?? ''}`) strip.scrollLeft = scroll;
     lastSignature = `${cat}|${current}|${builder?.category ?? ''}`;
@@ -1997,12 +1877,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     fitDrawer();
     tipCheck();
   }
-  /**
-   * The asset panel stands centred in the room between the tool options
-   * (left) and the selection (right), never over either: its width is all of
-   * that room, whatever the screen. With neither open it is the screen's
-   * centre, over the dock.
-   */
+  /** The asset panel stands centred in the room between the tool options (left) and the selection (right), never over either */
   function fitDrawer(): void {
     if (drawer.hidden) return;
     const vw = window.innerWidth;
@@ -2018,28 +1893,19 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const room = Math.max(320, right - left);
     // A narrow screen pins the panel to both edges (`shell.css`, max-width: 780px).
     drawer.style.left = vw <= 780 ? '' : `${Math.round(right - left >= 320 ? (left + right) / 2 : vw / 2)}px`;
-    // As wide as the room between the panels (its content sets its width, up
-    // to that): held to 1100 px it kept half a 2560 screen empty while the
-    // roads and the buildings scrolled out of sight.
+    // As wide as the room between the panels (its content sets its width, up to that)
     drawer.style.maxWidth = `${Math.floor(room)}px`;
-    // A card whose name has a word wider than the card grows to the word: the
-    // name's line clamp gives the card no width of its own, and the word was
-    // cut at the card's edge (MDN scrollWidth: the content's whole width).
+    // A card whose name has a word wider than the card grows to the word
     for (const name of strip.querySelectorAll<HTMLElement>('.v2-card-name')) {
       const over = name.scrollWidth - name.clientWidth;
       const card = name.parentElement;
       if (over > 1 && card) card.style.width = `${Math.ceil(card.offsetWidth + over)}px`;
     }
-    // A catalog's row of cards spans the panel's flexible track, which gives
-    // the panel no width of its own (CSS Grid intrinsic sizing): the panel
-    // takes the row's whole width, up to the room. A rule held it to 1100 px.
+    // A catalog's row of cards spans the panel's flexible track, which gives the panel no width of its own
     const row = cardRows()[0];
     drawer.style.minWidth = row ? `${Math.floor(Math.min(room, row.scrollWidth + drawer.offsetWidth - row.clientWidth))}px` : '';
     fadeAll();
-    // The modes keep their names while they fit; when they do not, only the
-    // one in use keeps its name (the others show the icon, the name in the
-    // tooltip); tighter still, none does. Past that the row scrolls: a mode
-    // never hides under the close button (8 modes in 284 px, 2026-10-10).
+    // The modes keep their names while they fit; when they do not, only the one in use keeps its name
     tabs.classList.remove('compact', 'tight');
     if (!tabs.hidden && tabs.scrollWidth > head.clientWidth - 8) tabs.classList.add('compact');
     if (!tabs.hidden && tabs.scrollWidth > head.clientWidth - 8) tabs.classList.add('tight');
@@ -2053,8 +1919,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     if (hint.textContent !== text) hint.textContent = text;
   }
 
-  // The HUD: the city's numbers as the game computes them (`updateStatus`,
-  // a few times a second while the city runs), written only when they change.
+  // The HUD: the city's numbers as the game computes them
   const showStatus = (now: ShellStatus): void => {
     status = now;
     if (clockText.data !== now.clock) clockText.data = now.clock;
@@ -2077,9 +1942,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     undo.disabled = !game.canUndo;
     redo.disabled = !game.canRedo;
   };
-  // The game's answers - saved, refused, undone, a road that cannot be laid -
-  // appear a moment above the dock, and a one-shot choice they end (the block
-  // grid laid) is redrawn.
+  // The game's answers - saved, refused, undone, a road that cannot be laid
   const toast = el('div', 'v2-toast');
   toast.setAttribute('role', 'status');
   toast.setAttribute('aria-live', 'polite');
@@ -2106,8 +1969,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     root.classList.toggle('has-side', roadSide || builderSide);
   }
 
-  // Redrawn when the game's state changes (told once a frame, `gameState.flush`),
-  // at the next frame, once however many changes came.
+  // Redrawn when the game's state changes
   let pending = false;
   const later = (): void => {
     if (pending) return;
@@ -2131,10 +1993,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   syncSky();
   syncSpeed();
   syncHistory();
-  // The Builder reports its state whenever it marks it changed - a hint, a
-  // drag, a selection (`buildingsWiring.ts` refresh, `dirty`): the panel is
-  // rebuilt only when what it shows has changed - it was rebuilt, fifty cards
-  // and all, on every report. The same state handed again means its pictures arrived.
+  // The Builder reports its state whenever it marks it changed - a hint, a drag, a selection
   let builderSig = '';
   const sigOf = (s: BuilderState): string => JSON.stringify([s.category, s.tool, s.armed, [...s.ready].sort().join(','), s.floor, s.snap, s.grid, s.hideOthers,
     s.selection, s.planning, s.planPoints, s.userBlueprints.map((b) => b.key), s.pattern, s.scope, s.roof, s.material, s.drawAction, s.inspectorOpen]);

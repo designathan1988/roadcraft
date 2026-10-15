@@ -5,37 +5,7 @@ import { ACCESS_COMPONENTS, PLINTH_MIN, STEP_RISE } from './foundation';
 import { EPS, GRID, bayWidth, baysOn, isMass, levelHeight, planOverlap, volumeLift } from './geometry';
 import { type BayComponent, type Building, type BuildingElement, type FaceId, MAX_LIFT, type Storey, type Volume, volumeById, volumeTop } from './types';
 
-/**
- * A building that follows its hillside: the back of it standing a half or a
- * whole storey above or below the front, as real houses on a slope are built
- * (a back-split, a split-level, a house with a lower ground floor opening on
- * the garden at the foot of the slope).
- *
- * The front - the block with the street door, and every block beside it -
- * keeps the street's floor (`foundation.ts`). Behind a line across the
- * building (the back of the door block, or its middle when nothing stands
- * behind it), the blocks are moved together to one floor of their own
- * (`Volume.lift`), the one that leaves the least earth cut and filled under
- * them, by half storeys (split levels are a half storey apart, joined by short
- * flights: McCarthy Homes, "split level home designs"; on 10-20 % slopes
- * "two to three split levels ... a daylight basement": studiomatrx, sloping
- * site design). Cut and fill are held to about a metre under a house where
- * that can be done (Camden DCP 4.2.2: "The maximum amount of cut must not
- * exceed 1m", fill the same; split level design on steep land) and a fill
- * costs more than a cut (fill raises the house off the hill). Each block is
- * moved whole, as CityEngine's "Translate to" alignment moves a shape.
- *
- * - Half a storey up or down: the back blocks' floors at their own level.
- * - A whole storey down: the back blocks keep their floors and gain a lower
- *   ground floor under them, exposed to the garden on the downhill side (a
- *   walk-out: its door at grade on the exposed side).
- * - A whole storey up: the back blocks lose their bottom storey to the hill.
- *
- * Where the front block is the whole building, it is split across its depth
- * into a front and a back part first. A face of a lowered block that looks
- * onto a side strip of the lot (laid at the street's floor) keeps no windows
- * below that grade.
- */
+/** A building that follows its hillside */
 
 /** The shallowest a part of a split block may be. */
 const MIN_PART = m(3.5);
@@ -54,14 +24,7 @@ export interface SlopeSite {
   /** Local x of the envelope's two sides: a face on one looks onto a side strip at the street's floor. */
   readonly x0: number;
   readonly x1: number;
-  /**
-   * A car park or a loading yard behind the building (a rectangle of the
-   * local plan), laid at the back's level with it: its ground counts in the
-   * choice of that level, as the back blocks' does. A yard is reached by its
-   * drive from the street, so the back may stand no farther from the street
-   * floor than `maxLift`: what the drive climbs or descends as a ramp at the
-   * grade its traffic takes (`editor/lotPlan.ts` `yardRamp`).
-   */
+  /** A car park or a loading yard behind the building (a rectangle of the local plan), laid at the back's level with it */
   readonly yard?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
   readonly maxLift?: number;
 }
@@ -97,12 +60,7 @@ function withoutBays(s: Storey, drop: readonly FaceId[]): Storey {
   return out;
 }
 
-/**
- * Splits block `v` across its depth at local `y`: `v` keeps the front part,
- * the returned block is the back part, with the same storeys, look and roof.
- * Bay overrides and reliefs stay with the face they were on; those of the two
- * sides, whose bays are shared out again, are left out.
- */
+/** Splits block `v` across its depth at local `y` */
 function splitBlock(v: Volume, y: number, id: number): Volume {
   const end = v.y + v.d;
   // The ridge as it ran on the whole block (absent, it follows the longer side).
@@ -138,27 +96,18 @@ function ownerOf(el: BuildingElement, blocks: readonly Volume[]): Volume | null 
   return best;
 }
 
-/**
- * Steps the back of a body (local frame, its volumes in place on the lot) to
- * the ground under it. Returns the step made, or null when the ground does
- * not call for one (or the building cannot take one: a block of another
- * shape, a core or an upper floor across the line).
- */
+/** Steps the back of a body (local frame, its volumes in place on the lot) to the ground under it. */
 export function stepToSlope(body: BlueprintBody, site: SlopeSite): SplitLevel | null {
   const b = body as Building;
   const solids = body.volumes.filter((v) => !v.open && isMass(v) && v.base === 0);
   if (!solids.length || body.volumes.some((v) => v.outline || v.mode) || solids.some((v) => v.lift)) return null;
   const front = [...solids].sort((p, q) => Number(doorOn(q, 0)) - Number(doorOn(p, 0)) || p.y - q.y)[0]!;
   const frontBack = front.y + front.d;
-  // The line: the back of the door block, or across its middle - and behind
-  // every shaft (a stair or a lift core rises through every floor of the
-  // front and is not cut in two: the line goes back past it, on the grid).
+  // The line: the back of the door block, or across its middle - and behind every shaft
   let y = solids.some((v) => v.y >= frontBack - EPS) ? frontBack : snap(front.y + front.d / 2);
   const coreBack = Math.max(-Infinity, ...(body.cores ?? []).map((c) => c.y + body.module));
   if (coreBack > y + EPS) y = Math.ceil((coreBack - EPS) / GRID) * GRID;
-  // Nor is a block standing on the ground floor's roof across the line (a
-  // tower on its podium): the line goes behind it too, the podium's back
-  // stepping on its own.
+  // Nor is a block standing on the ground floor's roof across the line (a tower on its podium)
   const uppers = body.volumes.filter((v) => !v.open && v.base > 0);
   const upperBack = Math.max(-Infinity, ...uppers.filter((v) => v.y < y - EPS && v.y + v.d > y + EPS).map((v) => v.y + v.d));
   if (upperBack > y + EPS) y = Math.ceil((upperBack - EPS) / GRID) * GRID;
@@ -195,12 +144,7 @@ export function stepToSlope(body: BlueprintBody, site: SlopeSite): SplitLevel | 
     return sum / samples.length;
   };
   const backs = [...behind, ...crossing];
-  // The steps a back may take: half a storey or a whole one either way (a
-  // whole storey up takes the bottom storey off the back blocks: each needs
-  // one to spare). With a yard behind, also any whole number of risers
-  // between them (`STEP_RISE`): a shop's or a works' back at its yard's level
-  // is moved whole by however much its drive can climb or fall (`maxLift`) -
-  // half a storey of a 4 m ground floor was more than any ramp beside it.
+  // The steps a back may take: half a storey or a whole one either way
   const options: { k: number; lift: number }[] = [
     { k: -2, lift: -H }, { k: -1, lift: -H / 2 }, { k: 1, lift: H / 2 },
     ...(backs.every((v) => v.storeys.length >= 2) ? [{ k: 2, lift: H }] : []),
@@ -241,9 +185,7 @@ export function stepToSlope(body: BlueprintBody, site: SlopeSite): SplitLevel | 
     Object.entries(s?.facade.bays ?? {}).find(([key, c]) => key.startsWith('2:') && isAccess(c))?.[0] ?? null;
   for (const v of parts) {
     if (k === -2) {
-      // A lower ground floor under it: a storey like the one above, walled
-      // where earth stands against it, its windows and the back door on the
-      // garden side.
+      // A lower ground floor under it: a storey like the one above, walled where earth stands against it
       const above = v.storeys[0]!;
       const lower = clone(above);
       lower.facade.sides = { ...(lower.facade.sides ?? {}), 0: 'wall' };
@@ -297,10 +239,7 @@ export function stepToSlope(body: BlueprintBody, site: SlopeSite): SplitLevel | 
   return { y, lift, steps: k };
 }
 
-/**
- * The step a block's floor is snapped to when it is dragged: half the ground
- * storey, the distance split levels stand apart (`stepToSlope`).
- */
+/** The step a block's floor is snapped to when it is dragged */
 const liftStep = (b: Building): number => levelHeight(b, 0) / 2;
 
 /** A lift snapped to the nearest half storey (`liftStep`) and held within `MAX_LIFT`. */
@@ -310,17 +249,7 @@ export function snapLift(b: Building, lift: number): number {
   return Math.max(-max, Math.min(max, Math.round(lift / step) * step));
 }
 
-/**
- * Sets the floor of block `id` to stand `lift` above (negative: below) the
- * building's ground floor - the Construction tool's own control of a split
- * level (`Volume.lift`), the way a modeller's "base offset" moves a part of a
- * building off its level (Revit's Base Offset: positive above the level,
- * negative below it). The block moves whole with what belongs to it: every
- * block standing on it (on its roof, and on theirs) keeps standing on it, and
- * the parts hung on its faces (canopies, awnings, units) go up or down with
- * the wall they hang on. Held within `MAX_LIFT`; an open lot never takes one
- * (its terrace does that). False when nothing changes.
- */
+/** Sets the floor of block `id` to stand `lift` above (negative: below) the building's ground floor */
 export function opSetLift(b: Building, id: number, lift: number): boolean {
   const v = volumeById(b, id);
   if (!v || v.open || !Number.isFinite(lift)) return false;
@@ -353,17 +282,7 @@ export function opSetLift(b: Building, id: number, lift: number): boolean {
 /** The narrowest bay a car's garage door is set in: a 2.4 m door and its jambs. */
 const GARAGE_BAY = m(2.6);
 
-/**
- * A garage in the lower ground floor of a house stepped a whole storey down
- * its hillside, on the side its drive runs down (`zoning.ts`): the back
- * block nearest that side - the one that gained a storey under it - takes a
- * garage door in the bay of its back (the downhill face, opening on the
- * garden at the foot of the slope) nearest the drive, as a drive-under
- * garage is reached by a drive down the side of the lot to the low side of
- * the house. Returns the door (local frame: its middle on the back face, its
- * width), or null when no such block or bay is there (the bay is narrower
- * than a car's door, or the back door is the only one on that side).
- */
+/** A garage in the lower ground floor of a house stepped a whole storey down its hillside, on the side its drive runs down */
 export function garageUnder(body: BlueprintBody, side: 'left' | 'right'): { readonly x: number; readonly y: number; readonly w: number } | null {
   const b = body as Building;
   const H = levelHeight(b, 0);

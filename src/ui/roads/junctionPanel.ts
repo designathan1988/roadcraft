@@ -7,17 +7,7 @@ import { greenWave } from '@sim/roads/greenWave';
 import { formatDecimal, t } from '../i18n';
 import './roads.css';
 
-/**
- * THE JUNCTION PANEL (docs/source/VIAS.md V5), in the inspector: the junction's
- * height, its control as buttons (automatic, signal, signs on each leg, a
- * stop on every leg, mini-roundabout, nothing signed - the CTB's own rule),
- * what "automatic" chose from the measured flows and the flows themselves, the
- * lock a choice of the player's puts on it and the way back to automatic,
- * each leg's rule, the signal's timing (adaptive or fixed, each stage's green,
- * the offset, the green wave along the main road, bus priority) and the
- * movements allowed. The interface's own controls throughout: no select, no
- * number box, no checkbox (the player's order on the profile editor, V2).
- */
+/** THE JUNCTION PANEL, in the inspector: the junction's height, its control as buttons */
 export interface JunctionPanelHost {
   readonly doc: RoadDoc;
   readonly sim: SimWorld;
@@ -35,13 +25,7 @@ export interface JunctionPanelHost {
 const CONTROLS: readonly JunctionControl[] = ['auto', 'signal', 'priority', 'stop', 'mini', 'none'];
 const RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
 
-/**
- * The way a leg points from its junction AS THE PLAYER SEES IT (up, down,
- * left, right on the screen), through the camera when the host gives it;
- * by the map's north otherwise. By the map's north, a road running across
- * the screen read "south-west" whenever the camera was turned (seen on V5's
- * photos).
- */
+/** The way a leg points from its junction AS THE PLAYER SEES IT */
 let screenOf: ((x: number, y: number) => { readonly x: number; readonly y: number }) | undefined;
 function compassOf(doc: RoadDoc, nodeId: NodeId, seg: { a: NodeId; b: NodeId }): string {
   const here = doc.node(nodeId);
@@ -224,8 +208,7 @@ export function refreshJunctionFlows(sim: SimWorld, doc: RoadDoc, node: NodeId):
   if (!flowsShown?.isConnected) return;
   const n = doc.node(node);
   if (!n) return;
-  // Each value by its own road: a leg the panel skipped (no segment) left the
-  // rows one short, and by position every number after it went to the wrong leg.
+  // Each value by its own road: a leg the panel skipped
   for (const el of flowsShown.querySelectorAll<HTMLElement>('strong[data-segment]')) {
     const id = Number(el.dataset['segment']) as SegmentId;
     if (n.incident.includes(id)) el.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });

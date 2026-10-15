@@ -8,35 +8,7 @@ import { elementClash } from './elements';
 import { GENERIC_SLAB, type MaterialSpec } from './materials';
 import { type BayComponent, type Building, type BuildingElement, type BuildingFunction, type RoofKind, type Volume, MIN_PITCH } from './types';
 
-/**
- * Buildings made to measure for a lot, never the same twice.
- *
- * The lot planner (`editor/lotPlan.ts`) hands each building its envelope: the
- * part of the plot it stands on, after the front garden or forecourt, the side
- * drive or passage, and the yard or car park behind. The building fills it,
- * and what it leaves of the envelope it reports (`free`), so the lot gives
- * that a use too.
- *
- * VARIETY, as CityEngine's mass modelling gets it (Esri, "Tutorial 8: Mass
- * modeling"): the FORM of the mass is chosen by case on the envelope - its
- * proportions, its width - and then by a stochastic branch among the forms
- * that fit (a house: a box with a rear wing, an L with a wing brought forward
- * to the street and mirrored at random, a veranda house, a house with its
- * garage, a pair of stepped halves, a long bungalow; flats: a bar, an L, a
- * U, a stepped bar, a tower on a podium with recursive setbacks); every
- * dimension is a random attribute in a range; a colour SCHEME (wall family,
- * contrasting trim, roof, base) is drawn from data and nudged per building,
- * so no two are the same paint. Each building reports its `signature` - form,
- * colour, roof, height - and the growth picks, of a few candidates, the one
- * least like its neighbours (`editor/zoning.ts`).
- *
- * Facades are composed in an architectural STYLE (`architecture.ts`): a
- * whole design - skin, trim, a rhythm of columns, a ground floor by use, a
- * crown floor, which mouldings and what top - so the parts of one building
- * agree, and two buildings differ in kind, not only in paint.
- *
- * Sizes are metres in the building's local frame, the street along -y.
- */
+/** Buildings made to measure for a lot, never the same twice. */
 
 export interface Rect { x0: number; y0: number; x1: number; y1: number }
 
@@ -53,11 +25,7 @@ export interface Signature {
 }
 
 export interface MadeBuilding {
-  /**
-   * What the eye tells two buildings apart by: the form of the mass, its
-   * wall colour, its roof, its height. Read by the growth's choice among
-   * candidates (`editor/zoning.ts`), so a street does not repeat itself.
-   */
+  /** What the eye tells two buildings apart by: the form of the mass, its wall colour, its roof, its height. */
   readonly signature: Signature;
   readonly fn: BuildingFunction;
   readonly body: BlueprintBody;
@@ -95,11 +63,7 @@ const half = (x: number): number => Math.round(x * 2) / 2;
 
 // ---------------------------------------------------------------- colour schemes
 
-/**
- * A colour nudged in hue, saturation and lightness, a little: two buildings
- * drawn from the same entry of a palette are never the same paint, as two
- * houses painted "the same yellow" years apart are not.
- */
+/** A colour nudged in hue, saturation and lightness, a little */
 function nudge(colour: number, rng: Rng, amount = 1): number {
   const r = ((colour >> 16) & 255) / 255, g = ((colour >> 8) & 255) / 255, b = (colour & 255) / 255;
   const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -177,12 +141,7 @@ function hang(body: BlueprintBody, el: Omit<BuildingElement, 'id'>): void {
 const baysOf = (v: Volume, side: 0 | 1 | 2 | 3 = 0): number =>
   v.facadeGeometry?.[side]?.bays ?? Math.max(1, Math.round(stepsIn(side === 0 || side === 2 ? v.w : v.d, 3)));
 
-/**
- * After the facades are composed: the entrance (a marquise across the lobby
- * of a modern block, a canopy or a porch on an older one), the stone base of
- * a style that has one, the end columns of a deco block brought forward as
- * wings.
- */
+/** After the facades are composed: the entrance */
 function dressBuilding(body: BlueprintBody, style: ArchStyle, rng: Rng, entrance: number, front: Volume, ground: GroundRole, keep: ReadonlySet<Volume>): void {
   const solid = body.volumes.filter((v) => !v.open && !keep.has(v));
   if (style.stoneBase) {
@@ -198,8 +157,7 @@ function dressBuilding(body: BlueprintBody, style: ArchStyle, rng: Rng, entrance
     const bw = front.w / across;
     const modern = style.key === 'contemporary' || style.key === 'modernist' || style.key === 'glass' || style.key === 'tropical' || style.key === 'modernHouse';
     if (ground === 'lobby' && modern) {
-      // The marquise: a thin slab over the lobby, wider than the door, the
-      // entrance read from the street (the marquise of a Brazilian block).
+      // The marquise: a thin slab over the lobby, wider than the door, the entrance read from the street
       const span = Math.min(front.w - m(0.6), bw * (across >= 5 ? 3 : 1) + m(1.2));
       const z = Math.min(body.groundHeight - m(0.45), m(3.6));
       hang(body, { kind: 'canopy', x: front.x + (bay + 0.5) * bw, y: front.y - m(1.2), facing: 0, w: span, d: m(2.4), z, h: m(0.22) });
@@ -210,9 +168,7 @@ function dressBuilding(body: BlueprintBody, style: ArchStyle, rng: Rng, entrance
       hang(body, { kind: 'canopy', x: front.x + (bay + 0.5) * bw, y: front.y - m(0.8), facing: 0, w: Math.min(m(4), bw + m(1)), d: m(1.6), z, h: m(0.18) });
     }
   }
-  // A tall modern block: its middle columns brought forward the whole body,
-  // the same skin - one vertical stroke up the facade instead of a plain
-  // extrusion (the projecting central bay of so many Brazilian towers).
+  // A tall modern block: its middle columns brought forward the whole body, the same skin
   if (style.key === 'contemporary' || style.key === 'modernist' || style.key === 'tropical' || style.key === 'brick') {
     for (const v of solid) {
       const across = baysOf(v), upper = v.storeys.length;
@@ -270,20 +226,13 @@ function signatureOf(form: string, body: BlueprintBody): Signature {
   };
 }
 
-/**
- * Finishes a body: pitched roofs given their pitch, the facades composed in
- * the style (`architecture.ts`) - except the blocks in `keep`, dressed by
- * their kind (a garage, a works hall) - the front door, a back door, the
- * entrance and the base.
- */
+/** Finishes a body: pitched roofs given their pitch, the facades composed in the style (`architecture.ts`) */
 function finish(fn: BuildingFunction, form: string, body: BlueprintBody, env: Envelope, rng: Rng, style: ArchStyle, ground: GroundRole,
   free: Rect[], doorKind: BayComponent = 'door', doorBlock?: Volume, keep: ReadonlySet<Volume> = new Set()): MadeBuilding {
   body.function = fn;
-  // Every pitched roof given its pitch (a wing's lean-to left at the default
-  // 12 degrees rose a storey over a deep kitchen).
+  // Every pitched roof given its pitch (a wing's lean-to left at the default 12 degrees rose a storey over a deep kitchen).
   for (const v of body.volumes) if (v.pitch === undefined) roofShape(v, rng);
-  // Tiles and sheet are for a pitched roof: a flat roof under them read as a
-  // tiled slab. A flat roof is a membrane, whatever the building's tiles.
+  // Tiles and sheet are for a pitched roof: a flat roof under them read as a tiled slab.
   const tiles = body.materials?.roof;
   if (tiles && (tiles.finish === 'tile' || tiles.finish === 'slate' || tiles.finish === 'metal')) {
     const membrane = mat('roofing', nudge(0x74716a, rng, 0.6));
@@ -302,33 +251,16 @@ function finish(fn: BuildingFunction, form: string, body: BlueprintBody, env: En
   return { signature: signatureOf(form, body), fn, body, entrance: entrance / m(1), ...(back !== undefined ? { backDoor: back / m(1) } : {}), free };
 }
 
-/**
- * The most a roof rises over its eaves, metres: a gable or a hip about a
- * storey (a house's attic), a lean-to and a sawtooth tooth a couple of
- * metres. A pitch drawn for a small house on a deep block or a hall made a
- * lean-to rise 10 m from the gutter - a wedge "from the ground to the top"
- * (the player, 2026-10-09).
- */
+/** The most a roof rises over its eaves, metres: a gable or a hip about a storey */
 const MAX_ROOF_RISE: Partial<Record<RoofKind, number>> = { gable: 3.2, hip: 3.2, shed: 1.2, sawtooth: 2 };
-/**
- * Pitches drawn, degrees, as built: clay tiles 20-35 (a tile roof needs about
- * 17 degrees or more to shed rain), a lean-to's metal or fibre-cement sheet
- * 5-14 (sheet roofs are laid at 3-15 degrees).
- */
+/** Pitches drawn, degrees, as built: clay tiles 20-35 */
 const PITCH: Partial<Record<RoofKind, readonly [number, number]>> = { gable: [20, 35], hip: [20, 32], shed: [5, 14], sawtooth: [22, 30] };
 
-/**
- * Pitch and ridge of a pitched roof, drawn: a gable end to the street one
- * time in three; the pitch then lowered until the roof rises no more than a
- * real one over its span (`MAX_ROOF_RISE`): a hall's wide roof is low, a
- * house's steep. A span too wide for even the lowest pitch is roofed flat
- * behind a parapet, as a deep block is.
- */
+/** Pitch and ridge of a pitched roof, drawn: a gable end to the street one time in three */
 function roofShape(v: Volume, rng: Rng, ridgeToStreet = rng.float() < 0.33): void {
   if (v.roof === 'flat' || v.roof === 'terrace') return;
   if (v.roof === 'gable' || v.roof === 'hip') v.ridge = ridgeToStreet ? 'y' : 'x';
-  // A lean-to falls across the short way, as one is built: falling the long
-  // way, its rise over the span was a storey or more.
+  // A lean-to falls across the short way, as one is built
   if (v.roof === 'shed' && v.fall === undefined && v.w < v.d) v.fall = 1;
   const [lo, hi] = PITCH[v.roof] ?? [20, 30];
   const run = v.roof === 'shed' ? ((v.fall ?? 0) % 2 === 0 ? v.d : v.w)
@@ -339,10 +271,7 @@ function roofShape(v: Volume, rng: Rng, ridgeToStreet = rng.float() < 0.33): voi
   v.pitch = Math.max(MIN_PITCH, Math.floor(Math.min(between(rng, lo, hi), cap)));
 }
 
-/**
- * A tower's plan, normalized to its block: undefined (a rectangle) half the
- * time, else a chamfered octagon or a round drum of 16 sides, counter-clockwise.
- */
+/** A tower's plan, normalized to its block: undefined */
 function towerShape(rng: Rng): Vec2[] | undefined {
   const r = rng.float();
   if (r < 0.5) return undefined;
@@ -370,20 +299,7 @@ function houseRoof(rng: Rng, style: ArchStyle): RoofKind {
   }
 }
 
-/**
- * A house, in one of six forms chosen by case on the envelope and then at
- * random among those that fit (CityEngine's `LUShape` case on proportions,
- * then a stochastic branch), dressed in a house style (`architecture.ts`):
- * a colonial house of render and shutters behind its parapet, a bungalow
- * under clay tiles, a modern house of slabs and wide glass, a sobrado.
- * - wing: the main body across the width, a kitchen wing behind on one side;
- * - ell: a wing brought forward to the street on one side (mirrored at
- *   random), its gable to the street, the door in the corner beside it;
- * - veranda: the house set back behind a covered veranda on posts;
- * - garage: a garage on the drive's side, set back from the house front;
- * - twin: two halves, one taller and set back, in two paints of one style;
- * - bungalow: long and low, a hipped roof, a porch over the door.
- */
+/** A house, in one of six forms chosen by case on the envelope and then at random among those that fit */
 function house(rng: Rng, env: Envelope): MadeBuilding {
   const { W, D } = env;
   const style = styleFor('house', rng, env.character, env.era);
@@ -501,11 +417,7 @@ function house(rng: Rng, env: Envelope): MadeBuilding {
   return made;
 }
 
-/**
- * Recursive setbacks (CityEngine's `RecursiveSetbacks`): from `base`, a block
- * of `floors`, the top part again and again stepped in by a share of its size
- * while it is more than a few floors, each step a block of its own.
- */
+/** Recursive setbacks (CityEngine's `RecursiveSetbacks`) */
 function setbacks(model: Model, rng: Rng, x: number, y: number, w: number, d: number, base: number, floors: number,
   spec: { roof: RoofKind; shape?: Vec2[] }): void {
   let left = floors, at = base, bx = x, by = y, bw = w, bd = d;
@@ -541,11 +453,7 @@ function flats(rng: Rng, env: Envelope, high: boolean): MadeBuilding {
   const barD = half(Math.min(d, between(rng, 12, 15)));
   let form: string;
   if (high) {
-    // Towers in the forms a Brazilian skyline is made of: a slab on its base,
-    // stepped, an L, two towers on one base, a tower with a recessed penthouse
-    // crown. The base is the tower's own footprint with a narrow ledge, in the
-    // tower's own skin: a wide podium under a narrow tower, or a base in
-    // another paint, read as two buildings (the player, 2026-10-09).
+    // Towers in the forms a Brazilian skyline is made of
     const podium = rng.int(1, 2);
     const inset = half(between(rng, 0.5, 1.2));
     const tw = Math.max(8, w - 2 * inset), td = Math.max(8, Math.min(d - 2 * inset, 22));
@@ -556,8 +464,7 @@ function flats(rng: Rng, env: Envelope, high: boolean): MadeBuilding {
     if (tw >= 14) forms.push('ell');
     if (tw >= 26) forms.push('twin', 'twin');
     const kind = pickOf(rng, forms);
-    // The tower's plan: a plain rectangle, a chamfered octagon (the cut
-    // corners of so many Brazilian towers) or a round drum, kept up its height.
+    // The tower's plan: a plain rectangle, a chamfered octagon
     const shape = kind === 'ell' ? undefined : towerShape(rng);
     const skin = shape ? { shape } : {};
     const shapedRoof: RoofKind = 'flat';
@@ -625,9 +532,6 @@ function flats(rng: Rng, env: Envelope, high: boolean): MadeBuilding {
   model.core('stairLift', half(w / 2 - 1.5), half(Math.min(d, 10) / 2 - 1.5), floors + (high ? 2 : 0));
   const body = model.build();
   // A second paint only for the second building of a pair, side by side.
-  // Never on a block stacked on another (a stepped top, a tower's setback):
-  // a building in two paints, one on top of the other, read as two buildings
-  // piled up (the player, 2026-10-09).
   if (form === 'flats:pair' && rng.float() < 0.6) body.volumes.filter((v) => !v.open)[1]!.materials = { wall: otherSkin(style, rng, paints.wall) };
   for (const v of body.volumes) roofShape(v, rng);
   return finish(fn, `${form}:${style.key}`, body, env, rng, style, ground, free, 'doubleDoor');
@@ -729,8 +633,7 @@ function works(rng: Rng, env: Envelope, density: 'low' | 'medium' | 'high'): Mad
   const fn: BuildingFunction = density === 'low' ? 'warehouse' : rng.float() < 0.5 ? 'factory' : 'warehouse';
   const style = STYLES.industrial;
   const paints = paintsOf(style, rng);
-  // A hall's one tall storey, 6-10 m to the eaves (racking and a lorry's
-  // door), taller the denser the district.
+  // A hall's one tall storey, 6-10 m to the eaves (racking and a lorry's door), taller the denser the district.
   const hallH = density === 'high' ? between(rng, 8, 10) : density === 'medium' ? between(rng, 7, 9) : between(rng, 6, 7.5);
   const model = new Model(fn, 'industrial', rng.int(0, 7)).heights(hallH, 3.4)
     .look(paints.wall, mat('panel', pickOf(rng, [0x6d7378, 0x8a8f86, 0x5d6870, 0x9a9890, 0x7a4a3a, 0x4f6b55])), paints.trim);
@@ -767,24 +670,14 @@ function works(rng: Rng, env: Envelope, density: 'low' | 'medium' | 'high'): Mad
 }
 
 
-/**
- * A building for an envelope `W` x `D` metres of a lot, for a zone's use and
- * density.
- */
+/** A building for an envelope `W` x `D` metres of a lot, for a zone's use and density. */
 export function madeToMeasure(use: 'residential' | 'commercial' | 'industrial', density: 'low' | 'medium' | 'high', env: Envelope, rng: Rng): MadeBuilding {
   if (use === 'residential') return density === 'low' ? house(rng, env) : flats(rng, env, density === 'high');
   if (use === 'commercial') return density === 'high' ? office(rng, env) : shop(rng, env, density);
   return works(rng, env, density);
 }
 
-/**
- * The signature of any building, grown or not, read off its record as the
- * eye reads it: its function and the arrangement of its blocks - for each,
- * whether it is at the front or set back, left, middle or right, across the
- * whole width or not, its storeys and its roof (not its exact size: two
- * houses of one form on lots a metre apart are the same house) - its main
- * wall and roof paint, its height.
- */
+/** The signature of any building, grown or not, read off its record as the eye reads it */
 export function bodySignature(body: BlueprintBody): Signature {
   const solid = body.volumes.filter((v) => !v.open);
   if (!solid.length) return signatureOf(`${body.function ?? body.use}|`, body);
@@ -800,10 +693,7 @@ export function bodySignature(body: BlueprintBody): Signature {
   return signatureOf(`${body.function ?? body.use}|${solid.map(token).sort().join(';')}`, body);
 }
 
-/**
- * How unlike two signatures are, 0 (the same building) to about 4: a
- * different form counts most, then a wall colour apart, a roof, a height.
- */
+/** How unlike two signatures are, 0 (the same building) to about 4 */
 export function signatureDistance(a: Signature, b: Signature): number {
   const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
   const [r1, g1, b1] = rgb(a.colour), [r2, g2, b2] = rgb(b.colour);

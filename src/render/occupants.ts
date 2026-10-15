@@ -3,20 +3,7 @@ import type { RiderClipKey } from './riderPoses';
 import type { DoorModel, SeatModel, SeatPose } from './vehicleModels';
 import { m } from '@world/units';
 
-/**
- * What the people in a vehicle are doing, as clips to play and places to put
- * them - pure, so the tests can measure exactly what the renderer draws
- * (`agents.ts` is the only caller in the game).
- *
- *  - `occupantPlays`: a seated person's pose, with now and then a glance - in
- *    the mirror, out of the window, down at a phone - blended in and out.
- *  - `kerbFigure`: somebody getting out at the kerb or in: turned on the seat
- *    towards the open door, onto the sill with the feet down on the road,
- *    up out of the car in the opening, and away round the BACK of the open
- *    door. They used to slide straight from the seat to a point off the
- *    middle of the door, rising as they went, which walked them through the
- *    door leaf and put their head through the roof rail.
- */
+/** What the people in a vehicle are doing, as clips to play and places to put them */
 
 /** Anything the rigged citizens can play (`riggedCitizens.CitizenClipKey`, without the import cycle). */
 type OccupantClip = RiderClipKey | 'walk' | 'walkSlow' | 'standUp' | 'idle';
@@ -59,13 +46,7 @@ const smooth = (x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/**
- * A seated person's pose at `time` (seconds of their own), written into
- * `out`: the seat's still pose, and every few seconds a glance - one of the
- * seat's two variations - eased in, held and eased out. The rhythm and the
- * choice come from `seed`, so two people side by side do not move together,
- * and a passenger on the right looks out of the right-hand window.
- */
+/** A seated person's pose at `time` (seconds of their own), written into `out` */
 export function occupantPlays(seat: Pick<SeatModel, 'pose' | 'driver' | 'row' | 'z'>, seed: number, time: number, out: Play[], slain = false): Play[] {
   const clips = clipsFor(seat);
   // Shot dead at the wheel: slumped over it, still.
@@ -79,25 +60,17 @@ export function occupantPlays(seat: Pick<SeatModel, 'pose' | 'driver' | 'row' | 
   // One cycle in four passes without a glance.
   let glance = (c & 3) === 0 ? 0 : smooth((u - 0.5) / 0.12) * (1 - smooth((u - 0.86) / 0.12));
   const variant = 1 + ((c >>> 4) & 1);
-  // A bus passenger looks out of their own side's window, never across the
-  // aisle; otherwise down at their phone.
+  // A bus passenger looks out of their own side's window, never across the aisle; otherwise down at their phone.
   const key: RiderClipKey = seat.pose === 'chair' && !seat.driver && variant === 2
     ? (seat.z > 0 ? 'chairSitRight' : 'chairSitLeft')
     : clips[variant]!;
   if (glance < 0.001) glance = 0;
-  // The idle loop from this person's own point in it: neighbours never breathe
-  // together. ONE pose at a time: the crowd blends bone matrices linearly, and
-  // a blend of a straight head with a turned one squashed the skull - the
-  // collapsed "clown" faces in the cars. The glance is the pose itself, held
-  // for the glance's span (its own idle loop turns the head in the meantime).
+  // The idle loop from this person's own point in it: neighbours never breathe together.
   const idle = time / SEATED_IDLE + (h & 0xff) / 256;
   return onePlay(out, glance > 0.5 ? key : clips[0]!, idle);
 }
 
-/**
- * `out` holding the one play, its object kept from call to call: a seated
- * person is posed every frame they are drawn. DO NOT push a new object a call.
- */
+/** DO NOT push a new object a call. */
 function onePlay(out: Play[], key: OccupantClip, phase: number): Play[] {
   const play = out[0] ?? { key, phase, weight: 1 };
   play.key = key;
@@ -114,11 +87,7 @@ function onePlay(out: Play[], key: OccupantClip, phase: number): Play[] {
 /** How far a door swings open, radians. The renderer swings the leaves by it. */
 export const DOOR_SWING = 1.15;
 
-/**
- * How far the feet are ahead of the pelvis at the start of the captured
- * stand-up (`standUp`), metres, over the roster: the rise is anchored with
- * the seated pelvis on the sill, so the person ends standing this far out.
- */
+/** How far the feet are ahead of the pelvis at the start of the captured stand-up (`standUp`), metres, over the roster */
 const STAND_UP_REACH = 0.36;
 
 /** Clearance kept from the edge of an open door leaf by a body walking past it, metres. */
@@ -139,11 +108,7 @@ export interface KerbFigure {
   x: number;
   y: number;
   z: number;
-  /**
-   * `pelvis`: the pelvis bone is on the point. `feet`: the model's origin
-   * (between the feet) is. `feetUnderPelvis`: the feet on the height, the
-   * first frame's pelvis over the point in plan - for rising from a seat.
-   */
+  /** `pelvis`: the pelvis bone is on the point. */
   anchor: 'pelvis' | 'feet' | 'feetUnderPelvis';
   /** Heading in the vehicle frame, radians: 0 forward, positive to the left. */
   heading: number;
@@ -180,11 +145,7 @@ function kerbRoute(p: KerbPlaces): { sill: { x: number; z: number }; stand: { x:
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-/**
- * Somebody getting out (`drop`) or in (`pick`), at a moment of the transfer:
- * `seated` 1 in the seat to 0 standing up outside the door, then `walked` 0
- * there to 1 on the footway (`kerbStops.kerbTransfer`). Written into `f`.
- */
+/** Somebody getting out (`drop`) or in (`pick`), at a moment of the transfer */
 export function kerbFigure(p: KerbPlaces, kind: 'drop' | 'pick', seated: number, walked: number, f: KerbFigure): KerbFigure {
   const side = p.door.side;
   const route = kerbRoute(p);
@@ -192,8 +153,7 @@ export function kerbFigure(p: KerbPlaces, kind: 'drop' | 'pick', seated: number,
   const high = p.seat.floor > m(0.6);
   f.plays.length = 0;
   if (walked > 0 || seated <= 0) {
-    // On foot, between the door and the footway. A cab's floor is a metre up:
-    // the first stretch is the climb down its steps.
+    // On foot, between the door and the footway.
     const pts = route.via ? [route.stand, route.via, p.foot] : [route.stand, p.foot];
     const lengths = pts.slice(1).map((q, i) => Math.hypot(q.x - pts[i]!.x, q.z - pts[i]!.z));
     const total = lengths.reduce((a, b) => a + b, 0);
@@ -215,8 +175,7 @@ export function kerbFigure(p: KerbPlaces, kind: 'drop' | 'pick', seated: number,
     const dz = (b.z - a.z) * (kind === 'drop' ? 1 : -1);
     f.heading = Math.atan2(-dz, dx);
     f.seated = false;
-    // The stride follows the ground actually covered, which for a pick-up
-    // runs from the footway end.
+    // The stride follows the ground actually covered, which for a pick-up runs from the footway end.
     f.plays.push({ key: 'walk', phase: 0, weight: 1, distance: kind === 'drop' ? along : total - along });
     return f;
   }
@@ -250,8 +209,7 @@ export function kerbFigure(p: KerbPlaces, kind: 'drop' | 'pick', seated: number,
     f.plays.push({ key: base, phase: 0, weight: 1 - t }, { key: 'chairSit', phase: 0, weight: t });
     return f;
   }
-  // Up out of the seat, in the opening, facing out: the captured stand-up,
-  // its seated start on the sill and the feet on the road (or the cab floor).
+  // Up out of the seat, in the opening, facing out
   const t = (u - slideEnd) / (1 - slideEnd);
   f.x = route.sill.x;
   f.z = route.sill.z;

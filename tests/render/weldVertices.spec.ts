@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { weldVertices } from '@render/mesh/tileMesh';
 
-/**
- * WELDING THE VERTICES THAT ARE THE SAME (`tileMesh.ts` `weldVertices`): every
- * triangle corner, read back through the indices, has exactly the attributes it
- * had before - the picture is the same - and the vertices that differ in the
- * least (a normal, a tint, one bit of a uv) are never made one. A fifth of a road
- * surface's vertices were copies (2026-10-15).
- */
+/** WELDING THE VERTICES THAT ARE THE SAME (`tileMesh.ts` `weldVertices`) */
 describe('welding the vertices of a mesh', () => {
   let seed = 5;
   const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);

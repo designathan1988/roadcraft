@@ -1,13 +1,4 @@
-/* The Builder's selection panel (`workspace.ts`): the numbers of what is
-   selected and the actions on it, on the right of the map. The interface v2
-   (`ui/v2/shell.css`, `.v2-shell #builder ...`) sets its place and type over
-   these; the colours are the Builder's (`--bw-*`, `ui/app.css`).
-
-   The rules were three stylesheets once - this one, construction.css and an
-   older "v2" for the Builder's own bars (a rail, a top bar, a dock, scoped to
-   `data-ui="v2"`). The bars left in 5g; what styled them went with them, and
-   what styles the panel was gathered here in the same order, so it cascades
-   as it did. */
+/* The Builder's selection panel (`workspace.ts`) */
 
 /* --- the panel's icon buttons */
 .bw-icon-button {
@@ -91,8 +82,7 @@
 .bw-inspector-actions .bw-action { flex: 1; height: 30px; }
 .bw-inspector-actions .bw-action.danger:hover { color: var(--bw-danger); border-color: var(--bw-danger); }
 
-/* --- the type and sizes the interface reads at (13 px and up), once the
-   shell is mounted (`.v2-shell` on the root, `ui/v2/shell.ts`) */
+/* --- the type and sizes the interface reads at (13 px and up), once the shell is mounted */
 :root.v2-shell {
   --v2-text-s: 13px;
   --v2-text-m: 14px;

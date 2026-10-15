@@ -1,17 +1,6 @@
 import type { Matrix4 } from 'three';
 
-/**
- * FEET ON A SLOPE, WITHOUT IK.
- *
- * A walker's clips are baked on level ground and skinned on the GPU, so no
- * foot can be placed on its own. Set down at the height under its centre on a
- * 12 % footway, a body had its leading foot 4 cm into the paving and its
- * trailing foot 4 cm in the air. A vertical SHEAR by the ground's gradient -
- * every point raised by the slope times its offset from the centre - puts
- * both feet on the plane of the ground and leaves the body upright: a torso a
- * few centimetres across moves by a few millimetres, where tilting the whole
- * figure would have leaned it like a falling post.
- */
+/** FEET ON A SLOPE, WITHOUT IK. */
 export interface Gradient {
   readonly gx: number;
   readonly gy: number;
@@ -31,10 +20,7 @@ export function groundGradient(heightAt: (x: number, y: number) => number, x: nu
   };
 }
 
-/**
- * Premultiplies `matrix` (three's axes: world y is -Z) by the shear about the
- * body's centre (X0, Z0): Y += gx (X - X0) - gy (Z - Z0).
- */
+/** Premultiplies `matrix` (three's axes: world y is -Z) by the shear about the body's centre (X0, Z0): Y += gx (X - X0) */
 export function shearMatrix(matrix: Matrix4, g: Gradient, X0: number, Z0: number): void {
   if (g.gx === 0 && g.gy === 0) return;
   const e = matrix.elements;

@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DeltaLog, type NetworkDelta } from '@world/networkDelta';
 import type { NodeId, SegmentId } from '@world/ids';
 
-/**
- * THE NETWORK'S HISTORY WITHOUT A LIMIT OF AGE (`DeltaLog`): a reader however
- * far behind is told what changed - the union of every rebuild since its token -
- * and merging away the states no one holds changes no reader's answer.
- */
+/** THE NETWORK'S HISTORY WITHOUT A LIMIT OF AGE (`DeltaLog`): a reader however far behind is told what changed */
 const delta = (k: number): NetworkDelta => ({
   segments: new Set([k as SegmentId, (k + 1) as SegmentId]),
   nodes: new Set([(k % 7) as NodeId]),

@@ -47,13 +47,7 @@ function pop(heap: RouteStep[]): RouteStep | undefined {
   return first;
 }
 
-/**
- * The road ends a vehicle of `body` can reach from `start` (`start` itself
- * left out), sorted; traffic cost stays live. Read off the strongly connected
- * components of the lanes, kept by what each edit changed (`laneReach.ts`).
- * DO NOT search the graph from each entry: every entry lane of the map
- * searched the whole town after each edit of the roads.
- */
+/** DO NOT search the graph from each entry */
 function reachableExits(w: SimWorld, start: LaneletId, body: BodyClass): readonly LaneletId[] {
   const exits = w.laneReaches.exitsFrom(w, start, body);
   return exits.includes(start) ? exits.filter((id) => id !== start) : exits;
@@ -66,12 +60,7 @@ export function chooseVehicleDestination(w: SimWorld, start: LaneletId, body: Bo
   return exits[Math.floor(w.rng.route.float() * exits.length)] ?? exits[0] ?? null;
 }
 
-/**
- * Least-time lanelet route to a fixed endpoint, with congestion priced at
- * planning time. A*, by the same lower bound as the trip planner
- * (`drive/tactical.ts` planTrip, `tripLowerBound`): the same least-time
- * route, without searching the whole town on the way to a far road end.
- */
+/** Least-time lanelet route to a fixed endpoint, with congestion priced at planning time. */
 export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletId, body: BodyClass): LaneletId[] | null {
   if (start === goal) return [start];
   if (!w.lanelet(start) || !w.lanelet(goal) || w.rt(goal).ghost) return null;

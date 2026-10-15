@@ -119,8 +119,7 @@ describe('a person dressed in MakeHuman garments', () => {
       // Shoes on the ground, nothing far above the head (a hat, hair).
       expect(low).toBeGreaterThan(-0.03);
       expect(high).toBeLessThan(height + 0.25);
-      // Every garment vertex is close to the body it was fitted to: a
-      // posture or a unit gone wrong puts clothes metres off.
+      // Every garment vertex is close to the body it was fitted to: a posture or a unit gone wrong puts clothes metres off.
       const bodyPts: Vector3[] = [];
       const plainPos = plain.mesh.geometry.getAttribute('position');
       for (let v = 0; v < plainPos.count; v += 7) bodyPts.push(new Vector3().fromBufferAttribute(plainPos, v));

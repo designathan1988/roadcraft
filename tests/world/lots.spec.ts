@@ -26,8 +26,7 @@ describe('lots', () => {
     applyLots(doc, planLots(doc, net));
     const inBlock = doc.lots.filter((l) => Math.abs(lotCentre(l).x) < m(45) && Math.abs(lotCentre(l).y) < m(35));
     expect(inBlock.length).toBeGreaterThanOrEqual(2);
-    // Equal but for the cut to the land: the corner lots lose the footway's
-    // curve at the block's corner, and each row reaches its own street.
+    // Equal but for the cut to the land
     const areas = inBlock.map(area).sort((a, b) => a - b);
     const median = areas[Math.floor(areas.length / 2)]!;
     for (const x of areas) expect(Math.abs(x - median) / median).toBeLessThan(0.15);

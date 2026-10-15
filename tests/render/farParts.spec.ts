@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BufferGeometry } from 'three';
 import { createBuildingKit } from '@render/buildings/kit';
 
-/**
- * A RAILING IS SEEN FROM BOTH SIDES. The far versions of the parts
- * (`kit.ts` `far`) keep only the faces that are seen; a railing is looked at
- * from behind, across its own roof or balcony, and drawn as faces to the
- * street only its back half vanished (the player, 2026-10-13). Every face of
- * a far railing has its twin turned the other way, in the same place.
- */
+/** A RAILING IS SEEN FROM BOTH SIDES. */
 function faces(g: BufferGeometry): { at: string; n: [number, number, number] }[] {
   const p = g.getAttribute('position'), idx = g.getIndex();
   const count = idx ? idx.count : p.count;

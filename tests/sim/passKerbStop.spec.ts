@@ -6,24 +6,7 @@ import { DT } from '@sim/params';
 import type { SimWorld } from '@sim/world';
 import { simOf } from './support/bodies';
 
-/**
- * NOBODY PARKS ACROSS TWO LANES.
- *
- * A car stops at the kerb to let somebody out. The car behind it, queued a
- * jam gap behind, pulled out to pass - and a lane change is a curve driven
- * over road: until its body was clear of the old lane it still followed the
- * stopped car, so it got a body length sideways and stopped there, across
- * both lanes, blocking the one it had moved into as well, for as long as the
- * kerb stop lasted. The same happened moving into a lane beside a queue that
- * was rolling up to a red. Measured on an avenue with kerb stops, before:
- * 43 such stalls in six five-minute runs, one of them 93 s long.
- *
- * Now a change is only started when the body can get out of the old lane
- * before whatever will be standing there stops it (`canLeaveLane`), a driver
- * stopping behind a car at the kerb leaves room to pull out round it
- * (`pullOutRoom`), and a body already clear of the car ahead in the old lane
- * is no longer held by it (`shadowLeaderObstacle`).
- */
+/** NOBODY PARKS ACROSS TWO LANES. */
 function avenue(withSignal: boolean): RoadDoc {
   const doc = new RoadDoc();
   const a = doc.addNode({ x: -900, y: 0 });

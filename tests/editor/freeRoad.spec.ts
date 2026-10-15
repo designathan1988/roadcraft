@@ -42,9 +42,7 @@ describe('free road gesture', () => {
   });
 
   it('raises the road mid-drag without leaving a gap or a stub', () => {
-    // Page Up pressed with the pointer still: samples at almost one place
-    // with rising heights, then the stroke goes on. It was committed with a
-    // gap where the heights changed.
+    // Page Up pressed with the pointer still: samples at almost one place with rising heights, then the stroke goes on.
     const { doc, net } = empty();
     const start = point(0, 0), end = point(300, 0, 15);
     const samples = [point(40, 0), point(80, 0), point(82, 0, 2.5), point(83, 0, 5), point(84, 0, 7.5),
@@ -233,8 +231,7 @@ describe('a road laid over a mountain', () => {
   };
 
   it('is bored as a tunnel where a cutting would be deeper than eighteen metres', () => {
-    // Held to its grade, the road ran 80 m under the summit of a 240-unit
-    // mountain in a slot cut to its own width, and vanished into it.
+    // Held to its grade, the road ran 80 m under the summit of a 240-unit mountain in a slot cut to its own width
     expect(over(240)).toContain('tunnel');
   });
 

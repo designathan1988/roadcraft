@@ -2,12 +2,7 @@ import { planRoofPlant, type RoofPlantItem } from '@world/buildings/roofPlant';
 import { type Building, type Volume, volumeTop } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * WHAT STANDS ON A ROOF, planned once for both levels of a building: the
- * detailed one (`buildingMesh.ts` draws each piece in full) and the far one
- * (`massing.ts` keeps the pieces a metre or more across), so the two never
- * disagree on where a machine room or a tank stands.
- */
+/** WHAT STANDS ON A ROOF, planned once for both levels of a building: the detailed one */
 
 /** The colours of a roof's pieces. */
 export const ROOF_COLOURS = {
@@ -31,8 +26,7 @@ export function roofPlantOf(b: Building, v: Volume): readonly RoofPlantItem[] {
     // A new town's buildings are of every vintage: the seed stands in for the years.
     age: age > 0 ? age : (((b.id * 2_246_822_519) >>> 0) % 1000) / 1000,
     hasCore: b.cores.length > 0,
-    // The blocks on this roof, and the machine rooms over its lift cores: a
-    // skylight stood with its face in a machine room's (2026-10-13).
+    // The blocks on this roof, and the machine rooms over its lift cores: a skylight stood with its face in a machine room's
     blocked: [
       ...b.volumes.filter((o) => o !== v && !o.open && o.base === volumeTop(v)).map((o) => ({ x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.d })),
       ...machineRooms(b).filter((r) => r.volume === v),
@@ -43,12 +37,7 @@ export function roofPlantOf(b: Building, v: Volume): readonly RoofPlantItem[] {
 /** How far a machine room keeps inside its roof's edge: off the parapet (0.25 m thick) by 5 cm. */
 const MACHINE_ROOM_INSET = m(0.3);
 
-/**
- * The machine rooms over the lift cores, each on the highest flat roof over
- * its core and kept inside the parapet (a core at the block's edge stood
- * with its face in the parapet's, 2026-10-13). One plan for both levels
- * (`buildingMesh.ts`, `massing.ts`) and for the roof plant kept off them.
- */
+/** The machine rooms over the lift cores, each on the highest flat roof over its core and kept inside the parapet */
 export function machineRooms(b: Building): { volume: Volume; x0: number; y0: number; x1: number; y1: number }[] {
   const out: { volume: Volume; x0: number; y0: number; x1: number; y1: number }[] = [];
   if (b.cutaway !== undefined) return out;

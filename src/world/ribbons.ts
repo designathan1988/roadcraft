@@ -10,11 +10,7 @@ import type { Junction } from './junction/build';
 import type { PolylineCache } from './geometry';
 import type { ChangeRect } from './changes';
 
-/**
- * A road's surface between the junctions at its ends (`Network.ribbons`):
- * its centreline cut at the trims of each level and the outline of each
- * level round it. Built by `networkBuild.ts`, one road at a time.
- */
+/** A road's surface between the junctions at its ends (`Network.ribbons`) */
 
 /** Per-level trim distances at both ends of a segment. */
 export interface SegmentTrims {
@@ -40,10 +36,7 @@ export interface SegmentRibbon {
   readonly full: Polyline;
 }
 
-/**
- * How far the road turns at a node joining exactly two segments, radians
- * (0 straight on); 0 anywhere else. Read off the two polylines' ends.
- */
+/** How far the road turns at a node joining exactly two segments, radians (0 straight on); 0 anywhere else. */
 export function bendAt(doc: RoadDoc, polylines: PolylineCache, nodeId: NodeId, segId: SegmentId): number {
   const node = doc.node(nodeId);
   if (!node || node.incident.length !== 2) return 0;
@@ -75,9 +68,7 @@ export function makeRibbon(doc: RoadDoc, polylines: PolylineCache, id: SegmentId
   const centre: Record<number, Polyline> = {};
   const rings: Record<number, Ring> = {};
   for (const level of SURFACE_LEVELS) {
-    // Pull the ribbon back INTO the junction by a hair. Under a single
-    // nonzero fill this overlap is invisible, and it removes any chance of
-    // a hairline of terrain showing where the two surfaces meet.
+    // Pull the ribbon back INTO the junction by a hair.
     const a = Math.max(0, (t.a[level] ?? 0) - SEAM_OVERLAP);
     const b = Math.max(0, (t.b[level] ?? 0) - SEAM_OVERLAP);
     const s0 = Math.min(a, Math.max(0, length - MIN_RIBBON));
@@ -85,14 +76,8 @@ export function makeRibbon(doc: RoadDoc, polylines: PolylineCache, id: SegmentId
     const trimmed = full.sub(s0, Math.min(s1, length));
     centre[level] = trimmed;
     // The SURFACE overlaps its neighbour; the CENTRELINE above does not.
-    // At a chain node (no junction, zero trims) an end that was not trimmed
-    // is pushed OUT into its neighbour, so the two ribbons do not meet edge
-    // to edge and show the ground through the join; at a bend with no
-    // junction the push covers the wedge left open on the outside of the
-    // bend, half the width times the tangent of half the bend (audit
-    // P2-26). `centre` keeps the honest length: it carries the dash phase.
     const base = SEAM_OVERLAP + (level - Level.Casing) * SURFACE_END_STEP;
-    // Each side to its own width (docs/source/VIAS.md V1).
+    // Each side to its own width.
     const hw = halfWidth(rt, level);
     rings[level] = ribbonRing(
       overlapUntrimmedEnds(trimmed, s0 <= 0, s1 >= length, base + hw * Math.tan(bendA / 2), base + hw * Math.tan(bendB / 2)),
@@ -103,11 +88,7 @@ export function makeRibbon(doc: RoadDoc, polylines: PolylineCache, id: SegmentId
   return { id, typeIndex: seg.type, direction: seg.direction, road: rt, centre, rings, dashOrigin: seg.dashOrigin, full };
 }
 
-/**
- * Pushes an untrimmed end of a ribbon `amount` past the node, ALONG the end
- * tangent, so the cross-section stays square to the road and the two
- * neighbours overlap by a strip rather than crossing at an angle.
- */
+/** Pushes an untrimmed end of a ribbon `amount` past the node, ALONG the end tangent */
 function overlapUntrimmedEnds(line: Polyline, atStart: boolean, atEnd: boolean, amount: number, amountEnd: number): Polyline {
   if (!atStart && !atEnd) return line;
   const pts = line.toPoints();
@@ -128,12 +109,7 @@ function overlapUntrimmedEnds(line: Polyline, atStart: boolean, atEnd: boolean, 
   return Polyline.fromPoints(out);
 }
 
-/**
- * Closes a trimmed centreline into a carriageway outline: both sides offset
- * with full miter compensation and loop pruning, joined by butt ends. The
- * ends are square by design: they butt against a junction mouth cut at
- * exactly the same distance.
- */
+/** Closes a trimmed centreline into a carriageway outline */
 function ribbonRing(centre: Polyline, hw: number, hwRight = hw): Ring {
   if (centre.n < 2 || centre.length <= 0) return new Ring({ x: 0, y: 0 }, []);
   const pts = centre.toPoints();
@@ -143,11 +119,7 @@ function ribbonRing(centre: Polyline, hw: number, hwRight = hw): Ring {
   return Ring.fromPolygon(loop).ensurePositive();
 }
 
-/**
- * Everything a ribbon puts on any level (`surfaces.ts` levelRings): its rings,
- * and the short overlaps at a curved leg's mouths, which stay within the
- * widest half-width of its centreline.
- */
+/** Everything a ribbon puts on any level (`surfaces.ts` levelRings) */
 export function ribbonBounds(ribbon: SegmentRibbon): ChangeRect {
   let reach = 0;
   for (const level of SURFACE_LEVELS) reach = Math.max(reach, halfWidth(ribbon.road, level));

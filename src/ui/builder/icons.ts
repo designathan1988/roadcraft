@@ -1,9 +1,4 @@
-/**
- * The Builder's icon set: one stroked 24x24 glyph per tool and per top-bar
- * action, drawn in the current colour so active state is a CSS change. Kept
- * deliberately plain - a single 1.6 stroke, no fills - so fifty small buttons
- * read as one family.
- */
+/** The Builder's icon set: one stroked 24x24 glyph per tool and per top-bar action */
 
 const P = {
   // --- categories
@@ -107,9 +102,7 @@ const P = {
   paintVolume: '<path d="M4 9l8-4 8 4v9l-8 4-8-4Z"/><path d="M4 9l8 4 8-4"/>',
   paintBuilding: '<path d="M5 20V6h14v14"/><path d="M3 20h18"/><path d="M9 20v-5h6v5"/>',
 
-  // --- the family buttons, and the variants behind them. Every id the
-  // catalogue can show has a glyph: a gallery of identical squares named the
-  // options without picturing them.
+  // --- the family buttons, and the variants behind them.
   floors: '<path d="M4 20V6l8-3 8 3v14"/><path d="M4 11h16M4 15.5h16"/><path d="M10 20v-2.5h4V20"/>',
   storeyDown: '<path d="M4 19h16V8l-8-5-8 5Z"/><path d="M4 12h16"/><path d="M12 14v4m-2-1.6 2 2 2-2"/>',
   refLoad: '<path d="M7 20V9h10v11" stroke-dasharray="2 2"/><path d="M12 3v9m-3.2-3 3.2 3.2L15.2 9"/><path d="M5 20h14"/>',
@@ -207,8 +200,7 @@ const P = {
   pillarBay: '<path d="M10 6h4v12h-4Z"/><path d="M4 6h3v12H4Z" stroke-dasharray="2 2"/><path d="M7 20h10"/>',
   wallBay: '<path d="M4 6h16v12H4Z"/><path d="M12 6v12" stroke-dasharray="2 2"/><path d="M4 10h8M4 14h8"/>',
   fence: '<path d="M5 20.4V7.6m4.6 12.8V7.6m4.8 12.8V7.6m4.6 12.8V7.6"/><path d="M3.4 12h17.2M3.4 16h17.2"/>',
-  // Lot furniture: a gate between its two posts, a wheelie bin, a lamp post,
-  // a bollard with its reflective band, a drain grate.
+  // Lot furniture: a gate between its two posts, a wheelie bin, a lamp post, a bollard with its reflective band
   gate: '<path d="M4 20.5V5.5h2.6v15M17.4 20.5V5.5H20v15"/><path d="M6.6 9h10.8M6.6 17h10.8"/><path d="M9.6 9v8m2.4-8v8m2.4-8v8"/>',
   bin: '<path d="M6.4 7.6h11.2l-1.2 11.2H7.6Z"/><path d="M5.4 7.6h13.2V5.4H5.4Z"/><path d="M10.4 11v4.6m3.2-4.6v4.6"/><circle cx="9" cy="20.4" r="1"/><circle cx="15" cy="20.4" r="1"/>',
   lamp: '<path d="M8 21h4"/><path d="M10 21V5.6c0-1.2 1-2.2 2.2-2.2h4"/><path d="M14.4 3.4h4.4l1 2.6h-6.4Z"/>',

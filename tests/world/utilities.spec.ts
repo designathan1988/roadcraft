@@ -11,15 +11,7 @@ import {
 import { m } from '@world/units';
 import { sampleWire } from './oracle/sampleWire';
 
-/**
- * The overhead utility network.
- *
- * A second drawable graph beside the roads, with none of their machinery: no
- * width, no junction, no trim, no elevation solve. What it does need is that
- * a run lands where the player released, that a wire hangs rather than
- * stretches, and above all that adding it to the document did not break
- * loading a map saved before it existed.
- */
+/** The overhead utility network. */
 
 describe('pole runs', () => {
   it('lights every other pole, deterministically', () => {
@@ -107,9 +99,7 @@ describe('the document carries the network', () => {
   });
 
   it('LOADS A MAP SAVED BEFORE POLES EXISTED, unchanged', () => {
-    // The property that matters most. Every map the player already has was
-    // written without these keys, and loading one must not fail, must not
-    // drop the roads, and must not invent a network.
+    // The property that matters most.
     const legacy = {
       version: 1 as const,
       nodes: [
@@ -180,8 +170,7 @@ describe('the document carries the network', () => {
 
   it('bumps the utility revision, and not the network revision', () => {
     const doc = new RoadDoc();
-    // A pole moved `revision` and rebuilt the whole road network and the
-    // simulation topology, about 330 ms per pole on a large map.
+    // A pole moved `revision` and rebuilt the whole road network and the simulation topology
     const before = doc.revision;
     const utilities = doc.utilityRevision;
     const a = doc.addPole({ x: 0, y: 0 }).id;

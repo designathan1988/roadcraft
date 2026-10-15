@@ -8,12 +8,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * The perspective camera from the overview down to the street (the player,
- * 2026-10-09: "descer mais a vista e não travar"): the tilt follows the zoom
- * continuously, the camera reaches a pedestrian's view, never goes under the
- * ground and never jumps between two steps of the wheel.
- */
+/** The perspective camera from the overview down to the street (the player, 2026-10-09: "descer mais a vista e não travar") */
 const W = 1280;
 const H = 720;
 
@@ -152,9 +147,7 @@ describe('camera from the overview to the street', () => {
     return 200 * U * t * t * (3 - 2 * t);
   };
 
-  // Brought in at once when a building comes between, as Cinemachine's
-  // Deoccluder (no damping when occluded) and camera-controls do: never a
-  // frame with the inside of a wall on screen.
+  // Brought in at once when a building comes between, as Cinemachine's Deoccluder
   it('is brought in front of a building between it and the point looked at, in the street', () => {
     const r = perspective(() => 0, 8 * U);
     r.setSolids(tower);

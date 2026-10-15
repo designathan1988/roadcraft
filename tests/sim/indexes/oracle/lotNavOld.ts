@@ -1,31 +1,10 @@
-// The lot's grid as built before 2026-10-15 (src/sim/agents/lotNav.ts at 8434df1): every cell's
-// centre tested against every wall ring, every touched cell against every part by separating
-// axes built anew per cell, every solid cell grown by the clearance: the oracle of
-// `lotGridSame.spec.ts`. Only its imports and exports were changed (the person's grid, unused here, left out).
+// The lot's grid as built before 2026-10-15 (src/sim/agents/lotNav.ts at 8434df1)
 import { Heap } from '@core/heap';
 import { sees } from '@sim/agents/lotNav';
 import { m } from '@world/units';
 import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
 
-/**
- * Driving inside a car park: a grid over the lot, its cells blocked where a
- * car cannot go (walls, the stalls themselves, fences, hedges, trees, posts),
- * and the distance from every free cell to the nearest way out onto a street.
- * A car leaving its stall follows that distance down the aisles to the exit;
- * one arriving drives the same way in reverse. Grid path planning with a
- * multi-source distance field, as car-park and crowd navigation commonly do;
- * the path is then pulled taut and driven as smooth curves (`manoeuvre.ts`).
- *
- * All coordinates here are the building's local frame (the lot's own axes).
- *
- * The same grid serves a person walking from a lot's gate to its door
- * (`agents/lotDoors.ts`), built for that walker as clearance-based
- * pathfinding builds one per kind of agent (Harabor, "Clearance-based
- * pathfinding", 2009: an agent may use a tile only where the clearance is at
- * least its size, for the terrain it can cross): finer cells, a body's
- * clearance instead of a car's, and stairs and ramps walkable. Built with the
- * car's clearance, a 1.2 m person's gate was shut.
- */
+/** Driving inside a car park: a grid over the lot, its cells blocked where a car cannot go */
 
 /** Cell size of a car's grid. */
 const DEFAULT_CELL = m(0.75);
@@ -72,11 +51,7 @@ function elementCorners(el: BuildingElement): { x: number; y: number }[] {
   return [[-sx, -sy], [sx, -sy], [sx, sy], [-sx, sy]].map(([a, b]) => ({ x: el.x + a! * c - b! * s, y: el.y + a! * s + b! * c }));
 }
 
-/**
- * Whether a convex ring (an element's turned box) overlaps the cell square
- * from (`cx`, `cy`) one `CELL` across: separating axes of the square and of
- * the ring's sides.
- */
+/** Whether a convex ring (an element's turned box) overlaps the cell square from (`cx`, `cy`) one `CELL` across */
 function rectTouchesCell(ring: readonly { x: number; y: number }[], cx: number, cy: number, size: number): boolean {
   const sq = [{ x: cx, y: cy }, { x: cx + size, y: cy }, { x: cx + size, y: cy + size }, { x: cx, y: cy + size }];
   for (const poly of [sq, ring]) {
@@ -102,11 +77,7 @@ function inside(ring: readonly { x: number; y: number }[], x: number, y: number)
   return hit;
 }
 
-/**
- * The lot's grid: `walls` are the buildings' footprints already in this
- * building's local frame; `exits` the points (local) cars leave the lot by.
- * `options`: a car's grid when absent; a person's is `PEOPLE_GRID`.
- */
+/** The lot's grid: `walls` are the buildings' footprints already in this building's local frame; `exits` the points */
 export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonly { x: number; y: number }[])[],
   exits: readonly { readonly inner: { x: number; y: number }; readonly edge: { x: number; y: number } }[],
   options: LotGridOptions = {}): LotGrid {
@@ -125,10 +96,7 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
       if (walls.some((ring) => inside(ring, x, y))) solid[j * nx + i] = 1;
     }
   }
-  // The parts are marked in every cell they touch (a supercover, Red Blob
-  // Games "Line drawing on a grid"): a fence 12 cm thick lies between the
-  // centres of cells 75 cm apart, and marked by the centres it covered it was
-  // not in the grid at all - cars drove through the boundary, not its gate.
+  // The parts are marked in every cell they touch (a supercover, Red Blob Games "Line drawing on a grid")
   for (const ring of solids) {
     let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity;
     for (const p of ring) { rx0 = Math.min(rx0, p.x); ry0 = Math.min(ry0, p.y); rx1 = Math.max(rx1, p.x); ry1 = Math.max(ry1, p.y); }
@@ -140,8 +108,7 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
       }
     }
   }
-  // Grown by the clearance: a free cell is one a car's centre can stand on,
-  // `CLEARANCE` from the nearest solid cell's EDGE (its centre is half a cell in).
+  // Grown by the clearance: a free cell is one a car's centre can stand on, `CLEARANCE` from the nearest solid cell's EDGE
   const blocked = new Uint8Array(nx * ny);
   const reach = (CLEARANCE + CELL / 2) / CELL;
   const r = Math.ceil(reach);
@@ -160,9 +127,7 @@ export function buildLotGrid(b: Building, lot: LotRect, walls: readonly (readonl
   // Distance from the exits over free cells (Dijkstra, eight neighbours).
   const dist = new Float32Array(nx * ny).fill(Infinity);
   const exitOf = new Int32Array(nx * ny).fill(-1);
-  // Each cell with the distance it was reached at, fixed in the entry
-  // (`@core/heap`). DO NOT key a heap on `dist[cell]`: a waiting entry's key
-  // then falls under it when a shorter way lowers `dist`.
+  // DO NOT key a heap on `dist[cell]`: a waiting entry's key then falls under it when a shorter way lowers `dist`.
   const heap = new Heap();
   const grid0 = { x0, y0, cell: CELL, nx, ny, blocked };
   exits.forEach((ex, n) => {

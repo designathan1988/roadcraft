@@ -3,14 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MultiPoly } from '@core/clipper';
 import { surfaceShape } from '@render/mesh/tileShape';
 
-/**
- * THE ROAD SURFACES' TRIANGLES ARE WELL SHAPED (`tileShape.ts` `flipToDelaunay`):
- * ear clipping joins an outline's points with long thin triangles, and the
- * refinement left them thin - a verge's triangle was a twelfth of the area its
- * longest edge allows, a curb ramp's a hundredth, and the road surfaces were
- * 1.4 GB of a 2,560 m city's 1.7 GB of geometry (2026-10-15). The diagonals are
- * turned to Delaunay's; the outline, the vertices and the edge limit stand.
- */
+/** THE ROAD SURFACES' TRIANGLES ARE WELL SHAPED (`tileShape.ts` `flipToDelaunay`) */
 const ring = (...points: [number, number][]): MultiPoly[number] => [points] as never;
 
 /** The area of a polygon's rings (holes subtracted), by the shoelace sum. */
@@ -61,8 +54,7 @@ describe('the triangles of a surface', () => {
   }
 
   it('has few slivers, where ear clipping and halving left most of the triangles thin', () => {
-    // Before the diagonals were turned: ramp 320 triangles (6 x 1.8 m), the deck and the verge several times what
-    // their area needs. The share of slivers, and the count a surface needs, are bounded.
+    // Before the diagonals were turned: ramp 320 triangles
     const ramp = statsOf(shapes[0]![1], shapes[0]![2]);
     expect(ramp.tris).toBeLessThan(200);
     const deck = statsOf(shapes[2]![1], shapes[2]![2]);

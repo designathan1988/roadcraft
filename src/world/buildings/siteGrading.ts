@@ -5,13 +5,7 @@ import type { BuildingFloors } from './floors';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
-/**
- * THE BUILDINGS' SITES AS THE GROUND WAS LAST GRADED TO THEM: each building's
- * platform (`buildingPads`), the platforms of the whole town for the ground's
- * shaping, and which sites changed since (`render/renderer.ts` cuts and fills
- * the ground round them). Out of the renderer so the work of one building more
- * can be counted (`tests/scale/buildingEdit.spec.ts`).
- */
+/** THE BUILDINGS' SITES AS THE GROUND WAS LAST GRADED TO THEM: each building's platform */
 
 /** A world box: [minX, minY, maxX, maxY]. */
 export type SiteBox = readonly [number, number, number, number];
@@ -19,11 +13,7 @@ export type SiteBox = readonly [number, number, number, number];
 export interface SiteGrading {
   /** The town's platforms as last put together (`rebuild`), reused while a stroke is held. */
   readonly pads: TownPads | null;
-  /**
-   * What changed among the buildings since the ground was graded: the box of each site added, removed
-   * or changed - each on its own, not their union: the union of a city's sites grown in a frame was the
-   * whole city to cut and fill again - or null when none did.
-   */
+  /** What changed among the buildings since the ground was graded: the box of each site added, removed or changed */
   changedSites(buildings: BuildingStore): SiteBox[] | null;
   /** A building's platform worked out again (the roads round it moved). */
   refresh(b: Building): void;
@@ -33,20 +23,13 @@ export interface SiteGrading {
   forget(buildings: BuildingStore): void;
 }
 
-/**
- * `groundAt`: the ground a building stands on before its own grading;
- * `pavedAt`: the footway's height; `apron`: the level margin round each
- * footprint (`buildingPads`); `bankBox`: the box a building's bank reaches.
- */
+/** `groundAt`: the ground a building stands on before its own grading; `pavedAt`: the footway's height; `apron` */
 export function siteGrading(
   groundAt: GroundAt,
   pavedAt: PavedAt | undefined,
   apron: number,
   bankBox: (b: Building) => SiteBox,
-  /**
-   * Each building's floor as kept for every reader (`floors.ts`), on `groundAt` and `pavedAt`:
-   * forgotten here whenever a platform is worked out afresh. Without it, each platform works its own out.
-   */
+  /** Each building's floor as kept for every reader (`floors.ts`), on `groundAt` and `pavedAt` */
   floors?: BuildingFloors,
 ): SiteGrading {
   const floorOf = floors ? (b: Building): number => floors.floorOf(b) : undefined;
@@ -56,25 +39,12 @@ export function siteGrading(
   let padsKnown = new WeakMap<Building, Pad | null>();
   /** The buildings the ground was last graded for, by id: their record then, its site as text, and the box their bank reaches. */
   const graded = new Map<number, { ref: Building; site: number; box: SiteBox }>();
-  /**
-   * What a building's site is graded from, as a digest (`core/digest.ts`),
-   * once per record (DO NOT key it by text: a string per building held while
-   * it stands): the
-   * platform the grading reads (`buildingPads`, kept in `padsKnown` for the
-   * grading itself) - each ring's corners, the platform's height at each,
-   * water, paving, its solid blocks and split levels - and nothing else of
-   * the record. A result is reused while the inputs its build reads are the
-   * same (Bazel's action cache). The whole record (less its age and name)
-   * was compared before: a storey added, a facade or a roof changed, the
-   * town's ageing - a record every few seconds - re-graded the lot and set
-   * off everything that stands on the ground round it.
-   */
+  /** What a building's site is graded from, as a digest (`core/digest.ts`), once per record */
   const siteKey = new WeakMap<Building, number>();
   const siteKeyOf = (b: Building): number => {
     let key = siteKey.get(b);
     if (key === undefined) {
-      // The building's own platform, kept for the town's (`rebuild`). DO NOT put it through
-      // `buildingPads` for one building: a town's filing (its cells, its map) made and dropped per site.
+      // DO NOT put it through `buildingPads` for one building: a town's filing (its cells, its map) made and dropped per site.
       if (!padsKnown.has(b)) padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
       const pad = padsKnown.get(b);
       const digest = new Digest();
@@ -92,13 +62,7 @@ export function siteGrading(
     }
     return key;
   };
-  /**
-   * The diary's revision the sites were last read at, and the town's
-   * platforms at; -1: read them all. A change is taken in by the ids the diary
-   * gives (`BuildingStore.changedSince`): one building more grades and files
-   * that building's site. NOT the whole store read and its platforms filed
-   * again for one building (docs/AUDITORIA-2026-10-14.md C8).
-   */
+  /** The diary's revision the sites were last read at, and the town's platforms at; -1: read them all. */
   const sitesRead = BuildingStore.cursor();
   const padsBuilt = BuildingStore.cursor();
   /** Buildings whose platform was worked out again for the roads (`refresh`) since the town's platforms were put together. */

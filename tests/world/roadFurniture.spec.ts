@@ -9,12 +9,7 @@ import { furnitureFor, NBR9050_CLEAR_WALK } from '@world/roads/furnitureSets';
 import { sectionOf, zonesOn } from '@world/section';
 import { m } from '@world/units';
 
-/**
- * THE FURNITURE OF A NEW ROAD (docs/source/VIAS.md V7): placed as the landscaping
- * tool places, on the footway's service strip, never in the clear walk of
- * NBR 9050 (1,20 m), never two pieces in one place, nothing on a footway too
- * narrow to keep the clear walk.
- */
+/** THE FURNITURE OF A NEW ROAD */
 function street(type: number, length = 400): { doc: RoadDoc; net: Network; seg: SegmentId } {
   const doc = new RoadDoc();
   const a = doc.addNode({ x: 0, y: 0 });

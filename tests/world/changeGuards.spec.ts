@@ -8,15 +8,7 @@ import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * WHAT CHANGED, READ BY PLACE AND BY ITEM:
- * - the diary's new entries are read once a frame for every parked car
- *   (`ChangeSweep`): a car caught up with the last sweep asks its cell, never
- *   the diary - cars x entries a frame was 30 s of a 2,560 m city's growing;
- * - two sites changed far apart are two small boxes to grade the ground in
- *   (`changedSites`), never the box round both - a city's scattered new
- *   buildings were the whole city to cut and fill.
- */
+/** WHAT CHANGED, READ BY PLACE AND BY ITEM: - the diary's new entries are read once a frame for every parked car */
 const KINDS: readonly ChangeKind[] = ['ground', 'buildings'];
 
 describe('the parked cars reading the diary', () => {

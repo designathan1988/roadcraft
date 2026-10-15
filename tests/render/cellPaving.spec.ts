@@ -16,12 +16,7 @@ import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { FOOTWAY_RISE } from '@world/roadTypes';
 import { m } from '@world/units';
 
-/**
- * THE PAVING READ BY A BUILDING CELL'S WORKER ITSELF (`cellPool.ts`, `world/paving.ts`): handed the
- * roads near its cell (copied as `postMessage` copies them), the worker reads the paving's height
- * at every point the page would have answered, the same number bit for bit, and asks the page only
- * for the ground - and the cell it puts together is the page's, byte for byte.
- */
+/** THE PAVING READ BY A BUILDING CELL'S WORKER ITSELF (`cellPool.ts`, `world/paving.ts`): handed the roads near its cell */
 const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
 const naturalAt = (x: number, y: number): number => ground(x, y) - m(0.3);
 
@@ -92,8 +87,7 @@ describe('the paving read by a building cell worker', () => {
     expect(onRoad).toBeGreaterThan(1_000);
     expect(flushRise).toBeGreaterThan(50);
 
-    // A cell put together as a worker does, the paving read there: asks the page no paving inside its
-    // rectangle, and makes what the page makes.
+    // A cell put together as a worker does, the paving read there
     const kit = createBuildingKit();
     const work = new CellWork(kitBoxes(kit));
     const buildings = [...doc.buildings.all()].filter((b) => Math.floor(b.x / BATCH_CELL) === -1 && Math.floor(b.y / BATCH_CELL) === -1);

@@ -9,24 +9,9 @@ import type { RoadNode, RoadSegment } from './doc';
 import type { ApproachGroup } from './approachGroups';
 import type { NodeId, SegmentId } from './ids';
 
-/**
- * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
- * (`conflictPoints.ts` keeps the sweeps, the caches and the index). Pure: no
- * graph, no lanelet, no document - a pair's table is a function of its two
- * sweeps' frames and three numbers each, so a worker measures it as well as
- * the page (`conflictTable.worker.ts`, `conflictPool.ts`). Moved out of
- * `conflictPoints.ts` unchanged (2026-10-14).
- */
+/** WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone */
 
-/**
- * Size classes a conflict zone is measured for.
- *
- * World knows nothing about the fleet, so the classes are envelopes in metres
- * and the simulation maps each archetype to the smallest one containing it
- * (`bodyClassOf`); `tests/world/conflictZones.spec.ts` checks every archetype
- * fits. Three classes are enough to separate what matters: two cars in a pair
- * of turn lanes do not touch, two buses in the same pair do.
- */
+/** Size classes a conflict zone is measured for. */
 export type BodyClass = 0 | 1 | 2;
 
 /** A turn as `turnPaths.ts` chose it: one cubic's handle, or two cubics through a point inside the junction. */
@@ -38,12 +23,7 @@ export interface ChosenTurn {
   readonly maxBodyClass: BodyClass | -1;
 }
 
-/**
- * What a turn is chosen from, as plain numbers, for a worker (`conflictPool.ts`): the arriving and
- * departing lanes and the waiting ones as flat x, y lists (`Polyline.xy`), the junction's surface by
- * its key with its centre and rings, and whether a lane meets a road's end. The same numbers the page
- * would sweep: the turn chosen there is the one chosen here.
- */
+/** What a turn is chosen from, as plain numbers, for a worker (`conflictPool.ts`) */
 export interface TurnAsk {
   /** The lanes' own lists (`Polyline.xy`, never changed once made): not copied here, once by the message. */
   readonly inXY: Float64Array;
@@ -69,17 +49,9 @@ export const BODY_ENVELOPE: readonly { readonly length: number; readonly width: 
 ];
 export const HEAVY: BodyClass = 2;
 
-/**
- * Sampling step of the body centre along a movement, world units. Each sampled
- * rectangle is lengthened by half a step at both ends, so consecutive samples
- * overlap and a thin conflict cannot fall between two of them.
- */
+/** Sampling step of the body centre along a movement, world units. */
 const SWEEP_STEP = m(0.4);
-/**
- * How far behind its stop line the front of a waiting body is swept, world
- * units: vehicles stop a few units short of the line, and a long one turning
- * beside them swings over that much of the lane next to it (see `inRange`).
- */
+/** How far behind its stop line the front of a waiting body is swept, world units */
 const QUEUE_BACK = m(3.2);
 
 /** A sweep's first sample and count: from a heavy body a little short of its stop line (`QUEUE_BACK`) to its rear past the movement's end (`length`). */
@@ -95,12 +67,7 @@ const SWEEP_MARGIN = m(0.06);
 /** Broad-phase cell size, world units. */
 const CELL = m(3.2);
 
-/**
- * What one movement's sweep is sampled from, as plain numbers (`ConflictIndex.prepare` asks, a worker
- * answers by `sampleSweep`): the approach, the movement and the exit as flat x, y lists (`Polyline.xy`,
- * never changed once made: handed over as they are, copied once by the message), and where the samples
- * start and how many there are.
- */
+/** What one movement's sweep is sampled from, as plain numbers */
 export interface SweepAsk {
   readonly inXY: Float64Array;
   readonly crossXY: Float64Array;
@@ -125,24 +92,12 @@ export function lineDigest(xy: Float64Array): number {
   return new Digest().addAll(xy).value();
 }
 
-/**
- * Digest of a sweep's frame and its movement's centreline: what a pair's key is made of (`conflictPoints.ts`
- * `measureShape`). Only a key: a collision costs a recompute, never a wrong answer, because a hit is
- * confirmed by comparing the values. It was a plain FNV-1a over the bytes, which mirrored movements beat:
- * negating a double flips only its top bit, a multiply never carries a top bit down, and the flips
- * cancelled in pairs - so in a town laid out symmetrically about the origin every movement shared its key
- * with its mirror image, the two threw each other out of the cache, and every rebuild measured some six
- * hundred pairs again (a third of a second). `Digest` mixes its words.
- */
+/** Digest of a sweep's frame and its movement's centreline: what a pair's key is made of */
 export function shapeDigest(frame: Float64Array, centre: Float64Array): number {
   return new Digest().addAll(frame).addAll(centre).value();
 }
 
-/**
- * The approach, the movement and the exit as one arc-length parameter.
- * Beyond either end the path continues straight along its end tangent, so a
- * very short approach still places the tail of a long body somewhere sensible.
- */
+/** The approach, the movement and the exit as one arc-length parameter. */
 export function joinedPath(inbound: Polyline, crossing: Polyline, outbound: Polyline): { sampleAt(c: number): { p: Vec2; t: Vec2 } } {
   return {
     sampleAt(c: number): { p: Vec2; t: Vec2 } {
@@ -162,11 +117,7 @@ export function joinedPath(inbound: Polyline, crossing: Polyline, outbound: Poly
   };
 }
 
-/**
- * The frame of a sweep: `count` body centres `SWEEP_STEP` apart from `c0` along the joined path, each
- * pointed along the same chord the drawn body is (`HEADING_CHORD`). A function of the three centrelines
- * and the two numbers alone, so the page and a worker make the same one, bit for bit.
- */
+/** The frame of a sweep: `count` body centres `SWEEP_STEP` apart from `c0` along the joined path */
 export function sweepFrame(path: { sampleAt(c: number): { p: Vec2; t: Vec2 } }, c0: number, count: number): Float64Array {
   const frame = new Float64Array(count * 4);
   for (let i = 0; i < count; i++) {
@@ -192,11 +143,7 @@ export function frameLengthsOf(frame: Float64Array): Float64Array {
   return out;
 }
 
-/**
- * One movement's sweep sampled from plain numbers, as `conflictPoints.ts` `sweepOf` and `measureShape`
- * would on the page: what a worker does (`conflictTable.worker.ts`). `lines`: the centrelines already
- * made from the same lists, with their digests (a lane is the approach or exit of several movements).
- */
+/** One movement's sweep sampled from plain numbers, as `conflictPoints.ts` `sweepOf` and `measureShape` would on the page */
 export function sampleSweep(ask: SweepAsk, lines?: Map<Float64Array, { line: Polyline; digest: number }>): SampledSweep {
   const lineOf = (xy: Float64Array): { line: Polyline; digest: number } => {
     let known = lines?.get(xy);
@@ -281,11 +228,7 @@ export interface SweepSamples {
   readonly frameLengthSq: Float64Array;
   /** A conservative bound around every sampled heavy-vehicle body. */
   bounds: { minX: number; minY: number; maxX: number; maxY: number } | null;
-  /**
-   * Broad phase of the HEAVY rectangles: cell key -> sample indices. Built
-   * the first time a pair needs it (`gridOf`): a movement whose every pair is
-   * answered from the cache never needs one.
-   */
+  /** Broad phase of the HEAVY rectangles: cell key -> sample indices. */
   grid: Map<number, number[]> | null;
   /** Body classes that may stand at each sampled centre, computed once. */
   range: Uint8Array | null;
@@ -343,19 +286,7 @@ function halfExtent(cls: BodyClass): readonly [number, number] {
 }
 
 /** Whether sample `i` is a legal centre for a body of this class. */
-/**
- * Whether a sample is a place a body of this class can be on the movement.
- *
- * The far end is where its rear has left the exit of the box. The near end
- * used to be where its FRONT reaches the stop line, so a body standing behind
- * its line was never inside any zone - and a car does stand behind its line,
- * a few units short of it, or further back in the queue. A bus turning right
- * off a short link swings its rear across the lane beside it well behind the
- * line; the car waiting there was outside every zone, so nothing held the bus
- * for it and nothing held it short of the bus, and the two bodies overlapped.
- * Every class is now swept from where the sweep starts: the front of the
- * longest body `QUEUE_BACK` short of the line.
- */
+/** Whether a sample is a place a body of this class can be on the movement. */
 function inRange(s: SweepSamples, i: number, cls: BodyClass): boolean {
   const half = (BODY_ENVELOPE[cls] as { length: number }).length / 2;
   const c = s.c0 + i * SWEEP_STEP;
@@ -384,10 +315,7 @@ function overlap(
   const bx = b.frame[j * 4] as number, by = b.frame[j * 4 + 1] as number;
   const bux = b.frame[j * 4 + 2] as number, buy = b.frame[j * 4 + 3] as number;
   const dx = bx - ax, dy = by - ay;
-  // The four SAT axes are the two bodies' own frames. Their self-projections
-  // are just the squared frame lengths, while the cross-projections share one
-  // dot and one determinant. Reuse these instead of twenty dot products and
-  // four helper calls for every candidate sample pair.
+  // The four SAT axes are the two bodies' own frames.
   const dot = aux * bux + auy * buy;
   const cross = aux * buy - auy * bux;
   const along = Math.abs(dot), across = Math.abs(cross);
@@ -405,8 +333,7 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
   if (aa.maxX < bb.minX || bb.maxX < aa.minX || aa.maxY < bb.minY || bb.maxY < aa.minY) return null;
   // Heavy against heavy, through the grid.
   const hits: number[] = [];
-  // Which of b's samples this sample of a has already tested: a stamp per
-  // sample instead of a set cleared per sample.
+  // Which of b's samples this sample of a has already tested: a stamp per sample instead of a set cleared per sample.
   const seen = new Int32Array(b.count);
   const grid = gridOf(b);
   const [hl, hw] = halfExtent(HEAVY);
@@ -434,8 +361,7 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
 
   // 3 x 3 class pairs x [enterA, exitA, enterB, exitB]; NaN = no overlap.
   const table = new Float64Array(TABLE_SIZE).fill(Number.NaN);
-  // The four SAT axes and their body projections are identical for all nine
-  // class pairs at a sampled pose pair. Compute them once, then vary extents.
+  // The four SAT axes and their body projections are identical for all nine class pairs at a sampled pose pair.
   const projection = new Float64Array(20);
   for (let k = 0; k < hits.length; k += 2) {
     const i = hits[k] as number, j = hits[k + 1] as number;
@@ -492,11 +418,7 @@ function widen(table: Float64Array, at: number, c: number): void {
 
 // ------------------------------------------------------------------ junctions
 
-/**
- * A whole build's junctions as a worker is sent them and answers (`junctionBuild.ts` `buildJunctionOf`),
- * named with the measurer's interface as `TurnAsk` is. DO NOT define them in `junctionBuild.ts`: this file
- * importing it closed an import cycle through `turnPaths.ts` and `junctionTurns.ts`.
- */
+/** DO NOT define them in `junctionBuild.ts` */
 
 /** How a movement turns (`junctionBuild.ts` `classifyTurn`). */
 export type TurnKind = 'through' | 'left' | 'right' | 'uturn';
@@ -527,12 +449,7 @@ export interface LaneAsk {
   readonly toEdge: boolean;
 }
 
-/**
- * One junction of a whole build, as a worker builds it (`buildJunctionOf`): its input as plain numbers, the
- * pieces of its surface (rings as flat lists, mouth strips with their road's centreline), and the turns its
- * build before chose (`JunctionTurns`), if any. A lane or a ring met by several junctions is the same
- * array in each: one message copies it once (the structured clone keeps what is shared shared).
- */
+/** One junction of a whole build, as a worker builds it (`buildJunctionOf`) */
 export interface JunctionAsk {
   readonly node: JunctionNode;
   readonly legs: readonly JunctionLeg[];
@@ -554,70 +471,31 @@ export interface JunctionAnswer {
   readonly turns: readonly (readonly [string, ChosenTurn])[];
 }
 
-/**
- * Builds a whole build's junctions somewhere else - the browser's workers (`conflictPool.ts`) - each as
- * `buildJunctionOf` would here, answered in the order asked; rejected when it cannot (the junctions are then
- * built on the page, `LaneletGraph.buildJunction`). Absent: every junction is built on the page.
- */
+/** Builds a whole build's junctions somewhere else - the browser's workers (`conflictPool.ts`) */
 export interface JunctionMeasurer {
   buildJunctions?(asks: readonly JunctionAsk[]): Promise<readonly JunctionAnswer[]>;
 }
 
-/**
- * Measures many pairs' tables somewhere else - the browser's workers
- * (`conflictPool.ts`) - each as `pairTable` would here, answered in the
- * order asked; rejected when it cannot (`ConflictIndex.prepare` then
- * measures them on the page). The same workers round the walkways' corners (`CornerMeasurer`) and build a
- * whole build's junctions (`JunctionMeasurer`).
- */
+/** Measures many pairs' tables somewhere else - the browser's workers (`conflictPool.ts`) */
 export interface PairMeasurer extends CornerMeasurer, JunctionMeasurer {
   /** `key`: the pair's key, under which a measurer that `keeps` stores its table for the next session. */
   measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples; readonly key?: string }[]): Promise<readonly (Float64Array | null)[]>;
-  /**
-   * Whether it keeps the tables it measures for the next session itself (where it measures them): the
-   * page then does not (`ConflictIndex.takeMeasured`). DO NOT keep them from the page: the structured
-   * clone of a city's tables in one write held a frame 0.9 s (2026-10-15).
-   */
+  /** DO NOT keep them from the page: the structured clone of a city's tables in one write held a frame 0.9 s (2026-10-15). */
   readonly keeps?: boolean;
-  /**
-   * Chooses many junction turns somewhere else, each as `turnPaths.ts` `chooseTurnOf` would here, answered
-   * in the order asked; rejected when it cannot (the turns are then chosen on the page,
-   * `LaneletGraph.redoProvisional`). Absent: every turn is chosen on the page.
-   */
+  /** Chooses many junction turns somewhere else, each as `turnPaths.ts` `chooseTurnOf` would here */
   chooseTurns?(asks: readonly TurnAsk[], surfaces: ReadonlyMap<string, SurfaceRings>): Promise<readonly ChosenTurn[]>;
-  /**
-   * Samples many movements' sweeps somewhere else, each as `sampleSweep` would here, answered in the
-   * order asked; rejected when it cannot (`ConflictIndex.prepare` then samples them on the page). Absent:
-   * every sweep is sampled on the page.
-   */
+  /** Samples many movements' sweeps somewhere else, each as `sampleSweep` would here, answered in the order asked */
   sampleSweeps?(asks: readonly SweepAsk[]): Promise<readonly SampledSweep[]>;
-  /**
-   * Finishes many pairs somewhere else, each as `finishPair` would here - where the two movements'
-   * centrelines first cross (on their own point lists, `Polyline.xy`) and what the index makes of the
-   * pair's zones (`pairFacts`, on its table) - answered in the order asked; rejected when it cannot (the
-   * conflict index then works them out on the page, `ConflictIndex.build`). Absent: on the page.
-   */
+  /** Finishes many pairs somewhere else, each as `finishPair` would here - where the two movements' centrelines first cross */
   finishPairs?(pairs: readonly FinishAsk[]): Promise<readonly FinishedPair[]>;
 }
 
 // ------------------------------------------------------------------ zones
 
-/**
- * `cross`: the two centrelines intersect. `merge`: both end in the same lane.
- * `swept`: the centrelines never meet, but the BODIES driven along them do —
- * opposing left turns that pass too close, a bus swinging its tail across the
- * lane beside it.
- */
+/** `cross`: the two centrelines intersect. */
 export type ConflictKind = 'cross' | 'merge' | 'swept';
 
-/**
- * Centre-arc interval over which a body of one class on one movement overlaps
- * the swept area of a body of another class on the other movement.
- *
- * Arc positions are of the BODY CENTRE along the movement, measured from the
- * stop line: negative while the centre is still on the approach, beyond the
- * connector length once it is on the exit lane.
- */
+/** Centre-arc interval over which a body of one class on one movement overlaps the swept area of a body of another class on */
 export interface Zone {
   readonly enter: number;
   readonly exit: number;
@@ -632,11 +510,7 @@ export interface ConflictRef {
   readonly s: number;
   readonly other: ConnectorId;
   readonly kind: ConflictKind;
-  /**
-   * Body-centre arc position past which a vehicle of each class has cleared
-   * the zone against ANY vehicle on the other movement. -Infinity when that
-   * class never touches it.
-   */
+  /** Body-centre arc position past which a vehicle of each class has cleared the zone against ANY vehicle on the other */
   readonly exit: readonly number[];
 }
 
@@ -666,12 +540,7 @@ export function zonesOf(table: Float64Array): PairZones {
   };
 }
 
-/**
- * What the index makes of a pair's zones for its conflict point (`ConflictIndex.add`) and its queue
- * intrusions (`recordIntrusions`): a function of the zones alone, so worked out once a pair and kept with
- * it (`CachedPair.facts`). DO NOT work them out again for each build: thirty zones a pair made and read
- * again, every pair of every junction built, were a fifth of a city's swap onto its new graph (2026-10-15).
- */
+/** DO NOT work them out again for each build */
 export interface PairFacts {
   readonly sA: number;
   readonly sB: number;

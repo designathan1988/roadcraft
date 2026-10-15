@@ -4,12 +4,7 @@ import { surfaceShape } from '@render/mesh/tileShape';
 import { type Context, meshPiece, meshSkirts, smoothTopNormals, streams } from '@render/mesh/tileMesh';
 import { finish, type SurfaceMeshOptions } from '@render/mesh/surfaceMesh';
 
-/**
- * A whole clipped surface band meshed in one piece, uncut by tiles: the game's
- * own shape and mesh steps (`surfaceShape`, `meshPiece`, `meshSkirts`,
- * `smoothTopNormals`) put together, so the specs check their contract on a
- * plain polygon.
- */
+/** A whole clipped surface band meshed in one piece, uncut by tiles: the game's own shape and mesh steps */
 export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
   const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1], cut: [0, -1, 0] };
 
@@ -21,8 +16,7 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
 
   const { positions, normals, uvs, colors, sections, indices } = out;
   if (indices.length === 0) return null;
-  // Only the top face was given a placeholder normal; recomputing just those
-  // vertices keeps the skirt's hard edges while the surface itself is smooth.
+  // Only the top face was given a placeholder normal
   smoothTopNormals(positions, normals, indices);
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));

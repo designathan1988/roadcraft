@@ -9,22 +9,7 @@ import { m } from '@world/units';
 import { SimWorld } from '@sim/world';
 import { trapLanes } from '@sim/routing/router';
 
-/**
- * THE SAME EDIT COSTS THE SAME ON A SMALL MAP AND A LARGE ONE (CLAUDE.md:
- * "A scale test proves the same edit costs the same on a small map and a large
- * one (work counters, not timings)"). One isolated road added beside a closed
- * grid of 3 x 3 blocks and beside one of 12 x 12 (16 times the area); each
- * derived product counts what it looked at, through the whole chain the game
- * runs after a road edit: the network (`Network.rebuild`), the simulation's
- * topology as the frame loop catches it up (`frameLoop.ts` `TopologyCatchUp`:
- * the graph prepared ahead, the vehicle half, the walking half), the
- * residents' walkways and the router's trap lanes.
- *
- * Products that still rebuild the whole map on every edit are listed in
- * `baseline.json` with the ratio measured (large / small): a product NOT
- * listed must not grow with the map, and a listed ratio may only fall (each
- * is brought to 1 and taken out).
- */
+/** THE SAME EDIT COSTS THE SAME ON A SMALL MAP AND A LARGE ONE */
 const BLOCK = 120;
 
 function grid(n: number): RoadDoc {

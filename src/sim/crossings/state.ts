@@ -1,19 +1,6 @@
 import type { CrossingId } from '../signals/plan';
 
-/**
- * What the rest of the simulation may know about the people at one crossing.
- *
- * Vehicles (admission, the stop before a zebra), the signal controllers and
- * the audit used to read the pedestrian model's internals - its edges, its
- * `entry`/`s` along a crossing edge, its FSM states, `stuck` - so no other
- * pedestrian model could ever be put behind them. This is the whole contract
- * now (docs/design/agency-architecture.md, step P0): whichever engine moves
- * the people publishes one of these per crossing at the end of its stage, and
- * nothing outside that engine reads a pedestrian again.
- *
- * Positions are measured along the crossing from its `from` kerb (the end the
- * crossing's walk edge starts at), in world units.
- */
+/** What the rest of the simulation may know about the people at one crossing. */
 export interface CrossingOccupant {
   readonly id: number;
   /** Distance from the `from` kerb. */
@@ -22,10 +9,7 @@ export interface CrossingOccupant {
   readonly forward: boolean;
   /** Walking speed, world units a second. */
   readonly v: number;
-  /**
-   * Standing still on the crossing, waiting for something - very often for
-   * the very vehicle asking - rather than arriving.
-   */
+  /** Standing still on the crossing, waiting for something - very often for the very vehicle asking - rather than arriving. */
   readonly held: boolean;
 }
 

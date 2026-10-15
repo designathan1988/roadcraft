@@ -31,8 +31,7 @@ export function shapePoints(shape: PlanShape): Vec2[] {
   if (shape === 'u') return points([[0, 0], [1, 0], [1, 1], [.7, 1], [.7, .3], [.3, .3], [.3, 1], [0, 1]]);
   // A cross: four arms of the middle third.
   if (shape === 'cross') return points([[.3, 0], [.7, 0], [.7, .3], [1, .3], [1, .7], [.7, .7], [.7, 1], [.3, 1], [.3, .7], [0, .7], [0, .3], [.3, .3]]);
-  // A ziggurat plan: every corner set back in two steps, as an Art Deco tower
-  // steps (the Altino Arantes, the Empire State).
+  // A ziggurat plan: every corner set back in two steps, as an Art Deco tower steps (the Altino Arantes, the Empire State).
   if (shape === 'stepped') return points([[.3, 0], [.7, 0], [.7, .12], [.85, .12], [.85, .3], [1, .3], [1, .7], [.85, .7], [.85, .88], [.7, .88],
     [.7, 1], [.3, 1], [.3, .88], [.15, .88], [.15, .7], [0, .7], [0, .3], [.15, .3], [.15, .12], [.3, .12]]);
   if (shape === 'chamfered') return points([[.12, 0], [.88, 0], [1, .12], [1, .88], [.88, 1], [.12, 1], [0, .88], [0, .12]]);
@@ -89,11 +88,7 @@ export function movePlanEdge(v: Volume, side: number, delta: number, snap = true
   return setVolumePlan(v, ring);
 }
 
-/**
- * Bevels corners of a plan: each corner becomes two, `distance` back along
- * its two sides (never past half a side). `only` bevels that corner alone;
- * absent, every corner is bevelled.
- */
+/** Bevels corners of a plan: each corner becomes two, `distance` back along its two sides (never past half a side). */
 export function bevelPlan(v: Volume, distance: number, only?: number): boolean {
   if (!(distance > 0)) return false;
   const ring = localFootprint(v);
@@ -145,8 +140,7 @@ export function offsetPlan(v: Volume, distance: number, snap = true): boolean {
   const scale = Math.round(perM(25_000));
   const paths = inflatePaths([source.map((p) => ({ x: Math.round(p.x * scale), y: Math.round(p.y * scale) }))],
     amount * scale, JoinType.Miter, EndType.Polygon);
-  // A split, vanished contour, or new corner needs a topology edit that can
-  // remap facade sides. Reject it here rather than silently moving materials.
+  // A split, vanished contour, or new corner needs a topology edit that can remap facade sides.
   if (paths.length !== 1 || paths[0]?.length !== source.length) return false;
   let points = paths[0]!.map((p) => ({ x: p.x / scale, y: p.y / scale }));
   if (signedArea(points) < 0) points = points.reverse();

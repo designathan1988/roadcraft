@@ -4,12 +4,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-/**
- * What people hold while they do something (`sim/people` gestures): a
- * newspaper, a cup, a phone, a camera, a shopping bag, an umbrella. Each is
- * one small model in metres, its grip at the origin of the hand bone it is
- * held in, drawn instanced: one draw per kind for the whole town.
- */
+/** What people hold while they do something (`sim/people` gestures) */
 export type HeldKind = 'newspaper' | 'cup' | 'phone' | 'camera' | 'bag' | 'umbrella' | 'box';
 
 /** Which hand holds what each gesture shows, and what it is. */
@@ -37,9 +32,7 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
 }
 
 function model(kind: HeldKind): BufferGeometry {
-  // In the hand bone's frame: +X from the wrist along the fingers, +Y out
-  // through the thumb, +Z out of the back of the hand (the palm is -Z).
-  // Measured with coloured axes on a drawn figure.
+  // In the hand bone's frame: +X from the wrist along the fingers, +Y out through the thumb, +Z out of the back of the hand
   const parts: BufferGeometry[] = [];
   switch (kind) {
     case 'newspaper':
@@ -65,8 +58,7 @@ function model(kind: HeldKind): BufferGeometry {
       parts.push(paint(new BoxGeometry(0.3, 0.34, 0.12), hex(0xb08a5a), 0, -0.27, 0));
       break;
     case 'box':
-      // A cardboard box a unit each way (scaled to the arms that hold it),
-      // its lid taped down the middle.
+      // A cardboard box a unit each way (scaled to the arms that hold it), its lid taped down the middle.
       parts.push(paint(new BoxGeometry(1, 1, 1), hex(0x8f6236)));
       parts.push(paint(new BoxGeometry(0.12, 0.01, 1.01), hex(0xb59a6c), 0, 0.5, 0));
       break;
@@ -83,12 +75,7 @@ function model(kind: HeldKind): BufferGeometry {
   return merged;
 }
 
-/**
- * Things that hang or stand by their own weight - a cup, a bag, an umbrella -
- * are drawn upright where the hand holds them, turned the way its thumb
- * points; the rest lie in the hand as it turns. The value is where in the
- * hand (its bone's frame, metres) the grip is.
- */
+/** Things that hang or stand by their own weight - a cup, a bag, an umbrella */
 const UPRIGHT: Partial<Record<HeldKind, readonly [number, number, number]>> = {
   cup: [0.07, 0.0, -0.05],
   bag: [0.08, 0.0, -0.02],
@@ -136,10 +123,7 @@ export function createHeldProps(): HeldProps {
   return {
     group,
     begin() {
-      // Empty until something is placed: not drawn (an empty mesh still went
-      // through both render lists every frame), and only the instances placed
-      // uploaded (`place`: a range each, which three merges when adjacent;
-      // with none, `needsUpdate` sent the whole buffer).
+      // Empty until something is placed: not drawn
       for (const mesh of meshes.values()) {
         mesh.count = 0;
         mesh.visible = false;

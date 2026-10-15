@@ -4,12 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { indexArray } from '@render/buildings/cellArrays';
 import { newPose, pedPose, pedPoseInto } from '@sim/pose';
 
-/**
- * TWO CHEAP ITEMS OF THE AUDIT OF 2026-10-15, CHECKED IN THE CODE (docs/AUDITORIA-2026-10-15.md 4.4a and 4.9d):
- * a cell's index is 16 bits where its vertices fit (the roads' blocks already were), and a pedestrian's pose is
- * written into a pose made once - the same numbers `pedPose` makes - instead of three objects made for each of
- * the 1,000 drawn, every frame.
- */
+/** TWO CHEAP ITEMS OF THE AUDIT OF 2026-10-15, CHECKED IN THE CODE (and 4.9d) */
 describe('a cell\'s index array', () => {
   it('is 16 bits up to 65,535 vertices and 32 beyond', () => {
     expect(indexArray(65_535, 90)).toBeInstanceOf(Uint16Array);

@@ -13,13 +13,7 @@ import { m } from '@world/units';
 import { ribbonsNear } from './snap';
 import { LEVEL_ROAD, type CityPlan } from '@world/cityGen/plan';
 
-/**
- * The city generator's hand on the map: the planned streets laid as roads
- * (`world/cityGen/plan.ts`), and once the lots are cut (`world/lots.ts`),
- * each lot zoned for what its district is for. The buildings then grow on
- * the zoned lots as any zoned lot's do (`zoning.ts` `growOnLot`): a generated
- * city is an ordinary map, every road, lot and building of it editable.
- */
+/** The city generator's hand on the map: the planned streets laid as roads */
 
 /** A new document with the plan's streets: a node at every crossing and bend, a road between. */
 export function layCity(plan: CityPlan): RoadDoc {
@@ -33,13 +27,7 @@ export function layCity(plan: CityPlan): RoadDoc {
   return doc;
 }
 
-/**
- * The generated city's footways, 3 m (docs/source/VIAS.md V7): wide enough for a
- * street tree's pit beside the kerb with the 1,20 m clear walk of NBR 9050
- * behind it (a 2 m footway takes no tree under that rule), and the avenues a
- * 2 m planted median. Before the lots
- * are cut, so they are cut against the wider street.
- */
+/** The generated city's footways, 3 m */
 const CITY_FOOTWAY = m(3);
 /** The generated avenues' median, planted (a canteiro of 2 m: a tree pit with a kerb each side). */
 const CITY_MEDIAN = m(2);
@@ -54,14 +42,7 @@ export function widenCityFootways(doc: RoadDoc): void {
   }
 }
 
-/**
- * The generated city's green (V7): a square in each neighbourhood
- * (`world/cityGen/squares.ts`, its lots taken away, its ground painted, its
- * trees planted) and every street's furniture: lamps, bins, benches,
- * hydrants - no street trees, on the footways or down the medians (the
- * player, 2026-10-09: "não gere ruas com árvores"). Returns how many squares
- * and pieces were laid.
- */
+/** The generated city's green (V7): a square in each neighbourhood */
 export function greenCity(doc: RoadDoc, net: Network, seed: number): { squares: number; pieces: number } {
   const steps = greenCitySteps(doc, net, seed);
   for (;;) {
@@ -70,11 +51,7 @@ export function greenCity(doc: RoadDoc, net: Network, seed: number): { squares: 
   }
 }
 
-/**
- * `greenCity` a slice at a time: the squares, then the power lines a few
- * streets a step (`layPowerLinesSteps`), then the furniture and the names.
- * Run whole it was half the frame a generated city's layout froze (2026-10-14).
- */
+/** `greenCity` a slice at a time: the squares, then the power lines a few streets a step */
 export function* greenCitySteps(doc: RoadDoc, net: Network, seed: number): Generator<void, { squares: number; pieces: number }> {
   const squares = planSquares(doc, seed);
   for (const square of squares) {
@@ -88,26 +65,18 @@ export function* greenCitySteps(doc: RoadDoc, net: Network, seed: number): Gener
   const power = (yield* layPowerLinesSteps(doc, net, doc.segments.keys())) > 0;
   yield;
   const pieces = furnitureFor(net, doc.segments.keys(), 'complete', doc.landscape.values(), power, false);
-  // One diary entry for all of them (`addLandscapeMany`). DO NOT add them one by one: 11,000 entries told
-  // every reader of the landscaping that everything changed.
+  // DO NOT add them one by one: 11,000 entries told every reader of the landscaping that everything changed.
   doc.addLandscapeMany(pieces.map((piece) => ({ kind: piece.kind, at: piece.at })));
   // Every street named (V8).
   doc.addLandscapeMany(nameFor(net, doc.segments.keys()).map((name) => ({ kind: 'streetname' as const, at: name.at, extra: { text: name.text } })));
   return { squares: squares.length, pieces: pieces.length };
 }
 
-/**
- * Every lot zoned by its district: commerce where its front is on an avenue
- * or a collector and the district is lively enough, parks left open. Returns
- * how many lots were zoned.
- */
+/** Every lot zoned by its district */
 export function zoneCity(doc: RoadDoc, net: Network, plan: CityPlan): number {
   const main = new Set(['avenue', 'urban'].map((id) => ROAD_TYPES.findIndex((t) => t.id === id)));
   const reach = m(22);
-  // The main roads round each lot, from the network's cells (`ribbonsNear`): a
-  // road's chord lies in its centreline's box, which its ribbon is filed over
-  // grown. DO NOT gather every main road of the map and test each lot against
-  // all of them (lots × roads).
+  // DO NOT gather every main road of the map and test each lot against all of them (lots × roads).
   const mainsNear = (p: Vec2): [Vec2, Vec2][] => {
     const out: [Vec2, Vec2][] = [];
     for (const { id } of ribbonsNear(net, [p.x - reach, p.y - reach, p.x + reach, p.y + reach])) {

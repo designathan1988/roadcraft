@@ -1,11 +1,6 @@
 import type { IndexRequest, LodLevel, LodRequest } from './lodWorker';
 
-/**
- * The simplifier worker (`lodWorker.ts`), started once and shared: a built
- * person's levels (`personRig.ts`) and a procedural crowd's pieces
- * (`crowdLod.ts`). Null where there are no workers (tests): callers then
- * simplify on the spot.
- */
+/** The simplifier worker (`lodWorker.ts`), started once and shared: a built person's levels */
 interface Pool {
   levels(req: Omit<LodRequest, 'id'>): Promise<LodLevel[]>;
   index(req: Omit<IndexRequest, 'id' | 'kind'>): Promise<Uint32Array | null>;
@@ -28,12 +23,7 @@ export function lodPool(): Pool | null {
     }
     else ask?.resolve(e.data);
   };
-  /**
-   * The worker failed outside a request (its script, its wasm) or a message
-   * could not be read: every request waiting fails, and says so. DO NOT leave
-   * them pending: an item whose levels never came was never drawn, silently,
-   * on everybody who wore it.
-   */
+  /** DO NOT leave them pending: an item whose levels never came was never drawn, silently, on everybody who wore it. */
   const failAll = (why: string): void => {
     console.error(`[lod worker] ${why}`);
     for (const ask of waiting.values()) ask.reject(new Error(`lod worker: ${why}`));

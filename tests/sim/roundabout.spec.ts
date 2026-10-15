@@ -12,21 +12,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * A ROUNDABOUT DRAWN AS A RING OF STREETS.
- *
- * The editor has no roundabout tool; a player draws one as a polygon of short
- * one-way streets with arms. It locked solid within a minute and not one
- * vehicle left it in five: the ring bends at every node, so nothing there was
- * a straight-on movement, and
- *
- *   - lane pairing treated every bend as a turn and merged the circulating
- *     carriageway's two lanes into one at every node (`carriedPair` in
- *     `world/lanelets.ts`);
- *   - nothing was the priority road, and a place freed on the ring went to
- *     whoever had asked first, so the arms filled the ring as fast as it
- *     emptied (`outranksForExit` in `sim/intersections/admission.ts`).
- */
+/** A ROUNDABOUT DRAWN AS A RING OF STREETS. */
 
 function ring(oneWay: boolean): RoadDoc {
   const doc = new RoadDoc();
@@ -90,15 +76,12 @@ function run(doc: RoadDoc, seconds: number, seed = 0x5eed): { left: number; wors
 describe('a ring of one-way streets with four arms', () => {
   it('keeps moving under heavy demand', () => {
     const { left, worstStill } = run(ring(true), 120);
-    // Before: 0 vehicles left the ring in 300 s, and the whole fleet stood
-    // still from the first minute on (two minutes here: 30 in five minutes was the bar).
+    // Before: 0 vehicles left the ring in 300 s, and the whole fleet stood still from the first minute on
     expect(left).toBeGreaterThan(12);
     expect(worstStill).toBeLessThan(100);
   });
 
-  // The ring used to fill up anyway, on other seeds, with every link holding
-  // a car waiting for the next one: entries are now metered onto a small
-  // cycle of links (`sim/intersections/cycles.ts`).
+  // The ring used to fill up anyway, on other seeds, with every link holding a car waiting for the next one
   for (const seed of [22, 23]) {
     it(`never locks solid when drawn with the editor (seed ${seed})`, () => {
       // Before metering, seed 22 left 2 vehicles out in 300 s (20 was the bar in five minutes).

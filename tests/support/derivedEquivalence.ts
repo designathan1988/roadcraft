@@ -3,13 +3,7 @@ import { Rng } from '@core/rng';
 import type { Derived } from '@world/derived';
 import type { ChangeJournal } from '@world/changes';
 
-/**
- * THE GENERIC PROOF OF A PRODUCT ON THE SPINE (`world/derived.ts`): random edits
- * with a seed, and after each one the product kept incrementally equals the
- * same product made from nothing; a refresh with no edit computes nothing.
- * Every product converted to the spine is proved by this, not by a test of
- * its own written by hand.
- */
+/** THE GENERIC PROOF OF A PRODUCT ON THE SPINE (`world/derived.ts`) */
 export function proveIncremental<D extends { readonly changes: ChangeJournal }, K, V>(options: {
   readonly source: D;
   /** A new product (made from nothing at its first refresh). */

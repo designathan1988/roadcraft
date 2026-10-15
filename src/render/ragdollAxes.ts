@@ -1,23 +1,6 @@
 import { Vector3 } from 'three';
 
-/**
- * THE FRAMES OF A RAGDOLL'S JOINTS, ALWAYS VALID (docs/PROBLEMS.md R1).
- *
- * Jolt builds a joint's frame as a rotation from the axes it is given:
- * a swing-twist joint from (twist, plane x twist, plane), a hinge from its hinge
- * and normal axes (JoltPhysics `SwingTwistConstraint.cpp`, `HingeConstraint.h`:
- * "mHingeAxis1 and mNormalAxis1 should be perpendicular"). That is a rotation
- * only when the two axes are unit long and perpendicular. The debug build of
- * Jolt reported, under a bomb, thousands of `ioSwing.IsNormalized()` and
- * `inWorldSpaceAxis.IsNormalized()` failures: a thigh's cone leant forwards had
- * its twist axis turned and its plane axis not, and a limb torn off left
- * particles on one point, so a bone's direction was zero. The release build
- * checks nothing; the error grew in the solver until `Step` broke ("table index
- * is out of bounds").
- *
- * Every function here returns unit, perpendicular axes whatever the particles
- * are, falling back to a fixed axis when a direction is degenerate.
- */
+/** THE FRAMES OF A RAGDOLL'S JOINTS, ALWAYS VALID. */
 
 const EPS = 1e-10;
 
@@ -48,22 +31,14 @@ export function across(v: Vector3, axis: Vector3, fallback?: Vector3): Vector3 {
   return perpendicular(axis);
 }
 
-/**
- * A cone (swing-twist) joint's two frames: `twist2` along the bone (unit),
- * its plane axis across it towards `side`; frame 1 is the same pair turned by
- * `lean` about `side`, so it stays a rotation.
- */
+/** A cone (swing-twist) joint's two frames: `twist2` along the bone (unit), its plane axis across it towards `side` */
 export function coneFrames(twist2: Vector3, side: Vector3, lean: number, fallback: Vector3): { twist1: Vector3; twist2: Vector3; plane1: Vector3; plane2: Vector3 } {
   const plane2 = across(side, twist2, fallback);
   if (!lean) return { twist1: twist2.clone(), twist2, plane1: plane2.clone(), plane2 };
   return { twist1: twist2.clone().applyAxisAngle(side, lean), twist2, plane1: plane2.clone().applyAxisAngle(side, lean), plane2 };
 }
 
-/**
- * A hinge from the upper bone `t` and the lower bone `s` (both unit): the
- * axis it bends about the right way (`bends`: where the lower bone goes as it
- * bends), the normal across it along `t`, and how far it is bent now.
- */
+/** A hinge from the upper bone `t` and the lower bone `s` (both unit): the axis it bends about the right way */
 export function hingeFrame(t: Vector3, s: Vector3, bends: Vector3): { axis: Vector3; normal: Vector3; bent: number } {
   const fallback = across(new Vector3().crossVectors(t, bends), t);
   let axis = new Vector3().crossVectors(t, s);
@@ -72,8 +47,7 @@ export function hingeFrame(t: Vector3, s: Vector3, bends: Vector3): { axis: Vect
     axis = fallback;
     bent = Math.atan2(new Vector3().crossVectors(t, s).dot(axis), t.dot(s));
   } else axis.normalize();
-  // The axis is perpendicular to `t` by construction (a cross product with it,
-  // or `across` it), so the normal along `t` is `t` itself made exact.
+  // The axis is perpendicular to `t` by construction
   const normal = across(t, axis);
   return { axis, normal, bent };
 }

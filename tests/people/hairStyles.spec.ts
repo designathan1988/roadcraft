@@ -4,12 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Morpher, type PeoplePacks } from '@people/body/morph';
 import { HAIR_STYLES, generateHair, type HairBase } from '@people/hair/procedural';
 
-/**
- * Every hairstyle the game hands out is grown, in finite numbers. A braid's
- * strand rooted at its tie made a card of one point (NaN corners), and the
- * grid search for the nearest head vertices never ended on a NaN point: the
- * game froze on the first girl with a braid (docs/source/performance.md #5).
- */
+/** Every hairstyle the game hands out is grown, in finite numbers. */
 const DIR = join(__dirname, '..', '..', 'public', 'models', 'people');
 const buf = (f: string): ArrayBuffer => { const b = readFileSync(join(DIR, f)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
 const json = <T>(f: string): T => JSON.parse(readFileSync(join(DIR, f), 'utf8')) as T;

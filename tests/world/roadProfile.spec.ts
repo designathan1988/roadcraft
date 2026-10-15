@@ -15,12 +15,7 @@ import { FLAT_GROUND, buildRoadElevation } from '@world/elevation';
 import { checkWorld } from '../fuzz/support/invariants';
 import { openCategories } from '../fuzz/support/runner';
 
-/**
- * THE ROAD PROFILE (docs/source/VIAS.md V1): an ordered cross-section that turns into
- * the segment's own fields, read back the same; asymmetric footways cut into
- * the outline, the junctions, the walking lines and the furniture zones of
- * each side; problems named before anything is built.
- */
+/** THE ROAD PROFILE */
 const withFootways = (p: RoadProfileSpec, left: number, right: number, extra: { flushLeft?: boolean; flushRight?: boolean } = {}): RoadProfileSpec => {
   const last = p.elements.length - 1;
   return { ...p, elements: p.elements.map((e, i) => (e.kind !== 'footway' ? e
@@ -188,8 +183,6 @@ describe('paving round a bend', () => {
     };
     const ratio = (panel?: number): number => {
       // Inside one panel (a joint lies at every multiple of 40).
-      // Over several of the centreline's vertices, where the bend is, and
-      // measured along the offset line itself.
       const s0 = Math.floor((line.length * 0.4) / 40) * 40 + 5, s1 = s0 + 30;
       let length = 0;
       for (let s = s0; s < s1; s += 0.5) { const p = at(s), q = at(s + 0.5); length += Math.hypot(q.x - p.x, q.y - p.y); }

@@ -13,47 +13,14 @@ import { flows, kindOf } from '../ambient/demand';
 import { arrival, departure, type Manoeuvre } from './manoeuvre';
 import { LorryTraffic } from './lorryTraffic';
 
-/**
- * Cars that use the lots' car gates: in from the street, through the gate,
- * up the drive to a stall of the car park behind, a while parked, and out
- * through the same gate onto the street again.
- *
- * A lot's car park is a SUMO parking area: bound to the lane its access is on
- * (here the lane in front of the car gate, `parking.ts` `gateExits`), reached
- * by a stop on that lane, held for a `duration`, and left onto the lane at a
- * `departPos` of its own, a few metres past the gate. A car of the passing
- * traffic is given that stop: it pulls up a few metres before the gate
- * (`BayLane.entryAt`), leaves the lane and is driven off the road
- * (`manoeuvre.ts`) through the gate to the stall; parked, it is one of the
- * cars standing in bays (`AmbientWorld.parked`, which the renderer draws and
- * walkers keep off); leaving, it backs out, drives out of the gate, waits at
- * the kerb for a gap and joins the traffic again, bound for a road end like
- * any other car.
- *
- * THE LOTS MAKE THE TRIPS, as the buildings of Cities: Skylines send their
- * cars out and take them in: a car of the traffic ends its trip in a lot at
- * the rate a trip ends (`TRIP_SECONDS`), to a lot drawn by how many go in
- * at its kind of place at this hour (`ambient/demand.ts` flows); and while
- * fewer cars drive than the panel asks for (`trafficTarget`), cars standing
- * in the lots' bays - the scenery's, handed over (`AmbientWorld.release`),
- * or those parked here - drive out, drawn by how many come out of each kind
- * of place now. A town with no road leading off the map keeps its traffic
- * this way; the road ends bring theirs in and take it away as before.
- * Where the camera is plays no part (the same map runs the same with the
- * camera anywhere).
- */
+/** Cars that use the lots' car gates */
 
 /** Seconds between two looks for a car to send in. */
 const LOOK = 1;
 /** Fewest cars on their way in at once, and the seconds a car called takes to reach its lot, about (more traffic, more on their way). */
 const MAX_COMING = 6;
 const COMING_SECONDS = 60;
-/**
- * Mean seconds a car drives between two lots: one trip in this many ends in
- * a lot each second. Three minutes of play is an hour of the city's day
- * (`city.ts` TIME_SCALE 20): long enough that a car is seen driving a
- * while, short enough that the lots are seen working within a minute.
- */
+/** Mean seconds a car drives between two lots: one trip in this many ends in a lot each second. */
 const TRIP_SECONDS = 180;
 /** Most cars sent out of the lots in one look. */
 const DEPART_PER_LOOK = 3;
@@ -113,11 +80,7 @@ export class LotTraffic {
   parkedIn = 0;
   leftBy = 0;
 
-  /**
-   * Cars driving off the road, into a bay or out of one: off the lanes (not
-   * in `SimWorld.vehicles`) but moving in sight, so the panel counts them
-   * among the cars driving (`main.ts` updateStatus).
-   */
+  /** Cars driving off the road, into a bay or out of one: off the lanes */
   moving(): number {
     let n = this.lorries.moving();
     for (const car of this.cars.values()) if (car.phase === 'parking' || car.phase === 'leaving') n++;
@@ -129,11 +92,7 @@ export class LotTraffic {
     return [...this.cars.values()].map((c) => ({ id: c.id, phase: c.phase, building: c.bay.building, x: c.body?.free?.x ?? NaN, y: c.body?.free?.y ?? NaN }));
   }
 
-  /**
-   * A different map (`AmbientWorld.reset`): the cars of the old one's lots
-   * are forgotten. Kept, those parking or driving out of a lot were drawn on
-   * the new map where the old lot had been.
-   */
+  /** A different map (`AmbientWorld.reset`): the cars of the old one's lots are forgotten. */
   reset(w?: SimWorld): void {
     this.lorries.reset(w);
     this.cars.clear();
@@ -143,8 +102,7 @@ export class LotTraffic {
     this.baysSeen = -1;
     this.bySource.clear();
     this.bays.clear();
-    // As a new map's: the counters from nought (the random stream is the
-    // world's, `SimWorld.rng.lots`, forked again by `SimWorld.reset`).
+    // As a new map's: the counters from nought
     this.called = 0;
     this.parkedIn = 0;
     this.leftBy = 0;
@@ -162,9 +120,7 @@ export class LotTraffic {
       }
       car.t += DT;
     }
-    // Drawn with the cars standing in bays: the scenery makes that list again
-    // when the bays change, keeping these. DO NOT ask `parked.includes` here:
-    // that walked every parked car of the map for each car of the lots, each tick.
+    // DO NOT ask `parked.includes` here: that walked every parked car of the map for each car of the lots, each tick.
     for (const car of this.cars.values()) if (car.body && !w.ambient.isParked(car.body)) w.ambient.addParked(car.body);
     // The lorries, one in a yard at a time, and never while the lot's own cars are moving there.
     this.lorries.step(w, (building) => this.carsMoving(building));
@@ -198,15 +154,9 @@ export class LotTraffic {
     return (w.city.minutes(w) % 1440) / 60;
   }
 
-  /**
-   * While fewer cars drive than the panel asks for, cars standing in the lots'
-   * bays drive out (a few a look): a lot drawn by how many come out of its
-   * kind of place at this hour. Those parked here go once their stay is over;
-   * one of the scenery's standing in a gated bay is handed over and goes now.
-   */
+  /** While fewer cars drive than the panel asks for, cars standing in the lots' bays drive out (a few a look) */
   private depart(w: SimWorld, target: number): void {
-    // The cars driving in and out of the bays are driving too (`moving`), and
-    // those sent out will be: the panel's number is the lanes' and theirs.
+    // The cars driving in and out of the bays are driving too (`moving`), and those sent out will be
     let leaving = 0;
     for (const car of this.cars.values()) if (car.phase === 'parking' || car.phase === 'leaving' || car.go) leaving++;
     const short = Math.min(DEPART_PER_LOOK, target - w.vehicles.size - leaving);
@@ -240,13 +190,7 @@ export class LotTraffic {
     }
   }
 
-  /**
-   * The gated lots' bays, kept from the bays' diary (`bayChangesSince`): only
-   * the sources whose bays changed are read again, a look after they changed
-   * (the scenery fills them first). DO NOT read the town's list
-   * (`collectBays`) on a change of `buildings.revision`: every bay of the
-   * town, for each building grown - each look of a city's growth.
-   */
+  /** DO NOT read the town's list (`collectBays`) on a change of `buildings.revision` */
   private readBays(w: SimWorld): void {
     const { serial, changed } = bayChangesSince(w, this.baysRead);
     if (changed !== null && changed.length === 0) { this.baysRead = serial; return; }
@@ -276,13 +220,7 @@ export class LotTraffic {
     }
   }
 
-  /**
-   * A free bay, drawn by how many go in at its kind of place at this hour,
-   * and the nearest passing car sent to it. False when none was. DO NOT
-   * draw among the bays near the view (`SimWorld.focus`): the camera is no
-   * input of the simulation, and the same map ran otherwise with the camera
-   * elsewhere.
-   */
+  /** DO NOT draw among the bays near the view (`SimWorld.focus`) */
   private call(w: SimWorld): boolean {
     const free = this.freeBays(w);
     if (!free.length) return false;
@@ -335,12 +273,7 @@ export class LotTraffic {
     return true;
   }
 
-  /**
-   * The scenery's cars standing in the gated bays, by the bay
-   * (`AmbientWorld.sceneryCarAt`), in the order of the bays - the order the
-   * scenery stood them in. DO NOT walk `ambient.parked` for them: every
-   * parked car of the map, each look.
-   */
+  /** DO NOT walk `ambient.parked` for them: every parked car of the map, each look. */
   private sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[] {
     const out: { bay: Bay; body: Vehicle }[] = [];
     const pooled = new Set<Vehicle>();
@@ -353,12 +286,7 @@ export class LotTraffic {
     return out;
   }
 
-  /**
-   * The gated bays nobody stands in nor is on the way to: not where a car of
-   * the lots is bound or stands, nor where a lorry's body is, nor one the
-   * scenery has a car in (asked of the scenery by place). DO NOT walk
-   * `ambient.parked` for it: every parked car of the map, each call.
-   */
+  /** DO NOT walk `ambient.parked` for it: every parked car of the map, each call. */
   private freeBays(w: SimWorld): Bay[] {
     const taken = new Set<string>();
     for (const car of this.cars.values()) {
@@ -441,10 +369,7 @@ export class LotTraffic {
     road.s = Math.min(l.length, lane.at + a.length / 2);
     road.v = JOIN_SPEED;
     road.prev = snapshot(road);
-    // Who rides with the driver, and whether the trip has somebody to drop or
-    // pick up on the way, as every other car out on the road (`spawn.ts`).
-    // With the driver alone, a town with no road off the map - its cars all
-    // out of the lots - never had a passenger nor a stop at the kerb.
+    // Who rides with the driver, and whether the trip has somebody to drop or pick up on the way
     assignOccupancy(w, road);
     w.vehicles.set(road.id, road);
     w.enterLanelet(road, l.id);
@@ -478,12 +403,7 @@ export class LotTraffic {
     if (car.body) w.ambient.removeParked(car.body);
   }
 
-  /**
-   * Whether nobody stands where the car will go over the rest of its way
-   * (its body as three discs every metre): then it holds that ground and
-   * drives it through. Kept waiting `ASK_WAY`, it goes on, the people
-   * walking out of a car's ground (`walk.ts`), as at a drive's mouth.
-   */
+  /** Whether nobody stands where the car will go over the rest of its way (its body as three discs every metre) */
   private mayGo(w: SimWorld, car: LotCar, body: Vehicle): boolean {
     // A lorry shunting in the yard: the cars of its lot wait (`lorryTraffic.ts`).
     if (!car.reserved && this.lorries.busy(car.bay.building)) return false;
@@ -499,9 +419,7 @@ export class LotTraffic {
       for (const j of [-1, 0, 1]) discs.push({ x: q.x + cx * j, y: q.y + cy * j });
       if (s >= path.length) break;
     }
-    // Asked of the people near each disc (`PeopleBridge.anyoneWithin`, the
-    // walkers' grid). DO NOT walk `w.pedViews`: every person of the map, for
-    // each car off the road, every tick.
+    // DO NOT walk `w.pedViews`: every person of the map, for each car off the road, every tick.
     let clear = true;
     const people = w.pedEngine.bridge;
     for (const d of discs) if (people.anyoneWithin(w, d.x, d.y, r, null)) { clear = false; break; }

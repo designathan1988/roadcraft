@@ -1,13 +1,6 @@
 import type { PlanShapeId } from './builder/catalog';
 
-/**
- * The footprint a shape tool draws, as a picture: the outline filled, on a
- * grid, seen from above - which is exactly how the player draws it.
- *
- * The shape tools have no object to photograph until one is drawn, so this is
- * drawn rather than rendered: the same polygons the plan decomposer works
- * from, in plan.
- */
+/** The footprint a shape tool draws, as a picture: the outline filled, on a grid, seen from above */
 
 /** Outline points per shape, in a 0..1 box. */
 const OUTLINES: Readonly<Record<PlanShapeId, readonly (readonly [number, number])[]>> = {
@@ -37,11 +30,7 @@ const OUTLINES: Readonly<Record<PlanShapeId, readonly (readonly [number, number]
   ],
 };
 
-/**
- * Drawn once per shape and size. These are asked for on every redraw of the
- * tray, and a canvas drawn and encoded to PNG is far too expensive to repeat:
- * it was the whole game's frame budget, sixty times a second.
- */
+/** Drawn once per shape and size. */
 const CACHE = new Map<string, string>();
 
 export function planSwatch(shape: PlanShapeId, width = 148, height = 78, dpr = 2): string {

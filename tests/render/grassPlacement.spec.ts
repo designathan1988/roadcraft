@@ -19,12 +19,7 @@ function tufts(doc: RoadDoc): Set<string> {
   return out;
 }
 
-/**
- * Drawing a road anywhere moved 90 % of the grass on screen: placement drew
- * from one random stream shared by the whole map. A placed clump is seeded by
- * its own id now (no grass grows by itself any more), so an edit elsewhere
- * moves none of it.
- */
+/** Drawing a road anywhere moved 90 % of the grass on screen */
 describe('grass placement', () => {
   function grid(): RoadDoc {
     const doc = new RoadDoc();

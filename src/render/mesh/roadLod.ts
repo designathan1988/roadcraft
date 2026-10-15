@@ -3,12 +3,7 @@ import type { BlockArrays } from './roadLodPure';
 
 export { coarseArrays, type BlockArrays } from './roadLodPure';
 
-/**
- * THE FAR LEVEL OF A BLOCK OF ROAD SURFACE, as meshes (`roadLodPure.ts` makes the arrays, in a worker): the
- * block's own mesh simplified, one of the two on the GPU (`roadResidency.ts`). The road surfaces were 1.04 GB
- * of a 2,560 m city's 1.56 GB of geometry, every block at full detail wherever the camera was (2026-10-15).
- * DO NOT draw a far block at full detail: nothing there is resolved.
- */
+/** DO NOT draw a far block at full detail: nothing there is resolved. */
 
 /** A coarse block's geometry from its arrays. */
 export function coarseGeometry(arrays: BlockArrays): BufferGeometry {

@@ -1,11 +1,6 @@
 import { type BayShare, baysOfShare } from '@sim/agents/lotBays';
 
-/**
- * The lots' bays off the page's thread (`bayPool.ts`): each lot of a share by
- * `bayRows` itself on what the page sent (`lotBays.ts` `baysOfShare`),
- * answered with the job's id. While it works it says so at least every
- * `BEAT_MS`, so the pool's watchdog hears it is alive.
- */
+/** The lots' bays off the page's thread (`bayPool.ts`): each lot of a share by `bayRows` itself on what the page sent */
 const BEAT_MS = 500;
 
 self.onmessage = (event: MessageEvent<{ id: number; share: BayShare }>) => {

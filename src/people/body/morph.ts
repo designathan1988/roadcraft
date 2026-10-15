@@ -1,17 +1,6 @@
 import { macroTargetWeights, type MacroDefinition, type MacroParams } from './macro';
 
-/**
- * The MakeHuman base mesh, morphed: the person model's body (Person track H1).
- *
- * A body is the base mesh plus a weighted sum of targets. The macro targets
- * (sex, age, muscle, weight, ethnicity, height, proportions) come from the
- * principal-component pack, so however many of them a person blends, the work
- * is one pass over its 64 basis shapes; the breast macro targets and the 231
- * regional sliders (nose, ears, hands...) come from the sparse regional pack.
- *
- * Pure: it takes the decoded packs and returns positions. Loading the files is
- * `assets.ts`; the renderer turns positions into a mesh.
- */
+/** The MakeHuman base mesh, morphed: the person model's body (Person track H1). */
 
 /** `base.json` (the parts used here). */
 export interface BaseMeta {
@@ -63,11 +52,7 @@ export interface PeoplePacks {
   };
 }
 
-/**
- * A regional slider's value, -1..1: negative towards its "decr/down/..."
- * target, positive towards the other. Sided sliders take `l-`/`r-` keys, or
- * the bare name for both sides together.
- */
+/** A regional slider's value, -1..1: negative towards its "decr/down/..." target, positive towards the other. */
 export type RegionalValues = Readonly<Record<string, number>>;
 
 export class Morpher {
@@ -113,11 +98,7 @@ export class Morpher {
     return this.packs.macro.components;
   }
 
-  /**
-   * The macro sliders folded into one coefficient per basis shape, as `shape`
-   * folds them: the body's macro part is the base plus the sum over k of
-   * `coefficients[k]` times `component(k)` (less each target's residual).
-   */
+  /** The macro sliders folded into one coefficient per basis shape, as `shape` folds them */
   coefficients(params: MacroParams): Float64Array {
     const K = this.packs.macro.components;
     const c = new Float64Array(K);
@@ -144,10 +125,7 @@ export class Morpher {
     return this.packs.local.targets.filter((t) => t.group === 'breast').map((t) => t.name);
   }
 
-  /**
-   * The body for these macro sliders and regional values, as positions in the
-   * base frame (decimetres). `out` is reused when given.
-   */
+  /** The body for these macro sliders and regional values, as positions in the base frame (decimetres). */
   shape(params: MacroParams, regional: RegionalValues = {}, out?: Float32Array): Float32Array {
     const D = this.vertexCount * 3;
     const result = out && out.length === D ? out : new Float32Array(D);
@@ -189,12 +167,7 @@ export class Morpher {
     return result;
   }
 
-  /**
-   * The regional sliders' moves added into `into` (decimetres, base frame):
-   * sparse targets summed at their weights, as MakeHuman applies a target
-   * (`algos3d.Target.apply`), whatever the macro shape under them. `shape`
-   * is the macro body plus exactly this.
-   */
+  /** The regional sliders' moves added into `into` (decimetres, base frame) */
   addRegional(into: Float32Array, regional: RegionalValues): void {
     for (const [key, value] of Object.entries(regional)) {
       if (!value) continue;
@@ -214,11 +187,7 @@ export class Morpher {
     }
   }
 
-  /**
-   * `bodyHeight(shape(params), bodyRange)` from the heights alone: only each
-   * vertex's Y of the macro sum, its residuals and the breast targets - a
-   * third of the work of the whole shape, for a body's standing height.
-   */
+  /** `bodyHeight(shape(params), bodyRange)` from the heights alone */
   height(params: MacroParams, bodyRange: readonly (readonly [number, number])[]): number {
     const K = this.packs.macro.components;
     const table = this.heightTable(bodyRange);
@@ -229,9 +198,7 @@ export class Morpher {
       if (!t) continue;
       for (let k = 0; k < K; k++) c[k] = (c[k] ?? 0) + w * (this.coeff[t.row * K + k] ?? 0);
     }
-    // The sparse moves - each macro target's residual, the breast targets -
-    // as one weight a source (`sources`); their entries are read per vertex,
-    // only for the vertices measured.
+    // The sparse moves - each macro target's residual, the breast targets - as one weight a source (`sources`)
     const { baseY, yBasis, starts, top, bottom, lead, reach, sources, entryStart, entrySource, entryDy, sourceReach } = table;
     const S = sources.length;
     const sourceWeight = new Float64Array(S);
@@ -257,15 +224,7 @@ export class Morpher {
       for (let e = entryStart[i]!; e < entryStart[i + 1]!; e++) y += sourceWeight[entrySource[e]!]! * entryDy[e]!;
       return y;
     };
-    // Branch and bound over small clusters of neighbouring vertices: the
-    // basis shapes and the sparse targets move no vertex of a cluster farther
-    // up or down than the cluster's bound (each one's largest move there, by
-    // its weight), so a cluster whose highest base plus its bound stays under
-    // the highest point found holds no higher one - and likewise for the
-    // lowest. The same max and min as every vertex measured (`bodyHeight` of
-    // the whole shape).
-    // A cluster moves as its first vertex does (`lead`), give or take how far
-    // any of its vertices strays from that under each shape (`reach`).
+    // Branch and bound over small clusters of neighbouring vertices
     const clusters = starts.length - 1;
     const upper = new Float64Array(clusters);
     const lower = new Float64Array(clusters);
@@ -339,8 +298,7 @@ export class Morpher {
     const scales = this.packs.macro.layout.basis.scales;
     const inRange = new Uint8Array(n);
     for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) inRange[v] = 1;
-    // Clusters: the base mesh's vertices by a grid of 0.4 dm cells, so the
-    // vertices of a cluster move alike under every basis shape.
+    // Clusters: the base mesh's vertices by a grid of 0.4 dm cells
     const CELL = 0.4;
     const byCell = new Map<string, number[]>();
     for (let v = 0; v < n; v++) {
@@ -381,11 +339,9 @@ export class Morpher {
       }
     });
     starts[groups.length] = i;
-    // The sparse sources, transposed to the vertices: each vertex's entries
-    // of every macro target's residual and every breast target.
+    // The sparse sources, transposed to the vertices
     const sources: string[] = [];
-    // Each source's entries as (index list, delta list), visited twice: once
-    // to count each vertex's entries, once to file them.
+    // Each source's entries as (index list, delta list), visited twice
     const lists: { readonly source: number; readonly idx: Uint16Array; readonly delta: Int16Array; readonly from: number; readonly to: number }[] = [];
     for (const t of this.packs.macro.targets) {
       this.residualSource.set(t.name, sources.length);

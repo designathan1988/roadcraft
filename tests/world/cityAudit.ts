@@ -12,12 +12,7 @@ import { Level } from '@world/roadTypes';
 import { roofRise, volumeCorners, levelElevation } from '@world/buildings/geometry';
 import type { Building, BuildingId, Volume } from '@world/buildings/types';
 
-/**
- * A GENERATED CITY, grown and audited as the player looks at it (the
- * player, 2026-10-09, on seed 20261009: lots over the streets, buildings run into each other, giant lean-to wedges, blank walls,
- * rows of twins, a sixth of the lots left bare). Shared by the specs that
- * guard each of those classes, and by the probe in the browser.
- */
+/** A GENERATED CITY, grown and audited as the player looks at it */
 
 export interface GrownCity { doc: RoadDoc; net: Network; plan: CityPlan; zoned: number }
 
@@ -102,11 +97,7 @@ export function auditBuildings(city: GrownCity): { zoned: number; bare: number; 
   return { zoned: zonedLots.length, bare, built: lotOf.size, clashes, outOfLot, worstOut };
 }
 
-/**
- * The masses: a roof rising more than its walls are tall or more than a
- * real roof does (a lean-to "from the ground to the top"), and works halls
- * out of a hall's proportion.
- */
+/** The masses: a roof rising more than its walls are tall or more than a real roof does */
 export function auditForms(city: GrownCity): { wildRoofs: number; badHalls: number; examples: string[] } {
   let wildRoofs = 0, badHalls = 0;
   const examples: string[] = [];

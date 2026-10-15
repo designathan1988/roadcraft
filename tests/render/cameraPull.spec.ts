@@ -3,16 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createIsoRig } from '@render/isoViewport';
 import { m } from '@world/units';
 
-/**
- * THE CAMERA DOES NOT SHAKE AMONG THE BUILDINGS. Close up, the eye is
- * brought in front of a building that stands between it and the point looked
- * at; taken whole in every frame, every tower corner a drag carried through
- * the sightline jerked the eye 7.8 m in a frame, back and forth (the player,
- * 2026-10-13: "a câmera fica tripidando"). Timed as Cinemachine's Deoccluder
- * times it (`settle`): a building that only crosses the sightline moves
- * nothing; one that stays in the way brings the eye in once, held, and out
- * again - never back and forth.
- */
+/** THE CAMERA DOES NOT SHAKE AMONG THE BUILDINGS. */
 const W = 1280;
 const H = 720;
 /** Towers 14 m wide and 40 m tall in a row between the eye and the point looked at, streets of 16 m between them; the eye's floor eases down within 2 m (`cameraSolids.ts`). */

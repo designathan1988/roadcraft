@@ -10,15 +10,7 @@ import { normaliseAngle } from './buildings';
 import { ribbonsNear } from './snap';
 import { m } from '@world/units';
 
-/**
- * Where a footprint goes when the pointer is at `cursor`: to a road first (facing it, its
- * front along the back of the footway, flush with a neighbour on the same
- * frontage), then to a nearby building (its rotation, edges flush), then to
- * the module grid.
- *
- * The result is an ANCHOR - the middle of the footprint's front edge - and a
- * rotation, which is exactly what `instantiate` takes.
- */
+/** Where a footprint goes when the pointer is at `cursor`: to a road first */
 export interface PlacementSnap {
   readonly anchor: Vec2;
   readonly rotation: number;
@@ -79,16 +71,7 @@ function frontAnchor(centre: Vec2, size: FootprintSize, rotation: number): Vec2 
   return { x: centre.x - vx * (size.depth / 2), y: centre.y - vy * (size.depth / 2) };
 }
 
-/**
- * The roads near the pointer, from the network's cells (`ribbonsNear`, `snap.ts`):
- * a road counts when its centreline comes within `half + depth + ROAD_REACH`
- * of the pointer, `half` its footway plus `ROAD_CLEARANCE`. A ribbon is filed
- * over its centreline's box grown by its casing (`ribbonBounds`), which is
- * wider than its footway, so a square of `ROAD_CLEARANCE + depth + ROAD_REACH`
- * round the pointer meets every road that can count; they come in the order of
- * `net.ribbons`, so the first of equals is the one the walk over every road kept.
- * DO NOT walk `net.ribbons` here: this runs on every pointer move.
- */
+/** DO NOT walk `net.ribbons` here: this runs on every pointer move. */
 function snapToRoad(net: Network, size: FootprintSize, cursor: Vec2): PlacementSnap | null {
   let best: { distance: number; anchor: Vec2; rotation: number; ribbon: number } | null = null;
   const at = cursor;
@@ -122,25 +105,12 @@ function snapToRoad(net: Network, size: FootprintSize, cursor: Vec2): PlacementS
   return { anchor: cornerFlush(net, best.anchor, best.rotation, size, best.ribbon, cursor), rotation: normaliseAngle(best.rotation), kind: 'road' };
 }
 
-/**
- * At a corner, the side of the footprint next to the crossing road slid onto
- * the back of that road's footway: a corner lot fills the corner, as a city
- * builder's corner lot does, instead of leaving a strip between the building
- * and the second street. Only a side facing a road that runs along it moves,
- * and the resulting footprint must still be under the pointer (within one
- * building module). This scales with the building instead of imposing a fixed
- * gap allowance on both a narrow house and a large civic building.
- */
+/** At a corner, the side of the footprint next to the crossing road slid onto the back of that road's footway */
 function cornerFlush(net: Network, anchor: Vec2, rotation: number, size: FootprintSize, snapped: number, cursor: Vec2): Vec2 {
   const ux = Math.cos(rotation), uy = Math.sin(rotation);
   const vx = -Math.sin(rotation), vy = Math.cos(rotation);
   let shift = 0;
   let bestNeed = Infinity;
-  // The roads either side can reach: a side's middle is at `width / 2` from
-  // the back middle of the footprint, and a road counts within
-  // `back + width + module` of it, `back` its footway plus `ROAD_CLEARANCE`,
-  // inside the casing its ribbon is filed with (see `snapToRoad`). In the order
-  // of `net.ribbons`, so the first of equals is the one the old walk kept.
   // DO NOT walk `net.ribbons` here: this runs on every pointer move.
   const midX = anchor.x + vx * size.depth / 2, midY = anchor.y + vy * size.depth / 2;
   const reach = size.width / 2 + ROAD_CLEARANCE + size.width + size.module;
@@ -177,9 +147,6 @@ function cornerFlush(net: Network, anchor: Vec2, rotation: number, size: Footpri
 function nearestBuilding(doc: RoadDoc, cursor: Vec2, ignore?: BuildingId): Building | null {
   let best: Building | null = null;
   let bestDistance = BUILDING_REACH;
-  // Only a building whose box comes within `BUILDING_REACH` can win: the
-  // store's grid (`BuildingStore.near`) hands those, a superset, in the order
-  // of `all()`, so the first of equals is the one the old walk kept.
   // DO NOT walk `doc.buildings.all()` here: this runs on every pointer move.
   const r = BUILDING_REACH;
   for (const b of doc.buildings.near(cursor.x - r, cursor.y - r, cursor.x + r, cursor.y + r)) {
@@ -197,11 +164,7 @@ function nearestBuilding(doc: RoadDoc, cursor: Vec2, ignore?: BuildingId): Build
   return best;
 }
 
-/**
- * Makes the footprint's edges flush with a neighbour of the same bearing:
- * along the local x axis always (a terrace along a street), along y too when
- * `both` (a building placed against another's back or side, away from roads).
- */
+/** Makes the footprint's edges flush with a neighbour of the same bearing: along the local x axis always */
 function flush(doc: RoadDoc, snap: PlacementSnap, size: FootprintSize, both: boolean, ignore?: BuildingId): PlacementSnap {
   const ux = Math.cos(snap.rotation);
   const uy = Math.sin(snap.rotation);
@@ -213,8 +176,6 @@ function flush(doc: RoadDoc, snap: PlacementSnap, size: FootprintSize, both: boo
   let bestV = EDGE_SNAP * size.module;
   const reach = Math.max(size.width, size.depth) * 2 + m(8);
   const near = snap.anchor;
-  // The buildings whose box comes within `reach` (the test kept below), from
-  // the store's grid in the order of `all()`.
   // DO NOT walk `doc.buildings.all()` here: this runs on every pointer move.
   for (const b of doc.buildings.near(near.x - reach, near.y - reach, near.x + reach, near.y + reach)) {
     if (b.id === ignore) continue;

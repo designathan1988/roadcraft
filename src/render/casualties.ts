@@ -25,25 +25,14 @@ export interface BloodDecal {
   age: number;
 }
 
-/**
- * What a blow leaves on the ground (the player's order of 2026-10-05): a pool
- * of blood spreading from under each body over its first seconds, a darker
- * splatter where somebody was right under the blow. Instanced decals on the
- * ground, one draw for all of them.
- */
+/** What a blow leaves on the ground (the player's order of 2026-10-05) */
 
 const MAX = 400;
 
 type Variant = 'pool' | 'splat' | 'drops';
 const VARIANTS: readonly Variant[] = ['pool', 'splat', 'drops'];
 
-/**
- * Blood as it lies on a street: nearly black where it is deep, a dark
- * crimson at thin edges, never the bright red of paint (fresh blood on
- * asphalt reads maroon). Three stamps: a pool (lobed, deep in the middle,
- * with a meniscus rim), a spatter (a blot and the drops thrown out of it,
- * stretched along their flight, as forensic spatter is), and a few drops.
- */
+/** Blood as it lies on a street: nearly black where it is deep, a dark crimson at thin edges */
 function bloodTexture(variant: Variant): CanvasTexture | null {
   if (typeof document === 'undefined') return null;
   const size = 256;
@@ -146,9 +135,7 @@ export function createCasualties(): CasualtyLayer {
         o.updateMatrix();
         stamps[k]!.mesh.setMatrixAt(n[k]!++, o.matrix);
       }
-      // Only the stains there are: an empty mesh is not drawn (three's
-      // `projectObject` skips what is not visible) and a buffer is uploaded up
-      // to its last stain, not whole every frame (75 KiB with no blood at all).
+      // Only the stains there are: an empty mesh is not drawn
       stamps.forEach((s, k) => {
         const count = n[k]!;
         s.mesh.count = count;

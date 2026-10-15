@@ -5,16 +5,7 @@ import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import type { NodeId } from '@world/ids';
 
-/**
- * A ROAD THAT BENDS AT A NODE IS STILL ONE ROAD.
- *
- * `classifyTurn` calls anything bending more than 30 degrees a turn, and turns
- * are paired lane to lane from their own side: a left from the innermost lane
- * into the innermost lane. So a two-lane carriageway bending 45 degrees at a
- * node kept lane 0 and merged lane 1 into it through the no-route fallback -
- * every bend in a polyline road was a lane drop - and a ring of streets, which
- * bends at every node, carried one lane with a merge at each of them.
- */
+/** A ROAD THAT BENDS AT A NODE IS STILL ONE ROAD. */
 
 function graphOf(doc: RoadDoc): LaneletGraph {
   const net = new Network(doc);
@@ -68,8 +59,7 @@ describe('a road bending at a node', () => {
   });
 
   it('carries the road through a junction where it bends and a side street joins square', () => {
-    // The main road turns 45 degrees at the node; the side street meets the
-    // outside of the bend. No pair is straight within 30 degrees.
+    // The main road turns 45 degrees at the node; the side street meets the outside of the bend.
     const doc = new RoadDoc();
     const node = doc.addNode({ x: 0, y: 0 });
     const west = doc.addNode({ x: -400, y: 0 });

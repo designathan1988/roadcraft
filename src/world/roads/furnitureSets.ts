@@ -9,28 +9,7 @@ import { BENCH_ZONE, sectionOf, zonesOn } from '../section';
 import { FURNITURE_CATALOG, furnitureEntry } from './furnitureCatalog';
 import { m } from '../units';
 
-/**
- * THE FURNITURE A NEW ROAD IS BUILT WITH (docs/source/VIAS.md V7; the player's
- * decision: automatic by default on new roads, the set chosen in the road
- * tool; roads already built never change by themselves).
- *
- * The pieces are ordinary placed items (`RoadDoc.landscape`), put where the
- * landscaping tool would put them (`snapLandscape`: the furnishing zone by
- * the kerb, clear of the crossings and of each other), so the player edits
- * or removes each one as any other and nothing regenerates over it.
- *
- * ABNT NBR 9050:2020, 6.12.3: a footway keeps a clear walking strip ("faixa
- * livre") of at least 1,20 m, furniture going in the service strip by the
- * kerb ("faixa de serviço", 0,70 m recommended): a piece that would leave
- * less than 1,20 m beside it is not put (on the game's 2 m footway, lamps
- * and hydrants go, bins and benches do not). Spacing as Brazilian practice lays a
- * street: a lamp column every 30 m on each side, staggered (NBR 5101 urban
- * lighting, spacing about 3 to 4 times the mounting height of 8-10 m), a
- * street tree every 10 m where the footway is wide enough for its pit, a bin
- * near each corner and every 60 m, a bench every 60 m on wide footways, a
- * hydrant every 100 m (NBR 13714 / fire brigade technical rules: 60-120 m
- * between urban hydrants).
- */
+/** THE FURNITURE A NEW ROAD IS BUILT WITH */
 export type FurnitureSet = 'complete' | 'basic' | 'none';
 export const FURNITURE_SETS: readonly FurnitureSet[] = ['complete', 'basic', 'none'];
 export const isFurnitureSet = (v: unknown): v is FurnitureSet => v === 'complete' || v === 'basic' || v === 'none';
@@ -67,18 +46,9 @@ export interface FurniturePlacement {
   readonly at: Vec2;
 }
 
-/**
- * The pieces of `set` along the given segments, each where the landscaping
- * tool would accept it among `existing` (and the pieces already chosen).
- * Deterministic: the same roads give the same pieces.
- */
+/** The pieces of `set` along the given segments, each where the landscaping tool would accept it among `existing` */
 export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: FurnitureSet,
-  /**
-   * The items standing to place among; absent (the way to call it): the
-   * document's own, asked by place round each street (`RoadDoc.landscapeIn`).
-   * A list handed in is filed whole first - every item of the map, when it is
-   * the document's.
-   */
+  /** The items standing to place among; absent (the way to call it): the document's own, asked by place round each street */
   existing: Iterable<LandscapeItem> | null,
   /** The left side carries a power line whose poles hold the street lights (`editor/roads/powerLine.ts`): no lamp columns there. */
   powerLeft = false,
@@ -86,8 +56,7 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
   trees = true): FurniturePlacement[] {
   if (set === 'none') return [];
   const out: FurniturePlacement[] = [];
-  // The items handed in and the pieces chosen here, in cells: each street asks
-  // only those near it (a generated city lays thousands of pieces at once).
+  // The items handed in and the pieces chosen here, in cells: each street asks only those near it
   const grid = new Map<string, LandscapeItem[]>();
   const cellOf = (x: number, y: number): string => `${Math.floor(x / CELL)},${Math.floor(y / CELL)}`;
   const file = (item: LandscapeItem): void => {
@@ -108,16 +77,14 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
     }
     const area = [box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad] as const;
     if (existing === null) items.push(...net.doc.landscapeIn(area));
-    // The utility poles standing count as lamp columns: nothing is put on them.
-    // By place (`RoadDoc.polesIn`). DO NOT file every pole of the map for each road drawn.
+    // DO NOT file every pole of the map for each road drawn.
     for (const pole of net.doc.polesIn(area)) items.push({ id: -1_000_000 - pole.id, kind: 'lamp', x: pole.x, y: pole.y });
     const keep = (item: LandscapeItem): void => { items.push(item); file(item); };
     const line = ribbon.full;
     const section = sectionOf(ribbon.road, segment.direction);
     const startS = net.mouthDistance(id, segment.a);
     const endS = line.length - net.mouthDistance(id, segment.b);
-    // A planted median takes the street's trees (a boulevard's row down the
-    // middle); the footways then keep theirs clear for the walkers.
+    // A planted median takes the street's trees (a boulevard's row down the middle)
     const medianTrees = trees && set === 'complete' && segment.direction === 'both' && plantedMedian(ribbon.road);
     if (medianTrees) {
       const shift = travelShift(ribbon.road);

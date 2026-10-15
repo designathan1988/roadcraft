@@ -6,23 +6,12 @@ import { setDrawProfile } from './drawProfile';
 import { openProfileEditor } from './profileEditor';
 import './roads.css';
 
-/**
- * THE ROAD'S PROFILE in the inspector (docs/source/VIAS.md V2): the cross-section in
- * miniature, drawn as the editor draws it (`crossSection.ts`) with each
- * element's width under it, the road's total width, lanes, paving and speed
- * in one line, and the button that opens the profile editor. Every change is
- * made in the editor, one place; what it applies is one edit of the road
- * (`apply`), judged and paid for like any other.
- */
+/** THE ROAD'S PROFILE in the inspector */
 export function mountProfilePanel(
   host: HTMLElement,
   segment: RoadSegment,
   apply: (profile: RoadProfileSpec, type?: number) => void,
-  /**
-   * V8: this road's profile copied to the whole street it runs in (`chain`
-   * segments, itself included), and the road tool given it to draw with
-   * (the eyedropper).
-   */
+  /** V8: this road's profile copied to the whole street it runs in */
   more: { readonly chain?: number; readonly toStreet?: () => void; readonly drawWith?: () => void } = {},
 ): void {
   const profile = profileOf(segment);

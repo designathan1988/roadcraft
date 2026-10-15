@@ -7,12 +7,7 @@ export const MAX_TEXTURED = 5;
 /** Items whose own texture is drawn: dyed items (hair, brows, beards) take the look's colour instead. */
 const UNTEXTURED = new Set(['hair', 'eyebrows', 'eyelashes', 'beard']);
 
-/**
- * The garments a person wears that are drawn with their own texture, in slot
- * order: the outfit first (slot 1, the one the outfit dye applies to), then
- * shoes, hat and the extras. `personRig.ts` writes each garment vertex's slot
- * and `skinAppearance.ts` binds one texture per slot, from this one list.
- */
+/** The garments a person wears that are drawn with their own texture, in slot order: the outfit first */
 export function texturedGarments(look: PersonLook): (string | undefined)[] {
   const extras = (look.extras ?? []).filter((name) => !UNTEXTURED.has(communityItem(name)?.kind ?? ''));
   return [look.outfit, look.footwear, look.hat === 'none' ? undefined : look.hat, ...extras].slice(0, MAX_TEXTURED);

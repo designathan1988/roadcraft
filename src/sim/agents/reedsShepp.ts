@@ -1,17 +1,4 @@
-/**
- * The shortest way between two poses for a vehicle that turns no tighter
- * than a radius and drives forward and in reverse alike (Reeds and Shepp,
- * "Optimal paths for a car that goes both forwards and backwards", Pacific
- * Journal of Mathematics 145(2), 1990): at most five pieces, each a full-lock
- * arc or a straight, from the families CSC, CCC, CCCC, CCSC and CCSCC, each
- * tried as written, time-flipped, reflected and backwards. Written after
- * OMPL's `ReedsSheppStateSpace.cpp`, which carries the paper's formulas 8.1 to
- * 8.11 with its two typos corrected.
- *
- * The hybrid A* (`hybridAStar.ts`) uses it as Dolgov et al. do: its length is
- * a lower bound of the way still to drive, and a way found free of obstacles
- * from a pose of the search to the goal ends the search exactly on the goal.
- */
+/** The shortest way between two poses for a vehicle that turns no tighter than a radius and drives forward and in reverse */
 
 const PI = Math.PI;
 const TWO_PI = 2 * Math.PI;
@@ -235,11 +222,7 @@ function CCSCC(x: number, y: number, phi: number): void {
   if (LpRmSLmRp(-x, -y, phi)) take(17, 5, -T.t, h, -T.u, h, -T.v);
 }
 
-/**
- * The shortest Reeds-Shepp way from pose `a` to pose `b` (positions in world
- * units, headings in radians) for a turning radius `radius`; null only if no
- * family fits, which the theorem says does not happen.
- */
+/** The shortest Reeds-Shepp way from pose `a` to pose `b` */
 export function reedsShepp(ax: number, ay: number, aAngle: number, bx: number, by: number, bAngle: number, radius: number): RsPath | null {
   const dx = bx - ax, dy = by - ay, c = Math.cos(aAngle), s = Math.sin(aAngle);
   const x = (c * dx + s * dy) / radius, y = (-s * dx + c * dy) / radius, phi = bAngle - aAngle;
@@ -263,10 +246,7 @@ function search(x: number, y: number, phi: number): boolean {
   return bestType >= 0;
 }
 
-/**
- * Poses along a Reeds-Shepp way from pose `a`, one every `step` (world
- * units) and at every piece's end, each with whether it is reached backing.
- */
+/** Poses along a Reeds-Shepp way from pose `a`, one every `step` */
 export function sampleReedsShepp(path: RsPath, ax: number, ay: number, aAngle: number, radius: number, step: number,
   out: { x: number; y: number; angle: number; reverse: boolean }[] = []): { x: number; y: number; angle: number; reverse: boolean }[] {
   let x = 0, y = 0, phi = aAngle;

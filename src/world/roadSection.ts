@@ -3,10 +3,7 @@ import { m } from './units';
 export const LANE_TURN_RULES = ['all', 'left', 'through', 'right', 'leftThrough', 'throughRight'] as const;
 export type LaneTurnRule = (typeof LANE_TURN_RULES)[number];
 
-/**
- * What an element of the cross-section is paved with (docs/source/VIAS.md V1). The
- * class's own look when absent.
- */
+/** What an element of the cross-section is paved with. */
 export const CARRIAGEWAY_MATERIALS = ['asphalt', 'concrete', 'cobble'] as const;
 export const FOOTWAY_MATERIALS = ['pavers', 'concrete', 'stone'] as const;
 export const MEDIAN_MATERIALS = ['grass', 'concrete', 'pavers'] as const;
@@ -22,22 +19,14 @@ export interface SectionMaterials {
   readonly median?: MedianMaterial;
 }
 
-/**
- * Authored road section. Widths use world units, whole metres; a footway
- * includes its kerb. Symmetric unless a side is given (`sidewalkLeft`,
- * `sidewalkRight`, left and right of a -> b): `sidewalk` is then the wider
- * of the two, what every consumer that only needs the road's reach reads.
- */
+/** Authored road section. */
 export interface RoadSection {
   readonly laneWidth: number;
   readonly sidewalk: number;
-  /** The footway left of a -> b, when it differs from the right one (docs/source/VIAS.md V1). */
+  /** The footway left of a -> b, when it differs from the right one. */
   readonly sidewalkLeft?: number;
   readonly sidewalkRight?: number;
-  /**
-   * A footway laid level with the carriageway (a shared surface): no kerb
-   * stone, no rise. The kerb is where the heights differ.
-   */
+  /** A footway laid level with the carriageway (a shared surface): no kerb stone, no rise. */
   readonly flushLeft?: boolean;
   readonly flushRight?: boolean;
   /** A central reservation painted on the carriageway instead of kerbed and raised. */
@@ -50,26 +39,13 @@ export interface RoadSection {
   readonly turnsForward?: readonly LaneTurnRule[];
   /** Lane order in the stored b -> a direction. Missing indexes retain default movements. */
   readonly turnsBackward?: readonly LaneTurnRule[];
-  /**
-   * Who may drive each lane, by laneIndex (inner to outer) in each direction
-   * (docs/source/VIAS.md V4): every vehicle, or buses only (a "faixa exclusiva",
-   * MBST vol. IV, MFE). Absent or short: every vehicle.
-   */
+  /** Who may drive each lane, by laneIndex (inner to outer) in each direction */
   readonly useForward?: readonly LaneUse[];
   readonly useBackward?: readonly LaneUse[];
-  /**
-   * The line between lane k and lane k + 1 of each direction: dashed (a lane
-   * change allowed, LMS-2) or solid (forbidden, LMS-1). Absent or short:
-   * dashed. The line beside a bus lane is solid whatever this says (MFE).
-   */
+  /** The line between lane k and lane k + 1 of each direction: dashed (a lane change allowed, LMS-2) or solid */
   readonly linesForward?: readonly LaneLine[];
   readonly linesBackward?: readonly LaneLine[];
-  /**
-   * The line between the two directions (docs/source/VIAS.md V6, MBST vol. IV):
-   * dashed (LFO-2, overtaking allowed), solid (LFO-1) or double solid
-   * (LFO-3). Absent: the road's own rule (dashed on a street, solid between
-   * lanes of a wider road).
-   */
+  /** The line between the two directions (MBST vol. IV): dashed (LFO-2, overtaking allowed), solid */
   readonly centreLine?: CentreLine;
 }
 
@@ -108,8 +84,7 @@ export function normalizeRoadSection(raw: unknown): RoadSection | undefined {
       ? Math.max(min, Math.min(max, onGridLength(clamped)))
       : clamped;
   }
-  // The two footways, when they differ: each on the grid and within the
-  // limits, and `sidewalk` the wider; equal sides are the symmetric section.
+  // The two footways, when they differ: each on the grid and within the limits, and `sidewalk` the wider
   const left = value['sidewalkLeft'], right = value['sidewalkRight'];
   if (left !== undefined || right !== undefined) {
     const side = (raw: unknown): number | null => {
@@ -149,8 +124,7 @@ export function normalizeRoadSection(raw: unknown): RoadSection | undefined {
     if (!CENTRE_LINES.includes(centreLine as CentreLine)) return undefined;
     result.centreLine = centreLine as CentreLine;
   }
-  // Lane uses and lines: a list of at most eight known values, dropped when
-  // it says nothing a missing one would not (all lanes open, every line dashed).
+  // Lane uses and lines: a list of at most eight known values, dropped when it says nothing a missing one would not
   for (const key of LANE_LIST_KEYS) {
     const list = value[key];
     if (list === undefined) continue;
@@ -185,10 +159,7 @@ function normalizeMaterials(raw: unknown): SectionMaterials | undefined | null {
 export const sectionSidewalk = (s: RoadSection, side: 'left' | 'right'): number =>
   (side === 'left' ? s.sidewalkLeft : s.sidewalkRight) ?? s.sidewalk;
 
-/**
- * The same section seen from the other end of its road: left and right
- * change places, and so do the lane arrows of the two directions.
- */
+/** The same section seen from the other end of its road */
 export function flipSection(s: RoadSection | undefined): RoadSection | undefined {
   if (!s) return undefined;
   const { sidewalkLeft, sidewalkRight, flushLeft, flushRight, materials, turnsForward, turnsBackward,
@@ -218,13 +189,7 @@ export function flipSection(s: RoadSection | undefined): RoadSection | undefined
 /** Every field of `SectionMaterials`: a field added there and left out here does not compile. */
 const MATERIAL_FIELDS: Record<keyof SectionMaterials, true> = { carriageway: true, footwayLeft: true, footwayRight: true, median: true };
 
-/**
- * Whether two sets of materials pave alike, field by field (none set and an
- * empty set alike). DO NOT compare them as JSON text: the text follows the
- * order the keys were written in (`Object.keys`), and `flipSection` writes
- * them in another order than `normalizeRoadSection`, so a road and the same
- * road stored the other way round compared different and were never joined.
- */
+/** DO NOT compare them as JSON text: the text follows the order the keys were written in */
 function sameMaterials(a: SectionMaterials | undefined, b: SectionMaterials | undefined): boolean {
   return (Object.keys(MATERIAL_FIELDS) as (keyof SectionMaterials)[]).every((key) => a?.[key] === b?.[key]);
 }
@@ -241,13 +206,7 @@ export function sameRoadSection(a: RoadSection | undefined, b: RoadSection | und
     });
 }
 
-/**
- * The section of one piece of a split road. Lane arrows are a rule of the END
- * a lane arrives at: forward arrows (a -> b) belong to the piece that reaches
- * b, backward arrows to the piece that reaches a. Copied onto every piece they
- * turned each new node into a place with only a forbidden way on - a lane with
- * no exit at all (seen at a mid-block crossing: "left only", nothing on the left).
- */
+/** The section of one piece of a split road. */
 export function sectionForPiece(section: RoadSection | undefined, reachesA: boolean, reachesB: boolean): RoadSection | undefined {
   if (!section) return undefined;
   const { turnsForward, turnsBackward, ...rest } = section;
@@ -283,12 +242,7 @@ export function laneTurnAllowed(rule: LaneTurnRule | undefined, turn: 'left' | '
     (rule === 'throughRight' && (turn === 'through' || turn === 'right'));
 }
 
-/**
- * The section that gives a road of class profile `rt` a chosen TOTAL width
- * (carriageway, median and both footways), on the 1 m subgrid of the zoning
- * grid: the footways keep their width and the lanes take up the difference,
- * within the lane limits; whatever the lanes cannot take goes to the footways.
- */
+/** The section that gives a road of class profile `rt` a chosen TOTAL width */
 export function sectionForWidth(rt: { readonly lanes: number; readonly median: number; readonly sidewalk: number; readonly speedLimit: number; readonly priorityRank: number },
   totalMetres: number, speedKmh: number): RoadSection {
   const total = m(Math.round(totalMetres));
@@ -309,12 +263,7 @@ export function laneUse(section: RoadSection | undefined, forward: boolean, inde
   return (forward ? section?.useForward : section?.useBackward)?.[index] ?? 'all';
 }
 
-/**
- * Whether a lane change across the line between lane `index` and lane
- * `index + 1` of one direction is allowed: a dashed line between two lanes
- * open to the same vehicles (MBST vol. IV: LMS-2 allows it, LMS-1 and the
- * line of an exclusive lane do not).
- */
+/** Whether a lane change across the line between lane `index` and lane `index + 1` of one direction is allowed */
 export function laneLineCrossable(section: RoadSection | undefined, forward: boolean, index: number): boolean {
   const line = (forward ? section?.linesForward : section?.linesBackward)?.[index] ?? 'dashed';
   return line === 'dashed' && laneUse(section, forward, index) === laneUse(section, forward, index + 1);

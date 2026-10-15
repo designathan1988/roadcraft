@@ -1,23 +1,4 @@
-/**
- * THE DOCUMENT AS LAST COMMITTED, and what changed since: the undo by
- * records (docs/ARCHITECTURE.md 5).
- *
- * Every edit serialized the whole map before and after (12.7 MB on a city of
- * 1 530 buildings) to compare the two texts and keep the "before" for undo.
- * Here the image keeps a copy of each record, list and value; `commit`
- * compares only the parts whose kind the diary says moved since the last
- * commit (Excalidraw's store finds its changes by comparing each element with
- * the last snapshot's), and hands back a patch: each changed record as it was
- * and as it is, each list's changed stretch, each changed value (tldraw's
- * `RecordsDiff`: added, updated [from, to], removed). Undo puts back the
- * "before" side, redo the "after" (`RoadDoc.restore`), through the diary like
- * any edit.
- *
- * The comparison is structural and generic (plain data), so a field added to a
- * record is compared without anyone listing it; the parts are checked complete
- * against the saved format (`PARTS_OF_SAVED`).
- * Pure: no three, no DOM.
- */
+/** THE DOCUMENT AS LAST COMMITTED, and what changed since: the undo by records. */
 import type { DocChangeKind } from './changes';
 import { samePlain } from '@core/plain';
 import { DOC_CHANGE_KINDS } from './changes';
@@ -43,8 +24,7 @@ const RECORDS: readonly { readonly part: RecordPart; readonly kinds: readonly Do
   { part: 'barriers', kinds: ['barriers'], entries: (d) => d.barriers, get: (d, id) => d.barriers.get(id) },
   // A building's record is replaced, never changed in place (`BuildingStore.put`): kept by reference.
   { part: 'buildings', kinds: ['buildings', 'buildingWear'], entries: (d) => buildingEntries(d), get: (d, id) => d.buildings.get(id as never), immutable: true },
-  // A lot's record too (`LotStore` OWNERSHIP), by the ids its entries carry. DO NOT go back to the lots as a
-  // list: a stretch of a list is found by walking it from both ends, the whole cadastre at each lot edited.
+  // DO NOT go back to the lots as a list
   { part: 'lots', kinds: ['lots'], entries: (d) => lotEntries(d), get: (d, id) => d.lotStore.get(id), immutable: true },
 ];
 const LISTS = Object.keys(LIST_KINDS) as ListPart[];
@@ -85,12 +65,7 @@ const copy = <T>(value: T): T => (value === undefined ? value : structuredClone(
 const IMMUTABLE: readonly RecordPart[] = RECORDS.filter((r) => r.immutable).map((r) => r.part);
 const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
 
-/**
- * What a patch holds that the document does not, UTF-16 bytes of its text: the
- * copies, and of a record replaced whole (a building) only its old version -
- * its new one is the document's own. A town grown under one edit (1 348
- * buildings) was written out whole only to be counted: 75 ms on the click after.
- */
+/** What a patch holds that the document does not, UTF-16 bytes of its text: the copies, and of a record replaced whole */
 function bytesHeld(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
   let bytes = 0;
   for (const r of records) bytes += textBytes(r.before) + (IMMUTABLE.includes(r.part) ? 0 : textBytes(r.after));
@@ -122,21 +97,12 @@ export class DocImage {
     this.see(doc);
   }
 
-  /**
-   * What changed since the last commit, and the image brought up to the
-   * document; null when nothing did. Compares only the parts whose kind moved
-   * in the diary since (and the small values every time).
-   */
+  /** What changed since the last commit, and the image brought up to the document; null when nothing did. */
   commit(doc: RoadDoc): DocPatch | null {
     return this.update(doc, true);
   }
 
-  /**
-   * The image brought up to the document, keeping nothing of what changed: a
-   * change made with no edit open (a town growing on its own) is taken in
-   * without a patch, which would copy every grown building into a step
-   * nobody keeps.
-   */
+  /** The image brought up to the document, keeping nothing of what changed: a change made with no edit open */
   absorb(doc: RoadDoc): void {
     this.update(doc, false);
   }
@@ -163,11 +129,7 @@ export class DocImage {
         if (keep) records.push({ part: r.part, id, before: was, after });
         kept.set(id, after);
       };
-      // The records the diary names since the last commit, and only they. Every
-      // record of the part only when it cannot say (an entry without ids - a
-      // load, an undo, a document replaced -, entries forgotten). DO NOT walk
-      // every record of a kind that moved: one road drawn compared every node
-      // and segment of the map, one building grown walked the town.
+      // DO NOT walk every record of a kind that moved
       const ids = this.named(doc, r.kinds);
       if (ids) {
         for (const id of [...ids].sort((p, q) => p - q)) take(id, r.get(doc, id));
@@ -208,11 +170,7 @@ export class DocImage {
     return { records, lists, values, bytes: bytesHeld(records, lists, values) };
   }
 
-  /**
-   * The ids the diary's entries of these kinds name since the last commit (a
-   * superset: an id may be another part's - node and segment ids share the
-   * roads' entries); null when some entry has none or was forgotten.
-   */
+  /** The ids the diary's entries of these kinds name since the last commit */
   private named(doc: RoadDoc, kinds: readonly DocChangeKind[]): Set<number> | null {
     let since = Infinity;
     for (const kind of kinds) since = Math.min(since, this.seen.get(kind) ?? 0);

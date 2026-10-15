@@ -9,12 +9,7 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE ROAD ENDS EACH LANE REACHES, KEPT BY WHAT CHANGED (`laneReach.ts`, from
- * the world's topology log): after every edit, for every link lane and body
- * class, the road ends must be those a search from that lane alone finds -
- * over the movements the body fits and the lane changes beside each lane.
- */
+/** THE ROAD ENDS EACH LANE REACHES, KEPT BY WHAT CHANGED (`laneReach.ts`, from the world's topology log) */
 function fromNothing(w: SimWorld, start: LaneletId, body: number): LaneletId[] {
   const next = (lane: LaneletId): LaneletId[] => {
     const out: LaneletId[] = [];

@@ -36,18 +36,7 @@ const CONE = (7.5 * Math.PI) / 180;
 const LENGTH_STEP = m(4);
 const LENGTH_TOLERANCE = m(1.68);
 
-/**
- * The road tool's snapping, as Cities: Skylines II lays it out: one switch
- * for all of it, and each kind on its own. Connecting to a road or a junction
- * is not part of it - a road drawn onto another always joins it.
- *
- * - `angles`: square to the world and to the roads it starts from or lands
- *   on, 45 degrees, and every 15 degrees;
- * - `grid`: points on the 1 m subdivision of the universal grid (`grid.ts`),
- *   the start of a road as well as its end.
- * Roads lay out no zoning grid any more (lots are drawn in the Zoning tool),
- * so their length is not snapped to one.
- */
+/** The road tool's snapping, as Cities: Skylines II lays it out: one switch for all of it, and each kind on its own. */
 export interface RoadSnap {
   readonly on: boolean;
   readonly angles: boolean;
@@ -64,18 +53,9 @@ try {
 } catch {
   // Not kept: the defaults stand.
 }
-/**
- * The grid the road snap lands on: the 1 m subdivision, or - while the grid
- * is drawn (the road panel's Grid) - the 10 m cells the player sees, so a road
- * runs along their lines and ends on their corners.
- */
+/** The grid the road snap lands on: the 1 m subdivision, or - while the grid is drawn (the road panel's Grid) */
 let gridSnapStep = GRID_STEP;
-/**
- * Where the snapped points sit within a cell: on its lines (0), or - for a
- * road an odd number of cells wide - in its middle (half a cell), so the road
- * fills whole cells between the lines instead of straddling one (the player,
- * 2026-10-06: "dentro do grid e não na linha").
- */
+/** Where the snapped points sit within a cell: on its lines (0), or - for a road an odd number of cells wide */
 let gridSnapOffset = 0;
 export function setGridSnapStep(step: number, offset = 0): void { gridSnapStep = step; gridSnapOffset = offset; }
 export function roadSnap(): RoadSnap {
@@ -90,18 +70,7 @@ export function setRoadSnap(patch: Partial<RoadSnap>): void {
   }
 }
 
-/**
- * The ribbons filed in the network's cells (`Network.segmentCells`,
- * `world/cells.ts`) whose bounds meet `rect`, in increasing id: the order of
- * `net.ribbons`, which the build keeps in increasing id (`insertionWatch`,
- * `world/networkBuild.ts`), so a search that keeps the first of equals finds
- * what the walk over every ribbon found. A pointer move reads the cells round
- * it, never the map.
- * DO NOT walk `net.ribbons` / `doc.segments` instead, and DO NOT go through
- * `Network.ribbonsMeeting`: its order table (`ribbonOrder`) is laid out again
- * over every ribbon of the map each time the network moves, and the hover after
- * an edit paid for it.
- */
+/** DO NOT walk `net.ribbons` / `doc.segments` instead, and DO NOT go through `Network.ribbonsMeeting`: its order table */
 export function ribbonsNear(net: Network, rect: ChangeRect): SegmentRibbon[] {
   const out: SegmentRibbon[] = [];
   for (const id of net.segmentCells.idsMeeting(rect)) {
@@ -111,15 +80,7 @@ export function ribbonsNear(net: Network, rect: ChangeRect): SegmentRibbon[] {
   return out;
 }
 
-/**
- * Finds what the pointer is over: an existing node, a point on an existing
- * road, or open ground.
- *
- * Radii are divided by zoom so that pick tolerance is constant in screen
- * pixels, and node candidates are biased so a junction wins over attaching
- * mid-segment — the same behaviour the V6 monolith had, kept deliberately.
- * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
- */
+/** @perInput Finds what the pointer is over: an existing node, a point on an existing road, or open ground. */
 export function findAnchor(
   doc: RoadDoc,
   net: Network,
@@ -134,29 +95,11 @@ export function findAnchor(
   let bestScore = Infinity;
   let bestNode: NodeId | null = null;
 
-  // THE ROADS NEAR THE POINTER, from the network's cells (`ribbonsNear`):
-  // a pointer move reads the few cells round it, never the map. Both loops below used to walk every node and every segment of the
-  // document on every move (class C2, docs/PLANO-ESPINHA-2026-10-14.md).
-  //
-  // Why this misses nothing the old walk found (the network must be current,
-  // as every caller's is - `main.ts` rebuilds it after each edit):
-  // - a ribbon is filed over `ribbonBounds`, its whole centreline's box grown
-  //   by the casing (`world/ribbons.ts`);
-  // - a node within `nodeRadius` is the end of a road, so it lies in that
-  //   road's centreline box: the square of `nodeRadius` round `p` meets the
-  //   ribbon's bounds. A node with no road is not found, and none is left:
-  //   every edit prunes them (`RoadDoc.pruneOrphanNodes`);
-  // - a segment passes the box test below only when `p` is within its radius,
-  //   `max(pickRadius, casing)`, of its centreline box: within the casing, `p`
-  //   is inside the filed bounds; within `pickRadius`, the square of it meets them.
   // DO NOT go back to `doc.nodes` / `doc.segments` here: it runs on every pointer move.
   const reach = Math.max(nodeRadius, pickRadius);
   const near = ribbonsNear(net, [p.x - reach, p.y - reach, p.x + reach, p.y + reach]);
 
-  // Equal distances go to the smaller id, which is the first the old walk over
-  // `doc.nodes` met: ids are handed out in increasing order and every copy,
-  // undo and load keeps the map's order. The order the cells give is then
-  // irrelevant, and a node shared by two roads met twice changes nothing.
+  // Equal distances go to the smaller id, which is the first the old walk over `doc.nodes` met
   for (const ribbon of near) {
     const seg = doc.segment(ribbon.id);
     if (!seg) continue;
@@ -176,11 +119,7 @@ export function findAnchor(
     }
   }
 
-  // A node inside its pick radius owns the gesture. Comparing its distance
-  // with a segment distance was not enough: at a shared endpoint, subpixel
-  // screen-to-world rounding can make the node a few millionths away while
-  // the projected segment is exactly zero away. The segment then stole the
-  // click and the Move tool panned the camera instead of moving the junction.
+  // A node inside its pick radius owns the gesture.
   if (best.kind === 'node') return best;
 
   let bestSegment: SegmentId | null = null;
@@ -188,18 +127,11 @@ export function findAnchor(
     const id = ribbon.id;
     const seg = doc.segment(id);
     if (!seg) continue;
-    // A pointer visibly inside a road must be able to attach to that road even
-    // when zoomed in.  A screen-only radius shrank below the physical casing at
-    // high zoom, creating endpoints that overlapped the rendered road while
-    // remaining topologically disconnected.
-    // The profile is the ribbon's own (`makeRibbon`, made from this segment):
-    // DO NOT call `roadProfile` here, it builds a new object per road per move.
+    // The profile is the ribbon's own (`makeRibbon`, made from this segment)
     const segRadius = Math.max(pickRadius, casingHalf(ribbon.road));
     const pl = net.polylines.get(doc, id);
     const q = p;
-    // Reject by bounding box first. `closestPoint` walks every flattened point
-    // of the polyline; a segment whose box is further than the snap radius
-    // cannot hold the closest point, and the box test is four comparisons.
+    // Reject by bounding box first.
     const bb = pl.bbox;
     if (
       q.x < bb.minX - segRadius ||
@@ -229,20 +161,14 @@ export function findAnchor(
   return best;
 }
 
-/**
- * Where a road starts: a junction or a road it is drawn from keeps its exact
- * point; open ground is moved onto the 1 m grid when the grid snap is on.
- */
+/** Where a road starts: a junction or a road it is drawn from keeps its exact point */
 export function snapRoadStart(anchor: Anchor): Anchor {
   const snap = roadSnapState;
   if (anchor.kind !== 'free' || !snap.on || !snap.grid) return anchor;
   return { kind: 'free', at: snapToGrid(anchor.at, gridSnapStep, gridSnapOffset) };
 }
 
-/**
- * Free road drawing follows the pointer exactly, snapping only to compatible networks.
- * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
- */
+/** @perInput Free road drawing follows the pointer exactly, snapping only to compatible networks. */
 export function snapRoadEndpoint(
   doc: RoadDoc, net: Network, start: Anchor, raw: Vec2, zoom: number, heightOffset: number,
 ): SnapResult {
@@ -266,25 +192,8 @@ export function snapRoadEndpoint(
   };
 }
 
-/**
- * Snaps a draft endpoint.
- *
- * Network snapping wins outright. Otherwise the heading is pulled to a
- * candidate angle — continuing or crossing an incident road at the start
- * anchor, or a world orthogonal — and the length is quantized.
- *
- * Angular snapping is not decoration. Junction quality depends on legs meeting
- * at sane angles: a fork of a few degrees forces an enormous separation setback
- * and produces a gore no corner solver can trace cleanly.
- */
-/**
- * The heading a drag is allowed to take, and why.
- *
- * ONE definition, because two callers need the same answer: a road drawn into
- * open ground and a road drawn onto another road. It used to exist only inline
- * in the first case, so landing on an existing road accepted any angle at all —
- * the very shape the editor otherwise refuses.
- */
+/** Snaps a draft endpoint. */
+/** The heading a drag is allowed to take, and why. */
 function snapHeading(
   doc: RoadDoc,
   start: Anchor,
@@ -309,12 +218,7 @@ function snapHeading(
   }
 
   if (landing !== undefined) {
-    // Landing on a road, the angles that matter are the ones to THAT road:
-    // square to it first, then every 15 degrees from its own direction. The
-    // world grid used to be offered here as well, and against any road not
-    // itself on that grid it won - a street drawn square onto an avenue at 21
-    // degrees was pulled to 105, and onto a bend to the world axis rather than
-    // the bend's normal: the new road visibly swung off where it was drawn.
+    // Landing on a road, the angles that matter are the ones to THAT road
     candidates.push({ angle: landing + Math.PI / 2, guide: 'perpendicular' });
     candidates.push({ angle: landing - Math.PI / 2, guide: 'perpendicular' });
     for (let i = 0; i < 24; i++) {
@@ -323,11 +227,7 @@ function snapHeading(
   } else {
     // The grid's orthogonals plus 45s, which is the grid most street layouts follow.
     for (const angle of GRID_HEADINGS) candidates.push({ angle, guide: 'orthogonal' });
-    // And every 15 degrees from them, as a coarser fallback - but not while
-    // the grid is drawn (its cells, `setGridSnapStep`): a road then runs along
-    // its lines or its diagonals, the nearest of the eight, whatever the drag.
-    // A drag 20 degrees off a line took the 15 or 30 and crossed the cells
-    // askew, its ends alone on the grid (the player, 2026-10-10).
+    // And every 15 degrees from them, as a coarser fallback - but not while the grid is drawn (its cells, `setGridSnapStep`)
     if (gridSnapStep > GRID_STEP) gridOnly = true;
     else for (let i = 0; i < 24; i++) {
       candidates.push({ angle: (i * Math.PI) / 12, guide: 'angle' });
@@ -351,13 +251,7 @@ function snapHeading(
   return { angle, guide };
 }
 
-/**
- * Where a ray from `from` along `dir` first crosses a polyline, or `null`.
- *
- * Used to land a snapped heading on the road being drawn onto: the angle is
- * decided first and the contact point follows from it, instead of the contact
- * point being taken and the angle left to chance.
- */
+/** Where a ray from `from` along `dir` first crosses a polyline, or `null`. */
 function rayHitsPolyline(
   from: Vec2,
   dir: Vec2,
@@ -383,10 +277,7 @@ export interface SnapOptions {
   readonly heightOffset?: number;
   /** Pull the heading to the candidate angles. Default on. */
   readonly angles?: boolean;
-  /**
-   * Lengths in whole steps of this many world units, always (a zone cell).
-   * Absent: the old soft quantum - 10 units when within 4.2 of it. 0: none.
-   */
+  /** Lengths in whole steps of this many world units, always (a zone cell). */
   readonly lengthStep?: number;
   /** The end on the 1 m grid (`grid.ts`). Default off. */
   readonly grid?: boolean;
@@ -404,8 +295,7 @@ export function snapEndpoint(
   const useAngles = options.angles ?? true;
   const network = findAnchor(doc, net, raw, zoom, undefined, options.heightOffset);
 
-  // LANDING ON A NODE takes the node, exactly, and no angle can be negotiated:
-  // the whole point is that the two roads share that one point.
+  // LANDING ON A NODE takes the node, exactly, and no angle can be negotiated
   if (network.kind === 'node') {
     const v = sub(network.at, start.at);
     return {
@@ -416,23 +306,13 @@ export function snapEndpoint(
     };
   }
 
-  // LANDING ON A ROAD used to do the same, and that is why a road drawn into
-  // open ground obeyed the angle snap while a road drawn onto another one could
-  // be laid at any angle at all: this early return skipped the whole snap.
-  //
-  // A segment is a LINE, not a point. So the heading is snapped first, exactly
-  // as it would be in open ground, and the snapped ray is then intersected with
-  // the road being landed on. The result still lands on the road — the join is
-  // as solid as before — and it arrives at an angle the editor is willing to
-  // build.
+  // LANDING ON A ROAD used to do the same
   if (network.kind === 'segment' && network.segment !== undefined && useAngles) {
     const target = net.polylines.get(doc, network.segment);
     const points = target.toPoints();
     const reach = dist(start.at, raw) * 2 + 1;
     const heading = angleOf(sub(raw, start.at));
-    // The target's direction where the new road meets it. Taken at the contact
-    // first, then once more where the snapped ray actually lands, which on a
-    // bend is a little further along.
+    // The target's direction where the new road meets it.
     const contact = { s: 0, distance: 0 };
     const tangentAt = (p: Vec2): number => {
       target.closestInto(p.x, p.y, contact);
@@ -448,20 +328,7 @@ export function snapEndpoint(
         hit = second;
       }
     }
-    // The snapped landing has to be NEAR WHERE THE POINTER IS, or it is not a
-    // snap, it is a different road.
-    //
-    // A ray locked to an angle can cross the target far from the contact the
-    // user aimed at — around a bend, or near a junction at the other end. Taken
-    // blindly, that cuts the target there instead, and a cut a few units from
-    // an existing node leaves a stub shorter than the road is wide. Measured
-    // after the first version of this: a 10.51-unit segment between two
-    // junctions each asking for about 25 units of setback, which is a link that
-    // cannot give either of them room and degenerates into the pale slivers
-    // that appeared fanning across the asphalt.
-    //
-    // The allowance is the anchor's own reach with a little margin, so the snap
-    // still bends the last few pixels of a drag and never relocates it.
+    // The snapped landing has to be NEAR WHERE THE POINTER IS, or it is not a snap, it is a different road.
     const reachable = 40 / zoom;
     if (hit && dist(hit, network.at) <= reachable) {
       return {
@@ -471,9 +338,7 @@ export function snapEndpoint(
         length: dist(start.at, hit),
       };
     }
-    // The snapped ray misses the road entirely — the pointer is beside it
-    // rather than across it. Taking the raw contact keeps the connection the
-    // user is clearly asking for; refusing it would just feel broken.
+    // The snapped ray misses the road entirely — the pointer is beside it rather than across it.
     const v = sub(network.at, start.at);
     return {
       at: network.at,
@@ -513,15 +378,7 @@ export function snapEndpoint(
   };
 }
 
-/**
- * The end of a road moved onto the 1 m grid.
- *
- * Along a world axis or a diagonal from a start on the grid, the grid points
- * lie ON the snapped heading, so the end slides along it to the nearest one
- * (a whole number of metres; of whole cells when the length snap asks for it)
- * and the angle stays exact. At any other heading the nearest grid point is
- * taken, and the heading moves the little it must.
- */
+/** The end of a road moved onto the 1 m grid. */
 function onGridAlong(start: Vec2, at: Vec2, angle: number, length: number, lengthStep: number): Vec2 {
   const g = gridSnapStep, o = gridSnapOffset;
   const startOnGrid = onGrid(start, g, o);
@@ -542,11 +399,7 @@ function onGridAlong(start: Vec2, at: Vec2, angle: number, length: number, lengt
 /** The grid's eight headings: its two lines both ways, then the diagonals between them. */
 const GRID_HEADINGS: readonly number[] = [0, Math.PI / 2, Math.PI, Math.PI * 1.5, Math.PI / 4, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
 
-/**
- * Height of an authored connection, relative to the designed ground, or
- * `fallback` for open ground. Shared by the road tool and the fuzzer, so the
- * defect detector draws roads the way the player does.
- */
+/** Height of an authored connection, relative to the designed ground, or `fallback` for open ground. */
 export function anchorHeightOffset(doc: RoadDoc, net: Network, anchor: Anchor, fallback: number): number {
   if (anchor.kind === 'node' && anchor.node !== undefined) {
     return doc.node(anchor.node)?.heightOffset ?? 0;

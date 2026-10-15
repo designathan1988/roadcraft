@@ -10,14 +10,7 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
 
-/**
- * THE WALKWAYS KEPT BY WHAT CHANGED (`Walkways.update`): after every edit of
- * the fuzzer's sequences and fixtures, the walkways brought up to the network
- * by its delta must be the walkways built from nothing - every footway piece,
- * corner and crossing, where it runs and what it joins - and the graph must
- * hold together: every walkway's ends in it, every node's list naming exactly
- * the walkways that meet there.
- */
+/** THE WALKWAYS KEPT BY WHAT CHANGED (`Walkways.update`) */
 function graphLines(g: WalkGraph): string[] {
   const at = (id: number): string => {
     const n = g.nodes[id];

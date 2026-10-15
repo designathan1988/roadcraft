@@ -18,13 +18,7 @@ export interface HolderState {
 /** Resolves a claim to its holder's live position; null when it cannot be placed. */
 export type LocateHolder = (claim: Claim) => HolderState | null;
 
-/**
- * Whether two movements may hold one conflict zone together right now.
- *
- * True when their body sizes never touch in that zone, or when either body has
- * already driven past its end of the zone. Nothing else about the pair
- * matters: a body that has not reached the zone yet still has all of it ahead.
- */
+/** Whether two movements may hold one conflict zone together right now. */
 export function zoneShareable(
   point: ConflictPoint,
   a: { readonly connector: ConnectorId; readonly state: HolderState },
@@ -37,25 +31,7 @@ export function zoneShareable(
   return a.state.centre > onA.exit || b.state.centre > onB.exit;
 }
 
-/**
- * Occupancy of the swept conflict zones inside junctions.
- *
- * There is no `expiresAt` anywhere in this class, and that is deliberate. A
- * claim is released when the vehicle's BODY has left the zone, or when the
- * vehicle is removed — both driven by the same integrator that moves it. A
- * claim therefore cannot outlive its holder or its holder's motion.
- *
- * The V6 monolith kept timed reservations and, when traffic was paused,
- * actively RENEWED expired ones (`expiresAt = now + 3`), which could block a
- * junction indefinitely (defect 2.7). Here the tick does not advance while
- * paused, so nothing decays and nothing is renewed; there is no timer to renew.
- *
- * Compact links require several future movement needs to be declared at once.
- * Admission checks that maximum-claim chain with the Banker, but this table
- * grants only conflict points for the connector physically being entered.
- * Earlier connectors can remain here while the rear clears them; soft future
- * intentions never appear in this table and therefore cannot block traffic.
- */
+/** Occupancy of the swept conflict zones inside junctions. */
 export class ClaimTable {
   /** Several vehicles may convoy through the same connector, never a conflict. */
   private readonly byPoint = new Map<number, Claim[]>();
@@ -79,17 +55,7 @@ export class ClaimTable {
     return this.byVehicle.get(vehicle) ?? [];
   }
 
-  /**
-   * True when every listed zone is free, already held by this vehicle, held by
-   * a vehicle on this exact connector, or held by a body that cannot touch
-   * this one there any more.
-   *
-   * A convoy on one connector follows one centreline and is kept apart by car
-   * following. A holder on ANOTHER connector blocks only while its body is
-   * still inside the part of the zone a body of the applicant's size could
-   * reach — a car in the second of two turn lanes does not wait for the car in
-   * the first, a bus does.
-   */
+  /** True when every listed zone is free, already held by this vehicle, held by a vehicle on this exact connector */
   available(
     points: readonly number[],
     vehicle: VehicleId,
@@ -136,14 +102,7 @@ export class ClaimTable {
     this.byVehicle.set(vehicle, held);
   }
 
-  /**
-   * Releases zones the vehicle's body has already driven out of.
-   *
-   * `centre` is the body-centre arc position along `connector`, which keeps
-   * growing past the connector's end while the rear is still clearing it. A
-   * zone is released once the centre is past the zone exit for this body size
-   * against ANY size on the other movement.
-   */
+  /** Releases zones the vehicle's body has already driven out of. */
   releasePassed(
     vehicle: VehicleId,
     connector: ConnectorId,
@@ -158,9 +117,7 @@ export class ClaimTable {
     for (const p of held) {
       const owners = this.byPoint.get(p) ?? [];
       const owner = owners.find((claim) => claim.vehicle === vehicle && claim.connector === connector);
-      // One vehicle may own movements at several junctions. A conflict point
-      // can also mention `connector` merely as the *other* movement, so pair
-      // membership alone is not proof that this connector acquired it.
+      // One vehicle may own movements at several junctions.
       if (owner?.vehicle !== vehicle || owner.connector !== connector) {
         keep.push(p);
         continue;
@@ -202,9 +159,7 @@ export class ClaimTable {
   dropMissing(conflicts: ConflictIndex): void {
     for (const [p, claims] of [...this.byPoint]) {
       const point = conflicts.points[p];
-      // Besides existence, verify that the stable resource still belongs to
-      // the movement which acquired it.  This makes a stale claim harmless
-      // even if a future id allocator regression were to reuse an id.
+      // Besides existence, verify that the stable resource still belongs to the movement which acquired it.
       for (const claim of claims) {
         if (!point || (point.a !== claim.connector && point.b !== claim.connector)) {
           this.dropVehicleAtPoint(claim.vehicle, p);

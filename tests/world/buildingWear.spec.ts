@@ -5,14 +5,7 @@ import { DocImage } from '@world/docImage';
 import { blueprintByKey } from '@world/buildings/blueprints';
 import { type Building, cloneBuilding } from '@world/buildings/types';
 
-/**
- * A building's wear (`Building.decay`) changes a tenth at a time, every few
- * seconds somewhere in a town, and on an explosion. It is no change of the
- * building's shape, place or use: written as one (`buildings`), it made every
- * product derived from the buildings' shape - walls, bays, yards, places,
- * grading, the camera's solids - work the town out again each time
- * (`BuildingStore.wear`).
- */
+/** A building's wear (`Building.decay`) changes a tenth at a time, every few seconds somewhere in a town */
 
 function house(x: number): Omit<Building, 'id'> {
   return { ...cloneBuilding(blueprintByKey('house')!.body as unknown as Building), x, y: 0, rotation: 0 };

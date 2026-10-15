@@ -1,19 +1,6 @@
 import type { RoadProfileSpec } from '@world/roads/profile';
 
-/**
- * A ready road seen FROM ABOVE, as the game draws it: footways in their
- * paving, the kerb line, asphalt (or concrete, or cobbles), lane lines -
- * dashed white between lanes of one direction, double yellow between the two
- * directions - a red bus lane, a green cycle lane, parked cars in their bays,
- * a grass median with trees, arrows on a one-way road. The road catalogue's
- * tiles (the player, 2026-10-09: the cards with little cars and figures were
- * "horrível"), as the old class gallery's plan-view swatches were
- * (`ui/roadSwatch.ts`): at tile size a plan says what the road IS.
- *
- * Each road fills most of its tile (a wider one a little more, `span` the
- * widest offered); the width in metres is written under it. Drawn once per
- * profile and size, kept as a data URL.
- */
+/** A ready road seen FROM ABOVE, as the game draws it: footways in their paving, the kerb line, asphalt */
 
 const CACHE = new Map<string, string>();
 
@@ -45,9 +32,7 @@ export function profileSwatch(profile: RoadProfileSpec, span: number, width = 11
   ctx.fillRect(0, 0, width, height);
 
   const total = profile.elements.reduce((s, e) => s + e.width, 0);
-  // Each road fills most of its tile, a narrow one a little less (between
-  // 62% and 86% of the height by its width against the widest): at one scale
-  // for all, a street was a thread across a field of grass.
+  // Each road fills most of its tile, a narrow one a little less
   const fill = 0.62 + 0.24 * Math.min(1, total / Math.max(span, 1e-6));
   const scale = (height * fill) / Math.max(total, 1e-6);
   let y = (height - total * scale) / 2;

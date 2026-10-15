@@ -1,13 +1,7 @@
 import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
 import { type BlockArrays, coarseArrays } from './mesh/roadLodPure';
 
-/**
- * One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a
- * share shaped and meshed whole (`roadTileMesh.ts`), over the roads near it the
- * page handed over; the ground's heights asked of the page at the points read
- * (`need`, answered with `heights`); the tiles' arrays handed back (MDN,
- * "Transferable objects"). The page only uploads them.
- */
+/** One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a share shaped and meshed whole */
 type Message =
   | { readonly id: number; readonly ask: MeshAsk }
   | { readonly id: number; readonly coarse: { readonly arrays: BlockArrays; readonly lock: readonly [number, number, number, number] } }

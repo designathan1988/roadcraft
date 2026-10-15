@@ -10,27 +10,7 @@ import { levelPolygons } from '@world/surfaces';
 import { area, union, type MultiPoly } from '@core/clipper';
 import type { Vec2 } from '@core/vec2';
 
-/**
- * A SURFACE THAT GOES IN MUST COME OUT.
- *
- * The player sent a saved map with a stretch of road rendered as pavement with
- * no carriageway at all. It was not a geometry fault: every ring the junction
- * builder and the ribbon builder produced for that road was simple, positively
- * wound and in the right place. It was the UNION that lost them — one
- * `Clipper.Union` call over the 144 rings of a level dropped whole rings, and
- * a dropped ring is a road that is not drawn.
- *
- * Measured on this fixture, which is that map: the old single call lost 39 of
- * the 576 input rings across the four surface levels, taking 59,644 square
- * units of footway and 47,332 of kerb with it. Two smaller maps by the same
- * player lost nothing, which is why this survived until somebody built
- * something big enough.
- *
- * The invariant is the obvious one and it had never been stated: the union of
- * a set of rings contains every one of them. It is what these tests assert,
- * ring by ring, rather than comparing a total area that can hide a loss here
- * behind a gain there.
- */
+/** A SURFACE THAT GOES IN MUST COME OUT. */
 
 const FIXTURE = join(process.cwd(), 'tests', 'fixtures', 'grid-and-bends.json');
 
@@ -149,9 +129,7 @@ describe('surface union', () => {
   });
 
   it('loses no area on a large map', () => {
-    // The total is a weaker statement than the one above and is here as a
-    // second opinion: the merged surface can never be smaller than the single
-    // largest thing that went into it.
+    // The total is a weaker statement than the one above and is here as a second opinion
     const net = fixtureNetwork();
 
     for (const level of SURFACE_LEVELS) {
@@ -174,8 +152,7 @@ describe('surface union', () => {
   });
 
   it('still merges two overlapping squares into one', () => {
-    // The ordinary case, so the robustness work above cannot quietly change
-    // what a union means.
+    // The ordinary case, so the robustness work above cannot quietly change what a union means.
     const square = (x: number, y: number, size: number): number[][] => [
       [x, y],
       [x + size, y],
@@ -196,8 +173,7 @@ describe('surface union', () => {
       [x1, y1],
       [x0, y1],
     ];
-    // A frame: the outer square minus nothing, built from four bars, leaving a
-    // hole in the middle.
+    // A frame: the outer square minus nothing, built from four bars, leaving a hole in the middle.
     const merged = union([
       [ring(0, 0, 30, 5)],
       [ring(0, 25, 30, 30)],

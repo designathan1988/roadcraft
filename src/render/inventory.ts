@@ -1,19 +1,6 @@
 import type { BufferAttribute, BufferGeometry, InstancedMesh, InterleavedBuffer, Material, Object3D, Texture } from 'three';
 
-/**
- * THE INVENTORY OF EVERYTHING THE SCENE HOLDS: each layer of the world and each
- * kind of mesh in it, with its meshes, instances, vertices, triangles, the bytes
- * its buffers take on the GPU and the bytes still held by a JavaScript array,
- * its draw calls, materials and textures - and the figures that show where a
- * problem is: bytes a vertex, triangles a draw, the share of the vertices that
- * is skirts or slivers' worth, how much of it is out of the view.
- *
- * Read from the scene itself (`countMemory` in `memoryCounters.ts` counts the
- * totals; this says who holds them), so a layer that grows out of proportion
- * shows in one table: the road surfaces were 1.4 GB of a 2,560 m city's 1.7 GB
- * of geometry, and their curb ramps alone 341 MB, which no total showed
- * (2026-10-15). Pure: no DOM, no renderer.
- */
+/** THE INVENTORY OF EVERYTHING THE SCENE HOLDS */
 
 /** One row: a kind of mesh in a layer. */
 interface InventoryRow {
@@ -75,11 +62,7 @@ const FLAGS = {
   tinyCount: 400,
 } as const;
 
-/**
- * Counts the scene under `root`: a row per layer and kind of mesh, the flags,
- * the totals. `root` is the scene; the first two levels of the hierarchy name
- * the layer (a child of the scene, then its child when the child is a group).
- */
+/** Counts the scene under `root`: a row per layer and kind of mesh, the flags, the totals. */
 export function sceneInventory(root: Object3D): Inventory {
   const rows = new Map<string, {
     layer: string; kind: string; meshes: number; shown: number; instances: number; vertices: number; triangles: number;
@@ -100,8 +83,7 @@ export function sceneInventory(root: Object3D): Inventory {
       if (!row) rows.set(key, row = { layer, kind, meshes: 0, shown: 0, instances: 0, vertices: 0, triangles: 0, gpuBytes: 0, cpuBytes: 0, materials: new Set(), textures: new Set() });
       row.meshes++;
       if (shown) row.shown++;
-      // A block of road whose own mesh has been given back to the GPU (`mesh/roadResidency.ts`: its far level is drawn)
-      // holds no buffer: it is counted as a mesh, its bytes are not.
+      // A block of road whose own mesh has been given back to the GPU
       const resident = (object.userData.lod as { full?: boolean } | undefined)?.full !== false;
       const instances = holder.isInstancedMesh ? (holder as unknown as InstancedMesh).count : 1;
       row.instances += instances;

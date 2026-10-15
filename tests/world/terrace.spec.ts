@@ -11,13 +11,7 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * Houses on a hillside follow the land (the player, 2026-10-09: "buildings
- * must follow the shape of the terrain as in real life"): the back garden is
- * a terrace of its own near the natural ground, up or down the slope, held
- * by a retaining wall with a flight of steps - not the whole yard cut down
- * or filled up to the floor.
- */
+/** Houses on a hillside follow the land */
 
 /** Ground rising to the north (-y) at 18 %: 6 m over a 32 m lot. */
 const hill = (_x: number, y: number): number => -y * 0.18;

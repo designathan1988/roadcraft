@@ -1,29 +1,14 @@
 import type { ChangeRect } from './changes';
 import type { NodeId, SegmentId } from './ids';
 
-/**
- * What one rebuild of the network changed (`Network.rebuild`): the roads
- * whose ribbon, trims, plate reach or record moved, added or gone; the
- * nodes whose junction, record or marks moved, added or gone; and the
- * rectangles those ribbons and junctions covered before and after. What is
- * derived from the network (the lanes, the conflict zones, the signals, the
- * zebras) reads it to redo only what an edit touched - the change a build
- * system propagates, item by item, instead of a revision that says only THAT
- * something changed somewhere (Mokhov, Mitchell and Peyton Jones, "Build
- * systems à la carte": a minimal build redoes a task only when one of its
- * inputs changed).
- */
+/** What one rebuild of the network changed (`Network.rebuild`) */
 export interface NetworkDelta {
   readonly segments: ReadonlySet<SegmentId>;
   readonly nodes: ReadonlySet<NodeId>;
   readonly rects: readonly ChangeRect[];
 }
 
-/**
- * One rebuild, or several merged: from one state of the network to another, and what changed;
- * `null`, everything (a load, a first build). The states are held weakly: the readers hold the
- * tokens they read, the history does not.
- */
+/** One rebuild, or several merged: from one state of the network to another, and what changed; `null`, everything */
 interface DeltaEdge {
   readonly from: WeakRef<object>;
   readonly to: WeakRef<object>;
@@ -33,25 +18,7 @@ interface DeltaEdge {
 /** Edges at which the history is first merged; past it, again whenever it has doubled since. */
 const MERGE_FROM = 64;
 
-/**
- * The states a network has been in, as tokens, and the change between each
- * and the next: a reader keeps the token it last read and asks for what
- * changed since (`since`). A network may also go BACK to an earlier state -
- * an edit refused puts the network it had back (`editor/editRules.ts`
- * `guardRoadEdit`) - or take the state of a copy built ahead
- * (`editor/commit.ts`: the copy's own rebuilds); the change between two
- * states is the same both ways, so the history is an undirected chain of
- * rebuilds and `since` walks it from the reader's token to the current one.
- *
- * Nothing is forgotten by age: a state no reader holds any more (its token
- * collected) is merged away, the two rebuilds round it one change, their
- * union (`merge`) - so the history is as long as the tokens still held, and
- * a reader however far behind is told what changed. DO NOT keep the last N
- * rebuilds only: while the traffic's topology waited for its workers, a
- * generated city rebuilt the network past 64 states every few seconds, and
- * the lane graph, its conflicts, the walkways and the zebras of the whole
- * town were built again from nothing - frames of 3.3 s at 2 560 m (2026-10-15).
- */
+/** DO NOT keep the last N rebuilds only */
 export class DeltaLog {
   /** The current state. A fresh object per rebuild: only its identity is read. */
   state: object = {};
@@ -85,12 +52,7 @@ export class DeltaLog {
     this.stateRef = other.stateRef;
   }
 
-  /**
-   * Merges away the states no reader holds: collected, or not `held` (tests pass their own; the
-   * current state is always held). A state between two rebuilds becomes one rebuild carrying both
-   * changes; a state at a loose end takes its rebuild with it (no reader can ask from there); a
-   * state where the history branches is kept.
-   */
+  /** Merges away the states no reader holds: collected, or not `held` */
   merge(held: (state: object) => boolean): void {
     const alive = (ref: WeakRef<object>): boolean => {
       if (ref === this.stateRef) return true;
@@ -121,17 +83,11 @@ export class DeltaLog {
     }
   }
 
-  /**
-   * Everything that changed between the state `from` and the current one,
-   * or `null` when that is not known (too far behind, a load in between, a
-   * state this network never was in): the reader then takes everything as
-   * changed. Empty when `from` is the current state.
-   */
+  /** Everything that changed between the state `from` and the current one, or `null` when that is not known */
   since(from: object | null): NetworkDelta | null {
     if (from === null) return null;
     if (from === this.state) return { segments: new Set(), nodes: new Set(), rects: [] };
-    // Breadth first over the remembered rebuilds, both ways, by the states' references: a state
-    // collected but not merged yet is still a step of the way.
+    // Breadth first over the remembered rebuilds, both ways, by the states' references
     const via = new Map<WeakRef<object>, DeltaEdge | null>([[this.stateRef, null]]);
     const queue: WeakRef<object>[] = [this.stateRef];
     let start: WeakRef<object> | null = null;

@@ -4,29 +4,7 @@ import { m } from '@world/units';
 import { natureDensity } from './natureNoise';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 
-/**
- * THE WOODS OF A PLATE NOT DRAWN IN FULL (`farForest.ts`): what the
- * ecosystem grows on one plate of the map, worked out in the ecology's
- * worker (`ecology.worker.ts`) once per land and ecosystem, never per frame.
- *
- * The same trees the plate grows when it is brought in full
- * (`renderer.ts` natureSweep): its natural land read at the terrain's
- * corners, its ecosystem from them (`world/ecology.ts`, no water, rock or
- * biome painted - a plate holding any of those is always drawn in full,
- * `flatAtlas.ts` content), the woods' density on the same 5 m lattice, the
- * same bands and the same hashes of the lattice's cells. So the far woods
- * stand where the near ones will, and the swap between them moves no tree
- * (Horizon Zero Dawn's placement is deterministic per cell for the same
- * reason: Guerrilla, "GPU-Based Procedural Placement", GDC 2017).
- *
- * Each tree keeps `pick`, its cell's hash over its band's odds: a tree
- * stands when `pick` is under the woods' scale, the near sweep's
- * `treeScale`, so the trees kept at one scale are a subset of those kept at
- * a larger one, and the far view thins the woods with distance by the same
- * number (`farForest.ts`).
- *
- * Pure: no `three`, no `Math.random`.
- */
+/** THE WOODS OF A PLATE NOT DRAWN IN FULL (`farForest.ts`) */
 
 /** The terrain's corners per plate side, the cell between them, the plate's half side (`terrain.ts` GRID, TERRAIN_CELL, TERRAIN_HALF). */
 export interface FarWoodsGrid {

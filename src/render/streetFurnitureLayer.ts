@@ -17,33 +17,7 @@ import { RunBuilder, createInstanceRuns, sameRun, warmMeshes, type Run, type Run
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
 import { LAMP_BEAM_RADIUS, LAMP_HEIGHT, LAMP_OUTREACH, LAMP_POOL_RADIUS, POOL_ALONG, SHADOW_REACH, foliageTint, type SceneryKit } from './scenery';
 
-/**
- * WHAT THE PLAYER PLACED ON THE FOOTWAYS, KEPT ITEM BY ITEM: street lights
- * with their pools and cones of light, benches, bins, hydrants, post boxes,
- * phones, drains, street trees in their pits, shrubs, and the long grass on
- * open ground (Paisagismo > Mato).
- *
- * Each placed item is a product of the document read from the diary
- * (`world/derived.ts`, the spine): where it stands - the footway under it,
- * its deck's height, the road it lights - is worked out again only when an
- * entry of a kind it reads reaches it (the landscaping at its place, a road
- * within reach of its footway and the crossings round it, the roads' heights
- * or the ground under it), and a result the same as before changes nothing
- * drawn. Each item's instances are one run of the layer's stores
- * (`instanceRuns.ts`): a run changed is taken out and the new one put in, the
- * GPU sent only what the next cull writes.
- *
- * The layer was built again whole - every item of the map placed, sorted,
- * filed and sent to the GPU, every clump of grass laid - when the
- * landscaping changed anywhere, when a road edit's blocks reached any item,
- * and every city hour while one tree was still growing (`renderer.ts`
- * `rebuildFurniture`, `growPlants`). DO NOT go back to that: one bench
- * placed paid for every bench of the city.
- *
- * The plants grow (`plantGrowth`): only the items still growing are sized
- * again, once a city hour, at the hour - the same size a layer made from
- * nothing at that hour gives.
- */
+/** DO NOT go back to that: one bench placed paid for every bench of the city. */
 
 /** Street trees are pollarded smaller than a tree in open ground. */
 const STREET_TREE_MIN = m(6.5);
@@ -134,10 +108,7 @@ function streetSpecies(roll: number): TreeSpecies {
   return roll < 0.89 ? 'ipeYellow' : 'ipePink';
 }
 
-/**
- * Where a placed item's instances stand, or undefined when it draws nothing
- * (no footway under it, a crossing's landing, not furniture).
- */
+/** Where a placed item's instances stand, or undefined when it draws nothing */
 function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, kit: SceneryKit,
   trees: Record<TreeSpecies, readonly number[]>, bushes: Record<BushKind, readonly number[]>): FurniturePlace | undefined {
   const item = furnitureOf(net, placed);
@@ -146,12 +117,9 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
   const put = (store: number, p: Omit<Placed, 'store' | 'tint' | 'h'> & { tint?: Color; h?: number }): void => {
     out.push({ store, x: p.x, y: p.y, z: p.z, yaw: p.yaw, sx: p.sx, sy: p.sy, sz: p.sz, tint: p.tint ?? null, h: p.h ?? 0 });
   };
-  // On the item's OWN road. The unfiltered field answers for whichever road is
-  // nearest, and a lamp on a street passing under a viaduct was lifted onto the
-  // deck above it.
+  // On the item's OWN road.
   const base = elevation.onSegment(item.segment, item.x, item.y) + footwayRiseAt(net, item.x, item.y);
-  // Local +X of a lamp reaches over the road; local -Z of a bench, a post
-  // box or a hydrant turns its back on the road.
+  // Local +X of a lamp reaches over the road; local -Z of a bench, a post box or a hydrant turns its back on the road.
   const inward = angleOf({ x: -item.outward.x, y: -item.outward.y });
   const facing = angleOf({ x: item.outward.y, y: -item.outward.x });
   const at = { x: item.x, y: item.y, z: base, sx: 1, sy: 1, sz: 1 };
@@ -160,9 +128,7 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
     case 'lamp': {
       put(MODEL.lamp, { ...at, yaw: inward });
       put(MODEL.lens, { ...at, yaw: inward });
-      // The light falls over the road and the footway behind the lamp:
-      // across, the carriageway's width; along it, POOL_ALONG mounting
-      // heights each way. Local X of the pool runs across the road.
+      // The light falls over the road and the footway behind the lamp: across, the carriageway's width
       const road = net.ribbons.get(item.segment)?.road;
       const across = Math.max(LAMP_POOL_RADIUS, (road ? road.width : m(7)) * 0.55 + m(2.5));
       const centre = Math.max(LAMP_OUTREACH * 0.85, across - m(3));
@@ -186,8 +152,7 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
     case 'hydrant':
     case 'phone':
     case 'drain':
-      // Built facing -Z; turned so the phone's shell opens to the footway
-      // and the drain's grate lies in the gutter on the road side.
+      // Built facing -Z; turned so the phone's shell opens to the footway and the drain's grate lies in the gutter on the road
       put(MODEL[item.kind], { ...at, yaw: facing + Math.PI });
       break;
     case 'streetTree': {
@@ -224,12 +189,7 @@ function samePlace(a: FurniturePlace, b: FurniturePlace): boolean {
   return true;
 }
 
-/**
- * Placed items of some kinds as a product of the diary, key by key (the
- * item's id): `pads` says how far round each kind of change an item reads
- * (an entry of the kind reaching that far round it makes it dirty). The
- * items made are filed by place, so one gone is found where it stood.
- */
+/** Placed items of some kinds as a product of the diary, key by key (the item's id) */
 class PlacedProduct<V extends { readonly x: number; readonly y: number }> implements DerivedSpec<FurnitureSource, number, V> {
   readonly byId = false;
   readonly kinds: readonly ChangeKind[];
@@ -259,9 +219,7 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
       for (const id of this.allKeys(source)) out.add(id);
       return;
     }
-    // The landscaping's entry names its items (`RoadDoc.addLandscapeMany`), and an item reads only its own
-    // record of the landscaping: those, and none round them. DO NOT look round each of an entry's
-    // rectangles: a generated city's one entry of 11,000 items asked the cells round every one of them.
+    // DO NOT look round each of an entry's rectangles
     if (change.kind === 'landscape' && change.ids) {
       for (const id of change.ids) {
         const item = source.net.doc.landscape.get(id);
@@ -270,8 +228,7 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
       return;
     }
     const pad = this.pads[change.kind] ?? 0;
-    // All the entry's rectangles in one look each (`landscapeInAny`, `idsMeetingAny`): an entry of the
-    // roads' heights is many blocks, grown by the reach they overlap, and each was looked round alone.
+    // All the entry's rectangles in one look each (`landscapeInAny`, `idsMeetingAny`)
     const areas = change.rects.map((rect) => grow(rect, pad));
     for (const item of source.net.doc.landscapeInAny(areas)) if (this.wanted(item)) out.add(item.id);
     for (const id of this.filing.idsMeetingAny(areas)) out.add(id);
@@ -339,20 +296,11 @@ export interface StreetFurnitureLayer {
   /** The long grass, drawn at every zoom (as it was). */
   readonly grass: Group;
   readonly triangles: number;
-  /**
-   * Brought up to the diary: the items an entry of their kinds reached are
-   * placed again, those still growing sized at the city's hour. Cheap when
-   * nothing changed (the diary's serials only).
-   */
+  /** Brought up to the diary: the items an entry of their kinds reached are placed again */
   /** Brings the furniture and the long grass up to the diary (and the hour); the items computed (the engine's ledger, `core/engine.ts`). */
   sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): number;
   setMap(map: boolean): void;
-  /**
-   * A mesh of each of its stores, as it draws them, for its programs to be
-   * compiled before the first thing of a store stands (`uploads.ts`
-   * compileAhead): the meshes are made only when a thing comes, and the first
-   * frame of a generated city's furniture linked their programs.
-   */
+  /** A mesh of each of its stores, as it draws them */
   warm(): InstancedMesh[];
   cull(frustum: Frustum, view: Matrix4): void;
   dispose(): void;
@@ -409,9 +357,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
       const removed: Run[] = [], added = new Set<Run>();
       const place = (id: number): void => {
         const was = runs.get(id);
-        // A run made earlier in this same sync (placed, then sized at the new
-        // hour) never reached the stores: dropped, not taken out. DO NOT hand
-        // the stores a run to take away in the change that puts it in.
+        // DO NOT hand the stores a run to take away in the change that puts it in.
         if (was) { if (!added.delete(was.run)) removed.push(was.run); runs.delete(id); }
         growing.delete(id);
         const value = places.get(id);

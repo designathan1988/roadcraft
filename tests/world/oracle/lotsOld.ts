@@ -1,6 +1,4 @@
-// The lots as planned before 2026-10-15 (src/world/lots.ts at 8434df1): every raster cell asked
-// `pavedTester` and every piece kept as a list of its cells - the oracle of
-// `lotRaster.spec.ts`. Only its imports were changed and what planning does not reach taken out.
+// The lots as planned before 2026-10-15 (src/world/lots.ts at 8434df1)
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
@@ -19,36 +17,11 @@ import type { ZoneDensity, ZoneUse } from '@world/zones';
 import { rectAround, type ChangeRect } from '@world/changes';
 import { grow } from '@world/cells';
 
-/**
- * Lots: the land cut into plots the player zones and buildings grow on, as a
- * town's cadastre is.
- *
- * - A closed block (land with streets all round) is cut into equal lots: its
- *   oriented rectangle in one or two rows - each row facing its own street -
- *   and in equal columns, each lot as near square as the block allows (a
- *   block 80 x 60 m is six lots of about 27 x 30 m). This is the "recursive"
- *   subdivision of CityEngine with no irregularity (equal parts) and street
- *   access forced (two rows at most).
- * - Along a street with open land beside it, a continuous strip as deep as a
- *   lot, from the back of the footway, cut into equal lots too: CityEngine's
- *   offset subdivision.
- *
- * Lots are STORED in the document (`RoadDoc.lotStore`, by id and by place,
- * every change written in the diary with its ids): the player moves their
- * corners, splits, joins, deletes and adds them. Land is subdivided only once:
- * each block or strip leaves a key (`RoadDoc.lotKeys`) so a lot deleted on
- * purpose is not made again; a road moved or added makes new land (a new key),
- * and lots the paving now covers are removed.
- */
+/** Lots: the land cut into plots the player zones and buildings grow on, as a town's cadastre is. - A closed block */
 
 interface Lot {
   readonly id: number;
-  /**
-   * The boundary, counter-clockwise (the inside on the left of each side):
-   * any polygon - four corners as generated, more where the player drew one,
-   * many along a curved side. The first side (corners 0 -> 1) is the front,
-   * on the street.
-   */
+  /** The boundary, counter-clockwise (the inside on the left of each side): any polygon */
   readonly corners: readonly Vec2[];
   readonly use?: ZoneUse;
   readonly density?: ZoneDensity;
@@ -58,11 +31,7 @@ interface Lot {
 
 /** Depth of a lot along an open street. */
 const LOT_DEPTH = m(32);
-/**
- * The frontage a lot aims at: a block's rows and a street's strip are cut
- * into equal lots of about this width (the player, 2026-10-05: square lots of
- * 26-30 m were too big; 2026-10-06: 15 m too small).
- */
+/** The frontage a lot aims at: a block's rows and a street's strip are cut into equal lots of about this width */
 const LOT_FRONTAGE = m(22);
 /** A block deeper than this is cut in two rows, back to back. */
 const TWO_ROWS = m(44);
@@ -82,33 +51,19 @@ function lotArea(l: Pick<Lot, 'corners'>): number {
 
 interface Candidate { key: string; corners: Vec2[] }
 
-/**
- * The corners in the order a building reads its lot: front-start to front-end
- * with the back on the LEFT of that direction (as the street grid's cells
- * have it, `ZoneCell.rotation`) - so a building made for the lot faces the
- * street. Given the other way round, the building stood back to front, its
- * yard over the footway, and was refused.
- */
+/** The corners in the order a building reads its lot: front-start to front-end with the back on the LEFT of that direction */
 function facingCorners<T extends readonly Vec2[]>(c: T): Vec2[] {
-  // Counter-clockwise keeps the inside on the left of every side; reversed,
-  // the front side keeps its two corners, swapped.
+  // Counter-clockwise keeps the inside on the left of every side; reversed, the front side keeps its two corners, swapped.
   if (lotArea({ corners: c }) >= 0) return [...c];
   return [c[1]!, c[0]!, ...[...c.slice(2)].reverse()];
 }
 
-/**
- * New lots for land with none yet, and the lots the paving now covers. Pure:
- * the caller stores the result (`applyLots`).
- */
+/** New lots for land with none yet, and the lots the paving now covers. */
 export interface LotPlan {
   add: Candidate[];
   keys: string[];
   drop: number[];
-  /**
-   * Where the land of each key lies (`keys[i]`'s at `keyRects[i]`): a key new
-   * to the document is written in the diary there (`applyLots`). Absent (a
-   * plan made by hand): a key with no place is the whole map.
-   */
+  /** Where the land of each key lies (`keys[i]`'s at `keyRects[i]`): a key new to the document is written in the diary there */
   keyRects?: ChangeRect[];
 }
 
@@ -120,13 +75,7 @@ export function planLots(doc: RoadDoc, net: Network): LotPlan {
   }
 }
 
-/**
- * `planLots` a little at a time: it yields between rows of the raster, blocks
- * and streets, and returns the plan. Replanning a town's lots in one go was a
- * quarter-second frame after every road edit; the game runs this a few
- * milliseconds a frame (`main.ts`) and applies the plan
- * only if nothing it read has changed meanwhile.
- */
+/** `planLots` a little at a time: it yields between rows of the raster, blocks and streets, and returns the plan. */
 function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
   const { onRoad, onPlate } = pavedTester(doc, net);
   yield;
@@ -145,14 +94,8 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
   const add: Candidate[] = [];
   const keys: string[] = [];
   const keyRects: ChangeRect[] = [];
-  /**
-   * A new lot made to fit round the lots already there: what of it lies on
-   * one is cut away (a boolean difference - the separating-axis test was only
-   * right for convex lots, and two lots cut to a bent street overlapped), and
-   * it is kept if most of it is left. Null otherwise.
-   */
-  // The lots there (kept, then added) filed by the cells their boxes cover:
-  // each new lot read every lot of the town - 12.5 s of a 2 560 m town's growing.
+  /** A new lot made to fit round the lots already there: what of it lies on one is cut away */
+  // The lots there (kept, then added) filed by the cells their boxes cover: each new lot read every lot of the town
   const rings: Vec2[][] = [], ringBoxes: ChangeRect[] = [];
   const ringCells = new Map<number, number[]>();
   const cellsOf = (b: ChangeRect, visit: (k: number) => void): void => {
@@ -168,12 +111,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
     cellsOf(b, (k) => { const list = ringCells.get(k); if (list) list.push(at); else ringCells.set(k, [at]); });
   };
   for (const l of kept) file(l.corners as Vec2[]);
-  /**
-   * The lots filed whose boxes meet a rectangle, in the order they were filed
-   * (the kept ones first, then those added): `rings` indices. `keptOnly`: the
-   * kept ones alone. DO NOT walk every lot of the town for each block row and
-   * each street strip: it was rows x lots, strips x lots.
-   */
+  /** DO NOT walk every lot of the town for each block row and each street strip: it was rows x lots, strips x lots. */
   const keptCount = rings.length;
   const filedIn = (box: ChangeRect, keptOnly = false): number[] => {
     const found = new Set<number>();
@@ -206,12 +144,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
     return facingCorners(withFront(simplifyRing(best, m(0.01)), [corners[0]!, corners[1]!]));
   };
 
-  // The land as rasters over the streets' reach: paved or not, then labelled
-  // into connected pieces; those that do not reach the raster's edge are
-  // closed blocks. One raster a GROUP of streets lying near one another: one
-  // raster round towns far apart spanned the empty land between them - some
-  // 23 million cells tested, a zone stroke's proposal waiting 3.3 s (the
-  // player, 2026-10-10: "tem que aparecer na hora que clica").
+  // The land as rasters over the streets' reach: paved or not, then labelled into connected pieces
   const pad = LOT_DEPTH + m(20);
   interface Land {
     readonly minX: number; readonly minY: number; readonly W: number; readonly H: number;
@@ -222,10 +155,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
     const bb = r.full.bbox;
     return [bb.minX - pad, bb.minY - pad, bb.maxX + pad, bb.maxY + pad] as [number, number, number, number];
   });
-  // Groups: boxes overlapping, joined (a union-find over the pairs). The
-  // pairs that can overlap are found by the cells the boxes cover (spatial
-  // hashing): every box against every other was streets² on each plan. The
-  // groups do not depend on the order of the joins.
+  // Groups: boxes overlapping, joined (a union-find over the pairs).
   const parent = ribbons.map((_, i) => i);
   const root = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]!]!; i = parent[i]!; } return i; };
   const boxCells = new Map<number, number[]>();
@@ -264,10 +194,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
     const W = Math.ceil((maxX - minX) / RASTER), H = Math.ceil((maxY - minY) / RASTER);
     const label = new Int32Array(W * H).fill(-1);
     const isPaved = new Uint8Array(W * H);
-    // Only the cells within a street's box (grown by a lot's depth) can be
-    // paved: those are tested, the rest is land. A town's group box is mostly
-    // open country, and every one of its cells was measured against the
-    // streets (most of a proposal's time).
+    // Only the cells within a street's box (grown by a lot's depth) can be paved: those are tested, the rest is land.
     const near = new Uint8Array(W * H);
     for (const k of members) {
       const b = boxes[k]!;
@@ -328,12 +255,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
         const dx = q.x - box.c.x, dy = q.y - box.c.y;
         return { s: dx * box.u.x + dy * box.u.y, t: dx * box.v.x + dy * box.v.y };
       };
-      /**
-       * A row's lots, as spans along the block: the row cut in equal columns,
-       * except where stored lots already stand in it - then what is left either
-       * side of them is cut instead. A proposed lot touching a stored one was
-       * dropped whole, and a gap up to a lot wide was left beside it.
-       */
+      /** A row's lots, as spans along the block: the row cut in equal columns, except where stored lots already stand in it */
       const rowSpans = (r: number): [number, number][] => {
         const t0 = -D / 2 + r * depth, t1 = t0 + depth;
         const taken: [number, number][] = [];
@@ -351,22 +273,16 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
       };
       for (let r = 0; r < rows; r++) for (const [s0, s1] of rowSpans(r)) {
         const t0 = -D / 2 + r * depth, t1 = t0 + depth;
-        // The front faces the street: the row's outer long edge (one row: the
-        // side nearer a street).
+        // The front faces the street: the row's outer long edge (one row: the side nearer a street).
         const towardMinus = rows === 2 ? r === 0 : nearerStreet(at, s0, s1, -D / 2, D / 2, paved);
-        // Reaching past the street sides (the front, a single row's back, the
-        // block's two ends) by a little, so the cut to the land below meets the
-        // footway exactly: the raster box stops up to half a cell short of it.
+        // Reaching past the street sides (the front, a single row's back, the block's two ends) by a little
         const reach = m(2.5), edge = 1e-6;
         const a0 = s0 <= -L / 2 + edge ? s0 - reach : s0, a1 = s1 >= L / 2 - edge ? s1 + reach : s1;
         const b0 = towardMinus || rows === 1 ? t0 - reach : t0, b1 = !towardMinus || rows === 1 ? t1 + reach : t1;
         const corners: [Vec2, Vec2, Vec2, Vec2] = towardMinus
           ? [at(a1, b0), at(a0, b0), at(a0, b1), at(a1, b1)]
           : [at(a0, b1), at(a1, b1), at(a1, b0), at(a0, b0)];
-        // Most of it on this block's land, and cut back to it: a block that is
-        // no rectangle (a bent street, a corner's curve) would otherwise have
-        // lots hanging over its streets - the player saw zoned lots over the
-        // roads (2026-10-09). The front stays the side along the street.
+        // Most of it on this block's land, and cut back to it: a block that is no rectangle
         let inside = 0, total = 0;
         for (let a = 0.1; a < 1; a += 0.2) for (let b = 0.1; b < 1; b += 0.2) {
           total++;
@@ -421,10 +337,7 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
         }
         keyRects.push(rectAround(edge)!);
         if (known.has(key)) continue;
-        // Cut in equal lots, round the lots already there: a corner lot of a
-        // cross street's strip, or a stored lot. Each proposed lot touching
-        // one was dropped whole, and a gap up to a lot wide was left at every
-        // corner of a street between two others (the player's empty spaces).
+        // Cut in equal lots, round the lots already there: a corner lot of a cross street's strip, or a stored lot.
         const taken: [number, number][] = [];
         // The lots there (kept and added), by the strip's box: its two edges along the run, a lot's reach round them.
         const stripBox = grow(rectAround(edge)!, m(4));
@@ -440,13 +353,11 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
             if (across > face - m(1) && across < face + LOT_DEPTH + m(1)) near = true;
             ls0 = Math.min(ls0, c.s); ls1 = Math.max(ls1, c.s);
           }
-          // Inside the strip: a corner in its band, and not a lot merely
-          // touching its far end.
+          // Inside the strip: a corner in its band, and not a lot merely touching its far end.
           if (near && ls1 > s0 + m(0.5) && ls0 < s1 - m(0.5)) taken.push([ls0, ls1]);
         }
         for (const [a, b] of cutSpans(freeSpans(s0, s1, taken, MIN_LOT), LOT_FRONTAGE)) {
-          // Facing the street: front-start, front-end along the street's
-          // direction on its left, against it on its right.
+          // Facing the street: front-start, front-end along the street's direction on its left, against it on its right.
           const corners: [Vec2, Vec2, Vec2, Vec2] = side === 1
             ? [point(a, face - m(1)), point(b, face - m(1)), point(b, face + LOT_DEPTH), point(a, face + LOT_DEPTH)]
             : [point(b, face - m(1)), point(a, face - m(1)), point(a, face + LOT_DEPTH), point(b, face + LOT_DEPTH)];
@@ -459,37 +370,23 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
       }
     }
   }
-  // No snap afterwards: every lot is cut to the land, flush with its footways
-  // (a hair back, `LAND_CLEARANCE`); a snap put the corners back onto the
-  // footway's edge, and what grew there touched the street.
+  // No snap afterwards: every lot is cut to the land, flush with its footways (a hair back, `LAND_CLEARANCE`)
   return { add, keys, drop, keyRects };
 }
 
-/**
- * How far a planned lot stands back from the paving: a hair, so what grows on
- * it is never on the footway (`validate.ts` `touchesRoad` measures from the
- * road's line, and the drawn footway's edge lies a few millimetres either
- * side of that), and no strip of grass shows between them.
- */
+/** How far a planned lot stands back from the paving: a hair, so what grows on it is never on the footway */
 const LAND_CLEARANCE = m(0.08);
 /** Side of the grid the lots are filed in while a plan is made (`planLotsSteps`). */
 const FIT_CELL = m(64);
 /** Side of the grid the streets' boxes are grouped in (`planLotsSteps`). */
 const GROUP_CELL = m(128);
 
-/**
- * A proposed lot (four corners, the front first) cut back to the land: the
- * paving taken off (`onLand`), the front found again along the street, the
- * corners in the order a building reads them. Null when less than half of it
- * is land - a lot that would be mostly street is no lot.
- */
+/** A proposed lot (four corners, the front first) cut back to the land: the paving taken off */
 function landLot(net: Network, corners: readonly Vec2[]): Vec2[] | null {
   const land = onLand(net, corners, false, LAND_CLEARANCE);
   if (!land) return null;
   if (Math.abs(lotArea({ corners: land })) < Math.abs(lotArea({ corners })) * 0.5) return null;
-  // Land within a road's reach though off its paving (outside a bend, where
-  // the cross street's line runs on to its node) is no lot: nothing could
-  // grow on it, and a zoned lot left bare is what the player saw.
+  // Land within a road's reach though off its paving
   if (touchesRoad(net, offsetRing(land, -m(0.016)))) return null;
   return facingCorners(withFront(simplifyRing(land, m(0.01)), [corners[0]!, corners[1]!]));
 }
@@ -522,11 +419,7 @@ function cutSpans(spans: readonly (readonly [number, number])[], target: number)
 
 const lerp = (a: Vec2, b: Vec2, t: number): Vec2 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
-/**
- * A piece of a cut lot with its front set: the side lying along the old
- * front, or else the side nearest it - a back piece of a lot cut parallel to
- * its street then faces the same way.
- */
+/** A piece of a cut lot with its front set: the side lying along the old front, or else the side nearest it */
 function withFront(piece: readonly Vec2[], front: readonly [Vec2, Vec2]): Vec2[] {
   const [fa, fb] = front;
   const len = Math.hypot(fb.x - fa.x, fb.y - fa.y) || 1;
@@ -544,20 +437,7 @@ function withFront(piece: readonly Vec2[], front: readonly [Vec2, Vec2]): Vec2[]
   return [...piece.slice(best), ...piece.slice(0, best)];
 }
 
-/**
- * The paving as drawn (footways and all within them) round a box, grown by
- * `grow`: the union of the footway rings of the streets and junctions filed
- * over the box (`Network.segmentCells`, `junctionCells`), whole rings - no
- * tile is cut out, so no seam - and each of its rings grown as the whole
- * map's was. Inside the box it is the whole map's paving (a ring that does
- * not reach the box changes nothing in it; a union and an offset are local),
- * so a lot cut against it there is cut the same.
- * DO NOT go back to the union of the whole map's footways, made again at each
- * network revision (`levelPolygons` per revision, `PavingIndex`): every road
- * edit paid for the whole map's paving at the next lot planned or drawn, and
- * the snap of a lot's corner too.
- * Null when no street or junction reaches the box.
- */
+/** DO NOT go back to the union of the whole map's footways, made again at each network revision */
 function pavingNear(net: Network, box: ChangeRect, grow = 0): MultiPoly | null {
   const ribbons = net.ribbonsMeeting(box);
   const junctions: [NodeId, ReadonlyMap<SurfaceLevel, Junction>][] = [];
@@ -579,20 +459,13 @@ function pavingNear(net: Network, box: ChangeRect, grow = 0): MultiPoly | null {
 /** Room round a lot's box the paving is read over: past the clearance, so the cut inside the box is the whole map's. */
 const PAVING_MARGIN = m(2);
 
-/**
- * A lot drawn over the street, cut back to the land: what falls on the paving
- * is taken off, so the lot - and the building grown on it - meets the footway
- * exactly, along a straight back and round a corner's curve alike (the
- * player, 2026-10-06: "snap certinho nas calçadas, rente"). The largest piece
- * is kept; null when nothing of it is on land.
- */
+/** A lot drawn over the street, cut back to the land: what falls on the paving is taken off, so the lot */
 function onLand(net: Network, points: readonly Vec2[], square = true, clearance = 0): Vec2[] | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   // The paving round the lot's box alone (`pavingNear`).
   const margin = Math.abs(clearance) + PAVING_MARGIN;
-  // A map with no street keeps the lot as drawn; one with streets, none near
-  // it, cuts it against nothing (its points on the clipping grid, as before).
+  // A map with no street keeps the lot as drawn; one with streets, none near it, cuts it against nothing
   const near = net.ribbons.size ? pavingNear(net, [x0 - margin, y0 - margin, x1 + margin, y1 + margin], clearance) ?? [] : null;
   if (!near) return [...points];
   let best: Vec2[] | null = null, bestArea = 0;
@@ -605,14 +478,7 @@ function onLand(net: Network, points: readonly Vec2[], square = true, clearance 
   return square ? squareCorners(best) : best;
 }
 
-/**
- * A lot cut back to the footways, its corners made square: each run of short
- * sides round a corner's curve between two long straight ones is replaced by
- * the point where the two straight ones meet. The lot is then a straight line
- * from corner to corner, and what grows on it reaches the footway at the
- * corner with no gap (the player, 2026-10-06), standing over the curve's
- * sliver of paving as a building on a street corner does.
- */
+/** A lot cut back to the footways, its corners made square */
 function squareCorners(ring: Vec2[]): Vec2[] {
   const n = ring.length;
   const longSides: number[] = [];
@@ -621,8 +487,7 @@ function squareCorners(ring: Vec2[]): Vec2[] {
     if (Math.hypot(q.x - p.x, q.y - p.y) >= STRAIGHT_BACK) longSides.push(i);
   }
   if (longSides.length < 2) return ring;
-  // The corners between each long side and the next: their shared point, or
-  // - with a curve's short sides between them - where their lines meet.
+  // The corners between each long side and the next: their shared point, or - with a curve's short sides between them
   const out: Vec2[] = [];
   for (let k = 0; k < longSides.length; k++) {
     const i = longSides[k]!, j = longSides[(k + 1) % longSides.length]!;

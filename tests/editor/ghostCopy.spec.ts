@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { blueprintByKey, instantiate, placeBody } from '@world/buildings/blueprints';
 
-/**
- * The ghost under the pointer is placed, not copied (`placeBody`): the same
- * record as `instantiate` gives, without writing the body to JSON at every
- * pointer move.
- */
+/** The ghost under the pointer is placed, not copied (`placeBody`) */
 describe('the ghost of a blueprint', () => {
   it('is placed as instantiate places it, without a JSON copy', () => {
     const body = blueprintByKey('house')!.body;

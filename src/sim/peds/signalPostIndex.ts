@@ -5,12 +5,7 @@ import type { Network } from '@world/network';
 import { type SignalPost, signalPostPlace, signalPosts } from '@world/signalPosts';
 import { m } from '@world/units';
 
-/**
- * What the index reads of the world (`SimWorld`): the roads, the lane graph's
- * junctions and the junctions' control changes. DO NOT import `SimWorld`:
- * `sim/world.ts` imports this file, and the type import closed an import
- * cycle (`tests/arch/imports.spec.ts`).
- */
+/** DO NOT import `SimWorld`: `sim/world.ts` imports this file, and the type import closed an import cycle */
 export interface SignalPostWorld {
   readonly doc: RoadDoc;
   readonly net: Network;
@@ -22,17 +17,7 @@ export interface SignalPostWorld {
 const POST_CELL = m(8);
 const cellOf = (gx: number, gy: number): number => (gx + 32768) * 65536 + (gy + 32768);
 
-/**
- * The traffic signal posts by place, for the walkers to keep clear of
- * (`walk.ts`: a post is a body standing still in their stripes, as a car's
- * discs are). Where each post stands is the world's one definition
- * (`world/signalPosts.ts`, the posts the renderer draws). Kept from the
- * junctions' control changes (`SimWorld.signalChangesSince`): a junction the
- * advisor turns to a signal, or back, has its own posts put up or taken
- * away; every post is placed again only when the junctions were rebuilt.
- * DO NOT ask the world for every post of the map to keep those round one
- * walker: every junction of the town, for every walker, every tick.
- */
+/** DO NOT ask the world for every post of the map to keep those round one walker */
 export class SignalPostIndex {
   private serial = -1;
   private readonly byNode = new Map<NodeId, SignalPost[]>();
@@ -40,11 +25,7 @@ export class SignalPostIndex {
   /** What `near` hands out, written again by each call. */
   private readonly found: SignalPost[] = [];
 
-  /**
-   * Nothing placed, as a new world's (`SimWorld.reset`). DO NOT keep the posts
-   * across a reset: the signals the old world's advisor chose kept their posts,
-   * and the walkers of the new world stepped round posts nobody had put up.
-   */
+  /** DO NOT keep the posts across a reset */
   reset(): void {
     this.serial = -1;
     this.byNode.clear();
@@ -68,12 +49,7 @@ export class SignalPostIndex {
     }
   }
 
-  /**
-   * One junction's posts: one on each approach of a signal group, where the
-   * world stands it (`signalPostPlace`), as `signalPosts` lists them.
-   * DO NOT ask `signalPosts` for them: its whole-map pass is in the same
-   * function as the pass round a point.
-   */
+  /** DO NOT ask `signalPosts` for them: its whole-map pass is in the same function as the pass round a point. */
   private placeJunction(w: SignalPostWorld, node: NodeId): void {
     const junction = w.graph.junctions.get(node);
     const record = w.doc.node(node);
@@ -113,11 +89,7 @@ export class SignalPostIndex {
     }
   }
 
-  /**
-   * The posts filed in the cells within `reach` of a point (a superset: the
-   * caller keeps its own test). The list is the index's own, written again
-   * by the next call.
-   */
+  /** The posts filed in the cells within `reach` of a point (a superset: the caller keeps its own test). */
   near(x: number, y: number, reach: number): readonly SignalPost[] {
     const out = this.found;
     out.length = 0;

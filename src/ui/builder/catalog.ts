@@ -1,16 +1,4 @@
-/**
- * The Builder's tool catalogue: seven tabs, each showing all it offers at
- * once, in short sections. This is the single source the panel and the tool
- * state machine read, so a tool exists in exactly one place.
- *
- * It replaces three groups, nine categories and a gallery behind every
- * family: the player clicked three times to reach a window, and "Massa" and
- * "Face" said nothing about what was inside them.
- *
- * `mode` tools take the pointer (draw a plan, place a window, hang a canopy);
- * `action` tools run once on the selection. Selecting is not a tool: the
- * pointer selects whenever nothing else is in hand.
- */
+/** The Builder's tool catalogue: seven tabs, each showing all it offers at once, in short sections. */
 
 export type BuilderCategoryId = 'models' | 'draw' | 'mass' | 'facade' | 'parts' | 'roof' | 'paint' | 'interior';
 
@@ -29,10 +17,7 @@ type BuilderShelf = 'models' | 'patterns' | 'scope' | 'roofParams' | 'finishes' 
 export interface BuilderSection {
   /** `builder.section.<title>`; none for a tab with one section. */
   readonly title?: string;
-  /**
-   * Interface v2: a section for the expert, shown only with "Advanced
-   * modelling" on. The everyday tabs keep five sections of a dozen choices.
-   */
+  /** Interface v2: a section for the expert, shown only with "Advanced modelling" on. */
   readonly advanced?: boolean;
   readonly tools?: readonly BuilderToolSpec[];
   readonly shelf?: BuilderShelf;
@@ -186,11 +171,7 @@ export const DRAW_ACTIONS = ['new', 'ground', 'top', 'cut'] as const;
 /** Where an opening or a pattern is applied. */
 export const FACADE_SCOPES = ['bay', 'zone', 'row', 'column', 'storey', 'side', 'volume'] as const;
 
-/**
- * One precise, editable number of the current selection, for the inspector.
- * Built by the tool, rendered and applied back by the workspace; the value
- * carries its unit so the field knows what it is showing.
- */
+/** One precise, editable number of the current selection, for the inspector. */
 export interface BuilderField {
   readonly id: string;
   readonly labelKey: string;

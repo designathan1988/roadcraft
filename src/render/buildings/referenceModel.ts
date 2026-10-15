@@ -3,17 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { UNITS_PER_METER } from '@world/units';
 import type { Point3, ReferenceSampler, Triangle } from '@world/buildings/reference';
 
-/**
- * A reference model in the Builder: a real building's 3D model (glTF/GLB),
- * shown translucent where a building stands, to build it over - the way an
- * architect traces a survey. It is a drawing aid only: never saved with the
- * city, never part of a building, and it casts no shadow.
- *
- * Placed on the selected building: its plan centred on the building's plan,
- * its foot on the building's floor, turned with the building, in metres (glTF
- * is Y-up in metres). The player turns it in quarter turns, mirrors it front
- * to back, fades it, hides it or removes it.
- */
+/** A reference model in the Builder: a real building's 3D model */
 export interface ReferenceTarget {
   /** Centre of the building's plan, world units. */
   readonly x: number;
@@ -38,11 +28,7 @@ export interface ReferenceModel {
   fade(step: number): void;
   toggle(): void;
   remove(): void;
-  /**
-   * The model as a surveyor reads it, in the frame of where it stands (the
-   * building it is placed on, or the origin): its triangles and a sampler of
-   * its own colours, in metres - x across, y away from the front, z up.
-   */
+  /** The model as a surveyor reads it, in the frame of where it stands (the building it is placed on, or the origin) */
   capture(): ReferenceCapture | null;
   /** Where it stands: the building it was placed on, or the map's origin. */
   readonly frame: ReferenceTarget;

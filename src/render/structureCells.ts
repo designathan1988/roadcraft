@@ -7,16 +7,7 @@ import { m } from '@world/units';
 import type { SceneMaterials } from './materials';
 import { PIER_FOOT_FLARE, SPAN_REACH, buildStructureDetails, type StructureDetails } from './structures';
 
-/**
- * THE ROADS' STRUCTURES KEPT CELL BY CELL (`structures.ts` builds them): the
- * piers, caps, abutments, parapets, retaining walls and portals of the roads
- * whose line centres in a cell of `CELL` are that cell's, built together (a
- * handful of draws a cell). A road edit builds again only the cells it
- * reached: those owning a road within reach of the blocks it changed, and
- * those whose structures stand there.
- * DO NOT build every viaduct and tunnel of the map again because an edit
- * reached one of them (the old `keepDetails`: all or nothing).
- */
+/** DO NOT build every viaduct and tunnel of the map again because an edit reached one of them */
 
 /** A cell's side: the world's own (`world/cells.ts`). */
 const CELL = m(256);
@@ -37,11 +28,7 @@ interface Cell { readonly details: StructureDetails; readonly reads: ChangeRect 
 export interface StructureCells {
   readonly group: Group;
   readonly triangles: number;
-  /**
-   * The cells a road edit reached (`blocks`: where the roads or the ground
-   * changed; null: everywhere) built again: the new pieces, to compile before
-   * they are drawn, and `apply`, which swaps them in.
-   */
+  /** The cells a road edit reached (`blocks`: where the roads or the ground changed; null: everywhere) built again */
   prepare(net: Network, elevation: RoadElevation, terrainAt: (x: number, y: number) => number,
     blocks: readonly (readonly [number, number, number, number])[] | null): { readonly fresh: readonly Group[]; apply(): void };
   dispose(): void;

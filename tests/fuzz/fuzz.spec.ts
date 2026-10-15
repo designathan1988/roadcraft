@@ -2,18 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Defect } from './support/invariants';
 import { generate, openCategories, profile, replay, saveFixture, shrink } from './support/runner';
 
-/**
- * THE DEFECT DETECTOR.
- *
- * Builds road networks with the editor's own commands (draw with snapping,
- * split, join, move, retype, lanes, one-way, structure, curve, bulldoze,
- * junction control), checks every world invariant after every gesture, then
- * drives traffic on the result and checks the bodies. See
- * `support/runner.ts` for the profiles.
- *
- * A failure prints the SHRUNK sequence. `FUZZ_RECORD=1` also writes it to
- * tests/fuzz/fixtures/, where `regressions.spec.ts` replays it for ever.
- */
+/** THE DEFECT DETECTOR. */
 const run = profile();
 const first = Number(process.env['FUZZ_FIRST'] ?? 1);
 const seeds = Array.from({ length: run.sequences }, (_, i) => first + i);
@@ -21,8 +10,7 @@ const seeds = Array.from({ length: run.sequences }, (_, i) => first + i);
 describe('road fuzzer', () => {
   // One test per sequence, each in a few seconds (all of them in one test passed its 10 s).
   for (const seed of seeds) it(`finds no defect in seeded sequence ${seed}`, () => {
-    // A category with an OPEN fixture is a known, recorded defect; it runs but
-    // does not fail the gate. Any other category fails it.
+    // A category with an OPEN fixture is a known, recorded defect; it runs but does not fail the gate.
     const open = openCategories();
     const gated = (category: string): boolean => !open.has(category);
     const ops = generate(seed, run.ops);

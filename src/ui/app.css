@@ -1,6 +1,4 @@
-/* Compact game HUD: dark mineral glass, teal interaction color and warm
-   highlights. The world stays visually dominant while every control remains
-   readable over bright terrain. */
+/* Compact game HUD: dark mineral glass, teal interaction color and warm highlights. */
 
 :root {
   --ui-bg: rgba(12, 25, 27, 0.82);
@@ -29,9 +27,7 @@ html, body, #app {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  /* The page behind the canvas. A plain colour, because the scene fills the
-     viewport: this only ever shows for the one frame before the renderer's
-     first draw, and the image that used to be here does not exist. */
+  /* The page behind the canvas. */
   background: #1b2a22;
   color: var(--text);
   font-family: Inter, ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -96,9 +92,7 @@ body { user-select: none; -webkit-user-select: none; }
   padding: 1px 5px;
 }
 
-/* A panel heading is also its collapse switch. The map is the point of the
-   game; every panel can fold down to its title so the player decides how much
-   of the screen the controls take. */
+/* A panel heading is also its collapse switch. */
 .collapsed > .panel-title { margin-bottom: 0; }
 .collapsed.glass { width: auto; }
 .inspect-select select option { color: #0d1512; background: #e8efe9; }
@@ -185,10 +179,7 @@ body { user-select: none; -webkit-user-select: none; }
 
 #game[data-tool="building"] { cursor: crosshair; }
 
-/* =============================================================== BUILDER ===
-   The Builder's selection panel (`ui/builder/workspace.ts`): its colours and
-   the root it is mounted in. Dark teal over the map, thin borders, 6-8 px
-   radii, compact type. */
+/* =============================================================== BUILDER === The Builder's selection panel */
 :root {
   --bw-bg: #0b1d1a;
   --bw-bg-2: #102824;

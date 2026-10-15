@@ -1,15 +1,4 @@
-/**
- * The highest the drawn ground rises under a part laid on a lawn.
- *
- * The terrain is drawn as triangles over a square grid (`render/terrain.ts`
- * `sampleGrid`): flat on each, so over a part's footprint the ground is
- * highest at a corner of the footprint, at a corner of the grid inside it, or
- * where an edge of the footprint crosses an edge of a triangle - a line of the
- * grid or a cell's diagonal, either way (`gx`, `gy`, `gx - gy`, `gx + gy`
- * whole, in cells). Those few points are read, and the answer is exact. Four
- * corners and the centre were read before (Etapa 5b): a ridge of the mesh
- * under a part rose through it between them (Etapa 5a).
- */
+/** The highest the drawn ground rises under a part laid on a lawn. */
 
 /** The terrain grid the ground is drawn on: cell size and the half width (world units). */
 export interface GroundLattice { readonly cell: number; readonly half: number }

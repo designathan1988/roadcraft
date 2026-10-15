@@ -1,22 +1,6 @@
 import { m } from '../units';
 
-/**
- * THE REGIONAL STANDARD OF ROAD PAINT (docs/source/VIAS.md V6), chosen for the map:
- *
- * - 'br', Brasil/CONTRAN (MBST vol. IV, Sinalização Horizontal, 2007, lido em
- *   texto): opposing flows split by YELLOW lines (LFO), same-direction flows
- *   by WHITE (LMS); a broken line's dash and gap by the speed - under
- *   60 km/h 1:2 (3 m and 6 m here), 60 to 80 km/h 1:3 (3 m and 9 m), 80 and
- *   over 1:3 (4 m and 12 m); the legend of an exclusive lane, "ÔNIBUS",
- *   1,60 m tall in urban roads up to 80 km/h, 2,40 m over.
- * - 'us', MUTCD (2009, 3A.05-3A.06): yellow between directions, white within
- *   one; 10 ft dashes and 30 ft gaps (3 m and 9 m); "BUS".
- * - 'eu', the Vienna Convention as most of Europe paints it: white between
- *   directions too; 3 m and 9 m; "BUS".
- * - 'classic': the game's paint before the regions (every map saved before
- *   them keeps it, so it opens identical): the class's own centre colour,
- *   8-unit dashes and gaps.
- */
+/** THE REGIONAL STANDARD OF ROAD PAINT, chosen for the map: - 'br', Brasil/CONTRAN */
 export type MarkingStyleId = 'classic' | 'br' | 'us' | 'eu';
 
 const YELLOW = '#e1c45a';
@@ -60,11 +44,7 @@ export function markingStyle(id: MarkingStyleId | undefined): MarkingStyle {
 export const isMarkingStyle = (v: unknown): v is MarkingStyleId =>
   v === 'classic' || v === 'br' || v === 'us' || v === 'eu';
 
-/**
- * The letters of the legends, stroked: each a list of polylines in a box one
- * unit wide (x, to the driver's right) and one tall (y, along the road away
- * from the driver). Only what the legends spell.
- */
+/** The letters of the legends, stroked: each a list of polylines in a box one unit wide */
 const GLYPHS: Readonly<Record<string, readonly (readonly [number, number])[][]>> = {
   O: [ring(0.5, 0.41, 0.5, 0.41)],
   Ô: [ring(0.5, 0.36, 0.5, 0.36), [[0.15, 0.82], [0.5, 1], [0.85, 0.82]]],
@@ -87,11 +67,7 @@ function ring(cx: number, cy: number, rx: number, ry: number): [number, number][
   });
 }
 
-/**
- * The give-way symbol on the floor (MBST vol. IV, "SIP" / Vienna "shark's
- * tooth"): a long triangle pointing at the driver who must give way, in a
- * box one wide and one long.
- */
+/** The give-way symbol on the floor (MBST vol. IV, "SIP" / Vienna "shark's tooth") */
 export const YIELD_SYMBOL: { strokes: [number, number][][]; width: number } = {
   strokes: [[[0.5, 0], [1, 1], [0, 1], [0.5, 0]], [[0.5, 0.3], [0.78, 0.9], [0.22, 0.9], [0.5, 0.3]]],
   width: 1,

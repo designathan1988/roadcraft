@@ -1,14 +1,4 @@
-/**
- * LIGHTNING (`world/weather.ts`): a bolt from the cloud base to the ground,
- * built by midpoint displacement - each segment split and its middle kicked
- * sideways, the kick halved at every generation, so the bolt is jagged at
- * every scale - with a few branches forking off at some 30 degrees, each
- * shorter the lower it leaves the main channel (gamedev.net, "Lightning
- * Bolts"; Tuts+, "How to Generate Shockingly Good 2D Lightning Effects").
- * Drawn as screen-wide lines in a white too bright for the tone curve, it
- * flickers - a stroke, a dim, a return stroke - and fades in a third of a
- * second; while it lasts it lights the whole scene (`flash`).
- */
+/** LIGHTNING (`world/weather.ts`): a bolt from the cloud base to the ground, built by midpoint displacement */
 import { Color, Group, Vector2, Vector3 } from 'three';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
@@ -78,20 +68,11 @@ export function createLightning(): Lightning {
   const strikes: { age: number; meshes: LineSegments2[]; materials: LineMaterial[] }[] = [];
   // Brighter than white: past the tone curve, and into the bloom at night.
   const core = new Color(6, 6.4, 8);
-  /**
-   * The strikes' materials, made ONCE here, three a strike for `MAX_STRIKES`
-   * at once: a material made per strike and disposed after it released the
-   * line program with the last one (`WebGLPrograms.releaseProgram`), and the
-   * next strike compiled it again in the middle of the game. DO NOT make or
-   * dispose them in a strike. A strike past them cuts the oldest short (a
-   * bolt lives `STRIKE_LIFE`, under half a second).
-   */
+  /** DO NOT make or dispose them in a strike. */
   const free: LineMaterial[] = Array.from({ length: MAX_STRIKES * 3 },
     () => new LineMaterial({ color: core, linewidth: 1, transparent: true, opacity: 1, depthWrite: false, toneMapped: false }));
   const all = [...free];
-  // One of them in the scene from the start, hidden, on an empty line: the
-  // renderer's look for new programs (`renderer.ts`, `compileCopy`) builds
-  // the line program before the first strike draws it.
+  // One of them in the scene from the start, hidden, on an empty line: the renderer's look for new programs
   const warm = new LineSegments2(new LineSegmentsGeometry().setPositions([0, 0, 0, 0, 0, 0]), free[0]!);
   warm.visible = false;
   warm.frustumCulled = false;

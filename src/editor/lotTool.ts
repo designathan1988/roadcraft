@@ -18,17 +18,7 @@ import type { ZoneDensity, ZoneUse } from '@world/zones';
 const REFUSED_REACH = m(40);
 const STROKE_STEP = m(2);
 
-/**
- * THE ZONING TOOL: the lots the player draws, edits and zones
- * (`world/lots.ts`), and the gestures doing it - a brush stroke zoning the
- * lots it crosses, a corner dragged, a lot drawn as a rectangle or point by
- * point, a cut line, a side bent, two lots joined, a delete stroke.
- *
- * Its gestures' data lives here, with the handlers that use it (Nystrom,
- * "State": the data that only matters in one state belongs to that state),
- * not as loose variables of `main.ts` read by every handler of every tool.
- * `main.ts` hands it the pointer and draws what `overlay` returns.
- */
+/** THE ZONING TOOL: the lots the player draws, edits and zones (`world/lots.ts`), and the gestures doing it */
 
 /** Brush paints the cells under the pointer; the other modes edit the lots. */
 export type ZoneMode = 'brush' | 'fill' | 'edit' | 'front' | 'split' | 'join' | 'add' | 'polygon' | 'curve' | 'delete';
@@ -77,31 +67,12 @@ export class LotTool {
   /** A drawn cut line, and a side being curved. */
   private cutLine: { pointer: number; a: Vec2; b: Vec2 } | null = null;
   private curve: { pointer: number; a: Vec2; b: Vec2; through: Vec2 } | null = null;
-  /**
-   * A stroke of the brush, a corner being dragged, a lot being drawn, the
-   * first lot of a join. A stroke takes stored lots (`ids`) and proposed
-   * ones (`fresh`, by their index in the proposal), made on release.
-   */
-  /**
-   * A zone stroke: the lots it passed, the proposed lots it passed, and the
-   * points it passed while the proposal was still being worked out - read
-   * once it is (`brushProposed`), never dropped: a stroke made while the
-   * proposal restarted (each new lot restarts it) zoned nothing (Etapa 5g).
-   */
+  /** A stroke of the brush, a corner being dragged, a lot being drawn, the first lot of a join. */
+  /** A zone stroke: the lots it passed, the proposed lots it passed */
   private stroke: { pointer: number; remove: boolean; ids: Set<number>; fresh: Set<number>; pending: Vec2[]; last: Vec2 } | null = null;
-  /**
-   * A stroke let go before the proposal it waits on was worked out: made in
-   * the frame the proposal is done (`advanceProposal`), never in one go - the
-   * whole proposal at once is 0.6 s on a generated city.
-   */
+  /** A stroke let go before the proposal it waits on was worked out: made in the frame the proposal is done */
   private waiting: { stroke: NonNullable<LotTool['stroke']>; use: ZoneUse; density: ZoneDensity } | null = null;
-  /**
-   * The land along the streets cut into lots while the Zoning tool is in
-   * hand, as Cities: Skylines shows its zonable land along every road: the
-   * brush paints these, and they are made on release. Worked out a few
-   * milliseconds a frame (`planLotsSteps`), again when the roads or the lots
-   * change; nothing is stored until the player paints.
-   */
+  /** The land along the streets cut into lots while the Zoning tool is in hand, as Cities */
   private proposal: { key: string; steps: Generator<void, LotPlan> | null; lots: readonly Vec2[][]; keys: readonly string[]; keyRects: readonly ChangeRect[] } | null = null;
   private corner: { pointer: number; from: Vec2; to: Vec2 } | null = null;
   private drawn: { pointer: number; a: Vec2; b: Vec2; angle: number } | null = null;
@@ -128,27 +99,17 @@ export class LotTool {
     this.zoned = this.doc.lots.some((l) => l.use);
   }
 
-  /**
-   * `overlay` with the key the scene compares (`render/lotOverlay.ts`). With
-   * the other tools and no gesture of this one left, it reads only the lots
-   * and the buildings (`lotsChanged` writes every change of a lot to the
-   * diary), so it is made again only when one of them changed (Nystrom,
-   * "Dirty Flag"): it was made, and turned to JSON for its key, on every frame.
-   */
+  /** `overlay` with the key the scene compares (`render/lotOverlay.ts`). */
   overlayKeyed(editing: boolean): LotOverlay & { readonly key: string } {
     const gesture = this.polygon.length > 0 || this.drawn !== null || this.cutLine !== null || this.curve !== null;
     if (!editing && !gesture) {
       const key = `lots ${this.doc.lotRevision} ${this.doc.buildings.revision}`;
       if (this.quiet?.key === key) return this.quiet.overlay;
       // A faint hint, not the tool: held while a city grows lot by lot
-      // (`holdOverlay`), it was laid again for all the town's lots on every
-      // frame of the growth - a tenth of the frame in the profile (2026-10-13).
       if (this.quiet && this.held) return this.quiet.overlay;
       return this.remakeQuiet(key);
     }
-    // In the tool, what is under the pointer changes the drawing: it is made again when the state it is
-    // drawn from changed (`liveKey`), not on every frame, and not compared by writing it all out as text.
-    // The proposal is moved on here, before the key: a cached overlay would stop it half worked out.
+    // In the tool, what is under the pointer changes the drawing: it is made again when the state it is drawn from changed
     if (editing && this.advanceProposal()) this.host.redraw();
     const key = this.liveKey(editing);
     if (this.live?.key === key) return this.live.overlay;
@@ -163,12 +124,7 @@ export class LotTool {
   private readonly liveCursor = new JournalCursor(['lots', 'buildings']);
   private liveEdits = 0;
 
-  /**
-   * Everything `overlay` reads, as a short string: the lots and buildings by what the diary says changed, the mode and its
-   * settings, the pointer (where it is changes what is lit, snapped and measured), the gestures under way and
-   * the proposal. DO NOT build the overlay and write it out as JSON to compare it: that is every lot of the
-   * town, every frame, and grows with it. A field `overlay` starts reading goes here too.
-   */
+  /** DO NOT build the overlay and write it out as JSON to compare it */
   private liveKey(editing: boolean): string {
     const at = (q: Vec2 | null): string => (q ? `${q.x},${q.y}` : '-');
     const prop = this.proposal;
@@ -201,12 +157,7 @@ export class LotTool {
   private get doc(): RoadDoc { return this.host.doc; }
   private get net(): Network { return this.host.net; }
 
-  /**
-   * The refused lots, those near what the network changed since let go, to be
-   * tried again (a road edit can make room there; `Network.changesSince`). DO
-   * NOT let every refused lot of the town go for an edit: the growth tried
-   * every one of them again, each up to its eighteen sites, after each road.
-   */
+  /** DO NOT let every refused lot of the town go for an edit */
   refusedNow(): Set<number> {
     const net = this.net;
     if (this.refusedNet === net.state) return this.refused;
@@ -259,11 +210,7 @@ export class LotTool {
     return `${this.net.revision}:${this.doc.lots.length}:${this.doc.nextLotId}`;
   }
 
-  /**
-   * Moves the proposal on by up to `budget` milliseconds, starting it again
-   * when what it was worked out from changed. True while it is still being
-   * worked out (the caller draws another frame).
-   */
+  /** Moves the proposal on by up to `budget` milliseconds, starting it again when what it was worked out from changed. */
   advanceProposal(budget = PROPOSAL_BUDGET_MS): boolean {
     const key = this.proposalKey();
     if (!this.proposal || this.proposal.key !== key) {
@@ -317,10 +264,7 @@ export class LotTool {
       for (let id = first; id < doc.nextLotId; id++) stroke.ids.add(id);
       return zoneLots(doc, [...stroke.ids], stroke.remove ? null : { use, density }) || fresh.length > 0;
     });
-    // The proposal holds on: the lots laid were its own, and the rest of it is
-    // as it was - it is kept for the land as it is now, less those, and the
-    // next stroke reads it at once. Worked out again after every stroke, each
-    // waited for the whole street land to be planned anew.
+    // The proposal holds on: the lots laid were its own, and the rest of it is as it was
     if (before && fresh.length) {
       const laid = new Set(stroke.fresh);
       this.proposal = { key: this.proposalKey(), steps: null, lots: before.lots.filter((_, k) => !laid.has(k)), keys: before.keys, keyRects: before.keyRects };
@@ -330,10 +274,7 @@ export class LotTool {
     host.redraw();
   }
 
-  /**
-   * The zone brush over the street land at `at`: the proposed lot under it,
-   * or the point kept until the proposal is ready (`readPending`).
-   */
+  /** The zone brush over the street land at `at`: the proposed lot under it, or the point kept until the proposal is ready */
   private brushProposed(at: Vec2): void {
     const stroke = this.stroke;
     if (!stroke) return;
@@ -393,11 +334,7 @@ export class LotTool {
     return snap(p, this.snapReach()).p;
   }
 
-  /**
-   * Which side of a lot is its front: the longest of those against a street
-   * (a lot cut back to the footway has many short sides round a corner's curve,
-   * and its front is the long straight one).
-   */
+  /** Which side of a lot is its front: the longest of those against a street */
   private frontSideOf(points: readonly Vec2[]): number {
     const sides = points.map((p, i) => {
       const q = points[(i + 1) % points.length]!;
@@ -432,9 +369,7 @@ export class LotTool {
       this.erase.lots.add(lot.id);
       if (lot.building !== undefined) this.erase.buildings.add(lot.building as BuildingId);
     }
-    // A building over the point has the point in its stored box: the store's
-    // grid hands those (`BuildingStore.near`). DO NOT walk `buildings.all()`:
-    // this runs for each of up to 400 steps of a pointer move.
+    // DO NOT walk `buildings.all()`: this runs for each of up to 400 steps of a pointer move.
     for (const b of this.doc.buildings.near(world.x, world.y, world.x, world.y)) {
       if (Math.hypot(b.x - world.x, b.y - world.y) > m(80)) continue;
       if (solidFootprints(b).some((ring) => insideLot(world, { corners: ring }))) this.erase.buildings.add(b.id as BuildingId);
@@ -443,20 +378,12 @@ export class LotTool {
 
   // ------------------------------------------------------------ pointer
 
-  /**
-   * The street land's proposed lots made real, to be edited as lots: a corner
-   * dragged, a front set, a cut, a join or a delete acts on stored lots, and
-   * the proposed ones vanished from under the Lots modes - the player's lots
-   * that "disappear" when Lots is picked, whose front could not be set. Their
-   * land's keys are kept, so they are not proposed again. One undo step.
-   */
+  /** The street land's proposed lots made real, to be edited as lots */
   private adoptProposal(): void {
     const prop = this.proposal;
     if (!prop || prop.steps || prop.key !== this.proposalKey() || !prop.lots.length) return;
     const add = prop.lots.map((corners) => ({ key: '', corners: [...corners] }));
-    // With where each key's land lies (`LotPlan.keyRects`): DO NOT hand the
-    // keys without it - a key with no place is written as the whole map, and
-    // every reader of the lots worked the town out again.
+    // With where each key's land lies (`LotPlan.keyRects`): DO NOT hand the keys without it
     this.host.mutate(() => applyLots(this.doc, { add, keys: [...prop.keys], drop: [], keyRects: [...prop.keyRects] }));
   }
 
@@ -525,8 +452,7 @@ export class LotTool {
       this.erase = { pointer, last: at, lots: new Set(), buildings: new Set() };
       this.eraseUnder(at);
     } else {
-      // The brush zones the lots it passes over, and the proposed lots of the
-      // street land (`proposal`), made when it is let go.
+      // The brush zones the lots it passes over, and the proposed lots of the street land (`proposal`), made when it is let go.
       const remove = shift || settings.eraser;
       this.stroke = { pointer, remove, ids: new Set(lot ? [lot.id] : []), fresh: new Set(), pending: [], last: at };
       if (!lot && !remove) this.brushProposed(at);
@@ -534,20 +460,13 @@ export class LotTool {
     host.redraw();
   }
 
-  /**
-   * The pointer moved; true when one of this tool's gestures took it.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved; true when one of this tool's gestures took it. */
   move(pointer: number, world: Vec2): boolean {
     const { host } = this;
     if (this.stroke?.pointer === pointer) {
       const stroke = this.stroke;
       const at = { x: world.x, y: world.y };
-      // The whole way from the last sample, a step shorter than any lot's
-      // front: a fast drag reports its pointer far apart (the browser
-      // coalesces moves, a slow frame more so - MDN, PointerEvent
-      // getCoalescedEvents), and a stroke along a street zoned every third
-      // lot and left grass between (seen in the game).
+      // The whole way from the last sample, a step shorter than any lot's front: a fast drag reports its pointer far apart
       const from = stroke.last;
       const steps = Math.min(400, Math.ceil(Math.hypot(at.x - from.x, at.y - from.y) / STROKE_STEP));
       for (let k = 1; k <= steps; k++) {
@@ -580,10 +499,7 @@ export class LotTool {
     return false;
   }
 
-  /**
-   * The pointer let go: the gesture it held is committed (`commit`), or dropped.
-   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer let go: the gesture it held is committed (`commit`), or dropped. */
   up(pointer: number, commit: boolean): void {
     const { doc, host } = this;
     const settings = host.settings();
@@ -592,10 +508,7 @@ export class LotTool {
       this.stroke = null;
       this.readPending(stroke);
       if (commit && stroke.pending.length) {
-        // The street land it passed is still being worked out: finished now,
-        // at once, and the stroke made - the zone shows the moment the stroke
-        // is let go (the player, 2026-10-10: "tem que aparecer na hora que
-        // clica"). Left to a few milliseconds a frame it took a second or more.
+        // The street land it passed is still being worked out: finished now, at once, and the stroke made
         this.waiting = { stroke, use: settings.use, density: settings.density };
         this.advanceProposal(Infinity);
         if (this.waiting) host.hint('hint.zone.pending');
@@ -666,11 +579,7 @@ export class LotTool {
 
   // ------------------------------------------------------------ drawing
 
-  /**
-   * The lots as the scene draws them: in the Zoning tool (`editing`) every
-   * lot with its front marked and what the mode would do under the pointer;
-   * with the other tools only the zoned ones, faintly, and none built on.
-   */
+  /** The lots as the scene draws them: in the Zoning tool */
   overlay(editing: boolean): LotOverlay {
     const { doc } = this;
     const settings = this.host.settings();
@@ -692,9 +601,7 @@ export class LotTool {
         line: picked ? (settings.mode === 'delete' ? 0xff6b5e : 0xffd25e) : 0xffffff, lineAlpha: editing ? (picked ? 1 : 0.85) : 0,
         width: picked ? 0.7 : 0.35, ...(built ? { built: true } : {}) });
     }
-    // The street land proposed as lots, in every mode of the tool (they
-    // vanished from the Lots modes): faint outlines; painted in the stroke, in
-    // the zone's colour; under the pointer, lit (the brush).
+    // The street land proposed as lots, in every mode of the tool (they vanished from the Lots modes): faint outlines
     if (editing) {
       if (this.advanceProposal()) this.host.redraw();
       const prop = this.proposal;

@@ -6,14 +6,7 @@ import { m } from '@world/units';
 import { addLine, addStop, addTrack, emptyTransit, railGraph, railPath } from '@world/transit';
 import { SimWorld } from '@sim/world';
 
-/**
- * A TRAIN LINE'S LOOP HOLDS EACH POINT ONCE. The loop out along the stations
- * and back is made of one leg per pair of stations (`railPath`); each leg
- * starts where the one before it ended, and the last ends where the first
- * began. Joined whole, every joint was a stretch of length zero on the loop,
- * and so was its closing stretch. Joined, the loop is the same line: its
- * length, its stations' places along it and its level crossings unchanged.
- */
+/** A TRAIN LINE'S LOOP HOLDS EACH POINT ONCE. */
 
 interface RailView {
   readonly points: readonly Vec2[];

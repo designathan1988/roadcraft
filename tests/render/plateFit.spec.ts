@@ -3,13 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Rng } from '@core/rng';
 import { fitSize } from '@render/signs';
 
-/**
- * THE SIZE A PLATE'S WORDS ARE WRITTEN AT (`signs.ts` fitSize): the size the
- * old walk found - down 2 px at a time from the top, measuring each size,
- * until the words fit or the size is at or under 10 - for words whose width
- * grows with their size, in proportion or not, with two or three measures
- * instead of one per size.
- */
+/** THE SIZE A PLATE'S WORDS ARE WRITTEN AT (`signs.ts` fitSize): the size the old walk found */
 function walked(max: number, size: number, widthAt: (px: number) => number): number {
   let px = size;
   while (widthAt(px) > max && px > 10) px -= 2;

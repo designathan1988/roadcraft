@@ -22,42 +22,7 @@ import { BIKE_FIT, CAB_WHEEL, MOTO_FIT, gripPoint, type TwoWheelerFit, type Whee
 import { UPRIGHT_CUSHION_REACH } from './carBody';
 import { CabinParts, type InteriorSolid } from './interiorSolids';
 
-/**
- * Vehicle bodies, built once per class from the class's own proportions.
- *
- * A body is drawn the way a car is designed, from a SIDE PROFILE, and then
- * split the way a car is built:
- *
- *  - the LOWER BODY is one outline - bumper, bonnet, waist, boot, sills, wheel
- *    arches - described as a bottom line and a top line, both monotone along
- *    the car. Any stretch of it is then a simple polygon (`outline`), so the
- *    nose, the tail, a door and the sill below it are cut from the same line
- *    and meet exactly; a door whose trailing edge runs over the rear wheel
- *    takes the arch out of its own bottom edge instead of crossing it.
- *  - with every door shut the lower body is ONE extrusion with its cabin top
- *    taken out (`hollow`): a continuous, bevelled side with no gaps, shut
- *    lines drawn on it. While a door moves the body is drawn in pieces
- *    instead - nose, tail, sill and the separate door leaves on their hinges.
- *  - above the waist the GREENHOUSE is a lofted surface - windscreen, roof,
- *    rear window - between two side planes that lean in towards the roof
- *    (tumblehome), with the pillars and the side glass cut from those planes.
- *    From the camera's 48 degrees the leaning glass faces up at the viewer,
- *    and the people inside are what is seen through it.
- *  - inside there is a finished cabin: carpet, a dashboard across the car with
- *    its binnacle and centre console, bucket seats and a rear bench with
- *    headrests, door cards with armrests, a parcel shelf or a boot floor.
- *
- * Buses and trucks are built with the same helpers (`buildBusModel`,
- * `buildTruckModel`): a low-floor bus with rows of seats, stanchions, a
- * driver's cab and sliding plug doors; a cab-over truck with a cab you can
- * see into, a chassis and a box body.
- *
- * Geometry is in world units, in the vehicle's frame: X forward, Y up, Z to the
- * vehicle's RIGHT, origin on the road under the middle of the body. Every
- * part carries a vertex colour that MULTIPLIES the instance colour (white keeps
- * the paint; dark gives black trim, rubber or a black-out pillar), so a body
- * is one draw per material whatever it depicts.
- */
+/** Vehicle bodies, built once per class from the class's own proportions. */
 
 /** Side of the vehicle a door is on: -1 left (the driver's), +1 right (the kerb's). */
 export type DoorSide = -1 | 1;
@@ -66,11 +31,7 @@ export interface DoorModel {
   /** Index into the vehicle's door state. Two leaves of one bus door share it. */
   readonly index: number;
   readonly side: DoorSide;
-  /**
-   * `hinge`: swings about a vertical axis at the front edge (cars, cabs).
-   * `slide`: a plug door, stepping out and sliding along the body by `slide`
-   * (signed, world units) - how a city bus opens.
-   */
+  /** `hinge`: swings about a vertical axis at the front edge (cars, cabs). */
   readonly kind: 'hinge' | 'slide';
   readonly slide: number;
   /** Hinge line (or the closed leaf's origin): along the body and across it, world units. */
@@ -104,11 +65,7 @@ export interface SeatModel {
   readonly driver: boolean;
   /** Row from the front, 0 for the driver's row: at a middle zoom only the front row is drawn. */
   readonly row: number;
-  /**
-   * The posture the seat is made for (`riderPoses.ts`): `car`, reclined with
-   * the legs forward; `cab`, the upright seat of a bus or truck driver, hip
-   * 0.45 m over the floor; `chair`, a bus seat, thighs level and feet down.
-   */
+  /** The posture the seat is made for (`riderPoses.ts`): `car`, reclined with the legs forward */
   readonly pose: SeatPose;
 }
 
@@ -122,24 +79,13 @@ export interface SeatedExtents {
   readonly half: number;
 }
 
-/**
- * How far a seated person reaches from their pelvis, metres at full size: the
- * worst of the roster's bodies (the MakeHuman people the game draws), measured
- * on the rig over every pose of that seat and its whole idle loop
- * (`scripts/measure-seated-poses.mjs`, `tests/fixtures/seated-pose-extents.json`),
- * rounded up to the centimetre. `tests/render/occupantFit.spec.ts` fails if a
- * measured body is larger.
- */
+/** How far a seated person reaches from their pelvis, metres at full size: the worst of the roster's bodies */
 export const SEATED_EXTENTS: SeatedExtents = { top: 0.88, bottom: 0.23, forward: 0.87, back: 0.37, half: 0.29 };
 
 /** Rear car passengers fold their legs into the shorter footwell. */
 export const REAR_SEATED_EXTENTS: SeatedExtents = { top: 0.88, bottom: 0.26, forward: 0.67, back: 0.33, half: 0.29 };
 
-/**
- * The same for a bus or truck driver's upright seat. Its feet are put on the
- * floor by their soles, whatever the shoes (`riderPoses.ts` seated): the
- * bottom is the floor the pose stands them on, to the millimetre.
- */
+/** The same for a bus or truck driver's upright seat. */
 export const CAB_EXTENTS: SeatedExtents = { top: 0.88, bottom: 0.452, forward: 0.66, back: 0.34, half: 0.29 };
 
 /** The same for a bus seat (`chairSit` and its variations). */
@@ -149,12 +95,7 @@ export const extentsOf = (seat: Pick<SeatModel, 'pose' | 'row'>): SeatedExtents 
   seat.pose === 'chair' ? CHAIR_EXTENTS : seat.pose === 'cab' ? CAB_EXTENTS
     : seat.row > 0 ? REAR_SEATED_EXTENTS : SEATED_EXTENTS;
 
-/**
- * The largest size a person may be drawn at in this seat and stay entirely
- * inside the cabin: head under the roof lining, feet above the floor, knees
- * and toes short of the bulkhead, shoulders clear of the door and the next
- * seat. Anybody larger is drawn at this size; nobody is drawn larger than 1.1.
- */
+/** The largest size a person may be drawn at in this seat and stay entirely inside the cabin */
 export function seatFitScale(seat: SeatModel): number {
   const metres = (u: number): number => u / M(1);
   const e = extentsOf(seat);
@@ -219,10 +160,7 @@ export interface Lamp {
 
 const M = (metres: number): number => m(metres);
 
-/**
- * Axle positions along the body, front first, world units. One definition for
- * the body model's wheel arches and the renderer's wheels.
- */
+/** Axle positions along the body, front first, world units. */
 export function axleStations(a: Archetype): number[] {
   const L = a.length;
   if (a.shape === 'motorcycle' || a.shape === 'bicycle') return [L * 0.37, -L * 0.37];
@@ -278,11 +216,7 @@ function tint<T extends BufferGeometry>(g: T, hex: number): T {
   return g;
 }
 
-/**
- * Merges parts into one non-indexed geometry with position, normal and
- * colour. A part without a colour is white - it takes the instance colour
- * as it is.
- */
+/** Merges parts into one non-indexed geometry with position, normal and colour. */
 export function merge(parts: BufferGeometry[]): BufferGeometry {
   const ready = parts.map((g) => {
     const n = g.index ? g.toNonIndexed() : g;
@@ -347,8 +281,7 @@ function extrude(points: readonly P2[], width: number, bevel: number, z = 0, cur
     bevelEnabled: bevel > 0,
     bevelThickness: bevel,
     bevelSize: bevel * 0.8,
-    // Rounded INTO the outline rather than grown out of it, so a profile's
-    // wheel arch and ground clearance are the sizes they were drawn at.
+    // Rounded INTO the outline rather than grown out of it
     bevelOffset: -bevel * 0.8,
     bevelSegments: bevel > 0 ? bevelSegments : 0,
     curveSegments,
@@ -397,10 +330,7 @@ function roundedSlab(lx: number, lz: number, radius: number, height: number, x: 
   return g;
 }
 
-/**
- * A flat polygon mapped into 3D, triangulated in its own 2D coordinates, and
- * wound so its face points along `outward`.
- */
+/** A flat polygon mapped into 3D, triangulated in its own 2D coordinates, and wound so its face points along `outward`. */
 function polygon(points2: readonly P2[], to3: (p: P2) => Vector3, outward: Vector3): BufferGeometry {
   const pts = clean(points2);
   if (pts.length < 3) return new BufferGeometry().setAttribute('position', new Float32BufferAttribute([], 3));
@@ -434,10 +364,7 @@ function twoSided(points2: readonly P2[], to3: (p: P2) => Vector3, outward: Vect
   return merge([front, back]);
 }
 
-/**
- * A surface lofted along a profile: at each station (x, y) it spans the width
- * from -half(y) to +half(y) with a crown, and it is wound to face up and out.
- */
+/** A surface lofted along a profile: at each station */
 function loft(stations: readonly P2[], half: (y: number) => number, crown: number, across = 6,
   zRange: readonly [number, number] = [-1, 1]): BufferGeometry {
   const pos: number[] = [];
@@ -476,13 +403,7 @@ function loft(stations: readonly P2[], half: (y: number) => number, crown: numbe
   return g;
 }
 
-/**
- * A seat's side profile, extruded across its width: cushion, backrest and
- * a rounded front edge, reclined by `recline` (radians back from upright).
- * `hip` is the occupant's hip point; the cushion sits under it and the
- * backrest behind it, where the pose puts the buttocks and the back. Every
- * seat drawn here is an upright one (a bus's, a cab's).
- */
+/** A seat's side profile, extruded across its width: cushion, backrest and a rounded front edge, reclined by `recline` */
 function seatShell(hipX: number, hipY: number, floor: number, width: number, z: number, recline: number,
   backHeight: number, fabric: number): BufferGeometry[] {
   const reach = M(UPRIGHT_CUSHION_REACH);
@@ -502,8 +423,7 @@ function seatShell(hipX: number, hipY: number, floor: number, width: number, z: 
     [backX, top + M(0.05)],
     [backX + M(0.06), top],
   ];
-  // The points run round the outline clockwise from the front; `extrude`
-  // takes either winding.
+  // The points run round the outline clockwise from the front; `extrude` takes either winding.
   const shell = tint(extrude(s, width, M(0.035), z, 4, 2), fabric);
   const out: BufferGeometry[] = [shell];
   // Bolsters on the backrest's edges, a shade darker.
@@ -607,12 +527,7 @@ export function spokedRimGeometry(): BufferGeometry {
 
 // ------------------------------------------------------------------ two-wheelers
 
-/**
- * A motorcycle or a bicycle, in the same frame as a car, with the parts that
- * move kept apart: the steering assembly turns about the head tube, the
- * cranks of a bicycle turn with the pedalling, and the whole machine leans
- * into a bend about the line where its tyres touch the road.
- */
+/** A motorcycle or a bicycle, in the same frame as a car, with the parts that move kept apart */
 export interface TwoWheelerModel {
   /** Frame, tank, bodywork: painted. */
   readonly body: BufferGeometry;
@@ -627,11 +542,7 @@ export interface TwoWheelerModel {
   readonly cranks: BufferGeometry | null;
   readonly bracketX: number;
   readonly bracketY: number;
-  /**
-   * Where the rider's pelvis bone sits: along the body and height above the
-   * road. The saddle, the grips, the pegs and the pedals are all built from
-   * here by `fit` (`riderPoses.ts`), which is what the riding poses reach for.
-   */
+  /** Where the rider's pelvis bone sits: along the body and height above the road. */
   readonly seatX: number;
   readonly seatY: number;
   readonly fit: TwoWheelerFit;
@@ -702,8 +613,7 @@ function motorcycleModel(a: Archetype): TwoWheelerModel {
   // The saddle: padded, its top where the rider's seat is.
   trim.push(tint(extrude([[tankRear + M(0.02), saddleTop - M(0.02)], [px, saddleTop], [px - M(0.3), saddleTop + M(0.02)],
     [px - M(0.33), saddleTop - M(0.06)], [tankRear, saddleTop - M(0.09)]], M(0.28), M(0.04), 0, 4, 2), 0x1a1a1c));
-  // Engine: crankcase, cylinder block leaning forward, and the exhaust along
-  // the right side back to a silencer.
+  // Engine: crankcase, cylinder block leaning forward, and the exhaust along the right side back to a silencer.
   trim.push(tint(extrude([[-M(0.2), M(0.3)], [M(0.2), M(0.3)], [M(0.26), M(0.46)], [M(0.1), M(0.62)], [-M(0.18), M(0.6)], [-M(0.24), M(0.44)]], M(0.26), M(0.03), 0, 2, 1), 0x4c5055));
   trim.push(tint(box(M(0.2), M(0.22), M(0.28), 0, 0, 0).rotateZ(-0.35).translate(M(0.15), M(0.64), 0), 0x6a6f75));
   trim.push(tint(bar(new Vector3(M(0.22), M(0.5), M(0.1)), new Vector3(-M(0.05), M(0.26), M(0.16)), M(0.05)), CHROME_TRIM));
@@ -721,8 +631,7 @@ function motorcycleModel(a: Archetype): TwoWheelerModel {
     trim.push(tint(new CylinderGeometry(M(0.018), M(0.018), M(0.11), 6).rotateX(Math.PI / 2).translate(at.x, at.y, at.z), 0x2a2c30));
     trim.push(tint(bar(new Vector3(at.x - M(0.04), at.y + M(0.02), side * M(0.12)), new Vector3(at.x, at.y, at.z - side * M(0.04)), M(0.025)), DARK_TRIM));
   }
-  // Steering: fork legs down to the front axle, the bars out to the grips,
-  // the headlamp nacelle and the front mudguard - about the steering head.
+  // Steering: fork legs down to the front axle, the bars out to the grips, the headlamp nacelle and the front mudguard
   const steering: BufferGeometry[] = [];
   const dx = front - headX;
   const dy = r - headY;
@@ -790,8 +699,7 @@ function bicycleModel(a: Archetype): TwoWheelerModel {
   }
   steering.push(strut(0, 0, -M(0.02), M(0.1), 0, tube, tube));
   steering.push(...handlebar(fit, px, headX, headY, M(0.1), M(0.014)));
-  // Cranks and pedals about the bottom bracket: two arms, opposite; the
-  // pedal on the arm pointing forward at rest is on the right (+Z).
+  // Cranks and pedals about the bottom bracket: two arms, opposite
   const crank = M(fit.crank!);
   const pedalSide = M(fit.pedalSide!);
   const cranks: BufferGeometry[] = [];
@@ -819,15 +727,7 @@ function bicycleModel(a: Archetype): TwoWheelerModel {
 
 // ------------------------------------------------------------------ bus
 
-/**
- * A low-floor city bus. A lower body with the three wheel arches, a glazed
- * band down both sides between black pillars, a roof with rounded ends and an
- * air-conditioning pod, a raked windscreen over a destination blind, and on
- * the kerb side two plug doors of two glazed leaves each. Inside: a grey
- * floor, the driver's cab on the left with its seat, dashboard, wheel and
- * screen, rows of seats either side of the aisle clear of the middle door,
- * yellow stanchions, and a back row across the width.
- */
+/** A low-floor city bus. */
 export function buildBusModel(a: Archetype): VehicleModel {
   const L = a.length;
   const W = a.width;
@@ -918,7 +818,6 @@ export function buildBusModel(a: Archetype): VehicleModel {
     shell.push(tint(box(bandEnd - bandStart, M(0.05), wall + M(0.004), (bandStart + bandEnd) / 2, sillY + M(0.01), z), BLACKOUT));
   }
   // The driver's side window, ahead of the first bay on the left.
-  // Windscreen: raked a little, black-edged, over the destination blind.
   const screenTop = cant - M(0.3);
   glass.push(loft([[front - M(0.04), screenBase], [front - M(0.14), screenTop]], () => halfW - M(0.08), M(0.04), 6));
   shell.push(tint(box(M(0.1), M(0.08), W - M(0.02), front - M(0.06), screenBase - M(0.02), 0), BLACKOUT));
@@ -960,17 +859,13 @@ export function buildBusModel(a: Archetype): VehicleModel {
 
   // ---- inside.
   const parts = new CabinParts();
-  // Its top at `floor`, where the seats, the poses and the people boarding
-  // take it to be (it stood 2 cm over it, the feet of everybody in it).
+  // Its top at `floor`, where the seats, the poses and the people boarding take it to be
   parts.add('floor', -1, tint(box(L - M(0.3), M(0.04), W - wall * 2, 0, floor - M(0.02), 0), BUS_FLOOR));
   // Inner walls under the windows, so the tub reads as a room.
   for (const side of [-1, 1] as const) {
     parts.add('sill', -1, tint(box(L - M(0.4), sillY - floor, M(0.03), 0, (sillY + floor) / 2, side * (halfW - wall - M(0.015))), BUS_SHELL));
   }
-  // The rear tandem's wheels stand in the cabin of a low-floor bus, their
-  // housings waist high. The seats over them are mounted ON the housing, on a
-  // podium from the wall to the aisle, as on a real low-floor bus - the
-  // housing was left as a bare grey box and the seats over it taken away.
+  // The rear tandem's wheels stand in the cabin of a low-floor bus, their housings waist high.
   const pocketHalf = archR * 0.95;
   const podiumTop = archR + r + M(0.04);
   const pitch = M(0.78);
@@ -1003,12 +898,10 @@ export function buildBusModel(a: Archetype): VehicleModel {
   const seats: SeatModel[] = [];
   const driverX = front - M(1.2);
   const driverZ = -halfW + M(0.62);
-  // The driver sits upright and high over the pedals (`CAB_WHEEL`), the
-  // hip 0.45 m over the floor where the `cabDrive` pose puts the feet.
+  // The driver sits upright and high over the pedals
   const driverHip = floor + M(0.45);
   parts.add('dash', -1, tint(extrude([[front - M(0.12), screenBase + M(0.05)], [front - M(0.12), floor], [front - M(0.5), floor], [front - M(0.55), screenBase - M(0.05)], [front - M(0.45), screenBase + M(0.12)]], W - wall * 2 - M(0.02), M(0.03), 0, 4, 2), DASH));
-  // The driver is seat 0, its back reclined as the truck's: at 0.2 rad the
-  // shoulders of the roster's broadest back stood 6 cm into it.
+  // The driver is seat 0, its back reclined as the truck's
   parts.add('seat', 0, ...seatShell(driverX, driverHip, floor, M(0.52), driverZ, 0.3, M(0.62), SEAT_FABRIC));
   const hr = headrestAt(driverX, driverHip, 0.3);
   parts.add('headrest', 0, ...headrest(hr.x, hr.y, driverZ));
@@ -1024,18 +917,10 @@ export function buildBusModel(a: Archetype): VehicleModel {
   const podiumHip = podiumTop + (seatHip - floor);
   const passenger: { x: number; z: number; floor: number; hip: number }[] = [];
   // How far a seated passenger's knees and toes reach ahead of the hip
-  // (measured, `CHAIR_EXTENTS`), and how far a bus seat's back reaches behind
-  // it (`seatShell` reclined `BUS_SEAT_RECLINE`, 0.52 m tall, 0.13 m thick).
   const legs = M(CHAIR_EXTENTS.forward + 0.04);
   const seatBack = M(0.14 + 0.52 * Math.sin(BUS_SEAT_RECLINE) + 0.13 + 0.02);
   const partition = driverX - M(0.5);
-  /**
-   * A row on the floor where a seated body does not fit, measured against
-   * the bodies (`tests/render/interiorSolids.spec.ts`): its knees through the
-   * driver's partition (9 cm), its legs into the podium ahead (6 cm), or its
-   * back over the podium behind, where the raised row's feet are (6 cm). No
-   * seat stands there, as on a real low-floor bus.
-   */
+  /** A row on the floor where a seated body does not fit, measured against the bodies (`tests/render/interiorSolids.spec.ts`) */
   const blocked = (x: number, side: -1 | 1): boolean =>
     (side === -1 && x + legs > partition)
     || podiums[side].some(([x0, x1]) => (x < x0 && x + legs > x0) || (x > x1 && x - seatBack < x1));
@@ -1052,19 +937,13 @@ export function buildBusModel(a: Archetype): VehicleModel {
   }
   const backRow = back + M(0.55);
   for (let k = -2; k <= 2; k++) passenger.push({ x: backRow, z: k * (seatWidth + M(0.02)), floor, hip: seatHip });
-  // The six seats the simulation fills (seats 1..6) are spread over the bus;
-  // the rest are empty: each shell knows whose it is.
+  // The six seats the simulation fills (seats 1..6) are spread over the bus; the rest are empty
   const order = spreadOrder(passenger.length);
   passenger.forEach((s, i) => {
     const k = order.indexOf(i);
     parts.add('seat', k < 0 ? -1 : 1 + k, ...busSeat(s.x, s.hip, s.floor, seatWidth, s.z));
   });
-  // Room either side: to the window's glass, or to the next seat in the row
-  // that somebody can sit in. The simulation fills the first `a.seats - 1`
-  // seats of `order`, never two side by side; the others stay empty, solids
-  // like any other (`tests/render/interiorSolids.spec.ts`). It was half a seat
-  // and 4 cm for every seat: 0.26 m, narrower than the roster's broadest
-  // shoulders (0.284 m), against a neighbour nobody sits in.
+  // Room either side: to the window's glass, or to the next seat in the row that somebody can sit in.
   const filled = new Set(order.slice(0, Math.max(0, a.seats - 1)));
   const sideRoomOf = (i: number): number => {
     const s = passenger[i]!;
@@ -1120,9 +999,7 @@ export function buildBusModel(a: Archetype): VehicleModel {
     extrude([[back + M(0.02), cant], [front - M(0.12), cant], [front - M(0.2), H - M(0.12)], [front - M(0.5), H], [back + M(0.35), H], [back + M(0.03), H - M(0.1)]], W, 0, 0, 2),
     ...farWheels(axles, r, halfW, W * 0.14),
   ]);
-  // With every door shut the leaves are part of the body. They were only in
-  // the separate door parts, which are drawn while a door moves: a bus with
-  // its doors shut drove about with two open holes in its kerb side.
+  // With every door shut the leaves are part of the body.
   const shellGeo = merge([...shell.map((g) => g.clone()), ...doors.map((d) => d.panel.clone().translate(d.hingeX, 0, d.hingeZ))]);
   const glassGeo = merge([...glass.map((g) => g.clone()), ...doors.map((d) => d.glass.clone().translate(d.hingeX, 0, d.hingeZ))]);
   const openShellGeo = merge(shell);
@@ -1136,20 +1013,13 @@ export function buildBusModel(a: Archetype): VehicleModel {
   };
 }
 
-/**
- * How far a bus seat's back leans, radians back from upright: as far as the
- * shoulders of a seated passenger (`chairSit`), 0.26 m behind the hip at
- * 0.3 m over it on the roster's broadest back (`tests/render/interiorSolids.spec.ts`).
- * At 0.14 the backrest stood 6 cm into them.
- */
+/** How far a bus seat's back leans, radians back from upright: as far as the shoulders of a seated passenger */
 const BUS_SEAT_RECLINE = 0.3;
 
 /** A bus seat: a moulded shell on a pedestal, a grab handle on top. */
 function busSeat(x: number, hipY: number, floor: number, width: number, z: number): BufferGeometry[] {
   const parts = seatShell(x, hipY, floor, width - M(0.03), z, BUS_SEAT_RECLINE, M(0.52), BUS_SEAT);
-  // The car seat's runner is a block 0.3 m long ahead of the hip: in a bus,
-  // where the seat stands high, it sat over the passenger's legs. A bus seat
-  // stands on a slim post under the back of the cushion instead.
+  // The car seat's runner is a block 0.3 m long ahead of the hip
   parts.pop();
   const cushion = Math.max(floor + M(0.1), hipY - M(0.23));
   parts.push(tint(box(M(0.05), cushion - floor, M(0.05), x - M(0.08), (cushion + floor) / 2, z), DASH));
@@ -1158,10 +1028,7 @@ function busSeat(x: number, hipY: number, floor: number, width: number, z: numbe
   return parts;
 }
 
-/**
- * The order the simulation's passenger seats take the bus's seats in: spread
- * from front to back and side to side, so six passengers are not six in a row.
- */
+/** The order the simulation's passenger seats take the bus's seats in */
 function spreadOrder(n: number): number[] {
   const out: number[] = [];
   const used = new Set<number>();
@@ -1179,12 +1046,7 @@ function spreadOrder(n: number): number[] {
 
 // ------------------------------------------------------------------ truck
 
-/**
- * A rigid truck: a cab over the front axle with a raked windscreen, a roof
- * deflector, doors over the front wheels with steps behind them, a cab you
- * can see into; a dark chassis with the fuel tank, side guards and the rear
- * axles; and a box body in the truck's second colour (`accent`).
- */
+/** A rigid truck: a cab over the front axle with a raked windscreen, a roof deflector */
 export function buildTruckModel(a: Archetype): VehicleModel {
   const L = a.length;
   const W = a.width;

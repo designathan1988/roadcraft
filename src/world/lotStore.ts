@@ -12,11 +12,7 @@ export function lotBox(lot: Pick<Lot, 'corners'>): ChangeRect {
   return rectAround(lot.corners) ?? [0, 0, 0, 0];
 }
 
-/**
- * Side of the cells the lots are filed in, world units: a few lots wide (a lot
- * is some 22 x 32 m), so a question at a point (`at`, the lot under the
- * pointer) reads a handful of lots, not a city block's.
- */
+/** Side of the cells the lots are filed in, world units: a few lots wide */
 const LOT_CELL = m(64);
 
 /** One change of some lots as the store applies it (`LotStore.apply`). */
@@ -31,34 +27,7 @@ export interface LotEdit {
   readonly also?: readonly ChangeRect[];
 }
 
-/**
- * THE DOCUMENT'S LOTS (`RoadDoc.lotStore`), with an owner: the records by id,
- * the lots by place (`in`, `at`), and every change written in the diary with
- * the ids it touched and where (kind `lots`), as `BuildingStore` keeps the
- * buildings. Before it the lots were a bare array on the document, written in
- * place by a dozen functions: a lot found by id was a search of the whole list
- * (`findIndex`), a lot taken out a shift of the whole list, the lot under the
- * pointer a test of every lot of the city, and the diary's entries carried no
- * ids, so whoever kept something per lot (the open lots, the undo image) took
- * any change for "everything changed" and read the city again.
- *
- * OWNERSHIP. A record handed to the store is the store's and is never changed
- * in place - by anyone, the caller included: a change is a new record (`put`),
- * as `BuildingStore`'s. The undo image keeps records by reference
- * (`docImage.ts`), a cloned document shares them (`shareFrom`), and the filing
- * by place knows a record by its identity (`CellFiling.file`).
- *
- * ORDER. The lots have an order (the growth draws "the k-th open lot",
- * `openLots.ts`; the file lists them in it): a record replaced keeps its
- * place, a new one - made, cut from another, or put back by an undo - goes
- * last (a `Map` iterates in the order keys were first inserted: MDN, `Map`).
- * Each record's place is a number (`orderOf`) that only grows, so a reader
- * kept by id tells a lot that went and came back (now last) from one changed
- * where it stands.
- *
- * DO NOT hand the lots out as an array the callers write into, nor search one
- * by id or by place: a lot is found by `get(id)`, `in(rect)` and `at(point)`.
- */
+/** DO NOT hand the lots out as an array the callers write into, nor search one by id or by place */
 export class LotStore {
   /** @mapWide Every lot of the map, in the lots' order. */
   private items = new Map<number, Lot>();
@@ -73,10 +42,7 @@ export class LotStore {
   private keySet = new Set<string>();
   /** The lots as an array, for the readers that still take one (`RoadDoc.lots`); null when a write made it stale. */
   private listed: readonly Lot[] | null = null;
-  /**
-   * The store a working copy lies over (`forkFrom`) while it has written no
-   * lot: its questions by place and its list are that store's. Null: its own.
-   */
+  /** The store a working copy lies over (`forkFrom`) while it has written no lot */
   private below: LotStore | null = null;
   /** The keys still the original's (`forkFrom`): copied the first time the copy writes one (`ownKeys`). */
   private keysShared = false;
@@ -111,12 +77,7 @@ export class LotStore {
     return this.order.get(id);
   }
 
-  /**
-   * The lots as an array, in their order, made again only after a change: for
-   * the readers that still take an array (`RoadDoc.lots`, pending their move
-   * to `in`/`at`/`get`).
-   * @rebuild The whole list only after a write.
-   */
+  /** @rebuild The lots as an array, in their order, made again only after a change: for the readers that still take an array */
   list(): readonly Lot[] {
     if (this.below) return this.below.list();
     return this.listed ??= [...this.items.values()];
@@ -141,10 +102,7 @@ export class LotStore {
     return this.keySet.has(key);
   }
 
-  /**
-   * The lots whose box meets `rect`, in increasing id order: a superset of
-   * those whose shape reaches it (the caller keeps its exact test).
-   */
+  /** The lots whose box meets `rect`, in increasing id order: a superset of those whose shape reaches it */
   in(rect: ChangeRect): Lot[] {
     if (this.below) return this.below.in(rect);
     return this.cells().idsMeeting(rect).map((id) => this.items.get(id)!);
@@ -160,11 +118,7 @@ export class LotStore {
     return best;
   }
 
-  /**
-   * The ids of the lots changed after `serial` (a `revision` read before),
-   * from the diary; null when it cannot say which (a load, a copy taken
-   * whole, entries forgotten): then read them all.
-   */
+  /** The ids of the lots changed after `serial` (a `revision` read before), from the diary; null when it cannot say which */
   changedSince(serial: number): number[] | null {
     const entries = this.journal.since(serial, ['lots']);
     if (!entries || entries.some((e) => !e.ids)) return null;
@@ -176,20 +130,13 @@ export class LotStore {
     return new JournalCursor(['lots'], true);
   }
 
-  /**
-   * The ids of the lots changed since `cursor` last read this store; null:
-   * read them all (the first read, another store, entries forgotten or
-   * without ids - a load, a copy taken whole).
-   */
+  /** The ids of the lots changed since `cursor` last read this store; null: read them all */
   changedFor(cursor: JournalCursor): number[] | null {
     const entries = cursor.read(this.journal);
     return entries === null ? null : entries.flatMap((e) => e.ids!);
   }
 
-  /**
-   * One change of the lots, written in the diary as ONE entry with every id it
-   * touched and where they were and are. Returns the lots added, in order.
-   */
+  /** One change of the lots, written in the diary as ONE entry with every id it touched and where they were and are. */
   apply(edit: LotEdit, cause: string): Lot[] {
     const ids: number[] = [];
     const rects: ChangeRect[] = [...(edit.also ?? [])];
@@ -223,13 +170,7 @@ export class LotStore {
     return added;
   }
 
-  /**
-   * Adds land to what is already cut into lots (`lots.ts` `applyLots`): the
-   * keys not known yet, written where their land lies (`rects[i]`; the whole
-   * map for a key with none). Written as `lotKeys`, NOT as `lots`: no lot came
-   * or went, and a reader of the lots by id takes an entry without ids for
-   * "everything changed". Returns whether any key was new.
-   */
+  /** Adds land to what is already cut into lots (`lots.ts` `applyLots`) */
   addKeys(keys: readonly string[], rects: readonly ChangeRect[] | undefined, cause: string): boolean {
     const where: ChangeRect[] = [];
     let placeless = false, added = false;
@@ -258,11 +199,7 @@ export class LotStore {
     return gone;
   }
 
-  /**
-   * Puts lots back as they were, or takes them away (`undefined`): undo and
-   * redo (`world/docImage.ts`), all in one entry. A lot put back where one of
-   * its id stands keeps its place; one that was gone goes last.
-   */
+  /** Puts lots back as they were, or takes them away (`undefined`): undo and redo (`world/docImage.ts`), all in one entry. */
   restore(records: readonly { readonly id: number; readonly value: Lot | undefined }[], cause: string): void {
     const ids: number[] = [];
     const rects: ChangeRect[] = [];
@@ -298,13 +235,7 @@ export class LotStore {
     if (keys.length) this.journal.record('lotKeys', null, { cause: 'mapa carregado' });
   }
 
-  /**
-   * The same records as another store (they are never changed in place):
-   * `RoadDoc.clone`, whose diary then goes on from the source's, so the copy
-   * stands at the same revision. Each record keeps its place number, so a
-   * change of the copy taken back (`replaceWith`) tells a lot put last from
-   * one changed in place. The filing is made only if the copy is asked by place.
-   */
+  /** The same records as another store (they are never changed in place) */
   shareFrom(source: LotStore): void {
     this.below = null;
     this.keysShared = false;
@@ -318,19 +249,7 @@ export class LotStore {
     this.listed = null;
   }
 
-  /**
-   * Takes another store's lots, writing only those that differ.
-   *
-   * `changed`: the ids a working copy of this document changed since it was
-   * copied (`RoadDoc.clone`, read from the copy's diary); only those are read,
-   * and a lot the copy put last (cut, joined, put back) goes last here too, so
-   * the order is the copy's. Null: any other source (a map loaded, the
-   * document as it stood before a refused edit): the records compared by
-   * identity (they are shared, never changed in place); when any differs the
-   * source's order is taken whole and the diary told so (an entry without
-   * ids). DO NOT compare the lots as text (`JSON.stringify` of the whole list):
-   * it was the whole cadastre written out twice on every road drawn.
-   */
+  /** DO NOT compare the lots as text (`JSON.stringify` of the whole list) */
   replaceWith(source: LotStore, changed: readonly number[] | null, cause: string): boolean {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     let keysMoved = false;
@@ -386,12 +305,7 @@ export class LotStore {
     return true;
   }
 
-  /**
-   * A working copy over another store (`RoadDoc.fork`): its records and
-   * their places in the order read through, each written here only
-   * (`ForkMap`); its questions by place, its list and its keys the other's
-   * until this one writes them. Writes nothing in the diary.
-   */
+  /** A working copy over another store (`RoadDoc.fork`) */
   forkFrom(source: LotStore): void {
     this.items = new ForkMap(source.items);
     this.order = new ForkMap(source.order);
@@ -405,12 +319,7 @@ export class LotStore {
     this.below = source;
   }
 
-  /**
-   * Takes back a working copy over this store (`forkFrom`): the lots it took
-   * away, replaced (in place) and put last (in its order, with its place
-   * numbers), the filing kept by the same writers, and its keys when it wrote
-   * them. Its diary entries come with the copy's diary (`ChangeJournal.take`).
-   */
+  /** Takes back a working copy over this store (`forkFrom`): the lots it took away, replaced (in place) and put last */
   takeFork(copy: LotStore): void {
     const { gone, replaced, added } = (copy.items as ForkMap<number, Lot>).changes();
     if (gone.size || replaced.size || added.size) this.listed = null;

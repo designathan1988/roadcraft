@@ -1,22 +1,4 @@
-/**
- * A LIST THE PLAYER KEEPS IN THIS BROWSER - their building blueprints
- * (`editor/blueprintLibrary.ts`), their road templates (`ui/roads/templates.ts`):
- * a JSON array under one `localStorage` key, the player's own work.
- *
- * - Changing it writes every entry it does not change back as it was, read by
- *   this build or not (Protocol Buffers: "Proto3 messages preserve unknown
- *   fields and include them during parsing and in the serialized output"): an
- *   entry a newer build wrote, or one damaged, is never lost to a save.
- * - Text under the key that is not a list is set aside whole, under
- *   `<key>.unreadable.<time>`, before anything is written over it.
- * - Every storage call is guarded (MDN, Window.localStorage: `SecurityError`
- *   when storage is blocked; Storage.setItem: `QuotaExceededError` when full):
- *   a change that was not written returns false, for the player to be told.
- *
- * DO NOT write back the list a build could read: a blueprint it could not read
- * was erased by the next save, a library whose text did not parse was saved
- * over whole (2026-10-14).
- */
+/** DO NOT write back the list a build could read */
 export class KeptList {
   /** `what`: what the entries are, for the console ("blueprint", "road template"). */
   constructor(readonly key: string, private readonly what: string) {}
@@ -27,10 +9,7 @@ export class KeptList {
     return stored && 'entries' in stored ? stored.entries : [];
   }
 
-  /**
-   * The entries this build reads, each by `read` (null: not read, kept as it is):
-   * one entry that throws is skipped, never the list.
-   */
+  /** The entries this build reads, each by `read` (null: not read, kept as it is) */
   read<T>(read: (entry: unknown) => T | null): T[] {
     const out: T[] = [];
     for (const entry of this.entries()) {

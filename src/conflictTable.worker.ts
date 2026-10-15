@@ -8,25 +8,7 @@ import { type CornerAsk, roundCorners } from '@world/walkingLines';
 import { type JunctionAnswer, type JunctionAsk, buildJunctionOf } from '@world/junctionBuild';
 import { keepDerivedMany } from './render/derivedCache';
 
-/**
- * The traffic's pure work off the page's thread (`conflictPool.ts`), answered
- * with the job's id:
- * - conflict pairs: each pair's table by `pairTable` itself on the samples
- *   sent, the tables' buffers transferred, not copied (MDN, "Transferable
- *   objects");
- * - junction turns: each by `chooseTurnOf` on the lanes and the surface sent,
- *   each surface made once;
- * - movements' sweeps: each by `sampleSweep` on the lanes sent, each lane made
- *   and digested once, the frames' buffers transferred;
- * - pairs finished: each by `finishPair` on the two centrelines and the
- *   table sent (its crossing and its zones' facts), each centreline's points
- *   made once;
- * - walkways' corners: each node's by `roundCorners` on its rings sent, the
- *   lines' buffers transferred;
- * - a whole build's junctions: each by `buildJunctionOf` on its node, roads,
- *   lanes and surface pieces sent, each lane and ring made once, the paths'
- *   buffers transferred.
- */
+/** The traffic's pure work off the page's thread (`conflictPool.ts`), answered with the job's id: - conflict pairs */
 interface PairsAsk {
   readonly kind: 'pairs';
   readonly id: number;

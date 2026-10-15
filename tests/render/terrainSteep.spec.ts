@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { steepnessInto, triangleSteep } from '@render/terrainSteep';
 
-/**
- * A PLATE'S STEEPNESS, READ ONCE A CELL (`render/terrainSteep.ts`): the same
- * answer, corner by corner, as the old reading of every corner's eight faces
- * - only without working each face out six times.
- */
+/** A PLATE'S STEEPNESS, READ ONCE A CELL (`render/terrainSteep.ts`) */
 function reference(p: Float32Array, flip: Uint8Array, side: number): Float32Array {
   const seg = side - 1;
   const out = new Float32Array(side * side);

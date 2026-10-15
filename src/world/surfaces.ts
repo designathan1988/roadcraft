@@ -8,13 +8,7 @@ import { type RoadStructure, roadStructure } from './structures';
 
 export type SurfaceSegmentFilter = (segment: SegmentId) => boolean;
 
-/*
- * What the surfaces read of the network (`Network`), of a road's ribbon
- * (`SegmentRibbon`) and of a junction (`Junction`), by shape. DO NOT import
- * `network.ts` or `junction/build.ts` here: both reach `walkways.ts`, whose
- * walking lines read this file, and the type imports closed an import cycle
- * (`tests/arch/imports.spec.ts`).
- */
+/* DO NOT import `network.ts` or `junction/build.ts` here */
 export interface SurfaceRibbon {
   readonly id: SegmentId;
   readonly road: RoadType;
@@ -35,18 +29,7 @@ export interface SurfaceNet {
   readonly junctions: ReadonlyMap<NodeId, ReadonlyMap<SurfaceLevel, SurfaceJunction>>;
 }
 
-/**
- * The network's surfaces as real polygons.
- *
- * A mesh needs the outline as DATA — with its holes, and with one boundary per
- * connected piece rather than a pile of overlapping rings — so the union of the
- * ribbons and the junction outlines is computed here rather than painted.
- *
- * Lives in `world` rather than in the renderer because it is geometry, not a
- * picture: the mesh builder, the marking clipper and the minimap all want the
- * same shapes, and none of them owns them. It knows nothing about cameras,
- * materials or three.js.
- */
+/** The network's surfaces as real polygons. */
 
 /** Every surface of the network, one entry per level, outermost first. */
 export interface Surfaces {
@@ -56,15 +39,7 @@ export interface Surfaces {
   readonly asphalt: MultiPoly;
 }
 
-/**
- * Bands, each the part of one level not covered by the level inside it.
- *
- * This is why no polygon offsetting is needed. Every level already has its own
- * half-width and its own trim — that is what makes the level rings nest — so
- * the footway is simply the footway level minus the kerb level, and the kerb is
- * the kerb level minus the carriageway. One source for every width, and no
- * second way to compute a distance.
- */
+/** Bands, each the part of one level not covered by the level inside it. */
 export interface Bands {
   /** The verge between the footway and the terrain. */
   readonly casing: MultiPoly;
@@ -76,28 +51,7 @@ export interface Bands {
   readonly carriageway: MultiPoly;
 }
 
-/**
- * Whether this pass draws the junction at a node.
- *
- * A junction's rings are built once, from ALL of the node's legs, whatever
- * structure each belongs to — so they cannot simply be drawn in every pass that
- * has a leg there. Doing that painted the same shape twice at two elevations:
- * on a saved map the ground throat and the raised ring crossed each other and
- * one road's markings cut across the other's deck. Skipping them in every pass
- * is the other half of the same defect: a segment ending on another structure
- * keeps its own closed end, so its kerb and footway bands close ACROSS the
- * carriageway and paint a pale stripe over the join, and the mouth it was cut
- * for is filled by nothing at all.
- *
- * The junction belongs to the pass whose deck is at grade — the lowest structure
- * at that node. A road on the ground keeps its mouth and its markings; a raised
- * deck arriving there comes down to it along its own ramp and draws no junction
- * of its own. (A road network draws a junction where roads CONNECT and a
- * crossing where they pass at different levels — see the OpenDRIVE junction
- * model. Here, every node the editor allows is a connection: the raised deck
- * ramps down to the ground at it.) Tunnels are left out of the choice because
- * they build no surface at all.
- */
+/** Whether this pass draws the junction at a node. */
 function ownsJunction(net: SurfaceNet, nodeId: NodeId, include: SurfaceSegmentFilter): boolean {
   const node = net.doc.node(nodeId);
   if (!node) return false;
@@ -115,22 +69,12 @@ function ownsJunction(net: SurfaceNet, nodeId: NodeId, include: SurfaceSegmentFi
   return owns;
 }
 
-/**
- * Every ring of one level, as clipper input, before they are merged
- * (`levelPolygons`). The road surfaces read them road by road and junction by
- * junction (`levelRingsOf`, `render/roadSurfaceInputs.ts`), so an edit pays only
- * for what it touched.
- */
+/** Every ring of one level, as clipper input, before they are merged (`levelPolygons`). */
 function levelRings(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
   return levelRingsOf(net, level, net.ribbons.values(), net.junctions, include);
 }
 
-/**
- * `levelRings` of the given ribbons and junctions only: the rings round one
- * place (`poleLines.ts` poleLinesIn), read from the cells round it
- * (`Network.segmentCells`) instead of from every road of the map; those of one
- * road or one junction (`render/roadSurfaceInputs.ts`).
- */
+/** `levelRings` of the given ribbons and junctions only: the rings round one place */
 export function levelRingsOf(
   net: SurfaceNet, level: SurfaceLevel, ribbons: Iterable<SurfaceRibbon>,
   junctions: Iterable<readonly [NodeId, ReadonlyMap<SurfaceLevel, SurfaceJunction>]>, include?: SurfaceSegmentFilter,
@@ -144,10 +88,7 @@ export function levelRingsOf(
     const segment = net.doc.segment(ribbon.id);
     const trims = net.trims.get(ribbon.id);
     if (!segment?.curve || !trims) continue;
-    // A curved leg's offset edge is not the straight mouth chord used by the
-    // junction plate. Give the two polygons a short, exact-width overlap at
-    // that mouth, derived from the same full centreline as the ribbon. Without
-    // it, a tight two-leg corner left a visible triangular asphalt gap.
+    // A curved leg's offset edge is not the straight mouth chord used by the junction plate.
     const width = halfWidth(ribbon.road, level);
     const length = ribbon.full.length;
     for (const [node, mouth, trim] of [

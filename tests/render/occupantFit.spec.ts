@@ -11,15 +11,7 @@ import { RIDER_CLIPS } from '@render/riderPoses';
 import { CROWD } from '@render/citizenCasting';
 import { m } from '@world/units';
 
-/**
- * EVERY OCCUPANT FITS INSIDE THEIR VEHICLE.
- *
- * Reported: people in cars with parts of their bodies outside the bodywork.
- * The cause was the seated clips (chair poses, head 0.91 m above the pelvis,
- * feet 0.54 m below it) in cabins 1.1 m tall. Occupants now sit in car-seat
- * poses, and each seat of each model states the room it has; this checks the
- * worst body of the roster, measured on the rig, against every seat.
- */
+/** EVERY OCCUPANT FITS INSIDE THEIR VEHICLE. */
 /** How far below the floor a sole resting on it may measure, metres: the pose's own precision. */
 const FEET_ON_FLOOR = m(0.003);
 
@@ -31,14 +23,12 @@ describe('occupants', () => {
   const roomFor = (key: string): SeatedExtents | null =>
     key.startsWith('carRear') ? REAR_SEATED_EXTENTS : key.startsWith('car') ? SEATED_EXTENTS
       : key.startsWith('cab') ? CAB_EXTENTS : key.startsWith('chair') ? CHAIR_EXTENTS : null;
-  // Every pose a seat is sat in (the slumped ones belong to the crime
-  // simulation, out of the game).
+  // Every pose a seat is sat in (the slumped ones belong to the crime simulation, out of the game).
   const seated = RIDER_CLIPS.map((c) => c.key).filter((k) => roomFor(k) && !k.endsWith('Dead'));
   const adults = CROWD.filter((c) => c.ageBand !== 'child').map((c) => c.id);
 
   it('was measured on the bodies the game draws, in every seated pose and its whole idle loop', () => {
-    // The roster's MakeHuman people (`scripts/measure-seated-poses.mjs`), not
-    // the glTF crowd that left the game: every worst case is one of them.
+    // The roster's MakeHuman people, not the glTF crowd that left the game
     expect(measured.bodies).toBe(adults.length);
     expect(measured.phases).toBeGreaterThanOrEqual(8);
     for (const key of seated) {
@@ -67,14 +57,11 @@ describe('occupants', () => {
         : a.shape === 'bus' ? buildBusModel(a) : a.shape === 'truck' ? buildTruckModel(a) : null;
       if (!model) continue;
       expect(model.seats.length, a.id).toBeGreaterThanOrEqual(a.seats);
-      // The seats somebody is drawn in (`agents.ts`: the first `a.seats`); a
-      // bus's other seats stay empty, solids like any other (`interiorSolids.spec`).
+      // The seats somebody is drawn in (`agents.ts`: the first `a.seats`)
       for (const seat of model.seats.slice(0, a.seats)) {
-        // At the size the body is drawn at: shrunk to fit in a car seat, as
-        // the pose was solved in a cab or a bus seat (`occupantScale`).
+        // At the size the body is drawn at: shrunk to fit in a car seat, as the pose was solved in a cab or a bus seat
         const s = occupantScale(seat);
-        // Nobody is shrunk into a child to make them fit: at worst the
-        // tallest body of the roster is drawn at 90 % in the lowest cabin.
+        // Nobody is shrunk into a child to make them fit
         if (s < 0.9) {
           const e = extentsOf(seat);
           undersized.push(`${a.id} row ${seat.row} at ${seat.x.toFixed(1)}: ${s.toFixed(3)} ` +
@@ -84,12 +71,10 @@ describe('occupants', () => {
             `shoulders ${(seat.sideRoom / m(1) / e.half).toFixed(3)})`);
         }
         const u = (metres: number): number => m(metres) * s;
-        // A car seat is sized for the reclined car poses, a bus seat for the
-        // upright captured sitting clip.
+        // A car seat is sized for the reclined car poses, a bus seat for the upright captured sitting clip.
         const e = extentsOf(seat);
         expect(u(e.top), `${a.id} head`).toBeLessThanOrEqual(seat.headroom);
-        // The soles on the floor, not through it: the pose puts them there
-        // to the millimetre over its idle loop (`riderPoses.ts` seated).
+        // The soles on the floor, not through it: the pose puts them there to the millimetre over its idle loop
         expect(u(e.bottom), `${a.id} feet`).toBeLessThanOrEqual(seat.hipY - seat.floor + FEET_ON_FLOOR);
         expect(u(e.forward), `${a.id} legs`).toBeLessThanOrEqual(seat.legroom + 1e-6);
         expect(u(e.half), `${a.id} shoulders`).toBeLessThanOrEqual(seat.sideRoom + 1e-6);

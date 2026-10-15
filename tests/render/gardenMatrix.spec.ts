@@ -4,11 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { yawMatrixInto } from '@render/gardens';
 
-/**
- * A GARDEN PLANT'S MATRIX WITHOUT AN `Object3D` (`gardens.ts` `yawMatrixInto`): the
- * same sixteen numbers three's `updateMatrix` gives for a position, a turn about
- * the up axis and a scale - for every yaw, in float32 as the packs store them.
- */
+/** A GARDEN PLANT'S MATRIX WITHOUT AN `Object3D` (`gardens.ts` `yawMatrixInto`) */
 describe('the matrix of a plant turned about the up axis', () => {
   it('is the matrix three composes for it', () => {
     let seed = 9;

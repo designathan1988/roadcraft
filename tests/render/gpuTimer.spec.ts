@@ -3,11 +3,7 @@ import type { WebGLRenderer } from 'three';
 import { SampleRing, STUTTER_MS } from '@core/sampleRing';
 import { createGpuTimer } from '@render/gpuTimer';
 
-/**
- * THE GPU TIME OF A FRAME (docs/pesquisa/fase-0-medida.md 3.1): a ring of
- * queries made once, results read in order, a disjoint round thrown away
- * whole, a frame with no free query skipped - and the samples' percentiles.
- */
+/** THE GPU TIME OF A FRAME */
 const TIME_ELAPSED = 0x88bf, DISJOINT = 0x8fbb;
 
 /** A WebGL2 context with the timer extension, whose results come in when `ready` says. */

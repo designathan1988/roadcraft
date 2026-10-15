@@ -7,13 +7,7 @@ import { crossingAccessesAt } from '@world/landscape';
 import type { NodeId, SegmentId } from '@world/ids';
 import { m } from '@world/units';
 
-/**
- * THE CROSSING LANDINGS KEPT BY NODE (`landscape.ts` crossingAccessesAt): a
- * node's landings, worked out once for the network as it stands, are at every
- * step of random edits - roads drawn, demolished, bent, their junctions'
- * control changed - the landings a network built from nothing gives for the
- * same document, node by node and in the order asked.
- */
+/** THE CROSSING LANDINGS KEPT BY NODE (`landscape.ts` crossingAccessesAt) */
 describe('the crossing landings kept by node', () => {
   it('are the landings worked out from nothing after every edit', () => {
     const rng = new Rng(0xc055);

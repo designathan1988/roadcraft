@@ -1,12 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ClipIdentity } from '@render/riggedCitizens';
 
-/**
- * A person keeps their clothes for as long as they are about, however many
- * other people the city has drawn meanwhile (the player, 2026-10-13: "se
- * trocam de roupa e cabelo"). Tested through the renderer's own registry
- * (`createRiggedCitizens`), as the game casts people.
- */
+/** A person keeps their clothes for as long as they are about, however many other people the city has drawn meanwhile */
 
 let saved: unknown;
 beforeAll(() => {
@@ -45,8 +40,7 @@ describe('casting memory', () => {
       if (first !== plain) break;
     }
     expect(first).not.toBe(plain);
-    // Out of sight while the city draws its next thousands of people, each
-    // in a street of their own, and minutes go by.
+    // Out of sight while the city draws its next thousands of people, each in a street of their own, and minutes go by.
     for (let other = 0; other < 10_000; other++) {
       if (other % 100 === 0) citizens.begin();
       citizens.indexFor(who(200_000 + other), false, 1e6 + other * 1000, 1e6);

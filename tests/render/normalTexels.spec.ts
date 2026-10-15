@@ -17,8 +17,7 @@ describe('normalTexels', () => {
   });
 
   it('a steep step decodes to a unit normal facing out, as the slope says', () => {
-    // A brick-to-mortar step under a strong relief: length well past 2, where
-    // z written as 1/length decoded inward.
+    // A brick-to-mortar step under a strong relief: length well past 2, where z written as 1/length decoded inward.
     const size = 8;
     const height = new Float32Array(size * size);
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) height[y * size + x] = x < 4 ? 0.1 : 0.75;

@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SweepSamples } from '@world/conflictTable';
 import { ConflictPool, SILENCE_MS } from '@/conflictPool';
 
-/**
- * The conflict pool never waits on a worker without a deadline: a worker that
- * goes silent with pairs waiting fails the pool, the jobs rejected (and then
- * measured on the page by `ConflictIndex.prepare`), while a worker that keeps
- * reporting as it works is waited for however long its share takes.
- */
+/** The conflict pool never waits on a worker without a deadline */
 class FakeWorker {
   static made: FakeWorker[] = [];
   onmessage: ((event: { data: unknown }) => void) | null = null;

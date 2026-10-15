@@ -15,37 +15,15 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceParasols } from './roofPlan';
 
-/**
- * A BUILDING FROM AFAR: its blocks as they stand, one plain mesh, with the
- * windows drawn by the shader (`kit.ts` `massingMaterial`) - the hierarchical
- * level of detail of every city of size. Unreal's HLOD stands a proxy mesh
- * and one material in for a cell's actors out of its loading range ("World
- * Partition - Hierarchical Level of Detail"); a building far off is boxes
- * whose windows and rooms the pixel shader finds from the regular spacing of
- * floors and bays, in constant time and no memory (van Dongen, "Interior
- * Mapping", CGI 2008). It keeps what the eye reads from afar: the blocks'
- * silhouette (unions and cuts resolved, outlines, every kind of roof with its
- * eaves), the wall and roof colours of the detailed building, the machine
- * rooms on the towers, and the rhythm of its windows - its bays and storeys -
- * lit at night as its rooms are.
- *
- * Positions are in three's axes (x, height, -y), as every shell of the layer.
- */
+/** A BUILDING FROM AFAR: its blocks as they stand, one plain mesh, with the windows drawn by the shader */
 
 export interface MassingChunk {
   readonly position: Float32Array;
   readonly normal: Float32Array;
   readonly colour: Float32Array;
-  /**
-   * Per vertex: metres along its face, the face's bay width (0: no windows,
-   * a roof), the storey height, and the height its first storey starts at.
-   */
+  /** Per vertex: metres along its face, the face's bay width */
   readonly facade: Float32Array;
-  /**
-   * Per vertex: the share of a bay its windows take across (1: a curtain
-   * wall), and the building's seed (0..1) for which rooms are lit, plus 2 on
-   * an office or a shop (`roomLamps.ts`: their lamps are cooler).
-   */
+  /** Per vertex: the share of a bay its windows take across (1: a curtain wall), and the building's seed */
   readonly glazing: Float32Array;
   readonly index: Uint32Array;
 }
@@ -98,10 +76,7 @@ class MassWriter {
     return [wx / l, up / l, -wy / l];
   }
 
-  /**
-   * A convex polygon of points (three's axes), all with one normal and
-   * colour; `along` its points' metres along their face (walls only).
-   */
+  /** A convex polygon of points (three's axes), all with one normal and colour; `along` its points' metres along their face */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], rgb: Rgb, f: Facade = NO_FACADE, along?: readonly number[]): void {
     const base = this.position.length / 3;
     for (let i = 0; i < points.length; i++) {
@@ -137,11 +112,7 @@ class MassWriter {
 /** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
 const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
 
-/**
- * A building's mass from afar, on the ground it stands on (the floor worked
- * out as the detailed building's, `floorHeight`); null when it has no closed
- * block (a park) or its body is drawn by its own design (`signature.ts`).
- */
+/** A building's mass from afar, on the ground it stands on (the floor worked out as the detailed building's, `floorHeight`) */
 export function emitMassing(
   b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false,
   /** Each finish's colour from afar (`finishes.ts` `finishAlbedo`): the detailed walls' tint times their texture's mean; none, the bare tint. */
@@ -151,8 +122,7 @@ export function emitMassing(
   const closed = resolved.volumes.filter((v) => !v.open);
   const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
   const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office);
-  // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`);
-  // a building of lots only lays them over the highest ground under them.
+  // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
   const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   if (floor !== undefined && !signature) {
     const shade = shadeOf(b);
@@ -169,20 +139,13 @@ export function emitMassing(
   return w.position.length ? w.chunk() : null;
 }
 
-/**
- * The colours of a lot's surface (`buildingMesh.ts` draws them in their
- * finishes): grass is the terrain's own and is not laid.
- */
+/** The colours of a lot's surface (`buildingMesh.ts` draws them in their finishes) */
 export const LOT_COLOURS: Readonly<Record<LotSurface, number>> = {
   grass: 0x6f9a4c, paving: 0xc4beb2, gravel: 0xa9a294, sand: 0xe2cf9c, water: 0x4f8fb3,
   asphalt: 0x515457, concrete: 0xb9b6ae, pavers: 0x9a958c, tiles: 0xb4785a,
 };
 
-/**
- * The paved lots - car parks, yards, courts - as the detailed lots lay them
- * (`lotSurfaces`, at the building's floor or over the ground): from afar a
- * car park is still a grey patch the size of a block's corner.
- */
+/** The paved lots - car parks, yards, courts - as the detailed lots lay them */
 function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undefined, groundAt: GroundAt, pavedAt?: PavedAt): void {
   const lots = b.volumes.filter((v) => v.open && v.open !== 'grass');
   if (lots.length === 0) return;
@@ -220,14 +183,7 @@ const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
 /** How far an arcade's wall steps back behind its columns (`buildingMesh.ts` ARCADE). */
 const ARCADE = m(1.8);
 
-/**
- * A block's walls from its bays as the detailed building lays them
- * (`facadeBays`): only the stretches that are an outside wall (none against
- * another block), each storey in its own colour, a relief standing out or set
- * back as far as the detailed one, an arcade's wall behind its columns - the
- * bays of a storey alike in a row drawn as one face. Then its parapet, where
- * the roof really ends, and its roof.
- */
+/** A block's walls from its bays as the detailed building lays them (`facadeBays`) */
 function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const eaves = floor + volumeHeight(b, v);
   const rows = new Map<string, FacadeBay[]>();
@@ -300,8 +256,7 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
   const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(b, v));
   const up = w.N(0, 0, 1);
   if (v.roof === 'flat' || v.roof === 'terrace') {
-    // The slab at the roof's own level (its parapet is the walls'), and what
-    // stands on it - as the detailed roof has them.
+    // The slab at the roof's own level (its parapet is the walls'), and what stands on it - as the detailed roof has them.
     const ring = localFootprint(v);
     const flatRing = ring.flatMap((p) => [p.x, p.y]);
     const tris = earcut(flatRing);
@@ -381,11 +336,7 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
   void floor;
 }
 
-/**
- * A pitched roof over a shaped block: the roof's surface (`roofHeightAt`)
- * over its footprint, cut by the planes it is made of as the detailed roof
- * is, and a gable filling each wall up to it.
- */
+/** A pitched roof over a shaped block: the roof's surface */
 function emitPolygonRoof(w: MassWriter, b: Building, v: Volume, eaves: number, roof: Rgb, rgb: (spec: MaterialSpec) => Rgb): void {
   const ring = localFootprint(v);
   const height = (p: Vec2): number => eaves + roofHeightAt(b, v, p);
@@ -461,12 +412,7 @@ function box(w: MassWriter, x0: number, y0: number, x1: number, y1: number, z0: 
   w.face([w.P(x0, y0, z1), w.P(x1, y0, z1), w.P(x1, y1, z1), w.P(x0, y1, z1)], w.N(0, 0, 1), top);
 }
 
-/**
- * The plant on a flat roof a metre or more across (`roofPlan.ts`, the plan
- * the detailed roof draws): machine rooms, tanks, air handlers, solar
- * arrays, skylights, chimneys. Masts, dishes, vents, hatches and condensers
- * are under the far level's error and left out.
- */
+/** The plant on a flat roof a metre or more across (`roofPlan.ts`, the plan the detailed roof draws) */
 function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const plant = rgbOf(ROOF_COLOURS.plant);
   const trimSpec = trimMaterial(b);

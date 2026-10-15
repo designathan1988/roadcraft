@@ -10,15 +10,7 @@ import { buildRoadElevation } from '@world/elevation';
 import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
 
-/**
- * MESHES SENT TO THE GPU AHEAD, ALONE, UNTIL NONE IS LEFT (`uploads.ts` `warmLoose`):
- * a loose mesh is drawn in a scene of its own, never the game's whole scene
- * (three walks every object of a scene it draws: a few blocks a frame, and a
- * generated city's road blocks waited for minutes with their arrays on the
- * CPU); it goes back where it was among its group's children, its matrices
- * untouched; the renderer asks for frames while any waits; and once drained,
- * no road block keeps an array on the CPU (`mesh/gpuOnly.ts`).
- */
+/** MESHES SENT TO THE GPU AHEAD, ALONE, UNTIL NONE IS LEFT (`uploads.ts` `warmLoose`) */
 
 /** A renderer that does what three's does with a drawn mesh's buffers: uploads them (`onUploadCallback`). */
 function fakeRenderer(drawn: Scene[], sizes: number[] = []): WebGLRenderer {

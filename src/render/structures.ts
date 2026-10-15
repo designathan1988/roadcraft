@@ -33,24 +33,12 @@ import {
 import type { SceneMaterials } from './materials';
 import { m } from '@world/units';
 
-/**
- * The parts of a raised structure that are not its deck: piers, pier caps,
- * the parapet along its edges and the abutment where it leaves the ground.
- *
- * These are what make an elevated road read as a structure rather than as a
- * ribbon floating in the air. The parapet in particular does most of the work:
- * it gives the deck a silhouette with thickness, and it catches the sun along
- * its top edge, which is the line the eye follows to read the road's height.
- */
+/** The parts of a raised structure that are not its deck */
 
 export interface StructureDetails {
   readonly group: Group;
   readonly triangles: number;
-  /**
-   * Where the structures built stand: each raised or buried road's box, with
-   * room for its abutments and the casings it meets. An edit that reaches
-   * none of them, and makes no new one, leaves these details as they are.
-   */
+  /** Where the structures built stand */
   readonly spans: readonly (readonly [number, number, number, number])[];
   dispose(): void;
 }
@@ -58,13 +46,7 @@ export interface StructureDetails {
 /** Room round a structure's road that its details read (abutments, casings met, portals). */
 export const SPAN_REACH = m(24);
 
-/**
- * The roads that carry structures: raised ones (a viaduct, a bridge, or a
- * deck lifted more than 2 m off the ground) and buried ones (a tunnel,
- * or a road deeper than the bore). With `within`, only the roads whose line
- * reaches one of those boxes are asked, found by place (`segmentCells`);
- * with `candidates`, only those. DO NOT walk every ribbon of the map for a box.
- */
+/** DO NOT walk every ribbon of the map for a box. */
 function structureRibbons(
   net: Network,
   elevation: RoadElevation,
@@ -96,7 +78,7 @@ function structureRibbons(
       ribbon.full.length > 0 &&
       (net.doc.segment(ribbon.id)?.structure === 'tunnel' || samples(ribbon, (lift) => lift < -TUNNEL_BORE)))
     : [];
-  // Roads whose cutting is held by retaining walls (docs/VIAS.md V3).
+  // Roads whose cutting is held by retaining walls.
   const walled = asked.filter((ribbon) => net.doc.segment(ribbon.id)?.cutWalls === true && ribbon.full.length > 0);
   return { raised, tunnels, walled };
 }
@@ -108,17 +90,7 @@ const WALL_FOOT = m(0.24);
 /** Spacing of a wall's sections along the road. */
 const WALL_STEP = m(0.8);
 
-/**
- * THE RETAINING WALLS of a cutting (docs/VIAS.md V3, `RoadSegment.cutWalls`):
- * along each edge of the casing, wherever the natural ground stands more than
- * `fillFrom` over the deck, a concrete face from under the road to a coping
- * just over the ground, and on top of the band the shaper cut back behind it
- * (`CUT_WALL_REACH`) the backfill at the natural ground's height, in the
- * terrain's own material. The natural ground is read where the backfill ends, where
- * the shaper no longer reaches. A heightfield cannot stand vertical, so the wall
- * is the face and the backfill the lid over the step behind it, as a portal's
- * headwall is over a tunnel's.
- */
+/** THE RETAINING WALLS of a cutting (`RoadSegment.cutWalls`) */
 function retainingWalls(
   net: Network, walled: readonly SegmentRibbon[], elevation: RoadElevation, terrainAt: (x: number, y: number) => number,
   faces: Extrusion, lids: Extrusion, faceTile: number, lidTile: number,
@@ -140,8 +112,7 @@ function retainingWalls(
         // The ground where the backfill ends: past the shaper's reach, the natural ground.
         const out = edge + CUT_WALL_REACH - m(0.2);
         const top = terrainAt(f.p.x + ox * out, f.p.y + oy * out);
-        // Only where the road is in an open cutting (`world/roads/buildMode.ts`):
-        // not at grade, not where it has gone into a bore.
+        // Only where the road is in an open cutting (`world/roads/buildMode.ts`): not at grade, not where it has gone into a bore.
         const here: Section | null = buildModeAt(structure, deck - top) === 'cutting'
           ? { x: f.p.x + ox * edge, y: f.p.y + oy * edge, ox, oy, deck, top, s }
           : null;
@@ -181,35 +152,13 @@ function retainingWalls(
 
 /** Bearing inset: the deck rests ON the pier, so its top stops just under it. */
 const BEARING = m(0.08);
-/**
- * How slender a column is allowed to be: height divided by width.
- *
- * Column width used to be one number per structure, so on rolling ground a
- * bent whose feet sat in a dip got a column nearly three times longer than its
- * neighbour at exactly the same width. A real pier is sized for what it
- * carries, so its proportions stay roughly constant however far it has to
- * reach: width grows with height, and the structure's own base radius is a
- * FLOOR rather than the answer.
- *
- * Eight, not eleven: a 1.2 m box girder carrying four lanes stands on columns
- * of 1.5 to 2 m, and at eleven every pier on the map read as a stick.
- */
+/** How slender a column is allowed to be: height divided by width. */
 const PIER_SLENDERNESS = 8;
 /** Nothing gets fatter than this, however tall the deck. */
 const PIER_MAX_WIDTH_FACTOR = 1.8;
 /** Shortest pier worth building. Below this the deck is on the ground. */
 const MIN_SUPPORT = m(0.36);
-/**
- * Where a bent's columns stand, as a fraction of the deck's half-width.
- *
- * A single column on the CENTRE LINE is invisible in this game, and that is a
- * property of the camera rather than an accident of modelling. The view is
- * locked at 48 degrees, so a deck `h` above the ground is drawn where the
- * ground `0.9 h` further from the camera would be, and it lands exactly on top
- * of the column that holds it. Standing the columns out at the deck's edges
- * moves them clear of that silhouette on the side facing the camera, which is
- * also how a two-column bent is actually built.
- */
+/** Where a bent's columns stand, as a fraction of the deck's half-width. */
 const BENT_SPREAD = 0.55;
 /** Depth of the crossbeam along the road, as a multiple of a column's radius. */
 const CAP_DEPTH = 2.2;
@@ -217,37 +166,17 @@ const CAP_DEPTH = 2.2;
 const CAP_HEIGHT = m(0.72);
 /** How far the crossbeam reaches past the outermost column. */
 const CAP_OVERHANG = m(0.64);
-/**
- * The parapet: a solid concrete barrier along each edge of a deck.
- *
- * It used to be a row of boxes six units apart, each scaled 0.7 along the road
- * and 6.25 ACROSS it - the two axes swapped - so every deck carried a comb of
- * thin fins standing out over its edge, which is the saw-toothed parapet the
- * player photographed. It is now one continuous extrusion that follows the
- * edge and the deck height, and it tapers out where the structure comes down
- * to the ground rather than stopping on a square end.
- */
+/** The parapet: a solid concrete barrier along each edge of a deck. */
 const PARAPET_HEIGHT = m(0.88);
 /** Width of the barrier at its foot and at its top: the traffic face leans back. */
 const PARAPET_FOOT = m(0.36);
 const PARAPET_TOP = m(0.2);
 /** Spacing of the extrusion's cross-sections along the edge. */
 const PARAPET_STEP = m(1.2);
-/**
- * Height of the deck over the ground between which the parapet grows from
- * nothing to its full height. Below the first the ramp is on its embankment and
- * the kerb is its edge; above the second it is a structure and needs a barrier.
- */
+/** Height of the deck over the ground between which the parapet grows from nothing to its full height. */
 const PARAPET_FROM = m(0.64);
 const PARAPET_FULL = m(1.28);
-/**
- * Height of the deck over the ground at which a ramp leaves its solid approach
- * for the first span on piers, and where the abutment stands.
- *
- * Below it the deck's own edge face (its full depth, `spec.deck`) already
- * reaches the ground, so the approach reads as a retained fill; above it there
- * is daylight under the soffit and the span needs something to rest on.
- */
+/** Height of the deck over the ground at which a ramp leaves its solid approach for the first span on piers */
 const ABUTMENT_LIFT = m(0.48);
 /** Depth of an abutment along the road. */
 const ABUTMENT_DEPTH = m(1.6);
@@ -275,18 +204,7 @@ interface Placement {
 /** A column's foot over its width: `CylinderGeometry(1, 1.08, ...)` scaled by the width (`buildStructureDetails`). */
 export const PIER_FOOT_FLARE = 1.08;
 
-/**
- * Whether a column `clearance` round, standing at (x, y), reaches into the
- * casing of a road other than `self`: its distance to that road's line - to
- * its SEGMENTS, the nearest point of each (`Polyline.distanceTo`, the point
- * projected on the segment and clamped to its ends) - within the casing's
- * half width and the clearance. The roads asked are those the network files
- * over that place (`Network.segmentCells`, each road over the box of its
- * whole line and widest surface), not every road of the map.
- * DO NOT file a road by the cells round its vertices again: a pier falling on
- * the middle of a long straight road, between two vertices, found no road
- * there and stood in the carriageway.
- */
+/** DO NOT file a road by the cells round its vertices again */
 export function onAnotherCasing(net: Network, self: SegmentId, x: number, y: number, clearance = 0): boolean {
   for (const id of net.segmentCells.idsMeeting([x - clearance, y - clearance, x + clearance, y + clearance])) {
     if (id === self) continue;
@@ -322,15 +240,7 @@ function instanced(
   return mesh;
 }
 
-/**
- * A box placement whose LENGTH runs along the road and whose WIDTH runs across
- * it, in world units.
- *
- * The rotation is about three's y axis, and three's z is world `-y`, so after
- * `yaw = angleOf(tangent)` the box's local x lies along the road and its local
- * z across it. Getting that backwards is exactly how the parapet became a
- * comb, so every box is placed through this one function.
- */
+/** A box placement whose LENGTH runs along the road and whose WIDTH runs across it, in world units. */
 function boxAlong(frame: Frame, along: number, across: number, height: number, centreY: number, offset = 0): Placement {
   return {
     x: frame.p.x + frame.n.x * offset,
@@ -349,11 +259,7 @@ class Extrusion {
   readonly normals: number[] = [];
   readonly uvs: number[] = [];
 
-  /**
-   * One quad `a b c d` (counter-clockwise seen from `normal`), in world
-   * `(x, y, height)`. The winding is checked against the normal rather than
-   * trusted, because the world-to-three mapping mirrors `y` and flips it.
-   */
+  /** One quad `a b c d` (counter-clockwise seen from `normal`), in world `(x, y, height)`. */
   quad(
     a: readonly [number, number, number],
     b: readonly [number, number, number],
@@ -383,10 +289,7 @@ class Extrusion {
     this.push(pa, pb, pc, pd, uvA, uvB, uvC, uvD, n3);
   }
 
-  /**
-   * A quad textured by world position (`uv = (x, y) / scale` at each corner),
-   * as the terrain's own material reads it (`roadSurfaces.ts` `TERRAIN_UV`).
-   */
+  /** A quad textured by world position (`uv = (x, y) / scale` at each corner), as the terrain's own material reads it */
   quadWorld(
     a: readonly [number, number, number],
     b: readonly [number, number, number],
@@ -440,14 +343,7 @@ function smoothstep(a: number, b: number, value: number): number {
   return u * u * (3 - 2 * u);
 }
 
-/**
- * The barrier along one edge of a raised deck, as a continuous extrusion.
- *
- * `side` is +1 for the left edge and -1 for the right. Each cross-section is
- * placed at the deck's own height at that point of the edge, so the barrier
- * follows the ramps, and scaled by how far the deck stands off the ground, so
- * it grows out of the embankment and never ends on a cut face.
- */
+/** The barrier along one edge of a raised deck, as a continuous extrusion. */
 function parapetRun(
   out: Extrusion,
   centre: Polyline,
@@ -512,12 +408,7 @@ export function buildStructureDetails(
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
   materials: SceneMaterials,
-  /**
-   * The terrain's own material, for a retaining wall's backfill: the lawn
-   * itself carried to the wall's top, textured by world position, never a
-   * second green (the player's order of 2026-10-05, as the road verge,
-   * `roadSurfaces.ts`). Without it (a warm-up, a test) the backfill is not drawn.
-   */
+  /** The terrain's own material, for a retaining wall's backfill */
   groundMaterial?: Material,
   /** Only these roads' structures (a cell of the structure layer, `structureCells.ts`); all of the map without. */
   only?: readonly SegmentRibbon[],
@@ -548,14 +439,7 @@ export function buildStructureDetails(
     const length = ribbon.full.length;
     const casing = casingHalf(ribbon.road);
 
-    // ------------------------------------------------------------ abutments
-    //
-    // Where a ramp leaves the ground, its deck stops being a retained fill -
-    // its own edge face reaching down to the earth - and starts to span. A real
-    // structure has an abutment there: a wall across the road that the first
-    // span rests on. Without one the deck simply lifted off the grass with
-    // daylight under its end, which is the "deck ending in mid-air" the player
-    // saw at the foot of every ramp.
+    // ------------------------------------------------------------ abutments Where a ramp leaves the ground
     const liftAt = (s: number): number => {
       const f = ribbon.full.sampleAt(s);
       return deckAt(f.p.x, f.p.y) - spec.deck - m(0.144) - terrainAt(f.p.x, f.p.y);
@@ -576,23 +460,12 @@ export function buildStructureDetails(
       before = here;
     }
 
-    // ---------------------------------------------------------------- piers
-    // Columns stand out at the deck edges rather than under its centre line;
-    // see `BENT_SPREAD`. The second clamp keeps a column under the deck it
-    // carries on a narrow class, where the fraction alone would push it out
-    // past the parapet.
+    // ---------------------------------------------------------------- piers Columns stand out at the deck edges rather than
     const halfDeck = sidewalkHalf(ribbon.road);
     const spread = Math.max(0, Math.min(halfDeck * BENT_SPREAD, halfDeck - radius - 1));
     const sides: readonly number[] = spread > 0 ? [-1, 1] : [0];
 
-    /**
-     * One bent: a crossbeam under the soffit, on a column at each deck edge.
-     *
-     * A column is dropped on its own rather than with the bent, because the two
-     * sides can meet different ground — and because one of them landing on
-     * another road is a reason to leave that side out, not to leave the span
-     * unsupported.
-     */
+    /** One bent: a crossbeam under the soffit, on a column at each deck edge. */
     const placeBent = (frame: Frame): void => {
       const soffit = deckAt(frame.p.x, frame.p.y) - spec.deck - m(0.144) - BEARING;
       const beam = soffit - CAP_HEIGHT;
@@ -607,9 +480,7 @@ export function buildStructureDetails(
       }
       if (standing.length === 0) return;
 
-      // One width for the whole bent, from the TALLEST of its feet: sizing each
-      // column against its own height makes the two legs of one bent different
-      // widths wherever the ground slopes across the deck.
+      // One width for the whole bent, from the TALLEST of its feet
       const tallest = standing.reduce((mx, foot) => Math.max(mx, beam - foot.ground), 0);
       const width = Math.min(radius * PIER_MAX_WIDTH_FACTOR, Math.max(radius, tallest / PIER_SLENDERNESS));
       // Not on another road: the column's whole foot clear of its casing, not only its axis.
@@ -620,8 +491,7 @@ export function buildStructureDetails(
         const height = beam - foot.ground + 0.5;
         piers.push({ x: foot.x, y: foot.y, yaw: angleOf(frame.t), sx: width, sy: height, sz: width, cy: foot.ground - 0.5 + height / 2 });
       }
-      // The crossbeam follows the columns it rests on, or a tall bent grows a
-      // beam narrower than the legs under it.
+      // The crossbeam follows the columns it rests on, or a tall bent grows a beam narrower than the legs under it.
       caps.push(boxAlong(frame, width * CAP_DEPTH, spread * 2 + width + CAP_OVERHANG * 2, CAP_HEIGHT, beam + CAP_HEIGHT / 2));
     };
 
@@ -636,11 +506,7 @@ export function buildStructureDetails(
       if (!abutmentAt.some((at) => Math.abs(at - mid) < PIER_ABUTMENT_GAP)) placeBent(ribbon.full.sampleAt(mid));
     }
 
-    // ------------------------------------------------------------- parapets
-    //
-    // Along the casing's own centreline, which the network trims back at a
-    // junction mouth and leaves whole at a node where one deck simply carries on
-    // into the next - so a chain of spans has one unbroken barrier.
+    // ------------------------------------------------------------- parapets Along the casing's own centreline
     const centre = ribbon.centre[Level.Casing] ?? ribbon.full;
     const edge = casing - m(0.02);
     for (const side of [1, -1] as const) {
@@ -681,20 +547,7 @@ export function buildStructureDetails(
     if (lidMesh) owned.push(lidMesh.geometry);
   }
 
-  // ---------------------------------------------------------------- portals
-  //
-  // A portal is NOT at the end of a tunnel segment. The segment's ends are at
-  // grade — a tunnel begins as a cutting and dives — so anchoring the headwall
-  // to the segment's endpoints, which is what this used to do, put it in open
-  // country with the road passing under it at full depth.
-  //
-  // The portal belongs where the ground closes over the arch, which is a depth,
-  // not an arc position: walk the alignment and place a headwall wherever the
-  // COVER over the road crosses `TUNNEL_PORTAL_COVER`. That reads the same
-  // number the terrain shaper fades on, so the wall lands exactly in the seam
-  // between the open cutting and the intact hill — and a tunnel that dips under
-  // two hills with a gap between them correctly gets four portals, with no code
-  // that knows about such a case.
+  // ---------------------------------------------------------------- portals A portal is NOT at the end of a tunnel segment.
   if (TUNNELS_DRAWN && tunnels.length > 0) {
     const jambs: Placement[] = [];
     const lintels: Placement[] = [];
@@ -725,34 +578,21 @@ export function buildStructureDetails(
         previous = cover;
         if (!crossed) continue;
         // A portal belongs to the alignment that actually reaches daylight.
-        // At a buried turn, the adjacent segment can reshape the shared ground
-        // enough to make the old leg appear to cross the cover threshold at its
-        // endpoint. A wall there slices across the turning road.
         if ((s < m(16) && buriedJoin(segment.a)) ||
           (length - s < m(16) && buriedJoin(segment.b))) continue;
 
-        // Linear interpolation is enough: the cover changes by at most a few
-        // tenths of a unit over one step.
+        // Linear interpolation is enough: the cover changes by at most a few tenths of a unit over one step.
         const frame = ribbon.full.sampleAt(s - step / 2);
         const road = elevation.onSegment(segment.id, frame.p.x, frame.p.y);
         const yaw = angleOf(frame.t);
         const opening = TUNNEL_HEADROOM;
         const crown = road + opening + TUNNEL_ARCH;
-        // The face has to be at least as wide as the band of ground the cutting
-        // held down, because that whole band steps back up here and the wall is
-        // what closes it. `CUT_SHOULDER` is the number that band is sized by.
+        // The face has to be at least as wide as the band of ground the cutting held down
         const faceHalf = half + jambWidth + PORTAL_WING;
-        // Tall enough to carry the arch and stand proud of the ground at the
-        // foot of the cutting, which is the whole reason the portal is here
-        // rather than at the depth the bore closes.
+        // Tall enough to carry the arch and stand proud of the ground at the foot of the cutting
         const top = Math.max(crown + m(0.6), terrainAt(frame.p.x, frame.p.y) + m(0.8));
 
-        // Either side of the opening, the face as WING WALLS stepping down with
-        // the hillside: slices across its width, each from under the ground to
-        // just over the ground at its own place (`PORTAL_COPING`), and never
-        // lower than the arch beside the opening. One slab of one height stood
-        // up out of the slope wherever the hill fell away beside the portal -
-        // grey plates over the ground (the coordinator's review of V3).
+        // Either side of the opening, the face as WING WALLS stepping down with the hillside
         for (const side of [-1, 1] as const) {
           const inner = half;
           const width = faceHalf - inner;
@@ -762,8 +602,7 @@ export function buildStructureDetails(
             const centre = inner + w * (k + 0.5);
             const x = frame.p.x + frame.n.x * centre * side;
             const y = frame.p.y + frame.n.y * centre * side;
-            // The higher ground either side of the face: the hill closing over
-            // the bore behind it, so the step the cutting leaves there is covered.
+            // The higher ground either side of the face
             const reach = PORTAL_THICKNESS / 2 + 2;
             const ground = Math.max(terrainAt(x, y), terrainAt(x + frame.t.x * reach, y + frame.t.y * reach), terrainAt(x - frame.t.x * reach, y - frame.t.y * reach));
             const low = Math.min(terrainAt(x + frame.t.x * reach, y + frame.t.y * reach), terrainAt(x - frame.t.x * reach, y - frame.t.y * reach));
@@ -785,8 +624,7 @@ export function buildStructureDetails(
           sz: (half + jambWidth) * 2,
           cy: crown + Math.max(m(0.32), top - crown) / 2,
         });
-        // A coping course along the top of the opening, which gives the portal
-        // a lit edge against the hillside instead of a flat grey rectangle.
+        // A coping course along the top of the opening
         headwalls.push({
           x: frame.p.x,
           y: frame.p.y,

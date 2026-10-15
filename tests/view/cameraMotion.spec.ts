@@ -4,12 +4,7 @@ import { createIsoRig } from '@render/isoViewport';
 import { CameraMotion } from '@view/cameraMotion';
 import { m } from '@world/units';
 
-/**
- * THE CAMERA'S GLIDE (`view/cameraMotion.ts`): a held key and a notch of the
- * wheel give the same view at the same time whatever the frames - 16 ms, a
- * ragged 7-50 ms, 150 ms - and the first frame after the game stood still
- * moves by the time since the key, not since the last frame drawn.
- */
+/** THE CAMERA'S GLIDE (`view/cameraMotion.ts`) */
 const W = 1280;
 const H = 720;
 const T0 = 5000;
@@ -67,10 +62,7 @@ describe("the camera's glide", () => {
     const end = (r: ReturnType<typeof run>) => r.seen.get(Math.max(...r.seen.keys()))!;
     const sa = end(a), sb = end(b);
     expect(b.motion.moving).toBe(false);
-    // The slide's speed is in screen pixels, so it hangs on the zoom the wheel
-    // is changing meanwhile: two coupled glides, exact each alone, agree to a
-    // part in a thousand of the ground covered (it was a sixth short, cut to
-    // 0.1 s a step).
+    // The slide's speed is in screen pixels, so it hangs on the zoom the wheel is changing meanwhile
     const travel = Math.hypot(sa.x, sa.y);
     expect(travel).toBeGreaterThan(m(10));
     expect(Math.hypot(sa.x - sb.x, sa.y - sb.y)).toBeLessThan(travel * 0.003);

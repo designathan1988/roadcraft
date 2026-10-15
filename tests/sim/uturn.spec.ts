@@ -9,11 +9,7 @@ import { commitUturn } from '@editor/streetObjects';
 import { Network } from '@world/network';
 import { simOf } from './support/bodies';
 
-/**
- * TRAFFIC TURNS ROUND AT A U-TURN (docs/VIAS.md V8). A boulevard with a 5 m
- * median between two map edges and a U-turn in the middle: some of the cars
- * that come in turn round there, and no body ever stands in another.
- */
+/** TRAFFIC TURNS ROUND AT A U-TURN. */
 describe('a U-turn through the median', () => {
   it('is driven by the cars that want to go back', () => {
     const doc = new RoadDoc();

@@ -5,15 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * `scripts/check-refs.mjs` on a small tree written here: a path cited in a
- * comment or a document that does not exist is caught, one that exists (a
- * file or a folder, same case) is not, nor a glob or a template; the
- * historical copies are not read; the baseline only shrinks.
- *
- * The tree's paths are written `~src/...` here and unmarked (`u`) when used,
- * so the check run on this repository does not take them for citations.
- */
+/** `scripts/check-refs.mjs` on a small tree written here */
 const script = fileURLToPath(new URL('../../scripts/check-refs.mjs', import.meta.url));
 const u = (s: string): string => s.replace(/~/g, '');
 
@@ -46,7 +38,6 @@ describe('check-refs', () => {
       ].join('\n'),
       '~src/world/b.ts': 'export const B = 2;\n',
       '~docs/GUIDE.md': 'See ~src/world and ~scripts/missing.mjs.\n',
-      '~docs/source/OLD.md': 'A historical copy citing ~src/never.ts.\n',
     });
     try {
       expect(list(root)).toEqual([

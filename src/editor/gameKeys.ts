@@ -1,19 +1,4 @@
-/**
- * THE GAME'S KEYS: every key the game answers, as rules of the command
- * registry (`core/commands.ts`, docs/ARCHITECTURE.md 4.4), read by the one
- * `keydown` listener `main.ts` wires.
- *
- * Before it several listeners each read every key (the game's, the camera's
- * and the drawer's), so one key did two things: Escape in the
- * Builder put the building down AND the tool; + and - in Terrain changed the
- * strength AND zoomed; Page Up on a picked node raised it AND tilted the
- * camera; Ctrl+F opened the browser's search AND took the barrier tool; and
- * the drawer opened on its own list of letters, which missed O and G. Here a
- * key runs one command: the first rule of `RULES` whose key and `when` match,
- * a tool reading its own keys passing the ones it does not use (`pass`).
- *
- * The order is the old listeners' order: the tool in hand, the camera turn, the page's shortcuts, the tool keys, Escape, the camera.
- */
+/** THE GAME'S KEYS: every key the game answers, as rules of the command registry */
 import { CommandRegistry, type CommandResult, type KeyRule } from '@core/commands';
 import type { Tool } from './toolMachine';
 

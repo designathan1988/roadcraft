@@ -1,23 +1,6 @@
 import type { PersonMeshData } from './personMesh';
 
-/**
- * PEOPLE IN AN ANIMATED FILM'S STYLE: a MakeHuman body reproportioned the way
- * Pixar's people are drawn, as parameters.
- *
- * Disney Research measured what makes an animated character read younger and
- * more appealing (Carter et al., "Designing Animated Characters for Children
- * of Different Ages"): a bigger head for the height, bigger and rounder eyes,
- * set lower; studios' style guides add shorter legs, larger hands and feet,
- * round forms. Each of those is a parameter here, applied to the morphed body
- * before it is rigged (`riggedCitizens.ts`), so everything built on the body
- * follows it: the skeleton is fitted to the moved joints, the clothes and the
- * eyes are fitted to the moved skin, the hair grows on the moved scalp, and
- * every animation plays on it as on any body.
- *
- * Positions are MakeHuman's: decimetres, +Y up. A vertex belongs to a part by
- * its skin weights (the game-engine rig's bones); the joint helper vertices
- * (no weights) by their group's name.
- */
+/** PEOPLE IN AN ANIMATED FILM'S STYLE: a MakeHuman body reproportioned the way Pixar's people are drawn, as parameters. */
 
 export interface CartoonStyle {
   /** Head size, 1 as the body has it. */

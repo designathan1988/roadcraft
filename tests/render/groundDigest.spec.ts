@@ -6,13 +6,7 @@ import { BLUEPRINTS } from '@world/buildings/blueprints';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * THE GROUND UNDER A BUILDING, FINGERPRINTED FROM ITS STORED BOX
- * (`layerCells.ts` `groundDigest`): a record of the store never changes in
- * place, so its box is worked out once (`storedBounds`). Worked out again at
- * every look, every building the ground moved near turned its corners into the
- * world again - 3 s of a 2,560 m city's growth (2026-10-15).
- */
+/** THE GROUND UNDER A BUILDING, FINGERPRINTED FROM ITS STORED BOX (`layerCells.ts` `groundDigest`) */
 describe('the ground fingerprint of a building', () => {
   it('reads the box kept for the record, never one worked out again', () => {
     const source = readFileSync('src/render/buildings/layerCells.ts', 'utf8');

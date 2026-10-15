@@ -14,25 +14,7 @@ import { drawSection, elementColour, metresText } from './crossSection';
 import { deleteTemplate, saveTemplate, savedTemplates } from './templates';
 import './roads.css';
 
-/**
- * THE PROFILE EDITOR (docs/source/VIAS.md V2): the road's cross-section drawn as a
- * street section (`crossSection.ts`), edited the way Streetmix edits a street
- * and Road Builder for Cities: Skylines II builds a road in one panel -
- * templates as cards with the section in miniature, elements added from an
- * icon palette (each put where the road can carry it: a lane beside the
- * lanes of its direction, a parking bay by the kerb), a boundary dragged to
- * change a width, an element dragged to change the order, and the picked
- * element's properties in one block of the interface's own controls
- * (stepper, segmented buttons, switch). Every problem the game cannot build
- * is named in the block of the element that has it (`profileIssues`), with a
- * badge on the element in the picture, and the apply is held back until
- * there is none.
- *
- * While a width or an order is dragged only the picture is redrawn (one SVG
- * string into one container); the panel round it is rebuilt on a discrete
- * change only. The time of each redraw is kept on the stage
- * (`data-redraw-ms`, `data-redraw-max`) for the probes.
- */
+/** THE PROFILE EDITOR: the road's cross-section drawn as a street section */
 export interface ProfileEditorOptions {
   /** What is being edited ("this road", "new roads"). */
   readonly title: string;
@@ -42,11 +24,7 @@ export interface ProfileEditorOptions {
   readonly apply?: (profile: RoadProfileSpec, type: number) => void;
   /** Makes the profile the one new roads are drawn with. */
   readonly drawWith?: (name: string, profile: RoadProfileSpec, type: number) => void;
-  /**
-   * Docked above the road tool's drawer (the catalogue's "Customise..."),
-   * never over it: compact, and folding to its head (the player's order of
-   * 2026-10-09).
-   */
+  /** Docked above the road tool's drawer (the catalogue's "Customise..."), never over it: compact, and folding to its head */
   readonly docked?: boolean;
   /** Told when a template was saved (the catalogue shows it under "My roads"). */
   readonly onSaved?: () => void;
@@ -100,11 +78,7 @@ function newElement(kind: PaletteKind, profile: RoadProfileSpec): ProfileElement
   }
 }
 
-/**
- * Where the palette puts a new element: where the road can carry it (the
- * order `profileIssues` asks for), next to the picked element when that is
- * one of the right places.
- */
+/** Where the palette puts a new element: where the road can carry it */
 export function insertionIndex(profile: RoadProfileSpec, kind: PaletteKind, selected: number): number {
   const e = profile.elements;
   const n = e.length;
@@ -151,11 +125,7 @@ export function insertionIndex(profile: RoadProfileSpec, kind: PaletteKind, sele
   }
 }
 
-/**
- * The element at `index` made `metres` wide. A lane takes every lane with it:
- * the engine lays the lanes of a road at one width (`profileIssues`
- * 'laneWidths'), so the width of one is the width of all.
- */
+/** The element at `index` made `metres` wide. */
 export function withWidth(profile: RoadProfileSpec, index: number, metres: number): RoadProfileSpec {
   const target = profile.elements[index];
   if (!target) return profile;
@@ -624,7 +594,6 @@ export function openProfileEditor(options: ProfileEditorOptions): void {
     const name = nameField.value.trim();
     const saved = name && !issues().length ? saveTemplate(name, type, profile) : null;
     // Saved, the new card is the answer (picked, at the end of the row); only a refusal is written.
-    // A refusal says why: no name or a profile with issues, or storage that would not keep it.
     status = saved ? '' : name && !issues().length ? t('profile.notStored') : t('profile.notSaved');
     if (saved) {
       saving = false;

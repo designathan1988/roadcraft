@@ -3,13 +3,7 @@ import { BufferAttribute, PlaneGeometry } from 'three';
 import { buildPlateMesh } from '@render/plateMesh';
 import { steepnessInto } from '@render/terrainSteep';
 
-/**
- * A PLATE'S MESH BUILT OFF THE PAGE (`render/plateMesh.ts`) IS THE ONE THE
- * PAGE BUILDS (`terrain.ts` update): the same corners, diagonals, normals
- * (three's `computeVertexNormals` over the same triangles) and steepness - so
- * a plate whose first build comes from the workers looks exactly as one
- * built on the page.
- */
+/** A PLATE'S MESH BUILT OFF THE PAGE (`render/plateMesh.ts`) IS THE ONE THE PAGE BUILDS (`terrain.ts` update) */
 describe('a plate mesh built in the workers', () => {
   it('matches the page\'s own build, corner by corner', () => {
     const side = 41, seg = side - 1, half = 128, cell = (2 * half) / seg, base = -0.048;

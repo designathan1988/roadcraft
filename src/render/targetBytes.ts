@@ -1,15 +1,6 @@
 import { FloatType, HalfFloatType, RedFormat, RGFormat, UnsignedByteType, UnsignedIntType, UnsignedShortType, type RenderTarget, type Texture } from 'three';
 
-/**
- * THE VIDEO MEMORY OF THE RENDER TARGETS AND SHADOW MAPS, in bytes: what `memoryCounters.ts` cannot see,
- * as they hang from no object of the scene. The scene's target alone (8 samples, half-float colour, float
- * depth) is ~500 MB at 2880 x 1620, and the sun's shadow map 134 MB, both missing from the plan's budget
- * line "alvos de render e sombras" (`core/perfBudget.ts`), which read "não medido" (docs/AUDITORIA-2026-10-15.md 4.1).
- *
- * An ESTIMATE from the sizes three allocates (`WebGLTextures.setupRenderTarget`): each colour attachment
- * once as a texture and, multisampled, `samples` times again as a render buffer; the depth likewise.
- * DO NOT read it as the driver's figure (padding, tiling and compression are the driver's own).
- */
+/** DO NOT read it as the driver's figure (padding, tiling and compression are the driver's own). */
 
 /** Bytes of one texel of a texture: channels by component size. */
 function texelBytesOf(texture: Pick<Texture, 'type' | 'format'>): number {

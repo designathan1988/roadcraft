@@ -3,19 +3,7 @@ import type { PoleId, SpanId } from './ids';
 import { m } from './units';
 import type { UtilityPole, UtilitySpan } from './utilities';
 
-/**
- * THE POLES BY PLACE AND THE WIRES BY POLE (`RoadDoc.polesIn`, `spansAt`): a
- * grid of cells holding the poles standing in each, and each pole's spans,
- * kept by the document's own writers - the only ones there are - so it is
- * never out of step (Nystrom, Game Programming Patterns, "Spatial
- * Partition"; the same as `buildings/grid.ts`).
- *
- * Without it every span strung read every span of the map for a duplicate,
- * every pole removed read them all for its wires, and the pole under the
- * pointer and the bulldozer's stroke read every pole: work as large as the
- * map for one pole, laid thousands of times as a city's lines go up.
- * DO NOT scan `doc.poles` or `doc.poleSpans` to find what is near or what is joined.
- */
+/** DO NOT scan `doc.poles` or `doc.poleSpans` to find what is near or what is joined. */
 
 /** Side of a cell, world units: a few pole spacings. */
 const CELL = m(64);

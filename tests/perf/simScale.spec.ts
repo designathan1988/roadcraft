@@ -6,16 +6,7 @@ import { SimWorld } from '@sim/world';
 import { step, tickWork } from '@sim/pipeline';
 import { signalWork } from '@sim/signals/fsm';
 
-/**
- * THE SCALE OF A TICK, BY COUNTING (docs/source/relatorio-desempenho-mapas-enormes-2026-10-11.md
- * 9.4; docs/research/source/fase-0-medida.md 3.4): the same few cars on a small
- * closed grid and on one 36 times its area. What a tick does for the map's
- * size - lanes looked at by the cleanup, signals that decide - must not grow
- * with the map: counted, not timed, so it runs in `npm run check` and holds
- * on any machine. Before phase 1 the cleanup looked at every lane of the map
- * every tick (20 876 on the large grid) and every signal was stepped and
- * decided (1 369).
- */
+/** THE SCALE OF A TICK, BY COUNTING */
 const BLOCK = 120;
 
 function closedGrid(n: number): RoadDoc {
@@ -61,8 +52,7 @@ function workOf(n: number, cars: number): { cleanup: number; stepped: number; de
 
 describe('the work of a tick', () => {
   it('does not grow with the map for the same traffic', () => {
-    // 4 times the area (36 times until 2026-10-13: building the large grid's topology took most of a
-    // minute, every identical junction measured again, docs/research/regression-barrier.md).
+    // 4 times the area 36 times until 2026-10-13: building the large grid's topology took most of a minute, every identical
     const small = workOf(6, 30), large = workOf(12, 30);
     expect(large.signals).toBeGreaterThan(small.signals * 3);
     // The cleanup looks at the lanes an edit left, none here, whatever the map.

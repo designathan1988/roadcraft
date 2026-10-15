@@ -19,20 +19,7 @@ import type { RoadDoc } from '@world/doc';
 import { lorryDocks } from '@world/buildings/docks';
 import type { Waypoint } from './hybridAStar';
 
-/**
- * Lorries to the works' loading docks: a lorry of the passing traffic is
- * sent to a dock that has a way in and out (`lorryDocks.ts`), stops on its
- * lane before the yard's gate, swings in across the street - the traffic
- * stopped short of it both ways, as drivers wait for a lorry turning
- * (`laneClosures.ts`) - shunts down the yard and backs onto the dock, stands
- * there while it is unloaded, and drives out by the same gate onto the lane
- * past it, a vehicle of the traffic again.
- *
- * One lorry in a yard at a time: the yards are narrow, and a lorry shunting
- * sweeps most of one. While it manoeuvres, the lot's cars wait (`busy`).
- * The ways are planned a slice a tick (`PLAN_BUDGET`), one dock at a time,
- * when a lorry might be sent there; a dock with no way takes no lorry.
- */
+/** Lorries to the works' loading docks: a lorry of the passing traffic is sent to a dock that has a way in and out */
 
 /** Seconds between two looks for a lorry to send. */
 const LOOK = 2;
@@ -93,13 +80,7 @@ export class LorryTraffic {
   /** The world last stepped: a reset opens the lanes its lorries closed there. */
   private world: SimWorld | null = null;
 
-  /**
-   * A different map (`LotTraffic.reset`, from `AmbientWorld.reset`): the
-   * lorries of the old one gone, the yard in hand dropped. The draws are the
-   * world's (`SimWorld.rng.lorries`), started from its seed again by
-   * `SimWorld.reset`: what the lorries did on a map no longer depends on how
-   * many draws the map opened before it took.
-   */
+  /** A different map (`LotTraffic.reset`, from `AmbientWorld.reset`) */
   reset(w: SimWorld | null = this.world): void {
     for (const lorry of this.lorries.values()) if (w) openLanes(w, lorry.id);
     this.lorries.clear();
@@ -153,11 +134,7 @@ export class LorryTraffic {
     if (this.lorries.size < MAX_LORRIES) this.call(w);
   }
 
-  /**
-   * Sends a lorry to a dock now, standing on its lane at the stop before the
-   * gate (for probes and specs): the dock is planned to the end first. False
-   * when the dock has no way, or the lane is not clear.
-   */
+  /** Sends a lorry to a dock now, standing on its lane at the stop before the gate (for probes and specs) */
   sendNow(w: SimWorld, building: BuildingId, dock: number): boolean {
     const b = w.doc.buildings.get(building);
     const truck = ARCHETYPES.find((a) => a.id === 'truck')!;
@@ -184,34 +161,21 @@ export class LorryTraffic {
   private readonly yardList = new YardList();
   private yards: readonly { building: BuildingId; docks: number }[] = [];
 
-  /**
-   * Only which buildings have docks: a yard is worked out (tens of
-   * milliseconds) when one of its docks is drawn, not all at once.
-   */
+  /** Only which buildings have docks: a yard is worked out */
   private readYards(w: SimWorld): void {
     this.yards = this.yardList.read(w.doc);
     // The yards of buildings gone, or with no yard now, forgotten with them.
-    // Kept, every yard ever made stayed in memory (a grid and its clearance
-    // field, megabytes each) after its building was demolished.
     const gone = this.yardList.gone;
     if (gone === null) forgetYardsBut(w, (id) => this.yardList.has(id as BuildingId));
     else for (const id of gone) forgetYard(w, id);
   }
 
-  /**
-   * The yard being made, a slice a call: its grid of a third of a million
-   * cells filled and its clearance worked out in one tick took 30 ms, the
-   * simulation's worst tick in the game (2026-10-13).
-   */
+  /** The yard being made, a slice a call */
   private making: { building: Building; key: string; steps: Generator<void, Yard, void> } | null = null;
   /** The lots and buildings near each yard (`yardNeighbours`), kept while they stand. */
   private neighbours: YardNeighbours | null = null;
 
-  /**
-   * A building's yard, made a slice a call (`buildYard`): undefined while it
-   * is being made. `begin` false: only a yard already made, or the one in
-   * hand carried on; another is not begun in its place.
-   */
+  /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
   private yardFor(w: SimWorld, building: BuildingId, begin = true): Yard | null | undefined {
     const b = w.doc.buildings.get(building);
     if (!b) return null;
@@ -248,12 +212,7 @@ export class LorryTraffic {
     if (!free.length) return;
     const pick = free[Math.floor(w.rng.lorries.float() * free.length)]!;
     const dock = Math.floor(w.rng.lorries.float() * pick.docks);
-    // With a dock of another yard in hand, only a yard already made is taken:
-    // the yard in hand is not thrown away (its grid and clearance, many
-    // slices) to begin this one. DO NOT call `yardFor` to begin a yard here
-    // while `planning` names another building: it took the place of the one
-    // being made, which `plan` began again from nothing the next tick, back
-    // and forth.
+    // DO NOT call `yardFor` to begin a yard here while `planning` names another building
     const yard = this.yardFor(w, pick.building, this.planning === null || this.planning.building === pick.building);
     if (yard === null) return;
     if (yard === undefined || !yard.planned(dock)) { this.planning ??= { building: pick.building, dock }; return; }
@@ -303,8 +262,7 @@ export class LorryTraffic {
     if (v.lanelet !== c.lanelet || v.v > m(0.12) || v.s < c.at - m(2.5)) return;
     const pose = vehiclePose(w, v, 1);
     if (!pose) { this.release(w, lorry, v); return; }
-    // Stopped before the gate: off the lane, standing where it stopped; the
-    // way in starts a little ahead or behind along the same lane.
+    // Stopped before the gate: off the lane, standing where it stopped
     const start = lorry.into.poses[0]!;
     const rear = lorryOf(v.archetype).rear;
     const here: Waypoint = { x: pose.p.x - Math.cos(pose.angle) * rear, y: pose.p.y - Math.sin(pose.angle) * rear, angle: pose.angle, reverse: false };
@@ -399,11 +357,7 @@ export class LorryTraffic {
     return true;
   }
 
-  /**
-   * Whether nobody stands where the lorry goes over the next few metres (its
-   * body as discs); kept waiting `ASK_WAY`, it goes on, the people stepping
-   * out of a vehicle's way (`walk.ts`), as the lots' cars do.
-   */
+  /** Whether nobody stands where the lorry goes over the next few metres (its body as discs) */
   private mayGo(w: SimWorld, lorry: Lorry, shunt: Shunt): boolean {
     const a = lorry.body!.archetype;
     const r = a.width / 2 + m(0.5);
@@ -451,19 +405,14 @@ function setFree(body: Vehicle, p: { x: number; y: number; angle: number }): voi
 }
 
 
-/**
- * The stretches of lane a street part sweeps: every lane a point of the body
- * comes within `LANE_HALF` of, from the first to the last arc position it
- * covers there, and a margin each side.
- */
+/** The stretches of lane a street part sweeps */
 export function closures(w: SimWorld, poses: readonly Waypoint[], owner: number, rear: number, length: number, width: number): Closure[] {
   if (!poses.length) return [];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of poses) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const pad = length + LANE_HALF;
   const spans = new Map<LaneletId, { from: number; to: number }>();
-  // The lanes whose box comes within `pad` of the poses, in the graph's order,
-  // from the lanes' grid. DO NOT walk every lane of the map here.
+  // DO NOT walk every lane of the map here.
   for (const lane of lanesInBox(w, x0 - pad, y0 - pad, x1 + pad, y1 + pad)) {
     for (let i = 0; i < poses.length; i += 2) {
       const p = poses[i]!;
@@ -485,12 +434,7 @@ export function closures(w: SimWorld, poses: readonly Waypoint[], owner: number,
 /** A building with a yard a lorry is sent to: a car-gated property with loading docks. */
 const hasYard = (b: Building): boolean => gatedProperty(b) !== null && lorryDocks(b).length > 0;
 
-/**
- * The town's yards and their docks, in the store's order (the lorries' draw
- * follows it), kept from the diary: only the buildings it names are read
- * again. Every building of the town was read whenever any changed, and the
- * town's ageing changes one every few seconds.
- */
+/** The town's yards and their docks, in the store's order (the lorries' draw follows it), kept from the diary */
 export class YardList {
   private readonly kept = new BuildingsInOrder(hasYard);
   private readonly docks = new Map<BuildingId, number>();

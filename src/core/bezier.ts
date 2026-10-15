@@ -1,15 +1,7 @@
 import { EPS, FLATTEN_TOL, clamp } from './scalar';
 import { type Vec2, add, addScaled, len, normalize, perp, scale, sub } from './vec2';
 
-/**
- * A segment's curvature, stored so that dragging a node cannot deform it.
- *
- * `t` is the normalized position of the control point along the A->B chord and
- * `h` is its lateral offset **in absolute world units**. The V6 monolith divided
- * the lateral component by the chord length as well, so the bulge scaled with
- * the chord — stretching a segment silently changed how curved it was. Keeping
- * `h` absolute makes the curve move rigidly with its endpoints.
- */
+/** A segment's curvature, stored so that dragging a node cannot deform it. */
 export interface CurveShape {
   /** Control-point position along the chord, normalized to [0,1]. */
   readonly t: number;
@@ -25,10 +17,7 @@ export function controlPoint(a: Vec2, b: Vec2, shape: CurveShape): Vec2 {
   return addScaled(addScaled(a, chord, clamp(shape.t, 0, 1)), n, shape.h);
 }
 
-/**
- * Derives a `CurveShape` from a control point, inverting `controlPoint`.
- * Used by the editor when converting a freehand drag into a stored curve.
- */
+/** Derives a `CurveShape` from a control point, inverting `controlPoint`. */
 export function shapeFromControl(a: Vec2, b: Vec2, c: Vec2): CurveShape {
   const chord = sub(b, a);
   const L = len(chord);
@@ -47,13 +36,7 @@ export const quadPoint = (a: Vec2, c: Vec2, b: Vec2, t: number): Vec2 => {
   };
 };
 
-/**
- * Number of uniform steps needed to flatten a quadratic within `tol`.
- *
- * A quadratic has a constant second derivative `B'' = 2(A - 2C + B)`, so the
- * maximum chordal deviation over `n` uniform steps is exactly `|B''| / (8n^2)`.
- * Solving for `n` gives the closed form below — no recursive subdivision needed.
- */
+/** Number of uniform steps needed to flatten a quadratic within `tol`. */
 function quadSegmentCount(a: Vec2, c: Vec2, b: Vec2, tol = FLATTEN_TOL): number {
   const d = len(sub(add(a, b), scale(c, 2)));
   return clamp(Math.ceil(Math.sqrt(d / (4 * tol))), 1, 64);
@@ -72,10 +55,7 @@ function flattenQuad(
   return out;
 }
 
-/**
- * Flattens a segment defined by endpoints plus an optional shape.
- * A `null` shape yields the two endpoints — a straight segment stays exact.
- */
+/** Flattens a segment defined by endpoints plus an optional shape. */
 export function flattenSegment(
   a: Vec2,
   b: Vec2,
@@ -99,14 +79,7 @@ export function splitQuad(
   return { left: [a, ac, mid], right: [mid, cb, b] };
 }
 
-/**
- * Tightest radius of curvature of a quadratic, closed form.
- *
- * With P = c - a and Q = b - c, B'(t) = 2((1-t)P + tQ) and B'' = 2(Q - P),
- * so B' x B'' = 4 P x Q is constant and the radius |B'|^3 / |B' x B''| is
- * smallest where |B'| is: at the foot of the perpendicular from the origin
- * to the segment P..Q, clamped to [0, 1].
- */
+/** Tightest radius of curvature of a quadratic, closed form. */
 export function quadMinRadius(a: Vec2, c: Vec2, b: Vec2): number {
   const px = c.x - a.x;
   const py = c.y - a.y;
@@ -122,11 +95,7 @@ export function quadMinRadius(a: Vec2, c: Vec2, b: Vec2): number {
   return (speed * speed * speed) / (4 * cross);
 }
 
-/**
- * The same curve, flattened just enough that it is nowhere tighter than
- * `minRadius`; `null` when only a straight line fits. Reducing |h| only ever
- * widens a quadratic's tightest bend, so a bisection on it is exact.
- */
+/** The same curve, flattened just enough that it is nowhere tighter than `minRadius` */
 export function fitShapeToRadius(a: Vec2, b: Vec2, shape: CurveShape | null, minRadius: number): CurveShape | null {
   if (!shape || Math.abs(shape.h) < EPS) return shape;
   const radius = (h: number): number => quadMinRadius(a, controlPoint(a, b, { t: shape.t, h }), b);

@@ -1,20 +1,7 @@
 import type { ReliefVersion } from '@world/terrain';
 import type { PlateMesh } from './plateMesh';
 
-/**
- * THE MAP'S LAND, WORKED OUT OFF THE PAGE. A plate the view brings in
- * (`flatAtlas.ts`) needs the land's height at each of its grid corners and
- * its first build; on the page's thread that was a few hundred milliseconds
- * a plate, a hitch at every zoom or drag (profiled 2026-10-11). As Proland produces its tiles
- * asynchronously and draws the first ancestor that is ready meanwhile, and
- * Cesium hands its terrain to workers, the corners are read by a worker here
- * (`flatGround.worker.ts`) and the plate's far patch stands in until they
- * come back, their buffer transferred, not copied (MDN, "Transferable
- * objects").
- *
- * Two workers; one job per plate; the plate nearest the place looked at goes
- * first; a plate no longer wanted is dropped from the queue (`cancel`).
- */
+/** THE MAP'S LAND, WORKED OUT OFF THE PAGE. */
 
 interface Job {
   readonly key: number;
@@ -94,11 +81,7 @@ export function flatGroundOffPage(): boolean {
   return start() !== null;
 }
 
-/**
- * Reads plate `key`'s corners in a worker, and builds its first mesh from
- * them (`plateMesh.ts`): `done` with it (rows from the north edge, `side` by
- * `side`), or `failed` (the caller reads them on the page).
- */
+/** Reads plate `key`'s corners in a worker, and builds its first mesh from them (`plateMesh.ts`): `done` with it */
 export function readFlatGround(job: Job): void {
   if (!start()) { job.failed(); return; }
   const queued = queue.findIndex((j) => j.key === job.key);

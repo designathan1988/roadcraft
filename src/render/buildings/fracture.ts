@@ -13,24 +13,7 @@ import { m } from '@world/units';
 import type { BuildingChunk } from './buildingMesh';
 import type { BuildingKit, PartKind } from './kit';
 
-/**
- * Pre-fracturing a building's own meshes (Voronoi fracture, as destructible
- * objects are prepared in games: Grönberg, "Real-time Mesh Destruction System
- * for a Video Game"; the chunk-and-graph approach of fracturing tools).
- *
- * The building's shell - every wall, roof, cornice, as drawn, with its own
- * colours and textures - is subdivided until no triangle is larger than a
- * fragment, and every triangle goes to the Voronoi cell (a jittered grid of
- * seeds) its centre is in. The windows, doors and other parts go whole to the
- * cell their centre is in. Each cell is one fragment: a mesh of exactly the
- * pieces of the building it covers, with the building's own materials, given
- * a wall's thickness (a back face and sides along every cut, in the grey of
- * broken masonry) so a piece that comes loose is solid. Floor slabs are added
- * inside, storey by storey, so a broken building shows its floors.
- *
- * Put back together the fragments ARE the building, so nothing changes on
- * screen until a blow takes some of them away.
- */
+/** Pre-fracturing a building's own meshes */
 
 /** Edge of a Voronoi cell: the size of a fragment. */
 const FRAGMENT = m(2.8);
@@ -86,11 +69,7 @@ function subdivide(v: number[], max: number, out: number[][]): void {
   }
 }
 
-/**
- * The fragments of one building, from its drawn chunk. `floor` is its ground
- * floor's height; `storeys` the heights (three's y, absolute) of its floor slabs
- * with the footprints they span, for the interior.
- */
+/** The fragments of one building, from its drawn chunk. */
 /** What a fracture needs, as plain arrays (so it can run in a worker, `fracture.worker.ts`). */
 export interface FractureInput {
   readonly shells: readonly { mat: number; position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; index: Uint32Array; decay: Float32Array }[];
@@ -169,17 +148,7 @@ export function prepareFracture(
   };
 }
 
-/**
- * Every fragment of a building in one buffer, in world space (three's, y up),
- * one draw group per material: the ruin's still mesh (`destruction.ts`), static
- * batching as Unity's manual "Draw call batching" describes it. `slots` holds,
- * per fragment, triples (start in the buffer, vertex count, material), so a
- * piece knocked loose is blanked in place and its own geometry made from its
- * ranges while it flies, and a piece landed written back, uploading only its
- * own range (three's `BufferAttribute.addUpdateRange`). The vertices are
- * nowhere else: kept per fragment as well, every ruin held them twice for
- * good. Pure arrays: made in the worker.
- */
+/** Every fragment of a building in one buffer, in world space (three's, y up), one draw group per material */
 export interface StillData {
   readonly position: Float32Array; readonly normal: Float32Array; readonly colour: Float32Array; readonly uv: Float32Array; readonly decay: Float32Array;
   readonly groups: readonly { material: number; start: number; count: number }[];
@@ -187,11 +156,7 @@ export interface StillData {
   readonly fragments: readonly Fragment[];
 }
 
-/**
- * A fragment's own geometry, round its centre, from its ranges in the ruin's
- * buffer as they stand (the piece about to fly is still where it stood): one
- * draw group per range, by its material.
- */
+/** A fragment's own geometry, round its centre, from its ranges in the ruin's buffer as they stand */
 export function fragmentGeometry(data: StillData, index: number): BufferGeometry {
   const slots = data.slots[index]!;
   const [cx, cy, cz] = data.fragments[index]!.centre;

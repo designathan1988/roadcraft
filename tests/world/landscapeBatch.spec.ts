@@ -10,14 +10,7 @@ import { applyLots, planLots } from '@world/lots';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 
-/**
- * ITEMS PLACED IN A BATCH (`RoadDoc.addLandscapeMany`): the same items, ids and
- * order as placed one by one, in ONE diary entry naming them; and a generated
- * city's furniture and names (`greenCity`) read from the diary as the items
- * placed, never as "everything changed" - its 11,000 entries, one an item,
- * overflowed the kind's kept entries and every reader of the landscaping
- * worked out the whole map again.
- */
+/** ITEMS PLACED IN A BATCH (`RoadDoc.addLandscapeMany`) */
 describe('landscaping placed in a batch', () => {
   it('is the landscaping placed one by one, in one entry naming its items', () => {
     const rng = new Rng(0xba);

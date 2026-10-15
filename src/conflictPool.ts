@@ -3,18 +3,7 @@ import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
 import type { JunctionAnswer, JunctionAsk } from '@world/junctionBuild';
 
-/**
- * THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. Each pair of
- * movements through a junction has its zones measured once (`pairTable`,
- * about a millisecond a pair); a generated city has thousands, 3.4 s of its
- * opening on the page's thread (profiled 2026-10-14). They are pure - two
- * sweeps' samples in, a table out - so they are split across workers
- * (`conflictTable.worker.ts`), as Cesium hands its heavy jobs to a
- * `TaskProcessor` and answers by promise; the pool is sized by the cores the
- * browser reports (MDN, `navigator.hardwareConcurrency`), one left to the
- * page. No workers here (a test, an old browser): `measure` rejects, and the
- * pairs are measured on the page as before (`ConflictIndex.prepare`).
- */
+/** THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { resolve(answer: unknown[]): void; reject(error: Error): void }>;
@@ -22,26 +11,14 @@ interface Lane {
   watchdog: ReturnType<typeof setTimeout> | null;
 }
 
-/**
- * Longest a worker with jobs waiting may stay silent. It reports at least
- * every `BEAT_MS` while it works (`conflictTable.worker.ts`), so a slow
- * machine or a big city's share is never taken for a hung worker; the margin
- * covers the module's first load. A worker that hangs (a loop that never
- * ends, an answer lost) fails the pool after this: the jobs are rejected and
- * measured on the page. DO NOT wait without a deadline: the topology catch-up
- * yields WAITING until the answer comes (`ConflictIndex.prepare`), and the
- * simulation stayed still for the page's life behind one silent worker.
- */
+/** DO NOT wait without a deadline: the topology catch-up yields WAITING until the answer comes */
 export const SILENCE_MS = 10_000;
 
 /** Most workers the pool opens: past four, a city's pairs are done before the copies are. */
 const MOST_LANES = 4;
 
 export class ConflictPool implements PairMeasurer {
-  /**
-   * `keepPrefix`: the key prefix the tables are kept under for the next session (`render/derivedCache.ts`),
-   * by the workers that measure them; none: not kept here.
-   */
+  /** `keepPrefix`: the key prefix the tables are kept under for the next session */
   constructor(private readonly keepPrefix: string | null = null) {}
 
   get keeps(): boolean {
@@ -89,11 +66,7 @@ export class ConflictPool implements PairMeasurer {
     });
   }
 
-  /**
-   * Junction turns chosen across the workers (`conflictTable.worker.ts`, `chooseTurnOf`): contiguous
-   * shares in the order asked - a junction's turns come one after another, so they mostly go to one
-   * worker - each share with its junctions' surfaces once, the asks pointing at them.
-   */
+  /** Junction turns chosen across the workers (`conflictTable.worker.ts`, `chooseTurnOf`) */
   chooseTurns(asks: readonly TurnAsk[], rings: ReadonlyMap<string, SurfaceRings>): Promise<readonly ChosenTurn[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
@@ -124,12 +97,7 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  /**
-   * Movements' sweeps sampled across the workers (`conflictTable.worker.ts`, `sampleSweep`): contiguous
-   * shares in the order asked - a junction's movements come one after another - each share with every
-   * lane it reads once (a lane is the approach or the exit of several movements), the sweeps pointing at
-   * them; the frames come back transferred, not copied.
-   */
+  /** Movements' sweeps sampled across the workers (`conflictTable.worker.ts`, `sampleSweep`) */
   sampleSweeps(asks: readonly SweepAsk[]): Promise<readonly SampledSweep[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
@@ -162,11 +130,7 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  /**
-   * Pairs finished across the workers (`conflictTable.worker.ts`, `finishPair`): their centrelines'
-   * crossings and their zones' facts. Contiguous shares, each with every centreline it reads once, the
-   * pairs pointing at them, and the share's tables packed into one list (`TABLE_SIZE` numbers a pair).
-   */
+  /** Pairs finished across the workers (`conflictTable.worker.ts`, `finishPair`) */
   finishPairs(pairs: readonly FinishAsk[]): Promise<readonly FinishedPair[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
@@ -195,11 +159,7 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  /**
-   * A whole build's junctions built across the workers (`conflictTable.worker.ts`, `buildJunctionOf`):
-   * contiguous shares in node order, one message a share - a lane, a road or a ring met by several of its
-   * junctions is one array there, copied once - the paths' points coming back transferred.
-   */
+  /** A whole build's junctions built across the workers (`conflictTable.worker.ts`, `buildJunctionOf`) */
   buildJunctions(asks: readonly JunctionAsk[]): Promise<readonly JunctionAnswer[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
@@ -218,10 +178,7 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  /**
-   * Walkways' corners rounded across the workers (`conflictTable.worker.ts`, `roundCorners`): contiguous
-   * shares of the nodes asked, each node with its own rings and corners; the lines come back transferred.
-   */
+  /** Walkways' corners rounded across the workers (`conflictTable.worker.ts`, `roundCorners`) */
   roundCorners(asks: readonly CornerAsk[]): Promise<readonly (readonly (Float64Array | null)[])[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
@@ -273,8 +230,7 @@ export class ConflictPool implements PairMeasurer {
           else if (event.data.junctions) job.resolve(event.data.junctions);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
-        // A worker that cannot run, or a message it cannot read: the pool is
-        // done (`fail`).
+        // A worker that cannot run, or a message it cannot read: the pool is done (`fail`).
         worker.onerror = (event) => this.fail(`a conflict worker failed: ${event.message}`);
         worker.onmessageerror = () => this.fail('a conflict worker sent a message that cannot be read');
         lanes.push(lane);
@@ -288,12 +244,7 @@ export class ConflictPool implements PairMeasurer {
     return this.lanes;
   }
 
-  /**
-   * The pool fails: every job waiting on ANY of its workers is rejected (its
-   * pairs are then measured on the page, `ConflictIndex.prepare`) and every
-   * worker is ended. DO NOT end only the lane that failed: the others were left
-   * running for the page's life, their jobs answered into a pool marked broken.
-   */
+  /** DO NOT end only the lane that failed */
   private fail(why: string): void {
     if (this.broken) return;
     console.warn(`[traffic] ${why}; the pairs are measured on the page`);

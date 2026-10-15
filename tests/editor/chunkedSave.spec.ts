@@ -4,12 +4,7 @@ import { BUILDINGS_PER_PART, type PartStore, PartedSaves } from '@editor/chunked
 import { type LargeStore, Persistence, normalizeSettings } from '@editor/persistence';
 import { RoadDoc } from '@world/doc';
 
-/**
- * THE MAP IS SAVED IN PARTS (`chunkedSave.ts`): never one text of the whole
- * map. What is read back is the map as it was, and a save writes again only
- * what the diary says changed: the parts of the buildings it names, the head
- * only when something of the head changed.
- */
+/** THE MAP IS SAVED IN PARTS (`chunkedSave.ts`): never one text of the whole map. */
 
 /** An IndexedDB stand-in that counts what each write touched; `refuse` makes the next write fail. */
 function memoryStore(): PartStore & { readonly blobs: Map<string, Blob>; writes: string[][]; refuse: boolean } {
@@ -71,8 +66,7 @@ describe('a map saved in parts', () => {
   });
 
   it('writes a building aged as the wears of its part, never the records of its part again', async () => {
-    // DO NOT write a part's records for wear: the town ageing turned every part of the map into text and
-    // gzipped it again, 512 records for one number each (2026-10-15).
+    // DO NOT write a part's records for wear
     const doc = town();
     const store = memoryStore();
     const saves = new PartedSaves(store, 'map');
@@ -175,8 +169,7 @@ describe('a map in parts among the other copies', () => {
   });
 
   it('a small map is saved in parts too, never as one text', async () => {
-    // Chosen by the count of buildings, a map of few buildings was written
-    // whole on every edit, whatever its roads, lots and trees.
+    // Chosen by the count of buildings, a map of few buildings was written whole on every edit, whatever its roads
     useStorage();
     const parts = memoryStore();
     const large = largeStore();

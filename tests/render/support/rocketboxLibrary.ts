@@ -3,10 +3,7 @@ import { basename, join } from 'node:path';
 
 import { loadRocketboxClips, type RocketboxLibrary } from '@render/citizenWalk';
 
-/**
- * Both Rocketbox motion libraries through the game's own loader
- * (`loadRocketboxClips`), its fetch answered from the files on disk.
- */
+/** Both Rocketbox motion libraries through the game's own loader */
 export async function rocketboxLibrary(): Promise<RocketboxLibrary> {
   const realFetch = globalThis.fetch;
   globalThis.fetch = ((input: string | URL | Request) => {

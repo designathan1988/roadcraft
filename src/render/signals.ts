@@ -26,49 +26,9 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { signalStateFor, type SignalState } from '@sim/signals/query';
 import { m } from '@world/units';
 
-/**
- * Physical traffic signal heads.
- *
- * ## Why every head is double-sided
- *
- * A real signal aims its lenses at the traffic it controls and shows the
- * approach behind it nothing but a black box. That is correct on a street and
- * wrong in this game: the camera is locked to one isometric diagonal, so at any
- * junction roughly half the heads faced away and the player saw unlit boxes. A
- * player looking at a junction where every visible head was a dark rectangle
- * reported, reasonably, that the signals "have no green or amber light".
- *
- * So each head carries a lens cluster on BOTH faces of its housing. The pair is
- * driven from one state, which is also what a real repeater head does, and it
- * costs three extra discs per head.
- *
- * ## Why a dark lens is still coloured
- *
- * The unlit lenses used to be almost black — 0x42110f against a 0x101410
- * housing — so a head showed one glowing dot and nothing else, and the other
- * two colours were invisible rather than merely off. A real lens is a coloured
- * filter over a dark can: you can see it is red, amber and green from across a
- * junction with the lamp out. The dark materials here keep their hue and a
- * faint emissive floor, so all three lenses read at a glance and the lit one is
- * unmistakably the one that is on.
- *
- * ## The lit lamp
- *
- * Emissive, unlit, and NOT tone mapped. Everything else in the scene goes
- * through ACES, which rolls a bright saturated colour towards white; a signal
- * lamp is one of the few things that must keep its hue at full brightness, the
- * same argument that makes vehicle lamps and street lights basic materials.
- * A larger, dimmer halo disc sits behind the lens so the lamp reads as a source
- * rather than as a painted dot.
- */
+/** Physical traffic signal heads. ## Why every head is double-sided A real signal aims its lenses at the traffic it */
 
-/**
- * Signal heads at life size, like everything else in the scene (the player's
- * order of 2026-10-05: they were drawn at 1.5 times life, with a head 2.3 m
- * tall, and read as out of proportion beside the cars and the people). A
- * three-lens 300 mm head is about 1.05 m tall and 0.42 m wide; the lit lens
- * and its halo carry the information at play zoom.
- */
+/** Signal heads at life size, like everything else in the scene */
 const SIGNAL_SCALE = 1;
 const u = (metres: number): number => m(metres) * SIGNAL_SCALE;
 
@@ -97,15 +57,7 @@ export interface SignalHeads {
   dispose(): void;
 }
 
-/**
- * The heads are batched BY CELL of the ground: one instanced mesh per kind
- * of part per cell, each with the sphere round its cell's heads, so three's
- * own frustum test (`Object3D.frustumCulled`, in the picture and in the
- * shadow pass) leaves out the cells off screen. ONE mesh a kind for the whole
- * map (nine draws, the old way) had a sphere over the map: every head of the
- * town - 532 triangles each - went to the GPU in every pass, wherever the
- * camera was. A cell is wide enough that a street view takes in a few.
- */
+/** The heads are batched BY CELL of the ground */
 const SIGNAL_CELL = m(256);
 /** How far a head's parts reach from the foot of its post, with its sway: the cell's sphere grows by it. */
 const HEAD_REACH = Math.hypot(ARM_LENGTH + HEAD_WIDTH, POST_HEIGHT) + m(0.1);
@@ -153,8 +105,7 @@ export function createSignalHeads(
   const postGeometry = new CylinderGeometry(POST_RADIUS, POST_RADIUS, POST_HEIGHT, 8);
   const armGeometry = new CylinderGeometry(ARM_RADIUS, ARM_RADIUS, ARM_LENGTH, 8);
   const housingGeometry = new BoxGeometry(HEAD_WIDTH, HEAD_HEIGHT, HEAD_DEPTH);
-  // A flat disc rather than a sphere: a lens is a disc, and an orthographic
-  // camera never sees enough of a sphere's curvature to justify the triangles.
+  // A flat disc rather than a sphere
   const lensGeometry = new CylinderGeometry(LAMP_RADIUS, LAMP_RADIUS, u(0.06), 12).rotateX(
     Math.PI / 2,
   );
@@ -164,23 +115,20 @@ export function createSignalHeads(
 
   const steel = new MeshStandardMaterial({ color: 0x2b302d, roughness: 0.7, metalness: 0.45 });
   const housing = new MeshStandardMaterial({ color: 0x15191a, roughness: 0.78, metalness: 0.1 });
-  // A signal post sways a few centimetres at the top in a gust, its arm and
-  // heads with it (`applyStructureSway`).
+  // A signal post sways a few centimetres at the top in a gust, its arm and heads with it (`applyStructureSway`).
   const armSteel = steel.clone();
   const SWAY = m(0.05);
   applyStructureSway(steel, POST_HEIGHT / 2, POST_HEIGHT, SWAY, 'signal-post');
   applyStructureSway(armSteel, POST_HEIGHT - u(0.3), POST_HEIGHT, SWAY, 'signal-arm');
   applyStructureSway(housing, HEAD_CENTRE, POST_HEIGHT, SWAY, 'signal-housing');
-  // Lit lenses keep their hue at full brightness: basic and untone-mapped,
-  // white here and coloured per instance.
+  // Lit lenses keep their hue at full brightness: basic and untone-mapped, white here and coloured per instance.
   const lit = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const LIT: Record<Lamp, Color> = {
     red: new Color(0xff4034),
     amber: new Color(0xffb219),
     green: new Color(0x3bf06a),
   };
-  // Off, but still obviously a coloured filter over a dark can. Each colour
-  // keeps its own faint emissive floor, so each is its own material.
+  // Off, but still obviously a coloured filter over a dark can.
   const dark: Record<Lamp, MeshStandardMaterial> = {
     red: lensMaterial(0x8d221c, 0x2a0705),
     amber: lensMaterial(0x8a6410, 0x281c04),
@@ -225,9 +173,7 @@ export function createSignalHeads(
       mesh.count = 0;
       mesh.castShadow = shadows.cast;
       mesh.receiveShadow = shadows.receive;
-      // Culled as a cell, by the sphere round its heads (three's own test,
-      // `frustumCulled` left on). Written when the junctions change (posts)
-      // or a head's light does (lenses), not every frame.
+      // Culled as a cell, by the sphere round its heads (three's own test, `frustumCulled` left on).
       mesh.boundingSphere = sphere;
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       if (coloured) {
@@ -255,8 +201,7 @@ export function createSignalHeads(
       const z = (HEAD_DEPTH / 2 + u(0.03)) * face;
       halos[name].push(at(ARM_LENGTH, y, z * 0.96));
       lens[name].push(at(ARM_LENGTH, y, z));
-      // A hood over each lens. It is what stops three coloured discs on a
-      // black slab reading as a decal, and it shades the lens below it.
+      // A hood over each lens.
       visors.push(at(ARM_LENGTH, y + LAMP_RADIUS * 1.15, z + (VISOR_DEPTH / 2) * face));
     }
   });
@@ -344,16 +289,14 @@ export function createSignalHeads(
       if (!segment) continue;
       const signalGroup = junction.groups.find((candidate) => candidate.segments.includes(segmentId));
       if (!signalGroup) continue;
-      // Where the post stands is the world's (`world/signalPosts.ts`): the
-      // pedestrians walk round the same post.
+      // Where the post stands is the world's (`world/signalPosts.ts`): the pedestrians walk round the same post.
       const post = signalPostPlace(world.net, node, segmentId);
       if (!post) continue;
       heads.push({
         x: post.x,
         height: elevationAt(world, post.x, post.y, segmentId),
         y: post.y,
-        // Local +X carries the arm inward over the road. Under the shared
-        // world-to-Three mapping, the world heading is also the Three yaw.
+        // Local +X carries the arm inward over the road.
         yaw: post.yaw,
         groupId: signalGroup.id,
         key: `${node}:${segmentId}`,
@@ -393,10 +336,7 @@ export function createSignalHeads(
     group.userData.lamps = lamps;
   };
 
-  /**
-   * Every head of the map placed again, cell by cell.
-   * @rebuild Called when the junctions' log cannot say what changed (the first look, a map opened, a log forgotten).
-   */
+  /** @rebuild Every head of the map placed again, cell by cell. */
   const placeAll = (world: SimWorld): void => {
     dropCells();
     shown.clear();
@@ -448,11 +388,7 @@ export function createSignalHeads(
         return;
       }
       group.visible = true;
-      // The junctions are the simulation's: what changed among them since the last look is its log
-      // (`SimWorld.signalChangesSince`: a control switched, the junctions an edit reached); the heads'
-      // heights follow the land, at the junctions near where it changed. DO NOT place every head of the
-      // map again on a revision of the network, the traffic, the land or the topology: every road drawn
-      // anywhere did.
+      // DO NOT place every head of the map again on a revision of the network, the traffic, the land or the topology
       const log = world.signalChangesSince(signalSerial);
       const land = landRead.read(world.doc.changes);
       if (placedNetwork !== world.net || log.nodes === null || land === null || land.some((e) => e.rects === null)) {
@@ -471,10 +407,7 @@ export function createSignalHeads(
         if (nodes.size) placeSome(world, nodes);
       }
       signalSerial = log.serial;
-      // Only the cells in view: their junctions' phases asked, and the lenses
-      // of a cell whose light changed written again - that cell's alone. A
-      // cell out of view is asked when it comes in. DO NOT ask every head of
-      // the map each frame, nor write every lens of the map at a change of one.
+      // DO NOT ask every head of the map each frame, nor write every lens of the map at a change of one.
       let litLenses = 0;
       for (const cell of cells.values()) {
         if (frustum && !frustum.intersectsSphere(cell.sphere)) continue;

@@ -9,22 +9,7 @@ import { RAMP_CELL, rampCellKey, rampCells, rampRiseIn, type CurbRamp } from './
 
 export type { CurbRamp } from './rampRise';
 
-/**
- * THE DROPPED KERBS: at each end of every zebra the footway ramps down to the
- * carriageway, so nobody steps off a 15 cm kerb onto a crossing - and nobody
- * drawn on one is lowered 15 cm in a single frame, which is what a walker
- * reaching the zebra did while the footway ran at full height to its edge.
- *
- * A curb ramp (curb cut, dropped kerb) slopes no steeper than 1:12, its flared
- * sides no steeper than 1:10, and is at least 1 m wide (US accessibility
- * guidance, as Wikipedia "Curb cut" gives it; the Brazilian NBR 9050 asks the
- * same 8.33 %). Here each is the zebra's own width, from the kerb face into the
- * footway, the flares either side along the street.
- *
- * One function says how high the walking surface stands at a point
- * (`walkingRise`): the footway's mesh, its kerb and the people standing on it
- * read the same, so the body meets the paving drawn under its feet.
- */
+/** THE DROPPED KERBS: at each end of every zebra the footway ramps down to the carriageway */
 
 /** The steepest ramp: 1 in 12. */
 const RAMP_RUN = FOOTWAY_RISE * 12;
@@ -32,16 +17,7 @@ const RAMP_RUN = FOOTWAY_RISE * 12;
 const FLARE_RUN = FOOTWAY_RISE * 10;
 /** The width of the unmarked crossing at a road's end (`walkways.ts`). */
 const UNMARKED_WIDTH = m(2);
-/**
- * The dropped kerbs of a network, kept node by node across its rebuilds: a
- * node's ramps are worked out again only when the network's change since the
- * last ask (`Network.changesSince`) names the node, one of its roads, or a
- * place one of its roads reaches (a crossing is fitted to the footway there,
- * `Network.crosswalkDistanceAt`). Each ramp is filed in the cells it reaches.
- * DO NOT build every ramp of the map again on a revision: `walkingRise` is
- * asked for every walker every frame, and its first ask after each edit paid
- * for every zebra of the city.
- */
+/** DO NOT build every ramp of the map again on a revision */
 interface RampState {
   /** The network's state the ramps stand for (`Network.state`); null before the first ask. */
   state: object | null;
@@ -51,10 +27,7 @@ interface RampState {
 
 const cache = new WeakMap<Network, RampState>();
 
-/**
- * The dropped kerbs of one node, as it stands (`rampState` brought up to the network first): what the
- * road surfaces read of a node an edit reached (`render/roadSurfaceInputs.ts`), never every ramp of the map.
- */
+/** The dropped kerbs of one node, as it stands (`rampState` brought up to the network first) */
 export function rampsOfNode(net: Network, node: NodeId): readonly CurbRamp[] {
   return rampState(net).byNode.get(node) ?? [];
 }
@@ -83,8 +56,7 @@ function rampsAt(net: Network, nodeId: NodeId): CurbRamp[] {
       });
     }
   };
-  // A street that leads nowhere is crossed at its end, with no zebra
-  // (`walkways.ts`, the unmarked crossing): a dropped kerb there too.
+  // A street that leads nowhere is crossed at its end, with no zebra (`walkways.ts`, the unmarked crossing)
   if (node.incident.length === 1) {
     // A turning circle is walked round, not across (`walkways.ts`).
     if (node.end !== 'bulb') pair(node.incident[0]!, 0, UNMARKED_WIDTH / 2);
@@ -139,14 +111,7 @@ function rampState(net: Network): RampState {
   return state;
 }
 
-/**
- * How high the walking surface stands at (x, y), as a share of the footway's
- * rise: 1 on the footway, 0 on the carriageway, and in between on a dropped
- * kerb - 0 at its foot, 1 where its slope (or a flare) meets the footway.
- * `onFootway` says which side the point is taken to be on away from any ramp;
- * inside one, both sides read the same, so stepping from the footway onto the
- * zebra is level.
- */
+/** How high the walking surface stands at (x, y), as a share of the footway's rise */
 export function walkingRise(net: Network, x: number, y: number, onFootway: boolean, structure = 'ground'): number {
   return rampRiseIn(rampState(net).grid, x, y, onFootway, structure);
 }

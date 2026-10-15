@@ -1,22 +1,4 @@
-// THE SHARE OF THE MACHINE A CONVERSATION MAY USE. The player's machine (i9-12900K, 24 logical processors,
-// 32 GB, RTX 3060) runs several conversations, their agents, their tests and their headless games at once,
-// besides the player's own work. Each conversation gets a Windows job object of its own, named after its
-// Claude process (`CLAUDE_PID`, shared by its agents), with a hard cap on CPU and on committed memory; every
-// heavy process of the conversation (`run-limited.mjs`, Vitest, `look.mjs` and the Chrome it starts) is put in
-// it, and every process it starts is in it too, without anybody watching
-// (learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject: "By default, all
-// child processes are associated with the immediate job").
-//   CPU: JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | HARD_CAP, CpuRate = percent × 100
-//        (ns-winnt-jobobject_cpu_rate_control_information): past it, no thread of the job runs until the next
-//        scheduling interval.
-//   memory: JOB_OBJECT_LIMIT_JOB_MEMORY, JobMemoryLimit (ns-winnt-jobobject_extended_limit_information): the
-//        commit of all the job's processes together; past it, an allocation fails.
-// Defaults: 25 % of the CPU and 8 GB a conversation (three conversations, 75 % and 24 GB; the rest is the
-// player's). ROADCRAFT_SESSION_CPU (percent) and ROADCRAFT_SESSION_MEM_GB change them.
-// DO NOT wait for the machine to be free instead, nor pin every job on the same cores: a conversation runs
-// at once within its share, and a game that cannot run within its share is a game to make faster.
-// The GPU has no such cap in this API: one headless game per conversation (`look.mjs`), and the CPU cap
-// paces the frames it submits.
+// DO NOT wait for the machine to be free instead, nor pin every job on the same cores
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -77,11 +59,7 @@ export function share(env = process.env) {
 /** The job's name: the conversation's Claude process, or one shared by everything run by hand. */
 export const jobName = (env = process.env) => `Local\\roadcraft-session-${env.CLAUDE_PID ?? 'by-hand'}`;
 
-/**
- * Puts process `pid` (this one by default) in the conversation's job, compiling the helper once.
- * Returns what was done, or why not (not Windows, or the system refused): the caller goes on either way,
- * saying so, rather than holding the work.
- */
+/** Puts process `pid` (this one by default) in the conversation's job, compiling the helper once. */
 export function joinSessionJob(pid = process.pid, env = process.env) {
   if (process.platform !== 'win32') return { joined: false, why: 'not Windows' };
   const { percent, memoryBytes } = share(env);

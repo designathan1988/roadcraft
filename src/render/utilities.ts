@@ -60,20 +60,7 @@ const WIRE_SWING = m(0.35);
 const WIRE_RADIUS = m(0.035);
 import type { UtilityPole, UtilitySpan } from '@world/utilities';
 
-/**
- * The overhead utility network on screen: poles, cross-arms, wires and lamps.
- *
- * Built exactly like every other derived structure — inside `rebuildWorld`,
- * behind the revision gate, never in a draw call. The poles and arms are
- * instanced because there are many identical ones; the wires are a single
- * `LineSegments` because a wire is one pixel wide at every zoom this game is
- * played at, and giving each one a tube would spend thousands of triangles on
- * something that reads as a line either way.
- *
- * The sag is what sells it. A straight segment between two poles reads as a
- * stick; the same span with a metre of droop reads as a cable. See
- * `world/utilities.ts` for why the curve is a quadratic and not a `cosh`.
- */
+/** The overhead utility network on screen: poles, cross-arms, wires and lamps. */
 
 export interface Utilities {
   readonly group: Group;
@@ -135,14 +122,7 @@ export function wireParts(): { readonly material: MeshStandardMaterial; readonly
   return { material: PARTS.wireMaterial, depth: PARTS.wireDepth };
 }
 
-/**
- * One pole's parts, pushed onto `out` by `POLE_PART`: the mast and its cap,
- * the cross-arms framed as a line crew frames them (`poleArmsAt`: square to a
- * straight line, on the bisector of a bend, one per line at a corner) with
- * their insulators and braces, a transformer on some poles, and the street
- * light. `top` is the pole's crown; `kerb` its way to the carriageway
- * (`kerbward`), null off the streets.
- */
+/** One pole's parts, pushed onto `out` by `POLE_PART` */
 export function placePole(
   pole: UtilityPole,
   top: number,
@@ -156,10 +136,7 @@ export function placePole(
   // A pole cap: the weathering cap on the crown of a timber pole.
   out[POLE_PART.cap]!.push({ x: pole.x, y: pole.y, z: base + POLE_HEIGHT + m(0.03), yaw: 0, sx: 1, sy: 1, sz: 1 });
 
-  // An instanced box is scaled on its LOCAL X and then rotated about Y, so
-  // the length goes on sx and the yaw is the direction that length points
-  // in. Putting the length on sz instead - which is what this did - turns
-  // every arm ninety degrees, and a row of poles comes out looking twisted.
+  // An instanced box is scaled on its LOCAL X and then rotated about Y
   for (const arm of frame.arms) {
     const armZ = top - POLE_ARM_DROP;
     out[POLE_PART.arm]!.push({
@@ -203,8 +180,7 @@ export function placePole(
   }
 
   if (!pole.lamp) return;
-  // The light reaches out over the street, square to the kerb, whichever
-  // way the wires run; off the streets, along the first arm.
+  // The light reaches out over the street, square to the kerb, whichever way the wires run
   const reach = kerb ?? frame.arms[0] ?? { x: 0, y: 1 };
   const reachYaw = angleOf(reach);
   const headX = pole.x + reach.x * POLE_LAMP_REACH;
@@ -222,8 +198,7 @@ export function placePole(
     sz: POLE_ARM_THICK * 0.8,
   });
   out[POLE_PART.lampHead]!.push({ x: headX, y: headY, z: headZ - POLE_LAMP_TALL / 2, yaw: reachYaw, sx: POLE_LAMP_LONG, sy: POLE_LAMP_TALL, sz: POLE_LAMP_WIDE });
-  // The lens under the head and the pool of light on the street, lit with
-  // the street lights' own materials, so they come on at dusk with them.
+  // The lens under the head and the pool of light on the street, lit with the street lights' own materials
   const lensZ = headZ - POLE_LAMP_TALL - m(0.004);
   const below = groundAt(headX, headY);
   out[POLE_PART.lens]!.push({ x: headX, y: headY, z: lensZ, yaw: reachYaw, sx: POLE_LAMP_LONG * 0.8, sy: 1, sz: POLE_LAMP_WIDE * 0.8 });
@@ -247,21 +222,7 @@ export const SPAN_WIRES = WIRE_COURSES.length * WIRE_OFFSETS.length;
 /** Numbers a wire's instance holds: its two ends in three's axes, its sag, its phase in the wind. */
 export const WIRE_STRIDE = 8;
 
-/**
- * Each wire is one instance of a tube the GPU bends along its sag
- * (`WIRE_GLSL`): eight numbers a wire - its two ends in three's axes, its
- * sag and its phase in the wind - not the tube's vertices. Built on the
- * CPU, a wire was 8 segments x 24 vertices of position, normal, swing and
- * phase, kept three times (a cache by span, the merged buffer three keeps
- * after the upload, the GPU): the wires of a city of radius 2,560 m held
- * 426 MB of the heap (2026-10-14).
- * DO NOT build the wires' vertices on the CPU again.
- *
- * Writes the `SPAN_WIRES` wires of one span into `out` from `at`. Each wire
- * leaves its own insulator on the arm the span hangs from; both ends' arms
- * are turned to the left of the span (`poleArmsAt`), so the wire at offset k
- * on one pole meets the wire at offset k on the next and none cross over.
- */
+/** DO NOT build the wires' vertices on the CPU again. */
 export function spanWires(
   span: UtilitySpan,
   a: { readonly x: number; readonly y: number; readonly top: number; readonly arm: { x: number; y: number } },
@@ -288,14 +249,7 @@ export function spanWires(
 /** Half-width of a drawn cable (`WIRE_GLSL`), for the wires' bounds. */
 export const WIRE_HALF_WIDTH = WIRE_RADIUS;
 
-/**
- * The tube every wire is drawn from: for each of the `WIRE_SEGMENTS`
- * segments of a wire, its four faces of two triangles, in the order the
- * tubes were built on the CPU. A vertex holds no place, only what to take
- * from its wire (`WIRE_GLSL`): `position` = (segment, which end of it 0/1,
- * corner of the section 0-3), `normal.x` = the face (its normal is the sum of
- * its two corners). The wire's ends, sag and phase are its instance's.
- */
+/** The tube every wire is drawn from */
 export function wireTemplate(): InstancedBufferGeometry {
   const vertices = WIRE_SEGMENTS * 24;
   const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3);
@@ -318,14 +272,7 @@ export function wireTemplate(): InstancedBufferGeometry {
   return geometry;
 }
 
-/**
- * A wire's tube in the vertex shader, the arithmetic the CPU did per segment
- * (in three's axes): the wire's point at t is its ends mixed and lowered by
- * `wireDrop` (sag * (1 - u^2), u = 2t - 1, `world/utilities.ts`); a segment
- * runs from t = i / n to (i + 1) / n; its section is u = d x up and
- * w = u x d, both `WIRE_RADIUS` long; corners u, w, -u, -w; a face's normal
- * the sum of its two corners, normalised.
- */
+/** A wire's tube in the vertex shader, the arithmetic the CPU did per segment (in three's axes) */
 const WIRE_GLSL = `
         attribute vec3 aStart;
         attribute vec3 aEnd;
@@ -360,9 +307,7 @@ const WIRE_GLSL = `
 
 /** The wires' materials: lit with the wind, and the shadow's depth, both bending the template along each wire. */
 function wireMaterials(): { readonly lit: MeshStandardMaterial; readonly depth: MeshDepthMaterial } {
-  // A wire is thinner than a pixel at any play zoom. Drawn solid near-black
-  // it broke up into a dotted trace across the footway under it, which read
-  // as a debug path left on screen; a faint line reads as a wire.
+  // A wire is thinner than a pixel at any play zoom.
   const lit = new MeshStandardMaterial({ color: 0x1e2224, roughness: 0.55, metalness: 0.3, side: DoubleSide });
   lit.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, windUniforms, { uWireAmp: { value: WIRE_SWING } });
@@ -405,13 +350,7 @@ interface UtilityParts {
   readonly boxGeometry: BoxGeometry;
   readonly lensGeometry: BufferGeometry;
 }
-/**
- * Made once, at load (`PARTS`, the end of this file), never disposed (a few
- * materials and small shapes): every road edit near a pole made them all
- * again, with their programs looked up anew; and made lazily on the first
- * build, they were materials made in play (`scripts/check-code.mjs`
- * material-in-frame: the catalogue is made at load).
- */
+/** Made once, at load (`PARTS`, the end of this file), never disposed (a few materials and small shapes) */
 function makeUtilityParts(): UtilityParts {
   const parts = madeUtilityParts();
   // Each shape's bounds once, at load: the pole layer grows its meshes' bounds from them.
@@ -425,17 +364,14 @@ function madeUtilityParts(): UtilityParts {
     roughness: 0.68,
     metalness: 0.35,
   });
-  // Creosoted timber: a grain of long streaks up the pole, a few knots and
-  // checks, painted once on a canvas and wrapped round the mast.
+  // Creosoted timber: a grain of long streaks up the pole, a few knots and checks
   const timber = new MeshStandardMaterial({
     color: 0xffffff,
     map: woodTexture(),
     roughness: 0.92,
     metalness: 0,
   });
-  // The luminaire as seen from above: its housing. The head used to be a box
-  // in the unlit glow, which from the isometric camera was a bright white
-  // mark hanging over the carriageway, read as a stray editor marker.
+  // The luminaire as seen from above: its housing.
   const housing = new MeshStandardMaterial({ color: 0xa9b0ad, roughness: 0.5, metalness: 0.3 });
   const wires = wireMaterials();
   return {
@@ -453,19 +389,7 @@ function madeUtilityParts(): UtilityParts {
   };
 }
 
-/**
- * Ground a pole stands on: the footway where there is one, the terrain where
- * there is not.
- *
- * A pole beside a street is installed ON the pavement, and the pavement is a
- * kerb height above the carriageway. The terrain is shaped to meet the road,
- * so reading the bare terrain put every pole a kerb-height BELOW the surface
- * it is standing on - which is the "poles do not sit on the footway" defect.
- *
- * Only the ground level is considered. A pole must not climb onto a viaduct
- * passing overhead, and `GROUND_ONLY` is the same filter every other
- * ground-level pass uses.
- */
+/** Ground a pole stands on: the footway where there is one, the terrain where there is not. */
 export function poleGroundAt(
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
@@ -475,7 +399,6 @@ export function poleGroundAt(
   return (x, y) => {
     const road = elevation.roadAt(x, y, GROUND_ONLY);
     // `half` is the CASING half-width, which runs a little past the footway.
-    // A pole out on the casing margin is on the verge, not the pavement.
     const onFootway = road.type >= 0 && Math.abs(road.across) <= road.half;
     if (!onFootway) return terrainAt(x, y);
     return elevation.at(x, y, GROUND_ONLY) + (net ? footwayRiseAt(net, x, y) : FOOTWAY_RISE);
@@ -529,9 +452,5 @@ function woodTexture(): CanvasTexture | null {
   return t;
 }
 
-/**
- * The pole layer's parts, made when this module loads: after everything they use
- * above (the wood's canvas cache included), and never in play.
- * DO NOT make them lazily on the first build again: that is a material made in a frame.
- */
+/** DO NOT make them lazily on the first build again: that is a material made in a frame. */
 const PARTS: UtilityParts = makeUtilityParts();

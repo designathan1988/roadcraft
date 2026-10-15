@@ -5,13 +5,7 @@ import { BLUEPRINTS } from '@world/buildings/blueprints';
 import { type Building, asBuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * The plant cull's index of where the buildings stand, filed a building at a
- * time (`set`, `remove`): it answers as the whole town filed again would, and
- * its version moves only when a footprint does. Filing the whole town for
- * one building was the layer reading every building at every change
- * (docs/AUDITORIA-2026-10-14.md A5).
- */
+/** The plant cull's index of where the buildings stand, filed a building at a time (`set`, `remove`) */
 function building(id: number, x: number, y: number, rotation = 0): Building {
   const bp = BLUEPRINTS[id % BLUEPRINTS.length]!;
   return { ...JSON.parse(JSON.stringify(bp.body)), id: asBuildingId(id), x, y, rotation } as Building;

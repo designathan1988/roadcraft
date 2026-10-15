@@ -2,11 +2,7 @@ import type { BodyPart, Severable } from './view';
 import type { SimWorld } from '../world';
 import type { PartyView, PersonAgeClass, PersonGender } from './view';
 
-/**
- * The people blows have struck, for the renderer (`render/ragdoll.ts`): every
- * pedestrian engine records here, so a blow throws bodies whichever engine
- * walks the town.
- */
+/** The people blows have struck, for the renderer (`render/ragdoll.ts`) */
 
 /** Somebody a blow killed or knocked down: who they were (for their body) and the blast that threw them. */
 export interface Casualty {

@@ -6,12 +6,7 @@ import { assembleBuildingMeshes, emitChunk } from '@render/buildings/buildingMes
 import { refillArrays } from '@render/mesh/gpuOnly';
 import { createBuildingKit } from '@render/buildings/kit';
 
-/**
- * THE TOWN'S SHELLS LIVE ON THE GPU (`render/buildings/buildingMesh.ts`):
- * their arrays, copies of the chunks', are let go once the renderer uploads
- * them (a third of a big town's heap), and come back the same from the
- * chunks when a lost WebGL context is restored. The preview keeps its own.
- */
+/** THE TOWN'S SHELLS LIVE ON THE GPU (`render/buildings/buildingMesh.ts`) */
 function placed(index: number): Building {
   const bp = BLUEPRINTS[index]!;
   return { ...JSON.parse(JSON.stringify(bp.body)), id: index + 1, x: index * 60, y: 20, rotation: 0.3 } as Building;

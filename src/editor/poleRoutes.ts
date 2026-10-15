@@ -7,22 +7,10 @@ import { CURB_BAND, Level } from '@world/roadTypes';
 import { MAX_POLE_SPACING } from '@world/utilities';
 import { m } from '@world/units';
 
-/**
- * THE ROUTE GRAPH of a set of pole lines and the shortest way through it
- * (`editor/poles.ts` plans the runs on it): stations along the kerb-line
- * contours, joined in order round each, and the spans that cross a street.
- */
+/** THE ROUTE GRAPH of a set of pole lines and the shortest way through it (`editor/poles.ts` plans the runs on it) */
 
 export interface RouteGraph {
-  /**
-   * The stations: every vertex of every contour, and every point where an edge
-   * crosses a line of the fixed grid of `STATION_STEP` (x or y a whole number
-   * of steps), placed by the place alone, so the stations of a stretch of kerb
-   * line are the same whichever lines it was read from (the region's,
-   * `poleLinesIn`, cut at its border, or the whole map's). An even spacing
-   * along each edge moved them whenever the edge was cut elsewhere. Kept as
-   * numbers, not an object a station: a city's kerb lines are millions of them.
-   */
+  /** The stations: every vertex of every contour */
   readonly x: Float64Array;
   readonly y: Float64Array;
   /** Each station's arc length along its contour, and the contour. */
@@ -35,14 +23,7 @@ export interface RouteGraph {
   readonly spanStart: Int32Array;
   readonly spanTo: Int32Array;
   readonly spanLength: Float64Array;
-  /**
-   * The search's arrays over every station and the run's two ends, clean
-   * between runs: a run writes only the stations it reaches and wipes just
-   * those (`touched`). A run used to allocate and fill arrays the size of the
-   * whole graph, so planning every street over a city's lines cost the city
-   * per street.
-   * DO NOT allocate per run: the work of a run must be the stations it reaches.
-   */
+  /** DO NOT allocate per run: the work of a run must be the stations it reaches. */
   readonly scratch: { readonly distTo: Float64Array; readonly prev: Int32Array; readonly done: Uint8Array; readonly touched: number[] };
 }
 
@@ -140,13 +121,7 @@ export function buildRouteGraph(net: Network, lines: PoleLines, region: ChangeRe
   };
 }
 
-/**
- * The route of a run, as a list of points: the shortest way through the route
- * graph from where the run starts on a contour to where it ends - round the
- * kerb line, and over a street by a square span where that is shorter. Null
- * when no way joins them. `head` and `tail`: a pole the run starts or ends at,
- * off the contour, put before and after the route.
- */
+/** The route of a run, as a list of points */
 export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | null, tail: Vec2 | null): { readonly path: Vec2[]; readonly cost: number } | null {
   const n = g.x.length;
   // Two extra nodes, the run's ends, each joined to the stations either side of it on its contour.
@@ -159,12 +134,7 @@ export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | nu
     distTo[node] = cost;
   };
   const at = (node: number): Vec2 => (node === START ? a.at : node === END ? b.at : { x: g.x[node]!, y: g.y[node]! });
-  /**
-   * Ties go by place, never by number: on a straight street, crossing it
-   * here or a few metres on costs the same, and the stations are numbered
-   * differently in a region's lines and in the whole map's - the route must
-   * not hang on that (`tests/world/poleLinesCells.spec.ts`).
-   */
+  /** Ties go by place, never by number */
   const placedBefore = (i: number, j: number): boolean => {
     if (i === START || j === END) return i !== j;
     if (j === START || i === END) return false;
@@ -173,12 +143,7 @@ export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | nu
   };
   // The lower cost first, then the node placed first (`@core/heap` with `before`).
   const heap = new Heap(placedBefore);
-  /**
-   * Costs in whole micrometres: a sum of integers is exact whatever order it
-   * is added in, so two ways of the same length cost the same (in metres, the
-   * last digit hung on the order, and the tie fell differently in a region's
-   * lines and in the whole map's).
-   */
+  /** Costs in whole micrometres: a sum of integers is exact whatever order it is added in */
   const relax = (from: number, to: number, metres: number): void => {
     const next = distTo[from]! + Math.round(metres * 1e6);
     if (next < distTo[to]!) { reachOf(to, next); prev[to] = from; heap.push(to, next); }

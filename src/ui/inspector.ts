@@ -31,7 +31,7 @@ export interface InspectorActions {
   readonly onSetType: (id: SegmentId, type: number) => void;
   readonly onSetLanes?: (id: SegmentId, lanes: number | null) => void;
   readonly onSetSection?: (id: SegmentId, section: RoadSection | undefined) => void;
-  /** A whole cross-section applied to the road, with its class when it comes from a template (docs/source/VIAS.md V1). */
+  /** A whole cross-section applied to the road, with its class when it comes from a template. */
   readonly onApplyProfile?: (id: SegmentId, profile: RoadProfileSpec, type?: number) => void;
   /** V8: this road's profile copied to the whole street (`world/roads/streetChain.ts`); how many segments that is. */
   readonly onProfileToStreet?: (id: SegmentId) => void;
@@ -55,9 +55,9 @@ export interface InspectorActions {
   readonly onDuplicate?: (id: SegmentId) => void;
   readonly onSetControl?: (id: NodeId, control: JunctionControl) => void;
   readonly onSetMovementBlocked?: (node: NodeId, from: SegmentId, to: SegmentId, blocked: boolean) => void;
-  /** The player's lane connections at a node (docs/source/VIAS.md V4); undefined: all derived. */
+  /** The player's lane connections at a node; undefined: all derived. */
   readonly onSetLaneLinks?: (node: NodeId, links: LaneLink[] | undefined) => void;
-  /** Each leg's rule at a junction (docs/source/VIAS.md V5); undefined: derived. */
+  /** Each leg's rule at a junction; undefined: derived. */
   readonly onSetApproachRules?: (node: NodeId, rules: ApproachRuleEntry[] | undefined) => void;
   /** A junction's signal settings (V5); and several at once (a green wave). */
   readonly onSetSignal?: (node: NodeId, settings: SignalSettings | undefined) => void;
@@ -80,27 +80,10 @@ interface InspectorContext {
 
 let current: InspectorContext | null = null;
 
-/**
- * What the panel's controls were last built for.
- *
- * The panel has two halves that change at very different rates. The controls
- * (selects, sliders, buttons) depend only on the selection, the document and
- * the language; the statistics (vehicles, queue, signal phase) change every
- * tick. Rebuilding everything on the 0.4 s refresh replaced the element under
- * the pointer mid-click, closed an open select and reset the scroll, so the
- * frame loop refused to refresh while the panel held focus - and since a
- * clicked button KEEPS focus, the live numbers froze after the first click.
- * The controls are now rebuilt only when this key changes, and the timer
- * rewrites the statistics block alone.
- */
+/** What the panel's controls were last built for. */
 let builtFor = '';
 
-/**
- * Inspector panel.
- *
- * Reads live simulation state through the same pure queries the renderer uses,
- * so what it reports about a junction is what the vehicles are actually obeying.
- */
+/** Inspector panel. */
 export function openInspector(
   doc: RoadDoc,
   net: Network,
@@ -113,13 +96,7 @@ export function openInspector(
   renderCurrent();
 }
 
-/**
- * Refreshes the open inspector without replacing its selection or actions.
- *
- * Cheap when only the traffic changed: the statistics are rewritten, and only
- * if their text differs, so it is safe to call on a timer while the player is
- * using the panel's controls.
- */
+/** Refreshes the open inspector without replacing its selection or actions. */
 export function refreshInspector(): void {
   if (current) renderCurrent();
 }
@@ -130,8 +107,7 @@ function renderCurrent(): void {
   if (!panel || !body || !current) return;
 
   const { doc, net, sim, selection, actions } = current;
-  // A junction's panel also follows the traffic's view of it: its signal comes
-  // or goes when the lane graph is rebuilt (after the edit) or the flows choose (V5).
+  // A junction's panel also follows the traffic's view of it: its signal comes or goes when the lane graph is rebuilt
   const junctionState = selection.node !== null
     ? `|${sim.topologyRevision}|${sim.graph.junctions.get(selection.node)?.signalised ? 1 : 0}|${sim.advisor.choice(selection.node) ?? ''}` : '';
   const key = `${selection.segment}|${selection.node}|${doc.revision}|${language()}${junctionState}`;
@@ -195,10 +171,7 @@ export function closeInspector(): void {
   tellOpen(false);
 }
 
-/**
- * A choice of on-street parking for one side: the kinds this class can carry
- * (`parkingAllowed`), so a highway offers none and an avenue only parallel bays.
- */
+/** A choice of on-street parking for one side: the kinds this class can carry */
 /** What a road's end is (V8), for an end that is the end of this road alone: the map's edge or a turning circle. */
 function endSelect(doc: RoadDoc, node: NodeId, which: 'A' | 'B'): string {
   if (doc.degree(node) !== 1) return '';
@@ -226,11 +199,7 @@ function segmentStats(doc: RoadDoc, net: Network, sim: SimWorld, id: SegmentId):
   let speedSum = 0;
   let speedCount = 0;
   let capacity = 0;
-  // The road's own lanes, found by their ids: lanes are numbered from 0 with
-  // no gap in each direction (`world/lanelets.ts` `buildSteps`). DO NOT walk
-  // `sim.graph.lanelets` here: this runs every refresh of the panel, and that
-  // map holds every lane of the city. DO NOT read through `sim.rt`, which
-  // creates a lane's runtime (and a ghost candidate) when it has none.
+  // DO NOT walk `sim.graph.lanelets` here: this runs every refresh of the panel, and that map holds every lane of the city.
   for (const [from, to] of [[seg.a, seg.b], [seg.b, seg.a]] as const) {
     for (let k = 0; ; k++) {
       const lane = sim.graph.lanelet(laneletId(id, from, to, k));
@@ -287,14 +256,10 @@ function renderSegment(
   const maxCurve = Math.max(20, Math.min(280, length * 0.65));
   const curveValue = seg.curve?.h ?? 0;
   const curvePosition = seg.curve?.t ?? 0.5;
-  // Reversing is meaningful only for a one-way road. On a two-way road the
-  // button used to turn it one-way A to B, which is what the direction select
-  // is for and not what "reverse" says.
+  // Reversing is meaningful only for a one-way road.
   const oneWay = seg.direction !== 'both';
 
-  // With the profile editor (docs/source/VIAS.md V2) the class, direction, lanes and
-  // parking are the profile's, edited there; the inspector shows the profile
-  // in miniature instead of a select for each.
+  // With the profile editor the class, direction, lanes and parking are the profile's, edited there
   const profiled = actions.onApplyProfile !== undefined;
   body.innerHTML =
     `<div id="inspectStats">${stats}</div>` +
@@ -454,8 +419,7 @@ function nodeStats(doc: RoadDoc, sim: SimWorld, id: NodeId): string | null {
     ]);
   }
 
-  // Each signal group as a lamp: the colour is read faster than the word, and
-  // the word stays for anyone who cannot tell the lamps apart.
+  // Each signal group as a lamp: the colour is read faster than the word
   let lamps = '';
   // Lamps only where there are lights: a stop or priority junction has none.
   if (controller && junction?.signalised && junction.groups.length) {
@@ -493,15 +457,7 @@ function renderNode(
     .map((seg) => `${meters(net.mouthDistance(seg, id))} m`)
     .join(' · ');
 
-  // The offer is a promise that the two legs read as ONE road, so it is gated on
-  // the model's own answer to that question rather than on degree alone.
-  // `surfaceMode` is the junction builder's classifier, and it answers 'none'
-  // exactly when a degree-2 node of a single class bends less than
-  // `CHAIN_BEND_COS` (5 degrees) — a straight-through chain that needs no
-  // junction drawn at all. Degree alone offered the merge on the seed's
-  // right-angle corners, where accepting it replaced a 620-unit corner path
-  // with a 444-unit straight chord: a corner cut, under a label promising
-  // alignment.
+  // The offer is a promise that the two legs read as ONE road
   const alignedLegs =
     !node.smooth && !node.crossing && node.incident.length === 2 && surfaceMode(doc, net.polylines, id) === 'none';
   const joinOffer = alignedLegs
@@ -513,13 +469,11 @@ function renderNode(
     ? `<p class="inspect-note">${t(node.crossing.kind === 'signal' ? 'inspector.crossingSignal' : 'inspector.crossingZebra')}</p>` +
       `<div class="inspect-actions"><button type="button" id="inspectRemoveCrossing" class="danger">${t('inspector.removeCrossing')}</button></div>`
     : '';
-  // Legs meeting too sharply (`world/legAngles.ts`, `Network.impossible`):
-  // the junction is drawn degraded; it was computed and shown nowhere.
+  // Legs meeting too sharply (`world/legAngles.ts`, `Network.impossible`): the junction is drawn degraded
   const gap = net.impossible.get(id);
   const impossible = gap === undefined ? ''
     : `<div class="inspect-warning" role="alert"><strong>${t('inspector.impossible')}</strong> · ${t('inspector.impossibleGap', { angle: Math.round((gap * 180) / Math.PI) })}<br>${t('inspector.impossibleBody')}</div>`;
   // Height, control, flows, legs, signal and movements in the junction panel
-  // (docs/source/VIAS.md V5): the interface's own controls, no select or number box.
   body.innerHTML = impossible + `<div id="inspectStats">${stats}</div>` + crossingOffer +
     '<div id="inspectJunction"></div>' + joinOffer +
     '<div id="inspectConnectors"></div>' + `<p class="inspect-note">${t('inspector.mouths')}: ${mouths || '—'}</p>`;

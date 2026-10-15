@@ -1,26 +1,4 @@
-/**
- * THE ONE ENGINE THAT KNOWS WHAT CHANGED AND HAS IT COMPUTED AGAIN
- * (docs/PLANO-ESPINHA-2026-10-14.md, "O controlador global").
- *
- * Every product derived from the game's inputs - the document's diary, the
- * view, the simulation's clock, the quality - is registered here and brought
- * up to date by `refresh`, once a frame (or a step), in the order of what it
- * reads. A product computes only the keys a change reached; a value computed
- * equal to the old one is not passed on (Salsa, "algorithm": "we can backdate
- * the result ... even though the inputs changed, the output didn't";
- * salsa-rs.github.io/salsa/reference/algorithm.html).
- *
- * The ledger counts what each product computed in each refresh. A refresh
- * with no input changed computes nothing; a product that computes then is
- * named (`idle`), as is one whose work grows with the town and not with the
- * change (the scale tests: one item more in a town of N and of 4N computes
- * the same).
- *
- * DO NOT let a product schedule its own rebuild, read a global revision or
- * walk the map outside its `@rebuild` start: it is told what changed here.
- * DO NOT slice, defer or space out work here: the engine makes needless work
- * not exist; needed heavy work goes to a worker.
- */
+/** DO NOT let a product schedule its own rebuild, read a global revision or walk the map outside its `@rebuild` start */
 
 /** An input of the engine that is not the diary (the view, the clock, the quality): a serial moved when it changes. */
 class EngineInput {
@@ -66,12 +44,7 @@ export interface ProductWork {
   idle: number;
 }
 
-/**
- * Where in the frame a product is brought up to date: `frame` by the frame
- * loop between the simulation and the drawing (`main.ts`), `draw` inside
- * the drawing once the world it stands on is settled (`render/renderer.ts`),
- * `step` at the start of each step of the simulation.
- */
+/** Where in the frame a product is brought up to date: `frame` by the frame loop between the simulation and the drawing */
 export type Phase = 'frame' | 'draw' | 'step';
 
 export class Engine {

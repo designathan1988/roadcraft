@@ -1,23 +1,4 @@
-/**
- * THE GAME'S HEALTH: what broke and what was slow, written down as it
- * happens, with what the player was doing - so a defect is known when it
- * happens, not when the player reports it (the player, 2026-10-08: "saiba
- * quando algo quebrou, está lento"; "tem coisas que não funciona e você nem
- * sabe").
- *
- * An entry is an event already past, its data captured when it is written
- * (Nystrom, "Event Queue"), in a ring of fixed size. The same failure
- * repeating is one entry with a count (the queue's "aggregating requests"):
- * an error thrown every frame must not push everything else out.
- *
- * Slowness is measured per system (`FrameTimer`): each frame notes how long
- * each system of the frame loop took, against a budget declared once here,
- * so a long frame (over 50 ms: MDN, Long Animation Frames) is told with the
- * systems that took it.
- *
- * Pure: no three, no DOM. The page's own signals (errors, the console,
- * workers, WebGL, long frames) are wired in `ui/healthWatch.ts`.
- */
+/** THE GAME'S HEALTH: what broke and what was slow, written down as it happens, with what the player was doing */
 
 /** What kind of trouble. */
 export type HealthKind =
@@ -109,11 +90,7 @@ export class HealthLog {
     return out;
   }
 
-  /**
-   * How the game is now: `broken` if something failed within `windowMs`,
-   * `slow` if a frame was long within it, else `ok`. Entries from an earlier
-   * session do not count.
-   */
+  /** How the game is now: `broken` if something failed within `windowMs`, `slow` if a frame was long within it, else `ok`. */
   status(windowMs = 30_000): 'ok' | 'slow' | 'broken' {
     const since = performance.now() - windowMs;
     let slow = false;
@@ -145,13 +122,7 @@ export class HealthLog {
 /** A long frame: past this the player sees a hitch (MDN, Long Animation Frames: 50 ms). */
 export const LONG_FRAME_MS = 50;
 
-/**
- * The systems of the frame loop (`main.ts` `frame`), by id: what a frame's
- * time is told by. The F9 monitor shows each through the dictionary
- * (`health.system.<id>`). DO NOT name a system by its words in one
- * language: they were the monitor's text in Portuguese whatever the game's
- * language was.
- */
+/** DO NOT name a system by its words in one language */
 export type FrameSystem = 'panels' | 'camera' | 'growCity' | 'topology' | 'simulation' | 'roadNetwork' | 'buildings' | 'poles' | 'drawing' | 'overlay';
 
 /** The dictionary key of a system's name, as the monitor shows it. */
@@ -167,12 +138,7 @@ export interface FrameRecord {
 /** How many frames are kept to be matched against a long frame. */
 const FRAMES_KEPT = 240;
 
-/**
- * Times the systems of each frame: `begin` at the top of the frame, `mark`
- * after each system with its name (the time since the last mark is that
- * system's), `end` at the bottom. Only `performance.now()` is read: no
- * `performance.measure` per frame.
- */
+/** Times the systems of each frame: `begin` at the top of the frame, `mark` after each system with its name */
 export class FrameTimer {
   private start = 0;
   private lap = 0;

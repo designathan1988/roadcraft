@@ -114,11 +114,7 @@ export function padGarmentInWorker(input: Input): Promise<Uint8ClampedArray> {
   return new Promise((resolve, reject) => send(input, { input, resolve: (sheet) => resolve(sheet!.pixels), reject }));
 }
 
-/**
- * A sheet fetched, decoded, read and padded in the worker, its pixels moved
- * back (a transfer: no copy). Null when there is no worker or it could not:
- * the caller reads the sheet itself.
- */
+/** A sheet fetched, decoded, read and padded in the worker, its pixels moved back (a transfer: no copy). */
 export function padGarmentFileInWorker(input: FileInput): Promise<PaddedSheet | null> {
   return new Promise((resolve, reject) => send({ ...input, width: 0, height: 0 }, { input: null, resolve, reject }));
 }

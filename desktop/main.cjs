@@ -1,18 +1,4 @@
-/**
- * ROADCRAFT ON THE DESKTOP: the production build (`npm run build`, `dist/`)
- * in a window of its own, with Electron's bundled Chromium.
- *
- * A wrapper adds no speed to WebGL by itself - Electron runs the same
- * Chromium and ANGLE as Chrome - so what this buys is what the browser tab
- * could not have: the built game (not the dev server), a window of its own
- * (not a pane shared with other tabs), the high-performance GPU forced on a
- * machine with two (Electron's `force_high_performance_gpu`), and no
- * throttling when the window is behind another.
- *
- * The files are served on a privileged custom scheme, `app://roadcraft/`, as
- * Electron's protocol docs recommend over `file://`: absolute asset paths
- * resolve, fetch and wasm work, and the saves (localStorage) keep one origin.
- */
+/** ROADCRAFT ON THE DESKTOP: the production build */
 const { app, BrowserWindow, protocol, net, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');

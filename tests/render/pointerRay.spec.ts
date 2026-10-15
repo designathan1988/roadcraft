@@ -2,14 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createIsoRig } from '@render/isoViewport';
 
-/**
- * The pointer's line of sight (`Viewport.rayAt`): every point of it lands
- * on the pixel it was asked for, over the horizon too. A building was
- * picked on a line made of two `toWorldAt` points, at heights 0 and 100; at
- * street level a pixel over the horizon meets no plane at 0 in front of the
- * eye, `toWorldAt` answered the view's centre, and a click on a house
- * demolished its neighbour (seen in the game, 2026-10-14).
- */
+/** The pointer's line of sight (`Viewport.rayAt`) */
 const W = 1280;
 const H = 720;
 

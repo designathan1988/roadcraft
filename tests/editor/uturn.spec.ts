@@ -9,13 +9,7 @@ import { LaneletGraph } from '@world/lanelets';
 import { MEDIAN_UTURN_OPENING, medianNose } from '@world/landscape';
 import { commitUturn } from '@editor/streetObjects';
 
-/**
- * A U-TURN THROUGH THE MEDIAN (docs/source/VIAS.md V8, retorno: a piece the player
- * puts, 2026-10-10). Only where a car can really turn round: a car turns on a
- * 6.4 m centreline radius (AASHTO), 12.8 m from lane to lane - the FHWA's
- * median U-turn minimum. The default boulevard (2 m median) is too narrow; a
- * 5 m median is enough. Never a U-turn nobody can make.
- */
+/** A U-TURN THROUGH THE MEDIAN (retorno: a piece the player puts, 2026-10-10). */
 const AVENUE = 2, BOULEVARD = 3;
 
 function road(type: number, median?: number): { doc: RoadDoc; net: Network; id: SegmentId; start: number } {

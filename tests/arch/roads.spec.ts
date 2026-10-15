@@ -2,12 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-/**
- * The road system's own folders (docs/source/VIAS.md): `src/<layer>/roads/` is part
- * of its parent layer and obeys the same dependency order. The lint rule
- * (`eslint.config.js`) reports the aliases; this also follows RELATIVE
- * imports, which the rule cannot see (`../../render/x` from `world/roads/`).
- */
+/** The road system's own folders */
 const SRC = join(process.cwd(), 'src');
 const LAYERS: Record<string, readonly string[]> = {
   core: ['core'],

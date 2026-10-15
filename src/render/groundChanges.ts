@@ -1,19 +1,4 @@
-/**
- * Where the drawn ground changed, and when: the one record everything that
- * stands on the ground reads to know whether it must be built again.
- *
- * Before it, the things on the ground (walls, the transport, gardens, the
- * forest, the buildings, the plants under them) were keyed on two global
- * counters - every world rebuild and every grading anywhere - so one street
- * drawn rebuilt all of them across the whole map, even with nothing near the
- * street, even with nothing at all (the empty trains mesh relinked its shader
- * on every road edit: docs/performance.md). Now a change is recorded with the
- * rectangle it happened in (the blocks the road solve moved, the region the
- * ground was cut and filled in, a building's bank), and a dependant is built
- * again only when its own data changed or a change since its last build
- * touches the area it stands on. A dependant with nothing to draw has no area
- * and is never built again for the ground.
- */
+/** Where the drawn ground changed, and when */
 
 /** A world rectangle: [minX, minY, maxX, maxY]. */
 export type Rect = readonly [number, number, number, number];
@@ -21,19 +6,11 @@ export type Rect = readonly [number, number, number, number];
 /** How many changes are remembered; a dependant older than that is built again. */
 const KEPT = 512;
 
-/**
- * What a dependant reads: the serial of the latest change, and whether a
- * change since one reaches an area. A `GroundChanges`, or a view of the
- * document's diary (`world/changes.ts`) over its ground kinds.
- */
+/** What a dependant reads: the serial of the latest change, and whether a change since one reaches an area. */
 export interface GroundRecord {
   readonly version: number;
   touches(since: number, area: Area): boolean;
-  /**
-   * Where the ground changed after `since`; null when the record cannot say
-   * (the whole map, or forgotten). Absent: the reader asks `touches` of each
-   * of its areas instead of finding them by place.
-   */
+  /** Where the ground changed after `since`; null when the record cannot say (the whole map, or forgotten). */
   rectsSince?(since: number): readonly Rect[] | null;
 }
 
@@ -57,14 +34,7 @@ export class GroundChanges implements GroundRecord {
     while (this.log.length > KEPT) this.forgotten = this.log.shift()!.serial;
   }
 
-  /**
-   * Whether a change after `since` reaches `area` (`null`: a dependant with
-   * nothing on the ground). An area may be the list of its items' own
-   * rectangles: then only a change that reaches one of them counts. The
-   * union of a whole layer's items covered most of a town, and every street
-   * or lot drawn anywhere in it built the whole layer again (Nystrom, "Dirty
-   * Flag": a coarse flag reprocesses what did not change).
-   */
+  /** Whether a change after `since` reaches `area` (`null`: a dependant with nothing on the ground). */
   touches(since: number, area: Area): boolean {
     if (area === null || since >= this.serial) return false;
     const list = isRect(area) ? [area] : area;

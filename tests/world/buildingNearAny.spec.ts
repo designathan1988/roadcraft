@@ -7,13 +7,7 @@ import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * THE BUILDINGS SEVERAL CHANGES REACH, IN ONE LOOK (`BuildingStore.nearAny`):
- * what asking `near` of each rectangle, testing and joining gives, in the
- * store's order. Rectangle by rectangle, the ground's changes since a look
- * read the cells they share again for each (0.8 s in one frame of a 2,560 m
- * city's growth, 2026-10-15).
- */
+/** THE BUILDINGS SEVERAL CHANGES REACH, IN ONE LOOK (`BuildingStore.nearAny`) */
 type Rect = readonly [number, number, number, number];
 describe('the buildings several rectangles reach', () => {
   it('are those each rectangle reaches, joined, in the store order', () => {

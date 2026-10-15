@@ -1,23 +1,4 @@
-/**
- * THE ECOSYSTEM: what grows where, read from the land.
- *
- * As Horizon Zero Dawn's procedural placement does (Jaap van Muijden, "GPU
- * Based Procedural Placement in Horizon Zero Dawn", GDC 2017): the plants are
- * not authored one by one but derived from maps of the world - the relief,
- * the distance to water, the rock, the biome painted - by rules per plant
- * community, so painting a biome or moving a river changes the whole
- * ecosystem there at once. The communities are Brazil's own (IBGE's six
- * biomes and their fitofisionomias): the cerrado's gallery forest, veredas,
- * cerrado and cerradão and its rocky fields; the Atlantic forest and its
- * high grasslands; the Amazon's terra firme forest and várzea; the caatinga's
- * thorn scrub and cacti; the pampa's grasslands and gallery woods; the
- * pantanal's flooded fields and forest islands.
- *
- * Pure and deterministic: arrays in, arrays out, no `three`, no
- * `Math.random` (the noise is seeded by the map). The renderer gives it the
- * ground it draws and the water it fills, and plants and paints from the
- * answer (`render/terrain.ts`, `render/nature/`).
- */
+/** THE ECOSYSTEM: what grows where, read from the land. */
 import { BIOME_KINDS, type BiomeKind } from './terrainPaint';
 import { valueNoise } from './terrain';
 import { m } from './units';
@@ -50,18 +31,10 @@ export interface EcologyInput {
   /** The painted rock at each corner: how much is sandstone, how much basalt (the rest granite). */
   readonly sandstone: ArrayLike<number>;
   readonly basalt: ArrayLike<number>;
-  /**
-   * The biomes painted: `REGIONS.length` weights per corner, corner-major;
-   * what they leave is the map's own region. Null when none was painted.
-   */
+  /** The biomes painted: `REGIONS.length` weights per corner, corner-major; what they leave is the map's own region. */
   readonly painted: ArrayLike<number> | null;
   readonly settings: NatureSettings;
-  /**
-   * Where the grid's centre lies in the world (a plate's centre). The patches
-   * and frays (`valueNoise`) are read at world positions: read at the grid's
-   * own, every plate drew the same pattern. Absent: the world's origin (a
-   * single field over the map).
-   */
+  /** Where the grid's centre lies in the world (a plate's centre). */
   readonly centre?: { readonly x: number; readonly y: number };
 }
 
@@ -93,12 +66,7 @@ export interface EcologyField {
   readonly lowest: number;
 }
 
-/**
- * A field brought up to date over a region (Etapa 5g): the corners whose
- * ground changed, inclusive, in grid indices, read again from `previous`
- * with the same water. A terrain stroke re-read the whole map, 82 ms, and
- * every tree of the countryside could change under a stroke far away.
- */
+/** A field brought up to date over a region (Etapa 5g) */
 export interface EcologyUpdate {
   readonly previous: EcologyField;
   readonly ix0: number; readonly ix1: number; readonly iy0: number; readonly iy1: number;
@@ -178,11 +146,7 @@ const smooth = (a: number, b: number, x: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/**
- * A community's fields, listed once: read anew for every corner they were an
- * array made per call, a large part of the opening (every plate's corners,
- * each blended once or twice) and of its garbage.
- */
+/** A community's fields, listed once */
 let communityKeys: readonly (keyof Community)[] | null = null;
 
 /** Mixes communities by weight into `out` (the weights need not sum to one). */
@@ -265,9 +229,7 @@ function regionCommunity(region: RegionId, s: Site, out: Community): void {
       break;
     }
     case 'pantanal': {
-      // The flooded fields on the low flats; cordilheiras, forest on the
-      // slightly higher ground the floods leave dry.
-      // The floods reach the level ground and everything near the rivers.
+      // The flooded fields on the low flats; cordilheiras, forest on the slightly higher ground the floods leave dry.
       const low = Math.max(s.flat * clamp01(0.35 + s.valley * 1.2) * (1 - smooth(0.25, 0.6, s.ridge)), 1 - smooth(m(8), m(88), s.waterDist));
       const cordilheira = smooth(0.55, 0.75, s.patch) * (1 - low * 0.7);
       blend(out, [
@@ -287,10 +249,7 @@ function regionCommunity(region: RegionId, s: Site, out: Community): void {
   out.shrub = clamp01(out.shrub * (1.2 - 0.4 * s.fray));
 }
 
-/**
- * Distance to the nearest wet corner, in world units: a two-pass chamfer
- * transform (3-4 weights), linear in the corners.
- */
+/** Distance to the nearest wet corner, in world units: a two-pass chamfer transform (3-4 weights), linear in the corners. */
 function waterDistance(water: ArrayLike<number>, side: number, cell: number): Float32Array {
   const far = 1e9;
   const d = new Float32Array(side * side);
@@ -326,11 +285,7 @@ function waterDistance(water: ArrayLike<number>, side: number, cell: number): Fl
   return d;
 }
 
-/**
- * `localMean` over the corners x0..x1, y0..y1 only (the rest 0): read from a
- * crop `radius` wider, which gives the same means inside it - the box at the
- * crop's inner edges is cut only where the grid's own edge cuts it.
- */
+/** `localMean` over the corners x0..x1, y0..y1 only (the rest 0) */
 function localMeanIn(heights: ArrayLike<number>, side: number, radius: number, x0: number, x1: number, y0: number, y1: number): Float32Array {
   const cx0 = Math.max(0, x0 - radius), cx1 = Math.min(side - 1, x1 + radius);
   const cy0 = Math.max(0, y0 - radius), cy1 = Math.min(side - 1, y1 + radius);
@@ -380,8 +335,7 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate): Eco
   const count = side * side;
   let lowest = Infinity;
   for (let i = 0; i < count; i++) lowest = Math.min(lowest, heights[i] as number);
-  // Over a region only when that is the same answer: the lowest ground (every
-  // corner's altitude is read from it) and the field's size unchanged.
+  // Over a region only when that is the same answer: the lowest ground
   const prev = update && update.previous.side === side && update.previous.lowest === lowest ? update.previous : null;
   const x0 = prev ? Math.max(0, update!.ix0 - REACH) : 0, x1 = prev ? Math.min(side - 1, update!.ix1 + REACH) : side - 1;
   const y0 = prev ? Math.max(0, update!.iy0 - REACH) : 0, y1 = prev ? Math.min(side - 1, update!.iy1 + REACH) : side - 1;
@@ -394,8 +348,7 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate): Eco
     waterDistance: waterDistance(input.water, side, cell), lowest,
   };
   const distance = field.waterDistance;
-  // A valley floor or a ridge against the ground some 130 m round it: over
-  // the region, from a crop a mean's radius wider still (exact inside it).
+  // A valley floor or a ridge against the ground some 130 m round it
   const mean = prev ? localMeanIn(heights, side, MEAN_RADIUS, x0, x1, y0, y1) : localMean(heights, side, MEAN_RADIUS);
   const seedX = (input.settings.seed % 997) * 1.731;
   const seedY = (Math.floor(input.settings.seed / 997) % 997) * 2.113;

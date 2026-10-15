@@ -4,17 +4,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { simOf } from './support/bodies';
 
-/**
- * A street that simply carries on as a bigger road: an urban street widening
- * into a boulevard at a node of two legs. Players watched the traffic stand
- * still there. The two boulevard lanes merge into the street's one; a car had
- * started a lane change it could not finish before the line and stopped with
- * its body - by then entirely in its new lane - still counted in the old one,
- * and the car admitted to the merge from that old lane waited behind the
- * phantom while the phantom waited for the merge. Measured over five minutes
- * before the fix: cars stood for 106 s at a time and 44 got through the merge;
- * after it, 25 s and 74. A plain street join of the same shape stands 17 s.
- */
+/** A street that simply carries on as a bigger road: an urban street widening into a boulevard at a node of two legs. */
 function join(pedestrians: boolean): { worstStill: number; eastbound: number; westbound: number } {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: -600, y: 0 });
@@ -54,8 +44,7 @@ describe('a street carrying on as a boulevard', () => {
     console.log(`classJoin: ${JSON.stringify(result)}`);
     expect(result.worstStill).toBeLessThan(45);
     expect(result.eastbound).toBeGreaterThan(5);
-    // Into the merge: 44 in five minutes before the fix, 74 after (11.7 and
-    // 19.7 in the 80 s simulated here, at the same rates).
+    // Into the merge: 44 in five minutes before the fix, 74 after
     expect(result.westbound).toBeGreaterThan(15);
   });
 });

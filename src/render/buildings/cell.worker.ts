@@ -2,11 +2,7 @@ import type { Finish } from '@world/buildings/materials';
 import type { KitBoxes } from './cellArrays';
 import { type CellJob, CellWork, replyBuffers } from './cellWork';
 
-/**
- * One worker of the buildings' cells (`cellPool.ts`): the page's messages -
- * a cell to put together, the readings it asked for, a job dropped -
- * answered by its `CellWork`, each reply's arrays handed over.
- */
+/** One worker of the buildings' cells (`cellPool.ts`): the page's messages */
 type Message =
   | { readonly type: 'init'; readonly boxes: KitBoxes; readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>> }
   | { readonly type: 'start'; readonly job: CellJob }

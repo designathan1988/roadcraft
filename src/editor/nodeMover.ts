@@ -18,24 +18,10 @@ export interface NodeMoverHost {
   redraw(): void;
 }
 
-/**
- * Shortest interval between geometry rebuilds while a node is dragged: a
- * preview at 20 Hz is smoother than the eye needs, and it spares rebuilding
- * routes, signals and spatial indexes for pointer samples superseded at once.
- */
+/** Shortest interval between geometry rebuilds while a node is dragged */
 const PREVIEW_MIN_MS = 50;
 
-/**
- * THE NODE MOVER (Move tool): a node dragged, previewed live in the
- * document, and dropped as one undo step. What a drag can change is kept
- * when it begins (a memento): the node's place and the curve of each road at
- * it - a step through a spot where an incident curve would be too tight
- * flattened it for good (`RoadDoc.fitCurve`) - so cancelling puts them back,
- * and the drop puts them back before moving the node once, from where it
- * started to where it lands. A refused drop is put back by `moveNodeChecked`.
- * DO NOT keep the whole document (`toJSON` at the press, `replaceFromJSON` at
- * the release): every drag serialised and parsed every building of the city.
- */
+/** DO NOT keep the whole document (`toJSON` at the press, `replaceFromJSON` at the release) */
 export class NodeMover {
   private drag: { node: NodeId; origin: Vec2; curves: ReadonlyMap<SegmentId, CurveShape | null> } | null = null;
   private lastPreview = -Infinity;
@@ -65,10 +51,7 @@ export class NodeMover {
     return true;
   }
 
-  /**
-   * The pointer moved: the node follows it, live. True when a node is being dragged.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved: the node follows it, live. */
   move(world: Vec2): boolean {
     if (!this.drag) return false;
     this.host.doc.moveNode(this.drag.node, world);
@@ -76,12 +59,7 @@ export class NodeMover {
     return true;
   }
 
-  /**
-   * Whether the network may be rebuilt for the preview at `now` (ms): no
-   * sooner than the last rebuild's own cost allows. On a large network one
-   * rebuild costs far more than 50 ms, and asking for one every 50 ms only
-   * queued them until the pointer stopped.
-   */
+  /** Whether the network may be rebuilt for the preview at `now` (ms): no sooner than the last rebuild's own cost allows. */
   previewDue(now: number, rebuildMs: number): boolean {
     if (now - this.lastPreview < Math.max(PREVIEW_MIN_MS, rebuildMs * 1.6)) return false;
     this.lastPreview = now;
@@ -108,19 +86,13 @@ export class NodeMover {
     if (!node) return;
     const now = { x: node.x, y: node.y };
     const changed = Math.hypot(now.x - drag.origin.x, now.y - drag.origin.y) > COARSE_EPS;
-    // Back to the roads as they were - curves included - then, if the drag
-    // counts, one move from there to the drop point as one undo step.
+    // Back to the roads as they were - curves included
     this.putBack(drag);
     if (!changed || !commit) {
       host.settleTopology();
       return;
     }
-    // The drop is reconciled like a drawn road: onto a node it joins it,
-    // across a road it makes a junction, and a drop that would leave a stub
-    // or cross a road at the wrong height is refused.
-    // Judged by the editing rules too (`editRules.ts`): a drop that makes a
-    // junction too sharp or too tight, or lays a road on another, is refused,
-    // and `moveNodeChecked` puts the roads back itself.
+    // The drop is reconciled like a drawn road
     let refused: DraftResult['reason'] | undefined;
     host.mutate(() => {
       const result = moveNodeChecked(doc, net, drag.node, now);

@@ -6,11 +6,7 @@ import { crossingAccesses, crossingAccessTester, onCrossingAccess } from '@world
 import { Rng } from '@core/rng';
 import { m } from '@world/units';
 
-/**
- * The searches of the street furniture by cell (profile of 2026-10-12: every
- * item asked every road and every crossing of the map, ~65 ms of each road
- * drawn on the player's map) find what the whole-map loops found.
- */
+/** The searches of the street furniture by cell */
 function town(): Network {
   const doc = new RoadDoc();
   buildDefaultTown(doc);

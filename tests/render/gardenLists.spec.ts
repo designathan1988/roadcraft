@@ -8,11 +8,7 @@ import type { Building, BuildingElement, BuildingId } from '@world/buildings/typ
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * The gardens' lists taken in a change at a time, by the ids the diary gives
- * (`BuildingStore.changedSince`, AUDITORIA C2): after any edits the lists
- * the changes leave placed are the lists a reader made from nothing gives.
- */
+/** The gardens' lists taken in a change at a time, by the ids the diary gives (`BuildingStore.changedSince`, AUDITORIA C2) */
 const still: GroundRecord = { version: 0, touches: () => false };
 const bank = (b: Building): Rect => [b.x - m(20), b.y - m(20), b.x + m(20), b.y + m(20)];
 /** A building's plants as the renderer's sampling would give them: one per plant element, where it stands. */

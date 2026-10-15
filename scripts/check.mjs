@@ -1,20 +1,4 @@
-// THE CHECK (`npm run check`; `npm run check:all` before a push; `--fast`: the barrier only, see
-// `stepsFor`). Every step has a hard limit (past it the
-// whole process tree is killed and the step fails), the run stops at the first failure and prints the
-// seconds of each step. Nothing here plays the game, times anything or retries.
-//   lint    ESLint (layers, file size, no silent catch, no module state), cached by file content
-//   code    scripts/check-code.mjs: the types and the code rules over the call graph of a frame
-//   knip    no unused file, export or dependency
-//   unit    vitest: the specs the change reaches through their imports, and those that read the code as
-//           text (`ALWAYS`: the static rules of the code and of the tests); each test at most 10 s
-//   scale   the counting suites (tests/perf, tests/scale) the change reaches: the same edit costs the
-//           same on any map
-//   build   vite build
-// What runs depends on what changed (git: the working tree against HEAD, untracked files included):
-// docs only → nothing; tests only → everything but the build; anything else → everything, the specs
-// chosen by what they import (test impact analysis; docs/research/regression-barrier.md).
-// `--all` runs every step and every spec whatever changed (the pre-push, on the commit being pushed).
-// `--base <branch>`: the changes since this branch left <branch> (a block's branch, before its merge).
+// THE CHECK (`npm run check`; `npm run check:all` before a push; `--fast`: the barrier only, see `stepsFor`).
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -25,12 +9,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const node = process.execPath;
 
-/**
- * Files of the working tree that differ from HEAD, untracked ones included; null outside a repository.
- * With `base` (`--base main`, the end of a block on its branch): from where the branch left that base
- * (`git merge-base`), so the block's commits count. DO NOT check a committed block against HEAD: it
- * saw nothing and ran no step.
- */
+/** DO NOT check a committed block against HEAD: it saw nothing and ran no step. */
 function changed(base) {
   const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
   try {
@@ -47,13 +26,7 @@ export const isDoc = (f) => f.startsWith('docs/') || f.endsWith('.md');
 /** A file only the specs read. */
 export const isTest = (f) => f.startsWith('tests/');
 
-/**
- * The steps a set of changed files calls for (`null`: every step). `fast` (`--fast`): the barrier
- * only - the files changed linted, the types and
- * the code rules, so a wrong form that left the code cannot come back. The specs, the counting suites,
- * the unused-export sweep and the bundle run at the END OF A BLOCK (`npm run check`, before a merge),
- * once (the player, 2026-10-14: "teste é no final dos blocos"). DO NOT put tests back in the turn's check.
- */
+/** DO NOT put tests back in the turn's check. */
 export function stepsFor(files, fast = false) {
   const all = fast ? ['lint', 'code'] : ['lint', 'code', 'knip', 'unit', 'scale', 'build'];
   if (!files) return all;
@@ -66,11 +39,7 @@ export function stepsFor(files, fast = false) {
 /** The changed files ESLint reads, for the fast check (a file's result depends on that file alone, see below). */
 const lintable = (files) => files.filter((f) => /\.(ts|js|mjs|cjs)$/.test(f) && existsSync(join(ROOT, f)));
 
-/**
- * The ESLint cache, keyed on what decides a result besides the file itself: the config, the project's own
- * rules and the installed versions (ESLint keys its cache on the file and the config only). No rule here
- * reads another file or the types, so a file's result depends on that file alone (eslint.org, "Caching").
- */
+/** The ESLint cache, keyed on what decides a result besides the file itself */
 function eslintCache() {
   const h = createHash('sha1');
   for (const f of ['eslint.config.js', 'package-lock.json', 'scripts/baselines/eslint-suppressions.json']) h.update(readFileSync(join(ROOT, f)));
@@ -78,10 +47,7 @@ function eslintCache() {
   return `node_modules/.cache/eslint/${h.digest('hex').slice(0, 12)}.json`;
 }
 
-/**
- * The specs that read the code or the page as text (through the file system, not by importing it): no
- * import graph leads to them, so they run in every check. `tests/tooling/check.spec.ts` keeps the list whole.
- */
+/** The specs that read the code or the page as text (through the file system, not by importing it) */
 export const ALWAYS = [
   'tests/arch/', 'tests/tooling/', 'tests/ui/decimals.spec.ts', 'tests/ui/i18n.spec.ts', 'tests/ui/i18nKeys.spec.ts',
   'tests/ui/oldInterface.spec.ts', 'tests/render/citizenLod.spec.ts', 'tests/render/vehicleFrame.spec.ts',
@@ -96,13 +62,7 @@ export const ALWAYS = [
   'tests/render/cheapAudit.spec.ts',
 ];
 
-/**
- * The specs a change calls for: `null` (every one) for a full check, else the changed files themselves and
- * `ALWAYS`, given to `vitest related`, which runs the specs whose imports (static and dynamic, followed to
- * the end) reach a changed file (vitest.dev/guide/cli; the graph is Vite's, `getTestDependencies`). Data the
- * specs read by path (maps, fixtures, models, the page, JSON in `src`) is in `forceRerunTriggers`
- * (`vitest.config.ts`): such a change runs every spec.
- */
+/** The specs a change calls for: `null` */
 export function specsFor(files) {
   if (!files) return null;
   const existing = files.filter((f) => !isDoc(f) && existsSync(join(ROOT, f)));
@@ -113,12 +73,7 @@ export function specsFor(files) {
   return [...new Set([...existing, ...always])];
 }
 
-/**
- * The specs that import a changed source file themselves (`@world/doc`, `../../src/world/doc`), the changed
- * specs and `ALWAYS`: the fast check's unit step. A change to a file the whole game reads (`world/doc.ts`)
- * reaches ~180 specs through their imports, 90-125 s; the specs written about the file run in seconds.
- * `npm run check` still runs every spec the change reaches.
- */
+/** The specs that import a changed source file themselves */
 export function directSpecsFor(files) {
   const specs = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? specs(`${dir}${e.name}/`) : e.name.endsWith('.spec.ts') ? [`${dir}${e.name}`] : []);

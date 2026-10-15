@@ -31,14 +31,7 @@ export interface FrameOut {
 /** A fresh `FrameOut`. */
 export const newFrame = (): FrameOut => ({ p: { x: 0, y: 0 }, t: { x: 1, y: 0 }, n: { x: 0, y: 1 }, i: 0, u: 0, s: 0 });
 
-/**
- * An immutable polyline with lazily-built arc-length, tangent and bbox tables.
- *
- * Immutability is load-bearing: the geometry cache stores these by identity and
- * a change produces a *new* object, so "is this stale?" never has to be asked.
- * The V6 monolith rebuilt a fresh point array on every `segmentPoints()` call —
- * dozens of times per segment per frame.
- */
+/** An immutable polyline with lazily-built arc-length, tangent and bbox tables. */
 export class Polyline {
   /** Flat [x0,y0,x1,y1,...]. Never mutated after construction. */
   readonly xy: Float64Array;
@@ -145,11 +138,7 @@ export class Polyline {
     return this.sampleAtInto(s, newFrame());
   }
 
-  /**
-   * `sampleAt` into `out`, for the simulation's and the drawing's loops: the
-   * frame and its three points made anew on every call were 370 MB in 10 s
-   * of a town with 400 cars and 400 people (the heap profiler, 2026-10-11).
-   */
+  /** `sampleAt` into `out`, for the simulation's and the drawing's loops */
   sampleAtInto(s: number, out: FrameOut): FrameOut {
     if (this.n < 2) {
       out.p.x = this.n === 1 ? (this.xy[0] as number) : 0;
@@ -190,10 +179,7 @@ export class Polyline {
     return this.sampleAt(s).t;
   }
 
-  /**
-   * Sub-polyline between two arc lengths, with exact endpoints inserted.
-   * Returns a polyline of at least 2 points whenever `s1 > s0`.
-   */
+  /** Sub-polyline between two arc lengths, with exact endpoints inserted. */
   sub(s0: number, s1: number): Polyline {
     const total = this.length;
     const a = clamp(Math.min(s0, s1), 0, total);
@@ -220,12 +206,7 @@ export class Polyline {
     return new Polyline(xy);
   }
 
-  /**
-   * Bounding boxes of `GROUP` runs at a time (`chunks`), for the longest
-   * lines: the outer edge of a whole town's footways is one ring of
-   * thousands of points, and asking it for every verge vertex tested every
-   * run's box - 7.5 s of a four-times town's first minute (2026-10-14).
-   */
+  /** Bounding boxes of `GROUP` runs at a time (`chunks`), for the longest lines */
   private get groups(): Float64Array {
     if (this._groups) return this._groups;
     const boxes = this.chunks;
@@ -275,18 +256,7 @@ export class Polyline {
     return boxes;
   }
 
-  /**
-   * The segment nearest (px, py): its index, or -1 for a single point, with
-   * its parameter and squared distance left in `nearest`.
-   *
-   * The same arithmetic as `closestOnSegment`, in the same order, so the answer
-   * is bit for bit what testing every segment gives - but with no allocation,
-   * and skipping every run of segments whose box is already farther away than
-   * the best so far. This is the innermost call of the road height field, run
-   * several times per mesh vertex: a scan of the whole centreline with two
-   * objects allocated per segment was a third of a road rebuild.
-   * DO NOT change its arithmetic without `segmentDistSq`'s (below).
-   */
+  /** DO NOT change its arithmetic without `segmentDistSq`'s (below). */
   private nearestSegment(px: number, py: number): number {
     const xy = this.xy;
     const segments = this.n - 1;
@@ -377,13 +347,7 @@ export class Polyline {
   }
 }
 
-/**
- * The squared distance from (px, py) to segment `i` of a flat point list
- * (`Polyline.xy`): the same arithmetic as `Polyline.nearestSegment`, in the
- * same order, so `Math.sqrt` of the least of these over every segment is bit
- * for bit `Polyline.distanceTo`. DO NOT change one without the other: the
- * paved raster (`world/zoneGrid.ts` `markPaved`) must answer as `distanceTo` does.
- */
+/** DO NOT change one without the other: the paved raster */
 export function segmentDistSq(xy: Float64Array, i: number, px: number, py: number): number {
   const ax = xy[i * 2] as number;
   const ay = xy[i * 2 + 1] as number;

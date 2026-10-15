@@ -6,12 +6,7 @@ import type { SimWorld } from '@sim/world';
 import { cyclesOf } from '@sim/intersections/cycles';
 import { seededEdit, seededWorld } from './support';
 
-/**
- * The small loops of road found with the open links in a binary heap
- * (`cycles.ts` `build`) are the loops found with the open list sorted before
- * every pop (the oracle below, the code of before): the same loops, with the
- * same storage and members, for every lane, through road edits.
- */
+/** The small loops of road found with the open links in a binary heap */
 const MAX_CYCLE_STORAGE = m(560);
 
 function oldBuild(graph: LaneletGraph): Map<LaneletId, { id: number; storage: number; lanelets: ReadonlySet<LaneletId> }[]> {

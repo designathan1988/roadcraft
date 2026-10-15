@@ -17,11 +17,7 @@ import {
   componentAt,
 } from './types';
 
-/**
- * Reusable building definitions: everything a building is except where it
- * stands. The built-in presets are here; the player's own live in
- * `editor/blueprintLibrary.ts` and have exactly the same shape.
- */
+/** Reusable building definitions: everything a building is except where it stands. */
 export type BlueprintBody = Omit<Building, 'id' | 'x' | 'y' | 'rotation'>;
 
 export interface Blueprint {
@@ -32,25 +28,12 @@ export interface Blueprint {
   readonly body: BlueprintBody;
 }
 
-/**
- * A building record for a blueprint, placed so the middle of its FRONT edge
- * (the street side) is at `anchor`.
- *
- * Here rather than with the editing commands because it is only arithmetic on
- * a record: the tool, the placement command and the gallery's photographs all
- * want it, and the renderer may not reach into `editor/`.
- */
+/** A building record for a blueprint, placed so the middle of its FRONT edge (the street side) is at `anchor`. */
 export function instantiate(body: BlueprintBody, anchor: Vec2, rotation: number, blueprint?: string): Omit<Building, 'id'> {
   return placeBody(JSON.parse(JSON.stringify(body)) as BlueprintBody, anchor, rotation, blueprint);
 }
 
-/**
- * `instantiate` without the copy: the record SHARES the body's volumes,
- * storeys and elements, so it is only to be read - a ghost under the pointer
- * (`BuildingTool.ghostAt`), cloned before it is stored. DO NOT copy the body
- * for a ghost: every pointer move wrote the whole body to JSON and read it
- * back to move it.
- */
+/** DO NOT copy the body for a ghost: every pointer move wrote the whole body to JSON and read it back to move it. */
 export function placeBody(body: BlueprintBody, anchor: Vec2, rotation: number, blueprint?: string): Omit<Building, 'id'> {
   const draft = { ...body, x: 0, y: 0, rotation } as Omit<Building, 'id'>;
   const f = footprintBox(draft as Building);
@@ -124,11 +107,7 @@ const bayCount = (length: number, module: number): number => Math.max(1, Math.ro
 /** `n` default modules, world units: how the presets below are measured. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
-/**
- * The parametric generator: a single volume `w x d` world units and `storeys`
- * storeys, with the facades and roof its use implies. The presets start from
- * this.
- */
+/** The parametric generator: a single volume `w x d` world units and `storeys` storeys */
 export function generateBody(
   use: BuildingUse,
   w: number,
@@ -167,11 +146,7 @@ const ABOVE_STREET: Partial<Record<BayComponent, BayComponent>> = {
   loadingDoor: 'window',
 };
 
-/**
- * A storey for above `source`, in the building's own style rather than a
- * category's: the same facade, with every way in (a door, a shopfront, a
- * loading door) turned into the window that belongs above it.
- */
+/** A storey for above `source`, in the building's own style rather than a category's: the same facade, with every way in */
 export function upperStoreyFrom(source: Storey): Storey {
   const lift = (c: BayComponent): BayComponent => ABOVE_STREET[c] ?? c;
   const facade: Facade = { fill: lift(source.facade.fill) };
@@ -193,11 +168,7 @@ export function upperStoreyFrom(source: Storey): Storey {
   return storey;
 }
 
-/**
- * The neutral starting block: no category, just a mass of `w x d` units and
- * `storeys` storeys with windows all round, a door in the middle of the
- * front and a flat roof. Everything else is shaped from here.
- */
+/** The neutral starting block: no category, just a mass of `w x d` units and `storeys` storeys with windows all round */
 export function generateBlock(
   w: number,
   d: number,

@@ -7,14 +7,7 @@ import { Level, halfWidth } from '@world/roadTypes';
 import { pavedTester } from '@world/zoneGrid';
 import { m } from '@world/units';
 
-/**
- * NO EMPTY SPACE AT A CORNER (the player, 2026-10-09: "os espaços vazios").
- *
- * A street between two cross streets: the cross streets' strips of lots take
- * the corners, and every proposed lot of the street between touching one was
- * dropped whole - a gap up to a lot wide at each corner. A stored lot did the
- * same to its block's row. Now what is left beside them is cut into lots.
- */
+/** NO EMPTY SPACE AT A CORNER (the player, 2026-10-09: "os espaços vazios"). */
 
 function street(): { doc: RoadDoc; net: Network } {
   const doc = new RoadDoc();

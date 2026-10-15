@@ -59,11 +59,7 @@ import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sam
 import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
 import type { Aabb } from '@core/aabb';
 
-/**
- * Side of one terrain plate, in world units: the map is laid in square plates
- * (`world/bounds.ts`), each its own mesh, so a plate far off the view costs a
- * coarse stand-in and an edit rebuilds the plate it touched.
- */
+/** Side of one terrain plate, in world units: the map is laid in square plates */
 const TERRAIN_SIZE = PLATE_SIZE;
 /** Cells per side: 320 cells of 6.4 m (`world/bounds.ts` PLATE_SIZE), fine enough for a brush. */
 const TERRAIN_SEGMENTS = 320;
@@ -80,13 +76,7 @@ const WATER_MARGIN = m(0.16);
 /** Grid resolution of the unified river surface. */
 const WATER_CELL = m(1.6);
 
-/**
- * World size of one terrain quad.
- *
- * The terrain mesh holds one vertex per cell and interpolates linearly between
- * them, so anything laid on the ground must be tessellated to at most this step
- * or it chords across a bump it never sampled.
- */
+/** World size of one terrain quad. */
 export const TERRAIN_CELL = TERRAIN_SIZE / TERRAIN_SEGMENTS;
 
 
@@ -95,43 +85,19 @@ const NO_WATER = -100_000;
 
 /** Corners per side of the terrain grid — one more than its cells. */
 const GRID = TERRAIN_SEGMENTS + 1;
-/**
- * Half the terrain plate's extent. Nothing may be placed outside it.
- *
- * The ground is a finite 4800-unit plate. Anything scattered beyond it hangs
- * in the void with no surface under it, which is exactly what happened to the
- * vegetation: it was spread over `max(900, networkBounds * 0.85)` about the
- * network centre with no reference to the terrain at all, so a network near an
- * edge planted trees off the end of the world.
- */
+/** Half the terrain plate's extent. */
 export const TERRAIN_HALF = TERRAIN_SIZE / 2;
 /** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
-/**
- * Where the grass field stands this frame (`grassField.ts`): world x, y, how
- * far it reaches, and 1 when it is drawn. The ground shades itself under it.
- */
+/** Where the grass field stands this frame (`grassField.ts`): world x, y, how far it reaches, and 1 when it is drawn. */
 const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
-/**
- * The universal grid drawn by the ground itself (`SceneHandle.setGrid`): the
- * cell (world units), the strength (0: off) and the map's half size. Part of
- * the terrain's own colour, it lies on the ground as drawn whatever roads are
- * laid, changed or removed - a set of lines over the ground went under it
- * wherever the ground was cut or filled after them (the player, 2026-10-06).
- */
+/** The universal grid drawn by the ground itself (`SceneHandle.setGrid`): the cell (world units), the strength */
 export const TERRAIN_GRID: { value: [number, number, number] } = { value: [m(10), 0, MAP_HALF] };
-/**
- * How far into the dry season the land is, 0 (the rains: everything green)
- * to 1 (the height of the drought: the savanna's grass straw-gold). Shared
- * by the ground and the grass; the seasons set it.
- */
+/** How far into the dry season the land is, 0 (the rains: everything green) to 1 */
 const SEASON_DRY: { value: number } = { value: 0.4 };
 
-/**
- * What the surface reads of the document: one plate's share of it, in the
- * plate's own coordinates (`flatAtlas.ts`).
- */
+/** What the surface reads of the document: one plate's share of it, in the plate's own coordinates (`flatAtlas.ts`). */
 export type TerrainSource = Pick<RoadDoc, 'changes' | 'terrainRevision' | 'terrainStamps' | 'terrainRelief' | 'natureRevision' | 'nature' | 'paintRevision' | 'terrainPaint'> & {
   /** The map's relief under the stamps, in the plate's own coordinates. */
   readonly terrainGround?: (x: number, y: number) => number;
@@ -140,78 +106,29 @@ export type TerrainSource = Pick<RoadDoc, 'changes' | 'terrainRevision' | 'terra
 export interface TerrainSurface {
   readonly meshes: readonly Object3D[];
   readonly ground: Mesh;
-  /**
-   * Where the sun is (a direction towards it, three's axes): the relief's
-   * shadows are cast again when it has moved, and its sky again when the
-   * land has (`terrainLight`).
-   */
+  /** Where the sun is (a direction towards it, three's axes) */
   setSun(direction: { readonly x: number; readonly y: number; readonly z: number }): void;
-  /**
-   * Once a frame, after `focus`: the map's far woods (`flatAtlas.ts`,
-   * `farForest.ts`). A plate of ground has nothing to do here: the fine relief
-   * it baked (`terrainRelief.ts`, removed) was read by nothing the ground draws.
-   */
+  /** Once a frame, after `focus`: the map's far woods (`flatAtlas.ts`, `farForest.ts`). */
   bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null): void;
   /** How the rivers and lakes look and move: waves, foam, current (`render/water.ts` WaterLook). */
   setWaterLook(look: WaterLook): void;
   /** The gullies the player cut or wiped, and how much of the steep land carries them of itself (`world/gullies.ts`). */
   setGullies(dabs: readonly GullyDab[], auto: number): void;
-  /**
-   * The terrain's own surface for the batter from a footway down to the
-   * ground (`roadSurfaces.ts`): the same lawn, read as LEVEL ground whatever
-   * its slope. The batter is steep over a short run, and the slope bands of
-   * the terrain shader painted it as soil and rock - brown streaks along
-   * every pavement.
-   */
+  /** The terrain's own surface for the batter from a footway down to the ground (`roadSurfaces.ts`) */
   readonly vergeMaterial: Material;
   /** The analytic height field: the smooth surface the stamps describe. */
   heightAt(x: number, y: number): number;
-  /**
-   * The ground as DRAWN, before any road cut or filled it.
-   *
-   * This is what the road profile is solved against. Solving it against the
-   * shaped surface instead would feed the roads their own previous answer, and
-   * the ground and the road would chase each other a little further apart on
-   * every rebuild.
-   */
+  /** The ground as DRAWN, before any road cut or filled it. */
   naturalRenderedHeightAt(x: number, y: number): number;
-  /**
-   * A digest of everything `renderedHeightAt` and `naturalRenderedHeightAt`
-   * read inside a rectangle: the corners, shaped and natural, of every cell
-   * they touch, and the stamps themselves where the rectangle leaves the plate
-   * and the field is read analytically.
-   */
+  /** A digest of everything `renderedHeightAt` and `naturalRenderedHeightAt` read inside a rectangle */
   digest(minX: number, minY: number, maxX: number, maxY: number): number;
-  /**
-   * The height the terrain is actually DRAWN at.
-   *
-   * The mesh samples the field at cell corners and interpolates linearly across
-   * the triangles between them, so the drawn surface differs from the field by
-   * up to `(cell^2 / 8) * |H''|`. Anything laid on the ground must clear what is
-   * on screen, not what the field says, or it sinks into a triangle.
-   */
+  /** The height the terrain is actually DRAWN at. */
   renderedHeightAt(x: number, y: number): number;
-  /**
-   * Whether a point is under a river's water.
-   *
-   * NOT "the ground is low": the base relief dips well below zero over whole
-   * valleys with no water in them, and planting was skipped wherever it did -
-   * which left the ground around a crossroads in such a valley bare.
-   */
+  /** Whether a point is under a river's water. */
   wetAt(x: number, y: number): boolean;
-  /**
-   * Rewrites the heightfield from the document's stamps alone.
-   *
-   * The first half of a two-pass build. Roads are solved against THIS surface,
-   * because a road has to be laid on the natural ground before the ground can
-   * be asked to come and meet it.
-   */
+  /** Rewrites the heightfield from the document's stamps alone. */
   update(doc: TerrainSource, stroking?: boolean): boolean;
-  /**
-   * Brings the painted ground up to `doc.paintRevision`. `deferEcology`: the
-   * ecosystem is left to `settleEcology` (the atlas reads its plates' a few
-   * at a time, nearest the view first).
-   */
+  /** Brings the painted ground up to `doc.paintRevision`. */
   updatePaint(doc: TerrainSource, deferEcology?: boolean): void;
   /** Whether the ecosystem waits to be read again (`settleEcology`). */
   readonly ecologyPending?: boolean;
@@ -239,45 +156,18 @@ export interface TerrainSurface {
   waterArea(): { minX: number; maxX: number; minY: number; maxY: number } | null;
   /** Moves whenever the water is rebuilt. */
   readonly waterRevision: number;
-  /**
-   * The grid cells (x0, x1, y0, y1) the last `update` rewrote, or null when it
-   * rewrote the whole plate: where a stroke's dab changed the ground.
-   */
+  /** The grid cells (x0, x1, y0, y1) the last `update` rewrote, or null when it rewrote the whole plate */
   readonly lastRegion: TerrainRegion | null;
-  /**
-   * After a stroke: what was deferred while it was held (the water) is
-   * brought up to date. Cheap when nothing was deferred.
-   */
+  /** After a stroke: what was deferred while it was held (the water) is brought up to date. */
   settle(): void;
-  /**
-   * Cuts and fills the ground so it meets the roads.
-   *
-   * The second half. `shape` is the solved road field; every corner inside a
-   * road's corridor is pulled to the road's subgrade, and the difference is
-   * carried back to the natural ground over a wide batter. Returns true when
-   * anything moved, so the caller knows whether the water needs rebuilding.
-   */
-  /**
-   * `region`: one region or several, shaped in one pass (each region's own
-   * pass walked every shaped corner, every road's box and the whole plate's
-   * bounds again: an edit touching 20 blocks paid that 20 times).
-   */
+  /** Cuts and fills the ground so it meets the roads. */
+  /** `region`: one region or several, shaped in one pass */
   shapeToRoads(shape: TerrainShaper | null, region?: TerrainRegion | readonly TerrainRegion[] | null): boolean;
-  /**
-   * `shapeToRoads` asked off the page (`groundShape.ts`): the corners its pass
-   * reads for `region` - with none, for `bounds`, the shapers' boxes, world
-   * coordinates for the atlas and the plate's own for a plate - each plate's
-   * in `plates`, and `take`, which puts the worker's answers (one a plate, in
-   * order) in place as `shapeToRoads` would have: true when anything moved.
-   */
+  /** `shapeToRoads` asked off the page (`groundShape.ts`): the corners its pass reads for `region` */
   askShape(region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): ShapeAsking;
   /** The plate's natural corners and the diagonals they are drawn with (`naturalRenderedHeightAt`), as kept: never written by the caller. */
   naturalCorners?(): { readonly natural: Float64Array; readonly diagonals: Uint8Array };
-  /**
-   * The atlas's plates' natural ground a set of world boxes reads
-   * (`naturalRenderedHeightAt`), as plain data for the ground's worker; a
-   * plate not made is left out (the page reads it).
-   */
+  /** The atlas's plates' natural ground a set of world boxes reads */
   naturalCut?(boxes: readonly (readonly [number, number, number, number])[]): NaturalPlate[];
   /** The grid corners a world box covers, as `shapeToRoads` takes them. */
   regionOf(box: readonly [number, number, number, number]): TerrainRegion;
@@ -285,29 +175,13 @@ export interface TerrainSurface {
   rectOf(region: TerrainRegion): readonly [number, number, number, number];
   /** The plates the ground is made of, each with its own surface (`TerrainPart`). */
   readonly parts: readonly TerrainPart[];
-  /**
-   * The highest corner of the drawn ground, when the surface keeps it as its
-   * ground moves (the atlas, from its plates'): read instead of every corner
-   * of every plate (`SceneHandle.landTop`).
-   */
+  /** The highest corner of the drawn ground, when the surface keeps it as its ground moves (the atlas, from its plates') */
   highest?(): number;
-  /**
-   * Where the view looks (world x, y) and how much ground it takes in (the
-   * screen's half height, world units): the atlas keeps in full the plates
-   * near it (`flatAtlas.ts`).
-   */
+  /** Where the view looks (world x, y) and how much ground it takes in (the screen's half height, world units) */
   focus?(x: number, y: number, reach: number): void;
-  /**
-   * The vegetation the quality tier allows (`quality.ts` vegetation, as the
-   * near trees' budget reads it): the atlas' far woods (`farForest.ts`)
-   * stand as thick as the near ones will.
-   */
+  /** The vegetation the quality tier allows (`quality.ts` vegetation, as the near trees' budget reads it) */
   setVegetation?(amount: number): void;
-  /**
-   * The woods' density but the ecosystem's share per cell, made off the page
-   * with the plate's first build (`woodsBase.ts`), while the natural land is
-   * that build's (no stamp since); else null, and the sweep works it out.
-   */
+  /** The woods' density but the ecosystem's share per cell, made off the page with the plate's first build */
   woodsBase?(): Float32Array | null;
   dispose(): void;
 }
@@ -320,10 +194,7 @@ export interface ShapeAsking {
   take(answers: readonly PlateShapeAnswer[]): boolean;
 }
 
-/**
- * A plate of the ground and where its centre stands (`flatAtlas.ts`).
- * `surface` speaks the plate's own coordinates, about its centre.
- */
+/** A plate of the ground and where its centre stands (`flatAtlas.ts`). */
 export interface TerrainPart {
   readonly surface: TerrainSurface;
   readonly cx: number;
@@ -337,10 +208,7 @@ function latticeHash(x: number, y: number, seed: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
 }
 
-/**
- * Value noise tiling with its own period on each axis: a streak long down a
- * face and narrow across it, still seamless (`makeNoise` has one period).
- */
+/** Value noise tiling with its own period on each axis: a streak long down a face and narrow across it, still seamless */
 function makeNoiseXY(seed: number): (x: number, y: number, px: number, py: number) => number {
   const smooth = (t: number): number => t * t * (3 - 2 * t);
   return (x, y, px, py) => {
@@ -391,25 +259,7 @@ const ROCK_SIZE = 512;
 /** World units one rock tile covers (`uRockScale`). */
 const ROCK_WORLD = m(23.2);
 
-/**
- * The rocks, two layers each - its FACE, read by the side projections of the
- * triplanar mapping (texture v is height, so beds lie level and streaks run
- * down), and its TOP, read from above on the gentler rock, with no direction
- * in it (a face texture laid flat drew parallel stripes over every outcrop).
- * In the shader's order: granite, sandstone, basalt.
- *
- *  - GRANITE / GNEISS, the land's own rock (Rio's sugarloaves, the Serra do
- *    Mar, the inselbergs of the sertão): grey slabs split by long sheeting
- *    joints, black streaks of the cyanobacteria the rain feeds running down
- *    the face, grooves (caneluras) and pale lichen.
- *  - SANDSTONE (the chapadas and their canyons): cross-bedded sets between
- *    level bounding surfaces, vertical joints, varnish hanging from the bed
- *    contacts. Its broad beds of colour are laid by the shader from the
- *    world height, so they never repeat with the tile.
- *  - BASALT (the Serra Geral, Itaimbezinho): dark columns of uneven width, each
- *    a facet, cross joints, rusty weathering; from above, the polygons of
- *    their tops.
- */
+/** The rocks, two layers each - its FACE, read by the side projections of the triplanar mapping */
 const ROCK_RECIPES: readonly (readonly [string, SurfaceRecipe])[] = (() => {
   const g1 = makeNoise(0x61a1), g2 = makeNoise(0x61d4), gs = makeNoiseXY(0x61b2), gf = makeNoise(0x61c3);
   const s1 = makeNoise(0x7a11), s2 = makeNoise(0x7a22), ss = makeNoiseXY(0x7a33);
@@ -428,8 +278,6 @@ const ROCK_RECIPES: readonly (readonly [string, SurfaceRecipe])[] = (() => {
     const upright = (1 - smoothstep(1.2, 3, ud)) * smoothstep(0.52, 0.64, fbm(g2, u * 5 + 1.7, v * 5 + 6.1, 5, 1));
     const crack = Math.max(joint, upright);
     // Streaks: water and the cyanobacteria it feeds, down from every crest.
-    // Broad and faint: thin dark ones packed close read as straw on a dome
-    // (the player, 2026-10-07).
     const st = gs(u * 8, v * 2, 8, 2) * 0.7 + gs(u * 20 + 7, v * 4, 20, 4) * 0.3;
     const streak = smoothstep(0.52, 0.8, st);
     const groove = gs(u * 150, v * 3 + 1.7, 150, 3);
@@ -566,11 +414,7 @@ const ROCK_RECIPES: readonly (readonly [string, SurfaceRecipe])[] = (() => {
   ];
 })();
 
-/**
- * Tiling noise stretched along v: the mean of samples stacked up the column,
- * which smears each blob into a streak while both axes keep the one period
- * `fbm` tiles on (a lower frequency along v alone would leave a seam).
- */
+/** Tiling noise stretched along v: the mean of samples stacked up the column */
 function streakNoise(noise: (x: number, y: number, period: number) => number, u: number, v: number, period: number): number {
   let sum = 0;
   for (let k = 0; k < 8; k++) sum += fbm(noise, u * period, v * period + k * 0.75, period, 2);
@@ -578,20 +422,8 @@ function streakNoise(noise: (x: number, y: number, period: number) => number, u:
   return Math.min(1, Math.max(0, 0.5 + (sum / 8 - 0.5) * 2.2));
 }
 
-/**
- * The grass's tones, sRGB: deep clump green, sunlit green, dry straw, bare
- * soil. Their mean has the brightness of measured grass (Physically Based's
- * grass, linear 0.105 0.133 0.041: green about 0.13 linear); the old sunlit
- * green was 0.32 linear and nearly blue-free, a neon lawn brighter than the
- * buildings (the player, 2026-10-08: "extremamente brilhante").
- */
-// The dark tone close to the lit one: at 0.22 0.32 0.12 the lawn's dark
-// patches were the very green of the tree crowns, and a park's trees vanished
-// into blotches of their own colour (the player, 2026-10-08: "olha o verde").
-// Olive, not lime: the film grade's vibrance and warm highlights
-// (postprocess.ts GRADE) push a yellow-green further, and at 0.40 0.49 0.20
-// the lawn read as neon from the map's zoom (the player, 2026-10-09: "verde
-// muito neon"). Lower chroma (lit green over blue 1.9x, was 2.45x), a touch darker.
+/** The grass's tones, sRGB: deep clump green, sunlit green, dry straw, bare soil. */
+// The dark tone close to the lit one
 const GRASS_TONES = {
   dark: [0.27, 0.34, 0.19],
   lit: [0.33, 0.4, 0.21],
@@ -611,21 +443,12 @@ export function terrainBakes(anisotropy: number): {
     {
       size: 1024,
       worldSize: m(38.4),
-      // Read at map zoom, where a pixel is a metre or two: the detail that
-      // shows is TUFTS a few metres across - dark clumps, sunlit olive, dry
-      // straw spots, soil showing through - as SimCity 4's ground has. A grain
-      // finer than a metre melts into the mip chain and leaves flat felt.
+      // Read at map zoom, where a pixel is a metre or two: the detail that shows is TUFTS a few metres across
       relief: 0.9,
       shade: (x, y, out) => {
         const u = x / 1024;
         const v = y / 1024;
-        // Domain-warped: value noise alone is laid on a square lattice and
-        // its blobs read as camouflage squares; bending the lookup by a
-        // second noise rounds them into tufts.
-        // A light warp only: a strong one smeared the patches into swirls of
-        // wet paint (the player, 2026-10-06).
-        // One octave each: the warp only bends the patches' edges, and the
-        // bake runs while the game loads.
+        // Domain-warped: value noise alone is laid on a square lattice and its blobs read as camouflage squares
         const wx = (fbm(grassClump, u * 24 + 11, v * 24, 24, 1) - 0.5) * 0.9;
         const wy = (fbm(grassClump, u * 24, v * 24 + 29, 24, 1) - 0.5) * 0.9;
         const speck = fbm(grassFine, u * 96 + wx * 2, v * 96 + wy * 2, 96, 2);
@@ -644,11 +467,7 @@ export function terrainBakes(anisotropy: number): {
         // Soil showing in the gaps between tufts.
         const soilW = Math.min(1, Math.max(0, (speck - 0.7) / 0.08)) * (1 - k) * 0.45;
         r += (soil[0]! - r) * soilW; g += (soil[1]! - g) * soilW; b += (soil[2]! - b) * soilW;
-        // GRAIN at the texel (9 cm): tufts of a couple of texels, dark gaps
-        // where the blades shade the ground and pale tips in the sun. It is
-        // what grass is made of at any distance a pixel is under a metre,
-        // and the mip chain averages it away further out, so the far view
-        // keeps its patches. Without it every patch was a smooth smear.
+        // GRAIN at the texel (9 cm): tufts of a couple of texels
         const tuftlet = fbm(grassFine, u * 384 + 1.7, v * 384 + 5.3, 384, 2);
         const blade = fbm(grassClump, u * 768 + 9.1, v * 768 + 2.9, 768, 1);
         const gap = blade < 0.3 ? 0.72 : 1;
@@ -679,8 +498,7 @@ export function terrainBakes(anisotropy: number): {
         const v = y / 256;
         const grain = fbm(dirtGrain, u * 90, v * 90, 90, 3);
         const patch = fbm(dirtGrain, u * 8 + 3, v * 8 + 9, 8, 3);
-        // Gullies: narrow across, long up the face, so on a bank (read from
-        // the side) they run down the slope as rain cuts them.
+        // Gullies: narrow across, long up the face, so on a bank (read from the side) they run down the slope as rain cuts them.
         const gully = streakNoise(dirtGrain, u, v, 48);
         const cut = Math.max(0, 0.5 - gully) * 2;
         const tone = 0.34 + (grain - 0.5) * 0.08 + patch * 0.07 - cut * 0.09 + Math.max(0, gully - 0.6) * 0.12;
@@ -698,32 +516,11 @@ export function terrainBakes(anisotropy: number): {
   return { grass, rocks, dirt };
 }
 
-/**
- * The terrain material: three surfaces blended by slope, height and noise.
- *
- * One texture stretched over four kilometres of ground is what made the terrain
- * read as painted paper. Three fixes are layered here, and each is visible on
- * its own:
- *
- *  - **Slope decides the surface.** Anything steeper than about 25 degrees is
- *    rock, which is what actually gives a hill a silhouette: the colour change
- *    follows the geometry, so a slope is legible even when the sun is behind it.
- *  - **Two scales of the same texture.** Each map is sampled at its own size and
- *    again about seven times larger, and the two are mixed. Their scales do
- *    not align on every eighth tile across the terrain plate.
- *  - **Macro variation.** A slow noise tints wide regions warm or cool, so the
- *    ground has weather in it rather than one flat green.
- */
+/** The terrain material: three surfaces blended by slope, height and noise. */
 /** Texels across a plate in each painted-ground weight texture. */
 const PAINT_RES = 1024;
 
-/**
- * The water's level at every terrain corner within a few cells of water, for
- * the shore bands of the terrain shader; NO_WATER elsewhere. Read off the
- * water surface itself (its vertices carry the level), so a lake and a river
- * are the same thing here, then spread outwards so the beach above the line
- * knows which water it belongs to.
- */
+/** The water's level at every terrain corner within a few cells of water, for the shore bands of the terrain shader */
 function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayLike<number>): void {
   levels.fill(NO_WATER);
   const position = water.getAttribute('position');
@@ -735,15 +532,12 @@ function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayL
       const iy = Math.round(gy);
       if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) continue;
       const k = iy * GRID + ix;
-      // Only a corner the water really stands over: a shore vertex marked
-      // the nearest corner even where that corner was dry or past the
-      // water, and the bed was painted a terrain cell beyond it, in steps.
+      // Only a corner the water really stands over
       if ((ground[k] as number) >= position.getY(i)) continue;
       levels[k] = Math.max(levels[k] as number, position.getY(i));
     }
   }
-  // Out three corners (48 units, about 19 m), each pass taking the highest
-  // water next to it.
+  // Out three corners (48 units, about 19 m), each pass taking the highest water next to it.
   for (let pass = 0; pass < 3; pass++) {
     const from = levels.slice();
     for (let iy = 0; iy < GRID; iy++) {
@@ -755,9 +549,7 @@ function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayL
         if (ix + 1 < GRID) best = Math.max(best, from[k + 1] as number);
         if (iy > 0) best = Math.max(best, from[k - GRID] as number);
         if (iy + 1 < GRID) best = Math.max(best, from[k + GRID] as number);
-        // Only onto a BANK, ground above the water: a corner under the level
-        // the water does not cover was drawn as a dry grey river bed, in
-        // the grid's steps, beside every pool.
+        // Only onto a BANK, ground above the water
         if (best > NO_WATER / 2 && (ground[k] as number) < best) continue;
         levels[k] = best;
       }
@@ -765,21 +557,13 @@ function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayL
   }
 }
 
-/**
- * The ground texture the terrain shader reads per corner: R the water's level
- * (`shoreLevels`), G the painted flowers' density, B the painted scrub's, A
- * the painted forest's. One texture for all: the terrain material already binds sixteen textures, the
- * most a fragment shader may, and a texture of its own for the flowers took
- * the whole terrain off the screen.
- */
+/** The ground texture the terrain shader reads per corner: R the water's level */
 function packGroundCorners(texture: DataTexture, levels: Float32Array, flowers: Float32Array, scrub: Float32Array, forest: Float32Array, sand: Float32Array, basalt: Float32Array): void {
   const data = texture.image.data as Float32Array;
   const byte = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 255);
   for (let k = 0; k < levels.length; k++) {
     data[k * 4] = levels[k] as number;
-    // Two bytes to a channel, exact in a float: the flowers (the scrub) low,
-    // the painted sandstone (basalt) high. The shader splits them per corner
-    // before it interpolates.
+    // Two bytes to a channel, exact in a float: the flowers (the scrub) low, the painted sandstone (basalt) high.
     data[k * 4 + 1] = byte(flowers[k] as number) + 256 * byte(sand[k] as number);
     data[k * 4 + 2] = byte(scrub[k] as number) + 256 * byte(basalt[k] as number);
     data[k * 4 + 3] = forest[k] as number;
@@ -787,12 +571,7 @@ function packGroundCorners(texture: DataTexture, levels: Float32Array, flowers: 
   texture.needsUpdate = true;
 }
 
-/**
- * Lays one geology dab on the terrain's corners: within its radius the rock
- * moves towards the dab's (granite: towards neither sandstone nor basalt) by
- * its strength times a smooth falloff, as a cover does. Returns the world
- * rectangle it reached.
- */
+/** Lays one geology dab on the terrain's corners: within its radius the rock moves towards the dab's */
 function rasterGeology(sand: Float32Array, basalt: Float32Array, dab: PaintDab): readonly [number, number, number, number] {
   const toSand = dab.kind === 'sandstone' ? 1 : 0;
   const toBasalt = dab.kind === 'basalt' ? 1 : 0;
@@ -806,8 +585,7 @@ function rasterGeology(sand: Float32Array, basalt: Float32Array, dab: PaintDab):
     for (let ix = x0; ix <= x1; ix++) {
       const d = Math.hypot(ix - cx, iy - cy) / Math.max(1e-6, r);
       if (d >= 1) continue;
-      // Flat to near its rim: a landform's cliff stands at the rim of its
-      // dabs, and a falloff from the centre left every wall granite.
+      // Flat to near its rim: a landform's cliff stands at the rim of its dabs
       const t = Math.min(1, Math.max(0, (d - 0.78) / 0.22));
       const w = Math.min(1, dab.strength * (1 - t * t * (3 - 2 * t)));
       const k = iy * GRID + ix;
@@ -818,11 +596,7 @@ function rasterGeology(sand: Float32Array, basalt: Float32Array, dab: PaintDab):
   return [dab.x - dab.radius, dab.y - dab.radius, dab.x + dab.radius, dab.y + dab.radius];
 }
 
-/**
- * Lays one biome dab on the terrain's corners: within its radius the painted
- * biome weights move towards the dab's biome (all of it at the centre, with
- * a falloff flat to near the rim, as the rock dabs), as a cover replaces another.
- */
+/** Lays one biome dab on the terrain's corners: within its radius the painted biome weights move towards the dab's biome */
 function rasterBiome(weights: Float32Array, dab: PaintDab): void {
   const target = (BIOME_KINDS as readonly string[]).indexOf(dab.kind);
   const n = BIOME_KINDS.length;
@@ -854,17 +628,8 @@ function bakedRows(texture: Texture): Uint8Array | Uint8ClampedArray | null {
   return context ? context.getImageData(0, 0, image.width, image.height).data : null;
 }
 
-/**
- * The rock layers as ONE texture array: a single texture unit for all of them
- * (the terrain material is at the sixteen a fragment shader may bind), each
- * layer chosen in the shader by index (three's DataArrayTexture; Terrain3D
- * keeps its terrain textures the same way).
- */
-/**
- * The rock layers and the macro map, made once and shared by every plate of
- * ground: an array of the rock textures made per plate was gigabytes of the
- * same pixels.
- */
+/** The rock layers as ONE texture array: a single texture unit for all of them */
+/** The rock layers and the macro map, made once and shared by every plate of ground */
 const layersMade = new Map<string, DataArrayTexture>();
 function sharedLayers(key: string, textures: readonly Texture[], srgb: boolean, anisotropy: number): DataArrayTexture {
   const id = `${key}:${anisotropy}`;
@@ -886,8 +651,7 @@ function layeredTexture(textures: readonly Texture[], srgb: boolean, anisotropy:
       if (!srgb) for (let k = i * layer + 2; k < (i + 1) * layer; k += 4) data[k] = 255;
       return;
     }
-    // A 2-D texture is uploaded flipped (flipY); an array cannot be, so the
-    // rows are flipped here and each layer reads as its 2-D twin did.
+    // A 2-D texture is uploaded flipped (flipY)
     for (let y = 0; y < height; y++) data.set(rows.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), i * layer + y * width * 4);
   });
   const array = new DataArrayTexture(data, width, height, textures.length);
@@ -904,29 +668,11 @@ function layeredTexture(textures: readonly Texture[], srgb: boolean, anisotropy:
   return array;
 }
 
-/**
- * The painted ground's layers, as ONE texture array (one texture unit for all:
- * the terrain material is at the sixteen a fragment shader may bind): 0 and 1
- * the eight paint weights (`rasterPaint`), each updated alone
- * (`addLayerUpdate`). (The ecology's ground has its own texture,
- * `userData.ecology`: the layer it once had here was sent to the GPU empty.)
- */
+/** The painted ground's layers, as ONE texture array */
 const PAINT_LAYERS = 3;
-/**
- * The array layer holding the land's own light and shape (`terrainLight`):
- * R the sun it sees past the relief, G the sky it sees past the hills round
- * it, B its convexity, A its steepness over 90 degrees; one texel a terrain
- * corner in the layer's first GRID x GRID texels.
- */
+/** The array layer holding the land's own light and shape (`terrainLight`) */
 const LIGHT_LAYER = 2;
-/**
- * The side of the painted ground's array before anything is painted on it:
- * the land's light layer (one texel a terrain corner) fits in it, and the
- * paint layers are empty. Grown to `PAINT_RES` by the first dab
- * (`growPaint`): every plate keeping its full array though almost none is
- * ever painted cost hundreds of MB of the page's memory, and as much again on
- * the GPU.
- */
+/** The side of the painted ground's array before anything is painted on it: the land's light layer */
 const PAINT_START_RES = Math.min(PAINT_RES, 2 ** Math.ceil(Math.log2(TERRAIN_SEGMENTS + 1)));
 function paintLayers(res = PAINT_START_RES): DataArrayTexture {
   const texture = new DataArrayTexture(new Uint8Array(res * res * 4 * PAINT_LAYERS), res, res, PAINT_LAYERS);
@@ -947,11 +693,7 @@ function paintLayer(texture: DataArrayTexture, layer: number): Uint8Array {
   return (texture.image.data as Uint8Array).subarray(layer * size, (layer + 1) * size);
 }
 
-/**
- * Lays one dab into the weight textures: within its radius every layer moves
- * toward the dab's (grass: toward none) by the dab's strength times a smooth
- * falloff, so the weights keep summing to at most one.
- */
+/** Lays one dab into the weight textures: within its radius every layer moves toward the dab's */
 function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab): void {
   const a = layers[0]!;
   const b = layers[1]!;
@@ -984,11 +726,7 @@ function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab): void {
 /** Side of the forest density grid over the plate (7.8 m a cell). */
 const FOREST_RES = 256;
 
-/**
- * Lays one dab into the cover densities: its own cover towards full, every
- * other towards none (a cover replaces another, and any plain ground clears
- * them all), as the forest alone always did.
- */
+/** Lays one dab into the cover densities: its own cover towards full, every other towards none */
 function rasterCover(covers: Readonly<Record<CoverKind, Uint8Array>>, dab: PaintDab): void {
   const cell = TERRAIN_SIZE / FOREST_RES;
   const cx = (dab.x + TERRAIN_HALF) / cell, cy = (dab.y + TERRAIN_HALF) / cell, r = dab.radius / cell;
@@ -1024,8 +762,7 @@ function terrainMaterial(
     roughness: 1,
     metalness: 0,
     side: FrontSide,
-    // Almost no environment reflection: a dielectric's 4 % reflects the whole
-    // sky at any roughness, and over a field of grass that is the plastic sheen.
+    // Almost no environment reflection
     envMapIntensity: 0.12,
   });
   material.normalScale.set(0.8, 0.8);
@@ -1034,17 +771,12 @@ function terrainMaterial(
   const soilDetail = detailTextures('soil', anisotropy);
   const paint = paintLayers();
   material.userData['paint'] = paint;
-  // The water's level at each terrain corner near water (`shoreLevels`),
-  // NO_WATER elsewhere: where the ground stands just above it is beach,
-  // just at it is wet, under it is the bed.
-  // R: the water's level at each corner near water, G: the painted flowers,
-  // B: the painted scrub (`packGroundCorners`).
+  // The water's level at each terrain corner near water (`shoreLevels`), NO_WATER elsewhere
   const shoreLevelData = new Float32Array(GRID * GRID).fill(NO_WATER);
   const flowerCornerData = new Float32Array(GRID * GRID);
   const scrubCornerData = new Float32Array(GRID * GRID);
   const forestCornerData = new Float32Array(GRID * GRID);
-  // The painted geology at each corner: how much is sandstone, how much basalt
-  // (the rest granite).
+  // The painted geology at each corner: how much is sandstone, how much basalt (the rest granite).
   const sandCornerData = new Float32Array(GRID * GRID);
   const basaltCornerData = new Float32Array(GRID * GRID);
   const shore = new DataTexture(new Float32Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, FloatType);
@@ -1055,8 +787,7 @@ function terrainMaterial(
   material.userData['shore'] = shore;
   material.userData['sandCorners'] = sandCornerData;
   material.userData['basaltCorners'] = basaltCornerData;
-  // The ecosystem's ground per corner (`refreshEcology`): R the forest floor,
-  // G the dry savanna grass, B waterlogged ground, A bare soil.
+  // The ecosystem's ground per corner (`refreshEcology`)
   const ecologyTexture = new DataTexture(new Uint8Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, UnsignedByteType);
   ecologyTexture.magFilter = LinearFilter;
   ecologyTexture.minFilter = LinearFilter;
@@ -1083,26 +814,18 @@ function terrainMaterial(
     uDirtMap: { value: bakes.dirt.map as Texture },
     uEcology: { value: ecologyTexture as Texture },
     uSeasonDry: SEASON_DRY,
-    // One repeat of the grass texture over 32 units (13 m): its tufts some
-    // 40 cm, its dry patches 1.3 m. Over 96 units the tufts were 1.2 m and
-    // the patches 4 m - blotches the size of a car beside the houses (the
-    // player, 2026-10-08: "muito grande a textura"); read without repeats.
+    // One repeat of the grass texture over 32 units (13 m): its tufts some 40 cm, its dry patches 1.3 m.
     uGrassScale: { value: 1 / m(12.8) },
     uRockScale: { value: 1 / ROCK_WORLD },
     uDirtScale: { value: 1 / m(13.6) },
-    // The close-zoom layer (see `mesh/detailLayer.ts`): blades over grass,
-    // grit over dirt and rock, faded in by pixel footprint.
+    // The close-zoom layer (see `mesh/detailLayer.ts`)
     uDetailOn: detailSwitch,
-    // Grass and soil as two layers of one array, maps and normals each
-    // (`detailLayers`): the land's material was at the sixteen textures a
-    // fragment shader may bind, and the lots read the ground's own (`lotOverlay.ts`).
+    // Grass and soil as two layers of one array, maps and normals each (`detailLayers`)
     uDetailMaps: { value: sharedLayers('detail-map', [grassDetail.map, soilDetail.map], false, anisotropy) as Texture },
     uDetailNormals: { value: sharedLayers('detail-normal', [grassDetail.normalMap, soilDetail.normalMap], false, anisotropy) as Texture },
     uGrassDetailScale: { value: 1 / grassDetail.worldSize },
     uSoilDetailScale: { value: 1 / soilDetail.worldSize },
     // Set to the surface's own bake (`createTerrainSurface`).
-    // Where this plate stands in the world: its own coordinates (its grids,
-    // its textures) are the world's less this.
     uTileOrigin: { value: new Vector3() },
   };
   material.userData['terrainUniforms'] = uniforms;
@@ -1123,8 +846,7 @@ function terrainMaterial(
       .replace(
         '#include <worldpos_vertex>',
         `#include <worldpos_vertex>
-         // The plate's own coordinates (its grids, its textures), and the
-         // world's (what lies round the camera).
+         // The plate's own coordinates (its grids, its textures), and the world's (what lies round the camera).
          vTerrainAtlas = (modelMatrix * vec4(transformed, 1.0)).xyz;
          vTerrainWorld = vTerrainAtlas - uTileOrigin;
          vTerrainNormal = normalize(mat3(modelMatrix) * objectNormal);
@@ -1160,16 +882,9 @@ function terrainMaterial(
            return mix(mix(ecoHash(i), ecoHash(i + vec2(1.0, 0.0)), u.x), mix(ecoHash(i + vec2(0.0, 1.0)), ecoHash(i + vec2(1.0, 1.0)), u.x), u.y);
          }
          uniform vec3 uShoreGrid; // half, cell, corners per side
-         // The water level here, bilinear over the corners that HAVE water
-         // (NO_WATER if none). Read from the nearest corner only, the level
-         // stepped at every grid line along a falling river and drew dark
-         // bands across the shallows under the water.
-         // x: that level; y: the painted flowers here, z: the painted scrub,
-         // w: the painted forest, all bilinear (G, B and A channels).
-         // The painted geology here: x sandstone, y basalt (the rest granite).
+         // The water level here, bilinear over the corners that HAVE water (NO_WATER if none).
          vec2 terrainGeo = vec2(0.0);
-         // How much of this point the corners with a water level cover, 0..1:
-         // the shore's bands fade with it, instead of ending in the grid's polygons.
+         // How much of this point the corners with a water level cover, 0..1
          float terrainShoreCover = 0.0;
          vec4 terrainShoreSample(vec3 world) {
            vec2 g = clamp((world.xz + uShoreGrid.x) / uShoreGrid.y, vec2(0.0), vec2(uShoreGrid.z - 1.001));
@@ -1186,8 +901,7 @@ function terrainMaterial(
            vec4 w = bilinear * has;
            float sum = w.x + w.y + w.z + w.w;
            terrainShoreCover = sum;
-           // G and B carry two bytes each (packGroundCorners): flowers and
-           // scrub low, sandstone and basalt high, split per corner first.
+           // G and B carry two bytes each (packGroundCorners)
            vec4 gPair = vec4(c00.y, c10.y, c01.y, c11.y);
            vec4 bPair = vec4(c00.z, c10.z, c01.z, c11.z);
            vec4 gHigh = floor(gPair / 256.0);
@@ -1226,13 +940,9 @@ function terrainMaterial(
          }
 
          // Set once per fragment: how far the close-zoom layer has taken over.
-         // The macro maps are NOT read softer under it any more: biased two
-         // mips down, the ground at the player's height was one blur (the
-         // player, 2026-10-06).
          float terrainDetailW = 0.0;
 
-         // Rotate the wide octave, as well as using an incommensurate scale:
-         // otherwise the most visible clumps line up with their own repeats.
+         // Rotate the wide octave, as well as using an incommensurate scale
          vec2 terrainWideUv(vec2 uv) {
            return vec2(uv.x * 0.9396926 - uv.y * 0.3420201,
                        uv.x * 0.3420201 + uv.y * 0.9396926) * 0.137;
@@ -1242,12 +952,7 @@ function terrainMaterial(
            vec4 far = texture2D(tex, terrainWideUv(uv));
            return mix(near, far, 0.42);
          }
-         // THE TEXTURE WITHOUT ITS REPEAT (Quilez, "Texture Repetition",
-         // technique 3): two reads of it at offsets picked by a slow noise,
-         // eight versions blended where the noise steps, derivatives from the
-         // unmoved coordinates (textureGrad), so the mips stay right across
-         // the offsets. From the map's zoom the lawn's 96 m tile and its 700 m
-         // octave read as a grid printed over the land.
+         // THE TEXTURE WITHOUT ITS REPEAT (Quilez, "Texture Repetition", technique 3)
          vec2 noTileOffset(float i) { return fract(sin(vec2(i * 127.1 + 1.3, i * 311.7 + 4.7)) * 43758.5453); }
          vec4 textureNoTile(sampler2D tex, vec2 uv) {
            float idx = ecoNoise(uv * 0.35) * 8.0;
@@ -1257,12 +962,7 @@ function terrainMaterial(
            vec4 b = textureGrad(tex, uv + noTileOffset(i0 + 1.0), dx, dy);
            return mix(a, b, smoothstep(0.2, 0.8, idx - i0));
          }
-         // The wide octave as a MACRO variation only (landscape materials
-         // pass from the detail texture to a macro one with distance, Unreal):
-         // its brightness against the texture's mean, at a third of its
-         // strength. Mixed in whole (0.42), it carried the tufts' full
-         // contrast up to hundreds of metres, and from the map's zoom the
-         // land was dark camouflage blotches.
+         // The wide octave as a MACRO variation only
          vec4 dualScaleNoTile(sampler2D tex, vec2 uv) {
            vec4 near = textureNoTile(tex, uv);
            vec3 far = textureNoTile(tex, terrainWideUv(uv)).rgb;
@@ -1279,16 +979,7 @@ function terrainMaterial(
            return mix(near, far, 0.42);
          }
 
-         // A WALL is not a floor. The ground's textures are read in a plan
-         // view, which smears a 45-degree cliff into vertical stripes: the
-         // steeper the land the more of the map's area it covers, and once the
-         // brush could raise mountains, whole hillsides were stripes.
-         //
-         // A cliff is read by the projection that faces it instead - the rock
-         // map sampled in the z-y plane for a face across z, in x-y for one
-         // across x - blended by how much of the normal points each way. Only
-         // the rock needs it: grass and soil live on ground gentle enough for
-         // the plan view, and rockMix is zero there anyway.
+         // A WALL is not a floor.
          vec3 terrainWallAxis() {
            vec3 n = abs(normalize(vTerrainNormal));
            return vec3(n.x / max(0.0001, n.x + n.z), 0.0, 0.0);
@@ -1299,23 +990,14 @@ function terrainMaterial(
            vec2 acrossZ = world.xy * scale;
            return mix(acrossZ, acrossX, wXl);
          }
-         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar
-         // Shader"): one sample per plane, the SAMPLES blended. Blending the
-         // coordinates instead (terrainWallUv) twisted the rock into curved
-         // wood grain wherever a face turned between the two axes.
-         // The slope, in degrees: the smooth vertex normal's, or - where a
+         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar Shader"): one sample per plane, the SAMPLES blended.
          // corner touches a WALL (a face over 50 degrees, \`aSteep\`) - the
          // wall's, so a cliff narrower than the grid is drawn as rock.
-         // The land's light and shape per corner (terrainLight), bilinear.
          vec4 terrainLand() {
            vec2 cell = vec2((vTerrainWorld.x + uPaintHalf) / ${TERRAIN_CELL.toFixed(6)}, (uPaintHalf + vTerrainWorld.z) / ${TERRAIN_CELL.toFixed(6)});
            return texture(uPaint, vec3((cell + 0.5) / uPaintRes, ${LIGHT_LAYER.toFixed(1)}));
          }
-         // The steepness that decides grass, soil and rock: the smooth
-         // normal's, raised to a wall's where the corners say the land is one.
-         // Those corners are read bilinearly from the texture: interpolated
-         // per triangle (vTerrainSteep) the edge of a wall followed the mesh's
-         // triangles in teeth.
+         // The steepness that decides grass, soil and rock
          float terrainSlope() {
            float smoothSlope = degrees(acos(clamp(vTerrainNormal.y, 0.0, 1.0)));
            float landSlope = terrainLand().a * 90.0;
@@ -1339,15 +1021,10 @@ function terrainMaterial(
            tz = vec3(tz.xy + n.xy, abs(n.z) * s.z);
            return normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z);
          }
-         // THE ROCKS: granite, sandstone, basalt, a face layer and a top layer
-         // each in one texture array (layer = kind * 2, + 1 for the top),
-         // read with gradients taken once in uniform control flow, so a kind
-         // or a projection with no weight is skipped (MicroSplat's dynamic
-         // branching over a texture array).
+         // THE ROCKS: granite, sandstone, basalt, a face layer and a top layer each in one texture array
          vec3 rockDpdx = vec3(0.0);
          vec3 rockDpdy = vec3(0.0);
-         // How much of each rock the colour took (granite, sandstone, basalt);
-         // the normal reads the same.
+         // How much of each rock the colour took (granite, sandstone, basalt); the normal reads the same.
          vec3 terrainRockMix = vec3(1.0, 0.0, 0.0);
          vec4 rockTriColor(float kind, vec3 p, vec3 w) {
            float face = kind * 2.0;
@@ -1379,8 +1056,7 @@ function terrainMaterial(
            }
            return normalize(acc + n * 1e-4);
          }
-         // One sandstone bed's tint over the face texture: mostly tan and
-         // orange, now and then a cream, a rust or a brown-grey one.
+         // One sandstone bed's tint over the face texture: mostly tan and orange, now and then a cream, a rust or a brown-grey one.
          vec3 sandstoneBed(float i) {
            float r = terrainHash(vec2(i, 17.0));
            return r < 0.12 ? vec3(1.13, 1.12, 1.1)
@@ -1390,11 +1066,7 @@ function terrainMaterial(
              : r < 0.92 ? vec3(0.9, 0.72, 0.62)
              : vec3(0.84, 0.78, 0.74);
          }
-         // The sandstone's beds by HEIGHT, level on every cliff and never
-         // repeating: principal beds 34 units (14 m) apart and thinner ones
-         // between at a third of the contrast (Terragen's strata), read at a
-         // height a slow noise bends (Unity's strata noise), a shade where a
-         // softer bed weathers back under a hard one.
+         // The sandstone's beds by HEIGHT, level on every cliff and never repeating: principal beds 34 units
          vec3 sandstoneBeds(float y, float warpA, float warpC) {
            float t = (y + (warpA - 0.5) * 30.0 + (warpC - 0.5) * 9.0) / 34.0;
            float i = floor(t);
@@ -1407,8 +1079,7 @@ function terrainMaterial(
            tint *= 1.0 - hard * 0.18 * smoothstep(0.84, 0.92, f) * (1.0 - smoothstep(0.96, 1.0, f));
            return tint;
          }
-         // Granite's exfoliation sheets: no beds, but broad shells of slightly
-         // different weathering a dozen metres apart, warmer and cooler.
+         // Granite's exfoliation sheets: no beds, but broad shells of slightly different weathering a dozen metres apart
          vec3 graniteSheets(float y, float warpA, float warpC) {
            float t = (y + (warpA - 0.5) * 60.0 + (warpC - 0.5) * 20.0) / 30.0;
            float i = floor(t);
@@ -1417,8 +1088,7 @@ function terrainMaterial(
            vec3 b = mix(vec3(0.9, 0.92, 0.95), vec3(1.06, 1.04, 1.0), terrainHash(vec2(i + 1.0, 47.0)));
            return mix(a, b, smoothstep(0.7, 1.0, f));
          }
-         // Basalt's lava flows, stacked some 22 m each: barely different
-         // greys, the weathered, bubbly top of each a little redder.
+         // Basalt's lava flows, stacked some 22 m each: barely different greys, the weathered, bubbly top of each a little redder.
          vec3 basaltFlows(float y, float warpA) {
            float t = (y + (warpA - 0.5) * 34.0) / 56.0;
            float i = floor(t);
@@ -1432,8 +1102,7 @@ function terrainMaterial(
       .replace(
         '#include <map_fragment>',
         `terrainDetailW = detailWeight(vTerrainWorld.xz);
-         // Taken here, in uniform control flow: the rock is read only where
-         // rock shows, with these gradients.
+         // Taken here, in uniform control flow: the rock is read only where rock shows, with these gradients.
          rockDpdx = dFdx(vTerrainWorld) * uRockScale;
          rockDpdy = dFdy(vTerrainWorld) * uRockScale;
          vec2 tGrass = vTerrainWorld.xz * uGrassScale;
@@ -1442,57 +1111,26 @@ function terrainMaterial(
          vec2 tRock = terrainWallUv(vTerrainWorld, uRockScale, wallX);
          vec3 triN = normalize(vTerrainNormal);
          vec3 triW = terrainTriWeights(triN);
-         // In DEGREES, not in one-minus-cosine. The cosine of a small angle is
-         // almost one, so thresholds written against it are unreadable and were
-         // simply wrong: a 10-degree hillside came out at 0.015, under a
-         // threshold meant to start at a gentle slope, and the whole map stayed
-         // one flat green however steep it got.
-         // And the steeper of the vertex normal and the drawn face: a cliff a
-         // cell or two wide shares its corners with the flat ground above and
-         // below it, so its averaged normals called the wall a 30-degree bank
-         // and it was drawn as turf.
+         // In DEGREES, not in one-minus-cosine.
          float slopeDeg = terrainSlope();
-         // High ground is bare whatever its slope: the quickest way to say
-         // "mountain" is that nothing grows on the top of it.
-         // Only the real summits: from 260 it greyed the top of every hill
-         // and dome into an olive mat (the player, 2026-10-07).
+         // High ground is bare whatever its slope: the quickest way to say "mountain" is that nothing grows on the top of it.
          float altitude = smoothstep(${m(168).toFixed(4)}, ${m(232).toFixed(4)}, vTerrainWorld.y);
-         // The bands are in degrees of slope, and they were set for land that
-         // could not rise more than ten metres: soil from 9 degrees, rock from
-         // 26. On a map with real hills that painted every hillside tan, and
-         // the whole country read as savanna. Soil now starts where a slope
-         // stops holding turf (18 degrees), rock where it stops holding soil.
-         //
-         // The bands WANDER: a slow noise shifts each threshold by up to some
-         // fifteen degrees, so the soil and the rock follow the landform
-         // loosely instead of drawing concentric rings round every hill.
+         // The bands are in degrees of slope, and they were set for land that could not rise more than ten metres
          float wanderA = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.00575).toFixed(6)}).g;
          float wanderB = texture2D(map, terrainWideUv(vTerrainWorld.xz * ${perM(0.0275).toFixed(6)})).g;
-         // And a hill-sized one (about 50 m), or a hill still wears one
-         // even, wobbly ring of soil round its foot.
+         // And a hill-sized one (about 50 m), or a hill still wears one even, wobbly ring of soil round its foot.
          float wanderC = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.05).toFixed(6)} + 0.37).g;
          // And a ragged one of about 12 m, so the edge itself frays.
          float wanderD = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.2075).toFixed(6)} + 0.61).b;
          float wander = (wanderA - 0.5) * 14.0 + (wanderB - 0.5) * 10.0 + (wanderC - 0.5) * 30.0 + (wanderD - 0.5) * 16.0;
-         // The wander eases on a cliff (nothing holds turf on a wall) but
-         // never lets go: it frays the rim, where the cliff's triangles meet
-         // the flat in the grid's zigzag, into ragged turf instead of teeth.
-         // A wide FUZZY ZONE broken by a fine noise (Terragen's surface layers:
-         // a slope constraint with a fuzzy zone, its mask broken up), so turf
-         // and rock interfinger over a few metres instead of meeting on a line.
+         // The wander eases on a cliff (nothing holds turf on a wall) but never lets go
          float breakup = (texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.475).toFixed(6)} + 0.13).g - 0.5) * 26.0;
          float rockW = max(smoothstep(30.0, 56.0, slopeDeg + wander * (1.0 - 0.5 * smoothstep(45.0, 70.0, slopeDeg)) + breakup), altitude * 0.92);
-         // Narrowed where the rock is near: turf meets the stone across a thin
-         // band of soil, not a red ring drawn round every outcrop.
-         // Grass holds a hillside to some thirty degrees: soil from fourteen
-         // capped every hill and dome in a mat of brown straw (the player,
-         // 2026-10-07).
+         // Narrowed where the rock is near
          float dirtW = smoothstep(27.0, 42.0, slopeDeg + wander * 1.0) * (1.0 - rockW) * (1.0 - 0.6 * smoothstep(36.0, 48.0, slopeDeg + wander * 1.0));
          float grassW = max(0.0, 1.0 - rockW - dirtW);
          vec4 grassColor = dualScaleNoTile(map, tGrass);
-         // Which rock breaks out here: the painted geology, granite where none
-         // was painted. Each kind is its own pair of layers (face, top) and is
-         // read only where it is and only where rock shows.
+         // Which rock breaks out here: the painted geology, granite where none was painted.
          vec4 shoreSample = terrainShoreSample(vTerrainWorld);
          vec3 geology = vec3(max(0.0, 1.0 - terrainGeo.x - terrainGeo.y), terrainGeo.x, terrainGeo.y);
          vec4 rockColor = vec4(0.45, 0.43, 0.4, 1.0);
@@ -1503,8 +1141,7 @@ function terrainMaterial(
            if (geology.x > 0.01) { cGranite = rockTriColor(0.0, vTerrainWorld, triW); cGranite.rgb *= graniteSheets(vTerrainWorld.y, wanderA, wanderC); }
            if (geology.y > 0.01) { cSand = rockTriColor(1.0, vTerrainWorld, triW); cSand.rgb *= sandstoneBeds(vTerrainWorld.y, wanderA, wanderC); }
            if (geology.z > 0.01) { cBasalt = rockTriColor(2.0, vTerrainWorld, triW); cBasalt.rgb *= basaltFlows(vTerrainWorld.y, wanderA); }
-           // Height-blended between the rocks too: a boundary breaks along the
-           // stone instead of fading one rock into the other.
+           // Height-blended between the rocks too: a boundary breaks along the stone instead of fading one rock into the other.
            vec3 has = step(vec3(0.01), geology);
            vec3 hk = (geology + vec3(dot(cGranite.rgb, vec3(0.3, 0.6, 0.1)), dot(cSand.rgb, vec3(0.3, 0.6, 0.1)), dot(cBasalt.rgb, vec3(0.3, 0.6, 0.1))) * 0.6) * has;
            float topK = max(hk.x, max(hk.y, hk.z)) - 0.12;
@@ -1512,20 +1149,13 @@ function terrainMaterial(
            terrainRockMix = bk / max(bk.x + bk.y + bk.z, 1e-4);
            rockColor = cGranite * terrainRockMix.x + cSand * terrainRockMix.y + cBasalt * terrainRockMix.z;
          }
-         // Soil on a slope is read from the side, as the rock is: from above
-         // it smeared down every bank in long streaks.
+         // Soil on a slope is read from the side, as the rock is: from above it smeared down every bank in long streaks.
          vec4 dirtPlan = dualScale(uDirtMap, tDirt);
          vec4 dirtSide = terrainTriColor(uDirtMap, vTerrainWorld, uDirtScale, triW);
          vec4 dirtColor = mix(dirtPlan, dirtSide, smoothstep(22.0, 42.0, slopeDeg));
-         // The soil is the rock it weathered from: red-yellow over granite,
-         // pale and sandy over sandstone, the dark purple-red terra roxa over
-         // basalt.
+         // The soil is the rock it weathered from
          dirtColor.rgb *= geology.x * vec3(0.88, 0.86, 0.88) + geology.y * vec3(1.14, 1.06, 0.92) + geology.z * vec3(0.8, 0.56, 0.52);
-         // Height blending (Mishkinis, "Advanced Terrain Texture Splatting"):
-         // each surface rises by its own relief, read from its brightness, and
-         // the highest within a thin depth wins, so soil fills the hollows
-         // between stones and the turf breaks into tufts at its edge instead
-         // of a soft fade. A surface with no weight gets no relief either.
+         // Height blending (Mishkinis, "Advanced Terrain Texture Splatting")
          float hGrass = grassW + dot(grassColor.rgb, vec3(0.3, 0.6, 0.1)) * 1.4 * smoothstep(0.0, 0.35, grassW);
          float hDirt = dirtW + dot(dirtColor.rgb, vec3(0.3, 0.6, 0.1)) * 0.9 * smoothstep(0.0, 0.35, dirtW);
          float hRock = rockW + dot(rockColor.rgb, vec3(0.3, 0.6, 0.1)) * 1.1 * smoothstep(0.0, 0.35, rockW);
@@ -1537,10 +1167,7 @@ function terrainMaterial(
          float rockMix = bRock / bSum;
          float dirtMix = bDirt / bSum;
          vec4 blended = (grassColor * bGrass + dirtColor * bDirt + rockColor * bRock) / bSum;
-         // TALUS where the rock gives out: its own rubble and grit, darker,
-         // mixed with the soil (each rock its own scree, so a sandstone foot is
-         // orange and a basalt one near black), so the cliff stands on a
-         // skirt of debris and not straight in the lawn.
+         // TALUS where the rock gives out: its own rubble and grit, darker, mixed with the soil
          float talus = smoothstep(0.06, 0.4, rockW) * (1.0 - smoothstep(0.5, 0.92, rockW));
          if (talus > 0.001) {
            float pebbles = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
@@ -1555,38 +1182,15 @@ function terrainMaterial(
          if (terrainDetailW > 0.001) {
            vec3 bladeDetail = detailSampleLayer(uDetailMaps, vTerrainWorld.xz * uGrassDetailScale, 0.0);
            vec3 soilDetail = detailSampleLayer(uDetailMaps, terrainWallUv(vTerrainWorld, uSoilDetailScale, wallX), 1.0);
-           // Blades only where the ground is gentle: projected from above
-           // onto a bank they stretched into long hairs.
+           // Blades only where the ground is gentle: projected from above onto a bank they stretched into long hairs.
            float soilMix = max(clamp(dirtMix + rockMix, 0.0, 1.0), smoothstep(12.0, 24.0, slopeDeg));
            vec3 fine = mix(bladeDetail, soilDetail, soilMix);
            blended.rgb *= mix(vec3(1.0), fine, terrainDetailW);
          }
-         // The land's own colour map, as an aerial photograph shows it: wide
-         // fields of lush green, yellowing meadow, deep green and olive, a few
-         // hundred metres each (macroTexture). It tints the grass fully and
-         // the bare ground a little, so a valley reads as country and not as
-         // one lawn tiled to the horizon.
-         // Light and dark only, and gently (Unreal's landscape macro
-         // variation): fields of yellow, olive and deep green laid over the
-         // lawn read as blotches from the map's zoom.
-         // Its brightness, baked with the relief (terrainRelief.ts).
-         // (No macro light and dark any more: the player asked for the
-         // terrain's lights and effects to go, 2026-10-08 - "está feio".)
-         // THE GRAIN AT EVERY ZOOM (distance tiling, as landscape materials
-         // switch a texture to a larger tiling with the camera's distance):
-         // the grass read again at the scale where its tufts are a few pixels
-         // across, two neighbouring scales blended, and laid on the lawn as
-         // light and shade. Up close the texture's own detail is that grain;
-         // from the whole map's zoom the mip chain had averaged it into flat
-         // felt, and the lawn read as paint, not grass.
+         // The land's own colour map, as an aerial photograph shows it
          {
            vec2 grainFp = fwidth(vTerrainWorld.xz);
-           // Tufts half a pixel to one: the mip chain has already averaged
-           // what is finer than a pixel (mipmaps are pre-filtered), so it
-           // does not shimmer. Set four times coarser (* 3.6) the patches grew
-           // to the size of a house (the player, 2026-10-08: "muito grande a
-           // textura"); the shimmer was the sharpening pass, now off. Read
-           // without the texture's repeat.
+           // Tufts half a pixel to one: the mip chain has already averaged what is finer than a pixel
            float grainLod = max(0.0, log2(max(grainFp.x, grainFp.y) * 0.9));
            float grainLevel = floor(grainLod);
            float grainBlend = grainLod - grainLevel;
@@ -1599,56 +1203,24 @@ function terrainMaterial(
            // Gently: at 0.55 to 1.5 the grain drew dark blotches as deep as the trees' green.
            blended.rgb *= mix(1.0, clamp(grain, 0.8, 1.25), grainW * 0.5);
          }
-         // A hillshade written into the ALBEDO, on top of the light the surface
-         // actually receives. Direct sun alone moves a 10-degree slope by about
-         // a tenth, which is under what the eye reads as shape at map zoom; this
-         // doubles that for the slopes that carry the landform and leaves flat
-         // ground untouched, so the hills are legible without the scene turning
-         // into a relief map.
+         // A hillshade written into the ALBEDO, on top of the light the surface actually receives.
          float relief = clamp(dot(normalize(vTerrainNormal), normalize(vec3(0.24, 0.62, -0.75))), -1.0, 1.0);
-         // Painted flowers: blossoms a hand across scattered through the
-         // grass, as many as the painted density, in a meadow's colours. Each
-         // 0.4-unit cell holds at most one, at a jittered point; they fade to
-         // their average tint where a pixel is wider than a blossom, so the
-         // far view shows a flowering meadow and not flickering dots.
-         // Derivatives taken outside any branch, where they are defined: how
-         // many 0.4-unit blossom cells one pixel spans.
+         // Painted flowers: blossoms a hand across scattered through the grass, as many as the painted density
          vec2 fp = vTerrainWorld.xz / ${m(0.16).toFixed(6)};
          float footprint = max(fwidth(fp.x), fwidth(fp.y));
-         // Scrubland: the ground under painted scrub goes the dark olive of
-         // a thicket's shade, so the patch reads from the whole map's zoom
-         // and not only where its bushes are big enough to see.
+         // Scrubland: the ground under painted scrub goes the dark olive of a thicket's shade
          blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.42, 0.52, 0.32), clamp(shoreSample.z * 1.4, 0.0, 0.85));
-         // Under a forest the floor is the canopy's shade: dark, mossy, with
-         // leaf litter - so the gaps between crowns read as the depth of a
-         // closed forest from above, not as a lawn showing through (near
-         // trees drawn one by one, the forest's far effect on the ground:
-         // Bruneton & Neyret, "Real-time realistic rendering and lighting of
-         // forests").
-         // THE ECOSYSTEM'S GROUND (world/ecology.ts), only where the ground is
-         // vegetated (not on the rock or the bare slopes): the savanna's
-         // tufts of straw-gold grass with red soil between them, going
-         // greener with the rains; bare soil where the herbs are sparse (the
-         // caatinga); the dark sodden green of veredas, brejos and várzeas;
-         // and under a canopy the forest floor's litter. The fine detail fades
-         // with the pixel's footprint, so the far view keeps the mix of colours
-         // and never shimmers.
+         // Under a forest the floor is the canopy's shade: dark, mossy, with leaf litter
          vec4 eco = texture2D(uEcology, ((vec2(vTerrainWorld.x, vTerrainWorld.z) + uShoreGrid.x) / uShoreGrid.y + 0.5) / uShoreGrid.z);
          float living = 1.0 - clamp(rockMix + dirtMix, 0.0, 1.0);
          {
            vec2 q = vTerrainWorld.xz;
-           // The grass's OWN texture, its HUE turned to straw where the
-           // savanna is dry - the same brightness and the same contrast, so
-           // the ground keeps its texture and is never lit any lighter (a
-           // flat khaki laid over it washed the whole map out). Green stays
-           // the rule; the gold comes in broad patches, most on the exposed
-           // tops and the rocky fields (eco.g), more as the dry season deepens.
+           // The grass's OWN texture, its HUE turned to straw where the savanna is dry
            float luma = dot(grassColor.rgb, vec3(0.3, 0.6, 0.1));
            vec3 straw = luma * vec3(1.32, 1.04, 0.46) * 1.05;
            float patchy = ecoNoise(q / 37.0 + 7.0) * 0.6 + ecoNoise(q / 13.0 + 3.0) * 0.4;
            float golden = clamp(eco.g * mix(0.25, 1.0, uSeasonDry) * (0.35 + 0.9 * patchy), 0.0, 1.0);
-           // Each patch either green or gold, its edge broken by the tufts:
-           // half of each mixed was an olive wash.
+           // Each patch either green or gold, its edge broken by the tufts: half of each mixed was an olive wash.
            float lift = clamp((luma - 0.17) / 0.2, 0.0, 1.0);
            float goldMask = smoothstep(0.35, 0.8, golden + (lift - 0.5) * 0.3) * 0.25;
            blended.rgb = mix(blended.rgb, straw, goldMask * living);
@@ -1657,21 +1229,14 @@ function terrainMaterial(
            // Waterlogged: darker, deeper green, a little blue, in hummocks.
            vec3 sodden = blended.rgb * vec3(0.55, 0.72, 0.55);
            blended.rgb = mix(blended.rgb, sodden, eco.b * 0.85 * living);
-           // The forest floor as the painted forest's always was: the grass
-           // darkened under the canopy, its texture kept. The ecosystem's own
-           // canopy (eco.r) darkens it only once its trees stand there.
+           // The forest floor as the painted forest's always was: the grass darkened under the canopy, its texture kept.
            blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.3, 0.36, 0.24), clamp(shoreSample.w * 1.6, 0.0, 0.9));
          }
-         // (No slope wear, dry tops, pale crests or dark hollows in the colours
-         // any more: the player asked for the terrain's effects to go.)
+         // No slope wear, dry tops, pale crests or dark hollows in the colours any more: the player asked for the terrain's
          {
            float flowersW = shoreSample.y * (1.0 - clamp(dirtMix + rockMix, 0.0, 1.0));
            if (flowersW > 0.01) {
-             // Blossoms at EVERY zoom, as levels of detail: a hand across up
-             // close, and as the camera pulls back the cells double - patches
-             // of flowers a metre, two, four across - so a flower is always a
-             // few pixels wide, two neighbouring levels blended so nothing
-             // pops. A painted meadow stays a flowering meadow on the map.
+             // Blossoms at EVERY zoom, as levels of detail: a hand across up close, and as the camera pulls back the cells double
              float lod = max(0.0, log2(footprint * 2.5));
              float level0 = floor(lod);
              float between = lod - level0;
@@ -1696,10 +1261,7 @@ function terrainMaterial(
              blended.rgb = mix(blended.rgb, bloom / max(cover, 1e-4), clamp(cover, 0.0, 1.0));
            }
          }
-         // The shore (Terragen's "wet shores": a band set by height over the
-         // water, darkened where it is wet). Under the water a muddy bed, at
-         // the waterline a dark wet strip, above it a beach of pale sand that
-         // only lies where the bank is gentle enough to hold it.
+         // The shore (Terragen's "wet shores": a band set by height over the water, darkened where it is wet).
          float shoreLevel = shoreSample.x;
          if (shoreLevel > ${NO_WATER / 2}.0) {
            float above = vTerrainWorld.y - shoreLevel;
@@ -1709,12 +1271,10 @@ function terrainMaterial(
            float shoreFade = smoothstep(0.15, 0.85, terrainShoreCover + (wanderD - 0.5) * 0.3);
            float beach = (1.0 - smoothstep(${m(1).toFixed(4)} + wanderD * ${m(1.2).toFixed(4)}, ${m(2.4).toFixed(4)} + wanderD * ${m(1.2).toFixed(4)}, above)) * gentle * shoreFade;
            blended.rgb = mix(blended.rgb, sand, beach * (1.0 - rockMix * 0.6));
-           // A steep bank holds no beach: it is a cut of damp earth from the
-           // water up to the turf, frayed at its top.
+           // A steep bank holds no beach: it is a cut of damp earth from the water up to the turf, frayed at its top.
            float bank = (1.0 - smoothstep(${m(2).toFixed(4)} + wanderD * ${m(2).toFixed(4)}, ${m(4).toFixed(4)} + wanderD * ${m(2).toFixed(4)}, above)) * (1.0 - gentle) * shoreFade;
            blended.rgb = mix(blended.rgb, dirtColor.rgb * vec3(0.78, 0.72, 0.62), bank * (1.0 - rockMix));
-           // Below the water: a bed of sand and pebbles, seen through the
-           // shallows, going to silt as it deepens.
+           // Below the water: a bed of sand and pebbles, seen through the shallows, going to silt as it deepens.
            float bed = smoothstep(0.0, ${m(-0.8).toFixed(4)}, above) * smoothstep(0.03, 0.35, terrainShoreCover);
            float pebble = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
            float stones = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.525).toFixed(6)} + 0.4).g;
@@ -1726,16 +1286,11 @@ function terrainMaterial(
            float wet = (1.0 - smoothstep(${m(-0.08).toFixed(4)}, ${m(0.56).toFixed(4)}, above)) * smoothstep(0.03, 0.35, terrainShoreCover);
            blended.rgb *= mix(1.0, 0.6, wet);
          }
-         // (No hillshade, dryness by height or damp hollows painted into the
-         // colour any more: the player asked for the terrain's lights and
-         // effects to go. The scene's own light shapes the hills.)
-         // Under the grass field the ground is the shade between the blades:
-         // darker, so the blades stand in a lawn and not on a bright card.
+         // No hillshade, dryness by height or damp hollows painted into the colour any more: the player asked for the terrain's
          float grassDist = distance(vec2(vTerrainAtlas.x, -vTerrainAtlas.z), uGrassField.xy);
          float grassUnder = uGrassField.w * (1.0 - smoothstep(uGrassField.z * 0.45, uGrassField.z * 0.95, grassDist));
          blended.rgb *= mix(1.0, 0.8, grassUnder * (1.0 - clamp(dirtMix + rockMix, 0.0, 1.0)));
-         // Painted ground (world/terrainPaint.ts): a weight per layer, the
-         // grass showing through what the weights leave.
+         // Painted ground (world/terrainPaint.ts): a weight per layer, the grass showing through what the weights leave.
          vec2 paintUv = vec2((vTerrainWorld.x + uPaintHalf) / uPaintSize, (uPaintHalf - vTerrainWorld.z) / uPaintSize);
          vec4 pa = texture(uPaint, vec3(paintUv, 0.0));
          vec4 pb = texture(uPaint, vec3(paintUv, 1.0));
@@ -1764,8 +1319,7 @@ function terrainMaterial(
            vec2 gw = fwidth(g);
            vec2 toLine = abs(fract(g - 0.5) - 0.5) / max(gw, vec2(1e-4));
            float line = 1.0 - min(min(toLine.x, toLine.y), 1.0);
-           // Gone before its cells shrink under a few pixels: a grid finer than
-           // the screen is only a pale wash over the land.
+           // Gone before its cells shrink under a few pixels: a grid finer than the screen is only a pale wash over the land.
            line *= 1.0 - smoothstep(0.1, 0.25, max(gw.x, gw.y));
            // White over the land, dark over snow and sand: seen on any ground.
            float bright = smoothstep(0.45, 0.7, dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)));
@@ -1776,23 +1330,17 @@ function terrainMaterial(
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
-         // Light thrown back from the sunlit land, on the ROCK TEXTURE only
-         // (weighted by how much of the pixel is rock): a cliff turned from
-         // the sun sees the lit ground, and without it a basalt or granite
-         // wall in shade was a black hole. The grass, the soil and the rims
-         // are lit exactly as before.
+         // Light thrown back from the sunlit land, on the ROCK TEXTURE only (weighted by how much of the pixel is rock)
          #if NUM_DIR_LIGHTS > 0
            reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.3, 0.28, 0.23) * rockMix * (1.0 - clamp(dot(normal, normalize(directionalLights[0].direction)), 0.0, 1.0));
          #endif
-         // (The land's own baked light - the relief's shadow, the sky a hollow
-         // sees, the dark creases - is not applied any more: the player asked
+         // The land's own baked light - the relief's shadow, the sky a hollow sees, the dark creases - is not applied any more:
          // for the terrain's lights to go, 2026-10-08.)`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         `vec3 grassN = dualScaleNormal(normalMap, vTerrainWorld.xz * uGrassScale);
-         // The rock's bumps, triplanar in world space like its colour, then
-         // brought into the geometry's tangent frame so the two can be mixed.
+         // The rock's bumps, triplanar in world space like its colour
          vec3 rockWorldN = triN;
          if (rockMix > 0.001) {
            vec3 acc = vec3(0.0);
@@ -1802,9 +1350,7 @@ function terrainMaterial(
            rockWorldN = normalize(acc + triN * 1e-4);
          }
          vec3 rockN = vec3(dot(rockWorldN, tbn[0]), dot(rockWorldN, tbn[1]), dot(rockWorldN, tbn[2]));
-         // Softened: with height blending the rock's edge is crisp, and its
-         // full relief turned every facet facing away from the sun into a
-         // black blot.
+         // Softened: with height blending the rock's edge is crisp
          rockN = normalize(mix(rockN, vec3(0.0, 0.0, 1.0), 0.45));
          vec3 mapN = normalize(mix(grassN, rockN, rockMix));
          mapN.xy *= normalScale;
@@ -1819,8 +1365,7 @@ function terrainMaterial(
          // player asked for the terrain's effects to go.)`,
       );
   };
-  // A changed program key forces three to compile this variant separately from
-  // any other standard material in the scene.
+  // A changed program key forces three to compile this variant separately from any other standard material in the scene.
   material.customProgramCacheKey = () => 'terrain-splat-v33';
   // The lots coloured into the land (`lotOverlay.ts`), at its world position.
   applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
@@ -1836,21 +1381,13 @@ const SLAB_DEPTH = m(128);
 /** The darker topsoil band under the rim, in metres. */
 const TOPSOIL = m(1.6);
 
-/**
- * The soil layers of the map's cut sides: horizontal bands of earth, clay and
- * stone, wavy rather than ruled, with a fine grain over them. Periodic noise,
- * so it tiles along the rim and down the wall with no seam.
- */
+/** The soil layers of the map's cut sides */
 function strataTexture(anisotropy: number): DataTexture {
-  // 1.25 m a texel over the 320 m the texture spans along a wall: finer than
-  // the wall is ever seen, and four times cheaper at load than 512.
+  // 1.25 m a texel over the 320 m the texture spans along a wall
   const res = 256;
   const noise = makeNoise(4_177);
   const grit = makeNoise(0x77a1);
-  // One repeat of the section, top to bottom: a THICKNESS (share of the
-  // repeat) and an sRGB colour per bed. Real beds are anything but even - a
-  // thick sandstone, a thin dark shale, a lens of gravel - and a repeat of
-  // equal wavy bands read as striped paper.
+  // One repeat of the section, top to bottom: a THICKNESS (share of the repeat) and an sRGB colour per bed.
   const beds: readonly (readonly [number, number, number, number, number])[] = [
     // thickness, r, g, b, texture (0 fine, 1 gravel)
     [0.16, 168, 134, 94, 0],
@@ -1912,13 +1449,7 @@ function strataTexture(anisotropy: number): DataTexture {
   return texture;
 }
 
-/**
- * THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the map's,
- * `flatAtlas.ts`): from the land's drawn height (`topAt`, world x, y, read every `step`) down past a
- * topsoil band to a flat bottom `SLAB_DEPTH` under the base level and
- * below the lowest of the rim - SimCity 4's slab, the map a block of land on
- * its bedrock. For `wallMaterial`.
- */
+/** THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the map's, `flatAtlas.ts`) */
 export function slabGeometry(minX: number, maxX: number, minY: number, maxY: number, step: number, topAt: (x: number, y: number) => number): BufferGeometry {
   // Each side from corner to corner (three's x, z: z = -y), with its outward normal.
   const sides: readonly (readonly [number, number, number, number, number, number])[] = [
@@ -1979,13 +1510,7 @@ export function slabGeometry(minX: number, maxX: number, minY: number, maxY: num
   return geometry;
 }
 
-/**
- * The cut sides' material: the strata texture, and over it what a painted
- * cross-section shows at its top - a ragged lip of turf hanging over the
- * edge, a dark band of topsoil with roots under it - and at its bottom the
- * layers giving way to grey bedrock. Drawn from the metres under the rim
- * (`aBelow`), so the lip follows a hill as the rim does.
- */
+/** The cut sides' material: the strata texture, and over it what a painted cross-section shows at its top */
 export function wallMaterial(anisotropy: number): MeshStandardMaterial {
   const material = new MeshStandardMaterial({
     map: strataTexture(anisotropy),
@@ -2022,19 +1547,14 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
                       mix(wallHash(dot(vec2(i.x, j.y), vec2(12.9898, 78.233))), wallHash(dot(j, vec2(12.9898, 78.233))), u.x), u.y);
          }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
-         // Along the rim and down from it in steps of 0.4 m, the scale this
-         // pattern was drawn at, so it keeps its size whatever the world unit.
+         // Along the rim and down from it in steps of 0.4 m, the scale this pattern was drawn at
          float along = vMapUv.x * ${(STRATA_SPAN_X / m(0.4)).toFixed(1)};
          float below = vBelow / ${m(0.4).toFixed(6)};
          // The turf lip: 2 to 4.8 m, ragged in tufts, thick enough to read at map zoom.
          float lip = 5.0 + 5.0 * wallNoise(along * 0.12) + 2.5 * wallNoise(along * 0.6 + 11.0);
          // The topsoil under it, darker and redder, with a wavy bottom.
          float soil = lip + 10.0 + 8.0 * wallNoise(along * 0.04 + 5.0);
-         // The strata without their 128 m repeat (Quilez, "Texture
-         // Repetition", technique 3), shifted ALONG the rim only so the beds
-         // stay level: two reads at offsets a slow noise picks, the mips from
-         // the unmoved coordinates. Read plainly, the same wavy beds came
-         // round again and again down every side of the map.
+         // The strata without their 128 m repeat
          vec3 strata;
          {
            float idx = wallNoise(vMapUv.x * 3.0 + 17.0) * 8.0;
@@ -2050,15 +1570,9 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
          topsoil = mix(topsoil, vec3(0.42, 0.33, 0.22), root * 0.6);
          vec3 turf = mix(vec3(0.24, 0.34, 0.13), vec3(0.15, 0.22, 0.09), smoothstep(0.0, lip, below));
          vec3 wall = mix(topsoil, strata, smoothstep(soil - 0.6, soil + 0.6, below));
-         // The base of the section, as the player's reference draws it: under
-         // the beds a band of FRACTURED ROCK - angular stones packed together,
-         // each a different grey, faceted (lit on the side facing the sun),
-         // thin dark cracks between them - and under that the dark BEDROCK,
-         // foliated: long wavy streaks flowing along the cut. Both boundaries
-         // wavy; the bedrock swells up into the broken rock in humps.
+         // The base of the section, as the player's reference draws it: under the beds a band of FRACTURED ROCK
          float bedTop = 200.0 + 16.0 * wallNoise(along * 0.025) + 5.0 * wallNoise(along * 0.11 + 3.0);
-         // The bed right above the rock is a pale pinkish tan, plain (the strata's
-         // own beds there carried a thin pale gravel line the player disliked).
+         // The bed right above the rock is a pale pinkish tan, plain
          vec3 paleBed = vec3(0.5, 0.33, 0.22) * (0.88 + 0.24 * wallNoise2(vec2(along, below) * 0.35));
          wall = mix(wall, paleBed, smoothstep(bedTop - 34.0, bedTop - 31.0, below + 6.0 * (wallNoise(along * 0.04 + 2.0) - 0.5)));
          float rockBase = bedTop + 62.0 + 30.0 * (wallNoise(along * 0.012 + 40.0) - 0.5) + 10.0 * (wallNoise(along * 0.05 + 9.0) - 0.5);
@@ -2082,8 +1596,7 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
          float edge = sqrt(f2) - sqrt(f1);
          float cw = max(fwidth(edge), 1e-4);
          float crack = 1.0 - smoothstep(0.02, 0.02 + cw * 1.5, edge);
-         // A facet: the stone's surface tilts away from its centre, so the
-         // side facing the light (up-left) is brighter - an angular, chipped look.
+         // A facet: the stone's surface tilts away from its centre, so the side facing the light (up-left) is brighter
          float facet = clamp(dot(normalize(-toCentre + 1e-4), normalize(vec2(-0.6, -0.8))), -1.0, 1.0) * smoothstep(0.0, 0.25, sqrt(f1));
          vec3 stone = mix(vec3(0.075, 0.075, 0.078), vec3(0.17, 0.165, 0.16), wallHash(stoneId + 9.1));
          stone *= 0.85 + 0.3 * wallNoise2(vec2(along, below) * 0.8);
@@ -2107,14 +1620,7 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
   return material;
 }
 
-/**
- * One plate of the ground (`flatAtlas.ts`). `origin`: where the plate's
- * centre stands in the world. Every coordinate the surface is given or
- * returns is the plate's own, about its centre; only its meshes are moved
- * there. `plate`: the plate's key, by which it shares the few light and
- * ecology workers. `prebuilt`: the plate's first build worked out off the page
- * (`plateMesh.ts`), copied in by the first `update` when no stamp reaches it.
- */
+/** One plate of the ground (`flatAtlas.ts`). */
 export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null): TerrainSurface {
   const bakes = terrainBakes(anisotropy);
   const material = terrainMaterial(bakes, anisotropy);
@@ -2125,15 +1631,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   ground.name = 'terrain-ground';
   ground.receiveShadow = true;
   // The ground does NOT cast.
-  //
-  // It is a single 301x301 heightfield - 180 000 triangles - and casting meant
-  // rasterising every one of them a second time into the shadow map each
-  // frame. What that bought was self-shadowing across one wide cascade whose
-  // texels are around a world unit across at play zoom, which does not resolve
-  // a hillside; what it actually produced was acne, the irregular dark
-  // diagonal banding on open grass that has nothing casting it. Roads,
-  // structures, props and agents all still cast onto the ground, which is
-  // every shadow the player is actually looking at.
   ground.castShadow = false;
   ground.matrixAutoUpdate = false;
   ground.position.set(origin.x, 0, -origin.y);
@@ -2150,13 +1647,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   water.matrixAutoUpdate = false;
   water.position.set(origin.x, 0, -origin.y);
   water.updateMatrix();
-  // The river animates itself from here on: nothing in the draw loop has to
-  // know that the terrain owns something with a clock in it.
+  // The river animates itself from here on
   waterSurface.attach(water);
-  // Hidden while it holds no water (`rebuildWater` shows it): three binds a
-  // mesh's program and every texture of its material before it finds the
-  // geometry empty (r186 `renderBufferDirect`): every plate's empty water
-  // sheet was such a bind a frame.
+  // Hidden while it holds no water (`rebuildWater` shows it)
   water.visible = false;
 
   let index = new TerrainIndex([], 0);
@@ -2166,8 +1659,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const naturalHeightAt = (x: number, y: number): number =>
     TERRAIN_BASE + sampleTerrainHeight(index, x, y);
 
-  // The heights the mesh actually carries, one per grid corner, so
-  // `renderedHeightAt` interpolates exactly the numbers that are on screen.
+  // The heights the mesh actually carries, one per grid corner
   const grid = new Float64Array(GRID * GRID);
   {
     // The ground reads its grids from where it stands.
@@ -2176,18 +1668,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   }
   /** The same corners before any road shaped them, so shaping is idempotent. */
   const natural = new Float64Array(GRID * GRID);
-  /**
-   * Corners a road has moved (1), so an unshaped one can be restored cheaply:
-   * a mark per corner, read over a region's own corners - a list of them all
-   * was walked whole for every quarter block of every road edit.
-   */
+  /** Corners a road has moved (1), so an unshaped one can be restored cheaply */
   const shapedCorners = new Uint8Array(GRID * GRID);
   const spherePoint = new Vector3();
-  /**
-   * The whole plate's normals, steepness and bounds worked out again: every corner moved (a map loaded,
-   * the land made anew), never a dab.
-   * @rebuild Only when the whole land changed.
-   */
+  /** @rebuild The whole plate's normals, steepness and bounds worked out again: every corner moved */
   const wholePlateMoved = (): void => {
     geometry.computeVertexNormals();
     markAll(geometry.getAttribute('normal') as BufferAttribute);
@@ -2198,13 +1682,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let lastRegion: TerrainRegion | null = null;
   /** The water waits for the end of a stroke (see `settle`). */
   let waterStale = false;
-  /**
-   * Where the land moved while the water waited, corners (`'all'`: anywhere,
-   * or a river dab): `settle` rebuilds the water only when this reaches it
-   * (a dirty region, Unity's `DirtyHeightmapRegion`; Nystrom's "Dirty Flag",
-   * fine-grained). Every stroke anywhere rebuilt every pool and river of the
-   * map, some 100 ms at its end.
-   */
+  /** Where the land moved while the water waited, corners (`'all'`: anywhere, or a river dab) */
   let waterDirty: TerrainRegion | 'all' | null = null;
   const markWaterDirty = (box: TerrainRegion | null): void => {
     if (box === null || waterDirty === 'all') { waterDirty = 'all'; return; }
@@ -2217,31 +1695,16 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   const heightAt = naturalHeightAt;
 
-  // The drawn corners again, for the water to measure its depth per pixel
-  // (`WaterSurface.setGround`). Refreshed with the water.
+  // The drawn corners again, for the water to measure its depth per pixel (`WaterSurface.setGround`).
   const groundTexture = new DataTexture(new Float32Array(GRID * GRID), GRID, GRID, RedFormat, FloatType);
   groundTexture.magFilter = NearestFilter;
   groundTexture.minFilter = NearestFilter;
   groundTexture.generateMipmaps = false;
   waterSurface.setGround(groundTexture, TERRAIN_HALF, TERRAIN_CELL, GRID, origin);
 
-  /**
-   * Which diagonal each cell is drawn with: 0 the plane's own (b-d), 1 the
-   * other (a-c). Chosen per cell as the one with the smaller rise along it - a
-   * data-dependent triangulation (Garland & Heckbert): the triangles' edges
-   * then follow the contour, and a cliff running across the grid's fixed
-   * diagonal no longer breaks into a zigzag of teeth.
-   */
+  /** Which diagonal each cell is drawn with: 0 the plane's own (b-d), 1 the other (a-c). */
   const flip = new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
-  /**
-   * The diagonals the land would be drawn with before any road shaped it, by
-   * the same rule on the natural corners: the natural ground
-   * (`naturalRenderedHeightAt`) the roads' heights are solved against must
-   * not move when the roads shape the drawn one. Read through `flip`, every
-   * cell a road had shaped changed it by millimetres to centimetres, every
-   * road was solved anew on the next edit, and the whole map was cut, filled
-   * and paved again (the player, 2026-10-08).
-   */
+  /** The diagonals the land would be drawn with before any road shaped it, by the same rule on the natural corners */
   const naturalFlip = new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
   /** The cells round a box of corners (inclusive) and the diagonal `corners` gives each. */
   const chooseDiagonals = (corners: Float64Array, into: Uint8Array, x0: number, x1: number, y0: number, y1: number): void => {
@@ -2308,21 +1771,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     chooseDiagonals(natural, naturalFlip, x0, x1, y0, y1);
   };
 
-  /**
-   * Pulls the ground towards the roads, and carries the difference away over a
-   * batter wide enough to read as an embankment rather than as a wall.
-   *
-   * This is the answer to the oldest complaint about this renderer: a road laid
-   * across rolling ground has to sit at ONE height across its full width, so
-   * where the ground falls away there is a difference to absorb. Absorbing it in
-   * the road's own skirt draws a vertical face — the "wall" — and absorbing it
-   * nowhere leaves the road hanging. Absorbing it in the TERRAIN is what a road
-   * actually does to a landscape, and it is the only version that looks built.
-   *
-   * It is also, with no extra code, how tunnels work: `shapeAt` fades its own
-   * weight out where the road is buried deeply, so the ground closes over the
-   * bore and stays open at the portals.
-   */
+  /** Pulls the ground towards the roads */
   /** Corners visited by the current shaping pass, by stamp, so regions and boxes that overlap visit each once. */
   const visited = new Int32Array(GRID * GRID);
   let pass = 0;
@@ -2335,19 +1784,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let lastChanged: readonly number[] = [];
   const shapeToRoads = (shape: TerrainShaper | null, region: TerrainRegion | readonly TerrainRegion[] | null = null): boolean => {
     const regions = regionList(region);
-    // Only the corners of the regions, or of the boxes some road or platform
-    // could shape (`shapeCorners`): asking all 90 601 of them was most of the pass.
+    // Only the corners of the regions, or of the boxes some road or platform could shape (`shapeCorners`)
     return shapePass(regions, shape && ((take) => {
       pass++;
       shapeCorners(corners, natural, shape, regions, visited, pass, take);
     }));
   };
-  /**
-   * The corners a pass of `region` reads (with none, of `bounds`: the boxes
-   * of the shapers, in the plate's coordinates), as the ground's worker takes
-   * them (`groundShape.ts`), and `take`, which puts its answer in place as
-   * `shapeToRoads` would have - the same corners, heights and order.
-   */
+  /** The corners a pass of `region` reads */
   const askShape = (region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): {
     ask: PlateShapeAsk; take(answer: PlateShapeAnswer): boolean;
   } => {
@@ -2360,19 +1803,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       }),
     };
   };
-  /**
-   * One pass: the corners of `regions` (null: of the plate) back to their land,
-   * then `fill` hands each corner it shapes to `take`, then the mesh follows.
-   */
+  /** One pass: the corners of `regions` */
   const shapePass = (regions: readonly TerrainRegion[] | null, fill: ((take: (i: number, height: number) => void) => void) | null): boolean => {
     // The corners whose height this pass changes, whichever way.
     const changed: number[] = [];
-    // Restore whatever the last shaping moved, so this is a pure function of
-    // the current network rather than an accumulation over every edit. With a
-    // region (a brush dab while the stroke is held) only the corners in it
-    // are shaped again: every other one keeps its cut and fill. The whole
-    // plate was re-shaped on every dab - every road and every building pad of
-    // the town, sixty-odd times a stroke.
+    // Restore whatever the last shaping moved
     const before = new Map<number, number>();
     const restore = (i: number): void => {
       if (!shapedCorners[i]) return;
@@ -2413,11 +1848,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       markLand({ x0, x1, y0, y1 });
     }
     refreshNormals(changed);
-    // The bounds grown over the corners that moved (`Sphere.expandByPoint`
-    // keeps everything it held): worked out again over all 90 601 corners it
-    // was 0.8 ms for each of the hundred-odd quarter blocks of a road edit.
-    // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made): DO NOT
-    // work it out again here, over every corner, in the pass a frame puts in place.
+    // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made)
     const sphere = geometry.boundingSphere!;
     for (const i of changed) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
     lastChanged = changed;
@@ -2431,16 +1862,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const cb = new Vector3();
   const ab = new Vector3();
   const sum = new Vector3();
-  /**
-   * The steepest face round each corner, in degrees: what the shader calls a
-   * WALL. A cliff a cell or two wide shares its corners with the flat above
-   * and below it, so its smooth normals called it a bank and drew turf on it,
-   * and its drawn faces alone alternate steep and gentle along the grid's
-   * diagonals (rock in teeth). Read per corner, both triangles of a wall cell
-   * are steep, and the rock frays one cell onto the rim as a cliff edge does.
-   */
-  // Written through the attribute's own array (`BufferAttribute` keeps the
-  // array it is given; the typed subclasses copy it).
+  /** The steepest face round each corner, in degrees: what the shader calls a WALL. */
+  // Written through the attribute's own array (`BufferAttribute` keeps the array it is given; the typed subclasses copy it).
   const steepAttribute = new BufferAttribute(new Float32Array(GRID * GRID), 1);
   const steep = steepAttribute.array as Float32Array;
   geometry.setAttribute('aSteep', steepAttribute);
@@ -2463,12 +1886,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     steepnessInto(position.array as ArrayLike<number>, flip, GRID, cellSteep, steep);
     markAll(steepAttribute);
   };
-  /**
-   * Recomputes the normals round the corners that moved: the corners
-   * themselves and every corner sharing a face with one, which is all a moved
-   * corner can tilt. The whole plate's `computeVertexNormals` was the other
-   * large share of every road edit.
-   */
+  /** Recomputes the normals round the corners that moved */
   const refreshNormals = (moved: readonly number[]): void => {
     const touched = new Set<number>();
     let nx0 = GRID, nx1 = -1, ny0 = GRID, ny1 = -1;
@@ -2489,8 +1907,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       faceSteep = 0;
       const ix = v % GRID;
       const iy = (v - ix) / GRID;
-      // The cells round the corner, split as `PlaneGeometry` splits them:
-      // (a, b, d) and (b, c, d).
+      // The cells round the corner, split as `PlaneGeometry` splits them: (a, b, d) and (b, c, d).
       for (let cy = iy - 1; cy <= iy; cy++) {
         for (let cx = ix - 1; cx <= ix; cx++) {
           if (cx < 0 || cy < 0 || cx >= TERRAIN_SEGMENTS || cy >= TERRAIN_SEGMENTS) continue;
@@ -2550,11 +1967,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let ecologyRevision = 0;
   /** The ecosystem must be read again; done when no stroke is held (as the water is). */
   let ecologyStale = true;
-  /**
-   * Where: the corners terrain strokes moved since it was last read, or the
-   * whole map (the water, the paint, the biome or the map changed). A stroke
-   * re-read the whole map, 82 ms, and could change trees far from the brush.
-   */
+  /** Where: the corners terrain strokes moved since it was last read, or the whole map */
   let ecologyDirty: TerrainRegion | 'all' | null = 'all';
   const ecologyAll = (): void => { ecologyStale = true; ecologyDirty = 'all'; };
   const ecologyOver = (box: TerrainRegion): void => {
@@ -2588,10 +2001,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const over = ecologyField && dirty !== 'all' && dirty !== null && !ecologyInFlight ? dirty : null;
     const sand = material.userData['sandCorners'] as Float32Array, basalt = material.userData['basaltCorners'] as Float32Array;
     const ask = ++ecologyAsk;
-    // A plate's whole field is read off the page (`ecologyPool.ts`): 90 ms of
-    // a frame each time the view brought a plate in. The plate shows the
-    // field it had (none, new) until it comes back; a newer reading asked
-    // meanwhile wins. A stroke's small region stays here.
+    // A plate's whole field is read off the page (`ecologyPool.ts`): 90 ms of a frame each time the view brought a plate in.
     if (!over && ecologyOffPage()) {
       const input = {
         side: GRID, cell: TERRAIN_CELL, heights: Float64Array.from(natural), water: wet,
@@ -2657,17 +2067,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
 
   const rebuildWater = (stamps: readonly TerrainStamp[]): void => {
-    // A river stands at the level its channel was cut INTO, below the banks: at
-    // a fixed world datum it vanished under raised ground, and level with the
-    // banks it covered the whole valley as one flat sheet.
+    // A river stands at the level its channel was cut INTO, below the banks
     const land = stamps.filter((stamp) => stamp.mode !== 'river');
     const landIndex = new TerrainIndex(land, 0, index.relief, index.ground);
     const landAt = (x: number, y: number): number => TERRAIN_BASE + sampleTerrainHeight(landIndex, x, y);
 
-    // A river drawn as a stroke is ONE body of water along its course: a
-    // ribbon down the channel, its level only ever falling downstream (the
-    // spline rivers of Unreal's Water and of Unity's river tools). Built
-    // from discs on a grid, a river crossing lower ground ended in steps.
+    // A river drawn as a stroke is ONE body of water along its course
     const strokes = new Map<number, TerrainStamp[]>();
     for (const stamp of stamps) {
       if (stamp.mode !== 'river' || stamp.stroke === undefined) continue;
@@ -2695,10 +2100,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const discs: WaterStamp[] = [];
     for (const stamp of stamps) {
       if (stamp.mode !== 'river' || discs.length >= MAX_TERRAIN_STAMPS || ribbonStamps.has(stamp)) continue;
-      // The LOWEST bank round the dab, not the ground at its centre: on a
-      // hillside one bank is lower than the other, and water standing at the
-      // centre's level spilled over it, flooded the slope past the basin
-      // limit and was dropped, leaving a stepped sheet at the brush's reach.
+      // The LOWEST bank round the dab, not the ground at its centre
       let bank = landAt(stamp.x, stamp.y);
       for (let k = 0; k < 8; k++) {
         const angle = (k / 8) * Math.PI * 2;
@@ -2729,19 +2131,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   /** How near the water a moved corner can be and still leave it as it was: two water cells and two terrain cells. */
   const WATER_REACH = 2 * WATER_CELL + 2 * TERRAIN_CELL;
-  /**
-   * Whether the last shaping moved ground under or beside the water. A road
-   * edit re-cut the ground under that road only, but rebuilt the whole water
-   * mesh every time (about 90 ms on a town with a river); away from the water
-   * the mesh is the same, as the rivers' levels read the unshaped land.
-   */
-  /**
-   * Whether land moved in `box` (corners) can change the water: it reaches
-   * the water's mesh, or a river's banks (each river dab reads the land round
-   * it out to its radius, `rebuildWater`), or the flood's way out past the
-   * mesh (`WATER_REACH`). A basin can only flood across cells next to the
-   * water it floods from, so land moved farther off leaves every pool as it is.
-   */
+  /** Whether the last shaping moved ground under or beside the water. */
+  /** Whether land moved in `box` (corners) can change the water: it reaches the water's mesh, or a river's banks */
   const waterReaches = (box: TerrainRegion): boolean => {
     const minX = box[0] * TERRAIN_CELL - TERRAIN_HALF, maxX = box[1] * TERRAIN_CELL - TERRAIN_HALF;
     const maxY = TERRAIN_HALF - box[2] * TERRAIN_CELL, minY = TERRAIN_HALF - box[3] * TERRAIN_CELL;
@@ -2775,11 +2166,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     return false;
   };
 
-  // Cloned without the userData: `Material.copy` copies it through
-  // JSON.stringify (three r186), and the land's textures and fields kept
-  // there were serialised image by image - 283 ms of the opening for a copy
-  // nothing reads. The verge reads the land's own (its uniforms come from
-  // `material.onBeforeCompile`), so both share the one object.
+  // Cloned without the userData: `Material.copy` copies it through JSON.stringify
   const landData = material.userData;
   material.userData = {};
   const vergeMaterial = material.clone();
@@ -2797,17 +2184,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let paintArray = material.userData['paint'] as DataArrayTexture;
   let paintRes = paintArray.image.width;
   let paint = [paintLayer(paintArray, 0), paintLayer(paintArray, 1)];
-  // The land's own light (`terrainLight`): lit and open to the sky until it
-  // is first worked out.
+  // The land's own light (`terrainLight`): lit and open to the sky until it is first worked out.
   let lightLayer = paintLayer(paintArray, LIGHT_LAYER);
   for (let i = 0; i < GRID; i++) {
     for (let j = 0; j < GRID; j++) lightLayer.set([255, 255, 128, 0], (i * paintRes + j) * 4);
   }
-  /**
-   * The painted ground's array at its full size (`PAINT_RES`), made when the
-   * first dab reaches this ground (`PAINT_START_RES`): the land's light
-   * carried over row by row, the shader given the new array and its side.
-   */
+  /** The painted ground's array at its full size (`PAINT_RES`), made when the first dab reaches this ground */
   const growPaint = (): void => {
     if (paintRes >= PAINT_RES) return;
     const small = paintArray, was = paintRes;
@@ -2827,15 +2209,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   paintArray.addLayerUpdate(LIGHT_LAYER);
   paintArray.needsUpdate = true;
   // The corners whose heights moved since the light was last asked for
-  // ('all': the whole land), joined over every shaping step of an edit.
   let landMoved: CornerRect | 'all' | null = 'all';
   const markLand = (rect: CornerRect | 'all'): void => {
     landMoved = rect === 'all' || landMoved === 'all' ? 'all' : landMoved ? unionCorners(landMoved, rect) : rect;
   };
   const litSun = { x: 0, y: -1, z: 0 };
-  // Worked out by the plates' few shared workers (`terrainLightPool.ts`), one
-  // request at a time: the edits and sun turns made meanwhile wait, joined,
-  // for the next.
+  // Worked out by the plates' few shared workers (`terrainLightPool.ts`), one request at a time
   const lightGrid = { n: GRID, cell: TERRAIN_CELL };
   let lightLocal: ((request: LightRequest) => LightResult) | null = null;
   let lightBusy = false;
@@ -2904,16 +2283,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       ecologyAll();
     }
     paintStep(doc);
-    // The ecosystem follows the land, the water and the paint, once no stroke
-    // is held (a stroke defers the water, and with it this).
+    // The ecosystem follows the land, the water and the paint, once no stroke is held
     if (ecologyStale && !waterStale && !deferEcology) refreshEcology();
   };
   const paintStep = (doc: TerrainSource): void => {
     if (doc.paintRevision === paintRevision) return;
     paintRevision = doc.paintRevision;
     const dabs = doc.terrainPaint;
-    // Whether a dab of ground or cover was laid: the plants follow those, and
-    // a dab of geology changes neither.
+    // Whether a dab of ground or cover was laid: the plants follow those, and a dab of geology changes neither.
     let covered = false;
     const geologyRects: (readonly [number, number, number, number])[] = [];
     // Something to lay: the array at its full size first.
@@ -2934,8 +2311,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       rasterCover(covers, dab);
       covered = true;
     };
-    // Dabs only added since the last time: lay just those. Anything else (an
-    // undo, a load, the oldest dabs dropped): lay them all again.
+    // Dabs only added since the last time: lay just those.
     if (dabs.length >= paintCount && dabs[0] === paintFirst && paintCount > 0) {
       for (let i = paintCount; i < dabs.length; i++) lay(dabs[i]!);
       if (geologyRects.length > 0) geologyChanges.mark(geologyRects);
@@ -2962,8 +2338,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     paintArray.addLayerUpdate(1);
     paintArray.needsUpdate = true;
     {
-      // The flowers and the scrub at each terrain corner, into the shader's
-      // ground texture.
+      // The flowers and the scrub at each terrain corner, into the shader's ground texture.
       const flowers = material.userData['flowerCorners'] as Float32Array;
       const scrub = material.userData['scrubCorners'] as Float32Array;
       const forest = material.userData['forestCorners'] as Float32Array;
@@ -3069,8 +2444,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const dirty = waterDirty;
       waterDirty = null;
       if (dirty !== null && dirty !== 'all' && !waterReaches(dirty)) {
-        // The water stands as it was; what it reads of the ground is copied,
-        // and the ecosystem, which reads the land's heights, is read again.
+        // The water stands as it was; what it reads of the ground is copied, and the ecosystem, which reads the land's heights
         (groundTexture.image.data as Float32Array).set(grid);
         groundTexture.needsUpdate = true;
         ecologyOver(dirty);
@@ -3106,22 +2480,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       revision = doc.terrainRevision;
       index = new TerrainIndex(doc.terrainStamps, revision, doc.terrainRelief, doc.terrainGround);
 
-      // Only the cells a new stamp reaches are rewritten. A brush stroke adds
-      // one 80-unit stamp; rewriting all 90 601 corners for it is what made
-      // painting terrain drop frames on a large map.
+      // Only the cells a new stamp reaches are rewritten.
       const added = doc.terrainStamps.length === previous.stamps.length + 1
         ? doc.terrainStamps[doc.terrainStamps.length - 1]
         : undefined;
-      // The first stamp of a map with none (a bomb's crater in a generated
-      // city) is an addition too when the diary says only it moved: taken for
-      // a new map, it rewrote and re-shaped the whole map - 2.7 s in the
-      // click of a bomb on a city of 1 530 buildings (2026-10-09).
+      // The first stamp of a map with none
       const sameHistory = added !== undefined && stampAppended(previous.stamps, doc.terrainStamps, doc.changes.since(before, ['terrain']));
 
-      // The first build worked out off the page (`plateMesh.ts`, as Cesium
-      // builds its terrain meshes in a worker): its corners, normals and
-      // steepness copied in, the diagonals and triangles chosen from the same
-      // corners as below - none of the 90 601 corners worked out here.
+      // The first build worked out off the page (`plateMesh.ts`, as Cesium builds its terrain meshes in a worker)
       const made = firstBuild && prebuilt && doc.terrainStamps.length === 0 ? prebuilt : null;
       prebuilt = null;
       // The woods' base holds only on the land it was worked out on.
@@ -3157,9 +2523,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         const cx1 = Math.min(GRID - 1, Math.ceil((added.x + reach + TERRAIN_HALF) / TERRAIN_CELL));
         const cy0 = Math.max(0, Math.floor((TERRAIN_HALF - (added.y + reach)) / TERRAIN_CELL));
         const cy1 = Math.min(GRID - 1, Math.ceil((TERRAIN_HALF - (added.y - reach)) / TERRAIN_CELL));
-        // A `flatten` stamp scales everything under it, so it can move ground
-        // the disc does not cover if an earlier stamp reached further; the box
-        // above is still the only place its influence is non-zero.
+        // A `flatten` stamp scales everything under it
         rewrite(cx0, cx1, cy0, cy1);
         box = [cx0, cx1, cy0, cy1];
         lastRegion = box;
@@ -3170,24 +2534,19 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (box) retriangulate(box[0], Math.min(GRID - 1, box[1] + 1), box[2], Math.min(GRID - 1, box[3] + 1));
       else retriangulate(0, GRID - 1, 0, GRID - 1);
       if (box) {
-        // Only the corners the dab rewrote can have tilted, with their ring of
-        // neighbours; the whole plate's normals were a third of a dab.
+        // Only the corners the dab rewrote can have tilted, with their ring of neighbours
         const moved: number[] = [];
         for (let iy = box[2]; iy <= box[3]; iy++) {
           for (let ix = box[0]; ix <= box[1]; ix++) moved.push(iy * GRID + ix);
         }
         refreshNormals(moved);
-        // The bounds grown over the corners the dab moved (`Sphere.expandByPoint`), as the shaping
-        // pass does: DO NOT work the sphere out again over every corner of the plate at every dab.
-        // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made).
+        // The bounds grown over the corners the dab moved (`Sphere.expandByPoint`), as the shaping pass does
         const sphere = geometry.boundingSphere!;
         const position = geometry.getAttribute('position');
         for (const i of moved) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
       } else wholePlateMoved();
       lastStamps = doc.terrainStamps;
-      // The water - every pool and river on the map - is the deferred part of
-      // a stroke (Unity's SetHeightsDelayLOD then SyncHeightmap on release):
-      // rebuilt on every dab, it was the largest single cost of painting.
+      // The water - every pool and river on the map - is the deferred part of a stroke
       if (stroking) {
         waterStale = true;
         // A river dab makes water; any other dab is its box.
@@ -3201,9 +2560,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       disposed = true;
       geometry.dispose();
       material.dispose();
-      // Each plate's own: its verge's material, its shore and ecology textures, its painted layers
-      // (3 to 12 MB of the graphics card). DO NOT leave them: plates come and go as the camera
-      // crosses the map (`flatAtlas.ts`), and every plate let go kept them on the card.
+      // DO NOT leave them: plates come and go as the camera crosses the map
       vergeMaterial.dispose();
       (material.userData['shore'] as Texture).dispose();
       ecologyTexture.dispose();
@@ -3254,20 +2611,7 @@ function waterCell(key: WaterKey): readonly [number, number] {
 /** Most cells one body of water may spread over into a basin: about 400 m square. */
 const MAX_FLOOD_CELLS = 40_000;
 
-/**
- * Water runs into the hollow beside it and fills it to its own level.
- *
- * The surface used to stop where the brush's reach stopped. A river led into
- * a pit stood at its own level out over the pit and simply ended there in the
- * air, a sheet with a sawtooth edge hanging over the hole. Each body of water
- * (the stamps' vertices, taken a connected group at a time) now floods out,
- * cell by cell, into every neighbouring cell whose ground is below its level -
- * the flood fill depression-filling algorithms are built on (Barnes, Lehman &
- * Mulla, "Priority-Flood", 2014) - so the pit becomes a lake whose edge is its
- * shore. A flood that runs on past `MAX_FLOOD_CELLS` is not a basin but open
- * low country the water would drain into; it is withdrawn and that water keeps
- * the extent the brush gave it.
- */
+/** Water runs into the hollow beside it and fills it to its own level. */
 /** How many water cells (24 units, about 10 m) of an over-large flood stay, so a river meets its own banks. */
 const SHORE_BAND = 6;
 function floodBasins(
@@ -3294,8 +2638,7 @@ function floodBasins(
         if (next && !seen.has(key)) { seen.add(key); stack.push(next); }
       }
     }
-    // Its flood, breadth first from its whole edge, each new cell at the level
-    // of the water that reached it.
+    // Its flood, breadth first from its whole edge, each new cell at the level of the water that reached it.
     const added: WaterKey[] = [];
     /** How many cells out from the body each flooded cell is. */
     const steps = new Map<WaterKey, number>();
@@ -3320,10 +2663,7 @@ function floodBasins(
         if (added.length > MAX_FLOOD_CELLS) { overflow = true; break; }
       }
     }
-    // Open country is not a basin: that flood is withdrawn - but not the
-    // band next to the water, or the sheet stopped at the brush's reach in
-    // steps over a bed it left dry. Within SHORE_BAND cells it reaches its
-    // bank; beyond, the water keeps the extent the brush gave it.
+    // Open country is not a basin: that flood is withdrawn
     if (overflow) {
       for (const key of added) if ((steps.get(key) ?? 0) > SHORE_BAND) vertices.delete(key);
     } else if (flooded) for (const key of added) {
@@ -3333,21 +2673,7 @@ function floodBasins(
   }
 }
 
-/**
- * One triangulated surface for every overlapping river stamp.
- *
- * Drawing one translucent disc per brush sample stacked forty alpha layers into
- * the pale cloud saved maps showed. Accumulating them on a shared grid performs
- * the union before rendering: overlap changes the local level, never the
- * opacity. The level each vertex carries is the weighted average of the stamps
- * reaching it, so the surface runs DOWN the channel's own profile instead of
- * standing at one height along a river that drops seventeen units across a map.
- *
- * Every vertex also carries its DEPTH — its own level minus the ground under it
- * — which is the one number the shader needs to tell a bank from a channel. It
- * is free here and impossible there: only this builder holds the terrain
- * sampler. See `water.ts` for what is made of it.
- */
+/** One triangulated surface for every overlapping river stamp. */
 export function unifiedWaterGeometry(
   stamps: readonly WaterStamp[],
   terrainHeightAt: (x: number, y: number) => number,
@@ -3397,8 +2723,7 @@ export function unifiedWaterGeometry(
   const positions: number[] = [];
   const depths: number[] = [];
   const cells = new Set<WaterKey>();
-  // The contour builders consume these immediately; reuse them across cells
-  // instead of allocating five points and three arrays for every quad.
+  // The contour builders consume these immediately
   const points: WaterPoint[] = Array.from({ length: 4 }, () => ({ x: 0, y: 0, level: 0, depth: 0 }));
   const centre: WaterPoint = { x: 0, y: 0, level: 0, depth: 0 };
   for (const vertex of vertices.values()) {
@@ -3408,20 +2733,14 @@ export function unifiedWaterGeometry(
     cells.add(waterKey(vertex.ix - 1, vertex.iy - 1));
   }
 
-  // Which way the water runs at every vertex (three's x and z, unit length
-  // down a river's course; still in a lake): the shader carries its ripples
-  // that way (`water.ts`, a flow map).
+  // Which way the water runs at every vertex (three's x and z, unit length down a river's course; still in a lake)
   const flows: number[] = [];
   for (const path of ribbons) riverRibbon(path, terrainHeightAt, positions, depths, flows);
   for (const cell of cells) {
     const [ix, iy] = waterCell(cell);
     const k0 = levelAt(ix, iy), k1 = levelAt(ix + 1, iy);
     const k2 = levelAt(ix + 1, iy + 1), k3 = levelAt(ix, iy + 1);
-    // A flooded basin carries a level only at its WET corners (`floodBasins`),
-    // so every cell on a lake's shore had a corner with none, and dropping
-    // those cells cut the lake's outline into a staircase of whole cells. The
-    // missing corners take the water's level instead: they stand above it, so
-    // the clip against the ground below draws the shore where it really is.
+    // A flooded basin carries a level only at its WET corners
     let known = 0, sum = 0;
     for (const level of [k0, k1, k2, k3]) if (level !== null) { known++; sum += level; }
     if (known === 0) continue;
@@ -3433,10 +2752,7 @@ export function unifiedWaterGeometry(
     p1.x = wx + WATER_CELL; p1.y = wy; p1.level = l1; p1.depth = l1 - terrainHeightAt(p1.x, p1.y);
     p2.x = wx + WATER_CELL; p2.y = wy + WATER_CELL; p2.level = l2; p2.depth = l2 - terrainHeightAt(p2.x, p2.y);
     p3.x = wx; p3.y = wy + WATER_CELL; p3.level = l3; p3.depth = l3 - terrainHeightAt(p3.x, p3.y);
-    // A corner past the water's extent is DRY even over ground below the
-    // level (a canyon the river crosses): as wet, every such cell was drawn
-    // whole and the sheet ended in steps of a cell in mid-air. Its edge is
-    // cut where the contour crosses, interpolated (marching squares).
+    // A corner past the water's extent is DRY even over ground below the level (a canyon the river crosses)
     p0.outside = k0 === null; p1.outside = k1 === null; p2.outside = k2 === null; p3.outside = k3 === null;
     for (const p of points) if (p.outside) p.depth = -Math.max(0.5, Math.abs(p.depth));
     centre.x = wx + WATER_CELL / 2;
@@ -3447,17 +2763,12 @@ export function unifiedWaterGeometry(
     const wetCorners = Number(p0.depth > TERRAIN_WATER_HEIGHT) + Number(p1.depth > TERRAIN_WATER_HEIGHT) +
       Number(p2.depth > TERRAIN_WATER_HEIGHT) + Number(p3.depth > TERRAIN_WATER_HEIGHT);
     if (wetCorners === 0 && centre.depth <= TERRAIN_WATER_HEIGHT) continue;
-    // Wound anticlockwise seen from above, so the surface is a FRONT face. The
-    // old winding pointed every face at the ground and needed `DoubleSide` and a
-    // back-face normal flip to be lit at all — which also meant the water was
-    // rasterised twice.
+    // Wound anticlockwise seen from above, so the surface is a FRONT face.
     if (wetCorners === 4 && centre.depth > TERRAIN_WATER_HEIGHT) {
       pushTriangle(positions, depths, points[0]!, points[1]!, points[2]!);
       pushTriangle(positions, depths, points[0]!, points[2]!, points[3]!);
     } else {
-      // Only the shore cells need a contour. Their wet triangles are clipped
-      // against the actual ground, so the edge follows the bank between grid
-      // corners instead of jumping one whole square at a time.
+      // Only the shore cells need a contour.
       for (let i = 0; i < 4; i++) {
         pushWetTriangle(positions, depths, points[i]!, points[(i + 1) % 4]!, centre, terrainHeightAt);
       }
@@ -3469,11 +2780,7 @@ export function unifiedWaterGeometry(
   while (flows.length < depths.length * 2) flows.push(0, 0);
   geometry.setAttribute(WATER_FLOW_ATTRIBUTE, new Float32BufferAttribute(flows, 2));
   const uvs: number[] = [];
-  // Flat UP, not the face normals `computeVertexNormals` would give. The level
-  // field steps by a fraction of a unit per cell, and on a surface this
-  // reflective those steps show as a quilt of four-unit facets in the Fresnel
-  // term and in the sun's glint. The ripple the eye reads comes from the normal
-  // map, so the geometry's own normal should be the plane's.
+  // Flat UP, not the face normals `computeVertexNormals` would give.
   const normals = new Float32Array(positions.length);
   for (let i = 0; i < positions.length; i += 3) {
     uvs.push((positions[i] as number) / 40, (positions[i + 2] as number) / 40);
@@ -3504,14 +2811,7 @@ const RIBBON_STEP = m(2.4);
 /** Strips across a ribbon. */
 const RIBBON_ACROSS = 6;
 
-/**
- * A river's water as one ribbon down its course: resampled along a smooth
- * curve through the stroke's dabs (Catmull-Rom), at the level of each
- * reach's banks, smoothed (the end whose banks stand higher is the source).
- * The ribbon is wider than the water: where a bank rises over the level the
- * ground hides it, so the shore is where the ground meets the water, with no
- * grid in it.
- */
+/** A river's water as one ribbon down its course: resampled along a smooth curve through the stroke's dabs */
 function riverRibbon(path: RiverPath, groundAt: (x: number, y: number) => number, positions: number[], depths: number[], flows?: number[]): void {
   if (path.length < 2) return;
   // Downstream: from the higher end (the order the falls are read in).
@@ -3535,14 +2835,11 @@ function riverRibbon(path: RiverPath, groundAt: (x: number, y: number) => number
   }
   const last = at(course.length - 1);
   pts.push({ x: last.x, y: last.y, half: last.half, level: last.level });
-  // The level follows each reach's own banks, smoothed. Held never to rise
-  // downstream, a river that crossed lower ground (a canyon) dropped to its
-  // floor and ran dry, under its own bed, the rest of its course.
+  // The level follows each reach's own banks, smoothed.
   for (let pass = 0; pass < 4; pass++) {
     for (let i = 1; i + 1 < pts.length; i++) pts[i]!.level = (pts[i - 1]!.level + pts[i]!.level * 2 + pts[i + 1]!.level) / 4;
   }
-  // Never dry: at least RIVER_MIN_DEPTH over the bed along the whole course,
-  // or a reach over higher ground broke the river into ponds.
+  // Never dry: at least RIVER_MIN_DEPTH over the bed along the whole course
   for (const p of pts) p.level = Math.max(p.level, groundAt(p.x, p.y) + RIVER_MIN_DEPTH);
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 1; i + 1 < pts.length; i++) pts[i]!.level = Math.max(groundAt(pts[i]!.x, pts[i]!.y) + RIVER_MIN_DEPTH, (pts[i - 1]!.level + pts[i]!.level * 2 + pts[i + 1]!.level) / 4);
@@ -3575,8 +2872,7 @@ function riverRibbon(path: RiverPath, groundAt: (x: number, y: number) => number
   for (let i = 0; i + 1 < rows.length; i++) {
     for (let j = 0; j < RIBBON_ACROSS; j++) {
       const a = rows[i]![j]!, b = rows[i]![j + 1]!, c = rows[i + 1]![j + 1]!, d = rows[i + 1]![j]!;
-      // Skip a quad over ground or under a film of water: a sheet a few
-      // centimetres deep over the floodplain drew grey slabs off the river.
+      // Skip a quad over ground or under a film of water
       if (Math.max(a.depth, b.depth, c.depth, d.depth) < 0.75) continue;
       const cross = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
       if (cross > 0) { push(a); push(b); push(c); push(a); push(c); push(d); }
@@ -3621,17 +2917,14 @@ function pushWetTriangle(
     let wet = fromWet ? from : to;
     let dry = fromWet ? to : from;
     if (dry.outside) {
-      // Past the water's extent: the crossing by the depths, as marching
-      // squares interpolates along an edge - if the ground there is under
-      // the water; on a bank, it is resolved against the ground below.
+      // Past the water's extent: the crossing by the depths, as marching squares interpolates along an edge
       const t = wet.depth / Math.max(1e-6, wet.depth - dry.depth);
       const x = wet.x + (dry.x - wet.x) * t, y = wet.y + (dry.y - wet.y) * t;
       const cut = { x, y, level: wet.level, depth: wet.level - groundAt(x, y) };
       if (cut.depth > TERRAIN_WATER_HEIGHT) { polygon.push(cut); continue; }
       dry = cut;
     }
-    // Resolve against the ground sampler itself. A linear depth estimate can
-    // place the vertex in air where the terrain bends or has a step.
+    // Resolve against the ground sampler itself.
     for (let step = 0; step < 8; step++) {
       const x = (wet.x + dry.x) / 2;
       const y = (wet.y + dry.y) / 2;
@@ -3650,14 +2943,7 @@ function pushWetTriangle(
   }
 }
 
-/**
- * Whether the land changed by one stamp added to the stamps it had (only its
- * box is rewritten), rather than by a map replaced. The first stamp of a map
- * with none - a bomb's crater in a generated city - is an addition when the
- * diary's terrain entries since (`entries`) all name where they moved:
- * taken for a new map, it rewrote and re-shaped the whole map, 2.7 s in the
- * click of a bomb on a city of 1 530 buildings (2026-10-09).
- */
+/** Whether the land changed by one stamp added to the stamps it had */
 export function stampAppended(previous: readonly unknown[], now: readonly unknown[], entries: readonly { readonly rects: unknown }[] | null): boolean {
   if (now.length !== previous.length + 1) return false;
   if (previous.length > 0) return previous[0] === now[0];

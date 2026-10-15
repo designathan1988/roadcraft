@@ -14,13 +14,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 
-/**
- * EACH BUILDING'S FLOOR WORKED OUT ONCE (`floors.ts`): the floor kept by
- * record is the floor `floorHeight` works out, to the bit - before and after
- * the ground under a part of the town moved and the diary said where - each
- * worked out once while what it reads stands, and a platform made with it
- * (`padOf`) is the platform made without.
- */
+/** EACH BUILDING'S FLOOR WORKED OUT ONCE (`floors.ts`) */
 const base = (x: number, y: number): number => m(6) * Math.sin(x / m(170)) + m(4) * Math.cos(y / m(130)) + x * 0.01;
 
 describe('the floors kept for every reader', () => {

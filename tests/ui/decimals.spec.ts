@@ -4,12 +4,7 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { formatDecimal, parseDecimal } from '@ui/i18n';
 
-/**
- * A measure the player reads is written in the interface language's notation:
- * "22,0 m" in Portuguese, "22.0 m" in English. The builder's ghost said
- * "22.0 × 18.0 m" in Portuguese (2026-10-10) and two road panels forced a
- * comma in English; every such text goes through `formatDecimal`.
- */
+/** A measure the player reads is written in the interface language's notation: "22,0 m" in Portuguese, "22.0 m" in English. */
 describe('formatDecimal', () => {
   it('writes the decimal the way the interface language does', () => {
     expect(formatDecimal(22, 1, 'pt-BR')).toBe('22,0');
@@ -36,9 +31,7 @@ const SRC = join(process.cwd(), 'src');
 // Text the player reads is built in the interface, the overlays and the composition root.
 const PLAYER_TEXT = (file: string): boolean =>
   file.startsWith('ui/') || file === 'main.ts' || file === 'buildingsWiring.ts';
-// `toFixed` that is not prose: SVG coordinates, probe data, a number input's own value; timings (ms) in the F8/F9 inspectors.
-// SVG attributes written through a setter (`set(el, key, 'd' | 'x' | 'opacity' ..., value)`, the flight
-// cockpit) and CSS colours (`rgba(...)`) are machine values too: they must keep the point in any language.
+// `toFixed` that is not prose: SVG coordinates, probe data, a number input's own value; timings
 const MACHINE = /="\$\{|dataset\[|input\.value =|d="M|set\([^,]+, [^,]+, '(d|x|y|cx|cy|r|width|height|opacity|transform)'|rgba\(/;
 
 function tsFilesUnder(dir: string): string[] {

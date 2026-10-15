@@ -8,24 +8,7 @@ import { Derived, type DerivedWork } from './derived';
 import type { LandscapeKind } from './landscape';
 import { m } from './units';
 
-/**
- * What a thrown body cannot go through, standing on the map, from the document
- * (`render/playEffects.ts`, the one reader; the player, 2026-10-06: "identificar
- * sólidos e não atravessar eles"):
- * - capsules: the walls and fences the player draws (`barriers.ts`), as thick
- *   as each kind is built;
- * - discs: poles, tree trunks and lamp posts of the lots, and the street
- *   furniture on the footways.
- * The buildings' own walls are not here: the reader takes them from the
- * buildings, roofs included.
- *
- * A product of the spine (`derived.ts`): each source item - a building, a
- * drawn barrier, a pole, a piece of street furniture - is a key, computed
- * again only when the diary names it, and the grid it is looked up through is
- * kept by key. DO NOT build the list again for the whole map on a revision: a
- * key of every store's revision and size made every edit of one item pay for
- * the city.
- */
+/** DO NOT build the list again for the whole map on a revision */
 export type Solid =
   | { readonly kind: 'capsule'; readonly a: Vec2; readonly b: Vec2; readonly r: number; readonly box: Box }
   | { readonly kind: 'disc'; readonly c: Vec2; readonly r: number; readonly box: Box };
@@ -98,12 +81,7 @@ function solidsOfItem(doc: RoadDoc, key: SourceKey): Solid[] | undefined {
   return out.length ? out : undefined;
 }
 
-/**
- * Whether two lists hold the same solids, shape for shape: the ends of a
- * capsule and the centre of a disc, not their box alone - a wall redrawn on
- * the other diagonal of the same box has the same box (Salsa's backdating
- * must never keep a value that differs).
- */
+/** Whether two lists hold the same solids, shape for shape */
 const sameSolids = (a: readonly Solid[], b: readonly Solid[]): boolean =>
   a.length === b.length && a.every((s, i) => {
     const t = b[i]!;

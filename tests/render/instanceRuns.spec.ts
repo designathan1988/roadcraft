@@ -16,13 +16,7 @@ import { RunBuilder, createInstanceRuns, type Run, type RunStore } from '@render
 import { SHADOW_REACH } from '@render/scenery';
 import { m } from '@world/units';
 
-/**
- * THE LAYER KEPT THING BY THING (`instanceRuns.ts`): through random things
- * put in and taken away, a cull draws exactly the live instances whose sphere
- * the view can see (or see the margin round), each once; what the GPU holds
- * after the partial uploads is what the mesh holds; and the same view sends
- * nothing again.
- */
+/** THE LAYER KEPT THING BY THING (`instanceRuns.ts`) */
 
 const geometry = new BoxGeometry(1, 1, 1);
 geometry.computeBoundingSphere();

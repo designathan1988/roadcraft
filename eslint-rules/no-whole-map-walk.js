@@ -1,16 +1,4 @@
-/**
- * NO WALK OF THE WHOLE MAP OUTSIDE A REBUILD (docs/PLANO-ESPINHA-2026-10-14.md,
- * Passo 4): what is near a place is found by an index (`buildings.near`,
- * `Network.ribbonsMeeting`, `segmentCells`), and what changed by the diary;
- * every building or every road of the map is walked only where the whole map
- * must be read - the first build, a map opened, a reader further behind than
- * the logs remember - and that place says so with `@rebuild` (its function's
- * doc comment, or a comment in the function before the walk). Reported:
- * `x.buildings.all()`, and the roads' ribbons walked whole (`x.ribbons.values()`,
- * `.keys()`, `.entries()`, or `for ... of x.ribbons`).
- * What stands elsewhere is in `eslint-suppressions.json`, which only shrinks.
- * DO NOT suppress it inline.
- */
+/** DO NOT suppress it inline. */
 const RIBBON_WALKS = new Set(['values', 'keys', 'entries', 'forEach']);
 
 const named = (node, name) => node && node.type === 'MemberExpression' && !node.computed

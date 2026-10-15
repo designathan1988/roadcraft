@@ -1,21 +1,7 @@
 import type { Building, RoofKind, FaceId, Volume } from './types';
 import { volumeSides } from './footprints';
 
-/**
- * What a building is made of.
- *
- * A material is a FINISH - the surface a wall or a roof is built in, which the
- * renderer draws with its own baked texture - and a COLOUR that tints it. Any
- * surface can take any material: a brick wing on a plaster block, a glass face
- * on a concrete tower, a metal roof on a brick house. Materials resolve from
- * the most specific setting to the least:
- *
- * ```
- * wall of one side:  volume.materials.sides[side] ?? volume.materials.wall ?? building.materials.wall ?? palette
- * roof of a volume:  volume.materials.roof ?? building.materials.roof ?? palette (by roof kind)
- * trim, plinth:      building.materials.trim / .plinth ?? palette
- * ```
- */
+/** What a building is made of. */
 
 export const FINISHES = ['plaster', 'stucco', 'ceramic', 'brick', 'stone', 'concrete', 'wood', 'metal', 'glass', 'tile', 'slate', 'panel', 'roofing'] as const;
 export type Finish = (typeof FINISHES)[number];
@@ -40,11 +26,7 @@ export interface VolumeMaterials {
   roof?: MaterialSpec;
 }
 
-/**
- * Each finish's own colour, as its swatch shows it: brick is brick-red before
- * it is painted. Choosing a finish brings it; a wall turned to brick kept its
- * plaster's white, and the red brick picked in the gallery came out white.
- */
+/** Each finish's own colour, as its swatch shows it: brick is brick-red before it is painted. */
 export const FINISH_COLOUR: Readonly<Record<Finish, number>> = {
   plaster: 0xe6e0d4,
   stucco: 0xdcd4c4,
@@ -72,10 +54,7 @@ function isMaterialSpec(v: unknown): v is MaterialSpec {
 
 const spec = (finish: Finish, colour: number): MaterialSpec => ({ finish, colour });
 
-/**
- * The colour schemes a building starts with (`Building.palette`): what every
- * surface is made of until the player says otherwise.
- */
+/** The colour schemes a building starts with (`Building.palette`) */
 export interface PaletteMaterials {
   readonly wall: MaterialSpec;
   readonly trim: MaterialSpec;
@@ -109,19 +88,10 @@ export function wallMaterial(b: Building, v: Volume, side: FaceId, storey?: numb
     v.materials?.sides?.[side] ?? v.materials?.wall ?? b.materials?.wall ?? paletteOf(b).wall;
 }
 
-/**
- * The slab the generator gives a tower or an office block (`procedural.ts`,
- * `towerKit.ts`): no finish of its own, a placeholder for "a flat roof". On a
- * flat roof it stands for any of `FLAT_ROOFS`; given as it is, 175 tower tops
- * were one identical grey (the player, 2026-10-13).
- */
+/** The slab the generator gives a tower or an office block (`procedural.ts`, `towerKit.ts`) */
 export const GENERIC_SLAB = 0x8a8a86;
 
-/**
- * Flat roofs as a town has them: tar-dark membrane, grey membrane, white
- * reflective sheet, beige gravel, bare concrete slab. One per building, by
- * its id - a whole town under one grey membrane read as a model, not a place.
- */
+/** Flat roofs as a town has them: tar-dark membrane, grey membrane, white reflective sheet, beige gravel */
 const FLAT_ROOFS: readonly MaterialSpec[] = [
   FLAT_ROOF_MATERIAL,
   spec('roofing', 0x4f4d49),
@@ -135,10 +105,7 @@ const FLAT_ROOFS: readonly MaterialSpec[] = [
 export function roofMaterial(b: Building, v: Volume): MaterialSpec {
   const own = v.materials?.roof ?? b.materials?.roof;
   if (isPitched(v.roof)) return own ?? paletteOf(b).roof;
-  // A flat roof or a terrace is a slab: a membrane, gravel or concrete, never
-  // the clay tile or slate a style keeps for its pitched roofs. Given the
-  // building's tile, every tower top read as a dark striped lid, and the
-  // tile's courses shimmered from above (the player, 2026-10-09: "noise").
+  // A flat roof or a terrace is a slab
   if (own && own.finish !== 'tile' && own.finish !== 'slate' && !(own.finish === 'concrete' && own.colour === GENERIC_SLAB)) return own;
   const pick = (Math.imul((b.id | 0) + 7, 2654435761) >>> 0) % FLAT_ROOFS.length;
   return FLAT_ROOFS[pick]!;
@@ -181,11 +148,7 @@ export function materialAt(b: Building, target: MaterialTarget): MaterialSpec | 
   }
 }
 
-/**
- * Sets (or with `null` clears) the material of a target, in place. Setting a
- * wider scope clears the narrower overrides under it, so "paint the whole
- * building" does what it says. Returns whether anything changed.
- */
+/** Sets (or with `null` clears) the material of a target, in place. */
 export function applyMaterial(b: Building, target: MaterialTarget, value: MaterialSpec | null): boolean {
   const before = JSON.stringify([b.materials, b.volumes.map((v) => [v.materials, v.storeys.map((s) => s.materials)])]);
   const tidyVolume = (v: Volume): void => {
@@ -293,10 +256,7 @@ export function migrateVolumeMaterials(raw: unknown): VolumeMaterials | undefine
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/**
- * Factory styles: a coherent set of materials for a whole building, applied
- * in one click and freely changed afterwards - a style locks nothing.
- */
+/** Factory styles: a coherent set of materials for a whole building, applied in one click and freely changed afterwards */
 export const STYLES: readonly { readonly key: string; readonly materials: Required<BuildingMaterials> }[] = [
   {
     key: 'brick',
@@ -324,8 +284,7 @@ export const STYLES: readonly { readonly key: string; readonly materials: Requir
 export function applyStyle(b: Building, key: string): boolean {
   const style = STYLES.find((s) => s.key === key);
   if (!style) return false;
-  // The storeys' own paint too (`wallMaterial` reads it first): left, the style
-  // did not show on the floors painted before it.
+  // The storeys' own paint too (`wallMaterial` reads it first)
   const state = (): string => JSON.stringify([b.materials, b.volumes.map((v) => [v.materials, v.storeys.map((s) => s.materials)])]);
   const before = state();
   b.materials = { ...style.materials };

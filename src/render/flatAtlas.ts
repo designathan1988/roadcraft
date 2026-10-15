@@ -29,23 +29,10 @@ import { m } from '@world/units';
 import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 
-/**
- * THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`): a grid of square
- * plates, each a `createTerrainSurface` of its own, brought in where the view
- * is and let go when far (Proland's split rule) - and the land beyond them a
- * light mesh of the whole map. On one plane every plate meets the next as it
- * is. A plate is centred on the origin: the maps made before stand on it,
- * their roads where they were.
- */
+/** THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`) */
 
 const REGION_STRIDE = 1000;
-/**
- * A plate made but not drawn is kept while it is within this many times the reach the view wants in full
- * (the margin keeps one on the line from being let go and made again, as `roadResidency.ts` does for the
- * roads), let go beyond it: by distance from the view, never by how many are kept or how long ago they were drawn.
- * DO NOT cap the plates by count: the six newest were kept wherever the view stood, and a plate next to it
- * was let go for one far behind.
- */
+/** DO NOT cap the plates by count: the six newest were kept wherever the view stood */
 const KEEP_MARGIN = 1.25;
 /** Most plates drawn in full near the view. */
 const NEAR_MOST = 9;
@@ -94,13 +81,7 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]): boolean => a.le
 const reaches = (p: Plate, x: number, y: number, radius: number): boolean =>
   Math.abs(x - p.cx) <= TERRAIN_HALF + radius && Math.abs(y - p.cy) <= TERRAIN_HALF + radius;
 
-/**
- * The map's far ground: a coarse patch of `FAR_QUADS` x `FAR_QUADS` quads per
- * plate, in world coordinates, every height the land's own, a skirt hung
- * `SKIRT` under each edge (hiding the step where a patch meets a plate drawn
- * in full). One geometry; its index lists the patches of the plates not drawn
- * in full (`farIndexInto`), so nothing is drawn twice.
- */
+/** The map's far ground: a coarse patch of `FAR_QUADS` x `FAR_QUADS` quads per plate, in world coordinates */
 const FAR_QUADS = 32;
 const FAR_SIDE = FAR_QUADS + 1;
 const SKIRT = m(30);
@@ -204,8 +185,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const root = new Group();
   root.name = 'flat-world-ground';
 
-  // The far ground: a surface of its own lends the terrain's material (its
-  // light and ecology pooled), its geometry the whole map's.
+  // The far ground: a surface of its own lends the terrain's material
   const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, PLATES);
   const farMesh = farSurface.ground;
   farMesh.name = 'flat-world-far';
@@ -213,15 +193,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   farMesh.receiveShadow = true;
   farMesh.visible = false;
   root.add(farMesh);
-  // THE SLAB under the whole map (SimCity 4's): its cut sides all round, the
-  // strata from the land down to the bedrock.
+  // THE SLAB under the whole map (SimCity 4's): its cut sides all round, the strata from the land down to the bedrock.
   const slab = new Mesh(new BufferGeometry(), wallMaterial(anisotropy));
   slab.name = 'flat-world-slab';
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
-  // THE WOODS OF THE PLATES NOT IN FULL (`farForest.ts`): every plate's
-  // trees worked out in the background, drawn as impostors on the far ground.
+  // THE WOODS OF THE PLATES NOT IN FULL (`farForest.ts`)
   const farForest = createFarForest(MAP_REGIONS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
   let focusX = 0, focusY = 0;
@@ -329,13 +307,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   };
 
   let contentKey = '';
-  /**
-   * What changed on the map since the content was last read (`world/derived.ts`): a change marks the
-   * plates its rectangles reach. DO NOT walk every node, building, lot, pole, plant and wall of the
-   * map at each change (it was: every building grown read the whole town again - quadratic as a
-   * town grows); the whole map is read only when the diary cannot say where (`@rebuild`). A plate
-   * emptied keeps its ground in full until then (it only costs that plate being drawn in full).
-   */
+  /** DO NOT walk every node, building, lot, pole, plant and wall of the map at each change */
   const contentCursor = new JournalCursor(CONTENT_KINDS);
   const plateCountOf = (rect: ChangeRect, into: Set<number>): void => {
     const kx0 = Math.round(rect[0] / PLATE_SIZE), kx1 = Math.round(rect[2] / PLATE_SIZE);
@@ -387,11 +359,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     return local;
   };
   let seenTerrain = -1;
-  /**
-   * The terrain's changes since the plates' stamps were last sorted (the diary's 'terrain'): only the
-   * plates a change's rectangles reach sort the stamps again. DO NOT filter the map's every stamp for
-   * every plate at each change: stamps times plates for one dab of the brush.
-   */
+  /** DO NOT filter the map's every stamp for every plate at each change: stamps times plates for one dab of the brush. */
   const terrainCursor = new JournalCursor(['terrain']);
   let seenRelief: ReliefVersion | null = null;
   let seenPaint = -1;
@@ -446,11 +414,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (readContent(doc)) refresh();
   };
   const bareAt = (p: Plate, lx: number, ly: number): number => TERRAIN_BASE + bare(p.cx + lx, p.cy + ly);
-  /**
-   * A plate's land at a point of its map: its corners as the workers read
-   * them (the same numbers the field gives there, to the bit), bilinear
-   * between them; the field itself off the plate or before they come.
-   */
+  /** A plate's land at a point of its map: its corners as the workers read them */
   function groundOn(p: Plate, lx: number, ly: number): number {
     const h = p.heights;
     if (h) {
@@ -524,11 +488,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     ground: firstSurface.ground,
     get parts() { return partsShown; },
     focus(x, y, reach) {
-      // In full within some times the ground the view takes in (Proland's
-      // split rule), none from far out: the far mesh alone. Worked out again
-      // only when the view moved to another plate or reach; a plate comes in
-      // once its corners are read off the page, one a frame at most - the far
-      // patch stands in meanwhile, never a frame stopped for it.
+      // In full within some times the ground the view takes in (Proland's split rule), none from far out: the far mesh alone.
       setFlatGroundFocus(x, y);
       focusX = x;
       focusY = y;

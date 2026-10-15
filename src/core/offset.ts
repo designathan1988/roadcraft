@@ -21,11 +21,7 @@ export interface OffsetOptions {
   readonly prune?: boolean;
 }
 
-/**
- * Appends a circular arc of `radius` about `c`, from angle `a0` to `a1`,
- * sweeping the short way. The first point is emitted, the last is not — callers
- * push the endpoint themselves so joins stay exact.
- */
+/** Appends a circular arc of `radius` about `c`, from angle `a0` to `a1`, sweeping the short way. */
 function pushArc(
   out: Vec2[],
   c: Vec2,
@@ -46,27 +42,7 @@ function pushArc(
   }
 }
 
-/**
- * Offsets an open polyline by a signed distance `d` along `perp(tangent)`.
- *
- * The V6 monolith placed each offset vertex at exactly `d` along the *vertex
- * normal*. That is wrong: the intersection of the two offset lines sits at
- * `d / cos(theta/2)` from the source vertex, where `theta` is the turn angle.
- * Using `d` alone pulls every corner toward the centreline, which is why lane
- * markings drifted off the carriageway and self-crossed on curves.
- *
- * The `miterLen` expression below is signed-correct for both sides of a turn on
- * its own: the inner side gets a short miter, the outer a long one. That single
- * expression is the whole fix.
- *
- * What is NOT true, and is worth stating because it reads as if it should be:
- * the result's points do not all lie at perpendicular distance |d| from the
- * source polyline. On the concave side of a turn the miter vertex's nearest
- * feature is the source *vertex*, at `|d| / cos(theta/2)`. The invariants the
- * tests actually pin are the miter distance itself, and that every offset
- * vertex sits exactly `d` from the supporting lines of both adjacent source
- * segments — which is what "parallel at distance d" means.
- */
+/** Offsets an open polyline by a signed distance `d` along `perp(tangent)`. */
 export function offsetPolyline(
   pts: readonly Vec2[],
   d: number,
@@ -135,14 +111,7 @@ export function offsetPolyline(
   return prune ? pruneSelfIntersections(out) : out;
 }
 
-/**
- * Removes loops from an open chain by walking forward and short-cutting across
- * the first self-intersection found, scanning candidate partners from the far
- * end backwards so the *largest* loop is removed first. Nested loops therefore
- * collapse in a single pass.
- *
- * O(n^2), with n bounded by the flattening budget (<= ~64 points per segment).
- */
+/** Removes loops from an open chain by walking forward and short-cutting across the first self-intersection found */
 function pruneSelfIntersections(q: readonly Vec2[]): Vec2[] {
   const m = q.length;
   if (m < 4) return q.slice();

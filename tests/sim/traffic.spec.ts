@@ -7,14 +7,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { hashSim } from './support/snapshot';
 
-/**
- * The simulation, exercised end to end on a network the editor could have drawn.
- *
- * These are throughput and invariant tests rather than unit tests, because the
- * failures that matter here are emergent: a junction that admits nobody, a
- * vehicle that leaves its lane, a number that turns into NaN and quietly
- * poisons every frame after it.
- */
+/** The simulation, exercised end to end on a network the editor could have drawn. */
 
 interface Fixture {
   readonly doc: RoadDoc;
@@ -76,9 +69,7 @@ describe('traffic', () => {
   });
 
   it('moves traffic through an UNCONTROLLED junction', () => {
-    // The regression this pins: mapping the "no control device" policy to a
-    // yield right-of-way made every approach wait for every other one, and the
-    // node wedged solid with nobody ever entering it.
+    // The regression this pins: mapping the "no control device" policy to a yield right-of-way made every approach wait for
     const fixture = crossroads('none');
     run(fixture, 60);
     const moving = [...fixture.sim.vehiclesInIdOrder()].filter((v) => v.v > 0.5).length;
@@ -93,25 +84,7 @@ describe('traffic', () => {
     expect(moving).toBeGreaterThan(0);
   });
 
-  /**
-   * The test above asserts that SOME vehicle SOMEWHERE is moving, which is
-   * satisfied by a junction with three of its four legs wedged solid. It
-   * passed throughout the period when a freshly built signalised crossroads
-   * froze in stage 0 for up to a minute and when cars sat at their own green
-   * for over ninety seconds. The tests below measure the thing the player
-   * actually sees: does MY approach get served, and how long do I wait.
-   *
-   * Two things are required to make them mean anything:
-   *
-   *   - the clock has to move, because every wedge detector, the FIFO
-   *     fairness order and the signal starvation promotion are keyed on it.
-   *     `step` itself now advances `clock.tick` (it used to move only inside
-   *     `clock.run`/`advance`, and specs that called `step` directly left the
-   *     whole diagnostic layer unreachable);
-   *   - the audit has to be ENABLED, because `runAudit` is gated on
-   *     `auditEnabled` and nothing but `main.ts` ever set it. No test in this
-   *     repository had ever run it.
-   */
+  /** The test above asserts that SOME vehicle SOMEWHERE is moving */
   describe('a signalised junction serves every approach', () => {
     const drive = (fixture: Fixture, seconds: number): void => {
       fixture.sim.clock.run(Math.round(seconds / DT), () =>
@@ -146,9 +119,7 @@ describe('traffic', () => {
     });
 
     it('does not leave a vehicle sitting at its own green', () => {
-      // `greenDenied` counts seconds spent at a green whose refusal was not
-      // one of the by-design ones. It must stay well inside a single cycle;
-      // the measured failure was 96 to 145 seconds.
+      // `greenDenied` counts seconds spent at a green whose refusal was not one of the by-design ones.
       const fixture = crossroads('signal');
       fixture.sim.auditEnabled = true;
       drive(fixture, 240);
@@ -165,16 +136,10 @@ describe('traffic', () => {
     });
 
     it('runs its state machine from the first second, never freezing', () => {
-      // The coordination offset used to be implemented by HOLDING the machine
-      // still for the length of the offset: `stepController` returned early
-      // while counting it down, so `elapsed` stayed at zero and every
-      // approach but the first sat on a hard red for up to sixty seconds. An
-      // offset is supposed to shift the PHASE, which is what it does now.
+      // The coordination offset used to be implemented by HOLDING the machine still for the length of the offset
       const fixture = crossroads('signal');
 
-      // `elapsed` restarts at every sub-phase boundary, so the instantaneous
-      // value proves nothing. What the freeze did was pin it at exactly zero
-      // for the whole offset, and never reach a boundary at all.
+      // `elapsed` restarts at every sub-phase boundary, so the instantaneous value proves nothing.
       let peakElapsed = 0;
       const phasesSeen = new Set<string>();
       fixture.sim.clock.run(Math.round(12 / DT), () => {
@@ -190,10 +155,7 @@ describe('traffic', () => {
     });
 
     it('visits every stage of its plan within two cycles', () => {
-      // Exclusive turn stages exist only to serve turns that are permissive
-      // everywhere else, and run when those turns are queued. Every other
-      // stage is served unconditionally; a gated one must run whenever its
-      // turns have been waiting.
+      // Exclusive turn stages exist only to serve turns that are permissive everywhere else
       const fixture = crossroads('signal');
       const seenStages = new Set<number>();
       let longestTurnWait = 0;
@@ -216,18 +178,13 @@ describe('traffic', () => {
       stages.forEach((s, i) => {
         if (!s.demandMovements) expect(seenStages.has(i), `stage ${i}`).toBe(true);
       });
-      // A turn only an exclusive stage protects never waits beyond the
-      // starvation bound (1.5 cycles of the longest legal plan).
+      // A turn only an exclusive stage protects never waits beyond the starvation bound (1.5 cycles of the longest legal plan).
       const bound = 1.5 * stages.reduce((t, s) => t + s.maxGreen + s.amber + s.allRed, 0);
       expect(longestTurnWait).toBeLessThan(bound);
     });
 
     it('never shows green to two approaches whose movements cross', () => {
-      // A four-leg cross of two-way roads: every approach has a left turn
-      // across the opposite approach's through movement, so no two approaches
-      // may share a green. Opposing approaches used to share every stage with
-      // the left turn looking for a gap, and players watched a turning car
-      // cross the stream the other light had released.
+      // A four-leg cross of two-way roads
       const fixture = crossroads('signal');
       const controller = [...fixture.sim.controllers.values()][0]!;
       expect(controller.plan.groups.length).toBe(4);
@@ -242,15 +199,12 @@ describe('traffic', () => {
     });
 
     it('still runs opposing approaches together when their movements never meet', () => {
-      // Ban the two left turns of the major road and its opposing approaches
-      // no longer cross: through and right from both sides share one green,
-      // which is what keeps a corridor's capacity.
+      // Ban the two left turns of the major road and its opposing approaches no longer cross
       const fixture = crossroads('signal');
       const { doc, sim } = fixture;
       const centre = [...doc.nodes.values()].find((n) => n.incident.length === 4)!;
       const [north, south] = centre.incident;
-      // Which exit is a LEFT turn is the network's answer, not an assumption
-      // about which way the axes run.
+      // Which exit is a LEFT turn is the network's answer, not an assumption about which way the axes run.
       for (const c of sim.graph.connectors.values()) {
         if (c.turn === 'left' && (c.inSegment === north || c.inSegment === south)) {
           doc.setMovementBlocked(centre.id, c.inSegment, c.outSegment, true);
@@ -307,8 +261,7 @@ describe('traffic', () => {
     run(fixture, 45);
     const before = fixture.sim.vehicles.size;
     expect(before).toBeGreaterThan(0);
-    // Demolish a leg mid-simulation: agents on it must be rebound or removed,
-    // never left pointing at a lanelet that no longer exists.
+    // Demolish a leg mid-simulation: agents on it must be rebound or removed
     const doomed = [...fixture.doc.segments.keys()][3]!;
     fixture.doc.removeSegment(doomed);
     fixture.doc.pruneOrphanNodes();
@@ -322,15 +275,13 @@ describe('traffic', () => {
     const b = crossroads('auto');
     run(a, 40);
     run(b, 40);
-    // A fingerprint over id-sorted, quantised agent state: it cannot depend on
-    // map insertion order, and it ignores last-bit noise that means nothing.
+    // A fingerprint over id-sorted, quantised agent state
     expect(hashSim(a.sim)).toBe(hashSim(b.sim));
     expect(a.sim.vehicles.size).toBe(b.sim.vehicles.size);
   });
 
   it('steps in one tick exactly as it steps in five', () => {
-    // The real test of a fixed timestep: the accumulator must never let the
-    // number of ticks per frame change the outcome.
+    // The real test of a fixed timestep: the accumulator must never let the number of ticks per frame change the outcome.
     const one = crossroads('auto');
     const five = crossroads('auto');
     for (let i = 0; i < 600; i++) step(one.sim, { traffic: true, pedestrians: true });

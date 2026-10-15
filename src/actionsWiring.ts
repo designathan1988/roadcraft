@@ -27,17 +27,7 @@ const RAY_BELOW = m(120);
 /** How often the fires flare on, seconds of the simulation's time. */
 const FIRE_STEP = 0.5;
 
-/**
- * THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on
- * fire after): a shot at the person, the rider or the car under the pointer;
- * a blow of the chosen force that wrecks everything in its reach - buildings
- * broken a piece at a time, people, cars, poles and their wires, traffic
- * lights, street things, a crater in bare earth - and the fires it leaves,
- * spreading their smoke. Part of the composition root, as
- * `buildingsWiring.ts` is: it reaches the document, the simulation and the
- * scene at once. `main.ts` hands it what it needs and calls `strikeAt`,
- * `shootAt` and `explodeAt`.
- */
+/** THE ACTIONS (the dock's Actions: the pistol and the bomb, and the city on fire after) */
 export interface ActionsDeps {
   readonly doc: RoadDoc;
   readonly net: Network;
@@ -69,11 +59,7 @@ export interface Actions {
   shootAt(sx: number, sy: number): boolean;
   /** An explosion at `world`, height `z` (on building `b` when it landed on one). */
   explodeAt(world: Vec2, z: number, b: Building | null, strength: number, quiet?: boolean): void;
-  /**
-   * The fires, at the simulation's time `now` (seconds, `SimClock.time`): called
-   * by the frame loop after the simulation stepped. They stand still with the
-   * pause and follow the speed, as the city they burn in.
-   */
+  /** The fires, at the simulation's time `now` (seconds, `SimClock.time`) */
   tick(now: number): void;
 }
 
@@ -91,12 +77,7 @@ export function createActions(deps: ActionsDeps): Actions {
   let breaking = false;
   const burning = new Map<number, { since: number; nextFlame: number; until: number }>();
 
-  /**
-   * The pistol: a shot at the person under the pointer, striking the part of
-   * the body clicked - the head, the body, an arm or a leg, the side as the
-   * body faces (`PedestrianEngine.shot`): the wound, the blood, a limb off,
-   * death. From the view, with no player on the map.
-   */
+  /** The pistol: a shot at the person under the pointer, striking the part of the body clicked */
   function shootAt(sx: number, sy: number): boolean {
     const { w, h } = deps.size();
     const view = deps.view();
@@ -116,10 +97,7 @@ export function createActions(deps: ActionsDeps): Actions {
       }
     }
     if (!best) {
-      // The bodies on the ground, alive or dead, along the line of sight:
-      // between just under the ground and a little above the tallest thing it
-      // can strike (a van, a rider's head); from much higher the point was
-      // behind a camera zoomed in close, and the line went askew.
+      // The bodies on the ground, alive or dead, along the line of sight
       const lo = ground(under) - m(0.3), hi = lo + m(5);
       const a = view.toWorldAt(sx, sy, hi, w, h), b = view.toWorldAt(sx, sy, lo, w, h);
       const hit = scene.shootBody([a.x, a.y, hi], [b.x, b.y, lo]);
@@ -133,9 +111,7 @@ export function createActions(deps: ActionsDeps): Actions {
       deps.hint('hint.shoot.miss');
       return false;
     }
-    // The shot's way: from the viewer into the scene, which on the ground is
-    // the way up the screen (taken from a point higher on the line of sight it
-    // pointed back at the viewer, and the person turned away to face it).
+    // The shot's way: from the viewer into the scene, which on the ground is the way up the screen
     const gz = ground(best);
     const farther = view.toWorldAt(sx, sy - 40, gz, w, h), nearer = view.toWorldAt(sx, sy + 40, gz, w, h);
     let dx = farther.x - nearer.x, dy = farther.y - nearer.y;
@@ -154,13 +130,7 @@ export function createActions(deps: ActionsDeps): Actions {
     return true;
   }
 
-  /**
-   * A shot along the line of sight from `a` (height `hi`) to `b` (height `lo`)
-   * at the traffic, as GTA lets a player shoot at it: a cyclist or a
-   * motorcyclist shot off their machine, dead, the machine falling over; a
-   * driver shot through the glass, the car rolling to a stop; the bodywork
-   * sparking, and after a dozen hits the car on fire and blowing up.
-   */
+  /** A shot along the line of sight from `a` (height `hi`) to `b` */
   function shootVehicle(a: Vec2, b: Vec2, hi: number, lo: number): boolean {
     let best: { v: ReturnType<typeof sim.vehicles.get> & object; t: number; x: number; y: number; z: number; up: number; angle: number } | null = null;
     for (const v of sim.vehicles.values()) {
@@ -220,21 +190,14 @@ export function createActions(deps: ActionsDeps): Actions {
     return true;
   }
 
-  /**
-   * The bomb (the player's order of 2026-10-05): a blow of the chosen force
-   * where the pointer is. A building breaks a piece at a time and comes down
-   * when little is left; a street gets a crater. Anybody close enough dies,
-   * anybody near runs away.
-   */
+  /** The bomb (the player's order of 2026-10-05): a blow of the chosen force where the pointer is. */
   function strikeAt(sx: number, sy: number, world: Vec2): void {
     const strength = deps.strength();
-    // A building already broken is no longer drawn as itself, so the pick by
-    // its meshes misses it: found by its footprint under the pointer instead.
+    // A building already broken is no longer drawn as itself, so the pick by its meshes misses it
     const id = deps.buildingAt({ x: sx, y: sy });
     const b = id !== null ? doc.buildings.get(id as BuildingId)
       : buildingsUnderRay(sx, sy, ground(world)).find((c) => rayOnBuilding(c, sx, sy, ground({ x: c.x, y: c.y })) !== null);
-    // Where the blow lands: the first point of the building along the
-    // pointer's ray (its roof or the face under the pointer); else the ground.
+    // Where the blow lands: the first point of the building along the pointer's ray (its roof or the face under the pointer)
     let target = world, z = ground(world);
     if (b) {
       const hit = rayOnBuilding(b, sx, sy, z);
@@ -243,12 +206,7 @@ export function createActions(deps: ActionsDeps): Actions {
     explodeAt(target, z, b ?? null, strength);
   }
 
-  /**
-   * An explosion at `world`, height `z` (on building `b` when it landed on
-   * one): it wrecks everything within its reach, not only what it lands on -
-   * buildings, people, cars, poles and their wires, traffic lights, street
-   * things, the road itself.
-   */
+  /** An explosion at `world`, height `z` (on building `b` when it landed on one) */
   function explodeAt(world: Vec2, z: number, b: Building | null, strength: number, quiet = false): void {
     const radius = m(2.5 + strength * 1.1);
     const kill = radius * 0.5, scare = m(70 + strength * 10);
@@ -262,15 +220,10 @@ export function createActions(deps: ActionsDeps): Actions {
     let downs = 0;
     deps.mutate(() => {
       let changed = false;
-      // Buildings: each struck at its nearest point, harder the nearer.
-      // Only a building whose outline comes within the reach can be struck, and
-      // its outline lies in its stored box (`BuildingStore.near`, in the order
-      // of `all()`). DO NOT walk `buildings.all()`: every blow outlined every
-      // building of the city.
+      // DO NOT walk `buildings.all()`: every blow outlined every building of the city.
       for (const c of doc.buildings.near(world.x - radius, world.y - radius, world.x + radius, world.y + radius)) {
         let best = Infinity, px = world.x, py = world.y;
-        // Its farthest corner from its own centre: past that and the reach,
-        // nothing of it is struck.
+        // Its farthest corner from its own centre: past that and the reach, nothing of it is struck.
         const own = solidFootprints(c);
         let extent = 0;
         for (const ring of own) for (const q of ring) extent = Math.max(extent, Math.hypot(q.x - c.x, q.y - c.y));
@@ -287,9 +240,7 @@ export function createActions(deps: ActionsDeps): Actions {
         // Where it is struck.
         const at = c === b ? { x: world.x, y: world.y, z } : { x: px, y: py, z: Math.max(z, ground({ x: px, y: py }) + m(1.5)) };
         const force = c === b ? strength : Math.max(1, strength * (1 - best / radius) * 1.2);
-        // Breaking a building into its pieces is the costly part (a Voronoi
-        // fracture of its meshes): the one struck now, the others a frame each
-        // after, so a big blow does not freeze the game for seconds.
+        // Breaking a building into its pieces is the costly part (a Voronoi fracture of its meshes)
         if (c !== b) { if (best < radius * 0.75 || force >= 4) { deferredHits.push({ id: c.id, ...at, force }); scheduleBreak(); } continue; }
         if (scene.strikeBuilding(c, at.x, at.y, at.z, force)) {
           doc.buildings.remove(c.id);
@@ -298,9 +249,7 @@ export function createActions(deps: ActionsDeps): Actions {
           downs++;
           changed = true;
         } else {
-          // Its wiring shorting and its pipes bursting at a few points on the
-          // side the blast struck: sparks and spouts of water for a while -
-          // only the first time it is struck, and only for a moment.
+          // Its wiring shorting and its pipes bursting at a few points on the side the blast struck
           const base = ground({ x: c.x, y: c.y });
           const floors = Math.max(1, Math.max(...c.volumes.map((v) => v.base + v.storeys.length)));
           const spots = shorted.has(c.id) ? 0 : Math.min(2, 1 + Math.round(force / 8));
@@ -313,9 +262,7 @@ export function createActions(deps: ActionsDeps): Actions {
           }
         }
       }
-      // Everything round it left filthy: the buildings within twice the reach
-      // blackened with soot and dust (their weathering, `decay`).
-      // By place (`near`, the same order as the whole store), not the whole town; a wear change (`wear`), not a new shape.
+      // Everything round it left filthy: the buildings within twice the reach blackened with soot and dust
       const soot = radius * 2.2;
       for (const c of doc.buildings.near(world.x - soot, world.y - soot, world.x + soot, world.y + soot)) {
         const d = Math.hypot(c.x - world.x, c.y - world.y);
@@ -323,20 +270,14 @@ export function createActions(deps: ActionsDeps): Actions {
         const add = 0.35 * (1 - d / soot) * Math.min(1, strength / 8);
         if (add > 0.02) { deps.caused('fuligem da explosão', () => doc.buildings.wear(c.id, Math.min(1, (c.decay ?? 0) + add))); changed = true; }
       }
-      // Poles: broken whole, snapped or to splinters; the wires torn off them
-      // pull the next poles over, or hang from them.
-      // From the poles' index and each broken pole's own wires (`polesIn`,
-      // `spansAt`), not every pole and wire of the map, twice.
+      // Poles: broken whole, snapped or to splinters; the wires torn off them pull the next poles over, or hang from them.
       const broken = new Set<PoleId>();
       for (const pole of doc.polesIn([world.x - radius, world.y - radius, world.x + radius, world.y + radius])) {
         if (near(pole.x, pole.y, radius)) broken.add(pole.id);
       }
-      // Which neighbour a torn wire pulls over is drawn from a stream seeded by
-      // the document and the place (`editor/editStream.ts`), not `Math.random`: the document's
-      // outcome is the same for the same blow, as every edit of it must be.
+      // Which neighbour a torn wire pulls over is drawn from a stream seeded by the document and the place
       const pull = editRng(doc, world.x, world.y);
-      // Each broken pole's wires, the ones it pulls over in their turn (a queue in
-      // id order: the same blow tears the same wires).
+      // Each broken pole's wires, the ones it pulls over in their turn
       const queue = [...broken].sort((p, q) => p - q);
       for (let k = 0; k < queue.length; k++) {
         for (const span of doc.spansAt(queue[k]!).sort((p, q) => p.id - q.id)) {
@@ -364,16 +305,13 @@ export function createActions(deps: ActionsDeps): Actions {
         doc.removePole(id);
         changed = true;
       }
-      // Traffic lights: a junction whose posts the blast reaches loses them.
-      // The posts of the junctions on the roads within reach only (`near`):
-      // DO NOT ask for every post of the map to keep those round one blow.
+      // The posts of the junctions on the roads within reach only (`near`)
       for (const post of signalPosts(net, sim.graph, { x: world.x, y: world.y, radius })) {
         if (!near(post.x, post.y, radius)) continue;
         hit.posts.push({ x: post.x, y: post.y, yaw: post.yaw });
         if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }
       }
       // Trees, benches, bins, lamps, signs: thrown and gone.
-      // The items round the blast only (`RoadDoc.landscapeIn`), not every one of the map.
       for (const item of doc.landscapeIn([world.x - radius, world.y - radius, world.x + radius, world.y + radius])) {
         if (!near(item.x, item.y, radius)) continue;
         hit.items.push({ kind: item.kind, x: item.x, y: item.y });
@@ -388,8 +326,7 @@ export function createActions(deps: ActionsDeps): Actions {
       }
       return changed;
     });
-    // Cars: thrown, burning shells - the traffic. Who was in them or on them:
-    // thrown out dead, torn, burnt black near the blast.
+    // Cars: thrown, burning shells - the traffic.
     const aboard: Occupant[] = [];
     const throwAboard = (id: number, x: number, y: number, angle: number, rider: boolean, index: number | null = null): void => {
       const d = Math.hypot(x - world.x, y - world.y);
@@ -451,22 +388,13 @@ export function createActions(deps: ActionsDeps): Actions {
     deps.redraw();
   }
 
-  /**
-   * Buildings on fire (the player's order of 2026-10-05: "o fogo ir tomando
-   * conta dos prédios vizinhos, acontecendo explosões, e ir ficando um clima
-   * ruim"): each burns with flames and a black column for a minute or two,
-   * at most three at once.
-   */
+  /** Buildings on fire the player's order of 2026-10-05: o fogo ir tomando conta dos prédios vizinhos, acontecendo */
   function ignite(id: number): void {
     if (burning.has(id) || burning.size >= 3) return;
     const now = sim.clock.time;
     burning.set(id, { since: now, nextFlame: now, until: now + 50 + Math.random() * 40 });
   }
-  /**
-   * The fires burning on, every `FIRE_STEP` s of the simulation's time.
-   * DO NOT go back to a `setInterval` on the wall clock: the fires went on
-   * with the game paused and ignored its speed, and the timer never ended.
-   */
+  /** DO NOT go back to a `setInterval` on the wall clock */
   let fireLast: number | null = null;
   function tick(now: number): void {
     if (fireLast === null || now < fireLast) fireLast = now;
@@ -493,13 +421,7 @@ export function createActions(deps: ActionsDeps): Actions {
     if (burning.size) deps.redraw();
   }
 
-  /**
-   * The buildings the screen ray through (sx, sy) can meet: those filed where
-   * the ray passes between a tallest building's top over the ground under the
-   * pointer and `RAY_BELOW` under it (`BuildingStore.near`, in the order of
-   * `all()`). DO NOT walk `buildings.all()`: a blow on open ground ray-marched
-   * every building of the city.
-   */
+  /** DO NOT walk `buildings.all()`: a blow on open ground ray-marched every building of the city. */
   function buildingsUnderRay(sx: number, sy: number, groundZ: number): Building[] {
     const { w, h } = deps.size();
     const view = deps.view();

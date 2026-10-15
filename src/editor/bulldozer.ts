@@ -24,12 +24,7 @@ export interface BulldozerHost {
 /** A press that moved less than this many screen pixels is a click. */
 const CLICK_PIXELS = 6;
 
-/**
- * THE BULLDOZER: a click removes the one thing under the pointer, a drag
- * draws a box on the map and removes everything inside it on release, as
- * SimCity's does - each one undo step. The box being dragged lives here
- * with the handlers that use it (Nystrom, "State").
- */
+/** THE BULLDOZER: a click removes the one thing under the pointer */
 export class Bulldozer {
   /** The box being dragged (screen pixels in the canvas, and the ground under its corners), or the press while it stays a click. */
   private drag: { pointer: number; a: Vec2; b: Vec2; world: Vec2; to: Vec2; anchor: Anchor } | null = null;
@@ -53,10 +48,7 @@ export class Bulldozer {
     this.drag = { pointer, a: { ...screen }, b: { ...screen }, world: { ...world }, to: { ...world }, anchor };
   }
 
-  /**
-   * The pointer moved; true when it was this tool's drag.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved; true when it was this tool's drag. */
   move(pointer: number, screen: Vec2, world: Vec2): boolean {
     if (this.drag?.pointer !== pointer) return false;
     this.drag.b = { ...screen };
@@ -84,17 +76,13 @@ export class Bulldozer {
     return { a: d.world, b: d.to };
   }
 
-  /**
-   * The bulldozer's click: the one thing under the pointer.
-   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
-   */
+  /** @perInput The bulldozer's click: the one thing under the pointer. */
   private click(screen: Vec2, world: Vec2, anchor: Anchor): void {
     const { host } = this;
     const { doc } = host;
     // A building stands over whatever is under it, so it is tried first.
     if (host.bulldozeBuildingAt(screen)) return;
-    // A pole stands ON the footway of a road, so the road under it would
-    // otherwise always win the click and the pole could never be hit.
+    // A pole stands ON the footway of a road
     const pole = doc.poleNear(world, host.poleReach());
     if (pole) {
       host.mutate(() => {
@@ -105,7 +93,6 @@ export class Bulldozer {
       return;
     }
     // Likewise a bench, a tree or a street light on the footway.
-    // The items round the pointer, by place (`RoadDoc.landscapeIn`): one counts within its own radius of the reach.
     const item = landscapeNearIn(doc, world, host.itemReach());
     if (item) {
       host.mutate(() => doc.removeLandscape(item.id));
@@ -125,26 +112,16 @@ export class Bulldozer {
     }
   }
 
-  /**
-   * Everything inside the box removed in one undo step: roads (their middle
-   * inside), buildings, lots, poles, trees and benches, walls. The box is on
-   * the map, its corners the ground pressed and released, square to the
-   * map's axes (the player, 2026-10-06: "o espaço do mapa e não 2D").
-   */
+  /** Everything inside the box removed in one undo step: roads */
   private boxed(a: Vec2, b: Vec2): void {
     const { doc, net } = this.host;
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
     const box = [x0, y0, x1, y1] as const;
     const inside = (p: Vec2): boolean => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
-    // Each kind from its own index, the box's cells only: a road's middle lies
-    // in its ribbon's filed bounds, a building's anchor in its stored bounds,
-    // an item's point and a wall's points in their filed boxes.
-    // DO NOT walk `doc.segments`, `doc.buildings.all()`, `doc.landscape` or
-    // `doc.barriers` here: a box on a street read the whole map, five times.
+    // DO NOT walk `doc.segments`, `doc.buildings.all()`, `doc.landscape` or `doc.barriers` here
     const segments = ribbonsNear(net, box).filter((ribbon) => inside(ribbon.full.sampleAt(ribbon.full.length / 2).p)).map((ribbon) => ribbon.id);
     const builtIds = doc.buildings.near(x0, y0, x1, y1).filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
-    // The lots have no index of their own yet (`world/lots.ts`, their diary
-    // entries carry no ids): read whole, once a box let go.
+    // The lots have no index of their own yet (`world/lots.ts`, their diary entries carry no ids)
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
     const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
     const items = doc.landscapeIn(box).filter((it) => inside(it)).map((it) => it.id);

@@ -52,11 +52,7 @@ const U = TUNED_UNIT;
 /** `n` default modules, world units. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
 
-/**
- * The building commands and the tool that drives them. Every command is
- * validated before it is stored, every one is a
- * single undo step, and a road drawn over a building demolishes it.
- */
+/** The building commands and the tool that drives them. */
 
 const flat = (): number => 0;
 

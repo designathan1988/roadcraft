@@ -1,14 +1,6 @@
 import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
-/**
- * Textures waiting to be sent to the GPU ahead of their first use.
- *
- * three.js uploads a texture the first time something using it is drawn, in
- * that frame: each new kind of person brought its skin, its garments and its
- * hair, and the frame it walked into view stalled on their upload. Loaders
- * queue what they make here; the renderer sends one a frame
- * (`renderer.initTexture`) before anybody needs it.
- */
+/** Textures waiting to be sent to the GPU ahead of their first use. three.js uploads a texture the first time something */
 const queue: Texture[] = [];
 const queued = new WeakSet<Texture>();
 const sent = new WeakSet<Texture>();
@@ -41,37 +33,14 @@ export function drainUploads(renderer: WebGLRenderer, count = 1): void {
   }
 }
 
-/**
- * Objects whose shaders must be compiled before they are first drawn: a
- * loader awaits `compileAhead` before handing an object to the frame, and
- * the renderer compiles each in parallel (`compileAsync`). Drawn first, a new
- * shader stopped that frame for as long as the driver took to build it.
- */
+/** Objects whose shaders must be compiled before they are first drawn */
 const toCompile: { object: Object3D; shadow: boolean; done: () => void }[] = [];
-/**
- * What a shadow program is built for: a render target as a shadow map is (no
- * colour space, no tone mapping). Built for the scene's target, a depth
- * material's program came out different and was built again, in the frame,
- * by the shadow pass.
- */
+/** What a shadow program is built for: a render target as a shadow map is (no colour space, no tone mapping). */
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
 let compiler = false;
 
-/**
- * A stand-in drawn with the depth material the shadow pass will draw `mesh`
- * with, set as three's `WebGLShadowMap.getDepthMaterial` sets it (r186: the
- * object's own `customDepthMaterial` or its shared depth material, which is
- * `new MeshDepthMaterial()` - BASIC packing, `WebGLShadowMap.js` 44 - the
- * side flipped for a PCF map, the colour and alpha maps and alpha test
- * copied), for `compileAhead(..., true)`. DO NOT give the stand-in RGBA
- * packing: the packing is part of the program's key (`WebGLPrograms`), so a
- * program no shadow pass uses was built and the real one was linked in the
- * first shadow pass that drew the mesh. three's `compile` builds the
- * scene's programs only, never a shadow's: the trees' wind-swayed depth
- * program was built in the first shadow pass, 3 s of the opening frozen on
- * the driver (profile of 2026-10-10). Null when the mesh casts no shadow.
- */
+/** DO NOT give the stand-in RGBA packing: the packing is part of the program's key */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
 const plainDepth = new MeshDepthMaterial();
 /** What a stand-in's plain depth material is set to (`userData`), at the moment it is compiled (`drainCompiles`). */
@@ -93,23 +62,13 @@ export function shadowStandIn(mesh: Mesh): Mesh | null {
   setDepth(custom ?? plainDepth, variant);
   const copy = compileCopy(mesh) as Mesh;
   copy.material = custom ?? plainDepth;
-  // The plain depth material is shared by every stand-in, and they are compiled later, together: each
-  // set to its own variant as it is compiled (`drainCompiles`). DO NOT compile them with the material as
-  // the last one left it: a sign's plate (a map, cut by its alpha) and a bench (neither) in one batch
-  // built only the plate's shadow program, and the bench's was linked in the first shadow pass drawing it.
+  // DO NOT compile them with the material as the last one left it: a sign's plate (a map, cut by its alpha) and a bench
   if (!custom) copy.userData[DEPTH_VARIANT] = variant;
   copy.visible = true;
   return copy;
 }
 
-/**
- * A copy of `object` to build its programs with: the same geometry, material
- * and variant (instanced, with instance colours or not), where it stands.
- * An instanced mesh's copy has ONE instance: NOT `clone`, which copies every
- * instance's matrix and colour (`InstancedMesh.copy`) to compile a shader -
- * thousands of a cell's parts copied for nothing, and nothing to copy at all
- * once their arrays are let go on the GPU (`mesh/gpuOnly.ts`).
- */
+/** A copy of `object` to build its programs with: the same geometry, material and variant */
 export function compileCopy(object: Object3D): Object3D {
   const instanced = object as InstancedMesh;
   if (!instanced.isInstancedMesh) return object.clone(false);
@@ -130,16 +89,13 @@ export function compileAhead(object: Object3D, shadow = false): Promise<void> {
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   compiler = true;
   if (!toCompile.length) return;
-  // For the target the scene is really drawn into: its colour space and tone
-  // mapping are part of every program. Compiled for the screen, the wrong
-  // programs were built and the right one still stalled the first frame.
+  // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
   renderer.setRenderTarget(target);
   while (toCompile.length) {
     const { object, shadow, done } = toCompile.shift()!;
     if (shadow) renderer.setRenderTarget(shadowTarget ??= new WebGLRenderTarget(1, 1));
-    // Each stand-in on the plain depth material with its own variant (`shadowStandIn`), then the whole:
-    // three builds a material's program from its state when compiled, and keeps every program it built for it.
+    // Each stand-in on the plain depth material with its own variant (`shadowStandIn`), then the whole
     const units: { readonly object: Object3D; readonly variant?: DepthVariant }[] = [];
     object.traverse((o) => {
       const variant = o.userData[DEPTH_VARIANT] as DepthVariant | undefined;
@@ -157,20 +113,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   renderer.setRenderTarget(previous);
 }
 
-/**
- * Meshes whose geometry must be on the GPU before they are first drawn.
- *
- * three.js sends a geometry's buffers (`WebGLObjects.update`) and builds its
- * morph target texture (`WebGLMorphtargets.update`) the first time the mesh
- * is drawn, in that frame; `compile` builds programs only. A new kind of
- * person walking into view stopped that frame on its body's upload. As the
- * three.js community does it ("render all the different meshes once", one a
- * frame to spread the cost: discourse.threejs.org/t/64940, /t/15549), each
- * waiting mesh is drawn once after the frame, alone - on a layer of its own,
- * into the target the scene is drawn into, under the scene's own lights, so
- * that the program used is the one already built for it - with no instance:
- * the buffers go up, nothing is drawn.
- */
+/** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
 const WARM_LAYER = 31;
 const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void; loose?: boolean }[] = [];
 let warmer = false;
@@ -179,23 +122,13 @@ export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Pr
   if (!warmer) return Promise.resolve();
   return new Promise((done) => toWarm.push({ mesh, geometries, done }));
 }
-/**
- * Meshes not in the scene yet (a batch of buildings put together to replace
- * the one drawn), each sent to the GPU one a frame before it is swapped in:
- * drawn first in the frame of the swap, a bomb's cells of buildings uploaded
- * 1.8-2.5 s of buffers in one frame (2026-10-09).
- */
+/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn) */
 export function warmLooseAhead(meshes: readonly Mesh[]): Promise<void> | null {
   // Nothing to wait for where no frame warms (tests, before the first frame).
   if (!warmer || meshes.length === 0) return null;
   return Promise.all(meshes.map((mesh) => new Promise<void>((done) => toWarm.push({ mesh, geometries: [mesh.geometry], done, loose: true })))).then(() => {});
 }
-/**
- * Meshes let go before their turn in the queue: taken out, their promises
- * settled. DO NOT dispose a mesh still waiting here without this: `warmOne`
- * drew it anyway and its geometry went back to the GPU with no owner left to
- * free it (`buildings/cellRequests.ts`, a cell dropped before it landed).
- */
+/** DO NOT dispose a mesh still waiting here without this */
 export function cancelWarm(meshes: Iterable<Mesh>): void {
   const gone = new Set(meshes);
   for (let i = toWarm.length - 1; i >= 0; i--) {
@@ -208,8 +141,7 @@ export function cancelWarm(meshes: Iterable<Mesh>): void {
 /** Sends one waiting mesh's geometry to the GPU, after the frame (`renderer.ts`). */
 export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   warmer = true;
-  // Loose meshes (a batch of buildings) several a frame within a few
-  // milliseconds; one at least, so the queue always moves.
+  // Loose meshes (a batch of buildings) several a frame within a few milliseconds; one at least, so the queue always moves.
   const until = performance.now() + WARM_SLICE_MS;
   do warmOne(renderer, camera, scene, target);
   while (toWarm.length > 0 && toWarm[0]!.loose && performance.now() < until);
@@ -221,11 +153,7 @@ export function warmPending(): boolean {
   return toWarm.length > 0;
 }
 
-/**
- * A loose mesh's buffers sent up in a scene of its own (`warmLoose`): three uploads every attribute
- * of a drawn geometry, whatever its material (`WebGLObjects.update`), so one plain material and a
- * 1x1 target do; its programs are built apart (`compileAhead`). Matrices are not touched.
- */
+/** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
 const LOOSE = {
   scene: Object.assign(new ThreeScene(), { matrixWorldAutoUpdate: false }),
   camera: new OrthographicCamera(),
@@ -234,12 +162,7 @@ const LOOSE = {
 };
 LOOSE.scene.overrideMaterial = LOOSE.material;
 
-/**
- * Sends one loose mesh's geometry to the GPU, alone. DO NOT draw the whole scene for it (on a layer
- * of its own): three walks every object of the scene for each such draw, a few milliseconds each in
- * a city, a few blocks a frame - the road blocks of a generated city queued for minutes, and every
- * one kept its arrays on the CPU meanwhile (`mesh/gpuOnly.ts`; 476 MB at 2 560 m, 2026-10-15).
- */
+/** DO NOT draw the whole scene for it (on a layer of its own) */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
   const parent = mesh.parent;
   const at = parent ? parent.children.indexOf(mesh) : -1;
@@ -312,13 +235,7 @@ function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: 
   }
 }
 
-/**
- * The geometry three's FullScreenQuad draws (`postprocessing/Pass.js`): one
- * triangle with a position and a uv. A pass's program compiled ahead must be
- * compiled with it: the attributes are part of the program's key (three's
- * `vertexNormals`), and compiled on a plane, with normals, it was another
- * program, and the real one was still built in the frame it was first drawn.
- */
+/** The geometry three's FullScreenQuad draws (`postprocessing/Pass.js`): one triangle with a position and a uv. */
 export function fullScreenTriangle(): BufferGeometry {
   const quad = new BufferGeometry();
   quad.setAttribute('position', new Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3));

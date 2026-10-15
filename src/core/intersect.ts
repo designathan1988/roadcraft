@@ -1,14 +1,7 @@
 import { EPS, GEO_EPS } from './scalar';
 import { type Vec2, add, sub, scale, cross, dot, lenSq } from './vec2';
 
-/**
- * Intersection of the infinite line through `a0` with direction `da` and the
- * infinite line through `b0` with direction `db`.
- *
- * Returns `null` when the directions are parallel within `sinEps`, measured as
- * |cross| of the two *unit* directions — so the epsilon is a real angle, not a
- * magnitude-dependent quantity.
- */
+/** Intersection of the infinite line through `a0` with direction `da` and the infinite line through `b0` with direction */
 export function lineLine(
   a0: Vec2,
   da: Vec2,
@@ -24,10 +17,7 @@ export function lineLine(
   return { point: add(a0, scale(da, sA)), sA, sB };
 }
 
-/**
- * Intersection of the finite segments a->b and c->d.
- * `t` and `u` are the parametric positions on each segment, both in [0,1].
- */
+/** Intersection of the finite segments a->b and c->d. */
 export function segSeg(
   a: Vec2,
   b: Vec2,
@@ -63,13 +53,7 @@ export function closestOnSegment(
   return { point, t, distSq: lenSq(sub(p, point)) };
 }
 
-/**
- * Does `p` lie inside the slab centred on the ray (`origin`, unit `dir`) of
- * half-width `hw`, and ahead of the origin?
- *
- * Used by the junction validator to prove that one leg's mouth corners do not
- * land inside a non-adjacent leg's carriageway.
- */
+/** Does `p` lie inside the slab centred on the ray (`origin`, unit `dir`) of half-width `hw`, and ahead of the origin? */
 export function inForwardSlab(
   p: Vec2,
   origin: Vec2,

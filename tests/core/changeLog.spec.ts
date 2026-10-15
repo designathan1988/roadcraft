@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ChangeLog } from '@core/changeLog';
 
-/**
- * A LOG OF CHANGES WITHOUT A LIMIT OF AGE (`ChangeLog`): a reader however far
- * behind is told every change since its token, in order; merging away the
- * states no one holds changes no reader's answer.
- */
+/** A LOG OF CHANGES WITHOUT A LIMIT OF AGE (`ChangeLog`) */
 describe('the change log', () => {
   it('tells a reader 1000 changes behind every change, in order', () => {
     const log = new ChangeLog<number>();

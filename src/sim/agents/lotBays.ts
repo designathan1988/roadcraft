@@ -9,17 +9,7 @@ import { type LotGrid, type LotPart, buildLotGrid, wayOut } from './lotNav';
 import { cellsMeet } from './laneGrid';
 import type { Bay, BayLane } from './bay';
 
-/**
- * A LOT'S BAYS FROM PURE DATA: its stalls, the lot grid each is driven out
- * of, the way out and the lane it is reached from (`bayRows`), read through
- * `BayReads` alone - the lanes and walls near a point, and two flags of a
- * lane. The page reads its world through it (`parking.ts`); a worker reads
- * what the page sent for the lot (`BayShare`, `bays.worker.ts`), the same
- * function on the same numbers, so the same bays. A lot is about a
- * millisecond, and a generated city's first look worked out 7,207 of them
- * inside one simulation step on the page (2.1-2.8 s, profiled 2026-10-15).
- * DO NOT read the world here but through `BayReads`: the worker has none.
- */
+/** DO NOT read the world here but through `BayReads`: the worker has none. */
 
 /** Width of one stall, as the lot planner lays them (2.5 x 5 m). */
 const STALL = m(2.5);
@@ -34,11 +24,7 @@ const CAR_GATE = m(2.2);
 
 /** What a lot's bays read of a block of its building (`bayRows`, `stallRoom`, `gatedProperty`). */
 type LotBlock = Pick<Volume, 'x' | 'y' | 'w' | 'd' | 'open' | 'base'>;
-/**
- * What a lot's bays read of its building's record: its frame, its blocks'
- * boxes and its parts. A stored record also holds its cores, roofs,
- * materials and furnishing: a worker is sent only this (`shareOf`).
- */
+/** What a lot's bays read of its building's record: its frame, its blocks' boxes and its parts. */
 export interface LotRecord {
   readonly id: BuildingId;
   readonly x: number;
@@ -70,28 +56,14 @@ export interface BayReads {
   wallsIn(x0: number, y0: number, x1: number, y1: number): readonly WallRing[];
 }
 
-/**
- * Whether a body this long stands wholly inside the stall, parked centred in
- * it. Parking codes keep a parked vehicle inside its stall and the stall clear
- * of obstructions (Calgary Land Use Bylaw 1P2007 s.122: "stall dimensions must
- * be clear of all obstructions"; Kannapolis 408: "no part of any parked
- * vehicle will extend beyond the boundaries of the parking space"). A van of
- * 5.6 m was parked centred in a stall of 5 m whose back the lot's fence takes
- * 5 cm of, and its nose stood 35 cm through the fence; cars stood through the
- * planters and a lamp standing in the ends of stalls. A stall now takes only
- * what fits it.
- */
+/** Whether a body this long stands wholly inside the stall, parked centred in it. */
 export function stallFits(bay: Pick<Bay, 'room'>, length: number): boolean {
   return length / 2 <= bay.room + FIT_EPS;
 }
 /** A body touching the stall's end is in it. */
 const FIT_EPS = m(0.001);
 
-/**
- * Every part of a lot that a parked body may not stand in: what a car cannot
- * drive through (`lotNav.ts` SOLID, less the stalls themselves) - the
- * boundary, posts, lamps, bins, planters, trees, steps.
- */
+/** Every part of a lot that a parked body may not stand in: what a car cannot drive through */
 const STALL_BLOCKS: Readonly<Partial<Record<LotPart['kind'], true>>> = Object.freeze({
   wall: true, fence: true, hedge: true, railing: true, gate: true, pillar: true, stair: true, ramp: true, tree: true, bench: true,
   planter: true, rocks: true, clock: true, shrub: true, bin: true, lamp: true, bollard: true,
@@ -101,13 +73,7 @@ const OVER_A_BODY = m(2.1);
 /** Half the widest body that parks in a stall (a van, 2 m) and a hand: the band a stall's clear length is read in. */
 const STALL_BAND = m(1.05);
 
-/**
- * Half the clear length of a stall (local frame of its building): from its
- * centre `(lx, ly)` along `(dx, dy)` (unit, along the stall) and against it, to
- * the first part of the lot or solid volume a body there would touch, in the
- * band a body's width wide; at most `half` (half the stall's depth). A part
- * standing over the centre leaves no room at all.
- */
+/** Half the clear length of a stall (local frame of its building): from its centre `(lx, ly)` along `(dx, dy)` */
 function stallRoom(b: LotRecord, lx: number, ly: number, dx: number, dy: number, half: number): number {
   let room = half;
   const along = (ring: readonly (readonly [number, number])[]): void => {
@@ -141,11 +107,7 @@ function stallRoom(b: LotRecord, lx: number, ly: number, dx: number, dy: number,
   return Math.max(0, room);
 }
 
-/**
- * A convex ring cut to one side of a line of the stall's frame
- * (Sutherland-Hodgman): `axis` 0 keeps u >= `at`; 1 keeps v >= `at`; -1 keeps
- * -v >= `at` (v <= -`at`).
- */
+/** A convex ring cut to one side of a line of the stall's frame (Sutherland-Hodgman): `axis` 0 keeps u >= `at` */
 function clip(poly: readonly [number, number][], axis: 0 | 1 | -1, at: number): [number, number][] {
   const val = (p: readonly [number, number]): number => (axis === 0 ? p[0] : axis === 1 ? p[1] : -p[1]) - at;
   const out: [number, number][] = [];
@@ -172,8 +134,7 @@ const EDGE_REACH = m(22);
 export function bayRows(r: BayReads, b: LotRecord): Bay[] {
   const out: Bay[] = [];
   const navCache = new Map<object, { exits: LotExit[]; grid: LotGrid }>();
-  // A lot closed by a boundary with car gates (`editor/lotPlan.ts`): the
-  // whole property is driven, and its only ways out are its car gates.
+  // A lot closed by a boundary with car gates (`editor/lotPlan.ts`)
   const property = gatedProperty(b);
   for (const el of b.elements ?? []) {
     if (el.kind !== 'parking') continue;
@@ -202,8 +163,7 @@ export function bayRows(r: BayReads, b: LotRecord): Bay[] {
       const lx = el.x + cx * u, ly = el.y + cy * u;
       const p = localToWorld(b, lx, ly);
       if (lot && nav) {
-        // The stall opens on whichever side has an aisle that leads out of
-        // the lot, down the aisles to the nearest way out onto a street.
+        // The stall opens on whichever side has an aisle that leads out of the lot
         const reach = el.d / 2 + m(2.8);
         let pick: { sign: number; points: { x: number; y: number }[]; exit: number; cost: number } | null = null;
         for (const sign of [1, -1]) {
@@ -270,12 +230,7 @@ export interface LotExit {
 /** Where a car leaving through a gate joins its lane, past the gate; where one arriving stops, before it. */
 const JOIN_PAST_GATE = m(6);
 const STOP_BEFORE_GATE = m(5);
-/**
- * Kept clear of a lane's ends for a gate's stop and join points. Small: a
- * gate beside a block's corner opens onto the very end of its street's lane
- * (a town's streets are a few tens of metres between junctions), and a lane
- * end kept six metres clear left one car park in five with no way out.
- */
+/** Kept clear of a lane's ends for a gate's stop and join points. */
 const GATE_LANE_END = m(1.5);
 
 /** A building's car gates: the `gate` elements a car fits through. */
@@ -283,11 +238,7 @@ export function carGates<E extends LotPart = BuildingElement>(b: { readonly elem
   return (b.elements ?? []).filter((el) => el.kind === 'gate' && el.w >= CAR_GATE);
 }
 
-/**
- * The property of a lot closed by a boundary with car gates: the box of all
- * its open blocks (front, drive, yard, car park), in the local frame. Null
- * for a lot with no car gate, whose stalls are reached as before.
- */
+/** The property of a lot closed by a boundary with car gates: the box of all its open blocks */
 export function gatedProperty(b: Pick<LotRecord, 'volumes' | 'elements'>): { x: number; y: number; w: number; d: number } | null {
   if (!carGates(b).length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -301,13 +252,7 @@ export function gatedProperty(b: Pick<LotRecord, 'volumes' | 'elements'>): { x: 
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, d: y1 - y0 + 2 * pad };
 }
 
-/**
- * The ways out of a gated lot: one per car gate, its inner point a few metres
- * inside, its outer point just outside, and the lane of the street in front
- * of it - joined a few metres past the gate and stopped at a few metres
- * before it, so a car crosses the footway square to the kerb and turns on
- * the carriageway (`manoeuvre.ts`).
- */
+/** The ways out of a gated lot: one per car gate, its inner point a few metres inside, its outer point just outside */
 export function gateExits(r: BayReads, b: LotRecord, property: { x: number; y: number; w: number; d: number }): LotExit[] {
   const out: LotExit[] = [];
   const cx = property.x + property.w / 2, cy = property.y + property.d / 2;
@@ -336,11 +281,7 @@ export function gateExits(r: BayReads, b: LotRecord, property: { x: number; y: n
   return out;
 }
 
-/**
- * The lane in front of a gate, on the kerb side: its join point `JOIN_PAST_GATE`
- * along the travel from the gate's foot, its stop point `STOP_BEFORE_GATE`
- * before it, both kept `GATE_LANE_END` clear of the lane's ends.
- */
+/** The lane in front of a gate, on the kerb side */
 function gateLane(r: BayReads, x: number, y: number, eitherSide = false): BayLane | null {
   let best: BayLane | null = null;
   let bestD = LANE_REACH;
@@ -350,8 +291,7 @@ function gateLane(r: BayReads, x: number, y: number, eitherSide = false): BayLan
     const hit = lane.centre.closestPoint({ x, y });
     if (hit.distance >= bestD) continue;
     const foot = lane.centre.sampleAt(hit.s);
-    // Right-hand traffic: the lot on the right of the direction of travel;
-    // on a one-way street, whichever kerb the lot is on (`gateExits`).
+    // Right-hand traffic: the lot on the right of the direction of travel; on a one-way street, whichever kerb the lot is on
     if (!eitherSide && (x - foot.p.x) * foot.t.y - (y - foot.p.y) * foot.t.x <= 0) continue;
     if (eitherSide && r.bothWays(lane.segment!)) continue;
     const at = Math.max(GATE_LANE_END, Math.min(lane.length - GATE_LANE_END, hit.s + JOIN_PAST_GATE));
@@ -390,12 +330,7 @@ function clearOfWalls(r: Pick<BayReads, 'wallsIn'>, a: { x: number; y: number },
   return true;
 }
 
-/**
- * The ways out of a lot onto a street: points along its sides from which a car
- * reaches a lane on the lot's kerb side in a straight line without crossing a
- * building. In a town of perimeter blocks, a car park in the middle of a block
- * is left by the passage between the buildings, not through them.
- */
+/** The ways out of a lot onto a street */
 function exitsOf(r: BayReads, b: LotRecord, v: { x: number; y: number; w: number; d: number }): LotExit[] {
   const sides = [
     { ax: v.x, ay: v.y, dx: 1, dy: 0, nx: 0, ny: -1, length: v.w },
@@ -439,8 +374,7 @@ export function laneFor(r: BayReads, x: number, y: number, among?: Iterable<BayL
     if (hit.distance >= bestD) continue;
     const at = Math.max(LANE_END, Math.min(lane.length - LANE_END, hit.s));
     const f = lane.centre.sampleAt(at);
-    // Right-hand traffic: the kerb, and the lots beyond it, are on the right of
-    // the direction of travel. A lane with the bay on its left is the far one.
+    // Right-hand traffic: the kerb, and the lots beyond it, are on the right of the direction of travel.
     if ((q.x - f.p.x) * f.t.y - (q.y - f.p.y) * f.t.x <= 0) continue;
     bestD = hit.distance;
     best = { lanelet: lane.id, at, x: f.p.x, y: f.p.y, tx: f.t.x, ty: f.t.y };
@@ -462,13 +396,7 @@ export interface LotAsk {
 /** Numbers a part of a lot is sent as (`shareOf`): x, y, w, d, facing, z, angle, whether it has an angle. */
 const PART = 8;
 
-/**
- * Lots to work out, as plain data for a worker (`postMessage` copies it,
- * MDN "structured clone"): every lane and wall the lots read once, flat, each
- * lot pointing at its own; a lot's parts as numbers (`PART` a part) and
- * their kinds as indices into `kinds`. Copied as objects, a city's parts (a
- * few dozen a lot) were most of the copy, on the page.
- */
+/** Lots to work out, as plain data for a worker (`postMessage` copies it, MDN "structured clone") */
 export interface BayShare {
   readonly lanes: readonly {
     readonly id: LaneletId; readonly kind: Lanelet['kind']; readonly length: number; readonly segment?: SegmentId;
@@ -551,14 +479,7 @@ function recordOf(share: BayShare, lot: BayShare['lots'][number]): LotRecord {
   return { ...record, elements };
 }
 
-/**
- * Every lot of a share worked out (`bayRows`) on what was sent, in order:
- * each lane's line made once (`Polyline.fromFlat`, the page's own points),
- * each lot reading only its own lanes and walls. A lot's lanes near a point
- * are those `LaneGrid.near` finds there, by the grid's own cells
- * (`cellsMeet`), in the id order they were sent in. `progress` is called
- * after each lot (the worker's heartbeat).
- */
+/** Every lot of a share worked out (`bayRows`) on what was sent, in order: each lane's line made once */
 export function baysOfShare(share: BayShare, progress?: () => void): Bay[][] {
   const lanes = share.lanes.map((l) => {
     const line: BayLaneLine & { ghost: boolean; bothWays: boolean } = {

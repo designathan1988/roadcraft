@@ -1,8 +1,4 @@
-// @vitest-environment happy-dom
-// A transport line's name and colour come from the map file (`world/transit.ts`
-// `normalizeTransit`): a map someone else made can hold anything there. Shown as
-// text and as a validated colour, never parsed as markup (OWASP XSS Prevention
-// Cheat Sheet: safe sinks, strict structural validation).
+// @vitest-environment happy-dom A transport line's name and colour come from the map file
 import { describe, expect, it } from 'vitest';
 import { transitLineRow } from '@ui/v2/transitLine';
 import { normalizeTransit } from '@world/transit';

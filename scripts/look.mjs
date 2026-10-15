@@ -1,54 +1,4 @@
-// LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking
-// anyone's window: the installed Google Chrome driven by Playwright, headless,
-// on the real GPU, with exact mouse and keyboard gestures, from a script of
-// steps. node scripts/look.mjs <steps.json>   (example: scripts/look/views.json)
-//
-// Why not the desktop app's browser pane: its screenshots come back at the
-// pane's size (800x450 asked at 1920x1080, 2026-10-14), too small to see a
-// defect. Claude Opus 5.x reads images up to 2576 px on the long edge without
-// downscaling (platform.claude.com/docs/en/build-with-claude/vision), so a
-// 1920x1080 PNG is seen whole; a detail is a `clip` taken with `dpr: 2`.
-// Why the installed Chrome (`channel: 'chrome'`, playwright.dev/docs/browsers):
-// the Chromium Playwright downloads (chromium-1234, -1243, -1248) does not
-// start on this machine (Windows: "side-by-side configuration is incorrect",
-// or its sandbox denied access to its own executable), while the installed
-// Chrome and the headless shell do.
-// Why `--enable-gpu`: headless Chrome draws with SwiftShader (the CPU) unless
-// told otherwise (chromium headless_mode_switches.h); the run stops if the
-// renderer is still a software one - its pictures and timings would lie.
-//
-// Two runs of one script compared picture by picture: scripts/look-compare.mjs.
-// steps.json: { "url"?, "viewport"?: [w, h], "dpr"?: 1|2, "cpu"?: N (CPU N times slower), "city"?: false |
-//   true | { CityOptions }, "out"?: dir, "steps": [ ... ] } where each step is
-//   { "lookAt": [x, y, zoom] }           the camera on a world point (__roadcraft.lookAt)
-//   { "wait": ms }                       real time, the game running
-//   { "frames": n }                      n drawn frames
-//   { "drag": [[x0, y0], [x1, y1]], "button"?: "left"|"right"|"middle", "steps"?: n, "keys"?: ["Shift"],
-//     "ms"?: the moves spread over this real time (a hand), "hold"?: ms still before letting go }
-//   { "wheel": [dx, dy], "at"?: [x, y] } scroll (zoom) at a screen point
-//   { "move": [x, y], "steps"?: n }      the pointer only (hover)
-//   { "click": [x, y], "button"?, "count"? }
-//   { "key": "Escape" }                  a key or chord ("Control+Z")
-//   { "type": "text" }
-//   { "eval": "expression" }             JavaScript in the page, its value reported
-//   { "evalFile": "scripts/look/x.js" }  the same from a file: one expression, a promise awaited
-//   { "shot": "name", "clip"?: [x, y, w, h] }  a PNG (CSS pixels; with dpr 2, twice the pixels)
-//   { "budget": "rua"|"bairro"|"mapa" }  the plan's budget table at this view
-//   { "city": { CityOptions } }          a city generated now, timed until it stands (as "city" above)
-//   { "memory": true }                   __roadcraft.memory(): heap, geometry held, draw calls
-//   { "profile": "name" }                from here: every frame over 50 ms with the functions that
-//                                        held it (Long Animation Frames, Chrome 123+), and a CPU
-//                                        profile of the page (DevTools protocol `Profiler`, 0.5 ms)
-//   { "profileEnd": true }               the long frames and the costliest functions since
-//                                        "profile", printed; the `.cpuprofile` saved beside the
-//                                        pictures (opens in DevTools, Performance)
-// Why the long frames and the profile: they name the function behind a hitch nobody listed
-// (developer.chrome.com/docs/web-platform/long-animation-frames: `scripts[].sourceFunctionName`,
-// the script's own time; chromedevtools.github.io/devtools-protocol `Profiler.start/stop`).
-// Screen points are CSS pixels of the viewport, from its top-left corner
-// (playwright.dev/docs/api/class-mouse). The game's camera (`main.ts`, the
-// pointer down): the middle button dragged pans, the right one swings it round
-// (Shift + right pans), the wheel zooms; the left button belongs to the tool.
+// LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking anyone's window
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -70,17 +20,11 @@ try {
 const out = resolve(plan.out ?? join(tmpdir(), 'roadcraft-look', new Date().toISOString().replace(/[:.]/g, '-')));
 mkdirSync(out, { recursive: true });
 const [width, height] = plan.viewport ?? [1920, 1080];
-/**
- * The dev server reloads the page whenever any session saves a file (Vite):
- * the city generated so far is gone, so an attempt cut by a reload starts
- * over, at most this many times.
- */
+/** The dev server reloads the page whenever any session saves a file (Vite) */
 const ATTEMPTS = 3;
 const RELOADED = 'a página recarregou no meio (um arquivo foi salvo e o Vite recarregou o jogo)';
 
-// The headless game inside the conversation's share of the machine (`sessionJob.mjs`): this process joins
-// the job, and the Chrome it starts - browser, GPU and renderer processes - is in it too. If the game cannot
-// run within the share, the game is too slow: make it faster, DO NOT lift the cap.
+// If the game cannot run within the share, the game is too slow: make it faster, DO NOT lift the cap.
 const job = joinSessionJob();
 console.log(job.joined ? `share: ${job.percent}% CPU, ${job.memoryGb} GB (${job.name})` : `share: not applied (${job.why})`);
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist'] });
@@ -105,8 +49,7 @@ console.log(`relatório: ${join(out, 'relatorio.json')}${report.console.length ?
 /** One run of the steps on a fresh page; throws `RELOADED` if the page reloads under it. */
 async function runOnce(report) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: plan.dpr ?? 1 });
-  // A slower computer: the page's CPU N times slower (DevTools protocol
-  // `Emulation.setCPUThrottlingRate`, rate 1 = none). The GPU is not slowed.
+  // A slower computer: the page's CPU N times slower (DevTools protocol `Emulation.setCPUThrottlingRate`, rate 1 = none).
   if (plan.cpu && plan.cpu > 1) {
     const session = await page.context().newCDPSession(page);
     await session.send('Emulation.setCPUThrottlingRate', { rate: plan.cpu });
@@ -188,8 +131,7 @@ async function steps(page, report) {
       await page.mouse.move(x0, y0);
       await page.mouse.down({ button: step.button ?? 'left' });
       if (step.ms) {
-        // A hand's pace: the moves spread over `ms` of real time (a mouse reports every few ms),
-        // not dispatched at once - a burst reads as a fling of thousands of pixels a second.
+        // A hand's pace: the moves spread over `ms` of real time (a mouse reports every few ms), not dispatched at once
         const n = step.steps ?? 30;
         const t0 = Date.now();
         for (let k = 1; k <= n; k++) {
@@ -254,19 +196,13 @@ async function steps(page, report) {
 }
 
 /** A script's place, short: the function, the file under `src/` (no origin, no Vite query) and the line. */
-// A declaration, not a `const`: the steps above run (top-level await) before this line is
-// reached, and a `const` cannot be read before it (MDN, "Hoisting": the temporal dead zone).
+// A declaration, not a `const`: the steps above run
 function where(fn, url, line) {
   const file = String(url ?? '').replace(/^https?:\/\/[^/]+\//, '').replace(/\?.*$/, '') || '(nativo)';
   return `${fn || '(anônima)'} @ ${file}${line >= 0 ? `:${line + 1}` : ''}`;
 }
 
-/**
- * What a profile and the long frames say, in milliseconds: each function's own
- * time (the samples where it was on top) and its time with what it calls (the
- * samples where it was anywhere on the stack, once per sample), the 25 most of
- * each; and the long frames, with the functions that held them added up.
- */
+/** What a profile and the long frames say, in milliseconds: each function's own time */
 function summarise(profile, frames) {
   const byId = new Map(profile.nodes.map((n) => [n.id, n]));
   const parent = new Map();

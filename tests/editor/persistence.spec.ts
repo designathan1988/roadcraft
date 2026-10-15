@@ -5,12 +5,7 @@ import { RoadDoc } from '@world/doc';
 import { insideMap } from '@world/bounds';
 import { RELIEF_FLAT, RELIEF_LEGACY, RELIEF_NATURAL } from '@world/terrain';
 
-/**
- * The boundary where data from OUTSIDE enters the model: the autosave and
- * imported files. Every shape here once got through and then threw in
- * `fromJSON` - at boot, at module top level - or loaded NaN, or broke an id
- * allocator.
- */
+/** The boundary where data from OUTSIDE enters the model: the autosave and imported files. */
 const base = (): Record<string, unknown> => ({
   version: 1,
   nodes: [{ id: 1, x: 0, y: 0 }, { id: 2, x: 100, y: 0 }],
@@ -40,8 +35,7 @@ describe('the load boundary', () => {
   });
 
   it('accepts every relief a map is saved with, the planet Earth too', () => {
-    // The Earth's (4) was refused here while the document read it: every new
-    // planet map was set aside on the next reload, the game opening empty.
+    // The Earth's (4) was refused here while the document read it
     for (const relief of [RELIEF_LEGACY, RELIEF_NATURAL, RELIEF_FLAT]) {
       const doc = new RoadDoc();
       doc.terrainRelief = relief;
@@ -57,9 +51,7 @@ describe('the load boundary', () => {
   });
 
   it('accepts the stamps the brush and the default town lay', () => {
-    // The town is shaped by stamps up to 1 400 units wide and the brush now
-    // reaches 300: with the old 180 ceiling every such map was refused on
-    // reload and quarantined.
+    // The town is shaped by stamps up to 1 400 units wide and the brush now reaches 300
     expect(isSerializedDoc({ ...base(), terrain: [
       { id: 1, x: 0, y: 0, radius: 1_400, strength: 34, mode: 'raise' },
       { id: 2, x: 0, y: 0, radius: 300, strength: 160, mode: 'raise', stroke: 3 },
@@ -118,8 +110,6 @@ describe('maps set aside', () => {
 describe('the model\'s own copies', () => {
   it('clone keeps two nodes the player stacked on one point, and the road between them', () => {
     // Two connected nodes dragged past the same map corner both clamp there.
-    // A clone that merged them dropped the road the next time anything was
-    // drawn, undone or reloaded.
     const doc = new RoadDoc();
     const a = doc.addNode({ x: 0, y: 0 });
     const b = doc.addNode({ x: 60, y: 0 });

@@ -4,20 +4,7 @@ import type { ChangeKind } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 
-/**
- * THE GROUND FLOOR OF EACH STORED BUILDING, for the Builder's picks and
- * overlay (`BuildingTool.floorOf`), kept from the diary (`world/derived.ts`
- * `JournalCursor`): a floor is measured on the building's record, the natural
- * ground under it (`terrain`) and the paving at its door (`roads`, and the
- * roads' heights solved, `elevation`). Only what the diary names is measured
- * again: a building whose record changed (its id), the buildings within
- * `FLOOR_READ_REACH` of a place the land or the roads changed
- * (`BuildingStore.near`); an entry of the whole map, or a diary that cannot
- * say, forgets them all.
- * DO NOT key the floors on a global revision (`${doc.revision}:${doc.terrainRevision}:${buildings.revision}`):
- * every road drawn, every hill dabbed and every building grown anywhere threw
- * away the floor of every building of the city.
- */
+/** DO NOT key the floors on a global revision (`${doc.revision}:${doc.terrainRevision}:${buildings.revision}`) */
 const KINDS: readonly ChangeKind[] = ['buildings', 'terrain', 'roads', 'elevation'];
 
 export class BuildingFloors {

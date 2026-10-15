@@ -8,22 +8,7 @@ import { meshTileShape, type Tile } from './mesh/tileMesh';
 import { type PassDesc, type RoadLook, type SurfaceRead, type SurfaceReads, passSurfaces, tileSpecOf } from './roadSurfaceReads';
 import { type TilePolys, tileShapes } from './roadTileShape';
 
-/**
- * THE ROADS' SURFACE TILES MADE WHOLE OFF THE PAGE (`roadTile.worker.ts`):
- * each tile's bands shaped (`tileShapes`), then meshed - each vertex's height,
- * texture frame, tint and place in the section read (`passSurfaces`), the
- * triangles a smear would cross framed again, the normals smoothed - over the
- * roads near the tiles the page hands over (`SurfaceData`). The page only
- * uploads the arrays. Pure (no three, no page): a test runs it as the worker
- * does and holds its surfaces to the page's, byte for byte
- * (tests/render/roadTileWorkers.spec.ts).
- *
- * The ground as drawn lives on the page (`terrain.ts`, its plates): its height
- * is asked of the page at the points read, in a round trip (`need`/`give`),
- * the verge's points before any is meshed; a point found missing while
- * meshing (a road too far for its own height, `roadField.ts` `blend`) asks
- * again, its tiles meshed again with it.
- */
+/** THE ROADS' SURFACE TILES MADE WHOLE OFF THE PAGE (`roadTile.worker.ts`): each tile's bands shaped */
 
 /** Everything a share of a pass's tiles reads besides the ground: the roads near them, as typed arrays and small records. */
 export interface SurfaceData {
@@ -88,11 +73,7 @@ function readsOf(data: SurfaceData, heights: PointHeights, missing: number[]): S
   };
 }
 
-/**
- * One share of a pass's tiles, made whole: `need` the ground's heights at the
- * points it reads, `give` them, `run`; `run` answers the tiles, or more
- * points to `give` first (then `run` again).
- */
+/** One share of a pass's tiles, made whole: `need` the ground's heights at the points it reads, `give` them, `run` */
 export class TileMesher {
   private readonly heights = new PointHeights();
   private readonly shapes: Map<string, SurfaceShape>[];

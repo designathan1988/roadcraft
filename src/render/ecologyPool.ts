@@ -1,21 +1,7 @@
 import type { EcologyField, EcologyInput } from '@world/ecology';
 import type { FarWoods, FarWoodsAsk } from './farWoods';
 
-/**
- * THE ECOSYSTEMS, WORKED OUT OFF THE PAGE. A plate brought in full as the
- * view nears it read its whole ecosystem on the page's thread - 90 ms of one
- * frame, a hitch at every plate the zoom or a drag brought in (profiled
- * 2026-10-10). As Cesium hands its terrain meshes to a worker
- * (`TaskProcessor`) and a renderer shows the coarse level until the fine one
- * is made (Proland), the field is read by one worker here and the plate shows
- * its land without it meanwhile.
- *
- * One job per plate at a time: asked again before its turn, the newer land
- * replaces the queued one; the rest in the order asked. The far woods of the
- * plates not drawn in full (`readFarWoods`) wait behind every plate brought
- * in: they fill the map in the background, never holding up the ground the
- * view is on.
- */
+/** THE ECOSYSTEMS, WORKED OUT OFF THE PAGE. */
 
 interface Job {
   readonly kind: 'near';
@@ -91,11 +77,7 @@ export function ecologyOffPage(): boolean {
   return start() !== null;
 }
 
-/**
- * Reads plate `key`'s ecosystem in the worker: `done` with the field, or
- * `failed` (the caller reads it on the page then). The input's arrays in
- * `transfer` are handed over - they must be the caller's own copies.
- */
+/** Reads plate `key`'s ecosystem in the worker: `done` with the field, or `failed` (the caller reads it on the page then). */
 export function readEcology(key: number, input: EcologyInput, transfer: ArrayBuffer[], done: (field: EcologyField) => void, failed: () => void): void {
   if (!start()) { failed(); return; }
   const queued = queue.findIndex((j) => j.kind === 'near' && j.key === key);
@@ -110,12 +92,7 @@ export function onEcologyRead(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/**
- * Works out plate `key`'s far woods in the worker (`farWoods.ts`), after
- * every plate's ecosystem asked: `done` with them, or `failed` (no workers
- * here; the far view then has no trees on that plate). Asked again before
- * its turn, the newer ask replaces the queued one.
- */
+/** Works out plate `key`'s far woods in the worker (`farWoods.ts`), after every plate's ecosystem asked */
 export function readFarWoods(key: number, far: FarWoodsAsk, done: (woods: FarWoods) => void, failed: () => void): void {
   if (!start()) { failed(); return; }
   const queued = queue.findIndex((j) => j.kind === 'far' && j.key === key);

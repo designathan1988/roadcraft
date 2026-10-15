@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { pointInPolygon } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
@@ -52,13 +51,7 @@ function bodyFrame(front: number, length: number, inbound: Lanelet, crossing: La
   return outbound.centre.sampleAt(centre - crossing.length);
 }
 
-/**
- * How far a body may overhang the kerb face: 0.9 units (36 cm). The check
- * always accepted the asphalt and the kerb stone, and the kerb stone was 36 cm
- * wide; it is now a real 15 cm precast kerb, so the same overhang - a bus's
- * front corner sweeping the edge of the footway on a turn - is stated here as
- * a distance instead of borrowed from the stone's width.
- */
+/** How far a body may overhang the kerb face: 0.9 units (36 cm). */
 const OVERHANG = 0.9;
 
 /** Distance from a point to the nearest edge of a set of polygons. */
@@ -113,11 +106,6 @@ describe('physical junction movements', () => {
             archetype: archetype.id, firstOutside, path: crossing.centre.toPoints() });
         }
       }
-    }
-    if (process.env['ROADCRAFT_RECORD_MOVEMENTS'] === '1') {
-      writeFileSync('docs/audit/junction-body-movements.json', JSON.stringify({
-        checked, movements: findings.length, findings,
-      }, null, 2) + '\n');
     }
     expect(checked).toBeGreaterThan(10_000);
     expect(findings.filter(finding => finding.firstOutside).map(finding => ({

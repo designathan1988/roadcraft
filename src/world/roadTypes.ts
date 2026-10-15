@@ -2,22 +2,10 @@ import { kmh, m } from './units';
 import { PARKING_DEPTH, parkingAllowed, type ParkingKind, type SegmentParking } from './parking';
 import type { CentreLine, RoadSection, LaneLine, LaneTurnRule, LaneUse, SectionMaterials } from './roadSection';
 
-/**
- * Legal driving directions, relative to the stored `a -> b` orientation
- * (`RoadSegment.direction`; `doc.ts` re-exports it). Here, not in `doc.ts`:
- * the document imports this file, and the type import from it closed an
- * import cycle (`tests/arch/imports.spec.ts`).
- */
+/** Legal driving directions, relative to the stored `a -> b` orientation (`RoadSegment.direction`; `doc.ts` re-exports it). */
 export type SegmentDirection = 'both' | 'aToB' | 'bToA';
 
-/**
- * Surface levels, in painting order.
- *
- * The whole point of naming them is that a junction computes a *separate*
- * polygon, with a *separate* trim distance, for each one. The V6 monolith
- * filled seven layers that all stopped at the same distance along every leg,
- * which is why no kerb or footway existed around any junction (defect 1.2).
- */
+/** Surface levels, in painting order. */
 export enum Level {
   Casing = 1,
   Sidewalk = 2,
@@ -43,29 +31,17 @@ export interface RoadType {
   readonly nameKey: string;
   /** Translation key for the one-line description under the name. */
   readonly subKey: string;
-  /**
-   * Lane count to substitute into `subKey` when the class has been overridden.
-   *
-   * Null for a stock class, whose description needs no numbers. The model does
-   * not format text — it states what the text is about and lets the interface
-   * layer render it in whatever language is showing.
-   */
+  /** Lane count to substitute into `subKey` when the class has been overridden. */
   readonly subLanes: number | null;
   /** Whether an overridden description is for a one-way road. */
   readonly subOneWay: boolean;
-  /**
-   * Carriageway width, kerb face to kerb face, in world units: the travel
-   * lanes, the median and any parking lanes.
-   */
+  /** Carriageway width, kerb face to kerb face, in world units: the travel lanes, the median and any parking lanes. */
   readonly width: number;
   /** Total lane count, both directions. */
   readonly lanes: number;
-  /**
-   * Footway width, in world units: on each side, or the wider one when the
-   * sides differ (`sidewalkLeft`/`sidewalkRight`, read through `footwayOn`).
-   */
+  /** Footway width, in world units: on each side, or the wider one when the sides differ */
   readonly sidewalk: number;
-  /** The footways left and right of a -> b when they differ (docs/source/VIAS.md V1); absent: `sidewalk` both. */
+  /** The footways left and right of a -> b when they differ; absent: `sidewalk` both. */
   readonly sidewalkLeft?: number;
   readonly sidewalkRight?: number;
   /** A footway level with the carriageway, without a kerb (a shared surface). */
@@ -77,11 +53,7 @@ export interface RoadType {
   readonly materials?: SectionMaterials;
   /** Central reservation width, in world units. Zero when absent. */
   readonly median: number;
-  /**
-   * Parking lanes inside the kerbs, left and right of the a -> b direction:
-   * their depth from the kerb face (world units, 0 when none) and their kind.
-   * Stock classes have none; a segment adds them (`RoadSegment.parking`).
-   */
+  /** Parking lanes inside the kerbs, left and right of the a -> b direction: their depth from the kerb face */
   readonly parkingLeft: number;
   readonly parkingRight: number;
   readonly parkingLeftKind: ParkingKind;
@@ -92,7 +64,7 @@ export interface RoadType {
   readonly priorityRank: number;
   readonly turnsForward?: readonly LaneTurnRule[];
   readonly turnsBackward?: readonly LaneTurnRule[];
-  /** Lane uses and lines from the section (docs/source/VIAS.md V4, `RoadSection.useForward`). */
+  /** Lane uses and lines from the section (`RoadSection.useForward`). */
   readonly useForward?: readonly LaneUse[];
   readonly useBackward?: readonly LaneUse[];
   readonly linesForward?: readonly LaneLine[];
@@ -106,46 +78,19 @@ export interface RoadType {
   readonly line: string;
 }
 
-/**
- * The colour of a painted line.
- *
- * These lived in `ui/overlay/palette.ts`, and that made `world` import `ui` -
- * the one import cycle in the project, and a violation of the layer order in
- * CLAUDE.md (Layers). A line's colour is a property of the ROAD CLASS, not of
- * the interface: the same yellow centre line has to be produced by the mesh
- * builder, by the minimap and by the overlay, and three consumers in three
- * layers mean the value belongs beside the class it describes.
- */
+/** The colour of a painted line. */
 export const markingColor = (rt: RoadType): string => rt.line;
 
-/**
- * The line between two lanes running the SAME way: always white.
- *
- * `line` is the class's centre-line colour, and for the two street classes it
- * is yellow - the colour that tells a driver the traffic beyond it comes the
- * other way. Every divider used to be painted in it, so a one-way street was
- * marked down its middle exactly like a two-way one, and read as one.
- */
+/** The line between two lanes running the SAME way: always white. */
 export const LANE_LINE = '#eee8d7';
 
 
 /** The kerb stone's width on top, beyond the carriageway edge: 15 cm, as a precast kerb. */
 export const CURB_BAND = m(0.15);
 
-/**
- * Height of the footway above the carriageway, world units.
- *
- * ONE number for the cross-section: the renderer lifts the footway band by it
- * and stands lamps, poles and pedestrians on it, and the elevation solver
- * counts it into a raised deck's depth. It used to be two constants of the
- * same value, `FOOTWAY_RISE` in render/roadSurfaces.ts and `FOOTWAY_DEPTH` in
- * world/elevation.ts, free to drift apart.
- */
+/** Height of the footway above the carriageway, world units. */
 export const FOOTWAY_RISE = m(0.15);
-/**
- * Extra half-width of the casing beyond the footway edge: the grass verge that
- * carries the footway's edge down (or up) to the ground beside it, 1 m.
- */
+/** Extra half-width of the casing beyond the footway edge: the grass verge that carries the footway's edge down */
 export const CASING_BAND = m(1);
 
 export const ROAD_TYPES: readonly RoadType[] = [
@@ -293,17 +238,7 @@ export const roadType = (i: number): RoadType =>
 const MIN_TRAVEL_LANES = 1;
 const MAX_TRAVEL_LANES = 8;
 
-/**
- * Resolves the physical road profile for a segment.
- *
- * A configured count is the total number of drivable lanes.  Two-way roads
- * therefore split it across directions, while one-way roads use all of it.
- * Older documents omit the count and retain their exact class profile.
- *
- * Parking lanes (`parking`, left and right of a -> b) widen the carriageway
- * kerb to kerb; the travel lanes keep their width and sit between them. A
- * kind the class cannot carry (`parkingAllowed`) is dropped.
- */
+/** Resolves the physical road profile for a segment. */
 export function roadProfile(
   typeIndex: number,
   configuredLanes?: number | null,
@@ -380,13 +315,7 @@ function travelProfile(
   };
 }
 
-/**
- * Half-width of a road type at a given surface level.
- *
- * These are the `hw[level][leg]` values that drive the whole junction builder.
- * They are strictly decreasing from Casing to Asphalt, which is what guarantees
- * the level rings nest (see the containment assertion in the junction tests).
- */
+/** Half-width of a road type at a given surface level. */
 export function halfWidth(rt: RoadType, level: SurfaceLevel): number {
   switch (level) {
     case Level.Asphalt:
@@ -411,19 +340,11 @@ export const footwayOn = (rt: RoadType, side: RoadSide): number =>
 export const flushOn = (rt: RoadType, side: RoadSide): boolean =>
   (side === 'left' ? rt.flushLeft : rt.flushRight) === true;
 
-/**
- * Whether the road's outline is the plain one: the same footway both sides,
- * each kerbed (every road before docs/source/VIAS.md V1).
- */
+/** Whether the road's outline is the plain one: the same footway both sides, each kerbed */
 export const symmetric = (rt: RoadType): boolean =>
   rt.sidewalkLeft === undefined && !rt.flushLeft && !rt.flushRight;
 
-/**
- * Half-width of one side of a road at a surface level, left or right of
- * a -> b: the outline a ribbon and a junction leg are cut to. `halfWidth` is
- * the wider side, for whatever only needs the road's reach. A flush footway
- * has no kerb stone: its kerb level is the carriageway's edge.
- */
+/** Half-width of one side of a road at a surface level, left or right of a -> b */
 export function sideHalfWidth(rt: RoadType, level: SurfaceLevel, side: RoadSide): number {
   if (symmetric(rt)) return halfWidth(rt, level);
   const half = rt.width / 2;
@@ -458,11 +379,7 @@ export const laneWidth = (rt: RoadType): number =>
 export const travelWidth = (rt: RoadType): number =>
   rt.width - rt.parkingLeft - rt.parkingRight;
 
-/**
- * Lateral offset of the travel way's centre from the road centreline, in the
- * a -> b frame (positive: left). Zero unless the two sides park differently:
- * the kerbs stay symmetric about the centreline and the lanes move over.
- */
+/** Lateral offset of the travel way's centre from the road centreline, in the a -> b frame (positive: left). */
 export const travelShift = (rt: RoadType): number =>
   (rt.parkingRight - rt.parkingLeft) / 2;
 
@@ -479,22 +396,12 @@ export function sectionFromProfile(rt: RoadType): RoadSection {
     ...(rt.centreLine ? { centreLine: rt.centreLine } : {}) };
 }
 
-/**
- * Signed lateral offset of a lane's centreline from the road centreline.
- * For two-way roads lane 0 is the innermost (nearest the centre); higher
- * indices move outward. One-way lanes are centred as a complete carriageway.
- *
- * `forward` says which frame the offset is wanted in: true for a -> b (the
- * segment's own direction), false for a lane read along b -> a. It matters
- * only when the two sides park differently and the travel way is off centre.
- */
+/** Signed lateral offset of a lane's centreline from the road centreline. */
 export function laneOffset(rt: RoadType, lane: number, direction: SegmentDirection = 'both', forward = true): number {
   const count = travelLanes(rt, direction);
   const idx = Math.max(0, Math.min(count - 1, lane));
   const shift = travelShift(rt) * (forward ? 1 : -1);
-  // A one-way carriageway is centred on its road centreline instead of being
-  // pushed onto the right-hand half reserved by two-way traffic. `perp` is the
-  // LEFT normal in this coordinate system, so right-hand traffic is negative.
+  // A one-way carriageway is centred on its road centreline instead of being pushed onto the right-hand half reserved by
   if (direction !== 'both') return shift - laneWidth(rt) * (idx - (count - 1) / 2);
   return shift - (rt.median / 2 + laneWidth(rt) * (idx + 0.5));
 }

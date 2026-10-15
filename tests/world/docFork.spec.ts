@@ -13,21 +13,7 @@ import { commitRoadPath, duplicateSegment, joinSegments, moveNodeChecked, reconc
 import { m } from '@world/units';
 import { growCity } from './cityAudit';
 
-/**
- * AN EDIT'S WORKING COPY COSTS WHAT THE EDIT TOUCHES (`RoadDoc.fork`,
- * 2026-10-15): every road drawn and every pause of the pointer while one is
- * drawn (the road tool's dry run) copied the whole document - every node,
- * segment, pole, item, list - and the commit compared and copied it all back.
- * A fork lays its maps over the document's and is taken back by what it wrote.
- *
- * Held here: the same edits made on a fork and taken back leave the document
- * exactly as making them on the document itself does - the same file
- * (`toJSON`), the same indices by place, and the same diary entries (kind,
- * places, ids, cause) - on a grown city and on the test fixtures; a road drawn
- * through the fork leaves the same map as through the old whole copy; the dry
- * run never touches the map; and a one-road edit on a large city copies a
- * handful of records, not the map.
- */
+/** AN EDIT'S WORKING COPY COSTS WHAT THE EDIT TOUCHES (`RoadDoc.fork`, 2026-10-15) */
 
 function random(seed: number): () => number {
   let s = seed >>> 0;
@@ -243,11 +229,7 @@ const road = (doc: RoadDoc, net: Network, a: { x: number; y: number }, b: { x: n
   commitRoadPath(doc, net, { kind: 'free', at: a }, { kind: 'free', at: b }, 1,
     [{ start: { at: a, heightOffset: 0 }, end: { at: b, heightOffset: 0 }, curve: null }], null, undefined, undefined, { dryRun });
 
-/**
- * A document's content, its records by id: an undo puts a record that had
- * gone back last in its map's order, through the old whole copy and the fork
- * alike, so the order of records is compared between the two ways, not here.
- */
+/** A document's content, its records by id */
 function content(doc: RoadDoc): string {
   const data = doc.toJSON() as unknown as Record<string, unknown>;
   const byId = (v: unknown): unknown => Array.isArray(v) && v.every((x) => typeof (x as { id?: unknown })?.id === 'number')
@@ -310,10 +292,7 @@ describe('roads drawn through the fork', () => {
   });
 });
 
-/**
- * A large map: a grid of 40 x 40 blocks, street furniture along it, a power
- * line, planted trees and lots - some 20 000 records.
- */
+/** A large map: a grid of 40 x 40 blocks, street furniture along it, a power line, planted trees and lots */
 function largeMap(): RoadDoc {
   const doc = new RoadDoc();
   const n = 40, block = m(120), half = (n * block) / 2;

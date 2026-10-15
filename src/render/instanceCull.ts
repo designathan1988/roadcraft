@@ -1,19 +1,6 @@
 import type { Frustum, InstancedBufferAttribute } from 'three';
 
-/**
- * WHAT EVERY INSTANCE CULL BY CELLS OF THE GROUND SHARES: the sphere round
- * two spheres, a sphere against the frustum's planes still unsettled (the
- * plane masks of bvh.js `BVH.frustumCulling`, what InstancedMesh2 culls
- * with), and one pending upload range per attribute. The culls themselves
- * keep their instances thing by thing in a quadtree they grow as things come
- * (`instanceRuns.ts`, `gardens.ts`).
- *
- * The static tree that was here (`createInstanceCull`, `spatialOrder`: every
- * instance of a layer sorted and filed once per build) needed the whole layer
- * built again for one thing changed; its last user, the street furniture,
- * keeps its items as runs now (`instanceRuns.ts`). DO NOT bring back a cull
- * that is made for the whole map at once.
- */
+/** DO NOT bring back a cull that is made for the whole map at once. */
 
 export type Bounds = { x: number; y: number; z: number; r: number };
 
@@ -27,12 +14,7 @@ export function enclose(a: Bounds | null, b: Bounds): Bounds {
   return { x: a.x + dx * k, y: a.y + dy * k, z: a.z + dz * k, r };
 }
 
-/**
- * The planes of `mask` (bit p: plane p not yet known to hold the sphere
- * inside) against the sphere: -1 when it lies wholly outside one of them,
- * else the planes it straddles - 0 when it is wholly inside every one. The
- * same sum as three's `Plane.distanceToPoint` in `Frustum.intersectsSphere`.
- */
+/** The planes of `mask` (bit p: plane p not yet known to hold the sphere inside) against the sphere */
 export function planeMask(frustum: Frustum, x: number, y: number, z: number, r: number, mask: number): number {
   let out = 0;
   for (let p = 0; p < 6; p++) {
@@ -46,11 +28,7 @@ export function planeMask(frustum: Frustum, x: number, y: number, z: number, r: 
   return out;
 }
 
-/**
- * A changed run of an attribute to upload, kept as ONE pending range: three
- * clears the ranges only when it uploads (`WebGLAttributes.updateBuffer`),
- * and a mesh not drawn would pile one up per cull.
- */
+/** A changed run of an attribute to upload, kept as ONE pending range: three clears the ranges only when it uploads */
 export function markRange(attribute: InstancedBufferAttribute, start: number, count: number): void {
   const pending = attribute.updateRanges[0];
   if (!pending) attribute.addUpdateRange(start, count);

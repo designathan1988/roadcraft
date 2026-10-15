@@ -8,31 +8,7 @@ import { DT } from '@sim/params';
 import { holderState } from '@sim/intersections/admission';
 import { zoneShareable } from '@sim/intersections/claims';
 
-/**
- * What a signal plan is FOR.
- *
- * A signalised junction exists so that a driver with a green may cross the
- * junction without meeting anybody who also has a green. The reported defect
- * was the opposite: cars leaving one street on green met cars crossing the
- * other street on green, and both sat there.
- *
- * The plan validator already asserted coverage and liveness - that no group is
- * left permanently dark and that some stage serves vehicles. It never asserted
- * SAFETY: that the movements a stage greens together can actually be taken
- * together. That is the property below, and it is checked against the engine's
- * own conflict-point index rather than against an assumption about geometry,
- * so it holds for skewed and many-legged junctions too.
- *
- * The rule the simulation actually implements, and therefore the rule to test:
- *
- *   - a THROUGH movement on green is PROTECTED. `rightOfWay` returns
- *     'signalGreen' for it and it does not yield to anything;
- *   - every TURN is 'yield' even on a full green, so it must find a gap.
- *
- * So two protected through movements sharing a conflict point is a plan that
- * contradicts itself, and nothing downstream can rescue it. A turn conflicting
- * with anything is permissive and is resolved by gap acceptance.
- */
+/** What a signal plan is FOR. */
 
 interface Fixture {
   readonly doc: RoadDoc;
@@ -100,8 +76,7 @@ describe('signal plans', () => {
   });
 
   it('never greens two conflicting protected movements on a skewed cross', () => {
-    // Opposite-ish but not exactly 180 apart, which is where a tolerance-based
-    // pairing rule is most likely to pair the wrong two approaches.
+    // Opposite-ish but not exactly 180 apart
     expect(unsafePairs(signalised([0, 78, 186, 262]))).toEqual([]);
   });
 
@@ -147,9 +122,7 @@ describe('signal plans', () => {
       for (const point of held) {
         const holders = fixture.sim.claims.holdersAt(point);
         if (holders.length < 2) continue;
-        // Several holders are legal only on the SAME movement (a convoy), or
-        // when their bodies cannot touch in that zone: sizes that never meet
-        // there, or one of them already past it.
+        // Several holders are legal only on the SAME movement (a convoy), or when their bodies cannot touch in that zone
         const zone = fixture.sim.conflicts.points[point];
         for (let i = 0; i < holders.length; i++) {
           for (let j = i + 1; j < holders.length; j++) {

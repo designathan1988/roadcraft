@@ -1,22 +1,6 @@
 import { Color } from 'three';
 
-/**
- * THE COLOUR OF A LIT ROOM, by the room: one lamp colour for every window of
- * the town read as a sheet of amber at night (the player, 2026-10-13: "à
- * noite TODA luz é amarela"). Lighting practice puts homes at 2700-3000 K
- * (living rooms and bedrooms 2700 K, kitchens 3000-3500 K) and offices at
- * 4000-5000 K (Feit Electric's guide,
- * https://www.feit.com/inspire/how-to-choose-the-right-color-light-temperature-for-your-bulb-or-fixture/),
- * and a Brazilian home as often as not lights its rooms with a cool-white
- * LED or tube. A television's screen throws a blue-white light that jumps
- * with every cut.
- *
- * Each room draws its lamp from its own lot; the far level of the buildings
- * draws from the same mix (`massingMaterial.ts`), so a block keeps its
- * colours when it changes level. Colours are of a black body at that
- * temperature (Tanner Helland's fit), in linear RGB, each brought to a
- * luminance of 1: the lamp's colour, never its brightness, changes.
- */
+/** THE COLOUR OF A LIT ROOM, by the room: one lamp colour for every window of the town read as a sheet of amber at night */
 const KELVIN_SRGB: Readonly<Record<number, readonly [number, number, number]>> = {
   2700: [255, 169, 87],
   3000: [255, 180, 107],
@@ -46,11 +30,7 @@ function mixGlsl(mix: readonly (readonly [number, number])[]): string {
   return `${lines.join('\n')}\n  return ${lampVec(mix[mix.length - 1]![0])};`;
 }
 
-/**
- * GLSL: `roomLamp(lot, office)`, a lit room's lamp colour from its lot (0..1)
- * and whether it is an office or a shop (1) or a home (0); `tvLight(clock,
- * lot)`, a television's light, its brightness jumping at each cut.
- */
+/** GLSL: `roomLamp(lot, office)`, a lit room's lamp colour from its lot (0..1) and whether it is an office or a shop */
 export const ROOM_LAMP_GLSL = `
 vec3 roomLampHome(float lot) {
 ${mixGlsl(HOME_MIX)}

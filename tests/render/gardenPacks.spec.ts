@@ -5,13 +5,7 @@ import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { m } from '@world/units';
 import { townChanges } from '../support/gardenChange';
 
-/**
- * The gardens are packed building by building and kept so (`gardens.ts`,
- * audit M3a): the town's plants drawn from the buildings' runs must be the
- * very instances one pass over every plant places, and a garden that came,
- * went or changed leaves the others where they were - the same plants a
- * town built afresh draws.
- */
+/** The gardens are packed building by building and kept so (`gardens.ts`, audit M3a) */
 const plant = (i: number, kind: GardenPlant['kind']): GardenPlant => ({
   kind, x: m(3) * i, y: m(2) * (i % 5), z: m(0.1) * (i % 3), w: m(2) + (i % 4) * m(0.5), d: m(1.5), h: m(2) + (i % 3), yaw: i * 0.7, seed: (i * 0.137) % 1,
 });

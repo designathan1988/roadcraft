@@ -8,20 +8,7 @@ import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from './instanceRuns';
 
-/**
- * Walls, fences and hedges on screen (`world/barriers.ts`), KEPT BARRIER BY
- * BARRIER: each barrier a run of every part it draws in an instanced layer
- * (`instanceRuns.ts`), made again only when the diary says it changed or the
- * ground under it moved (a product of the diary, `Derived`).
- *
- * Every piece is one unit box, instanced and placed: a wall is a run of
- * blocks with a coping on top, a fence posts every couple of metres with two
- * rails between them, a hedge a run of clipped green blocks. A run is cut
- * into pieces no longer than `PIECE` so it follows the ground it stands on.
- * DO NOT build every barrier of the map again for one placed or for the ground
- * moved under one: the whole layer was made again, and its pieces' areas all
- * asked, at each.
- */
+/** DO NOT build every barrier of the map again for one placed or for the ground moved under one */
 export interface Barriers {
   readonly group: Group;
   readonly triangles: number;
@@ -148,14 +135,7 @@ export function createBarriers(): Barriers {
   };
 }
 
-/**
- * The unit box and the materials, made ONCE for the module: every rebuild of
- * the barriers (each placed fence, each ground change under one) made nine
- * materials and disposed nine, each new one paying its program lookup and its
- * uniforms (CLAUDE.md: "Never create a material inside a rebuild"; as
- * `utilities.ts` `utilityParts` and `transit.ts` `sharedMaterial`).
- * NÃO criar material dentro da camada (`createBarriers`).
- */
+/** The unit box and the materials, made ONCE for the module: every rebuild of the barriers */
 const PARTS = barrierParts();
 function barrierParts(): { unit: BoxGeometry; material: Record<'wall' | 'coping' | 'post' | 'rail' | 'hedge' | 'guardrailPost' | 'guardrailBeam' | 'railingPost' | 'railingBar', Material> } {
   const material = (colour: number, roughness: number, metalness = 0): MeshStandardMaterial =>
@@ -230,11 +210,7 @@ function placeBarrier(barrier: Barrier, groundAt: (x: number, y: number) => numb
   }
 }
 
-/**
- * A road guardrail (a steel W-beam about 0.3 m deep, its top at 0.75 m, on
- * posts every 2 m, as highway standards set it) or an urban pedestrian railing
- * (posts every 1.5 m, a top rail, a bottom rail and close vertical bars).
- */
+/** A road guardrail (a steel W-beam about 0.3 m deep, its top at 0.75 m, on posts every 2 m, as highway standards set it) */
 function placeKerbBarrier(barrier: Barrier, groundAt: (x: number, y: number) => number,
   out: { steelPosts: Box[]; beams: Box[]; railPosts: Box[]; railBars: Box[] }): void {
   const guard = barrier.kind === 'guardrail';

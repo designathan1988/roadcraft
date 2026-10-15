@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { BODY_CLASSES, ConflictIndex } from '@world/conflictPoints';
@@ -8,15 +7,7 @@ import { LAYOUTS, fixtureDoc, layoutDoc } from '../sim/support/bodies';
 /** The body classes by name, for the report. */
 const BODY_CLASS_NAMES = ['small', 'car', 'heavy'] as const;
 
-/**
- * Conflict zones are measured from swept bodies, not centrelines.
- *
- * These are the properties the claim table relies on and cannot check for
- * itself: that a smaller body's zone lies inside a larger one's, that a
- * conflict with no line crossing is still found, that no zone reaches a body
- * waiting at its own stop line, and that the index is cheap enough to rebuild
- * on every edit.
- */
+/** Conflict zones are measured from swept bodies, not centrelines. */
 
 function indexOf(doc: ReturnType<typeof layoutDoc>['doc']) {
   const net = new Network(doc);
@@ -33,10 +24,7 @@ describe('swept conflict zones', () => {
     const { graph, conflicts } = indexOf(layoutDoc(LAYOUTS[0]!).doc);
     const swept = conflicts.points.filter((p) => p?.kind === 'swept');
     expect(swept.length).toBeGreaterThan(0);
-    // Paths whose centrelines never meet, yet whose bodies do - a bus's tail
-    // swinging over the movement beside it. The centreline index never saw
-    // them. (Opposing left turns used to be the example; since turn paths are
-    // as round as the kerbs allow, they now pass clear of each other.)
+    // Paths whose centrelines never meet, yet whose bodies do - a bus's tail swinging over the movement beside it.
     expect(swept.some((p) => p.zone(p.a, 2, 2) !== null && graph.connectors.get(p.a)?.inSegment !==
       graph.connectors.get(p.b)?.inSegment)).toBe(true);
   });
@@ -63,30 +51,21 @@ describe('swept conflict zones', () => {
   });
 
   it('never reaches a vehicle still waiting behind its own stop line', () => {
-    // A claim protects a body that is moving through the box. A zone that
-    // starts before the stop line would put a queued, unadmitted vehicle
-    // inside another movement's swept area where nothing can protect it.
+    // A claim protects a body that is moving through the box.
     const report: Record<string, unknown> = {};
     for (const layout of LAYOUTS) {
       const { conflicts } = indexOf(layoutDoc(layout).doc);
       report[layout.name] = conflicts.queueIntrusions.map((q) => ({
         ...q, mine: BODY_CLASS_NAMES[q.mine], theirs: BODY_CLASS_NAMES[q.theirs],
       }));
-      // Two cars: never. Heavy vehicles are recorded rather than asserted,
-      // because the carriageway geometry, not the index, decides them.
+      // Two cars: never.
       expect(conflicts.queueIntrusions.filter((q) => q.mine < 2 && q.theirs < 2), layout.name)
         .toEqual([]);
-    }
-    if (process.env['ROADCRAFT_RECORD_MOVEMENTS'] === '1') {
-      writeFileSync('docs/audit/junction-queue-intrusions.json', JSON.stringify(report, null, 2) + '\n');
     }
   });
 
   it('measures a whole player map within its count of pairs', () => {
-    // Counted, not timed (the timed version read 150 ms alone and nearly 2 s
-    // beside the rest of the suite): the pairs a cold build measures, 518 on
-    // this map on 2026-10-13. More is a change in what is measured: either a
-    // fault, or a new ceiling written here with the reason.
+    // Counted, not timed (the timed version read 150 ms alone and nearly 2 s beside the rest of the suite)
     const { conflicts } = indexOf(fixtureDoc());
     expect(conflicts.points.filter(Boolean).length).toBeGreaterThan(100);
     expect(conflicts.measured.build).toBeLessThanOrEqual(518);

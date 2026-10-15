@@ -84,9 +84,7 @@ describe('person model: bodies', () => {
   });
 
   it('measures the height from the heights alone as the whole shape does', () => {
-    // `Morpher.height` measures only the vertices that can be the highest or
-    // the lowest; it must agree with every vertex measured (MakeHuman's
-    // getHeightCm: max Y - min Y of the body).
+    // `Morpher.height` measures only the vertices that can be the highest or the lowest
     const cases: MacroParams[] = [];
     for (let i = 0; i < 12; i++) {
       const r = (k: number): number => ((i * 7919 + k * 104729) % 1000) / 999;

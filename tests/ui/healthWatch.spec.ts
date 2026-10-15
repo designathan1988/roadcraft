@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { longFrameWork, stepsWithin } from '@ui/healthWatch';
 
-/**
- * THE F9 MONITOR REPORTS WORK, NOT WAITING (Etapa 5g). Entries of 57 s with
- * no script in them were long frames (the browser idle), and a step with an
- * `await` in it (a person fitted over a second) was blamed for every long
- * frame it overlapped.
- */
+/** THE F9 MONITOR REPORTS WORK, NOT WAITING (Etapa 5g). */
 describe('long frames in the health monitor', () => {
   it('count the work in a frame, not the time the browser held it open', () => {
     // 57 s by the clock, nothing run in it.

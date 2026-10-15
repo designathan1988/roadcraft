@@ -1,68 +1,21 @@
-/**
- * THE WORLD'S DIARY OF CHANGES: what changed, where, and why - one record for
- * the whole game (the player, 2026-10-08: "se algo muda tem que saber o que
- * mudou, onde, etc."; "as estradas mudam terreno, ninguém sabe como, onde,
- * por quê").
- *
- * Before it, some twenty revision counters on the document said only THAT
- * something of a kind changed somewhere, and every system found out what by
- * digesting the whole map again; one of those findings was wrong for months
- * (the natural ground moved whenever a road shaped the drawn one, and every
- * road was solved and paved again: docs/source/PROBLEMAS.md P12) and nothing showed
- * it.
- *
- * An entry is an EVENT - what already happened, its data captured when it is
- * written (Nystrom, "Event Queue") - with the rectangles it happened in and
- * its cause: the tool and gesture for an edit of the document, or the entry it
- * follows from for what the game derives (the roads' heights solved, the
- * ground cut and filled, the land relit, the road tiles built), so every
- * change can be traced back to the edit that made it. Nobody is called when
- * one is written: whoever depends on a kind of change reads the entries since
- * the serial it last saw (`since`, `touches`), as `render/groundChanges.ts`
- * already did for the drawn ground - no listener to forget to unregister
- * (Nystrom, "Observer": the lapsed listener), no global bus (the diary belongs
- * to the document), and every change goes through one place (Nystrom, "Dirty
- * Flag": the flag a path forgets to set is the bug).
- *
- * Pure: no three, no DOM.
- */
+/** THE WORLD'S DIARY OF CHANGES: what changed, where, and why - one record for the whole game */
 
 /** A world rectangle: [minX, minY, maxX, maxY]. */
 export type ChangeRect = readonly [number, number, number, number];
 
-/**
- * What the player changes in the document. `roads` is the roads' geometry;
- * `traffic` the plan the traffic runs on, written with it when the plan
- * changes (a node raised without changing how it is crossed is not).
- */
+/** What the player changes in the document. */
 export type DocChangeKind =
   | 'roads' | 'traffic' | 'terrain' | 'paint' | 'buildings' | 'zones' | 'lots' | 'utilities' | 'barriers' | 'landscape'
   | 'transit' | 'people' | 'trees' | 'clearings' | 'elements' | 'fog' | 'clouds' | 'weather' | 'nature' | 'gullies'
   /** The balance (`economy.ts`): an edit paid for, or a demolition paid back. */
   | 'economy'
-  /**
-   * The land already cut into lots (`LotStore.addKeys`): no lot came or went,
-   * so a reader of the lots by id (`lots`, every entry with its ids) does not
-   * take it for "everything changed".
-   */
+  /** The land already cut into lots (`LotStore.addKeys`): no lot came or went, so a reader of the lots by id */
   | 'lotKeys'
-  /**
-   * The regional standard of the road paint (`RoadDoc.markingStyle`): every
-   * road's paint and the plates it puts up, and nothing of the roads' shape -
-   * `revision` (the roads) does not move for it.
-   */
+  /** The regional standard of the road paint (`RoadDoc.markingStyle`) */
   | 'markingStyle'
-  /**
-   * A building's wear (`Building.decay`: age, soot) and nothing else of it
-   * (`BuildingStore.wear`). Only what draws or saves a building reads it; what
-   * reads a building's shape, place or use reads `buildings`.
-   */
+  /** A building's wear (`Building.decay`: age, soot) and nothing else of it (`BuildingStore.wear`). */
   | 'buildingWear';
-/**
- * Every kind of change to the document, listed once (checked complete by the
- * type): what a reader of "anything the player changed" asks the diary for,
- * instead of a hand-kept list of revisions that misses the kinds added later.
- */
+/** Every kind of change to the document, listed once (checked complete by the type) */
 const DOC_KINDS = {
   roads: 1, traffic: 1, terrain: 1, paint: 1, buildings: 1, zones: 1, lots: 1, utilities: 1, barriers: 1, landscape: 1,
   transit: 1, people: 1, trees: 1, clearings: 1, elements: 1, fog: 1, clouds: 1, weather: 1, nature: 1, gullies: 1, economy: 1,
@@ -95,38 +48,17 @@ export interface Change {
 /** What a reader stands on: one rectangle, its items' rectangles, or nothing. */
 export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 
-/**
- * How many entries are kept, in all and of each kind: a reader older than
- * that takes everything as changed. Of EACH kind: in one ring for all, a
- * burst of one kind (2.048 buildings of a growing city) forgot the others,
- * and a reader of the ground that had missed nothing was told "everything
- * changed" and laid the whole map again (docs/AUDITORIA-2026-10-14.md D8/C1).
- * NO single ring for a reader of some kinds: a kind is forgotten only by
- * entries of its own.
- */
+/** How many entries are kept, in all and of each kind: a reader older than that takes everything as changed. */
 const KEPT = 2048;
 
-/**
- * A reader of some kinds that follows the diary (`ChangeJournal.follow`): the
- * entries after the serial it last read are kept for it, however many come
- * before it reads again.
- */
+/** A reader of some kinds that follows the diary (`ChangeJournal.follow`) */
 export interface JournalReader {
   readonly kinds: readonly ChangeKind[];
   /** The serial it has read up to; negative: it has read nothing yet (it reads everything first). */
   readonly seenSerial: number;
 }
 
-/**
- * The entries of one kind, oldest first, and the serial up to which they may
- * be missing (let go, or the copy's start). At least the last `KEPT` are kept,
- * and every entry a reader that follows the diary has not read yet
- * (`needed`): the entries a reader still needs are let go only when it has
- * read them. DO NOT let them go by count alone: a city growing while the
- * simulation waited for the traffic's topology wrote thousands of building
- * entries, its readers (the lots' bays, the store's order) were told
- * "everything changed" and read every lot of the town again (2026-10-15).
- */
+/** DO NOT let them go by count alone */
 class KindLog {
   private entries: Change[] = [];
   constructor(public missingUpTo: number) {}
@@ -168,12 +100,7 @@ class KindLog {
   }
 }
 
-/**
- * The work of the diary's readers: entries looked at to answer `since` and
- * `touches`. A count, not a time (`tests/scale/buildingEdit.spec.ts`): a
- * reader of one kind that walks every entry of the others since it last saw
- * its own - one building more, one entry more to walk - shows at once.
- */
+/** The work of the diary's readers: entries looked at to answer `since` and `touches`. */
 export const journalWork = { entries: 0 };
 
 const isRect = (area: ChangeRect | readonly ChangeRect[]): area is ChangeRect => typeof area[0] === 'number';
@@ -223,11 +150,7 @@ export class ChangeJournal {
   private readonly byKind = new Map<ChangeKind, KindLog>();
   /** Up to where every kind may be missing entries: a copy starts with none (`continueFrom`). */
   private startedAt = 0;
-  /**
-   * Every entry written since this diary went on from another as a working
-   * copy's (`forkFrom`), all of them, in order: what taking the copy back
-   * writes into the original (`take`). Null: not a working copy's.
-   */
+  /** Every entry written since this diary went on from another as a working copy's (`forkFrom`), all of them, in order */
   private written: Change[] | null = null;
 
   /** The serial of the latest entry: what a reader that has seen everything holds. */
@@ -235,26 +158,14 @@ export class ChangeJournal {
     return this.serial;
   }
 
-  /**
-   * The serial of the latest entry of any of these kinds, 0 when none was
-   * written: the document's revisions (`RoadDoc.revision`, `terrainRevision`...)
-   * are this, so a change not written in the diary moves no revision and
-   * nothing can change without the diary knowing (Nystrom, "Dirty Flag": one
-   * narrow way in, where the flag is set).
-   */
+  /** The serial of the latest entry of any of these kinds, 0 when none was written: the document's revisions */
   serialOf(...kinds: readonly ChangeKind[]): number {
     let latest = 0;
     for (const kind of kinds) latest = Math.max(latest, this.lastOf.get(kind) ?? 0);
     return latest;
   }
 
-  /**
-   * Goes on from where `other` stands: its serial and the latest serial of
-   * each kind, with none of its entries (a reader asking about them is told
-   * `null`, everything changed). A working copy of the document
-   * (`RoadDoc.clone`) is at the same revisions as the document it was copied
-   * from, so the live network can be taken over as it stands.
-   */
+  /** Goes on from where `other` stands: its serial and the latest serial of each kind, with none of its entries */
   continueFrom(other: ChangeJournal): void {
     this.serial = other.serial;
     this.count = 0;
@@ -267,21 +178,13 @@ export class ChangeJournal {
     this.written = null;
   }
 
-  /**
-   * Goes on from `other` as a working copy's diary (`RoadDoc.fork`): as
-   * `continueFrom`, and every entry written from here on is kept whole,
-   * however many, for the original to take (`take`).
-   */
+  /** Goes on from `other` as a working copy's diary (`RoadDoc.fork`) */
   forkFrom(other: ChangeJournal): void {
     this.continueFrom(other);
     this.written = [];
   }
 
-  /**
-   * Writes a working copy's entries into this diary, which stands
-   * where the copy's started: each the same entry at the same serial - what
-   * the same edits made here would have written - and the copy's cause after.
-   */
+  /** Writes a working copy's entries into this diary, which stands where the copy's started */
   take(from: ChangeJournal): void {
     const entries = from.written;
     if (!entries) throw new Error('ChangeJournal.take: not a working copy\'s diary');
@@ -337,15 +240,7 @@ export class ChangeJournal {
     this.written?.push(entry);
   }
 
-  /**
-   * The entries after `since` (oldest first), of these kinds only when given;
-   * `null` if some were forgotten. With kinds, only their own entries are
-   * read, and none when none was written since (`serialOf`): the revision a
-   * reader holds tells it at once - Salsa's last-changed revision per
-   * durability, `runtime.rs` `revisions`. NOT the whole diary walked for a
-   * kind that did not move: one building more was one entry more for every
-   * reader of the ground.
-   */
+  /** The entries after `since` (oldest first), of these kinds only when given; `null` if some were forgotten. */
   since(since: number, kinds?: readonly ChangeKind[]): Change[] | null {
     if (kinds) {
       if (since >= this.serialOf(...kinds)) return [];
@@ -367,20 +262,13 @@ export class ChangeJournal {
     return out;
   }
 
-  /**
-   * Whether a change after `since`, of these kinds, reaches `area` (`null`:
-   * a reader with nothing on the map). An area may be its items' own
-   * rectangles: then only a change reaching one of them counts.
-   */
+  /** Whether a change after `since`, of these kinds, reaches `area` (`null`: a reader with nothing on the map). */
   touches(since: number, area: ChangeArea, kinds?: readonly ChangeKind[]): boolean {
     if (area === null || since >= this.serial) return false;
     const list = isRect(area) ? [area] : area;
     if (list.length === 0) return false;
     if (kinds) {
-      // Each kind's own entries, newest first, back to `since`: no list made
-      // and sorted per question. DO NOT go through `since` here: a building's
-      // plants asking "did the ground move under me" made and sorted every
-      // entry since it was planted, buildings x entries a change (2026-10-15).
+      // DO NOT go through `since` here: a building's plants asking "did the ground move under me" made and sorted every entry
       if (since >= this.serialOf(...kinds)) return false;
       for (const kind of kinds) {
         const log = this.byKind.get(kind);
@@ -398,12 +286,7 @@ export class ChangeJournal {
     return false;
   }
 
-  /**
-   * The ids the entries of these kinds after `since` carry, each once; null
-   * when it cannot say (an entry forgotten, or one without ids: everything).
-   * A one-off question about a span of the diary (`RoadDoc.roadIdsChangedFrom`),
-   * not a reader that follows it (`JournalCursor`).
-   */
+  /** The ids the entries of these kinds after `since` carry, each once; null when it cannot say */
   idsSince(since: number, kinds: readonly ChangeKind[]): Set<number> | null {
     const entries = this.since(since, kinds);
     if (!entries) return null;

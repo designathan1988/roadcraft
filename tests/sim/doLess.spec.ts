@@ -6,14 +6,7 @@ import { SimWorld } from '@sim/world';
 import { step, tickWork } from '@sim/pipeline';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 
-/**
- * DOING LESS, AND THE SAME (docs/relatorio-desempenho-mapas-enormes-2026-10-11.md
- * 5.1, phase 1): a tick that visits only the lanes with a vehicle, the lanes
- * an edit left behind and the signals that can change (`SimWorld.doLess`)
- * is the tick that visits everything - the same vehicles, lanes, signals and
- * people, tick by tick, exactly - through edits that take lanes away and add
- * new ones.
- */
+/** DOING LESS, AND THE SAME (phase 1) */
 const BLOCK = 120;
 
 /** A grid of `n` x `n` blocks with a road off the map at two corners: traffic comes in and leaves. */

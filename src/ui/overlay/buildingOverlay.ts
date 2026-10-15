@@ -19,12 +19,7 @@ import type { Handle } from '@world/buildings/handles';
 import { type Building, type FaceId, volumeById } from '@world/buildings/types';
 import { HOVER, INVALID, SELECTION } from './palette';
 
-/**
- * The building tool's hairlines on the overlay canvas: the hovered and the
- * selected building, the selected volume as a wire box, the picked facade bay,
- * the drag handles and a label saying what the ghost is or what is wrong with
- * it. Everything is projected through `project`, at its real height.
- */
+/** The building tool's hairlines on the overlay canvas */
 export interface BuildingOverlayInput {
   readonly project: (x: number, y: number, z: number) => Vec2;
   readonly stage?: 'sketch' | 'shape' | 'facade' | 'roof';
@@ -100,9 +95,7 @@ export function drawBuildingOverlay(ctx: CanvasRenderingContext2D, input: Buildi
 
   const sel = input.selected;
   if (sel) {
-    // The cutting and clipping blocks are not drawn as mass: they are shown
-    // as dashed boxes while the building is selected, so they can be seen,
-    // clicked, moved and changed like any other block.
+    // The cutting and clipping blocks are not drawn as mass
     for (const o of sel.building.volumes) {
       if (o.mode !== 'void' && o.mode !== 'intersect') continue;
       const colour = o.mode === 'void' ? '#ff8a7a' : '#8ab8ff';
@@ -126,9 +119,7 @@ export function drawBuildingOverlay(ctx: CanvasRenderingContext2D, input: Buildi
     const b = sel.building;
     const v = volumeById(b, sel.volume);
     if (v) {
-      // No wire box over the building: a thin line where the selected volume
-      // stands, and its roof edge, is enough to say what is selected without
-      // hiding what it looks like.
+      // No wire box over the building: a thin line where the selected volume stands, and its roof edge
       const corners = volumeCorners(b, v, 0.4);
       ring(corners, sel.floor + volumeElevation(b, v, v.base), SELECTION, 1.25);
       ring(volumeCorners(b, v, 0.2), sel.floor + volumeHeight(b, v), SELECTION_FAINT, 1);
@@ -137,9 +128,7 @@ export function drawBuildingOverlay(ctx: CanvasRenderingContext2D, input: Buildi
           const f = edgeFrame(v, side);
           const local = { x: f.x + f.tx * f.length / 2 + f.nx * 1.3, y: f.y + f.ty * f.length / 2 + f.ny * 1.3 };
           const world = localToWorld(b, local.x, local.y);
-          // The side's drag arrow stands on the same mid-edge point: the
-          // length sits just above it, touching, never over it (labels above
-          // their point read best: arXiv 2407.11996).
+          // The side's drag arrow stands on the same mid-edge point: the length sits just above it, touching, never over it
           const arrow = input.handles.find((h) => h.kind === 'side' && h.side === side);
           const handleAt = arrow ? project(arrow.x, arrow.y, arrow.z) : project(world.x, world.y, sel.floor + 1);
           const at = { x: handleAt.x, y: handleAt.y - 19 };

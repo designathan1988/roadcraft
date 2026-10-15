@@ -9,13 +9,7 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
-/**
- * A works' loading yard is laid with lorry docks, each square in front of a
- * loading door of the hall, its door end at the hall's back wall - where a
- * lorry reverses to be unloaded (`lotPlan.ts`, `docks.ts`). Before, the
- * docks were spaced along the back from its corner, and stood in front of
- * blank wall as often as of a door.
- */
+/** A works' loading yard is laid with lorry docks, each square in front of a loading door of the hall */
 
 const flat = (): number => 0;
 const paved = (x: number, y: number): number =>
@@ -42,8 +36,7 @@ describe('lorry docks at the loading doors', () => {
       const doors = facadeBays(h).filter((bay) => bay.component === 'loadingDoor' && bay.level === 0);
       for (const d of lorryDocks(h)) {
         docks++;
-        // The loading door the dock's door end stands at: its middle within the lorry's own
-        // margin of the dock's (0.6 m: a door near the lot's edge), on its face.
+        // The loading door the dock's door end stands at: its middle within the lorry's own margin of the dock's
         const hit = doors.find((bay) => Math.hypot(bay.x - d.door.x, bay.y - d.door.y) < m(0.65));
         if (hit) atDoor++;
         expect(Math.hypot(d.open.x - d.door.x, d.open.y - d.door.y)).toBeGreaterThan(m(8));

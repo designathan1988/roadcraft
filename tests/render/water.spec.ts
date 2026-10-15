@@ -12,14 +12,7 @@ import {
   waterTextureSize,
 } from '@render/water';
 
-/**
- * What the water owes the shader, stated as tests.
- *
- * None of this needs a GL context: the normal map is baked into a byte array
- * rather than a canvas, and the geometry builder only ever touches numbers. The
- * one thing a headless runner genuinely cannot check — that the injected GLSL
- * compiles — is checked by `npm run verify:visual`, which boots the real app.
- */
+/** What the water owes the shader, stated as tests. */
 
 /** A bowl, so a disc of water at level 0 has a real bed and a real shore. */
 const bowl = (x: number, y: number): number => Math.hypot(x, y) / 12 - 20;
@@ -42,8 +35,7 @@ describe('waterNormalTexels', () => {
   });
 
   it('points every normal out of the surface', () => {
-    // A tangent-space normal whose z falls to or below the encoding midpoint is
-    // one pointing into the surface, which lights the water from underneath.
+    // A tangent-space normal whose z falls to or below the encoding midpoint is one pointing into the surface
     const data = waterNormalTexels(64);
     for (let i = 2; i < data.length; i += 4) expect(data[i] as number).toBeGreaterThan(127);
   });
@@ -60,8 +52,7 @@ describe('waterNormalTexels', () => {
   });
 
   it('tiles: the wrap seam is no sharper than the texture is anywhere else', () => {
-    // The whole reason the bake uses periodic noise. A seam shows up as a step
-    // in the normal down one column, and nothing else in the image looks like it.
+    // The whole reason the bake uses periodic noise.
     const size = 64;
     const data = waterNormalTexels(size);
     const at = (x: number, y: number, channel: number): number =>
@@ -96,8 +87,7 @@ describe('the quality tier and the clock', () => {
   });
 
   it('wraps the clock on a whole number of tiles, so the wrap is invisible', () => {
-    // Without this the scroll offset jumps at the wrap and the river stutters
-    // once every sixteen minutes.
+    // Without this the scroll offset jumps at the wrap and the river stutters once every sixteen minutes.
     for (const drift of WATER_DRIFTS) {
       for (const axis of drift) {
         expect(Number.isInteger(axis * WATER_CLOCK_WRAP)).toBe(true);
@@ -150,8 +140,7 @@ describe('unifiedWaterGeometry', () => {
   });
 
   it('builds nothing where the land stands above the surface', () => {
-    // The invariant that matters most: water hanging in open air is worse than
-    // no water. A level under the ground must produce no triangles at all.
+    // The invariant that matters most: water hanging in open air is worse than no water.
     const geometry = unifiedWaterGeometry(disc(-40), () => 0);
     expect(geometry.getAttribute('position')?.count ?? 0).toBe(0);
   });
@@ -204,15 +193,13 @@ describe('unifiedWaterGeometry', () => {
       shallowest = Math.min(shallowest, depth.getX(i));
     }
     expect(wrong).toBe(0);
-    // A flat depth would make the tint, the opacity ramp and the foam band all
-    // constant, which is the defect the attribute exists to fix.
+    // A flat depth would make the tint, the opacity ramp and the foam band all constant
     expect(deepest).toBeCloseTo(20, 0);
     expect(shallowest).toBeLessThan(1);
   });
 
   it('winds every face upwards and normals it upwards', () => {
-    // Front faces, so the sheet is rasterised once rather than twice, and a
-    // plane normal, so the Fresnel term does not break into per-cell facets.
+    // Front faces, so the sheet is rasterised once rather than twice, and a plane normal
     const geometry = unifiedWaterGeometry(disc(0), bowl);
     const position = attribute(geometry, 'position');
     const normal = attribute(geometry, 'normal');
@@ -232,8 +219,7 @@ describe('unifiedWaterGeometry', () => {
   });
 
   it('fills the hollow a river runs into, to the level of the river, and stops at its shore', () => {
-    // A channel at -5 from the river's disc to a pit 50 deep; banks at +5. The
-    // sheet used to end where the brush's reach ended, hanging over the pit.
+    // A channel at -5 from the river's disc to a pit 50 deep; banks at +5.
     const ground = (x: number, y: number): number => {
       if (Math.hypot(x - 160, y) < 60) return -50;
       if (Math.abs(y) < 10 && x > -40 && x < 170) return -5;
@@ -262,8 +248,7 @@ describe('unifiedWaterGeometry', () => {
   });
 
   it('runs the surface downhill when the stamps disagree about the level', () => {
-    // The union's whole point: two overlapping stamps at different levels give a
-    // sloping river, not two flat sheets with a step between them.
+    // The union's whole point: two overlapping stamps at different levels give a sloping river
     const flat = (): number => -30;
     const geometry = unifiedWaterGeometry(
       [

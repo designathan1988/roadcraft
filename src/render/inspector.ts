@@ -7,20 +7,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 
-/**
- * THE INSPECTION CAMERA (development builds only).
- *
- * The play camera is an isometric rig clamped at a 4 m tall view, where a
- * driver is a handful of pixels: nothing about a seated pose, a mirror or a
- * wheel on a slope can be judged from it. This renders the SAME scene - the
- * frame the play camera has just prepared, so culling, instancing and the
- * shadow frustum are those of the spot being looked at - from any angle and
- * distance, at any resolution, and hands back a PNG.
- *
- * `interior` cuts the scene with two clipping planes in world space: one
- * above the seated heads (the roof), one along the camera side of a vehicle
- * (the near door), so the people inside can be seen whole.
- */
+/** THE INSPECTION CAMERA (development builds only). */
 interface InspectShot {
   /** Point looked at, world units: (x, y) on the map and `h` its height. */
   readonly x: number;
@@ -35,11 +22,7 @@ interface InspectShot {
   readonly fov?: number;
   readonly width?: number;
   readonly height?: number;
-  /**
-   * Cut away a vehicle's roof and near side: its heading (radians), its roof
-   * cut height above `h`, half its width, and its centre when the shot is
-   * framed on something else (a seat).
-   */
+  /** Cut away a vehicle's roof and near side: its heading */
   readonly interior?: { readonly heading: number; readonly roofCut: number; readonly halfWidth: number;
     readonly cx?: number; readonly cy?: number };
 }
@@ -81,8 +64,7 @@ export function createInspector(renderer: WebGLRenderer, scene: Scene): Inspecto
         // Keep what is on the far side of the vehicle's camera-side flank.
         const hx = Math.cos(spec.interior.heading);
         const hy = Math.sin(spec.interior.heading);
-        // The vehicle's left in world (x, y) is (-hy, hx); the camera side is
-        // whichever flank faces the camera.
+        // The vehicle's left in world (x, y) is (-hy, hx); the camera side is whichever flank faces the camera.
         const toCameraX = Math.cos(spec.azimuth);
         const toCameraY = Math.sin(spec.azimuth);
         const leftFacing = -hy * toCameraX + hx * toCameraY > 0 ? 1 : -1;
@@ -95,10 +77,7 @@ export function createInspector(renderer: WebGLRenderer, scene: Scene): Inspecto
         );
         renderer.clippingPlanes = [roof, side];
       }
-      // To the canvas itself, at the shot's size, and read straight back in
-      // the same task: an offscreen target would skip the tone mapping and
-      // colour conversion three applies only on screen, and the picture would
-      // not be the game's.
+      // To the canvas itself, at the shot's size, and read straight back in the same task
       const size = renderer.getSize(new Vector2());
       const ratio = renderer.getPixelRatio();
       renderer.setPixelRatio(1);

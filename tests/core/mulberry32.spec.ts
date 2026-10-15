@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '@core/rng';
 
-/**
- * The one mulberry32 gives, bit for bit, what the copies it replaced gave
- * (people, hair, plants, facades): the same seed, the same model.
- */
+/** The one mulberry32 gives, bit for bit, what the copies it replaced gave (people, hair, plants, facades) */
 function copyAsItWas(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

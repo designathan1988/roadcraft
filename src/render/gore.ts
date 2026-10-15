@@ -3,26 +3,14 @@ import {
 } from 'three';
 import { m } from '@world/units';
 
-/**
- * What a body opened by a bullet or a blast shows (the player, 2026-10-06:
- * organs out of a belly - hanging, falling, spread on the ground - and now
- * and then the bone of a limb torn off): a loop of gut hanging out of the
- * wound on a chain of particles (Verlet, as the ragdolls are), swinging with
- * the body and dragging on the ground, now and then torn loose to fall;
- * organs dropped on the street; a bone's end standing out of a stump. Wet
- * and dark, not bright: instanced, a draw for each.
- */
+/** What a body opened by a bullet or a blast shows */
 
 /** Three's frame (y up). */
 type Ends = () => readonly [Vector3, Vector3] | null;
 
 export interface Gore {
   readonly group: Group;
-  /**
-   * Guts out of an opened belly: hanging from `anchor()` (the belly's point
-   * on the body, three's frame), until it returns null or the loop tears
-   * loose by itself; `kick` the way they spill.
-   */
+  /** Guts out of an opened belly: hanging from `anchor()` */
   spill(anchor: () => Vector3 | null, kick: Vector3): void;
   /** Organs dropped from a point (a body torn open), thrown by `kick`. */
   scatter(at: Vector3, count: number, kick: Vector3): void;
@@ -218,10 +206,7 @@ export function createGore(): Gore {
       }
       bones.count = b;
       cuffs.count = b;
-      // Only what is drawn, uploaded and drawn: three uploads a whole buffer
-      // whose `needsUpdate` has no ranges (`WebGLAttributes.updateBuffer`),
-      // and an empty mesh still goes through both render lists - 100 KiB a
-      // frame for the guts alone, with nobody hurt.
+      // Only what is drawn, uploaded and drawn: three uploads a whole buffer whose `needsUpdate` has no ranges
       for (const mesh of [segments, organs, bones, cuffs]) {
         mesh.visible = mesh.count > 0;
         if (!mesh.visible) continue;

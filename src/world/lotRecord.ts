@@ -1,21 +1,11 @@
 import type { Vec2 } from '@core/vec2';
 import type { ZoneDensity, ZoneUse } from './zones';
 
-/*
- * A lot's record and the test of a point in it (`lots.ts` re-exports both).
- * Their own file: the lots' store (`lotStore.ts`, `openLots.ts`) reads them,
- * and importing them from `lots.ts`, which reaches the document and the
- * network, closed an import cycle (`tests/arch/imports.spec.ts`).
- */
+/* A lot's record and the test of a point in it (`lots.ts` re-exports both). */
 
 export interface Lot {
   readonly id: number;
-  /**
-   * The boundary, counter-clockwise (the inside on the left of each side):
-   * any polygon - four corners as generated, more where the player drew one,
-   * many along a curved side. The first side (corners 0 -> 1) is the front,
-   * on the street.
-   */
+  /** The boundary, counter-clockwise (the inside on the left of each side): any polygon */
   readonly corners: readonly Vec2[];
   readonly use?: ZoneUse;
   readonly density?: ZoneDensity;

@@ -27,14 +27,7 @@ import { simplified } from '../mesh/simplify';
 import { m } from '@world/units';
 import { pullTowardEye } from '../depthConvention';
 
-/**
- * Share of people awake, by hour from midnight: 100 % less the share asleep in
- * the American Time Use Survey 2007-11 (BLS table A-3,
- * https://www.bls.gov/tus/tables/a3_0711.htm). A lit window is a room with
- * somebody home and awake in it (Richardson et al., "Domestic lighting: a
- * high-resolution energy demand model", 2009: lights follow active occupancy
- * once the daylight outside drops), so this is the share of rooms lit after dark.
- */
+/** Share of people awake, by hour from midnight: 100 % less the share asleep in the American Time Use Survey 2007-11 */
 const AWAKE_BY_HOUR = [
   0.174, 0.095, 0.063, 0.051, 0.082, 0.146, 0.34, 0.579, 0.755, 0.864, 0.924, 0.951,
   0.964, 0.959, 0.958, 0.961, 0.964, 0.97, 0.975, 0.973, 0.95, 0.855, 0.628, 0.349,
@@ -49,28 +42,13 @@ function awakeShare(hour: number): number {
 }
 /** The share the glass reads (`setNight`). */
 const roomsAwake = { value: awakeShare(22) };
-/**
- * How bright a room seen through its window is by day, as light it sends out
- * (`setNight`): a room is lit by the daylight its window lets in, not by the
- * sun on the facade, so it is drawn unlit behind the glass, as interior
- * mapping draws it (van Dongen 2008; SimCity's, rebuilt by Golus) - a fifth
- * of its colour in full day (an interior is far darker than the street
- * outside; a quarter drew every room as a lit picture), none at night (the
- * lamps take over).
- */
+/** How bright a room seen through its window is by day, as light it sends out (`setNight`) */
 const ROOM_DAYLIGHT = 0.2;
 const roomDaylight = { value: 0 };
 /** Seconds since the kit was made, for a television's flicker (`roomLamps.ts`). */
 const tvClock = { value: 0 };
 
-/**
- * Everything the buildings layer draws with, built ONCE per renderer.
- *
- * CLAUDE.md: materials and textures are made once and never inside a
- * rebuild, and repeated scene parts are instanced. Each component part here
- * is a unit geometry in a component frame - X along the facade, Y up, Z out
- * of the wall - scaled and turned per instance by `buildingMesh.ts`.
- */
+/** Everything the buildings layer draws with, built ONCE per renderer. */
 
 export type PartKind =
   | 'glass'
@@ -115,26 +93,14 @@ export const PART_KINDS: readonly PartKind[] = [
 
 /** The lantern beside a front door: a warm lamp behind frosted glass. */
 const PORCH_LIGHT = 0xffd49a;
-/**
- * A lit room's mean brightness over the glass (`roomLit` in the pane's
- * shader: 0.55-1.25 for a lit room, 0.45-1.35 drawn by lot, both 0.9 on
- * average), so the mean lit pane sits at `NIGHT_LUMINANCE.window`.
- */
+/** A lit room's mean brightness over the glass */
 const ROOM_LIT_MEAN = 0.9;
 
 /** The lantern beside a front door: width, height and depth out of the wall; its gap from the door's edge. */
 export const PORCH_LAMP = { w: m(0.16), h: m(0.26), d: m(0.12), gap: m(0.4) } as const;
 /** How far the wash of its light (the `wash` part, placed at the lantern's centre) stands out of the wall. */
 const WASH_OUT = m(0.01);
-/**
- * Outside lights after dark. 43 % of homes leave one on all night (EIA,
- * Residential Energy Consumption Survey 2024, table HC5.9: 57.5 of 132.5
- * million); the others light theirs while somebody is up (LRC/NYSERDA
- * assume about 4 hours a night), so with the share awake (`awakeShare`).
- * Each lamp draws its own lot by where it stands, in cells of about 4 m, so
- * a lantern, the light it throws on the wall and the lamps of one gate draw
- * the same.
- */
+/** Outside lights after dark. 43 % of homes leave one on all night */
 const ALL_NIGHT = 0.43;
 /** The share of outside lights lit at a clock time (hours). */
 function outsideLit(hour: number): number {
@@ -188,10 +154,7 @@ export interface BuildingKit {
   /** The furniture models, built the first time an interior is drawn. */
   furniture(): { readonly geometry: Readonly<Record<FurnitureKind, BufferGeometry>>; readonly material: MeshStandardMaterial };
   setGhostValid(valid: boolean): void;
-  /**
-   * Lights the windows from inside as night falls: 0 by day, 1 at night;
-   * `hour` (clock hours) decides how many rooms are lit (`awakeShare`).
-   */
+  /** Lights the windows from inside as night falls: 0 by day, 1 at night; `hour` */
   setNight(dark: number, hour?: number): void;
   dispose(): void;
 }
@@ -250,11 +213,7 @@ function quad(w: number, h: number, x: number, y: number, z: number, axis: 'z' |
   return g;
 }
 
-/**
- * The far versions: what of a part is seen from a distance, its faces to the
- * street only. A frame bar is a pixel or less from the overview; its sides,
- * top and back were five sixths of its triangles and two million in a town.
- */
+/** The far versions: what of a part is seen from a distance, its faces to the street only. */
 function frameFarGeometry(): BufferGeometry {
   const t = 0.045;
   const parts = [
@@ -304,10 +263,7 @@ function roofRailingGeometry(): BufferGeometry {
   return merged;
 }
 
-/**
- * A door leaf in the component frame: a slab with two raised panels on each
- * leaf half, a lock rail between them and a handle - not a brown rectangle.
- */
+/** A door leaf in the component frame */
 function doorGeometry(): BufferGeometry {
   const parts: BufferGeometry[] = [box(1, 1, 0.6, 0, 0, -0.2)];
   for (const x of [-0.24, 0.24]) {
@@ -322,11 +278,7 @@ function doorGeometry(): BufferGeometry {
 }
 
 /** A shop awning: a sloped canvas from the wall (y 0, z 0) down and out, with a valance. */
-/**
- * A louvred shutter leaf: a stile-and-rail frame round slats tilted to shed
- * rain, the persiana of a Brazilian sash or casement window. Unit size, X
- * across, Y up, Z out of the wall.
- */
+/** A louvred shutter leaf: a stile-and-rail frame round slats tilted to shed rain */
 function louvreGeometry(): BufferGeometry {
   const t = 0.09;
   const parts: BufferGeometry[] = [
@@ -345,11 +297,7 @@ function louvreGeometry(): BufferGeometry {
   return merged;
 }
 
-/**
- * A glass parapet: a clear pane the full width standing on the slab, a slim
- * metal cap along its top. Unit width, unit height from Y 0 (the floor) up,
- * centred on Z 0.
- */
+/** A glass parapet: a clear pane the full width standing on the slab, a slim metal cap along its top. */
 function glassRailGeometry(): BufferGeometry {
   const pane = box(1, 0.92, 0.02, 0, 0.48, 0);
   const merged = mergeGeometries([pane]) as BufferGeometry;
@@ -357,12 +305,7 @@ function glassRailGeometry(): BufferGeometry {
   return merged;
 }
 
-/**
- * A bay's rack of sun fins: six vertical blades across the unit width, the
- * storey's height, standing out of the wall (Z, unit depth centred on 0).
- * One instance a bay, scaled to it: the fins drawn one by one were thirty
- * thousand instances in a city.
- */
+/** A bay's rack of sun fins: six vertical blades across the unit width, the storey's height, standing out of the wall */
 const BRISE_FINS = 6;
 function briseGeometry(): BufferGeometry {
   const t = 0.035;
@@ -377,9 +320,7 @@ function awningGeometry(): BufferGeometry {
   const canvas = new BoxGeometry(1, 0.04, 1.08);
   canvas.rotateX(Math.atan2(0.75, 1));
   canvas.translate(0, -0.38, 0.5);
-  // The valance hangs from the canvas's front edge, overlapping it a little:
-  // set apart from it by hand, it left a slot of sky between the two (the
-  // player, 2026-10-13, "buraco no meio").
+  // The valance hangs from the canvas's front edge, overlapping it a little
   canvas.computeBoundingBox();
   const edge = canvas.boundingBox!;
   const valance = box(1, 0.28, 0.025, 0, edge.min.y + 0.03 - 0.14, edge.max.z - 0.0125);
@@ -417,40 +358,29 @@ export function createBuildingKit(): BuildingKit {
   const concrete = new MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.82, metalness: 0 });
   const metal = new MeshStandardMaterial({ color: 0x33373a, roughness: 0.45, metalness: 0.55 });
   const material: Record<PartKind, Material> = {
-    // Both sides in the shadow pass: a pane is one-sided, and three draws a
-    // front-sided material's BACK faces for shadows, so a pane facing the sun
-    // would let it straight through.
-    // Glossy enough to carry the sky. A dielectric (metalness 0, Filament "Metallic"): its sheen is the 4 %
-    // Fresnel reflection that grows towards grazing, never a tinted mirror.
+    // Both sides in the shadow pass: a pane is one-sided, and three draws a front-sided material's BACK faces for shadows
     glass: new MeshStandardMaterial({ color: 0x7c8e98, roughness: 0.06, metalness: 0, envMapIntensity: 1.6, shadowSide: DoubleSide }),
-    // White: each frame takes its building's trim as an instance colour
-    // (`buildingMesh.ts` COLOURED_PARTS) - black, bronze, green, wood, white.
+    // White: each frame takes its building's trim as an instance colour (`buildingMesh.ts` COLOURED_PARTS)
     frame: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.05 }),
     concrete,
     door: new MeshStandardMaterial({ color: 0x6b4a33, roughness: 0.55, metalness: 0 }),
     shutter: new MeshStandardMaterial({ color: 0x9aa1a4, roughness: 0.5, metalness: 0.45 }),
-    // Its own material, white, coloured per instance like the frames: a
-    // material shared with uncoloured batches would switch program variants.
+    // Its own material, white, coloured per instance like the frames
     railing: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.55 }),
     roofRailing: metal,
     // Per-instance colours (with the frames and railings), and it alone uses this material.
     awning: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 }),
     column: concrete,
-    // Window variety: a pane that reflects less (a darker room behind it) -
-    // no two rows of windows alike.
+    // Window variety: a pane that reflects less (a darker room behind it) - no two rows of windows alike.
     glassDark: new MeshStandardMaterial({ color: 0x5d6c74, roughness: 0.08, metalness: 0, envMapIntensity: 1.3, shadowSide: DoubleSide }),
-    // Pool water: clear, glossy and a little turquoise, the tiled floor showing
-    // through it - not a blue tile texture laid at the rim.
+    // Pool water: clear, glossy and a little turquoise, the tiled floor showing through it
     water: new MeshStandardMaterial({
       color: 0x58c4dd, roughness: 0.03, metalness: 0.15, envMapIntensity: 1.8,
       transparent: true, opacity: 0.62, depthWrite: false,
     }),
     // The lantern beside a front door: frosted glass by day, a lamp after dark.
     lamp: new MeshStandardMaterial({ color: 0xf1ebdd, roughness: 0.35, metalness: 0, emissive: PORCH_LIGHT, emissiveIntensity: 0 }),
-    // The light the lantern throws on the wall round it: laid on the wall
-    // additively, as a decal (pulled towards the eye so it never fights the
-    // wall for depth), seen only after dark.
-    // Sun fins and window surrounds, in the trim's colour per instance (`COLOURED_PARTS`).
+    // The light the lantern throws on the wall round it: laid on the wall additively, as a decal
     fin: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0 }),
     // Brise-soleil racks, concrete or painted metal in the trim's colour per instance.
     brise: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0 }),
@@ -460,9 +390,7 @@ export function createBuildingKit(): BuildingKit {
     glassRail: new MeshStandardMaterial({
       color: 0xa9c4c4, roughness: 0.05, metalness: 0.2, envMapIntensity: 1.4, transparent: true, opacity: 0.42, depthWrite: false,
     }),
-    // The props on the facades and balconies (`facadeProps.ts`): toned per
-    // vertex (a condenser's dark grille), tinted per instance. The leaves are
-    // single strips, seen from both sides.
+    // The props on the facades and balconies (`facadeProps.ts`): toned per vertex
     acUnit: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.55, metalness: 0.15 }),
     pot: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 }),
     foliage: new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.75, metalness: 0, side: DoubleSide, shadowSide: DoubleSide }),
@@ -480,19 +408,12 @@ export function createBuildingKit(): BuildingKit {
     }),
   };
   for (const [kind, m] of Object.entries(material)) m.name = `building-part-${kind}`;
-  // A part laid on the shell in its plane - a balcony's slab on the roof of
-  // the block beside it, a sill on its wall - wins it for depth everywhere
-  // instead of pixel by pixel (z-fighting: the player, 2026-10-13, "objetos se
-  // sobrepondo e piscando"): pulled towards the eye by a few depth steps, as
-  // a decal is (OpenGL `glPolygonOffset`, three's `Material.polygonOffset`).
-  // The source meant every part so (its `coplanar.spec`) and the parts here
-  // had lost it.
+  // A part laid on the shell in its plane - a balcony's slab on the roof of the block beside it, a sill on its wall
   for (const m of Object.values(material)) pullTowardEye(m, 1, 4);
   prefilterThinParts(material, THIN_PROPS);
   scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
   scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
-  // The furniture's models, made once: drawn in a cut-open interior, and
-  // their colours read by the windows for the piece seen through them.
+  // The furniture's models, made once
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
@@ -508,8 +429,7 @@ export function createBuildingKit(): BuildingKit {
   });
   const ghostParts = ghostShell.clone();
 
-  // The faded copies: same colour and maps, a fraction of the presence, and no
-  // depth write, so the edited building reads through them.
+  // The faded copies: same colour and maps, a fraction of the presence, and no depth write
   const dim = (m: MeshStandardMaterial): MeshStandardMaterial => {
     const faded = m.clone();
     faded.transparent = true;
@@ -536,12 +456,7 @@ export function createBuildingKit(): BuildingKit {
   };
   const geometries = new Set<BufferGeometry>([...Object.values(geometry), ...Object.values(far)]);
   const farShadows = new Set(Object.keys(far) as PartKind[]);
-  // LOD OF THE SMALL PROPS: the balconies' life is 80-240 triangles a piece
-  // with no far version, a pixel or two each from the overview (2026-10-14).
-  // Simplified once by meshoptimizer (`mesh/simplify.ts`, error 4 % of the
-  // prop's size: 2 cm on a 0.5 m pot, 0.15 px at the far zoom of 7.5 px/m),
-  // drawn from afar as the hand-made far frames are (`layer.ts` `applyDetail`).
-  // NÃO trocar por cortar as peças de longe: a versão simplificada é a mesma peça.
+  // LOD OF THE SMALL PROPS: the balconies' life is 80-240 triangles a piece with no far version
   const farReady = Promise.all(SIMPLIFIED_FAR.map(async (kind) => {
     const lighter = await simplified(geometry[kind], 0.3, 0.04);
     if (lighter === geometry[kind]) return;
@@ -563,8 +478,7 @@ export function createBuildingKit(): BuildingKit {
     dimParts,
     massing,
     finishTone: finishAlbedo(),
-    // Glass, doors and shutters close the openings for the sun: without them
-    // the shadow of every building is a lattice of lit windows.
+    // Glass, doors and shutters close the openings for the sun
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS]),
     furniture() {
       if (!furniture) {
@@ -579,9 +493,7 @@ export function createBuildingKit(): BuildingKit {
         roomsAwake.value = awakeShare(hour);
         outsideOn.value = outsideLit(hour);
       }
-      // Rooms lit behind the glass: a warm glow, brighter than any lit wall
-      // (`lightLevels.ts`), less behind the darker glass.
-      // White: each room's lamp gives the colour (`roomLamps.ts`, luminance 1).
+      // Rooms lit behind the glass: a warm glow, brighter than any lit wall (`lightLevels.ts`), less behind the darker glass.
       const room = NIGHT_LUMINANCE.window / ROOM_LIT_MEAN;
       for (const [kind, k] of [['glass', 1], ['glassDark', 0.64]] as const) {
         const mat = material[kind] as MeshStandardMaterial;

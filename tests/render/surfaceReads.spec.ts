@@ -11,30 +11,7 @@ import { layCity } from '@editor/cityGenerator';
 import type { SceneMaterials } from '@render/materials';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 
-/**
- * THE ROAD SURFACES' PER-VERTEX READS (`roadSurfaces.ts`, `world/elevation.ts`):
- * every point of a tile remembered while it is read (`RoadElevation.remembering`),
- * the footway's outline filed by its straight pieces (`fromFootway`), the
- * ground read only where the height blends into it. The meshes are the bytes
- * the reads made before any of that (commit 8434df1): every attribute and
- * index, with the verge on its own material and on the terrain's.
- * DO NOT update these digests to make a change pass: a different digest is a
- * different road on screen. Moved a second time, 2026-10-15, with the triangles' diagonals
- * turned to Delaunay's (`tileShape.ts` `flipToDelaunay`): the same outline and vertices of
- * every piece, other diagonals inside them - photographed before and after in the same views
- * (a crossing, its curb ramps, the zebra, the footway): the same picture. A third time the same day with the
- * vertices that are the same in every attribute made one (`tileMesh.ts` `weldVertices`): the same triangles from
- * fewer vertices, proved corner by corner in `tests/render/weldVertices.spec.ts`.
- *
- * Moved once, 2026-10-15, with the inputs kept road by road (`roadSurfaceInputs.ts`),
- * compared mesh by mesh with the build before: the city's every mesh the same bytes,
- * only the paint's meshes in the catalogue's order (`PAINT_COLOURS`) instead of the
- * order the map first painted them in; the fixture's the same but for the grass
- * verge's heights, at most 0.034 mm apart - its fall read off the footways' outline
- * made round each cell from the footways there (`SurfaceInputs.footwayEdges`), not
- * cut out of one union of the whole town, whose far crossings moved its vertices by
- * Clipper's grid (0.04 mm, `CLIPPER_SCALE`).
- */
+/** DO NOT update these digests to make a change pass: a different digest is a different road on screen. */
 const materials = new Proxy({}, {
   get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
 }) as unknown as SceneMaterials;

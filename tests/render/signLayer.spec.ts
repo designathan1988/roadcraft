@@ -12,14 +12,7 @@ import { m } from '@world/units';
 import { createSignLayer, signProduct } from '@render/signLayer';
 import { proveIncremental } from '../support/derivedEquivalence';
 
-/**
- * THE SIGNS ON THE SPINE (`signLayer.ts`): the signs kept from the diary are,
- * at every step of random edits - roads drawn and demolished, signs and
- * street names placed one by one and in batches, items taken away, the paint
- * standard changed -, the signs made from nothing; a landscaping entry stands
- * no junction again (its plates do not read the landscaping); and the plate
- * compiled ahead is drawn with the program a sheet's plates are.
- */
+/** THE SIGNS ON THE SPINE (`signLayer.ts`): the signs kept from the diary are, at every step of random edits */
 
 const span = m(400);
 
@@ -143,8 +136,7 @@ describe('the signs compiled ahead', () => {
     layer.group.traverse((o) => { if ((o as Mesh).isMesh) drawn.set(o.name, o as Mesh); });
     const warm = layer.warm();
     expect(new Set(warm.map((w) => w.name))).toEqual(new Set(drawn.keys()));
-    // What three keys a program by (`WebGLPrograms.getParameters`): the material's kind and parameters,
-    // a map or none, the alpha test, the side, the instancing and its colours, the shadow cast.
+    // What three keys a program by (`WebGLPrograms.getParameters`)
     const key = (mesh: Mesh): string => {
       const mat = mesh.material as MeshStandardMaterial;
       const instanced = mesh as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown };

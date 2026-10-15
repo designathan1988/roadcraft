@@ -4,15 +4,7 @@ import { orientedPolyline } from '../geometry';
 import { roadType } from '../roadTypes';
 import { m } from '../units';
 
-/**
- * THE RULES OF A JUNCTION (docs/source/VIAS.md V5): who goes first, as the source;
- * the signs are derived from it (V6). Brazilian practice (CTB art. 29, III):
- * where nothing is signed, a road ("rodovia") goes before the road it meets,
- * whoever circulates in a roundabout goes before whoever enters it, and
- * otherwise the one coming from the driver's right goes first. A junction
- * with signs gives each leg a rule: priority, give way ("Dê a preferência",
- * R-2) or stop ("Parada obrigatória", R-1).
- */
+/** THE RULES OF A JUNCTION: who goes first, as the source; the signs are derived from it (V6). */
 export type ApproachRule = 'priority' | 'yield' | 'stop';
 const APPROACH_RULES: readonly ApproachRule[] = ['priority', 'yield', 'stop'];
 
@@ -21,7 +13,7 @@ export interface ApproachRuleEntry {
   readonly rule: ApproachRule;
 }
 
-/** A signal's settings (docs/source/VIAS.md V5); absent: adaptive, the game's own timings. */
+/** A signal's settings; absent: adaptive, the game's own timings. */
 export interface SignalSettings {
   /** 'fixed': each stage its green, in order, every cycle (needed for a green wave); absent: adaptive. */
   readonly mode?: 'fixed';
@@ -77,11 +69,7 @@ function roadRank(doc: RoadDoc, segment: SegmentId): number {
   return s?.section?.priority ?? s?.type ?? 0;
 }
 
-/**
- * The road a junction is ON: the pair of legs whose lesser rank is the
- * highest, the straighter pair on a tie. Null when no pair stands out (every
- * leg the same rank and no straight pair: nothing is the main road).
- */
+/** The road a junction is ON: the pair of legs whose lesser rank is the highest, the straighter pair on a tie. */
 export function mainRoadLegs(doc: RoadDoc, nodeId: NodeId): readonly [SegmentId, SegmentId] | null {
   const node = doc.node(nodeId);
   if (!node || node.incident.length < 2) return null;
@@ -114,11 +102,7 @@ export function mainRoadLegs(doc: RoadDoc, nodeId: NodeId): readonly [SegmentId,
   return best;
 }
 
-/**
- * The rule of one leg of a junction with signs ('priority' control): the
- * player's own, or by default the main road's legs priority and every other
- * leg give way.
- */
+/** The rule of one leg of a junction with signs ('priority' control) */
 export function legRule(doc: RoadDoc, node: RoadNode, segment: SegmentId): ApproachRule {
   const own = node.approachRules?.find((e) => e.segment === segment)?.rule;
   if (own) return own;
@@ -133,14 +117,7 @@ export const isHighwayClass = (doc: RoadDoc, segment: SegmentId): boolean => {
   return id === 'highway' || id === 'ramp';
 };
 
-/**
- * The sign a leg's driver meets at a junction (docs/source/VIAS.md V6), derived from
- * the junction's control as the simulation reads it (`admission.ts`
- * `rightOfWay`): "Pare em todas" a stop on every leg; "Dê a preferência" and
- * a mini-roundabout a give-way on every leg (R-2 at each entry); "Placas"
- * each leg's rule, the main road unsigned. Automatic, signal and nothing
- * signed put up no sign (the game decides, a signal head, CTB art. 29).
- */
+/** The sign a leg's driver meets at a junction */
 export type ApproachSign = 'stop' | 'yield';
 export function approachSign(doc: RoadDoc, node: RoadNode, segment: SegmentId): ApproachSign | null {
   if (node.incident.length < 3) return null;

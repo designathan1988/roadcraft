@@ -9,87 +9,22 @@ import { idmAccel, type Obstacle } from './idm';
 
 /** How near the place it stops at a vehicle no longer changes lane, u. */
 const COMMUTE_HOLD = m(60);
-/**
- * Lane choice: the route's, and the driver's.
- *
- * ## Two kinds of change, and why they are not the same decision
- *
- * A **mandatory** change is one the route needs. Lane discipline in
- * `laneIsPlausible` makes each turn legal from exactly one lane — a right turn
- * only from the outermost, a left only from the innermost — which is what stops
- * a car crossing the carriageway to reach its turn. `planFrom` publishes
- * `desiredLane` once, when the movement is chosen, and this stage executes it.
- * It is deliberately NOT re-decided here: an earlier version re-scored lane
- * costs every link, and the whole fleet then migrated into whichever lane had
- * the cheaper turn menu — a standing queue emptied itself sideways instead of
- * discharging.
- *
- * A **discretionary** change is one the driver wants: the car in front is slow
- * and the next lane is clear. Without it every vehicle inherits the speed of
- * the slowest vehicle ahead of it for the length of the block, which is why a
- * bicycle on an avenue used to gather a silent procession of cars behind it.
- * This is what "overtake slow vehicles" means, and it is a different decision
- * with a different failure mode — oscillation rather than migration.
- *
- * ## MOBIL, and the three things that keep it from oscillating
- *
- * The incentive is the standard one: change if my acceleration improves by more
- * than a threshold, having weighted the two drivers I inconvenience by my own
- * politeness. Three guards turn it from a paper model into something shippable:
- *
- *  - a **refractory period**, because a driver sitting exactly on the threshold
- *    flips between two lanes every tick;
- *  - a **keep-to-the-kerb bias**, so the incentive is asymmetric and the fleet
- *    drains back outward instead of accumulating in the fast lane;
- *  - **no discretionary change on a junction approach**, because that is where
- *    mandatory changes need the room, and a driver weaving at a stop line is
- *    both wrong and the thing most likely to strand someone in the wrong lane.
- *
- * Both thresholds and the politeness are the DRIVER's, not constants, so one
- * car pulls out to pass where the one behind it waits.
- *
- * This stage never writes `lanelet`. It publishes `laneChange` when the move is
- * safe right now, and `integrate` — the only writer of position — performs it.
- */
+/** Lane choice: the route's, and the driver's. ## Two kinds of change */
 
-/**
- * Seconds of travel needed to complete a change, floored for a standing car.
- * Matches the eased change (`laneChangeLength`, about three seconds a lane)
- * so the body has settled before it reaches the stop line.
- */
+/** Seconds of travel needed to complete a change, floored for a standing car. */
 const LANE_CHANGE_TIME = 3.5;
 
-/**
- * Least room a mandatory change needs, whatever the speed.
- *
- * Below this the vehicle is committed to the lane it is in: it keeps the route
- * it can actually drive and misses the turn, which is what a real driver does
- * and is always recoverable on the next block.
- */
+/** Least room a mandatory change needs, whatever the speed. */
 const LANE_CHANGE_MIN_ROOM = m(4);
 
-/**
- * Room a DISCRETIONARY change needs — six seconds of travel, and much more than
- * the mandatory floor.
- *
- * Overtaking into the last stretch before a junction is how a driver ends up in
- * a lane that cannot serve their turn, with no room left to get back. Leaving
- * that stretch to mandatory changes only is the whole reason the two decisions
- * are separated.
- */
+/** Room a DISCRETIONARY change needs — six seconds of travel, and much more than the mandatory floor. */
 const OVERTAKE_TIME = 6;
 const OVERTAKE_MIN_ROOM = m(18);
 
 /** Shortest interval between two discretionary changes by the same driver. */
 const LANE_CHANGE_COOLDOWN = 6;
 
-/**
- * Bias towards the kerb side, in units of acceleration.
- *
- * Lane 0 is the innermost, so a HIGHER index is nearer the kerb. Moving outward
- * earns this; moving inward has to beat it. Without the asymmetry MOBIL is
- * perfectly reversible and the fleet ends up in whichever lane it drifted into.
- */
+/** Bias towards the kerb side, in units of acceleration. */
 const KEEP_SIDE_BIAS = 0.14;
 
 /** Hardest braking a discretionary change may impose on the car behind. */
@@ -98,14 +33,7 @@ const SAFE_BRAKE_SHARE = 0.55;
 /** An obstacle far enough away to be no obstacle at all. */
 const CLEAR_ROAD: Obstacle = { gap: 1e6, speed: 1e6, kind: 'vehicle' };
 
-/**
- * Seconds a driver signals before moving across.
- *
- * Road codes ask for the indicator in good time before a change (CTB art. 35
- * and 196); two to three flashes is what drivers actually give. A mandatory
- * change in a crawling queue gets a shorter lead, because the gap it is
- * signalling for is moving at walking pace and will not wait.
- */
+/** Seconds a driver signals before moving across. */
 const SIGNAL_LEAD = 1.4;
 const SIGNAL_LEAD_CRAWLING = 0.8;
 
@@ -119,26 +47,20 @@ export function stepLaneChange(w: SimWorld): void {
       continue;
     }
 
-    // The body still occupies the space between lanes until the previous
-    // manoeuvre finishes. Starting another transfer here compounds the lateral
-    // offset and can put the entire vehicle beyond the carriageway edge.
+    // The body still occupies the space between lanes until the previous manoeuvre finishes.
     if (Math.abs(v.lateral) > m(0.008)) continue;
 
-    // A granted movement pins the lane: the claim was arbitrated for this
-    // lanelet's connector, and moving would abandon it mid-transaction. A rear
-    // still inside a junction pins it for the same reason.
+    // A granted movement pins the lane
     if (v.admittedConnector || v.clearingConnectors.length > 0) {
       v.laneIntent = null;
       continue;
     }
-    // Pulling in to the kerb, or standing there with a door open: the car
-    // stays where the errand put it (`kerbStops.ts`).
+    // Pulling in to the kerb, or standing there with a door open: the car stays where the errand put it (`kerbStops.ts`).
     if (v.kerbStop) {
       v.laneIntent = null;
       continue;
     }
-    // Pulling in to the place it stops at on this lane (a bus at its stop, a
-    // resident's car at the bay it parks in): it stays in the lane by it.
+    // Pulling in to the place it stops at on this lane (a bus at its stop, a resident's car at the bay it parks in)
     if (v.commute && v.commute.lanelet === lane.id && v.commute.at - v.s < COMMUTE_HOLD) {
       v.laneIntent = null;
       continue;
@@ -151,8 +73,7 @@ export function stepLaneChange(w: SimWorld): void {
       wanted = mandatory(w, v, target);
       mandatoryMove = wanted !== null;
     } else if (target !== lane.id) {
-      // Keep a discretionary intent alive while the move is still worth
-      // making, so the indicator does not flicker with the incentive.
+      // Keep a discretionary intent alive while the move is still worth making
       wanted = discretionary(w, v, lane.id, lane.length, v.laneIntent);
     }
 
@@ -175,11 +96,7 @@ export function stepLaneChange(w: SimWorld): void {
   }
 }
 
-/**
- * The adjacent lane the route asks for, or null when there is no longer room
- * to get there (the vehicle keeps the route it can drive and misses the turn,
- * which is always recoverable on the next block).
- */
+/** The adjacent lane the route asks for, or null when there is no longer room to get there */
 function mandatory(w: SimWorld, v: Vehicle, target: LaneletId): LaneletId | null {
   const lane = w.lanelet(v.lanelet);
   const to = w.lanelet(target);
@@ -194,14 +111,13 @@ function mandatory(w: SimWorld, v: Vehicle, target: LaneletId): LaneletId | null
   const steps = Math.abs(to.laneIndex - lane.laneIndex);
   const adjacent = laneletId(lane.segment!, lane.from!, lane.to!,
     lane.laneIndex + Math.sign(to.laneIndex - lane.laneIndex));
-  // Across a solid line, or into a bus lane it may not drive: no (docs/VIAS.md V4).
+  // Across a solid line, or into a bus lane it may not drive: no.
   if (steps === 0 || !w.lanelet(adjacent) || w.rt(adjacent).ghost || !w.graph.changeTargets(lane.id, v.archetype.shape).includes(adjacent)) {
     v.desiredLane = null;
     v.movementIntent = null;
     return null;
   }
-  // Give up only when even easing off to a crawl would not make it; short of
-  // that the driver slows down to fit (`positioningSpeedCap`).
+  // Give up only when even easing off to a crawl would not make it; short of that the driver slows down to fit
   if (lane.length - v.s < roomNeeded(w, v, adjacent, steps, Math.min(v.v, CRAWL))) {
     v.desiredLane = null;
     v.movementIntent = null;
@@ -210,25 +126,13 @@ function mandatory(w: SimWorld, v: Vehicle, target: LaneletId): LaneletId | null
   return adjacent;
 }
 
-/**
- * Road a mandatory change of `steps` lanes needs at `speed`: each lane is
- * signalled for (`SIGNAL_LEAD_CRAWLING` at least) and then driven over its own
- * length (`laneChangeLength`), clear of the stop line.
- */
+/** Road a mandatory change of `steps` lanes needs at `speed`: each lane is signalled for */
 function roomNeeded(w: SimWorld, v: Vehicle, adjacent: LaneletId, steps: number, speed: number): number {
   return (Math.max(LANE_CHANGE_MIN_ROOM, speed * LANE_CHANGE_TIME,
     changeLength(w, v, adjacent, speed) + FINISH_MARGIN) + speed * SIGNAL_LEAD_CRAWLING) * steps;
 }
 
-/**
- * The speed a driver holds while working across to the lane the route needs.
- *
- * A driver with three lanes to cross before the turn does not accelerate to
- * the limit and then find there is no longer room: they ease off so that the
- * changes fit, and that is how the turn is kept. Infinity when no change is
- * pending or when there is room at any speed; the room check in `mandatory`
- * still gives up if even a crawl cannot make it.
- */
+/** The speed a driver holds while working across to the lane the route needs. */
 export function positioningSpeedCap(w: SimWorld, v: Vehicle): number {
   const target = v.desiredLane;
   if (target === null || target === v.lanelet) return Infinity;
@@ -240,8 +144,7 @@ export function positioningSpeedCap(w: SimWorld, v: Vehicle): number {
   if (steps === 0) return Infinity;
   const adjacent = laneletId(lane.segment!, lane.from!, lane.to!,
     lane.laneIndex + Math.sign(to.laneIndex - lane.laneIndex));
-  // A second of travel in hand, so the driver eases off before the room runs
-  // out rather than on the tick it does.
+  // A second of travel in hand, so the driver eases off before the room runs out rather than on the tick it does.
   const left = lane.length - v.s - v.v;
   if (roomNeeded(w, v, adjacent, steps, Math.max(v.v, lane.speedLimit)) <= left) return Infinity;
   // Room falls with speed, so bisect for the fastest speed that still fits.
@@ -270,12 +173,7 @@ function changeLength(w: SimWorld, v: Vehicle, target: LaneletId, speed = v.v): 
   return laneChangeLength(other.centre.closestPoint(here).distance, speed, v.archetype.length);
 }
 
-/**
- * The change the driver wants: the best neighbouring lane, or none.
- *
- * Only immediate neighbours are considered. A two-lane jump is two decisions,
- * and taking it as one is how a car crosses a carriageway in a single tick.
- */
+/** The change the driver wants: the best neighbouring lane, or none. */
 function discretionary(
   w: SimWorld,
   v: Vehicle,
@@ -285,27 +183,17 @@ function discretionary(
 ): LaneletId | null {
   if (v.age - v.lastLaneChangeAge < LANE_CHANGE_COOLDOWN) return null;
   if (laneLength - v.s < Math.max(OVERTAKE_MIN_ROOM, v.v * OVERTAKE_TIME)) return null;
-  // MOBIL weighs the accelerations round a change into a neighbouring lane:
-  // a carriageway of one lane has none, and its leader and follower were
-  // looked up for every car on it every tick for nothing.
+  // MOBIL weighs the accelerations round a change into a neighbouring lane
   const targets = w.graph.changeTargets(laneId, v.archetype.shape);
   if (!targets.length) return null;
-  // The street the route turns into next. A lane that cannot reach it is no
-  // overtaking lane: moving there only earns a mandatory change straight back,
-  // which is the lane-to-lane oscillation measured before this at 38 % of all
-  // changes (the kerb bias pulling a car out of its turning lane, the route
-  // pulling it in again).
+  // The street the route turns into next.
   const turnInto = nextOutSegment(w, v);
 
   const here = w.lanelet(laneId);
   const index = here?.laneIndex ?? 0;
   const wanted = desiredSpeed(v.driver, v.v0, v.age);
 
-  // "Does this lane go anywhere" is asked with `exitsOf`, not with the router's
-  // cost. The cost function recurses five hops over every branch, and this
-  // question is asked twice per vehicle per tick: on a city that is a full route
-  // search per car per frame, for an answer that only ever needed to be
-  // "somewhere or nowhere".
+  // "Does this lane go anywhere" is asked with `exitsOf`, not with the router's cost.
   const onward = w.graph.exitsOf(laneId).length > 0;
   const ahead = leaderIn(w, laneId, v.s, v.id);
   const behind = followerIn(w, laneId, v.s - v.archetype.length, v.id);
@@ -319,11 +207,7 @@ function discretionary(
     if (!to || to.kind !== 'link' || w.rt(candidate).ghost) continue;
     if (Math.abs((to.laneIndex ?? 0) - index) !== 1) continue;
     if (to.length < v.s) continue;
-    // Never move into a dead end — but only when the lane being left is not one
-    // itself. A carriageway with no junction at either end has no onward
-    // connector from ANY of its lanes, and the first version of this test
-    // therefore refused every overtake on a straight road: measured at zero
-    // lane changes in three minutes of a mixed fleet queued behind a bicycle.
+    // Never move into a dead end — but only when the lane being left is not one itself.
     if (onward && w.graph.exitsOf(candidate).length === 0) continue;
     if (turnInto !== null && !w.graph.exitsOf(candidate)
       .some((id) => w.connector(id)?.outSegment === turnInto)) continue;
@@ -331,10 +215,7 @@ function discretionary(
     const theirLeader = leaderIn(w, candidate, v.s, v.id);
     const theirFollower = followerIn(w, candidate, v.s - v.archetype.length, v.id);
 
-    // Would the car behind me over there have to brake harder than a driver
-    // reasonably can? That is the safety criterion, and it is separate from the
-    // incentive: a change nobody is inconvenienced enough to veto can still be
-    // one that forces an emergency stop.
+    // Would the car behind me over there have to brake harder than a driver reasonably can?
     let follower = 0;
     if (theirFollower) {
       const f = theirFollower.vehicle;
@@ -373,16 +254,10 @@ function discretionary(
     const bias = outward ? KEEP_SIDE_BIAS : -KEEP_SIDE_BIAS;
     const gain = theirs - mine + v.driver.politeness * (follower + released) + bias;
 
-    // Once signalling, the driver carries on while it is still worth it at
-    // all; a fresh decision needs the full threshold.
+    // Once signalling, the driver carries on while it is still worth it at all; a fresh decision needs the full threshold.
     const threshold = candidate === signalling ? v.driver.laneThreshold * 0.35 : v.driver.laneThreshold;
     if (!(gain > threshold && gain > bestGain)) continue;
-    // Deciding needs only a gap that could open; the move itself waits for the
-    // indicator and then checks the gap again (`stepLaneChange`). MOBIL's two
-    // criteria must both hold (Kesting, Treiber and Helbing 2007), so the
-    // order is free: the geometric gap check - curves sampled, the queue
-    // walked - only for a candidate the incentive would take, not for every
-    // lane beside every car (it was most of the cost of this stage).
+    // Deciding needs only a gap that could open; the move itself waits for the indicator and then checks the gap again
     if (candidate !== signalling && !gapIsSafe(w, v, candidate)) continue;
     bestGain = gain;
     best = candidate;
@@ -404,14 +279,7 @@ interface Neighbour {
   readonly kind: 'vehicle';
 }
 
-/**
- * The nearest vehicle ahead of `s` in a lane, as an obstacle.
- *
- * The lane's occupancy list is kept sorted by arc position, so this is a binary
- * search rather than a scan: MOBIL asks for four of these per candidate lane
- * per vehicle per tick, and a linear probe would make the cost of lane changing
- * quadratic in the length of a queue — precisely when there is a queue.
- */
+/** The nearest vehicle ahead of `s` in a lane, as an obstacle. */
 function leaderIn(w: SimWorld, laneId: LaneletId, s: number, self: number): Neighbour | null {
   const order = w.rt(laneId).order;
   let lo = 0;
@@ -459,20 +327,7 @@ function followerIn(w: SimWorld, laneId: LaneletId, rear: number, self: number):
   return null;
 }
 
-/**
- * Whether the body can get out of the lane it is in before whatever stands in
- * that lane stops it.
- *
- * A change is a curve driven over road, and until no corner of the body is
- * over the line it is still in the old lane (its `shadow`) and still follows
- * whatever is ahead there (`shadowLeaderObstacle`). The target lane was the
- * only one checked, so a car queued a few metres behind a car stopped at the
- * kerb pulled out, got a body length sideways and stopped - held by the very
- * car it was passing - across both lanes, blocking the one it had moved into
- * as well: measured on a straight avenue with a signal at its end, one car
- * stood like that for 47 s. A driver who cannot get round in the room there
- * is waits behind in its own lane, so the change is not started.
- */
+/** Whether the body can get out of the lane it is in before whatever stands in that lane stops it. */
 function canLeaveLane(w: SimWorld, v: Vehicle, target: LaneletId): boolean {
   const lane = w.lanelet(v.lanelet);
   const other = w.lanelet(target);
@@ -493,13 +348,7 @@ function canLeaveLane(w: SimWorld, v: Vehicle, target: LaneletId): boolean {
   return true;
 }
 
-/**
- * Where the rear of the nearest vehicle ahead of `s` in a lane will come to
- * rest. The queue is walked from its front, each vehicle stopping at the
- * nearest thing standing ahead of it (a red, a car at the kerb) or at its jam
- * gap behind the one in front: a car rolling up to the back of a queue is not
- * a car moving off. Infinity when nothing ahead will stand.
- */
+/** Where the rear of the nearest vehicle ahead of `s` in a lane will come to rest. */
 function restingRearAhead(w: SimWorld, laneId: LaneletId, s: number, self: number): number {
   const order = w.rt(laneId).order;
   let limit = Infinity;
@@ -526,17 +375,7 @@ function restingReach(v: Vehicle): number {
   return reach;
 }
 
-/**
- * Room a driver leaves behind a vehicle standing at the kerb, to pull out and
- * round it from a standstill into the lane beside: the road a crawling change
- * needs before the body is out of this lane (`canLeaveLane`), plus the jam
- * gap. Zero where there is no lane to pull out into.
- *
- * Without it the queue closed up to a jam gap behind the stopped car, and the
- * first car in it could never get round: every change it could start from
- * there would stop across both lanes, so it either did that or waited the
- * whole stop out.
- */
+/** Room a driver leaves behind a vehicle standing at the kerb */
 export function pullOutRoom(w: SimWorld, v: Vehicle): number {
   const lane = w.lanelet(v.lanelet);
   if (!lane || lane.kind !== 'link') return 0;
@@ -553,18 +392,11 @@ export function pullOutRoom(w: SimWorld, v: Vehicle): number {
   return best;
 }
 
-/**
- * Road driven before no corner of the body is over the line between two lanes
- * `start` apart, on a change `length` long: where the shadow is released
- * (`integrate.ts`).
- */
+/** Road driven before no corner of the body is over the line between two lanes `start` apart, on a change `length` long */
 function shadowClearDistance(v: Vehicle, start: number, length: number): number {
   const line = Math.abs(start) / 2;
   const steps = 24;
-  // On the first half of the quintic change, the centre is still at least
-  // half a lane away, so its body cannot be clear. On the second half, both
-  // remaining offset and body reach decrease for the fleet's length > width
-  // profiles. Search the same discrete samples without evaluating all 24.
+  // On the first half of the quintic change, the centre is still at least half a lane away, so its body cannot be clear.
   let lo = steps / 2, hi = steps;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
@@ -579,39 +411,19 @@ function shadowClearDistance(v: Vehicle, start: number, length: number): number 
   return (length * hi) / steps;
 }
 
-/**
- * Whether the target lane has room beside this vehicle right now.
- *
- * Both gaps are measured bumper to bumper and both must hold: moving in front
- * of a follower that cannot brake for it is the same collision as moving into
- * the back of a leader.
- */
+/** Whether the target lane has room beside this vehicle right now. */
 function gapIsSafe(w: SimWorld, v: Vehicle, target: LaneletId): boolean {
   if (!canLeaveLane(w, v, target)) return false;
   const rear = v.s - v.archetype.length;
-  // Road the change itself will take, to be free of anybody slower ahead in
-  // the new lane. A change started into the tail of a standing queue ended
-  // with the car stopped half across the line, holding BOTH lanes (its
-  // shadow) for as long as the queue stood - measured, a car held an
-  // admitted movement in the old lane through its whole green.
+  // Road the change itself will take, to be free of anybody slower ahead in the new lane.
   const finish = v.s + changeLength(w, v, target) + FINISH_MARGIN;
-  // And to be over before the lane ends. A change still sliding at the stop
-  // line leaves the car standing across both lanes while it waits there, and
-  // an admitted car in the lane it left waits behind its shadow for a
-  // movement the waiting car cannot take either: measured where a boulevard
-  // merged into a street, a car began a 53-unit change 48 units from the line
-  // and the merge stood still for over a minute.
+  // And to be over before the lane ends.
   const to = w.lanelet(target);
   if (to && to.kind === 'link' && finish > to.length) return false;
-  // Nor to be caught by a queue in the new lane that is still rolling now but
-  // will have stopped before the change is over: the car would stop half way
-  // across, as surely as behind a queue already standing.
+  // Nor to be caught by a queue in the new lane that is still rolling now but will have stopped before the change is over
   if (restingRearAhead(w, target, v.s, v.id) < finish) return false;
 
-  // Every BODY in the target lane, not just its occupancy list: a vehicle
-  // still sliding out of it, and the tail of one whose front has already
-  // entered the junction, are both physically there. Measured before this: a
-  // sedan moved in beside the last ten metres of a bus that had just turned.
+  // Every BODY in the target lane, not just its occupancy list
   for (const body of w.bodiesIn(target)) {
     const other = body.vehicle;
     if (other.id === v.id) continue;

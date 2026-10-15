@@ -1,10 +1,6 @@
 import type { GardenChange, GardenPlant } from '@render/gardens';
 
-/**
- * The change from the town's lists as last given to the town's lists now (the
- * lists that came and went, by object), as `gardenLists.ts` hands it to the
- * gardens: a test that describes the town whole gives the gardens its change.
- */
+/** The change from the town's lists as last given to the town's lists now */
 export function townChanges(): (lists: readonly (readonly GardenPlant[])[]) => GardenChange {
   let placed = new Set<readonly GardenPlant[]>();
   return (lists) => {

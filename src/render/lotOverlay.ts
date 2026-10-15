@@ -9,30 +9,7 @@ import {
   DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
 } from './lotLattice';
 
-/**
- * The lots drawn in the scene (`world/lots.ts`, the Zoning tool, and the
- * faint zones with the other tools): coloured into the ground by the
- * ground's own shaders - the terrain, the footways, the kerbs, the verges,
- * the carriageways (`applyLotOverlay`) - from the lots as vector shapes in a
- * lattice (`lotLattice.ts`; Nehab & Hoppe 2008, random-access vector
- * graphics). A pixel of the ground finds its 8 m cell and colours itself
- * from the few shapes listed there: exact at every distance (no texture to
- * pixelate up close or blur), on the ground wherever it drew itself (no
- * lift to float over a slope or sink into it), antialiased by its distance
- * to the nearest edge, and outlines of a constant width in metres.
- *
- * Only the shapes that changed are written again: each is keyed by what it
- * is, and the lattice rewrites the cells it touches. The shapes never sample
- * the ground, so a road, a pad or a stroke of the terrain brush redraws no
- * lot; a built lot keeps one number read from it, its level, for its yard's
- * paving drawn by the buildings' materials.
- *
- * DO NOT go back to geometry laid on the ground per lot (a triangulation
- * subdivided to 3 m with `groundAt` at every vertex): 3.5 million vertices
- * built on the CPU for a town of 1 500 lots, 1.3 s that was then spread over
- * frames (`LAY_SLICE_MS`, a slice of 12 ms a frame) - the cost hidden, not
- * removed (OTIMIZACAO.md item 20).
- */
+/** DO NOT go back to geometry laid on the ground per lot */
 export interface LotOverlayInput {
   /** Changes whenever anything drawn changes. */
   readonly key: string;
@@ -44,10 +21,7 @@ export interface LotOverlayInput {
     readonly lineAlpha: number;
     /** Line width, metres on the ground. */
     readonly width: number;
-    /**
-     * A lot with a building: its yard's paving and paths - the building's
-     * own parts, not the ground - are coloured too (`applyLotOverlay`, `building`).
-     */
+    /** A lot with a building: its yard's paving and paths - the building's own parts, not the ground - are coloured too */
     readonly built?: boolean;
   }[];
   readonly lines: readonly { readonly a: Vec2; readonly b: Vec2; readonly colour: number; readonly dashed: boolean; readonly width: number }[];
@@ -66,22 +40,14 @@ const EMPTY = new DataTexture(new Uint32Array(4), 1, 1, RGBAIntegerFormat, Unsig
 EMPTY.internalFormat = 'RGBA32UI';
 EMPTY.needsUpdate = true;
 
-/**
- * Shared by every ground material (`applyLotOverlay`), set by the overlay:
- * the lattice's texture and its frame - x the map's half, y the cell, z the
- * cells a side, w on (1) or off (0).
- */
+/** Shared by every ground material (`applyLotOverlay`), set by the overlay: the lattice's texture and its frame */
 const UNIFORMS = {
   uLots: { value: EMPTY },
   uLotsGrid: { value: new Vector4(MAP_HALF, LOT_CELL, Math.ceil((2 * MAP_HALF) / LOT_CELL), 0) },
   uLotsTiles: { value: Math.ceil(Math.ceil((2 * MAP_HALF) / LOT_CELL) / TILE_CELLS) },
 };
 
-/**
- * How far above or below a built lot's ground level a building's level
- * surface is still its yard (metres): paving, paths and a pool's coping lie
- * at the lot's level, a flat roof or a terrace a storey up does not.
- */
+/** How far above or below a built lot's ground level a building's level surface is still its yard (metres) */
 const LEVEL_REACH = 0.75;
 /** A building's surface facing up at least this much (world normal's y): a wall's never is. */
 const FACING_UP = 0.9;
@@ -98,11 +64,9 @@ const LOT_PARS = /* glsl */ `
     return vec4(lotLinear(v.rgb), v.a);
   }
   // The lots over \`base\` at world point w (x, y), dw/dx and dw/dy the
-  // pixel's footprint (Nehab & Hoppe 2008: parity for inside, the nearest
-  // edge's distance scaled to pixels for the antialiased edge and the stroke).
+  // pixel's footprint Nehab & Hoppe 2008: parity for inside, the nearest edge's distance scaled to pixels for the
   // \`building\`: a building's level surface at world height \`height\`: only
-  // the built lots whose ground level is within LEVEL_REACH of it draw there
-  // (the yard's paving, not a flat roof).
+  // the built lots whose ground level is within LEVEL_REACH of it draw there (the yard's paving, not a flat roof).
   vec3 lotOver(vec3 base, vec2 w, vec2 dx, vec2 dy, float height, bool building) {
     vec2 g = (w + uLotsGrid.x) / uLotsGrid.y;
     if (any(lessThan(g, vec2(0.0))) || any(greaterThanEqual(g, vec2(uLotsGrid.z)))) return base;
@@ -199,18 +163,7 @@ const LOT_PARS = /* glsl */ `
   }
 `;
 
-/**
- * Makes a material colour the lots into itself: chained after whatever it
- * already does to its shader, its colour blended right after the lighting
- * (`opaque_fragment`), so the lots are unlit paint over the lit surface as
- * the transparent sheets of before were, before tone mapping and fog.
- * `world`: a varying of the material already holding the world position
- * (the terrain's `vTerrainAtlas`), or a varying of its own. `building`: a
- * building's material (its shell, its far massing), which draws only the
- * built lots, on its surfaces facing up near their ground level (the yard's
- * paving and paths; never a wall or a roof). The code is always in the
- * shader, switched by the uniform: opening the Zoning tool compiles nothing.
- */
+/** Makes a material colour the lots into itself */
 export function applyLotOverlay(material: Material, key: string, options: { readonly world?: string; readonly building?: boolean } = {}): void {
   const { world, building = false } = options;
   const previous = material.onBeforeCompile.bind(material);
@@ -245,8 +198,7 @@ export function applyLotOverlay(material: Material, key: string, options: { read
       .replace('#include <common>', `#include <common>\n${declare}\n${LOT_PARS}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>
         if (uLotsGrid.w > 0.5) {
-          // World (x, y): three's z is the world's -y. The footprint taken
-          // here, before any branch a pixel's neighbours may not share.
+          // World (x, y): three's z is the world's -y.
           vec2 lotW = vec2(${varying}.x, -${varying}.z);
           vec2 lotDx = dFdx(lotW), lotDy = dFdy(lotW);
           ${building
@@ -260,11 +212,7 @@ export function applyLotOverlay(material: Material, key: string, options: { read
 /** What one shape of the input is, its key: the same key, the same shape. */
 type Keyed = { key: string; make(order: number): LatticeShape };
 
-/**
- * The input's shapes, keyed, in drawing order: the polygons, then the lines,
- * then the dots. A built lot, a line and a dot carry their ground level
- * (`levelOf`, by where they are), in their key.
- */
+/** The input's shapes, keyed, in drawing order: the polygons, then the lines, then the dots. */
 function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: readonly Vec2[]) => number): Keyed[] {
   const out: Keyed[] = [];
   for (const poly of input.polygons) {
@@ -288,8 +236,7 @@ function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: reado
     // A line of no length drew nothing as a ribbon, and draws nothing here.
     if (l.a.x === l.b.x && l.a.y === l.b.y) continue;
     const line = rgba(l.colour, 1);
-    // A line or a dot is drawn over a yard's paving too (a lot's front, its
-    // arrow): it carries the level of the ground under its middle.
+    // A line or a dot is drawn over a yard's paving too (a lot's front, its arrow)
     const where = `${l.a.x},${l.a.y};${l.b.x},${l.b.y}`;
     const level = levelOf(where, [l.a, l.b]);
     out.push({
@@ -309,11 +256,7 @@ function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: reado
   return out;
 }
 
-/**
- * What moves the ground a built lot's level is read from (`surfaceHeightAt`):
- * its level is read again there. Only the built lots' levels: the shapes
- * themselves never ask the ground (`applyLotOverlay`).
- */
+/** What moves the ground a built lot's level is read from (`surfaceHeightAt`): its level is read again there. */
 const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
 
 /** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle. */
@@ -325,11 +268,7 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
   let held = new Map<string, LatticeShape[]>();
   /** The diary's serial the levels were read at. */
   let groundSeen = -1;
-  /**
-   * The ground levels read, by where the shape is: each read once, not on
-   * every pointer move of the Zoning tool (which makes the input again);
-   * forgotten where the ground moved.
-   */
+  /** The ground levels read, by where the shape is: each read once, not on every pointer move of the Zoning tool */
   const levels = new Map<string, number>();
   /** The levels read, by the lattice cell of the point they were read at: those a ground change reaches, found by place. */
   const levelsByCell = new Map<number, Set<string>>();
@@ -404,11 +343,7 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
   return {
     /** The lattice: for the tests, the work an edit cost. */
     lattice,
-    /**
-     * Draws `input` (null: no lots) into the ground from the next frame.
-     * `changes`, the document's diary: where the ground moved, a built lot's
-     * level is read again (the only thing here read from the ground).
-     */
+    /** Draws `input` (null: no lots) into the ground from the next frame. */
     set(input: LotOverlayInput | null, changes?: ChangeJournal): void {
       let moved = false;
       if (changes && changes.version !== groundSeen) {

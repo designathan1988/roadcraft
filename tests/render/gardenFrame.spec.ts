@@ -6,14 +6,7 @@ import { createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
 import { townChanges } from '../support/gardenChange';
 
-/**
- * The gardens' work per frame and per building (docs/PLANO-ESPINHA-2026-10-14.md):
- * `renderer.ts` calls `setMap` every frame, which used to drop the cull, so a
- * still camera walked the whole tree of the town's gardens every frame and the
- * leaf cards were never left out at the map zoom; and every `update` forgot
- * what every store's GPU buffer held, so one garden more sent every plant in
- * view to the GPU again.
- */
+/** The gardens' work per frame and per building */
 const KINDS: GardenPlant['kind'][] = ['tree', 'shrub', 'hedge', 'flowers'];
 function town(count: number, spread: number, seed: number, kinds = KINDS): GardenPlant[][] {
   const rng = new Rng(seed);

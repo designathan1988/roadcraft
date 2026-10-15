@@ -11,32 +11,7 @@ import { createAgentWalkEngine } from '@sim/agents/walk';
 import { blueprintByKey, instantiate } from '@world/buildings/blueprints';
 import { fixtureDoc, LAYOUTS, layoutDoc } from './bodies';
 
-/**
- * WHAT THE PLAYER SEES GO WRONG WITH THE AGENTS, measured on the drawn bodies
- * and the vehicles, in the engines the game runs (the agents' walking engine
- * with the scenery's life - the map filled when it opens, then people and
- * cars coming and going at the road ends and the lots - Drive v2):
- *
- * - `zebraStand`: longest anybody stood still on a zebra (the cars wait for
- *   them: a frozen junction);
- * - `pavementStand`: longest anybody stood still elsewhere, neither waiting at
- *   a kerb, nor queueing for one or behind somebody walking the same way
- *   (`queuedBehind`), nor sitting or talking;
- * - `fidgets`: a standing body turning its head and shoulders to and fro -
- *   over 20 degrees swung back and forth within a second - per person-minute;
- * - `back`, `side`, `jump`, `flip`: steps against the heading (any faster
- *   than 0.05 m/s - the body's own envelope allowed 0.15 m/s backwards, and a
- *   threshold of 0.25 m/s could never see it), sideways faster than a
- *   shuffle, teleports, side-to-side pops;
- * - `milling`: a body that walks without getting anywhere - more than 0.6 m
- *   walked in 2 s, less than 35 % of it as headway - as two friends circling
- *   each other on a pavement do: share of person-time, and the longest spell;
- * - `hotspots`: where on the map the back steps and milling happen (cells of
- *   25 u), so a defect is looked at where it is;
- * - `closest`: the nearest two bodies came, metres;
- * - `junction`: longest a junction had a queue at its line and let nobody in;
- * - `still`: longest any one vehicle stood without moving (a red included).
- */
+/** WHAT THE PLAYER SEES GO WRONG WITH THE AGENTS, measured on the drawn bodies and the vehicles */
 export interface AgentDefects {
   name: string;
   people: number;
@@ -84,17 +59,11 @@ function people(sim: SimWorld, peds: number, traffic: number): SimWorld {
   sim.pedestrianIntensity = peds;
   sim.trafficIntensity = traffic;
   sim.demandMultiplier = traffic || 1;
-  // How many people and cars the panel asks for (`main.ts` from the settings):
-  // the scenery puts that many on the map as it opens and keeps them coming
-  // and going (`sim/ambient`, `vehicles/spawn.ts`). Left unset, nobody came.
-  // The whole crowd is there from the first second now, so the 90 s window
-  // sees what used to show only after a few minutes (people meeting at
-  // corners, `docs/PROBLEMAS.md` P101).
+  // How many people and cars the panel asks for (`main.ts` from the settings)
   sim.pedestrianCount = peds * 50;
   sim.trafficCount = traffic * 50;
   sim.clock.paused = false;
-  // As the game runs (`main.ts`): the agents' walking engine, nobody living
-  // here, people and cars from the opening, the road ends and the lots.
+  // As the game runs (`main.ts`): the agents' walking engine, nobody living here, people and cars from the opening
   sim.usePedestrianEngine(createAgentWalkEngine());
   sim.driveModel = 'v2';
   sim.ambient.enabled = true;
@@ -135,8 +104,7 @@ export const CITIES: readonly City[] = [
     },
   },
   {
-    // A narrow street of houses, busy with parties and people coming the
-    // other way: two families meeting on one pavement.
+    // A narrow street of houses, busy with parties and people coming the other way: two families meeting on one pavement.
     name: 'narrow-street',
     seconds: 120,
     build: () => {
@@ -151,14 +119,7 @@ export const CITIES: readonly City[] = [
   ...LAYOUTS.map((layout) => ({ name: layout.name, build: () => people(worldOf(layoutDoc(layout, 300).doc, 0x1a70), 6, 2) })),
 ];
 
-/**
- * Somebody standing in a queue: another person walking the same way (headings
- * within 60 degrees) less than 1.2 m ahead, in front of their body. A
- * pedestrian following another stands while the gap is under the one it keeps
- * (SUMO's striping: speed from the distance less the preferred gap), which is
- * queueing, not standing frozen. Two people face to face are not a queue, and
- * the head of a queue still counts, so a frozen queue is still seen.
- */
+/** Somebody standing in a queue: another person walking the same way */
 function queuedBehind(v: SimWorld['pedViews'][number], views: SimWorld['pedViews']): boolean {
   const hx = Math.cos(v.heading), hy = Math.sin(v.heading);
   for (const q of views) {
@@ -231,8 +192,7 @@ export function measureDefects(city: City, seconds: number): AgentDefects {
       if (speed > 3) r.jump++;
       else if (speed > 0.05 && fwd < -0.05) { r.back++; spot(v.x, v.y); }
       else if (Math.abs(lat) > 0.5) r.side++;
-      // Milling: walking, but not getting anywhere. Waiting at a kerb, on a
-      // zebra, sitting or talking are not walks.
+      // Milling: walking, but not getting anywhere.
       const m0 = mill.get(v.id) ?? { steps: [], spell: 0 };
       m0.steps.push({ x: v.x, y: v.y, d: Math.hypot(dx, dy) });
       if (m0.steps.length > millTicks) m0.steps.shift();

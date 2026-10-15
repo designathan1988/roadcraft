@@ -5,14 +5,7 @@ import { Network } from '@world/network';
 import { segmentMarkings } from '@world/markings';
 import { LANE_LINE, roadType } from '@world/roadTypes';
 
-/**
- * YELLOW MEANS ONCOMING TRAFFIC.
- *
- * Every lane divider was painted in the class's centre-line colour, which for
- * streets is yellow, so a one-way street carried a yellow dashed line down its
- * middle - the marking that tells a driver the other lane comes towards them.
- * A line between two lanes running the same way is white.
- */
+/** YELLOW MEANS ONCOMING TRAFFIC. */
 
 function paint(type: number, direction: SegmentDirection) {
   const doc = new RoadDoc();

@@ -12,13 +12,7 @@ const between = (a: number, b: number): number => {
   return Math.min(d, 180 - d);
 };
 
-/**
- * A road drawn onto another road near a junction swung away from where it was
- * drawn: the heading snapped to the WORLD grid even when the road it landed on
- * was not on that grid, so a street drawn square onto an avenue at 21 degrees
- * arrived at 105 - fifteen degrees off - and onto a bend it arrived square to
- * the world axis instead of to the bend.
- */
+/** A road drawn onto another road near a junction swung away from where it was drawn */
 describe('drawing a road onto another road', () => {
   function drawOnto(rotation: number, curved: boolean, relative: number, zoom = 1) {
     const doc = new RoadDoc();
@@ -70,12 +64,7 @@ describe('drawing a road onto another road', () => {
   });
 });
 
-/**
- * The road tool's "length in zone cells" (as Cities: Skylines II's zone cell
- * length snap): a road drawn into open ground is a whole number of 8 m zone
- * cells long, so the zoning grid along it comes out in whole cells; a click
- * (under half a cell) is still a click, not a road.
- */
+/** The road tool's "length in zone cells" (as Cities: Skylines II's zone cell length snap) */
 describe('zone cell length', () => {
   it('draws whole zone cells, and leaves a click alone', async () => {
     const { ZONE_CELL } = await import('@world/zoneGrid');

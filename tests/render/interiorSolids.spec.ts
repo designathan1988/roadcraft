@@ -10,22 +10,7 @@ import type { InteriorSolid, InteriorSolidKind } from '@render/interiorSolids';
 import { seatBaseClip } from '@render/occupants';
 import { m } from '@world/units';
 
-/**
- * THE INTERIOR'S SOLIDS HAVE NAMES (`render/interiorSolids.ts`, docs/PLANO.md
- * 5a): every vertex of a vehicle's cabin belongs to a named piece - the
- * floor, the dashboard, a seat and whose it is, the pedals, a pole - so a
- * seated body against the cabin is a contact of a class, measured.
- *
- * The bodies are the roster's MakeHuman people in the poses of their seat,
- * over the whole idle loop, as the 3 cm cells their skin passes through
- * (`scripts/measure-seated-poses.mjs`), filled: everything the skin encloses
- * is body too, and each cell knows how deep in the body it is. A piece of the
- * cabin in a body is then as deep as the deepest body cell inside it - a
- * cushion a body rests on is in its skin, a knee through a dashboard or a
- * pole through a chest is deep in it. A floor (and a podium a seat stands
- * on) is the ground under the feet: how far the body goes below its top. A
- * door's lining is a sheet facing the cabin: how far the body goes behind it.
- */
+/** THE INTERIOR'S SOLIDS HAVE NAMES (`render/interiorSolids.ts`) */
 const models = (): [string, VehicleModel][] => {
   const out: [string, VehicleModel][] = [];
   for (const a of ARCHETYPES) {
@@ -45,11 +30,7 @@ const CELL = CELLS.cell;
 /** A body cell: where (the body's frame: x its left, y up, z ahead; metres from the pelvis) and how deep in the body, metres. */
 interface BodyCell { readonly at: Vector3; readonly depth: number }
 
-/**
- * The skin's cells filled: the cells no path of empty cells joins to the
- * outside are inside the body; each cell's depth is its distance in cells
- * from the outside (6-connected), the skin's being 0.
- */
+/** The skin's cells filled: the cells no path of empty cells joins to the outside are inside the body */
 function fill(runs: readonly number[]): BodyCell[] {
   const skin: number[] = [];
   for (let i = 0; i < runs.length; i += 2) for (let k = 0; k < runs[i + 1]!; k++) skin.push(runs[i]! + k);
@@ -128,9 +109,7 @@ function pieces(model: VehicleModel): Piece[] {
       box.expandByPoint(t.a).expandByPoint(t.b).expandByPoint(t.c);
       tris.push(t);
     }
-    // A door's lining is the door's skin moved in (`carBody.ts`): a sheet,
-    // whose rim is the edges only one of its triangles has (the corners
-    // welded at 0.1 mm). Every other piece is a closed solid.
+    // A door's lining is the door's skin moved in (`carBody.ts`)
     if (solid.kind !== 'card') return { solid, box, tris, edges: null };
     const key = (v: Vector3): string => `${Math.round(v.x * 1e4 / m(1))},${Math.round(v.y * 1e4 / m(1))},${Math.round(v.z * 1e4 / m(1))}`;
     const count = new Map<string, { n: number; a: Vector3; b: Vector3 }>();
@@ -217,13 +196,7 @@ function contacts(model: VehicleModel): Contact[] {
   return out;
 }
 
-/**
- * How deep a seated body may be in a piece: up to a cell, at the size the
- * body is drawn at, is a contact (a surface on another, at the cells' grain):
- * a body on its cushion and against its backrest and headrest, feet on the
- * floor or on the pedals, an elbow on a door's lining. Deeper is a defect: a
- * knee through a dashboard, legs through a podium, a pole through a chest.
- */
+/** How deep a seated body may be in a piece: up to a cell, at the size the body is drawn at, is a contact */
 
 describe('the interior\'s solids', () => {
   it('name every vertex of every cabin, in pieces, and every seat its own shell', () => {

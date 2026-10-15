@@ -11,31 +11,11 @@ import { createVehicle, snapshot } from '@sim/vehicles/state';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { makeDriver } from '@sim/vehicles/driver';
 
-/**
- * What the player sees, as opposed to what the simulation believes.
- *
- * The simulation was already smooth: `s` advances by `v * DT` and nothing
- * teleports. The RENDER pose was not, and it produced the reported defect of
- * cars "jumping position while driving":
- *
- *   - `vehiclePose` refused to interpolate at all whenever the vehicle had
- *     changed lanelet since the previous snapshot. Entering a junction
- *     connector, leaving one and changing lane are all lanelet changes, so
- *     the car snapped to its new centreline at exactly the three moments the
- *     eye is following it;
- *   - a lane change moved the vehicle a whole lane width sideways in one
- *     tick, with nothing carrying the displacement;
- *   - the heading was never interpolated, so a turning car rotated in
- *     discrete steps.
- *
- * These tests measure the drawn pose directly, tick by tick, against what the
- * vehicle's own speed makes possible.
- */
+/** What the player sees, as opposed to what the simulation believes. */
 
 function grid(): { doc: RoadDoc; net: Network; sim: SimWorld } {
   const doc = new RoadDoc();
-  // A cross plus a parallel street, so there are both junction movements and
-  // sibling lanes for discretionary lane changes.
+  // A cross plus a parallel street, so there are both junction movements and sibling lanes for discretionary lane changes.
   const centre = doc.addNode({ x: 0, y: 0 });
   const ends = [
     doc.addNode({ x: 0, y: -460 }),
@@ -104,8 +84,7 @@ describe('rendered pose', () => {
         if (!before) continue;
 
         const moved = Math.hypot(pose.p.x - before.x, pose.p.y - before.y);
-        // Forward travel this tick, plus the lateral rate a lane change is
-        // allowed to close at, plus a unit of slack for curvature.
+        // Forward travel this tick, plus the lateral rate a lane change is allowed to close at
         const allowed = v.v * DT + 8.5 * DT + 1;
         if (moved - allowed > worst) {
           worst = moved - allowed;
@@ -135,8 +114,7 @@ describe('rendered pose', () => {
 
         let delta = Math.abs((pose.angle - before) % (2 * Math.PI));
         if (delta > Math.PI) delta = 2 * Math.PI - delta;
-        // A tight junction connector is the sharpest thing a vehicle drives;
-        // a quarter turn in a single 16 ms tick is not driving, it is a snap.
+        // A tight junction connector is the sharpest thing a vehicle drives
         if (delta > worst) {
           worst = delta;
           detail = `vehicle ${v.id} turned ${((delta * 180) / Math.PI).toFixed(1)} degrees in one tick`;
@@ -148,8 +126,7 @@ describe('rendered pose', () => {
   });
 
   it('slides across a lane change instead of teleporting', () => {
-    // `lateral` is the unfinished part of a change. It must be non-zero for
-    // several ticks after one happens, and must always decay to zero.
+    // `lateral` is the unfinished part of a change.
     const { sim } = grid();
     let sawSlide = false;
     let worstLateral = 0;
@@ -172,9 +149,7 @@ describe('rendered pose', () => {
   });
 
   it('points a changing vehicle INTO its move, never away from it', () => {
-    // The heading during a change is the direction of travel: forward along
-    // the lane plus the sideways slide. The slide runs along perp(t) with the
-    // opposite sign of `lateral`, so the drawn angle must lean that way.
+    // The heading during a change is the direction of travel: forward along the lane plus the sideways slide.
     const { sim } = grid();
     let checked = 0;
     let wrong = 0;
@@ -182,14 +157,9 @@ describe('rendered pose', () => {
     sim.clock.run(Math.round(120 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.vehicles.values()) {
-        // Only well inside a change, and on the same lanelet as the previous
-        // snapshot so the heading blend itself is not what is being measured.
-        // A change is driven, not timed: a car that committed to it while
-        // stopped in a queue has not started the curve yet and points
-        // straight, which is right — it is not moving sideways either.
+        // Only well inside a change, and on the same lanelet as the previous snapshot so the heading blend itself is not what is
         if (Math.abs(v.lateral) < 3 || v.prev.lanelet !== v.lanelet || Math.abs(v.prev.lateral) < 3) continue;
-        // A change committed while standing still has not begun its curve:
-        // the slope is zero to rounding and the body points straight ahead.
+        // A change committed while standing still has not begun its curve
         if (Math.abs(v.lateralSlope) < 1e-4) continue;
         const lane = sim.lanelet(v.lanelet);
         const pose = vehiclePose(sim, v, 1);
@@ -208,12 +178,7 @@ describe('rendered pose', () => {
   });
 
   it('drives a lane change along the body, never crabbing sideways', () => {
-    // The reported defect: cars "floating sideways" into the next lane. The
-    // offset used to be a timed slide, so a car creeping in a queue kept
-    // moving sideways at full rate while its heading, capped at a few
-    // degrees, could not follow. Measured before the change was driven in
-    // distance: the drawn body moved more than 45 degrees off the direction
-    // it pointed in on 5 % of lane-change ticks, and up to 88 degrees.
+    // The reported defect: cars "floating sideways" into the next lane.
     const { sim } = grid();
     const last = new Map<number, { x: number; y: number }>();
     let checked = 0;
@@ -224,9 +189,7 @@ describe('rendered pose', () => {
       for (const v of sim.vehicles.values()) {
         const pose = vehiclePose(sim, v, 1);
         if (!pose) continue;
-        // Measured at the REAR AXLE, which is what cannot slip sideways: the
-        // body is steered from it, so its middle swings very slightly as the
-        // heading changes, exactly as a real vehicle's does.
+        // Measured at the REAR AXLE, which is what cannot slip sideways
         const back = 0.3 * v.archetype.length;
         const axle = { x: pose.p.x - Math.cos(pose.angle) * back, y: pose.p.y - Math.sin(pose.angle) * back };
         const before = last.get(v.id);
@@ -243,16 +206,12 @@ describe('rendered pose', () => {
     });
 
     expect(checked).toBeGreaterThan(1000);
-    // A car goes where it points. Two degrees covers the curvature of the
-    // road between the body centre and the arc position it is sampled from.
+    // A car goes where it points.
     expect(worst * 180 / Math.PI).toBeLessThan(2);
   });
 
   it('keeps a car stopped half way across a lane angled, not snapped straight', () => {
-    // Built on purpose rather than waited for: lane changes are now only
-    // started when they can be finished (`canLeaveLane`), so a traffic run no
-    // longer reliably leaves a car standing mid-change. The pose of one that
-    // does - a car that had to stop half way - must still follow its curve.
+    // Built on purpose rather than waited for: lane changes are now only started when they can be finished
     const { sim } = grid();
     sim.clock.run(Math.round(40 / DT), () => step(sim, { traffic: true, pedestrians: false }));
     const v = [...sim.vehiclesInIdOrder()].find((candidate) => {
@@ -305,8 +264,7 @@ describe('rendered pose', () => {
       if (!early || !late) continue;
       moved = Math.max(moved, Math.hypot(late.p.x - early.p.x, late.p.y - early.p.y));
     }
-    // A moving fleet must show SOME difference between the start and the end
-    // of a tick, or the renderer is drawing stepped motion.
+    // A moving fleet must show SOME difference between the start and the end of a tick
     expect(moved).toBeGreaterThan(0);
   });
 });

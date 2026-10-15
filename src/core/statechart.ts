@@ -1,17 +1,4 @@
-/**
- * A STATECHART WITH THE SEMANTICS OF W3C SCXML (docs/research/controllers.md),
- * for the game's tools and modes (docs/ARCHITECTURE.md 4.2):
- * - an event is processed to completion (a macrostep): an event sent while one
- *   is being processed goes to the back of an internal queue, emptied before
- *   `send` returns;
- * - a transition exits the states it leaves, innermost first, runs its own
- *   actions, then enters the states it reaches, outermost first;
- * - the innermost active state is asked first, then its parents; within a
- *   state the first transition declared whose guard holds wins;
- * - every transition taken is written down (from, event, to), newest last, in
- *   a ring the debug surface reads.
- * Pure: no DOM, no three.
- */
+/** A STATECHART WITH THE SEMANTICS OF W3C SCXML, for the game's tools and modes */
 
 export interface MachineEvent { readonly type: string }
 
@@ -102,19 +89,7 @@ export class Machine<C, E extends MachineEvent> {
     }
   }
 
-  /**
-   * Takes `t`, declared on `source` (the active state or one of its parents).
-   * The states left and entered are those below the transition's domain, the
-   * SCXML `getTransitionDomain`/`findLCCA` of an external transition
-   * (w3.org/TR/scxml, Appendix D): the innermost PROPER ancestor of the source
-   * that is also a proper ancestor of the target; none, the top. Everything
-   * active below it is exited, innermost first; the target and its ancestors
-   * below it are entered, outermost first.
-   * DO NOT take the shared part of the active leaf's and the target's paths as
-   * the domain: a transition to the source's own parent (or declared on a
-   * parent, to that parent) then neither exited nor re-entered the parent, and
-   * its entry and exit never ran.
-   */
+  /** DO NOT take the shared part of the active leaf's and the target's paths as the domain */
   private take(event: E, t: Transition<C, E>, source: string): void {
     const from = this.current;
     if (t.target === undefined) {

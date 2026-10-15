@@ -10,15 +10,7 @@ import { roadFrame, type RoadFrame } from '@render/vehicleFrame';
 import { m } from '@world/units';
 import { buildInspectionMap } from '../fixtures/inspectionMap';
 
-/**
- * EVERY WHEEL ON THE ROAD, ON EVERY KIND OF ROAD.
- *
- * On the inspection map - a hill with a crest, a hillside, a bridge, an
- * elevated road with its ramps, a tunnel, an acute junction - each road
- * vehicle is set down along every lane, and each of its four wheel contacts
- * must be within 2 cm of its own road's surface. The height is the road's,
- * never the ground's: a bridge or a bore is what it rides on.
- */
+/** EVERY WHEEL ON THE ROAD, ON EVERY KIND OF ROAD. */
 const TOLERANCE = m(0.02);
 
 /** World (x, y, h) of a point on the frame's ground plane, `along` forward and `side` left. */
@@ -101,8 +93,7 @@ describe('vehicle frame', () => {
   });
 
   it('places every part of a vehicle through its one transform', () => {
-    // No part computes its own height: place, the steering wheel and the
-    // seats all go through `toWorld`, which applies the vehicle's quaternion.
+    // No part computes its own height
     const source = readFileSync('src/render/agents.ts', 'utf8');
     for (const fn of ['const place = (', 'const placeSteeringWheel = (', 'const seatWorldInto = (']) {
       const start = source.indexOf(fn);

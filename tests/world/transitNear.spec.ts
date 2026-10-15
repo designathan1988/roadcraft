@@ -9,13 +9,7 @@ import { nearestFootway } from '@world/footwayPath';
 import { type TransitData, emptyTransit, addStop, addTrack, stopNear, stopById, trackPointNear } from '@world/transit';
 import { m } from '@world/units';
 
-/**
- * The public transport tool's questions by place (`editor/transitTools.ts`)
- * answer what the walks over the whole map answered: the footway at a click
- * (the walking network of the whole map, every footway measured), the stop
- * at a click (every stop), the track point the pointer snaps to (every point
- * of every track), the stop by id (`stops.find`).
- */
+/** The public transport tool's questions by place */
 describe('the transit tool by place', () => {
   it('finds the footway the whole walking network found', () => {
     const doc = layCity(planCity({ ...DEFAULT_CITY, size: 'small', seed: 3 }));
@@ -43,8 +37,7 @@ describe('the transit tool by place', () => {
       const got = nearestFootway(net, p, reach, rejects);
       if (want) found++;
       if (rejects) {
-        // Never a point turned down, within reach, and as near as the walk over
-        // the footway's pieces found (to the metre the footway is sampled at).
+        // Never a point turned down, within reach, and as near as the walk over the footway's pieces found
         if (got) { expect(rejects(got), `point ${i}`).toBe(false); expect(got.d).toBeLessThan(reach); }
         if (want) { expect(got, `point ${i}`).not.toBeNull(); expect(got!.d, `point ${i}`).toBeLessThanOrEqual(want.d + m(1)); }
         continue;

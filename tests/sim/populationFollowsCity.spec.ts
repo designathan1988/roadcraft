@@ -11,20 +11,7 @@ import { createAgentWalkEngine } from '@sim/agents/walk';
 import { trafficTarget } from '@sim/vehicles/spawn';
 import { busy, PEOPLE } from '@sim/ambient/demand';
 
-/**
- * THE CITIES ARE EMPTY (the player, 2026-10-11: "A cidade não tem trânsito
- * de carros e nem de pessoas. Todas as cidades são sempre vazias.").
- *
- * The game asked for an absolute 10 cars and 10 people (`editor/persistence.ts`,
- * the panel's default from 2026-10-06), so a crossroads and a town of hundreds
- * of buildings got the same ten (docs/investigacao-populacao.md). It now
- * follows the city (`SimWorld.followCity`): one car per `TRAFFIC_DENSITY` of
- * road times the panel's share and the demand, the scenery's people per 100 m
- * of street by use and hour (`ambient/demand.ts` `PEOPLE` x `busy`).
- *
- * Built here as `main.ts` boots: following the city at the panel's 100 %, the
- * walking engine, the scenery fed from the road ends and the lots.
- */
+/** THE CITIES ARE EMPTY the player, 2026-10-11: A cidade não tem trânsito de carros e nem de pessoas. Todas as cidades são */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },

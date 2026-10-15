@@ -16,18 +16,7 @@ export type RingEdge =
       readonly to: Vec2;
     };
 
-/**
- * A closed boundary made of lines and exact arcs.
- *
- * Arcs stay exact all the way into `Path2D`, so curb returns are crisp at any
- * zoom. The flattened form exists only for validation, hit-testing and
- * containment checks.
- *
- * Winding invariant: every ring handed to the painter must have **positive
- * signed area**. Under a single nonzero fill, a reversed ring would punch a
- * hole instead of contributing to the union, so `ensurePositive()` is mandatory
- * before insertion.
- */
+/** A closed boundary made of lines and exact arcs. */
 export class Ring {
   readonly start: Vec2;
   readonly edges: readonly RingEdge[];
@@ -45,17 +34,7 @@ export class Ring {
     return this.edges.length < 2;
   }
 
-  /**
-   * Vertices approximating the ring, first point NOT repeated at the end.
-   *
-   * The chordal tolerance is `ARC_TOL` and is not a parameter. It used to be
-   * one, but the result was memoised on first call and every later call
-   * silently returned the first tolerance's points — so a caller asking for a
-   * finer flattening got whatever the first caller happened to want. Since the
-   * flattening tolerance is a property of the engine rather than of a call
-   * site, and no caller ever passed anything but the default, the parameter is
-   * gone rather than the memo.
-   */
+  /** Vertices approximating the ring, first point NOT repeated at the end. */
   flatten(): Vec2[] {
     if (this._flat) return this._flat;
     const tol = ARC_TOL;
@@ -84,10 +63,7 @@ export class Ring {
     return out;
   }
 
-  /**
-   * `flatten` as one flat x, y list, made once: what a worker makes the same ring from (`world/junctionBuild.ts`).
-   * DO NOT flatten it again per use: a road's outline is in the surface of every junction near it.
-   */
+  /** DO NOT flatten it again per use: a road's outline is in the surface of every junction near it. */
   flatXY(): Float64Array {
     if (this._flatXY) return this._flatXY;
     const points = this.flatten();
@@ -121,19 +97,7 @@ export class Ring {
     return this.signedArea() >= 0 ? this : this.reversed();
   }
 
-  /**
-   * The same boundary traversed the other way, with arcs kept exact.
-   *
-   * This used to flatten and rebuild through `fromPolygon`, which emits only
-   * line edges — so any ring that came out negatively wound silently lost the
-   * exact curb returns this class exists to preserve, and `ensurePositive()`
-   * calls `reversed()`. The loss was invisible: the flattened outline is the
-   * same shape, just no longer crisp under zoom.
-   *
-   * Vertex `i` is where edge `i` ends and the ring closes back on `start`, so
-   * walking the edges backwards and flipping each one traverses the identical
-   * boundary in the opposite direction.
-   */
+  /** The same boundary traversed the other way, with arcs kept exact. */
   reversed(): Ring {
     const n = this.edges.length;
     if (n === 0) return this;
@@ -190,10 +154,7 @@ function arcDelta(e: Extract<RingEdge, { kind: 'arc' }>): number {
   return Math.abs(d) < EPS ? 0 : d;
 }
 
-/**
- * Builds an arc edge from a centre and two endpoints, choosing the sweep whose
- * central angle is less than PI. For curb returns that sweep is always unique.
- */
+/** Builds an arc edge from a centre and two endpoints, choosing the sweep whose central angle is less than PI. */
 export function arcEdge(c: Vec2, r: number, from: Vec2, to: Vec2): RingEdge {
   const a0 = angleOf(sub(from, c));
   const a1 = angleOf(sub(to, c));

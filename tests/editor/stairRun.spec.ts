@@ -9,12 +9,7 @@ import { type BuildingContext, placeBuilding } from '@editor/buildings';
 import { BuildingTool, type ToolHost, type ToolView } from '@editor/buildingTool';
 import type { EditResult } from '@editor/buildings';
 
-/**
- * A stair laid along a traced path: click the corners of the climb, finish,
- * and one flight lands per segment - turned with the trace, its rise spread
- * over the segments in proportion to their length, so the run lands exactly on
- * the floor above. This is what lets a stair wrap a corner or follow a wall.
- */
+/** A stair laid along a traced path: click the corners of the climb, finish, and one flight lands per segment */
 
 const flat = (): number => 0;
 
@@ -83,8 +78,7 @@ describe('a stair traced as a path', () => {
     const after = doc.buildings.get(building.id)!;
     const stairs = (after.elements ?? []).filter((e) => e.kind === 'stair');
     expect(stairs).toHaveLength(2);
-    // The first flight starts at the ground floor and the second carries on
-    // from where it ended: together they climb exactly one storey.
+    // The first flight starts at the ground floor and the second carries on from where it ended
     const first = stairs[0]!;
     const second = stairs[1]!;
     expect(first.z).toBeCloseTo(levelElevation(after, 0), 6);

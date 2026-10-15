@@ -10,11 +10,7 @@ import weightsBin from '../../../public/models/people/weights-game-engine.bin?ur
 
 import type { BaseMeta, PeoplePacks } from './morph';
 
-/**
- * Loads the MakeHuman packs (about 10 MB gzipped) once, when something first
- * needs a person model: the Person Creator, at the moment. Nothing is fetched
- * at boot.
- */
+/** Loads the MakeHuman packs (about 10 MB gzipped) once, when something first needs a person model */
 
 export interface PeopleAssets {
   readonly packs: PeoplePacks;

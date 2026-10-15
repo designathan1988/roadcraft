@@ -2,12 +2,7 @@ import { mulberry32 as rng } from '@core/rng';
 import { ageFromYears } from './body/macro';
 import { CLOTH_COLOURS, WARDROBE, randomPerson, type BottomStyle, type PersonSpec, type TopStyle } from './spec';
 
-/**
- * The street's people: a fixed roster of MakeHuman bodies, made once from
- * seeds, that the crowd draws (`render/citizenCasting.ts`). Each one is dressed
- * for a wardrobe - a set of clothes that go together - so a party can be
- * dressed to one code, as the casting asks.
- */
+/** The street's people: a fixed roster of MakeHuman bodies, made once from seeds, that the crowd draws */
 type RosterWardrobe = 'casual' | 'smart-casual' | 'business' | 'sport-casual' | 'traditional';
 type RosterAge = 'child' | 'young' | 'adult' | 'senior';
 
@@ -72,11 +67,7 @@ const WARDROBE_SYSTEM = new Set<string>([...WARDROBE.outfits.male, ...WARDROBE.o
 /** Dyes a suit takes: never a party colour. */
 const SOBER: readonly number[] = [0x22252b, 0x2c3550, 0x3a3f47, 0x4a3a2c, 0x5c5c5c, 0x1f3a32];
 
-/**
- * An outfit and its colour that nobody in the roster wears yet: undyed or dyed
- * one of `palette`. Picked freely, 84 people came out in 44 combinations, and
- * a street showed the same blue suit three times over.
- */
+/** An outfit and its colour that nobody in the roster wears yet: undyed or dyed one of `palette`. */
 function dressUnlike(r: () => number, used: Set<string>, outfits: readonly string[], palette: readonly number[]): { outfit: string; outfitTint: number | null } {
   const tints: (number | null)[] = [null, ...palette];
   for (let attempt = 0; attempt < 64; attempt++) {
@@ -120,12 +111,7 @@ export function makeRoster(): RosterEntry[] {
             bottom: pick(r, dress.bottom(female)),
             bottomColour: pick(r, dress.bottomColours.filter((c) => c !== topColour)),
             shoes: wardrobe === 'business' ? pick(r, [0x22252b, 0x3a2418]) : wardrobe === 'sport-casual' ? pick(r, [0xf2f0ea, 0x22252b]) : base.look.shoes,
-            // The MakeHuman outfit for the wardrobe: a suit for business, a
-            // sports suit for sport, everyday clothes otherwise.
-            // Casual people sometimes keep the dress or suit the generator drew.
-            // Children in the casual outfits (a T-shirt and jeans or shorts),
-            // fitted to their bodies like anyone's: the plain painted shells
-            // read as leotards.
+            // The MakeHuman outfit for the wardrobe: a suit for business, a sports suit for sport, everyday clothes otherwise.
             ...(age === 'child' ? { ...dressUnlike(r, used, female ? ['female_casualsuit01', 'female_casualsuit02'] : ['male_casualsuit02', 'male_casualsuit04', 'male_casualsuit06'], CLOTH_COLOURS),
               footwear: pick(r, ['shoes01', 'shoes02', 'shoes04', 'shoes05']) }
               : (wardrobe === 'casual' && base.look.outfit && !WARDROBE_SYSTEM.has(base.look.outfit) && r() < 0.5) ? {}
@@ -133,7 +119,6 @@ export function makeRoster(): RosterEntry[] {
           },
         };
         // Riders reach the controls of the two-wheelers as they are drawn
-        // (`render/riderPoses.ts`, measured in tests/render/riderFit.spec.ts).
         const rides = age !== 'child' && age !== 'senior' && person.body.height >= (female ? 0.55 : 0.53) && years >= 18;
         out.push({ id: `mh_${String(n).padStart(2, '0')}`, wardrobe, ageBand: age, gender, person, rides });
         n++;

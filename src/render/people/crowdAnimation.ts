@@ -18,20 +18,7 @@ import {
 import type { ClipFrames } from '../citizenBake';
 import { PACKED_BONE_FLOATS } from '../citizenPalette';
 
-/**
- * A crowd's animation on the GPU, as GPU Gems 3, chapter 2 ("Animated Crowd
- * Rendering") lays it out: every frame of every clip of a body class baked
- * once into one texture, three texels a bone (the affine rows, the
- * translation in their last components), read with exact fetches.
- *
- * Its reader is the palette pass (`PalettePass`): each bone of each person
- * blended from up to four clips between two frames and moved to that
- * person's own joints (`proceduralCrowd.ts` `refit`, the same sums, walking
- * up the bone's parents) - written to a float render target the skinning
- * reads. Nothing of it is worked out in JavaScript; a frame uploads the plays
- * that changed (a row each, or the whole plays texture - 80 bytes a row of
- * the class - past eight), and the overrides written.
- */
+/** A crowd's animation on the GPU, as GPU Gems 3, chapter 2 ("Animated Crowd Rendering") lays it out */
 
 /** Texels a bone takes in the animation texture (twelve floats). */
 const ATLAS_TEXELS = 3;
@@ -89,12 +76,7 @@ export interface PalettePass {
   readonly capacity: number;
   /** What person `row` plays this frame, the body variant whose joints they have; null plays: a palette of their own (`setOverride`). */
   setPlays(row: number, plays: readonly PalettePlay[] | null, variant: number): void;
-  /**
-   * Person `row` is not drawn this frame: their row is not blended. It is
-   * still covered by the pass (every row up to `used`), a fetch and a return
-   * a texel: the class's rows are reused (`proceduralCrowd.ts` `takeRow`), so
-   * `used` stays near the people living, not every body ever made.
-   */
+  /** Person `row` is not drawn this frame: their row is not blended. */
   rest(row: number): void;
   /** A palette worked out on the CPU for a person (held by a ragdoll, wounded, a limb lost). */
   setOverride(row: number, palette: Float32Array): void;
@@ -105,13 +87,7 @@ export interface PalettePass {
   dispose(): void;
 }
 
-/**
- * The palette pass of a body class: a quad drawn into a float target, a
- * texel a column of a bone of a person.
- *
- * `joints`: a texture of `bones` texels a row, a body variant a row, each
- * bone's head moved for that body (`crowdBodies.ts`).
- */
+/** The palette pass of a body class: a quad drawn into a float target, a texel a column of a bone of a person. */
 export function createPalettePass(anim: ClassAnimation, parent: Int16Array, joints: () => Texture, capacity: number): PalettePass {
   const bones = anim.bones;
   const width = bones * 4;
@@ -176,8 +152,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
         if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
         int variant = int(meta.x + 0.5);
         mat4 m = blended(person, bone);
-        // The bone moved to this body's joints (proceduralCrowd.ts refit):
-        // its head carried by every parent's turn up to the root.
+        // The bone moved to this body's joints (proceduralCrowd.ts refit): its head carried by every parent's turn up to the root.
         vec3 shift = vec3(0.0);
         int cur = bone;
         for (int s = 0; s < MAX_DEPTH; s++) {
@@ -234,8 +209,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       if (n === 0) return;
       material.uniforms['uJoints']!.value = joints();
       if (dirtyAll || dirty.size) {
-        // Each update range is one row of the image in three (WebGLTextures.js):
-        // a range a row while few changed, the whole texture (80 bytes a person) otherwise.
+        // Each update range is one row of the image in three (WebGLTextures.js)
         playTexture.clearUpdateRanges();
         if (!dirtyAll && dirty.size <= 8) for (const row of dirty) playTexture.addUpdateRange(row * PLAY_TEXELS * 4, PLAY_TEXELS * 4);
         playTexture.needsUpdate = true;

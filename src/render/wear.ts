@@ -9,15 +9,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from 'three';
 
-/**
- * Wear: streets and footways that age with use (the player's order of
- * 2026-10-05). Every vehicle drawn lays rubber along its two wheel tracks,
- * every walker scuffs the paving under their feet; where a lane is used hard
- * enough the surface breaks into potholes. The marks accumulate in a map-wide
- * field (R: wheels, G: feet), uploaded every few seconds as a texture that the
- * asphalt and footway shaders read by world position. Nothing is stored in
- * the document: a city wears as it is lived in.
- */
+/** Wear: streets and footways that age with use (the player's order of 2026-10-05). */
 
 /** Texels across the map: about 0.94 m each on the 4 800-unit map. */
 const RES = 2048;
@@ -40,9 +32,7 @@ export function createWearField(mapSize: number): WearField {
   const cell = mapSize / RES;
   const wheels = new Float32Array(RES * RES);
   const feet = new Float32Array(RES * RES);
-  // RGBA though only red (wheels) and green (feet) are read: three uploads
-  // part of a texture (`updateRanges`) only for RGBA, and re-sending the whole
-  // 2048-square field every two seconds was a hitch of its own.
+  // RGBA though only red (wheels) and green (feet) are read: three uploads part of a texture
   const bytes = new Uint8Array(RES * RES * 4);
   const texture = new DataTexture(bytes, RES, RES, RGBAFormat, UnsignedByteType);
   /** Per row, the first and last cell changed since the last upload. */
@@ -67,8 +57,7 @@ export function createWearField(mapSize: number): WearField {
   return {
     texture,
     wheels(x, y, angle, width, dt) {
-      // Rubber on the two tracks: a busy lane darkens in a few minutes of
-      // traffic, and keeps darkening towards potholes.
+      // Rubber on the two tracks: a busy lane darkens in a few minutes of traffic, and keeps darkening towards potholes.
       const nx = -Math.sin(angle), ny = Math.cos(angle);
       const k = dt * 0.05;
       add(wheels, x + nx * width / 2, y + ny * width / 2, k);
@@ -103,11 +92,7 @@ export function createWearField(mapSize: number): WearField {
   };
 }
 
-/**
- * Makes a road surface material show the wear field: `channel` 0 reads the
- * wheels (asphalt: tyre marks, then potholes), 1 the feet (paving: scuffs and
- * stains). Chained after whatever the material already does to its shader.
- */
+/** Makes a road surface material show the wear field: `channel` 0 reads the wheels */
 export function applyWear(material: Material, field: WearField, mapSize: number, channel: 0 | 1, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   const previousKey = material.customProgramCacheKey.bind(material);

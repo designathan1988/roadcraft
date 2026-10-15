@@ -1,14 +1,4 @@
-/**
- * ELEMENTS: the small things a scene is dressed with, laid by a brush -
- * stones, pebbles and gravel, fallen leaves, grass, tall grass, scrub, ferns,
- * clover, flowers and mushrooms; and EFFECTS that live where they are laid -
- * smoke, fire, steam, dust, soot, sparks and spray. The brush works as an
- * engine's foliage painter does (Unreal's Foliage mode: a density per area,
- * a minimum distance between instances, a scale range, random turn, paint
- * and erase), and the document keeps every INSTANCE it laid, so a dressed
- * map saves, loads and undoes like any other edit; the renderer draws them
- * (`render/elements.ts`).
- */
+/** ELEMENTS: the small things a scene is dressed with, laid by a brush */
 
 const PROP_KINDS = ['stones', 'pebbles', 'gravel', 'leaves', 'grass', 'tallGrass', 'scrub', 'fern', 'clover', 'flowers', 'mushrooms'] as const;
 export const EFFECT_KINDS = ['smoke', 'fire', 'steam', 'dust', 'soot', 'sparks', 'spray'] as const;
@@ -84,14 +74,7 @@ export function readElement(data: unknown): ElementItem | null {
   };
 }
 
-/**
- * The instances one dab of the brush lays: as many as the density asks over
- * the dab's disc times the strength, each at a random point, kept only if no
- * instance of the same kind already stands within the spacing (a Poisson-disc
- * by rejection, as foliage painters keep their minimum distance). `random`
- * is the editor's generator (0..1); `nearby` lists the instances already
- * there. Units: world units, `unitsPerMetre` to turn the brush's metres.
- */
+/** The instances one dab of the brush lays */
 export function scatter(kind: ElementKind, brush: ElementBrush, x: number, y: number, radius: number, unitsPerMetre: number,
   random: () => number, nearby: readonly ElementItem[]): ElementItem[] {
   const area = Math.PI * (radius / unitsPerMetre) ** 2;

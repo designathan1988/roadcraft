@@ -1,12 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SignSheets } from '@render/signs';
 
-/**
- * The street-name plates' pictures: every one on a sheet of a size every
- * graphics card takes. WebGL 2 guarantees 2048 and every device reports at
- * least 4096 (web3dsurvey.com, MAX_TEXTURE_SIZE); a canvas past its browser's
- * limit is unusable (MDN, `<canvas>`, "Maximum canvas size").
- */
+/** The street-name plates' pictures: every one on a sheet of a size every graphics card takes. */
 const LIMIT = 4096;
 
 /** A canvas without a page: the sizes it is given, and a 2D context that draws nothing. */

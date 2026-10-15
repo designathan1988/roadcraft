@@ -11,31 +11,7 @@ import { roadsBefore, settleRoadEdit } from './roads/economy';
 import { m } from '@world/units';
 import { ribbonsNear } from './snap';
 
-/**
- * What a road edit may not leave behind, judged on the network it builds.
- *
- * City builders refuse a placement the game cannot carry and say why, before
- * the mouse is let go: Cities: Skylines will not lay a road steeper than its
- * limit, nor a segment too short ("distance too short": intersections too
- * close together, a curve too sharp), nor a piece over something already
- * there. These are the same refusals for this game's geometry:
- *  - `sharp`: a node whose legs meet under `MIN_LEG_ANGLE` - the mark the game
- *    already shows as "cannot be built" (`Network.impossible`);
- *  - `squeezed`: a junction whose legs are too short to separate their lanes
- *    (`Network.squeezed`);
- *  - `overlap`: a road lying on another one with no junction between them and
- *    without the vertical room to pass over it;
- *  - `steep`: a road whose height change, over what the junction plates at its
- *    ends leave free, needs a grade no street is built at.
- * And `funds`, which is not geometry: an edit the balance cannot pay for
- * (`editor/roads/economy.ts`), judged after the rules above.
- *
- * Every rule is DIFFERENTIAL: an edit is refused for what IT created or made
- * worse, never for damage already on the map. Loading never refuses, so any
- * map may hold such places; judged absolutely, one of them would refuse every
- * road drawn anywhere afterwards (measured on the old sharp-node refusal: a
- * 7-degree node 5000 units away blocked a road at the origin).
- */
+/** What a road edit may not leave behind, judged on the network it builds. */
 export type RoadEditRefusal = 'sharp' | 'squeezed' | 'overlap' | 'steep' | 'funds';
 
 export interface RoadState {
@@ -44,27 +20,13 @@ export interface RoadState {
   readonly net: Network;
 }
 
-/**
- * A node's smallest leg gap may shrink this much before it counts as made
- * sharper: re-flattening a split curve moves an untouched gap by ulps.
- */
+/** A node's smallest leg gap may shrink this much before it counts as made sharper */
 const GAP_NOISE = COARSE_EPS;
 /** A squeeze may deepen this much (0.4 m) before it counts as made worse. */
 const SQUEEZE_SLACK = m(0.4);
-/**
- * The steepest grade a road is refused beyond: Baldwin Street, Dunedin, the
- * steepest street in the world at 34.8 % (Guinness; Wikipedia, "Grade
- * (slope)"). The height solver lays any grade the two ends ask for as one
- * continuous ramp (`elevation.ts` `solveGround`/`solveVariable`); past this
- * there is no street to model, and on the free run the plates leave the ramp
- * becomes a cliff (fuzz seed 3: 17 units down in about 10).
- */
+/** The steepest grade a road is refused beyond: Baldwin Street, Dunedin, the steepest street in the world at 34.8 % */
 const MAX_BUILT_GRADE = ROAD_TUNING.grade.refuse;
-/**
- * Vertical room for one road to pass over another: the elevated deck's
- * clearance, the same figure the road tool uses for its crossings
- * (`commit.ts` `CROSSING_CLEARANCE`).
- */
+/** Vertical room for one road to pass over another */
 const PASS_CLEARANCE = ROAD_TUNING.clearance.elevated;
 /** Two decks within this height of each other are at one level (`commit.ts` `HEIGHT_JOIN_EPS`). */
 const SAME_LEVEL = m(0.3);
@@ -75,12 +37,7 @@ const OVERLAP_SLACK = m(0.2);
 /** A point within this of an old centreline lay on that road before the edit. */
 const SAME_PLACE = 1;
 
-/**
- * The reason to refuse turning `before` into `after`, or null when the edit
- * may stand. `after.net` must be rebuilt for `after.doc`; node and segment ids
- * of `before` keep their meaning in `after` (a working copy, or the same
- * document edited in place).
- */
+/** The reason to refuse turning `before` into `after`, or null when the edit may stand. */
 export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRefusal | null {
   for (const [node, gap] of after.net.impossible) {
     const was = before.doc.node(node) ? before.net.impossible.get(node) : undefined;
@@ -93,12 +50,7 @@ export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRef
   const changed = changedSegments(before.doc, after.doc);
   if (!changed.length) return null;
   if (tooSteep(before, after, changed)) return 'steep';
-  // The decks as the game solves them, over flat land (two roads at one map
-  // point stand on the same ground, so it cancels): a tunnel is at its full
-  // depth only between its portals, and a road crossing it near one passed
-  // over it with 3 m to spare by the authored figures - 13 units under at
-  // mid-length, 8 near the portal (fuzz fixture `open-road-drawn-over-road`).
-  // Solved only when two roads lie on each other in plan.
+  // The decks as the game solves them, over flat land (two roads at one map point stand on the same ground, so it cancels)
   let solved: RoadElevation | null = null;
   const deck = (id: SegmentId, p: Vec2): number =>
     (solved ??= buildRoadElevation(after.net, FLAT_GROUND)).onSegment(id, p.x, p.y);
@@ -106,10 +58,7 @@ export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRef
   return null;
 }
 
-/**
- * A copy of the roads as they stand, to judge an edit made in place against
- * (`refuseRoadEdit`). The network's geometry is taken over, not rebuilt.
- */
+/** A copy of the roads as they stand, to judge an edit made in place against (`refuseRoadEdit`). */
 export function snapshotRoads(doc: RoadDoc, net: Network): RoadState {
   const copy = doc.clone();
   const copyNet = new Network(copy);
@@ -118,20 +67,14 @@ export function snapshotRoads(doc: RoadDoc, net: Network): RoadState {
   return { doc: copy, net: copyNet };
 }
 
-/**
- * Runs an edit made in place on the live roads (a split, a retype, more lanes,
- * a bend, a join, a copy) and judges it by the same rules as a drawn road. A
- * refused edit is undone: the document and its network are put back exactly
- * as they were, so the caller records nothing.
- */
+/** Runs an edit made in place on the live roads */
 export function guardRoadEdit(doc: RoadDoc, net: Network, edit: () => boolean):
   { readonly changed: boolean; readonly refused: RoadEditRefusal | null } {
   const before = snapshotRoads(doc, net);
   const money = roadsBefore(doc);
   if (!edit()) return { changed: false, refused: null };
   if (net.revision !== doc.revision) net.rebuild();
-  // Judged, then paid for (`editor/roads/economy.ts`): an edit the balance
-  // cannot cover is refused like any other.
+  // Judged, then paid for (`editor/roads/economy.ts`): an edit the balance cannot cover is refused like any other.
   const refused = refuseRoadEdit(before, { doc, net }) ?? (settleRoadEdit(money, doc).affordable ? null : 'funds');
   if (!refused) return { changed: true, refused: null };
   doc.replaceWith(before.doc);
@@ -142,11 +85,7 @@ export function guardRoadEdit(doc: RoadDoc, net: Network, edit: () => boolean):
 /** Segments of `after` that are new, or whose shape, class, structure or end points changed. */
 function changedSegments(before: RoadDoc, after: RoadDoc): SegmentId[] {
   const out: SegmentId[] = [];
-  // The roads the diary names since the two stood equal, and the roads of the
-  // nodes it names: only they can differ. DO NOT walk every road of the map
-  // and write each one out twice as text for every edit and every pause of
-  // the pointer while a road is drawn (the dry run); every road only when the
-  // diary cannot say (two documents not known to have stood equal).
+  // DO NOT walk every road of the map and write each one out twice as text for every edit and every pause of the pointer
   const named = after.roadIdsChangedFrom(before);
   if (named) {
     const candidates = new Set<SegmentId>();
@@ -186,14 +125,7 @@ function deckAt(doc: RoadDoc, seg: RoadSegment, s: number, length: number): numb
 const GRADE_STEP = m(0.4);
 const GRADE_RUN = 2;
 
-/**
- * The steepest grade of a segment's deck as the game solves it (rise over run,
- * over `GRADE_RUN`): read from the solved profile itself, not estimated. It was
- * estimated as the rise over the length less `Network.plateReach` at both ends,
- * and the solver flattens a wider plate (`elevation.ts`: the trim, the footway
- * and verge, a margin, up to 45 % of the length each); a ramp measured at 14 %
- * was solved as 4.8 units up in about 4 (fuzz `elevationStep`, seed 21).
- */
+/** The steepest grade of a segment's deck as the game solves it (rise over run, over `GRADE_RUN`) */
 function grade(state: RoadState, id: SegmentId, solved: () => RoadElevation): number {
   const { doc, net } = state;
   const seg = doc.segment(id);
@@ -218,13 +150,7 @@ function grade(state: RoadState, id: SegmentId, solved: () => RoadElevation): nu
   return steepest;
 }
 
-/**
- * Whether the edit leaves a ramp steeper than any street, on a road it laid
- * or on one meeting it: a junction made at a ramp's end grows the plate the
- * ramp loses its run to (fuzz seed 3: a road set 17 units up, a new road at
- * its foot, 10 units left to come down in). A ramp already that steep is
- * refused only when the edit made it steeper.
- */
+/** Whether the edit leaves a ramp steeper than any street, on a road it laid or on one meeting it */
 function tooSteep(before: RoadState, after: RoadState, changed: readonly SegmentId[]): boolean {
   const touched = new Set<SegmentId>(changed);
   for (const id of changed) {
@@ -234,7 +160,6 @@ function tooSteep(before: RoadState, after: RoadState, changed: readonly Segment
     }
   }
   // Solved over flat land, once per state and only when a ramp asks for it
-  // (two roads at one point stand on the same ground, so it cancels).
   let solvedAfter: RoadElevation | null = null;
   let solvedBefore: RoadElevation | null = null;
   const afterElevation = (): RoadElevation => (solvedAfter ??= buildRoadElevation(after.net, FLAT_GROUND));
@@ -248,16 +173,7 @@ function tooSteep(before: RoadState, after: RoadState, changed: readonly Segment
   return false;
 }
 
-/**
- * Whether a changed segment's roadway lies on another road's carriageway
- * (or that road's on its own), away from any junction they share, at one level.
- *
- * Sampled along the centreline beyond the junction plates at both ends. A
- * sample is in conflict with another segment when the gap between the two
- * centrelines is less than one road's carriageway half-width plus the other's
- * footway half-width: the lanes, or a footway and the lanes, lie on each other.
- * Near a node the two share, the other road's own plate is junction, not overlap.
- */
+/** Whether a changed segment's roadway lies on another road's carriageway */
 function overlapsAnother(before: RoadState, after: RoadState, id: SegmentId,
   deck: (id: SegmentId, p: Vec2) => number): boolean {
   const { doc, net } = after;
@@ -271,12 +187,7 @@ function overlapsAnother(before: RoadState, after: RoadState, id: SegmentId,
   const to = length - (trims?.b[Level.Casing] ?? 0) - SAMPLE_STEP / 2;
   if (to <= from) return false;
 
-  // Candidate roads: any whose box comes within reach of this one's. The reach
-  // is at most this road's footway half-width plus the other's, and the other
-  // is filed in the network's cells over its box grown by its casing, wider
-  // than its footway: the cells round this box grown by its own footway hold
-  // every candidate (`ribbonsNear`). DO NOT walk `doc.segments` here: each
-  // changed road of every edit and dry run read every road of the map.
+  // DO NOT walk `doc.segments` here: each changed road of every edit and dry run read every road of the map.
   const box = line.bbox;
   const grow = halfWidth(ribbon.road, Level.Sidewalk);
   const others: { id: SegmentId; seg: RoadSegment; limit: number }[] = [];
@@ -322,14 +233,7 @@ function withinSharedPlate(after: RoadState, seg: RoadSegment, other: RoadSegmen
   return false;
 }
 
-/**
- * The same two places already overlapped before the edit: both were road, on
- * two different segments at those heights, whose widths then already reached
- * across the gap between them. The overlap is old (a split elsewhere on those
- * roads re-identifies them), not this edit's. Only being road before is not
- * enough: a lane added that widens a road onto its neighbour leaves both
- * centrelines where they were.
- */
+/** The same two places already overlapped before the edit */
 function overlappedBefore(before: RoadState, p: Vec2, ph: number, q: Vec2, qh: number): boolean {
   const onP = segmentsThrough(before, p, ph);
   if (!onP.length) return false;
@@ -342,10 +246,7 @@ function overlappedBefore(before: RoadState, p: Vec2, ph: number, q: Vec2, qh: n
   return false;
 }
 
-/**
- * How close two roads' centrelines may come before one's carriageway lies on
- * the other's carriageway or footway.
- */
+/** How close two roads' centrelines may come before one's carriageway lies on the other's carriageway or footway. */
 function overlapReach(net: Network, a: SegmentId, b: SegmentId): number {
   const ra = net.ribbons.get(a)?.road;
   const rb = net.ribbons.get(b)?.road;
@@ -354,12 +255,7 @@ function overlapReach(net: Network, a: SegmentId, b: SegmentId): number {
     halfWidth(ra, Level.Sidewalk) + halfWidth(rb, Level.Asphalt)) - OVERLAP_SLACK;
 }
 
-/**
- * The roads whose centreline passes within `SAME_PLACE` of `p` at `height`: from
- * the network's cells round the point (a ribbon is filed over its centreline's
- * box grown by its casing). DO NOT walk `state.doc.segments`: this runs for
- * every sample of every changed road.
- */
+/** DO NOT walk `state.doc.segments`: this runs for every sample of every changed road. */
 function segmentsThrough(state: RoadState, p: Vec2, height: number): SegmentId[] {
   const out: SegmentId[] = [];
   for (const { id } of ribbonsNear(state.net, [p.x - SAME_PLACE, p.y - SAME_PLACE, p.x + SAME_PLACE, p.y + SAME_PLACE])) {

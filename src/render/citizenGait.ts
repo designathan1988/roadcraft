@@ -3,41 +3,7 @@ import { DT } from '@sim/dt';
 import { m } from '@world/units';
 import type { LibraryClip, WalkAmplitude } from './citizenWalk';
 
-/**
- * What a pedestrian's legs play, decided from what the simulation says the
- * body is doing — and nothing else. No bone, mesh or texture is touched here;
- * `riggedCitizens.ts` bakes the clips and blends what this returns, and the
- * tests drive this directly against the real simulation (`citizenGait.spec`).
- *
- * THE BODY MOVES, SO THE LEGS STEP. The speed the gait reads is the speed
- * the DRAWN body moves at: the simulation's own tick-to-tick displacement,
- * which already holds the walk along the footway, a step aside, the catch-up
- * after a change of edge and the steps to and from a bench. Reading the
- * forward speed alone, every one of those moved a figure standing in its idle
- * pose — a ghost sliding over the pavement — and a walk stop that had played
- * out left the body gliding on at half a metre a second with its feet
- * together.
- *
- * STEPS SHORTEN WITH PACE. A person walking slowly takes shorter steps at a
- * slower cadence, not the same step slowed down. The neutral walk used to be
- * the only cycle and its stride fixed, so somebody at 0.4 m/s played it at a
- * third of its speed: slow motion. Now three captures are blended on one
- * shared phase by speed — a shuffle (the slow walk with its swing shrunk), the
- * Rocketbox slow walk, and the neutral walk (an older person's version of it
- * for elders) — each at its own natural pace, and between two of them the
- * stride is interpolated, so the cadence stays in the range a person has.
- *
- * TURNS ARE STEPPED. Turning on the spot plays the turn clips, advanced by the
- * angle the body turns, whatever else was playing; a turn made while barely
- * moving adds its footwork to the cadence. The finish of a walk stop used to
- * take precedence, and the figure swivelled on motionless legs to face a
- * crossing.
- *
- * DIRECTION BELONGS TO THE FEET. Sideways and backward displacement blends
- * directional steps while the torso follows the published visual heading.
- * Shortening a stride also blends its pose towards the mean walking stance;
- * changing only the cycle's distance would leave full-length feet skating.
- */
+/** What a pedestrian's legs play, decided from what the simulation says the body is doing — and nothing else. */
 
 export interface GaitClip {
   /** Intervals between baked frames. */
@@ -125,18 +91,9 @@ export interface GaitPlay {
   weight: number;
 }
 
-/**
- * An older walker: a step about a fifth shorter, arms that swing about half as
- * far, hips that rise and roll less. The trunk keeps the capture's own
- * upright posture — nothing here leans or bends it.
- */
+/** An older walker: a step about a fifth shorter, arms that swing about half as far, hips that rise and roll less. */
 export const ELDER_AMPLITUDE: WalkAmplitude = { arms: 0.5, legs: 0.78, hips: 0.6 };
-/**
- * The shuffle: the slow walk with its swing roughly halved. The slowest
- * capture there is walks at 0.8-0.9 m/s; a person inching forward in a knot
- * or easing into a queue takes steps half that long, not the same steps at
- * half the rate.
- */
+/** The shuffle: the slow walk with its swing roughly halved. */
 export const SHUFFLE_AMPLITUDE: WalkAmplitude = { arms: 0.4, legs: 0.5, hips: 0.55 };
 /** Mean walking stance, not the rig's T-pose; used to shorten actual foot travel. */
 export const REST_AMPLITUDE: WalkAmplitude = { arms: 0, legs: 0, hips: 0 };
@@ -155,11 +112,7 @@ function curveAt(curve: Float32Array, loop: boolean, fraction: number): number {
   return curve[k0]! * (1 - f) + curve[k1]! * f;
 }
 
-/**
- * The gait facts of one library clip on a body of `scale`: its baked frame
- * count, its stride, and its travel (walk start, stop) and turn curves
- * resampled to the baked frames.
- */
+/** The gait facts of one library clip on a body of `scale`: its baked frame count, its stride, and its travel */
 export function gaitClipOf(clip: LibraryClip, scale: number, frames: number): GaitClip {
   const travel = new Float32Array(frames + 2);
   const yaw = new Float32Array(frames + 2);
@@ -216,10 +169,7 @@ function fractionAtYaw(clip: GaitClip, angle: number): number {
 const clipSpeed = (clip: GaitClip, i: number, size: number): number =>
   (clip.travel![i]! - clip.travel![i - 1]!) * size / (clip.duration / clip.frames);
 
-/**
- * Fraction of the walk stop at which the clip moves at `speed` on a body of
- * `size`, after its fastest point: where a slowing walker joins it.
- */
+/** Fraction of the walk stop at which the clip moves at `speed` on a body of `size`, after its fastest point */
 function stopEntry(clip: GaitClip, speed: number, size: number): number {
   if (!clip.travel) return 0;
   let peak = 0, peakAt = 0;
@@ -233,10 +183,7 @@ function stopEntry(clip: GaitClip, speed: number, size: number): number {
   return 1;
 }
 
-/**
- * Fraction of the walk start at which the clip first moves at `speed`: a
- * body already under way skips the weight shift the clip begins with.
- */
+/** Fraction of the walk start at which the clip first moves at `speed` */
 function startEntry(clip: GaitClip, speed: number, size: number): number {
   if (!clip.travel) return 0;
   for (let i = 1; i <= clip.frames; i++) {
@@ -261,11 +208,7 @@ const HAND_R_WALKS = ['walkHandR'] as const satisfies readonly Cycle[];
 /** Carrying a box: the clips the arms are baked holding it in (`riggedCitizens` CARRY_AT). */
 const CARRY_WALKS = ['walkShuffle', 'walk'] as const satisfies readonly Cycle[];
 
-/**
- * The walks people walk in, one each for life (`walkStyle`): several
- * Rocketbox captures of ordinary walking - neutral, strolling, easy, brisk -
- * so a street is not a file of one gait.
- */
+/** The walks people walk in, one each for life (`walkStyle`): several Rocketbox captures of ordinary walking */
 export const WALK_STYLES = ['walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast'] as const;
 type WalkStyle = (typeof WALK_STYLES)[number];
 /** Which walk somebody walks in, from their id. */
@@ -287,12 +230,7 @@ function walksOf(clips: GaitClips, style: WalkStyle): readonly Cycle[] {
 /** Natural pace of a walk cycle on a body of `size`, m/s. */
 const naturalPace = (clip: GaitClip, size: number): number => clip.stride * size / clip.duration;
 
-/**
- * Chooses the two walk cycles for a pace, the second one's weight, and the
- * ground one blended cycle covers. At each capture's own pace it is played
- * exactly as captured; between two, the stride is interpolated; below the
- * shuffle, its stride shortens with the pace as a person's does.
- */
+/** Chooses the two walk cycles for a pace, the second one's weight, and the ground one blended cycle covers. */
 function pace(g: Gait, clips: GaitClips, elder: boolean, size: number, speed: number, drunk = false, hand?: 'L' | 'R',
   carry = false, style?: WalkStyle): void {
   const walks = carry ? CARRY_WALKS : drunk ? DRUNK_WALKS : hand === 'L' ? HAND_L_WALKS : hand === 'R' ? HAND_R_WALKS
@@ -348,11 +286,7 @@ const STOP_BELOW = 0.6;
 const STOP_DECEL = 0.35;
 /** Speed, m/s, below which setting off plays the walk start. */
 const START_BELOW = 1.0;
-/**
- * Slowest share of its own rate a start or stop is played at. Advanced only
- * by the ground covered, a start into a slow pace dragged over seconds — the
- * clip ends at 1.2 m/s and the walker never got there.
- */
+/** Slowest share of its own rate a start or stop is played at. */
 const CLIP_FLOOR = 0.75;
 /** Rate a stop the body has already come out of finishes at, as a share of its own. */
 const STOP_SETTLE = 1.25;
@@ -412,19 +346,13 @@ function play(g: Gait, key: PlayKey, phase = 0, fade = FADE): void {
   g.fadeTime = fade;
 }
 
-/**
- * What a person standing still is doing, from what the simulation says they
- * are doing: talking or listening with their party, reading a phone,
- * looking round, or simply standing, each with a phase of their own.
- */
+/** What a person standing still is doing, from what the simulation says they are doing */
 function standingKey(ped: PedView, g: Gait, hash: number, clips: GaitClips): Single {
   const act = ped.gesture;
   // Arms full: just standing, holding it, whatever else is going on.
   if (ped.carry) return 'idle';
   if (act?.kind === 'talk' && act.phase === 'hold') {
-    // One speaks at a time, and the turn passes round the party. Some
-    // parties are merry - the one speaking laughs now and then - and some
-    // are quarrelling.
+    // One speaks at a time, and the turn passes round the party.
     const turn = Math.floor((ped.age + (ped.party.id % 7) * 1.3) / 6.5) % Math.max(1, ped.party.size);
     const mood = ped.party.id % 11;
     if (turn !== ped.rank) return mood === 3 ? 'angry' : 'listen';
@@ -432,8 +360,7 @@ function standingKey(ped: PedView, g: Gait, hash: number, clips: GaitClips): Sin
     return mood === 3 ? 'argue' : mood % 4 === 1 && beat === 2 ? 'laugh' : 'talk';
   }
   if (act?.kind === 'phone') return 'phone';
-  // Fallen and not drawn as a ragdoll (`ragdoll.ts`): down on the haunches,
-  // never a stiff body tipped over about its feet.
+  // Fallen and not drawn as a ragdoll (`ragdoll.ts`): down on the haunches, never a stiff body tipped over about its feet.
   if (act?.kind === 'fall') return 'crouchIdle';
   if (act?.kind === 'crouch') {
     // Down, a while there (tying a lace, a word to a child), and up again.
@@ -458,18 +385,13 @@ function standingKey(ped: PedView, g: Gait, hash: number, clips: GaitClips): Sin
 
 /** What a person stopped to do plays (the gestures of `sim/people/view.ts`). */
 const ACTIVITY: Partial<Record<string, Single>> = {
-  // Reading: the book held up in both hands, as a phone is (the library's
-  // newspaper clip only carries one by the side).
+  // Reading: the book held up in both hands, as a phone is (the library's newspaper clip only carries one by the side).
   read: 'phone', bag: 'bag', trolley: 'trolley', umbrella: 'umbrella', cheer: 'cheer', dance: 'dance',
   wave: 'wave', drink: 'drink', photo: 'photo', laugh: 'laugh', argue: 'argue', knock: 'knock',
   headphones: 'headphones', eat: 'eatIdle', work: 'workTable',
 };
 
-/**
- * Advances one pedestrian's gait to `time` (the pedestrian's own clock,
- * interpolated). `heading` is the simulation's, interpolated; `size` is the
- * body's scale, metres per model metre.
- */
+/** Advances one pedestrian's gait to `time` (the pedestrian's own clock, interpolated). */
 export function stepGait(g: Gait, ped: PedView, clips: GaitClips, time: number, heading: number,
   size: number, hash: number): void {
   const dt = Math.min(Math.max(0, time - g.time), 0.2);
@@ -485,21 +407,15 @@ export function stepGait(g: Gait, ped: PedView, clips: GaitClips, time: number, 
   if (dt > 0) g.accel += ((speed - g.speed) / dt - g.accel) * approach(dt, ACCEL_TIME);
   g.speed = speed;
 
-  // The simulation turns the visual heading smoothly. Directional footwork
-  // represents motion before that turn is complete, without rotating the
-  // whole figure into a sideways step or suppressing a backward step.
+  // The simulation turns the visual heading smoothly.
   const want = wrap(heading - g.base);
   let swing = want * approach(dt, 1 / 18);
   if (speed < TURN_IN_PLACE) {
-    // Standing or creeping, the body turns only as far as its feet step it
-    // round, by the weight of the turn clip now playing. It used to take the simulation's heading
-    // at once, and the turn clip faded in over a body already turned - the
-    // swivel on motionless legs that players kept reporting.
+    // Standing or creeping, the body turns only as far as its feet step it round, by the weight of the turn clip now playing.
     const stepWeight = g.cur.key === 'turnLeft' || g.cur.key === 'turnRight'
       ? g.fade * g.fade * (3 - 2 * g.fade)
       : g.prev && (g.prev.key === 'turnLeft' || g.prev.key === 'turnRight') ? 1 - g.fade : 0;
-    // Only once the steps carry most of the pose: turning while the turn clip
-    // is still a faint blend over the stand is the same swivel, slower.
+    // Only once the steps carry most of the pose
     const limit = STEPPED_TURN_RATE * Math.max(0, stepWeight * 2 - 1) * dt;
     swing = Math.max(-limit, Math.min(limit, swing));
   }
@@ -513,9 +429,7 @@ export function stepGait(g: Gait, ped: PedView, clips: GaitClips, time: number, 
   const elder = ped.ageClass === 'elder';
   const cur = g.cur;
   const isTurn = cur.key === 'turnLeft' || cur.key === 'turnRight';
-  // Standing, a slower turn already needs the feet: the body is not carried
-  // round by a stride, so any visible rotation is footwork or a swivel.
-  // A body still short of where it is facing, standing, steps round to it too.
+  // Standing, a slower turn already needs the feet
   const lagging = speed < TURN_IN_PLACE && Math.abs(wrap(heading - g.base)) > LAG_STEPS;
   const spin = lagging || Math.abs(ped.turnV) > (speed < TURN_IN_PLACE ? TURN_STEPS_STANDING : TURN_STEPS);
   const turnSign = Math.abs(ped.turnV) > TURN_STEPS_STANDING ? Math.sign(ped.turnV) : Math.sign(wrap(heading - g.base));
@@ -528,17 +442,11 @@ export function stepGait(g: Gait, ped: PedView, clips: GaitClips, time: number, 
       : seat === 'standUp' ? Math.min(1, act!.t / STAND_UP_SECONDS[ped.gender])
         : (act!.t / clips.sitIdle.duration) % 1;
   } else if (Math.hypot(raw.x, raw.y) > STILL_BELOW && speed > STILL_BELOW && (!spin || speed >= TURN_IN_PLACE)) {
-    // A fast turn while barely creeping is a turn on the spot, even out of a
-    // walk: it used to stay in the walk stop, feet planted, while the body
-    // swung round to face the road at every kerb - most of the rotation the
-    // audit found on motionless legs.
-    // Somebody carrying a box walks on steadily, as an elder does: no
-    // breaking into a run, no start and stop with the arms swinging.
+    // A fast turn while barely creeping is a turn on the spot, even out of a walk
     moving(g, ped, clips, dt, speed, distanceSpeed, size, hash, elder || ped.carry !== undefined);
   } else {
     standing(g, ped, clips, dt, turned, spin, isTurn, hash, turnSign);
-    // A walk fading out under a turn or a stop keeps stepping with whatever
-    // motion is left, rather than freezing mid-stride while the body turns.
+    // A walk fading out under a turn or a stop keeps stepping with whatever motion is left
     g.cycle = (g.cycle + Math.hypot(distanceSpeed, TURN_FOOT * ped.turnV) * dt / Math.max(1e-3, g.stride)) % 1;
   }
 
@@ -547,21 +455,14 @@ export function stepGait(g: Gait, ped: PedView, clips: GaitClips, time: number, 
   if (prev?.key === 'stop') prev.phase = Math.min(1, prev.phase + STOP_SETTLE * dt / clips.stop.duration);
   else if (prev?.key === 'start') prev.phase = Math.min(1, prev.phase + dt / clips.start.duration);
   else if (prev?.key === 'turnLeft' || prev?.key === 'turnRight') {
-    // A turn handing over - to its own next step or to a walk - finishes the
-    // step it is in rather than freezing with a foot in the air.
+    // A turn handing over - to its own next step or to a walk
     prev.phase = Math.min(1, prev.phase + dt / clips[prev.key].duration);
   }
   if (g.fade < 1) g.fade = Math.min(1, g.fade + dt / g.fadeTime);
   if (g.fade >= 1) g.prev = null;
 }
 
-/**
- * Below this drawn speed a body is standing (m/s, as everything in the gait
- * is - `drawnVelocity`): the avoidance's nudges of a few centimetres a second
- * used to keep the walk cycle playing, legs stepping on a body that was not
- * going anywhere. It was 0.12, written as units (5 cm/s) but read as metres
- * (12 cm/s): a body walking at 7 cm/s slid along on legs standing still.
- */
+/** Below this drawn speed a body is standing (m/s, as everything in the gait is - `drawnVelocity`) */
 const STILL_BELOW = 0.05;
 
 /** The branch of `stepGait` for a body not going anywhere: turning, settling, or standing. */
@@ -569,9 +470,7 @@ function standing(g: Gait, ped: PedView, clips: GaitClips, dt: number, turned: n
   isTurn: boolean, hash: number, turnSign: number): void {
   const cur = g.cur;
   if (spin || (isTurn && g.settling < TURN_SETTLE)) {
-    // Turning on the spot: the feet step round, the turn clip advanced by
-    // the angle the body has actually turned. This comes before the end of
-    // a walk stop, which used to swivel the body on legs standing still.
+    // Turning on the spot: the feet step round, the turn clip advanced by the angle the body has actually turned.
     const key: Single = spin ? (turnSign > 0 ? 'turnLeft' : 'turnRight') : (cur.key as Single);
     if (spin) g.settling = 0; else g.settling += dt;
     if (g.cur.key !== key) {
@@ -579,8 +478,7 @@ function standing(g: Gait, ped: PedView, clips: GaitClips, dt: number, turned: n
       g.cur.acc = TURN_WINDUP;
     }
     const clip = clips[key];
-    // The feet lead a turn: they step from its first moment, and the body
-    // follows once the steps carry the pose (see the swing limit above).
+    // The feet lead a turn: they step from its first moment, and the body follows once the steps carry the pose
     g.cur.acc += spin ? Math.max(turned, FEET_LEAD_RATE * dt) : turned;
     g.cur.phase = fractionAtYaw(clip, g.cur.acc);
     if (g.cur.phase >= 0.96) {
@@ -592,8 +490,7 @@ function standing(g: Gait, ped: PedView, clips: GaitClips, dt: number, turned: n
     }
     g.armed = true;
   } else if (cur.key === 'stop' && cur.phase < 1) {
-    // Come to rest before the stop has played out: its last steps settle
-    // the feet, a little quicker than captured.
+    // Come to rest before the stop has played out: its last steps settle the feet, a little quicker than captured.
     cur.phase = Math.min(1, cur.phase + STOP_SETTLE * dt / clips.stop.duration);
     g.armed = true;
   } else {
@@ -611,13 +508,11 @@ function moving(g: Gait, ped: PedView, clips: GaitClips, dt: number, speed: numb
   hash: number, elder: boolean): void {
   g.settling = 0;
   const cur = g.cur;
-  // Start/stop captures have no lateral travel. Any actual direction change
-  // hands over to the directional cycles; epsilon only absorbs roundoff.
+  // Start/stop captures have no lateral travel.
   const forwardMotion = Math.abs(g.direction) < 1e-6;
   if (!forwardMotion && (cur.key === 'start' || cur.key === 'stop')) play(g, 'loco', 0, GAIT_FADE);
   if (cur.key !== 'loco' && cur.key !== 'start' && cur.key !== 'stop') {
-    // Setting off from a standstill: the walk start, joined where it moves at
-    // this pace, unless already going too fast for it.
+    // Setting off from a standstill: the walk start, joined where it moves at this pace, unless already going too fast for it.
     if (speed >= naturalPace(clips.walkShuffle, size) && speed < START_BELOW && !elder && forwardMotion) {
       play(g, 'start', startEntry(clips.start, speed, size), GAIT_FADE);
       g.cur.acc = travelAt(clips.start, g.cur.phase) * size;
@@ -633,9 +528,7 @@ function moving(g: Gait, ped: PedView, clips: GaitClips, dt: number, speed: numb
       g.armed = false;
     }
   } else if (cur.key === 'stop' && (speed > STOP_BELOW + 0.2 || g.accel > STOP_DECEL || cur.phase >= 0.97)) {
-    // Not stopping after all, or the stop is done and the body still moves:
-    // walk on, in short steps if slowly. A finished stop used to hold the
-    // feet together while the body slid on.
+    // Not stopping after all, or the stop is done and the body still moves: walk on, in short steps if slowly.
     play(g, 'loco', 0, GAIT_FADE);
   }
   if (speed > STOP_BELOW + 0.1) g.armed = true;
@@ -653,23 +546,18 @@ function moving(g: Gait, ped: PedView, clips: GaitClips, dt: number, speed: numb
   }
 
   pace(g, clips, elder, size, speed, ped.style === 'drunk', ped.hand, ped.carry !== undefined, walkStyle(ped.id));
-  // Non-forward locomotion uses the short capture: long lateral strides
-  // would cross the legs. Cardinal blend weights share one footfall phase.
+  // Non-forward locomotion uses the short capture: long lateral strides would cross the legs.
   const x = Math.cos(g.direction), y = Math.sin(g.direction);
   const share = (clip: GaitClip): number => Math.min(1, Math.pow(Math.max(speed, Number.EPSILON) / naturalPace(clip, size), STRIDE_EXPONENT));
   g.backScale = share(clips.walkBack); g.leftScale = share(clips.walkLeft); g.rightScale = share(clips.walkRight);
-  // Running is a blend INSIDE the forward group. Treating its weight as a
-  // separate forward addition would rotate a diagonal stride towards it.
+  // Running is a blend INSIDE the forward group.
   const runs = elder ? 0 : smoothstep(runAt(hash), runAt(hash) + 0.6, speed * Math.max(0, x));
   g.run += (runs - g.run) * approach(dt, RUN_TIME);
   const forwardStride = g.stride * (1 - g.run) + clips.run.stride * size * g.run;
   const backStride = clips.walkBack.stride * size * g.backScale;
   const leftStride = clips.walkLeft.stride * size * g.leftScale;
   const rightStride = clips.walkRight.stride * size * g.rightScale;
-  // A shorter lateral capture needs more weight per metre. Angular weights
-  // alone match the vector's magnitude but give the wrong direction whenever
-  // the component strides differ. Normalise distance-calibrated weights,
-  // then use that exact resulting vector to set the shared phase rate.
+  // A shorter lateral capture needs more weight per metre.
   const forward = Math.max(0, x) / Math.max(Number.EPSILON, forwardStride);
   const back = Math.max(0, -x) / Math.max(Number.EPSILON, backStride);
   const left = Math.max(0, y) / Math.max(Number.EPSILON, leftStride);

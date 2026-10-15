@@ -9,28 +9,7 @@ import { createIsoRig } from '@render/isoViewport';
 import { JunctionSurface, turnFits } from '@world/turnPaths';
 import { HEAVY } from '@world/conflictPoints';
 
-/**
- * WHICH WAY IS LEFT.
- *
- * `classifyTurn` was mirrored: it labelled every left turn 'right' and every
- * right turn 'left'. Nothing caught it, because nothing in the suite pinned
- * the handedness of the world frame — the whole thing passed identically with
- * the sign either way round. That is the hole these tests close.
- *
- * Everything keyed on the label was therefore applied to the opposite
- * movement: which lane a turn may be taken from, which turn is allowed to go
- * on red, how long a gap it needs and how fast it takes the curve. On screen
- * that is cars turning across a junction from the wrong lane and crossing a
- * green stream to do it — the reported "signals with the wrong turn".
- *
- * The chain of facts, each measured rather than assumed:
- *
- *   1. the renderer puts +Y UP on screen;
- *   2. so the frame is right-handed and `perp` is the LEFT normal;
- *   3. so a positive heading change is a left turn;
- *   4. so a right turn leaves from the kerb lane and does not cross oncoming
- *      traffic, and a left turn leaves from the innermost lane and does.
- */
+/** WHICH WAY IS LEFT. */
 
 describe('the world frame', () => {
   it('renders +Y upwards, which is what makes perp the left normal', () => {
@@ -130,10 +109,7 @@ describe('junction movements', () => {
       const to = graph.lanelets.get(connector.toLane);
       if (from?.laneIndex === undefined || to?.laneIndex === undefined) continue;
 
-      // Lane 0 is the innermost, nearest the centreline; the highest index is
-      // the kerb lane. A right turn belongs on the kerb, a left on the inside,
-      // and getting this backwards is what made both turns cross their own
-      // approach's through traffic.
+      // Lane 0 is the innermost, nearest the centreline; the highest index is the kerb lane.
       if (connector.turn === 'left') {
         seen.left++;
         expect(from.laneIndex).toBe(0);
@@ -161,10 +137,7 @@ describe('junction movements', () => {
       const lane = graph.lanelets.get(connector.lanelet);
       if (!lane || lane.length < 1) continue;
 
-      // Offset of the whole movement from where it started, across the
-      // approach. A right turn stays on the near side; a left turn has to
-      // reach the far side, which is exactly why it crosses oncoming traffic
-      // and may never be let through on red.
+      // Offset of the whole movement from where it started, across the approach.
       const start = lane.centre.sampleAt(0);
       const end = lane.centre.sampleAt(lane.length);
       const left = perp(start.t);
@@ -185,11 +158,7 @@ describe('junction movements', () => {
   });
 
   it('gives an approach no two movements that cross each other', () => {
-    // Within ONE approach the movements fan out and must never meet: the
-    // mirrored label put the left turn in the kerb lane and the right turn on
-    // the inside, so each crossed the other and both crossed the through
-    // lanes between them. Two movements from the same approach cross when
-    // their lane order and their exit order disagree.
+    // Within ONE approach the movements fan out and must never meet
     const { graph } = cross();
     const byApproach = new Map<string, { lane: number; rank: number }[]>();
 
@@ -208,8 +177,7 @@ describe('junction movements', () => {
       for (const a of movements) {
         for (const b of movements) {
           if (a.lane >= b.lane) continue;
-          // A lane further out may not be assigned a movement that turns
-          // further in than one beside it.
+          // A lane further out may not be assigned a movement that turns further in than one beside it.
           expect(a.rank, `approach ${approach}`).toBeLessThanOrEqual(b.rank);
         }
       }

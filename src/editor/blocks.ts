@@ -6,15 +6,7 @@ import type { SegmentParking } from '@world/parking';
 import { commitRoadPath } from './commit';
 import { findAnchor, type Anchor } from './snap';
 
-/**
- * Several blocks at once: a grid of streets laid in one gesture (the player's
- * order of 2026-10-05), as city builders' grid tools do. `cols` x `rows`
- * blocks of `blockMetres` between street centrelines, centred on a point and
- * turned by `angle`. Each street line is laid with the road tool's own commit
- * (`commitRoadPath`), the lines across joining the ones already laid at real
- * junctions, so the result is exactly what drawing the streets one by one
- * would give.
- */
+/** Several blocks at once: a grid of streets laid in one gesture */
 export interface BlockGrid {
   readonly cols: number;
   readonly rows: number;
@@ -36,19 +28,12 @@ export function blockGridLines(centre: Vec2, grid: BlockGrid): [Vec2, Vec2][] {
   return lines;
 }
 
-/**
- * Lays the grid into `doc` through the road tool's commit, line after line, on
- * the game's own network `net` (`commitRoadPath` hands it the network of each
- * line laid). Returns how many lines were laid.
- * DO NOT make a network per line: each was built from nothing over the whole
- * map, as many times as the grid has lines.
- */
+/** DO NOT make a network per line: each was built from nothing over the whole map, as many times as the grid has lines. */
 export function commitBlockGrid(
   doc: RoadDoc, net: Network, centre: Vec2, grid: BlockGrid, type: number, lanes: number | null, parking?: SegmentParking,
 ): number {
   let laid = 0;
-  // `net` is built for `doc` (the caller's is: every edit rebuilds it), and
-  // each line laid hands it back current (`Network.adopt` in `commitRoadPath`).
+  // `net` is built for `doc` (the caller's is: every edit rebuilds it), and each line laid hands it back current
   for (const [a, b] of blockGridLines(centre, grid)) {
     // Ends join what is already there (an earlier line, an existing street).
     const anchor = (p: Vec2): Anchor => {

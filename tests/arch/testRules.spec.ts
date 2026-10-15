@@ -3,18 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * THE RULES OF THE TESTS (read from the files: nothing runs). A test earns its place by running in every
- * check, the same way on any machine and at any load (Software Engineering at Google, ch. 11: speed and
- * determinism first; "a bad test suite can be worse than no test suite"):
- * - nothing focused (`.only`) and nothing that may not run: no `.skip`, `.todo`, `skipIf` or `runIf` (a
- *   test that runs only with an environment variable or a file of one machine runs nowhere). `it.fails`
- *   stays: a recorded defect that tells when it is fixed (`tests/fuzz/regressions.spec.ts`);
- * - no real clock: no `performance.now()` or `Date.now()` and no wait on a timer, unless the file installs
- *   fake timers (`vi.useFakeTimers`). Wall time is noise: work is counted, never timed
- *   (docs/research/regression-barrier.md);
- * - no test longer than 10 s: none may give itself more than `vitest.config.ts` testTimeout.
- */
+/** THE RULES OF THE TESTS (read from the files: nothing runs). */
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const CAP_MS = 10_000;
 

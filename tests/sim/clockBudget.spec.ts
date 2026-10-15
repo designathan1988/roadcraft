@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SimClock } from '@sim/clock';
 import { DT, MAX_SUBSTEPS } from '@sim/params';
 
-/**
- * THE SIMULATION'S BUDGET A FRAME (`SimClock.advance`): past `budgetMs` of
- * wall time no further step runs this frame (one always does) and the debt
- * is shed, so a simulation dearer than real time slows down instead of
- * stretching every frame (Fiedler, "Fix Your Timestep!"). A fake clock
- * stands for the wall: each step costs what the spec says.
- */
+/** THE SIMULATION'S BUDGET A FRAME (`SimClock.advance`): past `budgetMs` of wall time no further step runs this frame */
 function clockWithSteps(stepMs: number): { clock: SimClock; steps: () => number; run: (wall: number, budget?: number) => number } {
   const clock = new SimClock();
   let wall = 0, steps = 0;

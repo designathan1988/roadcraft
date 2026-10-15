@@ -12,22 +12,14 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * P1-46: a route that ends on a link too short to stop on. Admission asks for
- * the movement beyond it, the route has none, and the car used to wait at the
- * stop line for ever.
- */
+/** P1-46: a route that ends on a link too short to stop on. */
 describe('a route ending on a short link', () => {
   for (const model of ['v2'] as const) {
     it(`is grown past it, and the car goes on (${model})`, () => {
       const doc = new RoadDoc();
       const a = doc.addNode({ x: 0, y: 0 });
       const b = doc.addNode({ x: 300 * U, y: 0 });
-      // 40 u across: a car's swept body fits both turns (`maxBodyClass`), and
-      // the link between them, after both junctions' trims, is still shorter
-      // than the car - asserted below. At 12 u only the smallest bodies fit
-      // the first turn, the route was one no planner makes, and admission
-      // refused it for good before route growth was ever tried.
+      // 40 u across: a car's swept body fits both turns
       const c = doc.addNode({ x: 300 * U, y: 40 * U });
       const d = doc.addNode({ x: 600 * U, y: 40 * U });
       const first = doc.addSegment(a.id, b.id, 2)!;

@@ -17,79 +17,17 @@ import {
 import { fbm, makeNoise } from './mesh/textureBaker';
 import { m } from '@world/units';
 
-/**
- * River water: an extended `MeshStandardMaterial`, not a `ShaderMaterial`.
- *
- * The old surface was a flat blue disc at a fixed opacity, and every one of its
- * defects came from something it did not know:
- *
- *  - it did not move, so nothing told the eye it was liquid;
- *  - it did not know how deep it was, so the bank faded out at the same rate as
- *    the middle of the channel and the river had no visible bed and no shore;
- *  - it had one flat colour, so the only thing standing between it and painted
- *    card was the environment map.
- *
- * ## The approach
- *
- * Everything here is folded into the standard material through
- * `onBeforeCompile`, so the water keeps the scene's lights, its PMREM
- * environment map, its shadows and its ACES tone mapping. A stand-alone
- * `ShaderMaterial` would have had to reimplement all four, and would have
- * drifted away from them at the first lighting change.
- *
- * Four things are injected:
- *
- *  1. **Two scrolling normal layers.** One baked, tiling normal map sampled
- *     twice — at two world scales, drifting in two directions at two speeds —
- *     and summed in tangent space. That is the whole of the motion; it is also
- *     the whole of the sparkle, because a low roughness plus a perturbed normal
- *     is what lets the low sun throw glints off the surface.
- *  2. **A depth tint**, read from the `aDepth` vertex attribute the geometry
- *     builder writes: the surface level minus the ground under it. Shallow water
- *     is lighter and greener and largely transparent, so the bed shows through
- *     near the bank; deep water is darker, bluer and nearly opaque. Uniform
- *     opacity is what used to make the whole river read as one sheet of plastic.
- *  3. **A widened Schlick term.** See `FRESNEL_POWER` for why it is not 5.
- *  4. **A shore foam band**, also driven by `aDepth`, broken up by a noise
- *     channel carried in the alpha of the same normal map so it does not read as
- *     a contour line.
- *
- * ## The cost
- *
- * Two `texture2D` fetches per pixel, from one sampler, and arithmetic. The foam
- * noise rides in the alpha channel of the normal map rather than in a texture of
- * its own precisely so that the count stays at two. Everything else the fragment
- * does is what a `MeshStandardMaterial` already did. There is no render target,
- * no reflection pass and no depth pre-pass: water covers a small part of an
- * isometric frame and does not deserve one.
- *
- * The normal map is baked procedurally into a `DataTexture` — no canvas, no
- * file, no fetch — which also means the bake is a pure function that a headless
- * test can check.
- */
+/** River water: an extended `MeshStandardMaterial`, not a `ShaderMaterial`. */
 
 /** Side of the baked normal map at the top tier. Power of two, as GL wants. */
 const TEXTURE_SIZE_HIGH = 256;
 const TEXTURE_SIZE_LOW = 128;
 
-/**
- * World units one tile of each layer covers.
- *
- * Two clearly different sizes, not two similar ones: layers an octave apart
- * beat against each other into a visible moire, and layers at the same size are
- * one layer with extra cost.
- */
+/** World units one tile of each layer covers. */
 const LAYER_A_TILE = m(13.6);
 const LAYER_B_TILE = m(4.4);
 
-/**
- * Scroll speed of each layer, in TILES per second.
- *
- * Both are whole multiples of a thousandth, so `CLOCK_WRAP * drift` is an
- * integer number of tiles for both layers: the clock can be wrapped to keep the
- * float32 uniform precise and the wrap lands exactly on a tile boundary, which
- * with `RepeatWrapping` is no jump at all.
- */
+/** Scroll speed of each layer, in TILES per second. */
 const DRIFT_A: readonly [number, number] = [0.035, 0.021];
 const DRIFT_B: readonly [number, number] = [-0.026, 0.047];
 
@@ -104,11 +42,7 @@ export const WATER_DEPTH_ATTRIBUTE = 'aDepth';
 /** The per-vertex way the water runs (three's x and z, unit down a river, nought in a lake). */
 export const WATER_FLOW_ATTRIBUTE = 'aFlow';
 
-/**
- * How the water looks and moves (`world/weather.ts`): waves 0..1, foam 0..1,
- * the current, world units a second down a river, and the wind's way
- * (three's x and z, unit) and speed, world units a second.
- */
+/** How the water looks and moves (`world/weather.ts`) */
 export interface WaterLook {
   readonly waves: number;
   readonly foam: number;
@@ -127,46 +61,19 @@ const WAVE_TILE = m(36);
 const DEEP_AT = m(2.4);
 /** Depth over which the shore foam band fades out. */
 const FOAM_AT = m(1.6);
-/**
- * Depth over which the sheet fades in from nothing.
- *
- * The geometry stops exactly where the surface would leave the carved ground,
- * which is the right place for it to stop but the wrong place for it to stop
- * ABRUPTLY: a constant alpha ends the river on a cut line. Fading the last third
- * of a unit of depth hides the edge under the bank instead.
- */
+/** Depth over which the sheet fades in from nothing. */
 const RIM_AT = m(0.28);
 
-/**
- * Reflectance straight down at the surface, before the angular term.
- *
- * Water's real value is 0.02. This is raised because the scene is lit by one
- * low sun and a sky, and a 2% floor leaves the river reading as a hole.
- */
+/** Reflectance straight down at the surface, before the angular term. */
 const FRESNEL_BASE = 0.06;
-/**
- * The Schlick exponent, lowered from the physical 5.
- *
- * The camera is orthographic and fixed at 48 degrees of elevation, so the view
- * angle onto a flat water surface is very nearly constant and never approaches
- * the grazing angles where a physical Fresnel term actually switches on. At 48
- * degrees the physical curve returns four percent, which is why the water looked
- * like paint however good the environment map was. A gentler exponent spreads
- * the same transition across the range of angles the rippled normals do reach.
- */
+/** The Schlick exponent, lowered from the physical 5. */
 const FRESNEL_POWER = 3;
 
 /** Low enough for the sun to catch, high enough not to alias into fireflies. */
 const WATER_ROUGHNESS = 0.15;
 const FOAM_ROUGHNESS = 0.72;
 
-/**
- * The surface's height field, in one sweep, as a tiling normal map plus a
- * coarse noise for the foam to break itself up on.
- *
- * Pure and DOM-free: the result is a byte array, so this is the one part of the
- * water that a node test can assert against.
- */
+/** The surface's height field, in one sweep, as a tiling normal map plus a coarse noise for the foam to break itself up on. */
 export function waterNormalTexels(size: number): Uint8Array {
   const ripple = makeNoise(0x2f81);
   const swell = makeNoise(0x77d3);
@@ -180,9 +87,7 @@ export function waterNormalTexels(size: number): Uint8Array {
       const v = y / size;
       const fine = fbm(ripple, u * 24, v * 24, 24, 3);
       const long = fbm(swell, u * 6, v * 6, 6, 3);
-      // Ridged, not smooth. Plain value noise gives rounded blobs, which read as
-      // a quilted bedspread rather than as water; folding it about its midpoint
-      // creases the crests, which is the shape a capillary wave actually has.
+      // Ridged, not smooth.
       const crest = 1 - Math.abs(fine - 0.5) * 2;
       const index = y * size + x;
       height[index] = crest * 0.62 + long * 0.38;
@@ -190,8 +95,7 @@ export function waterNormalTexels(size: number): Uint8Array {
     }
   }
 
-  // Relief in TEXELS, so the same number is the same visual slope at either
-  // texture size — otherwise the low tier's water is twice as choppy.
+  // Relief in TEXELS, so the same number is the same visual slope at either texture size
   const relief = size * 0.014;
   const data = new Uint8Array(size * size * 4);
   const at = (x: number, y: number): number =>
@@ -224,9 +128,7 @@ function waterNormalTexture(size: number, anisotropy: number): DataTexture {
   texture.name = 'water-normal';
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
-  // A `DataTexture` defaults to nearest filtering and no mipmaps, which on a
-  // surface this texture is scrolled across leaves the ripple crawling with
-  // aliasing at any distance from the camera.
+  // A `DataTexture` defaults to nearest filtering and no mipmaps
   texture.magFilter = LinearFilter;
   texture.minFilter = LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
@@ -235,12 +137,7 @@ function waterNormalTexture(size: number, anisotropy: number): DataTexture {
   return texture;
 }
 
-/**
- * The ripple texture, baked once per size and filtering and shared by every
- * water surface (one per plate): a texture is not freed with
- * the material that uses it (three.js manual, "How to dispose of Objects"),
- * so the surfaces never dispose it.
- */
+/** The ripple texture, baked once per size and filtering and shared by every water surface (one per plate) */
 const normalsMade = new Map<string, DataTexture>();
 function sharedWaterNormals(anisotropy: number): DataTexture {
   const size = waterTextureSize(anisotropy);
@@ -254,23 +151,9 @@ export interface WaterSurface {
   readonly material: MeshStandardMaterial;
   /** The clock the shader scrolls by, in seconds. Exposed so it can be read. */
   readonly time: { value: number };
-  /**
-   * Makes the mesh drive its own animation.
-   *
-   * The draw loop belongs to the renderer and knows nothing about water; asking
-   * it to tick a uniform would put a frame-by-frame dependency on the terrain
-   * into a module that otherwise only rebuilds behind revision gates. The mesh's
-   * own `onBeforeRender` runs exactly when the water is about to be drawn, and
-   * not at all when it is off screen or when there is no river.
-   */
+  /** Makes the mesh drive its own animation. */
   attach(mesh: Mesh): void;
-  /**
-   * The ground under the water as a texture of the terrain's grid heights
-   * (one texel per grid corner, `half` and `cell` in world units), so the
-   * depth is measured per PIXEL. Interpolated per vertex across the shore's
-   * fan triangles, the depth bent at every triangle edge, and the foam band
-   * and the fade drawn from it came out as a sawtooth along every bank.
-   */
+  /** The ground under the water as a texture of the terrain's grid heights */
   setGround(texture: Texture, half: number, cell: number, size: number, origin?: { readonly x: number; readonly y: number }): void;
   /** The waves, foam and current (`WaterLook`). */
   setLook(look: WaterLook): void;
@@ -281,34 +164,25 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
   const normalMap = sharedWaterNormals(anisotropy);
 
   const material = new MeshStandardMaterial({
-    // White: the colour that reaches the lighting is mixed per pixel from the
-    // depth attribute, so a constant tint here would only dim it.
+    // White: the colour that reaches the lighting is mixed per pixel from the depth attribute
     color: 0xffffff,
     normalMap,
     roughness: WATER_ROUGHNESS,
-    // Water is a dielectric. The old material used 0.32 to force a reflection
-    // out of the environment map, which tinted that reflection with the water's
-    // own colour and killed the diffuse — the widened Fresnel below buys the
-    // same brightness without lying about the material.
+    // Water is a dielectric.
     metalness: 0,
     transparent: true,
     opacity: 1,
     side: FrontSide,
-    // Stylised, not a mirror: the sky shows as a soft sheen and a horizon
-    // tint (below), not as a chrome reflection of the environment map.
+    // Stylised, not a mirror: the sky shows as a soft sheen and a horizon tint
     envMapIntensity: 0.42,
   });
-  // Measured against a screenshot at the zoom the game is actually played at,
-  // not at a close-up: below about 0.8 the mip chain washes the ripple out
-  // entirely once the camera pulls back and the river goes glassy again.
+  // Measured against a screenshot at the zoom the game is actually played at, not at a close-up
   material.normalScale.set(0.85, 0.85);
 
   const time = { value: 0 };
   const uniforms = {
     uWaterTime: time,
-    // Three stops after SimCity 4's water: a pale blue over the shelf, a soft
-    // periwinkle, a dense blue in the channel - a painted ramp, not navy, and
-    // not the icy cyan a single light blue gave.
+    // Three stops after SimCity 4's water: a pale blue over the shelf, a soft periwinkle, a dense blue in the channel
     uShallow: { value: new Color(0x7fb2a8) },
     uMid: { value: new Color(0x3d7a8e) },
     uDeep: { value: new Color(0x245a74) },
@@ -404,18 +278,10 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
          // value only until a ground is set.
          float waterDepthPx = uGroundGrid.z > 0.5 ? vWaterWorld.y - waterGroundAt(vWaterWorld.xz) : vWaterDepth;
          // The two layers, and the only two texture fetches this material adds.
-         // Sampled in WORLD space, not from the mesh uv, so the pattern does not
-         // stretch where the surface grid is cut at an angle by the shore.
          vec2 waterPoint = vWaterWorld.xz;
          vec4 waterA = texture2D(normalMap, waterPoint * uScaleA + uWaterTime * uDriftA);
          vec4 waterB = texture2D(normalMap, waterPoint * uScaleB + uWaterTime * uDriftB);
-         // THE CURRENT: down a river the ripples are carried the way the water
-         // runs - a flow map (Vlachos, "Water Flow in Portal 2"; Catlike
-         // Coding's "Texture Distortion"): each layer read twice, pushed
-         // downstream over a cycle, the two reads half a cycle apart and
-         // weighted by a triangle wave so neither's restart is ever seen. A
-         // lake keeps the still layers above. Read in every pixel, not behind
-         // a branch, so the mip derivatives stay whole.
+         // THE CURRENT: down a river the ripples are carried the way the water runs - a flow map
          float waterFlowing = clamp(length(vWaterFlow), 0.0, 1.0);
          float waterCycle = uWaterTime / ${FLOW_CYCLE.toFixed(1)};
          float waterP0 = fract(waterCycle), waterP1 = fract(waterCycle + 0.5);
@@ -428,59 +294,38 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
          float waterRun = smoothstep(0.02, 0.3, waterFlowing) * step(0.001, uCurrent);
          waterA = mix(waterA, waterFA, waterRun);
          waterB = mix(waterB, waterFB, waterRun);
-         // THE WAVES: a broad swell travelling with the wind, as tall as the
-         // map's setting asks, calm in the shallows.
+         // THE WAVES: a broad swell travelling with the wind, as tall as the map's setting asks, calm in the shallows.
          vec4 waterW = texture2D(normalMap, waterPoint * uScaleWave + uWaterTime * uWaveDrift);
 
-         // Shallow reads green and lets the bed through; deep reads blue and
-         // does not. One opacity for both is what left the river with no bed.
-         // Beer-Lambert absorption, 1 - exp(-depth / k), through three stops,
-         // so the ramp keeps changing across a deep channel instead of
-         // reaching its deep colour a metre from the bank.
+         // Shallow reads green and lets the bed through; deep reads blue and does not.
          float waterDeep = 1.0 - exp(-max(waterDepthPx, 0.0) / ${(DEEP_AT * 0.6).toFixed(2)});
          vec3 waterTint = waterDeep < 0.5
            ? mix(uShallow, uMid, waterDeep * 2.0)
            : mix(uMid, uDeep, waterDeep * 2.0 - 1.0);
 
-         // A BAND, not a threshold: foam that simply grows towards zero depth is
-         // brightest exactly where the sheet fades out, so none of it is ever
-         // seen. Broken up by the noise the normal map carries in its alpha, or
-         // it draws a contour line along the bank.
+         // A BAND, not a threshold: foam that simply grows towards zero depth is brightest exactly where the sheet fades out
          float waterShore = smoothstep(0.0, ${FOAM_AT.toFixed(2)}, waterDepthPx);
-         // A crisp edge, as stylised foam is drawn: the band is cut by the
-         // drifting noise at a hard-ish threshold, so it frays into lacy
-         // scallops instead of a soft white smear.
+         // A crisp edge, as stylised foam is drawn
          float waterLace = waterA.a * 0.55 + waterB.a * 0.65;
          float waterEdge = 1.0 - waterShore;
-         // A band set IN from the shore, never on it: the outline itself is
-         // where the surface is clipped against the ground, cell by cell, and
-         // foam drawn there traced every tooth of it. The outline is faded
-         // out instead (RIM_AT), as soft particles fade where they meet a
-         // surface, and the foam starts just inside it. The lace only moves
-         // the band's inner edge; it never adds foam over open water.
+         // A band set IN from the shore, never on it
          float waterFoamOuter = smoothstep(${(RIM_AT * 0.7).toFixed(2)}, ${(RIM_AT * 1.3).toFixed(2)}, waterDepthPx);
          float waterFoam = waterFoamOuter * smoothstep(0.34, 0.4, waterEdge + (waterLace - 0.6) * 0.22);
          // A hint of a wash line, not a white outline drawn round the water.
          waterFoam = clamp(waterFoam * uFoamAmount, 0.0, 1.0);
-         // Whitecaps on the crests of tall waves, and streaks where a fast
-         // current churns: as much as the foam setting asks.
+         // Whitecaps on the crests of tall waves, and streaks where a fast current churns: as much as the foam setting asks.
          float waterOpen = smoothstep(${m(0.6).toFixed(3)}, ${m(2.4).toFixed(3)}, waterDepthPx);
          float waterCaps = smoothstep(0.8 - 0.22 * uWaves, 0.97, waterW.a) * smoothstep(0.25, 0.8, uWaves) * waterOpen;
          float waterChurn = waterRun * waterFlowing * smoothstep(0.66, 0.78, waterLace) * smoothstep(${m(0.8).toFixed(3)}, ${m(3.2).toFixed(3)}, uCurrent);
          waterFoam = clamp(max(waterFoam, (waterCaps + waterChurn * 0.6) * uFoamAmount * 1.6), 0.0, 1.0);
          waterTint = mix(waterTint, uFoamTint, waterFoam);
 
-         // The first shallow stretch reveals the actual bed. Starting at
-         // 0.34 opacity mixed green water with brown ground into a bright
-         // cyan outline before the river became deep blue a few pixels in.
-         // The bed shows through until some five and a half metres: a river of a
-         // couple of metres is clear to its stones, only the deep goes opaque.
+         // The first shallow stretch reveals the actual bed.
          float waterAlpha = mix(0.05, 0.88, smoothstep(${m(0.12).toFixed(3)}, ${m(5.6).toFixed(3)}, waterDepthPx));
          waterAlpha = max(waterAlpha, waterFoam * 0.9);
          float waterRim = smoothstep(0.0, ${RIM_AT.toFixed(2)}, waterDepthPx);
 
-         // Slicks and currents: a slow, wide swing in tone, so a long river is
-         // not one flat colour from bank to horizon. One more fetch.
+         // Slicks and currents: a slow, wide swing in tone, so a long river is not one flat colour from bank to horizon.
          float waterSlick = texture2D(normalMap, waterPoint * 0.0031 + uWaterTime * vec2(0.0011, 0.0006)).a;
          waterTint *= 0.94 + 0.12 * waterSlick;
          diffuseColor.rgb = waterTint;
@@ -496,10 +341,7 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
         '#include <normal_fragment_maps>',
         `vec3 waterNormalA = waterA.xyz * 2.0 - 1.0;
          vec3 waterNormalB = waterB.xyz * 2.0 - 1.0;
-         // The tangent-space SLOPES are summed; the vectors are not blended. A
-         // lerp between two opposed normals cancels to flat, so a mixed
-         // two-layer surface goes glassy exactly where the layers cross — which
-         // is everywhere, a few times a second.
+         // The tangent-space SLOPES are summed; the vectors are not blended.
          vec3 waterNormalW = waterW.xyz * 2.0 - 1.0;
          float waterSwell = uWaves * 1.3 * smoothstep(${m(0.32).toFixed(3)}, ${m(2).toFixed(3)}, waterDepthPx);
          vec3 mapN = normalize(vec3(
@@ -522,23 +364,16 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
          material.specularColor = waterSpecular;
          material.specularColorBlended = waterSpecular;
          material.specularF90 = 1.0;
-         // What is reflected is not transmitted: the bed goes away under the
-         // glancing parts of the surface, and the body of the water dims by as
-         // much as the reflection gains.
+         // What is reflected is not transmitted
          material.diffuseContribution *= 1.0 - waterFresnel * 0.6;
-         // Water absorbs most of the light that enters it: its body colour is
-         // the light scattered back, a fraction of what a matte surface of
-         // that colour would return under the same sun. Lit as paint, the
-         // river read as a pale sheet of plastic.
+         // Water absorbs most of the light that enters it
          material.diffuseContribution *= mix(0.65, 1.0, waterFoam);
-         // The horizon tint: what faces away from the eye takes the sky's pale
-         // colour as a painted wash, instead of a sharp reflection.
+         // The horizon tint: what faces away from the eye takes the sky's pale colour as a painted wash
          material.diffuseContribution = mix(material.diffuseContribution, uHorizon, waterFresnel * 0.35 * (1.0 - waterFoam));
          diffuseColor.a = clamp(diffuseColor.a + waterFresnel * 0.5, 0.0, 1.0) * waterRim;`,
       );
   };
-  // A changed key keeps this variant out of the cache slot the road and terrain
-  // standard materials share.
+  // A changed key keeps this variant out of the cache slot the road and terrain standard materials share.
   material.customProgramCacheKey = () => 'water-flow-waves-v6';
 
   const started = performance.now();
@@ -554,8 +389,7 @@ export function createWaterSurface(anisotropy: number): WaterSurface {
       uniforms.uWaves.value = look.waves;
       uniforms.uFoamAmount.value = look.foam;
       uniforms.uCurrent.value = look.current;
-      // The swell runs with the wind, a little faster the harder it blows
-      // (tiles a second; a breath of a drift in still air).
+      // The swell runs with the wind, a little faster the harder it blows (tiles a second; a breath of a drift in still air).
       const speed = (m(0.6) + look.windSpeed * 0.35) / WAVE_TILE;
       uniforms.uWaveDrift.value.set(look.windX * speed, look.windZ * speed);
     },

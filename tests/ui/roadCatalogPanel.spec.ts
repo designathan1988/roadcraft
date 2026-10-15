@@ -1,5 +1,4 @@
-// @vitest-environment happy-dom
-// The road catalogue in the road tool's drawer (the player's order of 2026-10-09).
+// @vitest-environment happy-dom The road catalogue in the road tool's drawer (the player's order of 2026-10-09).
 import { afterEach, describe, expect, it } from 'vitest';
 import { catalogStrip, pickedRoad } from '@ui/roads/catalogPanel';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';

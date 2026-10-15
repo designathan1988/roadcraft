@@ -3,14 +3,7 @@ import { BackSide, BoxGeometry, DoubleSide, Group, Mesh, MeshStandardMaterial, T
 
 import { compileAhead, drainCompiles, shadowStandIn } from '@render/uploads';
 
-/**
- * THE SHADOWS COMPILED AHEAD (`uploads.ts` shadowStandIn): stand-ins of
- * different variants compiled in one batch are each compiled with their own
- * depth variant - the side, the map and the alpha test the shadow pass will
- * draw them with. On one shared depth material set when each stand-in was
- * made, every one was compiled as the last one made, and the others' shadow
- * programs were linked in the first shadow pass that drew them.
- */
+/** THE SHADOWS COMPILED AHEAD (`uploads.ts` shadowStandIn) */
 describe('the shadow stand-ins compiled ahead', () => {
   it('are each compiled with their own depth variant, in one batch', async () => {
     const seen: string[] = [];

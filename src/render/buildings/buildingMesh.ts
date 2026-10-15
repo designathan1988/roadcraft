@@ -108,14 +108,7 @@ let flagSink: FlagInstance[] | null = null;
 const flagOf = (detail: RoofDetail): FlagDesign | null =>
   !detail.flag || detail.flag === 'none' ? null : detail.flagDesign ?? legacyFlag(detail.flag);
 
-/**
- * Buildings, as meshes. See docs/buildings.md section 5.
- *
- * ONE merged, vertex-coloured shell for every building passed in - walls with
- * real openings and reveals, plinths, storey bands, parapets, roofs, steps,
- * lift overruns - and one instanced batch per component part, shared by every
- * building. Built behind the renderer's revision gate, never in a draw call.
- */
+/** Buildings, as meshes. */
 
 export interface BuildingMeshes {
   readonly group: Group;
@@ -196,11 +189,7 @@ const EAVES = m(0.45);
 const ROOF_THICK = m(0.18);
 const ARCADE = m(1.8);
 const PLINTH_GROW = m(0.12);
-/**
- * How far a plinth's ledge and a door's threshold stand over the floor: a yard
- * at the floor's level met them in one plane and flickered. A flight's landing
- * stands at the same height (`foundation.ts` `LANDING_RISE`, `Entrance.floor`).
- */
+/** How far a plinth's ledge and a door's threshold stand over the floor */
 const PLINTH_RISE = LANDING_RISE;
 /** How deep a loggia is let into the wall. */
 const LOGGIA_DEPTH = m(1.4);
@@ -264,9 +253,7 @@ function openingOf(component: BayComponent, W: number, H: number, geometry?: Fac
       h1 = Math.min(H - m(0.6), m(4.5));
       depth = m(0.25);
       break;
-    // These had no opening at all: every double door, French window, bay
-    // window, ribbon and garage door in the city was drawn as plain wall -
-    // the bank and the city hall with no way in.
+    // These had no opening at all: every double door, French window, bay window
     case 'doubleDoor':
       w = Math.min(W - m(0.7), m(2.4));
       h0 = 0;
@@ -299,8 +286,7 @@ function openingOf(component: BayComponent, W: number, H: number, geometry?: Fac
       break;
     // The facade library (`world/buildings/architecture.ts`).
     case 'loggia':
-      // Let into the wall the depth of a room's edge: its floor, its ceiling,
-      // its cheeks and the glazed wall at the back are the reveals.
+      // Let into the wall the depth of a room's edge
       w = W - m(0.5);
       h0 = m(0.02);
       h1 = H - m(0.3);
@@ -350,25 +336,14 @@ class ShellPart {
   readonly decay: number[] = [];
 }
 
-/**
- * Triangles in THREE's axes, one buffer set per finish; winding fixed per face.
- *
- * UVs are in WORLD units laid on the face's own plane: along the face
- * horizontally and up it (up the slope, on a roof), so a texture's courses of
- * brick or rows of tiles run level on every wall and every roof. Each finish's
- * material scales them to its tile (`kit.ts`).
- */
+/** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 /** The lattice value of `macroNoise` at (i, j, k), 0..1. */
 function noiseHash(i: number, j: number, k: number): number {
   let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(j | 0, 0x165667b1) ^ Math.imul(k | 0, 0x3c6ef372);
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   return ((h ^ (h >>> 13)) >>> 0) / 4_294_967_296;
 }
-/**
- * Smooth 3D value noise, 0..1, for tone that drifts over a whole facade.
- * Called for every vertex of every shell (a town's opening: 0.8 s of the
- * 6 s its buildings took): no closure made per call.
- */
+/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade. */
 function macroNoise(x: number, y: number, z: number): number {
   const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
   let fx = x - x0, fy = y - y0, fz = z - z0;
@@ -388,23 +363,12 @@ const GRIME_REACH = m(1.2);
 
 class Shell {
   readonly parts = new Map<Finish, ShellPart>();
-  /**
-   * The ground floor's height for the building being emitted: walls darken
-   * towards it (splash and dirt at the base), which also seats the building
-   * on the ground. NaN turns it off.
-   */
+  /** The ground floor's height for the building being emitted: walls darken towards it */
   ground = Number.NaN;
   /** How run-down the building being emitted is (`Building.decay`): stains, peeling paint, grime. */
   decay = 0;
 
-  /**
-   * A planar convex polygon (3 or more world points in order, x/y map, z up)
-   * facing world normal `n`, laid as a fan from its first point. The winding
-   * is measured, never assumed: world y is mirrored into three's z, which
-   * flips handedness (CLAUDE.md trap: winding). DO NOT lay only the first
-   * two triangles: a lantern's octagonal and 24-sided caps (`emitLantern`
-   * `disc`) were left open, the rest of their sides never drawn.
-   */
+  /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
     let part = this.parts.get(c.finish);
     if (!part) {
@@ -429,9 +393,7 @@ class Shell {
     const nz = -wy;
     const wall = Math.abs(wz) < 0.5;
     const grime = wall && Number.isFinite(this.ground);
-    // Every vertex of every shell passes here (a town's opening: 2.5-3 s of
-    // its 6 s of buildings): written straight into the part, no array or
-    // closure made per vertex.
+    // Every vertex of every shell passes here (a town's opening: 2.5-3 s of its 6 s of buildings)
     const { position, normal, colour, decay, uv } = part;
     const rgb = c.rgb;
     for (let i = 0; i < points.length; i++) {
@@ -487,10 +449,7 @@ interface BayFace {
   H: number;
 }
 
-/**
- * The frame of a face of `side`, starting `along` units from the side's
- * start, its plane `push` units out from the side (negative: set back).
- */
+/** The frame of a face of `side`, starting `along` units from the side's start, its plane `push` units out from the side */
 function sideFrame(v: Volume, side: FaceId, along: number, push = 0): Pick<BayFace, 'ax' | 'ay' | 'tx' | 'ty' | 'nx' | 'ny'> {
   const s = sideStart(v, side);
   const edge = edgeFrame(v, side);
@@ -617,12 +576,7 @@ class Emitter {
 /** How far its light reaches over the wall round it, either way and up or down. */
 const PORCH_WASH = { half: m(1.1), up: m(1.3) } as const;
 
-/**
- * The lantern beside a front door, a little under the door's head, on the
- * side where the bay's wall has room for it (none where neither has), and
- * the light it throws on the wall: a splash centred on it, kept to the bay's
- * own wall so it never hangs past a corner.
- */
+/** The lantern beside a front door, a little under the door's head, on the side where the bay's wall has room for it */
 function emitPorchLight(e: Emitter, f: BayFace, W: number, am: number, w: number, top: number): void {
   const right = am + w / 2 + PORCH_LAMP.gap;
   const left = am - w / 2 - PORCH_LAMP.gap;
@@ -678,26 +632,19 @@ function emitBuilding(
     { a0: x.width * 0.2, a1: x.width * 0.8, h0: 0, h1: levelHeight(b, 0) * 0.7, depth: REVEAL };
   /** Where an entrance's bay starts along its side. */
   const entranceStart = (x: Entrance, v: Volume): number => x.index * bayWidth(b, v, x.side);
-  // A small, stable shade per building, so a street of one preset is not a
-  // single flat colour.
+  // A small, stable shade per building, so a street of one preset is not a single flat colour.
   const shade = 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
   const wallOf = (v: Volume, side: FaceId, storey?: number): Paint => paint(wallMaterial(b, v, side, storey), shade);
-  // Mouldings - bands, cornices, copings, reveals - are smooth: a finish with
-  // a pattern (formwork ties, courses) repeated along a moulding reads as rivets.
+  // Mouldings - bands, cornices, copings, reveals - are smooth: a finish with a pattern
   const trimSpec = trimMaterial(b);
   const frameTrim = paint({ finish: trimSpec.finish === 'metal' ? 'metal' : 'plaster', colour: trimSpec.colour });
-  // Mouldings - cornices, string courses, copings, the heads of reliefs - are
-  // masonry: on a building whose frames are dark metal (graphite, bronze)
-  // they are the skin a shade lighter, never a black stripe round the block.
+  // Mouldings - cornices, string courses, copings, the heads of reliefs - are masonry
   const trim = trimSpec.finish === 'metal' && b.materials?.wall
     ? shaded(paint({ finish: 'plaster', colour: b.materials.wall.colour }), 1.1) : frameTrim;
   const plinth = paint(plinthMaterial(b));
   const awning = new Color().setHex(paletteOf(b).awning);
 
-  // ---- plinth: from below the lowest ground up to the floor - each block's
-  // own, on a split level, so a block a half storey up stands on its own
-  // foundation wall and one a storey down shows its lower floor whole -
-  // notched where a flight of steps is set into the building
+  // ---- plinth: from below the lowest ground up to the floor
   for (const v of b.volumes) {
     if (v.base !== 0) continue;
     const top = floor + volumeLift(v);
@@ -711,8 +658,7 @@ function emitBuilding(
       list.push({ a0: start + o.a0, a1: start + o.a1, recess: x.recess });
       notches.set(x.side, list);
     }
-    // Its ledge a little over the floor (`PLINTH_RISE`), so a yard laid at
-    // the floor's level meets its face, not its top.
+    // Its ledge a little over the floor (`PLINTH_RISE`), so a yard laid at the floor's level meets its face, not its top.
     const ledge = top + PLINTH_RISE;
     emitPlinth(e, b, v, Math.min(f.bottom, top - PLINTH_BURY), ledge, plinth, notches);
     // A projection standing on the ground stands on the plinth too.
@@ -763,9 +709,7 @@ function emitBuilding(
       e.rect(face, 0, face.W, face.H - head, face.H, -m(.16), e.N(face.nx, face.ny), frame);
       continue;
     }
-    // Cut open, the floor seen is walled as The Sims walls it: the walls that
-    // face the camera are cut down to a skirting, the ones across the room
-    // stand whole and show their inside.
+    // Cut open, the floor seen is walled as The Sims walls it
     if (b.cutaway !== undefined && bay.level === b.cutaway && b.cutView) {
       const n = e.N(face.nx, face.ny);
       const inner = paint({ finish: 'plaster', colour: 0xeee8dc });
@@ -799,13 +743,11 @@ function emitBuilding(
     e.room = null;
     const ribDepth = controls?.pierDepth ?? (grammar === 'artDecoCrown' ? m(.65) : grammar === 'artDeco' ? m(.3) : 0);
     if (ribDepth > 0 && bay.index % (controls?.pierEvery ?? 1) === 0) {
-      // Shallow, continuous-looking stone pilasters give every mass a vertical
-      // rhythm while retaining individually editable windows and wall bays.
+      // Shallow, continuous-looking stone pilasters give every mass a vertical rhythm while retaining individually editable
       const width = Math.min(controls?.pierWidth ?? (grammar === 'artDecoCrown' ? m(.65) : m(.36)), face.W * .3);
       const a0 = width * 0.35, a1 = a0 + width;
       const depth = -ribDepth;
-      // The building's own skin, a little lighter (catching the light): a
-      // stone-coloured pier on a brick or a painted wall read as a second building.
+      // The building's own skin, a little lighter (catching the light)
       const stone = shaded(wallOf(v, bay.side, bay.storey), 1.08);
       // On the ground floor from the plinth's ledge up, not through it.
       const foot = bay.storey === 0 && v.base === 0 ? PLINTH_RISE : 0;
@@ -828,8 +770,7 @@ function emitBuilding(
       const level = v.base + k;
       if (level === 0) continue;
       const z = floor + volumeElevation(b, v, level);
-      // Not where another block stands against the wall over and under the
-      // line: two flush blocks' bands of two colours lay there in one plane.
+      // Not where another block stands against the wall over and under the line
       const hidden = (side: FaceId): [number, number][] => bothCovered(coveredSpans(b, v, side, level - 1), coveredSpans(b, v, side, level));
       if (lines === 'every') band(e, v, z, BAND_OUT, BAND_H, trim, hidden);
       // One string course over the ground floor: the base read from the body.
@@ -847,8 +788,7 @@ function emitBuilding(
   }
   if (b.cutaway !== undefined) emitInterior(e, b, floor, b.cutaway);
 
-  // ---- entrance steps: outside, down to the ground in front, or set into
-  // the building where the paving leaves no room for them
+  // ---- entrance steps: outside, down to the ground in front
   for (const entrance of f.entrances) {
     if (entrance.steps <= 0) continue;
     const v = volumes.get(entrance.volume) as Volume;
@@ -907,9 +847,7 @@ function emitBuilding(
   // ---- cores: a lift overrun on the highest flat roof over the core (`roofPlan.ts`)
   for (const { volume: best, x0, y0, x1, y1 } of machineRooms(b)) {
     const z = floor + volumeHeight(b, best);
-    // The machine room clad in the building's own skin: a white box on
-    // every tower top read as a separate thing set on it. Masonry under a
-    // glass skin: a lift's machine room is a closed room, never glazed.
+    // The machine room clad in the building's own skin: a white box on every tower top read as a separate thing set on it.
     const skin = best.dress ? wallOf(best, 0) : trim;
     e.box(x0, y0, x1, y1, z, z + m(3), skin.finish === 'glass' ? MACHINE_ROOM : skin, ROOF_PLANT);
   }
@@ -922,12 +860,7 @@ const MACHINE_ROOM = paint({ finish: 'concrete', colour: 0xa7a49c });
 /** A parapet's metal coping: aluminium flashing. */
 const ALUMINIUM_COPING = paint({ finish: 'metal', colour: 0xb9bcbd });
 
-/**
- * A parapet's coping: the trim where it is a masonry moulding of a quiet
- * colour (a stone or rendered cap); a metal flashing - aluminium - where the
- * trim is metal or glass or a strong colour. Every tower was capped by a band
- * of pure blue or green paint (the player, 2026-10-13).
- */
+/** A parapet's coping: the trim where it is a masonry moulding of a quiet colour (a stone or rendered cap) */
 function copingOf(trim: Paint): Paint {
   const [r, g, b] = trim.rgb;
   const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
@@ -940,16 +873,9 @@ const SHAFT = paint({ finish: 'concrete', colour: 0xb9b6ae });
 const CAB = paint({ finish: 'metal', colour: 0x9aa3a8 });
 const STEP = paint({ finish: 'stone', colour: 0xc9c2b3 });
 
-/**
- * Inside a building cut open at level `cut` (the Construction tool's interior
- * view): the floor of that level, and the cores - lift shafts with the car
- * at that floor, stair shafts with their flight - and on the ground floor the
- * lobby's desk. These are the places people will walk through: entrance,
- * lobby, core, floor.
- */
+/** Inside a building cut open at level `cut` (the Construction tool's interior view) */
 function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void {
-  // The cut floor's height where a point of the plan is: each block's own,
-  // on a split level (`Volume.lift`).
+  // The cut floor's height where a point of the plan is: each block's own, on a split level (`Volume.lift`).
   const zAt = (x: number, y: number): number => floor + liftAt(b, cut, x, y) + levelElevation(b, cut);
   // Homes and hotels have wooden floors; everywhere else, stone (the windows show the same, `roomBehind.ts`).
   const kind = floorKind(b, cut);
@@ -999,10 +925,7 @@ function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void
       }
     }
   }
-  // The flights between blocks at floors of their own (a split level,
-  // `levelFlights`): in the lower block, up to the higher floor at the line
-  // they meet along - where before the step showed only as the higher
-  // block's plinth.
+  // The flights between blocks at floors of their own (a split level, `levelFlights`)
   for (const f of levelFlights(b, cut)) {
     const run = Math.hypot(f.top.x - f.foot.x, f.top.y - f.foot.y);
     const ux = (f.top.x - f.foot.x) / run, uy = (f.top.y - f.foot.y) / run;
@@ -1018,8 +941,7 @@ function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void
   // The rooms: their walls, with doorways, and what is in them.
   const inside = interiorAt(b, cut);
   const wallRise = Math.min(levelHeight(b, cut) - m(0.4), m(2.7));
-  // Walls across the camera's line of sight come down to a skirting, as in
-  // The Sims; walls running along it stay up and divide the rooms.
+  // Walls across the camera's line of sight come down to a skirting, as in The Sims
   const view = b.cutView;
   const viewLocal = view ? { x: view.x * Math.cos(b.rotation) + view.y * Math.sin(b.rotation), y: -view.x * Math.sin(b.rotation) + view.y * Math.cos(b.rotation) } : null;
   for (const p of inside.partitions) {
@@ -1038,11 +960,7 @@ function emitInterior(e: Emitter, b: Building, floor: number, cut: number): void
   }
 }
 
-/**
- * One piece of furniture, as an instance of its model: scaled from the
- * model's own size to the piece, standing on the floor, its front turned the
- * way the piece faces (at angle 0, towards -y in the building's frame).
- */
+/** One piece of furniture, as an instance of its model */
 function placeFurniture(e: Emitter, f: Furniture, floorZ: number): void {
   const [w, d, h] = FURNITURE_SIZE[f.kind];
   const p = e.L(f.x, f.y, floorZ + 0.05);
@@ -1059,13 +977,7 @@ const shaded = (c: Paint, k: number): Paint => ({ rgb: [c.rgb[0] * k, c.rgb[1] *
 
 /** Walls that take a rain streak: render, stucco, concrete and stone (not glass, tile, brick or metal). */
 const STREAKED: ReadonlySet<Finish> = new Set<Finish>(['plaster', 'stucco', 'concrete', 'stone']);
-/**
- * The rain streak under a sill: water off the sill runs down the wall and
- * leaves a darker wash fading downwards (the dirt map of CityEngine's facade
- * tutorial, drawn per window instead of as a texture). Two triangles a
- * window, darker under the sill and gone a metre below it; stronger on an
- * older building. Laid a hair proud of the wall, so it never fights it.
- */
+/** The rain streak under a sill: water off the sill runs down the wall and leaves a darker wash fading downwards */
 function emitStreak(e: Emitter, f: BayFace, bay: FacadeBay, am: number, w: number, sill: number, wall: Paint): void {
   if (!STREAKED.has(wall.finish) || sill < m(0.5)) return;
   const h = bayHash(bay);
@@ -1086,13 +998,7 @@ function bayHash(bay: FacadeBay): number {
   return (h ^ (h >>> 13)) >>> 0;
 }
 
-/**
- * The height of a door canopy's slab (its centre, `half` its thickness): `over`
- * above the door's head, but under the slab of a balcony on the storey over
- * it - a canopy at the door's height ran into a varanda gourmet's slab, the
- * two tops in one plane (2026-10-13). The gourmet slab and its edge beam
- * hang 0.29 m under the storey's floor; the canopy's fascia 0.06 m lower still.
- */
+/** The height of a door canopy's slab (its centre, `half` its thickness) */
 function canopyAt(head: number, H: number, half: number, over: number): number {
   return Math.min(head + over, H - m(0.42) - half);
 }
@@ -1134,21 +1040,18 @@ function emitBay(
     e.rect(f, 0, W, 0, H, 0, out, wall);
     return;
   }
-  // A porch runs down to the floor and back to the door; its floor is the
-  // top of the flight, so it has no sill of its own.
+  // A porch runs down to the floor and back to the door; its floor is the top of the flight, so it has no sill of its own.
   const o = recess > 0 ? { ...found, h0: 0, depth: recess } : found;
   // The wall around the hole, then the four reveals into it.
   e.rect(f, 0, o.a0, 0, H, 0, out, wall);
   e.rect(f, o.a1, W, 0, H, 0, out, wall);
   e.rect(f, o.a0, o.a1, 0, o.h0, 0, out, wall);
   e.rect(f, o.a0, o.a1, o.h1, H, 0, out, wall);
-  // The reveals are in the wall's shadow: darkened here, so a recess reads as
-  // one even where the ambient occlusion pass is off (the lower tiers).
+  // The reveals are in the wall's shadow
   const reveal = shaded(recess > 0 ? wall : trim, REVEAL_SHADE);
   e.jamb(f, o.a0, o.h0, o.h1, 0, o.depth, along, reveal);
   e.jamb(f, o.a1, o.h0, o.h1, 0, o.depth, back, reveal);
-  // A sill; at the floor, a threshold as high as the plinth's ledge, over a
-  // yard laid at the floor's level rather than in its plane.
+  // A sill; at the floor, a threshold as high as the plinth's ledge
   if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, [0, 0, 1], shaded(trim, 0.92));
   e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, [0, 0, -1], shaded(reveal, 0.8));
 
@@ -1159,14 +1062,10 @@ function emitBay(
   switch (bay.component) {
     case 'window':
     case 'sashWindow': {
-      // No two rows alike: some rooms darker, some with the roller shutter
-      // part way down - picked from the bay, so stable. The curtains are the
-      // glass's (`kit.ts`, the room behind the pane: folds, weave, the light
-      // through them): as flat boxes they were slabs of cream paint.
+      // No two rows alike: some rooms darker, some with the roller shutter part way down - picked from the bay, so stable.
       const pick = bay.component === 'sashWindow' ? 13 : bayHash(bay) % 20;
       e.put(pick < 5 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
-      // The shutter a little inside the frame's edges: as wide as it, its
-      // sides lay in the frame's own and fought it for depth.
+      // The shutter a little inside the frame's edges: as wide as it, its sides lay in the frame's own and fought it for depth.
       if (pick >= 9 && pick < 13) {
         const down = h * (0.25 + (pick - 9) * 0.15) - PART_INSET;
         e.put('shutter', f, am, o.h1 - PART_INSET - down / 2, o.depth - m(0.05), w - 2 * PART_INSET, down, m(0.04));
@@ -1190,13 +1089,11 @@ function emitBay(
     case 'door':
       e.put('door', f, am, hm, o.depth + m(0.03), w, h, m(0.06));
       if (bay.level === 0) {
-        // A canopy over the door: a slab with a fascia at its edge (a drip),
-        // and two brackets under it into the wall.
+        // A canopy over the door: a slab with a fascia at its edge (a drip), and two brackets under it into the wall.
         const cz = canopyAt(o.h1, H, m(0.06), m(0.3));
         e.put('concrete', f, am, cz, -m(0.45), w + m(0.7), m(0.12), m(0.9));
         e.put('concrete', f, am, cz - m(0.04), -m(0.88), w + m(0.7), m(0.2), m(0.05));
-        // The brackets up to the slab's soffit, not into it: their backs and
-        // the slab's lay in the wall's plane over the 3 cm they crossed.
+        // The brackets up to the slab's soffit, not into it
         for (const side of [-1, 1]) e.put('frame', f, am + side * (w / 2 + m(0.2)), cz - m(0.06) - m(0.15), -m(0.25), m(0.06), m(0.3), m(0.5), tc);
         emitPorchLight(e, f, W, am, w, o.h1);
       }
@@ -1211,8 +1108,7 @@ function emitBay(
       e.put('shutter', f, am, hm, o.depth, w, h, m(0.1));
       break;
     case 'doubleDoor': {
-      // Two leaves up to door height, and a fanlight over them in a tall
-      // opening; a canopy over the whole on the ground floor.
+      // Two leaves up to door height, and a fanlight over them in a tall opening; a canopy over the whole on the ground floor.
       const leafTop = Math.min(h, m(2.5));
       const leafMid = o.h0 + leafTop / 2;
       for (const side of [-1, 1]) {
@@ -1245,9 +1141,7 @@ function emitBay(
     case 'brise': {
       e.put(bayHash(bay) % 5 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
       e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
-      // Vertical fins the storey's height, standing out of the wall: the
-      // brise-soleil of the Brazilian modern block (Capanema, Pedregulho).
-      // One rack a bay (`kit.ts` `brise`).
+      // Vertical fins the storey's height, standing out of the wall: the brise-soleil of the Brazilian modern block
       const fd = m(0.6);
       e.put('brise', f, W / 2, H / 2, -fd / 2, W, H, fd, tc);
       break;
@@ -1255,8 +1149,7 @@ function emitBay(
     case 'shutteredWindow': {
       e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
       e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.06), tc);
-      // A moulded surround in the trim, then the louvred leaves folded back
-      // on the wall either side, in the shutter paint (`louvre`).
+      // A moulded surround in the trim, then the louvred leaves folded back on the wall either side, in the shutter paint
       const band = m(0.14);
       e.put('fin', f, am, o.h1 + band / 2, -m(0.03), w + band * 2, band, m(0.06), tc);
       for (const side of [-1, 1]) e.put('fin', f, am + side * (w / 2 + band / 2), hm, -m(0.03), band, h, m(0.06), tc);
@@ -1266,30 +1159,21 @@ function emitBay(
       break;
     }
     case 'gourmet': {
-      // Sliding glass the bay's width, and the deep balcony: its slab, a
-      // glass parapet along its front edge.
+      // Sliding glass the bay's width, and the deep balcony: its slab, a glass parapet along its front edge.
       e.put(bayHash(bay) % 4 === 0 ? 'glassDark' : 'glass', f, am, hm, o.depth, w, h, 1);
       e.put('frame', f, am, hm, o.depth - m(0.03), w, h, m(0.05), tc);
       const slab = slabColour(wall);
-      // Where the run of balconies ends, the side wall that carries the
-      // slabs storey on storey and closes the balcony (the Brazilian varanda
-      // gourmet's cheek, in the wall's own finish), a hair inside the bay so
-      // its face is in no plane of the slab's or the next bay's; the rail and
-      // its cap end inside it. Between two balconies, the low party screen
-      // that parts one flat's from the next.
+      // Where the run of balconies ends, the side wall that carries the slabs storey on storey and closes the balcony
       const closedLeft = left !== 'gourmet', closedRight = right !== 'gourmet';
       const r0 = closedLeft ? CHEEK_IN + GOURMET_CHEEK / 2 : 0, r1 = closedRight ? W - CHEEK_IN - GOURMET_CHEEK / 2 : W;
       e.put('fin', f, W / 2, -m(0.12), -GOURMET_OUT / 2, W, m(0.24), GOURMET_OUT, slab);
-      // The slab's edge beam, a drip under its front: the slab reads as a
-      // floor of the building carried out, not a tray.
+      // The slab's edge beam, a drip under its front: the slab reads as a floor of the building carried out, not a tray.
       e.put('fin', f, W / 2, -m(0.2), -GOURMET_OUT + m(0.06), W, m(0.18), m(0.16), slab);
       e.put('glassRail', f, (r0 + r1) / 2, 0, -GOURMET_OUT + m(0.04), r1 - r0, m(1.05), 1);
       // The rail's metal cap along the top of the glass, in the frames' colour.
       e.put('fin', f, (r0 + r1) / 2, m(1.06), -GOURMET_OUT + m(0.04), r1 - r0, m(0.05), m(0.06), tc);
       for (const [u, closed] of [[CHEEK_IN + GOURMET_CHEEK / 2, closedLeft], [W - CHEEK_IN - GOURMET_CHEEK / 2, closedRight]] as const) {
-        // A storey high from under the slab, so the cheeks of the storeys
-        // stack into one wall; 5 cm proud of the slab's edge, never in its plane.
-        // Its back let into the wall, off the plane the slab's and the other parts' backs lie in.
+        // A storey high from under the slab, so the cheeks of the storeys stack into one wall
         if (closed) e.put('fin', f, u, H / 2 - CHEEK_FOOT, (CHEEK_BURY - GOURMET_OUT - m(0.05)) / 2, GOURMET_CHEEK, H, GOURMET_OUT + m(0.05) + CHEEK_BURY, slab);
       }
       if (!closedRight) e.put('frame', f, W, m(0.55), -GOURMET_OUT / 2 - m(0.1), m(0.06), m(1.1), GOURMET_OUT - m(0.2), tc);
@@ -1318,14 +1202,7 @@ function emitBay(
   }
 }
 
-/**
- * A ground volume's plinth, from `bottom` to `floor`, PLINTH_GROW proud of the
- * walls: its four sides and the ledge along their top (the rest of the top is
- * under the floor, never seen), with a notch cut into a side wherever a
- * flight of steps is set into the building.
- * Notch intervals are along the side's own axis (+x on sides 0 and 2, +y on
- * 1 and 3), in local units.
- */
+/** A ground volume's plinth, from `bottom` to `floor`, PLINTH_GROW proud of the walls */
 function emitPlinth(
   e: Emitter,
   b: Building,
@@ -1336,8 +1213,7 @@ function emitPlinth(
   notches: ReadonlyMap<FaceId, readonly { a0: number; a1: number; recess: number }[]>,
 ): void {
   const g = PLINTH_GROW;
-  // Only along the outside: where another block of the ground stands against
-  // a side, the plinth (and its ledge) would be inside the building.
+  // Only along the outside: where another block of the ground stands against a side, the plinth
   const coveredOf = (side: FaceId, base: number): [number, number][] =>
     coveredSpans(b, v, side, 0).map(([a0, a1]) => [base + a0, base + a1] as [number, number]);
   if (v.outline) {
@@ -1407,11 +1283,7 @@ function emitPlinth(
   }
 }
 
-/**
- * A flight set into the building: from the plinth's face up to the door at
- * `recess` behind the facade, between the porch's jambs. Treads share the run
- * evenly, the top one is the landing in front of the door.
- */
+/** A flight set into the building: from the plinth's face up to the door at `recess` behind the facade */
 function emitRecessedFlight(
   e: Emitter,
   face: BayFace,
@@ -1445,12 +1317,7 @@ function emitRecessedFlight(
   }
 }
 
-/**
- * The frame of a relief: its two cheeks and its head and sill, between the
- * side's plane and the region's (whose bays the facade loop already drew,
- * pushed). A projection's head is a cap and its sill a soffit; a recess's are
- * a ceiling and a floor.
- */
+/** The frame of a relief: its two cheeks and its head and sill, between the side's plane and the region's */
 function emitRelief(e: Emitter, b: Building, v: Volume, r: Relief, floor: number, wall: Paint, trim: Paint): void {
   const count = baysOn(b, v, r.side);
   const top = v.storeys.length - 1;
@@ -1475,11 +1342,7 @@ function emitRelief(e: Emitter, b: Building, v: Volume, r: Relief, floor: number
   e.shell.face([P(a0, z0, 0), P(a1, z0, 0), P(a1, z0, d), P(a0, z0, d)], [0, 0, out ? -1 : 1], trim);
 }
 
-/**
- * What stands on a flat roof: drains in two opposite corners, then the plant
- * the building's own catalogue draw packed on it (`world/buildings/roofPlant.ts`
- * - by use, size and age, seeded per building, never two pieces crossing).
- */
+/** What stands on a flat roof: drains in two opposite corners */
 function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Paint): void {
   if (v.roofDetails?.length) return;
   // Drains in two opposite corners, where the roof's fall takes the water.
@@ -1579,13 +1442,7 @@ const POT: Paint = paint({ finish: 'ceramic', colour: 0xa8573a });
 const POT_SOIL: Paint = paint({ finish: 'plaster', colour: 0x3a2a1d });
 const PARASOL: Paint = paint({ finish: 'plaster', colour: ROOF_COLOURS.parasol });
 
-/**
- * A roof terrace that is used (the player's order of 2026-10-05): a timber
- * deck, planters of green round the edge, tables under parasols, loungers, a
- * pergola, a water tank - each drawn or not by the building's seed, so no
- * two terraces of a street carry the same set (2026-10-09: the same set on
- * every roof).
- */
+/** A roof terrace that is used (the player's order of 2026-10-05) */
 function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint): void {
   const deck = terraceDeck(b, v);
   if (!deck) return;
@@ -1610,8 +1467,7 @@ function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint)
   // Loungers on the far side, a pergola of beams over them.
   const lx = Math.min(v.x + v.w - m(1.5), dx1 + m(1.2));
   if (rnd(8) < 0.6) for (let y = dy0 + m(0.4); y + m(0.7) < dy1; y += m(1.2)) e.box(lx - m(0.9), y, lx + m(0.9), y + m(0.65), z, z + m(0.35), PARASOL);
-  // The pergola: posts every 2.4 m on two lines, a beam along each line on
-  // the posts, and the rafters resting across the two beams - nothing floats.
+  // The pergola: posts every 2.4 m on two lines, a beam along each line on the posts
   const span = dy1 - dy0;
   const bays = Math.max(1, Math.round(span / m(2.4)));
   const pergola = rnd(9) < 0.45;
@@ -1647,14 +1503,7 @@ const LOT_PAINT: Readonly<Record<LotSurface, Paint>> = {
   tiles: paint({ finish: 'ceramic', colour: LOT_COLOURS.tiles }),
 };
 const LOT_KERB = paint({ finish: 'stone', colour: 0xb3ada0 });
-/**
- * Layers at a lot's edge, so no two faces there share a plane (two surfaces
- * in one plane fight for the depth buffer and flicker as the camera moves:
- * the player, 2026-10-13). A wall, a fence or a gate standing on the edge
- * keeps its face on it; a paving's sides stand `COVER_INSET` in from its top's
- * edge; a lot's kerb stands `KERB_INSET` in under its plate. The camera's
- * depth resolution is under a millimetre at the distances these are seen.
- */
+/** Layers at a lot's edge, so no two faces there share a plane */
 const COVER_INSET = m(0.006);
 const KERB_INSET = m(0.012);
 const POOL_TILE = paint({ finish: 'ceramic', colour: 0x9fd0dc });
@@ -1665,12 +1514,7 @@ const POOL_COPING = paint({ finish: 'stone', colour: 0xeeebe2 });
 /** Depth of the water under the coping. */
 const POOL_WATER_DROP = m(0.12);
 
-/**
- * The open blocks of a building, laid on the ground: a plate of grass,
- * paving, gravel, sand or water on a low kerb, over the highest ground under
- * it. When the building is only lots, its free parts (trees, benches, paths,
- * fences) stand on them here.
- */
+/** The open blocks of a building, laid on the ground */
 /** The grid the terrain is drawn on, whose triangles a lawn's parts are seated over (`lawnGround.ts`). */
 const LAWN_LATTICE = { cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
@@ -1688,15 +1532,10 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
     for (const p of localFootprint(v)) floor = Math.max(floor, at(p.x, p.y));
     floor = Math.max(floor, at(v.x + v.w / 2, v.y + v.d / 2));
   }
-  // A building's own yard - its car park, its garden - meets its ground floor
-  // at the back and the street at the front (`lots.ts`); a park on its own is
-  // laid on its ground.
+  // A building's own yard - its car park, its garden - meets its ground floor at the back and the street at the front
   const level = buildingFloor !== undefined ? buildingFloor : floor + m(0.12);
   const surfaces = lotSurfaces(b, level, pavedAt);
-  // Where the doors' flights stand: a path laid to a door stops at the foot
-  // of its steps. Laid on the land up to the facade it came up through the
-  // lower treads wherever the land under the flight rises over its foot (the
-  // player, 2026-10-14).
+  // Where the doors' flights stand: a path laid to a door stops at the foot of its steps.
   const feet = buildingFloor !== undefined ? flightFeet(b, groundAt, pavedAt, buildingFloor) : [];
   let low = Infinity;
   for (const v of lots) for (const p of localFootprint(v)) low = Math.min(low, at(p.x, p.y));
@@ -1709,12 +1548,10 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   }
   for (const v of lots) {
     const height = heightOf.get(v) ?? (() => level);
-    // A lawn is the terrain itself, graded to the lot (`pads.ts`), and drawn
-    // with the terrain's grass: no plate, no kerb.
+    // A lawn is the terrain itself, graded to the lot (`pads.ts`), and drawn with the terrain's grass: no plate, no kerb.
     if ((v.open ?? 'grass') === 'grass') continue;
     const water = v.open === 'water';
-    // A pool: its floor down at the bottom, the water itself a separate
-    // glossy surface just under the coping (`water` part).
+    // A pool: its floor down at the bottom, the water itself a separate glossy surface just under the coping (`water` part).
     const look = water ? POOL_FLOOR : LOT_PAINT[v.open ?? 'grass'] ?? LOT_KERB;
     const sink = water ? POOL_SINK : 0;
     if (water) {
@@ -1780,8 +1617,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
           // A pool's or a pond's side, tiled, from the water up to the rim.
           shell.face([e.L(ax, ay, za), e.L(bx, by, zb), e.L(bx, by, zb - sink), e.L(ax, ay, za - sink)], e.N(-nx, -ny), POOL_TILE);
         } else {
-          // Set in under the plate's edge (`KERB_INSET`), and cut short at the
-          // corners by as much, so the kerbs meet at the inset corner.
+          // Set in under the plate's edge (`KERB_INSET`), and cut short at the corners by as much
           const sa = k === 0 ? KERB_INSET : 0, sb = k === steps - 1 ? KERB_INSET : 0;
           const kax = ax - nx * KERB_INSET + tx * sa, kay = ay - ny * KERB_INSET + ty * sa;
           const kbx = bx - nx * KERB_INSET - tx * sb, kby = by - ny * KERB_INSET - ty * sb;
@@ -1791,21 +1627,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
     }
   }
   const loose = looseParts(b);
-  // The objects on the lawn (`partGroups`: a table and its post, a carport
-  // and its posts, crates stacked), each set on the land under it as one: its
-  // lowest parts on the highest ground under them, so nothing sinks into a
-  // slope, and run down to the ground below them as footings, so nothing is
-  // left in the air on the low side. At the lot's one level - what they stood
-  // at before - a slope buried them on its high side and left them standing
-  // tall on its low side (the player, 2026-10-09).
-  // Only on a natural lawn: a terrace is a level platform (`Volume.terrace`),
-  // and a flight, a ramp or a retaining wall between two platforms is an
-  // earthwork held at the lot's levels, not a thing set down on the grass.
-  // The lot a point stands on: a paved one (a court, a drive) over the lawn
-  // laid round it, as it is drawn - the lawn is the terrain under the plates.
-  // Taken as the first lot listed, a planter on a sunken court was set on the
-  // garden's graded ground under the court, its top in the asphalt's plane
-  // (buried, and the two flickered). DO NOT take the first lot that holds it.
+  // DO NOT take the first lot that holds it.
   const hostAt = (x: number, y: number): Volume | undefined => {
     let lawn: Volume | undefined;
     for (const v of lots) {
@@ -1828,9 +1650,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   const seats = new Map<number, { base: number; lowest: number }>();
   {
     const lowest = new Map<number, number>();
-    // Only what stands on the land is seated on it: a canopy hung on the wall
-    // over a front lawn, a group of its own, was set down on the grass as a
-    // slab (its lowest part, itself, put at the ground).
+    // Only what stands on the land is seated on it
     const standing = new Set<number>();
     for (const el of b.elements ?? []) {
       const g = groups.get(el.id);
@@ -1845,9 +1665,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
       const points = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [(x0 + x1) / 2, (y0 + y1) / 2]] as const;
       const lawn = points.filter(([px, py]) => onLawn(px, py));
       if (lawn.length === 0) continue;
-      // All on the lawn: the highest the drawn ground rises anywhere under it,
-      // ridges of the terrain's triangles included (`lawnGround.ts`); partly
-      // on a terrace or paving, the lawn's points of it.
+      // All on the lawn: the highest the drawn ground rises anywhere under it, ridges of the terrain's triangles included
       const ground = lawn.length === points.length
         ? highestGroundUnder(points.slice(0, 4).map(([px, py]) => { const w = e.L(px, py, 0); return [w[0], w[1]] as const; }), groundAt, LAWN_LATTICE)
         : Math.max(...lawn.map(([px, py]) => at(px, py)));
@@ -1869,20 +1687,12 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
       }
       continue;
     }
-    // A run on the land in steps, each on the lot's surface under it, or on
-    // the ground where no lot is laid: nothing floats over a slope.
+    // A run on the land in steps, each on the lot's surface under it, or on the ground where no lot is laid
     for (const piece of followPieces(el).flatMap((p) => (p.kind === 'pavement' ? clearOf(p, feet) : [p]))) {
       const host = hostAt(piece.x, piece.y);
-      // On a lawn the ground is the terrain as drawn (`pads.ts`), not the
-      // lot's plane: a path laid at the plane's height stood over the grass
-      // like a bridge from the gate to the door.
+      // On a lawn the ground is the terrain as drawn (`pads.ts`), not the lot's plane
       const height = host && (host.open ?? 'grass') !== 'grass' ? heightOf.get(host) : undefined;
-      // A part raised or lowered with a paving at a level of its own (a
-      // split-level's yard, a terrace, a ramp: `editor/lotPlan.ts` `lift`)
-      // has that level in its own height already: it stands on the paving,
-      // not that far over (or under) it. Counted twice, the crates of a
-      // service court a storey up hung two metres in the air, and those of
-      // one a storey down were buried under it.
+      // A part raised or lowered with a paving at a level of its own
       const base = height && host && !FOLLOWS_GROUND.has(piece.kind) ? host.ramp ?? host.terrace ?? 0 : 0;
       const z = height ? height(piece.x, piece.y) - base : FOLLOWS_GROUND.has(piece.kind) ? at(piece.x, piece.y) : level;
       emitElement(e, piece, z, Math.min(low, z) - m(0.3), look, height);
@@ -1891,32 +1701,21 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   return lotGroundOf(b, surfaces, level, true);
 }
 
-/**
- * A building's lot ground made again from its recipe, as `emitLots` made it:
- * for a chunk emitted in a worker, whose `heightAt` (a function) cannot cross
- * to the page (`cellPool.ts`).
- */
+/** A building's lot ground made again from its recipe, as `emitLots` made it */
 export function lotGroundAgain(b: Building, recipe: LotGroundRecipe, pavedAt?: PavedAt): LotGround | undefined {
   const resolved = resolveBlocks(b);
   const surfaces = recipe.lots && recipe.level !== undefined ? lotSurfaces(resolved, recipe.level, pavedAt) : [];
   return lotGroundOf(resolved, surfaces, recipe.level, recipe.lots);
 }
 
-/**
- * The ground of a building's lots as drawn: each lot's surface, and the level
- * a parking bay outside every lot is laid at. What a car standing in a bay
- * stands on (`render/agents.ts`).
- */
+/** The ground of a building's lots as drawn: each lot's surface, and the level a parking bay outside every lot is laid at. */
 function lotGroundOf(b: Building, surfaces: readonly LotPlane[], level: number | undefined, lots: boolean): LotGround | undefined {
   const bays = (b.elements ?? []).filter((el) => el.kind === 'parking').map((el) => {
     const [x0, y0, x1, y1] = elementRect(el);
     return [localToWorld(b, x0, y0), localToWorld(b, x1, y0), localToWorld(b, x1, y1), localToWorld(b, x0, y1)];
   });
   if (surfaces.length === 0 && bays.length === 0) return undefined;
-  // The box of every lot and bay: a point outside it is off them all, found
-  // without a ring test each (a bounding volume's trivial rejection). Bodies
-  // and debris ask hundreds of lots for every cell of ground they touch
-  // (`playEffects.ts` ragdollCorner), nearly all of them far away.
+  // The box of every lot and bay: a point outside it is off them all, found without a ring test each
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const ring of [...surfaces.map((s) => s.ring), ...bays]) {
     for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
@@ -1963,10 +1762,7 @@ function elementPaint(b: Building, kind: BuildingElement['kind']): Paint {
 const CLOCK_FACE = paint({ finish: 'plaster', colour: 0xf4f1e8 });
 const CLOCK_INK = paint({ finish: 'metal', colour: 0x23272b });
 
-/**
- * A facade clock: a pale dial on a dark rim, twelve marks and two hands
- * standing just proud of it, on whichever side the element faces.
- */
+/** A facade clock: a pale dial on a dark rim, twelve marks and two hands standing just proud of it */
 function emitClock(e: Emitter, el: BuildingElement, x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): void {
   e.box(x0, y0, x1, y1, z0, z1, CLOCK_INK);
   const along = el.facing === 0 || el.facing === 2;
@@ -1998,23 +1794,14 @@ function emitClock(e: Emitter, el: BuildingElement, x0: number, y0: number, x1: 
   layer(ca, ca + r * 0.78, cz - w, cz + w, m(0.1), m(0.12), CLOCK_INK);
 }
 
-/**
- * The parts of a grown lot nothing holds up (`unsupportedElements`): lots
- * furnished before that rule kept a carport roof or a pergola whose posts
- * were refused, and drew it in the air. Only grown lots (`lotPlan`): what the
- * player builds in the builder is theirs to see.
- */
+/** The parts of a grown lot nothing holds up (`unsupportedElements`) */
 function looseParts(b: Building): Set<number> | null {
   if (b.lotPlan === undefined || !b.elements?.length) return null;
   const loose = unsupportedElements(b);
   return loose.size ? loose : null;
 }
 
-/**
- * One free element. A stair is a block per step, every riser the same; a
- * ramp a slope with its cheeks; the rest are boxes. Whatever stands on the
- * ground reaches down to the plinth's bottom, so it meets sloping land.
- */
+/** One free element. */
 function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: number, c: Paint,
   surface?: (lx: number, ly: number) => number): void {
   const [x0, y0, x1, y1] = elementRect(el);
@@ -2036,8 +1823,7 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
       }
     };
     if (el.kind === 'stair' && el.angle) {
-      // A stair laid along a traced path: its own frame is turned, so the run
-      // follows the line it was drawn on and turns with it.
+      // A stair laid along a traced path
       emitTurnedStair(e, el, z0, zb, c);
       return;
     }
@@ -2050,8 +1836,7 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
           const [a0, b0, a1, b1] = sub(k * tread, (k + 1) * tread);
           e.box(a0, b0, a1, b1, zb, z0 + ((k + 1) * el.h) / n, c);
         }
-        // Three steps up to a door without a rail read as a heap of blocks:
-        // a flight taller than a kerb carries its handrail too.
+        // Three steps up to a door without a rail read as a heap of blocks: a flight taller than a kerb carries its handrail too.
         if (el.h > m(0.5)) emitStairRails(e, el, [x0, y0, x1, y1], z0);
         return;
       }
@@ -2081,8 +1866,7 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     e.shell.face([[headPts[0][0], headPts[0][1], zb], [headPts[1][0], headPts[1][1], zb], headPts[1], headPts[0]], e.N(-nf.x, -nf.y), c);
     return;
   }
-  // Trees, shrubs and hedges are the scenery's plants (`scenery.ts`,
-  // `buildGardens`): swaying, instanced, the same as every other tree.
+  // Trees, shrubs and hedges are the scenery's plants (`scenery.ts`, `buildGardens`)
   if (el.kind === 'tree' || el.kind === 'shrub' || el.kind === 'hedge') return;
   if (el.kind === 'railing') {
     emitFence(e, el, z0, z1, c, true);
@@ -2130,8 +1914,7 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     return;
   }
   if (el.kind === 'ac') {
-    // A wall unit: the case, and a grille plate on the side it faces - in
-    // from the case's ends and a little proud of its face, never in its planes.
+    // A wall unit: the case, and a grille plate on the side it faces
     e.box(x0, y0, x1, y1, z0, z1, c);
     const g = sub2(el, [x0, y0, x1, y1], 0, 0.09);
     const end = m(0.04);
@@ -2146,13 +1929,11 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     return;
   }
   if (el.kind === 'canopy') {
-    // A cantilevered slab: a fascia down its free edge (the drip) and two
-    // steel brackets under it back to the wall.
+    // A cantilevered slab: a fascia down its free edge (the drip) and two steel brackets under it back to the wall.
     e.box(x0, y0, x1, y1, z0, z1, c);
     const n = SIDE_NORMAL[el.facing];
     const lip = m(0.05);
-    // The fascia a little proud of the slab's edge and over its top: flush, its
-    // face and top lay in the slab's own planes and the two flickered.
+    // The fascia a little proud of the slab's edge and over its top
     const out = PART_INSET;
     const [lx0, ly0, lx1, ly1] = el.facing === 0 ? [x0, y0 - out, x1, y0 + lip] : el.facing === 2 ? [x0, y1 - lip, x1, y1 + out] : el.facing === 3 ? [x0 - out, y0, x0 + lip, y1] : [x1 - lip, y0, x1 + out, y1];
     e.box(lx0 - Math.abs(n.y) * lip, ly0 - Math.abs(n.x) * lip, lx1 + Math.abs(n.y) * lip, ly1 + Math.abs(n.x) * lip, z0 - m(0.12), z1 + out, shaded(c, 0.95));
@@ -2174,22 +1955,11 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     return;
   }
   if (el.kind === 'wall' && onGround(el) && el.h <= m(3.2)) {
-    // A boundary wall: its body, a darker plinth at the foot where the rain
-    // splashes, and a coping of precast stone along the top, proud of both
-    // faces, so the top reads apart from the paint.
-    // The body stands on the plinth, the plinth on the footing: one over the
-    // other, never the plinth laid over the body, whose ends it shared. The
-    // ends a little past the wall's own (`PART_INSET`): a wall run into the
-    // corner of another ended in that one's face, in its plane. And the
-    // plinth of a wall along x a centimetre lower than one along y: two walls
-    // meeting at a corner cross each other's plinths, and at one height
-    // their tops lay in one plane.
+    // A boundary wall: its body, a darker plinth at the foot where the rain splashes
     const along = x1 - x0 >= y1 - y0;
     const lip = m(0.04);
     const cap = m(0.07);
-    // And walls that cross in plan (a sink set against another of the yard's
-    // walls, 2026-10-13) each at a course of their own, by the
-    // element: two plinths at one height laid their tops in one plane.
+    // And walls that cross in plan (a sink set against another of the yard's walls, 2026-10-13) each at a course of their own
     const foot = z0 + (along ? m(0.22) : m(0.23)) + m(0.02) * (el.id % 3);
     // Past the ends by `PART_INSET`; the plinth and the coping proud of both faces by `lip`.
     const ex = along ? PART_INSET : 0, ey = along ? 0 : PART_INSET;
@@ -2200,8 +1970,7 @@ function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: num
     return;
   }
   if (el.kind === 'pavement') {
-    // A paving's sides stand in from its top's edge (`COVER_INSET`): a wall
-    // or a gate on that edge keeps the face there.
+    // A paving's sides stand in from its top's edge (`COVER_INSET`): a wall or a gate on that edge keeps the face there.
     e.slab(x0, y0, x1, y1, zb, z1, COVER_INSET, c);
     return;
   }
@@ -2215,11 +1984,7 @@ const PATH_REACH = m(14);
 const LOT_LIFT = m(0.024);
 const PAVING: Paint = paint({ finish: 'stone', colour: 0xbdb5a6 });
 
-/**
- * Where a door's flight of steps stands along its side, in the side's own
- * axis (`sideStart`): the opening and a quarter metre each way, as
- * `emitBuilding` draws the flight.
- */
+/** Where a door's flight of steps stands along its side, in the side's own axis (`sideStart`) */
 function flightSpan(b: Building, v: Volume, x: Entrance): [number, number] {
   const o = openingOf(x.component, x.width, levelHeight(b, 0)) ?? { a0: x.width * 0.2, a1: x.width * 0.8 };
   const half = (o.a1 - o.a0 + m(0.5)) / 2;
@@ -2230,12 +1995,7 @@ function flightSpan(b: Building, v: Volume, x: Entrance): [number, number] {
 /** A rectangle of the plan, local: x0, y0, x1, y1. */
 type PlanRect = readonly [number, number, number, number];
 
-/**
- * The ground the doors' flights of steps stand on, in the plan (local
- * rectangles): each from the facade out to the foot of its lowest tread. The
- * entrances as `emitBuilding` lays them - the same foundation, from the
- * building's blocks without its lots.
- */
+/** The ground the doors' flights of steps stand on, in the plan (local rectangles) */
 function flightFeet(b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, floor: number): PlanRect[] {
   const closed = b.volumes.filter((v) => !v.open);
   if (closed.length === 0) return [];
@@ -2285,12 +2045,7 @@ function clearOf(piece: BuildingElement, feet: readonly PlanRect[]): BuildingEle
     .map(([x0, y0, x1, y1]) => ({ ...piece, facing: 0, x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, d: y1 - y0 }));
 }
 
-/**
- * What seats a building in its lot: a paved apron round the base of every
- * ground volume, laid on the land (sampled, so it follows a slope) and left
- * out where there is paving already; and, from every way in that does not
- * open straight onto a footway, a path out to the nearest one.
- */
+/** What seats a building in its lot: a paved apron round the base of every ground volume, laid on the land */
 function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pavedAt: PavedAt | undefined): void {
   const paved = (x: number, y: number): boolean => pavedAt !== undefined && Number.isFinite(pavedAt(x, y));
   const up: V3 = [0, 0, 1];
@@ -2307,10 +2062,7 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
       e.shell.face(world.map((w) => [w[0], w[1], groundAt(w[0], w[1]) + LOT_LIFT] as V3), up, PAVING);
     }
   };
-  // The flights standing out of the sides (by block and side): the apron is
-  // laid round their feet, not through them. Laid on the land across a
-  // flight, it came up through its lower treads where the land in front of
-  // the door rises over the foot of the steps (the player, 2026-10-14).
+  // The flights standing out of the sides (by block and side): the apron is laid round their feet, not through them.
   const flights = new Map<string, { a0: number; a1: number; run: number }[]>();
   for (const x of f.entrances) {
     if (x.steps <= 0 || x.recess > 0) continue;
@@ -2323,10 +2075,7 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
   for (const v of b.volumes) {
     if (v.base !== 0) continue;
     const g = PLINTH_GROW;
-    // Round the footprint the way it runs, each strip grown past the corner
-    // it starts from and only to the plinth at the one it ends at: the
-    // corner squares paved once each, a pinwheel. Grown past both, two
-    // strips lay one over the other at every corner and flickered.
+    // Round the footprint the way it runs
     const ring = localFootprint(v);
     for (let i = 0; i < ring.length; i++) {
       const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
@@ -2334,9 +2083,7 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
       if (length < 1e-6) continue;
       const tx = (q.x - p.x) / length, ty = (q.y - p.y) / length;
       const n = { x: ty, y: -tx };
-      // Only along the outside: against another block of the ground the
-      // apron lay inside the building. The side's own axis (`sideStart`) runs
-      // against the ring on a rectangle's back and left sides.
+      // Only along the outside: against another block of the ground the apron lay inside the building.
       const s = sideStart(v, i as FaceId);
       const reversed = s.tx * tx + s.ty * ty < 0;
       const toRing = ([a0, a1]: readonly [number, number]): [number, number] => (reversed ? [length - a1, length - a0] : [a0, a1]);
@@ -2396,12 +2143,7 @@ const TREAD = m(0.05);
 const WAIST = m(0.25);
 const HANDRAIL = m(0.95);
 
-/**
- * A tall flight as it is really built: every step a tread and a riser, the
- * lot carried by a raking concrete slab (the waist) with its cheeks, and a
- * handrail on both sides on a post at each end. A solid wedge that tall reads
- * as a ramp of rubble, not a stair.
- */
+/** A tall flight as it is really built: every step a tread and a riser, the lot carried by a raking concrete slab */
 function emitOpenStair(
   e: Emitter,
   el: BuildingElement,
@@ -2447,11 +2189,7 @@ function emitOpenStair(
   emitStairRails(e, el, [x0, y0, x1, y1], z0);
 }
 
-/**
- * The handrail of a flight: a slim rail over each edge, at a constant height
- * above the nosings, on posts every couple of steps. Shared by the open
- * flights and the short solid ones.
- */
+/** The handrail of a flight: a slim rail over each edge, at a constant height above the nosings */
 function emitStairRails(
   e: Emitter,
   el: BuildingElement,
@@ -2491,10 +2229,7 @@ const RAIL: Paint = paint({ finish: 'metal', colour: 0x3a3f42 });
 const PLANTER_SOIL: Paint = paint({ finish: 'wood', colour: 0x3d2f22 });
 const TRUNK: Paint = paint({ finish: 'wood', colour: 0x5a4632 });
 
-/**
- * A rectangle inside an element's plan, as fractions of the axis its `d`
- * runs on: 0 at the edge it faces, 1 at its back.
- */
+/** A rectangle inside an element's plan, as fractions of the axis its `d` runs on: 0 at the edge it faces, 1 at its back. */
 function sub2(
   el: BuildingElement,
   [x0, y0, x1, y1]: [number, number, number, number],
@@ -2511,11 +2246,7 @@ function sub2(
   return [Math.min(a, b), y0, Math.max(a, b), y1];
 }
 
-/**
- * A flight laid along a traced path: the steps live in the element's own
- * turned frame, so a run that wraps a corner follows the line it was drawn on.
- * The rise is the element's `h`, spread evenly over its steps.
- */
+/** A flight laid along a traced path */
 function emitTurnedStair(e: Emitter, el: BuildingElement, z0: number, zb: number, c: Paint): void {
   const a = el.angle ?? 0;
   const ca = Math.cos(a);
@@ -2580,11 +2311,7 @@ function emitFence(e: Emitter, el: BuildingElement, z0: number, z1: number, c: P
     return { x: el.x + ux * u + vx * v, y: el.y + uy * u + vy * v };
   };
   const t = light ? m(0.03) : m(0.06);
-  // The rails, boxes a post wide: as two flat ribbons they had no sides to
-  // see, and a ribbon's top lay at a wall's round height (a rail top at
-  // 1.23 m in the body of a wall of 1.30 m under its coping). Their tops on
-  // the half centimetre (`RAIL_OFF`), off the whole centimetres the walls,
-  // copings and plinths are built in.
+  // The rails, boxes a post wide: as two flat ribbons they had no sides to see
   const railTop = z0 + el.h - m(0.07) - RAIL_OFF;
   const railMid = z0 + el.h * 0.45 + RAIL_OFF;
   const a = at(-half, 0), b = at(half, 0);
@@ -2598,11 +2325,7 @@ function emitFence(e: Emitter, el: BuildingElement, z0: number, z1: number, c: P
     e.shell.face([q(0, -r, z + tall), q(len, -r, z + tall), q(len, r, z + tall), q(0, r, z + tall)], [0, 0, 1], c);
     e.shell.face([q(0, r, z), q(len, r, z), q(len, -r, z), q(0, -r, z)], [0, 0, -1], c);
   }
-  // Posts every couple of metres on a fence, closer together on a railing,
-  // at both ends - INSIDE the run, a hair off its end (`PART_INSET`): a post
-  // centred on the run's end stood half past it, into the building or the
-  // wall the run ends at, and one flush with the end had its face in the
-  // plane of the wall across the corner (2026-10-13).
+  // Posts every couple of metres on a fence, closer together on a railing, at both ends
   const spacing = light ? m(0.45) : m(2);
   const posts = Math.max(2, Math.round(el.w / spacing) + 1);
   const reach = Math.max(0, half - t - PART_INSET);
@@ -2649,8 +2372,7 @@ function emitRocks(e: Emitter, el: BuildingElement, z0: number, bottom: number, 
 
 /** A parking apron: asphalt and the stall lines painted on it. */
 function emitParking(e: Emitter, el: BuildingElement, z0: number, surface?: (lx: number, ly: number) => number): void {
-  // Laid on the lot, following its fall: the asphalt and the stall lines are
-  // drawn on the surface itself, not as a slab standing over it.
+  // Laid on the lot, following its fall
   const lift = (lx: number, ly: number, dz: number): V3 => e.L(lx, ly, (surface ? surface(lx, ly) : z0) + dz);
   const quad = (x0: number, y0: number, x1: number, y1: number, dz: number, look: Paint): void => {
     e.shell.face([lift(x0, y0, dz), lift(x1, y0, dz), lift(x1, y1, dz), lift(x0, y1, dz)], [0, 0, 1], look);
@@ -2685,13 +2407,7 @@ const GATE_LANTERN = { w: m(0.16), h: m(0.24) } as const;
 const BOLLARD_BAND: Paint = paint({ finish: 'plaster', colour: 0xe8e2cf });
 const DRAIN_GRATE: Paint = paint({ finish: 'metal', colour: 0x26292b });
 
-/**
- * The furniture of a lot. A gate is a frame of posts and rails filled with
- * close bars, a person's shut, a car's (by its width) with its leaves swung
- * open into the lot; bins are a pair of
- * wheelie bins with their lids; a lamp a post with its head over the path; a
- * bollard a post with a pale band; a drain a dark grate flush with the paving.
- */
+/** The furniture of a lot. */
 function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1: number, y1: number,
   z0: number, zb: number, c: Paint): void {
   const z1 = z0 + el.h;
@@ -2705,8 +2421,7 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
   switch (el.kind) {
     case 'gate': {
       const look = el.material ? c : GATE_PAINT;
-      // A gate's pillars stand proud of the wall either side of it: 0.14 m off
-      // the wall's line was the face of a 0.2 m wall's plinth (0.1 + 0.04).
+      // A gate's pillars stand proud of the wall either side of it
       const post = Math.min(0.2, GATE_POST / length);
       part(0, post, -0.4, 1.4, zb, z1 + m(0.1), look);
       part(1 - post, 1, -0.4, 1.4, zb, z1 + m(0.1), look);
@@ -2720,9 +2435,7 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
         }
       }
       if (el.w >= CAR_GATE_OPEN) {
-        // A car's gate: its two leaves swung open into the lot on their
-        // hinges at the posts, so the cars that use it (`sim/agents/
-        // lotTraffic.ts`) are not drawn through its bars.
+        // A car's gate: its two leaves swung open into the lot on their hinges at the posts, so the cars that use it
         const depth = el.d || m(0.12);
         const leaf = ((1 - 2 * post) * length) / 2 / depth;
         const inward = el.facing === 0 || el.facing === 3 ? 1 : -1;
@@ -2741,9 +2454,7 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
         return;
       }
       {
-        // A person's gate: its one leaf, hung on one post like a door, stands
-        // swung open into the lot - people walk through it to their doors
-        // (`sim/agents/lotDoors.ts`), never through a shut leaf.
+        // A person's gate: its one leaf, hung on one post like a door, stands swung open into the lot
         const depth = el.d || m(0.12);
         const leaf = ((1 - 2 * post) * length) / depth;
         const inward = el.facing === 0 || el.facing === 3 ? 1 : -1;
@@ -2810,24 +2521,13 @@ function postAt(e: Emitter, P: (u: number, a: number, z: number) => V3, u: numbe
 
 /** A horizontal band around a volume at height z (a storey line or a cornice). */
 function band(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint, hidden?: (side: FaceId) => [number, number][]): void {
-  // A moulding is a PROFILE, not a slab: a fillet under a projecting drip,
-  // whose shadow line is what makes it read at a distance.
-  // Each step of the profile its faces and the ledge on top (`flushBand`):
-  // drawn as a box, its top was a slab over the whole block at every floor,
-  // inside the building, a floor nobody sees drawn on every storey.
+  // A moulding is a PROFILE, not a slab
   const tier = (o: number, z0: number, z1: number, paint: Paint): void => flushBand(e, v, (z0 + z1) / 2, o, z1 - z0, paint, hidden);
   tier(out * 0.45, z - height / 2, z - height * 0.1, shaded(c, 0.94));
   tier(out, z - height * 0.1, z + height / 2, c);
 }
 
-/**
- * A band flush with the wall, standing out only `out`: a slab edge, not a
- * moulding. Its faces and the ledge `out` deep on top, round the footprint
- * the way it runs, each ledge grown past the corner it starts from (a
- * pinwheel). Drawn as a box, its top was a slab over the whole block, in the
- * plane of a neighbouring block's band of another colour, and the two
- * flickered.
- */
+/** A band flush with the wall, standing out only `out`: a slab edge, not a moulding. */
 function flushBand(e: Emitter, v: Volume, z: number, out: number, height: number, c: Paint, hidden?: (side: FaceId) => [number, number][]): void {
   const ring = localFootprint(v);
   const z0 = z - height / 2, z1 = z + height / 2;
@@ -2856,11 +2556,7 @@ function bothCovered(a: readonly [number, number][], b: readonly [number, number
   return out.sort((p, q) => p[0] - q[0]);
 }
 
-/**
- * The shutters' paint: a colour of their own against the wall, as Brazilian
- * houses paint them - the trim's when the trim is a colour (green, blue,
- * wine, wood), else a green or a blue chosen by the wall's tone.
- */
+/** The shutters' paint: a colour of their own against the wall, as Brazilian houses paint them */
 const SHUTTER_PAINTS = [new Color().setHex(0x55785c), new Color().setHex(0x557392), new Color().setHex(0x7a5538)];
 /** A balcony slab's colour: the wall's own, a shade darker underneath the light (a slab of the building, not a white tray). */
 const slabColours = new WeakMap<Paint, Color>();
@@ -2955,24 +2651,14 @@ function emitRoofDetails(e: Emitter, b: Building, v: Volume, floor: number): voi
 }
 
 
-/**
- * A flag flown from a mast whose top is at (x, y, flagTop): recorded for the
- * cloth layer, which draws every flag in one waving instanced draw.
- */
+/** A flag flown from a mast whose top is at (x, y, flagTop) */
 function emitFlag(e: Emitter, x: number, y: number, flagTop: number, design: FlagDesign, width: number, height: number): void {
   if (!flagSink) return;
   const [wx, wy, wz] = e.L(x, y, flagTop);
   flagSink.push({ x: wx, y: wz, z: -wy, width, height, design });
 }
 
-/**
- * The lighthouse on a tower top, measured on the Altino Arantes model
- * (public/incoming/altino_glb): an octagonal base 1.0 m high, a glazed
- * cylinder 3.7 m across and 7.5 m tall with its window grid, a hemispherical
- * dome 1.1 m high, and a mast 0.3 m thick to the top with the aviation light
- * and the flag. `h` is the whole height above the roof (19.4 m on the model);
- * every part keeps the model's proportion of it.
- */
+/** The lighthouse on a tower top, measured on the Altino Arantes model */
 function emitLantern(e: Emitter, detail: RoofDetail, z: number): void {
   const h = detail.h ?? m(19.4);
   const k = h / m(19.4);
@@ -3003,8 +2689,7 @@ function emitLantern(e: Emitter, detail: RoofDetail, z: number): void {
   const z1 = z + m(1.03) * k;
   ring(8, z - m(0.05), z1, rBase, rBase, stone, Math.PI / 8);
   disc(8, z1, rBase, stone, Math.PI / 8);
-  // The glazed cylinder, 3.7 m across, 7.5 m tall: glass, then the grid in front
-  // of it - eight mullions round, a band at every floor - and a cornice at its head.
+  // The glazed cylinder, 3.7 m across, 7.5 m tall: glass, then the grid in front of it
   const rCyl = rBase * (3.69 / 4.02);
   const z2 = z1 + m(7.47) * k;
   ring(N, z1, z2, rCyl, rCyl, glass);
@@ -3133,10 +2818,7 @@ function emitPolygonRoof(
     if (v.roof === 'flat' || v.roof === 'terrace') {
       if (v.roof === 'terrace') e.put('roofRailing', f, frame.length / 2, 0, m(.12), frame.length, m(1), 1);
       else {
-        // A wall with two faces and a top, as the square blocks' parapets
-        // (\`emitRoof\`): drawn by its outer face alone, from the roof it was
-        // not there at all - a band floating round the tower (the player,
-        // 2026-10-13: "faces que não existem do outro lado").
+        // A wall with two faces and a top, as the square blocks' parapets (\`emitRoof\`)
         const out = e.N(f.nx, f.ny);
         e.rect(f, 0, frame.length, 0, PARAPET_H, 0, out, wallOf(side));
         e.rect(f, 0, frame.length, 0, PARAPET_H, PARAPET_T, [-out[0], -out[1], 0], shaded(roofColour, 0.9));
@@ -3171,17 +2853,13 @@ function emitRoof(
   if (v.roof === 'flat' || v.roof === 'terrace') {
     const terrace = v.roof === 'terrace';
     sh.face([e.L(x0, y0, z), e.L(x1, y0, z), e.L(x1, y1, z), e.L(x0, y1, z)], up, terrace ? TERRACE : roofColour);
-    // A terrace with a block standing on it (a setback, a tower's podium) is
-    // left plain: its furniture and tank were drawn through the block above,
-    // and every step of a stepped tower carried a set of its own.
+    // A terrace with a block standing on it (a setback, a tower's podium) is left plain
     const built = b.volumes.some((o) => o !== v && !o.open && o.base === top);
     if (!terrace) emitRoofPlant(e, b, v, z, trim);
     else if (!built) emitTerrace(e, b, v, z, trim);
-    // Its top stays just under the roof: a face shared with the roof cap
-    // z-fights into stripes.
+    // Its top stays just under the roof: a face shared with the roof cap z-fights into stripes.
     emitCornice(e, v, z, trim);
-    // An edge bay gets a parapet (or a railing, on a terrace) only where the
-    // roof really ends: not against a neighbour of the same or greater height.
+    // An edge bay gets a parapet (or a railing, on a terrace) only where the roof really ends
     for (const side of volumeSides(v)) {
       // Only where the roof really ends: not against a neighbour as tall or taller.
       const spans = [...coveredSpans(b, v, side, top - 1), ...coveredSpans(b, v, side, top)].sort((p, q) => p[0] - q[0]);
@@ -3199,9 +2877,6 @@ function emitRoof(
             const out = e.N(face.nx, face.ny);
             e.rect(face, 0, W, 0, ph, 0, out, wallOf(side));
             // Its inner face is the roof's membrane carried up the parapet
-            // (a flat roof's membrane is "fully adhered up and over parapet
-            // walls"), not the facade: a glass tower's parapet was black
-            // glass inside.
             e.rect(face, 0, W, 0, ph, PARAPET_T, [-out[0], -out[1], 0], shaded(roofColour, 0.9));
             // The coping: proud of both faces, so the rain drips clear of them.
             const coping = copingOf(trim);
@@ -3240,10 +2915,7 @@ function emitRoof(
     sh.face([Lp(a1 + o, c1 + o, eave), Lp(a0 - o, c1 + o, eave), Lp(r0, cm, ridge), Lp(r1, cm, ridge)], nFar, roofColour);
     const endLow = alongX ? e.N(-slope, 0, 1) : e.N(0, -slope, 1);
     const endHigh = alongX ? e.N(slope, 0, 1) : e.N(0, slope, 1);
-    // The roof has a body, not a sheet of paper (the player's order of
-    // 2026-10-05): a fascia board along every eave, the soffit closing the
-    // overhang underneath, a ridge cap over the ridge and barge boards up the
-    // rakes of a gable.
+    // The roof has a body, not a sheet of paper (the player's order of 2026-10-05)
     const T = ROOF_THICK;
     const fascia = shaded(trim, 0.92);
     const soffit = shaded(trim, 0.7);
@@ -3289,9 +2961,7 @@ function emitRoof(
   }
 
   if (v.roof === 'shed') {
-    // One slope, low along the side it falls towards and high along the
-    // opposite one. Q(a, t) is a point of the plan: `a` along the low eave
-    // (0..1), `t` from the low eave to the high one (0..1).
+    // One slope, low along the side it falls towards and high along the opposite one.
     const fall = shedFall(v);
     const lowAlongX = fall === 0 || fall === 2;
     const eaveLength = lowAlongX ? x1 - x0 : y1 - y0;
@@ -3313,8 +2983,7 @@ function emitRoof(
       e.N(nf.x * slope, nf.y * slope, 1),
       roofColour,
     );
-    // The slab's body: a fascia on all four edges and the soffit under the
-    // overhang, so the roof has a thickness (it read as a sheet of paper).
+    // The slab's body: a fascia on all four edges and the soffit under the overhang, so the roof has a thickness
     {
       const T = ROOF_THICK;
       const lo = z - EAVES * slope, hi = high + EAVES * slope;
@@ -3379,21 +3048,12 @@ function writeMatrix(out: Float32Array, offset: number, p: Placement): void {
   out[offset + 12] = p.x; out[offset + 13] = p.z; out[offset + 14] = -p.y; out[offset + 15] = 1;
 }
 
-/**
- * Whether a building flies a flag: a spire or a lantern on its roof with a
- * flag (`flagOf`). The buildings layer emits the far ones that do, for the
- * flag layer; a far building with none is not emitted until its cell comes
- * near (`layer.ts` backlog).
- */
+/** Whether a building flies a flag: a spire or a lantern on its roof with a flag (`flagOf`). */
 export function fliesFlag(b: Building): boolean {
   return b.volumes.some((v) => (v.roofDetails ?? []).some((d) => (d.kind === 'spire' || d.kind === 'lantern') && flagOf(d) !== null));
 }
 
-/**
- * A signature building's ground floor (`BuildingChunk.signatureFloor`) without
- * emitting it: what `signature.ts` draws the body at. The layer reads it for
- * the far buildings it has not emitted (`layer.ts`, the opening).
- */
+/** A signature building's ground floor (`BuildingChunk.signatureFloor`) without emitting it */
 export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
   if (!drawsSignature(b)) return undefined;
   const resolved = resolveBlocks(b);
@@ -3404,18 +3064,15 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
   const parts = Object.fromEntries(PART_KINDS.map((k) => [k, [] as Placement[]])) as Record<PartKind, Placement[]>;
-  // The blocks as drawn: unions, cuts and intersections resolved, the stored
-  // blocks untouched (`world/buildings/blocks.ts`).
+  // The blocks as drawn: unions, cuts and intersections resolved, the stored blocks untouched (`world/buildings/blocks.ts`).
   const resolved = resolveBlocks(b);
-  // Open blocks are lots: laid on the ground, not built. The rest is the
-  // building; a building that is only lots (a park) has its parts on them.
+  // Open blocks are lots: laid on the ground, not built.
   const lots = resolved.volumes.filter((v) => v.open);
   const closed = resolved.volumes.filter((v) => !v.open);
   const furnished: Partial<Record<FurnitureKind, Placement[]>> = {};
   const inLot = (el: BuildingElement): boolean =>
     lots.some((v) => el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
-  // The terrain is graded from this natural-ground floor. Reading the graded
-  // ground back into the floor would move the building away from its own pad.
+  // The terrain is graded from this natural-ground floor.
   const designedFloor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   const flags: FlagInstance[] = [];
   flagSink = flags;
@@ -3496,11 +3153,7 @@ export function kitBoxes(kit: BuildingKit): KitBoxes {
 /** What a batch takes by default: every part, the shells and the furniture. */
 const WHOLE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS, shells: true, furniture: true };
 
-/**
- * Meshes for a set of building chunks: one merged shell, one instanced batch
- * per part. `ghost` draws them with the translucent preview materials,
- * casting no shadow and with no instance colours (one program per material).
- */
+/** Meshes for a set of building chunks: one merged shell, one instanced batch per part. */
 export function assembleBuildingMeshes(
   chunks: readonly BuildingChunk[],
   kit: BuildingKit,
@@ -3513,13 +3166,7 @@ export function assembleBuildingMeshes(
   return meshesOf(cellArrays(chunks, take, kitBoxes(kit)), kit, ghost, dim, () => cellArrays(chunks, take, kitBoxes(kit)));
 }
 
-/**
- * A batch's meshes from its arrays (`cellArrays.ts`), made here or in a
- * worker: each array taken as it is, the bounds as worked out with them. NOT a
- * vertex walked here - the arrays came whole, their bounds with them.
- * `refill` makes the arrays again when a lost WebGL context is restored
- * (`mesh/gpuOnly.ts`); without it the batch's owner makes it again.
- */
+/** A batch's meshes from its arrays (`cellArrays.ts`), made here or in a worker */
 export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, dim: boolean, refill?: () => CellArrays): BuildingMeshes {
   const group = new Group();
   group.name = ghost ? 'building-preview' : 'buildings';
@@ -3532,31 +3179,18 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const shell = arrays.shells[finish];
     if (!shell) continue;
     const g = new BufferGeometry();
-    // The arrays taken as they are. DO NOT wrap them in a Float32BufferAttribute
-    // or Uint32BufferAttribute: those copy the array they are given
-    // (`super(new Float32Array(array), ...)`, three's BufferAttribute.js), every
-    // vertex of the cell copied twice in the frame that put it together (1.3 of
-    // 20 s streaming a city, 2026-10-14).
+    // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
     g.setAttribute('position', new BufferAttribute(shell.position, 3));
     g.setAttribute('normal', new BufferAttribute(shell.normal, 3));
     g.setAttribute('color', new BufferAttribute(shell.colour, 3));
     g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
     g.setAttribute('aDecay', new BufferAttribute(shell.decay, 1));
     g.setIndex(new BufferAttribute(shell.index, 1));
-    // A Mesh a finish a cell, its arrays let go once on the GPU (below). NOT
-    // a BatchedMesh a finish for the town: three keeps a batch's whole
-    // capacity on the CPU (`BatchedMesh._initializeGeometry`), 1.1 GB of the
-    // heap for 8 M vertices (2026-10-14), and the game stalled on collection.
-    // The bounds came with the arrays: the renderer reads every mesh's box
-    // for the tallest building (the shadows).
+    // A Mesh a finish a cell, its arrays let go once on the GPU (below).
     g.boundingBox = boxOf(shell.bounds);
     g.boundingSphere = sphereOf(shell.bounds);
     const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell[finish] : kit.shell[finish]);
-    // The town's shells live on the GPU only: their arrays are let go once
-    // uploaded (three's BufferAttribute.onUpload: "clean-up operations after
-    // the upload when attribute data are not needed anymore on the CPU side")
-    // - a third of the heap of a town of 1 348 buildings (2026-10-11). Nothing
-    // reads them after (bounds above; no raycast on the town).
+    // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
       gpuOnly(mesh, () => {
         const again = refill?.().shells[finish];
@@ -3574,8 +3208,7 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const part = arrays.parts[kind];
     if (!part) continue;
     const { count } = part;
-    // Window panes carry their room's light slot, per instance, on their own
-    // copy of the pane geometry (the kit's is shared by every batch).
+    // Window panes carry their room's light slot, per instance, on their own copy of the pane geometry
     const glassy = part.litSlot !== undefined;
     const geometry = glassy ? kit.geometry[kind].clone() : kit.geometry[kind];
     let roomBuffer: InstancedInterleavedBuffer | null = null;
@@ -3596,9 +3229,7 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     if (part.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(part.instanceColor, 3);
     mesh.boundingBox = boxOf(part.bounds);
     mesh.boundingSphere = sphereOf(part.bounds);
-    // Its own arrays live on the GPU only (`mesh/gpuOnly.ts`), made again
-    // from the chunks. DO NOT let go of the kit's geometry it draws: it is
-    // shared by every batch of the kind.
+    // DO NOT let go of the kit's geometry it draws: it is shared by every batch of the kind.
     if (!ghost) {
       const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { instanceMatrix: mesh.instanceMatrix };
       if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
@@ -3652,7 +3283,6 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     }
   }
   // Shell vertices and part instance matrices are already in world space.
-  // Only a rebuild changes them; their Object3D transforms stay at identity.
   for (const mesh of meshes) {
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -3693,11 +3323,7 @@ export function buildBuildingMeshes(
   return assembleBuildingMeshes([...buildings].map((b) => emitChunk(b, groundAt, pavedAt, naturalAt)), kit, ghost);
 }
 
-/**
- * The furniture of every floor of a building, as it stands inside: what a
- * blow throws out of it when it breaks (`destruction.ts`). The same pieces a
- * floor cut open shows (`emitInterior`), on all floors at once.
- */
+/** The furniture of every floor of a building, as it stands inside: what a blow throws out of it when it breaks */
 export function interiorFurniture(b: Building, floor: number): Partial<Record<FurnitureKind, PartBatch>> {
   const placed: Partial<Record<FurnitureKind, Placement[]>> = {};
   const e = new Emitter(b, new Shell(), {} as Record<PartKind, Placement[]>, placed);

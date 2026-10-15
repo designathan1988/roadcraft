@@ -5,17 +5,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { simOf } from './support/bodies';
 
-/**
- * DON'T BLOCK THE BOX AT A JUNCTION WITHOUT SIGNALS EITHER.
- *
- * Two side streets join a street 120 units apart. A car waiting at the second
- * junction to turn off holds its lane just as a red does, and the queue behind
- * it reaches back to the first junction. The storage check only placed a queue
- * where it would come to rest - and only debited the cars already crossing
- * towards it - for lanes ending at a signal; here it counted the last car's
- * current rear, the rolling cars ahead let the next one in, and it stood in
- * the first junction's box.
- */
+/** DON'T BLOCK THE BOX AT A JUNCTION WITHOUT SIGNALS EITHER. */
 function teesOnAStreet(): RoadDoc {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: -500, y: 0 });

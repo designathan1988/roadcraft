@@ -1,12 +1,5 @@
 import { DIV_EPS } from './scalar';
-/**
- * Deterministic RNG: xoshiro128** seeded through splitmix32.
- *
- * `Math.random` is banned in `src/world` and `src/sim` — enforced by a source
- * scan in `tests/arch`. Streams are forked by string tag so that adding a new
- * consumer (a pedestrian source, say) cannot reshuffle an existing one and
- * silently change every regression fixture.
- */
+/** Deterministic RNG: xoshiro128** seeded through splitmix32. */
 export class Rng {
   private s0: number;
   private s1: number;
@@ -97,14 +90,7 @@ export class Rng {
   }
 }
 
-/**
- * Mulberry32 (Tommy Ettinger, 2017, gist.github.com/tommyettinger/46a874533244883189143505d203312c):
- * a 32-bit state, uniform in [0, 1). The small seeded streams of the models
- * (people, hair, plants, facades) draw from it, so the same seed makes the
- * same model every load. A different generator from `Rng`: swapping one for
- * the other changes every model it shapes. DO NOT copy it into a file: eight
- * copies of it stood beside this module (2026-10-14).
- */
+/** DO NOT copy it into a file: eight copies of it stood beside this module (2026-10-14). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

@@ -3,12 +3,7 @@ import { PointLight } from 'three';
 import { createBlast } from '@render/blast';
 import type { Exhaust } from '@render/exhaust';
 
-/**
- * A hydrant broken by a blast (`actionsWiring.ts` calls `geyser` with no
- * duration): its jet must stop and leave the effect list, or it sprays
- * particles and keeps `active()` true - the renderer drawing every frame -
- * for the rest of the game.
- */
+/** A hydrant broken by a blast (`actionsWiring.ts` calls `geyser` with no duration) */
 
 let saved: unknown;
 

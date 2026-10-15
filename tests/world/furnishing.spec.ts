@@ -27,7 +27,6 @@ describe('furnishing', () => {
       const b2 = floor.furniture.filter((f) => f.kind === partner).length;
       expect(a, fn).toBeGreaterThan(1);
       // A desk without its chair (or a bed without its TV) means the room was laid out too tight.
-      // (A classroom's teacher has a desk and no chair: one per board.)
       const teachers = floor.furniture.filter((f) => f.kind === 'blackboard').length;
       expect(b2, fn).toBeGreaterThanOrEqual(a - teachers);
     }

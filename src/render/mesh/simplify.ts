@@ -2,13 +2,7 @@ import { BufferAttribute, type BufferGeometry } from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
-/**
- * A coarser copy of a mesh for when it is a few pixels big: welded, then
- * simplified edge by edge with meshoptimizer, keeping its silhouette and its
- * colours (`color` weighs in the error). `ratio` is the share of triangles
- * aimed at, `error` the deviation allowed as a share of the mesh's size.
- * Resolves to the source itself when the simplifier cannot run.
- */
+/** A coarser copy of a mesh for when it is a few pixels big */
 export async function simplified(source: BufferGeometry, ratio: number, error: number): Promise<BufferGeometry> {
   try {
     await MeshoptSimplifier.ready;

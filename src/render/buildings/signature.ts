@@ -25,21 +25,7 @@ import { LANDMARKS } from './landmarks';
 import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * Signature buildings: a building of the tower kit drawn with parts of its
- * own - its own windows, balconies, railings, cladding, planters, roof plant -
- * modelled from the reference the player gave, instead of the shared facade
- * kit every other building is drawn with (`kit.ts`, `buildingMesh.ts`).
- *
- * The building's blocks stay in its record (picking, collisions, its lot);
- * `buildingMesh.ts` leaves its closed blocks out and this module draws the
- * body, sized from those blocks, so resizing the blocks resizes the drawing.
- * Each material's parts are merged into one mesh: a building is a handful of
- * draws. Materials and textures are made once (AGENTS.md).
- *
- * Metres in the building's frame: x along the front, y back from it, z up
- * from the floor; three's frame is (x, z, -y), as everywhere in this layer.
- */
+/** Signature buildings: a building of the tower kit drawn with parts of its own */
 
 /** A material's name: the shared ones of `makeMaterials`, or a facade made by `facade`. */
 type Mat = string;
@@ -58,19 +44,11 @@ type FacadeKind = 'curtainBlue' | 'curtainDark' | 'curtainGreen' | 'punchedBeige
   | 'archTerracotta' | 'ribbonWhite' | 'squareConcrete' | 'navyGrid' | 'copperFins' | 'ribbonBlack' | 'punchedPink' | 'curtainTeal'
   | 'archBrick' | 'archStone' | 'decoStripes' | 'loftBrick' | 'tallStone' | 'schoolBrick' | 'gothicStone' | 'officeWhite';
 
-/**
- * A facade drawn as a picture of its bays - panes and mullions, spandrels,
- * punched windows in a wall - tiling one bay across and one storey up, so
- * floor lines meet the slabs: `base` is the height (m) the storeys start at.
- */
+/** A facade drawn as a picture of its bays - panes and mullions, spandrels, punched windows in a wall */
 function facade(kind: FacadeKind, bay: number, storey: number, base: number): Mat {
   const key = `${kind}|${bay}|${storey}|${base}`;
   if (facades.has(key)) return key;
-  // Each style's picture painted once, kept with its first material (under `picture|kind`): the
-  // materials of its other rhythms read it through their own repeat and offset (a clone shares the
-  // picture's source, one texture on the graphics card: three's `Texture.clone`). DO NOT paint a
-  // picture per rhythm: a rhythm is a building's bay, storey and ground height, and every signature
-  // building of new proportions painted and sent a 256-pixel picture more, never let go.
+  // DO NOT paint a picture per rhythm
   const first = facades.get(`picture|${kind}`) as MeshStandardMaterial | undefined;
   // Its noise seeded by the style: the same picture in every run (DO NOT use Math.random here).
   const rng = new Rng(seedOf(kind));
@@ -484,10 +462,7 @@ class Parts {
     this.push(mat, g);
   }
 
-  /**
-   * A triangular prism: a gable roof (`along` 'y': the ridge runs back from
-   * the front, the gable end faces the street) or a pediment ('x').
-   */
+  /** A triangular prism: a gable roof */
   gable(mat: Mat, x0: number, x1: number, y0: number, y1: number, z: number, h: number, along: 'x' | 'y' = 'y'): void {
     const Yf = (y: number): number => -this.Y(y);
     const P = along === 'y'
@@ -911,11 +886,7 @@ function towerOf(look: TowerLook) {
 
 type Design = (p: Parts, W: number, D: number, g: number, s: number, upper: number) => void;
 
-/**
- * A flat roof's parapet in `mat` from z0 to z1 round the rectangle, and the
- * membrane deck inside it at `deck` (default just above z0): a rim, never a
- * lid of facade stone over the whole roof.
- */
+/** A flat roof's parapet in `mat` from z0 to z1 round the rectangle, and the membrane deck inside it at `deck` */
 function roofRing(p: Parts, mat: Mat, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, deck = z0): void {
   const r = Math.min(0.45, (x1 - x0) / 6, (y1 - y0) / 6);
   p.box(mat, x0, x1, y0, y0 + r, z0, z1);
@@ -1766,10 +1737,7 @@ export function drawsSignature(b: Building): boolean {
   return kind !== null && DESIGNS[kind] !== undefined;
 }
 
-/**
- * The body of a signature building, placed in the world: `floor` is the
- * height of its ground floor (world units), as the generic body would stand.
- */
+/** The body of a signature building, placed in the world: `floor` is the height of its ground floor */
 export function buildSignature(b: Building, floor: number): Group | null {
   const kind = signatureKind(b);
   const design = kind ? DESIGNS[kind] : undefined;

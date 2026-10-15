@@ -1,13 +1,4 @@
-/**
- * NO MUTABLE STATE LOOSE IN A MODULE (CLAUDE.md, Architecture: "No mutable
- * state loose in a module"). State belongs to one of the global controllers
- * (document, session store, state machines, simulation, render), each the
- * only writer of its data. Reported at a module's top level:
- * - `let` and `var` declarations (a value reassigned from anywhere in the file);
- * - `const` bound to a fresh mutable container (`new Map/Set/WeakMap/WeakSet/Array`,
- *   an empty array literal), the usual shape of a hidden cache.
- * Frozen tables (`as const`, `Object.freeze`) and constants are fine.
- */
+/** NO MUTABLE STATE LOOSE IN A MODULE (CLAUDE.md, Architecture: "No mutable state loose in a module"). */
 const CONTAINERS = new Set(['Map', 'Set', 'WeakMap', 'WeakSet', 'Array']);
 
 function mutableContainer(init) {

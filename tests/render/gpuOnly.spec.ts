@@ -13,13 +13,7 @@ import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * THE TOWN'S MESHES LIVE ON THE GPU (`render/mesh/gpuOnly.ts`): a road block
- * merged from its tiles and a cell of building masses let their arrays go
- * once the renderer uploads them - they were 2.6 GB of the heap of a 2,560 m
- * city, nothing let go - and take them back the same from their sources when
- * a lost WebGL context is restored.
- */
+/** THE TOWN'S MESHES LIVE ON THE GPU (`render/mesh/gpuOnly.ts`) */
 const attributes = (mesh: Mesh): BufferAttribute[] => [...Object.values(mesh.geometry.attributes), mesh.geometry.index!] as BufferAttribute[];
 const arraysOf = (mesh: Mesh): number[][] => attributes(mesh).map((a) => Array.from(a.array));
 /** What the renderer does after `bufferData` (`WebGLAttributes.createBuffer`). */

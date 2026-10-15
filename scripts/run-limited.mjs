@@ -1,15 +1,4 @@
-/**
- * Runs a heavy job of a conversation (the check, the tests, the build) within the conversation's share of
- * the machine, at once: the job object of the conversation (`sessionJob.mjs`: a hard cap on CPU and on
- * memory, 25 % and 8 GB by default) holds this process and so every process it starts - npm, Vitest's
- * workers, a Chrome -, at below-normal priority, which the children inherit.
- *
- * DO NOT bring back the lock of one heavy job on the whole machine, the wait for the CPU to fall, the four
- * fixed cores every job shared or the loop that put Chrome back on them: conversations waited minutes for
- * one another while the machine (24 logical processors, 32 GB) was mostly idle, and one job could still
- * take every core its children escaped to (2026-10-14, the player: "não tem cabimento usar 100% da cpu em
- * um processo"). A job too slow within its share is a job, or a game, to make faster.
- */
+/** DO NOT bring back the lock of one heavy job on the whole machine, the wait for the CPU to fall */
 import { spawn } from 'node:child_process';
 import { constants, cpus, setPriority } from 'node:os';
 import { clearTimeout, setTimeout } from 'node:timers';
@@ -25,8 +14,7 @@ if (!requested) {
   process.exit(2);
 }
 
-// npm and npx through their .cmd shims: PowerShell's execution policy
-// refuses the .ps1 ones, and the check silently never ran.
+// npm and npx through their .cmd shims
 const windows = process.platform === 'win32';
 const executable = requested === 'npm' || requested === 'npx'
   ? windows ? join(dirname(process.execPath), `${requested}.cmd`) : requested
@@ -43,11 +31,7 @@ const asked = Number(process.env.VITEST_MAX_WORKERS);
 const env = { ...process.env, VITEST_MAX_WORKERS: String(Number.isFinite(asked) ? Math.min(workers, Math.max(1, asked)) : workers), ROADCRAFT_IN_JOB: joined.joined ? '1' : '' };
 
 const TIMEOUT_S = Number(process.env.RUN_LIMITED_TIMEOUT_S ?? 480);
-// `.cmd` shims need cmd.exe on Windows (Node refuses to spawn them bare since CVE-2024-27980), and
-// cmd.exe reads one command line: Node's docs, child_process, "Spawning .bat and .cmd files on Windows":
-// spawn cmd.exe with the file as an argument, and "if the script filename contains spaces, it needs to be
-// quoted". DO NOT go back to `shell: true` with the arguments apart: Node joins them with spaces unquoted
-// (`windowsVerbatimArguments`), and npx under "C:\Program Files\nodejs" ran "C:\Program" (2026-10-14).
+// DO NOT go back to `shell: true` with the arguments apart: Node joins them with spaces unquoted
 const viaCmd = windows && /\.cmd$/i.test(executable);
 /** One word of a cmd.exe command line: quoted when it holds a space or a character cmd.exe reads. */
 const cmdWord = (word) => (word === '' || /[\s"&|<>^()%!,;=]/.test(word) ? `"${word.replace(/"/g, '""')}"` : word);

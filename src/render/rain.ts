@@ -1,23 +1,4 @@
-/**
- * RAIN (`world/weather.ts`): streaks falling through a box that goes with the
- * view - camera-centred rain, as games draw it (Microsoft Research's
- * "Real-Time Rendering of Realistic Rain"; Tatarchuk's ToyShop rain at ATI):
- * every drop's place is a hash in the box plus the rain's fall so far,
- * wrapped round the box in the vertex shader, so the CPU sends a few numbers
- * a frame and nothing else. The drops are anchored to the world (they do not
- * slide with the camera); the box is as wide as the view; the drops fall as
- * fast across it at any zoom, slanted by the wind, and fade towards its sides
- * so it has no edge.
- *
- * The fall is integrated frame by frame (velocity x the frame's time), as a
- * particle system advances its state (NVIDIA's Rain SDK, Tariq 2007), and kept
- * as an offset inside the box (`RainField.lattice`). DO NOT place the drops by
- * `velocity * total time`: the velocity follows the zoom, and every change of
- * zoom moved every drop by the change times all the time it had rained - the
- * rain jumped. DO NOT wrap world coordinates by a box that changes: a box a
- * hair wider moved drops far from the world's origin by its change times
- * their distance over the box. A new box scales the drops with it.
- */
+/** DO NOT place the drops by `velocity * total time` */
 import {
   AdditiveBlending, BufferAttribute, BufferGeometry, Color, LineSegments, ShaderMaterial, Vector2, Vector3,
 } from 'three';
@@ -28,11 +9,7 @@ const MAX_DROPS = 10_000;
 
 export interface Rain {
   readonly object: LineSegments;
-  /**
-   * The rain this frame: how hard (0..1), the ground point under the view
-   * and the view's width there (world units), the wind (world units a second,
-   * along three's x and z), the seconds since the last frame.
-   */
+  /** The rain this frame: how hard (0..1), the ground point under the view and the view's width there */
   update(amount: number, centre: Vector3, span: number, wind: Vector2, delta: number): void;
   dispose(): void;
 }
@@ -56,13 +33,7 @@ export function createRainField(): RainField {
 
 const wrap = (a: number, b: number): number => a - b * Math.floor(a / b);
 
-/**
- * The rain one frame on: the box over `ground` as wide as the view (`span`),
- * the drops' velocity for that box and the `wind`, and the lattice moved by
- * the fall over `delta` seconds. A box of another size scales the lattice
- * about the ground point, as the box itself scales: a drop in view moves by
- * no more than the box's own sides do.
- */
+/** The rain one frame on: the box over `ground` as wide as the view */
 export function advanceRain(field: RainField, ground: Vector3, span: number, wind: Vector2, delta: number): void {
   // As wide as the view, as tall as half of it, centred over the ground.
   const side = Math.min(m(1_200), Math.max(m(64), span * 1.1));
@@ -75,18 +46,15 @@ export function advanceRain(field: RainField, ground: Vector3, span: number, win
     ox = centre.x - box.x * 0.5 + lattice.x;
     oy = centre.y - box.y * 0.5 + lattice.y;
     oz = centre.z - box.z * 0.5 + lattice.z;
-    // About the ground point: the box hangs over it in the same proportions
-    // at any size, so the old box maps onto the new one.
+    // About the ground point: the box hangs over it in the same proportions at any size, so the old box maps onto the new one.
     ox = cx + (ox - cx) * (side / box.x);
     oy = ground.y + (oy - ground.y) * (tall / box.y);
     oz = cz + (oz - cz) * (side / box.z);
   }
-  // Fast enough to cross the view in about a second at any zoom; the
-  // wind's slant kept in proportion to it (some 9 m/s of fall).
+  // Fast enough to cross the view in about a second at any zoom; the wind's slant kept in proportion to it
   const fall = Math.max(m(8.8), tall * 1.6);
   const scale = fall / m(8.8);
-  // The slant: the wind against the fall, never flatter than some 40
-  // degrees off the vertical (a gale's rain, not scratches across the view).
+  // The slant: the wind against the fall, never flatter than some 40 degrees off the vertical
   const windLength = Math.hypot(wind.x, wind.y);
   const across = Math.min(0.85 * fall, windLength * scale);
   const k = windLength > 1e-6 ? across / windLength : 0;
@@ -100,10 +68,7 @@ export function advanceRain(field: RainField, ground: Vector3, span: number, win
   field.started = true;
 }
 
-/**
- * A drop's place - `seed` its hash in [0, 1) on each axis, `tip` 0 at its
- * head, 1 at its tail - as the vertex shader puts it.
- */
+/** A drop's place - `seed` its hash in [0, 1) on each axis, `tip` 0 at its head, 1 at its tail */
 export function dropAt(field: RainField, seed: Vector3, tip: number, streak: number, out: Vector3): Vector3 {
   const { centre, box, lattice, velocity } = field;
   return out.set(

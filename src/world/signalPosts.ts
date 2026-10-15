@@ -6,16 +6,7 @@ import type { NodeId, SegmentId } from './ids';
 import { roadProfile } from './roadTypes';
 import { m } from './units';
 
-/**
- * Where the traffic signal posts stand: one per approach of a signalised
- * junction, on the kerb side, two metres back from the zebra.
- *
- * ONE definition, read by the renderer that draws the posts
- * (`render/signals.ts`) and by the blast that knocks them down
- * (`actionsWiring.ts`). The pedestrians' footway graph (`sim/peds/sidewalk.ts`)
- * does NOT read it today, whatever this said before: people queuing for the
- * crossing can stand inside a post.
- */
+/** Where the traffic signal posts stand */
 
 /** Clearance from the carriageway edge to the post's centre line. */
 export const SIGNAL_POST_KERB = m(0.9);
@@ -38,11 +29,9 @@ export function signalPostPlace(net: Network, node: NodeId, segmentId: SegmentId
   const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
   const mouth = net.mouthDistance(segmentId, node);
   const polyline = net.polylines.get(net.doc, segmentId);
-  // Sample outward from the node to find the kerb position, then reverse
-  // that tangent: traffic on this approach travels TOWARD the node.
+  // Sample outward from the node to find the kerb position, then reverse that tangent
   const outward = segment.a === node ? polyline : polyline.reversed();
-  // A mid-block crossing has no junction mouth: its post stands at the stop
-  // line, where the driver who stopped for it can see it.
+  // A mid-block crossing has no junction mouth
   const record = net.doc.node(node);
   const midBlock = record?.crossing !== undefined && record.incident.length === 2;
   const distance = midBlock
@@ -56,14 +45,7 @@ export function signalPostPlace(net: Network, node: NodeId, segmentId: SegmentId
   return { node, segment: segmentId, x: position.x, y: position.y, yaw: angleOf({ x: -right.x, y: -right.y }) };
 }
 
-/**
- * Every signal post on the map, in a deterministic order; with `near`, only
- * those of the junctions at the ends of the roads within reach of it, found by
- * place (`Network.ribbonsMeeting`: a post stands on its leg, by the kerb,
- * inside the road's ribbon - so a post within reach is on a road within reach).
- * A superset: the caller keeps its own test. DO NOT ask for every post of the
- * map to keep those round one point (a blast, `actionsWiring.ts`).
- */
+/** DO NOT ask for every post of the map to keep those round one point (a blast, `actionsWiring.ts`). */
 export function signalPosts(net: Network, graph: LaneletGraph, near?: { readonly x: number; readonly y: number; readonly radius: number }): SignalPost[] {
   const out: SignalPost[] = [];
   let nodes: NodeId[];

@@ -7,11 +7,7 @@ interface SurfaceBakeResult {
 }
 
 declare const __SURFACE_BAKE_HASH__: string | undefined;
-/**
- * The fingerprint of the recipes' code (`cook-plugin.ts`), read here and sent
- * to the worker: its texels are kept in the browser under it
- * (`derivedCache.ts`) and read back instead of baked again.
- */
+/** The fingerprint of the recipes' code (`cook-plugin.ts`), read here and sent to the worker */
 const BAKE_HASH = typeof __SURFACE_BAKE_HASH__ !== 'undefined' ? __SURFACE_BAKE_HASH__ : null;
 
 /** Start the exact procedural recipes (or read back the texels they made) while the main thread builds the town. */
@@ -32,8 +28,7 @@ export function startSurfaceBake(): Promise<SurfaceBakeResult | null> {
         console.warn('Surface bake worker failed; using the canvas recipes on the main thread.', event.data.error);
         resolve(null);
       } else {
-        // Not stopped here: it is still keeping the texels it just sent
-        // (`derivedCache.ts`), and closes itself once they are kept.
+        // Not stopped here: it is still keeping the texels it just sent (`derivedCache.ts`), and closes itself once they are kept.
         resolve(event.data);
       }
     };

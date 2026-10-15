@@ -4,10 +4,7 @@ import { Network } from '@world/network';
 import { LotTool } from '@editor/lotTool';
 import { m } from '@world/units';
 
-/**
- * The street land's proposed lots made real (`LotTool.adoptProposal`) are
- * written in the diary where they lie, keys and all: never as the whole map.
- */
+/** The street land's proposed lots made real */
 describe('the proposed lots taken in', () => {
   it('are written in the diary with their places', () => {
     const doc = new RoadDoc();

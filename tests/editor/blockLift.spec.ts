@@ -9,17 +9,7 @@ import { validateBuilding } from '@world/buildings/validate';
 import { type Building, MAX_LIFT, cloneBuilding } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * The Construction tool's control of a block's own floor (`Volume.lift`, a
- * split level): typed in the panel or dragged by the block's vertical arrow,
- * the block goes up or down whole, with what stands on it and what hangs on
- * its walls. Before this, only the zoning's growth (`stepToSlope`) could set
- * a lift; the player had no way to.
- *
- * The view is oblique: a point drawn at height z lands z further up the
- * screen (screen y = world y - z), so one unit of drag up the screen is one
- * unit of height.
- */
+/** The Construction tool's control of a block's own floor (`Volume.lift`, a split level) */
 
 function setup(): { tool: BuildingTool; doc: RoadDoc; ctx: ReturnType<ToolHost['context']> } {
   const doc = new RoadDoc();
@@ -181,8 +171,7 @@ describe('the lift of a block (a split level) in the Construction tool', () => {
     back.x = front.x + front.w / 2; back.w = front.w / 2; back.d = front.w;
     draft.volumes.splice(2);
     opSetLift(draft, back.id, -m(3));
-    // The box's back-left corner is open ground: nearer the lowered back block
-    // than the front one, so graded to the back's floor - the handle on it.
+    // The box's back-left corner is open ground
     const handles = buildingHandles(draft, back.id, 0, () => [3, 2]);
     expect(handles.find((h) => h.kind === 'move')!.z).toBeCloseTo(-m(3), 6);
   });

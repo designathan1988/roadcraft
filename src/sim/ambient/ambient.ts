@@ -19,47 +19,7 @@ import { BuildingMix, SightWalls, StreetLength, atRoll } from './ambientIndex';
 import { LotPlaces, PLACE_KINDS } from './lotPlaces';
 
 
-/**
- * The life of the scenery, as GTA makes it: nobody lives here. People and
- * traffic are made where the camera is about to look and taken away where it
- * no longer does, within a fixed budget, at the density the place and the hour
- * call for (GTA's `popcycle`: per kind of zone and per hour, so many people
- * and so many cars).
- *
- * - NOTHING APPEARS OR VANISHES IN VIEW (the player's rule, 2026-10-05). Made
- *   outside the view, in a ring past its edge, and removed only past a wider
- *   ring (GTA IV: born out to ~105 m, culled 70-115 m and only off camera).
- *   Zoomed out past where people are drawn, the walkers are placed round the
- *   middle of the view where nobody can see them, so a zoom into the street
- *   finds it lived in. Only a map just opened is filled in view, as a game
- *   fills its world behind the loading screen.
- * - People walk the footways with the walking engine (`agents/walk.ts`):
- *   zebras, signals, cars, each other. They go from one place to another and
- *   go in when they get there.
- * - Cars join the lanes the same way and drive the traffic engine. Parked
- *   cars (GTA's car generators) stand in the bays of the whole map, the same
- *   car in the same bay every time: never simulated, so never made or taken
- *   away in sight; the renderer draws only those in view.
- * - Zoomed out past where a person can be seen, nobody is on foot at all.
- *
- * SET BY THE COMPOSITION ROOT (`enabled`) and fed by the renderer
- * (`SimWorld.focus`): with no focus (tests, harnesses) nothing is made.
- *
- * FED FROM THE ROAD ENDS AND THE LOTS (`source: 'edges'`, the game's way):
- * none of the above is made round the view.
- * - A map opened (a saved one, a file, a generated city) is lived in at once
- *   (the player, 2026-10-09: "sempre que abrir a cidade tem que já ter carros
- *   e pessoas", revoking "only at the road ends" for the opening): the
- *   panel's numbers (`SimWorld.trafficCount`, `pedestrianCount`) put on its
- *   lanes and footways in the first ticks (`open`), as a game fills its world
- *   behind the loading screen.
- * - From then on cars come in at the road ends (`vehicles/spawn.ts`
- *   stepDispatch) and out of the lots' bays (`agents/lotTraffic.ts`), and
- *   leave at a road end or into a lot; people come in on the footways at the
- *   road ends and out of the lots' gates, and leave at a road end or in at a
- *   gate (`edgePeople`, `keepWalking`) - never anywhere else, so a town with
- *   no road end keeps its numbers on its lots alone.
- */
+/** The life of the scenery, as GTA makes it: nobody lives here. */
 
 /** How far round a road end its footway points are looked for, u. */
 const END_LOOK = m(16);
@@ -73,16 +33,7 @@ const LOOK_EVERY = 0.25;
 const TRIM_PER_LOOK = 10;
 /** Most made in one look: the population fills over a second or two. */
 const MAKE_PER_LOOK = 8;
-/**
- * A map just opened is filled this many cars and people a tick, for at most
- * this many ticks: 400 of each in 200 ticks, under four seconds of the
- * simulation, 40 of each in a third of a second. Each car costs a route and
- * each person a walk, about a millisecond apiece in node on a generated town
- * of 1 500 buildings and two to three in the browser: 8 of each a tick made
- * opening frames of 100 to 460 ms in the browser (the clock runs up to
- * `MAX_SUBSTEPS` ticks a frame); 2 of each keep a tick to a few milliseconds.
- * A count, not a time budget, so the same map fills the same way everywhere.
- */
+/** A map just opened is filled this many cars and people a tick, for at most this many ticks */
 const OPEN_CARS = 2;
 const OPEN_PEOPLE = 2;
 const OPEN_TICKS = 600;
@@ -101,39 +52,21 @@ export class AmbientWorld {
   enabled = false;
   /** Where people and cars come from: round the view (GTA's way) or the ends of the roads. */
   source: 'view' | 'edges' = 'edges';
-  /**
-   * The cars standing in bays near the view: drawn, solid to walkers, never
-   * stepped. Written by the scenery and, through `addParked`/`removeParked`,
-   * by the lots' traffic, so `isParked` can answer without a walk of it.
-   */
+  /** The cars standing in bays near the view: drawn, solid to walkers, never stepped. */
   readonly parked: Vehicle[] = [];
   /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
   private readonly standing = new Set<Vehicle>();
   /** Each car's place in `parked`, for its removal in one step (`removeParked`). */
   private readonly parkedAt = new Map<Vehicle, number>();
-  /**
-   * The cars of `parked` that may move while they stand in it: those put
-   * there through `addParked` (the lots' cars driving into or out of a bay,
-   * the lorries in a yard). The scenery's own stand where they were put.
-   */
+  /** The cars of `parked` that may move while they stand in it: those put there through `addParked` */
   readonly movers = new Set<Vehicle>();
-  /**
-   * The cars that came into `parked` and went since `parkedBase`, oldest
-   * first (`parkedSince`), and the serial of the latest: what the walkers'
-   * zones of the parked cars follow (`agents/walk.ts` ParkedZoneIndex). DO
-   * NOT make a reader compare the whole list every tick to find what changed:
-   * every parked car of the map, each tick.
-   */
+  /** DO NOT make a reader compare the whole list every tick to find what changed: every parked car of the map, each tick. */
   private parkedLog: { readonly car: Vehicle; readonly added: boolean }[] = [];
   private parkedBase = 0;
   parkedSerial = 0;
   /** The scenery's own cars standing in bays, by the bay's place (`spotKey`). */
   private readonly sceneryAt = new Map<string, Vehicle>();
-  /**
-   * The scenery's cars by the source of their bays (`parking.ts`
-   * bayChangesSince: a lot's, a street's kerb), and each car's source: what
-   * a change of one source's bays stands again, and nothing else.
-   */
+  /** The scenery's cars by the source of their bays */
   private readonly carsBySource = new Map<string, Vehicle[]>();
   private readonly sourceOf = new Map<Vehicle, string>();
   /** The serial of the bays' changes last taken in (`bayChangesSince`); -1: none yet. */
@@ -156,11 +89,7 @@ export class AmbientWorld {
   private freshFor = 4;
   /** Where people are placed while too far to be drawn: round the middle of the view. */
   private static readonly UNSEEN_REACH = m(170);
-  /**
-   * The least radius people and cars live in round the view, metres: as GTA
-   * keeps its population ~100 m round the player whatever the camera sees,
-   * so a close view still has a street's worth of life round it, coming in.
-   */
+  /** The least radius people and cars live in round the view, metres */
   private static readonly LIVE_PEOPLE = m(150);
   private static readonly LIVE_CARS = m(200);
 
@@ -195,11 +124,7 @@ export class AmbientWorld {
     this.opening = true;
     this.openTicks = OPEN_TICKS;
     this.openSpots.length = 0;
-    // As a new map's: the looks from the first, the counters from nought (the
-    // random stream is the world's, `SimWorld.rng.ambient`, forked again by
-    // `SimWorld.reset`). DO NOT keep them going: the same map opened twice
-    // filled other streets with other people at other ticks. The trip ids go
-    // on (`nextTrip`), as the vehicles' (`SimWorld.reset`).
+    // DO NOT keep them going: the same map opened twice filled other streets with other people at other ticks.
     this.clock = 0;
     this.nextEdgeLook = 0;
     this.gateWalks.made = 0;
@@ -216,8 +141,7 @@ export class AmbientWorld {
     for (const id of this.walkers) if (!walkerAlive(w, id)) this.walkers.delete(id);
     for (const id of this.drivers) if (!w.vehicles.has(id)) { this.drivers.delete(id); this.sighted.delete(id); }
     if (this.source === 'edges') {
-      // A map just opened is filled at once, the panel's numbers on its
-      // streets, as a game fills its world behind the loading screen.
+      // A map just opened is filled at once, the panel's numbers on its streets
       if (this.opening) this.open(w);
       this.keepWalking(w);
     }
@@ -234,8 +158,7 @@ export class AmbientWorld {
     if (!focus) return;
     if (this.fresh) { this.freshFor -= LOOK_EVERY; if (this.freshFor <= 0) this.fresh = false; }
     const hour = (w.city.minutes(w) % 1440) / 60;
-    // Drawn, people live in a ring a little wider than the view; zoomed out
-    // (not drawn), round the middle of the view.
+    // Drawn, people live in a ring a little wider than the view; zoomed out (not drawn), round the middle of the view.
     const reach = focus.detail ? Math.max(focus.r * 1.3, AmbientWorld.LIVE_PEOPLE) : Math.min(focus.r, AmbientWorld.UNSEEN_REACH);
     const carReach = Math.max(focus.r * 1.35, AmbientWorld.LIVE_CARS);
     const mix = this.mixAround(w, focus.x, focus.y, focus.r);
@@ -252,17 +175,7 @@ export class AmbientWorld {
     this.parking(w);
   }
 
-  /**
-   * Down to the population the machine sustains (`SimWorld.populationShare`,
-   * `sim/populationGovernor.ts`): over the ceilings it sets, walkers and
-   * drivers made here are taken away out of sight, `TRIM_PER_LOOK` a look,
-   * as the view's own life takes away who is past its reach (`people`,
-   * `traffic`). Without it a cut kept every walker and car until its trip
-   * ended, minutes later, and the cost stayed the full town's (measured
-   * 2026-10-13). People are out of sight
-   * when not drawn (`focus.detail`) or out of the view; cars are drawn at
-   * every zoom. The hour's own thinning is still left to the trips' ends.
-   */
+  /** Down to the population the machine sustains (`SimWorld.populationShare`, `sim/populationGovernor.ts`) */
   private trimToCeilings(w: SimWorld): void {
     const focus = w.focus;
     let walkers = Math.min(TRIM_PER_LOOK, w.pedViews.length - Math.floor(PED_CEILING * w.populationShare));
@@ -291,11 +204,7 @@ export class AmbientWorld {
 
   // ------------------------------------------------------------ on foot
 
-  /**
-   * Whether a point may be on screen: in the circle of the view from above,
-   * or, playing, near the player or inside the camera's cone this side of how
-   * far anything is noticed (`SimWorld.focus.view`).
-   */
+  /** Whether a point may be on screen */
   private seen(w: SimWorld, focus: NonNullable<SimWorld['focus']>, x: number, y: number, pad: number): boolean {
     if (Math.hypot(x - focus.x, y - focus.y) < focus.r + pad) return true;
     const v = focus.view;
@@ -304,17 +213,11 @@ export class AmbientWorld {
     if (d > v.far + pad) return false;
     if (d < pad) return true;
     if ((rx * v.dx + ry * v.dy) / d <= v.cos) return false;
-    // In the cone, but behind a building: hidden, as GTA fills a street from
-    // behind the corners. The point grown by `pad` must be hidden whole.
+    // In the cone, but behind a building: hidden, as GTA fills a street from behind the corners.
     return !this.behindWall(w, v.ex, v.ey, x, y, pad);
   }
 
-  /**
-   * The walls of the buildings in a grid kept by the diary, for the line of
-   * sight (`ambientIndex.ts`). DO NOT make it again on `buildings.revision`:
-   * the town's ageing moves that every few seconds, and every wall of the
-   * map was gathered again, then walked twice a look per person and car.
-   */
+  /** DO NOT make it again on `buildings.revision` */
   private readonly walls = new SightWalls();
 
   /** True when a wall stands between the eye and (x, y), and between the eye and each side of it `pad` across. */
@@ -326,9 +229,7 @@ export class AmbientWorld {
   }
 
   private people(w: SimWorld, focus: NonNullable<SimWorld['focus']>, reach: number, want: number): void {
-    // Drawn (`detail`), the view is the circle of radius `focus.r`: nobody is
-    // made or taken away inside it. Not drawn, nothing is seen: they are kept
-    // round the middle, `reach`, made and taken away anywhere.
+    // Drawn (`detail`), the view is the circle of radius `focus.r`: nobody is made or taken away inside it.
     const seen = focus.detail;
     const far = reach * 1.15;
     for (const id of [...this.walkers]) {
@@ -379,27 +280,14 @@ export class AmbientWorld {
   /** Walkers whose walk does not end at a road end (a map with one): sent on to one when they can be. */
   private readonly roaming = new Set<number>();
   private nextEdgeLook = 0;
-  /**
-   * The buildings people walk into, by id, kept by the diary, each with
-   * what kind of place it is and its way from the door to the footway
-   * (`agents/lotDoors.ts`), worked out when the lot is first drawn
-   * (`lotPlaces.ts`).
-   */
+  /** The buildings people walk into, by id, kept by the diary */
   private places = newPlaces();
   /** Walks made from the road ends, and how many of them came out of a lot's gate or went in at one. */
   readonly gateWalks = { made: 0, fromGate: 0, toGate: 0 };
   /** People come out of and go in at the lots' gates (off: everybody passes from road end to road end, for a measure). */
   gates = true;
 
-  /**
-   * Where people come in and leave: the footways round every road end (a node
-   * with one road), kept by what each rebuild of the network changed
-   * (`Network.changesSince`): the nodes it changed, the ends of the roads it
-   * changed, and the road ends near what it changed (the walkways round them,
-   * `walkableNear`), looked at again; the others stand. DO NOT look round
-   * every node of the map when the network moves: every road drawn probed the
-   * town's road ends again.
-   */
+  /** DO NOT look round every node of the map when the network moves: every road drawn probed the town's road ends again. */
   private roadEnds(w: SimWorld): { node: number; x: number; y: number }[] {
     if (this.endsFor === w.net.state) return this.ends;
     const engine = w.pedEngine;
@@ -443,13 +331,7 @@ export class AmbientWorld {
     return this.ends;
   }
 
-  /**
-   * How many people on foot the panel asks for: its count, or, following the
-   * city (`SimWorld.followCity`), the lots' street tables over the whole map
-   * at this hour (`PEOPLE` x `busy` a 100 m of street, by the mix of its
-   * buildings - the view's own model) times the panel's share. Past one per
-   * 8 m of street they would only stand in each other's way.
-   */
+  /** How many people on foot the panel asks for: its count, or, following the city */
   private peopleTarget(w: SimWorld): number {
     const street = this.roadAround(w, 0, 0, Infinity);
     const most = Math.floor(stepsIn(street, 8));
@@ -462,14 +344,7 @@ export class AmbientWorld {
     return Math.min(Math.max(0, want), most, Math.floor(PED_CEILING * w.populationShare));
   }
 
-  /**
-   * People on foot, up to the number chosen, from where people come from: a
-   * road end (from off the map) or a lot's gate (out of a building). Each
-   * walks to another road end and leaves there, or to a lot and goes in
-   * (`walk.ts` ends the walk on arrival), by the lots' tables of the hour. A
-   * town with no road end lives on its lots alone; one with a single road end
-   * sends them somewhere across the map and on (`keepWalking`).
-   */
+  /** People on foot, up to the number chosen, from where people come from: a road end (from off the map) or a lot's gate */
   private edgePeople(w: SimWorld): void {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return;
@@ -480,14 +355,10 @@ export class AmbientWorld {
     if (onFoot >= want) return;
     const ends = this.roadEnds(w);
     const hour = (w.city.minutes(w) % 1440) / 60;
-    // The lots' own people: how many the land use puts on its street at this
-    // hour (the density of the view's model, `PEOPLE` x `busy`, over each
-    // lot's frontage); that share of the walkers comes out of a lot's gate or
-    // goes in at one, the rest pass through from road end to road end.
+    // The lots' own people: how many the land use puts on its street at this hour
     let outW = 0, inW = 0;
     if (this.gates && (this.placesReady(w) || !ends.length)) {
       // By kind: the frontage of the lots of that kind that may be walked to
-      // (a lot not yet worked out by the most its way can have).
       const frontage = this.places.frontages();
       PLACE_KINDS.forEach((kind, k) => {
         const people = PEOPLE[kind] * busy(kind, hour) * (frontage[k]! / m(100));
@@ -499,8 +370,7 @@ export class AmbientWorld {
     if (!ends.length && outW <= 0) return;
     this.nextEdgeLook -= LOOK_EVERY;
     if (this.nextEdgeLook > 0) return;
-    // Two a second at most: the street fills over a while, and each new body
-    // is built without a stall (`render/agents.ts` builds one at a time).
+    // Two a second at most: the street fills over a while, and each new body is built without a stall
     const batch = Math.min(want - onFoot, 2);
     this.nextEdgeLook = 1;
     // With no road end, everybody comes out of a lot.
@@ -529,11 +399,7 @@ export class AmbientWorld {
     }
   }
 
-  /**
-   * A walk from `from` (a road end, a lot's door with `fromLot`, a point on a
-   * footway): into `toLot` when given, else to another road end, else
-   * somewhere across the map, sent on from there (`roaming`). Its id, or null.
-   */
+  /** A walk from `from` (a road end, a lot's door with `fromLot`, a point on a footway) */
   private walkFrom(w: SimWorld, from: { node: number; x: number; y: number }, fromLot: DoorWay | null, toLot: DoorWay | null): number | null {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return null;
@@ -582,12 +448,7 @@ export class AmbientWorld {
     return null;
   }
 
-  /**
-   * The walkers whose walk does not end at a road end or at a lot's door,
-   * sent on before they get to its end - nobody vanishes in the street: to a
-   * lot, by the lots' tables of the hour, or a road end, or across the map
-   * again. Every tick, so nobody reaches the end between two looks.
-   */
+  /** The walkers whose walk does not end at a road end or at a lot's door, sent on before they get to its end */
   private keepWalking(w: SimWorld): void {
     if (!this.roaming.size) return;
     const hour = (w.city.minutes(w) % 1440) / 60;
@@ -620,15 +481,9 @@ export class AmbientWorld {
   private foot: { way: Walkway; at: number }[] = [];
   private footLength = 0;
 
-  /**
-   * The panel's numbers put on the streets of a map just opened, a slice a
-   * tick (`OPEN_CARS`, `OPEN_PEOPLE`): cars on the lanes of the whole map,
-   * people on its footways, each on a trip. After this, cars and people
-   * come and go only at the road ends and the lots' gates.
-   */
+  /** The panel's numbers put on the streets of a map just opened, a slice a tick (`OPEN_CARS`, `OPEN_PEOPLE`) */
   private open(w: SimWorld): void {
-    // A map with no road (a new map): nothing to fill, and nothing filled later
-    // in sight - the first road drawn is not filled in the middle of a street.
+    // A map with no road (a new map): nothing to fill, and nothing filled later in sight
     if (!this.openingLanes(w).length) { this.endOpening(); return; }
     const cars = w.edgeTraffic ? trafficTarget(w) - w.vehicles.size : 0;
     const people = this.peopleTarget(w) - this.walkers.size;
@@ -642,23 +497,14 @@ export class AmbientWorld {
     this.openSpots.length = 0;
   }
 
-  /**
-   * Cars on link lanes of the whole map, each lane drawn by its length (SUMO's
-   * randomTrips weighted by edge length, sumo.dlr.de/docs/Tools/Trip.html),
-   * at a random free place on it (its departPos "random_free": a few random
-   * tries), a safe distance from the cars ahead and behind and born at a
-   * speed they allow (`spawnVehicleAt`), bound for a road end, or driving
-   * round until a lot calls them in (`agents/lotTraffic.ts`).
-   */
+  /** Cars on link lanes of the whole map, each lane drawn by its length */
   private openCars(w: SimWorld, n: number): void {
     const lanes = this.openingLanes(w);
     const at = this.lanesAt;
     const total = at.length ? at[at.length - 1]! : 0;
     const rng = w.rng.spawnVehicles;
     for (let made = 0, tries = 0; made < n && tries < n * 6; tries++) {
-      // The lane whose stretch of the lanes laid end to end the roll falls in:
-      // a binary search over their running sum. DO NOT walk the lanes
-      // subtracting lengths: that was every lane of the map per car made.
+      // DO NOT walk the lanes subtracting lengths: that was every lane of the map per car made.
       const pick = lanes[atRoll(at, rng.float() * total)]!;
       const arch = rng.weighted(TRAFFIC);
       if (pick.length < arch.length + m(3)) continue;
@@ -667,12 +513,7 @@ export class AmbientWorld {
     }
   }
 
-  /**
-   * People on the footways of the whole map, each footway drawn by its length,
-   * never within 1.5 m of anybody (nor of anybody put there this opening and
-   * still waiting to step out), each walking to a lot, a road end, or across
-   * the map (`walkFrom`).
-   */
+  /** People on the footways of the whole map, each footway drawn by its length, never within 1.5 m of anybody */
   private openPeople(w: SimWorld, n: number): void {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return;
@@ -713,13 +554,7 @@ export class AmbientWorld {
     }
   }
 
-  /**
-   * The buildings people walk into, taken in from the diary: the buildings
-   * changed, and the street doors near the roads changed (a street door's
-   * way holds while a footway is at its foot). Every building is a
-   * candidate: one with no people's gate may open its door onto the street,
-   * which only its way tells (null: nobody walks to it).
-   */
+  /** The buildings people walk into, taken in from the diary */
   private refreshPlaces(w: SimWorld): void {
     this.places.sync(w.doc.buildings, w.doc.changes);
   }
@@ -730,16 +565,7 @@ export class AmbientWorld {
     return this.places.ready();
   }
 
-  /**
-   * A lot with a way to its door, at random by the people it has on its
-   * street now coming out (`out`) or going in: `PEOPLE` x `busy` x frontage x
-   * the share that way at this hour (`outShare`). Not `not`, nor one too near
-   * it to be worth the walk; the other end of a walk from `not` nearer is
-   * likelier, by the gravity model's negative exponential (`WALK_DECAY`).
-   * Drawn by `LotPlaces.pick` - with no other end, in O(log n) (a Fenwick tree
-   * per kind); from another end, over the place cells (one look a cell) - the
-   * lot drawn worked out then.
-   */
+  /** A lot with a way to its door, at random by the people it has on its street now coming out (`out`) or going in */
   private pickPlace(w: SimWorld, hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
     this.refreshPlaces(w);
     const coef = PLACE_KINDS.map((kind) => {
@@ -749,13 +575,7 @@ export class AmbientWorld {
     return this.places.pick(w.rng.ambient, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
   }
 
-  /**
-   * Now and then somebody walking with a walker just made (`walkTrip` with):
-   * a couple three times in ten, an adult with a child once in ten - the
-   * same way, at the same pace; shot, the one left grieves beside them
-   * (`sim/agents/walk.ts` mourn). Everybody walked alone, and nobody near a
-   * shot person was theirs (the player, 2026-10-06).
-   */
+  /** Now and then somebody walking with a walker just made (`walkTrip` with) */
   private company(w: SimWorld, leader: number, age: PersonAgeClass, from: { x: number; y: number }, to: { x: number; y: number }, roams: boolean,
     head: readonly { x: number; y: number }[] = NO_WAY, tail: readonly { x: number; y: number }[] = NO_WAY): void {
     const engine = w.pedEngine;
@@ -763,10 +583,7 @@ export class AmbientWorld {
     const roll = w.rng.ambient.float();
     if (roll >= 0.4) return;
     const ageClass: PersonAgeClass = age === 'child' ? 'adult' : roll < 0.1 && age === 'adult' ? 'child' : age;
-    // Out of the same door: after the first, when the spot is clear (`walk.ts`
-    // inside); on the footway, beside them, just past the 0.8 m a walker made
-    // waits to have clear (`walk.ts` DOOR_CLEAR): at 0.6 m they stood inside
-    // until the first had walked off, and a group was seen to step out apart.
+    // Out of the same door: after the first, when the spot is clear (`walk.ts` inside)
     const trip = {
       trip: this.nextTrip++, fromX: from.x + (head.length ? 0 : m(0.9)), fromY: from.y, toX: to.x, toY: to.y,
       seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30), with: leader,
@@ -777,10 +594,7 @@ export class AmbientWorld {
     if (roams) this.roaming.add(id);
   }
 
-  /**
-   * The road ends forgotten, and every node to look round.
-   * @rebuild The first look, a map opened, a network further behind than it remembers.
-   */
+  /** @rebuild The road ends forgotten, and every node to look round. */
   private everyEnd(w: SimWorld): Set<number> {
     this.ends = [];
     this.endSlots.clear();
@@ -801,12 +615,7 @@ export class AmbientWorld {
     }
   }
 
-  /**
-   * A road end's footway point at another road end than `not`, each drawn
-   * alike; null when there is none. Drawn among all of them, a draw of `not`'s
-   * own points falling to the next of the others: DO NOT copy the list of the
-   * town's road ends for each walker sent.
-   */
+  /** Drawn among all of them, a draw of `not`'s own points falling to the next of the others */
   private pickEnd(w: SimWorld, not: number | null): { node: number; x: number; y: number } | null {
     const ends = this.roadEnds(w);
     const own = not === null ? [] : [...this.endSlots.get(not) ?? []].sort((x, y) => x - y);
@@ -844,9 +653,7 @@ export class AmbientWorld {
       }
     }
     if (this.drivers.size >= want) return;
-    // The lanes within reach of the focus, from the lanes' grid (`parking.ts` lanesInBox). DO NOT draw from
-    // every lane of the map and throw away those far off: on a large map nearly every draw fell outside the
-    // reach, and no car came near the view.
+    // DO NOT draw from every lane of the map and throw away those far off
     const lanes = this.lanesAround(w, focus, reach);
     if (!lanes.length) return;
     // Cars are drawn at every zoom: only past the edge of the view, but for a map just opened.
@@ -904,11 +711,7 @@ export class AmbientWorld {
   /** Bays whose scenery car the lots drove out: left empty when the bays are made again. */
   private readonly vacated = new Set<string>();
 
-  /**
-   * A parked car handed to the lots' traffic (`agents/lotTraffic.ts`), which
-   * drives it out of its bay: no longer the scenery's, and its bay is not
-   * filled again when the bays are made again (a car would appear in it).
-   */
+  /** A parked car handed to the lots' traffic (`agents/lotTraffic.ts`), which drives it out of its bay */
   release(car: Vehicle): void {
     this.leaveSource(car);
     if (car.free) {
@@ -919,11 +722,7 @@ export class AmbientWorld {
     this.removeParked(car);
   }
 
-  /**
-   * Whether `body` is among the cars standing (`parked`), put there by the
-   * scenery or through `addParked`. DO NOT ask `parked.includes` per car per
-   * tick: the list holds every parked car of the map.
-   */
+  /** DO NOT ask `parked.includes` per car per tick: the list holds every parked car of the map. */
   isParked(body: Vehicle): boolean {
     return this.standing.has(body);
   }
@@ -938,11 +737,7 @@ export class AmbientWorld {
     this.logParked(body, true);
   }
 
-  /**
-   * A car taken out of the cars standing in bays: the last of the list takes
-   * its place. DO NOT `indexOf` and `splice` it out: every parked car of the
-   * map, for each car of the lots that drives out (nobody reads the order).
-   */
+  /** DO NOT `indexOf` and `splice` it out: every parked car of the map, for each car of the lots that drives out */
   removeParked(body: Vehicle): void {
     this.standing.delete(body);
     this.movers.delete(body);
@@ -978,14 +773,7 @@ export class AmbientWorld {
     return this.sceneryAt.get(spot);
   }
 
-  /**
-   * The cars standing in the bays of the whole map: the same car in the same
-   * bay each time. Only the sources of bays whose bays changed (a lot, a
-   * street's kerb: `parking.ts` bayChangesSince) are stood again; every one
-   * at the first look. DO NOT stand every bay of the town again at each
-   * change: every bay of the map (and a seeded draw each) for each building
-   * grown, and every parked car of the town filed again by the walkers.
-   */
+  /** DO NOT stand every bay of the town again at each change: every bay of the map */
   private parking(w: SimWorld): void {
     const { serial, changed } = bayChangesSince(w, this.baysSerial);
     if (serial === this.baysSerial && changed !== null) return;
@@ -998,11 +786,7 @@ export class AmbientWorld {
     for (const source of new Set(changed)) this.standSource(w, source, true);
   }
 
-  /**
-   * The scenery's cars of one source of bays stood again: those there now
-   * off, a car in each of its bays now (`stand`); a car whose bay is where it
-   * stood is kept (the same body in the same place). `fill` false: only off.
-   */
+  /** The scenery's cars of one source of bays stood again: those there now off, a car in each of its bays now (`stand`) */
   private standSource(w: SimWorld, source: string, fill: boolean): void {
     const was = new Map<string, Vehicle>();
     for (const car of [...(this.carsBySource.get(source) ?? [])]) {
@@ -1028,8 +812,7 @@ export class AmbientWorld {
     // Seeded by where the bay is, in steps of 0.4 m: the same car in it at any world unit.
     const r = new Rng(0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761));
     if (r.float() >= PARKED) return null;
-    // A body the stall holds whole (`stallFits`): a van's nose stood through
-    // the fence at the back of a car's stall.
+    // A body the stall holds whole (`stallFits`): a van's nose stood through the fence at the back of a car's stall.
     const fits = PARKED_KINDS.filter((kind) => stallFits(bay, kind.length));
     const pick = r.float();
     if (!fits.length) return null;
@@ -1070,13 +853,7 @@ export class AmbientWorld {
 
   // ------------------------------------------------------------ the place
 
-  /**
-   * The mix of the buildings round a place: counts by kind per cell and for
-   * the whole map, kept by the diary (`ambientIndex.ts` BuildingMix). DO NOT
-   * count every building again under a key with `buildings.revision`: the
-   * town's ageing moves it every few seconds, and the whole map was counted
-   * again that often (and on every look of the view's life).
-   */
+  /** DO NOT count every building again under a key with `buildings.revision` */
   private readonly buildingMix = new BuildingMix();
 
   private mixAround(w: SimWorld, x: number, y: number, r: number): Mix {
@@ -1084,13 +861,7 @@ export class AmbientWorld {
     return this.buildingMix.around(x, y, r);
   }
 
-  /**
-   * Street length inside the view, world units: what the population is sized
-   * by (`ambientIndex.ts` streetLength). DO NOT put a one-slot cache back in
-   * front of it: three questions a look (the view's people, its cars, the
-   * whole map's) each threw the other's answer out, and every ribbon of the
-   * map was walked again for each.
-   */
+  /** DO NOT put a one-slot cache back in front of it: three questions a look */
   private readonly street = new StreetLength();
 
   private roadAround(w: SimWorld, x: number, y: number, r: number): number {
@@ -1098,14 +869,7 @@ export class AmbientWorld {
   }
 }
 
-/**
- * Distance decay of a walk from one lot to another, u: the gravity model's
- * negative exponential, e^(-d/L) (Wikipedia "Trip distribution": "a negative
- * exponential tends to be the preferred form"). With places spread evenly,
- * walks then run 2L on average; L = 470 m makes that the 12 minutes of the
- * average walk in São Paulo's origin-destination survey of 2017 (about
- * 940 m at 1.3 m/s).
- */
+/** Distance decay of a walk from one lot to another, u: the gravity model's negative exponential, e^(-d/L) */
 const WALK_DECAY = m(470);
 /** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
 const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });

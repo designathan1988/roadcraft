@@ -7,13 +7,7 @@ import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 import { conflictLines, graphLines } from './support/graphLines';
 
-/**
- * THE LANE GRAPH KEPT BY WHAT CHANGED (`LaneletGraph.update`): after every edit
- * of the fuzzer's sequences and fixtures (the editor's own commands), the graph
- * brought up to the network by its delta must be the graph built from nothing -
- * every lanelet and connector, each lane's exits, each node's lanes in and out,
- * each junction's groups, connectors and signal.
- */
+/** THE LANE GRAPH KEPT BY WHAT CHANGED (`LaneletGraph.update`): after every edit of the fuzzer's sequences and fixtures */
 /** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };

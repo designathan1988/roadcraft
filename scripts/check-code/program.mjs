@@ -1,6 +1,4 @@
-// THE PROGRAM the code rules read (`scripts/check-code.mjs`): the TypeScript program of the
-// project, its type check (the diagnostics `tsc --noEmit` gives) and the small predicates on
-// its nodes. Split from check-code.mjs (eslint max-lines); the rules are there.
+// THE PROGRAM the code rules read (`scripts/check-code.mjs`): the TypeScript program of the project, its type check
 import ts from 'typescript';
 import { join, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';

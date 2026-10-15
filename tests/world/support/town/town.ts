@@ -6,14 +6,7 @@ import { ROAD_CLEARANCE } from '@world/buildings/validate';
 import { type Box, type Edge, facingBody, inside, overlaps } from './sampleTown';
 import { m } from '@world/units';
 
-/**
- * The town's building kit: houses drawn up here, every one its own (its plan,
- * its storeys, its roof, its walls, its front garden), the parks, squares and
- * courts, and the frontage builders (`perimeter`, `houses`) that line a block
- * with them. The town the game opens on (`defaultTown.ts`) is laid out with
- * these. Every building is an ordinary building, so each can be edited,
- * entered and lived in.
- */
+/** The town's building kit: houses drawn up here, every one its own */
 
 type Rng = () => number;
 const pick = <T>(rng: Rng, list: readonly T[]): T => list[Math.floor(rng() * list.length) % list.length]!;
@@ -53,20 +46,14 @@ function around(outer: Rect, hole: Rect): Rect[] {
   return out;
 }
 
-/**
- * An open lot, if it is big enough to be a block (two metres a side). A lawn
- * strip narrower than that is left to the ground, which is lawn anyway.
- */
+/** An open lot, if it is big enough to be a block (two metres a side). */
 function lotIn(model: Model, x: number, y: number, w: number, d: number, surface: 'grass' | 'paving' | 'gravel' | 'water'): void {
   if (w >= 2 && d >= 2) model.lot(x, y, w, d, surface);
 }
 
 type Style ='cottage' | 'villa' | 'modern' | 'bungalow' | 'barn';
 
-/**
- * One house on a plot `W` wide and `D` deep (metres), its front on the
- * street at y = 0: drawn up from `rng`, so no two are alike.
- */
+/** One house on a plot `W` wide and `D` deep (metres), its front on the street at y = 0 */
 function house(rng: Rng, W: number, D: number): BlueprintBody {
   const style = pick<Style>(rng, ['cottage', 'villa', 'modern', 'bungalow', 'barn', 'villa', 'cottage', 'modern']);
   const wall = style === 'modern' ? pick(rng, [mat('plaster', 0xf6f4ef), mat('concrete', 0xc8c6bf), mat('plaster', 0xe4e1da), mat('wood', 0x8c6b4c), mat('panel', 0x7d878e)])
@@ -171,8 +158,7 @@ function house(rng: Rng, W: number, D: number): BlueprintBody {
     }
   }
 
-  // The front garden: a path to the door, a drive to the garage, and the
-  // boundary on the street with a gap for each.
+  // The front garden: a path to the door, a drive to the garage, and the boundary on the street with a gap for each.
   model.el('pavement', doorX, fy / 2, 0, { w: between(rng, 1.1, 1.6), d: fy, h: 0.12, material: pick(rng, [mat('stone', 0xc9c0ae), mat('brick', 0xa86a52), mat('concrete', 0xc2bfb6), mat('stone', 0xb3aa98)]) });
   const gaps: [number, number][] = [[doorX - 0.9, doorX + 0.9]];
   if (garage) {
@@ -351,10 +337,7 @@ export function park(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   return model.build();
 }
 
-/**
- * The garden inside a block of terraces: lawn round a gravel walk, trees,
- * shrubs, flower beds and benches; in a big one, a games court.
- */
+/** The garden inside a block of terraces: lawn round a gravel walk, trees, shrubs, flower beds and benches */
 export function courtyard(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   const model = new Model('square', 'commercial', 1);
   const walk = 2.2;
@@ -385,9 +368,7 @@ export function courtyard(rng: Rng, Wm: number, Dm: number): BlueprintBody {
     if (court && Math.abs(x - (inner.x + inner.w / 2)) < 11 && Math.abs(y - (inner.y + inner.d / 2)) < 8) continue;
     model.el('shrub', x, y, 0, { w: s, d: s, h: s * 0.8, material: HEDGE(rng) });
   }
-  // Keep the furniture inside the gravel ring. The narrow outer lawn strip is
-  // omitted by `lotIn`, so anything beyond the ring would cross the footprint
-  // that `instantiate` aligns with the back of the footway.
+  // Keep the furniture inside the gravel ring.
   for (const [x, y, f] of [[Wm / 2, inner.y - walk + 0.8, 2], [Wm / 2, inner.y + inner.d + walk - 0.8, 0]] as const) {
     model.el('bench', x - 4, y, f as Side, { w: 1.8 });
     model.el('bench', x + 4, y, f as Side, { w: 1.8 });

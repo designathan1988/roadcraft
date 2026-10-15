@@ -2,15 +2,7 @@ import { ClampToEdgeWrapping, DataTexture, DataUtils, HalfFloatType, LinearFilte
 import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { fogAt, type FogDab, type FogSample } from '@world/fogPaint';
 
-/**
- * The painted fog as the post pass reads it (`postprocess.ts` CLOUD_SHADOWS):
- * a map over the land: R the fog's density there (0..1, the dabs rasterised
- * by `fogAt`), G the height of the ground under it, so the bank lies on the
- * land and follows it into the valleys, B how high that fog stands and A how
- * fast it drifts (each painted with the brush's own settings). Half floats,
- * filtered.
- * Kept by the rectangles that changed (`createFogField`).
- */
+/** The painted fog as the post pass reads it (`postprocess.ts` CLOUD_SHADOWS): a map over the land */
 
 /** Texels across the map: some 20 m a texel. */
 const FOG_RES = 512;
@@ -38,14 +30,7 @@ export function createFogTexture(): DataTexture {
 /** A world rectangle: [minX, minY, maxX, maxY]. */
 type Rect = readonly [number, number, number, number];
 
-/**
- * The fog map kept up to date by the rectangles that changed: a dab painted
- * or wiped, the land or the ground under it moved. Only the texels of those
- * rectangles are worked out again and only their rows go to the GPU (three
- * sends an update range as one row of the image); the slab (`low`, `high`)
- * is kept a row at a time. DO NOT raster the whole map at every dab: 262 144
- * texels and a ground height each, for a brush's few metres.
- */
+/** DO NOT raster the whole map at every dab: 262 144 texels and a ground height each, for a brush's few metres. */
 export interface FogField {
   /** Every texel, from these dabs and this ground (the first time, or when the diary cannot say where). */
   whole(dabs: readonly FogDab[], groundAt: (x: number, y: number) => number): FogLayer;

@@ -1,19 +1,7 @@
 import type { SegmentId } from '@world/ids';
 import { DT } from '../dt';
 
-/**
- * A person as everything outside the pedestrian engine sees them.
- *
- * The renderer, the inspector and the counters used to read the legacy
- * model's `Ped` directly: its crossing state machine, its sidewalk edge and
- * arc position, its route. None of that exists in the People engine that
- * replaces it (a navmesh, not edges), so the renderer reads this instead, and
- * whichever engine runs publishes one `PedView` per person at the end of its
- * tick. The object for an id is kept for as long as that person lives, so a
- * renderer may key per-person state on it.
- *
- * `docs/design/agency-architecture.md` §5.
- */
+/** A person as everything outside the pedestrian engine sees them. */
 
 export type PersonAgeClass = 'child' | 'adult' | 'elder';
 export type PersonGender = 'f' | 'm';
@@ -101,10 +89,7 @@ export interface PedView {
   ground: PedGround;
   /** The road the ground belongs to, for its elevation; undefined off the road network. */
   segment: SegmentId | undefined;
-  /**
-   * Which walkway and which way along it. Two people with the same stretch
-   * are walking the same path in the same direction, side by side if close.
-   */
+  /** Which walkway and which way along it. */
   stretch: string;
   /** Under way along a path, not paused, waiting or crossing. */
   walking: boolean;
@@ -112,17 +97,11 @@ export interface PedView {
   kerbWait: number;
   /** The crossing waited for, while `kerbWait > 0`. */
   waitingFor: string | null;
-  /**
-   * What the person is doing in place, or null. A new object means a new
-   * gesture: a renderer looking round starts its look again.
-   */
+  /** What the person is doing in place, or null. */
   gesture: GestureView | null;
 }
 
-/**
- * Integer avalanche over an id: how a person's appearance and idle habits are
- * drawn, identically in the simulation and in the renderer.
- */
+/** Integer avalanche over an id: how a person's appearance and idle habits are drawn */
 export function personHash(id: number): number {
   let h = (id | 0) + 0x9e3779b9;
   h = Math.imul(h ^ (h >>> 16), 0x21f0aaad);
@@ -130,13 +109,7 @@ export function personHash(id: number): number {
   return (h ^ (h >>> 15)) >>> 0;
 }
 
-/**
- * How fast the body really went this tick, u/s: its walking speed, or what it
- * moved if more. A walker stepping aside into its stripe moves while its
- * forward speed is nil (SUMO's striping does the same, `MSPModel_Striping`
- * `maxYSpeed`); the gait drawn from `v` alone stood still and the body slid
- * along the ground (Etapa 5a, `tests/sim/walkHeight.spec.ts`).
- */
+/** How fast the body really went this tick, u/s: its walking speed, or what it moved if more. */
 export function gaitSpeed(view: Pick<PedView, 'x' | 'y' | 'prev' | 'v'>): number {
   return Math.max(view.v, Math.hypot(view.x - view.prev.x, view.y - view.prev.y) / DT);
 }

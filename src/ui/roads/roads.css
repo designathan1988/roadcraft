@@ -1,6 +1,4 @@
-/* The road system's panels (docs/VIAS.md V2): the profile editor and the
-   profile summary in the inspector. Built on the interface v2 tokens
-   (shell.css): its glass, its accent, its corners, its type. */
+/* The road system's panels (docs/VIAS.md V2): the profile editor and the profile summary in the inspector. */
 
 .rp-panel {
   position: fixed; left: 16px; right: 16px; bottom: calc(var(--v-dock-h, 54px) + 14px); z-index: 40;
@@ -208,13 +206,8 @@ button.rp-issue:hover { background: rgba(255, 111, 97, 0.2); }
 .rp-panel.docked.folded { bottom: auto !important; }
 .rp-panel.docked.folded [data-action="fold"] svg { transform: rotate(180deg); }
 
-/* ---- the road catalogue in the road tool's drawer: a compact strip of
-   plan-view tiles (the road as the game draws it, `profileSwatch.ts`), the
-   whole name under each, details on hover - not a wall of cards over the
-   city (the player, 2026-10-09). */
-/* The drawer holding it takes the row of cards' whole width, up to the room
-   between the panels (`shell.ts` fitDrawer): a grid item spanning a flexible
-   track gives the drawer no width of its own (CSS Grid, intrinsic sizing). */
+/* ---- the road catalogue in the road tool's drawer: a compact strip of plan-view tiles */
+/* The drawer holding it takes the row of cards' whole width, up to the room between the panels (`shell.ts` fitDrawer) */
 .rc-catalog { display: grid; gap: 6px; min-width: 0; font: 12px/1.25 Inter, ui-sans-serif, "Segoe UI", Roboto, sans-serif; color: var(--v-text, #eef4f2); }
 .rc-catalog * { box-sizing: border-box; }
 .rc-catalog button { font: inherit; color: inherit; cursor: pointer; }

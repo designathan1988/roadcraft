@@ -1,13 +1,4 @@
-/**
- * THE WARDROBE: every MakeHuman item a person can wear, the system pack
- * (`spec.ts` WARDROBE) and the community packs
- * (`proxies/community.json`),
- * sorted by what it is and who it suits.
- *
- * The street draws only items light enough for a crowd (STREET_TRIANGLES)
- * and never fantasy items (masks, horns, helmets); the Person Creator offers
- * everything.
- */
+/** THE WARDROBE: every MakeHuman item a person can wear, the system pack (`spec.ts` WARDROBE) and the community packs */
 import community from '../../public/models/people/proxies/community.json';
 import selection from './wardrobeSelection.json';
 import sexes from './wardrobeSex.json';
@@ -15,12 +6,7 @@ import sexes from './wardrobeSex.json';
 /** Whom each curated item is cut for, decided by looking at it (the player: no bizarre mixes). */
 const SEX = sexes as Record<string, 'female' | 'male' | 'any'>;
 
-/**
- * The items reviewed for the street: a curated choice of the imported packs,
- * which the player edits in the wardrobe catalogue (the `source` in the json).
- * Every imported item is offered in the Person Creator (player, 2026-10-02:
- * "tudo"); a passer-by wears only reviewed ones.
- */
+/** The items reviewed for the street */
 const SELECTED = new Set<string>(selection.names);
 
 export type CommunityKind = 'top' | 'bottom' | 'skirt' | 'dress' | 'suit' | 'beard' | 'hat' | 'glasses' | 'gloves'

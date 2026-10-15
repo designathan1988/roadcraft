@@ -1,25 +1,6 @@
 import type { MeshStandardMaterial } from 'three';
 
-/**
- * WHERE A STREET IS DIRTY AND WHERE IT IS WORN: the marks a carriageway and
- * a footway take from their use, drawn from each fragment's place in the
- * road's cross-section (`surfaceMesh.ts` `section`, the `roadSection`
- * attribute) - no texture and no extra sample. A road read as one flat
- * asphalt from kerb to kerb, a footway as one flat paving from kerb to lot
- * (the player, 2026-10-13: the asphalt by the kerb is a different tone from
- * its middle, the footway too at its edges). As road tools lay such masks
- * along the road's width - edge wear, dirt, wear tracks (the Procedural Road
- * Toolkit's normalised across-the-road UV, "for centerlines, lane markings,
- * wear tracks", and its "edge wear, dirt accumulation").
- *
- * The carriageway: the gutter's band of grit and grime along each kerb,
- * browner and darker; in every lane the two wheel tracks polished lighter and
- * the drip line of oil between them darker. The footway: the dirt splashed
- * behind the kerb stone, the grime and a little moss along the lot's edge, the
- * walking line down the middle a shade lighter.
- *
- * Chained onto the material's own shader changes (`detailLayer.ts`).
- */
+/** WHERE A STREET IS DIRTY AND WHERE IT IS WORN */
 export function applyRoadEdges(material: MeshStandardMaterial, kind: 'carriageway' | 'footway'): void {
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey;

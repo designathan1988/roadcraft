@@ -11,12 +11,7 @@ import { applyProfile } from '@world/roads/profile';
 import { LANE_LINE, sectionFromProfile, travelWidth } from '@world/roadTypes';
 import { m } from '@world/units';
 
-/**
- * THE ROAD PAINT AND THE SIGNS (docs/source/VIAS.md V6): the map's regional standard
- * (MBST vol. IV for Brazil), the bus lane's legend, the junction rule's floor
- * legends and its plates, and the speed plates. A map saved before keeps its
- * paint ('classic').
- */
+/** THE ROAD PAINT AND THE SIGNS: the map's regional standard */
 function cross(type = 1, length = m(120)): { doc: RoadDoc; net: Network; centre: NodeId; legs: SegmentId[] } {
   const doc = new RoadDoc();
   const centre = doc.addNode({ x: 0, y: 0 });
@@ -128,8 +123,7 @@ describe('the junction rule, painted and signed', () => {
       expect(mine.length, `leg ${id}`).toBeGreaterThan(0);
       for (const l of mine) for (const p of l.points) {
         const a = along(net, id, p);
-        // Before the stop line as the driver comes, on the arriving half: the
-        // traffic coming back along a leg drawn out of the centre keeps right, +n.
+        // Before the stop line as the driver comes, on the arriving half
         expect(a.s).toBeGreaterThan(stopAt);
         expect(a.off).toBeGreaterThan(0);
       }

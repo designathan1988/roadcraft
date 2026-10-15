@@ -1,34 +1,6 @@
 import { Box3, Bone, Matrix4, Object3D, Quaternion, SkinnedMesh, Vector3 } from 'three';
 
-/**
- * Poses for people sitting in and on vehicles, built on the citizens' own
- * skeleton by inverse kinematics.
- *
- * The seated clips the citizen assets ship with are CHAIR poses: measured on
- * the rig, the head is 0.91 m above the pelvis and the feet 0.54 m below it,
- * knees at a right angle. A car's cabin has 1.1 m between floor and roof
- * lining, so a driver in that pose had their head through the roof and their
- * feet through the floor. The captured sitting idle is no better on a bus:
- * its legs splay 0.36 m to the side, and a passenger by the window had a foot
- * through the bodywork.
- *
- * A pose here is a handful of TARGETS in the pelvis frame - where the feet,
- * the hands and the head have to be - and two-bone IK puts the limbs there on
- * whatever body is being baked. Distances are in metres, in the model's frame:
- * +Z forward, +Y up, +X to the body's left (the Rocketbox convention).
- *
- * Where a person touches a machine - the rim of a steering wheel, the grips
- * and pegs of a motorcycle, the bars and pedals of a bicycle - the place is
- * stated HERE, once (`DRIVER_WHEEL`, `CAB_WHEEL`, `MOTO_FIT`, `BIKE_FIT`),
- * and the vehicle models build those parts to it. The hands were 18 to 25 cm
- * off the grips while the two were written down separately.
- *
- * The poses are baked into bone palettes once per body, like every other clip
- * (`riggedCitizens.ts`); nothing here runs per frame. The small movements that
- * keep a seated person alive - a look in the mirror, out of the window, down
- * at a phone - are more still poses of the same seat, which the renderer
- * blends in and out per person (`occupants.ts`).
- */
+/** Poses for people sitting in and on vehicles, built on the citizens' own skeleton by inverse kinematics. */
 
 export type RiderClipKey =
   | 'carDrive' | 'carDriveMirror' | 'carDriveRight' | 'carDead' | 'cabDead'
@@ -76,13 +48,7 @@ export const SEATED_IDLE = 6;
 
 // ---------------------------------------------------------------- steering wheels
 
-/**
- * A steering wheel, from the hip point, metres: its centre ahead and above,
- * the tilt of its rim from vertical (top towards the driver) and its radius.
- * The vehicle models build the column to it and the renderer places the wheel
- * there at the driver's own size, so the hands the driving poses put on the
- * rim are on the rim.
- */
+/** A steering wheel, from the hip point, metres: its centre ahead and above, the tilt of its rim from vertical */
 export interface WheelSpec {
   readonly forward: number;
   readonly up: number;
@@ -90,24 +56,13 @@ export interface WheelSpec {
   readonly radius: number;
 }
 
-/**
- * A car's wheel, per the vehicle spec (docs/vehicle-model-spec.md, section 3.2): 0.46 m
- * ahead of the hip point and 0.36 m above it, its plane 26 degrees from
- * vertical. It was 0.215 m above the hip, which put the rim in the driver's
- * lap and their hands with it.
- */
+/** A car's wheel, per the vehicle spec */
 export const DRIVER_WHEEL: WheelSpec = { forward: 0.46, up: 0.36, tilt: 0.45, radius: 0.185 };
 
-/**
- * A bus's or a truck's wheel: large, laid back towards flat, in front of a
- * driver sitting upright and high over the pedals.
- */
+/** A bus's or a truck's wheel: large, laid back towards flat */
 export const CAB_WHEEL: WheelSpec = { forward: 0.42, up: 0.13, tilt: 1.0, radius: 0.22 };
 
-/**
- * A point on the rim of a wheel, pelvis frame (+X left, +Y up, +Z forward):
- * `clock` radians round from the top, positive to the left.
- */
+/** A point on the rim of a wheel, pelvis frame (+X left, +Y up, +Z forward) */
 function rimPoint(clock: number, wheel: WheelSpec = DRIVER_WHEEL): V3 {
   const { forward, up, tilt, radius } = wheel;
   const across = Math.sin(clock) * radius;
@@ -117,11 +72,7 @@ function rimPoint(clock: number, wheel: WheelSpec = DRIVER_WHEEL): V3 {
 
 // ---------------------------------------------------------------- two-wheelers
 
-/**
- * Where a rider sits on a two-wheeler and what they hold and stand on,
- * metres. Heights are over the road; everything else is from the pelvis bone,
- * `side` across from the centre line, `up` and `forward` from the pelvis.
- */
+/** Where a rider sits on a two-wheeler and what they hold and stand on, metres. */
 export interface TwoWheelerFit {
   /** Height of the pelvis bone over the road. */
   readonly pelvisY: number;
@@ -169,11 +120,7 @@ export const BIKE_FIT: TwoWheelerFit = {
 /** Largest steering angle a steered pose is baked at; the renderer blends towards it. */
 export const STEER_FULL = 0.3;
 
-/**
- * Where a hand holds a grip: the wrist a little behind and above the grip's
- * centre, and 2 cm in towards the stem (the first component is applied
- * towards the centre line: `offset(..., -1)` for the left hand).
- */
+/** Where a hand holds a grip: the wrist a little behind and above the grip's centre, and 2 cm in towards the stem */
 const WRIST_ON_GRIP: V3 = [0.02, 0.03, -0.06];
 /** Where the ankle is over a peg or a pedal under the ball of the foot. */
 const ANKLE_OVER_PEDAL: V3 = [0, 0.07, -0.08];
@@ -197,11 +144,7 @@ export function pedalPoint(fit: TwoWheelerFit, angle: number, side: 1 | -1): V3 
   return [side * (fit.pedalSide ?? 0.13), b.up + Math.sin(angle) * crank, b.forward + Math.cos(angle) * crank];
 }
 
-/**
- * The ankle target for a foot put down on the road beside a machine tilted
- * by `fit.stopTilt`: found in the tilted frame, so that after the tilt the
- * foot is on the road.
- */
+/** The ankle target for a foot put down on the road beside a machine tilted by `fit.stopTilt` */
 function footDownTarget(fit: TwoWheelerFit): V3 {
   const t = fit.stopTilt;
   const ankle = 0.08;
@@ -219,23 +162,11 @@ function hands(fit: TwoWheelerFit, steer = 0): Pick<Targets, 'leftHand' | 'right
 
 // ---------------------------------------------------------------- the poses
 
-/**
- * A car seat: reclined a little, thighs near level, feet forward on the
- * pedals or the floor, and for the driver the hands on the wheel at ten to
- * two. Floor and wheel are placed to match `vehicleModels.ts` (hip point
- * 0.3 m above the floor, the wheel at `DRIVER_WHEEL`).
- */
+/** A car seat: reclined a little, thighs near level, feet forward on the pedals or the floor */
 const CAR_DRIVE: Targets = {
-  // The rest pose already stoops about 0.2 rad forward; this reclines the
-  // trunk some 14 degrees back from upright, as a car seat holds a driver.
-  // At -0.8 (34 degrees) people lay back as in a deckchair, and the head,
-  // pitched forward to see the road, dragged the face out of shape.
+  // The rest pose already stoops about 0.2 rad forward
   lean: -0.45,
-  // Heels on the floor (the ankle 8 cm over it, the hip point 0.28 m up) and
-  // 0.8 m ahead of the hip, on the pedals. The ankles were 0.6 m ahead and
-  // 0.15 m down, closer to the hip than a leg reaches without folding: the
-  // knee rose above the hip, and every occupant sat with their knees at
-  // their chest.
+  // Heels on the floor (the ankle 8 cm over it, the hip point 0.28 m up) and 0.8 m ahead of the hip, on the pedals.
   leftFoot: [0.17, -0.08, 0.62],
   rightFoot: [-0.14, -0.08, 0.64],
   leftHand: rimPoint(1.05),
@@ -246,8 +177,7 @@ const CAR_DRIVE: Targets = {
 };
 const CAR_RIDE: Targets = {
   lean: -0.45,
-  // Legs out, the knees a little over the hips: a passenger's feet go under
-  // the seat in front, 0.75 m ahead of the hip point.
+  // Legs out, the knees a little over the hips
   leftFoot: [0.16, -0.08, 0.61],
   rightFoot: [-0.16, -0.08, 0.61],
   leftHand: [0.13, 0.06, 0.3],
@@ -267,12 +197,7 @@ const CAR_REAR_RIDE: Targets = {
   rightHand: [-0.14, 0.04, 0.23],
 };
 
-/**
- * The driver's seat of a bus or a truck cab: upright, the hip 0.45 m over
- * the floor, the feet down on the pedals and the hands on a big, laid-back
- * wheel (`CAB_WHEEL`). The car pose, used there before, left the feet 0.3 m
- * above the cab floor.
- */
+/** The driver's seat of a bus or a truck cab */
 const CAB_DRIVE: Targets = {
   lean: -0.42,
   leftFoot: [0.16, -0.37, 0.4],
@@ -294,10 +219,7 @@ const CAB_RIDE: Targets = {
   look: 0,
 };
 
-/**
- * A bus seat: upright, thighs level, shins down to the floor 0.55 m below the
- * hip, hands resting on the thighs.
- */
+/** A bus seat: upright, thighs level, shins down to the floor 0.55 m below the hip, hands resting on the thighs. */
 const CHAIR_SIT: Targets = {
   lean: -0.3,
   leftFoot: [0.12, -0.46, 0.4],
@@ -309,32 +231,20 @@ const CHAIR_SIT: Targets = {
   look: 0.05,
 };
 
-/**
- * A driver shot dead at the wheel, as GTA V draws one: slumped forward over
- * the wheel, the head hanging down and to one side, one hand slid off the
- * rim into the lap and the other arm hanging by the seat. The feet stay on
- * the pedals.
- */
+/** A driver shot dead at the wheel, as GTA V draws one */
 const dead = (t: Targets, lean: number): Targets => ({
   ...t, lean, twist: 0.12, turn: 0.55, look: 0.75,
-  // Fallen into the lap, as the other: hanging 0.2 m down beside the seat,
-  // the hand (some 0.14 m past the wrist on these bodies) went through the
-  // floor of the cabin, 0.27 m under the hip, and out of the door; drawn up
-  // beside the thigh, the folded arm put its elbow out of the door instead.
+  // Fallen into the lap, as the other: hanging 0.2 m down beside the seat, the hand
   leftHand: [0.08, 0.02, 0.3],
   rightHand: [-0.06, 0.02, 0.3],
-  // The elbows hang down at the sides (mirrored per arm, as the driving
-  // poses' are): pulled out, they stood out of the doors.
+  // The elbows hang down at the sides (mirrored per arm, as the driving poses' are)
   elbowPole: [0, -1, -0.3],
 });
 
 /** A head turned, and the shoulders a little with it. */
 const turned = (t: Targets, turn: number, look = t.look ?? 0): Targets => ({ ...t, turn, look, twist: (t.twist ?? 0) + turn * 0.15 });
 
-/**
- * Astride a motorcycle: leaning into the tank, hands on the grips, feet on
- * the pegs (`MOTO_FIT`).
- */
+/** Astride a motorcycle: leaning into the tank, hands on the grips, feet on the pegs (`MOTO_FIT`). */
 const MOTO: Targets = {
   lean: 0.28,
   ...hands(MOTO_FIT),
@@ -347,10 +257,7 @@ const MOTO: Targets = {
 /** Stopped: the machine tilted onto the left foot, the right on its peg. */
 const MOTO_STOP: Targets = { ...MOTO, lean: 0.12, leftFoot: footDownTarget(MOTO_FIT) };
 
-/**
- * On a bicycle: a forward reach to the bars and the feet on the pedals,
- * which turn round the bottom bracket (`BIKE_FIT`).
- */
+/** On a bicycle: a forward reach to the bars and the feet on the pedals, which turn round the bottom bracket (`BIKE_FIT`). */
 const BIKE: Omit<Targets, 'leftFoot' | 'rightFoot'> = {
   lean: 0.32,
   ...hands(BIKE_FIT),
@@ -402,20 +309,13 @@ export const RIDER_CLIPS: readonly RiderClip[] = [
   },
   still('bikeLeft', { ...steered(BIKE, BIKE_FIT, 1), leftFoot: pedalFoot(0, 1), rightFoot: pedalFoot(Math.PI, -1) }),
   still('bikeRight', { ...steered(BIKE, BIKE_FIT, -1), leftFoot: pedalFoot(0, 1), rightFoot: pedalFoot(Math.PI, -1) }),
-  // Stopped: tilted onto the left foot, the right on its pedal at the top of
-  // the stroke, ready to push off.
+  // Stopped: tilted onto the left foot, the right on its pedal at the top of the stroke, ready to push off.
   still('bikeStop', { ...BIKE, lean: 0.18, leftFoot: footDownTarget(BIKE_FIT), rightFoot: pedalFoot(Math.PI * 0.6, -1) }),
 ];
 
 // ---------------------------------------------------------------- helmets
 
-/**
- * Bodies whose hair no helmet of a helmet's size holds - buns, big curls, a
- * ponytail high on the crown: fitted round the hair, the shell came out 0.41
- * to 0.52 m across. Nobody is drawn riding a motorcycle on one of these
- * bodies; the rider takes another of their sex. `tests/render/riderFit.spec.ts`
- * measures every head and fails if this list and the heads disagree.
- */
+/** Bodies whose hair no helmet of a helmet's size holds - buns, big curls, a ponytail high on the crown */
 export const NO_HELMET: ReadonlySet<string> = new Set([
   'female_01', 'female_02', 'female_04', 'female_07', 'female_09', 'female_11', 'female_12', 'female_17',
   'female_party_02', 'medical_female_01', 'medical_female_03', 'medical_male_04', 'pilot_male_03',
@@ -427,18 +327,7 @@ export const NO_HELMET: ReadonlySet<string> = new Set([
 /** Segments round a helmet shell: its flat facets sit this close to the true ellipsoid. */
 export const HELMET_SEGMENTS = { width: 24, height: 16 } as const;
 
-/**
- * A helmet made for one body: an ellipsoid in the head bone's own frame that
- * encloses every point of the head above the base of the skull - hair
- * included - with a little room, returned as the matrix that takes a sphere
- * of unit DIAMETER there. The renderer multiplies it by the posed head bone
- * and the body's own transform, so the helmet goes where that head is, at
- * its size, turned with it.
- *
- * It used to be one sphere of one size at a fixed height over the seat: on a
- * tall rider or a leaning one the head came out through its side, which
- * players saw as a ball stuck in the rider's head.
- */
+/** A helmet made for one body: an ellipsoid in the head bone's own frame that encloses every point of the head above the */
 export function helmetShape(rig: Object3D): Matrix4 | null {
   rig.updateMatrixWorld(true);
   const head = rig.getObjectByName(BONES.head);
@@ -452,25 +341,18 @@ export function helmetShape(rig: Object3D): Matrix4 | null {
   for (const p of points) {
     k = Math.max(k, Math.hypot((p.x - centre.x) / half.x, (p.y - centre.y) / half.y, (p.z - centre.z) / half.z));
   }
-  // Room between the head and the shell, and for the shell's flat facets
-  // lying inside the ellipsoid through their corners.
+  // Room between the head and the shell, and for the shell's flat facets lying inside the ellipsoid through their corners.
   const facet = 1 / (Math.cos(Math.PI / HELMET_SEGMENTS.height) * Math.cos(Math.PI / HELMET_SEGMENTS.width));
   const pad = 1.2; // centimetres: the skeleton is authored in them
   const radius = half.multiplyScalar(k * facet).addScalar(pad);
   return new Matrix4().compose(centre, new Quaternion(), radius.multiplyScalar(2));
 }
 
-/**
- * The points of a posed head a helmet must hold, in the head bone's frame:
- * every vertex the head bone moves most, from the base of the skull up. The
- * neck, the chin under the chin bar and hair hanging below the rim are
- * outside a real helmet too.
- */
+/** The points of a posed head a helmet must hold, in the head bone's frame */
 export function headPoints(rig: Object3D, head: Object3D): Vector3[] {
   const out: Vector3[] = [];
   const v = new Vector3();
-  // Mesh to head in one matrix, inverted once per mesh: inverting the head's
-  // world matrix for every vertex (`worldToLocal`) was most of a body's bake.
+  // Mesh to head in one matrix, inverted once per mesh: inverting the head's world matrix for every vertex
   const fromWorld = head.matrixWorld.clone().invert();
   const toHead = new Matrix4();
   rig.traverse((o) => {
@@ -499,11 +381,7 @@ function still(key: RiderClipKey, targets: Targets): RiderClip {
   return { key, duration: 1, loop: true, pose: (rig) => apply(rig, targets) };
 }
 
-/**
- * A seated pose that lives: breathing in the trunk, the head turning a little
- * and nodding, over a loop of `SEATED_IDLE` seconds. Hands and feet stay on
- * their targets (the wheel, the pedals, the lap), so only the body moves.
- */
+/** A seated pose that lives: breathing in the trunk, the head turning a little and nodding */
 function seated(key: RiderClipKey, targets: Targets): RiderClip {
   return {
     key, duration: SEATED_IDLE, loop: true,
@@ -527,17 +405,7 @@ function seated(key: RiderClipKey, targets: Targets): RiderClip {
   };
 }
 
-/**
- * The ankle 8 cm over the floor, as the seated targets put it, is where an
- * average shoe's sole meets the floor; the roster's shoes are not average
- * (knee boots, sandals): one body's soles went 4.8 cm through the floor of
- * every cab and bus, another's hung over it (`tests/render/occupantFit.spec.ts`,
- * `tests/fixtures/seated-pose-extents.json` byBody). So each body's feet are
- * put on the floor by their soles: on the first frame a body is solved in a
- * pose, the lowest point its feet carry is measured, and the ankles move by
- * what is left between it and the floor. The feet do not move over the idle
- * loop (only the trunk and the head do), so once a body and pose is enough.
- */
+/** The ankle 8 cm over the floor, as the seated targets put it, is where an average shoe's sole meets the floor */
 const SOLE = 0.08;
 const soleLifts = new WeakMap<Object3D, Map<RiderClipKey, number>>();
 function soleLift(rig: Object3D, key: RiderClipKey, floor: number, targets: Targets): number {
@@ -613,14 +481,11 @@ function apply(rig: Object3D, t: Targets): void {
   const pelvis = find(BONES.pelvis);
   if (!pelvis) return;
   rig.updateMatrixWorld(true);
-  // The pelvis frame in world: its position, and the MODEL's axes (the rig's
-  // root is unrotated when a clip is baked), so targets are body-relative.
+  // The pelvis frame in world: its position, and the MODEL's axes
   const origin = pelvis.getWorldPosition(new Vector3());
   const worldOf = (v: V3): Vector3 => new Vector3(v[0], v[1], v[2]).add(origin);
 
   // Trunk: lean and twist shared over the three spine bones.
-  // Only the spine ABOVE the hips: in a biped rig the thighs may hang from the
-  // lowest spine bone, and leaning that would swing the legs with the trunk.
   const thigh = find(BONES.leftLeg[0]);
   const spine = BONES.spine.map(find).filter((b): b is Object3D => !!b && !isAncestor(b, thigh));
   for (const bone of spine) {
@@ -631,10 +496,7 @@ function apply(rig: Object3D, t: Targets): void {
   const head = find(BONES.head);
   // A turn of the head less the part the shoulders already took.
   const turn = (t.turn ?? 0) - (t.twist ?? 0);
-  // Most of a turn or a nod in the neck, the rest in the head. The body has no
-  // jaw bone: the inside of the mouth goes with the head while the cheek by
-  // the ear is shared with the neck, so a turn taken mostly by the head
-  // pushed the mouth out through the cheek.
+  // Most of a turn or a nod in the neck, the rest in the head.
   if (neck && turn) rotateWorld(neck, new Vector3(0, 1, 0), turn * 0.7);
   if (head && turn) rotateWorld(head, new Vector3(0, 1, 0), turn * 0.3);
   const nod = t.look ? t.look - t.lean * 0.6 : 0;
@@ -688,10 +550,7 @@ function aim(bone: Object3D, child: Vector3, target: Vector3): void {
   bone.updateMatrixWorld(true);
 }
 
-/**
- * Two-bone IK: the root bone, the middle joint and the end effector, reaching
- * for `target`, bending in the plane that contains `pole` (model frame).
- */
+/** Two-bone IK: the root bone, the middle joint and the end effector, reaching for `target` */
 function limb(rig: Object3D, names: readonly string[], target: Vector3, pole: V3): void {
   const [root, mid, end] = names.map((n) => rig.getObjectByName(n));
   if (!(root instanceof Object3D) || !(mid instanceof Object3D) || !(end instanceof Object3D)) return;

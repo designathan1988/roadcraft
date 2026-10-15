@@ -5,11 +5,7 @@ import { HealthLog } from '@core/health';
 import { mountHealthPanel } from '@ui/healthPanel';
 import { t } from '@ui/i18n';
 
-/**
- * F9's panel: its button is handed to whoever lays out the top bar (it once
- * waited for the bar with a timer and found Help by its title), and copying
- * the log says when the browser refused it (it once said nothing).
- */
+/** F9's panel: its button is handed to whoever lays out the top bar */
 describe('health panel', () => {
   const mount = () => mountHealthPanel({ log: new HealthLog(), world: () => [], state: () => ({ now: [], changes: [] }) });
 

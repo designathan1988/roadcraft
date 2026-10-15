@@ -7,13 +7,7 @@ import { sampleTerrainHeight } from '@world/terrain';
 import { m } from '@world/units';
 import { buildInspectionMap } from '../fixtures/inspectionMap';
 
-/**
- * NO HARD GRADE BREAKS. On every lane of the inspection map the grade over one
- * 3 m stretch may differ from the grade over the next by no more than a
- * vertical curve allows: a road at grade is rounded wherever its grade line
- * bends, and a ramp's foot and crest are curves. Before: 0.115 on the hill
- * and 0.11 at the foot of the bridge ramp - the whole grade inside one car.
- */
+/** NO HARD GRADE BREAKS. */
 const WINDOW = m(3);
 const GROUND_LIMIT = 0.06;
 /** Ramps: the crest is as long as the 100-unit ramp rule allows. */

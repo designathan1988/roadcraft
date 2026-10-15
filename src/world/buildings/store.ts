@@ -16,61 +16,20 @@ function sameButWear(a: Building, b: Building): boolean {
   return true;
 }
 
-/**
- * Where a building stands, for the diary: its box, or - a record with no
- * volume to measure - its anchor. DO NOT answer null for it: one such record
- * made the whole entry (every building of an edit) the whole map.
- */
+/** DO NOT answer null for it: one such record made the whole entry (every building of an edit) the whole map. */
 function rectOf(b: Building): ChangeRect {
   const box = storedBounds(b);
   return Number.isFinite(box.minX) ? [box.minX, box.minY, box.maxX, box.maxY] : [b.x, b.y, b.x, b.y];
 }
 
-/**
- * The document's buildings, with their own revision.
- *
- * `revision` is deliberately NOT the document's: a building edit must not
- * rebuild the road network, the lanelets or the simulation, which is what
- * moving `RoadDoc.revision` does. The renderer gates the buildings layer on
- * this number (and on the terrain, which the foundations stand on).
- *
- * Every change is written in the document's diary (`changes.ts`, kind
- * `buildings`) with where the building stands, and `revision` is the serial
- * of the latest one: a building cannot change without the diary knowing.
- *
- * OWNERSHIP. A record handed to `add`, `put`, `restore` or `replaceWith`
- * becomes the store's: it is kept, not copied - only made the plain JSON
- * data a copy would have been, in place (`settleBuilding`: -0 is 0, no
- * `undefined` member) - and from then on NOBODY changes it or any object
- * inside it, the caller included. A change is a new record
- * (`cloneBuilding` the stored one, edit the draft, `put` the draft, as
- * `editor/buildings.ts` `editBuilding` does). Records may share parts with
- * each other (`put({ ...stored, decay })` keeps the stored volumes): they are
- * values, read-only once stored. The rest of the game counts on this: the
- * undo image keeps records by reference (`docImage.ts`), a cloned document
- * shares them (`shareFrom`), and each record's text, its bays' text
- * (`sim/agents/parking.ts`) and its walls are worked out once per record.
- *
- * DO NOT copy a record on the way in again "to be safe": the deep copy of
- * every record added or replaced (`cloneBuilding`, a JSON round trip) was
- * the largest cost of growing a generated city (2.2 s of a 2.5 km one), for
- * records their callers had just built and never touched again. A caller
- * that keeps editing what it handed over copies it itself.
- */
+/** DO NOT copy a record on the way in again "to be safe": the deep copy of every record added or replaced */
 export class BuildingStore {
   /** @mapWide Every building of the map. A working copy's lies over the original's (`forkFrom`). */
   private items: Map<BuildingId, Building> = new Map();
-  /**
-   * The store a working copy lies over (`forkFrom`) while it has written
-   * nothing: its questions by place are that store's. Null: the store's own.
-   */
+  /** The store a working copy lies over (`forkFrom`) while it has written nothing: its questions by place are that store's. */
   private below: BuildingStore | null = null;
   private ids = new IdAllocator(1);
-  /**
-   * The records made plain JSON data when they were adopted (`settleBuilding`,
-   * OWNERSHIP above): one handed back - an undo, a clone's records - is not
-   * walked again. Shared with the stores that share the records (`shareFrom`).
-   */
+  /** The records made plain JSON data when they were adopted (`settleBuilding`, OWNERSHIP above): one handed back */
   private settled = new WeakSet<object>();
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
   private grid: BuildingGrid | null = null;
@@ -95,14 +54,7 @@ export class BuildingStore {
     this.journal.record('buildings', rects, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
   }
 
-  /**
-   * The ids of the buildings changed after `serial` (a `revision` read
-   * before), from the diary; null when it cannot say which (a whole-store
-   * change: loaded, cleared, shared; or entries forgotten): then read them
-   * all. What a product derived from some buildings asks to take in a change
-   * by its ids, never the whole store again (root CLAUDE.md, "Como adicionar
-   * um produto derivado").
-   */
+  /** The ids of the buildings changed after `serial` (a `revision` read before), from the diary */
   changedSince(serial: number): BuildingId[] | null {
     const entries = this.journal.since(serial, ['buildings']);
     if (!entries || entries.some((e) => !e.ids)) return null;
@@ -114,14 +66,7 @@ export class BuildingStore {
     return new JournalCursor(['buildings'], true);
   }
 
-  /**
-   * The ids of the buildings changed since `cursor` last read this store
-   * (`BuildingStore.cursor()`); null: read them all - the first read, another
-   * store (a map opened), entries forgotten or without ids. What a product kept
-   * from the buildings reads instead of holding a serial of its own: a serial
-   * read against another document's diary answers "nothing changed" in silence
-   * (`derived.ts` `JournalCursor`).
-   */
+  /** The ids of the buildings changed since `cursor` last read this store (`BuildingStore.cursor()`); null: read them all */
   changedFor(cursor: JournalCursor): BuildingId[] | null {
     const entries = cursor.read(this.journal);
     return entries === null ? null : entries.flatMap((e) => e.ids!) as BuildingId[];
@@ -143,22 +88,14 @@ export class BuildingStore {
     return this.items.values();
   }
 
-  /**
-   * The buildings whose box (or anchor) may reach the rectangle, in the order
-   * of `all()`: a superset, the caller keeps its exact test (`grid.ts`). What
-   * asks about one place asks this, never `all()`.
-   */
+  /** The buildings whose box (or anchor) may reach the rectangle, in the order of `all()` */
   near(minX: number, minY: number, maxX: number, maxY: number): Building[] {
     if (this.below) return this.below.near(minX, minY, maxX, maxY);
     this.grid ??= new BuildingGrid(this.items.values());
     return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
   }
 
-  /**
-   * The buildings `meets` keeps for one of `rects`, asked of those within `pad` of it, each once, in the
-   * store's order (`BuildingGrid.nearAny`): what `near` of each rectangle grown by `pad`, tested and joined,
-   * gives - each cell read once.
-   */
+  /** The buildings `meets` keeps for one of `rects`, asked of those within `pad` of it, each once, in the store's order */
   nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
     meets: (b: Building, rect: readonly [number, number, number, number]) => boolean): Building[] {
     if (this.below) return this.below.nearAny(rects, pad, meets);
@@ -171,12 +108,7 @@ export class BuildingStore {
     return asBuildingId(this.ids.peek);
   }
 
-  /**
-   * Stores a new building under a fresh id. The record becomes the store's
-   * (see OWNERSHIP above): the stored one is it with the id set, its parts
-   * not copied.
-   * @perItem Runs once a building added: nothing it reaches may walk the map.
-   */
+  /** @perItem Stores a new building under a fresh id. */
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.ids.take());
     const building = settleBuilding({ ...value, id } as Building, this.settled);
@@ -187,10 +119,7 @@ export class BuildingStore {
     return building;
   }
 
-  /**
-   * Replaces an existing building's record (same id). The record becomes the store's (OWNERSHIP above).
-   * @perItem Runs once a building replaced: nothing it reaches may walk the map.
-   */
+  /** @perItem Replaces an existing building's record (same id). */
   put(building: Building): void {
     const was = this.items.get(building.id);
     if (!was) return;
@@ -202,15 +131,7 @@ export class BuildingStore {
     this.changed([was, now], 'replaced');
   }
 
-  /**
-   * Sets a building's wear (`Building.decay`), its volumes, place and use
-   * kept. Written in the diary as `buildingWear`, so `revision` does not move.
-   * DO NOT write a wear change with `put`: the town decays a tenth at a time,
-   * every few seconds somewhere, and as a `buildings` change each tenth made
-   * everything derived from the buildings' shape (walls, bays, yards, places,
-   * grading, the camera's solids) work the town out again.
-   * @perItem Runs once a building's wear moved: nothing it reaches may walk the map.
-   */
+  /** @perItem DO NOT write a wear change with `put` */
   wear(id: BuildingId, decay: number): void {
     const was = this.items.get(id);
     if (!was || (was.decay ?? 0) === decay) return;
@@ -221,12 +142,7 @@ export class BuildingStore {
     this.journal.record('buildingWear', [rectOf(now)], { ids: [id as number] });
   }
 
-  /**
-   * Puts back a building as it was, or takes it away (`undefined`): undo and
-   * redo (`world/docImage.ts`). The record is kept, not copied (a record the
-   * undo image holds is a stored one, read-only: OWNERSHIP above); the diary
-   * is told where it stood and where it stands.
-   */
+  /** Puts back a building as it was, or takes it away (`undefined`): undo and redo (`world/docImage.ts`). */
   restore(id: BuildingId, value: Building | undefined): void {
     const was = this.items.get(id);
     if (value === undefined) {
@@ -274,13 +190,7 @@ export class BuildingStore {
     return [...this.items.values()].map((b) => cloneBuilding(b));
   }
 
-  /**
-   * `JSON.stringify(this.toJSON())`, without the copies: a stored record is
-   * plain and never changed in place (OWNERSHIP above), so its own text is
-   * its copy's. Written when asked (the autosave, an export), never kept:
-   * DO NOT keep each record's text beside it - a string the size of the
-   * record held for every building of the town.
-   */
+  /** Written when asked (the autosave, an export), never kept: DO NOT keep each record's text beside it */
   toText(): string {
     const parts: string[] = [];
     for (const b of this.items.values()) parts.push(JSON.stringify(b));
@@ -301,11 +211,7 @@ export class BuildingStore {
     this.changed(null, 'loaded');
   }
 
-  /**
-   * The same records as another store (they are never changed in place):
-   * `RoadDoc.clone`, whose diary then goes on from the source's
-   * (`ChangeJournal.continueFrom`), so the copy is at the same revision.
-   */
+  /** The same records as another store (they are never changed in place) */
   shareFrom(source: BuildingStore): void {
     this.leaveBelow();
     this.items.clear();
@@ -317,12 +223,7 @@ export class BuildingStore {
     this.changed(null, 'shared');
   }
 
-  /**
-   * A working copy over another store (`RoadDoc.fork`): its records read
-   * through, each written here only (`ForkMap`), its questions by place the
-   * other's until this one writes. Writes nothing in the diary: the copy's
-   * diary goes on from the original's, at the same revision.
-   */
+  /** A working copy over another store (`RoadDoc.fork`): its records read through, each written here only */
   forkFrom(source: BuildingStore): void {
     this.items = new ForkMap(source.items);
     this.below = source;
@@ -331,12 +232,7 @@ export class BuildingStore {
     this.ids = new IdAllocator(source.ids.peek);
   }
 
-  /**
-   * Takes back a working copy over this store (`forkFrom`): the records it
-   * deleted, replaced (each keeping its place) and added (last, in order),
-   * the grid kept by the same writers. The diary entries come with the
-   * copy's diary (`ChangeJournal.take`): none written here.
-   */
+  /** Takes back a working copy over this store (`forkFrom`): the records it deleted, replaced */
   takeFork(copy: BuildingStore): void {
     const { gone, replaced, added } = (copy.items as ForkMap<BuildingId, Building>).changes();
     for (const id of gone) { this.items.delete(id); this.grid?.delete(id); }
@@ -357,24 +253,7 @@ export class BuildingStore {
     this.ids = new IdAllocator(Math.max(this.ids.peek, from.ids.peek));
   }
 
-  /**
-   * Replaces the contents from another store, writing a change only when
-   * the buildings actually differ, and only of those that do (where they
-   * stood and where they stand). Drawing a road replaces the whole document
-   * with an edited clone; that must not rebuild every building.
-   *
-   * `changed`: the ids the source changed since it shared this store's
-   * records (`RoadDoc.clone`, read from the copy's diary by
-   * `RoadDoc.buildingsMovedIn`); only those are read. Null: any source (a map
-   * loaded, an undo through JSON), every id compared, record by record.
-   *
-   * Only the records that differ are taken, each through the grid's own
-   * writers (`insert`, `update`, `delete`), so the grid stays (a record kept
-   * keeps its place in the order, a new one goes last, as `restore` does).
-   * DO NOT go back to clearing the store and the grid and writing every
-   * record again, nor to comparing the whole store as text (`toText` twice):
-   * that was the whole town, twice over, on every road drawn.
-   */
+  /** DO NOT go back to clearing the store and the grid and writing every record again */
   replaceWith(source: BuildingStore, changed: readonly BuildingId[] | null = null): void {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     const touched: Building[] = [];

@@ -1,10 +1,6 @@
 import { type GroundJob, ShapeScratch, runGroundJob } from './groundShape';
 
-/**
- * The ground's worker (`groundShapePool.ts`): a shaping pass's corners, or two
- * solves' blocks digested (`groundShape.ts`), answered with the job's id, the
- * answer's buffers handed over (MDN, "Transferable objects").
- */
+/** The ground's worker (`groundShapePool.ts`): a shaping pass's corners, or two solves' blocks digested */
 /** This worker's scratch, sized to a plate by its first pass. */
 const scratch = new ShapeScratch();
 

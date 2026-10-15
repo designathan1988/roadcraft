@@ -1,14 +1,4 @@
-/**
- * TREES THE PLAYER PLANTS, AND THE CLEARINGS THEY CUT. The countryside grows
- * its own woods (the ecosystem and the painted forest, `render/renderer.ts`);
- * over them the player plants trees where they want them and cuts any tree
- * away, the woods' own too - as a procedural spawner's instances are then
- * painted over and erased one by one with the foliage tools (Unreal's
- * Procedural Foliage and Foliage modes). The document keeps the planted trees
- * and the clearings, so they save, load and undo; the renderer draws the
- * planted ones with the countryside's own models (`render/natureTrees.ts`)
- * and grows no tree of its own inside a clearing.
- */
+/** TREES THE PLAYER PLANTS, AND THE CLEARINGS THEY CUT. */
 
 /** The tree models to choose from (`render/natureTrees.ts` TREE_MODELS, in order): each its share of the seed's range. */
 export const TREE_KINDS = ['mixed', 'oak', 'cypress', 'palm'] as const;
@@ -72,12 +62,7 @@ export function treeSeed(kind: TreeKind, random: () => number): number {
   return (slot + 0.05 + random() * 0.9) / MODEL_COUNT;
 }
 
-/**
- * The trees one dab of the brush plants in a circle: as many as the density
- * asks for its area (a fraction by chance, so a light brush still plants
- * some), none nearer than the spacing to another planted tree. `random`
- * gives 0..1.
- */
+/** The trees one dab of the brush plants in a circle: as many as the density asks for its area */
 export function plantTrees(kind: TreeKind, brush: TreeBrush, x: number, y: number, radius: number, unitsPerMetre: number,
   random: () => number, nearby: readonly PlantedTree[]): PlantedTree[] {
   const hectares = (Math.PI * (radius / unitsPerMetre) ** 2) / 10_000;
@@ -108,11 +93,7 @@ function inClearing(clearings: readonly TreeClearing[], x: number, y: number): b
   return false;
 }
 
-/**
- * A lookup of the clearings for many points at once (the woods are tens of
- * thousands of trees): each clearing filed in the cells of a grid it
- * reaches, so a point asks only its own cell's.
- */
+/** A lookup of the clearings for many points at once (the woods are tens of thousands of trees) */
 export function clearingIndex(clearings: readonly TreeClearing[], cell = 64): (x: number, y: number) => boolean {
   if (clearings.length === 0) return () => false;
   const cells = new Map<number, TreeClearing[]>();

@@ -14,55 +14,15 @@ import { type Box, type Edge, facingBody, inside, overlaps } from './sampleTown'
 import { courtyard, houses, park, perimeter, varied, type Placer } from './town';
 import { m } from '@world/units';
 
-/**
- * THE TOWN THE GAME OPENS ON.
- *
- * A small town, planned rather than scattered: one avenue as its spine, the
- * shops and the square on that spine, neighbourhoods of houses and terraces
- * behind them, a school and a park between the two, and the works - the
- * factory, the yards, the warehouses - on the flat ground by the water at the
- * edge, where industry belongs. Hills to the west and north, a ridge behind
- * the town, a stream along the east: the land the town was built in, not a
- * plate the town was poured onto.
- *
- * ## How it is planned (in the order a town is really planned)
- *
- * 1. `layLandform` - the ground first: the shelf the town stands on, the
- *    hills and the ridge that frame it, the stream and its valley.
- * 2. `layStreets` - the avenue east to west, the cross streets that make
- *    blocks, the road out to the works, the bridge over the stream.
- * 3. `occupy` - what stands on each block: the shops on the avenue, the
- *    square, the houses of the residential blocks, the school, the park, the
- *    works.
- * 4. `dress` - the boundaries (hedges, fences, walls), the poles and wires.
- *
- * Streets and blocks come BEFORE anything is placed on them, which is why
- * the grid is a table of node lines rather than a list of buildings: a block
- * is the rectangle between four lines, and what goes on it is decided from
- * its own size, frontage by frontage, the way `town.ts` does it.
- *
- * Everything here is deterministic (one seeded stream), so the same town
- * opens every time.
- */
+/** THE TOWN THE GAME OPENS ON. */
 
 // ---------------------------------------------------------------- the plan
 
-/**
- * The town was laid out in steps of 0.4 m (the world unit until 2026-10-10,
- * docs/source/ESCALA.md): every figure of the plan below - the street lines, the
- * landform's dabs, the hedges - is a number of these steps, and `plan` makes
- * it world units.
- */
+/** The town was laid out in steps of 0.4 m (the world unit until 2026-10-10) */
 const PLAN_STEP = m(0.4);
 const plan = (steps: number): number => steps * PLAN_STEP;
 
-/**
- * Node lines of the street grid (300 steps is a 120 m block, which is a town
- * block; 210 steps is 84 m of depth, two rows of plots back to back).
- *
- * The avenue is `y = 0`. The streets either side are at ±84 m - the first
- * row of blocks each way - and the outer pair at ±168 m.
- */
+/** Node lines of the street grid 300 steps is a 120 m block, which is a town block; 210 steps is 84 m of depth, two rows */
 const XS: readonly number[] = [-1200, -900, -600, -300, 0, 300, 600].map(plan);
 const YS: readonly number[] = [-420, -210, 0, 210, 420].map(plan);
 /** The avenue's own line, and where it runs out at each end. */
@@ -79,18 +39,10 @@ type Rng = () => number;
 
 const LOCAL = ROAD_TYPES.findIndex((t) => t.id === 'local');
 const AVENUE_CLASS = ROAD_TYPES.findIndex((t) => t.id === 'avenue');
-/**
- * The residential streets are laid with parallel parking along both kerbs, as
- * real ones are: the residents' cars stand there (`sim/agents/parking.ts`
- * kerb bays). The lots are set back from the street with its parking lanes.
- */
+/** The residential streets are laid with parallel parking along both kerbs, as real ones are */
 const STREET_PARKING: SegmentParking = { left: 'parallel', right: 'parallel' };
 const parkingOf = (type: number): SegmentParking | undefined => (type === LOCAL ? STREET_PARKING : undefined);
-/**
- * The local streets running east-west trade the parking on one side for a
- * cycle lane (ciclofaixa, `parking.ts` kind `cycle`): the same 2 m band, so
- * the lots stand where they do on the other streets.
- */
+/** The local streets running east-west trade the parking on one side for a cycle lane */
 const CYCLE_STREET: SegmentParking = { left: 'parallel', right: 'cycle' };
 const parkingAlong = (type: number, from: Vec2, to: Vec2): SegmentParking | undefined =>
   type === LOCAL && Math.abs(to.x - from.x) > Math.abs(to.y - from.y) ? CYCLE_STREET : parkingOf(type);
@@ -106,16 +58,7 @@ const stamp = (
 ): Omit<TerrainStamp, 'id'> =>
   ({ x: plan(x), y: plan(y), radius: plan(radius), strength: plan(strength), mode, ...(level === undefined ? {} : { level: plan(level) }) });
 
-/**
- * A mass of high ground along a line, the way a hill is really shaped.
- *
- * A dab on its own raises the ground by its strength and no more, and its
- * smoothstep falloff means a row of them adds up to something much less than
- * their sum. So a landform is written as a PROFILE: stations along a path,
- * each with its own strength (a bell along the line: low shoulders, a high
- * crest), stamped in two passes so the shoulders fill in under the crest.
- * One dab would be a cone; this is a hill.
- */
+/** A mass of high ground along a line, the way a hill is really shaped. */
 function ridge(
   doc: RoadDoc,
   from: Vec2,
@@ -126,10 +69,7 @@ function ridge(
   passes = 2,
 ): void {
   const length = Math.hypot(to.x - from.x, to.y - from.y);
-  // What one dab must add for the line to add up to `peak`: a dab reaches
-  // `radius` either way, so the line's own overlap is `2 * radius / spacing`
-  // dabs deep. Without this the crest came out an order of magnitude over the
-  // number asked for - a 300-unit hill arrived at the clamp, 560.
+  // What one dab must add for the line to add up to `peak`
   const spacing = Math.max(1, length / Math.max(1, stations - 1));
   const each = (peak * spacing) / (2 * radius) / passes;
   for (let pass = 0; pass < passes; pass++) {
@@ -146,33 +86,15 @@ function ridge(
   }
 }
 
-/**
- * The land the town was built in.
- *
- * The numbers are steps of 0.4 m (`plan`, through `stamp`). The town's own ground falls about four
- * per cent from the west end of the avenue to the works - 3 m over 90 m - which
- * is enough for the streets to have been built onto the land and gentle enough
- * that nothing has to be terraced. Around it: a 70 m hill closing the western
- * view, a 110 m ridge behind the town, and 150-200 m mountains on the far side
- * of the map, so the horizon is landscape rather than a lawn.
- */
+/** The land the town was built in. */
 function layLandform(doc: RoadDoc): void {
-  // The town's own ground: high in the west, falling east towards the works
-  // and the water. Written as wide, shallow masses rather than a flatten,
-  // because a town on a slope reads as built; a town on a plane reads as a
-  // diagram. About four per cent across the town - a street you can see is
-  // going somewhere.
+  // The town's own ground: high in the west, falling east towards the works and the water.
   doc.addTerrainStamp(stamp(-1_500, -100, 1_400, 34, 'raise'));
   doc.addTerrainStamp(stamp(-2_000, -400, 1_000, 22, 'raise'));
   doc.addTerrainStamp(stamp(900, -60, 1_200, 26, 'lower'));
   doc.addTerrainStamp(stamp(1_900, 40, 900, 20, 'lower'));
 
-  // And the relief INSIDE the town, which is what a town on real ground has
-  // and a poured slab does not: a knoll the church stands on, a rise the
-  // northern terraces step up, a slope the southern houses sit below. The
-  // streets round them are cut and filled as they cross, exactly as a street
-  // is; the blocks on them are graded under each building. Kept to 20-30
-  // units (8-12 m): a town's own ground, not a mountain range in a grid.
+  // And the relief INSIDE the town, which is what a town on real ground has and a poured slab does not
   doc.addTerrainStamp(stamp(-430, -470, 260, 28, 'raise'));
   doc.addTerrainStamp(stamp(-1_020, 300, 250, 26, 'raise'));
   doc.addTerrainStamp(stamp(760, 320, 230, 24, 'raise'));
@@ -180,61 +102,43 @@ function layLandform(doc: RoadDoc): void {
   doc.addTerrainStamp(stamp(-1_150, -720, 300, 24, 'raise'));
   doc.addTerrainStamp(stamp(430, 560, 300, 20, 'lower'));
 
-  // The hill that closes the avenue's western view, and the rise behind the
-  // town's last street of houses. The RADIUS is what a landform is read by: a
-  // 250-unit hill spread over a 900-unit base is a two-degree slope, which is
-  // invisible from this camera however tall it is. At 380-420 its flanks are
-  // thirty degrees - a hill, with a shadow side and a silhouette.
+  // The hill that closes the avenue's western view, and the rise behind the town's last street of houses.
   ridge(doc, { x: -1_950, y: -350 }, { x: -1_520, y: -950 }, 400, 260, 5, 2);
   ridge(doc, { x: -2_100, y: 250 }, { x: -1_300, y: 250 }, 400, 200, 3, 2);
-  // The hill the avenue runs towards: its western end is against this, which
-  // is what closes the town's longest view.
+  // The hill the avenue runs towards: its western end is against this, which is what closes the town's longest view.
   doc.addTerrainStamp(stamp(-2_450, 60, 560, 40, 'raise'));
   doc.addTerrainStamp(stamp(-2_150, -260, 380, 30, 'raise'));
 
-  // The ridge behind the town, close enough to be the town's backdrop and
-  // far enough that the northern street is not on it: the rise starts just
-  // past the last row of houses.
+  // The ridge behind the town, close enough to be the town's backdrop and far enough that the northern street is not on it
   ridge(doc, { x: -2_100, y: 980 }, { x: 1_900, y: 900 }, 420, 250, 12, 2);
 
-  // The south side: a hillside the southern houses step down, rising to the
-  // mountains at the map's far edge.
+  // The south side: a hillside the southern houses step down, rising to the mountains at the map's far edge.
   ridge(doc, { x: -1_900, y: -1_180 }, { x: 900, y: -1_400 }, 420, 210, 11, 2);
 
-  // The stream's valley, along the east: shallow and wide, so the water is the
-  // bottom of the view and not a wall in it.
+  // The stream's valley, along the east: shallow and wide, so the water is the bottom of the view and not a wall in it.
   for (let i = 0; i < 9; i++) {
     doc.addTerrainStamp(stamp(STREAM_X + 60, -1_800 + i * 460, 420, 12, 'lower'));
   }
   // The channel itself, with the water in it.
-  //
-  // Dabbed at a fifth of its own width - the spacing the brush itself uses on
-  // a dragged stroke - so the channel is one body of water. At a dab every 250
-  // units the discs did not merge into a river at all: they read as a string
-  // of round ponds, which is exactly what the union of distant discs is.
   const streamAt = (t: number): Vec2 => ({
     x: STREAM_X + Math.sin(t * Math.PI * 2.4) * 95 + Math.sin(t * 7.1) * 22,
     y: 1_420 - t * 2_620,
   });
-  // A 26-unit (10 m) channel with a 64-unit brush: the water is twice the
-  // brush's own width, which is a stream forty metres bank to bank. At the
-  // radius a hole was dug with, the "stream" came out 160 m across.
+  // A 26-unit (10 m) channel with a 64-unit brush
   const CHANNEL_STEP = 26;
   for (let d = 0; d * CHANNEL_STEP < 2_620; d++) {
     const t = (d * CHANNEL_STEP) / 2_620;
     const at = streamAt(t);
     doc.addTerrainStamp(stamp(at.x, at.y, 64, 9, 'river'));
   }
-  // The mill pond at the foot of the stream: wider, shallower, and the reason
-  // the works are where they are.
+  // The mill pond at the foot of the stream: wider, shallower, and the reason the works are where they are.
   for (let i = 0; i < 6; i++) {
     doc.addTerrainStamp(stamp(1_850 + (i % 3) * 55, -1_250 - Math.floor(i / 3) * 60, 110, 6, 'river'));
   }
   // The works' flat, on the low ground between the town and the water.
   for (let i = 0; i < 2; i++) doc.addTerrainStamp(stamp(1_150, -100, 560, 6, 'flatten', TOWN_LEVEL - 16));
 
-  // The far east, past the stream: the bank rises again, so the town has a
-  // horizon on that side too.
+  // The far east, past the stream: the bank rises again, so the town has a horizon on that side too.
   ridge(doc, { x: 2_250, y: 1_600 }, { x: 2_150, y: -1_700 }, 380, 150, 7, 2);
 
   // Mountains proper, on the map's far side: the horizon is landscape.
@@ -269,23 +173,12 @@ class Nodes {
   }
 }
 
-/**
- * The streets.
- *
- * Every street is cut at every line it crosses, so the junction builder gets
- * plain four-way crossings and the blocks between them are the rectangles the
- * plan says they are. The avenue is the exception only in its class: it is
- * laid the same way, and the only bends in the whole grid are where the roads
- * out of town leave it.
- */
+/** The streets. */
 function layStreets(doc: RoadDoc): Nodes {
   const nodes = new Nodes(doc);
   const point = (x: number, y: number): Vec2 => ({ x, y });
 
-  // The avenue, west to east: in from the hill, through the town, out to the
-  // works. Its western end carries on off the map - the road IN, which is how
-  // a town of this size has always been entered - over the saddle between the
-  // hill and the ridge.
+  // The avenue, west to east: in from the hill, through the town, out to the works.
   nodes.run(point(plan(-2_200), AVENUE + plan(130)), point(XS[0] as number, AVENUE), AVENUE_CLASS, [
     point(plan(-1_800), AVENUE + plan(70)),
     point(WEST_END, AVENUE + plan(34)),
@@ -294,27 +187,17 @@ function layStreets(doc: RoadDoc): Nodes {
   for (let i = 0; i + 1 < XS.length; i++) {
     nodes.run(point(XS[i] as number, AVENUE), point(XS[i + 1] as number, AVENUE), AVENUE_CLASS);
   }
-  // East of the last street the avenue is a street again, and the works' own
-  // road takes over at its end: a four-lane carriageway with a 6-unit footway
-  // on it reaching into the yard frontage would hold the sheds ten units back
-  // from their own street.
+  // East of the last street the avenue is a street again, and the works' own road takes over at its end
   nodes.run(point(XS[6] as number, AVENUE), point(EAST_END, AVENUE), LOCAL);
 
-  // The cross streets, north-south: one segment per band between the avenue's
-  // neighbours, so each crossing is a node of its own.
+  // The cross streets, north-south: one segment per band between the avenue's neighbours
   for (const x of XS) {
     for (let j = 0; j + 1 < YS.length; j++) {
       nodes.run(point(x, YS[j] as number), point(x, YS[j + 1] as number), LOCAL);
     }
   }
 
-  // The cross streets, east-west: the town's own grid runs from -1200 to 600;
-  // the two southern ones carry on east to the works' road, and the northern
-  // pair stop at the last street of the grid, where the town gives way to the
-  // hillside.
-  // These two carry on to the works' road as well: without them the ground
-  // between the grid and the works was one 300 x 420 block, too deep for any
-  // frontage to reach its middle, and it stood empty.
+  // The cross streets, east-west: the town's own grid runs from -1200 to 600
   for (const y of [YS[1] as number, YS[3] as number]) {
     for (let i = 0; i + 1 < XS.length; i++) {
       nodes.run(point(XS[i] as number, y), point(XS[i + 1] as number, y), LOCAL);
@@ -328,11 +211,7 @@ function layStreets(doc: RoadDoc): Nodes {
     nodes.run(point(XS[6] as number, y), point(WORKS.west, y), LOCAL);
   }
 
-  // The works: a service road down the district's western edge, one along its
-  // northern side, one along the water, and the cross road at its far end. The
-  // district is a rectangle of roads with the yards between them, not a
-  // scatter of driveways - and the western one crosses the avenue, so the
-  // works are reached from the town's own spine.
+  // The works: a service road down the district's western edge, one along its northern side, one along the water
   nodes.run(point(WORKS.west, YS[4] as number), point(WORKS.west, YS[3] as number), LOCAL);
   nodes.run(point(WORKS.west, YS[3] as number), point(WORKS.west, AVENUE), LOCAL);
   nodes.run(point(WORKS.west, AVENUE), point(WORKS.west, YS[1] as number), LOCAL);
@@ -341,12 +220,10 @@ function layStreets(doc: RoadDoc): Nodes {
   nodes.run(point(WORKS.west, WORKS.south), point(WORKS.east, WORKS.south), LOCAL);
   nodes.run(point(WORKS.east, WORKS.north), point(WORKS.east, WORKS.south), LOCAL);
 
-  // Out to the stream and over it: the lane along the works, the town's bridge,
-  // and the road beyond it that carries on off the map.
+  // Out to the stream and over it: the lane along the works, the town's bridge
   nodes.run(point(EAST_END, WORKS.south), point(plan(1_760), WORKS.south), LOCAL, [point(plan(1_180), WORKS.south - plan(10))]);
   nodes.run(point(plan(1_760), WORKS.south), point(plan(1_980), WORKS.south), LOCAL, [], 'bridge');
-  // And off the map on the east bank: the road out, which is why the bridge is
-  // there at all.
+  // And off the map on the east bank: the road out, which is why the bridge is there at all.
   nodes.run(point(plan(1_980), WORKS.south), point(plan(2_320), WORKS.south + plan(120)), LOCAL, [
     point(plan(2_140), WORKS.south + plan(20)),
     point(plan(2_260), WORKS.south + plan(60)),
@@ -364,10 +241,7 @@ const AVENUE_LOT_OFF = sidewalkOf(AVENUE_CLASS);
 
 /** The lot of the block between two street lines: the rectangle the paving leaves. */
 function lotOf(i: number, j: number): Box {
-  // A block is inset by whatever street bounds it, and the avenue is nearly
-  // twice as wide as a street: insetting the avenue's own side by a street's
-  // half-width put the shops' fronts into its footway, which the building
-  // validator reports as standing on a road.
+  // A block is inset by whatever street bounds it, and the avenue is nearly twice as wide as a street
   const side = (line: number): number => (line === AVENUE ? AVENUE_LOT_OFF : LOCAL_LOT_OFF);
   const x0 = (XS[i] as number) + LOCAL_LOT_OFF;
   const x1 = (XS[i + 1] as number) - LOCAL_LOT_OFF;
@@ -376,18 +250,13 @@ function lotOf(i: number, j: number): Box {
   return { x0, y0, x1, y1 };
 }
 
-/**
- * The blocks between the grid's last street and the works' road, south to
- * north. East of the grid the avenue is a plain street, so every side of
- * these is a street's width but the avenue's.
- */
+/** The blocks between the grid's last street and the works' road, south to north. */
 const BAND_YS = [YS[0], YS[1], AVENUE, YS[3], YS[4]] as const;
 function bandLot(j: number): Box {
   return {
     x0: (XS[XS.length - 1] as number) + LOCAL_LOT_OFF,
     x1: WORKS.west - LOCAL_LOT_OFF,
-    // The avenue's side as wide as the avenue: its junction with the grid's
-    // last street is the avenue's plate, and reaches that far into the block.
+    // The avenue's side as wide as the avenue
     y0: (BAND_YS[j] as number) + (BAND_YS[j] === AVENUE ? AVENUE_LOT_OFF : LOCAL_LOT_OFF),
     y1: (BAND_YS[j + 1] as number) - (BAND_YS[j + 1] === AVENUE ? AVENUE_LOT_OFF : LOCAL_LOT_OFF),
   };
@@ -418,13 +287,7 @@ const TERRACE_FRONT: readonly (readonly BuildingFunction[])[] = [
 const FILL_SHOP: readonly BuildingFunction[] = ['shop', 'townhouse'];
 const FILL_TERRACE: readonly BuildingFunction[] = ['townhouse', 'shop'];
 
-/**
- * A lot of open ground, as the model's own blocks.
- *
- * A block may not be bigger than 160 m on a side (`MAX_SIZE`), and a plaza,
- * a yard or a car park is: they are tiled here in pieces under that, which is
- * also how such ground is really made - in bays and bays.
- */
+/** A lot of open ground, as the model's own blocks. */
 function paved(model: Model, x: number, y: number, w: number, d: number, surface: LotSurface, piece = 50): void {
   const nx = Math.max(1, Math.ceil(w / piece));
   const ny = Math.max(1, Math.ceil(d / piece));
@@ -435,14 +298,7 @@ function paved(model: Model, x: number, y: number, w: number, d: number, surface
   }
 }
 
-/**
- * A straight run of paving or of parking bays, laid in PIECES.
- *
- * An element may not be longer than 40 m (`MAX_ELEMENT`), and the walks
- * across a square and the bays of a car park are longer than that. Cut into
- * lengths, a 90 m walk is four pieces of paving, which is what a paved walk
- * is made of anyway - and the model keeps its own rules.
- */
+/** A straight run of paving or of parking bays, laid in PIECES. */
 function runOf(
   model: Model,
   kind: 'pavement' | 'parking',
@@ -456,18 +312,13 @@ function runOf(
   const count = Math.max(1, Math.ceil(length / piece));
   for (let i = 0; i < count; i++) {
     const t = (i + 0.5) * (length / count);
-    // 0.12 m: the thinnest a part may be (`MIN_ELEMENT`), which is why a
-    // paving slab is a kerb's height and not a sheet of paper.
+    // 0.12 m: the thinnest a part may be
     model.el(kind, facing === 0 ? x + t : x, facing === 0 ? y : y + t, facing,
       { w: length / count, d: across, h: kind === 'pavement' ? 0.12 : 0.12 });
   }
 }
 
-/**
- * The market square: paving from edge to edge, a fountain where the ways
- * cross, rows of trees, benches, market canopies and flower beds. The town's
- * one big room, and the reason the avenue has a bend worth walking to.
- */
+/** The market square: paving from edge to edge, a fountain where the ways cross, rows of trees, benches */
 function plaza(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   const model = new Model('square', 'commercial', 3);
   const w = Wm;
@@ -502,10 +353,7 @@ function plaza(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   return model.build();
 }
 
-/**
- * A car park: hard standing, marked bays, and a row of trees along each
- * aisle - which is what keeps a forecourt from reading as a grey rectangle.
- */
+/** A car park: hard standing, marked bays, and a row of trees along each aisle */
 function parkingBody(Wm: number, Dm: number, surface: LotSurface): BlueprintBody {
   const model = new Model('square', 'commercial', 1);
   paved(model, 0, 0, Wm, Dm, surface, 60);
@@ -514,21 +362,15 @@ function parkingBody(Wm: number, Dm: number, surface: LotSurface): BlueprintBody
     const y = ((k + 0.5) * Dm) / rows;
     runOf(model, 'parking', 3, y, Math.max(2, Wm - 6), 5, 0, 30);
   }
-  // A row of trees along the two long sides, which is what breaks a forecourt
-  // up: a paved rectangle with nothing in it reads as a hole in the town.
+  // A row of trees along the two long sides, which is what breaks a forecourt up
   const trees = Math.max(2, Math.min(9, Math.round(Wm / 22)));
   model.row('tree', 4, 3.4, Wm - 4, 3.4, trees);
   model.row('tree', 4, Dm - 3.4, Wm - 4, Dm - 3.4, trees);
-  // A part may not be one of a handful: 64 elements is a whole building's
-  // budget (`MAX_ELEMENTS`), and a car park is not allowed to spend it alone.
+  // A part may not be one of a handful: 64 elements is a whole building's budget
   return model.build();
 }
 
-/**
- * A garden on a strip too narrow for a court: lawn, a line of trees down its
- * length, shrubs between them. The side yard between two terraces, the green
- * behind a row of shops.
- */
+/** A garden on a strip too narrow for a court: lawn, a line of trees down its length, shrubs between them. */
 function garden(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   const model = new Model('square', 'commercial', 1);
   paved(model, 0, 0, Wm, Dm, 'grass', 60);
@@ -554,12 +396,7 @@ function garden(rng: Rng, Wm: number, Dm: number): BlueprintBody {
   return model.build();
 }
 
-/**
- * The biggest empty rectangle left in `lot`, clear of every box in `placed`:
- * the lot is laid on a 2 m grid, and the classic largest-rectangle-in-a-
- * histogram sweep runs over it row by row. Null when nothing as big as
- * `min` on both sides is left.
- */
+/** The biggest empty rectangle left in `lot`, clear of every box in `placed` */
 function emptiest(lot: Box, placed: readonly Box[], min: number): Box | null {
   const cell = m(2);
   const nx = Math.floor((lot.x1 - lot.x0) / cell);
@@ -603,19 +440,12 @@ function emptiest(lot: Box, placed: readonly Box[], min: number): Box | null {
   };
 }
 
-/**
- * The works: yards, warehouses and the factory, with their aprons fenced off
- * the street. One lot of the industrial estate, in its own frame: the caller
- * says where it stands and which way it faces.
- */
+/** The works: yards, warehouses and the factory, with their aprons fenced off the street. */
 function yard(rng: Rng, Wm: number, Dm: number, kind: 'factory' | 'warehouse' | 'store'): BlueprintBody {
   const model = new Model(kind === 'store' ? 'warehouse' : kind, 'industrial', 7);
   const w = Wm;
   const d = Dm;
-  // The boundary is a FENCE, not a wall all the way round: a ring of 4 m
-  // panels round an 90 m lot is eighty parts, which is more than a building
-  // may have. A dog-leg along the street side and the yard's lane is what an
-  // estate actually shows the town.
+  // The boundary is a FENCE, not a wall all the way round
   const boundary = (): void => {
     model.row('fence', 2, d - 1, w - 2, d - 1, Math.max(3, Math.round(w / 6)));
     model.row('fence', 1, 2, 1, d * 0.6, Math.max(2, Math.round(d / 12)));
@@ -641,8 +471,7 @@ function yard(rng: Rng, Wm: number, Dm: number, kind: 'factory' | 'warehouse' | 
   } else {
     paved(model, 0, 0, w, d, 'paving');
     model.block({ x: 6, y: 14, w: 30, d: 24, storeys: 1, roof: 'shed', fill: 'wall', ground: 'loadingDoor' });
-    // The turning apron and the bays are in FRONT of the shed: a part never
-    // stands inside a volume, and a lorry needs the room anyway.
+    // The turning apron and the bays are in FRONT of the shed
     runOf(model, 'parking', 6, 6, Math.max(20, w - 14), 5, 0);
     model.row('tree', 46, 18, 46, d - 8, 3);
     boundary();
@@ -660,9 +489,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     placed,
     put(body, box) {
       doc.buildings.add(body);
-      // The whole of what it puts on the ground - its volumes AND its parts
-      // (the trees of a front garden, an awning, a fence): a lot laid in a gap
-      // against the volumes alone came down on a neighbour's trees.
+      // The whole of what it puts on the ground - its volumes AND its parts (the trees of a front garden, an awning, a fence)
       const all = buildingBounds(body as Building);
       placed.push({ x0: Math.min(box.x0, all.minX), y0: Math.min(box.y0, all.minY), x1: Math.max(box.x1, all.maxX), y1: Math.max(box.y1, all.maxY) });
       count++;
@@ -678,13 +505,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     into.put({ ...f.body, function: fn }, f.box);
     return true;
   };
-  /**
-   * What is left of a block once its frontage is built: every empty
-   * rectangle of 10 m or more, biggest first, becomes ground of the
-   * district's own kind - a court or a garden among homes, a car park behind
-   * shops, hard standing in the works. A block of a town has no unclaimed
-   * ground in it; a gap left by the frontage reads as a demolition site.
-   */
+  /** What is left of a block once its frontage is built */
   const fillGaps = (lot: Box, kind: 'homes' | 'shops' | 'works'): void => {
     const refused: Box[] = [];
     for (let k = 0; k < 24; k++) {
@@ -695,10 +516,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
       const Wm = (box.x1 - box.x0) / m(1);
       const Dm = (box.y1 - box.y0) / m(1);
       const short = Math.min(Wm, Dm);
-      // In the works a gap big enough for a shed is a shed and its apron (a
-      // yard of nothing but parking bays read as a grey wasteland); behind
-      // shops, a car park or a court in turn, so the backs of the blocks are
-      // not one car park after another.
+      // In the works a gap big enough for a shed is a shed and its apron
       const shed = kind === 'works' && Wm >= 52 && Dm >= 46;
       const park = kind === 'shops' && short >= 14 && (short < 22 || k % 2 === 0);
       const body = shed ? yard(rng, Wm, Dm, 'warehouse')
@@ -726,17 +544,14 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     middle(lot, (w, d) => courtyard(rng, w, d), 'square');
     fillGaps(lot, 'shops');
   }
-  // The north-east block is the supermarket and its car park: a big shed is
-  // not something to line up with the shops.
+  // The north-east block is the supermarket and its car park: a big shed is not something to line up with the shops.
   {
     const lot = lotOf(5, 2);
     const body = varied(rng, 'supermarket') as BlueprintBody;
     const edge: Edge = { start: { x: lot.x0 + m(3.2), y: lot.y0 + m(0.8) }, along: { x: 1, y: 0 }, inward: { x: 0, y: 1 }, length: lot.x1 - lot.x0 - m(6.4) };
     const f = facingBody(body, 'supermarket', edge, 0, m(0.4));
     into.put({ ...f.body, function: 'supermarket' }, f.box);
-    // Its car park beside it, on the avenue: the shed is nearly the block's
-    // whole depth, so the parking is to its side, not behind it (behind, it
-    // came out with a negative depth and the block was left half empty).
+    // Its car park beside it, on the avenue
     const park = { x0: f.box.x1 + m(2), y0: lot.y0, x1: lot.x1, y1: lot.y1 };
     putOpen(parkingBody((park.x1 - park.x0) / m(1), (park.y1 - park.y0) / m(1), 'paving'), 'square', park);
     fillGaps(lot, 'shops');
@@ -750,20 +565,14 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     fillGaps(lot, 'shops');
   }
   {
-    // The square: the block between the avenue and the street behind it, from
-    // x = -300 to 0, opening on the avenue. The city hall stands at its west
-    // end and the church at its east, both facing into the plaza, and the
-    // plaza fills the ground between them. The market street runs along its
-    // eastern side, so the square is on a corner of the grid and not a hole
-    // cut through it.
+    // The square: the block between the avenue and the street behind it, from x = -300 to 0, opening on the avenue.
     const lot: Box = lotOf(3, 1);
     let west = lot.x0;
     let east = lot.x1;
     for (const [fn, atWest] of [['cityHall', true], ['church', false]] as const) {
       const body = varied(rng, fn);
       if (!body) continue;
-      // Facing the plaza: the model's front is set against `inward`, so a
-      // building at the west end faces east with inward pointing west.
+      // Facing the plaza: the model's front is set against `inward`
       const inward: Vec2 = { x: atWest ? -1 : 1, y: 0 };
       const probe = facingBody(body, fn, { start: { x: 0, y: 0 }, along: { x: 0, y: 1 }, inward, length: 1 }, 0, 0);
       const width = probe.box.y1 - probe.box.y0;
@@ -783,8 +592,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
       putOpen(plaza(rng, (east - west) / m(1), (lot.y1 - lot.y0) / m(1)), 'square',
         { x0: west, y0: lot.y0, x1: east, y1: lot.y1 });
     }
-    // The church's yard and the city hall's garden: the ground either side of
-    // them, up to the streets.
+    // The church's yard and the city hall's garden: the ground either side of them, up to the streets.
     fillGaps(lot, 'homes');
   }
   {
@@ -807,9 +615,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     const edge: Edge = { start: { x: lot.x0 + m(0.8), y: lot.y0 + m(1.6) }, along: { x: 1, y: 0 }, inward: { x: 0, y: 1 }, length: lot.x1 - lot.x0 - m(1.6) };
     const f = facingBody(varied(rng, 'school') as BlueprintBody, 'school', edge, 0, m(0.4));
     if (inside(f.box, lot)) into.put({ ...f.body, function: 'school' }, f.box);
-    // The rest of the block is the street's terraces round the school's
-    // playing field: a campus in a town is a building with a street round it,
-    // not a building in a field.
+    // The rest of the block is the street's terraces round the school's playing field
     perimeter(rng, lot, ['townhouse', 'apartments', 'townhouse', 'bakery', 'townhouse'], FILL_TERRACE, into);
     const field = emptiest(lot, placed, m(30));
     if (field) {
@@ -824,8 +630,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     putOpen(park(rng, (lot.x1 - lot.x0) / m(1), (lot.y1 - lot.y0) / m(1)), 'park', lot);
   }
 
-  // ---- the southern band: the residential blocks, each a pair of rows of
-  // houses back to back, every house its own - its plan, its roof, its garden.
+  // ---- the southern band: the residential blocks, each a pair of rows of houses back to back, every house its own
   for (let i = 0; i < 6; i++) {
     const lot = lotOf(i, 0);
     houses(rng, lot, into);
@@ -834,10 +639,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     fillGaps(lot, 'homes');
   }
 
-  // ---- the blocks between the grid and the works, south to north: the
-  // works' offices and trade counters by the lane, shops and flats on the
-  // avenue, terraces up the hill. The edge of a town grades into its works;
-  // it does not stop at a street.
+  // ---- the blocks between the grid and the works, south to north
   const BAND: readonly { front: BuildingFunction[]; fill: readonly BuildingFunction[]; kind: 'homes' | 'shops' | 'works' }[] = [
     { front: ['warehouse', 'office', 'shop', 'warehouse'], fill: ['office', 'shop'], kind: 'works' },
     { front: ['office', 'gym', 'shop', 'restaurant', 'apartments'], fill: FILL_SHOP, kind: 'shops' },
@@ -851,13 +653,7 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
     fillGaps(lot, band.kind);
   });
 
-  // ---- the works, east of the last street
-  //
-  // Two columns of yards with the lane between them, and the service strip
-  // along the southern road: the garage and its forecourt on the way out of
-  // town, the sheds up the lane, and a lorry park at the foot of the western
-  // column. Every lot is placed from the same two lines, so none of them has
-  // to be nudged to clear its neighbour.
+  // ---- the works, east of the last street Two columns of yards with the lane between them
   {
     const west = WORKS.west + LOCAL_LOT_OFF;
     const east = WORKS.east - LOCAL_LOT_OFF;
@@ -890,17 +686,11 @@ function occupy(doc: RoadDoc, stream: RngStream): number {
 
 // ---------------------------------------------------------------- the dressing
 
-/**
- * The town's own fittings: the hedges that hold the built town off the
- * fields it was cut out of. Poles, lamps, street trees, bins and benches are
- * not generated: the player places them (`world/landscape.ts`).
- */
+/** The town's own fittings: the hedges that hold the built town off the fields it was cut out of. */
 function dress(doc: RoadDoc): void {
-  // No poles: wires, street lights and every other fitting of a street are
-  // the player's to place (2026-10-05).
+  // No poles: wires, street lights and every other fitting of a street are the player's to place (2026-10-05).
 
-  // The hedgerows along the two edges of the built town, on the far side of
-  // the outer streets: what stops a grid of houses from just stopping.
+  // The hedgerows along the two edges of the built town, on the far side of the outer streets
   const hedgeAlong = (from: Vec2, to: Vec2, step = plan(30)): void => {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
     const count = Math.max(2, Math.round(length / step));
@@ -919,8 +709,7 @@ function dress(doc: RoadDoc): void {
   hedgeAlong({ x: plan(-1_250), y: YS[0] as number - plan(34) }, { x: plan(640), y: (YS[0] as number) - plan(40) });
   hedgeAlong({ x: plan(-1_250), y: (YS[4] as number) + plan(34) }, { x: plan(640), y: (YS[4] as number) + plan(40) });
   hedgeAlong({ x: (XS[0] as number) - plan(34), y: plan(-400) }, { x: (XS[0] as number) - plan(40), y: plan(420) });
-  // And a wall round the park, which is the one plot in the town that is not
-  // somebody's front garden.
+  // And a wall round the park, which is the one plot in the town that is not somebody's front garden.
   const park = lotOf(4, 3);
   doc.addBarrier('wall', [
     { x: park.x0 - m(0.8), y: park.y0 - m(0.8) },
@@ -931,11 +720,7 @@ function dress(doc: RoadDoc): void {
   ]);
 }
 
-/**
- * Every block the streets enclose, named: the grid's blocks, the band between
- * the grid and the works, and the works. What the town must leave no part of
- * empty (`tests/world/defaultTown.spec.ts`).
- */
+/** Every block the streets enclose, named: the grid's blocks, the band between the grid and the works, and the works. */
 export function townBlocks(): { name: string; box: Box }[] {
   const out: { name: string; box: Box }[] = [];
   for (let j = 0; j + 1 < YS.length; j++) {

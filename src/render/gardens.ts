@@ -18,22 +18,7 @@ import { BUSH_KINDS, TREE_SPECIES, trianglesOf, type BushKind, type TreeSpecies 
 import { SHADOW_REACH, foliageTint, type Scenery, type SceneryKit } from './scenery';
 import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
 
-/**
- * THE BUILDINGS' GARDENS, KEPT BUILDING BY BUILDING: the trees, shrubs,
- * hedges and flowers of every building's garden, drawn with the scenery's
- * own plants (instanced, swaying, culled to the view).
- *
- * Each plant kind is one store of instances - one mesh, one draw - in which
- * every building's garden holds a run of slots. A building grown appends its
- * run; one changed or gone leaves its run dead (never drawn) until half the
- * store is dead and it is packed again. The whole town's gardens were built
- * again from every building's plants at each building grown: 36 s of the 64
- * a city of 2 560 m spent growing from 10 000 buildings on (2026-10-14),
- * and the city slowed to four buildings a second. Fixed capacity and a live
- * count, a new mesh only to grow (threejs.org InstancedMesh; three's GPU
- * buffer is made at the array's size, `WebGLAttributes.createBuffer`).
- * DO NOT go back to rebuilding the whole town's gardens at every building.
- */
+/** DO NOT go back to rebuilding the whole town's gardens at every building. */
 
 /** A plant of a building's garden, in the world: a tree, a shrub, a run of hedge or a flower bed. */
 export interface GardenPlant {
@@ -73,12 +58,7 @@ interface GardenPack {
   readonly count: number;
 }
 
-/**
- * The matrix of a plant turned about the up axis only, written at `at` of `out`: three's `Matrix4.compose` for the
- * quaternion `Euler(0, yaw, 0)` gives (x = 0, y = sin(yaw / 2), z = 0, w = cos(yaw / 2); `Quaternion.setFromEuler`,
- * order XYZ), the same sums. DO NOT go through an `Object3D` for each plant of a garden: its position, rotation,
- * scale and `updateMatrix` per instance were the packing's whole cost (2026-10-15).
- */
+/** DO NOT go through an `Object3D` for each plant of a garden */
 export function yawMatrixInto(out: Float32Array | number[], at: number, px: number, py: number, pz: number, yaw: number, sx: number, sy: number, sz: number): void {
   const y = Math.sin(yaw / 2), w = Math.cos(yaw / 2);
   const y2 = y + y;
@@ -106,10 +86,7 @@ function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPac
         break;
       }
       case 'shrub': {
-        // The geometry is about 1.5 across for 1 tall, kept in the bush's own
-        // proportions: it fills the slot's width and stands no taller than a
-        // bush that wide, a little under the slot (the leaf cards reach past
-        // the crown, and a bush by a wall must not show through it).
+        // The geometry is about 1.5 across for 1 tall, kept in the bush's own proportions
         const across = (Math.min(p.w, p.d) / 1.5) * 0.8;
         const tall = Math.min(p.h, across * 1.3);
         const wide = Math.max(across, tall / 1.3);
@@ -206,19 +183,7 @@ interface Store {
 /** The smallest store worth a mesh. */
 const MIN_CAPACITY = 64;
 
-/**
- * THE GARDENS' CELLS, FOR CULLING: every plant sits in a leaf cell of a
- * quadtree over the ground, and the cull walks the tree from its roots,
- * dropping a node out of view with all it holds and taking a node wholly in
- * view without testing anything under it - the hierarchical frustum culling
- * with plane masks of bvh.js (`BVH.frustumCulling`, what InstancedMesh2
- * culls with). The old cull tested every plant of the city against the
- * frustum at every camera move: 0.8 to 2.3 s every minute or two of play in
- * a city of 2 560 m, more the bigger the city. Now a move costs the nodes
- * near the view's edge and the plants in view.
- * DO NOT go back to a pass over every plant of the town per camera move,
- * nor to a flat list of cells (it grows with the town's area too).
- */
+/** DO NOT go back to a pass over every plant of the town per camera move, nor to a flat list of cells */
 interface CellNode {
   /** Bounds of everything under it, scene frame; radius < 0 while empty. Grown, never shrunk: a gone plant leaves it conservative. */
   x: number; y: number; z: number; r: number;
@@ -247,12 +212,7 @@ export interface GardenChange {
 }
 
 export interface Gardens extends Scenery {
-  /**
-   * The gardens that came and went: a list taken away leaves its slots dead,
-   * one placed takes slots; the meshes taken out of the scene and put in (a
-   * store grown past its room is a new mesh). DO NOT hand it the town's lists
-   * to find what changed: that was a pass over the town per building grown.
-   */
+  /** DO NOT hand it the town's lists to find what changed: that was a pass over the town per building grown. */
   update(change: GardenChange): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
 }
 
@@ -416,26 +376,14 @@ export function createGardens(kit: SceneryKit): Gardens {
   };
 
   let culledFor: Matrix4 | null = null;
-  /**
-   * The map zoom as the last `setMap` gave it (null: never told). At the map
-   * zoom the leaf cards are left out (`Scenery.setMap`): their stores are
-   * neither culled nor drawn (count 0; three draws nothing for no instance,
-   * `WebGLBufferRenderer.renderInstances`), and their GPU buffers are kept as
-   * they are, so coming back costs only the positions whose plant changed.
-   */
+  /** The map zoom as the last `setMap` gave it (null: never told). */
   let mapMode: boolean | null = null;
   /** Whether a store is drawn at all in the current mode. */
   const drawnNow = (s: Store): boolean => !(s.cards && mapMode === true);
   const probe = new Sphere();
   /** The frustum of the cull in progress. */
   let cullFrustum: Frustum | null = null;
-  /**
-   * The node and what it holds against the planes of `mask` still unsettled
-   * for it (0: wholly in view, nothing under it tested). A node's sphere
-   * holds its plants' spheres, so a node out of view by the shadow reach has
-   * every plant out by it, and one in view by it has every plant in: the
-   * plants kept are exactly those the per-plant test keeps.
-   */
+  /** The node and what it holds against the planes of `mask` still unsettled for it */
   const visit = (node: CellNode, mask: number): void => {
     if (node.r < 0) return;
     let inner = mask;
@@ -526,14 +474,7 @@ export function createGardens(kit: SceneryKit): Gardens {
           if (was) { removed.push(was); was.dispose(); }
           if (s.mesh) added.push(s.mesh);
         }
-        // What the GPU buffer holds is unknown only where the slots moved (a
-        // repack gives an index another plant) or the buffer is new (a new
-        // mesh): there the next cull writes every position it draws. A run
-        // gone leaves its slots dead, never drawn again until a repack, and a
-        // run come takes slots no position showed: the positions of every
-        // other store, and of this one, still say what the GPU holds.
-        // DO NOT forget every store's positions at every building: one
-        // garden more sent every plant in view of the town to the GPU again.
+        // DO NOT forget every store's positions at every building
         if (moved || was !== s.mesh) {
           if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
           s.shown.fill(-1);
@@ -546,11 +487,7 @@ export function createGardens(kit: SceneryKit): Gardens {
     },
     // A garden plant has one model at every zoom.
     setNear() {},
-    /**
-     * Called every frame (`renderer.ts`): only a change of mode culls again.
-     * DO NOT drop the cull here unconditionally: with the camera still, the
-     * whole tree of the town's gardens was walked again every frame.
-     */
+    /** DO NOT drop the cull here unconditionally */
     setMap(map) {
       if (mapMode === map) return;
       mapMode = map;
@@ -573,8 +510,7 @@ export function createGardens(kit: SceneryKit): Gardens {
         if (!mesh) continue;
         // Left out at the map zoom: nothing drawn, its buffer as it was.
         if (!drawnNow(s)) { mesh.count = 0; continue; }
-        // Only the positions whose plant changed go to the GPU; the same
-        // plants in view (a small turn, a forced recull) upload nothing.
+        // Only the positions whose plant changed go to the GPU; the same plants in view
         if (s.firstChanged < s.drawn) {
           markRange(mesh.instanceMatrix, s.firstChanged * 16, (s.drawn - s.firstChanged) * 16);
           markRange(mesh.instanceColor!, s.firstChanged * 3, (s.drawn - s.firstChanged) * 3);

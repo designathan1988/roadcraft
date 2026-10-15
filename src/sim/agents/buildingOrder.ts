@@ -2,25 +2,7 @@ import type { RoadDoc } from '@world/doc';
 import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
 import type { Building, BuildingId } from '@world/buildings/types';
 
-/**
- * THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY.
- *
- * A product that keeps some of the town's buildings (the lots with bays, the
- * yards with docks) needs them in the order of `BuildingStore.all()`: the
- * bays' ids and the lorries' draws follow it. Each such product walked every
- * building of the town whenever any one changed, and the town's ageing
- * changes a record every few seconds. Here the diary (`world/changes.ts`,
- * kind `buildings`) says which buildings changed; only those are looked at,
- * and the order is kept by rank (Nystrom, Game Programming Patterns, "Dirty
- * Flag" and "Spatial Partition": the change says what to redo).
- *
- * The rank of a building is its place in the store's `Map`: a building added
- * or put back after being taken away goes last, a record replaced keeps its
- * place (`BuildingStore.add`, `put`, `restore`, `remove`). A change whose
- * effect on the order is not known (a load, a store taken over, an edited
- * copy put in, an entry the diary forgot) reads the order from the store
- * again, whole.
- */
+/** THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY. */
 
 /** The store's order as ranks, kept from the diary. */
 class StoreOrder {
@@ -95,10 +77,7 @@ export interface BuildingDelta {
 
 const NOTHING: BuildingDelta = { ids: [], rects: [] };
 
-/**
- * The buildings that pass `keep`, in the store's order, kept from the diary.
- * `update` brings them up to date and says what changed since the last call.
- */
+/** The buildings that pass `keep`, in the store's order, kept from the diary. */
 export class BuildingsInOrder implements JournalReader {
   readonly kinds: readonly ChangeKind[] = ['buildings'];
   /** What it has read up to (`JournalReader`): its diary keeps the buildings' entries after it until it reads them. */
@@ -130,11 +109,7 @@ export class BuildingsInOrder implements JournalReader {
     return this.order.rank(id) ?? Infinity;
   }
 
-  /**
-   * Up to date with the store. Returns the ids and rectangles the diary named
-   * since the last call (nothing: none), or null when the store was read whole
-   * (the first call, or the diary could not say what changed).
-   */
+  /** Up to date with the store. */
   update(doc: RoadDoc): BuildingDelta | null {
     const order = this.order;
     order.follow(doc);
@@ -160,9 +135,7 @@ export class BuildingsInOrder implements JournalReader {
       this.epoch = order.epoch;
       return null;
     }
-    // Each building named: out, and back in at its rank if it is kept (a
-    // building taken away and put back since stands last now). Found in the
-    // list by the rank it was filed at, by halving: DO NOT walk the list.
+    // Found in the list by the rank it was filed at, by halving: DO NOT walk the list.
     for (const id of ids) this.unfile(id);
     if (order.epoch !== this.epoch) this.resort();
     for (const id of ids) {

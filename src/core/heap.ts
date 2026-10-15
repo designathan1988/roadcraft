@@ -1,11 +1,4 @@
-/**
- * A binary min-heap of (item, priority), ties broken by `before(a, b)` (item
- * a goes first) when given, then by insertion order. The one heap of the
- * game: a search that needs its ties by place (`editor/poleRoutes.ts`) passes
- * `before`. DO NOT write another heap beside it: the copies drifted (one read its
- * keys from the array the search lowers, so waiting entries changed key under
- * it, `sim/agents/lotNav.ts` before 2026-10-14).
- */
+/** DO NOT write another heap beside it: the copies drifted */
 export class Heap {
   constructor(private readonly before?: (a: number, b: number) => boolean) {}
   private items: number[] = [];

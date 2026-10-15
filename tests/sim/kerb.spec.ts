@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { writeFileSync } from 'node:fs';
 
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
@@ -19,30 +18,11 @@ import type { Vec2 } from '@core/vec2';
 import { pedPose } from '@sim/pose';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 
-/**
- * NOBODY DRIVES ON THE PAVEMENT.
- *
- * The turning path itself was never in doubt — a connector is a Bézier through
- * the junction and the arc is right. What was never checked is the thing the
- * player actually sees: whether the BODY of a vehicle, with its real length
- * and width and at the angle it is really drawn at, stays on the asphalt for
- * the whole of a run.
- *
- * That is a different question from "is the centreline correct", and it is the
- * one that catches a lane too close to the kerb, a connector whose curve is
- * tighter than the vehicle taking it, and a lane-change lean that swings a
- * long vehicle's tail out. A long bus on a tight turn is the worst case and it
- * is deliberately in the fleet here.
- *
- * The surface is taken from `world/surfaces.ts` — the same carriageway polygon
- * the mesh is built from, so this measures against what is drawn rather than
- * against a reconstruction of it.
- */
+/** NOBODY DRIVES ON THE PAVEMENT. */
 
 function city(): SimWorld {
   const doc = new RoadDoc();
-  // A cross and a T, with different classes meeting, so the turns include
-  // tight ones between roads of unequal width.
+  // A cross and a T, with different classes meeting, so the turns include tight ones between roads of unequal width.
   const centre = doc.addNode({ x: 0, y: 0 });
   const north = doc.addNode({ x: 0, y: 420 });
   const south = doc.addNode({ x: 0, y: -420 });
@@ -195,9 +175,7 @@ describe('the kerb', () => {
             };
             checked++;
             if (onSurface(asphalt, corner)) continue;
-            // The kerb band is the face between carriageway and footway. A
-            // corner overhanging it is a wing mirror over the kerb, not a
-            // wheel on the pavement, and a real vehicle does that.
+            // The kerb band is the face between carriageway and footway.
             if (onSurface(kerb, corner)) continue;
 
             worst++;
@@ -225,20 +203,11 @@ describe('the kerb', () => {
     });
 
     expect(checked).toBeGreaterThan(10_000);
-    if (process.env['ROADCRAFT_RECORD_CONTAINMENT'] === '1') {
-      writeFileSync('docs/audit/vehicle-containment-baseline.json', JSON.stringify({
-        checked, violations: worst, categories: Object.fromEntries(categories), lateralEvents,
-      }, null, 2) + '\n');
-    }
     expect(worst, detail).toBe(0);
   });
 
   it('keeps pedestrians off the carriageway except where they may cross', () => {
-    // The mirror of the same rule. A pedestrian on the asphalt is either on a
-    // crossing or is a defect, so this asserts only that one walking along a
-    // footway stays off it. The people are the game's: the agents' walking
-    // engine with the scenery's life coming in at the road ends (`main.ts`,
-    // `support/bodies.ts` `simOf`), read through the views it publishes.
+    // The mirror of the same rule.
     const sim = city();
     sim.usePedestrianEngine(createAgentWalkEngine());
     sim.ambient.enabled = true;
@@ -254,8 +223,7 @@ describe('the kerb', () => {
       step(sim, { traffic: true, pedestrians: true });
 
       for (const view of sim.pedViews) {
-        // Only somebody under way along a footway. Crossing, and the open
-        // ground off the road network, are other grounds.
+        // Only somebody under way along a footway.
         if (!view.walking || view.ground !== 'footway') continue;
         walked++;
         const pose = pedPose(view, 1);

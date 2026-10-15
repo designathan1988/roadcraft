@@ -4,12 +4,7 @@ import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { cyclesOf } from '@sim/intersections/cycles';
 
-/**
- * P1-22: the ring breaker meters entries onto small loops so they never fill
- * and lock. U-turns made every two-way street a loop of its own, the whole
- * city one strongly connected component, too big to be a ring - and nothing
- * was ever metered. Loops are now the shortest way round without turning back.
- */
+/** P1-22: the ring breaker meters entries onto small loops so they never fill and lock. */
 describe('small loops of road', () => {
   it('are found on a connected grid of two-way streets: its blocks', () => {
     const doc = new RoadDoc();

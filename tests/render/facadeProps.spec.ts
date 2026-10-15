@@ -3,14 +3,7 @@ import { facadeProps } from '@render/buildings/facadeProps';
 import { m } from '@world/units';
 import type { BayComponent, BuildingUse } from '@world/buildings/types';
 
-/**
- * THE LIFE ON THE BALCONIES IS SPARSE AND VARIED (the player, 2026-10-13: a
- * tower with every balcony full of palms, chairs and tables - "tenha
- * noção"). Over many flats: some 45 % of balconies bare, a pot on one in five
- * at most, no condenser on a balcony's floor (they hang under the windows),
- * an office's balconies all but bare, and no two neighbouring flats alike in
- * a run of storeys.
- */
+/** THE LIFE ON THE BALCONIES IS SPARSE AND VARIED */
 const opening = { a0: m(0.65), a1: m(2.35), h0: m(0.02), h1: m(2.3), depth: m(0.2) };
 
 function survey(component: BayComponent, use: BuildingUse, old = 0.1): { bare: number; potted: number; kinds: Set<string>; arrangements: string[] } {

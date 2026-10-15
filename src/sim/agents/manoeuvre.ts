@@ -1,19 +1,6 @@
 import { m } from '@world/units';
 
-/**
- * A car's path off the road: out of a parking bay to its lane, or from the lane
- * into a bay (brought back from `src/backup/residents` for the cars that use
- * the lots' car gates, `lotTraffic.ts`).
- *
- * A path is a chain of legs, each a cubic Hermite curve between two points
- * with the direction of MOTION given at both ends (the basis h00, h10, h01,
- * h11 on [0, 1], tangents scaled by the leg's chord and shortened as a
- * cardinal spline's tension does, so the curve does not bulge or loop off the
- * line the lot grid found clear). A leg driven in reverse keeps the body
- * pointing against its motion: backing out of a bay, the nose stays towards
- * the bay while the car swings round. Bays are entered nose first and left
- * backing out, as drivers do in a car park.
- */
+/** A car's path off the road: out of a parking bay to its lane, or from the lane into a bay */
 
 export interface PathSample {
   readonly x: number;
@@ -128,10 +115,7 @@ function unit(x: number, y: number, fallback: [number, number]): [number, number
 
 type Point = { readonly x: number; readonly y: number };
 
-/**
- * Forward legs through `points`, leaving the first along `t0` and arriving at the
- * last along `t1`; at the points between, the direction halves the turn.
- */
+/** Forward legs through `points`, leaving the first along `t0` and arriving at the last along `t1` */
 function through(points: readonly Point[], t0: [number, number], t1: [number, number]): Leg[] {
   const legs: Leg[] = [];
   const dirAt = (i: number): [number, number] => {
@@ -153,13 +137,7 @@ function through(points: readonly Point[], t0: [number, number], t1: [number, nu
 /** How far into the lane from its kerb side a car crossing the footway first aims, u. */
 const ACROSS_INTO_LANE = m(1.2);
 
-/**
- * Where a car leaving a lot by its gate `edge` is once across the footway:
- * on the carriageway square in front of it, a little short of the lane's
- * centre line. A driver crosses a footway straight and turns along the road
- * on the road. Null when the lane point is not ahead along the lane (the car
- * would turn back on the road) or the edge is already at it.
- */
+/** Where a car leaving a lot by its gate `edge` is once across the footway */
 function acrossFootway(edge: Point, lane: { x: number; y: number; tx: number; ty: number }): Point | null {
   const t = (edge.x - lane.x) * lane.tx + (edge.y - lane.y) * lane.ty;
   if (t > -m(1.5)) return null;
@@ -169,12 +147,7 @@ function acrossFootway(edge: Point, lane: { x: number; y: number; tx: number; ty
   return { x: qx + nx * ACROSS_INTO_LANE, y: qy + ny * ACROSS_INTO_LANE };
 }
 
-/**
- * Out of a bay to the lane: backing out of the stall into the aisle, swinging
- * the nose towards the way out, then forward down the aisle, out through the
- * gate (`Bay.via`), square across the footway and onto the lane at its
- * joining point.
- */
+/** Out of a bay to the lane: backing out of the stall into the aisle, swinging the nose towards the way out */
 export function departure(
   bay: { x: number; y: number; ox: number; oy: number; via: readonly Point[] },
   lane: { x: number; y: number; tx: number; ty: number },
@@ -190,11 +163,7 @@ export function departure(
   ]);
 }
 
-/**
- * From the lane into a bay, nose first: from where the car stopped (`from`,
- * before the gate), square across the footway to the gate, in along the way
- * out run backwards, and straight into the stall.
- */
+/** From the lane into a bay, nose first: from where the car stopped */
 export function arrival(
   from: { x: number; y: number; angle: number },
   bay: { x: number; y: number; ox: number; oy: number; via: readonly Point[] },
@@ -202,8 +171,7 @@ export function arrival(
   const [hx, hy] = unit(Math.cos(from.angle), Math.sin(from.angle), [1, 0]);
   const inward = [...bay.via].reverse();
   const aisle = inward[inward.length - 1] ?? { x: bay.x + bay.ox * m(5), y: bay.y + bay.oy * m(5) };
-  // Off the lane square across the footway to the gate: the way out run
-  // backwards (`acrossFootway` with the travel direction reversed).
+  // Off the lane square across the footway to the gate: the way out run backwards
   const across = inward.length ? acrossFootway(inward[0]!, { x: from.x, y: from.y, tx: -hx, ty: -hy }) : null;
   return new Manoeuvre([
     ...through([from, ...(across ? [across] : []), ...(inward.length ? inward : [aisle])], [hx, hy], [-bay.ox, -bay.oy]),
@@ -216,14 +184,7 @@ const SHUNT_FORWARD = m(2.5);
 const SHUNT_BACKWARD = m(1.2);
 const SHUNT_RAMP = m(1.5);
 
-/**
- * A lorry's way through a yard (`lorryDocks.ts`): the rear axle's poses, a
- * fraction of a metre apart, each with whether it is reached backing. The
- * body is posed at its centre, `rear` ahead of the axle along the heading,
- * as a vehicle steered by its front wheels moves. Between two changes of
- * direction the lorry gets up to speed and comes to rest, as `Manoeuvre`
- * does on each of its legs.
- */
+/** A lorry's way through a yard (`lorryDocks.ts`) */
 export class Shunt {
   /** Distance along the way at each pose, and where each run in one direction ends. */
   private readonly at: Float64Array;

@@ -5,52 +5,23 @@ import { CellFiling } from '@world/cells';
 import type { GardenChange, GardenPlant } from './gardens';
 import type { GroundRecord, Rect } from './groundChanges';
 
-/**
- * WHICH PLANTS THE BUILDINGS' GARDENS HOLD, building by building, and which
- * lists must be placed or taken away (`render/renderer.ts` hands the change to
- * `gardens.ts`). A building's plants are sampled on the ground again only when
- * they changed or a change of the ground reached its bank. Out of the
- * renderer, and with no three, so the work of one building more can be
- * counted (`tests/scale/buildingEdit.spec.ts`).
- *
- * WHAT CHANGED, NOT THE TOWN: a building more costs that building - its
- * record read by the id the diary gives, its bank found by the ground's
- * changes through the world's cells (`world/cells.ts`), and only its list
- * handed on. DO NOT hand the gardens every planted building's list at every
- * change (it was: the gardens then walked the town's lists to find the one
- * that came, a pass over the town per building grown, `building+1:gardens`
- * x14,02 - quadratic).
- */
+/** DO NOT hand the gardens every planted building's list at every change */
 
 export interface GardenLists {
-  /**
-   * The lists to place and to take away since the last call, null when none.
-   * `settled`: the ground is the one the plants will stand on (no stroke held,
-   * no world being built); until it is, nothing is placed.
-   */
+  /** The lists to place and to take away since the last call, null when none. */
   update(buildings: BuildingStore, settled: boolean): GardenChange | null;
 }
 
 /** A planted building: its record, its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. */
 interface Site { b: Building; key: number; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
 
-/**
- * `ground`: where and when the drawn ground changed (with `rectsSince`, the
- * banks it reached are found by place; without, every placed bank is asked);
- * `bankBox`: the box a building's bank reaches; `plantsOf`: a building's
- * plants on the drawn ground.
- */
+/** `ground`: where and when the drawn ground changed */
 export function gardenLists(
   ground: GroundRecord,
   bankBox: (b: Building) => Rect,
   plantsOf: (b: Building) => readonly GardenPlant[],
 ): GardenLists {
-  /**
-   * The plants of the buildings' gardens, as `plantsOf` reads them: each
-   * building's plant elements and where it stands, digested (`Digest.addPlain`), once per
-   * record (a record is replaced on any change, its age included); -1: no plants. DO NOT key it by
-   * the JSON text: a string kept for every building with a garden.
-   */
+  /** DO NOT key it by the JSON text: a string kept for every building with a garden. */
   const plantKey = new WeakMap<Building, number>();
   const plantKeyOf = (b: Building): number => {
     let key = plantKey.get(b);
@@ -121,10 +92,7 @@ export function gardenLists(
     if (since < 0) return;
     const rects = ground.rectsSince ? ground.rectsSince(since) : null;
     if (rects) {
-      // Every placed site was placed at `groundRead` or before (`update` reads
-      // the ground first), so a change after `since` met by its bank moved
-      // its ground: no asking the diary back to when it was placed.
-      // Every change in one look (`idsMeetingAny`): a change at a time read the cells they share again for each.
+      // Every placed site was placed at `groundRead` or before
       for (const id of banks.idsMeetingAny(rects)) if (sites.get(id)!.plants) pending.add(id);
       return;
     }

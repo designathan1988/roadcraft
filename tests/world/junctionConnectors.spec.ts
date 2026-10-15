@@ -8,13 +8,7 @@ import type { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { m } from '@world/units';
 
-/**
- * ONE JUNCTION'S CONNECTORS WITHOUT THE MAP'S GRAPH (`LaneletGraph.junctionConnectors`):
- * made from the roads that meet there and the junction's surface alone, they
- * are the whole graph's for that junction - the same movements, the same
- * paths bit for bit, the same largest body - on generated towns of every
- * street style, before and after random edits with a seed.
- */
+/** ONE JUNCTION'S CONNECTORS WITHOUT THE MAP'S GRAPH (`LaneletGraph.junctionConnectors`) */
 const line = (c: Connector, path: Float64Array): string =>
   `${c.id} ${c.turn} ${c.carried} ${c.group} ${c.maxBodyClass} ${c.inSegment}>${c.outSegment} ${c.length} ${Buffer.from(path.buffer, path.byteOffset, path.byteLength).toString('base64')}`;
 

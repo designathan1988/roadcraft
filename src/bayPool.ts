@@ -2,19 +2,7 @@ import type { Bay } from '@sim/agents/bay';
 import { type LotAsk, shareOf } from '@sim/agents/lotBays';
 import type { BayWorkers } from '@sim/agents/parking';
 
-/**
- * THE LOTS' BAYS WORKED OUT ON THE OTHER CORES (`bays.worker.ts`). A lot's
- * bays - its grid, a Dijkstra from its exits, each stall's way out and lane
- * - are about a millisecond, and are pure (`lotBays.ts` `bayRows`): the
- * record, the lanes and the walls within reach in, the bays out. A generated
- * city's first look worked out its 7,207 lots, and each later look the
- * ~2,300 whose surroundings had grown, inside one simulation step on the page
- * (2.1-2.8 s, profiled 2026-10-15). They are split across workers as
- * `conflictPool.ts` splits the conflict pairs, sized by the cores the browser
- * reports (MDN, `navigator.hardwareConcurrency`), one left to the page. No
- * workers (an old browser), or a worker failed: `work` rejects, and the page
- * works the lots out on the same data (`parking.ts` `baysNow`).
- */
+/** THE LOTS' BAYS WORKED OUT ON THE OTHER CORES (`bays.worker.ts`). */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { resolve(answer: Bay[][]): void; reject(error: Error): void }>;
@@ -22,12 +10,7 @@ interface Lane {
   heard: number;
 }
 
-/**
- * Longest a worker with lots waiting may stay silent. It reports at least
- * every 500 ms while it works (`bays.worker.ts`); whoever waits calls `check`
- * (`parking.ts` `baysNow`, while lots wait). DO NOT wait without a deadline:
- * a lot waiting on a hung worker kept its old bays for the page's life.
- */
+/** DO NOT wait without a deadline: a lot waiting on a hung worker kept its old bays for the page's life. */
 const SILENCE_MS = 10_000;
 
 /** Most workers the pool opens. */
@@ -102,10 +85,7 @@ export class BayPool implements BayWorkers {
     return this.lanes;
   }
 
-  /**
-   * The pool fails: every job waiting on ANY of its workers is rejected (its
-   * lots worked out on the page) and every worker is ended.
-   */
+  /** The pool fails: every job waiting on ANY of its workers is rejected */
   private fail(why: string): void {
     if (this.broken) return;
     console.warn(`[parking] ${why}; the lots are worked out on the page`);

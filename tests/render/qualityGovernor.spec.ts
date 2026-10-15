@@ -22,9 +22,7 @@ describe('the automatic quality governor', () => {
   });
 
   it('climbs back once the display is kept up with and the frames are cheap', () => {
-    // It used to need a median frame under 9 ms to climb, which a 60 Hz
-    // display never reports: one slow stretch left the game on the low tier
-    // for the rest of the session.
+    // It used to need a median frame under 9 ms to climb, which a 60 Hz display never reports
     const governor = new QualityGovernor('high');
     run(governor, 12, 1 / 20, 40);
     expect(governor.current).toBe('low');

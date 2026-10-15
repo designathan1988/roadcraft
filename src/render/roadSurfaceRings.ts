@@ -42,29 +42,14 @@ export function inputOf(poly: Poly): Input | null {
   return { poly, minX, minY, maxX, maxY, digest: digest.value() };
 }
 
-/**
- * A road's central reservation, as two real polygons rather than as paint: the
- * kerb stone round the island, and what grows or is paved inside it.
- *
- * It used to be drawn as two overlapping marking strokes at the same height —
- * a wide kerb colour with a narrower green inside it — which put two coplanar
- * surfaces in the depth buffer and produced the torn green scribble a player
- * photographed down the middle of every boulevard. A median is not paint: it is
- * a kerbed island with something growing in it, so it is built like one, with
- * its own height and its own skirt.
- *
- * Clipped against the carriageway so it can never leak past the kerb line, and
- * unioned so two medians meeting at a junction are one shape rather than two
- * overlapping ones - both a tile at a time, in `roadTileShape.ts`.
- */
+/** A road's central reservation, as two real polygons rather than as paint */
 export function medianOf(net: Network, ribbon: SegmentRibbon): { kerb: Poly; inner: Poly; paved: boolean } | null {
   const median = ribbon.road.median;
-  // A median painted on the carriageway has no kerb and no island (docs/VIAS.md V1).
+  // A median painted on the carriageway has no kerb and no island.
   if (median <= 0 || ribbon.road.medianFlush) return null;
   const centre = ribbon.centre[Level.Asphalt];
   if (!centre || centre.n < 2) return null;
-  // The island's nose stands back of each crossing (`world/landscape.ts`
-  // medianNose): measured from the node, the centre line starting at the mouth.
+  // The island's nose stands back of each crossing (`world/landscape.ts` medianNose)
   const seg = net.doc.segment(ribbon.id);
   const back = (node: NodeId | undefined, from: { x: number; y: number }): number => {
     const at = node === undefined ? null : net.doc.node(node);

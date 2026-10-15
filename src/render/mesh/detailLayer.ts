@@ -11,36 +11,7 @@ import { Rng } from '@core/rng';
 import { bakedTextureFromPixels, canvasPixels, makeNoise, fbm, normalMapFrom, type BakedPixels } from './textureBaker';
 import { m } from '@world/units';
 
-/**
- * The close-up detail layer: what a surface looks like at the camera's nearest
- * zoom.
- *
- * ## Why the ground went to mush up close
- *
- * The camera zooms from a whole city down to a view four metres tall — about
- * eighty screen pixels per world unit. The surface textures were baked at 12 to
- * 20 texels per unit, because that is what the play zoom needs and a larger
- * canvas costs startup time. Magnified four to seven times, every noise cell of
- * the asphalt aggregate became a soft blob fifteen pixels across: the "huge
- * grain" a player saw on the road, the footway and the grass alike. A bigger
- * macro texture only moves the problem one zoom step further in.
- *
- * ## What this does instead
- *
- * A second, SMALL texture is baked per material family - stones in a binder for
- * asphalt, pores and sand for concrete, blades for grass - covering only a
- * couple of metres at well over a hundred texels per unit. The shader samples it
- * twice, at two scales and two rotations, and multiplies the two, so the tile
- * has no visible period. It modulates the albedo around 1.0 and adds its own
- * normal on top of the macro normal.
- *
- * It fades in by the pixel FOOTPRINT (`fwidth` of the world position), not by a
- * zoom threshold, so it is exact on any screen: at play zoom it contributes
- * nothing and costs two texture reads; at close zoom it carries all of the
- * fine structure. As it fades in, the macro map is read one or two mip levels
- * softer, which removes the magnified blobs instead of drawing crisp grain on
- * top of them.
- */
+/** The close-up detail layer: what a surface looks like at the camera's nearest zoom. ## Why the ground went to mush up */
 
 export type DetailKind = 'asphalt' | 'concrete' | 'grass' | 'soil';
 
@@ -135,8 +106,7 @@ function blade(
         const px = (((Math.round(cx) + ox) % SIZE) + SIZE) % SIZE;
         const py = (((Math.round(cy) + oy) % SIZE) + SIZE) % SIZE;
         const i = py * SIZE + px;
-        // Later blades lie on top of earlier ones, and a blade is higher at
-        // its tip than at its root, which is what gives the field depth.
+        // Later blades lie on top of earlier ones, and a blade is higher at its tip than at its root
         const h = 0.35 + t * 0.65;
         if (h >= (field[i] as number)) {
           field[i] = h;
@@ -147,10 +117,7 @@ function blade(
   }
 }
 
-/**
- * Bakes one detail family. Everything is deterministic and wraps at the edge,
- * so the tile is seamless by construction.
- */
+/** Bakes one detail family. */
 function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; height: Float32Array; worldSize: number; relief: number } {
   const n = SIZE * SIZE;
   const height = new Float32Array(n);
@@ -158,9 +125,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
   const rng = new Rng(0xde7a11 ^ kind.length * 7919);
 
   if (kind === 'asphalt') {
-    // Aggregate: a dark bitumen binder, packed with stones of 2 to 14 mm in a
-    // spread of greys, a few of them pale quartz. At 3.2 units the tile is
-    // 1.28 m and a texel is 2.5 mm.
+    // Aggregate: a dark bitumen binder, packed with stones of 2 to 14 mm in a spread of greys, a few of them pale quartz.
     const binder = makeNoise(0x3a91);
     for (let i = 0; i < n; i++) {
       const x = i % SIZE;
@@ -170,10 +135,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
     }
     const stones = new Float32Array(n);
     const stoneTone = new Float32Array(n);
-    // A FINE, worn surfacing course: stones mostly 2 to 8 mm, their tones
-    // close to the binder's once traffic has dulled them, pale quartz rare.
-    // The old spread (tones 0.85 to 2.15 against a binder of 0.62) read as
-    // loose gravel at close zoom.
+    // A FINE, worn surfacing course: stones mostly 2 to 8 mm, their tones close to the binder's once traffic has dulled them
     for (let k = 0; k < 7800; k++) {
       const x = rng.float() * SIZE;
       const y = rng.float() * SIZE;
@@ -213,8 +175,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
   }
 
   if (kind === 'concrete') {
-    // Broom-finished concrete: fine sand, the odd exposed pebble, and pin-hole
-    // pores that catch dirt. Tile 2.6 units, about a metre.
+    // Broom-finished concrete: fine sand, the odd exposed pebble, and pin-hole pores that catch dirt.
     const sand = makeNoise(0x1c07);
     const cloud = makeNoise(0x88e1);
     for (let i = 0; i < n; i++) {
@@ -247,8 +208,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
   }
 
   if (kind === 'grass') {
-    // Blades seen from above, in every direction, darker at the root. The
-    // tone is carried per texel so a blade reads as one stroke. Tile 4 units.
+    // Blades seen from above, in every direction, darker at the root.
     const tone = new Float32Array(n).fill(0.55);
     height.fill(0);
     const soil = makeNoise(0x4411);
@@ -269,8 +229,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
         0.85 + rng.float() * 0.5,
       );
     }
-    // Carried in the tint channels: blades are yellow-green, the gaps between
-    // them are a darker, warmer green-brown.
+    // Carried in the tint channels: blades are yellow-green, the gaps between them are a darker, warmer green-brown.
     const r = new Float32Array(n);
     const g = new Float32Array(n);
     const b = new Float32Array(n);
@@ -310,8 +269,7 @@ function bake(kind: DetailKind): { albedo: Float32Array; tint: Float32Array[]; h
 
 function dataTexture(canvas: HTMLCanvasElement, anisotropy: number): Texture {
   const texture = new CanvasTexture(canvas);
-  // Linear DATA: the albedo is a multiplier around 1.0, not a colour, so it
-  // must not go through the sRGB decode.
+  // Linear DATA: the albedo is a multiplier around 1.0, not a colour, so it must not go through the sRGB decode.
   texture.colorSpace = NoColorSpace;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
@@ -321,13 +279,7 @@ function dataTexture(canvas: HTMLCanvasElement, anisotropy: number): Texture {
   return texture;
 }
 
-/**
- * The detail textures for one family, baked once and cached.
- *
- * The albedo is stored as a multiplier divided by two (so 0.5 means "unchanged")
- * and normalised to that mean, so a material's overall tone is exactly what its
- * macro texture says it is, at every zoom.
- */
+/** The detail textures for one family, baked once and cached. */
 export function detailTextures(kind: DetailKind, anisotropy: number): DetailTextures {
   const cached = cache.get(kind);
   if (cached) {
@@ -383,15 +335,10 @@ export function disposeDetailTextures(): void {
 /** The shared on/off switch, so a low tier pays nothing but a uniform read. */
 export const detailSwitch = { value: 1 };
 
-/**
- * GLSL for sampling a detail layer. `detailSample` returns the albedo
- * multiplier in rgb, and `detailNormal` the tangent-space normal, both
- * already combined from two rotated scales.
- */
+/** GLSL for sampling a detail layer. */
 export const DETAIL_GLSL = /* glsl */ `
   uniform float uDetailOn;
-  // World units per pixel below which detail is fully shown, and above which
-  // it is gone.
+  // World units per pixel below which detail is fully shown, and above which it is gone.
   const float DETAIL_NEAR = ${m(0.018).toFixed(6)};
   const float DETAIL_FAR = ${m(0.064).toFixed(6)};
   const mat2 DETAIL_TURN = mat2(0.5403, 0.8415, -0.8415, 0.5403);
@@ -409,8 +356,7 @@ export const DETAIL_GLSL = /* glsl */ `
   vec3 detailNormal(sampler2D tex, vec2 uv) {
     vec3 a = texture2D(tex, uv).xyz * 2.0 - 1.0;
     vec3 b = texture2D(tex, DETAIL_TURN * uv * 0.4137 + 0.31).xyz * 2.0 - 1.0;
-    // The second sample was read through a rotation, so its slope is rotated
-    // back into the first one's frame before the two are added.
+    // The second sample was read through a rotation
     b.xy = b.xy * DETAIL_TURN;
     return vec3(a.xy + b.xy * 0.55, a.z);
   }
@@ -428,10 +374,7 @@ export interface DetailSpec {
   readonly macroBlur: number;
 }
 
-/**
- * Installs the detail layer on a standard material whose UVs are in macro
- * tiles (`world / macroTile`), which is how every road band is built.
- */
+/** Installs the detail layer on a standard material whose UVs are in macro tiles */
 export function applyDetail(material: MeshStandardMaterial, spec: DetailSpec, anisotropy: number): void {
   const textures = detailTextures(spec.kind, anisotropy);
   const uniforms = {

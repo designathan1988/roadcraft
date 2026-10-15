@@ -11,13 +11,7 @@ import { type Building, type BuildingId, cloneBuilding } from '@world/buildings/
 import { editBuilding, placeBuilding } from '@editor/buildings';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 
-/**
- * The building store keeps the records it is handed, without copying them
- * (`store.ts`, OWNERSHIP): what it stores must still be what a copy was -
- * plain JSON data - and no record may change once stored, or the undo image,
- * the cloned documents and every per-record cache that keep records by
- * reference would read a building that is no longer there.
- */
+/** The building store keeps the records it is handed, without copying them (`store.ts`, OWNERSHIP) */
 
 /** The record as the old store kept it: a JSON round trip of what it was handed. */
 const roundTrip = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;

@@ -43,34 +43,12 @@ export interface SidewalkEdge {
   readonly lanes?: readonly LaneletId[];
 }
 
-/**
- * The kerbs, zebras and footway lines the vehicles and signals read, derived
- * from the SAME junction geometry that trims the vehicle lanelets.
- *
- * - A zebra (`crossings`, `crossingEdge`) runs between the two kerb nodes of
- *   a leg, where `Network.crosswalkDistanceAt` paints it: admission, the
- *   crossing spans, the signal plans and the walking engine's published
- *   crossing states all measure along it. As in SUMO, a vehicle learns about
- *   people only through the state of the crossing it is about to drive over.
- * - A footway line (`kind: 'walk'`) runs along each side of a road between
- *   its kerbs: a bus at a stop finds the pavement beside its doors on it
- *   (`vehicles/kerbStops.ts`).
- *
- * People walk on `world/walkways.ts` (`sim/agents/walk.ts`). This graph was
- * also the footway-graph pedestrian engine's network - corner paths, walking
- * corridors, a link to every door, destinations, an occupancy index - which
- * went with that engine on 2026-10-08; nothing read any of it, and every road
- * edit rebuilt it (the door links alone were P17 in docs/PROBLEMAS.md).
- */
+/** The kerbs, zebras and footway lines the vehicles and signals read */
 export class SidewalkGraph {
   readonly nodes = new Map<SidewalkNodeId, SidewalkNode>();
   readonly edges = new Map<SidewalkEdgeId, SidewalkEdge>();
   readonly crossings = new Map<CrossingId, SidewalkEdgeId>();
-  /**
-   * The footway lines (`kind: 'walk'`) of each road, in the order they were
-   * added to `edges`. A kerb stop asks for the footway beside one lane; it
-   * walked every edge of the map for each car with an errand, every tick.
-   */
+  /** The footway lines (`kind: 'walk'`) of each road, in the order they were added to `edges`. */
   private readonly walksBySegment = new Map<SegmentId, SidewalkEdge[]>();
 
   /** The kerb nodes and zebras each road node made: what an edit there takes away. */
@@ -84,14 +62,7 @@ export class SidewalkGraph {
     for (const segId of doc.segments.keys()) this.footwaysOf(doc, net, segId);
   }
 
-  /**
-   * Brought up to the lane graph's changes since it was last (`LaneletGraph.update`,
-   * in order; null: built whole): the kerbs and zebras of the junctions built again,
-   * and the footway lines of every road at them. Every id is the place's own (node,
-   * road, side), so what an edit left stands as it was.
-   * DO NOT build the kerbs, zebras and footway lines of the whole map for an edit:
-   * every road drawn made the town's again.
-   */
+  /** DO NOT build the kerbs, zebras and footway lines of the whole map for an edit: every road drawn made the town's again. */
   update(doc: RoadDoc, net: Network, graph: LaneletGraph, changes: readonly GraphChange[] | null): void {
     if (changes === null) { this.build(doc, net, graph); return; }
     const nodes = new Set<NodeId>(), roads = new Set<SegmentId>();
@@ -153,8 +124,7 @@ export class SidewalkGraph {
 
       for (const side of [-1, 1] as const) {
         const id = kerbId(nodeId, segId, side);
-        // Each side's own footway (docs/VIAS.md V1): looking away from the
-        // node, `+nrm` is the road's left from `a` and its right from `b`.
+        // Each side's own footway
         const roadSide = (side > 0) === (seg.a === nodeId) ? 'left' : 'right';
         this.nodes.set(id, {
           id,
@@ -183,9 +153,7 @@ export class SidewalkGraph {
 
       const crossing = makeCrossingId(nodeId, segId);
       const path = Polyline.fromPoints([right.at, left.at]);
-      // The link lanes of its own road (`LaneletGraph.linksOfSegment`), in its own array:
-      // the edge owns them. DO NOT gather every lane of the map to find a road's: that
-      // made this quadratic in the size of the network (`tests/scale/edit.spec.ts`).
+      // DO NOT gather every lane of the map to find a road's: that made this quadratic in the size of the network
       const lanes = graph.linksOfSegment(segId).slice();
 
       this.addEdge({
@@ -267,11 +235,7 @@ export class SidewalkGraph {
     this.ofNode.clear();
   }
 
-  /**
-   * What a road node's kerbs and zebras were made as (`update`): a new object
-   * each time the node is made again, the same while it stands - for what a
-   * reader keeps by node (`agents/walk.ts` crossingOf).
-   */
+  /** What a road node's kerbs and zebras were made as (`update`) */
   madeAt(node: NodeId): object | undefined {
     return this.ofNode.get(node);
   }
@@ -289,8 +253,7 @@ export class SidewalkGraph {
   private addEdge(edge: SidewalkEdge): void {
     if (edge.length < COARSE_EPS) return;
     this.edges.set(edge.id, edge);
-    // A footway's id (`W:<segment>:<side>`) is set once per build, so each
-    // list below holds exactly the walk edges of `edges`, in the same order.
+    // A footway's id (`W:<segment>:<side>`) is set once per build, so each list below holds exactly the walk edges of `edges`
     if (edge.kind === 'walk' && edge.segment !== undefined) {
       const list = this.walksBySegment.get(edge.segment);
       if (list) list.push(edge);
@@ -299,44 +262,21 @@ export class SidewalkGraph {
   }
 }
 
-/**
- * Clamps the crossing distance to something the segment can actually hold.
- *
- * The distance itself comes from `Network.crosswalkDistanceAt`, which derives
- * it from the SAME asphalt trim the junction mouth and the stop line use — so
- * the crossing always sits between the two, and vehicles halt behind waiting
- * pedestrians by construction.
- */
+/** Clamps the crossing distance to something the segment can actually hold. */
 function kerbDistance(
   crossingDistance: number,
   segmentLength: number,
   mouthDistance = 0,
 ): number {
-  // A zero crossing distance is the network's sentinel for "no crossing fits on
-  // this approach", NOT a crossing standing at the node. Reading it as a
-  // distance put the kerb at the 2-unit floor below — inside the junction
-  // surface. With no crossing to stand beside, the kerb belongs at the
-  // junction mouth.
+  // A zero crossing distance is the network's sentinel for "no crossing fits on this approach"
   const from = crossingDistance > 0 ? crossingDistance : mouthDistance;
 
-  // No second cap on the crossing itself. `Network.crosswalkDistanceAt` has
-  // already clamped it against the junction mouth; re-clamping against a bare
-  // fraction of the segment would undo that and push the kerb back into the
-  // carriageway.
+  // No second cap on the crossing itself.
   const floor = Math.max(mouthDistance, Math.min(m(0.8), segmentLength * 0.2));
   return Math.max(floor, Math.min(from, segmentLength * 0.5));
 }
 
-/**
- * Pushes a kerb outward until it is genuinely clear of the junction surface.
- *
- * Distance alone is not enough. Where a junction's legs have very unequal
- * trims — a narrow street meeting a boulevard on a short block — the corner
- * boundary sweeps between one leg's distant mouth and another's near one, and
- * can cover ground that is well past the SHORT leg's own mouth. A kerb placed
- * by distance would then still land on the carriageway, so the containment is
- * tested rather than assumed, and the crossing steps outward until it clears.
- */
+/** Pushes a kerb outward until it is genuinely clear of the junction surface. */
 function clearOfJunction(
   net: Network,
   node: NodeId,

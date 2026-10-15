@@ -3,15 +3,7 @@ import { type BlueprintBody, instantiate } from '@world/buildings/blueprints';
 import { footprintRects } from '@world/buildings/geometry';
 import type { Building, BuildingFunction } from '@world/buildings/types';
 
-/**
- * Where a building stands on a block: boxes, edges, and the arithmetic that
- * turns a model to face the street.
- *
- * These were written for a sample town that drew its own grid; that town is
- * gone - `defaultTown.ts` is the map the game opens on - and what is left
- * here is the vocabulary every town generator needs, which both `town.ts` and
- * `defaultTown.ts` lay their blocks out with.
- */
+/** Where a building stands on a block: boxes, edges, and the arithmetic that turns a model to face the street. */
 
 /** Between the pavement's edge and a facade; between two neighbours. */
 const FRONT_GAP = 0.12;

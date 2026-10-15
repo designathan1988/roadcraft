@@ -4,14 +4,7 @@ import type { Network } from './network';
 /** Lengths are summed in millionths of a unit, as integers: exact, in whatever order an edit adds and takes them. */
 const SCALE = 1e6;
 
-/**
- * The summed length of the network's roads (each ribbon's centreline), kept
- * by what each rebuild changed (`Network.changesSince`): the roads it changed
- * taken out and put back, the others as they were. Summed as integers
- * (`SCALE`), so the total after any run of edits is the total of the roads
- * as they are, never a float that drifted with them. DO NOT sum every ribbon
- * of the map at each revision: every road drawn walked the town's roads.
- */
+/** DO NOT sum every ribbon of the map at each revision: every road drawn walked the town's roads. */
 export class NetworkLength {
   private net: Network | null = null;
   private seen: object | null = null;
@@ -34,10 +27,7 @@ export class NetworkLength {
     return this.total / SCALE;
   }
 
-  /**
-   * Every road summed again.
-   * @rebuild The first ask, a map opened, or a network further behind than it remembers.
-   */
+  /** @rebuild Every road summed again. */
   private sumAll(net: Network): void {
     this.bySegment.clear();
     this.total = 0;

@@ -1,9 +1,4 @@
-/**
- * A bake worker: a body's core clips baked off the main thread
- * (`citizenBake.ts`, `bakePool.ts`). In: the rig as data and the body's sex.
- * Out: the clips baked (the deferred ones left out, null), their buffers
- * transferred, matrices as their elements.
- */
+/** A bake worker: a body's core clips baked off the main thread (`citizenBake.ts`, `bakePool.ts`). */
 import { type ClipFrames, type RigNode, bake, rigFromData, setSliceMs } from './citizenBake';
 import { loadRocketboxClips, type RocketboxClips, type WalkSex } from './citizenWalk';
 
@@ -14,8 +9,7 @@ interface Job { readonly id: number; readonly nodes: RigNode[]; readonly sex: Wa
 
 export type BakedClip = Omit<ClipFrames, 'head'> & { head?: number[] };
 
-// Reuse decoded clips across this worker's jobs. The pool releases them when
-// the last visible citizen is evicted and its idle workers are terminated.
+// Reuse decoded clips across this worker's jobs.
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
 
 const scope = globalThis as unknown as {

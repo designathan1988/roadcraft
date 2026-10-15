@@ -1,17 +1,6 @@
 import type { LightGrid, LightRequest, LightResult } from './terrainLightCompute';
 
-/**
- * THE LAND LIGHT, WORKED OUT BY A FEW SHARED WORKERS. Each terrain plate
- * started a worker of its own for its light (`terrainLight.worker.ts`): with
- * many plates, many threads, each with its own heap, all baking at once at
- * the opening - the whole machine taken, and gigabytes of memory.
- *
- * A worker pool instead, the pattern of the Web Workers API (MDN, "Using Web
- * Workers": a fixed set of workers fed from a queue): `POOL_SIZE` workers,
- * each plate always sent to the same one (its land's shape is kept there
- * between requests, by the plate's key), one request in flight per worker,
- * those waiting in the order asked.
- */
+/** THE LAND LIGHT, WORKED OUT BY A FEW SHARED WORKERS. */
 
 /** Workers for every plate's light: a sliver of the machine, never all of it. */
 const POOL_SIZE = 2;
@@ -75,10 +64,7 @@ function next(lane: Lane): void {
   lane.worker.postMessage({ ...job!.request, key: job!.key }, [job!.request.heights.buffer]);
 }
 
-/**
- * Sends a plate's light request to its worker (queued behind the others);
- * false when there are no workers (the caller lights on the page).
- */
+/** Sends a plate's light request to its worker (queued behind the others); false when there are no workers */
 export function submitLight(grid: LightGrid, key: number, request: LightRequest, done: Job['done'], failed: Job['failed']): boolean {
   const pool = start(grid);
   if (!pool) return false;

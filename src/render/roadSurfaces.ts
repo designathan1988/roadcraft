@@ -43,109 +43,32 @@ import {
 
 export { TERRAIN_UV } from './roadSurfaceReads';
 
-/**
- * The road network's surface bands, per structural level.
- *
- * ## Cross-section
- *
- * Every band sits at a fixed offset from ONE shared deck height, and each one
- * draws a skirt down to the band outside it. That is what turns four flat
- * ribbons into a built cross-section:
- *
- * ```
- *                 kerb +0.16 m   footway +0.15 m
- *   asphalt 0.00 ──┐┌──────────────────────────┐
- *   (gutter at the │┘ kerb face                 ╲  verge: a grass batter from
- *    kerb, painted)                               ╲ the footway down (or up) to
- *                                                  ╲ the ground as it is drawn
- * ```
- *
- * Small, real steps: a 15 cm precast kerb, the footway level with its top, the
- * gutter at the carriageway's own level. The verge used to be a flat band
- * 4 cm under the asphalt with a vertical skirt down to ground pulled 60 cm
- * below the road - a grass wall that made every road read as a thick slab laid
- * on the terrain. It now slopes from the footway's edge to the drawn terrain,
- * so nothing stands proud and no side of the mesh shows.
- *
- * Because every offset is measured from the same `RoadElevation`, two bands can
- * never disagree about where the road is — the defect that left steps and gaps
- * between the carriageway and its kerb.
- *
- * ## Per-class colour, in one mesh
- *
- * A residential street is grey and a boulevard is near-black, but they share a
- * junction and therefore a polygon. The class tint is written per VERTEX from
- * the nearest road, so one asphalt mesh carries every class and the colour
- * blends where two classes meet instead of stopping at an invented seam.
- */
+/** The road network's surface bands */
 
-/**
- * Longest triangle edge on a road at grade.
- *
- * This is NOT sized against the terrain's curvature. The deck reads a solved
- * profile whose every station has already been raised to clear the ground
- * within a window wider than this edge (`DILATE` in `world/elevation.ts`), so a
- * chord this long is guaranteed above the ground at both ends and everywhere
- * between them. The tessellation only has to be fine enough to SHADE well.
- */
+/** Longest triangle edge on a road at grade. */
 const GROUND_MAX_EDGE = TERRAIN_CELL / 2;
 /** A raised deck follows nothing, so it needs vertices only for its shading. */
 const RAISED_MAX_EDGE = TERRAIN_CELL;
 
-/**
- * What one build of the surfaces keeps for the next, so an edit rebuilds only
- * the tiles it reaches. Owned by the renderer; a build without it makes
- * everything afresh.
- */
+/** What one build of the surfaces keeps for the next, so an edit rebuilds only the tiles it reaches. */
 export interface SurfaceReuse {
-  /**
-   * The tiles of the last build, per structural level, by digest: what
-   * identifies each (`KeptTile`), not its arrays. DO NOT keep a tile's arrays
-   * here: copied into its block's mesh and sent to the GPU, they were a second
-   * copy of every road on the CPU (330 MB of a 1,280 m city's heap, 2026-10-15).
-   */
+  /** DO NOT keep a tile's arrays here */
   readonly tiles: Map<string, Map<number, KeptTile>>;
-  /**
-   * A digest of everything the height field and the texture frames read in a
-   * rectangle: the solved roads near it and the ground under it, both as
-   * shaped and as it naturally lies.
-   */
+  /** A digest of everything the height field and the texture frames read in a rectangle */
   readonly dependsOn: (minX: number, minY: number, maxX: number, maxY: number) => number;
   /** The paint materials, by colour: made once, not on every rebuild. */
   readonly paint: Map<string, Material>;
-  /**
-   * The meshes of each block of tiles (`CHUNK` tiles a side), by pass,
-   * surface and block, with the digests of the tiles they were merged from. A
-   * block whose tiles are the same keeps its mesh and its buffers on the GPU;
-   * one that changed is merged again, its tiles kept from before built again.
-   * Owned by the cache: `disposeSurfaceReuse` frees them.
-   */
+  /** The meshes of each block of tiles */
   readonly chunks: Map<string, { readonly parts: readonly number[]; readonly mesh: Mesh }>;
   /** Block meshes replaced but maybe still drawn: freed by the owner once the new roads are in. */
   readonly retired?: Mesh[];
-  /**
-   * Whether a block at (x, y), world units, is near the camera: made at full detail, its far level hidden; else only
-   * the far level goes to the GPU (`mesh/roadLod.ts`). Absent: every block is at full detail, with no far level.
-   */
+  /** Whether a block at (x, y), world units, is near the camera: made at full detail, its far level hidden */
   readonly near?: (x: number, y: number) => boolean;
-  /**
-   * Tiles kept from an earlier session (`derivedCache.ts`), by `storedKey`:
-   * a tile whose key comes round again is taken from here instead of built
-   * (Unreal's Derived Data Cache: derived data made once, kept locally, and
-   * made again whenever it is missing). Its key is everything the tile is
-   * built from, so a kept tile is the tile a build would make.
-   */
+  /** Tiles kept from an earlier session (`derivedCache.ts`), by `storedKey` */
   readonly stored?: Map<string, TileBundle>;
-  /**
-   * The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`):
-   * each build brings them up to the network's change instead of gathering every road of the map
-   * again. Absent, every build makes them from the whole map.
-   */
+  /** The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`) */
   readonly inputs?: SurfaceInputs;
-  /**
-   * Each tile built afresh, to be kept for a later session: called once its blocks are merged, when
-   * nothing of the build reads its arrays any more - the keeper may take them (transfer them).
-   */
+  /** Each tile built afresh, to be kept for a later session */
   readonly keep?: (key: string, bundle: TileBundle) => void;
 }
 
@@ -194,10 +117,7 @@ function sameTiles(parts: readonly number[], list: readonly PassTile[]): boolean
   return parts.length === list.length && list.every((tile, i) => tile.value === parts[i]);
 }
 
-/**
- * One surface's tiles in a block, built again from their rings (a lost WebGL
- * context, `mesh/gpuOnly.ts`): only that surface, each tile read as it was.
- */
+/** One surface's tiles in a block, built again from their rings (a lost WebGL context, `mesh/gpuOnly.ts`) */
 function surfaceSource(spec: SurfaceSpec, tiles: readonly { readonly rect: TileRect; readonly into: Reach }[],
   reading: <T>(work: () => T) => T): () => Tile[] {
   return () => tiles.map(({ rect, into }) =>
@@ -217,29 +137,14 @@ export interface RoadSurfaces {
   readonly rebuilt: readonly TileRect[];
   /** The time the tiles and their blocks took, ms, without the frames between slices. */
   readonly workMs: number;
-  /**
-   * Puts the blocks kept from the build before into `group`, at the swap.
-   * A mesh has one parent (three.js `Object3D.add` takes it from the one it
-   * had): added while the steps ran, each kept block left the roads still
-   * drawn, and the streets showed as grass until the new ones took their
-   * place - for as long as the job took, or longer when an edit overtook it.
-   */
+  /** Puts the blocks kept from the build before into `group`, at the swap. */
   adopt(): void;
   dispose(): void;
 }
 
-/**
- * Tiles a side of one mesh. Every tile of the network used to be merged into
- * one mesh per surface on every edit and sent to the GPU whole - 50 to 80 MB
- * and a 400-850 ms frame for one short street in the default town
- * (docs/performance.md #9). A block of tiles is merged on its own, and kept
- * while its tiles are.
- */
+/** Tiles a side of one mesh. */
 const CHUNK = 4;
-/**
- * Tiles a batch asked of the workers at once (`roadTilePool.ts`): enough to keep every worker busy
- * for a while, few enough that the shapes waiting to be read stay small.
- */
+/** Tiles a batch asked of the workers at once (`roadTilePool.ts`) */
 const SHAPE_BATCH = 64;
 
 /** Linear-space tints per road class, so the asphalt mesh can vary by class. */
@@ -248,7 +153,7 @@ const CLASS_TINT: readonly Color[] = ROAD_TYPES.map((type) =>
 );
 /** The tint the asphalt material is authored against, so 1.0 means "as baked". */
 const TINT_REFERENCE = new Color(0x3a3d3f);
-/** A carriageway's tone by what it is paved with (docs/VIAS.md V1); asphalt keeps its class's. */
+/** A carriageway's tone by what it is paved with; asphalt keeps its class's. */
 const CARRIAGEWAY_TINT: Readonly<Record<Exclude<CarriagewayMaterial, 'asphalt'>, Color>> = {
   concrete: new Color(0x8f8d88),
   cobble: new Color(0x6a5f52),
@@ -303,14 +208,7 @@ export function buildRoadSurfaces(
   return step.value;
 }
 
-/**
- * `buildRoadSurfaces` in steps: it yields after each tile built and each block
- * merged, so the renderer can spread an edit's tiles over frames while the
- * roads as they were stay drawn (`renderer.ts`), as a city builder updates a
- * road's mesh behind the frame (docs/performance.md #10). With
- * `reuse.retired`, the meshes a block replaces are handed there, not freed:
- * the roads still drawn may hold them until the new ones take their place.
- */
+/** `buildRoadSurfaces` in steps: it yields after each tile built and each block merged */
 export function* roadSurfaceSteps(
   net: Network,
   elevation: RoadElevation,
@@ -331,8 +229,7 @@ export function* roadSurfaceSteps(
   const usedChunks = new Set<string>();
   /** The blocks whose far level is being made by the workers (`mergeTiles`): the build waits for them before it ends. */
   let coarsening = 0;
-  // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`):
-  // drawn there anyway, its geometry went back to the GPU with no owner left to free it.
+  // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`)
   const retire = (mesh: Mesh): void => { cancelWarm(levelsOf(mesh)?.coarse ? [mesh, levelsOf(mesh)!.coarse!] : [mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
   const group = new Group();
   group.name = 'road-network';
@@ -341,29 +238,21 @@ export function* roadSurfaceSteps(
   let built = 0;
   let reused = 0;
   const rebuilt: TileRect[] = [];
-  // The paint of every colour, made at load (`paintCatalogue`): read here, never made. A colour not in
-  // it (none is: `tests/render/paintCatalogue.spec.ts`) takes the lane lines' paint; without a caller's
-  // catalogue (a test) the materials' road paint stands in.
+  // The paint of every colour, made at load (`paintCatalogue`): read here, never made.
   const paint = reuse?.paint;
   const paintFor = (color: string): Material => paint?.get(color) ?? paint?.get(LANE_LINE) ?? materials.asphalt;
 
   const reading = <T>(work: () => T): T => elevation.remembering ? elevation.remembering(work) : work();
-  // The inputs of every pass, kept road by road and node by node and brought up to the network by its
-  // change (`roadSurfaceInputs.ts`): an edit makes those of the items it touched. A build without a
-  // cache makes them from the whole map.
+  // The inputs of every pass, kept road by road and node by node and brought up to the network by its change
   const inputs = reuse?.inputs ?? new SurfaceInputs();
   inputs.refresh(net);
-  // Roads at authored heights are drawn on their own, each from its own
-  // deck, and those that run on from one another through a two-way node
-  // as ONE surface: drawn a segment at a time, every piece of a road raised in
-  // one stroke closed its ends, and the joins showed as lines and notched kerbs.
+  // Roads at authored heights are drawn on their own, each from its own deck
   const passes = inputs.passList();
   if (reuse) {
     const current = new Set(passes.map((pass) => pass.id));
     for (const id of reuse.tiles.keys()) if (!current.has(id)) reuse.tiles.delete(id);
   }
-  // Every pass may paint in every colour of the catalogue: a colour with no line in a tile draws
-  // nothing there (`roadTileShape.ts`), and the surfaces of a pass stay the same whatever is painted.
+  // Every pass may paint in every colour of the catalogue: a colour with no line in a tile draws nothing there
   const paintColours = inputs.paintColours();
   for (const pass of passes) {
     yield;
@@ -387,10 +276,7 @@ export function* roadSurfaceSteps(
       : isRaised(structure.id);
     const maxEdge = raised ? RAISED_MAX_EDGE : GROUND_MAX_EDGE;
 
-    // The footways' outer edges round each cell, for the verge's fall (`roadSurfaceReads.ts` `fromFootway`),
-    // made for the cells of the tiles this build makes, from the footways that reach them
-    // (`SurfaceInputs.footwayEdges`). DO NOT merge every footway of the pass: the union of a town's
-    // footways is one ring round the whole town (and one per block), 6.5 s of a 2,560 m city's roads.
+    // DO NOT merge every footway of the pass: the union of a town's footways is one ring round the whole town
     const footwayEdges = new Map<number, number[] | undefined>();
     const edgesAt = (key: number): number[] | undefined => {
       if (!footwayEdges.has(key)) footwayEdges.set(key, inputs.footwayEdges(pass.id, key));
@@ -433,12 +319,7 @@ export function* roadSurfaceSteps(
     };
     const specs = passSurfaces(desc, pageReads).map((read) => dress(read, raised, materials, groundMaterial, paintFor));
 
-    // Everything a tile's build reads besides its rings and its surroundings:
-    // the constants of every surface, so a change to one is a change to all.
-    // A paint colour's surface draws only in the tiles that hold lines of that
-    // colour, so its constants are in those tiles' keys alone: in every key,
-    // a road of a class with a colour new to the map (its centre line) made
-    // every tile of the town build again, a second's stall for one street.
+    // Everything a tile's build reads besides its rings and its surroundings
     const specSalt = (spec: SurfaceSpec): number => new Digest().addText(spec.options.name).add(spec.options.maxEdge)
       .add(spec.options.uvWorld ?? 0).add(spec.options.skirtUvScale ?? 0).add(spec.options.bottom ? 1 : 0)
       .add(spec.options.tint ? 1 : 0).value();
@@ -473,16 +354,11 @@ export function* roadSurfaceSteps(
       tiles.push({ value, chunk, rect, into, surfaces: surfaces ?? (stored ? [...stored.keys()] : null), bundle: stored ?? null });
       if (surfaces || stored) {
         reused++;
-        // A step too: the digests of every tile kept, back to back, were a
-        // slice of 20-30 ms after a road edit (docs/performance.md #34).
+        // A step too: the digests of every tile kept, back to back, were a slice of 20-30 ms after a road edit
         yield;
       }
     }
-    /**
-     * The roads a share of the tiles reads, for a worker (`roadTileMesh.ts`): the solved profiles near
-     * them and the alignment's chain, their looks, the flush footways and dropped kerbs filed there and
-     * the footways' edges in their cells - only what a vertex of those tiles can read, never the map's.
-     */
+    /** The roads a share of the tiles reads, for a worker (`roadTileMesh.ts`) */
     const dataFor = (rects: readonly TileRect[]): { data: SurfaceData; transfer: ArrayBuffer[] } => {
       // A unit round each tile: its vertices lie on its edges, and the cut puts some a rounding past them.
       const around = rects.map((r): [number, number, number, number] => [r[0] - 1, r[1] - 1, r[2] + 1, r[3] + 1]);
@@ -517,12 +393,7 @@ export function* roadSurfaceSteps(
       for (const array of [edgeData.keys, edgeData.ends, edgeData.xy]) transfer.push(array.buffer as ArrayBuffer);
       return { data: { field, looks: lookList, flush: flush.data, ramps: [...ramps], edges: edgeData }, transfer };
     };
-    /**
-     * Builds `list`'s tiles, each handed to `done`: made whole by the workers when there are some
-     * (`roadTilePool.ts`) - shaped and each vertex read there, over the roads near them handed over -
-     * while this thread draws; the page only takes the arrays. DO NOT cut, triangulate or read the
-     * vertices of a city's tiles on the page: the whole of its roads' build (2026-10-15).
-     */
+    /** DO NOT cut, triangulate or read the vertices of a city's tiles on the page: the whole of its roads' build (2026-10-15). */
     const offPage = tiler && elevation.fieldFor ? tiler : null;
     const buildAll = function* (list: readonly PassTile[], done: (tile: PassTile) => void): Generator<'wait' | void, void, void> {
       /** Asks the tiler for `SHAPE_BATCH` tiles from `from` on; the answer lands in the record it returns. */
@@ -540,9 +411,7 @@ export function* roadSurfaceSteps(
         );
         return { from, answer };
       };
-      // A batch at a time, the next asked before this one is taken: the workers make it while the page
-      // merges this one. DO NOT ask for every tile at once: a whole city's tiles held together, before
-      // any was merged, took the page past 7 GB (2026-10-15).
+      // DO NOT ask for every tile at once: a whole city's tiles held together, before any was merged, took the page past 7 GB
       let job = offPage && list.length ? ask(0) : null;
       let failed = false;
       for (let from = 0; from < list.length; from += SHAPE_BATCH) {
@@ -556,8 +425,7 @@ export function* roadSurfaceSteps(
         for (let k = from; k < Math.min(list.length, from + SHAPE_BATCH); k++) {
           const tile = list[k]!;
           const tileAt = performance.now();
-          // Made off the page: taken as it is. Else built here, every point of the tile remembered while
-          // its vertices are read (`RoadElevation.remembering`).
+          // Made off the page: taken as it is.
           const bundle = made ? made[k - from]! : reading(() => buildTile(tile.into, tile.rect, specs));
           tile.bundle = bundle;
           tile.surfaces = [...bundle.keys()];
@@ -589,9 +457,7 @@ export function* roadSurfaceSteps(
         else blocks.set(tile.chunk, [tile]);
       }
     }
-    // A block keeps its mesh while its tiles are the same (by digest). One that changed is merged
-    // again from the arrays of all its tiles: those kept from before hold none (`KeptTile`), and are
-    // built again from their rings - the tiles that made the mesh on the GPU, made the same way.
+    // A block keeps its mesh while its tiles are the same (by digest).
     const keyOf = (spec: SurfaceSpec, chunk: string): string =>
       `${pass.id}|${spec.options.name}|${chunk}|${spec.options.material.uuid}|${spec.renderOrder ?? ''}`;
     const again = new Set<PassTile>();
@@ -610,9 +476,7 @@ export function* roadSurfaceSteps(
         const key = keyOf(spec, chunk);
         const known = chunks?.get(key);
         let mesh: Mesh | null;
-        // A lost WebGL context puts the arrays back from this build's rings (`gpuOnly`), the block's
-        // tiles built again for this surface alone. DO NOT let the mesh hold its tiles for it: a
-        // second copy of every road on the GPU, kept on the CPU (81 MB of a 1,280 m city).
+        // DO NOT let the mesh hold its tiles for it: a second copy of every road on the GPU, kept on the CPU
         const source = surfaceSource(spec, list.map((tile) => ({ rect: tile.rect, into: tile.into })), reading);
         if (known && sameTiles(known.parts, list)) {
           mesh = known.mesh;
@@ -622,7 +486,6 @@ export function* roadSurfaceSteps(
         } else {
           if (known) retire(known.mesh);
           // The block's box and centre, to lock its edge in the far level and to tell near from far (`roadLod.ts`).
-          // Its far level is made by the workers, and only where there are some (`tiler.coarsen`).
           const coarsen = reuse?.near && tiler?.coarsen ? tiler.coarsen.bind(tiler) : null;
           const lock = coarsen ? blockBox(list.map((tile) => tile.rect)) : null;
           const near = lock ? reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) : true;
@@ -649,12 +512,7 @@ export function* roadSurfaceSteps(
             } : undefined);
           void started;
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
-          // Sent to the GPU ahead, a few a frame (`warmLooseAhead`), so its arrays let go at once
-          // (`mesh/gpuOnly.ts`). DO NOT wait for the camera to frame it: a block out of view was never
-          // uploaded and kept its copy on the CPU - 476 MB of a 2 560 m city's heap (asphalt, footway,
-          // kerb, verge, kerb ramps; 2026-10-15), and the whole map's would not fit a tab.
-          // The level that will be drawn: a block made far waits for its far level (it is sent when it arrives,
-          // its own mesh never is, `roadResidency.ts`); one near, or with no workers, is sent now.
+          // DO NOT wait for the camera to frame it: a block out of view was never uploaded and kept its copy on the CPU
           if (mesh && !(lock && !near)) void warmLooseAhead([mesh]);
           if (mesh) chunks?.set(key, { parts: list.map((tile) => tile.value), mesh });
           else chunks?.delete(key);
@@ -671,16 +529,14 @@ export function* roadSurfaceSteps(
     }
     // The tiles' arrays go with `tiles` here: copied into the blocks, which send them to the GPU.
     mergeMs += performance.now() - mergeAt;
-    // Kept for a later session only now, every block merged: nothing here reads a tile's arrays after
-    // this, so the keeper may hand them to another thread instead of copying them (`renderer.ts` keep).
+    // Kept for a later session only now, every block merged
     for (const tile of fresh) reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle!);
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
-  // The far levels still being made: the roads are put in place with them (a block made far has none of its own to
-  // draw until its far level comes). DO NOT wait without a deadline: `check` fails the pool when a worker is silent.
+  // DO NOT wait without a deadline: `check` fails the pool when a worker is silent.
   while (coarsening > 0) { tiler?.check(); yield 'wait'; }
-  // Where an edit's time went (`hitch:` entries, scripts/probe-hitches.mjs; docs/performance.md).
+  // Where an edit's time went (`hitch:` entries).
   const end = performance.now();
   performance.measure(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept ${remade} remade, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, { start: started, end });
   return {
@@ -739,10 +595,7 @@ function dress(read: SurfaceRead, raised: boolean, materials: SceneMaterials, gr
   }
 }
 
-/**
- * Every surface of one tile, from the rings that reach it: merged, banded and
- * clipped exactly as the whole network would be, then cut to the tile.
- */
+/** Every surface of one tile, from the rings that reach it */
 function buildTile(into: Reach, rect: TileRect, specs: readonly SurfaceSpec[]): TileBundle {
   return bundleOf(tileShapes(polysOf(into), rect, specs.map(tileSpecOf)), specs);
 }

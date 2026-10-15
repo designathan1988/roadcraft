@@ -12,15 +12,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * A BEND IS TAKEN AT A SPEED A DRIVER WOULD TAKE IT.
- *
- * Nothing used to slow a vehicle for the curvature of the road: a turn at a
- * junction took a fixed share of the limit and a curved street took none.
- * Measured before this, on a single bend of an urban street, vehicles pulled
- * 10.3 m/s² sideways, and on the saved player map 22 m/s² - more than twice
- * what a tyre holds - with 1 % of all samples over 1 g.
- */
+/** A BEND IS TAKEN AT A SPEED A DRIVER WOULD TAKE IT. */
 
 /** Curvature of a lanelet at `s`, over the same kind of chord a driver reads. */
 function curvatureAt(sim: SimWorld, lanelet: string, s: number): number {
@@ -49,10 +41,6 @@ function bendDoc(): RoadDoc {
 describe('curvature speed', () => {
   it('keeps the sideways pull of every bend within what a driver accepts', () => {
     // The sideways pull as a share of what THIS driver accepts at THIS speed
-    // (the figure falls with speed, `MAX_LATERAL_ACCEL`), plus what the chord
-    // estimate and one step of lag add; and never beyond the most anybody
-    // accepts at a crawl. The share is read against the speed AFTER the step,
-    // one step later than the cap was set from, which is worth a few per cent.
     const ceiling = 1.4;
     const absolute = MAX_LATERAL_ACCEL * 1.2 * 1.35;
     for (const [name, doc] of [['bend', bendDoc()], ['player-map', fixtureDoc()]] as const) {
@@ -86,10 +74,7 @@ describe('curvature speed', () => {
         const cap = curveSpeedCap(sim, v);
         if (cap >= v.v) continue;
         braked++;
-        // Braking for the bend, a driver never brakes harder than comfortably
-        // (IDM's b): the bend was seen in time. The speed follows the cap
-        // through the jerk-limited controller (`drive/physicalMotion.ts`), a
-        // step or two behind - so the gap to the cap is small, not zero.
+        // Braking for the bend, a driver never brakes harder than comfortably (IDM's b): the bend was seen in time.
         worstBraking = Math.max(worstBraking, -v.accel - v.driver.b);
         worstOverCap = Math.max(worstOverCap, (v.v - cap) / m(1));
       }

@@ -7,12 +7,7 @@ import { lotBox } from '@world/lotStore';
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 
-/**
- * The lots' owner (`world/lotStore.ts`): by place it answers what the walk
- * over every lot answered; the diary's entries of the lots carry their ids;
- * a working copy taken back and an undo give back the same lots, in the order
- * the walk would read them.
- */
+/** The lots' owner (`world/lotStore.ts`): by place it answers what the walk over every lot answered */
 const SIDE = m(1200);
 
 function square(rng: Rng): Omit<Lot, 'id'> {

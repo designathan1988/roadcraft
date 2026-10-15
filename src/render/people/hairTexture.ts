@@ -1,18 +1,6 @@
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, UnsignedByteType } from 'three';
 
-/**
- * The strand atlas a procedural hair card samples (`people/hair/procedural.ts`),
- * as DATA, not colour - the compact layout of the open-source Three.js hair
- * shader (github.com/creategamecharacters/threejs-hair-shader): R strand
- * coverage, G position from root (0) to tip (1), B a per-strand seed. The
- * shader turns them into the person's hair colour, darker at the roots,
- * each strand a little lighter or darker than its neighbours, and coverage
- * into alpha with no hard cut (alpha to coverage).
- *
- * Four strips side by side, root at the top (v = 0); a solid band along the
- * top for the painted scalp (the cap). Strands are rasterised directly:
- * each a tapered, slightly swaying line, ending at its own length.
- */
+/** The strand atlas a procedural hair card samples (`people/hair/procedural.ts`), as DATA, not colour */
 const CACHE = new Map<string, DataTexture>();
 
 export function hairStrandTexture(kind: 'straight' | 'wavy'): DataTexture {

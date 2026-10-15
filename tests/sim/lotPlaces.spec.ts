@@ -15,19 +15,7 @@ import { busy, kindOf, outShare, PEOPLE, type Mix } from '@sim/ambient/demand';
 import { ambientIndexWork } from '@sim/ambient/ambientIndex';
 import { LotPlaces, PLACE_KINDS } from '@sim/ambient/lotPlaces';
 
-/**
- * The lots people walk into (`sim/ambient/lotPlaces.ts`), drawn in O(log n)
- * and worked out only when drawn, against the old way (copied here as the
- * oracle): every building's way worked out, and a lot drawn by a walk over
- * all of them with the weight `PEOPLE x busy x frontage x share x decay`.
- *
- * - The same ways, through edits of the buildings and of the roads (a street
- *   door's foot off its footway).
- * - The same chances: the draw's sequence differs (another algorithm), so
- *   the frequencies of many draws are held to the oracle's probabilities by
- *   a chi-square test, with lots not yet worked out among them.
- * - The game still runs the same for the same seed.
- */
+/** The lots people walk into (`sim/ambient/lotPlaces.ts`), drawn in O(log n) and worked out only when drawn */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },
@@ -102,11 +90,7 @@ const coefOf = (hour: number, out: boolean): number[] => PLACE_KINDS.map((kind) 
   return PEOPLE[kind] * busy(kind, hour) * (out ? share : 1 - share);
 });
 
-/**
- * Pearson's chi-square of `draws` (by building id) against the oracle's
- * weights; categories expected fewer than 5 times pooled. Returns the
- * statistic and the degrees of freedom.
- */
+/** Pearson's chi-square of `draws` (by building id) against the oracle's weights */
 function chiSquare(counts: Map<number, number>, weights: Map<number, number>, draws: number): { chi: number; df: number; stray: number } {
   let total = 0;
   for (const v of weights.values()) total += v;
@@ -123,11 +107,7 @@ function chiSquare(counts: Map<number, number>, weights: Map<number, number>, dr
   return { chi, df, stray };
 }
 
-/**
- * The chi-square a fit exceeds with a chance of one in a million (z = 4.75),
- * by the Wilson-Hilferty cube-root normal approximation (Wilson and
- * Hilferty, 1931): a draw 100 000 times off by a few per cent goes past it.
- */
+/** The chi-square a fit exceeds with a chance of one in a million */
 const chiCritical = (df: number): number => df * (1 - 2 / (9 * df) + 4.75 * Math.sqrt(2 / (9 * df))) ** 3;
 
 let doc: RoadDoc;
@@ -208,9 +188,7 @@ describe('the lots people walk into', () => {
     const verified = ambientIndexWork.verified;
     const rng = new Rng(0xd1ce);
     const DRAWS = 40_000;
-    // Lots whose way fronts less than its bound (a gate other than the widest
-    // one): their frontage cut to 30-100 % of the way's, by the building -
-    // the draw must turn them down that often.
+    // Lots whose way fronts less than its bound (a gate other than the widest one)
     const cut = (id: number): number => 0.3 + 0.7 * new Rng(id * 7919).float();
     const shrunk = new WeakMap<DoorWay, DoorWay>();
     const narrower = (b: Building): DoorWay | null => {

@@ -5,12 +5,7 @@ import { TUNNEL_GRADE, roadStructure } from '@world/structures';
 import { DEFAULT_POLE_SPACING, MAX_POLE_SPACING, MIN_POLE_SPACING } from '@world/utilities';
 import { m } from '@world/units';
 
-/**
- * The road tuning (`world/roads/tuning.ts`, docs/source/VIAS.md V0) holds the LIVE
- * figures exactly as the code had them before it existed: moving them into
- * one place must not change the game. A live figure changes only by the
- * player's decision, and then this lock changes with it, on purpose.
- */
+/** The road tuning (`world/roads/tuning.ts`) holds the LIVE figures exactly as the code had them */
 describe('road tuning', () => {
   it('keeps every live figure at the value the game ran on', () => {
     expect(ROAD_TUNING.grade.ground).toBe(0.12);

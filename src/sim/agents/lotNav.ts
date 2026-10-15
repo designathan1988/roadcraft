@@ -2,25 +2,7 @@ import { Heap } from '@core/heap';
 import { m } from '@world/units';
 import type { BuildingElement, ElementKind } from '@world/buildings/types';
 
-/**
- * Driving inside a car park: a grid over the lot, its cells blocked where a
- * car cannot go (walls, the stalls themselves, fences, hedges, trees, posts),
- * and the distance from every free cell to the nearest way out onto a street.
- * A car leaving its stall follows that distance down the aisles to the exit;
- * one arriving drives the same way in reverse. Grid path planning with a
- * multi-source distance field, as car-park and crowd navigation commonly do;
- * the path is then pulled taut and driven as smooth curves (`manoeuvre.ts`).
- *
- * All coordinates here are the building's local frame (the lot's own axes).
- *
- * The same grid serves a person walking from a lot's gate to its door
- * (`agents/lotDoors.ts`), built for that walker as clearance-based
- * pathfinding builds one per kind of agent (Harabor, "Clearance-based
- * pathfinding", 2009: an agent may use a tile only where the clearance is at
- * least its size, for the terrain it can cross): finer cells, a body's
- * clearance instead of a car's, and stairs and ramps walkable. Built with the
- * car's clearance, a 1.2 m person's gate was shut.
- */
+/** Driving inside a car park: a grid over the lot, its cells blocked where a car cannot go */
 
 /** Cell size of a car's grid. */
 const DEFAULT_CELL = m(0.75);
@@ -45,13 +27,7 @@ export interface LotGridOptions {
   readonly clearance?: number;
   readonly solid?: ReadonlySet<ElementKind>;
 }
-/**
- * A person's grid: 20 cm cells, so a gate's opening (1.3 m between the fence
- * ends at the narrowest, `editor/lotPlan.ts`) keeps free cells after the
- * supercover rounds each fence end out by up to a cell; grown by 0.25 m, the
- * nearest free cell's centre is a cell and a half (0.3 m) from the edge of
- * the solid cell, more than a body's radius (0.27 m, `agents/walk.ts` BODY).
- */
+/** A person's grid: 20 cm cells, so a gate's opening */
 export const PEOPLE_GRID: LotGridOptions = { cell: m(0.2), clearance: m(0.25), solid: PEOPLE_SOLID };
 
 export interface LotRect { readonly x: number; readonly y: number; readonly w: number; readonly d: number }
@@ -83,25 +59,13 @@ function elementCorners(el: LotPart): { x: number; y: number }[] {
   return [[-sx, -sy], [sx, -sy], [sx, sy], [-sx, sy]].map(([a, b]) => ({ x: el.x + a! * c - b! * s, y: el.y + a! * s + b! * c }));
 }
 
-/**
- * A convex ring's separating-axis test against the cells of a grid, set up
- * once per ring: its points flat, and its sides' axes with the ring's own
- * extent along each (which no cell changes). `touches` answers exactly what a
- * test of the square and the ring's every side from scratch answers, with the
- * same products; the ring's extents are only not worked out again per cell.
- * DO NOT build arrays per cell here: a lot's parts are tested over every cell
- * of their boxes, and the arrays made per cell were most of a lot's grid.
- */
+/** DO NOT build arrays per cell here */
 class RingCover {
   private readonly px: Float64Array;
   private readonly py: Float64Array;
   /** Per side with an axis: ax, ay, the ring's least and greatest projection on it. */
   private readonly sides: Float64Array;
-  /**
-   * The square's four axes last met, and the ring's extent on each: a cell's
-   * axes are its corners' differences, the cell's size give or take a
-   * rounding, so the same few come again cell after cell.
-   */
+  /** The square's four axes last met, and the ring's extent on each */
   private readonly squareAxes = new Float64Array(16).fill(NaN);
 
   constructor(ring: readonly { x: number; y: number }[]) {
@@ -121,10 +85,7 @@ class RingCover {
     this.sides = Float64Array.from(sides);
   }
 
-  /**
-   * Whether the ring overlaps the cell square from (`cx`, `cy`) `size`
-   * across: separating axes of the square's sides and of the ring's.
-   */
+  /** Whether the ring overlaps the cell square from (`cx`, `cy`) `size` across */
   touches(cx: number, cy: number, size: number): boolean {
     // The square's corners: (cx, cy), (x1, cy), (x1, y1), (cx, y1).
     const x1 = cx + size, y1 = cy + size;
@@ -134,8 +95,7 @@ class RingCover {
     for (let k = 0; k < s.length; k += 4) {
       if (apart(cx, cy, x1, y1, s[k]!, s[k + 1]!, s[k + 2]!, s[k + 3]!)) return false;
     }
-    // The square's sides in order, each axis the difference of a side's corners turned a quarter:
-    // (cx, cy) to (x1, cy), to (x1, y1), to (cx, y1), back to (cx, cy).
+    // The square's sides in order, each axis the difference of a side's corners turned a quarter: (cx, cy) to (x1, cy), to
     for (let k = 0; k < 4; k++) {
       const ax = k === 1 ? -(y1 - cy) : k === 3 ? -(cy - y1) : -0;
       const ay = k === 0 ? x1 - cx : k === 2 ? cx - x1 : 0;
@@ -159,22 +119,7 @@ function apart(cx: number, cy: number, x1: number, y1: number, ax: number, ay: n
   return a1 <= b0 || b1 <= a0;
 }
 
-/**
- * The cells whose centre a wall ring holds, marked row by row: a scanline
- * fill (Foley, van Dam, Feiner and Hughes, "Computer Graphics: Principles and
- * Practice", 3.6 "Filling polygons": a row's crossings sorted, the cells
- * between each odd crossing and the next inside). A centre is inside by the
- * even-odd rule of Franklin's PNPOLY, with its inequalities and its crossing
- * point to the bit: a side crosses the row at `y` when one end is above it
- * and the other not, at the `x` PNPOLY computes, and the centre is inside
- * when an odd number of crossings lie to its right. A closed ring crosses a
- * row an even number of times (each crossing changes which side of the row
- * the walk round it is on, and the walk ends where it began), so the centres
- * with an odd number to their right are those from a sorted crossing of even
- * index (0, 2, ...) up to, not including, the next.
- * DO NOT test every cell's centre against every ring again: a lot's cells
- * times its walls' sides was a third of a lot's grid.
- */
+/** DO NOT test every cell's centre against every ring again */
 function fillRing(solid: Uint8Array, nx: number, ny: number, x0: number, y0: number, cell: number,
   ring: readonly { x: number; y: number }[], xs: number[]): void {
   const n = ring.length;
@@ -204,20 +149,7 @@ function fillRing(solid: Uint8Array, nx: number, ny: number, x0: number, y0: num
   }
 }
 
-/**
- * The solid cells grown by a disc of `reach` cells: every cell within
- * `reach` (centre to centre, strictly) of a solid one is blocked. Only the
- * solid cells on the edge of the solid (a neighbour of the four free, or off
- * the grid) spread the disc; an inner one is blocked itself and spreads
- * nothing the others do not. From an inner solid cell a, the cell a + d (d not
- * zero) is a' + d' with a' = a + e, e one step along a non-zero component of
- * d with its sign: a' is solid, and d' = d - e is strictly shorter than d, so
- * within the disc. Each such step shortens d, so the walk ends at an edge
- * cell spreading the rest of d, or at d' = 0, a solid cell: the same cells as
- * every solid cell spreading the disc, as the grid was grown before.
- * DO NOT spread the disc from every solid cell again: the inside of a row of
- * stalls blocked, over and over, what its edge had blocked.
- */
+/** DO NOT spread the disc from every solid cell again */
 function growByClearance(solid: Uint8Array, nx: number, ny: number, reach: number): Uint8Array {
   const blocked = solid.slice();
   const r = Math.ceil(reach);
@@ -242,12 +174,7 @@ function growByClearance(solid: Uint8Array, nx: number, ny: number, reach: numbe
   return blocked;
 }
 
-/**
- * The lot's grid: `walls` are the buildings' footprints already in this
- * building's local frame; `exits` the points (local) cars leave the lot by.
- * `options`: a car's grid when absent; a person's is `PEOPLE_GRID`. Cell for
- * cell the grid of before (`tests/sim/indexes/lotGridSame.spec.ts`).
- */
+/** The lot's grid: `walls` are the buildings' footprints already in this building's local frame; `exits` the points */
 export function buildLotGrid(b: { readonly elements?: readonly LotPart[] }, lot: LotRect, walls: readonly (readonly { x: number; y: number }[])[],
   exits: readonly { readonly inner: { x: number; y: number }; readonly edge: { x: number; y: number } }[],
   options: LotGridOptions = {}): LotGrid {
@@ -263,10 +190,7 @@ export function buildLotGrid(b: { readonly elements?: readonly LotPart[] }, lot:
   // Solid where a cell's centre is inside a wall (`fillRing`).
   const xs: number[] = [];
   for (const ring of walls) fillRing(solid, nx, ny, x0, y0, CELL, ring, xs);
-  // The parts are marked in every cell they touch (a supercover, Red Blob
-  // Games "Line drawing on a grid"): a fence 12 cm thick lies between the
-  // centres of cells 75 cm apart, and marked by the centres it covered it was
-  // not in the grid at all - cars drove through the boundary, not its gate.
+  // The parts are marked in every cell they touch (a supercover, Red Blob Games "Line drawing on a grid")
   for (const ring of solids) {
     let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity;
     for (const p of ring) { rx0 = Math.min(rx0, p.x); ry0 = Math.min(ry0, p.y); rx1 = Math.max(rx1, p.x); ry1 = Math.max(ry1, p.y); }
@@ -280,15 +204,12 @@ export function buildLotGrid(b: { readonly elements?: readonly LotPart[] }, lot:
       }
     }
   }
-  // Grown by the clearance: a free cell is one a car's centre can stand on,
-  // `CLEARANCE` from the nearest solid cell's EDGE (its centre is half a cell in).
+  // Grown by the clearance: a free cell is one a car's centre can stand on, `CLEARANCE` from the nearest solid cell's EDGE
   const blocked = growByClearance(solid, nx, ny, (CLEARANCE + CELL / 2) / CELL);
   // Distance from the exits over free cells (Dijkstra, eight neighbours).
   const dist = new Float32Array(nx * ny).fill(Infinity);
   const exitOf = new Int32Array(nx * ny).fill(-1);
-  // Each cell with the distance it was reached at, fixed in the entry
-  // (`@core/heap`). DO NOT key a heap on `dist[cell]`: a waiting entry's key
-  // then falls under it when a shorter way lowers `dist`.
+  // DO NOT key a heap on `dist[cell]`: a waiting entry's key then falls under it when a shorter way lowers `dist`.
   const heap = new Heap();
   const grid0 = { x0, y0, cell: CELL, nx, ny, blocked };
   exits.forEach((ex, n) => {
@@ -360,11 +281,7 @@ export function sees(g: Pick<LotGrid, "x0" | "y0" | "cell" | "nx" | "ny" | "bloc
   return true;
 }
 
-/**
- * The way from a local point (in front of a stall) down the aisles to the
- * nearest exit: the cells walked downhill on the distance field, pulled taut
- * so only the turns remain. Null when the point reaches no exit.
- */
+/** The way from a local point (in front of a stall) down the aisles to the nearest exit */
 export function wayOut(g: LotGrid, x: number, y: number): { points: { x: number; y: number }[]; exit: number } | null {
   let cell = freeCellNear(g, x, y);
   if (cell < 0) return null;

@@ -7,12 +7,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
-/**
- * The sites and the town's platforms taken in a change at a time, by the ids
- * the diary gives (`BuildingStore.changedSince`, AUDITORIA C8): after any
- * edits they say what a grading that reads the whole store says - the same
- * box of changed sites, the same platforms, the same ground at every point.
- */
+/** The sites and the town's platforms taken in a change at a time, by the ids the diary gives */
 const slope = (x: number, y: number): number => x * 0.05 + y * 0.02;
 const bank = (b: Building): SiteBox => [b.x - m(30), b.y - m(30), b.x + m(30), b.y + m(30)];
 

@@ -9,38 +9,7 @@ import type { Gore } from './gore';
 import { joltWorld, startJolt, type JointSpec, type JoltRagdoll, type JoltStatic, type JoltWorld, type PartSpec } from './ragdollJolt';
 import { across, coneFrames, direction, hingeFrame, unitOr } from './ragdollAxes';
 
-/**
- * Ragdolls: people knocked over or killed by a blow, or tripping, their own
- * bodies falling.
- *
- * Jakobsen's method, as Hitman's dead bodies were done ("Advanced Character
- * Physics", GDC 2001): the skeleton is a stick figure of particles at the
- * joints - pelvis, chest, neck, head, shoulders, elbows, wrists, hips, knees,
- * ankles, toes - moved by Verlet integration and held together by distance
- * constraints relaxed several times a step: rigid sticks for the bones and a
- * braced torso, ranges for what a joint allows (a knee folds only so far, and
- * only forwards; an elbow only backwards; the head does not fold into the
- * chest). Collisions are projections: a particle below the ground, inside a
- * wall or under a roof is put back on its surface and loses most of its speed
- * into it and some along it (friction). Every bone of the real skeleton is
- * then turned and placed from the particles - each limb's frame derived from
- * its particles with cross products, so knees and elbows bend the way the
- * particles do - and its skin matrix written into the body's palette: the
- * person's own mesh, clothes and hair tumble with arms and legs loose, strike
- * walls and the ground, and come to rest sprawled where they fell.
- *
- * The dead never get up. Right under a blow a body is torn apart: sticks are
- * broken (the head, an arm at the shoulder, a leg at the hip) and each piece
- * flies on its own, spraying blood; a piece is drawn as the whole body with
- * every bone not on it shrunk to the joint it was torn from, so the stump
- * closes. Bodies lie in their blood for a few minutes, then sink away.
- *
- * The living - knocked over by a blast, or tripping on the pavement - lie
- * dazed a moment, then get up the way games bring a ragdoll back to its feet
- * (blend the lying pose into the first frame of a get-up animation, then
- * play it): into a crouch over a short blend, then the crouch-to-stand clip,
- * where the body lies; the simulation is told where (`getUp`), and they run.
- */
+/** Ragdolls: people knocked over or killed by a blow, or tripping, their own bodies falling. */
 
 export interface RagdollCitizens {
   capturedPose(id: number): { index: number; palette: Float32Array; transform: Matrix4 } | null;
@@ -185,11 +154,7 @@ const MAX_BODIES = 40;
 const CRAWL_AFTER = 4;
 /** Seconds from lying face down to on hands and knees, ready to crawl. */
 const CRAWL_UP = 1.1;
-/**
- * Bodies simulated by Jolt (`ragdollJolt.ts`), not the stick figure (`step`,
- * which still carries a body until Jolt has loaded; `?ragdoll=verlet` keeps
- * it for every body).
- */
+/** Bodies simulated by Jolt (`ragdollJolt.ts`), not the stick figure */
 const JOLT = typeof location !== 'undefined' && new URLSearchParams(location.search).get('ragdoll') !== 'verlet';
 
 /** Starts loading the physics the bodies fall with (Jolt): when the Actions are chosen, or the first time a body falls. */
@@ -233,12 +198,7 @@ interface Survivor {
   clip: number;
   /** Whether the get-up clip is baked. */
   ready?: boolean;
-  /**
-   * Getting up from lying (`rise`): the body moved through key poses from
-   * where it lies - rolled onto its front if it lay face up, pushed up onto
-   * hands and knees, drawn back into the crouch the get-up clip starts from -
-   * before the clip (`pre` seconds of it, then `blend` into the clip).
-   */
+  /** Getting up from lying (`rise`): the body moved through key poses from where it lies */
   keys?: { stages: { from: Vector3[]; to: Vector3[]; start: number; end: number; roll?: { axis: Vector3; at: Vector3; lift: number } }[] };
   pre?: number;
   blend?: number;
@@ -283,10 +243,7 @@ interface Body {
   /** Parts lost before the fall (shot off, `Casualty.lost`): drawn closed at their joint. */
   lostParts: Set<PartName>;
   survivor: Survivor | undefined;
-  /**
-   * A limb torn off, a body of its own (`detach`): only `keep` simulated and
-   * drawn, every other particle held at `root`, where it was torn from.
-   */
+  /** A limb torn off, a body of its own (`detach`) */
   pin?: { readonly root: number; readonly keep: ReadonlySet<number> };
   /** Called when the body goes (a twin given back). */
   drop?: (() => void) | undefined;
@@ -301,12 +258,7 @@ interface Body {
   mush?: boolean;
   /** Opened at the belly, the guts out (`openBelly`). */
   opened?: boolean;
-  /**
-   * Seconds left of joint friction (`joints`): a body just struck moves as
-   * a body, not a bundle of loose sticks - its limbs' speeds drawn towards
-   * their neighbours', no pose forced on it (pose springs fighting the
-   * sticks made a shot body writhe like elastic).
-   */
+  /** Seconds left of joint friction (`joints`): a body just struck moves as a body, not a bundle of loose sticks */
   stiff?: number;
   /** Which piece each particle is on: the body itself, or a limb torn off. */
   comp: number[];
@@ -317,12 +269,7 @@ interface Body {
   age: number;
   flying: number;
   pooled: boolean;
-  /**
-   * Simulated by Jolt (`ragdollJolt.ts`): its parts; the colliders made for
-   * it (its ground, the walls round it), shared with the pieces torn off it;
-   * and its particles as last set from the parts, to tell a change made to
-   * them since (a push) from the motion itself.
-   */
+  /** Simulated by Jolt (`ragdollJolt.ts`): its parts; the colliders made for it */
   jolt?: JoltRagdoll | undefined;
   colliders?: { list: JoltStatic[]; users: number } | undefined;
   synced?: { p: Vector3[]; o: Vector3[] } | undefined;
@@ -390,22 +337,11 @@ export interface Ragdolls {
   drip(x: number, y: number, z: number, size: number): void;
   /** Called where a body is torn apart (world x, y, height z; the way it flew; how fast): the renderer throws its pieces. */
   onGore: ((x: number, y: number, z: number, dirX: number, dirY: number, speed: number, kind: 'torn' | 'dead') => void) | null;
-  /**
-   * Somebody falling (a `fall` pause), from the pose they were last drawn in:
-   * tripping forwards, or knocked towards `away` (world angle) by a punch or
-   * a shove - over their heels when it is behind them.
-   */
+  /** Somebody falling (a `fall` pause), from the pose they were last drawn in: tripping forwards, or knocked towards `away` */
   trip(id: number, heading: number, citizens: RagdollCitizens, world: RagdollWorld, away?: number | null): void;
   /** Whether somebody's own body is on the ground here, so the crowd does not draw them standing too. */
   hides(id: number): boolean;
-  /**
-   * A shot along the line of sight from `a` to `b` (three's frame) at the
-   * bodies on the ground: the one it strikes holed, bled, pushed, a limb or
-   * the head shot off at the second hit there, shot to a heap of meat at the
-   * last (the player, 2026-10-06: "se continuar atirando vai causar mais
-   * dano ... até virar um monte de carne"). Somebody alive on the ground is
-   * the simulation's to hurt: their id and the part struck come back.
-   */
+  /** A shot along the line of sight from `a` to `b` (three's frame) at the bodies on the ground */
   shootBody(a: Vector3, b: Vector3): { alive: number; part: BodyPart } | 'hit' | null;
   /** Lets go of those who are up again once the simulation has them up too (`down` false). */
   release(down: (id: number) => boolean): void;
@@ -417,12 +353,7 @@ export interface Ragdolls {
   stats(): { bodies: number; moving: number; pieces: number; living: number };
   /** Each body's pelvis, phase and fate (for probes). */
   debug(): { pelvis: number[]; head: number[]; asleep: boolean; phase: string; torn: boolean }[];
-  /**
-   * Everything about each body for a test bench (the weapons lab,
-   * `src/weaponsLab.ts`): its particles (world x, y, height), how far the
-   * lowest sits into the ground, how deep any is inside a wall, how far the
-   * bones are off their lengths, how fast it moves, what it is doing.
-   */
+  /** Everything about each body for a test bench (the weapons lab): its particles */
   probe(): RagdollProbe[];
   /** Every body, piece and stain gone (the weapons lab's clean slate). */
   clear(): void;
@@ -430,10 +361,7 @@ export interface Ragdolls {
 
 export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null = null): Ragdolls {
   const bodies: Body[] = [];
-  // Jolt (some 3.5 MB of WebAssembly) is loaded when the Actions are taken up
-  // (`warmPhysics`), not in every session: the effects are made ahead at idle
-  // for the first shot, and loading Jolt with them downloaded and compiled it
-  // for every player who never shoots (web.dev: load code on interaction).
+  // Jolt (some 3.5 MB of WebAssembly) is loaded when the Actions are taken up (`warmPhysics`), not in every session
   let separated = false;
   const decals: BloodDecal[] = [];
   /** The casualty records already turned into bodies (`absorb`). */
@@ -453,8 +381,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     const sk = pose ? citizens.skeletonOf(pose.index) : null;
     if (!pose || !sk) return null;
     const bones = sk.names.length;
-    // Each bone's world matrix in the pose drawn. The crowd draws a bone as
-    // instance * local * bind^-1 * palette, the palette being W * boneInverse.
+    // Each bone's world matrix in the pose drawn.
     const rebind = sk.local.clone().multiply(sk.bind.clone().invert());
     const unbind = rebind.clone().invert();
     const binds = sk.inverses.map((inv) => inv.clone().invert());
@@ -508,16 +435,13 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       [LS, LE], [LE, LW], [RS, RE], [RE, RW], [LH, LK], [LK, LA], [LA, LT], [RH, RK], [RK, RA], [RA, RT],
     ] as const) rigid(a, b);
     // The neck bends, the head nods and turns, but neither folds into the chest.
-    // Firmer than a free joint: a shot body's head does not flop (Euphoria's shot keeps the neck stiff at first).
     range(HEA, CHE, 0.88, 1.03);
     range(TOP, CHE, 0.82, 1.03);
     range(TOP, BEL, 0.85, 1.1);
-    // Not folded past what the clothes follow: tighter than this the skin
-    // came through the sleeves and trouser legs at the elbow and the knee.
+    // Not folded past what the clothes follow
     fold(LS, LE, LW, 0.42); fold(RS, RE, RW, 0.42);
     fold(LH, LK, LA, 0.5); fold(RH, RK, RA, 0.5);
     // Ankles: `ankles` (an angle range; a knee-to-toe distance let the foot swing round the shin).
-    // Shoulders and hips: an arm or a leg swings wide, but not through the body.
     range(CHE, LE, 0.5, 1.6); range(CHE, RE, 0.5, 1.6);
     range(BEL, LK, 0.55, 1.45); range(BEL, RK, 0.55, 1.45);
     range(CHE, LK, 0.55, 1.25); range(CHE, RK, 0.55, 1.25);
@@ -531,12 +455,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       // Limbs as thick as they are drawn: thinner, a knee or a shin sank into the ground.
       : k === LW || k === RW || k === LT || k === RT ? 0.055 : 0.07));
     const walls: Wall[] = world.wallsNear(x, y, m(35))
-      // A wall the body starts in or against does not hold it: the building it
-      // is blown out of (its pieces still being made), a doorway, a lot it
-      // stood in. Collisions are projections (Jakobsen, "Advanced Character
-      // Physics"), each particle moved the least way out: one started inside
-      // went up on to the roof, the next out of a face metres off, and the
-      // sticks drew the body back together over seconds - a giant shrinking.
+      // A wall the body starts in or against does not hold it: the building it is blown out of
       .filter((wall) => !inside(wall.ring, x, y) && !p.some((v, k) => {
         if (v.y > wall.top + radius[k]!) return false;
         const wx = v.x, wy = -v.z;
@@ -628,10 +547,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     head: [HEA, TOP], torso: [CHE, NEC, BEL], armL: [LE, LW], armR: [RE, RW], legL: [LK, LA], legR: [RK, RA],
   };
 
-  /**
-   * A bullet's push: the part it went into knocked back from the shooter, the
-   * chest a little with it (a leg shot takes the leg from under them).
-   */
+  /** A bullet's push: the part it went into knocked back from the shooter, the chest a little with it */
   const shove = (body: Body, c: Casualty): Vector3 => {
     const dir = new Vector3(c.x - c.blastX, 0, -(c.y - c.blastY));
     if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
@@ -642,13 +558,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       const push = hit.includes(k) ? m(leg ? 2.2 : 1.6) : k === CHE || k === NEC || k === HEA || k === TOP ? m(0.7) : 0;
       if (push > 0) body.o[k]!.addScaledVector(dir, -push * STEP);
     }
-    // And over it goes, backwards, the way the round went: the upper body
-    // carried on along it while the knees give. Dropped straight down, the
-    // body folded onto its knees and stayed there kneeling, or curled in a
-    // ball; toppled forwards, a shot person was never seen knocked back (the
-    // player, 2026-10-06).
-    // A leg shot out from under them: down forwards onto knees and hands
-    // (euphoria's leg-shot reaction), not thrown back.
+    // And over it goes, backwards, the way the round went: the upper body carried on along it while the knees give.
     const buckle = c.kind === 'knocked' && leg;
     const over = buckle ? new Vector3(Math.cos(c.heading), 0, -Math.sin(c.heading)) : dir;
     for (const k of [CHE, NEC, HEA, TOP, LS, RS, BEL]) body.o[k]!.addScaledVector(over, -(buckle ? m(0.9) : c.kind === 'knocked' ? m(1.5) : m(1.8)) * STEP);
@@ -696,21 +606,17 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     for (const limb of c.lost ?? []) for (const part of LOST_PARTS[limb]) body.lostParts.add(part);
     body.recordId = c.id;
     if (body.survivor && c.lieFor !== undefined) body.survivor.lie = c.lieFor;
-    // Bled out on their feet or crawling: the strength goes and they slump
-    // over, the trunk down and to a side - left as it was, a body on hands
-    // and knees stood there like a table (2026-10-07).
+    // Bled out on their feet or crawling: the strength goes and they slump over, the trunk down and to a side
     if (c.faded) {
       const side = Math.random() < 0.5 ? 1 : -1;
       const lean = new Vector3(Math.cos(c.heading + side * Math.PI / 2), -1.2, -Math.sin(c.heading + side * Math.PI / 2));
       for (const k of [CHE, NEC, HEA, TOP, LS, RS, BEL]) body.o[k]!.addScaledVector(lean, -m(1.4) * STEP);
     }
     if (body.survivor && c.crawl) body.survivor.crawl = { since: 0 };
-    // A bullet does not throw a body: a small push where it went in, the
-    // rest is the body itself giving way under its own weight.
+    // A bullet does not throw a body: a small push where it went in
     const speed = c.struck ? m(0.6) : c.kind === 'knocked' ? m(2.5 + 4 * c.power) : m(4 + 9 * c.power);
     const dir = c.struck ? shove(body, c) : blast(body, c, speed);
     // Alive going down: the arms out the way they fall, to take it
-    // (Euphoria's catch-fall), not dead weight hitting the ground.
     if (c.struck && c.kind === 'knocked') {
       const leg = c.struck === 'legL' || c.struck === 'legR';
       const way = leg ? new Vector3(Math.cos(c.heading), 0, -Math.sin(c.heading)) : dir;
@@ -720,11 +626,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.stiff = 1.6;
     const chest = body.p[CHE]!;
     if (c.kind === 'torn') {
-      // Torn: thrown harder, limbs flung, blood everywhere - but whole. A
-      // limb torn off by shrinking its bones to the joint (one palette per
-      // piece) dragged every vertex the joint's two sides share half-way to
-      // it: blades of skin. Tearing needs the mesh cut and capped at the
-      // joint, as games author it; until then the body stays in one piece.
+      // Torn: thrown harder, limbs flung, blood everywhere - but whole.
       for (const limb of LIMBS.filter(() => Math.random() < 0.5)) {
         const kick = new Vector3(Math.random() - 0.5, 0.3 + Math.random() * 0.6, Math.random() - 0.5).multiplyScalar(speed * 0.5).addScaledVector(dir, speed * 0.3);
         for (const k of limb) body.o[k]!.addScaledVector(kick, -STEP);
@@ -740,9 +642,6 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     } else if (c.kind === 'dead') {
       exhaust.burst(chest.x, -chest.z, chest.y, 24, 4, m(0.25), m(0.045), 0.9);
       // Dead: the pool spreads under the body where it comes to rest
-      // (`update`, pooled), not where they stood or were thrown from (a rider
-      // shot off a motorcycle, somebody thrown by a blast); and a bullet
-      // throws no pieces of them about - a blast does.
       for (let k = 0; k < 4; k++) {
         const a = Math.random() * Math.PI * 2, r = m(0.8 + Math.random() * 2.5);
         bleed(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, groundHere, m(0.3 + Math.random() * 0.5), 0);
@@ -751,9 +650,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     }
     add(body);
     sever(body, c, dir, citizens);
-    // A blast tears a body open (one torn apart, most often); a bullet never
-    // does it at once - only a body already dead, shot again and again in
-    // the belly (`shootBody`).
+    // A blast tears a body open (one torn apart, most often); a bullet never does it at once
     if (!c.struck && (c.kind === 'torn' ? Math.random() < 0.7 : c.kind === 'dead' && Math.random() < 0.12)) {
       openBelly(body, dir.clone().multiplyScalar(m(3)), 2 + Math.floor(Math.random() * 3));
     }
@@ -779,11 +676,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
   let lastCitizens: RagdollCitizens | null = null;
   let world0: RagdollWorld | null = null;
 
-  /**
-   * A body shot to pieces: every limb and the head off it if still on, the
-   * trunk soaked through, scraps of flesh over the ground round it and a
-   * wide pool spreading - a heap of meat, as GTA leaves a body shot apart.
-   */
+  /** A body shot to pieces: every limb and the head off it if still on, the trunk soaked through */
   const mush = (body: Body, citizens: RagdollCitizens): void => {
     body.mush = true;
     const at = body.p[body.pin ? body.pin.root : CHE]!;
@@ -853,13 +746,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.colliders = undefined;
   };
 
-  /**
-   * A limb (or the head) torn off at a blow: a body of its own from here -
-   * the person's own arm, leg or head, their sleeve and skin on it, closed at
-   * the joint it came from (as GTA's and Soldier of Fortune's dismemberment
-   * swap in the severed part) - kicked off the way the blow went; the body
-   * left without it, closed at the stump.
-   */
+  /** A limb (or the head) torn off at a blow: a body of its own from here */
   const detach = (body: Body, limb: Severable, citizens: RagdollCitizens, kick: Vector3): void => {
     const parts = LOST_PARTS[limb];
     const index = citizens.twin ? citizens.twin(body.index) : body.index;
@@ -881,8 +768,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     };
     components(piece);
     if (body.jolt) {
-      // In Jolt: the joint holding it lets go, and its parts go with the
-      // piece; what they carried stays at the stump on the body.
+      // In Jolt: the joint holding it lets go, and its parts go with the piece
       const torn = [...new Set(parts.map((q) => J_PART[q]))];
       const at = body.p[limb === 'head' ? NEC : root]!.clone().divideScalar(METRE);
       const moved = body.p.map((_, k) => k).filter((k) => torn.includes(body.jolt!.partOf(k)));
@@ -958,8 +844,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     })),
     hides: (id) => bodies.some((b) => b.survivor?.id === id),
     release(down) {
-      // Up: stood on the clip's last frame until the simulation lets them go
-      // too (it may be paused, or running faster than the clock).
+      // Up: stood on the clip's last frame until the simulation lets them go too
       for (let i = bodies.length - 1; i >= 0; i--) {
         const alive = bodies[i]!.survivor;
         if (alive?.phase === 'rise' && alive.t >= (alive.pre ?? 0) + (alive.blend ?? RISE_BLEND) + alive.clip && !down(alive.id)) remove(i);
@@ -1011,8 +896,6 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       const dir = ab.clone().normalize();
       const at = body.p[k]!;
       // The bullet's push, the spray out of the far side, blood under it.
-      // In Jolt the part struck takes the round's push itself (a corpse
-      // jerks); in the stick figure, the particle.
       if (body.jolt) body.jolt.push(k, dir.clone().multiplyScalar(2.2), 0.7);
       else body.o[k]!.addScaledVector(dir, -m(1.6) * STEP);
       body.asleep = false; body.still = 0; body.flying = 0;
@@ -1067,9 +950,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
           return v;
         });
       } else {
-        // Struck: the chest and head driven away from the blow, the feet left
-        // where they stood - backwards over the heels, or sideways, as it came -
-        // the arms flung up and out.
+        // Struck: the chest and head driven away from the blow, the feet left where they stood
         const push = new Vector3(Math.cos(away), 0, -Math.sin(away));
         launch(body, (k, v) => {
           const h = (body.p[k]!.y - low) / Math.max(1e-3, high - low);
@@ -1084,8 +965,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     update(dt, world) {
       const wall = Math.min(0.1, Math.max(0, dt));
       clock += wall;
-      // A body down without the Actions chosen (a probe, the weapons lab): the
-      // physics asked for now; meanwhile it falls by the stick figure.
+      // A body down without the Actions chosen (a probe, the weapons lab): the physics asked for now
       if (bodies.length) warmPhysics();
       for (const d of decals) d.age += wall;
       while (clock >= STEP) {
@@ -1158,19 +1038,13 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     },
   };
 
-  /**
-   * Getting up: which way, from how the body lies (face down, it pushes up
-   * and crouches facing where its head was; face up, it sits up facing its
-   * feet), where (over its pelvis), and the lying pose to blend from.
-   */
+  /** Getting up: which way, from how the body lies */
   function rise(body: Body, alive: Survivor, citizens: RagdollCitizens, world: RagdollWorld): void {
     const spine = new Vector3().subVectors(body.p[CHE]!, body.p[PEL]!).normalize();
     const side = torsoSide(body, new Vector3()).clone();
     const chestFront = new Vector3().crossVectors(side, spine).multiplyScalar(body.front);
     const faceUp = chestFront.y > 0;
-    // Up the way a person gets up off the ground: onto the front first if
-    // they lie on their back, then up onto hands and knees, facing where the
-    // head is; then into a crouch and up (the clip).
+    // Up the way a person gets up off the ground
     const facing = spine.clone().setY(0);
     if (facing.lengthSq() < 0.04) facing.copy(chestFront).setY(0).multiplyScalar(faceUp ? -1 : 1);
     if (facing.lengthSq() < 1e-6) facing.set(1, 0, 0);
@@ -1220,20 +1094,9 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     getUp(alive.id, x, y, heading, t + alive.blend + alive.clip);
   }
 
-  /**
-   * Getting up as captured (CMU 140_01 face down, 140_08 face up): the clip's
-   * first frame, lying, laid where the body lies - turned so that its hips
-   * to head line runs along the body's, its hips over the body's - the
-   * lying pose blended into it, then the clip played to standing; the
-   * person stands where the clip ends, facing as it ends. False when the
-   * clip is not there (the key poses then).
-   */
+  /** Getting up as captured (CMU 140_01 face down, 140_08 face up): the clip's first frame, lying, laid where the body lies */
   function captured(body: Body, alive: Survivor, citizens: RagdollCitizens, world: RagdollWorld, faceUp: boolean, crawl = false): boolean {
-    // To crawl (face down): the crawl's own first frame, on hands and knees,
-    // blended into from where they lie, and crawling on from exactly there.
-    // Part of the getting-up played instead ended kneeling half up, its
-    // limbs some 40 degrees off the crawl's and its hips-to-head line near
-    // vertical: the crawl then set off turned any way at all.
+    // To crawl (face down): the crawl's own first frame, on hands and knees, blended into from where they lie
     const key = crawl ? 'crawl' : faceUp ? 'getUpBack' : 'getUpFront';
     const upTo = crawl ? 0 : 0.999;
     const first = citizens.clipPose(body.index, key, 0);
@@ -1305,11 +1168,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     return p;
   }
 
-  /**
-   * On hands and knees over where the crouch will be: knees and shins on
-   * the ground under the hips, hands flat under the shoulders, the back
-   * level, the head up a little. Built in the frame the get-up clip plays in.
-   */
+  /** On hands and knees over where the crouch will be */
   function handsAndKnees(body: Body, root: Matrix4, crouch: readonly Vector3[], M: number, world: RagdollWorld): Vector3[] {
     const origin = new Vector3().setFromMatrixPosition(root);
     const turn = new Quaternion().setFromRotationMatrix(new Matrix4().extractRotation(root));
@@ -1381,17 +1240,10 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         w.fromArray(clip.palette, i * 16).multiply(body.binds[i]!);
         return new Matrix4().multiplyMatrices(alive.root!, body.rebind).multiply(w);
       });
-      // Blended in, the clip's own matrix exactly: a bone of these rigs is
-      // scaled unevenly (sheared), and taken apart and put back together it
-      // came out crooked.
+      // Blended in, the clip's own matrix exactly: a bone of these rigs is scaled unevenly
       if (blend >= 0.999) world = target;
       else {
-        // Before that, blended as animation systems blend poses: each bone's
-        // turn relative to its parent, then the chain put back together from
-        // the root. Each bone blended on its own in the world (position along
-        // a straight line, turn on its own) pulled the limbs off their joints
-        // and folded the body through itself on the way up (the player,
-        // 2026-10-06: "a forma totalmente deformada").
+        // Before that, blended as animation systems blend poses
         world = new Array<Matrix4>(bones);
         const p0 = new Vector3(), q0 = new Quaternion(), s0 = new Vector3();
         const p1 = new Vector3(), q1 = new Quaternion(), s1 = new Vector3();
@@ -1423,14 +1275,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     return out;
   }
 
-  /**
-   * A body into Jolt, or a change since its last step passed on: made the
-   * first time (its colliders, its parts from where its particles are), the
-   * particles' speeds then given to the parts as pushes; after that, a
-   * particle moved or sped up by anything but Jolt (a bullet, a blast, arms
-   * thrown out, a knee drawn up) pushes its part by the difference. Moved
-   * far (the getting-up poses), the parts are made again where it is.
-   */
+  /** A body into Jolt, or a change since its last step passed on: made the first time */
   function prepare(physics: JoltWorld, body: Body, world: RagdollWorld): void {
     if (!separated) { for (const [a, b] of J_PAIRS) physics.separate(a, b); separated = true; }
     // Burnt black: drawn up as burnt bodies are (`curl`), by muscle pulls.
@@ -1497,9 +1342,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     else body.p.forEach((v, k) => { body.synced!.p[k]!.copy(v); body.synced!.o[k]!.copy(body.o[k]!); });
     body.flying += STEP;
     body.still = moved < m(0.0025) ? body.still + STEP : 0;
-    // Asleep a moment after Jolt has put its parts to sleep (or when it lies
-    // still): asleep the step it was woken, its pose was never drawn again -
-    // a limb shot off a body lying still went on being drawn on it.
+    // Asleep a moment after Jolt has put its parts to sleep (or when it lies still)
     if ((!jr.active() && body.still > 0.25) || body.still > 0.8 || body.flying > SETTLE) { body.asleep = true; jr.sleep(); }
     if (body.torn && moved > m(0.01)) {
       body.spray -= STEP;
@@ -1511,12 +1354,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     }
   }
 
-  /**
-   * The ground under a body and round it (a height field from the same
-   * ground the rest reads, `groundAt`) and the walls, poles, street things
-   * and cars beside it, as Jolt colliders. A body thrown far gets a wider
-   * ground.
-   */
+  /** The ground under a body and round it */
   function colliders(physics: JoltWorld, body: Body, world: RagdollWorld): JoltStatic[] {
     const pel = body.p[PEL]!;
     const fast = body.p.some((v, k) => v.distanceTo(body.o[k]!) / STEP > m(6));
@@ -1534,20 +1372,11 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     return list;
   }
 
-  /**
-   * A body as Jolt parts and joints, from where its particles are (metres):
-   * the trunk a box from the hips to the neck, the head and neck one capsule,
-   * each limb bone a capsule; the knees and elbows hinges bending the way
-   * they bend (0 to 150 and 145 degrees), the shoulders, hips, neck and
-   * ankles cones with a twist (the hips leaning forwards, as a leg lifts far
-   * more forwards than back).
-   */
+  /** A body as Jolt parts and joints, from where its particles are (metres) */
   function joltSpec(body: Body): { parts: PartSpec[]; joints: JointSpec[]; points: Vector3[] } {
     const P = body.p.map((v) => v.clone().divideScalar(METRE));
     const R = (k: number): number => body.radius[k]! / METRE;
-    // Every axis unit and every joint frame a rotation, whatever the particles
-    // are (`ragdollAxes.ts`): two particles on one point (a limb torn off and
-    // pinned to its stump) gave a zero direction, and Jolt's solver broke on it.
+    // Every axis unit and every joint frame a rotation, whatever the particles are (`ragdollAxes.ts`)
     const up = direction(P[PEL]!, P[NEC]!, WORLD_UP);
     const dir = (a: number, b: number): Vector3 => direction(P[a]!, P[b]!, up);
     const side = across(new Vector3().subVectors(P[RH]!, P[LH]!).add(tmpA.subVectors(P[RS]!, P[LS]!)), up, WORLD_SIDE);
@@ -1573,8 +1402,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       { shape: capsule(P[RA]!, P[RT]!, R(RT) * 0.8), particles: [RT] },
     ];
     const cone = (parent: number, child: number, at: number, a: number, b: number, planeCone: number, normalCone: number, twist: number, lean = 0): JointSpec => {
-      // The cone's middle leant forwards (`lean`, about the side axis) from
-      // where the bone is now: frame 1 is frame 2 turned, plane axis included.
+      // The cone's middle leant forwards (`lean`, about the side axis) from where the bone is now
       const f = coneFrames(dir(a, b), side, lean, fwd);
       return { parent, child, at: P[at]!.clone(), kind: 'cone', ...f, planeCone, normalCone, twistMin: -twist, twistMax: twist };
     };
@@ -1601,13 +1429,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
   }
 
   /** One Verlet step of a body: move, then relax the sticks, the joints and the collisions together. */
-  /**
-   * Somebody down for good and hurt, where they lie (GTA's writhe: on the
-   * ground in pain, going nowhere): a knee drawn up towards the belly and
-   * let go, one then the other, weaker as they bleed, the blood spreading
-   * under them. Nothing moves them along the ground: the body pulled along
-   * with no hand or knee pushing on anything slid (the player, 2026-10-06).
-   */
+  /** Somebody down for good and hurt, where they lie (GTA's writhe: on the ground in pain, going nowhere) */
   function writhe(body: Body, crawl: NonNullable<Survivor['crawl']>, dt: number, world: RagdollWorld): void {
     if (crawl.since === 0) {
       const at = body.p[PEL]!;
@@ -1619,8 +1441,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     for (const [knee, hip, phase] of [[LK, LH, 0], [RK, RH, 2.4]] as const) {
       const s = Math.sin(t * 1.3 + phase);
       if (s <= 0) continue;
-      // In Jolt, a muscle's pull between the knee and the belly (the body as
-      // a whole unmoved); pushed alone, the knee sat the body up.
+      // In Jolt, a muscle's pull between the knee and the belly (the body as a whole unmoved)
       if (body.jolt) { body.jolt.pull(knee, BEL, 14 * dt * s * strength); continue; }
       tmpA.lerpVectors(body.p[hip]!, body.p[BEL]!, 0.5).add(tmpB.subVectors(body.p[CHE]!, body.p[PEL]!).multiplyScalar(0.3));
       body.p[knee]!.lerp(tmpA, 0.3 * dt * s * strength);
@@ -1628,11 +1449,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.asleep = false;
   }
 
-  /**
-   * A body burnt black draws up as burnt bodies do (the heat contracting
-   * the muscles: the "pugilistic attitude" of forensics): the forearms drawn
-   * up to the chest, the fists before the face, the knees and hips bent.
-   */
+  /** A body burnt black draws up as burnt bodies do */
   function curl(body: Body): void {
     const k = 0.015 * Math.min(1, body.age / 1.5);
     const chest = body.p[CHE]!, head = body.p[HEA]!;
@@ -1643,12 +1460,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.p[LK]!.lerp(chest, k * 0.4); body.p[RK]!.lerp(chest, k * 0.4);
   }
 
-  /**
-   * Joint friction: across every bone (a rigid stick), the two ends' speeds
-   * drawn a little towards their mean - the damping a joint's muscles and
-   * tissue give a real body (an articulated body's joint damping), so the
-   * limbs follow the trunk instead of whipping about it.
-   */
+  /** Joint friction: across every bone (a rigid stick), the two ends' speeds drawn a little towards their mean */
   function joints(body: Body): void {
     const { p, o } = body;
     const k = 0.12;
@@ -1698,8 +1510,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       collide(body, near, it === ITERATIONS - 1, world);
       if (it % 3 === 2 || it === ITERATIONS - 1) capsules(body, near, world);
     }
-    // The bones' lengths last (a little into a wall reads less than a body
-    // pulled apart; Unity's ragdoll "projection" does the same).
+    // The bones' lengths last a little into a wall reads less than a body pulled apart; Unity's ragdoll projection does the
     for (let it = 0; it < 3; it++) {
       for (const s of body.sticks) {
         if (s.broken || s.min !== s.max) continue;
@@ -1731,16 +1542,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     }
   }
 
-  /**
-   * Ankles: each foot kept within the reach a real ankle has, in its shin's
-   * frame (the shin, the knee's bend normal, forward across them): 20
-   * degrees up and 70 down from where it stood (a foot lying slack on the
-   * ground points back along the shin), 25 to either side - the
-   * swing and twist limits of a ragdoll's character joint (Unity's
-   * CharacterJoint). Held by a knee-to-toe distance alone the foot was free
-   * to swing round the shin: on the ground it turned until it pointed back,
-   * the shoe off the leg (the player, 2026-10-06).
-   */
+  /** Ankles: each foot kept within the reach a real ankle has, in its shin's frame */
   function ankles(body: Body): void {
     for (const [limb, knee, ankle, toe] of FEET) {
       if (body.comp[knee] !== body.comp[ankle] || body.comp[ankle] !== body.comp[toe]) continue;
@@ -1803,16 +1605,11 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     for (let k = 0; k < p.length; k++) {
       if (body.pin && !body.pin.keep.has(k)) continue;
       const v = p[k]!, old = o[k]!, r = radius[k]!;
-      // The ground where it is now (looked up once a step, a particle the
-      // sticks drew across a footway's edge was left inside the footway, and
-      // thrown up out of it the next step - measured 2026-10-06).
+      // The ground where it is now looked up once a step, a particle the sticks drew across a footway's edge was left inside
       body.ground[k] = world.groundAt(v.x, -v.z);
       const floor = body.ground[k]! + r;
       if (v.y < floor) {
-        // Out along the ground's normal, the shortest way (a heightfield is
-        // a surface, as PhysX's: a footway's edge a steep bank, `groundAt`):
-        // straight up, a hand beside a footway 27 cm over the grass was
-        // thrown up its whole height, the body after it.
+        // Out along the ground's normal, the shortest way
         const e = m(0.04);
         const gx = (world.groundAt(v.x + e, -v.z) - world.groundAt(v.x - e, -v.z)) / (2 * e);
         const gz = (world.groundAt(v.x, -v.z - e) - world.groundAt(v.x, -v.z + e)) / (2 * e);
@@ -1840,8 +1637,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         if (!into && away >= r) continue;
         const top = wall.roof ? wall.roof(wx, wy) : wall.top;
         if (v.y > top + r) continue;
-        // Over the wall or the roof, coming down on it (or nearer its top than
-        // its face): onto it, like the ground.
+        // Over the wall or the roof, coming down on it (or nearer its top than its face): onto it, like the ground.
         if (into && (old.y >= top + r * 0.5 || top + r - v.y < away + r)) {
           const vy = v.y - old.y;
           v.y = top + r;
@@ -1874,13 +1670,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     }
   }
 
-  /**
-   * The bones as capped cylinders (Jakobsen, "Advanced Character Physics":
-   * each limb a capsule projected out of what it strikes): two points along
-   * every bone kept out of the ground and the walls, the bone's two ends
-   * moved by their share of the correction. With the joints alone colliding,
-   * a forearm or a shin lying across a kerb, a step or a pole sank into it.
-   */
+  /** The bones as capped cylinders Jakobsen, Advanced Character Physics: each limb a capsule projected out of what it */
   function capsules(body: Body, walls: readonly Wall[], world: RagdollWorld): void {
     const { p, o, radius } = body;
     for (const [a, b] of CAPSULE_BONES) {
@@ -1888,18 +1678,14 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       if (body.comp[a] !== body.comp[b]) continue;
       const pa = p[a]!, pb = p[b]!;
       for (const t of CAPSULE_SAMPLES) {
-        // Tapered, from one end's radius to the other's: with the two ends'
-        // mean all along, a bone lying with its ends on the ground (a head
-        // and a neck, a chest and a neck) had a point inside it, lifted each
-        // step and dropped again - a body that never lay still.
+        // Tapered, from one end's radius to the other's
         const r = radius[a]! + (radius[b]! - radius[a]!) * t;
         const wa = 1 - t, wb = t, share = wa * wa + wb * wb;
         const qx = pa.x + (pb.x - pa.x) * t, qy = pa.y + (pb.y - pa.y) * t, qz = pa.z + (pb.z - pa.z) * t;
         const pen = world.groundAt(qx, -qz) + r - qy;
         // Deeper than a bank's face: the bone is beside it, not on it (`collide`).
         if (pen > 0 && pen <= STEP_FACE) {
-          // Moved out, not thrown out: the old positions go with them, so the
-          // correction adds no speed (a push out turned into a launch).
+          // Moved out, not thrown out: the old positions go with them, so the correction adds no speed
           const l = pen / share;
           pa.y += wa * l; pb.y += wb * l;
           o[a]!.y += wa * l; o[b]!.y += wb * l;
@@ -1944,12 +1730,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
 
   /** Each limb's bend normal, carried on so it keeps its sign and survives the limb going straight. */
   function updateNormals(body: Body, side: Vector3, rate: number): void {
-    // A leg's knee bends to the body's front (`hinges`), so its bend normal
-    // is the torso's side give or take the hip's turn: its sign taken from
-    // the torso, and a straight leg's normal drawn to the side. Carried in
-    // the world instead, a straight leg kept its normal while the body
-    // rolled over, and the leg was drawn turned half round, the foot and the
-    // shoe pointing back (the player, 2026-10-06).
+    // A leg's knee bends to the body's front (`hinges`), so its bend normal is the torso's side give or take the hip's turn
     const torso = !body.pin && side.lengthSq() > 0.5;
     for (const [limb, a, mid, b] of LIMB_JOINTS) {
       const u = tmpA.subVectors(body.p[mid]!, body.p[a]!), w = tmpB.subVectors(body.p[b]!, body.p[mid]!);
@@ -1995,12 +1776,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       f0t.copy(body.frame0[part]).transpose();
       turn[part] = new Quaternion().setFromRotationMatrix(f.multiply(f0t));
     }
-    // Each part placed from its parent part, at its rest distance turned
-    // with the parent (forward kinematics, as retargeting keeps bone
-    // lengths: only rotations reach the children), not at its own particle:
-    // squeezed against a wall or a kerb the particles come closer than the
-    // bones are long, and the skin between them was crushed or stretched.
-    // A part on another piece (torn off) keeps its particle.
+    // Each part placed from its parent part, at its rest distance turned with the parent
     const origin: Partial<Record<PartName, Vector3>> = {};
     for (const part of PART_NAMES) {
       const parent = PART_PARENT[part];
@@ -2039,9 +1815,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         if (on[i]) {
           m4.multiplyMatrices(back, world[i]!).multiply(body.inverses[i]!);
         } else {
-          // Not on this piece: shrunk to the joint it was torn from - its
-          // nearest ancestor still on the piece, or else the piece's root -
-          // so the stump closes there.
+          // Not on this piece: shrunk to the joint it was torn from
           let j = body.parents[i]!;
           while (j >= 0 && !on[j]) j = body.parents[j]!;
           const t = tmpB.setFromMatrixPosition(world[j >= 0 ? j : root]!).applyMatrix4(back);

@@ -18,15 +18,7 @@ import type { BodyClass, JunctionAnswer, JunctionAsk, JunctionLeg, JunctionNode,
 export type { JunctionAnswer, JunctionAsk, JunctionLeg, JunctionMeasurer, LaneAsk, TurnKind } from './conflictTable';
 import { m } from './units';
 
-/**
- * ONE JUNCTION'S MOVEMENTS, FROM PURE DATA: its node, the roads that meet there, the lanes arriving and
- * leaving, the surface round it - in, its connectors with their shaped turns, its approach groups and
- * whether it is signalised - out. The same code builds a junction on the page (`LaneletGraph.buildJunction`,
- * from the document and the network) and in a conflict worker (`buildJunctionOf`, from the numbers the page
- * sent, `conflictPool.ts`), so the two are the same junction to the last bit (`tests/sim/topologyOffPage.spec.ts`).
- * DO NOT read the document, the network or the graph here: a worker has none of them. Moved out of
- * `lanelets.ts` (2026-10-15).
- */
+/** DO NOT read the document, the network or the graph here: a worker has none of them. */
 
 export const connectorId = (from: string, to: string): string => `${from}->${to}`;
 
@@ -74,22 +66,7 @@ export function isJunction(node: Pick<RoadNode, 'incident' | 'end'>, inbound: nu
   return (node.incident.length >= 2 || bulb) && inbound > 0 && outbound > 0;
 }
 
-/**
- * The key a junction's connectors are kept under, from its surface's key (`JunctionSurface.key`).
- *
- * What a junction's connectors are made of, read in full by `junctionMovements` and the calls under it:
- * the surface the turns are shaped across, the node's own `control`, `incident` and `blockedMovements`,
- * and every lanelet that meets there - whose own keys carry each segment's type, section, direction and
- * geometry (`LaneletGraph.buildSegmentLinks`). All of it is here, so moving any one of them moves the key:
- *
- *   `node.control` -> `shouldSignalise`
- *   `node.crossing` -> a mid-block crossing's own junction
- *   `node.incident` -> the leg list, `computeApproachGroups`
- *   `node.blockedMovements` -> which movements are dropped
- *   the lanelet keys -> `surface.centre`, the turn geometry, lane counts,
- *   `carriedPair`'s ranking by `section.priority ?? type`
- *   `surface.key` -> the junction's own rings and the incident ribbons'
- */
+/** The key a junction's connectors are kept under, from its surface's key (`JunctionSurface.key`). */
 export function junctionKey(j: JunctionInput, surfaceKey: string): string {
   const node = j.node;
   return `${node.id}|${new Digest().addText(String(surfaceKey)).addText(node.control)
@@ -106,10 +83,7 @@ function legLine(leg: JunctionLeg, from: NodeId): Polyline {
   return leg.segment.a === from ? line : line.reversed();
 }
 
-/**
- * The connectors of one junction (`isJunction`), shaped across its surface (`surfaceOf`, made only when a
- * movement is shaped), their turns found, kept and left to choose off the page in `turns`.
- */
+/** The connectors of one junction (`isJunction`), shaped across its surface */
 export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSurface | null, turns: JunctionTurns): JunctionMade {
   const { node, inbound, outbound } = j;
   const bulb = node.incident.length === 1 && node.end === 'bulb';
@@ -120,10 +94,7 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
     if (!found) throw new Error(`junction ${node.id} has no road ${segment}`);
     return found;
   };
-  // Only a leg that brings traffic INTO the node is an approach. A one-way
-  // road leaving the junction used to get a signal group of its own: a head
-  // facing an empty carriageway, and a whole stage of every cycle spent
-  // showing green to nobody while every real approach waited at red.
+  // Only a leg that brings traffic INTO the node is an approach.
   const approaching = new Set<SegmentId>();
   for (const lane of inbound) approaching.add(lane.segment);
   const legs = node.incident
@@ -171,9 +142,7 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
     const rules = inLane.from === incomingSegment.a ? incomingSegment.section?.turnsForward : incomingSegment.section?.turnsBackward;
     const rule = rules?.[inLane.laneIndex];
     const authored = rule !== undefined && rule !== 'all';
-    // The player's own connections for this lane (docs/VIAS.md V4,
-    // `roads/connectors.ts`): exactly those, when any is still valid;
-    // a movement the node bans stays banned.
+    // The player's own connections for this lane (`roads/connectors.ts`)
     const manual = linksOf(node.laneLinks, inLane.segment, inLane.laneIndex);
     if (manual.length) {
       let count = 0;
@@ -191,18 +160,12 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
       if (count > 0) continue;
     }
     const legal: { o: number; turn: TurnKind; carried: boolean }[] = [];
-    // U-turns the lane-count rule above set aside. They come back only for
-    // a lane that has nothing else: where two roads both run back to the
-    // same node (a lens of two curves), EVERY movement classifies as a
-    // U-turn, and dropping them all left the lane with no exit at all - a
-    // car driving into a node it can never leave (the fuzzer's
-    // `deadLanelet`).
+    // U-turns the lane-count rule above set aside.
     const dropped: typeof legal = [];
 
     for (let o = 0; o < outbound.length; o++) {
       const outLane = outbound[o]!;
-      // A movement back down the segment it came from is a U-turn; allow it
-      // only where there is nowhere else to go.
+      // A movement back down the segment it came from is a U-turn; allow it only where there is nowhere else to go.
       const isReverse = outLane.segment === inLane.segment;
       const outDir = tangentAtStart(outLane.centre);
       const turn = isReverse ? 'uturn' : classifyTurn(inDir, outDir);
@@ -234,11 +197,7 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
       }
     }
 
-    // A wide road may feed a narrower exit. Strict lane matching is useful
-    // where alternatives exist, but it must never leave an outer lane with
-    // no route at all: vehicles spawned there would reach a green signal
-    // with no connector to request. Merge that lane onto the best legal
-    // outbound path only when the normal pairing produced none.
+    // A wide road may feed a narrower exit.
     if (exits[i] === 0 && !legal.length) legal.push(...dropped);
     if (exits[i] === 0 && legal.length) {
       legal.sort((a, b) =>
@@ -247,16 +206,12 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
         outbound[a.o]!.id.localeCompare(outbound[b.o]!.id),
       );
       const fallback = legal[0]!;
-      // A lane that merges into the road it is on is still that road:
-      // losing `carried` here made the dropped lane give way at a node of
-      // three legs, and the lane beside it never had to let it in.
+      // A lane that merges into the road it is on is still that road
       addConnector(i, fallback.o, fallback.turn, fallback.carried);
     }
   }
 
-  // A U-turn through the median (docs/VIAS.md V8, retorno): from the
-  // inner lane of the road it serves, by the median, back the other way -
-  // swept like any turn, so only what a body fits is driven (`maxBodyClass`).
+  // A U-turn through the median (retorno)
   if (node.uturn !== undefined && node.incident.length === 2) {
     for (let i = 0; i < inbound.length; i++) {
       const inLane = inbound[i]!;
@@ -271,11 +226,7 @@ export function junctionMovements(j: JunctionInput, surfaceOf: () => JunctionSur
 
 // ------------------------------------------------------------------ off the page
 
-/**
- * A junction's input and surface as a worker is sent them (`JunctionAsk`), with the turns of its build before.
- * `sent`: the lanes and roads already made for the asks of this message, by id - a lane arrives at one
- * junction and leaves another, a road meets two: one object each, so the message copies it once.
- */
+/** A junction's input and surface as a worker is sent them (`JunctionAsk`), with the turns of its build before. */
 export function junctionAsk(j: JunctionInput, surface: SurfaceSource, before: JunctionTurns | null,
   sent: { readonly lanes: Map<string, LaneAsk>; readonly legs: Map<SegmentId, JunctionLeg> }): JunctionAsk {
   const n = j.node;
@@ -320,11 +271,7 @@ export function junctionAsk(j: JunctionInput, surface: SurfaceSource, before: Ju
   };
 }
 
-/**
- * One junction built from what the page sent (`JunctionAsk`): the surface made from its pieces, the key, the
- * connectors and their turns - `junctionKey` and `junctionMovements`, as the page runs them. `lines` and
- * `rings`: each lane, road and ring of a message made once.
- */
+/** One junction built from what the page sent (`JunctionAsk`) */
 export function buildJunctionOf(ask: JunctionAsk, lines: Map<Float64Array, Polyline>, rings: Map<Float64Array, Vec2[]>): JunctionAnswer {
   const line = (xy: Float64Array): Polyline => {
     let made = lines.get(xy);
@@ -358,41 +305,11 @@ export function buildJunctionOf(ask: JunctionAsk, lines: Map<Float64Array, Polyl
   };
 }
 
-/**
- * How far along a leg to look when deciding which approaches share an axis.
- *
- * Far enough that a slight kink at the node does not split an axis, near
- * enough that a real curve is not straightened away.
- */
+/** How far along a leg to look when deciding which approaches share an axis. */
 const GROUPING_LOOKAHEAD_FRACTION = 0.2;
 const GROUPING_LOOKAHEAD_MAX = m(4.8);
 
-/**
- * Classifies a movement from its heading change.
- *
- * THIS WAS MIRRORED, and it is the whole of the "signals turn the wrong way"
- * defect. It claimed +Y ran down the map; it does not. The renderer maps world
- * `(x, y)` to three's `(x, h, -y)`, which puts +Y UP on screen - measured, not
- * assumed: projecting `(0, 100)` lands 105 pixels ABOVE the origin. So the
- * frame is right-handed on screen, a positive heading change is
- * counter-clockwise, and counter-clockwise is a LEFT turn.
- *
- * Every other file already agreed with that. `laneOffset` pushes traffic onto
- * `-perp` and calls it right-hand traffic; `render/signals.ts` puts the head
- * on `-perp` and calls it the right-hand kerb. Only this function read the
- * sign the other way, and because every rule downstream is keyed on the label
- * it produces, all of them applied to the opposite movement:
- *
- *   - `laneIsPlausible` made left turns leave from the kerb lane and right
- *     turns from the innermost lane, so both crossed their own approach's
- *     through lanes;
- *   - the right-on-red exemption in `sim/signals/permission.ts` was granted to
- *     the turn that crosses oncoming traffic. Measured over 1500 s of traffic:
- *     every one of the 11 entries on red was a real LEFT turn, 4 of them while
- *     the crossing street had green;
- *   - `CRITICAL_GAP` gave the left turn the shorter gap meant for the right,
- *     and `turnSpeedFactor` the wrong speed.
- */
+/** Classifies a movement from its heading change. */
 export function classifyTurn(inDir: Vec2, outDir: Vec2): TurnKind {
   const delta = normalizeAngle(angleOf(outDir) - angleOf(inDir));
   const deg = (delta * 180) / Math.PI;
@@ -424,13 +341,7 @@ function endDirection(pl: Polyline): Vec2 {
   return pl.sampleAt(pl.length).t;
 }
 
-/**
- * The immediate tangent where a lane leaves its node.
- *
- * Deliberately unsmoothed. Turn classification asks what a driver does at
- * the junction, so a curve further along the block must not rotate the
- * answer — a left turn onto a road that bends right is still a left turn.
- */
+/** The immediate tangent where a lane leaves its node. */
 function tangentAtStart(pl: Polyline): Vec2 {
   if (pl.n < 2) return { x: 1, y: 0 };
   return pl.sampleAt(0).t;
@@ -443,31 +354,7 @@ const CARRIED_MAX_BEND = (100 * Math.PI) / 180;
 /** Below this bend a movement is already classified as straight on. */
 const STRAIGHT_BEND = (30 * Math.PI) / 180;
 
-/**
- * The two legs that are ONE ROAD carried across a node, when that road bends.
- *
- * `classifyTurn` calls anything bending more than 30 degrees a turn. For a
- * movement from one road into another that is right; for a road that simply
- * bends at a node it is only half right - it states how sharp the bend is,
- * which speed and the indicator should read - and two things keyed on the
- * label went wrong with it:
- *
- *   - lane pairing. A turn leaves from the lane on its own side and arrives in
- *     the lane on its own side, so a two-lane carriageway bending 45 degrees at
- *     a node was paired lane 0 to lane 0 only, and lane 1 was merged into lane
- *     0 by the no-route fallback: every such bend a lane drop. On a ring of
- *     streets - a roundabout drawn as a polygon, bending at every node - the
- *     circulating carriageway became a single lane with a merge at every node,
- *     and it locked solid: not one vehicle left it in five minutes;
- *   - right of way. `continues` in `sim/intersections/admission.ts` makes the
- *     road the node is on the priority road; with no straight-on movement
- *     nothing was, and every approach gave way to every other;
- *
- * A node of two legs is one road, whatever the angle. At a node of three or
- * more with no straight-on pair at all, the road is the pair that goes on most
- * nearly straight among the pairs of the highest class - and only when one
- * pair clearly does, so a symmetric Y keeps its three turns.
- */
+/** The two legs that are ONE ROAD carried across a node, when that road bends. */
 function carriedPair(node: JunctionNode, leg: (segment: SegmentId) => JunctionLeg): readonly SegmentId[] | null {
   const incident = [...new Set(node.incident)];
   if (incident.length === 2) return incident;
@@ -481,8 +368,7 @@ function carriedPair(node: JunctionNode, leg: (segment: SegmentId) => JunctionLe
     for (let j = i + 1; j < legs.length; j++) {
       const a = legs[i]!;
       const b = legs[j]!;
-      // Both directions point away from the node: a straight road has them
-      // opposed, so the bend is what is left of a half turn.
+      // Both directions point away from the node: a straight road has them opposed, so the bend is what is left of a half turn.
       const between = Math.abs(normalizeAngle(angleOf(b.dir) - angleOf(a.dir)));
       const bend = Math.PI - between;
       if (bend < STRAIGHT_BEND) return null;
@@ -497,70 +383,14 @@ function carriedPair(node: JunctionNode, leg: (segment: SegmentId) => JunctionLe
   return best.members;
 }
 
-/**
- * The direction of a leg once a kink at the node is smoothed away.
- *
- * Approach grouping asks a different question from turn classification:
- * which arms of a junction form one axis and can share a signal stage. A
- * slight bend right at the node must not split an otherwise straight axis,
- * so this looks ahead before deciding.
- *
- * The two therefore DISAGREE on a curved leg, and that is correct. They were
- * once both spelled with the same function name - one local here, one an
- * unused export elsewhere - which made the disagreement look like a bug and
- * invited someone to "fix" it by unifying them.
- */
+/** The direction of a leg once a kink at the node is smoothed away. */
 function smoothedDirectionFromNode(pl: Polyline): Vec2 {
   const look = Math.min(GROUPING_LOOKAHEAD_MAX, Math.max(1, pl.length * GROUPING_LOOKAHEAD_FRACTION));
   return normalize(sub(pl.sampleAt(look).p, pl.point(0)));
 }
 
-/**
- * Rejects lane pairings that no driver would make, so the connector set stays
- * small and turns start and finish in sensible lanes. Lane 0 is innermost.
- */
-/**
- * Whether a movement from this lane to that one is one a driver would make.
- *
- * `laneIndex` 0 is the INNERMOST lane; higher indices sit progressively further
- * to the right of travel. So the innermost lane turns left and the outermost
- * lane turns right.
- *
- * THE RULE THAT MATTERS: connections leaving one approach are ORDER PRESERVING
- * and INJECTIVE — lane `i` goes to lane `i`, and no two of them ever land on
- * the same receiving lane. Two paths that keep their lane order are concentric;
- * they never cross. Two that converge do, and `ConflictIndex` then generates a
- * perfectly correct crossing point between two movements that a real layout
- * draws as parallel.
- *
- * That is not a hypothetical. The previous rule was
- *
- *   if (turn === 'right') return i === 0 || o === i;   // lane 0 -> ANY lane
- *   return o === i || Math.abs(o - i) === 1;           // through may drift one
- *
- * so `right(lane 0)` reached every receiving lane and `through` could drift
- * sideways. Measured on a 4x4 grid of four-lane avenues, 89.1 % of the conflicts
- * that stopped a vehicle at its own green light named a holder on the SAME
- * approach that was ALSO green — 56.8 % of them a second right turn, and even
- * `through(0)` against `through(1)`, which cannot cross under any geometry.
- *
- * Unequal lane counts are handled by the merge fallback in `build`, not here:
- * an inbound lane that this rule leaves with no exit at all is given one, and
- * that merge is deliberate and singular rather than an accident of pairing.
- *
- * LANE DISCIPLINE (CTB art. 38). A driver about to turn must already be in the
- * lane the turn leaves from, and must land in the corresponding lane of the
- * receiving road — never cross the carriageway to reach the turn. So a right
- * turn leaves the OUTERMOST lane and enters the outermost receiving lane, and a
- * left turn leaves the innermost and enters the innermost.
- *
- * That makes a turn reachable only from one lane, which is exactly why
- * `src/sim/vehicles/laneChange.ts` exists: a vehicle that wants a turn its
- * current lane cannot serve moves across to the lane that can, in advance, with
- * a gap. Before lane changing existed this rule was unshippable, because a left
- * turn lands a vehicle in the innermost lane and a following right turn was
- * then unreachable for the rest of its life.
- */
+/** Rejects lane pairings that no driver would make */
+/** Whether a movement from this lane to that one is one a driver would make. */
 function laneIsPlausible(
   inLane: JunctionLane,
   outLane: JunctionLane,

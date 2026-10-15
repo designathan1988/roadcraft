@@ -10,12 +10,7 @@ import { growOnLot } from '@editor/zoning';
 import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength, atRoll } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
 
-/**
- * The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks
- * over the whole map they replace: each old walk is copied here as the
- * oracle, asked the same random questions, with buildings removed, moved and
- * put back between the questions.
- */
+/** The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks over the whole map they replace */
 
 const ZONES = [
   { use: 'residential', density: 'medium' }, { use: 'commercial', density: 'low' },
@@ -210,8 +205,7 @@ describe('the street length round a place', () => {
         net.rebuild();
       }
       expect(net.ribbons.size).toBeGreaterThan(0);
-      // The whole map's is kept by the edits (`world/networkLength.ts`), summed exactly in millionths of a
-      // unit: within a millionth a road of the walk's float sum, whatever order the edits came in.
+      // The whole map's is kept by the edits (`world/networkLength.ts`), summed exactly in millionths of a unit
       const whole = oldRoad(net, 0, 0, Infinity);
       expect(Math.abs(streetLength(net, 0, 0, Infinity) - whole)).toBeLessThanOrEqual(1e-6 * net.ribbons.size + 1e-9 * whole);
       wholes.add(streetLength(net, 0, 0, Infinity));

@@ -69,16 +69,7 @@ import {
   volumeTop,
 } from '@world/buildings/types';
 
-/**
- * The building commands.
- *
- * Two halves. The OPERATIONS (`op*`) change a draft building in place and say
- * whether they changed anything; they know nothing about the document, so the
- * tool can run them on a copy for a live preview. The COMMANDS run an
- * operation on a copy of a stored building, validate the copy, and only then
- * write it back. `main.ts` wraps every command in `mutateBuildings`, which
- * records the undo snapshot first.
- */
+/** The building commands. */
 
 export type BuildingContext = SiteContext;
 
@@ -94,11 +85,7 @@ const UNCHANGED: EditResult = { ok: false };
 
 // =============================================================== operations
 
-/**
- * Storeys copied up when a volume is pulled taller: the top one, in the
- * building's own style. A ground storey's doors and shopfronts belong on the
- * street, so above it they become the windows that go with them.
- */
+/** Storeys copied up when a volume is pulled taller: the top one, in the building's own style. */
 function storeyTemplate(v: Volume): Storey {
   const top = v.storeys[v.storeys.length - 1];
   if (!top) return { facade: { fill: 'window' } };
@@ -154,11 +141,7 @@ function shiftBays(v: Volume, sides: readonly FaceId[], shift: number): void {
   }
 }
 
-/**
- * Moves one side of a volume by `delta` world units (out is positive),
- * snapped to the grid. Bays re-divide the new length; a side that grew at its
- * start keeps its single-bay overrides on the bays they were set on.
- */
+/** Moves one side of a volume by `delta` world units (out is positive), snapped to the grid. */
 export function opResize(b: Building, volumeId: number, side: Side, delta: number, snap = true): boolean {
   const v = volumeById(b, volumeId);
   if (!v || delta === 0) return false;
@@ -198,11 +181,7 @@ function copyStoreys(v: Volume, count = v.storeys.length): Storey[] {
   return out;
 }
 
-/**
- * Adds a wing against `side` of a volume: same base and height, `depth` world
- * units out, `length` along the side (default: about half of it, centred),
- * both snapped to the grid. Returns the new volume's id, or null.
- */
+/** Adds a wing against `side` of a volume: same base and height, `depth` world units out, `length` along the side */
 export function opAddWing(b: Building, volumeId: number, side: FaceId, depth?: number, length?: number): number | null {
   const v = volumeById(b, volumeId);
   if (!v) return null;
@@ -257,11 +236,7 @@ export function opAddWing(b: Building, volumeId: number, side: FaceId, depth?: n
   return wing.id;
 }
 
-/**
- * Stacks a setback on a volume: inset by `inset` world units (default one
- * module) where the volume is wide enough, `storeys` tall. The roof it stands
- * on becomes a terrace.
- */
+/** Stacks a setback on a volume: inset by `inset` world units */
 export function opAddSetback(b: Building, volumeId: number, inset?: number, storeys = 2): number | null {
   const v = volumeById(b, volumeId);
   if (!v) return null;
@@ -298,18 +273,14 @@ export function opAddSetback(b: Building, volumeId: number, inset?: number, stor
   return volume.id;
 }
 
-/**
- * Removes a volume and everything that loses its support with it. Returns
- * false if nothing would be left standing on the ground (delete the building).
- */
+/** Removes a volume and everything that loses its support with it. */
 export function opRemoveVolume(b: Building, volumeId: number): boolean {
   const index = b.volumes.findIndex((v) => v.id === volumeId);
   if (index < 0) return false;
   const remaining = b.volumes.filter((v) => v.id !== volumeId);
   if (!remaining.some((v) => v.base === 0)) return false;
   b.volumes = remaining;
-  // Anything now hanging over nothing goes too, repeatedly: a tower on a
-  // podium goes with the podium.
+  // Anything now hanging over nothing goes too, repeatedly: a tower on a podium goes with the podium.
   for (let changed = true; changed;) {
     changed = false;
     for (const v of b.volumes) {
@@ -367,20 +338,10 @@ export function opSetLevelHeight(b: Building, level: number, height: number | nu
 }
 
 /** Where a component is applied when a bay is clicked. */
-/**
- * Where a component goes: the picked bay; its row (that floor of that face);
- * its column (that bay on every floor of that face); the whole floor (every
- * face); the whole face; the whole block.
- */
+/** Where a component goes: the picked bay; its row (that floor of that face); its column */
 export type FacadeScope = 'bay' | 'row' | 'column' | 'storey' | 'side' | 'volume' | 'zone';
 
-/**
- * A facade zone: every bay from `index0` to `index1` on every storey from
- * `storey0` to `storey1` of one side takes `component` - the band of windows
- * between two piers, the plain stone of a pavilion, a gallery of columns -
- * dragged as one rectangle across the face (CityEngine's facade split, as a
- * brush). Returns whether anything changed.
- */
+/** A facade zone: every bay from `index0` to `index1` on every storey from `storey0` to `storey1` of one side takes */
 export function opSetComponentZone(
   b: Building,
   volumeId: number,
@@ -410,10 +371,7 @@ export function opSetComponentZone(
   return JSON.stringify(v.storeys) !== before;
 }
 
-/**
- * Puts a component into the facade. `scope` widens the click: the one bay,
- * every bay of that storey, that side of every storey, or the whole volume.
- */
+/** Puts a component into the facade. */
 export function opSetComponent(
   b: Building,
   volumeId: number,
@@ -486,12 +444,7 @@ export function opRotate(b: Building, angle: number, pivot?: Vec2): boolean {
   return true;
 }
 
-/**
- * Scales the whole plan by `factor` about its centre: every mass, the free
- * parts and the roof equipment move with it; heights stay (storeys are
- * storeys). The facades keep their rhythm - bays are re-counted on the new
- * lengths.
- */
+/** Scales the whole plan by `factor` about its centre: every mass, the free parts and the roof equipment move with it */
 export function opScalePlan(b: Building, factor: number): boolean {
   if (!(factor > 0) || Math.abs(factor - 1) < 1e-6) return false;
   const f = footprintBox(b);
@@ -553,10 +506,7 @@ export function addBuildingRecord(
   return { ok: true, id: ctx.doc.buildings.add(draft).id };
 }
 
-/**
- * Runs an operation on a copy of a stored building, validates the copy and
- * stores it. Nothing is written unless the result is valid.
- */
+/** Runs an operation on a copy of a stored building, validates the copy and stores it. */
 export function editBuilding(ctx: BuildingContext, id: BuildingId, op: (draft: Building) => boolean): EditResult {
   const current = ctx.doc.buildings.get(id);
   if (!current) return FAIL_MISSING;
@@ -600,10 +550,7 @@ export function removeVolume(ctx: BuildingContext, id: BuildingId, volumeId: num
   return { ok: true, id };
 }
 
-/**
- * A copy of a building beside it: tried to the right, left, behind and in
- * front, flush against the original (so a copied house makes a terrace).
- */
+/** A copy of a building beside it: tried to the right, left, behind and in front, flush against the original */
 export function duplicateBuilding(ctx: BuildingContext, id: BuildingId): EditResult {
   const source = ctx.doc.buildings.get(id);
   if (!source) return FAIL_MISSING;
@@ -623,16 +570,7 @@ export function duplicateBuilding(ctx: BuildingContext, id: BuildingId): EditRes
   return last;
 }
 
-/**
- * The road-wins rule: every building a road now overlaps is removed. Returns
- * how many were. Run after an edit, inside the same undo step (`main.ts`
- * `mutateBuilt`). `rects`: where the roads changed (`Network.changesSince`);
- * only the buildings there are looked at - a building away from every road
- * that changed cannot have started touching one. `null`: what changed is not
- * known (a map loaded, the network rebuilt from nothing), every building.
- * DO NOT walk `buildings.all()` for an edit: every pole, lot or storey edited
- * read every building of the city against the roads.
- */
+/** DO NOT walk `buildings.all()` for an edit */
 export function clearBuildingsOnRoads(ctx: BuildingContext, rects: readonly ChangeRect[] | null): number {
   if (!ctx.net || ctx.doc.buildings.size === 0 || rects?.length === 0) return 0;
   const doomed: BuildingId[] = [];
@@ -668,12 +606,7 @@ function buildingsIn(ctx: BuildingContext, rects: readonly ChangeRect[]): Buildi
   return out;
 }
 
-/**
- * Agrupar: every volume of `source` moves into `target`, brought into the
- * target's own frame. A volume of a building with a different bearing keeps
- * its exact shape as an outline; the emptied record goes. Elements come along,
- * their centres transformed the same way.
- */
+/** Agrupar: every volume of `source` moves into `target`, brought into the target's own frame. */
 export function groupInto(ctx: BuildingContext, targetId: BuildingId, sourceId: BuildingId): EditResult {
   const target = ctx.doc.buildings.get(targetId);
   const source = ctx.doc.buildings.get(sourceId);
@@ -706,8 +639,7 @@ export function groupInto(ctx: BuildingContext, targetId: BuildingId, sourceId: 
         (Math.abs(p.x - minX) < 1e-6 || Math.abs(p.x - maxX) < 1e-6) &&
         (Math.abs(p.y - minY) < 1e-6 || Math.abs(p.y - maxY) < 1e-6),
       );
-    // An outline is stored normalized to its bounds (0..1). Stored in local
-    // units it failed validation, and grouping never worked.
+    // An outline is stored normalized to its bounds (0..1).
     if (plain) delete volume.outline;
     else if (!setVolumePlan(volume, ring)) return { ok: false, problem: 'outline' };
     draft.volumes.push(volume);
@@ -726,12 +658,7 @@ export function groupInto(ctx: BuildingContext, targetId: BuildingId, sourceId: 
 
 // =============================================================== massing
 
-/**
- * Fuses a free part placed beside an identical one: two flights of stairs
- * side by side become one wider flight, two runs of fence one longer fence.
- * Parts only fuse when they agree in everything but their length along the
- * row - the same kind, facing, depth, base height and rise.
- */
+/** Fuses a free part placed beside an identical one */
 export function opFuseElement(b: Building, id: number): boolean {
   const e = b.elements?.find((x) => x.id === id);
   if (!e || e.angle) return false;
@@ -773,11 +700,7 @@ export function opFuseElement(b: Building, id: number): boolean {
 /** How far apart two parts may be and still be welded into one run. */
 const FUSE_GAP = m(0.6);
 
-/**
- * Moves one block of a building by (dx, dy), with every block that stands on
- * it (and on those): a brick lifts what is stacked on it. Roof equipment goes
- * with its roof. Nothing else changes - the block can be put back.
- */
+/** Moves one block of a building by (dx, dy), with every block that stands on it (and on those) */
 export function opMoveBlock(b: Building, volumeId: number, dx: number, dy: number, snap = true): boolean {
   const v = volumeById(b, volumeId);
   if (!v) return false;
@@ -809,12 +732,7 @@ export function opMoveBlock(b: Building, volumeId: number, dx: number, dy: numbe
   return true;
 }
 
-/**
- * Where a dragged block clicks into place: the shift (dx, dy) that lays one
- * of its sides on a side of another block - flush, face to face, or in line -
- * or its centre on another's centre, when one lies within `reach`. Each axis
- * on its own, so a block slides along a wall and stops at its end.
- */
+/** Where a dragged block clicks into place: the shift (dx, dy) that lays one of its sides on a side of another block */
 export function blockSnap(b: Building, volumeId: number, reach: number): { dx: number; dy: number } {
   const v = volumeById(b, volumeId);
   if (!v) return { dx: 0, dy: 0 };
@@ -837,12 +755,7 @@ export function blockSnap(b: Building, volumeId: number, reach: number): { dx: n
   return { dx, dy };
 }
 
-/**
- * Fuses a volume with a neighbour it is flush against, when the two make one
- * rectangle on the same levels. Returns false when there is no such neighbour
- * (volumes that share a wall already read as one mass, so nothing is lost by
- * leaving them).
- */
+/** Fuses a volume with a neighbour it is flush against, when the two make one rectangle on the same levels. */
 /** What a mass looks like, resolved: its walls, each side's, and its roof. */
 const lookOf = (b: Building, v: Volume): string => JSON.stringify({
   wall: v.materials?.wall ?? b.materials?.wall ?? paletteOf(b).wall,
@@ -875,28 +788,12 @@ export function opUnionVolumes(b: Building, volumeId: number, sameLookOnly = fal
 
 // =============================================================== welding
 
-/**
- * Welds every building the draft touches or overlaps into the draft: the
- * neighbour's masses are brought into its frame, and the result is fused - an
- * overlap is cut out of the smaller mass, flush neighbours that make one
- * rectangle become one block.
- *
- * This is what dragging a block against another does. Refusing the drop and
- * painting the ghost red ("overlaps another building") was the old answer, and
- * it made building a city a game of leaving gaps.
- *
- * Returns the ids to drop from the document once the draft is stored.
- */
+/** Welds every building the draft touches or overlaps into the draft */
 export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly BuildingId[] = []): BuildingId[] {
   const absorbed: BuildingId[] = [];
   const fresh = new Set(draft.volumes.map((v) => v.id));
   const mine = buildingBounds(draft, 0.5);
-  // Only a building whose outlines, grown by 0.5, reach `mine` can weld (the
-  // box test below); its outlines lie in its stored box, which the store's
-  // grid files (`BuildingStore.near`, in the order of `all()`).
-  // DO NOT walk `buildings.all()` here: the ghost of a placement asks this on
-  // every pointer move (`BuildingTool.verdict`), and it built the outlines of
-  // every building of the city each time.
+  // DO NOT walk `buildings.all()` here: the ghost of a placement asks this on every pointer move
   for (const other of ctx.doc.buildings.near(mine.minX - 0.5, mine.minY - 0.5, mine.maxX + 0.5, mine.maxY + 0.5)) {
     if (other.id === draft.id || skip.includes(other.id)) continue;
     const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
@@ -906,12 +803,7 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
       box.minY = Math.min(box.minY, p.y - 0.5); box.maxY = Math.max(box.maxY, p.y + 0.5);
     }
     if (box.maxX < mine.minX || box.minX > mine.maxX || box.maxY < mine.minY || box.minY > mine.maxY) continue;
-    // Does anything actually touch or overlap? A shared edge counts.
-    // Measured on the real outlines, a hair grown: bounding boxes of turned or
-    // shaped masses touched buildings standing metres away.
-    // Everything that stands on the ground counts, free parts too: the same
-    // shapes the validator compares, so a weld is tried exactly where the
-    // validator would otherwise refuse.
+    // Does anything actually touch or overlap?
     const mineRings = [...footprintRects(draft, m(0.02)), ...groundProjections(draft, m(0.02)), ...groundElements(draft, m(0.02))];
     const touches = mineRings.some((a) => otherRings.some((c) => overlapArea(a, c) > 1e-6));
     if (!touches) continue;
@@ -923,18 +815,13 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
       volume.y = polygonBounds(ring).minY;
       volume.w = Math.max(MIN_SIZE, polygonBounds(ring).maxX - volume.x);
       volume.d = Math.max(MIN_SIZE, polygonBounds(ring).maxY - volume.y);
-      // Each mass keeps the look it had: walls and roof of the building it
-      // came from. Left to the building it joins, they took its palette, and
-      // the last building placed painted every one beside it.
+      // Each mass keeps the look it had: walls and roof of the building it came from.
       volume.materials = {
         ...volume.materials,
         wall: v.materials?.wall ?? other.materials?.wall ?? paletteOf(other).wall,
         roof: roofMaterial(other, v),
       };
-      // A box that stays square to this building's frame is a plain volume;
-      // anything else keeps its exact shape as an outline, normalized to its
-      // bounds. Stored in local units (and every four-cornered ring taken for
-      // a box, turned or not) it failed validation: the weld always refused.
+      // A box that stays square to this building's frame is a plain volume
       const b0 = polygonBounds(ring);
       const square = ring.length === 4 && ring.every((p) =>
         (Math.abs(p.x - b0.minX) < 1e-6 || Math.abs(p.x - b0.maxX) < 1e-6) &&
@@ -950,18 +837,12 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
     }
     absorbed.push(other.id);
   }
-  // Nothing is cut: the blocks of both buildings stay whole, overlapping
-  // where they overlap, and can be moved apart again.
+  // Nothing is cut: the blocks of both buildings stay whole, overlapping where they overlap, and can be moved apart again.
   void fresh;
   return absorbed;
 }
 
-/**
- * The part of `ring` inside `within` (local units), as one simple ring - the
- * largest piece when the two meet in several. A mass stacked on a roof is
- * kept on the roof this way, so a rectangle drawn a little past the eaves
- * still stands instead of turning red for want of support.
- */
+/** The part of `ring` inside `within` (local units), as one simple ring - the largest piece when the two meet in several. */
 export function clipRing(ring: readonly Vec2[], within: readonly Vec2[]): Vec2[] | null {
   const pieces = clipping.intersection(asPolygon(ring), asPolygon(within)).flatMap((p) => simplePieces(p));
   let best: Vec2[] | null = null;
@@ -983,11 +864,7 @@ function polygonBounds(ring: readonly Vec2[]): { minX: number; minY: number; max
   return { minX, minY, maxX, maxY };
 }
 
-/**
- * The pieces of a plan polygon (one outer ring, maybe holes) as simple rings
- * without holes: a ring with a hole is split in two through the hole, which
- * a volume can carry (a volume is one simple outline).
- */
+/** The pieces of a plan polygon (one outer ring, maybe holes) as simple rings without holes */
 function simplePieces(poly: clipping.Polygon, depth = 0): Vec2[][] {
   const outer = poly[0];
   if (!outer) return [];
@@ -1021,10 +898,7 @@ export interface FaceRegion {
 /** Depths a relief snaps to: five centimetres. */
 const RELIEF_STEP = m(0.05);
 
-/**
- * What is left of a relief once `region` is cut out of it: up to four
- * rectangles of bays and storeys, each keeping the relief's depth.
- */
+/** What is left of a relief once `region` is cut out of it */
 function cutRelief(r: Relief, region: FaceRegion): Relief[] {
   if (r.side !== region.side || r.bay0 > region.bay1 || region.bay0 > r.bay1 || r.storey0 > region.storey1 || region.storey0 > r.storey1) {
     return [r];
@@ -1040,11 +914,7 @@ function cutRelief(r: Relief, region: FaceRegion): Relief[] {
   return out;
 }
 
-/**
- * Pushes a region of a face out (positive `depth`) or in (negative), in world
- * units snapped to `RELIEF_STEP`; 0 flattens it again. A relief the region
- * overlaps keeps the part of it outside the region.
- */
+/** Pushes a region of a face out (positive `depth`) or in (negative), in world units snapped to `RELIEF_STEP` */
 export function opSetRelief(b: Building, volumeId: number, region: FaceRegion, depth: number, snap = true): boolean {
   const v = volumeById(b, volumeId);
   if (!v) return false;
@@ -1096,10 +966,7 @@ export function opAddElement(b: Building, element: Omit<BuildingElement, 'id'>):
 
 export type ElementPatch = Partial<Pick<BuildingElement, 'w' | 'd' | 'h' | 'z' | 'facing' | 'material'>>;
 
-/**
- * Changes an element's size, height or facing. A stair or a ramp keeps the
- * run its rise needs: setting its rise sets its run.
- */
+/** Changes an element's size, height or facing. */
 export function opUpdateElement(b: Building, id: number, patch: ElementPatch): boolean {
   const e = b.elements?.find((x) => x.id === id);
   if (!e) return false;
@@ -1137,11 +1004,7 @@ export function opRemoveElement(b: Building, id: number): boolean {
 
 const MIRROR_SIDE: Readonly<Record<Side, Side>> = { 0: 0, 1: 3, 2: 2, 3: 1 };
 
-/**
- * Mirrors a building left to right in its own frame - volumes, bays and their
- * overrides, reliefs, per-face materials, elements, cores and a shed's fall -
- * keeping its footprint's centre where it was.
- */
+/** Mirrors a building left to right in its own frame */
 export function opMirror(b: Building): boolean {
   const before = footprintCentre(b);
   const flipSide = (side: Side): Side => MIRROR_SIDE[side];
@@ -1197,8 +1060,7 @@ export function opMirror(b: Building): boolean {
       v.facadeGeometry = controls;
     }
     if (v.fall !== undefined) v.fall = flipSide(v.fall);
-    // The roof equipment goes with its roof: left where it was, it stood off
-    // the mirrored roof and the mirror was refused as "out of limits".
+    // The roof equipment goes with its roof
     for (const part of v.roofDetails ?? []) {
       part.x = -part.x;
       part.rotation = -part.rotation;
@@ -1216,12 +1078,7 @@ export function opMirror(b: Building): boolean {
   return true;
 }
 
-/**
- * Repeats an element in a row across its facing - pillars along a facade, a
- * run of canopies - every `spacing` world units, as many times as fit within
- * the building's extent on that axis without standing inside a volume.
- * Returns how many copies were added.
- */
+/** Repeats an element in a row across its facing - pillars along a facade, a run of canopies */
 export function opRepeatElement(b: Building, id: number, spacing?: number): number {
   const e = b.elements?.find((x) => x.id === id);
   if (!e) return 0;

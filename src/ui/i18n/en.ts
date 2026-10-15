@@ -1,9 +1,6 @@
 import type { Dictionary } from './index';
 
-/**
- * The English interface strings, and the reference every other language is
- * checked against: a key missing from another dictionary falls back to here.
- */
+/** The English interface strings, and the reference every other language is checked against */
 export const EN: Dictionary = {
   'tool.zone': 'Zoning',
   'zone.title': 'ZONING',
@@ -984,8 +981,7 @@ export const EN: Dictionary = {
   'creator.pattern.artDecoCrown': 'Deco crown',
   'creator.pattern.observation': 'Glazed lookout',
 
-  // ------------------------------------------------------------- builder
-  // The Builder Workspace: the buildings module's own interface.
+  // ------------------------------------------------------------- builder The Builder Workspace
   'builder.label': 'Builder workspace',
   'builder.grid': 'Grid',
   'builder.view.frame': 'Frame the selection',

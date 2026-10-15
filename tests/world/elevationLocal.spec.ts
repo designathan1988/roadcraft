@@ -9,15 +9,7 @@ import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
 import type { RoadStructure } from '@world/structures';
 import { m } from '@world/units';
 
-/**
- * THE ROADS' HEIGHTS SOLVED WHERE A CHANGE REACHES (`elevation.ts`, "what is
- * solved again"): after random edits with a seed - a node moved, raised or
- * lowered, a road made a viaduct, a bridge or a tunnel or put back on the
- * ground, a road taken away - the solve started from the last one equals a
- * solve from nothing, road by road and node by node; and an edit of one road
- * of a town solves a few roads, not the town (the town is one connected piece,
- * which was solved whole at every edit).
- */
+/** THE ROADS' HEIGHTS SOLVED WHERE A CHANGE REACHES (`elevation.ts`, "what is solved again") */
 function lines(doc: RoadDoc, elevation: RoadElevation): string[] {
   const out: string[] = [];
   const summaries = elevation.summaries!();

@@ -36,13 +36,7 @@ function tileArrays(parts: readonly Tile[]): {
   return { position, normal, uv, color, roadSection, index };
 }
 
-/**
- * One mesh of a surface from its tiles, in order. The mesh is the only copy
- * the network keeps, on the GPU (`gpuOnly`): `source` makes its tiles again
- * from what they were made from (`roadSurfaces.ts`), for a lost WebGL context.
- * DO NOT pass a source that returns `parts`: the closure would hold every
- * tile's arrays for as long as the mesh lives.
- */
+/** DO NOT pass a source that returns `parts`: the closure would hold every tile's arrays for as long as the mesh lives. */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
   far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void }): Mesh | null {
@@ -55,9 +49,7 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
   geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
   geometry.setIndex(new BufferAttribute(arrays.index, 1));
-  // Bounded by its tiles' boxes, made with them in the worker (`tileMesh.ts`): DO NOT measure every
-  // vertex of the block again on the page (0.6 s of a 2,560 m city's road blocks, 2026-10-15). The box
-  // is the one its vertices give; the sphere is the box's (`Box3.getBoundingSphere`): it holds them all.
+  // Bounded by its tiles' boxes, made with them in the worker (`tileMesh.ts`)
   if (parts.every((tile) => tile.box)) {
     const box = new Box3();
     for (const tile of parts) {
@@ -72,8 +64,7 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   const mesh = finish(geometry, options);
   tilesOnGpu(mesh, source);
   if (far) {
-    // The block's far level is made off the page (`roadTile.worker.ts`) and arrives later (`attachFarLevel`): the
-    // block is its own mesh until then. DO NOT simplify it here, a block after the other on the page.
+    // DO NOT simplify it here, a block after the other on the page.
     mesh.userData[LOD_KEY] = { coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true } satisfies BlockLevels;
     far.start?.(mesh, arrays);
   }
@@ -85,11 +76,7 @@ export function cloneBlock(arrays: BlockArrays): BlockArrays {
   return { position: arrays.position.slice(), normal: arrays.normal.slice(), uv: arrays.uv.slice(), color: arrays.color.slice(), roadSection: arrays.roadSection.slice(), index: arrays.index.slice() };
 }
 
-/**
- * The block's far level (`roadLod.ts`) as it arrives from its worker: a simplified mesh beside the block's own, one of
- * the two on the GPU. `near`: the block's own stays (the far one waits hidden); else the far one is drawn and the
- * block's own gives its buffers and arrays back at once (`roadResidency.ts`) - it was never sent to the GPU.
- */
+/** The block's far level (`roadLod.ts`) as it arrives from its worker */
 export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
   lock: readonly [number, number, number, number], near: boolean): Mesh {

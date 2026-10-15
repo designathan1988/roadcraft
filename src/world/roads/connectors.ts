@@ -1,21 +1,6 @@
 import type { NodeId, SegmentId } from '../ids';
 
-/**
- * LANE CONNECTORS BY HAND (docs/source/VIAS.md V4): which lane of a road arriving
- * at a node may continue into which lane of a road leaving it. The game
- * derives the connections itself (`lanelets.ts` `buildJunctions`: lane
- * arrows, plausible lane pairs, a fallback so no lane is left without an
- * exit); a node may carry the player's own for some of its arriving lanes
- * (`RoadNode.laneLinks`), and for those lanes exactly the player's
- * connections are built - never overwritten by the derived ones. A link to
- * or from a lane that no longer exists (a road removed, split or narrowed)
- * is left out of the build and dropped the next time the node is edited.
- *
- * As in Traffic Manager: President Edition's lane connector
- * (github.com/CitiesSkylinesMods/TMPE, `LaneConnectionSubManager.cs`): a
- * lane with connections of its own uses only those, the others keep the
- * game's; invalid lanes lose their connections.
- */
+/** LANE CONNECTORS BY HAND */
 export interface LaneLink {
   /** The arriving road and its lane (laneIndex: 0 innermost). */
   readonly from: SegmentId;
@@ -72,15 +57,7 @@ export interface NodeLanes {
   readonly built: readonly LaneLink[];
 }
 
-/**
- * The node's links after the player toggles one connection (docs/source/VIAS.md V4):
- * the first edit of an arriving lane starts from the connections the game
- * built for it, so taking one away leaves the rest; a lane is never left
- * without a way on (the toggle that would is refused: null). Links to lanes
- * the node no longer has are dropped. An arriving lane whose links come back
- * to exactly what the game builds by itself keeps them (they are the
- * player's), until "restore" clears the node.
- */
+/** The node's links after the player toggles one connection */
 export function toggleLaneLink(
   current: readonly LaneLink[] | undefined, lanes: NodeLanes, link: LaneLink,
 ): LaneLink[] | undefined | null {

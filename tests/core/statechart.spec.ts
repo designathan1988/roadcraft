@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Machine, type StateSpec } from '@core/statechart';
 
-/** The SCXML semantics the machine promises (docs/research/controllers.md). */
+/** The SCXML semantics the machine promises. */
 type E = { type: 'go'; to?: string } | { type: 'ping' } | { type: 'chain' } | { type: 'up' } | { type: 'reset' };
 
 function machine(log: string[]) {

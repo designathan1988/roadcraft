@@ -1,13 +1,6 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 
-/**
- * THE FAR LEVEL OF A BLOCK OF ROAD SURFACE, as arrays (`roadLod.ts` makes the mesh): the block's own mesh
- * simplified edge by edge (meshoptimizer, quadric error: Garland and Heckbert, 1997; zeux's
- * `meshopt_simplifyWithAttributes`), the vertices on the block's outer edge locked so no crack opens between
- * two blocks of different level, and the normals and tints weighing in the error. Pure: no three, no DOM, so a
- * worker makes it (`roadTile.worker.ts`): on the page it was 2,000 blocks of a 2,560 m city one after the other
- * in the opening, and the town stood later by as much (2026-10-15).
- */
+/** THE FAR LEVEL OF A BLOCK OF ROAD SURFACE, as arrays (`roadLod.ts` makes the mesh) */
 
 /** A block's arrays, as `tileArrays` makes them. */
 export interface BlockArrays extends Readonly<Record<string, ArrayLike<number>>> {
@@ -26,11 +19,7 @@ const COARSE_RATIO = 0.08;
 /** A block with fewer triangles than this is not simplified: its far level would save nothing. */
 const COARSE_MIN_TRIANGLES = 160;
 
-/**
- * The coarse arrays of a block, or null when it is too small to be worth it or the simplifier cannot run.
- * `lock`: the block's outer box [minX, minY, maxX, maxY] in world units (the mesh's x and z = -y): a vertex on it
- * is not moved, so the blocks' borders agree whatever their level.
- */
+/** The coarse arrays of a block, or null when it is too small to be worth it or the simplifier cannot run. */
 export function coarseArrays(block: BlockArrays, lock: readonly [number, number, number, number]): BlockArrays | null {
   const count = block.position.length / 3;
   const indices = block.index.length;

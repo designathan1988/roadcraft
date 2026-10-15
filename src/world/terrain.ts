@@ -10,74 +10,18 @@ export interface TerrainStamp {
   readonly radius: number;
   readonly strength: number;
   readonly mode: TerrainMode;
-  /**
-   * Height a `flatten` stamp levels towards. Absent means sea level, which is
-   * what every stamp written before this field existed meant, so a saved map
-   * loads unchanged.
-   *
-   * Levelling towards a TARGET is the difference between a tool that flattens
-   * and a tool that levels. The old rule scaled the ground towards zero, so
-   * "flatten" on a hillside pulled a plateau down to the datum instead of
-   * making the ground under the cursor level with itself — which is what a
-   * player levelling a site for a junction is actually asking for.
-   */
+  /** Height a `flatten` stamp levels towards. */
   readonly level?: number;
-  /**
-   * The brush stroke this dab belongs to. Within one stroke the dabs of a
-   * raise, lower or river do NOT add up: the stroke moves the ground by the
-   * strongest dab over each point and no more - a brush's OPACITY, not its
-   * flow (Photoshop and Krita draw the same line: opacity caps what one
-   * stroke can do however often it passes; lift the pen and paint again to
-   * build up). Summed, a held brush stacked a hundred dabs on one spot,
-   * the ground hit the height ceiling and came out a flat-topped cylinder
-   * with vertical walls; as a union, a stroke lays a ridge, a valley or a
-   * channel of even height along its path, and a mountain is built stroke
-   * by stroke, with slopes the falloff sets.
-   *
-   * Absent (the town's own landform, maps saved before this field) means a
-   * dab of its own, added as before.
-   */
+  /** The brush stroke this dab belongs to. */
   readonly stroke?: number;
-  /**
-   * Where a rough dab's noise is measured from (`rough`): the first dab of
-   * its stroke, written in the same coordinates as the dab itself. Measured
-   * from the point itself, the noise was the map's own (Unity Terrain Tools'
-   * "World" coordinate space), and every plate's own coordinates give the
-   * same ground other numbers (`render/flatAtlas.ts`): the two plates either
-   * side of a border raised the same stroke into two different hills, a step
-   * of up to 4 m along it (2026-10-11). From a point both plates carry with
-   * the dab, they agree; every dab of a stroke still shares it, so the
-   * stroke's lobes stay one. Absent (dabs before this field, the town's own
-   * landform): the point.
-   */
+  /** Where a rough dab's noise is measured from (`rough`) */
   readonly ox?: number;
   readonly oy?: number;
-  /**
-   * A natural brush (raise and lower dabs the player paints): the reach
-   * wanders between ROUGH_REACH_MIN and the full radius with a world-space
-   * noise, so a dab is not a circle, and the height is carved by a ridged
-   * noise into crests and gullies (Unity Terrain Tools' noise brush: a noise
-   * type over the falloff). Ten smooth domes on one spot made a perfect cone.
-   *
-   * Absent (the town's landform, maps saved before this field) means the
-   * smooth dome, so saved ground is unchanged. The reach only ever SHRINKS,
-   * so the spatial index's buckets, built on `radius`, stay right.
-   */
+  /** A natural brush (raise and lower dabs the player paints) */
   readonly rough?: boolean;
-  /**
-   * How hard the brush's edge is, 0..1, for raise and lower: 0 (absent) the
-   * smooth dome; towards 1 the full height holds over the dab and drops in
-   * the outer rim only - a mesa's flat top and its cliff, a canyon's floor
-   * and walls (a terrain brush's falloff curve, Unity's Brush "Falloff",
-   * from smooth fades to sharp edges).
-   */
+  /** How hard the brush's edge is, 0..1, for raise and lower: 0 (absent) the smooth dome */
   readonly hardness?: number;
-  /**
-   * A raise's SHAPE other than the dome of its falloff. 'dome': a granite
-   * sugarloaf (a bornhardt - Rio's Pão de Açúcar, Quixadá's monoliths): a
-   * rounded crown on sides that steepen to a wall at the foot, its outline
-   * wandering if the dab is rough but its crown smooth. Absent: the falloff.
-   */
+  /** A raise's SHAPE other than the dome of its falloff. 'dome': a granite sugarloaf */
   readonly profile?: TerrainProfile;
 }
 
@@ -85,55 +29,19 @@ export interface TerrainStamp {
 export type TerrainProfile = 'dome';
 export const isTerrainProfile = (value: unknown): value is TerrainProfile => value === 'dome';
 
-/**
- * A sugarloaf's section, 1 at its centre to 0 at its foot, over `d` = the
- * share of the reach out from the centre: a crown that stays round over the
- * inner half, then sides steepening to a near wall (a bornhardt's).
- */
+/** A sugarloaf's section, 1 at its centre to 0 at its foot, over `d` = the share of the reach out from the centre */
 const sugarloafProfile = (d: number): number => Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.max(0, d)), 2.4)), 0.6);
 
-/**
- * How many brush dabs one map may hold.
- *
- * It was 512, and a river painted across the map is several hundred on its own:
- * the oldest dabs were silently dropped off the front of the list and the start
- * of the player's own river disappeared while they were still drawing the end
- * of it. The spatial index makes the sampling cost depend on local density
- * rather than on this number, so the cap can be generous.
- */
+/** How many brush dabs one map may hold. */
 export const MAX_TERRAIN_STAMPS = 4_096;
-/**
- * The vertical extent of the land, in world units: how deep a pit and how high
- * a mountain the brush may ever make.
- *
- * They were -26 and +34 — ten metres down, fourteen up — which is a garden
- * terrace: a sustained stroke stopped moving the ground and the terrain simply
- * planed off into a plateau at the ceiling. A map wanted mountains, valleys and
- * cuttings, and none of them fit.
- *
- * The map is 4 800 units (1 920 m) across, so the range is set against it: a
- * 560-unit mountain is 224 m over a plate two kilometres wide — a real
- * landform — and a 360-unit pit is 144 m, deeper than anything a player is
- * likely to dig on purpose. Deliberately NOT symmetric, because a town sits on
- * the land at 0 and the interesting relief (ridges, hillsides, lookouts) is
- * almost all above it.
- *
- * These are absolute bounds of the height FIELD, not a brush strength: a dab
- * still moves the ground by its own `strength`, and only the accumulated
- * result is clamped.
- */
+/** The vertical extent of the land, in world units: how deep a pit and how high a mountain the brush may ever make. */
 export const TERRAIN_MIN_HEIGHT = m(-144);
 export const TERRAIN_MAX_HEIGHT = m(224);
 export const TERRAIN_WATER_HEIGHT = m(0.048);
 /** The extra factor a river stamp carves with, over a raise of the same strength. */
 export const RIVER_CARVE = 1.45;
 
-/**
- * How much a stamp of strength 1 bends the ground `unit` of the way out, where
- * `unit` runs from 1 at its centre to 0 at its edge (the smoothstep). Monotone,
- * so it can be inverted to find where a carve is a given depth — which is where
- * a shoreline sits.
- */
+/** How much a stamp of strength 1 bends the ground `unit` of the way out */
 export const terrainInfluence = (unit: number): number => unit * unit * (3 - 2 * unit);
 
 /** The narrowest share of its radius a hard dab's edge falls over (`TerrainStamp.hardness`). */
@@ -151,26 +59,7 @@ export const ROUGH_REACH_MIN = 0.78;
 
 // --------------------------------------------------------------- base relief
 
-/**
- * The land the map starts with, before the player touches it.
- *
- * A perfectly flat plane is the single biggest reason a 3D scene reads as a
- * drawing: with no relief there is nothing for the sun to shade, so the ground
- * is one flat colour from horizon to horizon whatever the lighting does.
- *
- * Four octaves of smooth, deterministic noise give the eye slopes to read. The
- * amplitudes were set by MEASURING the result rather than by taste: at a broad
- * wavelength alone the field's median slope came out at 2 degrees and its
- * steepest at 7, which changes how much sun a face takes by about a tenth —
- * under the eye's threshold for reading shape, and the reason the ground still
- * looked painted after the lighting was fixed. Shortening the wavelengths and
- * splitting the amplitude across four octaves brings the median to roughly 7
- * degrees and the steepest to around 20, which the sun models clearly, while
- * the largest landforms stay gentle enough for a road at grade to climb.
- *
- * Deterministic and analytic: no array, no seeding step, identical in the
- * renderer, the simulation and a headless test.
- */
+/** The land the map starts with, before the player touches it. */
 const BASE_AMPLITUDE = 32;
 
 function hash2(x: number, y: number): number {
@@ -194,33 +83,16 @@ export function valueNoise(x: number, y: number): number {
   return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
 }
 
-/**
- * Which land a map starts from (`RoadDoc.terrainRelief`): 1 the gentle
- * four-octave field every map saved before this existed was built on, 2 the
- * natural landform (`naturalRelief`), 3 a level plain (height 0 everywhere,
- * the player's flat map). A map keeps the one it was made on, so its roads
- * never find the ground moved under them.
- */
+/** Which land a map starts from (`RoadDoc.terrainRelief`) */
 export type ReliefVersion = 1 | 2 | 3;
 export const RELIEF_LEGACY: ReliefVersion = 1;
 export const RELIEF_NATURAL: ReliefVersion = 2;
 export const RELIEF_FLAT: ReliefVersion = 3;
-/**
- * A saved map's relief as the document reads it, or null when the value is
- * none. 4 was the planet's Earth (continents and oceans), gone with the
- * planet (the player, 2026-10-13): such a map opens on the level plain.
- */
+/** A saved map's relief as the document reads it, or null when the value is none. 4 was the planet's Earth */
 export const readRelief = (value: unknown): ReliefVersion | null =>
   value === 1 || value === 2 || value === 3 ? value : value === 4 ? RELIEF_FLAT : null;
 
-/**
- * Where a map's own relief (1, 2) stands: the plate of the map of before,
- * 1.92 km about the origin, where the maps made then and their roads lie,
- * eased into the level plain over `RELIEF_BLEND` past it. Spread over the
- * whole map of 10 km, the old field's value noise lit by a low sun read as
- * dark blotches in steps over all the land (the player, 2026-10-13: "os
- * gráficos estão péssimos"); before, the Earth's land took over there.
- */
+/** Where a map's own relief (1, 2) stands */
 const RELIEF_HALF = m(960);
 const RELIEF_BLEND = m(480);
 
@@ -239,23 +111,7 @@ const smooth01 = (t: number): number => {
   return k * k * (3 - 2 * k);
 };
 
-/**
- * The natural landform: country, not a plate.
- *
- * - DOMAIN-WARPED (Inigo Quilez, "warp"): every octave is read at a position
- *   bent by a slow noise, so ridges curve and valleys meander instead of the
- *   isotropic blobs plain fbm gives.
- * - REGIONS: a slow mask decides where the land is hilly and where it is a
- *   plain, so a map has flat ground to build a town on and hills to look at,
- *   not one even roughness everywhere.
- * - RIDGED octaves (1 - |n|, squared) in the hills: crests and spurs with
- *   gullies between, the shape erosion leaves, not round domes.
- * - Rolling swells and a metre-scale micro-relief over everything, so a
- *   slope catches the light in more than one plane.
- *
- * Amplitudes in world units (2.5 to the metre): a plain within a few metres,
- * hills to some 75 m over it - enough to read from the map camera.
- */
+/** The natural landform: country, not a plate. - DOMAIN-WARPED (Inigo Quilez, "warp") */
 export function naturalRelief(x: number, y: number): number {
   return naturalReliefTuned(x / TUNED_UNIT, y / TUNED_UNIT) * TUNED_UNIT;
 }
@@ -301,14 +157,7 @@ function baseReliefTuned(x: number, y: number): number {
 
 // -------------------------------------------------------------- stamp lookup
 
-/**
- * A uniform grid over the stamps, so a height query touches only nearby ones.
- *
- * `sampleTerrainHeight` runs once per terrain vertex on every terrain edit, and
- * again for every road profile station and every mesh vertex of every road. With
- * a linear scan and the stamp cap at 512 that was over fifty million distance
- * tests per brush stroke, which is precisely the stall felt while painting.
- */
+/** A uniform grid over the stamps, so a height query touches only nearby ones. */
 export class TerrainIndex {
   private readonly buckets = new Map<number, TerrainStamp[]>();
   readonly stamps: readonly TerrainStamp[];
@@ -317,25 +166,16 @@ export class TerrainIndex {
   /** The land under the stamps (`ReliefVersion`). */
   readonly relief: ReliefVersion;
 
-  /**
-   * The land under the stamps when it is read otherwise than from the relief
-   * at the point itself: a plate's, in its own coordinates, from the corners
-   * read off the page (`render/flatAtlas.ts`). Undefined: the relief's field.
-   */
+  /** The land under the stamps when it is read otherwise than from the relief at the point itself */
   readonly ground: ((x: number, y: number) => number) | undefined;
 
   constructor(stamps: readonly TerrainStamp[], revision: number, relief: ReliefVersion = RELIEF_LEGACY, ground?: (x: number, y: number) => number) {
     this.relief = relief;
     this.ground = ground;
-    // COPIED, not aliased. The document's stamp list is mutated in place, so
-    // holding the live array made every index look identical to the next one and
-    // the renderer could never tell what had just changed.
+    // COPIED, not aliased.
     this.stamps = stamps.slice();
     this.revision = revision;
-    // A FIXED cell, each stamp filed in every cell it covers. DO NOT size the
-    // cell by the widest stamp: one wide stamp (the default town's hill, 560 m)
-    // made every cell that wide, and every height query - a terrain vertex, a
-    // road station - read nearly every stamp of the map.
+    // DO NOT size the cell by the widest stamp: one wide stamp
     for (const stamp of stamps) {
       const x0 = Math.floor((stamp.x - stamp.radius) / STAMP_CELL);
       const x1 = Math.floor((stamp.x + stamp.radius) / STAMP_CELL);
@@ -352,12 +192,7 @@ export class TerrainIndex {
     }
   }
 
-  /**
-   * The stamps that can affect a point, in authoring order.
-   *
-   * Order matters: `flatten` scales whatever the stamps before it produced, so
-   * applying them out of order gives a different surface.
-   */
+  /** The stamps that can affect a point, in authoring order. */
   near(x: number, y: number): readonly TerrainStamp[] {
     return this.buckets.get(stampCellKey(Math.floor(x / STAMP_CELL), Math.floor(y / STAMP_CELL))) ?? EMPTY;
   }
@@ -370,13 +205,7 @@ const stampCellKey = (i: number, j: number): number => (i + 32768) * 65536 + (j 
 
 const EMPTY: readonly TerrainStamp[] = [];
 
-/**
- * The height of the land at a point: base relief plus every stamp over it.
- *
- * Pass a `TerrainIndex` whenever the same stamp list is sampled more than a
- * handful of times; the plain array overload is kept for one-off queries and
- * for tests.
- */
+/** The height of the land at a point: base relief plus every stamp over it. */
 export function sampleTerrainHeight(
   stamps: readonly TerrainStamp[] | TerrainIndex,
   x: number,
@@ -386,8 +215,7 @@ export function sampleTerrainHeight(
   const relief = stamps instanceof TerrainIndex ? stamps.relief : RELIEF_LEGACY;
   const ground = stamps instanceof TerrainIndex ? stamps.ground : undefined;
   let height = ground ? ground(x, y) : reliefHeight(relief, x, y);
-  // The stroke being gathered (see `TerrainStamp.stroke`): its id, its mode,
-  // and the strongest signed move any of its dabs makes here so far.
+  // The stroke being gathered (see `TerrainStamp.stroke`)
   let stroke: number | undefined;
   let strokeMode: TerrainMode | undefined;
   let strokeMove = 0;
@@ -410,17 +238,14 @@ export function sampleTerrainHeight(
     const nx = stamp.ox === undefined ? x : x - stamp.ox;
     const ny = stamp.oy === undefined ? y : y - stamp.oy;
     if (stamp.rough && stamp.mode === 'river') {
-      // A river with a BED: a wide flat floor and ramped banks that wander
-      // in and out along its length, at a depth a river has (some 6 m at
-      // full strength) - not the smooth-walled canyon the dome profile cut.
+      // A river with a BED: a wide flat floor and ramped banks that wander in and out along its length, at a depth a river has
       const lobe = stamp.radius * 0.6;
       reach *= ROUGH_REACH_MIN + (1 - ROUGH_REACH_MIN) * (0.5 + 0.5 * valueNoise(nx / lobe + 23.9, ny / lobe + 31.4));
       if (distance >= reach) continue;
       carve = RIVER_BED_DEPTH;
       bedProfile = true;
     } else if (stamp.rough && (stamp.mode === 'raise' || stamp.mode === 'lower')) {
-      // World-space noise scaled by the brush, so every dab of a stroke (one
-      // radius) agrees on the same lobes and crests.
+      // World-space noise scaled by the brush, so every dab of a stroke (one radius) agrees on the same lobes and crests.
       const lobe = stamp.radius * 0.45;
       reach *= ROUGH_REACH_MIN + (1 - ROUGH_REACH_MIN) * (0.5 + 0.5 * valueNoise(nx / lobe + 41.3, ny / lobe - 17.9));
       if (distance >= reach) continue;
@@ -429,14 +254,11 @@ export function sampleTerrainHeight(
         const crest = stamp.radius * 0.55;
         const ridge = 1 - Math.abs(valueNoise(nx / crest - 5.1, ny / crest + 8.6));
         // Gentle: dabs stack, and a strong carve stacked ten times drew spires.
-        // A hard dab (a mesa, a canyon) keeps a flatter top and floor.
         carve = 1 + (0.36 * ridge * ridge - 0.18) * (1 - 0.75 * (stamp.hardness ?? 0));
       }
     }
     const unit = 1 - distance / reach;
     // A hard edge: the falloff squeezed into the dab's outer rim.
-    // Never narrower than MIN_HARD_WALL: a wall thinner than a few cells of the drawn grid
-    // came out a zigzag of teeth along its rim.
     const rim = stamp.hardness && (stamp.mode === 'raise' || stamp.mode === 'lower') ? Math.min(1, Math.max(MIN_HARD_RIM, 1 - stamp.hardness, MIN_HARD_WALL / reach)) : 1;
     const influence = (bedProfile ? terrainInfluence(Math.min(1, unit / RIVER_BED_FLOOR))
       : stamp.profile === 'dome' && stamp.mode === 'raise' ? sugarloafProfile(1 - unit)
@@ -451,9 +273,7 @@ export function sampleTerrainHeight(
       if (Math.abs(move) > Math.abs(strokeMove)) strokeMove = move;
     } else if (stamp.mode !== 'flatten') height += move;
     else {
-      // Level towards the stamp's own target. With `level` absent this is
-      // `height * (1 - k)` — algebraically the rule it replaced, so old maps
-      // are bit-for-bit unaffected.
+      // Level towards the stamp's own target.
       const target = stamp.level ?? 0;
       height += (target - height) * Math.min(1, stamp.strength / m(4)) * influence;
     }

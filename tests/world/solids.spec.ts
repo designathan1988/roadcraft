@@ -5,11 +5,7 @@ import { m } from '@world/units';
 import type { PoleId } from '@world/ids';
 import { proveIncremental } from '../support/derivedEquivalence';
 
-/**
- * THE SOLIDS ON THE SPINE (`world/solids.ts`, `world/derived.ts`): kept item by
- * item from the diary, equal at every step to the solids made from nothing,
- * looked up the same, and an edit of one item computes that item only.
- */
+/** THE SOLIDS ON THE SPINE (`world/solids.ts`, `world/derived.ts`) */
 const span = m(600);
 const at = (rng: { float(): number }) => ({ x: rng.float() * span, y: rng.float() * span });
 const pick = <T>(list: readonly T[], rng: { float(): number }): T | undefined => list[Math.floor(rng.float() * list.length)];

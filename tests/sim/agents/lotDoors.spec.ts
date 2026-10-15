@@ -13,12 +13,7 @@ import { createAgentWalkEngine, inspectAgentWalkers } from '@sim/agents/walk';
 import { doorWay, personGates } from '@sim/agents/lotDoors';
 import { streetDoors } from '@world/buildings/streetDoors';
 
-/**
- * People use the lots' people's gates (the player, 2026-10-09: every lot has
- * one, nobody walked through it): a share of the walkers comes out of a
- * door, down the path and out through the gate, or in the other way, and the
- * way in the lot keeps clear of the walls, fences and the building.
- */
+/** People use the lots' people's gates (the player, 2026-10-09: every lot has one, nobody walked through it) */
 
 const BOUNDARY = new Set(['wall', 'fence', 'hedge', 'railing']);
 
@@ -73,8 +68,7 @@ describe('the way from a lot door out through its people gate', () => {
     let gated = 0, found = 0;
     const missing: string[] = [];
     for (const b of doc.buildings.all()) {
-      // A gate in front of the building (`lotPlan.ts`: on the path to the door); a lot built up to the
-      // street has its gates on the side passages, and its door on the footway.
+      // A gate in front of the building (`lotPlan.ts`: on the path to the door)
       const front = personGates(b).some((g) => b.volumes.some((v) => !v.open && v.base === 0 && g.x > v.x && g.x < v.x + v.w && v.y > g.y + m(1)));
       if (!front) continue;
       gated++;
@@ -141,9 +135,7 @@ describe('the scenery uses the gates', () => {
     // Standing still on a lot's path: two meeting in single file pass each other (SUMO's narrow jam, 1 s).
     const standing = new Map<number, number>();
     let longestStand = 0;
-    // Spinning on the spot: the heading round more than a whole turn in 2 s
-    // while the body stays within half a metre (Etapa 5a; a walker circled
-    // the end of a short lot stretch at 4 rad/s, 2026-10-10).
+    // Spinning on the spot: the heading round more than a whole turn in 2 s while the body stays within half a metre
     const windows = new Map<number, { x: number; y: number; heading: number; t: number }>();
     const spinning = new Set<number>();
     let spinDetail = '';

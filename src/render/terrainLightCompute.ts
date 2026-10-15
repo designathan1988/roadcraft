@@ -1,31 +1,4 @@
-/**
- * THE LAND'S OWN LIGHT, from its heights alone (`terrain.ts` draws it, the
- * worker in `terrainLight.worker.ts` works it out) - what makes a relief read
- * as one: the ground itself casts no shadow map (180 000 triangles drawn twice
- * a frame), so a chapada threw no shadow over the plain and a valley was as
- * bright as a ridge.
- *
- *  - SUN: from every corner a ray is marched towards the sun over the
- *    heightfield, keeping how near it passes over the ground for its distance
- *    (Inigo Quilez's soft shadows, min(k h / t)): fully lit, in the penumbra
- *    of a ridge, or behind it (the heightfield shadows of horizon and shadow
- *    height maps).
- *  - SKY: the horizon is found in eight directions round every corner and
- *    each direction sees 1 - sin^2 of it - three's GTAO integral for a surface
- *    seen from above - so valleys, hollows and the feet of walls see less sky.
- *
- * Worked out for the corners a change can reach and no others: a corner's
- * horizon depends only on the ground within its search (Stewart, "Fast
- * Horizon Computation at All Points of a Terrain With Visibility and
- * Shading Applications", TVCG 1997), so a road drawn relights the ground
- * round it, its sky's reach, and the band its relief can shade away from
- * the sun - as an engine refreshes a terrain's dirty region only (Unity,
- * `TerrainData.DirtyHeightmapRegion`). The whole map was lit again for every
- * quarter-block the ground was shaped in: fourteen times 120-220 ms for one
- * road (the player, 2026-10-08).
- *
- * Pure: no three, no DOM.
- */
+/** THE LAND'S OWN LIGHT, from its heights alone */
 
 /** The corner grid: `n` corners a side, `cell` world units apart, centred on the origin. */
 export interface LightGrid {
@@ -47,15 +20,7 @@ interface Sun {
   readonly z: number;
 }
 
-/**
- * What the land's shape says per corner, for its colours (`lightLand`): its
- * share of the sky past the hills round it, its steepness - the steepest of
- * the four cells it shares, half blended with its neighbours', so a wall
- * stays a wall and its edge is a curve read bilinearly, not the mesh's
- * triangles - and its CONVEXITY, the Laplacian of the heights (World
- * Machine's convexity selector, Gaea's curvature map): ridges and tops
- * against hollows and valley floors.
- */
+/** What the land's shape says per corner, for its colours (`lightLand`) */
 interface LandShape {
   readonly sky: Float32Array;
   /** Degrees. */
@@ -180,8 +145,7 @@ function skyOf(grid: LightGrid, heights: Float64Array, sky: Float32Array, rect: 
 interface Aim { readonly dgx: number; readonly dgy: number; readonly rise: number }
 
 function aimAt(grid: LightGrid, sun: Sun): Aim {
-  // x grows with world x, the rows with -y (world y is three's -z, so the
-  // rows grow with three's z).
+  // x grows with world x, the rows with -y (world y is three's -z, so the rows grow with three's z).
   const hl = Math.hypot(sun.x, sun.z) || 1e-6;
   // Height gained per grid cell along the ray.
   return { dgx: sun.x / hl, dgy: sun.z / hl, rise: (Math.max(0.03, sun.y) / hl) * grid.cell };
@@ -197,13 +161,7 @@ function heightRange(heights: Float64Array): { min: number; max: number } {
   return { min, max };
 }
 
-/**
- * The corners whose light a change of the heights in `moved` can alter: their
- * shape's reach (`shapeReach`), and every corner whose ray towards the sun
- * crosses the moved ground - those lying away from the sun from it, as far
- * as a ray can still pass under the highest ground ((max - min) / rise
- * cells; a ray above it is cut off, `lightLand`).
- */
+/** The corners whose light a change of the heights in `moved` can alter: their shape's reach */
 function lightReach(grid: LightGrid, heights: Float64Array, sun: Sun, moved: CornerRect): CornerRect {
   const aim = aimAt(grid, sun);
   const { min, max } = heightRange(heights);
@@ -214,11 +172,7 @@ function lightReach(grid: LightGrid, heights: Float64Array, sun: Sun, moved: Cor
   return unionCorners(shapeReach(grid, moved), clampRect(grid, swept));
 }
 
-/**
- * The light of the corners in `rect`, RGBA a corner into `out` (`outWidth`
- * corners a row, the rect's first corner at 0): R the sun, G the sky, B the
- * convexity, A the slope.
- */
+/** The light of the corners in `rect`, RGBA a corner into `out` (`outWidth` corners a row, the rect's first corner at 0) */
 function lightLand(
   grid: LightGrid,
   heights: Float64Array,
@@ -280,11 +234,7 @@ export interface LightResult {
   readonly ms: number;
 }
 
-/**
- * The land's light kept between requests (the worker's own state, or the
- * page's when there is no worker): the shape of the whole land, worked out
- * again only where it moved.
- */
+/** The land's light kept between requests (the worker's own state, or the page's when there is no worker) */
 export function createLandLighter(grid: LightGrid): (request: LightRequest) => LightResult {
   let shape: LandShape | null = null;
   return (request) => {

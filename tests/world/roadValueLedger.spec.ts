@@ -6,11 +6,7 @@ import { segmentPolyline } from '@world/geometry';
 import type { NodeId, SegmentId } from '@world/ids';
 import { m } from '@world/units';
 
-/**
- * THE ROADS' VALUE KEPT FROM THE DIARY (`economy.ts` `roadValue`): after any
- * edit, of the document or of a working copy of it, it is the sum of every
- * road's price worked out from nothing.
- */
+/** THE ROADS' VALUE KEPT FROM THE DIARY (`economy.ts` `roadValue`) */
 const fromNothing = (doc: RoadDoc): number => {
   let total = 0;
   for (const s of doc.segments.values()) total += segmentCost(doc, s, segmentPolyline(doc, s).length);

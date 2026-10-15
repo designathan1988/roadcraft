@@ -1,13 +1,6 @@
 import { FINISHES, FINISH_COLOUR, type Finish } from '@world/buildings/materials';
 
-/**
- * A tile's picture for a finish: the surface itself, drawn rather than
- * lettered. Thirteen rollers painted the same glyph before this, which named
- * the materials without showing any of them.
- *
- * The colours are the finish's own character - brick is brick-red before it is
- * painted - and the pattern is what tells one from another at 56 px.
- */
+/** A tile's picture for a finish: the surface itself, drawn rather than lettered. */
 
 const BASE = Object.fromEntries(FINISHES.map((f) => [f, `#${FINISH_COLOUR[f].toString(16).padStart(6, '0')}`])) as Readonly<Record<Finish, string>>;
 

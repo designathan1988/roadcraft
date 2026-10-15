@@ -7,19 +7,7 @@ import { perM } from '@core/units';
 export const MIN_ZOOM = perM(0.45);
 export const MAX_ZOOM = perM(8);
 
-/**
- * The camera is applied as a canvas transform and nothing else.
- *
- * The V6 monolith projected every point in JavaScript through `worldToScreen`
- * and hand-multiplied every stroke width and dash length by the zoom, while
- * vehicles used `ctx.translate/rotate/scale` — two conflicting conventions in
- * one renderer (defect 5.12). Here there is one: draw in world units.
- *
- * Three things fall out of that. Line widths and dash patterns are already in
- * world units, so nothing is scaled by hand. `Path2D` objects are camera
- * independent, so panning and zooming rebuild no geometry at all. And a change
- * in device pixel ratio needs no geometry rebuild either — only the matrix.
- */
+/** The camera is applied as a canvas transform and nothing else. */
 export class Camera {
   /** World point at the centre of the viewport. */
   x = 0;

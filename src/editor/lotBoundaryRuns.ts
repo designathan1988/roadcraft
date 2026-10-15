@@ -1,29 +1,6 @@
-/**
- * THE OPEN STRETCHES OF A LOT'S EDGE (`lotPlan.ts`, the boundary made whole):
- * the edge is sampled every 25 cm, a sample is covered when it lies in the
- * box of a boundary part (a wall, a fence, a hedge, a railing, a gate) or of
- * the building's own ground floor, and each run of uncovered samples long
- * enough is handed back to be closed.
- *
- * Each box covers ONE contiguous range of samples: its test along the edge is
- * monotone in the sample's position (`t - cx` and `t >= lo` only grow with
- * `t`, rounding included), so the first and the last sample it covers are
- * found by binary search (the leftmost index where a monotone predicate turns
- * true, Wikipedia "Binary search algorithm") and the range is marked in a
- * difference array. A side costs O(boxes log samples + samples).
- *
- * DO NOT go back to testing every sample against every part: that was
- * O(samples x parts) per side - both grow with the lot - and 1.8 s of a
- * 2 560 m town (2026-10-14). The tests below are the old ones, expression for
- * expression, so the same samples come out covered
- * (`tests/editor/lotBoundaryRunsEquivalence.spec.ts`).
- */
+/** DO NOT go back to testing every sample against every part: that was O(samples x parts) per side */
 
-/**
- * A part's box, as the old test read it: `centre`, a boundary part covering
- * where `|px - cx| <= hw && |py - cy| <= hd`; `span`, a ground-floor volume
- * covering where `x0 <= px <= x1 && y0 <= py <= y1`.
- */
+/** A part's box, as the old test read it: `centre`, a boundary part covering where `|px - cx| <= hw && |py - cy| <= hd` */
 export type CoverBox =
   | { readonly kind: 'centre'; readonly cx: number; readonly cy: number; readonly hw: number; readonly hd: number }
   | { readonly kind: 'span'; readonly x0: number; readonly x1: number; readonly y0: number; readonly y1: number };
@@ -41,12 +18,7 @@ function firstWhere(ts: readonly number[], holds: (t: number) => boolean): numbe
   return lo;
 }
 
-/**
- * The open stretches along an edge from 0 to `len`: the samples run along
- * `along` (x: the point is `[t, fixed]`; y: `[fixed, t]`). Each stretch is
- * `[from - 0.25, to + 0.25]` clamped to the edge, kept when at least 0.4 m of
- * samples are open.
- */
+/** The open stretches along an edge from 0 to `len`: the samples run along `along` */
 export function openRunsAlong(len: number, along: 'x' | 'y', fixed: number, boxes: readonly CoverBox[]): [number, number][] {
   // The samples exactly as the walk along the edge makes them (summed, not multiplied).
   const ts: number[] = [];

@@ -1,10 +1,6 @@
 import type { Aabb } from '@core/aabb';
 
-/**
- * WHICH CORNERS OF A PLATE'S GROUND A SHAPING PASS ASKS (`terrain.ts`
- * `shapeToRoads`), out of the mesh so the work of a pass can be counted
- * (`tests/render/terrainShaping.spec.ts`).
- */
+/** WHICH CORNERS OF A PLATE'S GROUND A SHAPING PASS ASKS */
 
 /** A box of grid corners, inclusive: x0..x1 across, y0..y1 down. */
 export type TerrainRegion = readonly [number, number, number, number];
@@ -25,23 +21,7 @@ export interface CornerGrid {
   y(i: number): number;
 }
 
-/**
- * Asks `shape` at the corners a pass reshapes, each corner once (`visited`
- * stamped with `pass`), and hands every corner it moves to `take` with its
- * new height.
- *
- * With `regions` (the sites graded, a road edit's blocks, a brush dab): the
- * corners of the regions and nothing else - `shapeAt` answers weight 0
- * outside its `shapeBounds`, so a corner of a region outside every box is
- * left as it is by `shapeAt` itself. DO NOT walk `shapeBounds` against the
- * regions: every box of the town (every road's, every building's platform)
- * crossed with every region of the call was each corner visited once per box
- * and region over it - 1.4 s of one frame of a growing 2,560 m city, the sites
- * of thousands of buildings graded at once (2026-10-15).
- *
- * Without regions (the whole plate): the corners of the boxes, the only ones
- * `shapeAt` can move (`boxRegion`).
- */
+/** DO NOT walk `shapeBounds` against the regions: every box of the town */
 export function shapeCorners(
   grid: CornerGrid,
   natural: ArrayLike<number>,
@@ -82,11 +62,7 @@ export function boxRegion(grid: Pick<CornerGrid, 'cell' | 'half'>, box: Aabb): T
 
 type ShapeAt = TerrainShaper['shapeAt'];
 
-/**
- * The roads' and the buildings' platforms' shaping as one (`renderer.ts`
- * `shapeGround`, and the ground's worker): a road keeps the ground it has
- * claimed; a platform takes the rest.
- */
+/** The roads' and the buildings' platforms' shaping as one (`renderer.ts` `shapeGround`, and the ground's worker) */
 export function shapeBoth(roads: { shapeAt: ShapeAt } | null, pads: { shapeAt: ShapeAt }): ShapeAt {
   return (x, y, ground) => {
     const road = roads ? roads.shapeAt(x, y, ground) : { height: ground, weight: 0 };
@@ -97,18 +73,11 @@ export function shapeBoth(roads: { shapeAt: ShapeAt } | null, pads: { shapeAt: S
   };
 }
 
-/**
- * The height a plate's ground is drawn at, at a point of the plate (its own
- * coordinates, inside it): the corners' triangles as each cell is drawn
- * (`diagonals`, `terrain.ts` `retriangulate`). The plate reads its ground
- * with it, and the ground's worker reads a copy of the corners with it: the
- * same numbers to the bit.
- */
+/** The height a plate's ground is drawn at, at a point of the plate (its own coordinates, inside it) */
 export function sampleCorners(grid: Pick<CornerGrid, 'n' | 'cell' | 'half'>, corners: ArrayLike<number>, diagonals: ArrayLike<number>, x: number, y: number): number {
   const n = grid.n;
   const segments = n - 1;
-  // `PlaneGeometry` lays its rows from +y downwards, so the row index grows as
-  // world y falls.
+  // `PlaneGeometry` lays its rows from +y downwards, so the row index grows as world y falls.
   const gx = (x + grid.half) / grid.cell;
   const gy = (grid.half - y) / grid.cell;
   const ix = Math.min(segments - 1, Math.floor(gx));
@@ -119,8 +88,7 @@ export function sampleCorners(grid: Pick<CornerGrid, 'n' | 'cell' | 'half'>, cor
   const b = corners[ix + (iy + 1) * n] as number;
   const c = corners[ix + 1 + (iy + 1) * n] as number;
   const d = corners[ix + 1 + iy * n] as number;
-  // Each cell is split along the diagonal it is DRAWN with (`retriangulate`):
-  // b-d into (a, b, d) and (b, c, d), or a-c into (a, d, c) and (a, b, c).
+  // Each cell is split along the diagonal it is DRAWN with (`retriangulate`): b-d into (a, b, d) and (b, c, d), or a-c into
   if (diagonals[ix + iy * segments]) {
     return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
   }

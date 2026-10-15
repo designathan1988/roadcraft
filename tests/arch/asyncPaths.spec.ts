@@ -3,22 +3,7 @@ import { dirname, join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-/**
- * THE HEAVY WORK STAYS OFF THE FRAME (2026-10-15): what kept a generated
- * city's work on the page, held its layers, or let the workers never run,
- * checked in the code itself so it cannot come back unseen:
- * - the frame never rebuilds the traffic's topology after `net.rebuild()`:
- *   `TopologyCatchUp` brings it up, its turns and pairs in the workers;
- * - the world's rebuild is always the sliced job (`worldSteps(..., true)`),
- *   never run to its end in one frame, and its roads get the tile workers;
- * - nothing holds the buildings' layer (`holdBuildings`);
- * - the parked cars read the diary through the sweep, never `touches` per car;
- * - the ground's cut and fill and the comparison of two solves go to the
- *   ground's worker whenever it is there, never a corner shaped on the page;
- * - the workers import pure modules only: no three, no page (their output is
- *   checked byte for byte against the page's in tests/render/roadTileWorkers,
- *   tests/render/terrainShaping, tests/world/turnPlan and the conflict specs).
- */
+/** THE HEAVY WORK STAYS OFF THE FRAME (2026-10-15) */
 const read = (path: string): string => readFileSync(path, 'utf8');
 
 /** The body of `function name(` in a source, by its braces. */

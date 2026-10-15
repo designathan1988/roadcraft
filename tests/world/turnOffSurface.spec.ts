@@ -13,15 +13,7 @@ import { mouthOverlapStrip } from '@world/junction/mouthOverlap';
 import { orientedPolyline } from '@world/geometry';
 import { replay, type Fixture } from '../fuzz/support/runner';
 
-/**
- * MOVEMENTS NO VEHICLE COULD MAKE (P92, fuzz `turnOffSurface`).
- *
- * A seeded hunt over 60 sequences of 60 gestures found 135 movements that
- * fitted no body at all; each case here is one cause, shrunk to a few
- * gestures, and fails on the code before its fix. Every one is also replayed
- * by `tests/fuzz/regressions.spec.ts`; here each is asked the question its
- * cause answers.
- */
+/** MOVEMENTS NO VEHICLE COULD MAKE (P92, fuzz `turnOffSurface`). */
 function built(name: string) {
   const fixture = JSON.parse(readFileSync(`tests/fuzz/fixtures/${name}.json`, 'utf8')) as Fixture;
   const outcome = replay(fixture.ops, null, 'turnOffSurface');
@@ -31,8 +23,7 @@ function built(name: string) {
 }
 
 describe('a lane ends where its road is cut', () => {
-  // The trimmed centre of seed 21's avenue: the cut fell 0.06 units past a
-  // vertex of the curve, and the kerb-side lane is 5.25 units to its inside.
+  // The trimmed centre of seed 21's avenue
   const trimmed: Vec2[] = [[-259.058, -51.352], [-260.664, -51.725], [-262.656, -52.064], [-264.602, -52.267],
     [-266.5, -52.335], [-268.352, -52.267], [-270.156, -52.064], [-270.217, -52.052]].map(([x, y]) => ({ x: x!, y: y! }));
   const centre = Polyline.fromPoints(trimmed);

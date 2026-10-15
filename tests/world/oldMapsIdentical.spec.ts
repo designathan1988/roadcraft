@@ -7,21 +7,7 @@ import { applyOp, freshState, type FuzzOp } from '../fuzz/support/ops';
 import { generate } from '../fuzz/support/runner';
 import { derivedLines, laneletLines, networkLines } from './support/roadDigest';
 
-/**
- * OLD MAPS STAY IDENTICAL (docs/source/VIAS.md, acceptance of every stage): the
- * road system grows - profiles, asymmetry, materials, connectors, controls -
- * and a map saved before any of it must derive exactly what it derived
- * before: the same ribbons, junctions, lanelets, surface bands, walkways,
- * furniture, markings and cross-sections. Recorded once from the code before
- * the road system (`ROAD_BASELINE_RECORD=1` rewrites it, only on purpose).
- * The fuzz maps are stored as their operations, so a fuzzer that learns new
- * gestures still replays the same maps.
- *
- * One baseline per world unit (`core/units.ts`): the lines digest the numbers
- * in units, and a map opened at another unit is rescaled (`world/rescale.ts`),
- * so its floats round differently though it is the same place in metres. The
- * fuzz operations of each are drawn in that unit's numbers (`fuzz/support/ops.ts`).
- */
+/** OLD MAPS STAY IDENTICAL (acceptance of every stage): the road system grows */
 const FIXTURE = METERS_PER_UNIT === 0.4 ? 'tests/fixtures/roadBaseline.json' : `tests/fixtures/roadBaseline.${METERS_PER_UNIT}m.json`;
 
 interface Baseline {

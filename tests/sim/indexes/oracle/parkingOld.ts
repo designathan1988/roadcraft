@@ -1,6 +1,4 @@
-// The bays as worked out before 2026-10-14 (src/sim/agents/parking.ts at 5120d15),
-// every building and every street read on each pass: the oracle of
-// `baysByDiary.spec.ts`. Only its imports were changed.
+// The bays as worked out before 2026-10-14
 import { pointInPolygon } from '@core/polygon';
 import { localDirToWorld, storedBounds, localToWorld, solidFootprints, worldToLocal } from '@world/buildings/geometry';
 import { Digest } from '@core/digest';
@@ -15,18 +13,7 @@ import type { SegmentId } from '@world/ids';
 import { parkingLayout } from '@world/parkingLayout';
 import { PARKING_PITCH } from '@world/parking';
 
-/**
- * The parking bays of the city: where a resident's car stands when it is not
- * on the road.
- *
- * A car used to be made at the kerb when its driver set off and deleted when
- * it arrived, the "pocket car" of Cities: Skylines 1. Cities: Skylines II
- * parks every car in a real space and lets the lack of one change how a
- * citizen travels (Development Diary #11); so does this. Every bay painted on
- * a lot (`parking` elements, `editor/lotPlan.ts`, `world/defaultTown.ts`) is
- * a space for one car, with the side it opens on and the point of the road a
- * car leaves it for and comes back from.
- */
+/** The parking bays of the city: where a resident's car stands when it is not on the road. */
 
 /** Width of one stall, as the lot planner lays them (2.5 x 5 m). */
 const STALL = m(2.5);
@@ -46,13 +33,7 @@ export interface BayLane {
   /** Unit direction of travel there. */
   readonly tx: number;
   readonly ty: number;
-  /**
-   * For a lot entered by a car gate: the arc position (body centre) an
-   * arriving car stops at, a few metres BEFORE the gate, to turn in through
-   * it; `at` is then a few metres past the gate, where a car leaving joins.
-   * As SUMO binds a parking area to the lane its access is on, the gate's
-   * lane is the one a lot is driven to and left by.
-   */
+  /** For a lot entered by a car gate: the arc position */
   readonly entryAt?: number;
 }
 
@@ -69,46 +50,18 @@ export interface Bay {
   readonly depth: number;
   /** The road it is reached from; null when no lane is near enough. */
   readonly lane: BayLane | null;
-  /**
-   * The way through its lot, from the aisle in front of the stall to the lot's
-   * street edge (world points, in the order a car leaving drives them): a car
-   * keeps to the lot and never cuts across a building to the nearest road.
-   * Empty for a bay outside any lot: it is driven straight to its lane.
-   */
+  /** The way through its lot, from the aisle in front of the stall to the lot's street edge */
   readonly via: readonly { readonly x: number; readonly y: number }[];
-  /**
-   * Half the stall's clear length: from its centre to its nearer end, or to
-   * the first part of the lot or wall standing in the stall before that
-   * (`stallRoom`). A body is parked centred, so it fits when half its
-   * length is no more than this (`stallFits`).
-   */
+  /** Half the stall's clear length: from its centre to its nearer end */
   readonly room: number;
   /** The car standing in it, or coming to it (reserved). */
   car: VehicleId | null;
-  /**
-   * A bay along a street's kerb (`world/parkingLayout.ts`), not in a lot: a
-   * car backs into it from the lane beside, as one parks on a real street,
-   * and drives forward out of it. Its lane point is a few metres ahead of it.
-   */
+  /** A bay along a street's kerb (`world/parkingLayout.ts`), not in a lot */
   readonly kerb?: true;
 }
 
-/**
- * Whether a body this long stands wholly inside the stall, parked centred in
- * it. Parking codes keep a parked vehicle inside its stall and the stall clear
- * of obstructions (Calgary Land Use Bylaw 1P2007 s.122: "stall dimensions must
- * be clear of all obstructions"; Kannapolis 408: "no part of any parked
- * vehicle will extend beyond the boundaries of the parking space"). A van of
- * 5.6 m was parked centred in a stall of 5 m whose back the lot's fence takes
- * 5 cm of, and its nose stood 35 cm through the fence; cars stood through the
- * planters and a lamp standing in the ends of stalls. A stall now takes only
- * what fits it.
- */
-/**
- * Every part of a lot that a parked body may not stand in: what a car cannot
- * drive through (`lotNav.ts` SOLID, less the stalls themselves) - the
- * boundary, posts, lamps, bins, planters, trees, steps.
- */
+/** Whether a body this long stands wholly inside the stall, parked centred in it. */
+/** Every part of a lot that a parked body may not stand in: what a car cannot drive through */
 const STALL_BLOCKS: ReadonlySet<string> = new Set([
   'wall', 'fence', 'hedge', 'railing', 'gate', 'pillar', 'stair', 'ramp', 'tree', 'bench', 'planter', 'rocks',
   'clock', 'shrub', 'bin', 'lamp', 'bollard',
@@ -118,13 +71,7 @@ const OVER_A_BODY = m(2.1);
 /** Half the widest body that parks in a stall (a van, 2 m) and a hand: the band a stall's clear length is read in. */
 const STALL_BAND = m(1.05);
 
-/**
- * Half the clear length of a stall (local frame of its building): from its
- * centre `(lx, ly)` along `(dx, dy)` (unit, along the stall) and against it, to
- * the first part of the lot or solid volume a body there would touch, in the
- * band a body's width wide; at most `half` (half the stall's depth). A part
- * standing over the centre leaves no room at all.
- */
+/** Half the clear length of a stall (local frame of its building): from its centre `(lx, ly)` along `(dx, dy)` */
 function stallRoom(b: Building, lx: number, ly: number, dx: number, dy: number, half: number): number {
   let room = half;
   const along = (ring: readonly (readonly [number, number])[]): void => {
@@ -158,11 +105,7 @@ function stallRoom(b: Building, lx: number, ly: number, dx: number, dy: number, 
   return Math.max(0, room);
 }
 
-/**
- * A convex ring cut to one side of a line of the stall's frame
- * (Sutherland-Hodgman): `axis` 0 keeps u >= `at`; 1 keeps v >= `at`; -1 keeps
- * -v >= `at` (v <= -`at`).
- */
+/** A convex ring cut to one side of a line of the stall's frame (Sutherland-Hodgman): `axis` 0 keeps u >= `at` */
 function clip(poly: readonly [number, number][], axis: 0 | 1 | -1, at: number): [number, number][] {
   const val = (p: readonly [number, number]): number => (axis === 0 ? p[0] : axis === 1 ? p[1] : -p[1]) - at;
   const out: [number, number][] = [];
@@ -186,12 +129,7 @@ const EDGE_INSET = m(3);
 const EDGE_REACH = m(22);
 
 /** Every stall of every parking element, with the way out of its lot and the lane it is reached from. */
-/**
- * The bays as last worked out, by world: the ambient traffic and the
- * residents' cars both asked for them on every edit, and each worked out every
- * lot, exit and aisle of the town again (docs/performance.md #15). Handed out
- * as fresh copies (a holder sets `car` on its own).
- */
+/** The bays as last worked out, by world */
 const BAYS = new WeakMap<SimWorld, { key: string; first: unknown; bays: readonly Bay[] }>();
 export function collectBays(w: SimWorld): Bay[] {
   const roads = roadsKey(w);
@@ -207,11 +145,7 @@ const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revis
 /** Cell of the lanes' grid, world units. */
 const LANE_CELL = m(30);
 const LANE_GRIDS = new WeakMap<object, { key: string; lanes: Lanelet[]; cells: Map<number, number[]> }>();
-/**
- * The lanes whose bounds come within `reach` of a point, in the graph's order
- * (the tie-break), from a grid of their bounds: every bay and every lot used to
- * measure every lane of the town.
- */
+/** The lanes whose bounds come within `reach` of a point, in the graph's order (the tie-break), from a grid of their bounds */
 function lanesNear(w: SimWorld, x: number, y: number, reach: number): Lanelet[] {
   const grid = laneGrid(w);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return grid.lanes;
@@ -247,22 +181,11 @@ function laneGrid(w: SimWorld): { key: string; lanes: Lanelet[]; cells: Map<numb
   return grid;
 }
 
-/**
- * Each building's bays as last worked out, with what they were worked out
- * from: its record, the lanes within reach (their lines and whether they are
- * ghosts) and the walls within reach. A road edit worked out the exits and
- * aisles of every lot in town again; a lot whose surroundings are the same
- * keeps its bays (docs/performance.md #15).
- */
+/** Each building's bays as last worked out, with what they were worked out from: its record, the lanes within reach */
 const LOT_BAYS = new WeakMap<SimWorld, Map<BuildingId, { lot: string; key: number; bays: readonly Bay[] }>>();
 /** How far a lot's bays read lanes and walls (`LANE_REACH`, the exits' reach), with a margin. */
 const LOT_READS = LANE_REACH + m(12);
-/**
- * What a building's bays are worked out from, as text, once per record: the
- * record less its age, its name and its lot plan's version. A record is
- * replaced on any change, and the town's ageing (a record every few seconds)
- * worked out those lots' exits, grids and aisles again for nothing.
- */
+/** What a building's bays are worked out from, as text, once per record */
 const LOT_TEXT = new WeakMap<Building, string>();
 function lotText(b: Building): string {
   let text = LOT_TEXT.get(b);
@@ -274,17 +197,9 @@ function lotText(b: Building): string {
   return text;
 }
 
-/**
- * Where the bays were last worked out from: the roads (`roadsKey`, the first
- * lane object) and the diary's serial. With the roads the same, only the lots
- * whose reach a building change since then touched can see anything new.
- */
+/** Where the bays were last worked out from: the roads (`roadsKey`, the first lane object) and the diary's serial. */
 const LAST_PASS = new WeakMap<SimWorld, { roads: string; first: unknown; serial: number }>();
-/**
- * The building changes since the last pass, as rectangles, when the roads are
- * the same; null when the lots must be digested again (the roads changed, or
- * the diary forgot, or a change covered the whole map).
- */
+/** The building changes since the last pass, as rectangles, when the roads are the same */
 function buildingChangesSince(w: SimWorld, roads: string, first: unknown): ChangeRect[] | null {
   const last = LAST_PASS.get(w);
   LAST_PASS.set(w, { roads, first, serial: w.doc.changes.version });
@@ -301,10 +216,7 @@ function buildingChangesSince(w: SimWorld, roads: string, first: unknown): Chang
 
 function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
   const out: Bay[] = [];
-  // A building grown in a town of a thousand: every parking lot's lanes and
-  // walls digested again, 60 ms a building (audit M3a). With the roads as
-  // they were, a lot whose reach no building change touched keeps its bays
-  // without reading anything (the diary's rectangles: `world/changes.ts`).
+  // A building grown in a town of a thousand: every parking lot's lanes and walls digested again, 60 ms a building
   const changed = buildingChangesSince(w, roads, first);
   let walls: Wall[] | null = null;
   /** @rebuild Made once a call of `workOutBays`, at the first building that asks. */
@@ -347,8 +259,7 @@ function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
   return out;
 
   function bayRows(b: Building): void {
-    // A lot closed by a boundary with car gates (`editor/lotPlan.ts`): the
-    // whole property is driven, and its only ways out are its car gates.
+    // A lot closed by a boundary with car gates (`editor/lotPlan.ts`)
     const property = gatedProperty(b);
     for (const el of b.elements ?? []) {
       if (el.kind !== 'parking') continue;
@@ -377,8 +288,7 @@ function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
         const lx = el.x + cx * u, ly = el.y + cy * u;
         const p = localToWorld(b, lx, ly);
         if (lot && nav) {
-          // The stall opens on whichever side has an aisle that leads out of
-          // the lot, down the aisles to the nearest way out onto a street.
+          // The stall opens on whichever side has an aisle that leads out of the lot
           const reach = el.d / 2 + m(2.8);
           let pick: { sign: number; points: { x: number; y: number }[]; exit: number; cost: number } | null = null;
           for (const sign of [1, -1]) {
@@ -434,10 +344,7 @@ function kerbBays(w: SimWorld, first: number): Bay[] {
     const f = bay.facing;
     const ahead = { x: bay.centre.x + f.x * KERB_AHEAD, y: bay.centre.y + f.y * KERB_AHEAD };
     const lane = laneFor(w, ahead.x, ahead.y, undefined, bay.segment);
-    // The lane has to run the way the car faces: the traffic beside the bay;
-    // and its joining point (kept `LANE_END` clear of the junctions) must lie
-    // ahead of the bay. Near the end of a street it falls behind it, and the
-    // car would turn round on the spot, its tail sweeping the footway.
+    // The lane has to run the way the car faces: the traffic beside the bay; and its joining point
     const aligned = lane !== null && lane.tx * f.x + lane.ty * f.y > 0.7
       && (lane.x - bay.centre.x) * f.x + (lane.y - bay.centre.y) * f.y >= KERB_MIN_AHEAD;
     out.push({
@@ -478,12 +385,7 @@ const CAR_GATE = m(2.2);
 /** Where a car leaving through a gate joins its lane, past the gate; where one arriving stops, before it. */
 const JOIN_PAST_GATE = m(6);
 const STOP_BEFORE_GATE = m(5);
-/**
- * Kept clear of a lane's ends for a gate's stop and join points. Small: a
- * gate beside a block's corner opens onto the very end of its street's lane
- * (a town's streets are a few tens of metres between junctions), and a lane
- * end kept six metres clear left one car park in five with no way out.
- */
+/** Kept clear of a lane's ends for a gate's stop and join points. */
 const GATE_LANE_END = m(1.5);
 
 /** A building's car gates: the `gate` elements a car fits through. */
@@ -491,11 +393,7 @@ export function carGates(b: Building): BuildingElement[] {
   return (b.elements ?? []).filter((el) => el.kind === 'gate' && el.w >= CAR_GATE);
 }
 
-/**
- * The property of a lot closed by a boundary with car gates: the box of all
- * its open blocks (front, drive, yard, car park), in the local frame. Null
- * for a lot with no car gate, whose stalls are reached as before.
- */
+/** The property of a lot closed by a boundary with car gates: the box of all its open blocks */
 export function gatedProperty(b: Building): { x: number; y: number; w: number; d: number } | null {
   if (!carGates(b).length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -509,13 +407,7 @@ export function gatedProperty(b: Building): { x: number; y: number; w: number; d
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, d: y1 - y0 + 2 * pad };
 }
 
-/**
- * The ways out of a gated lot: one per car gate, its inner point a few metres
- * inside, its outer point just outside, and the lane of the street in front
- * of it - joined a few metres past the gate and stopped at a few metres
- * before it, so a car crosses the footway square to the kerb and turns on
- * the carriageway (`manoeuvre.ts`).
- */
+/** The ways out of a gated lot: one per car gate, its inner point a few metres inside, its outer point just outside */
 export function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
   const out: LotExit[] = [];
   const cx = property.x + property.w / 2, cy = property.y + property.d / 2;
@@ -544,11 +436,7 @@ export function gateExits(w: SimWorld, b: Building, property: { x: number; y: nu
   return out;
 }
 
-/**
- * The lane in front of a gate, on the kerb side: its join point `JOIN_PAST_GATE`
- * along the travel from the gate's foot, its stop point `STOP_BEFORE_GATE`
- * before it, both kept `GATE_LANE_END` clear of the lane's ends.
- */
+/** The lane in front of a gate, on the kerb side */
 function gateLane(w: SimWorld, x: number, y: number, eitherSide = false): BayLane | null {
   let best: BayLane | null = null;
   let bestD = LANE_REACH;
@@ -558,8 +446,7 @@ function gateLane(w: SimWorld, x: number, y: number, eitherSide = false): BayLan
     const hit = lane.centre.closestPoint({ x, y });
     if (hit.distance >= bestD) continue;
     const foot = lane.centre.sampleAt(hit.s);
-    // Right-hand traffic: the lot on the right of the direction of travel;
-    // on a one-way street, whichever kerb the lot is on (`gateExits`).
+    // Right-hand traffic: the lot on the right of the direction of travel; on a one-way street, whichever kerb the lot is on
     if (!eitherSide && (x - foot.p.x) * foot.t.y - (y - foot.p.y) * foot.t.x <= 0) continue;
     if (eitherSide && w.doc.segment(lane.segment!)?.direction === 'both') continue;
     const at = Math.max(GATE_LANE_END, Math.min(lane.length - GATE_LANE_END, hit.s + JOIN_PAST_GATE));
@@ -600,10 +487,7 @@ export function wallsOf(w: SimWorld): Wall[] {
 /** Cell of the walls' grid, world units. */
 const WALL_CELL = m(30);
 const WALL_GRIDS = new WeakMap<readonly Wall[], Map<number, Wall[]>>();
-/**
- * The walls whose bounds meet a box, read from a grid of them: every exit
- * tried from every lot filtered every building in town.
- */
+/** The walls whose bounds meet a box, read from a grid of them */
 function wallsInBox(walls: readonly Wall[], x0: number, y0: number, x1: number, y1: number): Wall[] {
   let cells = WALL_GRIDS.get(walls);
   if (!cells) {
@@ -653,12 +537,7 @@ function clearOfWalls(walls: readonly Wall[], a: { x: number; y: number }, b: { 
   return true;
 }
 
-/**
- * The ways out of a lot onto a street: points along its sides from which a car
- * reaches a lane on the lot's kerb side in a straight line without crossing a
- * building. In a town of perimeter blocks, a car park in the middle of a block
- * is left by the passage between the buildings, not through them.
- */
+/** The ways out of a lot onto a street */
 function exitsOf(w: SimWorld, b: Building, v: { x: number; y: number; w: number; d: number }, walls: readonly Wall[]): LotExit[] {
   const sides = [
     { ax: v.x, ay: v.y, dx: 1, dy: 0, nx: 0, ny: -1, length: v.w },
@@ -702,8 +581,7 @@ function laneFor(w: SimWorld, x: number, y: number, among?: Iterable<Lanelet>, s
     if (hit.distance >= bestD) continue;
     const at = Math.max(LANE_END, Math.min(lane.length - LANE_END, hit.s));
     const f = lane.centre.sampleAt(at);
-    // Right-hand traffic: the kerb, and the lots beyond it, are on the right of
-    // the direction of travel. A lane with the bay on its left is the far one.
+    // Right-hand traffic: the kerb, and the lots beyond it, are on the right of the direction of travel.
     if ((q.x - f.p.x) * f.t.y - (q.y - f.p.y) * f.t.x <= 0) continue;
     bestD = hit.distance;
     best = { lanelet: lane.id, at, x: f.p.x, y: f.p.y, tx: f.t.x, ty: f.t.y };

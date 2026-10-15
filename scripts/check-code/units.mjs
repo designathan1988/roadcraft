@@ -1,7 +1,4 @@
-// THE FUNCTIONS of `src/` and how a call reaches them, for the code rules (`scripts/check-code.mjs`):
-// each function's stable name, the implementations a call through an interface or a stored
-// callback can run, the members by name and holder, and every unit collected. Split from
-// check-code.mjs (eslint max-lines).
+// THE FUNCTIONS of `src/` and how a call reaches them, for the code rules (`scripts/check-code.mjs`)
 import ts from 'typescript';
 import { checker, inSrc, isFunction, rel, skipParens, sources, symbolOf } from './program.mjs';
 
@@ -23,9 +20,7 @@ function nameOf(unit) {
   else if ((ts.isPropertyAssignment(unit.parent) || ts.isPropertyDeclaration(unit.parent)) && ts.isIdentifier(unit.parent.name)) name = `${owner(unit.parent)}${unit.parent.name.text}`;
   else if (ts.isBinaryExpression(unit.parent) && ts.isPropertyAccessExpression(unit.parent.left)) name = `${unit.parent.left.name.text}=`;
   else {
-    // Named by the call it is given to (`draw/λbuildTransit`), numbered only
-    // among those given to a call of the same name: an arrow added or taken
-    // elsewhere in the function does not rename it.
+    // Named by the call it is given to (`draw/λbuildTransit`), numbered only among those given to a call of the same name
     let outer = unit.parent;
     while (outer && !isFunction(outer) && !ts.isSourceFile(outer)) outer = outer.parent;
     const base = outer && !ts.isSourceFile(outer) ? nameOf(outer).split(' ')[1] : '(module)';
@@ -50,8 +45,7 @@ function nameOf(unit) {
   return full;
 }
 
-// Implementations: what a call through an interface, a base class or a stored
-// callback can run, keyed by the DECLARATION it is called through.
+// Implementations: what a call through an interface, a base class or a stored callback can run
 const implementations = new Map();
 const implement = (declarations, unit) => {
   for (const d of declarations ?? []) {
@@ -59,10 +53,7 @@ const implement = (declarations, unit) => {
     if (list) list.push(unit); else implementations.set(d, [unit]);
   }
 };
-// And by member name with the object or class that holds it, for a call the
-// checker cannot tie: kept only where that holder's type is assignable to the
-// receiver's (class hierarchy analysis, Dean, Grove and Chambers, ECOOP 1995,
-// with TypeScript's structural assignability in place of subclassing).
+// And by member name with the object or class that holds it, for a call the checker cannot tie
 const byName = new Map();
 const nameUnit = (name, unit, holder) => { const list = byName.get(name); const entry = { unit, holder }; if (list) list.push(entry); else byName.set(name, [entry]); };
 const holderTypes = new Map();
@@ -115,9 +106,7 @@ function holdsFor(holder, receiver) {
   if (!byReceiver) assignable.set(holder, byReceiver = new Map());
   let ok = byReceiver.get(receiver);
   if (ok === undefined) {
-    // A receiver of a named type of the game (`BuildingMeshes`) runs the holders that say they are one - an
-    // object literal typed as it, a class implementing it -, not every holder whose shape happens to fit:
-    // `{ dispose(): void }` fits half the game (the roads' `dispose` was tied to every cell's, 2026-10-14).
+    // A receiver of a named type of the game (`BuildingMeshes`) runs the holders that say they are one
     const named = namedIn(receiver);
     ok = named.size
       ? [...namesOfHolder(holder)].some((s) => named.has(s))
@@ -176,11 +165,7 @@ function indexMember(memberName, unit, container) {
   }
 }
 
-/**
- * A key listener that runs no command of the game, said so with its reason in
- * a comment just above its statement (`// own key listener: <why>`): it tracks
- * a modifier or the focus, or holds the keys while a panel of its own is open.
- */
+/** A key listener that runs no command of the game, said so with its reason in a comment just above its statement */
 function ownListener(call) {
   let statement = call;
   while (statement && !ts.isExpressionStatement(statement)) statement = statement.parent;

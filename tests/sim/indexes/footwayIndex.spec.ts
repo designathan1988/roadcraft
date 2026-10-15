@@ -4,12 +4,7 @@ import type { SidewalkEdge } from '@sim/peds/sidewalk';
 import type { SimWorld } from '@sim/world';
 import { seededEdit, seededWorld } from './support';
 
-/**
- * The footways beside a road (`SidewalkGraph.walksBeside`, read by the kerb
- * stops' `footwayBeside`) are exactly what the old scan of every edge of the
- * map found for that road, in the same order - so the nearest footway, and
- * the first of two at the same distance, is the same one. Through edits.
- */
+/** The footways beside a road (`SidewalkGraph.walksBeside`, read by the kerb stops' `footwayBeside`) are exactly what the */
 function oracle(w: SimWorld, segment: number): SidewalkEdge[] {
   const out: SidewalkEdge[] = [];
   for (const edge of w.sidewalks.edges.values()) {

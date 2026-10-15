@@ -1,22 +1,4 @@
-/**
- * THE COMMAND REGISTRY: one table of what the player can do, behind the
- * shortcuts, the dock, the drawers, the menus and the top bar
- * (docs/ARCHITECTURE.md 4.4, docs/research/controllers.md).
- * - A command is an id, its label (an i18n key), whether it may run now
- *   (`enabled`) and what it does (`run`), which reports `done`, `cancelled`
- *   or `pass` (Blender's operators: FINISHED, CANCELLED, PASS_THROUGH; only
- *   `done` acted, `pass` lets the key go on to the next rule).
- * - Keys are rules on the physical key (`code`, `KeyboardEvent.code`) or on
- *   the character (`key`, `KeyboardEvent.key`, compared without case), with
- *   modifiers (`ctrl` stands for Ctrl or Cmd; a modifier left out matches
- *   either way) and a `when`. A rule with neither `code` nor `key` takes any
- *   key: a tool that reads its own keys and passes the rest.
- * - Rules are read from the last bound to the first and the first whose key
- *   and `when` match and whose command does not pass wins (VS Code's key
- *   bindings): a later rule overrides an earlier one. One key press runs one
- *   command at most.
- * Pure: no DOM (the key press is described by its fields), no three.
- */
+/** THE COMMAND REGISTRY: one table of what the player can do, behind the shortcuts, the dock, the drawers */
 
 export type CommandResult = 'done' | 'cancelled' | 'pass';
 
@@ -90,11 +72,7 @@ export class CommandRegistry<Ctx> {
     return command.run(ctx, args);
   }
 
-  /**
-   * Resolves a key press and runs its command: the last bound rule whose key
-   * and `when` match, or the one before it while the commands pass. The rule
-   * that acted, or null when none did.
-   */
+  /** Resolves a key press and runs its command */
   press(press: KeyPress, ctx: Ctx): KeyRule<Ctx> | null {
     for (let i = this.keys.length - 1; i >= 0; i--) {
       const r = this.keys[i]!;

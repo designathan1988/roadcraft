@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AA_MARGIN, LotLattice, TEXTURE_WIDTH, halfBits, type LatticeShape } from '@render/lotLattice';
 import { sampleLattice } from './support/latticeSampler';
 
-/**
- * THE LOTS AS VECTOR SHAPES IN A LATTICE (`render/lotLattice.ts`), read the
- * way the ground's shader reads them (`support/latticeSampler.ts`): every
- * point of the ground knows exactly which lots it is in and how far it is
- * from their edges, and an edit writes only the cells it touches.
- */
+/** THE LOTS AS VECTOR SHAPES IN A LATTICE (`render/lotLattice.ts`), read the way the ground's shader reads them */
 
 const HALF = 1024;
 

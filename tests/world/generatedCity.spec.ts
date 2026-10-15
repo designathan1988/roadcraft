@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { auditBuildings, auditForms, auditLots, growCity } from './cityAudit';
 
-/**
- * The generated city the player looked at (2026-10-09, seed 20261009, in
- * rectangular blocks, the default style) and two more: every class of defect he reported, counted on the
- * whole town and held at zero (or at what a real town shows).
- */
+/** The generated city the player looked at */
 const CITIES = [
   { seed: 20261009, size: 'small' },
   { seed: 77, size: 'small' },

@@ -1,44 +1,4 @@
-/**
- * THE LOTS AS VECTOR SHAPES IN A LATTICE, read by the ground's own shaders
- * (`lotOverlay.ts`): random-access vector graphics (Nehab & Hoppe,
- * "Random-Access Rendering of General Vector Graphics", SIGGRAPH Asia 2008,
- * hhoppe.com/ravg.pdf; the same per-cell lists drape map vectors on terrain
- * in Thöny, Billeter & Pajarola, "Deferred Vector Map Visualization", 2016).
- *
- * The map is cut into cells of `LOT_CELL`; each cell holds the shapes that
- * reach it - a lot's fill and outline, a line, a dot - with only the edges
- * that come near it, in the cell's own coordinates. A pixel of the ground
- * finds its cell, and from that short list its colour: inside a polygon by
- * the parity of the edges crossed on the way from a point of the cell whose
- * side is known (the record's reference), and its distance to the nearest
- * edge for the antialiased border and the stroke of a constant width in
- * metres.
- *
- * Nothing here samples the ground: the shapes are 2D, and the pixel they
- * colour is wherever the ground drew itself - no lift, no float, no
- * re-laying when a road or a pad reshapes the land. A shape added or taken
- * away rewrites only the cells it touches.
- *
- * DO NOT go back to triangulating each lot and laying every vertex on the
- * ground (`groundAt` per vertex, `FILL_EDGE` subdivision): 3.5 million
- * vertices for a town of 1 500 lots, built on the CPU and then spread over
- * frames (`LAY_SLICE_MS`) to hide the 1.3 s it took (OTIMIZACAO.md item 20).
- *
- * Storage (one RGBA32UI texture `TEXTURE_WIDTH` texels wide, every texel
- * four uint32): a table of tiles (`TILE_CELLS` cells a side) at the start,
- * four tiles a texel, each a texel address of the tile's block or 0; a
- * block is `TILE_CELLS`² cells, four a texel, each `(stream << 8) | count`
- * (a count of 255 means the count is the stream's first texel); a stream is
- * its records in drawing order. A record: one header texel
- *   x fill RGBA8 (sRGB), y line RGBA8 (sRGB),
- *   z edges (10 bits) | flags (6 bits) | half width (half float, 16 bits),
- *   w the reference point (two half floats, cell-local metres)
- * then, with a level, one texel (x: the level's float bits), then one texel
- * per edge, (ax, ay, bx, by) as float bits, cell-local.
- * Flags: 1 filled, 2 the reference is inside, 4 dashed, 8 stroked, 16 a
- * line with square ends (its one edge a ribbon, as the lines of before), 32
- * a level follows (a built lot: its yard's paving is coloured too).
- */
+/** DO NOT go back to triangulating each lot and laying every vertex on the ground */
 
 /** Metres a side of a lattice cell: a few shapes each where lots are smallest. */
 export const LOT_CELL = 8;
@@ -46,11 +6,7 @@ export const LOT_CELL = 8;
 export const TILE_CELLS = 16;
 /** Texels a row of the texture. */
 export const TEXTURE_WIDTH = 2048;
-/**
- * How far past a cell an edge is still listed in it, beyond its stroke's half
- * width: the antialiased border reaches a pixel's footprint out, and a pixel
- * of the ground near the camera is millimetres, far off a metre or two.
- */
+/** How far past a cell an edge is still listed in it, beyond its stroke's half width */
 export const AA_MARGIN = 1.5;
 /** A dashed line: dash and gap, metres. */
 export const DASH = 2;
@@ -76,12 +32,7 @@ export interface LatticeShape {
   readonly dashed: boolean;
   /** A line with square ends (its one edge); otherwise round at its ends and corners (an outline, a dot). */
   readonly butt: boolean;
-  /**
-   * A built lot's ground level (world height, metres): the buildings'
-   * materials colour their level surfaces near it - the yard's paving, the
-   * paths - and nothing higher (`lotOverlay.ts` \`applyLotOverlay\`). Unset: only
-   * the ground's materials draw the shape.
-   */
+  /** A built lot's ground level (world height, metres): the buildings' materials colour their level surfaces near it */
   readonly level?: number;
   /** Drawing order: later over earlier (fills all under the strokes). */
   order: number;
@@ -123,11 +74,7 @@ export function halfBits(v: number): number {
   return sign | h;
 }
 
-/**
- * Points tried as a cell's reference, metres from its centre: multiples of
- * 1/16, exact in a half float, so the shader starts from the very point
- * whose side was worked out here.
- */
+/** Points tried as a cell's reference, metres from its centre */
 const REFERENCES: readonly (readonly [number, number])[] = [
   [0, 0], [0.5625, 0.3125], [-0.4375, 0.6875], [0.3125, -0.8125], [-0.9375, -0.5625],
   [1.6875, 1.1875], [-1.8125, 1.4375], [1.4375, -1.9375], [-1.5625, -1.6875], [2.5625, 0.0625],
@@ -145,8 +92,7 @@ function segmentDistance(px: number, py: number, ax: number, ay: number, bx: num
 
 /** Whether segment (ax, ay)-(bx, by) comes within `r` of the box [x0, y0]-[x1, y1]. */
 function segmentNearBox(ax: number, ay: number, bx: number, by: number, x0: number, y0: number, x1: number, y1: number, r: number): boolean {
-  // The box grown by r, then the segment clipped to it (Liang-Barsky): a
-  // little more than within r at the corners, never less.
+  // The box grown by r, then the segment clipped to it (Liang-Barsky)
   const gx0 = x0 - r, gy0 = y0 - r, gx1 = x1 + r, gy1 = y1 + r;
   let t0 = 0, t1 = 1;
   const dx = bx - ax, dy = by - ay;
@@ -251,12 +197,7 @@ export class LotLattice {
     this.dirty.clear();
   }
 
-  /**
-   * What to send to the GPU since the last call: everything (the texture
-   * grew or was compacted), or texel ranges cut at row ends (three uploads a
-   * range as part of one row, `WebGLTextures.updateTexture`, r186), as
-   * [start, count] pairs in uint32 components.
-   */
+  /** What to send to the GPU since the last call: everything */
   takeUpload(): { whole: boolean; ranges: number[] } {
     const whole = this.wholeChanged;
     const ranges: number[] = [];
@@ -364,9 +305,7 @@ export class LotLattice {
     let length = long ? 1 : 0;
     for (const p of shapes) length += p.records.get(cell)!.length / 4;
     const blockSize = TILE_CELLS * TILE_CELLS / 4;
-    // Room for both first: a compaction between the two would move one and
-    // not the other. A block always counted: compacting drops the block of a
-    // tile whose only stream is this one, gone from `streams` above.
+    // Room for both first: a compaction between the two would move one and not the other.
     this.reserve(length + blockSize);
     if (!this.blocks[tile]) {
       const block = this.alloc(blockSize);
@@ -409,9 +348,7 @@ export class LotLattice {
   /** Room for `length` texels at the top: the texture compacted, or grown, when full. */
   private reserve(length: number): void {
     if (this.top + length <= this.data.length / 4) return;
-    // More garbage than live texels: compacted, which moves each live texel
-    // once for at least as many texels thrown away (amortised constant).
-    // Otherwise the texture doubles.
+    // More garbage than live texels: compacted, which moves each live texel once for at least as many texels thrown away
     const used = this.top - this.tableTexels;
     if (used - this.live > this.live) this.compact();
     if (this.top + length > this.data.length / 4) this.grow(this.top + length);

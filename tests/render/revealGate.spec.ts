@@ -3,12 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REVEAL_LIMIT_MS, RevealGate } from '@render/revealGate';
 import { FrameClock } from '../../src/frameLoop';
 
-/**
- * A town put together behind the loading curtain is shown whole, never
- * half-built because the clock ran (2026-10-09: generating a city in a pane
- * the browser had stopped drawing lifted the curtain after 60 s on streets
- * with no buildings).
- */
+/** A town put together behind the loading curtain is shown whole, never half-built because the clock ran */
 describe('the loading curtain', () => {
   it('is not lifted by the clock while the load gets no frames', () => {
     const gate = new RevealGate();

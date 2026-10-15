@@ -15,24 +15,7 @@ import type { GeologyKind } from '@world/terrainPaint';
 import { leafCardMaterials, lowPolyTreeParts, type LowPolyKind } from './lowPolyTrees';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 
-/**
- * What stands on the open ground: rocks and boulders (the painted "rocks"
- * ground and the stones of a river's bed and banks), low scrub (the painted
- * "scrub") and the trees of a painted forest.
- *
- * All LOW-POLY by rule (the player: nothing of hundreds or thousands of
- * polygons): a stone is 36 triangles, a bush 60, a tree 70 to 190 - the
- * game's one tree style (`lowPolyTrees.ts`). A forest of thousands costs a
- * few draw calls - one instanced mesh per variant, as instanced forests are
- * drawn (three.js forum, "Procedural instanced forest").
- *
- * Each variant is a convex solid pushed in and out by layered noise, the
- * large form first and then detail at a fraction of the amplitude, as
- * procedural rock generators build them (Modo's rock item, Houdini rock
- * breakdowns); a stone squashed to a boulder's proportions with its underside
- * flattened so it sits IN the ground, a bush three lumps of foliage. One
- * instanced mesh per variant, the colour per instance.
- */
+/** What stands on the open ground: rocks and boulders */
 
 export interface CoverPlacement {
   readonly x: number;
@@ -112,8 +95,7 @@ export function rockGeometry(seed: number): BufferGeometry {
   const stretch = 0.8 + ((seed * 0.37) % 1) * 0.5;
   for (let i = 0; i < position.count; i++) {
     p.fromBufferAttribute(position, i);
-    // A function of the ORIGINAL position, so the copies of one corner on
-    // its faces move together and the stone stays closed.
+    // A function of the ORIGINAL position, so the copies of one corner on its faces move together and the stone stays closed.
     const big = noise3(p.x * 1.1 + seed * 7, p.y * 1.1, p.z * 1.1, seed);
     const small = noise3(p.x * 3.2, p.y * 3.2 + seed * 3, p.z * 3.2, seed + 11);
     p.multiplyScalar(1 + big * 0.32 + small * 0.1);
@@ -134,11 +116,7 @@ export function rockGeometry(seed: number): BufferGeometry {
   return geometry;
 }
 
-/**
- * A low bush: three lumps of foliage (20 triangles each), a large one and two
- * smaller ones leaning out of it, lumpy by noise, darker at the foot and
- * lighter where the sun reaches the top. 60 triangles.
- */
+/** A low bush: three lumps of foliage */
 export function scrubGeometry(seed: number): BufferGeometry {
   const lumps: [number, number, number, number][] = [
     [0, 0.05, 0, 0.62],
@@ -156,8 +134,7 @@ export function scrubGeometry(seed: number): BufferGeometry {
     for (let i = 0; i < position.count; i++) {
       p.fromBufferAttribute(position, i);
       const bump = noise3(p.x * 1.7 + seed * 5 + lump * 3, p.y * 1.7, p.z * 1.7, seed + lump);
-      // Shaded as a round crown (the normal from the lump's centre), not as
-      // its 20 facets: faceted, a bush read as a green stone.
+      // Shaded as a round crown (the normal from the lump's centre), not as its 20 facets
       n.copy(p).normalize();
       normals.push(n.x, n.y * 0.9 + 0.1, n.z);
       p.multiplyScalar(r * (1 + bump * 0.22));
@@ -168,8 +145,7 @@ export function scrubGeometry(seed: number): BufferGeometry {
       // Never below the ground it stands on.
       if (p.y < 0) p.y *= 0.2;
       positions.push(p.x, p.y, p.z);
-      // Dark at the foot, the sunlit top well lighter: a bush must stand out
-      // of the shaded scrubland ground it grows on.
+      // Dark at the foot, the sunlit top well lighter: a bush must stand out of the shaded scrubland ground it grows on.
       const shade = 0.55 + Math.min(1, p.y / 0.95) * 0.75 + bump * 0.06;
       colours.push(shade, shade, shade);
     }
@@ -189,12 +165,7 @@ const FOREST_KIND: Readonly<Record<ForestSpecies, LowPolyKind>> = {
   broadleaf: 'oak', broadleafTall: 'broadleafTall', conifer: 'cypress', ipeYellow: 'ipeYellow', ipePink: 'ipePink',
 };
 
-/**
- * A tree one unit tall, in the game's one style (`lowPolyTrees.ts`): the
- * painted woods' stand-ins, drawn only when the countryside's kit cannot be
- * grown, must not be a second kind of tree (the player, 2026-10-08). Its body
- * and its foliage cards (none on a conifer).
- */
+/** A tree one unit tall, in the game's one style (`lowPolyTrees.ts`) */
 export function treeModel(species: ForestSpecies, seed: number): TreeModel {
   return lowPolyTreeParts(FOREST_KIND[species], 0x5f0e + seed * 7919 + species.length * 131);
 }
@@ -254,8 +225,7 @@ export function rockTint(item: CoverPlacement, out: Color): Color {
     if (t < 0.75) return out.setRGB(0.06 + t * 0.02, 0.058 + t * 0.018, 0.055 + t * 0.016);
     return out.setRGB(0.1, 0.065, 0.045);
   }
-  // LINEAR values (three's colour management): 0.17 is a mid grey on
-  // screen; the 0.4s first used drew every stone a pale chalk.
+  // LINEAR values (three's colour management): 0.17 is a mid grey on screen
   if (t < 0.6) return out.setRGB(0.15 + t * 0.06, 0.145 + t * 0.05, 0.13 + t * 0.04);
   if (t < 0.85) return out.setRGB(0.17, 0.125, 0.085);
   return out.setRGB(0.11, 0.135, 0.075);

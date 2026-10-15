@@ -9,13 +9,7 @@ import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { clearanceOf } from '@sim/agents/hybridAStar';
 import { buildYard, knownYard, lorryOf, yardKey, yardNeighbours } from '@sim/agents/lorryDocks';
 
-/**
- * A WORKS' YARD IS MADE A SLICE A TICK. Its grid (cells of 10 cm, a third of
- * a million) was filled and its clearance worked out in one simulation tick:
- * 30 ms, the worst tick of the game's simulation (2026-10-13), a hitch every
- * time a lorry was called to a yard not yet made. Made by `buildYard` a slice
- * at a time, it comes out the same as made at once.
- */
+/** A WORKS' YARD IS MADE A SLICE A TICK. */
 function works(): RoadDoc {
   const doc = new RoadDoc();
   const ids: number[][] = [];

@@ -27,20 +27,7 @@ export { type TurnKind } from './junctionBuild';
 export type LaneletId = string;
 export type ConnectorId = string;
 
-/**
- * The atomic unit of vehicle space: a directed, single-lane centreline.
- *
- * There are two kinds and no motion code distinguishes them. A `link` is one
- * lane of one direction of one segment, already trimmed at the junction
- * boundary. A `connector` is one legal movement inside a junction.
- *
- * That single representational choice removes an entire class of defect. The
- * stop line is ALWAYS `s = link.length`, because the setback was consumed when
- * the geometry was trimmed — there is no `stopAt = max(0, L - setback)` left to
- * go negative. And "inside the junction" is not a special case in the physics;
- * it just means being on a connector. The V6 monolith's pin at `progress = 0`
- * (defect 2 / 1b of RELATORIO.md) has no representation here.
- */
+/** The atomic unit of vehicle space: a directed, single-lane centreline. */
 export interface Lanelet {
   readonly id: LaneletId;
   readonly kind: 'link' | 'connector';
@@ -54,16 +41,11 @@ export interface Lanelet {
   readonly from?: NodeId;
   readonly to?: NodeId;
   readonly laneIndex?: number;
-  /**
-   * The kerb-side lane of a street with a cycle lane (`cycle` band) on its
-   * right: how far sideways, in `perp` units (negative is right of travel),
-   * the middle of the cycle lane lies from this lane's centre. Bicycles ride
-   * there (`sim/vehicles/cycleLane.ts`).
-   */
+  /** The kerb-side lane of a street with a cycle lane (`cycle` band) on its right: how far sideways, in `perp` units */
   readonly cycleShift?: number;
   /** True when the far end of this link is a junction with a stop line. */
   readonly controlled: boolean;
-  /** Buses only (`RoadSection.useForward`, docs/VIAS.md V4); absent: every vehicle. */
+  /** Buses only (`RoadSection.useForward`); absent: every vehicle. */
   readonly use?: 'bus';
   /** No lane change across the line to lane `laneIndex - 1` / `laneIndex + 1` (solid, or a bus lane's). */
   readonly solidInner?: true;
@@ -86,13 +68,7 @@ export interface Connector {
   readonly inSegment: SegmentId;
   readonly outSegment: SegmentId;
   readonly turn: TurnKind;
-  /**
-   * True when this movement is the road the node is ON carried across it -
-   * a road bending at a node of two legs, or bending through a junction that
-   * has no straight-on movement (`carriedPair`). Its lanes pair one to one,
-   * and it has priority where the node is unsignalised. `turn` still states
-   * how far it bends, which is what speed and the indicator are read from.
-   */
+  /** True when this movement is the road the node is ON carried across it */
   readonly carried: boolean;
   readonly group: number;
   readonly length: number;
@@ -110,11 +86,7 @@ export interface JunctionTopology {
   readonly control?: JunctionControl;
 }
 
-/**
- * A junction built on turns still to be chosen off the page (`TurnPlan`), kept until they are
- * (`LaneletGraph.redoProvisional`): what its cache entry is made of, and each movement that stood a turn
- * in, with how to shape it again.
- */
+/** A junction built on turns still to be chosen off the page (`TurnPlan`), kept until they are */
 interface PendingJunction {
   readonly key: string;
   readonly turns: JunctionTurns;
@@ -151,21 +123,10 @@ export const laneletId = (
   lane: number,
 ): LaneletId => `${segment}:${from}>${to}:${lane}`;
 
-/**
- * The work of the lane graph's builds, counted (`tests/scale/edit.spec.ts`):
- * segments and nodes looked at. An edit must cost the same on a small map and a
- * large one (CLAUDE.md); at the SOURCE every build looks at the whole map
- * (stage F3 makes it local).
- */
+/** The work of the lane graph's builds, counted (`tests/scale/edit.spec.ts`): segments and nodes looked at. */
 export const laneletWork = { segments: 0, nodes: 0 };
 
-/**
- * Builds every lanelet and connector of the network.
- *
- * Link geometry is the lane centreline trimmed by the SAME asphalt trim the
- * junction mouth uses — `Network.trims` is the single source, so a stop line
- * and a junction mouth can never disagree.
- */
+/** Builds every lanelet and connector of the network. */
 /** What one `LaneletGraph.update` built again: the junctions, the lanelets that came or went, the segments. */
 export interface GraphChange {
   readonly junctions: ReadonlySet<NodeId>;
@@ -183,20 +144,12 @@ export class LaneletGraph {
   readonly inbound = new Map<NodeId, LaneletId[]>();
   /** Link lanelets leaving each node. */
   readonly outbound = new Map<NodeId, LaneletId[]>();
-  /**
-   * The link lanelets of each segment, both directions, in the order they were
-   * built (the order of `lanelets`). Kept by the one writer of links
-   * (`buildLinks`) and cleared with them (`buildSteps`).
-   */
+  /** The link lanelets of each segment, both directions, in the order they were built (the order of `lanelets`). */
   private readonly bySegment = new Map<SegmentId, LaneletId[]>();
 
   revision = -1;
 
-  /**
-   * The link lanelets of each (segment, direction), by the geometry and trims
-   * they were built from: a road an edit did not touch keeps the lanelets it
-   * had, objects and all.
-   */
+  /** The link lanelets of each (segment, direction), by the geometry and trims they were built from */
   private linkCache = new Map<string, Lanelet[]>();
   /** The key each lanelet of this build was made under (`buildLinks`). */
   private readonly laneletKeys = new Map<LaneletId, string>();
@@ -210,11 +163,7 @@ export class LaneletGraph {
     this.netState = net.state;
   }
 
-  /**
-   * The turns of the next build chosen off the page (`SimWorld.prepareVehicleTopology`): set, a turn a
-   * junction does not know is asked of it and stood in for, and `redoProvisional` builds those
-   * junctions again once it holds the answers. Null: every turn is chosen here, as it always was.
-   */
+  /** The turns of the next build chosen off the page (`SimWorld.prepareVehicleTopology`) */
   turnPlan: TurnPlan | null = null;
 
   /** The network's state this graph was last brought up to (`update`). */
@@ -227,17 +176,7 @@ export class LaneletGraph {
     this.netState = null;
   }
 
-  /**
-   * The graph brought up to the network by what changed since it was last
-   * (`Network.changesSince`): the link lanelets of the segments the edit
-   * changed and of those meeting a node it changed, and the connectors of the
-   * junctions at their ends - nothing else is touched, objects and all. The
-   * whole graph is built only when the network cannot say what changed (a
-   * load, a first build, a graph of another network). Returns the junctions
-   * built again and the lanelets that came or went; null: everything.
-   * DO NOT build the whole graph for an edit: every segment's key and every
-   * junction's were worked out again, the map's for one road.
-   */
+  /** DO NOT build the whole graph for an edit */
   update(doc: RoadDoc, net: Network): GraphChange | null {
     const steps = this.updateSteps(doc, net);
     let step = steps.next();
@@ -245,17 +184,11 @@ export class LaneletGraph {
     return step.value;
   }
 
-  /**
-   * `update` as steps (`SimWorld.prepareVehicleTopology`): a graph built whole goes through `buildSteps`
-   * as the incremental path goes through its generator, so it is one more of the preparation's steps and
-   * never one call the generator cannot see into. DO NOT read this as slicing: `TopologyCatchUp` runs
-   * every plain step in the frame it starts, and only `WAITING` (workers busy) ends a frame.
-   */
+  /** DO NOT read this as slicing: `TopologyCatchUp` runs every plain step in the frame it starts, and only `WAITING` */
   *updateSteps(doc: RoadDoc, net: Network, builder: JunctionMeasurer | null = null): Generator<void | typeof WAITING, GraphChange | null, void> {
     const delta = this.netState === null || this.lanelets.size === 0 ? null : net.changesSince(this.netState);
     if (delta === null) {
       // Not brought up to any state until the whole build is done: one left half way is built whole again.
-      // Its junctions built by `builder`'s workers when it has them (`junctionsOffPage`), as an edit's turns are chosen by them.
       this.netState = null;
       yield* this.buildSteps(doc, net, builder);
       this.netState = net.state;
@@ -279,15 +212,7 @@ export class LaneletGraph {
     return this.letGo(net, segments, junctions, out);
   }
 
-  /**
-   * The graph brought up to `from`, a graph of the same network already brought up to it and finished
-   * (`current`; the preparation's, `SimWorld.prepareVehicleTopology`): what changed since this one was
-   * last brought up is TAKEN from `from` - the link lanelets of those segments, the junctions and their
-   * connectors, objects and all, with the keys they were built under - not built again. The same graph
-   * `update` makes (`tests/sim/topologyOffPage.spec.ts`), and what it returns. DO NOT seed this graph's
-   * caches from `from` and `update` it: every lane's key and every junction's surface and key were worked
-   * out a second time in the frame of the swap, a city's whole map on its first build (2026-10-15).
-   */
+  /** DO NOT seed this graph's caches from `from` and `update` it */
   adopt(from: LaneletGraph, doc: RoadDoc, net: Network): GraphChange | null {
     const delta = this.netState === null || this.lanelets.size === 0 ? null : net.changesSince(this.netState);
     if (delta === null) {
@@ -358,11 +283,7 @@ export class LaneletGraph {
     this.revision = net.revision;
   }
 
-  /**
-   * What a change of the network reaches (`update`, `adopt`): the segments to build again - those changed,
-   * and every segment meeting a node that changed (its stop line and its key read the node) - and the
-   * junctions at their ends, before and now.
-   */
+  /** What a change of the network reaches (`update`, `adopt`): the segments to build again */
   private reach(doc: RoadDoc, delta: { readonly segments: ReadonlySet<SegmentId>; readonly nodes: ReadonlySet<NodeId> }): { segments: Set<SegmentId>; junctions: Set<NodeId> } {
     const segments = new Set<SegmentId>(delta.segments);
     for (const nodeId of delta.nodes) for (const seg of doc.node(nodeId)?.incident ?? []) segments.add(seg);
@@ -379,13 +300,7 @@ export class LaneletGraph {
     return { segments, junctions };
   }
 
-  /**
-   * Out with what these segments and junctions made: their lanelets, the junctions' connectors, every
-   * list naming them. Their cache entries stay until they are built again: a lanelet or a junction whose
-   * key comes round again is handed back, the same object (a height-only edit moves no lane); those not
-   * come round go after (`letGo`). Each junction's entry is found by its key (`junctionKeyOf`). DO NOT
-   * walk the junction cache to find them: every edit read every junction of the map.
-   */
+  /** DO NOT walk the junction cache to find them: every edit read every junction of the map. */
   private takeOut(segments: ReadonlySet<SegmentId>, junctions: ReadonlySet<NodeId>): TakenOut {
     const out: TakenOut = { lanes: new Set(), before: new Map(), junctionKeys: [], linkKeys: [] };
     for (const nodeId of junctions) {
@@ -423,12 +338,7 @@ export class LaneletGraph {
     return out;
   }
 
-  /**
-   * The cache entries of before that did not come round again let go (the cache holds what the graph
-   * has), and the graph brought up to the network. A link's key names its segment, so only the lanes of
-   * the segments built again can hold one of them. DO NOT gather every lanelet's key to find out: every
-   * edit read the whole map's.
-   */
+  /** DO NOT gather every lanelet's key to find out: every edit read the whole map's. */
   private letGo(net: Network, segments: ReadonlySet<SegmentId>, junctions: Set<NodeId>, out: TakenOut): GraphChange {
     const liveLinkKeys = new Set<string>();
     for (const seg of segments) for (const id of this.bySegment.get(seg) ?? []) liveLinkKeys.add(this.laneletKeys.get(id)!);
@@ -443,12 +353,7 @@ export class LaneletGraph {
     return { junctions, lanelets: out.lanes, segments: new Set(segments) };
   }
 
-  /**
-   * The junctions the last build stood on turns still to be chosen (`turnPlan`), built again now that
-   * the plan holds the answers: their connectors out, then in again from the cache and the plan's
-   * turns - the junction a build that chose every turn here makes. A turn the plan could not answer (its
-   * workers failed) is chosen here. Only those junctions: DO NOT build the graph again for them.
-   */
+  /** Only those junctions: DO NOT build the graph again for them. */
   redoProvisional(doc: RoadDoc, net: Network): void {
     const plan = this.turnPlan;
     if (!plan) return;
@@ -478,13 +383,7 @@ export class LaneletGraph {
   /** The junctions built on turns still to be chosen off the page, by node (`buildJunction`, `redoProvisional`). */
   private readonly pending = new Map<NodeId, PendingJunction>();
 
-  /**
-   * A junction built on turns still to be chosen, finished with the turns chosen: only the movements
-   * that stood one in are shaped again (`turnPath`, now reading the plan's answers), each lanelet and
-   * connector the one `buildJunction` makes with them, and the junction kept as it keeps one. DO NOT
-   * build the whole junction again for its turns (its surface, its key, every movement): the second
-   * build of every junction of a generated city was 0.3 s of a frame on the page (2026-10-15).
-   */
+  /** DO NOT build the whole junction again for its turns (its surface, its key, every movement) */
   private reshape(nodeId: NodeId, pending: PendingJunction): void {
     for (const { id, again } of pending.reshape) {
       const { path, maxBodyClass } = again();
@@ -548,11 +447,7 @@ export class LaneletGraph {
   private buildSegmentLinks(doc: RoadDoc, net: Network, segId: SegmentId, previous: Map<string, Lanelet[]>, next: Map<string, Lanelet[]>): void {
     laneletWork.segments++;
     const seg = doc.requireSegment(segId);
-    // A tunnel with no geometry carries no traffic. Skipping the link
-    // lanelets removes the segment from the routing graph outright — no
-    // lanelets, no connectors, no junction groups — so a vehicle can never
-    // pass silently through a bore that is not drawn. The segment itself
-    // stays in the document, authored and saved normally.
+    // A tunnel with no geometry carries no traffic.
     if (seg.structure === 'tunnel' && !TUNNELS_DRAWN) return;
     const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
 
@@ -562,8 +457,7 @@ export class LaneletGraph {
       const from = forward ? seg.a : seg.b;
       const to = forward ? seg.b : seg.a;
 
-      // A link ends at the STOP LINE, not at the junction mouth, leaving room
-      // for the crossing in between. Both distances come from the same trim.
+      // A link ends at the STOP LINE, not at the junction mouth, leaving room for the crossing in between.
       const startTrim = net.stopLineDistance(segId, from);
       const endTrim = net.stopLineDistance(segId, to);
 
@@ -571,24 +465,9 @@ export class LaneletGraph {
       const total = full.length;
 
       // Consume the accessor's answer, do not re-derive it.
-      //
-      // This used to clamp each end independently against `total * 0.45`,
-      // which is a second stop-line formula competing with the first — the
-      // exact shape of defect 1.5, and it silently undid the accessor's
-      // guarantee that the stop line sits beyond the crossing. Measured on a
-      // boulevard with 84-unit arms: the accessor said 38.67 and the lanelet
-      // still ended at 37.80, putting the line 0.87 units inside the zebra.
-      //
-      // The trim solver already reserves `MIN_DRIVABLE_RESERVE` between the
-      // two approach zones, so the two ends normally fit. When they do not,
-      // scale them JOINTLY: that keeps their ratio, degrades both ends the
-      // same way, and never lets one end reach past the other.
       const wanted = startTrim + endTrim;
       const room = Math.max(0, total - MIN_RIBBON);
-      // What gives way is the approach zones, never the mouths: a lane that
-      // ended inside a junction's mouth would start its connector on the
-      // plate (the fuzzer's `trimOrder`). Only where the mouths alone do not
-      // fit are both ends scaled whole, as before.
+      // What gives way is the approach zones, never the mouths
       const mouthStart = Math.min(startTrim, net.mouthDistance(segId, from));
       const mouthEnd = Math.min(endTrim, net.mouthDistance(segId, to));
       const approach = wanted - mouthStart - mouthEnd;
@@ -605,26 +484,7 @@ export class LaneletGraph {
       }
       const centreTrimmed = full.sub(s0, Math.min(s1, total));
 
-      // EVERYTHING of the document this lanelet — and any junction it runs
-      // into — is made of. Read in full from `buildJunctions` and the calls
-      // under it, so a field left out here is a field a junction cannot see
-      // move:
-      //
-      //   the segment's own points (the lanelet's shape, `carriedPair`'s
-      //   bend, `computeApproachGroups`' legs), its `type` and
-      //   `section.priority` (`carriedPair` ranks by `priority ?? type`),
-      //   `lanes` and `direction` and the whole `section`
-      //   (`laneWidth`, `sidewalk`, `median`, `speedKmh`, `priority`, through
-      //   `roadProfile`: `laneIsPlausible`'s lane counts, the signal rule),
-      //   `structure`, the two stop-line trims, the authored lane arrows
-      //   (`section.turnsForward` / `turnsBackward`: `laneTurnAllowed` and
-      //   the authored-turn lane choice in `buildJunctions`), and the degree
-      //   and pedestrian crossing of the node it runs into (`controlled`).
-      //
-      // The junction key is built out of these lanelet keys, so this list is
-      // what makes that one complete: `TUNNELS_DRAWN` is true and every
-      // direction is allowed somewhere, so every segment of a node has at
-      // least one lanelet here to speak for it.
+      // EVERYTHING of the document this lanelet — and any junction it runs into — is made of.
       const section = seg.section;
       const crossing = doc.node(to)?.crossing;
       const key = `${segId}|${forward ? 1 : 0}|${seg.type}|${seg.lanes ?? '-'}|${seg.direction}`
@@ -697,15 +557,7 @@ export class LaneletGraph {
     }
   }
 
-  /**
-   * Every junction of a whole build made OFF THE PAGE (`builder`'s workers, `conflictPool.ts`): each one's
-   * input sent as plain numbers (`junctionAsk`: its node, its roads, its lanes, the pieces of its surface),
-   * `WAITING` yielded while the workers build them (`buildJunctionOf`: the surface, the key, every movement
-   * shaped and its turn chosen), and each placed here from its answer, in the order the page builds them - or
-   * handed back from the cache when its key is known, as `buildJunction` hands it back. False when the
-   * workers failed: the page builds them. DO NOT build a whole build's junctions on the page when there are
-   * workers: a generated city's surfaces, keys and turns held one frame 1.2-1.4 s at 2.5 km (2026-10-15).
-   */
+  /** DO NOT build a whole build's junctions on the page when there are workers */
   private *junctionsOffPage(doc: RoadDoc, net: Network, previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>,
     before: (node: NodeId) => JunctionCache | undefined, builder: JunctionMeasurer): Generator<void | typeof WAITING, boolean, void> {
     const asked: { nodeId: NodeId; node: RoadNode; input: JunctionInput }[] = [];
@@ -733,10 +585,7 @@ export class LaneletGraph {
     return true;
   }
 
-  /**
-   * What a junction's connectors are made of (`junctionBuild.ts`), read off the document and this graph's
-   * links; null when the node is no junction (`isJunction`).
-   */
+  /** What a junction's connectors are made of (`junctionBuild.ts`), read off the document and this graph's links */
   private junctionInput(doc: RoadDoc, nodeId: NodeId, node: RoadNode): JunctionInput | null {
     const inbound = this.inbound.get(nodeId) ?? [], outbound = this.outbound.get(nodeId) ?? [];
     if (!isJunction(node, inbound.length, outbound.length)) return null;
@@ -777,11 +626,7 @@ export class LaneletGraph {
     return true;
   }
 
-  /**
-   * A junction's movements (`junctionMovements`, here or in a worker) made this graph's: a lanelet and a
-   * connector each, in the order made, the junction, and its cache entry - or, standing on turns still to
-   * be chosen off the page, its pending record (`redoProvisional`).
-   */
+  /** A junction's movements (`junctionMovements`, here or in a worker) made this graph's */
   private place(nodeId: NodeId, node: RoadNode, input: JunctionInput, key: string, made: JunctionMade, turns: JunctionTurns, next: Map<string, JunctionCache>): void {
     const connectorIds: ConnectorId[] = [];
     /** The movements that stood a turn in (`turns.defer`), shaped again once it is chosen (`reshape`). */
@@ -832,7 +677,6 @@ export class LaneletGraph {
       control: node.control,
     });
     // A junction standing on turns still to be chosen off the page is not kept: finished with them
-    // (`redoProvisional`), and a later build must not hand back its stand-ins.
     if (turns.provisional) {
       this.pending.set(nodeId, { key, turns, groups, signalised, connectors: connectorIds, reshape });
       return;
@@ -852,18 +696,13 @@ export class LaneletGraph {
   private buildJunction(doc: RoadDoc, net: Network, nodeId: NodeId, node: RoadNode,
     previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>, before: (node: NodeId) => { readonly turns: JunctionTurns } | undefined): void {
     laneletWork.nodes++;
-    // Built again: whatever it stood in for its turns, and the key it was kept under, go with the build
-    // before. DO NOT keep them: a junction left on stand-in turns by a preparation given up (the network
-    // edited while its workers chose them) and built again later was reshaped with the old build's
-    // movements, and one never built again kept its stand-ins (`redoProvisional`).
+    // DO NOT keep them: a junction left on stand-in turns by a preparation given up
     this.pending.delete(nodeId);
     this.turnPlan?.provisional.delete(nodeId);
     this.junctionKeyOf.delete(nodeId);
     const input = this.junctionInput(doc, nodeId, node);
     if (!input) return;
-    // The surface a turn has to stay on, built once per node. `turnPath` needs the surface anyway, so
-    // asking for its key costs nothing extra - and a junction an edit did not reach hands back the
-    // connectors it had, objects and all (`junctionKey`).
+    // The surface a turn has to stay on, built once per node.
     let surface: JunctionSurface | null | undefined;
     const surfaceOf = (): JunctionSurface | null => (surface ??= new JunctionSurface(net, nodeId));
     const key = junctionKey(input, surfaceOf()?.key ?? '');
@@ -873,17 +712,7 @@ export class LaneletGraph {
     this.place(nodeId, node, input, key, junctionMovements(input, surfaceOf, turns), turns, next);
   }
 
-  /**
-   * The connectors of the junction at `node` ALONE, made as the whole graph's
-   * build makes them (`buildJunction`): from the link lanelets of the roads
-   * that meet there (`buildSegmentLinks`) and the junction's own surface - all
-   * a junction's connectors read (the turns stay on the plate and its legs,
-   * the lanes that wait are the ones arriving there). What asks whether a
-   * movement of one junction can be driven asks this, never a graph of the
-   * whole map: `editor/streetObjects.ts` built one, and walked every
-   * connector of it, on every click of the U-turn tool.
-   * @perInput Runs once a question about one junction: it reads that junction and its roads.
-   */
+  /** @perInput The connectors of the junction at `node` ALONE, made as the whole graph's build makes them (`buildJunction`) */
   static junctionConnectors(doc: RoadDoc, net: Network, nodeId: NodeId): { readonly connectors: readonly Connector[]; readonly centres: ReadonlyMap<ConnectorId, Polyline> } {
     const node = doc.node(nodeId);
     if (!node) return { connectors: [], centres: new Map() };
@@ -895,12 +724,7 @@ export class LaneletGraph {
   }
 
 
-  /**
-   * The link lanelets of one segment, both directions, in the order of
-   * `lanelets`: the same as filtering every lanelet for `kind === 'link' &&
-   * segment === id`, read off an index. DO NOT walk `lanelets` to find one
-   * road's lanes (the inspector did, every 0.4 s, for the whole map).
-   */
+  /** DO NOT walk `lanelets` to find one road's lanes (the inspector did, every 0.4 s, for the whole map). */
   linksOfSegment(segment: SegmentId): readonly LaneletId[] {
     return this.bySegment.get(segment) ?? [];
   }
@@ -913,36 +737,22 @@ export class LaneletGraph {
     return this.lanelets.get(id);
   }
 
-  /**
-   * The other lanes of the same carriageway, adjacent ones first.
-   *
-   * Lane discipline makes each turn legal from exactly one lane, so both route
-   * planning and lane changing have to be able to see across the carriageway.
-   * Lane indices are contiguous from 0, so walking outward from this one and
-   * stopping at the first gap enumerates the direction without needing to know
-   * its width here.
-   */
+  /** The other lanes of the same carriageway, adjacent ones first. */
   siblingLanes(id: LaneletId): LaneletId[] {
-    // The same lanes until the graph is built again (`buildSteps` clears it):
-    // asked for every vehicle on every tick, making the ids as strings each
-    // time cost 3 s in 3.5 minutes of 400 cars at 4x.
+    // The same lanes until the graph is built again (`buildSteps` clears it)
     let known = this.siblings.get(id);
     if (!known) this.siblings.set(id, known = this.findSiblings(id));
     return known;
   }
   private readonly siblings = new Map<LaneletId, LaneletId[]>();
 
-  /** Whether a vehicle of this shape may drive a lane (a bus lane is buses only, docs/VIAS.md V4). */
+  /** Whether a vehicle of this shape may drive a lane (a bus lane is buses only). */
   laneUsable(id: LaneletId, shape: string): boolean {
     const lane = this.lanelets.get(id);
     return !!lane && (lane.use !== 'bus' || shape === 'bus');
   }
 
-  /**
-   * The lanes of the same carriageway a vehicle of this shape may change
-   * into from `id`: across dashed lines only (MBST vol. IV, LMS-1/LMS-2), and
-   * into lanes it may drive. Nearest first, as `siblingLanes`.
-   */
+  /** The lanes of the same carriageway a vehicle of this shape may change into from `id`: across dashed lines only */
   changeTargets(id: LaneletId, shape: string): readonly LaneletId[] {
     const key = shape === 'bus' ? `${id}|b` : id;
     let known = this.changes.get(key);
@@ -994,21 +804,7 @@ export class LaneletGraph {
   }
 }
 
-/**
- * A lane's centre between the cross-sections at its two ends.
- *
- * The lane is the road's trimmed centre offset sideways, and the trim can
- * leave a last piece of a few centimetres where the cut falls just past a
- * vertex of the curve. On the inside of the curve the offset's mitre vertex
- * there lands beyond the end of that short piece, so the lane ran on past its
- * own end and came back: its last direction pointed backwards, and every turn
- * out of it was shaped as a hook no vehicle fitted (fuzz `turnOffSurface`,
- * seeds 21 and 26, a 0.06-unit piece and a 0.2-unit step back). An open
- * offset is clipped at its ends, as CavalierContours clips a raw open offset
- * at the circles round its end points: the run of vertices right before an end
- * that lies past that end's cross-section is dropped. Only that run, so a lane
- * that winds back on itself further along keeps its shape.
- */
+/** A lane's centre between the cross-sections at its two ends. */
 export function clipToEndSections(points: readonly Vec2[], startTangent: Vec2, endTangent: Vec2): Vec2[] {
   if (points.length < 3) return points.slice();
   const first = points[0]!, last = points[points.length - 1]!;

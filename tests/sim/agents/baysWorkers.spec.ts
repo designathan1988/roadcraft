@@ -12,17 +12,7 @@ import { type Bay, type BayWorkers, bayChangesSince, baysOfSource, collectBays, 
 import { type BayReads, bayRows, baysOfShare, shareOf } from '@sim/agents/lotBays';
 import { lanesNear } from '@sim/agents/laneGrid';
 
-/**
- * THE LOTS' BAYS WORKED OUT OFF THE PAGE ARE THE PAGE'S (`bayPool.ts`,
- * `bays.worker.ts`). Workers that copy each share as `postMessage` does
- * (`structuredClone`), work it out with the same `baysOfShare` and copy the
- * bays back answer for the world; once they have answered, its bays must be
- * every number of the bays a fresh world works out on the page - through
- * buildings grown and taken away and roads drawn, moved and taken away; in
- * a generated city, every lot's bays are what `bayRows` makes of it on the
- * page. While a lot waits for its answer it keeps the bays it had (none for a new
- * lot), and the answer is logged for the diary's readers (`bayChangesSince`).
- */
+/** THE LOTS' BAYS WORKED OUT OFF THE PAGE ARE THE PAGE'S (`bayPool.ts`, `bays.worker.ts`). */
 const strip = (bays: readonly Bay[]): string[] => bays.map(({ id, building, x, y, ox, oy, depth, lane, via, room, kerb }) =>
   [id, building, x, y, ox, oy, depth, room, kerb ? 'k' : '-',
     lane ? `${lane.lanelet}:${lane.at}@${lane.x},${lane.y}>${lane.tx},${lane.ty}:${lane.entryAt ?? '-'}` : 'null',
@@ -92,11 +82,7 @@ describe('the bays worked out by the workers', () => {
       other.rebuildTopology();
       return strip(collectBays(other));
     };
-    /**
-     * An edit looked at: the lots asked keep the bays they had until the
-     * workers answer; then each is logged, and the world's bays are a fresh
-     * world's. The lots asked.
-     */
+    /** An edit looked at: the lots asked keep the bays they had until the workers answer */
     const look = async (edit: () => void): Promise<number> => {
       // Read before the edit (a first look asks its lots here, and has no bays for them yet).
       const start = workers.asked.length;
@@ -181,8 +167,7 @@ describe('a generated city', () => {
     grow(40);
     bayChangesSince(w, -1);
     await workers.answer();
-    // The page's own work on the same world (`parking.ts` pageReads), lot by lot: a fresh world would
-    // build the junctions' topology again for the same lanes.
+    // The page's own work on the same world (`parking.ts` pageReads), lot by lot
     const walls = wallsOf(w);
     const page: BayReads = {
       lanesNear: (x, y, reach) => lanesNear(w, x, y, reach),

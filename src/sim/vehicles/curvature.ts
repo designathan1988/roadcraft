@@ -6,23 +6,7 @@ import { JERK_UP } from '../drive/operational';
 import type { SimWorld } from '../world';
 import type { Vehicle } from './state';
 
-/**
- * How fast a driver is willing to take the road ahead, from its curvature.
- *
- * Nothing used to slow a vehicle for a bend. Turns through a junction took a
- * fixed share of the limit (`turnSpeedFactor`), and a curved road took none
- * at all: measured on a single bend of an urban street, vehicles pulled up to
- * 10 m/s² sideways, and on the saved player map 1 % of all vehicle samples
- * exceeded 1 g. The cap here is the one a driver actually applies - a
- * lateral acceleration they are comfortable with, `v = sqrt(a / curvature)`
- * at every point ahead, reached by braking comfortably from where they are.
- *
- * Curvature is measured over a chord a few metres long rather than at a
- * single vertex, so the kink between two segments of a flattened polyline is
- * not mistaken for a hairpin. Each lanelet's profile is computed once and
- * cached against the lanelet object, so it is rebuilt exactly when the
- * topology is.
- */
+/** How fast a driver is willing to take the road ahead, from its curvature. */
 
 /** Spacing of the curvature profile along a lanelet. */
 const SAMPLE = m(2);
@@ -76,11 +60,7 @@ function lateralShare(v: Vehicle): number {
   return (1 + AGGRESSION_SPREAD * v.driver.aggression) * (heavy ? HEAVY_SHARE : 1);
 }
 
-/**
- * Fastest speed at which a bend of curvature `k` is taken within the driver's
- * speed-dependent comfort: the root of `k v^2 = share * (a0 - c v)`, or of the
- * floor once the falling figure has reached it.
- */
+/** Fastest speed at which a bend of curvature `k` is taken within the driver's speed-dependent comfort */
 function bendSpeed(share: number, k: number): number {
   const a0 = share * MAX_LATERAL_ACCEL;
   const c = share * LATERAL_ACCEL_FALL;
@@ -89,10 +69,7 @@ function bendSpeed(share: number, k: number): number {
   return Math.max(v, floor);
 }
 
-/**
- * The speed this vehicle takes the sharpest bend of a lanelet at, within its
- * comfort. `Infinity` for a straight one.
- */
+/** The speed this vehicle takes the sharpest bend of a lanelet at, within its comfort. */
 export function slowestBend(v: Vehicle, lane: Lanelet): number {
   const share = lateralShare(v);
   let slowest = Infinity;
@@ -103,23 +80,13 @@ export function slowestBend(v: Vehicle, lane: Lanelet): number {
   return slowest;
 }
 
-/**
- * Highest speed at which this vehicle can drive on now and still take every
- * bend within its look-ahead at a comfortable lateral acceleration, braking
- * no harder than its comfortable deceleration. `Infinity` on a straight road.
- */
+/** Highest speed at which this vehicle can drive on now and still take every bend within its look-ahead at a comfortable */
 export function curveSpeedCap(w: SimWorld, v: Vehicle): number {
   const share = lateralShare(v);
   const brake = Math.max(v.driver.b, 1e-3);
   const horizon = (v.v * v.v) / (2 * brake) + v.v * LOOK_TIME + LOOK_MARGIN;
   let cap = Infinity;
-  // The brake comes off as a ramp, not at once: the pedal changes at a
-  // driver's jerk (`drive/operational.ts` JERK_UP), so easing off from
-  // comfortable braking takes b / J and sheds b² / 2J more (an S-curve's
-  // closing ramp). Planned to end at the bend's speed - braked for as if the
-  // brake came off at once, a car reached the bend still braking and left it
-  // 3-7 km/h under the speed the bend allows (measured at a crossroads of
-  // avenues: 13 km/h round a 7.6 m right turn that allows 18.5).
+  // The brake comes off as a ramp, not at once: the pedal changes at a driver's jerk
   const easeTime = brake / JERK_UP;
   const eased = (brake * brake) / (2 * JERK_UP);
   /** Highest speed `d` ahead of a bend taken at `safe`: braking, then the ramp easing off. */
@@ -129,19 +96,13 @@ export function curveSpeedCap(w: SimWorld, v: Vehicle): number {
     return d <= ramp ? safe + eased * (d / ramp) : Math.sqrt(top * top + 2 * brake * (d - ramp));
   };
 
-  // The body itself, from its middle to its front at distance 0, then ahead of
-  // the front along the planned route. From the middle rather than the rear:
-  // a driver unwinds the wheel and accelerates as the car straightens, not
-  // once the rear bumper has left the curve - measured from the rear, a bus
-  // held its lowest speed for twelve metres past the apex.
+  // The body itself, from its middle to its front at distance 0, then ahead of the front along the planned route.
   let lane = w.lanelet(v.lanelet);
   let from = v.s - v.archetype.length / 2;
   let ahead = -v.s; // distance from the front to the start of `lane`
   let next = 0;
   while (lane && ahead < horizon) {
-    // A straight lanelet - most of a town's - has no sample that could lower
-    // the cap: passed over whole instead of sample by sample (a branch that
-    // cannot improve the best found is not explored: branch and bound).
+    // A straight lanelet - most of a town's - has no sample that could lower the cap
     if (!straight(lane)) {
       const profile = profileOf(lane);
       const start = Math.max(0, Math.floor(Math.max(0, from) / SAMPLE));

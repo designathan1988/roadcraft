@@ -16,17 +16,7 @@ import { buildYard, lorryOf, type Yard, yardKey, yardNeighbours } from '@sim/age
 import { closures, YardList } from '@sim/agents/lorryTraffic';
 import { buildYard as oldBuildYard, yardNeighbours as oldYardNeighbours, type Yard as OldYard } from './oracle/lorryDocksOld';
 
-/**
- * THE LORRIES READ WHAT IS NEAR, AND FIND WHAT THE OLD LOOPS FOUND.
- *
- * - The yards a lorry may be sent to (`YardList`), kept from the diary in the
- *   store's order, are the old loop's over every building (the oracle below).
- * - The stretches of lane a lorry sweeps (`closures`), from the lanes' grid,
- *   are the old loop's over every lane (the oracle below).
- * - A yard made with the buildings asked of the store by place is the yard
- *   made from the old index of every building (`oracle/lorryDocksOld.ts`).
- * Through buildings grown, altered, taken away and put back, and roads drawn.
- */
+/** THE LORRIES READ WHAT IS NEAR, AND FIND WHAT THE OLD LOOPS FOUND. - The yards a lorry may be sent to */
 
 /** The old `readYards`: every building of the town, in the store's order. */
 function oldYards(doc: RoadDoc): { building: BuildingId; docks: number }[] {

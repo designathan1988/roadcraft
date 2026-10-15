@@ -5,15 +5,7 @@ import { DT } from '@sim/params';
 import { m } from '@world/units';
 import { collisions, fixtureDoc, simOf } from './support/bodies';
 
-/**
- * PEOPLE GET IN AND OUT OF CARS AT THE KERB.
- *
- * Before this nobody ever got in or out of a vehicle and no door ever moved.
- * These tests run the saved player map and follow every kerb stop: the car
- * stops in the kerb lane, a kerb-side door opens only once it has stopped and
- * nobody is in the way of it, the passenger moves across, the door shuts, and
- * a dropped-off passenger is a pedestrian on the footway afterwards.
- */
+/** PEOPLE GET IN AND OUT OF CARS AT THE KERB. */
 describe('kerb stops', () => {
   it('stop, open the door only when stopped and clear, move somebody across, and shut it', () => {
     const sim = simOf(fixtureDoc(), 0x51de, 1);
@@ -48,8 +40,7 @@ describe('kerb stops', () => {
         if (prev.endsWith('transfer') && key.endsWith('close')) {
           if (prev.startsWith('drop')) {
             drops++;
-            // Delivery mates get back into the same vehicle. Their drop
-            // uses the door animation but deliberately creates no walker.
+            // Delivery mates get back into the same vehicle.
             if (!stop?.keep) passengersAlighting++;
           }
           else picks++;
@@ -71,8 +62,7 @@ describe('kerb stops', () => {
     expect(movingWithDoorOpen).toBe(0);
     expect(openedIntoSomebody).toBe(0);
     expect(overlaps).toBe(0);
-    // Five minutes of the whole map with every body checked: under a minute
-    // alone, three under a machine busy with other builds.
+    // Five minutes of the whole map with every body checked
   });
 });
 

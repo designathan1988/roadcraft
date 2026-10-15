@@ -18,23 +18,12 @@ import { applyProfileTo } from '@editor/roads/profile';
 /** The 0.4 m unit the gestures are drawn in: every length below in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * One editor gesture, as plain JSON.
- *
- * Entities are chosen by `pick`, a fraction in [0, 1) into the sorted id list,
- * never by id. Ids shift as soon as an earlier operation is removed, and the
- * shrinker removes operations; a fraction still picks SOMETHING afterwards,
- * which is what lets a failing sequence be cut down to its core.
- */
+/** One editor gesture, as plain JSON. */
 export type FuzzOp =
   | { readonly op: 'draw'; readonly a: readonly [number, number]; readonly b: readonly [number, number];
     readonly type: number; readonly curve: { readonly t: number; readonly h: number } | null;
     readonly structure: RoadStructure }
-  /**
-   * A road drawn the way the road tool draws it today: `commitRoadPath` with
-   * authored heights (`h0`/`h1`, units above the designed ground). `draw` is
-   * the older `commitDraft` path, kept so the shrunk fixtures still replay.
-   */
+  /** A road drawn the way the road tool draws it today: `commitRoadPath` with authored heights */
   | { readonly op: 'path'; readonly a: readonly [number, number]; readonly b: readonly [number, number];
     readonly type: number; readonly curve: { readonly t: number; readonly h: number } | null;
     readonly h0: number; readonly h1: number }
@@ -50,10 +39,7 @@ export type FuzzOp =
   | { readonly op: 'delete'; readonly pick: number }
   | { readonly op: 'removeNode'; readonly pick: number }
   | { readonly op: 'control'; readonly pick: number; readonly control: JunctionControl }
-  /**
-   * A new cross-section on a road already built (docs/source/VIAS.md V1): each
-   * footway its own width in whole metres, either laid flush (no kerb).
-   */
+  /** A new cross-section on a road already built */
   | { readonly op: 'profile'; readonly pick: number; readonly left: number; readonly right: number;
     readonly flushLeft: boolean; readonly flushRight: boolean };
 
@@ -66,8 +52,7 @@ export interface FuzzState {
 
 export function freshState(): FuzzState {
   const doc = new RoadDoc();
-  // The fuzzer hunts geometry: money is never why a gesture fails here (the
-  // economy's own refusals are tested in tests/editor/economy.spec.ts).
+  // The fuzzer hunts geometry: money is never why a gesture fails here
   doc.setBalance(Number.MAX_SAFE_INTEGER, 'fuzz');
   const net = new Network(doc);
   net.rebuild();
@@ -101,11 +86,7 @@ function anchorAt(state: FuzzState, p: Vec2, structure: RoadStructure): Anchor {
   return segment && segment.structure !== structure ? { kind: 'free', at: anchor.at } : anchor;
 }
 
-/**
- * Applies one gesture exactly the way `main.ts` does: the same editor calls,
- * then a full `Network.rebuild()` when the gesture changed anything (what
- * `mutateBuilt` does). Returns whether it changed the document.
- */
+/** Applies one gesture exactly the way `main.ts` does */
 export function applyOp(state: FuzzState, op: FuzzOp): boolean {
   const { doc, net } = state;
   let changed = false;
@@ -116,8 +97,7 @@ export function applyOp(state: FuzzState, op: FuzzOp): boolean {
       const endAnchor = anchorAt(state, snapped, op.structure);
       const end: Anchor = endAnchor.kind === 'free' ? { kind: 'free', at: snapped } : endAnchor;
       changed = commitDraft(doc, net, start, end, op.type, op.curve, op.structure).committed;
-      // commitDraft hands back a network it claims is current. Hold it to that
-      // before `mutateBuilt`'s own rebuild would paper over it.
+      // commitDraft hands back a network it claims is current.
       if (changed) {
         const missing = [...doc.segments.keys()].filter((id) => !net.ribbons.has(id));
         if (net.revision === doc.revision && missing.length) {
@@ -128,9 +108,7 @@ export function applyOp(state: FuzzState, op: FuzzOp): boolean {
       break;
     }
     case 'path': {
-      // `main.ts` pointerdown + commitRoadGesture: the start is whatever is under
-      // the pointer, the end is snapped at the height being drawn, and an anchor
-      // at another height is open ground (a crossing, not a junction).
+      // `main.ts` pointerdown + commitRoadGesture
       const start = findAnchor(doc, net, { x: op.a[0], y: op.a[1] }, 1);
       const startHeight = start.kind === 'free' ? op.h0 : anchorHeightOffset(doc, net, start, op.h0);
       const snapped = snapRoadEndpoint(doc, net, start, { x: op.b[0], y: op.b[1] }, 1, op.h1).at;
@@ -146,8 +124,7 @@ export function applyOp(state: FuzzState, op: FuzzOp): boolean {
       }]).committed;
       break;
     }
-    // Edits made in place are judged like a drawn road and undone when
-    // refused, as main.ts's `mutateRoads` does (`editRules.ts` `guardRoadEdit`).
+    // Edits made in place are judged like a drawn road and undone when refused, as main.ts's `mutateRoads` does
     case 'split': {
       const id = pickFrom(segmentIds(doc), op.pick);
       if (id === undefined) return false;
@@ -165,8 +142,7 @@ export function applyOp(state: FuzzState, op: FuzzOp): boolean {
       const id = pickFrom(nodeIds(doc), op.pick);
       const node = id === undefined ? undefined : doc.node(id);
       if (!node || id === undefined) return false;
-      // As main.ts's drop (`NodeMover.drop`): move, reconcile and judge; a
-      // refused drop is put back by `moveNodeChecked` itself.
+      // As main.ts's drop (`NodeMover.drop`): move, reconcile and judge; a refused drop is put back by `moveNodeChecked` itself.
       changed = moveNodeChecked(doc, net, id, { x: node.x + op.dx, y: node.y + op.dy }).committed;
       break;
     }
@@ -254,12 +230,7 @@ const round = (value: number): number => Math.round(value * 100) / 100;
 const clampField = (value: number): number => Math.max(-FIELD, Math.min(FIELD, value));
 const point = (x: number, y: number): [number, number] => [round(clampField(x)), round(clampField(y))];
 
-/**
- * Draws a gesture that is LIKELY to stress the builders, not a uniform one:
- * roads out of existing nodes (junctions of degree 3 to 6), roads across
- * existing roads at chosen angles, contacts landing just past
- * `MIN_LINK_LENGTH` from a node, and near-parallel roads a lane apart.
- */
+/** Draws a gesture that is LIKELY to stress the builders, not a uniform one: roads out of existing nodes */
 function drawOp(rng: Rng, state: FuzzState): FuzzOp {
   const { doc, net } = state;
   const type = rng.int(0, ROAD_TYPES.length - 1);
@@ -313,8 +284,7 @@ function drawOp(rng: Rng, state: FuzzState): FuzzOp {
   }
   const chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const shaped = curve ? { t: curve.t, h: round((rng.float() < 0.5 ? 1 : -1) * rng.range(0.1, 0.35) * chord) } : null;
-  // Most roads go through the tool's own path: authored heights, no legacy
-  // structure. A share keeps the old `commitDraft` structures in play.
+  // Most roads go through the tool's own path: authored heights, no legacy structure.
   if (rng.float() < 0.7) {
     const height = (): number => rng.float() < 0.6 ? 0 : round((rng.float() < 0.75 ? 1 : -1) * rng.range(2.5, 30) * U);
     return { op: 'path', a, b, type, curve: shaped, h0: height(), h1: height() };

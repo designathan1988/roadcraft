@@ -4,12 +4,7 @@ import { Network } from '@world/network';
 import { buildDefaultTown } from './support/town/defaultTown';
 import { buildRoadElevation } from '@world/elevation';
 
-/**
- * The renderer digests only the blocks a road that differs reaches
- * (`RoadElevation.differences`); every block of the map was digested twice
- * on every edit (docs/source/performance.md #10). It must find every block a full
- * sweep finds.
- */
+/** The renderer digests only the blocks a road that differs reaches (`RoadElevation.differences`) */
 const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
 
 describe('the differences between two solves', () => {

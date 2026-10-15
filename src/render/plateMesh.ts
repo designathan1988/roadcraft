@@ -1,17 +1,6 @@
 import { steepnessInto } from './terrainSteep';
 
-/**
- * A TERRAIN PLATE'S MESH FROM ITS CORNERS, off the page (`flatGround.worker.ts`):
- * what a plate's first build works out over its 90 601 corners
- * (`terrain.ts` update: rewrite, the diagonals, `computeVertexNormals`, the
- * steepness), the same numbers, so the page only copies them in. As Cesium
- * builds its terrain meshes - their vertices and normals - in a worker
- * (`createVerticesFromHeightmap`) and the main thread only uploads them; a
- * plate's first build was some 35 ms of a frame on the page (profiled 2026-10-11).
- *
- * Corners: `side` x `side`, rows from the plate's north edge down (as
- * `PlaneGeometry` lays them, rotated flat), x from -half, `cell` apart.
- */
+/** A TERRAIN PLATE'S MESH FROM ITS CORNERS, off the page (`flatGround.worker.ts`) */
 export interface PlateMesh {
   /** The ground at each corner, the terrain's base level added (`TERRAIN_BASE`). */
   readonly heights: Float64Array;

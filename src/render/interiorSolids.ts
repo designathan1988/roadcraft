@@ -1,16 +1,6 @@
 import type { BufferGeometry } from 'three';
 
-/**
- * THE SOLIDS OF A VEHICLE'S INTERIOR, BY NAME (docs/PLANO.md 5a). The cabin
- * is drawn as one merged geometry (`VehicleModel.interior`); a probe of the
- * seated bodies against it found 34 to 1 937 triangles a model touching a
- * body, and only a picture could tell a foot on its pedal from a knee
- * through the dashboard. Each part of the cabin is now added under a kind and
- * the seats it belongs to, and kept as the range of vertices it takes in the
- * merge - the cabin's compound collider, as engines build one of named
- * primitives (Unity, "Introduction to compound colliders"), with no copy of
- * the geometry: a contact is then of a class (`tests/render/interiorSolids.spec.ts`).
- */
+/** THE SOLIDS OF A VEHICLE'S INTERIOR, BY NAME. */
 export type InteriorSolidKind =
   /** The floor, the carpet, a boot floor. */
   | 'floor'
@@ -40,11 +30,7 @@ export type InteriorSolidKind =
   /** A bus's stanchions and ceiling rails. */
   | 'pole';
 
-/**
- * One closed piece of the cabin (a box, an extruded profile, a bar), named:
- * a point is inside it when a ray from it crosses its faces an odd number of
- * times (`tests/render/interiorSolids.spec.ts`).
- */
+/** One closed piece of the cabin (a box, an extruded profile, a bar), named */
 export interface InteriorSolid {
   readonly kind: InteriorSolidKind;
   /** The seats (indices into `VehicleModel.seats`) it belongs to: a seat's own shell, a bench's two places, the driver's pedals; empty for the cabin's. */

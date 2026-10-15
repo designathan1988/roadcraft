@@ -1,22 +1,9 @@
-/**
- * Walls, fences and hedges drawn along a path, as roads are: a run of points
- * on the ground, each pair of them a straight length of barrier.
- *
- * Their own graph, not a building's parts: a building's fence lives in its
- * local frame and needs the building selected first, and a boundary along a
- * street is nobody's building. Drawn as a network the way city builders do
- * it (Cities: Skylines' walls and fences, laid like roads) and traced point
- * after point as The Sims' fence tool is.
- */
+/** Walls, fences and hedges drawn along a path, as roads are */
 export type BarrierKind = 'fence' | 'wall' | 'hedge' | 'guardrail' | 'railing';
 
 export const BARRIER_KINDS: readonly BarrierKind[] = ['fence', 'wall', 'hedge', 'guardrail', 'railing'];
 
-/**
- * Kinds that stand at the KERB, on the footway's road edge, rather than along
- * its back: a road guardrail (steel W-beam on posts) and an urban pedestrian
- * railing, which keep walkers and vehicles apart where the street needs it.
- */
+/** Kinds that stand at the KERB, on the footway's road edge, rather than along its back: a road guardrail */
 export const KERB_BARRIERS: ReadonlySet<BarrierKind> = new Set<BarrierKind>(['guardrail', 'railing']);
 
 export interface Barrier {

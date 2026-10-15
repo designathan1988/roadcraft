@@ -25,7 +25,7 @@ import type { SegmentRibbon, SegmentTrims } from './ribbons';
 import { DeltaLog, type NetworkDelta } from './networkDelta';
 import type { PoleLineState } from './poleLines';
 
-/** A `hitch:` entry for the frame monitor and `scripts/probe-hitches.mjs`, where the platform measures. */
+/** A `hitch:` entry for the frame monitor, where the platform measures. */
 function measureHitch(name: string, start: number): void {
   if (typeof performance !== 'undefined' && typeof performance.measure === 'function') {
     performance.measure(name, { start, end: performance.now() });
@@ -34,15 +34,7 @@ function measureHitch(name: string, start: number): void {
 
 export type { SegmentRibbon, SegmentTrims } from './ribbons';
 
-/**
- * All geometry derived from the authoring document.
- *
- * Everything here is rebuilt at commit time and never lazily during drawing.
- * The V6 monolith recomputed junction outlines inside the render loop — seven
- * times per node per frame, each one re-filtering every segment in the world —
- * and let `approachAxis` rebuild signal plans from the renderer (defects 5.7
- * and 3.3). Nothing in this class is reachable from a draw call.
- */
+/** All geometry derived from the authoring document. */
 /** A crossing's landing on the footways (`Network.crossingLandingAt`): kept clear of everything. */
 export interface CrossingLanding {
   readonly x: number;
@@ -56,54 +48,18 @@ export interface CrossingLanding {
 export class Network {
   /** The footway the crossings are fitted to, by cell (`walkable.ts`): kept across rebuilds. */
   private crossingWalkable: WalkableSurface | null = null;
-  /**
-   * Each crossing's distance from its node, by road and node, kept across
-   * rebuilds: what a rebuild changed is dropped (`forgetCrossings`), nothing
-   * else. DO NOT clear it on every rebuild: every edit then fitted every
-   * crossing of the map again for whoever asked next.
-   */
+  /** DO NOT clear it on every rebuild: every edit then fitted every crossing of the map again for whoever asked next. */
   private readonly crossingDistances = new Map<SegmentId, Map<NodeId, number>>();
-  /**
-   * Each crossing's landing on the footways (`crossingLandingAt`), by road and
-   * node, kept and dropped with the distances (`forgetCrossings`): the
-   * distance, the road's profile and its centreline are all it reads. Every
-   * item of street furniture asks the landings of the nodes round it
-   * (`landscape.ts` nearCrossingAccess), and each node's were worked out again
-   * - its legs' profiles and centrelines built again - for every item that
-   * asked, some ten times each: 140 of the 175 ms a generated city's furniture
-   * of 2,560 m took to stand (profile of 2026-10-15: `crossingAccessesAt`,
-   * `travelProfile`, `Polyline` tan/cum). DO NOT work a landing out again for
-   * each asker.
-   */
+  /** DO NOT work a landing out again for each asker. */
   private readonly crossingLandings = new Map<SegmentId, Map<NodeId, CrossingLanding | null>>();
   readonly junctions = new Map<NodeId, Map<SurfaceLevel, Junction>>();
   readonly ribbons = new Map<SegmentId, SegmentRibbon>();
-  /**
-   * The ribbons and the junctions filed by the cells their surfaces reach
-   * (`world/cells.ts`): what is derived from the roads of a place (the pole
-   * lines, `poleLines.ts`) reads the cells round it, and is made again only
-   * when one of them moves - an edit pays for the cells it reaches.
-   */
+  /** The ribbons and the junctions filed by the cells their surfaces reach (`world/cells.ts`) */
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
   readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
-  /**
-   * The ribbons with a footway laid flush on a side (docs/source/VIAS.md V1),
-   * filed like `segmentCells`: what asks how high the footway stands at a
-   * point (`roads/footwayRise.ts`, for every walker and every lamp) reads the
-   * cells round it, and none where nothing is flush.
-   */
+  /** The ribbons with a footway laid flush on a side, filed like `segmentCells` */
   readonly flushCells = new CellFiling<SegmentId, SegmentRibbon>();
-  /**
-   * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
-   * `ribbons`: what a loop over every ribbon would meet there, in the order it
-   * would meet them, so a search that keeps the first of equals finds the same.
-   *
-   * `ribbons` is kept in increasing id order by its one writer
-   * (`networkBuild.ts` `insertionWatch`, and `copyState` copies it as it is),
-   * and `idsMeeting` answers in increasing id order: the two orders are one.
-   * DO NOT go back to a rank of every ribbon made again at each revision
-   * (`ribbonOrder`): every edit paid a walk of the map for the next question.
-   */
+  /** DO NOT go back to a rank of every ribbon made again at each revision (`ribbonOrder`) */
   ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
     const out: SegmentRibbon[] = [];
     for (const id of this.segmentCells.idsMeeting(rect)) {
@@ -113,49 +69,17 @@ export class Network {
     return out;
   }
 
-  /**
-   * Nodes the editor would refuse to create, with the gap that condemns them,
-   * in radians. This is the MARK, and it is derived rather than stored.
-   *
-   * A flag written into the document would have to be kept in step with every
-   * move, split, delete and undo, and a stale mark is worse than none: it either
-   * accuses a node that has since been straightened or misses one that has just
-   * been bent. Recomputed here, it cannot disagree with the geometry, and it
-   * needs no migration for maps saved before the rule existed.
-   */
+  /** Nodes the editor would refuse to create, with the gap that condemns them, in radians. */
   readonly impossible = new Map<NodeId, number>();
-  /**
-   * Junctions whose legs are too short to separate their lanes, with how far
-   * (units) the worst mouth is cut short of the point where two neighbouring
-   * carriageways stop overlapping (`Corner.x`). `reconcile` lets a link too
-   * short for both of its junctions squeeze them below that point; the lanes
-   * of the two legs then run into each other outside any conflict zone and
-   * the cars collide (fuzz fixture `open-body-overlap-on-impossible-short-leg`:
-   * mouths cut at 3 units with the carriageways overlapping to 30-52). SUMO
-   * warns of the same thing for clusters of junctions joined by short edges:
-   * "low throughput, jams and even deadlocks". Derived like `impossible`.
-   */
+  /** Junctions whose legs are too short to separate their lanes, with how far */
   readonly squeezed = new Map<NodeId, number>();
   readonly trims = new Map<SegmentId, SegmentTrims>();
-  /**
-   * How far along each leg a junction's flat plate reaches, keyed
-   * `node:segment`: the trim the junction's outermost surface would be cut at
-   * were it solved on its own. The surfaces are all cut at the carriageway's
-   * trim now (`junction/derive.ts`); the elevation solver keeps its plate at
-   * the reach it was designed and measured for.
-   */
+  /** How far along each leg a junction's flat plate reaches, keyed `node:segment` */
   readonly plateReach = new Map<string, number>();
-  /**
-   * Nodes where one road carries on at another width, built as a taper rather
-   * than as a junction (`junction/transition.ts`).
-   */
+  /** Nodes where one road carries on at another width, built as a taper rather than as a junction (`junction/transition.ts`). */
   readonly transitions = new Set<NodeId>();
   readonly polylines = new PolylineCache();
-  /**
-   * What the pole lines keep of this network (`poleLines.ts` `PoleLineState`):
-   * made when first asked, and this network's own - it goes with it. Each
-   * region kept checks the cells it was made from, so a rebuild clears nothing.
-   */
+  /** What the pole lines keep of this network (`poleLines.ts` `PoleLineState`) */
   poleLines: PoleLineState | null = null;
 
   /** Matches `RoadDoc.revision` at the time of the last rebuild. */
@@ -181,25 +105,7 @@ export class Network {
     return this.junctions.get(node)?.get(level);
   }
 
-  /**
-   * Rebuilds every derived surface, INCREMENTALLY (docs/VIAS.md V0, stage F3):
-   * only what the edit changed and what depends on it (`networkBuild.ts`).
-   *
-   * Two solver passes, then a hard clamp. The first pass finds what each
-   * junction wants; segments then reconcile the two ends against their own
-   * length and hand back a scale factor; the second pass re-solves the nodes
-   * under that pressure with curb radii scaled by the factor, because a
-   * smaller radius needs a shorter run and therefore a shorter trim. A third,
-   * capped pass guarantees the invariant where the second did not converge,
-   * and the trims adopt what the junctions finally used.
-   *
-   * What changed is published (`changesSince`) for whatever is derived from
-   * the network, so it too redoes only what the edit touched.
-   * `tests/world/incrementalRebuild.spec.ts` holds the result equal to a
-   * rebuild from nothing; `tests/scale/edit.spec.ts` counts the work. `full`
-   * forgets everything first: loading a map (`editor/history.ts`).
-   * @rebuild Called when the document's revision moved (an edit, a load), never every frame.
-   */
+  /** @rebuild Rebuilds every derived surface, INCREMENTALLY */
   rebuild(options: { readonly full?: boolean } = {}): void {
     const started = performance.now();
     if (options.full || this.build.empty) this.clear();
@@ -211,12 +117,7 @@ export class Network {
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
-  /**
-   * What changed since the network was in `state` (a token it handed out,
-   * `state`), or null: everything (too far behind, a load, a state of
-   * another map). The lanes, conflicts, signals and zebras read it to redo
-   * only what an edit touched.
-   */
+  /** What changed since the network was in `state` (a token it handed out, `state`), or null: everything */
   changesSince(state: object | null): NetworkDelta | null {
     return this.log.since(state);
   }
@@ -242,13 +143,7 @@ export class Network {
     this.flushCells.copyFrom(new CellFiling());
   }
 
-  /**
-   * Takes another network's derived state as the start of its own, without
-   * claiming to be up to date: a working copy of the document made for an
-   * edit starts from the network it was copied from, and its next rebuild
-   * compares this document against what that one was built from and builds
-   * again only what differs.
-   */
+  /** Takes another network's derived state as the start of its own, without claiming to be up to date */
   seedJunctions(from: Network): void {
     this.copyState(from);
     this.build.copyFrom(from.build, false);
@@ -256,17 +151,7 @@ export class Network {
     this.trafficRevision = -1;
   }
 
-  /**
-   * Takes over another network's derived geometry instead of recomputing it.
-   *
-   * `commitDraft` works on a working copy (`RoadDoc.fork`), builds a network for it to find crossings
-   * and splits, and then - on success - takes the copy back into the live
-   * document: the copy's network was built from the very same segments, and
-   * `RoadDoc.takeBack` has made the two documents equal. Measured on a
-   * 205-segment map: a rebuild cost about 55 ms, and drawing one road paid
-   * for three of them. What the other network changed comes across with it
-   * (`changesSince`), so whatever reads this one sees the edit.
-   */
+  /** Takes over another network's derived geometry instead of recomputing it. */
   adopt(other: Network): void {
     this.copyState(other);
     this.build.copyFrom(other.build, true);
@@ -295,23 +180,11 @@ export class Network {
     this.polylines.adopt(other.polylines);
     const before = this.log.state;
     this.log.takeFrom(other.log);
-    // The crossing caches belong to the geometry just replaced: what changed
-    // between the state this network was in and the one it takes is dropped
-    // (everything, when the log cannot say); the rest is worked out again
-    // when asked. Kept whole, after every road drawn the zebras, stop lines,
-    // lanelets and footway furniture read crossing distances of the network
-    // before the edit (a highway joined to a junction still had its zebras).
-    // The footway's cells (`walkable.ts`) are kept by the versions of the
-    // filings, unique to each change of each cell (`cells.ts`): they stay.
+    // The crossing caches belong to the geometry just replaced
     this.forgetCrossings(this.log.since(before));
   }
 
-  /**
-   * Drops the crossing distances a change of the network may have moved: those
-   * of the roads it changed, of the nodes it changed, and of every road whose
-   * ribbon reaches a place it changed (the footway a crossing is fitted to,
-   * `fits`, lies within the road's ribbon). `null`: all of them.
-   */
+  /** Drops the crossing distances a change of the network may have moved */
   private forgetCrossings(delta: NetworkDelta | null): void {
     if (delta === null) { this.crossingDistances.clear(); this.crossingLandings.clear(); return; }
     for (const seg of delta.segments) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
@@ -326,11 +199,7 @@ export class Network {
     }
   }
 
-  /**
-   * Where the crossing of `seg` at `node` lands on the footways (its centre on
-   * the road's centreline, the road's direction there leaving the node, how
-   * far across it reaches), or null: no crossing there. Kept (`crossingLandings`).
-   */
+  /** Where the crossing of `seg` at `node` lands on the footways */
   crossingLandingAt(seg: SegmentId, node: NodeId): CrossingLanding | null {
     const kept = this.crossingLandings.get(seg)?.get(node);
     if (kept !== undefined) return kept;
@@ -349,39 +218,19 @@ export class Network {
     return landing;
   }
 
-  /**
-   * Whether a node is one road carrying on rather than an intersection: two
-   * legs, and no control device the player put there.
-   *
-   * Such a node still has a junction outline whenever its two roads differ -
-   * a change of class, of lane count, of structure, or a bend - but it has no
-   * approach: no zebra, no stop line, and the lanes run to its mouth. It used
-   * to get a crossing on both legs, so a street widening into a boulevard was
-   * painted as a crossroads with two of its arms missing.
-   */
+  /** Whether a node is one road carrying on rather than an intersection */
   continues(node: NodeId): boolean {
     const record = this.doc.node(node);
     if (!record || record.incident.length !== 2) return false;
     if (record.control !== 'auto' && record.control !== 'none') return false;
     if (this.junctions.get(node)?.get(Level.Asphalt)?.transition) return true;
-    // A continuous two-leg bend has no approach or zebra; the footway follows
-    // its outer edge. Width-changing corners and curved alignments use the
-    // transition sweep rather than a crossroads plate.
+    // A continuous two-leg bend has no approach or zebra; the footway follows its outer edge.
     const legs = this.junctions.get(node)?.get(Level.Asphalt)?.legs;
     if (!legs || legs.length !== 2) return true;
     return dot((legs[0] as { dir: Vec2 }).dir, (legs[1] as { dir: Vec2 }).dir) < -Math.cos(TRANSITION_BEND);
   }
 
-  /**
-   * Whether a node is a junction of three legs or more.
-   *
-   * A zero mouth distance is the sentinel for "no junction mouth on this end":
-   * a dead end, a road bending at a node. But a junction leg can have a zero
-   * mouth too - the wide arm of a fork, whose corners with the narrower arms
-   * fall behind the node, needs no trim. Read as the sentinel, that arm got no
-   * crossing and a stop line at the node itself, a crossing's depth past the
-   * bar painted for it.
-   */
+  /** Whether a node is a junction of three legs or more. */
   /** The node's authored crossing, while the node still joins exactly two roads. */
   private midBlockCrossing(node: NodeId): NodeCrossing | undefined {
     const n = this.doc.node(node);
@@ -415,67 +264,29 @@ export class Network {
     return side[Level.Asphalt] ?? 0;
   }
 
-  /**
-   * Distance from a node at which vehicles must stop on the given segment.
-   *
-   * Derived from the same asphalt trim the junction mouth uses, plus the
-   * approach zone that holds the crossing. There is one trim in the engine, so
-   * a stop line and a junction mouth cannot disagree.
-   *
-   * The V6 monolith had a separate `approachSetback` formula that could exceed
-   * the segment's own length, which pinned vehicles at progress zero forever
-   * (defect 2 / 1b of RELATORIO.md).
-   */
+  /** Distance from a node at which vehicles must stop on the given segment. */
   stopLineDistance(seg: SegmentId, node: NodeId): number {
-    // A mid-block crossing (`RoadNode.crossing`): the paint lies on one piece,
-    // its far edge at the node. Both approaches stop a whole crosswalk plus the
-    // setback short of the node, so neither bar can reach the paint (MUTCD
-    // 3B.16 wants 1.2 m at least in front of the near crosswalk line).
+    // A mid-block crossing (`RoadNode.crossing`): the paint lies on one piece, its far edge at the node.
     if (this.midBlockCrossing(node)) return CROSSWALK_DEPTH + STOP_BAR_SETBACK;
     const mouth = this.mouthDistance(seg, node);
     if (mouth <= 0 && !this.isJunction(node)) return 0;
-    // Nothing stops where a road merely carries on: the link runs to the mouth
-    // and the lanes continue across the node.
+    // Nothing stops where a road merely carries on: the link runs to the mouth and the lanes continue across the node.
     if (this.continues(node)) return mouth;
-    // Nor where it circulates through a priority node (a roundabout's ring):
-    // it has the way, and no crossing lies across it.
+    // Nor where it circulates through a priority node (a roundabout's ring): it has the way, and no crossing lies across it.
     if (this.circulating(seg, node)) return mouth;
     const length = this.polylines.get(this.doc, seg).length;
     // Never let the approach zone eat the whole segment.
     const capped = Math.min(stopLine(mouth), length * STOP_LINE_CAP);
     // ...but the fractional cap may never pull the stop line onto the zebra.
-    // The crossing's position is the protected one — a kerb placed for it must
-    // stay out of the carriageway — so when the two constraints disagree it is
-    // the stop line that moves outward, not the crossing that moves in.
-    // Without this, a boulevard with 84-unit arms put the bar 0.87 units inside
-    // the far edge of its own crossing: the two distances reached their shared
-    // ordering through separate clamps (0.45 and 0.49 of segment length) and
-    // nothing structural kept them ordered once both bound.
     const crossing = this.crosswalkDistanceAt(seg, node);
     const behindCrossing =
       crossing > 0 ? crossing + CROSSWALK_DEPTH / 2 + STOP_BAR_SETBACK : 0;
-    // ...and never inside the junction plate. On a short leg into a wide, acute
-    // junction the fractional cap bit below the mouth itself (the fuzzer's
-    // `trimOrder`: a 184-unit leg with an 85-unit mouth stopped its lanes at
-    // 83), which ended the lanelets and started every connector ON the plate.
+    // ...and never inside the junction plate.
     return Math.max(capped, behindCrossing, mouth);
   }
 
-  /**
-   * Distance from a node to the centre of this segment's crossing.
-   *
-   * Clamped against the MOUTH, never against a bare fraction of the segment.
-   * On a short edge beside a wide junction, a fractional cap pushes the
-   * crossing back inside the junction — and any kerb placed for it then sits in
-   * the carriageway, which is precisely the class of bug this rewrite exists to
-   * make impossible. The crossing may end up closer to the segment's midpoint
-   * than is ideal; it may never end up inside the road.
-   */
-  /**
-   * The footway the crossings are fitted to, built once per network: a build
-   * spread over frames asks for it in a step of its own
-   * (`render/roadSurfaces.ts`), not inside the step that paints the markings.
-   */
+  /** Distance from a node to the centre of this segment's crossing. */
+  /** The footway the crossings are fitted to, built once per network */
   crossingSurface(): WalkableSurface {
     return this.crossingWalkable ??= new WalkableSurface(this);
   }
@@ -483,13 +294,10 @@ export class Network {
   crosswalkDistanceAt(seg: SegmentId, node: NodeId): number {
     const cached = this.crossingDistances.get(seg)?.get(node);
     if (cached !== undefined) return cached;
-    // An authored mid-block crossing is exactly where the player put it: its
-    // centre half a crosswalk back from the node, on the piece it names.
+    // An authored mid-block crossing is exactly where the player put it
     const placed = this.midBlockCrossing(node);
     if (placed) return placed.segment === seg ? CROSSWALK_DEPTH / 2 : 0;
-    // No zebra across a circulating stream: at a priority node where two
-    // one-way pieces carry one flow on (one arrives, the other leaves - the
-    // ring of a roundabout), people cross the arms, never the ring.
+    // No zebra across a circulating stream: at a priority node where two one-way pieces carry one flow on
     if (this.circulating(seg, node)) return 0;
     // A turning circle is walked round on its footway (`walkways.ts`), not crossed.
     if (this.doc.node(node)?.end === 'bulb' && this.doc.degree(node) === 1) return 0;
@@ -504,15 +312,7 @@ export class Network {
     const length = this.polylines.get(this.doc, seg).length;
     const clear = mouth + CROSSWALK_DEPTH / 2 + 1;
 
-    // Both ends of a segment want an approach zone, and a short link cannot
-    // give both. Half the drivable length is this end's share; a crossing that
-    // does not leave room for its own stop line inside that share is a crossing
-    // a driver would park on, so there is no crossing here at all.
-    //
-    // Suppressing it is what keeps the ordering unbreakable further down:
-    // with the crossing capped this way, both stop lines fit without anyone
-    // rescaling them, and rescaling is what used to pull the bar inside the
-    // zebra on a 16-unit link between two junctions.
+    // Both ends of a segment want an approach zone, and a short link cannot give both.
     const halfBudget = Math.max(0, (length - MIN_RIBBON) / 2);
     const segment = this.doc.segment(seg);
     if (!segment) return 0;
@@ -525,7 +325,7 @@ export class Network {
     const proposed = Math.min(Math.max(crosswalkAt(mouth), clear), length * CROSSWALK_CAP, orderingCap);
     const limit = Math.min(length * CROSSWALK_CAP, orderingCap);
     const profile = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
-    // The middle of each side's own footway (an asymmetric road, docs/VIAS.md V1).
+    // The middle of each side's own footway (an asymmetric road).
     const lateralLeft = profile.width / 2 + footwayOn(profile, 'left') / 2;
     const lateralRight = profile.width / 2 + footwayOn(profile, 'right') / 2;
     const line = this.polylines.get(this.doc, seg);

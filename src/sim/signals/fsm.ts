@@ -14,16 +14,7 @@ import {
 
 type SubPhase = 'GREEN' | 'AMBER' | 'ALL_RED';
 
-/**
- * Per-junction signal state.
- *
- * Phase is an OWNED integer plus an owned timer, advanced by `dt` in exactly
- * one place. It is emphatically not `(simTime + offset) % cycle` evaluated
- * against a lazily rebuilt plan, which is what the V6 monolith did — and which
- * meant any change to the plan teleported every light at the node, and a getter
- * called from the renderer could rewrite `cycle` and `phaseOffset` halfway
- * through evaluating a single expression (defects 3.3 and 3.4).
- */
+/** Per-junction signal state. */
 export interface SignalController {
   readonly node: NodeId;
   plan: SignalPlan;
@@ -33,26 +24,9 @@ export interface SignalController {
   elapsed: number;
   /** Tick at which each group last received green. */
   lastServed: Map<GroupId, number>;
-  /**
-   * Tick at which each stage last ended its green. A demand-gated exclusive
-   * stage shares its group with a paired stage, so the group's service time
-   * says nothing about how long the stage's own turns have waited.
-   */
+  /** Tick at which each stage last ended its green. */
   stageServed: Map<number, number>;
-  /**
-   * Coordination offset ALREADY APPLIED, in seconds. Diagnostics only.
-   *
-   * This used to be a countdown that `stepController` decremented while
-   * returning early, which did not shift the phase at all — it FROZE the
-   * junction. With a four-leg cycle of ~98 s and a seed of `node * 7.317 % 60`
-   * the modulo never bit, so a freshly drawn signalised crossroads sat in
-   * stage 0 with three legs on a hard red for up to a full minute. That is the
-   * "the light is green and nothing moves" report, and it recurred every time
-   * the player drew another junction.
-   *
-   * The offset is now applied by SEEKING the plan to that point in its cycle,
-   * which is what a coordination offset means.
-   */
+  /** Coordination offset ALREADY APPLIED, in seconds. */
   readonly offsetApplied: number;
   /** Set when a plan failed validation and a fallback was substituted. */
   degraded: boolean;
@@ -77,25 +51,15 @@ export interface SignalDeps {
   readonly pedestrianDemandOn: (node: NodeId, crossings: readonly CrossingId[]) => boolean;
   /** Whether a physical compact-box holder needs this group next. */
   readonly reservationDemandOn: (node: NodeId, groups: readonly GroupId[]) => boolean;
-  /** The player's settings of a junction's signal (docs/VIAS.md V5): fixed time, greens, offset, bus priority. */
+  /** The player's settings of a junction's signal: fixed time, greens, offset, bus priority. */
   readonly settings?: (node: NodeId) => SignalSettings | undefined;
   /** Whether a bus is coming to the line of one of these groups, close enough to be served (V5). */
   readonly busNear?: (node: NodeId, groups: readonly GroupId[]) => boolean;
-  /**
-   * Doing less (`SimWorld.doLess`): nobody near the junction - no vehicle on
-   * an approach, nobody on, at or walking up to one of its crossings, no
-   * reservation for it. Absent or false, the whole decision runs.
-   */
+  /** Doing less (`SimWorld.doLess`): nobody near the junction */
   readonly quiet?: (c: SignalController) => boolean;
 }
 
-/**
- * How long a green is held past its maximum for a bus about to reach the
- * line (green extension), seconds; and the least green a stage keeps before
- * it is cut short for a bus waiting on another (early green, red truncation).
- * Transit signal priority as described for active systems (green extension up
- * to a preset maximum; conflicting phases shortened by a set amount, not ended).
- */
+/** How long a green is held past its maximum for a bus about to reach the line (green extension), seconds */
 const BUS_EXTENSION = 10;
 
 /** Greens that rested with nobody near (`SignalDeps.quiet`): a count for the tests and the budgets. */
@@ -115,22 +79,13 @@ export function createController(
     ...seekPhase(plan, offset),
     lastServed: new Map(plan.groups.map((g) => [g, deps.tick()])),
     stageServed: new Map(plan.stages.map((_, i) => [i, deps.tick()])),
-    // Neighbouring junctions start out of phase so platoons do not all stop
-    // together. The V6 monolith seeded this modulo 23 against a 34 second
-    // cycle, so a third of the offset range was unreachable.
+    // Neighbouring junctions start out of phase so platoons do not all stop together.
     offsetApplied: offset,
     degraded,
   };
 }
 
-/**
- * Where in its own cycle a plan sits `seconds` after the start of stage 0.
- *
- * A coordination offset shifts the PHASE. Holding the machine still for the
- * length of the offset does the opposite of that: every junction still starts
- * at stage 0, it just starts later, and in the meantime every approach except
- * the first is held at red for the whole offset.
- */
+/** Where in its own cycle a plan sits `seconds` after the start of stage 0. */
 function seekPhase(
   plan: SignalPlan,
   seconds: number,
@@ -183,36 +138,15 @@ function safePlan(
 const isStrict = (): boolean =>
   typeof process !== 'undefined' && process.env?.['SIM_STRICT'] === '1';
 
-/**
- * A tick of a controller asleep (`SimWorld.signalsAsleep`): resting in its
- * green with nobody near, it only keeps its time - the same sum its step would
- * make, so the result is the same as stepping it (`tests/sim/doLess.spec.ts`).
- * With `stepController`, the only writers of `elapsed` in a step (a rebuild
- * and a seek, `rebuildController`, `seekFixed`, set it outright).
- */
+/** A tick of a controller asleep (`SimWorld.signalsAsleep`) */
 export function restController(c: SignalController): void {
   c.elapsed += DT;
 }
 
-/**
- * Longest a green is held past its maximum for people still on its crossings,
- * seconds.
- *
- * A green is never cut over somebody it released, on the grounds that walkers
- * always finish. They do not always: two people met face to face at a kerb,
- * one on the zebra and one on the footway, and each waited for the other for
- * good. The stage that had released the one on the zebra held green for
- * minutes and every other approach starved (`groupStarved`, hundreds of times
- * in five minutes). Anybody who stepped on at the last WALK finishes well
- * inside this, so it bounds only the case where nobody is actually crossing.
- */
+/** Longest a green is held past its maximum for people still on its crossings, seconds. */
 const PED_HOLD_LIMIT = 30;
 
-/**
- * One tick of a controller. True when it rested in green with nobody near
- * (`SignalDeps.quiet`): until somebody comes, every tick after does the same,
- * and the caller may let it sleep (`SimWorld.signalsAsleep`).
- */
+/** One tick of a controller. */
 export function stepController(c: SignalController, deps: SignalDeps): boolean {
   c.elapsed += DT;
   const st = c.plan.stages[c.stageIndex];
@@ -223,14 +157,7 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
 
   switch (c.sub) {
     case 'GREEN': {
-      // Nobody near: a green that is neither fixed-time nor held for buses
-      // rests in it - every way below for it to end needs a vehicle, a
-      // pedestrian or a reservation at this junction (a competing call, a
-      // reservation elsewhere, people still crossing). Asked of every
-      // junction of the map every tick, the decision was most of stage 1
-      // (1.8 ms of a tick on a 36 x 36 grid, annex B2).
-      // Read through the same answers the decision uses (`pedestriansCrossing`):
-      // the rest never disagrees with them.
+      // Nobody near: a green that is neither fixed-time nor held for buses rests in it
       if (deps.quiet?.(c) && !deps.pedestriansCrossing(c.node, st.pedWalk)) {
         const resting = deps.settings?.(c.node);
         if (resting?.mode !== 'fixed' && !resting?.busPriority) { signalWork.rested++; return true; }
@@ -262,10 +189,7 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
         c.elapsed = 0;
         break;
       }
-      // Before its minimum and short of its maximum a green cannot end
-      // whatever the demand: nothing below is asked (every deciding term
-      // needs `mayEnd`, or the maximum), and the answer is the same. Asked
-      // every tick, the demand of every other stage was most of this stage.
+      // Before its minimum and short of its maximum a green cannot end whatever the demand: nothing below is asked
       if (!mayEnd && c.elapsed < st.maxGreen) break;
       const competingDemand = c.plan.stages.some(
         (candidate, index) => index !== c.stageIndex && stageHasDemand(c, candidate, deps),
@@ -275,21 +199,11 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
           !st.greenGroups.includes(group) &&
           deps.reservationDemandOn(c.node, [group]),
       );
-      // A physical compact-box holder can depend on the next signal to release
-      // its rear from the previous junction. Cut a conflicting green after its
-      // guaranteed minimum, and keep the needed green alive to its target. The
-      // soft future claim itself owns no connector and blocks no admission.
-      //
-      // With a conflicting call, the green stays alive while somebody can
-      // USE it: a head at the line or arriving within the passage time, with
-      // room to leave. An empty junction rests in its current green.
-      // Asked only where it decides: a gap-out needs a competing call.
+      // A physical compact-box holder can depend on the next signal to release its rear from the previous junction.
       const currentDemand = (): boolean => deps.reservationDemandOn(c.node, st.greenGroups) || (deps.demand
         ? deps.demand(c.node, st.greenGroups, st.demandMovements).active > 0
         : deps.demandOn(c.node, st.greenGroups));
-      // An actuated junction rests in green when nobody else asks for the
-      // right of way. A gap or maximum is relevant only after a conflicting
-      // call; otherwise cycling through empty stages stops an arriving car.
+      // An actuated junction rests in green when nobody else asks for the right of way.
       const gapOut = mayEnd && competingDemand && !currentDemand();
       const yieldAtTarget = mayEnd && competingDemand && c.elapsed >= st.targetGreen;
       if (gapOut || (mayEnd && reservedElsewhere) || yieldAtTarget) {
@@ -300,12 +214,7 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
       } else if (c.elapsed >= st.maxGreen && !pedestriansInside &&
         (competingDemand || (c.elapsed >= st.maxGreen + PED_HOLD_LIMIT && deps.pedestriansCrossing(c.node, st.pedWalk)))) {
         c.stageServed.set(c.stageIndex, deps.tick());
-        // Never cut a green over people still on its crossings. The next stage
-        // gives protected green to movements that drive over those crossings,
-        // and a walker caught there held every one of them at a green light:
-        // measured on a four-way of avenues, the pedestrian obstacle was the
-        // commonest reason a queue head stood still at green. Walkers always
-        // finish, so the extension is bounded.
+        // Never cut a green over people still on its crossings.
         for (const g of st.greenGroups) c.lastServed.set(g, deps.tick());
         c.sub = 'AMBER';
         c.elapsed = 0;
@@ -319,10 +228,7 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
       }
       break;
     case 'ALL_RED':
-      // Clearance is purely time based. An all-red conditioned on the box being
-      // empty is exactly the kind of gate a single stuck vehicle holds open
-      // forever; the box is instead guaranteed to drain because vehicles inside
-      // are never held and never enter without room to leave.
+      // Clearance is purely time based.
       if (c.elapsed >= st.allRed) {
         const settings = deps.settings?.(c.node);
         const bus = settings?.busPriority
@@ -354,21 +260,16 @@ function pickNextStage(c: SignalController, deps: SignalDeps): number {
 
   for (let index = 0; index < stages.length; index++) {
     // Do not immediately reopen the phase that just completed its clearance.
-    // A real change of right-of-way is needed for amber to protect an
-    // approaching driver and to give another movement its minimum service.
     if (index === c.stageIndex) continue;
     const stage = stages[index]!;
     const hasDemand = stageHasDemand(c, stage, deps);
-    // Age weighted by what is waiting: the longest-unserved stage still wins
-    // eventually, but a stage with a long queue is not made to wait behind one
-    // with a single car. An exclusive turn stage only ever runs on demand.
+    // Age weighted by what is waiting
     const waited = stage.demandMovements
       ? now - (c.stageServed.get(index) ?? now)
       : stageAge(c, stage.greenGroups, now);
     const age = waited * (1 + stageScore(c, stage, deps) / DEMAND_PRIORITY);
 
-    // An overdue stage wins among live calls; spending an entire green on an
-    // empty stage would delay the approach that actually requested service.
+    // An overdue stage wins among live calls
     if (stage.greenGroups.length && waited >= deadline && hasDemand &&
       betterCandidate(index, age, overdue, overdueAge, sequential, stages.length)) {
       overdue = index;
@@ -382,9 +283,7 @@ function pickNextStage(c: SignalController, deps: SignalDeps): number {
 
   if (overdue >= 0) return overdue;
 
-  // Somebody who has stood at a kerb for PED_WAIT_LIMIT is served next, ahead
-  // of vehicle demand: measured before this, walkers waited nearly two
-  // minutes at five-leg junctions while every vehicle stage won on queue size.
+  // Somebody who has stood at a kerb for PED_WAIT_LIMIT is served next, ahead of vehicle demand
   let walkers = -1;
   let longest = PED_WAIT_LIMIT;
   for (let index = 0; index < stages.length; index++) {
@@ -440,15 +339,7 @@ function betterCandidate(
 const circularDistance = (index: number, start: number, count: number): number =>
   (index - start + count) % count;
 
-/**
- * Rebuilds a controller's plan after the network changed, carrying state over.
- *
- * The stage with the greatest overlap with what is currently green is chosen,
- * so the junction does not visibly jump. New groups are timestamped at the
- * rebuild and then served by the same finite sequential cycle as every other
- * stage; diagnostics therefore measure their real wait instead of reporting a
- * synthetic near-starvation immediately after an edit.
- */
+/** Rebuilds a controller's plan after the network changed, carrying state over. */
 export function rebuildController(
   c: SignalController,
   junction: JunctionTopology,
@@ -475,8 +366,7 @@ export function rebuildController(
   if (bestScore > 0 && c.sub === 'GREEN') {
     c.elapsed = Math.min(c.elapsed, plan.stages[best]?.maxGreen ?? SIGNAL.maxGreen);
   } else {
-    // What was green no longer exists, or we were mid-transition. Take the full
-    // clearance rather than switching a green on top of vehicles in the box.
+    // What was green no longer exists, or we were mid-transition.
     c.sub = 'ALL_RED';
     c.elapsed = 0;
   }
@@ -501,11 +391,7 @@ export function fixedCycle(plan: SignalPlan, settings: SignalSettings | undefine
   return plan.stages.reduce((sum, s, i) => sum + (settings?.greens?.[i] ?? s.targetGreen) + s.amber + s.allRed, 0);
 }
 
-/**
- * Puts a fixed-time signal where its cycle stands at `seconds` of the common
- * clock plus its offset (V5), so signals on one corridor keep the green wave
- * they were given: each starts its first stage `offset` seconds after time 0.
- */
+/** Puts a fixed-time signal where its cycle stands at `seconds` of the common clock plus its offset */
 export function seekFixed(c: SignalController, settings: SignalSettings, seconds: number): void {
   const total = fixedCycle(c.plan, settings);
   if (!(total > 0)) return;

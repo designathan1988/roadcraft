@@ -18,42 +18,7 @@ import type { PedestrianEngine, PeopleBridge, ResidentWalk } from '../people/eng
 import { recordCasualty, recordWound } from '../people/casualties';
 import type { FreePose, Vehicle } from '../vehicles/state';
 
-/**
- * The agents' walking: people on lanes of the footways, as SUMO's striping
- * model walks them (sumo.dlr.de, "Pedestrians": a footway cut into stripes;
- * each person takes the stripe with the most room ahead, keeps right of
- * somebody coming the other way, and walks as fast as that room allows).
- *
- * The ground is `world/walkways.ts`: footways down the middle of each
- * footway's through zone, corners round each junction, crossings on the
- * zebras, each with the lateral room a walker may use either side of it
- * (`lo`/`hi`). A walker's route is a chain of those walkways found by
- * shortest path. Along it:
- *
- * - the stripe (`aim`, the offset left of the way walked) is the one with the
- *   most free distance ahead (the room to the next body in it, halved for
- *   somebody coming the other way), with a pull to the right; a walker held
- *   up steps aside into it, no faster than a person sidesteps;
- * - the speed is what the room ahead in its own stripe allows, a person
- *   following another at a step's distance;
- * - the body walks towards a point a step or so ahead on its route, in its
- *   stripe, turning at a person's turn rate and only ever moving the way it
- *   faces (a pure pursuit, the path follower of Reynolds' "Steering Behaviors
- *   for Autonomous Characters"): it never jumps, never slides sideways and
- *   never steps backwards, and it rounds a corner instead of snapping to it;
- * - at a zebra it stands at the kerb until the crossing is theirs by the rule
- *   every pedestrian keeps (`crossings/permission.ts`: the signal, or a gap in
- *   the traffic), and while on it is published to the vehicles
- *   (`SimWorld.crossingStates`), which stop for it;
- * - a car parked off the road (the scenery's, `sim/ambient`) is solid;
- * - somebody held still a long while (`JAM_AFTER`) is let through others
- *   slowly, as SUMO's jammed state does, so nobody is ever stuck for good.
- *
- * Who walks here is the scenery's life (`sim/ambient`): people coming in at
- * the ends of the roads and walking the footways. The residents, who walked
- * here from door to door and to and from their own cars, are kept apart in
- * `src/backup/residents`.
- */
+/** The agents' walking: people on lanes of the footways, as SUMO's striping model walks them */
 
 /** Width of one stripe, world units: SUMO's default, a person's room abreast. */
 const STRIPE = m(0.65);
@@ -84,19 +49,9 @@ const LATERAL_PENALTY = m(1) / STRIPE;
 /** Held still this long, a walker is let through others slowly (SUMO's jamtime: 10 s on a crossing). */
 const JAM_AFTER = 20;
 const JAM_AFTER_CROSSING = 10;
-/**
- * Where only one person fits abreast - a lot's path and its gate - SUMO's
- * `pedestrian.striping.jamtime.narrow`, 1 s: two people meeting there pass
- * each other slowly at once instead of standing nose to nose.
- */
+/** Where only one person fits abreast - a lot's path and its gate - SUMO's `pedestrian.striping.jamtime.narrow`, 1 s */
 const JAM_AFTER_NARROW = 1;
-/**
- * Face to face and getting no further along the way for this long, s, a
- * walker is let through as jammed whatever its side steps do: in a group
- * coming the other way every step aside found another of them, each step
- * cleared the time held, and a walker danced 7 s on the spot (one-way-mix,
- * 2026-10-11). Progress is what `jamtime` measures in SUMO, not stillness.
- */
+/** Face to face and getting no further along the way for this long, s */
 const JAM_NO_PROGRESS = JAM_AFTER_NARROW;
 /** Getting this much further along the way is progress (`JAM_NO_PROGRESS`), u. */
 const PROGRESS = m(0.1);
@@ -108,12 +63,7 @@ const AHEAD = m(0.9);
 const LOT_AHEAD = m(0.35);
 /** Most a walker moves across towards its stripe, as a share of its forward speed (SUMO's LATERAL_SPEED_FACTOR). */
 const LATERAL_SHARE = 0.4;
-/**
- * Slower than this a walker faces the way its walk goes and steps aside
- * sideways, unless the point it walks to is more than `SHUFFLE_COS` round
- * (45 degrees): a corner. The defect counted standing or at a shuffle
- * (0.15 m/s, `defects.spec` fidgets); 0.25 m/s covers it.
- */
+/** Slower than this a walker faces the way its walk goes and steps aside sideways */
 const SHUFFLE = m(0.25);
 const SHUFFLE_COS = Math.SQRT1_2;
 /** Fastest a body turns walking, and standing (on the spot), rad/s. */
@@ -125,30 +75,15 @@ const CROSSING_COST = m(12);
 const KERB_BACK = m(0.35);
 /** A walker this far from the waiting place starts asking whether they may cross. */
 const ASK_FROM = m(1.5);
-/**
- * Behind somebody waiting for the zebra it is going to, this near its
- * waiting place, a walker is in the queue: waiting too (`queuedFor`), never
- * jammed through the crowd. Within this gap of the body ahead past `KEEP`.
- */
+/** Behind somebody waiting for the zebra it is going to, this near its waiting place, a walker is in the queue */
 const QUEUE_REACH = m(6);
-/**
- * Half the length of kerb people wait along at a zebra, u: past the zebra's
- * own width, as a crowd at a corner lines the kerb rather than standing
- * deep across the footway (SUMO's "wide queue").
- */
+/** Half the length of kerb people wait along at a zebra, u */
 const WAIT_HALF = m(2.2);
 
 const QUEUE_GAP = m(0.6);
 /** How often a waiting walker asks whether they may cross, seconds. */
 const ASK_EVERY = 0.25;
-/**
- * Seconds a leave to cross holds for one standing still who has not yet
- * stepped onto the carriageway. Entering is a condition met when entering (SUMO: a pedestrian
- * crosses only if its time on the crossing does not meet an approaching
- * vehicle's), not once for good: a walker let on, then held still at the kerb
- * for seconds, stepped off later in front of a car admitted meanwhile, which
- * stood in the junction for it (`priorityBox.spec`, seed 3).
- */
+/** Seconds a leave to cross holds for one standing still who has not yet stepped onto the carriageway. */
 const GRANT_LIFE = 1;
 /** Farthest a door or a car may be from the walkways, by default. */
 const REACH = m(30);
@@ -157,10 +92,7 @@ const DOOR_CLEAR = m(0.8);
 /** The end of a walk is reached this near it. */
 const THERE = m(0.25);
 /** Spatial cells for the walkers and for the walkways. */
-/**
- * As wide as a walker looks ahead (`LOOK`): everybody it can see is in its
- * own cell or the next ones round, 9 cells read where 6 m cells needed 25.
- */
+/** As wide as a walker looks ahead (`LOOK`) */
 const CELL = LOOK;
 const WAY_CELL = m(20);
 /** Cells for the cars' zones (`zonesNear`). */
@@ -176,11 +108,7 @@ interface CarZone {
 }
 const NO_POINTS: readonly Vec2[] = [];
 
-/**
- * A car's body as a zone: three discs along its length, half its width round.
- * Made once per pose by `ParkedZoneIndex`, which keeps it while the car
- * stands where it stood. Shared and read-only.
- */
+/** A car's body as a zone: three discs along its length, half its width round. */
 function parkedZone(car: Vehicle, f: FreePose): CarZone {
   const r = car.archetype.width / 2;
   const reach = Math.max(0, car.archetype.length / 2 - r);
@@ -190,13 +118,7 @@ function parkedZone(car: Vehicle, f: FreePose): CarZone {
   return { x0, y0, x1, y1, discs, on: null, crossingOnly: false };
 }
 
-/**
- * The work of the walkers' derived products, counted (counts, not times: the
- * same on every machine), for the scale specs (`tests/sim/walkSpine.spec.ts`):
- * - `hailLooked`: walkers `hailable` looked at;
- * - `routeNodes`: walkway nodes a route search touched;
- * - `parkedFiled`: parked cars' zones filed or taken out of their cells.
- */
+/** The work of the walkers' derived products, counted (counts, not times: the same on every machine), for the scale specs */
 export const walkWork = { hailLooked: 0, routeNodes: 0, parkedFiled: 0 };
 
 interface ParkedEntry { readonly car: Vehicle; x: number; y: number; angle: number; zone: CarZone | null; readonly cells: number[]; seen: number }
@@ -213,16 +135,7 @@ export interface ParkedSource {
   readonly movers: ReadonlySet<Vehicle>;
 }
 
-/**
- * The parked cars' zones by cell, kept as the cars come, go and move: only a
- * car that changed is taken out of its cells and filed again. DO NOT file
- * every parked car again when one of them changes: a car of the lots or a
- * lorry manoeuvring in a yard is in `ambient.parked` and moves every tick,
- * and every parked car of the map was made and filed again each tick for it
- * (O(parked cars) per tick, the map's size). The cars are compared with what
- * was seen in the list's own order, plain fields read, so a tick in which
- * nothing changed touches no cell.
- */
+/** DO NOT file every parked car again when one of them changes */
 export class ParkedZoneIndex {
   /** The zones by cell, each in every cell its box reaches with a walker's look ahead round it. */
   readonly cells = new Map<number, CarZone[]>();
@@ -233,12 +146,7 @@ export class ParkedZoneIndex {
   /** The serial of the source last followed (`follow`); -1: never. */
   private serial = -1;
 
-  /**
-   * Brought up to the cars standing, from what their keeper says changed:
-   * the cars that came and went since the last look, and the cars that may
-   * move (`ParkedSource.movers`) looked at again; the rest are not looked at.
-   * Whole when the keeper cannot say (the bays made again, a new map).
-   */
+  /** Brought up to the cars standing, from what their keeper says changed */
   follow(source: ParkedSource): void {
     const changes = this.serial < 0 ? null : source.parkedSince(this.serial);
     this.serial = source.parkedSerial;
@@ -289,8 +197,6 @@ export class ParkedZoneIndex {
     }
     if (i === cars.length && i === list.length) return;
     // The list changed from `i` on (a car came or went): the rest by car.
-    // Those before `i` are the same and stay; of those seen from `i` on, the
-    // ones not in the list now are gone.
     const pass = ++this.pass;
     for (let k = 0; k < i; k++) list[k]!.seen = pass;
     const tail = list.slice(i);
@@ -361,12 +267,7 @@ interface Step {
   /** Off the walkways: the straight line walked. */
   readonly a?: Vec2;
   readonly b?: Vec2;
-  /**
-   * A stretch inside a lot, between its door and its people's gate
-   * (`agents/lotDoors.ts`): found round the walls, fences and parts of the
-   * lot, so never planned again from where the body is (a straight line from
-   * there would cross the fence); one walker abreast.
-   */
+  /** A stretch inside a lot, between its door and its people's gate (`agents/lotDoors.ts`) */
   readonly lot?: true;
 }
 
@@ -391,12 +292,7 @@ interface Walker {
   held: number;
   /** Where along its step it last made progress (`PROGRESS`), and how long ago, s. */
   progress?: { leg: number; s: number; since: number } | undefined;
-  /**
-   * The step it got jammed on (held past JAM_AFTER): it goes on at
-   * JAM_SHARE through what blocks it until it leaves that step or the way
-   * ahead clears (SUMO's jammed state). Ended as soon as it moved, it crept
-   * 2 cm every 10 s and a car waiting for it waited for good.
-   */
+  /** The step it got jammed on (held past JAM_AFTER) */
   jammedOn?: number | undefined;
   /** Age at which its stripe (`aim`) last changed (`AIM_HOLD`). */
   aimAt?: number | undefined;
@@ -407,11 +303,7 @@ interface Walker {
   granted: CrossingId | null;
   /** When (its `age`) it was let onto it: a leave to step off now, not for good (`GRANT_LIFE`). */
   grantedAt?: number | undefined;
-  /**
-   * Not out yet: waiting inside the door (or the car) until the spot it steps
-   * out onto is clear. As SUMO inserts a person only where there is room, a
-   * crowd leaving one building comes out one after another.
-   */
+  /** Not out yet: waiting inside the door (or the car) until the spot it steps out onto is clear. */
   inside: boolean;
   /** The zebra it is coming up to, and the one it stands waiting for. */
   zebra: Zebra | null;
@@ -451,16 +343,7 @@ interface Walker {
   bleeding?: number | undefined;
 }
 
-/**
- * Every field a walker may be given later, there from its birth and in one
- * order: added as things happened to each (a stripe taken, a leave granted,
- * a fright, a wound), in whatever order they came, they gave the walkers many
- * hidden classes, and the step's optimised code was thrown away on each new
- * one ("wrong map": 40 times in 40 s of a town, `stepWalkers` re-optimised
- * 15 times). V8 shares a hidden class only among objects given the same
- * properties in the same order (v8.dev/docs/hidden-classes). Spread last into
- * each walker's literal.
- */
+/** Every field a walker may be given later, there from its birth and in one order: added as things happened to each */
 const WALKER_SHAPE = {
   progress: undefined, jammedOn: undefined, aimAt: undefined, grantedAt: undefined, fright: undefined, tripAt: undefined,
   maimed: undefined, hp: undefined, hits: undefined, opened: undefined, leader: undefined, crawlNext: undefined,
@@ -475,27 +358,15 @@ interface State {
   walkers: Walker[];
   byId: Map<number, Walker>;
   arrivals: number[];
-  /**
-   * For each car holding (or asking for) its way across the footway, the
-   * walkers who were on that ground when it took it: they walk on off it;
-   * everybody else keeps off it.
-   */
+  /** For each car holding (or asking for) its way across the footway, the walkers who were on that ground when it took it */
   onCarWay: Map<number, Set<number>>;
-  /**
-   * Shocking events (as GTA's peds have them): where a blow fell or somebody
-   * was shot, and the bodies lying there, for a while after - whoever comes
-   * near one later runs from it too, instead of strolling past.
-   */
+  /** Shocking events (as GTA's peds have them) */
   shocks: { x: number; y: number; radius: number; until: number }[];
   /** Seconds of walking stepped (the shocks' clock). */
   clock: number;
   /** When the walkers were last checked against the shocks. */
   shockLook: number;
-  /**
-   * The walkers by cell for the cars' questions (`anyoneWithin`, `hailable`),
-   * filed at the first question after the walkers stepped, and the clock they
-   * were filed at (-1: again).
-   */
+  /** The walkers by cell for the cars' questions */
   near: WalkerGrid;
   nearAt: number;
   /** The vehicles by cell for `gapOpen`, filed once a tick when somebody first asks; the fastest of them. */
@@ -506,12 +377,7 @@ interface State {
   grid: WalkerGrid;
   /** The parked cars' zones by cell, kept as the cars come, go and move (`ParkedZoneIndex`). */
   parked: ParkedZoneIndex;
-  /**
-   * Each party's walkers (`PedView.party.id`), in the order they were made:
-   * who walks with whom, asked when a companion is made and when one is shot
-   * (`startWalk`, `mourn`). DO NOT find them in `walkers`: every walker of
-   * the map, for each companion made.
-   */
+  /** DO NOT find them in `walkers`: every walker of the map, for each companion made. */
   parties: Map<number, Walker[]>;
 }
 
@@ -520,12 +386,7 @@ interface TrafficSeen { readonly x: number; readonly y: number; readonly angle: 
 /** Cells for the vehicles near a crossing (`gapOpen`). */
 const TRAFFIC_CELL = m(32);
 
-/**
- * A test bench's trace of what happens to chosen walkers (the weapons lab,
- * `traceWalkers`): every change of what they are doing or of their flight,
- * with why, from where (the call stack) and their state then. Off (and
- * free) unless somebody is traced.
- */
+/** A test bench's trace of what happens to chosen walkers (the weapons lab, `traceWalkers`) */
 export interface WalkTrace {
   readonly tick: number;
   readonly id: number;
@@ -554,23 +415,14 @@ function trace(p: Walker, field: WalkTrace['field'], from: string, to: string, r
   traceSink({ tick: traceTick, id: p.id, field, from, to, reason, hp: p.hp ?? 100, hits: p.hits ?? 0, stack });
 }
 
-/**
- * How a shot walker is hurt, from their health and what struck them: none,
- * light (most of their health left) or grave (half gone, or a limb lost).
- * The end of a reaction never makes them well again: the wound stays and
- * governs how they move for as long as they are on the street.
- */
+/** How a shot walker is hurt, from their health and what struck them: none, light (most of their health left) or grave */
 function woundOf(p: Walker): { part: BodyPart; grave: boolean } | null {
   if (!p.lastHit) return null;
   return { part: p.lastHit.part, grave: (p.hp ?? 100) < 50 || (p.lost?.length ?? 0) > 0 };
 }
 /** A wounded walker's pace walking on, as a share of their own: slow, bent over the wound, never their own walk again. */
 const WOUNDED_PACE = { light: 0.55, leg: 0.45, grave: 0.4 } as const;
-/**
- * Getting away hurt, against their own pace: a run bent over the wound, as
- * GTA's shot peds flee clutching it (a hurried walk away read as somebody
- * walking on unhurt - the player, 2026-10-06); on a hurt leg, a hobble.
- */
+/** Getting away hurt, against their own pace: a run bent over the wound, as GTA's shot peds flee clutching it */
 const WOUNDED_RUSH = { light: 2.2, leg: 0.6, grave: 0.6 } as const;
 /** Which of those a wound sets. */
 function woundPace(wound: { part: BodyPart; grave: boolean }): 'light' | 'leg' | 'grave' {
@@ -583,12 +435,7 @@ export const FLINCH = 1.6;
 const CRAWL_PACE = m(0.12);
 /** Knocked down by a light wound: the longest they can be down before they are up (`getUp` sets the real end). */
 const KNOCKED_MOST = 12;
-/**
- * Struck by the round: a stagger of a couple of steps back, the way it went
- * (GTA's shot peds are knocked back; stood still where they were struck, a
- * shot person was never seen pushed - the player, 2026-10-06). Seconds, and
- * how far.
- */
+/** Struck by the round: a stagger of a couple of steps back, the way it went */
 export const STAGGER_TIME = 0.75;
 /** It starts after the hit itself (the captured jerk, `render/agents.ts`). */
 export const STAGGER_FROM = 0.3;
@@ -621,28 +468,15 @@ function stateOf(w: SimWorld): State {
   return s;
 }
 
-/**
- * Length of (x, y). `Math.hypot` guards against overflow past 1e154 (MDN),
- * which no distance on a map comes near, and in the browser's profile it was
- * most of the walkers' frame and distance arithmetic (2026-10-09).
- */
+/** Length of (x, y). */
 const hypot = (x: number, y: number): number => Math.sqrt(x * x + y * y);
-/**
- * A grid cell as one number: a string key (`"x,y"`) cost a string built and
- * hashed for every one of the 25 cells every walker reads every tick, the
- * largest single cost of the step. Unique while |cy| < 2^15 cells (km away).
- */
+/** A grid cell as one number: a string key */
 const cell = (cx: number, cy: number): number => cx * 65536 + cy;
 const cellKey = (x: number, y: number, size: number): number => cell(Math.floor(x / size), Math.floor(y / size));
 
 // ------------------------------------------------------------------ ground
 
-/**
- * The walkways of the map as it is now, and their index by cell kept by what
- * each edit took out and put in (`WalkGraph.changesSince`). DO NOT index
- * every walkway again when the network changes: every road drawn filed the
- * town's walkways again.
- */
+/** DO NOT index every walkway again when the network changes: every road drawn filed the town's walkways again. */
 function ensureGraph(w: SimWorld, s: State): WalkGraph | null {
   const g = w.walkwaysNow();
   const changes = s.graph === g && s.graphState ? g.changesSince(s.graphState) : null;
@@ -707,25 +541,13 @@ function nearestWay(s: State, p: Vec2, reach: number): { way: Walkway; s: number
 /** The cost of walking a way: its length, and more for a zebra. */
 const wayCost = (way: Walkway): number => way.path.length + (way.kind === 'crossing' ? CROSSING_COST : 0);
 
-/**
- * The steps from one point on a way to another: the shortest chain of
- * walkways between them (A* over the walkway nodes; Hart, Nilsson and
- * Raphael 1968). The estimate from a node is the straight line to an end of
- * the goal way plus the rest of the goal way from that end: a way is never
- * shorter than its chord and a zebra only costs more, so it never
- * overestimates and never decreases by more than a way's cost - the route is
- * as short as Dijkstra's. DO NOT search without it: the scenery's people
- * come in at the map's edge for the far side, and each one's search spread
- * over every footway of the town (1.2 s of a 2,560 m city's growth,
- * 2026-10-15).
- */
+/** DO NOT search without it: the scenery's people come in at the map's edge for the far side */
 export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkway; s: number }): Step[] | null {
   if (from.way.id === to.way.id) {
     return [{ way: from.way, dir: to.s >= from.s ? 1 : -1, from: from.s, to: to.s }];
   }
   const n = g.nodes.length;
-  // The graph's own arrays, used again by every search on it: a node's entry
-  // counts only when its stamp is this search's (`RouteScratch`).
+  // The graph's own arrays, used again by every search on it: a node's entry counts only when its stamp is this search's
   const r = routeScratch(g);
   const { dist, via, stamp, done, open } = r;
   const gen = r.gen;
@@ -737,10 +559,7 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
     if (!p || !goalA || !goalB) return 0;
     return Math.min(hypot(goalA.x - p.x, goalA.y - p.y) + restA, hypot(goalB.x - p.x, goalB.y - p.y) + restB);
   };
-  // A binary heap, and done once both ends of the goal way are settled: the
-  // open list was scanned whole for every node taken and the search went on
-  // over the whole graph, for every walker, when an edit moved them all onto
-  // the new footways in one frame (docs/performance.md #27).
+  // A binary heap, and done once both ends of the goal way are settled
   const push = (node: number, d: number, way: number): void => {
     if (d >= distOf(node)) return;
     if (stamp[node] !== gen) { stamp[node] = gen; walkWork.routeNodes++; }
@@ -752,7 +571,6 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
   push(from.way.b, from.way.path.length - from.s, from.way.id);
   let goals = to.way.a === to.way.b ? 1 : 2;
   // The best way in found so far, by an end of the goal way settled: once nothing open can do better
-  // (its distance plus the estimate is a bound from below), the search is done.
   let best = Infinity;
   while (open.size && goals > 0 && open.peekKey() < best) {
     const node = open.pop();
@@ -800,17 +618,7 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
   return steps;
 }
 
-/**
- * A route search's arrays, one set per walk graph, sized to its nodes and
- * used again by every search on it: a node's `dist` and `via` count only when
- * its `stamp` is the search's generation (`gen`), and it is settled when its
- * `done` is - so a search touches the nodes it reaches and no others, as
- * Detour's node pool is cleared between queries without touching its nodes
- * (recastnavigation, DetourNode.cpp `dtNodePool::clear`). DO NOT go back to
- * `new Float64Array(n).fill(Infinity)` per search: three arrays of every
- * walkway node of the map were made and filled for each walker's route,
- * however short (O(map) per route).
- */
+/** DO NOT go back to `new Float64Array(n).fill(Infinity)` per search */
 interface RouteScratch { dist: Float64Array; via: Int32Array; stamp: Uint32Array; done: Uint32Array; gen: number; open: Heap }
 const ROUTE_SCRATCH = new WeakMap<WalkGraph, RouteScratch>();
 /** The graph's search arrays, on a new generation, the heap empty. */
@@ -818,8 +626,7 @@ function routeScratch(g: WalkGraph): RouteScratch {
   const n = g.nodes.length;
   let r = ROUTE_SCRATCH.get(g);
   if (!r || r.stamp.length < n) {
-    // The graph grows with the edits (`Walkways.update`): room for half as much again, so a road drawn
-    // does not make them again (InstancedMesh2's capacity, 1.5x + 512).
+    // The graph grows with the edits (`Walkways.update`)
     const room = Math.ceil(n * 1.5) + 512;
     r = { dist: new Float64Array(room), via: new Int32Array(room), stamp: new Uint32Array(room), done: new Uint32Array(room), gen: 0, open: new Heap() };
     ROUTE_SCRATCH.set(g, r);
@@ -851,12 +658,7 @@ function frame(st: Step, s: number): StepFrame {
   return frameInto(st, s, newStepFrame());
 }
 
-/**
- * `frame` into `out`: the walkers' step asks it several times a tick for
- * every walker, and the frame and the way's sample made anew each time were
- * some 300 MB in 10 s of a town with 400 people (the heap profiler,
- * 2026-10-11).
- */
+/** `frame` into `out`: the walkers' step asks it several times a tick for every walker */
 function frameInto(st: Step, s: number, out: StepFrame): StepFrame {
   if (!st.way) {
     const len = Math.max(1e-6, stepLength(st));
@@ -868,13 +670,7 @@ function frameInto(st: Step, s: number, out: StepFrame): StepFrame {
   const k = Math.max(0, Math.min(len, s));
   const path = st.way.path;
   const f = path.sampleAtInto(st.from + st.dir * k, WAY_SAMPLE);
-  // The tangent blended along each piece from the tangent at its one end to
-  // the tangent at the other (each the mean of the two pieces meeting there),
-  // then made unit again - as Phong shading interpolates vertex normals - so
-  // it turns smoothly through a corner's points. The piece's own tangent
-  // jumped at every point of the line: a body standing on one stepped from
-  // one frame to the other and back each tick, and the people in front of it
-  // swung a step across - its stripe and its shoulders with them.
+  // The tangent blended along each piece from the tangent at its one end to the tangent at the other
   const tan = path.tan, last = path.n - 2, i = f.i;
   const ax = i > 0 ? tan[i * 2 - 2]! + tan[i * 2]! : tan[i * 2]!, ay = i > 0 ? tan[i * 2 - 1]! + tan[i * 2 + 1]! : tan[i * 2 + 1]!;
   const bx = i < last ? tan[i * 2]! + tan[i * 2 + 2]! : tan[i * 2]!, by = i < last ? tan[i * 2 + 1]! + tan[i * 2 + 3]! : tan[i * 2 + 1]!;
@@ -923,44 +719,24 @@ function projectInto(st: Step, x: number, y: number, out: { s: number; d: number
   return out;
 }
 
-/**
- * The lateral room of a step in its own walking frame, [low, high], left
- * positive, for a body's centre. Round the inside of a corner a walker keeps
- * within half its radius: farther in, the line would fold back on itself.
- */
+/** The lateral room of a step in its own walking frame, [low, high], left positive, for a body's centre. */
 function room(st: Step): readonly [number, number] {
   let kept = ROOMS.get(st);
   if (!kept) ROOMS.set(st, kept = Object.freeze(roomOf(st)));
   return kept;
 }
-/**
- * Each step's room, worked out once (it depends on the step alone): asked
- * several times a tick for every walker, it was made anew each time. Frozen:
- * a caller that widens it for itself copies it first (`stepWalkers`' span).
- */
+/** Each step's room, worked out once (it depends on the step alone) */
 const ROOMS = new WeakMap<Step, readonly [number, number]>();
 
 function roomOf(st: Step): [number, number] {
   if (!st.way) return [0, 0];
   let lo = st.way.lo + BODY, hi = st.way.hi - BODY;
   if (st.way.kind === 'corner') {
-    // By the tightest bend of the line, not its average: a corner eases off
-    // each footway straight and turns in a tighter arc between, and a body
-    // kept within half the average radius stood past the arc's centre - its
-    // nearest point on the line jumped to and fro between the two ends of the
-    // arc, and so did where it was going (a parallel curve folds into a cusp
-    // where the offset reaches the radius of curvature).
-    // Only round the inside of the corner's own turn: outwards the line
-    // never folds, and the small counter-bends where a corner eases off its
-    // footways narrowed it to single file both ways.
+    // By the tightest bend of the line, not its average
     const r = bendRadii(st.way);
     if (r.turn > 0.2) hi = Math.min(hi, r.left * 0.5);
     else if (r.turn < -0.2) lo = Math.max(lo, -r.right * 0.5);
-    // Never past the fold itself on either side, counter-bends and corners
-    // that barely turn end to end included (an S across the top of a T): a
-    // walker put 1.9 m inside a bend of 1.5 m radius spun round on the spot
-    // for 13 s, its nearest point on the line jumping across the cusp
-    // (`defects.spec` mixed-T milling, P101).
+    // Never past the fold itself on either side, counter-bends and corners that barely turn end to end included
     hi = Math.min(hi, r.left * FOLD_SHARE);
     lo = Math.max(lo, -r.right * FOLD_SHARE);
   }
@@ -988,12 +764,7 @@ function reservedFor(st: Step): number {
 /** Arc over which a line's bend is measured, u. */
 const BEND_WINDOW = m(1);
 const BENDS = new WeakMap<Walkway, { left: number; right: number; turn: number }>();
-/**
- * The tightest radius of a walkway's line turning left and turning right
- * (along it from `a` to `b`): the turn over every stretch of `BEND_WINDOW`.
- * Infinity for a side it never turns to (by more than 0.2 rad a stretch).
- * `turn`: its whole turn, end to end, left positive.
- */
+/** The tightest radius of a walkway's line turning left and turning right (along it from `a` to `b`) */
 function bendRadii(way: Walkway): { left: number; right: number; turn: number } {
   let r = BENDS.get(way);
   if (r) return r;
@@ -1019,9 +790,7 @@ function bendRadii(way: Walkway): { left: number; right: number; turn: number } 
   return r;
 }
 
-// Read by index, not unpacked: a pattern in a parameter walks the array's
-// iterator, and made an iterator and its results on every call (24 MB in
-// 10 s of 400 walkers, the heap profiler, 2026-10-11).
+// Read by index, not unpacked: a pattern in a parameter walks the array's iterator
 const clamp = (v: number, r: readonly [number, number]): number => Math.max(r[0], Math.min(r[1], v));
 
 /** How far a footway's walking line is from its kerb (where a crossing's end meets the road). */
@@ -1030,19 +799,12 @@ const kerbInset = (way: Walkway | null | undefined): number =>
 
 // ------------------------------------------------------------------ crossings
 
-/**
- * A crossing on a walker's way: a zebra as the vehicles and the signals know
- * it (`edge`), or a crossing with no zebra (`edge` null: the end of a road that
- * leads nowhere, `Walkway.unmarked`), where the walker takes a gap.
- */
+/** A crossing on a walker's way: a zebra as the vehicles and the signals know it (`edge`), or a crossing with no zebra */
 interface Zebra { readonly id: CrossingId; readonly edge: SidewalkEdge | null; readonly way: Walkway }
 
 function crossingOf(w: SimWorld, way: Walkway | null | undefined): Zebra | null {
   if (!way || way.kind !== 'crossing' || way.node === undefined || way.segment === undefined) return null;
-  // Kept per walkway while its node's zebras stand (`SidewalkGraph.madeAt`): every
-  // walker asked it several times a tick, each a string id built and a fresh
-  // object. DO NOT key it by the topology's revision: every edit dropped every
-  // walkway's, the town's, for whatever it changed.
+  // DO NOT key it by the topology's revision: every edit dropped every walkway's, the town's, for whatever it changed.
   const made = w.sidewalks.madeAt(way.node);
   const known = ZEBRAS.get(way);
   if (known && known.made === made) return known.zebra;
@@ -1062,18 +824,11 @@ const IMPATIENT = 30;
 /** A vehicle this near the crossing keeps a walker on the kerb whatever it is doing, u. */
 const GAP_NEAR = m(6);
 
-/**
- * Whether a walker may step onto a crossing with no zebra: no vehicle near
- * it, and none coming that would reach it before they are across and a
- * margin more (gap acceptance, as SUMO's pedestrians take a crossing without
- * priority). Nothing stops for them there.
- */
+/** Whether a walker may step onto a crossing with no zebra */
 function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number): boolean {
   const path = z.way.path;
   const time = path.length / Math.max(pace, m(0.5)) + (waited < IMPATIENT ? GAP_MARGIN : 0);
-  // The vehicles by cell, filed once this tick (their poses were worked out
-  // for every vehicle at every ask): only those within reach of the
-  // crossing - the nearest, or the fastest's distance in that time - are read.
+  // The vehicles by cell, filed once this tick (their poses were worked out for every vehicle at every ask)
   if (s.trafficAt !== s.clock) {
     s.trafficAt = s.clock;
     s.traffic.clear();
@@ -1108,11 +863,7 @@ function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number):
 }
 const NO_TRAFFIC: readonly TrafficSeen[] = [];
 
-/**
- * The zebra a walker is coming up to and has not been let onto, and the
- * distance along its route to where it waits for it (a step back from the
- * kerb); null when none is ahead on this step or the next.
- */
+/** The zebra a walker is coming up to and has not been let onto, and the distance along its route to where it waits for it */
 function zebraAhead(w: SimWorld, p: Walker): { zebra: Zebra; stop: number } | null {
   const st = p.steps[p.leg]!;
   const here = crossingOf(w, st.way);
@@ -1147,19 +898,11 @@ const ALIGHT_TRIES = 4;
 
 export function createAgentWalkEngine(): PedestrianEngine {
   const bridge: PeopleBridge = {
-    // A car stopping at the kerb for somebody (`vehicles/kerbStops.ts`): a
-    // grown-up walking on the footway on the kerb side of the lane, between
-    // `s0` and `s1` along it, the nearest the car first. Stubs since this
-    // engine came in: nobody was ever picked up but a lorry's own mate.
+    // A car stopping at the kerb for somebody (`vehicles/kerbStops.ts`)
     hailable(w, lanelet, s0, s1, exclude) {
       const lane = w.lanelet(lanelet);
       if (!lane) return null;
-      // Only those near the lane between `s0` and `s1`: anybody it takes is
-      // within `HAIL_REACH` of a point of that stretch (their nearest point on
-      // the lane is in it), so within the stretch's box widened by that - and
-      // by a cell, for anybody moved since they were filed (`nearNow`). DO NOT
-      // walk every walker of the map: this is asked for every car out to pick
-      // somebody up, every tick, and read the whole town's people for each.
+      // DO NOT walk every walker of the map
       const c = lane.centre;
       const a = Math.max(0, s0), b = Math.min(c.length, s1);
       if (a > b) return null;
@@ -1192,8 +935,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
         });
       return best;
     },
-    // Into the car: off the street, as they stand, if they are still free
-    // and within `reach` of the door.
+    // Into the car: off the street, as they stand, if they are still free and within `reach` of the door.
     board(w, id, door, reach) {
       const s = stateOf(w);
       const p = s.byId.get(id);
@@ -1203,18 +945,12 @@ export function createAgentWalkEngine(): PedestrianEngine {
       prune(s);
       return boarder;
     },
-    // Somebody out of a car at the kerb (`vehicles/kerbStops.ts`): a walker
-    // from where they stand by the door, off along the footways to somewhere
-    // 60 to 200 m away. It was a stub since this engine came in (2026-10-05):
-    // nobody dropped off ever stepped onto the pavement (`kerbStops.spec`).
-    // The way is drawn from the person's seed: `sim` never calls Math.random.
+    // Somebody out of a car at the kerb (`vehicles/kerbStops.ts`)
     alight(w, person) {
       const s = stateOf(w);
       ensureGraph(w, s);
       const h = personHash(person.seed);
-      // Out onto the walkway nearest the door, not the point by the door off
-      // it: begun there, the walker stood on the open ground (the terrain's
-      // height) a step and then rose onto the footway.
+      // Out onto the walkway nearest the door, not the point by the door off it
       const at = nearestWay(s, { x: person.footX, y: person.footY }, ALIGHT_SNAP);
       const foot = at ? at.way.path.sampleAt(at.s).p : { x: person.footX, y: person.footY };
       const walk = (to: { readonly x: number; readonly y: number }): boolean =>
@@ -1225,10 +961,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
         const hit = nearestWay(s, { x: person.footX + Math.cos(a) * d, y: person.footY + Math.sin(a) * d }, m(30));
         if (hit && walk(hit.way.path.sampleAt(hit.s).p)) return true;
       }
-      // Nowhere 60 to 200 m off is reached on foot from here (a footway cut
-      // off from the rest, a street no car reached before): along the walkway
-      // they stand on, then. The passenger vanished at the door
-      // (`kerbStops.spec`, the player's map: 4 of 16 set down).
+      // Nowhere 60 to 200 m off is reached on foot from here (a footway cut off from the rest, a street no car reached before)
       if (at) {
         const length = at.way.path.length;
         for (const ds of [m(25), -m(25), m(8), -m(8)]) {
@@ -1240,7 +973,6 @@ export function createAgentWalkEngine(): PedestrianEngine {
     },
     anyoneWithin(w, x, y, radius, except) {
       // The walkers by cell, filed once a tick (every walker was read at every ask).
-      // A cell's margin: anybody moved since they were filed is still found.
       const r = radius + CELL;
       return nearNow(stateOf(w)).someIn(Math.floor((x - r) / CELL), Math.floor((y - r) / CELL),
         Math.floor((x + r) / CELL), Math.floor((y + r) / CELL),
@@ -1258,11 +990,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
     rebind(w) {
       const s = stateOf(w);
       const g = ensureGraph(w, s);
-      // A walker whose route is all on walkways the edit left - or made again
-      // just as they were, handed back the same (`WalkGraph.add`) - goes on
-      // with it; only the others look for a way again (each a search of the
-      // walkways). DO NOT key every walkway of the map to find them: every
-      // edit read the town's walkways again.
+      // DO NOT key every walkway of the map to find them: every edit read the town's walkways again.
       for (const p of s.walkers) {
         if (g && p.steps.every((st) => !st.way || g.holds(st.way))) continue;
         // Found again from where they are, through a lot's gate when the walk runs through one (`reroute`).
@@ -1272,12 +1000,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
     },
     publish(w) { publish(w); },
     audit(_w: SimWorld, _out: AuditIssue[]) {},
-    // Everybody gone and everything the walkers' step keeps made new - the
-    // clock, the grids, the parked cars' zones, the cars' ways, the shocks -
-    // as a new world's (`SimWorld.reset`): kept, the clock and the filed
-    // grids of the old map made a reset world walk otherwise than a new one.
-    // The ids still to give go on, kept by the world as the vehicles' are
-    // (`SimWorld.nextPersonId`): the renderer knows a person by id.
+    // Everybody gone and everything the walkers' step keeps made new
     reset(w) {
       STATES.delete(w);
     },
@@ -1289,10 +1012,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       return out;
     },
     impact(w, x, y, kill, scare) {
-      // A blow (`editor` strike): killed within `kill` - off the street for
-      // good, a body for the renderer to throw (`render/ragdoll.ts`), torn
-      // apart right under it; knocked down within twice that, up again where
-      // the body comes to rest (`getUp`); everybody within `scare` runs.
+      // A blow (`editor` strike): killed within `kill` - off the street for good, a body for the renderer to throw
       const s = stateOf(w);
       let dead = 0;
       for (const p of walkersWithin(s, x, y, kill * 2)) {
@@ -1303,15 +1023,13 @@ export function createAgentWalkEngine(): PedestrianEngine {
         const who = { x: p.x, y: p.y, heading: p.heading, t: 0, id: p.id, gender: v.gender, ageClass: v.ageClass,
           party: { id: v.party.id, size: v.party.size, archetype: v.party.archetype, hasChild: v.party.hasChild }, blastX: x, blastY: y };
         if (d < kill && !p.player) {
-          // Right under it: burnt black and torn limb from limb; further off,
-          // killed, an arm, a leg or the head often blown off.
+          // Right under it: burnt black and torn limb from limb; further off, killed, an arm, a leg or the head often blown off.
           const roll = personHash(p.id ^ 0x5eed);
           const torn = d < kill * 0.4;
           const all: Severable[] = ['head', 'armL', 'armR', 'legL', 'legR'];
           const severed = torn ? all.filter((_, i) => ((roll >> i) & 1) === 1 || i === (roll >>> 8) % 5)
             : (roll & 3) !== 0 ? [all[1 + ((roll >>> 4) % 4)]!, ...((roll & 12) === 12 ? ['head' as const] : [])] : [];
-          // Burnt black, everybody it kills (only those right under it were:
-          // a charred body was hardly ever seen - the player, 2026-10-06).
+          // Burnt black, everybody it kills
           recordCasualty(w, { ...who, kind: torn ? 'torn' : 'dead', power: 1 - d / kill, severed, lost: severed, charred: true });
           finish(s, p, false);
           dead++;
@@ -1340,12 +1058,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       const s = stateOf(w);
       const p = s.byId.get(id);
       if (!p || p.done || p.inside || p.player) return null;
-      // As GTA's peds take it: a shot to the head kills; to the body a third
-      // of their health; to an arm or a leg a fifth, the limb gone at the
-      // second; each hit staggers them or knocks them down, and they run.
-      // A head shot kills and leaves the head on: it comes off only to more
-      // shots into the body (`render/ragdoll.ts` shootBody). One pistol
-      // round took it off (recorded 2026-10-06).
+      // As GTA's peds take it: a shot to the head kills; to the body a third of their health
       const DAMAGE: Record<BodyPart, number> = { head: 100, torso: 34, armL: 20, armR: 20, legL: 20, legR: 20 };
       const hpBefore = p.hp ?? 100;
       p.hp = (p.hp ?? 100) - DAMAGE[part];
@@ -1363,10 +1076,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
         p.hp -= 15;
       }
       const v = p.view;
-      // A grave trunk wound opens the belly, the guts out: always at the third
-      // round in the trunk, now and then at the second - never at the first
-      // (the player, 2026-10-06: organs from one shot are absurd; in grave
-      // cases they come out).
+      // A grave trunk wound opens the belly, the guts out: always at the third round in the trunk, now and then at the second
       const trunkHits = Math.round((p.hurt.torso ?? 0) / DAMAGE.torso);
       const opened = part === 'torso' && !p.opened && (trunkHits >= 3 || (trunkHits === 2 && (personHash(p.id ^ 0x0b1e) & 255) < 102));
       if (opened) p.opened = true;
@@ -1386,26 +1096,16 @@ export function createAgentWalkEngine(): PedestrianEngine {
         shock(s, p.x, p.y, BODY_SHOCK);
         return { killed: true, severed };
       }
-      // Hurt, not killed. As GTA's shot peds take it (NaturalMotion's
-      // euphoria: a stagger with a hand to the wound, a leg shot dropping them
-      // onto their knees and hands): a leg wound puts them down, a trunk
-      // wound half the time, and they get up and away hurt; otherwise a
-      // stagger back, a hand to it, and away. Hurt badly - a second wound, a
-      // limb gone, already down - they go down and stay down: writhing where
-      // they lie, bleeding.
+      // Hurt, not killed.
       p.hits = (p.hits ?? 0) + 1;
       const legGone = p.lost.includes('legL') || p.lost.includes('legR');
-      // Incapacitated (`woundOf` grave: half their health gone or a limb lost),
-      // or shot again while already down: they go down and stay down. A
-      // lighter wound - however many - is taken on their feet.
+      // Incapacitated (`woundOf` grave: half their health gone or a limb lost), or shot again while already down
       const grave = woundOf(p)?.grave ?? false;
       if (!wasDown && !grave) {
         const before = actName(p.act);
         const leg = part === 'legL' || part === 'legR';
         if (leg || (part === 'torso' && (personHash(p.id ^ (p.hits * 0x2f9b)) & 255) < 128)) {
-          // Knocked down (`render/ragdoll.ts`: a leg gives way and they go
-          // onto their knees and hands, a round in the trunk throws them back),
-          // a moment on the ground, then up (`getUp`, which sets when) and away.
+          // Knocked down : a leg gives way and they go onto their knees and hands, a round in the trunk throws them back, a moment
           p.act = { kind: 'fall', from: p.age, until: p.age + KNOCKED_MOST, faceX: fromX, faceY: fromY };
           trace(p, 'act', before, actName(p.act), `shot: light wound (hp ${p.hp}), knocked down`);
           recordCasualty(w, { x: p.x, y: p.y, heading: p.heading, t: 0, id: p.id, gender: v.gender, ageClass: v.ageClass,
@@ -1439,8 +1139,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       return { killed: false, severed };
     },
     getUp(w, id, x, y, heading, seconds, crawl) {
-      // Up where the body came to rest (the walkway nearest it), facing the
-      // way it rises, the fall held until the getting-up is over.
+      // Up where the body came to rest (the walkway nearest it), facing the way it rises
       const s = stateOf(w);
       const p = s.byId.get(id);
       if (!p || p.done) return;
@@ -1453,9 +1152,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
         return;
       }
       {
-        // Exactly where the body lies (they were put on the nearest walkway,
-        // metres off: a jump the moment they stood), walking back onto the
-        // walkways from there.
+        // Exactly where the body lies (they were put on the nearest walkway, metres off: a jump the moment they stood)
         const goal = p.rush?.goal ?? lastOf(p);
         p.x = p.prevX = x; p.y = p.prevY = y;
         replan(w, s, p, goal);
@@ -1507,13 +1204,7 @@ function lotSteps(points: readonly Vec2[]): Step[] {
   return out;
 }
 
-/**
- * A walk that begins by coming out through a lot (`head`: from its door to
- * its gate's foot on the footway) or ends by going in through one (`tail`:
- * from a gate's foot to the door), or both; the walkways between. The walker
- * waits inside the door until the spot is clear, as anybody made does, and
- * goes in (is done) at the door. `trip.from`/`to` are the door's points.
- */
+/** A walk that begins by coming out through a lot */
 export function walkThrough(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[], tail: readonly Vec2[]): number | null {
   return startWalk(w, trip, head, tail);
 }
@@ -1521,14 +1212,7 @@ export function walkThrough(w: SimWorld, trip: ResidentWalk, head: readonly Vec2
 /** Farthest a gate's foot may be from the walkway it is joined to. */
 const GATE_JOIN = m(4);
 
-/**
- * A lot's way (door ... gate, foot) joined to the footway: its foot moved to
- * the walkway point nearest it, so the walk turns off the walkway and goes
- * straight on through the gate (the foot lies square out from the gate, and
- * so does the nearest point of the footway along the lot). Kept at the foot,
- * a walkway nearer the lot than the foot (measured: 0.26 m from the boundary,
- * the foot 0.5 m out) made the walk step out past the walkway and back.
- */
+/** A lot's way (door ... gate, foot) joined to the footway */
 function joinFootway(s: State, way: readonly Vec2[], footFirst: boolean): readonly Vec2[] {
   if (way.length < 2) return way;
   const foot = footFirst ? way[0]! : way[way.length - 1]!;
@@ -1612,13 +1296,7 @@ function finish(s: State, p: Walker, arrived = true): void {
   }
 }
 
-/**
- * The walkers out on the street (not inside, not done) within `radius` of a
- * point, in the walkers' own order: from the walkers' grid (`nearNow`), a
- * cell's margin for anybody moved since they were filed. What a blow, a shot
- * or a look round asks. DO NOT walk `State.walkers` for a place: every
- * walker of the map, for each blow and each look.
- */
+/** DO NOT walk `State.walkers` for a place: every walker of the map, for each blow and each look. */
 function walkersWithin(s: State, x: number, y: number, radius: number): Walker[] {
   const r = radius + CELL;
   const found: { p: Walker; rank: number }[] = [];
@@ -1639,12 +1317,7 @@ function prune(s: State): void {
 function target(p: Walker): { x: number; y: number } {
   let leg = p.leg;
   let st = p.steps[leg]!;
-  // Through a lot and its gate, a short look ahead (Reynolds, as The Nature
-  // of Code puts it: the distance ahead "should be dynamic"): the gate's
-  // foot is 0.6 m out on the footway, and a point 0.9 m ahead cut the turn
-  // from the footway into the gate across the fence beside it (10 cm from it,
-  // measured). With it the body slows at the turn and turns there, as a
-  // person turns in at a gate.
+  // Through a lot and its gate, a short look ahead
   let s = p.s + (st.lot ? LOT_AHEAD : AHEAD);
   while (s > stepLength(st) && leg + 1 < p.steps.length) {
     s -= stepLength(st);
@@ -1653,15 +1326,7 @@ function target(p: Walker): { x: number; y: number } {
     if (st.lot) s = Math.min(s, LOT_AHEAD);
   }
   if (leg === p.steps.length - 1) s = Math.min(s, stepLength(st));
-  // In this step, towards its stripe, but no more across than SUMO lets a
-  // walker move sideways for its forward speed (`MSPModel_Striping`
-  // `PState::walk`: the lateral speed is capped at LATERAL_SPEED_FACTOR, 0.4,
-  // of the walking speed, and the forward speed is never cut for it). The
-  // point set on the stripe itself, 1.4 m across and 0.9 m ahead, was 57
-  // degrees off: the speed fell to nothing (`want *= cos(err)...`), the body
-  // stood turning towards it, and turned back as the stripe was set again on
-  // the next step - the to and fro at the corners (`defects.spec`). In the
-  // next step, where it is now across that one.
+  // In this step, towards its stripe, but no more across than SUMO lets a walker move sideways for its forward speed
   const d = leg === p.leg ? p.d + Math.max(-LATERAL_SHARE * AHEAD, Math.min(LATERAL_SHARE * AHEAD, p.aim - p.d))
     : clamp(projectInto(st, p.x, p.y, AIM_PROJECTION).d, room(st));
   const f = frameInto(st, s, AIM_FRAME);
@@ -1689,16 +1354,7 @@ function fileZones(zones: readonly CarZone[]): Map<number, CarZone[]> {
   return cells;
 }
 
-/**
- * The walkers out on the street by cell of `CELL`, as Matthias Müller's dense
- * spatial hash files particles (Ten Minute Physics, "Spatial hashing": a table
- * twice the count, each cell's walkers counted, the counts summed into each
- * cell's start, the walkers written into one array behind them). A query
- * reads the cells round a point by index; a walker of another cell that
- * hashed to the same slot is told apart by the cell kept for it. Each walker
- * read 25 cells of a map of arrays every tick - a key hashed and an iterator
- * made for each, a third of the walkers' own time (profile, 2026-10-09).
- */
+/** The walkers out on the street by cell of `CELL`, as Matthias Müller's dense spatial hash files particles */
 class WalkerGrid {
   readonly list: Walker[] = [];
   private cx = new Int32Array(0);
@@ -1750,11 +1406,7 @@ class WalkerGrid {
     return this.someIn(cx - reach, cy - reach, cx + reach, cy + reach, fn);
   }
 
-  /**
-   * Whether `fn` is true of anybody filed in the cells [gx0, gx1] x [gy0, gy1];
-   * stops at the first. `rank`: their place in the order they were filed in
-   * (the walkers' own order).
-   */
+  /** Whether `fn` is true of anybody filed in the cells [gx0, gx1] x [gy0, gy1]; stops at the first. */
   someIn(gx0: number, gy0: number, gx1: number, gy1: number, fn: (q: Walker, rank: number) => boolean): boolean {
     if (!this.list.length) return false;
     const start = this.start, entries = this.entries;
@@ -1770,11 +1422,7 @@ class WalkerGrid {
   }
 }
 
-/**
- * The walkers by cell for the cars' questions, filed at the first one after
- * the walkers stepped (`State.near`): positions do not change until they step
- * again, but for a body set down where it lies (`getUp`, which files again).
- */
+/** The walkers by cell for the cars' questions, filed at the first one after the walkers stepped (`State.near`) */
 function nearNow(s: State): WalkerGrid {
   if (s.nearAt !== s.clock) {
     s.nearAt = s.clock;
@@ -1783,12 +1431,7 @@ function nearNow(s: State): WalkerGrid {
   return s.near;
 }
 
-// ---------------------------------------------------- the step's scratch
-// What the walkers' step works with for each walker in turn, made once and
-// written again: the bodies near it, the cars' zones in its cell, its span.
-// Made anew for every walker every tick - the bodies as objects, the looks
-// round them as closures, the zones joined into new arrays - they were some
-// 260 MB in 10 s of a town with 400 people (the heap profiler, 2026-10-11).
+// ---------------------------------------------------- the step's scratch What the walkers' step works with for each
 
 /** A body near the walker, in its own frame (`addOther`). */
 interface Other { along: number; lat: number; oncoming: boolean; r: number; waitFor: Zebra | null; facing: boolean }
@@ -1888,8 +1531,7 @@ function stepWalkers(w: SimWorld): void {
   ensureGraph(w, s);
   w.signalPosts.follow(w);
   indexReservations(w);
-  // Who is where, a cell of a few metres each (`WalkerGrid`); those who come
-  // out of a door or a car during the pass are read from `late`.
+  // Who is where, a cell of a few metres each (`WalkerGrid`)
   const late: Walker[] = [];
   const enter = (p: Walker): void => { late.push(p); };
   const grid = s.grid;
@@ -1898,10 +1540,7 @@ function stepWalkers(w: SimWorld): void {
   if (s.shocks.length && s.clock >= s.shockLook) {
     s.shockLook = s.clock + 0.4;
     s.shocks = s.shocks.filter((k) => k.until > s.clock);
-    // Shock by shock, those near each (`walkersWithin`), in the order of the
-    // shocks: a walker is frightened by the first one it is near, and is then
-    // frightened (`fright`) for the rest. DO NOT walk every walker of the map
-    // against every shock.
+    // DO NOT walk every walker of the map against every shock.
     for (const k of s.shocks) {
       for (const p of walkersWithin(s, k.x, k.y, k.radius)) {
         if (p.inside || p.done || p.player || (p.fright ?? 0) > p.age || p.act) continue;
@@ -1927,8 +1566,7 @@ function stepWalkers(w: SimWorld): void {
   }
   if (bled) prune(s);
   grid.build(s.walkers);
-  // Those running in panic who trip: down on the ground (the renderer throws
-  // the body, `ragdoll.trip`), up again and running after.
+  // Those running in panic who trip: down on the ground
   for (const p of s.walkers) {
     if (p.tripAt === undefined || p.age < p.tripAt || p.inside || p.done) continue;
     p.tripAt = undefined;
@@ -1936,16 +1574,9 @@ function stepWalkers(w: SimWorld): void {
     p.act = { kind: 'fall', from: p.age, until: p.age + 3 + ((personHash(p.id) >> 3) & 3), faceX: p.x - Math.cos(p.heading), faceY: p.y - Math.sin(p.heading) };
     p.v = 0;
   }
-  // The cars off the road: solid to a walker as a person is (the body three
-  // discs along its length, half its width round: a walker's own body is the
-  // margin, so a car in the road by the kerb does not close the kerb-side
-  // stripe). Somebody already inside one walks on out of it.
+  // The cars off the road: solid to a walker as a person is
   const carZones: CarZone[] = [];
-  // The scenery's parked cars stand where they stand (the residents' own
-  // cars, which drove across the footway in and out of their bays, were kept
-  // apart with them, `src/backup/residents`); the lots' cars and the lorries
-  // in that list move. Only a car that came, went or moved is filed again
-  // (`ParkedZoneIndex`).
+  // The scenery's parked cars stand where they stand
   s.parked.follow(w.ambient);
   s.onCarWay.clear();
   // The trains at grade: solid as cars are (nobody walks across a level crossing under one).
@@ -1955,19 +1586,10 @@ function stepWalkers(w: SimWorld): void {
     // `on` empty: whoever is on a train's ground walks off it (`inside` below).
     carZones.push({ x0, y0, x1, y1, discs, on: TRAIN_GROUND, crossingOnly: false });
   }
-  // The zones by cell, each in every cell its box reaches with a walker's look
-  // ahead round it: a walker reads its own cell instead of every car in town
-  // (the town's parked cars made that the step's second largest cost). A zone
-  // a walker could see or touch is always in the walker's cell. The parked
-  // cars' are kept as they change (`ParkedZoneIndex`); the trains' every tick.
+  // The zones by cell, each in every cell its box reaches with a walker's look ahead round it
   nearParked = s.parked.cells;
   nearMoving = fileZones(carZones);
-  // Everybody is stepped in full, every tick, wherever the camera is. DO NOT
-  // read `SimWorld.focus` here: walkers out of the view were stepped one tick
-  // in four, by four ticks' time, and not round each other, so the same town
-  // with the same seed went otherwise with the camera elsewhere (deterministic
-  // simulation: the same state and inputs give the same result, and the camera
-  // is not an input). The cost is cut in the algorithm, not by the view.
+  // DO NOT read `SimWorld.focus` here
 
   for (const p of s.walkers) {
     p.age += DT;
@@ -1983,16 +1605,13 @@ function stepWalkers(w: SimWorld): void {
       if (clear) { p.inside = false; p.prevX = p.x; p.prevY = p.y; p.prevHeading = p.heading; enter(p); }
       continue;
     }
-    // The player's body goes where the player moves it (`movePlayerWalker`);
-    // what it does (a punch, a fall) ends in its time as anybody's does, or
-    // a knocked-down player lies half risen for ever.
+    // The player's body goes where the player moves it (`movePlayerWalker`); what it does
     if (p.player) {
       if (p.act && p.age >= p.act.until) p.act = null;
       continue;
     }
     const dt = DT;
     // Stopped for something (a word, a fall): standing there, facing it.
-    // (Crawling is moving: on below, at a crawl.)
     if (p.act && p.act.kind !== 'crawl') {
       if (p.age < p.act.until) {
         p.v = 0;
@@ -2003,9 +1622,7 @@ function stepWalkers(w: SimWorld): void {
           if (back > 0 && l > 1e-6) { p.x += (ax / l) * back * dt; p.y += (ay / l) * back * dt; }
         }
         const want = Math.atan2(p.act.faceY - p.y, p.act.faceX - p.x);
-        // Not for a fall or a wound: a shot person does not turn round on the
-        // spot to face the shot (recorded 2026-10-06: a 180-degree spin, back
-        // to the camera for 1.3 s, then a spin back to walk on).
+        // Not for a fall or a wound: a shot person does not turn round on the spot to face the shot
         if (hypot(p.act.faceX - p.x, p.act.faceY - p.y) > m(0.1) && p.act.kind !== 'fall' && p.act.kind !== 'flinch') {
           const err = Math.atan2(Math.sin(want - p.heading), Math.cos(want - p.heading));
           p.heading += Math.max(-TURN_STANDING * dt, Math.min(TURN_STANDING * dt, err));
@@ -2040,20 +1657,10 @@ function stepWalkers(w: SimWorld): void {
     const kept = room(st);
     const span = SPAN;
     span[0] = kept[0]; span[1] = kept[1];
-    // On a zebra everybody keeps to their right half: those coming the other
-    // way are on the other half. Waiting at its kerb, the whole width: SUMO's
-    // people "wait in front of crossings in a wide queue"
-    // (sumo.dlr.de/docs/Simulation/Pedestrians.html). Kept to half, the
-    // crowd of a long red stood three and four deep, back across the
-    // footway's through zone, and held up everybody walking past the corner
-    // (`defects.spec`, P101).
+    // On a zebra everybody keeps to their right half: those coming the other way are on the other half.
     const atKerb = crossingOf(w, st.way) !== null && p.waiting !== null && p.s < kerbInset(p.steps[p.leg - 1]?.way);
     if (crossingOf(w, st.way) && !atKerb) span[1] = Math.max(span[0], Math.min(span[1], BODY / 2));
-    // And wider than the zebra, along the kerb (`WAIT_HALF`): on a narrow
-    // footway the second and third rows of a crowd filled its whole width.
-    // Let on, one standing past the zebra's edge steps along the kerb into it
-    // before stepping off (`offZebra` below): beside the dropped kerb they
-    // stepped down its 15 cm in one frame (`walkHeight.spec`).
+    // And wider than the zebra, along the kerb (`WAIT_HALF`)
     if (atKerb) { span[0] = Math.min(span[0], -WAIT_HALF); span[1] = Math.max(span[1], WAIT_HALF); }
     const zebraRoom = room(st);
     const offZebra = !atKerb && crossingOf(w, st.way) !== null && p.s < kerbInset(p.steps[p.leg - 1]?.way)
@@ -2077,8 +1684,7 @@ function stepWalkers(w: SimWorld): void {
     for (let zi = 0; zi < zonesN; zi++) {
       const z = ZONES[zi]!;
       if (p.x < z.x0 - LOOK || p.x > z.x1 + LOOK || p.y < z.y0 - LOOK || p.y > z.y1 + LOOK) continue;
-      // On it when the car took it, or inside the car's body (the car came to
-      // them): they walk on out of its way.
+      // On it when the car took it, or inside the car's body (the car came to them): they walk on out of its way.
       const inside = insideDiscs(z.discs, z.discs.length, p.x, p.y, 0);
       if (inside && (z.on === TRAIN_GROUND || z.on?.has(p.id) || insideDiscs(z.discs, 3, p.x, p.y, 0))) continue;
       if (!inside) z.on?.delete(p.id);
@@ -2093,12 +1699,7 @@ function stepWalkers(w: SimWorld): void {
         addOther(Math.max(0.01, along), p.d - rx * f.ty + ry * f.tx, false, c.r, null, false);
       }
     }
-    // The traffic signal posts: a body standing still in the stripes, kept
-    // clear of as a car's discs are (SUMO's striping keeps its distance
-    // within a stripe, sumo.dlr.de/docs/Simulation/Pedestrians.html). The
-    // post stands 0.9 m in from the kerb, 2 m past the zebra: inside the
-    // crowd waiting along the kerb (`WAIT_HALF`). DO NOT leave them out:
-    // people queuing for the crossing stood inside the post.
+    // DO NOT leave them out: people queuing for the crossing stood inside the post.
     const posts = w.signalPosts.near(p.x, p.y, LOOK);
     for (let k = 0; k < posts.length; k++) {
       const post = posts[k]!;
@@ -2111,62 +1712,38 @@ function stepWalkers(w: SimWorld): void {
     // --- the stripe: the most room ahead, keeping to the right (SUMO's striping).
     if (span[1] > span[0]) {
       const right = span[0] + Math.min(span[1] - span[0], STRIPE * 0.5);
-      // A metre less room for every stripe away from where the body is, unless
-      // its own stripe is shut or it is held (SUMO's LATERAL_PENALTY, applied
-      // while `distance[current] > 0` and the walker is not waiting,
-      // `MSPModel_Striping`). A fifth of a unit a unit - an eighth of SUMO's -
-      // let a standing walker swap between stripes a metre apart every tick,
-      // turning its shoulders to each (`defects.spec`, four-way-avenues).
+      // A metre less room for every stripe away from where the body is, unless its own stripe is shut or it is held
       const lateral = p.held === 0 && freeAhead(p.d) > m(0.05) ? LATERAL_PENALTY : 0;
-      // Round a corner the leftmost stripes, in the way walked, are left to
-      // those coming the other way (SUMO reserves 0.34 of a walking area's
-      // stripes, at most 1.28 m: `getReserved`,
-      // `pedestrian.striping.reserve-oncoming.junctions`): never taken, and
-      // left by one standing in them (half the penalty, as SUMO's current
-      // stripe). Two people meeting on a corner each kept to whichever side
-      // the other was not, and swapped sides every tick, face to face.
+      // Round a corner the leftmost stripes, in the way walked, are left to those coming the other way
       const leftEdge = span[1] - reservedFor(st);
-      // Somebody coming the other way in the leftmost stripe: that stripe is
-      // theirs, and both keep right of each other (SUMO's
-      // ONCOMING_CONFLICT_PENALTY on the leftmost stripe, `walk`). Without it
-      // two people meeting on a narrow footway stood nose to nose, each
-      // stepping towards the side the other was taking.
+      // Somebody coming the other way in the leftmost stripe: that stripe is theirs, and both keep right of each other
       const leftmost = span[1] - STRIPE;
       let oncomingLeft = false;
-      // In that stripe: overlapping it, not anywhere to the left (somebody on
-      // the far side of the street is in nobody's stripe here).
+      // In that stripe: overlapping it, not anywhere to the left
       for (let k = 0; k < othersN; k++) {
         const o = OTHERS[k]!;
         if (o.oncoming && o.lat + o.r + BODY > leftmost && o.lat - o.r - BODY < span[1]) { oncomingLeft = true; break; }
       }
       const wide = span[1] - span[0] > STRIPE;
-      // Held up, the stripe it holds is worth less than a free one: SWITCH_GAIN
-      // keeps a walker from dithering between two, not standing behind a crowd
-      // with a stripe a metre freer beside it (P101).
+      // Held up, the stripe it holds is worth less than a free one
       const gain = p.held > HELD_SWITCH ? SWITCH_GAIN / 4 : SWITCH_GAIN;
       let best = p.aim, bestScore = freeAhead(p.aim) - (p.aim - right) * 0.15 - Math.abs(p.aim - p.d) * lateral + gain - reserveCost(p.aim, leftEdge, oncomingLeft, leftmost, wide) / 2;
       for (let c = span[0]; c <= span[1] + 1e-6; c += STRIPE / 2) {
         const score = freeAhead(c) - (c - right) * 0.15 - Math.abs(c - p.d) * Math.max(lateral, 0.2) - reserveCost(c, leftEdge, oncomingLeft, leftmost, wide);
         if (score > bestScore) { bestScore = score; best = c; }
       }
-      // A stripe just taken is kept a moment unless it shuts (`AIM_HOLD`): a
-      // couple's second walker swapped between two stripes five times a
-      // second, stepping left and right (`defects.spec` flips, P101).
+      // A stripe just taken is kept a moment unless it shuts (`AIM_HOLD`)
       const next = clamp(best, span);
       if (Math.abs(next - p.aim) > 1e-6 && (p.age - (p.aimAt ?? -Infinity) >= AIM_HOLD || freeAhead(p.aim) < KEEP || p.held > HELD_SWITCH)) { p.aim = next; p.aimAt = p.age; }
     }
     p.aim = clamp(p.aim, span);
 
     // --- a zebra ahead: wait a step back from the kerb until it is theirs.
-    // A leave not used in its time - held still short of the carriageway -
-    // is asked for again; one walking on to the kerb keeps it.
     if (p.granted !== null && p.v < MOVING && p.age - (p.grantedAt ?? p.age) > GRANT_LIFE && !onZebra(w, p)) p.granted = null;
     const zebra = zebraAhead(w, p);
     p.zebra = zebra?.zebra ?? null;
     p.waiting = null;
-    // Held behind somebody waiting for the same zebra, within a few metres of
-    // it: in the queue, waiting too (SUMO's "wide queue" in front of a
-    // crossing) - asking, standing, never pushing through the crowd.
+    // Held behind somebody waiting for the same zebra, within a few metres of it: in the queue, waiting too
     const queued = zebra !== null && zebra.stop < QUEUE_REACH && queuedForZebra(zebra.zebra, p.d);
     if (zebra && (zebra.stop < ASK_FROM || queued)) {
       p.waiting = zebra.zebra;
@@ -2189,12 +1766,7 @@ function stepWalkers(w: SimWorld): void {
     const crawling = p.act?.kind === 'crawl';
     if (crawling) p.turnV = 0;
     else if (hypot(tx, ty) > m(0.05)) {
-      // Standing or at a shuffle (a crowd at a kerb, a queue, somebody slow
-      // ahead): facing the way the walk goes, the step aside taken sideways
-      // (`SIDESTEP` below) - as a person in a crowd steps aside without
-      // turning round. Turned to the point ahead, each shuffle across swung
-      // the head to and fro (`defects.spec` fidgets, P101). Not where the
-      // point ahead is well round a turn: that is a corner to turn.
+      // Standing or at a shuffle (a crowd at a kerb, a queue, somebody slow ahead)
       const along = Math.atan2(f.ty, f.tx), ahead = Math.atan2(ty, tx);
       const want = p.v < SHUFFLE && Math.cos(ahead - along) > SHUFFLE_COS ? along : ahead;
       err = Math.atan2(Math.sin(want - p.heading), Math.cos(want - p.heading));
@@ -2207,29 +1779,14 @@ function stepWalkers(w: SimWorld): void {
 
     // --- the speed: the room ahead in its own stripe, the wait, and the turn still to make.
     const crossing = crossingOf(w, st.way) !== null;
-    // Jammed from the moment it has been held too long, until it is off this
-    // step or the way ahead is clear (`Walker.jammedOn`).
-    // Nose to nose: the nearest body in its own stripe faces it, standing as
-    // it stands (a moving one is `oncoming` and the stripes sort them out).
-    // Two people meeting so stood until the jam rule's 20 s - each the other's
-    // only way - at a busy corner, between the queue for a zebra and the
-    // stripe kept for those coming the other way (busy-crossroads, P101).
-    // They squeeze past each other slowly at once, as SUMO has two people
-    // do where only one fits abreast (`jamtime.narrow`, JAM_AFTER_NARROW).
-    // The nearest body in its own stripe faces it, standing or walking (who
-    // stops it for good: `JAM_NO_PROGRESS`); standing, nose to nose.
-    // As far ahead as a queue is read (`queuedForZebra`): the one it stops for.
+    // Jammed from the moment it has been held too long, until it is off this step or the way ahead is clear
     let nearGap = KEEP + QUEUE_GAP, nearest: Other | null = null;
     for (let k = 0; k < othersN; k++) {
       const o = OTHERS[k]!;
       if (Math.abs(o.lat - p.d) >= BODY + o.r) continue;
       if (o.along < nearGap) { nearGap = o.along; nearest = o; }
     }
-    // Somebody waiting at a kerb for a zebra is a queue to wait behind -
-    // unless they face this walker: they wait to cross towards it, and it
-    // is the one coming off that zebra into where they stand (a child stood
-    // 10 s at the end of a zebra before the jam rule let it by, five-leg,
-    // 2026-10-11).
+    // Somebody waiting at a kerb for a zebra is a queue to wait behind - unless they face this walker
     const notQueue = nearest?.waitFor == null || nearest.waitFor !== p.waiting;
     const facingAhead = !!nearest?.facing && notQueue;
     const noseToNose = facingAhead && !nearest!.oncoming;
@@ -2240,9 +1797,7 @@ function stepWalkers(w: SimWorld): void {
     // A leg lost: a hobble; both: no walking at all.
     const legsLost = legsLostOf(p);
     let want = p.pace * (crossing ? 1.15 : 1) * (p.rush?.by ?? 1) * (legsLost >= 2 ? 0 : legsLost === 1 ? 0.22 : 1);
-    // Wounded: the wound sets the pace, whatever they were told - fleeing, a
-    // hurt run (a hobble on a hurt leg); after, a slow hurt walk: the
-    // reaction's end is not a recovery.
+    // Wounded: the wound sets the pace, whatever they were told - fleeing, a hurt run (a hobble on a hurt leg)
     const wound = woundOf(p);
     if (wound) want = Math.min(want, p.pace * (p.rush !== null && p.age < p.rush.until ? WOUNDED_RUSH : WOUNDED_PACE)[woundPace(wound)]);
     // Crawling: the capture's own pace (CMU 111_03, half a metre in four seconds).
@@ -2268,22 +1823,14 @@ function stepWalkers(w: SimWorld): void {
     const aside = p.aim - p.d;
     if (!crawling && Math.abs(aside) > m(0.02) && freeAhead(p.aim) > KEEP) {
       const ls = Math.max(-SIDESTEP, Math.min(SIDESTEP, aside / 0.25)) * Math.max(0, 1 - p.v / (0.6 * p.pace));
-      // Across the way itself, towards the stripe: its left normal runs on
-      // smoothly round a corner. Square to the body instead, the side was
-      // the sign of the body against the way, which flips as a body turns
-      // across a tight corner - the step went to and fro and people swayed
-      // and spun at the corners (`defects.spec`, the corner walkways). Never
-      // a step back: what of it goes against the body's heading is dropped.
+      // Across the way itself, towards the stripe: its left normal runs on smoothly round a corner.
       let mx = -f.ty * ls * dt, my = f.tx * ls * dt;
       const hx = Math.cos(p.heading), hy = Math.sin(p.heading);
       const back = mx * hx + my * hy;
       if (back < 0) { mx -= hx * back; my -= hy * back; }
       p.x += mx;
       p.y += my;
-      // Stepping aside is moving: but by the step really taken. With all of
-      // it against the body (a turn across a corner), none was taken and
-      // the walker stood, yet was never counted as held - so never let
-      // through as jammed: 10 s on the end of a zebra (mixed-lanes, P101).
+      // Stepping aside is moving: but by the step really taken.
       if (hypot(mx, my) > m(0.05) * dt) p.held = 0;
     }
 
@@ -2300,13 +1847,7 @@ function stepWalkers(w: SimWorld): void {
         break;
       }
       const next = p.steps[p.leg + 1]!;
-      // Onto or off a lot's way only at the turn itself: let on early, the
-      // body went for the gate from a step to the side of it.
-      // A lot's stretch is also done once the body has ARRIVED at its turn
-      // (within `THERE`, Reynolds' "arrival", GDC 1999): a body a little
-      // aside of a short stretch steered for its end at more than 60°, stood,
-      // turned, and circled it at 4 rad/s, never reaching the end's exact `s`
-      // (in a back yard by a barbecue, 2026-10-10).
+      // Onto or off a lot's way only at the turn itself: let on early, the body went for the gate from a step to the side of it.
       const arrived = st.lot === true && !!st.b && hypot(st.b.x - p.x, st.b.y - p.y) <= THERE;
       const ahead = p.s >= len - m(0.02) || arrived || (!st.lot && !next.lot && p.s > len - AHEAD && projectAcross(next, p.x, p.y).s >= 0);
       if (!ahead) break;
@@ -2327,9 +1868,7 @@ function publish(w: SimWorld): void {
   w.crossingStates.clear();
   const views = w.pedViews;
   const byId = w.pedViewById;
-  // The list is written over in place; the map by id is made again only when
-  // somebody came out or went (each view object lives as long as its walker),
-  // not for all 400 people every tick.
+  // The list is written over in place; the map by id is made again only when somebody came out or went
   const before = views.length;
   let count = 0, same = true;
   for (const p of s.walkers) {
@@ -2360,9 +1899,7 @@ function publish(w: SimWorld): void {
     v.x = p.x; v.y = p.y; v.heading = p.heading;
     v.prev.x = p.prevX; v.prev.y = p.prevY; v.prev.heading = p.prevHeading;
     v.v = p.v; v.turnV = p.turnV; v.age = p.age;
-    // Off the footways - the player, or a stretch of a route over open
-    // ground - the body stands on what is drawn under it, not at the height
-    // of the nearest road (the player sank into the grass or floated over it).
+    // Off the footways - the player, or a stretch of a route over open ground
     v.ground = on ? 'crossing' : p.player || !st.way ? 'open' : 'footway';
     v.segment = (st.way?.segment ?? undefined) as SegmentId | undefined;
     // Spelt out once a step, not a fresh string each tick.
@@ -2484,12 +2021,7 @@ export function movePlayerWalker(w: SimWorld, id: number, x: number, y: number, 
   p.x = x; p.y = y; p.heading = heading; p.v = v;
 }
 
-/**
- * On their last stretch, a walk goes on to somewhere else instead of ending
- * (a passer-by in sight never vanishes where they stop, as GTA's peds wander
- * on): the route from where it would end to `to`, joined on. False when they
- * are not on their last stretch, or no way leads there.
- */
+/** On their last stretch, a walk goes on to somewhere else instead of ending */
 export function walkOn(w: SimWorld, id: number, toX: number, toY: number, reach: number,
   tail: readonly Vec2[] = NO_POINTS): boolean {
   const s = stateOf(w);
@@ -2521,12 +2053,7 @@ export function onLastStretch(w: SimWorld, id: number): boolean {
 }
 
 /** Takes somebody off the street altogether (into a car, into a building): no arrival is told. */
-/**
- * Whether a lot's way out ending at `p` reaches a footway a walker can join
- * there (`joinFootway`, within `GATE_JOIN`): a door that opens onto open
- * ground - a house set back from the road, with no lot - is not walked to
- * from the street (`ambient.ts`, `lotDoors.ts` `streetWay`).
- */
+/** Whether a lot's way out ending at `p` reaches a footway a walker can join there (`joinFootway`, within `GATE_JOIN`) */
 export function joinsFootway(w: SimWorld, p: Vec2): boolean {
   const s = stateOf(w);
   ensureGraph(w, s);
@@ -2557,11 +2084,7 @@ const RUN = 2.4;
 /** Running for their lives from a blow: a sprint. */
 const PANIC_RUN = 3.4;
 
-/**
- * Everybody within `radius` of a fright (a blow, a crash, a car on the
- * footway) runs off away from it for a while, then goes on where they were
- * going. Those knocked down get up first. Returns who saw it.
- */
+/** Everybody within `radius` of a fright */
 export function startle(w: SimWorld, x: number, y: number, radius: number, seconds: number, except: number | null): number[] {
   const s = stateOf(w);
   const saw: number[] = [];
@@ -2575,10 +2098,7 @@ export function startle(w: SimWorld, x: number, y: number, radius: number, secon
   return saw;
 }
 
-/**
- * Those walking with somebody shot (`startWalk` with): down beside them,
- * crying, a few seconds, then away (`frighten` waits on it).
- */
+/** Those walking with somebody shot (`startWalk` with): down beside them, crying, a few seconds, then away */
 function mourn(s: State, p: Walker): void {
   if (p.view.party.size < 2) return;
   for (const q of [...(s.parties.get(p.view.party.id) ?? [])]) {
@@ -2607,19 +2127,10 @@ function frighten(w: SimWorld, s: State, p: Walker, x: number, y: number, d: num
     p.rush = { by: hurt ?? (seconds >= 14 ? PANIC_RUN : RUN), until: p.age + after + seconds * (0.7 + 0.6 * ((personHash(p.id) & 255) / 255)), goal };
     trace(p, 'rush', rushBefore, `${rushName(p.rush)} for ${(p.rush.until - p.age).toFixed(1)}s`, `frighten (startle ${seconds}s, ${(d / m(1)).toFixed(1)} m off)`);
     p.fright = p.rush.until;
-    // In a stampede some trip over and go down, a second or a few in; some
-    // break down where they are, crouched and sobbing; a few faint.
-    // A blast's stampede (26 s of running): some trip, some crouch sobbing,
-    // a few faint. A shot frightens without that: nobody far off drops as if
-    // shot themself (the player, 2026-10-06) - those near crouch, others film.
+    // In a stampede some trip over and go down, a second or a few in; some break down where they are, crouched and sobbing
     const stampede = seconds >= 20;
     if (!stampede && seconds >= 14 && after === 0) {
-      // A shot (GTA V: everybody near a gunshot flees, some film it): first
-      // the head round to it; near it, two in five drop where they are, both
-      // hands over the head (`render/agents.ts` cower) and run after; farther
-      // off some hold a phone up at it a few seconds; the rest run at once, a
-      // few of those near tripping as they go. Stood looking, or running in
-      // a plain run, a bystander read as somebody out jogging (2026-10-06).
+      // A shot (GTA V: everybody near a gunshot flees, some film it): first the head round to it
       const roll = personHash(p.id ^ 0x7a11) & 255;
       const near = d < m(15);
       let hold: number;
@@ -2648,8 +2159,7 @@ function frighten(w: SimWorld, s: State, p: Walker, x: number, y: number, d: num
         p.act = { kind: 'fall', from: p.age + 1.5, until: p.age + 14 + (roll % 7), faceX: p.x + Math.cos(p.heading), faceY: p.y + Math.sin(p.heading) };
         p.v = 0;
       } else if (roll < 150 && after === 0 && d > m(12)) {
-        // Far enough off to feel safe: they stop and hold a phone up at it a
-        // few seconds (as GTA's peds film a scene), then run all the same.
+        // Far enough off to feel safe: they stop and hold a phone up at it a few seconds
         const hold = 3 + (roll % 5);
         p.act = { kind: 'photo', from: p.age, until: p.age + hold, faceX: x, faceY: y };
         p.v = 0;
@@ -2681,15 +2191,7 @@ function replan(w: SimWorld, s: State, p: Walker, to: Vec2): void {
   reroute(w, s, p, to);
 }
 
-/**
- * A walker's route found again to `to`, keeping what runs through a lot
- * (`Step.lot`): the rest of the way out of the lot they are walking out of
- * is walked first and the way is found from its gate; going to the walk's own
- * end, the way into the lot there is kept and the way is found to its gate;
- * already on that way in, nothing changes (they are nearly indoors). Found
- * from the body, a straight line out of a lot crossed its fence. False when
- * no way leads there.
- */
+/** A walker's route found again to `to`, keeping what runs through a lot (`Step.lot`) */
 function reroute(w: SimWorld, s: State, p: Walker, to: Vec2): boolean {
   const steps = p.steps;
   let tailFrom = steps.length;
@@ -2722,11 +2224,7 @@ export function releaseWalker(w: SimWorld, id: number, to: Vec2 | null): void {
   replan(w, s, p, to);
 }
 
-/**
- * One walker as a test bench reads them (the weapons lab, `src/weaponsLab.ts`):
- * where, how fast, what they are doing and for how long yet, how hurt.
- * Null once they are off the street (dead, arrived).
- */
+/** One walker as a test bench reads them (the weapons lab) */
 export function walkerState(w: SimWorld, id: number): {
   x: number; y: number; heading: number; v: number; act: string | null; actLeft: number; hp: number; hits: number;
   bleeding: number; lost: readonly Severable[]; fleeing: boolean; frightened: boolean;

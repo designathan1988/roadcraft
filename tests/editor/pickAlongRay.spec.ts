@@ -10,10 +10,7 @@ import { m } from '@world/units';
 import { type BuildingContext, placeBuilding } from '@editor/buildings';
 import { pickAlongRay } from '@editor/buildingTool';
 
-/**
- * THE PICK UNDER THE POINTER reads the buildings along the ray's track, not the
- * city (`pickAlongRay`): it must find exactly what testing every building finds.
- */
+/** THE PICK UNDER THE POINTER reads the buildings along the ray's track, not the city (`pickAlongRay`) */
 describe('picking a building along the ray', () => {
   it('finds the same face as a look at every building, for rays from every side', () => {
     const doc = new RoadDoc();

@@ -6,38 +6,11 @@ import type { ZoneDensity, ZoneUse } from '../zones';
 import { TensorField, valueNoise, type BasisField } from './field';
 import { planarize, traceStreets, type StreetEdge, type StreetGraph, type StreetLevel } from './streets';
 
-/**
- * A GENERATED CITY'S PLAN: what the player asks for (`CityOptions`) made into
- * the city's grain (the tensor field), its outline, its streets (a graph) and
- * its districts - what each piece of land is for and how dense.
- *
- * - Centres: one to four, each a downtown. The first is in the middle; the
- *   others round it. Density falls away from the nearest centre (the
- *   bid-rent curve of every city: towers where land is dearest, houses at
- *   the edge).
- * - Commerce lines the main streets and fills the centres; industry takes a
- *   sector of the edge, away from the centres. No block is left a park by
- *   default (the player, 2026-10-09: no parks in the middle of the blocks);
- *   `parks` above 0 brings them back.
- * - Style: the basis fields the grain is made of.
- *   - grid: one grid for the whole city, a couple of districts turned to
- *     their own angle (as a city annexes its neighbours);
- *   - organic: many small grids at varied angles and a strong noise (an old
- *     town grown street by street);
- *   - radial: rings and spokes round every centre, a grid beyond;
- *   - mixed: a radial heart and grids round it.
- *
- * Everything follows from the seed: the same options give the same city.
- */
+/** A GENERATED CITY'S PLAN: what the player asks for (`CityOptions`) made into the city's grain */
 
 export type CityStyle = 'grid' | 'organic' | 'radial' | 'mixed' | 'blocks';
 
-/**
- * Block sizes of the 'blocks' style, in metres: a rectangular grid laid
- * straight, no field traced (Chicago's and Melbourne's 100 x 200 m blocks,
- * Manhattan's 80 x 274 m - en.wikipedia.org/wiki/City_block - shortened so
- * a block holds two rows of lots back to back, 22 m frontage, ~30 m deep).
- */
+/** Block sizes of the 'blocks' style, in metres: a rectangular grid laid straight, no field traced */
 const BLOCK_LONG = 120;
 const BLOCK_SHORT = 72;
 /** Every this many blocks an avenue, every other one between a collector. */
@@ -51,14 +24,7 @@ function blockGrid(R: number): StreetGraph {
   const nodes: Vec2[] = [];
   const id = (i: number, j: number): number => j * (nx + 1) + i;
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) nodes.push({ x: x0 + i * along, y: y0 + j * across });
-  // A line's class from its index: the edges and every AVENUE_EVERY-th line
-  // avenues, halfway between them collectors, the rest local streets. A grid
-  // too small for an inner avenue has its avenues at the edges and its
-  // collector on the middle line (the lower of the two when the count of
-  // blocks is odd). DO NOT halve an odd count of blocks to find the middle:
-  // `k % (n / 2)` is never 0 inside the grid then, and a city of 3, 5 or 7
-  // blocks across came out with no collector that way (no main street for
-  // the zoning, `editor/cityGenerator.ts` `zoneCity`).
+  // DO NOT halve an odd count of blocks to find the middle
   const levelOf = (k: number, n: number): number => {
     if (k === 0 || k === n) return 0;
     if (n < AVENUE_EVERY * 2) return k === Math.floor(n / 2) ? 1 : 2;

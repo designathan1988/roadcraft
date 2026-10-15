@@ -9,11 +9,7 @@ import { TAPER_RATIO, widthStep } from '@world/junction/transition';
 import { levelPolygons } from '@world/surfaces';
 import { pointInPolygon } from '@core/polygon';
 
-/**
- * A road that simply carries on at another width: the urban street running
- * into a boulevard or an avenue that the player photographed as a boxy plate
- * with notched kerbs and a zebra and a stop line on both legs.
- */
+/** A road that simply carries on at another width */
 function join(from: number, to: number, bendDegrees = 0) {
   const doc = new RoadDoc();
   const west = doc.addNode({ x: -500, y: 0 });
@@ -46,8 +42,7 @@ describe('a road carrying on at another width', () => {
   it('widens smoothly, over a length set by how far the kerb moves', () => {
     const { net, node, street, wide } = join(1, 3);
     const junction = net.junctions.get(node)!.get(Level.Asphalt)!;
-    // One outline, no carriageway rectangles run back to the node: the tongue
-    // of the wide leg is what made the width step at the node.
+    // One outline, no carriageway rectangles run back to the node
     expect(junction.tongues).toHaveLength(0);
     expect(junction.rings).toHaveLength(1);
     const total = net.mouthDistance(street, node) + net.mouthDistance(wide, node);
@@ -86,9 +81,7 @@ describe('a road carrying on at another width', () => {
   it('paints its centre line and shared lanes straight through', () => {
     const { net, node } = join(2, 3);
     const strokes = transitionMarkings(net, node);
-    // Two lines parting round the reservation, and the one lane divider per
-    // direction the avenue and the boulevard share. (No painted edge lines:
-    // the asphalt's concrete gutter marks the edge.)
+    // Two lines parting round the reservation, and the one lane divider per direction the avenue and the boulevard share.
     expect(strokes.length).toBe(4);
     for (const stroke of strokes) expect(stroke.points.length).toBeGreaterThan(8);
   });

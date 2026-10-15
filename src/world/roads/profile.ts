@@ -7,31 +7,13 @@ import {
 import { type RoadType, laneWidth, roadProfile, roadType } from '../roadTypes';
 import { kmh } from '../units';
 
-/**
- * THE ROAD PROFILE (docs/source/VIAS.md V1): a road's cross-section as an ordered
- * list of elements from its left edge to its right edge, looking from `a` to
- * `b` - footway, parking or cycle lane, the lanes of each direction, the
- * central reservation - each with its width and what it is paved with, the
- * way OpenDRIVE and RoadRunner describe a road (lanes from the reference line
- * outward, each typed: driving, sidewalk, parking, biking, median; a lane's
- * height over the road for a raised walkway).
- *
- * It is an AUTHORING model, and an adapter: `applyProfile` turns it into the
- * segment's own fields (`lanes`, `direction`, `section`, `parking`), from
- * which `roadProfile` derives the `RoadType` every consumer already reads -
- * the junction builder, the lanelets, the markings, the pedestrians. So a
- * profile takes effect everywhere at once, a map saved before profiles is
- * the profile `profileOf` reads back from it, and nothing stores the same
- * thing twice. What the engine cannot carry yet is refused with a reason
- * (`profileProblems`): a lane of its own width, unequal lane counts per
- * direction and lane classes come with the lane connectors (V4).
- */
+/** THE ROAD PROFILE */
 export type ProfileElement =
   | { readonly kind: 'footway'; readonly width: number; readonly material?: FootwayMaterial; readonly flush?: boolean }
   | { readonly kind: 'parking' | 'cycle'; readonly width: number }
   | {
     readonly kind: 'lane'; readonly width: number; readonly dir: 'forward' | 'backward';
-    /** Buses only (docs/source/VIAS.md V4, `RoadSection.useForward`). */
+    /** Buses only (`RoadSection.useForward`). */
     readonly use?: 'bus';
     /** The line on its right, to the next lane of its direction: solid (no lane change) instead of dashed. */
     readonly line?: 'solid';
@@ -76,9 +58,7 @@ export function profileOf(source: ProfileSource): RoadProfileSpec {
   elements.push(footway('left'));
   band(rt.parkingLeftKind);
   const lanes = rt.lanes;
-  // A lane as the section has it (V4): who drives it, and the line on its
-  // right in the A-to-B view, which is the line to the lane `laneIndex + 1`
-  // forward and to `laneIndex - 1` backward (lane 0 is the innermost).
+  // A lane as the section has it (V4)
   const lane = (dir: 'forward' | 'backward', index: number, count: number): ProfileElement => {
     const forward = dir === 'forward';
     const use = laneUseOf(section, forward, index);
@@ -115,11 +95,7 @@ export function profileOf(source: ProfileSource): RoadProfileSpec {
 export type ProfileProblem =
   | 'footways' | 'noLanes' | 'laneWidths' | 'laneBalance' | 'order' | 'median' | 'parkingSide' | 'width' | 'class' | 'busOnly';
 
-/**
- * What stops a profile from being built, empty when nothing does. The order
- * the engine carries is footway, parking or cycle lane, the backward lanes,
- * the median, the forward lanes, parking or cycle lane, footway.
- */
+/** What stops a profile from being built, empty when nothing does. */
 export function profileProblems(profile: RoadProfileSpec, typeIndex: number): ProfileProblem[] {
   return [...new Set(profileIssues(profile, typeIndex).map((issue) => issue.problem))];
 }
@@ -130,10 +106,7 @@ export interface ProfileIssue {
   readonly elements: readonly number[];
 }
 
-/**
- * `profileProblems` with the elements each problem is about, so an editor can
- * name the problem on the element that has it (docs/source/VIAS.md V2).
- */
+/** `profileProblems` with the elements each problem is about, so an editor can name the problem on the element that has it */
 export function profileIssues(profile: RoadProfileSpec, typeIndex: number): ProfileIssue[] {
   const out: ProfileIssue[] = [];
   const add = (problem: ProfileProblem, elements: readonly number[]): void => {
@@ -200,13 +173,7 @@ function sameFlat(a: object, b: object): boolean {
   return true;
 }
 
-/**
- * Whether two profiles are the same road, field by field. DO NOT compare
- * profiles by `JSON.stringify`: the text follows the order the keys were
- * written in, so a profile edited by a spread (`{ ...element, width }` puts
- * nothing new first, but `{ material, ...element }` does) or read back from a
- * template stops being equal to the identical one built by `profileOf`.
- */
+/** DO NOT compare profiles by `JSON.stringify` */
 export function sameProfile(a: RoadProfileSpec, b: RoadProfileSpec): boolean {
   if (a === b) return true;
   const { elements: ea, ...ra } = a;
@@ -224,12 +191,7 @@ export interface AppliedProfile {
   readonly parking: SegmentParking | undefined;
 }
 
-/**
- * The segment's fields for a profile. With the class (`typeIndex`), a profile
- * that is the class's own (as `profileOf` reads a road of that class with
- * that many lanes, that direction and that parking) stays the class's: no
- * authored section, which would round its lanes to whole metres.
- */
+/** The segment's fields for a profile. */
 export function applyProfile(profile: RoadProfileSpec, typeIndex?: number): AppliedProfile {
   const authored = authoredFields(profile);
   if (typeIndex === undefined) return authored;
@@ -272,8 +234,7 @@ function authoredFields(profile: RoadProfileSpec): AppliedProfile & { readonly l
     ...(Object.keys(materials).length ? { materials } : {}),
     ...(profile.centreLine ? { centreLine: profile.centreLine } : {}),
   };
-  // Lane uses and lines by laneIndex (V4): forward lanes left to right are
-  // laneIndex 0, 1, ...; backward lanes left to right are the outermost first.
+  // Lane uses and lines by laneIndex (V4): forward lanes left to right are laneIndex 0, 1, ...
   const fwd = lanes.filter((l) => l.dir === 'forward');
   const bwd = lanes.filter((l) => l.dir === 'backward').reverse();
   const uses = (list: typeof lanes): string[] => list.map((l) => l.use ?? 'all');

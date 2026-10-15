@@ -74,8 +74,7 @@ describe('animation follows actual displacement', () => {
 
   it.each([[0.3, 0.3], [0.3, -0.3], [-0.3, 0.3], [-0.3, -0.3], [2.3, 0.2]])(
     'carries both signed velocity components (%s,%s) with different forward/lateral strides', (vx, vy) => {
-      // Different per-body lateral limits are valid clip data. A blend of
-      // equal angular weights must not quietly rotate the resulting travel.
+      // Different per-body lateral limits are valid clip data.
       const bodyClips = { ...clips,
         walkLeft: { ...clips.walkLeft, stride: clips.walkLeft.stride * 0.35 },
         walkRight: { ...clips.walkRight, stride: clips.walkRight.stride * 0.6 },
@@ -161,9 +160,7 @@ describe('the drawn feet carry the selected stride', () => {
         for (const [root, end] of [['Thigh', 'Calf'], ['Calf', 'Foot']]) {
           const sourceLength = bonePosition(source.rig, name(root!)).distanceTo(bonePosition(source.rig, name(end!)));
           const drawnLength = bonePosition(drawn.rig, name(root!)).distanceTo(bonePosition(drawn.rig, name(end!)));
-          // Imported bind axes contain float32 error. A tenth of a millimetre
-          // in world space still forbids visible stretch; the authored local
-          // segment lengths must be unchanged exactly.
+          // Imported bind axes contain float32 error.
           expect(Math.abs(drawnLength - sourceLength)).toBeLessThan(0.0001);
           expect(drawn.rig.getObjectByName(name(end!))!.position.toArray()).toEqual(source.rig.getObjectByName(name(end!))!.position.toArray());
         }
@@ -174,8 +171,7 @@ describe('the drawn feet carry the selected stride', () => {
         expect(footGap(drawn.rig), 'the drawn foot surfaces must stay separated laterally').toBeGreaterThanOrEqual(-0.00001);
       }
     }
-    // Correlation of successive samples avoids different left/right stance
-    // centres; these differences measure the direction the feet actually step.
+    // Correlation of successive samples avoids different left/right stance centres
     let agreement = 0, travel = 0;
     for (let i = 2; i < pairs.length; i++) {
       const forward = pairs[i]![0] - pairs[i - 2]![0];
@@ -215,8 +211,7 @@ describe('the drawn feet carry the selected stride', () => {
       captured.pose(frame / 30 * library.male.walkSlow.duration);
       const foot = bonePosition(source.rig, 'Bip01_L_Foot');
       full.push(foot.z);
-      // The renderer linearly blends skinning matrices, so the position of
-      // an ankle attached to its bone has this same weighted position.
+      // The renderer linearly blends skinning matrices
       short.push(foot.z * weight + mean.z * (1 - weight));
     }
     expect(Math.max(...full) - Math.min(...full)).toBeGreaterThan(0.1);

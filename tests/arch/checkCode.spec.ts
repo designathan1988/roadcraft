@@ -5,14 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * The rules of `scripts/check-code.mjs`, each made to fire once and each
- * escape made to hold, on a small project written here: a frame that reaches
- * JSON, a material, a loop over the whole map, through a direct call, an
- * interface implemented by an object literal, a callback run by `forEach`;
- * and does not reach a deferred callback, a stored one, or a `@rebuild`
- * body's per-frame work.
- */
+/** The rules of `scripts/check-code.mjs`, each made to fire once and each escape made to hold */
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const three = join(root, 'node_modules', '@types', 'three', 'index.d.ts').split('\\').join('/');
 
@@ -48,12 +41,7 @@ export function frame(doc: RoadDoc): void {
 }
 `;
 
-/**
- * The traversal rules: a loop over the map inside a loop over the map, through
- * a call or over a local filled from the map (CLARITY's redundant traversal),
- * and a loop over the map reached from what runs once an item; a `@rebuild`
- * callee is amortized, and code not marked per item is not held to it.
- */
+/** The traversal rules: a loop over the map inside a loop over the map, through a call or over a local filled from the map */
 const ITEMS = `
 export class RoadDoc { readonly nodes = new Map<number, { x: number }>(); readonly lots: { id: number }[] = []; }
 /** @perFrame */
@@ -74,15 +62,7 @@ export function grow(doc: RoadDoc): number { return lotIndex(doc, 1); }
 export function free(doc: RoadDoc): number { return lotIndex(doc, 2); }
 `;
 
-/**
- * The blind spots closed: a class field filled from the map and walked once a
- * query (`Sight.blocked`, as `AmbientWorld.walls` was), a collection marked
- * `@mapWide` walked inside a walk over itself, the map redone because a global
- * revision moved (a `!==` branch, a key holding a revision with an early
- * return, a `@rebuild` callee: not excused), and the map walked once a
- * pointer move (`@perInput`). Spared: a loop over what `near(...)` hands
- * back, and the diary read (`changes.since`) under a revision guard.
- */
+/** The blind spots closed: a class field filled from the map and walked once a query */
 const DERIVED = `
 export class RoadDoc {
   readonly lots: { id: number; x: number }[] = [];
@@ -150,12 +130,7 @@ export function frame(doc: RoadDoc, sight: Sight, sim: Sim, keyed: Keyed, rebuil
 }
 `;
 
-/**
- * A call the checker cannot tie, tied by the member's name: a receiver of a
- * named type of the game runs the holders that say they are one, not every
- * holder of the same shape; an untyped receiver runs none. The roads' `dispose`
- * (a loop over the map) was tied to every building cell's and to a mesh's.
- */
+/** A call the checker cannot tie, tied by the member's name */
 const DISPATCH = `
 export class RoadDoc { readonly nodes = new Map<number, number>(); }
 export interface Cell { dispose(): void }

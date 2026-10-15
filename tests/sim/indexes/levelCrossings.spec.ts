@@ -6,13 +6,7 @@ import type { SimWorld } from '@sim/world';
 import { levelCrossings } from '@sim/transit/transit';
 import { seededEdit, seededWorld } from './support';
 
-/**
- * A train's level crossings, each leg of its loop meeting only the lanes near
- * it (`levelCrossings`, the lanes' grid), are the old loop's over every lane
- * of the map, segment by segment, against every leg (the oracle below): the
- * same crossings in the same order. Through road edits, on loops drawn at
- * random across the town and along its roads (legs ending on a lane's points).
- */
+/** A train's level crossings, each leg of its loop meeting only the lanes near it */
 function oldCrossings(w: SimWorld, points: readonly Vec2[], at: readonly number[]) {
   const crossAt = (a: Vec2, b: Vec2, p: Vec2, q: Vec2): { u: number; v: number } | null => {
     const rx = b.x - a.x, ry = b.y - a.y, sx = q.x - p.x, sy = q.y - p.y;

@@ -4,49 +4,13 @@ import { MeshoptSimplifier } from 'meshoptimizer';
 import { simplifyIndex } from './lodWorker';
 import { lodPool } from './lodPool';
 
-/**
- * The crowd's levels of detail (`proceduralCrowd.ts`), from its own meshes.
- *
- * A level is chosen by how tall a person is on the screen, H pixels, so that
- * a triangle facing the camera covers some 16 pixels or more - between the
- * floor of one 2 x 2 quad and the 32 pixels a primitive PowerVR's guide asks
- * for ("avoid small triangle sizes … especially dipping below 32 pixels per
- * primitive"): a body's visible area is about H x H/4 over half its
- * triangles, so T <= H² / 32.
- *
- *   level 0  H >= 40   the whole model (its hair never more than its body)
- *   level 1  20..40    about 4 800 triangles
- *   level 2  8..20     about 1 440
- *   level 3  3..8      about 330: one merged mesh a class and outfit, the hair apart
- *   none     < 3       not drawn
- *
- * The bands are the person's height as a share of the screen, as an engine
- * sets a LOD Group's transitions (Unity, "Transition (% Screen Size)"), and
- * they are set by what each level LOSES, not by triangles alone: the far mesh
- * has no texture (one colour a vertex), so it is for a person too small to
- * show a face or a print. The triangle rule alone put it on everybody up to
- * 150 px - every person at every playable zoom (58 px at the usual one) -
- * and the player asked why the pedestrians looked like rubbish (2026-10-08).
- * Then the whole model began at 100 px, and at the street view the player
- * plays at (people 60-80 px tall) everybody was level 1 - no lashes, no
- * mouth, a faceted body: "the detail must not appear only when the zoom is
- * rubbed in their faces". As Unity's "Set to Camera" does it, the closest
- * level covers the height a person has in the view in use. The cost is held
- * by the caps below, not by the bands.
- *
- * Every level of a piece is an index buffer over the same vertices
- * (meshoptimizer for the meshes; hair cards, which a simplifier cannot merge,
- * chosen card by card), so a piece's vertex data is on the GPU once.
- */
+/** The crowd's levels of detail (`proceduralCrowd.ts`), from its own meshes. */
 const LEVEL_PIXELS = [40, 20, 8, 3] as const;
 /** Levels drawn: 0..3. */
 export const LEVELS = 4;
 /** Hysteresis: a person goes back up a level only this far past its edge. */
 const HYSTERESIS = 0.1;
-/**
- * The closest levels' safety caps: past them, the people smallest on the
- * screen go one level down (a street-level camera in a packed square).
- */
+/** The closest levels' safety caps: past them, the people smallest on the screen go one level down */
 export const LEVEL_CAPS = [30, 120] as const;
 
 /** The level for a person `pixels` tall on the screen, given the one they had (-1: none). */
@@ -66,12 +30,7 @@ export type PieceRole = 'skin' | 'outfit' | 'garment' | 'shoes' | 'hair' | 'brow
 /** The body's triangles at level 0: no hair costs more. */
 const SKIN_TRIANGLES_LEVEL0 = 26756;
 
-/**
- * Triangles a piece keeps at each level (Infinity: all of it; 0: not drawn
- * there). At level 3 the skin, the outfit and the shoes are the far mesh
- * (`FAR_TRIANGLES`); the hair and the accessories stay pieces of their own.
- * No hair costs more than the body at the same level.
- */
+/** Triangles a piece keeps at each level (Infinity: all of it; 0: not drawn there). */
 export const LEVEL_TRIANGLES: Readonly<Record<PieceRole, readonly [number, number, number, number]>> = {
   skin: [Infinity, 2000, 600, 0],
   outfit: [Infinity, 1200, 400, 0],
@@ -103,11 +62,7 @@ function positionsOf(geometry: BufferGeometry): Float32Array {
   return out;
 }
 
-/**
- * `indices` (triangles of `geometry`) simplified to about `triangles`
- * triangles over the same vertices; the indices themselves when they are
- * within it, null when the simplifier cannot run.
- */
+/** `indices` (triangles of `geometry`) simplified to about `triangles` triangles over the same vertices */
 function simplifiedIndex(geometry: BufferGeometry, triangles: number, indices?: Uint32Array): Uint32Array | null {
   const source = indices ?? (geometry.getIndex() ? Uint32Array.from(geometry.getIndex()!.array as ArrayLike<number>) : null);
   if (!source || !geometry.getAttribute('position')) return null;
@@ -115,11 +70,7 @@ function simplifiedIndex(geometry: BufferGeometry, triangles: number, indices?: 
   return simplifyIndex(source, positionsOf(geometry), triangles);
 }
 
-/**
- * `simplifiedIndex` done by the simplifier worker (`lodPool.ts`): the same
- * result, off the main thread - each new piece's levels were 2-14 ms of a
- * frame. Here, as before, where there is no worker.
- */
+/** `simplifiedIndex` done by the simplifier worker (`lodPool.ts`): the same result, off the main thread */
 export async function simplifiedIndexAway(geometry: BufferGeometry, triangles: number, indices?: Uint32Array): Promise<Uint32Array | null> {
   const source = indices ?? (geometry.getIndex() ? Uint32Array.from(geometry.getIndex()!.array as ArrayLike<number>) : null);
   if (!source || !geometry.getAttribute('position')) return null;
@@ -146,13 +97,7 @@ export interface CardSelection {
   readonly widen: number;
 }
 
-/**
- * A hairstyle's cards (each a connected run of quads), and the cards kept
- * for each budget: the largest first, widened about their own middle by
- * √(area of all / area kept) - at most 1.6 - so the hair keeps its cover
- * (the widening is the vertex shader's: `aCard`, each vertex's card middle).
- * Over the same vertices, so the selection holds for every class's fit.
- */
+/** A hairstyle's cards (each a connected run of quads), and the cards kept for each budget */
 export function cardSelections(geometry: BufferGeometry, budgets: readonly number[]): { cardOf: Int32Array; selections: (CardSelection | null)[] } {
   const index = geometry.getIndex();
   const position = geometry.getAttribute('position');
@@ -228,11 +173,7 @@ export function cardCentres(geometry: BufferGeometry, cardOf: Int32Array): Float
   return out;
 }
 
-/**
- * The region of the far mesh a vertex belongs to (`proceduralCrowd.ts`): the
- * skin and the shoes take the person's colour, the outfit its own dyed with
- * the person's dye, another garment its own.
- */
+/** The region of the far mesh a vertex belongs to (`proceduralCrowd.ts`) */
 export const REGION = { skin: 0, outfit: 1, shoes: 2, garment: 3 } as const;
 
 /** A part of the far mesh: some triangles of a geometry, simplified to `triangles`, and the colour of each vertex. */
@@ -245,13 +186,7 @@ export interface FarPart {
   readonly colour?: (v: number) => readonly [number, number, number];
 }
 
-/**
- * The far mesh of a class and outfit (level 3): the skin the outfit leaves
- * bare and the outfit, each simplified, merged into one geometry; `aFar` a
- * vertex is its own colour and its region (skin below `ankle` is the
- * shoes'). Only what the far skinning reads is kept: position, normal,
- * skinIndex, skinWeight, aRefs, aRefW.
- */
+/** The far mesh of a class and outfit (level 3) */
 export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometry | null {
   const keep = ['position', 'normal', 'skinIndex', 'skinWeight', 'aRefs', 'aRefW'];
   const pieces: BufferGeometry[] = [];
@@ -272,8 +207,7 @@ export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometr
       const attribute = part.geometry.getAttribute(name);
       if (!attribute) return null;
       const size = attribute.itemSize;
-      // Made in its own type and kept by the attribute (`BufferAttribute`):
-      // the typed subclasses copy the array they are given.
+      // Made in its own type and kept by the attribute (`BufferAttribute`): the typed subclasses copy the array they are given.
       const values = name === 'skinIndex' ? new Uint16Array(order.length * size) : new Float32Array(order.length * size);
       order.forEach((v, i) => { for (let c = 0; c < size; c++) values[i * size + c] = attribute.getComponent(v, c); });
       g.setAttribute(name, new BufferAttribute(values, size));
@@ -298,11 +232,7 @@ export function farMesh(parts: readonly FarPart[], ankle: number): BufferGeometr
 }
 
 const sortedWeights = new WeakSet<object>();
-/**
- * Sorts each vertex's four bone weights largest first, in place: the far
- * levels skin with the first two only (renormalised), and the close ones
- * read all four, so their result is the same.
- */
+/** Sorts each vertex's four bone weights largest first, in place: the far levels skin with the first two only */
 export function sortSkinWeights(geometry: BufferGeometry): void {
   const index = geometry.getAttribute('skinIndex');
   const weight = geometry.getAttribute('skinWeight');

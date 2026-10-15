@@ -3,10 +3,7 @@ import type { Finish } from '@world/buildings/materials';
 import type { FlagInstance } from './flagLayer';
 import type { PartKind } from './kit';
 
-/**
- * WHAT ONE BUILDING CONTRIBUTES TO THE BATCHES, as `buildingMesh.ts` `emitChunk`
- * makes it and `cellArrays.ts` puts it together, here or in an emit worker.
- */
+/** WHAT ONE BUILDING CONTRIBUTES TO THE BATCHES */
 
 /** A building of a cell as the cell workers are sent it (`cellWork.ts`): its chunk's key (an id, or a building cut open), its record as text and the ground under it. */
 export interface CellEntry {
@@ -17,11 +14,7 @@ export interface CellEntry {
   readonly digest: number;
 }
 
-/**
- * An entry as a job carries it to a worker: with its record's text, written
- * for the message alone (`CellPool.run`). DO NOT keep the text with the
- * entries the page keeps: a string the size of the record, for every building.
- */
+/** DO NOT keep the text with the entries the page keeps: a string the size of the record, for every building. */
 export interface CellJobEntry extends CellEntry {
   readonly record: string;
 }
@@ -37,12 +30,7 @@ export interface PartBatch {
   readonly rooms?: Float32Array;
 }
 
-/**
- * Everything one building contributes, in typed arrays: a shell fragment with
- * local indices and its instance batches. The layer caches these per building
- * (see `layer.ts`), so an edit re-emits one building and merely concatenates
- * the rest.
- */
+/** Everything one building contributes, in typed arrays: a shell fragment with local indices and its instance batches. */
 export interface ShellChunk {
   readonly decay: Float32Array;
   readonly position: Float32Array;

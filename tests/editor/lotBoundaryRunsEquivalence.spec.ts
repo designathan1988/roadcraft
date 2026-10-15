@@ -2,14 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { type CoverBox, openRunsAlong } from '@editor/lotBoundaryRuns';
 import { growCity } from '../world/cityAudit';
 
-/**
- * THE OPEN STRETCHES OF A LOT'S EDGE ARE THE OLD ONES (2026-10-14):
- * `lotPlan.ts` stopped testing each 25 cm sample of an edge against every
- * boundary part and volume of the lot (`lotBoundaryRuns.ts`: one range of
- * samples per box, found by binary search). Every edge of every lot of
- * generated towns must give exactly the runs the old walk gave, or the walls
- * and fences would be laid differently. The old walk is kept frozen below.
- */
+/** THE OPEN STRETCHES OF A LOT'S EDGE ARE THE OLD ONES (2026-10-14) */
 
 interface Call { readonly args: [number, 'x' | 'y', number, readonly CoverBox[]]; readonly out: [number, number][] }
 const calls = vi.hoisted((): Call[] => []);

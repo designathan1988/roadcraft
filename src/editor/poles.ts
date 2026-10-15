@@ -11,40 +11,7 @@ import type { ChangeRect } from '@world/changes';
 import { DEFAULT_POLE_SPACING, MAX_POLE_SPACING, MIN_POLE_SPACING, poleCarriesLamp, type PoleLampMode } from '@world/utilities';
 import { m } from '@world/units';
 
-/**
- * Where a pole line goes: on the footway, just behind the kerb, and nowhere
- * else (the player's order of 2026-10-05, second pass).
- *
- * A distribution line in a town runs ALONG the street, its poles in a uniform
- * alignment a little behind the face of the kerb (N.J.A.C. 16:25-10.3; AASHTO
- * asks at least 0.5 m from the kerb face), turning with the street. The first
- * version of this tool kept one straight line per street, cut at each
- * junction's mouth, and joined two streets by a chord between their line
- * ends. Both halves of that were wrong at a corner: the line end at the mouth
- * stood inside the kerb return - on the asphalt - and the two streets' ends
- * gave two or three poles a few metres apart where one corner pole belongs.
- *
- * Now the line IS the kerb line, offset into the footway: the outline of
- * everything a kerb bounds (carriageway and kerb stone of every street that
- * has footways, `surfaces().curb`), grown by `POLE_KERB_INSET` with round
- * joins (Clipper2, as the walking lines in `walkways.ts` are). Each closed
- * contour runs round one block at exactly that distance from the kerb - along
- * a street, round the kerb return of a corner, round a bend - so a pole on it
- * is on the pavement by construction, never in a junction.
- *
- * - Both ends of a run must be on that line (or on a pole already standing).
- * - Between them the run follows the contour the short way round the block.
- *   An end on another block's contour is reached by ONE span across the
- *   street, from the point of this block's contour nearest it.
- * - A pole stands at every corner the line turns (the corners are found by
- *   Ramer-Douglas-Peucker simplification of the route), and the rest are
- *   spaced evenly between corners, off any crossing's landing.
- * - A planned pole close to one already standing IS that pole: lines join
- *   instead of growing a second mast beside the first.
- *
- * Both the preview and the commit ask `planPoleRun`, so what is drawn under
- * the pointer is what is built on release.
- */
+/** Where a pole line goes: on the footway, just behind the kerb, and nowhere else */
 
 /** Pick radius for an existing pole, in screen pixels. */
 export const POLE_PICK_PIXELS = 34;
@@ -79,12 +46,7 @@ export interface PoleSnap {
   readonly pole?: PoleId;
 }
 
-/**
- * Snaps one end of a pole run: onto a pole already standing (joining a line
- * is the commonest thing anyone does), else onto the pole line of the footway
- * under the pointer. Anything else is `free`, and a run with a free end is
- * refused.
- */
+/** Snaps one end of a pole run: onto a pole already standing */
 export function snapPole(doc: RoadDoc, net: Network, at: Vec2, reach: number): PoleSnap {
   return snapOn(doc, net, poleLinesAt(net, at), at, reach);
 }
@@ -122,23 +84,7 @@ function placeOf(lines: PoleLines, snap: PoleSnap): OnContour | null {
   return nearestOnContour(lines, snap.at, snap.kind === 'pole' ? POLE_TO_LINE : m(0.5));
 }
 
-/**
- * THE ROUTE GRAPH of a network's pole lines: stations a few metres apart
- * along every kerb-line contour, joined in order round it, and the spans
- * that cross a street - from a station straight over the carriageway to the
- * station facing it. An overhead crossing is laid on a line perpendicular to
- * the street (Virginia 24VAC30-151-330 A: "Overhead utility crossings shall
- * be located on a line that is perpendicular to the highway alignment"), so
- * the spans are cast square off each street's centreline where it runs
- * between its junctions - never on a diagonal through a junction.
- *
- * The run is the shortest way through it (Dijkstra, as the traffic routes,
- * `sim/drive/tactical.ts`). The contour alone - the first version - followed
- * one kerb the short way round: in a network of open-ended streets the whole
- * kerb line is ONE contour, and a run to the footway across the road went down
- * the street, round its end or into the next street and back (the player's
- * report of 2026-10-09: 176 units of line for 21.6 straight across).
- */
+/** THE ROUTE GRAPH of a network's pole lines */
 /** A run's end off its contour: the pole it starts or ends at, put before or after the route. */
 const endOff = (snap: PoleSnap, on: OnContour): Vec2 | null => (snap.kind === 'pole' && on.distance > 1e-3 ? snap.at : null);
 
@@ -161,14 +107,7 @@ const ROUTE_MARGIN_MOST = m(4096);
 /** What the route search did: regions read. A count for the budgets (`core/perfBudget.ts`). */
 const poleRouteWork = { regions: 0 };
 
-/**
- * The run's route, read from the lines of a region round its ends only
- * (`poleLinesIn`), as exact as the whole map's: a way that leaves the region
- * goes out past the margin and comes back, so it is longer than twice the
- * margin; a route found inside shorter than that is the shortest of all.
- * Otherwise the region doubles. The region is laid on whole cells, so the
- * preview's pointer moves read the same lines again.
- */
+/** The run's route, read from the lines of a region round its ends only (`poleLinesIn`), as exact as the whole map's */
 function routeRun(net: Network, from: PoleSnap, to: PoleSnap, first = ROUTE_MARGIN):
   { readonly path: Vec2[]; readonly lines: PoleLines } | 'noPlace' | 'noPath' {
   const x0 = Math.min(from.at.x, to.at.x), y0 = Math.min(from.at.y, to.at.y);
@@ -212,20 +151,7 @@ export interface PoleRunPlanner {
   plan(doc: RoadDoc, rawFrom: Vec2, rawTo: Vec2, reach: number, spacing?: number, lamps?: PoleLampMode): PoleRunPlan;
 }
 
-/**
- * Plans the runs of a network that is not changing meanwhile - a generated
- * city's power lines (`roads/powerLine.ts`) - over lines and route graphs made
- * once per tile of the map and held until the planner is dropped. Planning
- * each street on its own made the lines and the graph of a region round it
- * again, street after street, over regions that mostly overlap: the same kerb
- * lines were cut, offset and cast across many times over (the power lines of
- * a city of radius 2,560 m were 39 s of its 170 s, growing faster than the
- * city). A run is routed over the tile its start is in, whose lines reach a
- * whole cell past it; one that could leave them (an end within `ROUTE_MARGIN`
- * of their border, or a route longer than twice its distance to the border)
- * is planned as the pole tool plans it, so every route is the whole map's.
- * DO NOT plan a batch of runs one region each: the lines are the same.
- */
+/** DO NOT plan a batch of runs one region each: the lines are the same. */
 export function poleRunPlanner(net: Network): PoleRunPlanner {
   const tiles = new Map<string, { readonly region: ChangeRect; readonly lines: PoleLines; readonly graph: RouteGraph }>();
   const tileAt = (p: Vec2): { readonly region: ChangeRect; readonly lines: PoleLines; readonly graph: RouteGraph } => {
@@ -305,11 +231,7 @@ function inLanding(accesses: readonly CrossingAccess[], p: Vec2): boolean {
   });
 }
 
-/**
- * Everything the run WOULD build, from the two raw ends of the gesture.
- * Called by the preview on every pointer move and by the commit once.
- * Nothing here mutates the document.
- */
+/** Everything the run WOULD build, from the two raw ends of the gesture. */
 export function planPoleRun(
   doc: RoadDoc,
   net: Network,
@@ -319,10 +241,7 @@ export function planPoleRun(
   spacing = DEFAULT_POLE_SPACING,
   lamps: PoleLampMode = 'alternate',
 ): PoleRunPlan {
-  // The preview asks for the plan every frame (`main.ts`), and the same plan
-  // while the pointer stands still: kept until something it reads changes -
-  // its ends, its settings, the network or the poles standing (1.3 ms a frame
-  // on a 6 x 6 block town, redone for nothing).
+  // The preview asks for the plan every frame (`main.ts`), and the same plan while the pointer stands still
   const poles = doc.changes.serialOf('utilities');
   const k = lastPlan;
   if (k && k.doc === doc && k.net === net && k.revision === net.revision && k.poles === poles &&
@@ -340,11 +259,7 @@ let lastPlan: {
   readonly reach: number; readonly spacing: number; readonly lamps: PoleLampMode; readonly plan: PoleRunPlan;
 } | null = null;
 
-/**
- * `planPoleRun` routed over the lines of a region covering the whole map
- * (every street within `ROUTE_MARGIN_MOST`): the oracle the regional route is
- * held to (`tests/world/poleLinesCells.spec.ts`). Not cached.
- */
+/** `planPoleRun` routed over the lines of a region covering the whole map (every street within `ROUTE_MARGIN_MOST`) */
 export function planPoleRunWhole(
   doc: RoadDoc, net: Network, rawFrom: Vec2, rawTo: Vec2, reach: number,
   spacing = DEFAULT_POLE_SPACING, lamps: PoleLampMode = 'alternate',
@@ -386,8 +301,7 @@ function computePoleRun(
     return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
   };
 
-  // Corner stations; corners closer than a pole gap merge into one, and none
-  // stands within a gap of either end.
+  // Corner stations; corners closer than a pole gap merge into one, and none stands within a gap of either end.
   const keys: number[] = [0];
   for (const index of corners(path, CORNER_TOLERANCE).slice(1, -1)) {
     const s = cum[index]!;
@@ -445,10 +359,7 @@ function computePoleRun(
   return { from, to, poles };
 }
 
-/**
- * Applies a plan to the document. Returns whether anything was built.
- * A refused plan builds nothing.
- */
+/** Applies a plan to the document. */
 export function commitPoleRun(doc: RoadDoc, plan: PoleRunPlan): boolean {
   return commitPoleRunPoles(doc, plan) !== null;
 }
@@ -487,21 +398,11 @@ export interface PoleToolHost {
   redraw(): void;
 }
 
-/**
- * THE POLE TOOL: a distribution line traced as straight stretches, each a
- * drag (or a click, click, click: a press that builds nothing starts the
- * chain), from the last pole while the tool stays on it; Shift-click, or the
- * Remove verb, takes a pole and its wires away. The stretch being dragged,
- * the chain's last pole and the pointer live here (Nystrom, "State").
- */
+/** THE POLE TOOL: a distribution line traced as straight stretches, each a drag */
 export class PoleTool {
   /** The stretch being dragged. */
   private draft: { readonly from: Vec2; to: Vec2; readonly chained: boolean } | null = null;
-  /**
-   * The end of the last committed run, while the tool is still on it: a
-   * line is drawn as a sequence of stretches, and finishing one is almost
-   * never finishing the line. Escape, a different tool or an undo drops it.
-   */
+  /** The end of the last committed run, while the tool is still on it */
   private chain: Vec2 | null = null;
   /** The pointer over the map while the tool is in hand, unsnapped. */
   private hover: Vec2 | null = null;
@@ -509,12 +410,7 @@ export class PoleTool {
 
   constructor(private readonly host: PoleToolHost) {}
 
-  /**
-   * Pick radius for a pole, in WORLD units at the current zoom: one
-   * definition for the snap, the preview, removal and bulldoze (when they
-   * were separate numbers the preview highlighted a pole the commit then
-   * missed, and the run was built disconnected).
-   */
+  /** Pick radius for a pole, in WORLD units at the current zoom */
   reach(): number {
     return POLE_PICK_PIXELS / this.host.zoom();
   }
@@ -560,8 +456,7 @@ export class PoleTool {
       remove();
       this.chain = null;
     } else if (hit && shift) {
-      // Shift-click removes. A plain click on a pole starts a run AT it: the
-      // commonest gesture of the tool.
+      // Shift-click removes.
       remove();
       this.chain = null;
     } else {
@@ -569,10 +464,7 @@ export class PoleTool {
     }
   }
 
-  /**
-   * The pointer moved; true when a stretch being dragged took it.
-   * @perInput Runs once a pointer move: nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer moved; true when a stretch being dragged took it. */
   move(world: Vec2): boolean {
     if (this.draft) {
       this.draft.to = world;
@@ -580,18 +472,14 @@ export class PoleTool {
       return true;
     }
     if (this.host.inHand()) {
-      // The bare pointer, not a road anchor: the tool snaps to its own line,
-      // and a chained run has no button held, so the preview follows it.
+      // The bare pointer, not a road anchor
       this.hover = world;
       this.host.redraw();
     }
     return false;
   }
 
-  /**
-   * The pointer let go: the stretch is built (`commit`), or dropped.
-   * @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map.
-   */
+  /** @perInput The pointer let go: the stretch is built (`commit`), or dropped. */
   up(commit: boolean): void {
     const { host } = this;
     const run = this.draft;
@@ -603,19 +491,13 @@ export class PoleTool {
     // A run with an end off the footways builds nothing, and says why.
     if (plan.refused) host.hint(`hint.pole.${plan.refused}`);
     const built = host.mutate(() => commitPoleRun(host.doc, plan));
-    // The line goes on from where it ended. A press that built nothing - a
-    // click in place - starts the chain instead, so tracing a line is
-    // click, click, click rather than a drag per stretch.
+    // The line goes on from where it ended.
     if (built && last) this.chain = { x: last.at.x, y: last.at.y };
     else if (!run.chained) this.chain = { x: plan.from.at.x, y: plan.from.at.y };
     else this.chain = null;
   }
 
-  /**
-   * What the overlay marks besides the run drawn in 3D: with the Remove
-   * verb, the pole under the pointer; before a run, where its first pole
-   * would go.
-   */
+  /** What the overlay marks besides the run drawn in 3D: with the Remove verb, the pole under the pointer */
   marks(): { removing: Vec2 | null; first: PoleSnap | null } {
     const { host } = this;
     if (!host.inHand() || !this.hover) return { removing: null, first: null };

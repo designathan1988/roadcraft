@@ -5,19 +5,7 @@ import type { LandedCell } from './cellRequests';
 import { buildSignature, disposeSignature } from './signature';
 import { type CellCache, detailKeysOf, dropCell } from './layerCells';
 
-/**
- * The buildings the layer shows, by id and by coarse cell, kept from one
- * change to the next: what one building changed is taken in by its id (the
- * diary's, `doc.changes.since(seen, ['buildings'])`) and costs its cells, not
- * the town. Before it, `update` filtered the whole store twice, grouped it by
- * cell twice and walked it for masses, signatures, the plant cull and the
- * flags at every change of one building (docs/AUDITORIA-2026-10-14.md A1;
- * the counter `building+1:layer` in `tests/scale/buildingEdit.spec.ts`).
- *
- * Each cell's list is in the order the town had when it was filed whole
- * (the store's), a building changed in place keeping its place and a new one
- * going last, as in the store; one moved to another cell goes last there.
- */
+/** The buildings the layer shows, by id and by coarse cell, kept from one change to the next */
 export class TownIndex {
   /** The shown buildings by coarse cell: what a cell is made of (`layer.ts` `townCells`). */
   readonly byCell = new Map<string, Building[]>();
@@ -32,10 +20,7 @@ export class TownIndex {
     for (const b of shown) this.file(b);
   }
 
-  /**
-   * A building's record as it is now (`undefined`: gone, or not shown) taken
-   * in; the cells it left and entered are added to `dirty`.
-   */
+  /** A building's record as it is now (`undefined`: gone, or not shown) taken in */
   take(id: BuildingId, now: Building | undefined, dirty: Set<string>): void {
     const was = this.cellOfId.get(id);
     const cell = now ? this.cellOf(now) : undefined;
@@ -70,13 +55,7 @@ export class TownIndex {
   }
 }
 
-/**
- * The signature buildings' bodies (`signature.ts`) under `root`, each built
- * again only when its record or its floor changed: asked by id for the
- * buildings a change touched, or for the whole town. The record by its digest
- * kept per record object (`sigOf`), NOT `JSON.stringify` of every signature
- * building at every change of any (docs/AUDITORIA-2026-10-14.md A16).
- */
+/** The signature buildings' bodies */
 export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
   set(b: Building, floor: number | undefined): void;
   remove(id: BuildingId): void;
@@ -114,10 +93,7 @@ export interface CellBatches {
   readonly detailed: BuildingMeshes;
 }
 
-/**
- * One coarse cell's batches swapped for those landed for it (`cellRequests.ts`),
- * its detail cells with it; none: its detail goes (a cell emptied, or drawn far).
- */
+/** One coarse cell's batches swapped for those landed for it (`cellRequests.ts`), its detail cells with it; none */
 export function patchCell(key: string, landed: LandedCell | null, at: CellBatches): void {
   dropCell(at.cells, key, at.stored);
   for (const sub of detailKeysOf(key)) dropCell(at.details, sub, at.detailed);

@@ -21,33 +21,7 @@ import { createCanyonLight } from './canyonLight';
 import { DEPTH_GLSL } from './depthConvention';
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 
-/**
- * The post chain: ambient occlusion, then anti-aliasing, then tone mapping.
- *
- * ## Why ambient occlusion earns its cost here
- *
- * Nearly every contact in this scene is a flat surface meeting another flat
- * surface at a small height difference — asphalt to kerb, kerb to footway,
- * footway to verge, a pier standing on the ground, a deck over a road. Direct
- * light cannot describe any of those: the two surfaces face the same way, so
- * they take the same amount of sun and the edge between them vanishes. Ground
- * truth ambient occlusion darkens exactly those creases, and it is the single
- * change that makes the road read as built into the ground rather than printed
- * on it.
- *
- * ## MSAA and SMAA
- *
- * The scene's own half-float target is multisampled (up to 8x where the GPU
- * allows): thin geometry - lane lines, kerbs, a road's edge seen from afar -
- * is sampled at every pixel it crosses. Only the scene: the composer's
- * buffers, which the full-screen passes draw, have no samples. SMAA then runs on the resolved image, one pass,
- * and - unlike FXAA - keeps the thin bright lines of lane markings sharp
- * instead of smearing them.
- *
- * At the lowest quality tier the composer is skipped entirely and the scene is
- * drawn straight to the canvas with the driver's own MSAA, which is what keeps a
- * weak GPU playable.
- */
+/** The post chain: ambient occlusion, then anti-aliasing */
 
 
 export interface PostChain {
@@ -58,29 +32,13 @@ export interface PostChain {
   targets(): readonly WebGLRenderTarget[];
   render(delta: number): void;
   setSize(width: number, height: number, pixelRatio: number): void;
-  /**
-   * How dark it is, 0 by day to 1 at night: the bloom is for lights in the
-   * dark (lamps, headlights, lit windows). By day it set the white paint of
-   * every zebra and line glowing in the sun; it is off then (and its passes
-   * with it), and comes up with the dusk.
-   */
+  /** How dark it is, 0 by day to 1 at night: the bloom is for lights in the dark (lamps, headlights, lit windows). */
   setNight(dark: number): void;
-  /**
-   * How much of the light on the ground comes straight from the sun
-   * (`SceneEnvironment.directShare`): all a cloud's shadow can take away.
-   */
+  /** How much of the light on the ground comes straight from the sun (`SceneEnvironment.directShare`) */
   setDirectShare(share: number): void;
-  /**
-   * The view's centre (map x, y), the town's solids and where they changed
-   * since the last call (null: anywhere): the light the buildings shut out of
-   * the streets follows (`canyonLight.ts`).
-   */
+  /** The view's centre (map x, y), the town's solids and where they changed since the last call (null: anywhere) */
   followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
-  /**
-   * The sky the player set (`Atmosphere`) and the light it is lit by; the
-   * map is seen as a model over the void, the air round it drawn too: the
-   * backdrop and the haze of distance.
-   */
+  /** The sky the player set (`Atmosphere`) and the light it is lit by */
   setAtmosphere(atmosphere: Atmosphere, sun: Vector3, skyColor: Color, sunLight: Color,
     /** How far in front of the camera the view's equivalent eye stands (`uEyeShift`): 0 in perspective. */
     eyeShift?: number): void;
@@ -88,25 +46,14 @@ export interface PostChain {
   setPlacedClouds(clouds: readonly PlacedCloud[]): void;
   /** How far the wind has carried the clouds, on the map (`world/clouds.ts` driftedCloud). */
   setCloudDrift(x: number, y: number): void;
-  /**
-   * The painted fog (`render/fogLayer.ts`): its map, the slab of ground it
-   * lies over, and the map's settings - or none.
-   */
+  /** The painted fog (`render/fogLayer.ts`): its map, the slab of ground it lies over, and the map's settings - or none. */
   setGroundFog(fog: { texture: Texture; low: number; high: number; density: number } | null): void;
   dispose(): void;
 }
 
-/**
- * The player's sky (Paisagem > Céu e clima): how much of it is cloud, at
- * what height and how thick the layer is, and how much mist lies over the
- * land and how high it reaches. World units.
- */
+/** The player's sky (Paisagem > Céu e clima) */
 export interface Atmosphere {
-  /**
-   * How much of the sky the old setting covered (0..1). The sky draws only
-   * the map's own clouds now (`world/clouds.ts`); a cover still kept is
-   * turned into clouds of the map once (`main.ts`).
-   */
+  /** How much of the sky the old setting covered (0..1). */
   readonly clouds: number;
   readonly cloudBase: number;
   readonly cloudThickness: number;
@@ -160,36 +107,16 @@ export function createPostChain(
   }
 
   const size = renderer.getSize(new Vector2());
-  // The scene is drawn into ITS OWN target, which keeps its depth, so the
-  // occlusion pass reads it rather than drawing the whole scene a second time.
+  // The scene is drawn into ITS OWN target, which keeps its depth
   const ratio = renderer.getPixelRatio();
   const sceneTarget = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), {
     type: HalfFloatType,
-    // A float depth buffer: the reversed Z the renderer draws with keeps its
-    // precision only in floats (`depthConvention.ts`; three's example
-    // webgl_reversed_depth_buffer). Its multisampled buffer takes the same
-    // format (three's `setupRenderBufferStorage`: DEPTH_COMPONENT32F).
+    // A float depth buffer: the reversed Z the renderer draws with keeps its precision only in floats
     depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), FloatType),
-    // Multisampled, its depth resolved into the texture the occlusion reads
-    // (three's `resolveDepthBuffer`). With SMAA alone, on the resolved image, a
-    // lane line or a road's edge narrower than a pixel at a distance broke into
-    // dots (the player, 2026-10-06): what was never sampled cannot be smoothed.
-    // As many samples as the GPU offers (8 on the RTX 3060): every extra sample
-    // is a coverage test at a geometry edge, which is what a railing, a wire and
-    // a window frame are made of, and the resolve of 4 extra samples is cheap
-    // next to a pass of the town.
+    // Multisampled, its depth resolved into the texture the occlusion reads (three's `resolveDepthBuffer`).
     samples: Math.min(8, renderer.capabilities.maxSamples),
   });
-  /**
-   * The composer's two buffers: what the full-screen passes read and write.
-   * Plain, no samples and no depth. DO NOT hand the composer the scene's
-   * multisampled target again: it clones it (`EffectComposer`:
-   * `renderTarget.clone()`), and the two 8x HalfFloat targets with float
-   * depth were some 900 MB of video memory at a pixel ratio of 1.5 on a
-   * 1080p screen - for full-screen passes that need no samples - before the
-   * town's own (GL_OUT_OF_MEMORY close to the street, 2026-10-14); and each
-   * pass resolved colour and depth after it, its depth over the scene's.
-   */
+  /** DO NOT hand the composer the scene's multisampled target again: it clones it */
   const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: HalfFloatType, depthBuffer: false });
   /** The scene's resolved picture into the composer's buffer the passes read (`scenePass`). */
   const copyQuad = new FullScreenQuad(new ShaderMaterial({
@@ -198,13 +125,7 @@ export function createPostChain(
     blending: NoBlending, depthTest: false, depthWrite: false,
   }));
   const composer = new EffectComposer(renderer, target);
-  /**
-   * The programs being built ahead (`compileAsync` below): the chain is not
-   * taken apart until they are done. Disposed while three still polled their
-   * completion (KHR_parallel_shader_compile), the GPU process answered
-   * "glGetProgramiv: Program object expected" dozens of times at every boot,
-   * when the view's camera is chosen and the chain made again.
-   */
+  /** The programs being built ahead (`compileAsync` below): the chain is not taken apart until they are done. */
   const warming: Promise<unknown>[] = [];
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(size.x, size.y);
@@ -212,19 +133,9 @@ export function createPostChain(
   if (import.meta.env.DEV) Object.assign(window, { __composer: composer });
   const scenePass = new RenderPass(scene, camera);
   composer.addPass(scenePass);
-  /**
-   * The depth the scene was drawn with THIS frame. The composer ping-pongs
-   * two targets and an odd number of swaps leaves it starting on the other
-   * one next frame, so a pass bound to one target's depth read a stale or
-   * empty buffer every other frame - the cloud shadows flickered on and off.
-   */
+  /** The depth the scene was drawn with THIS frame. */
   const sceneDepth: DepthTexture | null = sceneTarget.depthTexture;
-  /**
-   * How much each pixel may be sharpened (`SHARP_MASK`), worked out from the
-   * scene's depth right after the scene is drawn: the full-screen passes after
-   * it draw into the same targets and overwrite that depth, so the grade at
-   * the end of the chain could not read it.
-   */
+  /** How much each pixel may be sharpened (`SHARP_MASK`), worked out from the scene's depth right after the scene is drawn */
   const sharpMask = quality.sharpen > 0
     ? new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: UnsignedByteType, format: RedFormat, depthBuffer: false })
     : null;
@@ -265,10 +176,6 @@ export function createPostChain(
     gtao = new GTAOPass(scene, camera, size.x, size.y);
     gtao.output = GTAOPass.OUTPUT.Default;
     // Tuned for world units where a kerb is 0.4 high and a pier is 15 tall.
-    // At a radius of 4 (1.6 m) the crease at every kerb's foot became a wide,
-    // blotchy dark halo across the asphalt - a stain along every road edge,
-    // worst where junction corners gather it. A crease is darkened over about
-    // its own height; piers and buildings still read from the tighter pass.
     gtao.updateGtaoMaterial({
       radius: level === 'ultra' ? 1.3 : 1.0,
       distanceExponent: 1.6,
@@ -278,11 +185,7 @@ export function createPostChain(
       screenSpaceRadius: false,
     });
     gtao.blendIntensity = 0.85;
-    // The occlusion is worked out from the depth the scene was just drawn
-    // with (normals rebuilt from it). Left to itself the pass drew the whole
-    // scene a second time, every mesh with an override material, for its own
-    // depth and normals - a third full draw of the town each frame, with the
-    // shadow map and the picture.
+    // The occlusion is worked out from the depth the scene was just drawn with (normals rebuilt from it).
     const pass = gtao;
     const draw = pass.render.bind(pass);
     pass.render = (...args: Parameters<GTAOPass['render']>) => {
@@ -290,14 +193,11 @@ export function createPostChain(
       if (depth && pass.depthTexture !== depth) pass.setGBuffer(depth);
       draw(...args);
     };
-    // At half the resolution, as games do: occlusion is a soft shade, and
-    // worked out per pixel at full size it cost as much as drawing the town.
+    // At half the resolution, as games do
     const resize = pass.setSize.bind(pass);
     pass.setSize = (width: number, height: number) => resize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
     composer.addPass(gtao);
     // GTAO's denoise shader is the slowest program to link on a cold start.
-    // Submit both fullscreen programs now, while the rest of the game boots,
-    // using the same depth input and target format as the first real pass.
     gtao.setGBuffer(sceneTarget.depthTexture!);
     const quad = fullScreenTriangle();
     const warm = new Scene();
@@ -310,8 +210,7 @@ export function createPostChain(
     renderer.setRenderTarget(previous);
   }
 
-  // The light the town shuts out of its streets, and the sun's contact
-  // shadows (`canyonLight.ts`): after the small occlusion, before the bloom.
+  // The light the town shuts out of its streets, and the sun's contact shadows (`canyonLight.ts`)
   let sunLight: DirectionalLight | null = null;
   const canyon = quality.ambientOcclusion
     ? createCanyonLight(camera, () => sceneDepth, () => (sunLight ??= (scene.getObjectByName('sun') as DirectionalLight | undefined) ?? null))
@@ -326,25 +225,14 @@ export function createPostChain(
     }).finally(() => quad.dispose()));
   }
 
-  // Light that is brighter than white spills a little round itself: the sun
-  // on glass, lit windows and lamps at night. Only what is really bright
-  // blooms; the day scene keeps its edges.
-  // Gentle and tight, and only for real lights (lamps, headlamps, lanterns
-  // over 1.05): stronger and wider, with every lit window over the threshold,
-  // the night town was washed out in halos (the player, 2026-10-09).
+  // Light that is brighter than white spills a little round itself: the sun on glass, lit windows and lamps at night.
   const bloomStrength = level === 'ultra' ? 0.22 : 0.18;
   const bloom = new UnrealBloomPass(new Vector2(size.x, size.y), bloomStrength, 0.32, 1.05);
   bloom.enabled = false;
   composer.addPass(bloom);
-  // Its shaders built now, in parallel (KHR_parallel_shader_compile), not at
-  // the first dusk: the bloom is off by day, and the frame it first came on
-  // stopped while its fourteen passes' programs were built. Compiled for one
-  // of its own targets, as it draws them (render targets are part of a
-  // program's key).
+  // Its shaders built now, in parallel (KHR_parallel_shader_compile), not at the first dusk
   {
-    // FullScreenQuad's own triangle (position and uv, no normals): the
-    // attributes are part of a program's key, and a plane's normals built
-    // another program than the one drawn.
+    // FullScreenQuad's own triangle (position and uv, no normals)
     const quad = fullScreenTriangle();
     const warm = new Scene();
     for (const material of [bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]) {
@@ -355,10 +243,7 @@ export function createPostChain(
     warming.push(renderer.compileAsync(warm, camera).catch(() => {}).finally(() => quad.dispose()));
     renderer.setRenderTarget(previous);
   }
-  // Cloud shadows: soft patches drifting over the land, on the linear image
-  // before tone mapping. Each pixel's world position is rebuilt from the
-  // depth the scene was drawn with, so the patches lie on the ground, the
-  // roads and the roofs alike, and scroll with the wind.
+  // Cloud shadows: soft patches drifting over the land, on the linear image before tone mapping.
   const clouds = quality.cloudShadows || quality.skyClouds ? new ShaderPass(CLOUD_SHADOWS) : null;
   /** Whether its program is built (compiled ahead below): until then the pass is not drawn. */
   let cloudsReady = false;
@@ -411,9 +296,7 @@ export function createPostChain(
         gl.setRenderTarget(previous);
       }
       if (on) {
-        // With the view still, fewer steps and the last frame blended in
-        // (Playdead's TAA feedback); moving, the full steps and no history -
-        // nothing is carried across a change of view, so nothing trails.
+        // With the view still, fewer steps and the last frame blended in (Playdead's TAA feedback)
         const u = pass.uniforms as Record<string, { value: unknown }>;
         const still = historyValid;
         u['uSteps']!.value = still ? CLOUD_STEPS_STILL : CLOUD_STEPS_MOVING;
@@ -431,12 +314,7 @@ export function createPostChain(
       shade(...args);
     };
     composer.addPass(clouds);
-    // Its program built now, in parallel (KHR_parallel_shader_compile), for
-    // the composer's target it draws into, as the bloom's and GTAO's are:
-    // built at its first frame it stopped the opening for 2.6 s (profile of
-    // 2026-10-10).
-    // With its two inner programs, the bodies' and the shadow map's, each for
-    // the target it draws into.
+    // Its program built now, in parallel
     {
       const quad = fullScreenTriangle();
       const previous = renderer.getRenderTarget();
@@ -447,34 +325,13 @@ export function createPostChain(
         return renderer.compileAsync(warm, camera).catch(() => {});
       });
       renderer.setRenderTarget(previous);
-      // Not drawn until they are built: drawn while the driver still builds
-      // them, the frame waits all the same (three asks for the program's log,
-      // which blocks until the link is done).
+      // Not drawn until they are built: drawn while the driver still builds them, the frame waits all the same
       warming.push(Promise.all(builds).finally(() => { quad.dispose(); cloudsReady = true; }));
     }
   }
   const smaa = quality.smaa ? new SMAAPass() : null;
   if (smaa) {
-    // three ships SMAA at its *Medium* preset (`SMAAShader.js`: "Preset: SMAA
-    // 1x Medium", `SMAA_MAX_SEARCH_STEPS` 8), which only traces an edge eight
-    // texels out: a kerb, a parapet or a lane line running diagonally - the
-    // edges the player names as serrated - is longer than that, so the part
-    // beyond the search is left as it was found. High is 16 and needs nothing
-    // else of the area texture (`SMAA_AREATEX_MAX_DISTANCE` stays 16), so the
-    // only cost is the longer loop.
-    //
-    // The threshold needs the same correction for a different reason. SMAA
-    // measures an edge as the largest channel difference between neighbouring
-    // texels and compares it to `SMAA_THRESHOLD` (three's shader,
-    // `SMAAColorEdgeDetectionPS`: `step(threshold, delta)`). The reference
-    // implementation runs on the finished sRGB image, where 0.1 is a tenth of
-    // the display range; three runs the pass before `OutputPass`, on the
-    // composer's LINEAR half-float image, where the same 0.1 is a tenth of a
-    // range that the shadows only occupy the bottom of. Every crease in the
-    // shade - a kerb against a footway, a wall against its own shadow - then
-    // differs by less than 0.1 and is not seen as an edge at all. 0.04 is
-    // about the tenth of the sRGB range the reference meant, read in linear
-    // light.
+    // three ships SMAA at its *Medium* preset
     const tune = (material: ShaderMaterial, defines: Record<string, string>): void => {
       Object.assign(material.defines as Record<string, string>, defines);
       material.needsUpdate = true;
@@ -487,31 +344,17 @@ export function createPostChain(
     tune(pass._materialWeights, { SMAA_MAX_SEARCH_STEPS: '16' });
     composer.addPass(smaa);
   }
-  // The output and the grade in ONE pass: tone mapping, the sRGB transfer and
-  // the film grade (sharpening, contrast, vibrance, vignette) in the same
-  // fragment. Two passes - three's OutputPass then a ShaderPass - each read
-  // and wrote the whole screen (1920 x 1080 x 1.5^2 pixels on the high tier);
-  // "almost every pass performs at least one expensive fullscreen render
-  // operation" is why pmndrs/postprocessing merges its effects into one
-  // EffectPass (issue #82). The pass is three's own OutputPass, keeping its
-  // defines for the renderer's tone mapping and colour space, with the grade
-  // appended to its fragment (`GRADED_OUTPUT_FRAGMENT`).
-  // NÃO voltar a separar o grade num ShaderPass: é um passe de tela cheia a mais.
+  // The output and the grade in ONE pass: tone mapping, the sRGB transfer and the film grade
   const output = new OutputPass();
   output.material.fragmentShader = GRADED_OUTPUT_FRAGMENT;
   output.uniforms['uSharpen'] = { value: quality.sharpen };
   output.uniforms['tSharpMask'] = { value: sharpMask?.texture ?? null };
-  // The OutputPass's material is raw GLSL ES 1.00 (no `textureSize`): the
-  // texel is a uniform, set with the size (`setSize`).
+  // The OutputPass's material is raw GLSL ES 1.00 (no `textureSize`): the texel is a uniform, set with the size (`setSize`).
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
   composer.addPass(output);
 
-  // A cloud's shadow takes the sun's direct light and leaves the sky's
-  // (global = diffuse + direct * cos(zenith)): its strength is the direct
-  // share, none by night. A fixed 0.62 took more than the whole sun gives in
-  // the morning (some a fifth of the light at 06:30), and from the map's
-  // zoom the land was covered in near-black blotches (2026-10-08).
+  // A cloud's shadow takes the sun's direct light and leaves the sky's (global = diffuse + direct * cos(zenith))
   let night = 0;
   let directShare = CLOUD_SHADOW_STRENGTH;
   const shadowStrength = (): number => directShare * Math.max(0, 1 - night * 1.5);
@@ -534,8 +377,7 @@ export function createPostChain(
         if (plane !== null) u['uShadowPlane']!.value = plane;
         (clouds.uniforms['uProjectionInverse'] as { value: Matrix4 }).value.copy(camera.projectionMatrixInverse);
         (clouds.uniforms['uCameraWorld'] as { value: Matrix4 }).value.copy(camera.matrixWorld);
-        // The history holds for the same view only: the last frame drew
-        // clouds, from this camera, at this size.
+        // The history holds for the same view only: the last frame drew clouds, from this camera, at this size.
         const same = camera.matrixWorld.equals(lastView) && camera.projectionMatrix.equals(lastProjection);
         historyValid = same && count > 0 && hadClouds;
         hadClouds = count > 0;
@@ -590,9 +432,7 @@ export function createPostChain(
     },
     setSize(width, height, pixelRatio) {
       composer.setPixelRatio(pixelRatio);
-      // The composer sizes every pass, the bloom too, at the pixel ratio. DO
-      // NOT size the bloom again in CSS pixels: after a resize it ran at a
-      // smaller size than at the opening, its halo another size.
+      // DO NOT size the bloom again in CSS pixels
       composer.setSize(width, height);
       sceneTarget.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
       for (const t of bodiesTargets) t.setSize(bodiesSize(width * pixelRatio), bodiesSize(height * pixelRatio));
@@ -635,13 +475,7 @@ const CLOUD_SHADOW_STRENGTH = 0.62;
 const MAX_CLOUDS = 24;
 const CLOUD_PUFFS = 7;
 
-/**
- * Each cloud's puffs, in units of its size: across, up from the base, along,
- * radius. A cumulus is a flat-bottomed heap - a row of broad puffs on the
- * base, two smaller ones over them and a crown (the sphere clusters of Maxime
- * Heckel's "Real-time dreamy Cloudscapes" and the three.js volume cloud's
- * spherical mask).
- */
+/** Each cloud's puffs, in units of its size: across, up from the base, along, radius. */
 const PUFFS: readonly (readonly [number, number, number, number])[] = [
   [-0.46, 0.26, 0.02, 0.4],
   [0.0, 0.3, 0.06, 0.48],
@@ -659,28 +493,17 @@ function cloudHash(i: number, salt: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
 }
 
-/**
- * Lays the clouds out: the map's own, each where the player put it or the
- * sky's spreader laid it (`world/clouds.ts`), whole. The sky invents none of
- * its own - every cloud can be moved, set and taken away (the player,
- * 2026-10-07). Writes each cloud's bounding sphere (centre, size), its puffs
- * (world centre, radius) and how grown it is (1).
- */
+/** Lays the clouds out: the map's own, each where the player put it or the sky's spreader laid it */
 function layClouds(bounds: Vector4[], puffs: Vector4[], lives: number[], bases: number[], shows: number[], placed: readonly PlacedCloud[], drift: { x: number; y: number }): number {
   let slot = 0;
   for (const cloud of placed) {
     if (slot >= MAX_CLOUDS) break;
     // Where the wind has carried it, thinning away near the edge it wraps round.
-    // The thinning scales its DENSITY (`uShow`: Beer-Lambert, the optical
-    // depth goes with the concentration, so the whole cloud fades evenly).
-    // Fed to `life` it eroded the shape instead, and a cloud near the edge
-    // broke into loose white flecks, one lying over the land (2026-10-08).
     const at = driftedCloud(cloud, drift);
     const height = cloud.height;
     layOne(slot, 1_000_003 + cloud.id * 7919, at.x, -at.y, height, cloud.size, cloud.yaw, cloud.density, 1, bounds, puffs, lives);
     shows[slot] = at.show;
-    // Each its own flat base, at its own height (one height for the whole
-    // sky cut away every cloud set lower than it, and its shadow with it).
+    // Each its own flat base, at its own height
     bases[slot] = height;
     slot++;
   }
@@ -702,23 +525,7 @@ function layOne(i: number, id: number, x: number, z: number, base: number, size:
   }
 }
 
-/**
- * THE ATMOSPHERE, on the image (the player sets it: Paisagem > Céu e clima):
- *
- *  - CUMULUS CLOUDS, each its own heap over the map: puffs joined by a
- *    smooth union, their rims eaten by 3-D noise (the sphere-plus-fbm density
- *    of Heckel's cloudscapes), a flat base; lit by the directional derivative
- *    towards the sun (brighter where the cloud thins sunwards), absorbed by
- *    Beer's law. Marched only where the ray crosses a cloud's bounding
- *    sphere, nearest first, and faded within its own size of the camera, so a
- *    cloud is never a wall in front of it (the player, 2026-10-07).
- *  - Their SHADOWS: from each pixel towards the sun through the clouds'
- *    smooth shapes, one big soft shadow where the sun throws each cloud's.
- *  - MIST: exponential height fog, thickest in the low ground.
- *
- * Every pixel's world position is rebuilt from the depth the scene was drawn
- * with (the composer swaps its targets, so the depth is captured per frame).
- */
+/** THE ATMOSPHERE, on the image (the player sets it: Paisagem > Céu e clima): */
 const CLOUD_SHADOWS = {
   uniforms: {
     tDiffuse: { value: null },
@@ -741,37 +548,26 @@ const CLOUD_SHADOWS = {
     uSunDir: { value: new Vector3(0.5, 0.8, 0.3).normalize() },
     uSunLight: { value: new Color(3, 2.8, 2.5) },
     uFogColor: { value: new Color(0xc9dcea) },
-    // The painted fog (`setGroundFog`): its map; the map's density, -, -, on;
-    // the lowest and highest the bank reaches.
+    // The painted fog (`setGroundFog`): its map; the map's density, -, -, on; the lowest and highest the bank reaches.
     tGroundFog: { value: null as Texture | null },
     uGroundFog: { value: new Vector4() },
     uGroundFogSlab: { value: new Vector2() },
     uMapHalf: { value: MAP_HALF },
-    // How far in front of the camera the view's equivalent eye stands, units
-    // (`setAtmosphere`): 0 in perspective; in the orthographic view the camera
-    // stands far back by construction, and the air is measured from where the
-    // perspective camera would stand at the same scale.
+    // How far in front of the camera the view's equivalent eye stands, units (`setAtmosphere`): 0 in perspective
     uEyeShift: { value: 0 },
-    // The void round the map: its deep blue, the paler air towards the
-    // horizon, and the abyss below (sRGB, as the page's own colours).
+    // The void round the map: its deep blue, the paler air towards the horizon, and the abyss below
     uSkyDeep: { value: new Color(0x0c1a2c) },
     uSkyGlow: { value: new Color(0x3d5a82) },
     uSkyLow: { value: new Color(0x0a1830) },
     // The sky seen from near the ground: pale at the horizon, deeper above.
-    // Sky blue, not grey (the player, 2026-10-07): a clear pale blue at
-    // the horizon, a deep clear blue above.
     uSkyHorizon: { value: new Color(0x86bdf0) },
     uSkyHigh: { value: new Color(0x2a66c8) },
-    // Below the map: a deep navy, never black (the player, 2026-10-09: "não
-    // quero que fique preto, é azul escuro"); the earth-brown went black
-    // looking straight down.
+    // Below the map: a deep navy, never black (the player, 2026-10-09: "não quero que fique preto, é azul escuro")
     uAbyss: { value: new Color(0x0b1a33) },
     // The clouds' bodies, marched at a quarter of the pixels (`CLOUD_BODIES_MAIN`): light, and what of the scene shows through.
     tClouds: { value: null as Texture | null },
     uCloudsOn: { value: 0 },
-    // The bodies' accumulation (`CLOUD_BODIES_MAIN`): the last frame's
-    // result, its weight (0: none), the frame number for the start's jitter,
-    // and the steps across a cloud's diameter.
+    // The bodies' accumulation (`CLOUD_BODIES_MAIN`): the last frame's result, its weight
     tCloudHistory: { value: null as Texture | null },
     uHistory: { value: 0 },
     uFrame: { value: 0 },
@@ -862,8 +658,7 @@ const CLOUD_SHADOWS = {
       float d = 1e5;
       for (int k = 0; k < PUFFS; k++) {
         vec4 s = uPuff[c * PUFFS + k];
-        // Each puff a little flattened, and joined wide: one heap with a
-        // lumpy top, not a bunch of balls.
+        // Each puff a little flattened, and joined wide: one heap with a lumpy top, not a bunch of balls.
         vec3 o = p - s.xyz;
         // Flattened along its own up: the world's y.
         o.y += o.y * 0.3;
@@ -873,14 +668,7 @@ const CLOUD_SHADOWS = {
       float base = smoothstep(uBase[c] - size * 0.12, uBase[c] + size * 0.08, altitude(p));
       return -d / size * base;
     }
-    // Its density, as Horizon Zero Dawn's clouds are built (Schneider; the
-    // TerrainEngine-OpenGL shader after it): a soft base shape - the heap
-    // ramped over a wide band, its outline broken by large noise - and then
-    // ERODED by fine billowy noise, remapped so the erosion eats the thin
-    // edge away into wisps while the dense heart stays whole; wispy towards
-    // the base, billowy towards the top. The noise only takes away, never
-    // adds, so nothing lies past the heap's surface and no cloud is cut off
-    // by its bounding sphere.
+    // Its density, as Horizon Zero Dawn's clouds are built (Schneider; the TerrainEngine-OpenGL shader after it)
     float cloudDensity(int c, vec3 p) {
       float size = uCloud[c].w;
       // The billows boil: they rise and turn over as the cloud lives.
@@ -888,8 +676,7 @@ const CLOUD_SHADOWS = {
       float life = uLife[c];
       vec3 q = p / (size * 0.3) + drift;
       float low = noise3(q) * 0.5 + noise3(q * 2.03 + 5.1) * 0.3 + noise3(q * 4.1 + 9.7) * 0.2;
-      // The outline broken by that noise, deep enough that no puff keeps a
-      // sphere's clean edge.
+      // The outline broken by that noise, deep enough that no puff keeps a sphere's clean edge.
       float shape = clamp(heap(c, p) * 3.2 - (1.0 - low) * (0.55 + 0.4 * (1.0 - life)) - (1.0 - life) * 0.8, 0.0, 1.0);
       if (shape <= 0.0) return 0.0;
       vec3 r = p / (size * 0.055) + drift * 2.3;
@@ -898,8 +685,7 @@ const CLOUD_SHADOWS = {
       float detail = b1 * 0.65 + b2 * 0.35;
       float up = clamp((altitude(p) - uBase[c]) / size, 0.0, 1.0);
       detail = mix(1.0 - detail, detail, clamp(up * 3.0, 0.0, 1.0));
-      // remap(base, detail * 0.35, 1, 0, 1): the heart (1) stays whole, the
-      // thin edge is worn into wisps.
+      // remap(base, detail * 0.35, 1, 0, 1): the heart (1) stays whole, the thin edge is worn into wisps.
       float erode = detail * (0.55 + 0.3 * (1.0 - life));
       return clamp((shape - erode) / (1.0 - erode), 0.0, 1.0) * uShow[c];
     }
@@ -909,19 +695,14 @@ const CLOUD_SHADOWS = {
     uniform float uHistory;
     uniform float uFrame;
     uniform float uSteps;
-    // The clouds' shadow map (Unreal's cloud shadow map in place of a march
-    // per pixel): what lies between a point of the plane under every cloud's
-    // base and the sun, over the rectangle the shadows fall in.
+    // The clouds' shadow map (Unreal's cloud shadow map in place of a march per pixel)
     uniform sampler2D tCloudShadow;
     uniform float uShadowMapOn;
     uniform float uShadowPlane;
     uniform vec4 uShadowRect;
     // How much cloud lies from a point towards the sun, through each heap.
-    // What a cloud's shadow is cast by: the density the cloud is drawn with
     // (\`cloudDensity\`) with its noises at their mean - the base shape less
-    // the mean erosion - so the shadow is the cloud's own size. Cast by the
-    // whole smooth heap, it was the cloud's bounding outline: shadows twice
-    // the clouds' size, dark where no cloud was seen (2026-10-10).
+    // the mean erosion - so the shadow is the cloud's own size.
     float shadowDensity(int c, vec3 p) {
       float life = uLife[c];
       float shape = clamp(heap(c, p) * 3.2 - 0.5 * (0.55 + 0.4 * (1.0 - life)) - (1.0 - life) * 0.8, 0.0, 1.0);
@@ -951,10 +732,7 @@ const CLOUD_SHADOWS = {
       vec3 rd = normalize(hit - ro);
       float tScene = sky ? 1e7 : length(hit - ro);
       vec3 colour = src.rgb;
-      // The clouds' shadows. No cloud has anything below the plane of the
-      // lowest base, so a point under it is shaded as the point where its ray
-      // to the sun crosses that plane: one read of the map. Above the plane
-      // (a roof over a low cloud's base) the march itself.
+      // The clouds' shadows.
       if (!sky && uStrength > 0.0 && uCloudCount > 0) {
         float through = 0.0;
         if (uShadowMapOn > 0.5 && altitude(hit) <= uShadowPlane) {
@@ -964,16 +742,13 @@ const CLOUD_SHADOWS = {
         } else {
           through = shadowThrough(hit);
         }
-        // Of the light on lit ground a cloud takes the sun's direct part
-        // alone (uStrength, setDirectShare): the sky's own light still
-        // falls in its shadow.
+        // Of the light on lit ground a cloud takes the sun's direct part alone (uStrength, setDirectShare)
         float shaded = 1.0 - uStrength * (1.0 - exp(-through * 7.0));
         colour *= shaded;
       }
       // The air between the eye and what the pixel sees: from the view's
       // equivalent eye (\`uEyeShift\`). Measured from the orthographic camera,
-      // 5 000 units back whatever the zoom, rain mist covered half of every
-      // close view and the haze lay over ground seen from a few metres.
+      // 5 000 units back whatever the zoom
       float tAir = max(tScene - uEyeShift, 0.0);
       vec3 eye = ro + rd * uEyeShift;
       // Mist: exponential in height, along the ray to what the pixel sees.
@@ -985,30 +760,14 @@ const CLOUD_SHADOWS = {
         vec3 mist = mix(uFogColor, uFogColor * 0.18, uDark);
         colour = mix(colour, mist, clamp(amount, 0.0, 0.95));
       }
-      // THE AIR round the map while it is built, seen as a model over the
-      // void (the player, 2026-10-07). The path a ray takes through the air
-      // grows towards the horizon - Preetham's optical length, as three's Sky
-      // has it - so the backdrop pales there, round the map's edge, and deepens
-      // up and further still down into the abyss. And the land beyond the
-      // middle of the view takes on that air, L0 e^(-b s) plus the air's own
-      // light (the aerial perspective of Preetham and of Hillaire's
-      // atmosphere), by the real distance, so the far edge melts into the
-      // pale horizon from afar and ground seen close up stays clear. The backdrop hangs on the view's direction, as a
-      // sky infinitely far: the map slides over it, and it turns only with the
-      // camera - its parallax.
+      // THE AIR round the map while it is built, seen as a model over the void (the player, 2026-10-07).
       {
         float zen = acos(clamp(abs(rd.y), 0.0, 1.0));
         float air = 1.0 / (cos(zen) + 0.15 * pow(max(93.885 - degrees(zen), 1e-3), -1.253));
         float glow = 1.0 - exp(-air * 0.12);
         float sunSide = pow(max(dot(rd, uSunDir), 0.0), 3.0);
         vec3 haze = mix(uSkyGlow, uSkyGlow * vec3(1.4, 1.18, 0.9), sunSide * 0.6) * (1.0 - 0.85 * uDark);
-        // Brought down near the ground the view gets a SKY: pale blue at the
-        // horizon deepening upwards (the player, 2026-10-07: "azul mais
-        // clarinho com transição para o mais escuro, só quando der zoom");
-        // from high over the map it stays the dark blue round the model.
-        // Dark blue down to the zoom of the whole map filling the view
-        // (about 280 m up), pale sky only closer than that (the player,
-        // 2026-10-09).
+        // Brought down near the ground the view gets a SKY: pale blue at the horizon deepening upwards
         float low = 1.0 - smoothstep(${m(100).toFixed(2)}, ${m(260).toFixed(2)}, ro.y);
         vec3 horizon = mix(uSkyHorizon, uSkyHorizon * vec3(1.12, 1.04, 0.92), sunSide * 0.5) * (1.0 - 0.85 * uDark);
         vec3 overhead = uSkyHigh * (1.0 - 0.7 * uDark);
@@ -1016,31 +775,14 @@ const CLOUD_SHADOWS = {
         if (sky) {
           vec3 backdrop = mix(uSkyDeep, haze, glow);
           backdrop = mix(backdrop, mix(horizon, overhead, smoothstep(0.0, 0.5, rd.y)), low * step(0.0, rd.y));
-          // Below the horizon: a deeper blue at once, going down into the
-          // earth's own dark brown (the player, 2026-10-07).
+          // Below the horizon: a deeper blue at once, going down into the earth's own dark brown (the player, 2026-10-07).
           backdrop = mix(backdrop, uSkyLow, smoothstep(0.0, 0.3, -rd.y) * 0.85);
           backdrop = mix(backdrop, uAbyss, smoothstep(0.18, 0.8, -rd.y) * 0.9);
           // A faint veil of high haze, fixed in the sky.
           float veil = noise3(rd * 4.0 + 3.1) * 0.6 + noise3(rd * 9.0 + 7.7) * 0.4;
           colour = backdrop * (0.88 + 0.24 * veil);
         } else {
-          // By the real distance, as air is: the whole map seen from afar
-          // takes it on, ground seen close up none (the player, 2026-10-07).
-          // Koschmieder: contrast falls as exp(-beta d) from the eye, beta =
-          // 3.912 / visibility; a clear day of 30 km. It began
-          // only past 880 m, so ground at mid distance kept the foreground's
-          // full colour and the town read as a model on a table (2026-10-08).
-          // Held under 0.55: the map's edge never melts into the dark blue
-          // round it (the player, 2026-10-08).
-          //
-          // The haze is the low air's (aerosols, scale height 1.2 km, as
-          // Hillaire's atmosphere has its Mie layer): its density falls as
-          // e^(-y/H) with height, so a ray down from high up crosses little
-          // of it. Taken as uniform, the whole map seen from a few
-          // kilometres up lay under a half-white veil (the player,
-          // 2026-10-11). The optical depth along the ray in closed form
-          // (Quilez, "Better fog": the integral of a e^(-b y) along it), from
-          // its two ends' heights, so nothing overflows; level, the limit.
+          // By the real distance, as air is: the whole map seen from afar takes it on, ground seen close up none
           const float HAZE_BETA = ${perM(3.912 / 30000).toExponential(6)};
           const float HAZE_H = ${m(1200).toFixed(2)};
           float hazeY0 = max(eye.y, 0.0), hazeY1 = max(eye.y + rd.y * tAir, 0.0);
@@ -1051,15 +793,7 @@ const CLOUD_SHADOWS = {
           colour = mix(colour, haze * (1.0 + 0.6 * glow), amount);
         }
       }
-      // THE PAINTED FOG (world/fogPaint.ts): a bank of mist lying on the
-      // land where the player laid it, thick near the ground and thinning
-      // with height over it (Unreal's local fog volumes over an exponential
-      // height fog), torn into drifting wisps by a noise the wind carries
-      // through. The view's ray is marched through the slab of air the bank
-      // can fill, as far as the scene; each step's density from the painted
-      // map, the ground under it from the map's other channel. Lit by the
-      // sky and, looking towards the sun, its warm glow (Inigo Quilez,
-      // "Better Fog").
+      // THE PAINTED FOG (world/fogPaint.ts)
       if (uGroundFog.w > 0.5) {
         float t0 = 0.0, t1 = min(tScene, ${m(12000).toFixed(1)});
         // Into the slab [low, high] along the ray.
@@ -1073,17 +807,10 @@ const CLOUD_SHADOWS = {
         if (t1 > t0) {
           const int FOG_STEPS = 36;
           float stepLen = (t1 - t0) / float(FOG_STEPS);
-          // Interleaved gradient noise (Jimenez, "Next Generation Post
-          // Processing in Call of Duty: Advanced Warfare", 2014) to start each
-          // pixel's march: a sine hash drew a visible cross-hatch over the
-          // bank (the player's screenshot, 2026-10-07).
+          // Interleaved gradient noise (Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare", 2014) to start
           float jitterF = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
           vec2 windDir = normalize(vec2(24.0, 9.0));
-          // The FLOW MAP (Vlachos, "Water Flow in Portal 2", Valve 2010):
-          // each texel's fog moves at its own speed, so the offset cannot
-          // grow with time (neighbours of different speeds would shear the
-          // wisps apart); two layers half a cycle apart each slide for one
-          // cycle and start again, the one restarting always faded out.
+          // The FLOW MAP (Vlachos, "Water Flow in Portal 2", Valve 2010)
           const float CYCLE = 9.0;
           float phaseA = fract(uTime / CYCLE);
           float phaseB = fract(uTime / CYCLE + 0.5);
@@ -1100,13 +827,7 @@ const CLOUD_SHADOWS = {
             if (over < ${m(-1.6).toFixed(4)}) continue;
             float thin = exp(-max(over, 0.0) / max(m.b, ${m(0.4).toFixed(4)}));
             vec2 flow = windDir * m.a * CYCLE;
-            // Wisps: two layers of billows the wind carries at different
-            // speeds and a little apart in heading, each rolling over in
-            // time as it goes, so the bank streams, curls and frays instead
-            // of sliding as one sheet (the player, 2026-10-07: "tem que se
-            // mexer").
-            // The rolling-over goes at the fog's own pace too: still fog
-            // barely stirs, fast fog boils.
+            // Wisps: two layers of billows the wind carries at different speeds and a little apart in heading
             float roll = uTime * (0.01 + m.a * 0.002);
             vec2 flow2 = vec2(flow.x * 1.7 - flow.y * 0.4, flow.y * 1.7 + flow.x * 0.4);
             float n = 0.0;
@@ -1143,12 +864,7 @@ const CLOUD_SHADOWS = {
   `,
 };
 
-/**
- * The clouds' shadow map (`CLOUD_SHADOWS`'s functions and uniforms): each
- * texel a point of the plane under every cloud's base, over the rectangle the
- * shadows fall in, and how much cloud lies from it towards the sun - the
- * march each pixel of the screen made for itself, made once a texel.
- */
+/** The clouds' shadow map (`CLOUD_SHADOWS`'s functions and uniforms) */
 const CLOUD_SHADOW_MAP_MAIN = /* glsl */ `
     void main() {
       vec3 from = vec3(mix(uShadowRect.x, uShadowRect.z, vUv.x), uShadowPlane, mix(uShadowRect.y, uShadowRect.w, vUv.y));
@@ -1156,13 +872,7 @@ const CLOUD_SHADOW_MAP_MAIN = /* glsl */ `
     }
 `;
 
-/**
- * The clouds' bodies' steps across a cloud's diameter: the full 24 with the
- * camera moving (no history then), 10 with it still, each frame's start
- * moved on and the last frames blended in with this weight (Playdead's TAA
- * feedback; with ten jittered steps a frame it gathers the full count's
- * samples within three frames).
- */
+/** The clouds' bodies' steps across a cloud's diameter: the full 24 with the camera moving */
 const CLOUD_STEPS_MOVING = 24;
 const CLOUD_STEPS_STILL = 16;
 const CLOUD_HISTORY = 0.9;
@@ -1170,12 +880,7 @@ const CLOUD_HISTORY = 0.9;
 /** Texels a side of the clouds' shadow map: some 10 world units a texel over the whole map, for shadows tens to hundreds of units soft. */
 const CLOUD_SHADOW_MAP = 512;
 
-/**
- * The plane under every cloud (none has density below `uBase - 0.12 size`,
- * `heap`) and the rectangle on it where their shadows fall: each cloud's
- * bounding sphere carried down the sun's ray to the plane, stretched by the
- * sun's slant. Null with no cloud or the sun too low for a map.
- */
+/** The plane under every cloud (none has density below `uBase - 0.12 size`, `heap`) and the rectangle on it where their */
 function cloudShadowFrame(bounds: readonly Vector4[], bases: readonly number[], count: number, sun: Vector3,
   rect: Vector4): number | null {
   if (count === 0 || sun.y < 0.08) return null;
@@ -1194,16 +899,7 @@ function cloudShadowFrame(bounds: readonly Vector4[], bases: readonly number[], 
   return plane;
 }
 
-/**
- * The clouds' bodies (`CLOUD_SHADOWS`'s functions and uniforms), nearest
- * first, into a target of half the width and half the height: a quarter of
- * the pixels, as volumetric clouds are marched in games (Horizon Zero Dawn's
- * cloudscapes, the Nubis line of work) - they are soft, and every pixel of
- * them cost up to 24 clouds of 24 steps of noise. Each is marched to the
- * nearest of the scene's four depths under it, so no cloud is laid over the
- * edge of something in front of it; the full-size pass blends them in
- * (light, and what of the scene shows through).
- */
+/** The clouds' bodies (`CLOUD_SHADOWS`'s functions and uniforms), nearest first */
 const CLOUD_BODIES_MAIN = /* glsl */ `
     void main() {
       ivec2 full = textureSize(tDepth, 0);
@@ -1221,31 +917,16 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
       if (uCloudCount > 0) {
         float focusDepth = texture2D(tDepth, vec2(0.5)).r;
         float tFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5), focusDepth) - ro);
-        // Drawn from up close only: from far enough to take in the whole
-        // diorama every cloud stands out against the empty space round it,
-        // a ball hanging in the void (the player, 2026-10-07); there only
-        // their shadows cross the land.
-        // How tall the view is there, in world units: the same measure in
-        // the orthographic view and in perspective (both ends of the
-        // screen's middle column at the depth of its centre).
+        // Drawn from up close only: from far enough to take in the whole diorama every cloud stands out against the empty space
         float spanFocus = depthIsBackground(focusDepth) ? 1e5 : length(worldAt(vec2(0.5, 1.0), focusDepth) - worldAt(vec2(0.5, 0.0), focusDepth));
-        // Over the map only now (layClouds), so they show from every zoom
-        // (the player, 2026-10-07: "quero que as nuvens apareçam"); only
-        // past the whole map's width do they give way to their shadows.
+        // Over the map only now (layClouds), so they show from every zoom (the player, 2026-10-07: "quero que as nuvens apareçam")
         float bodies = 1.0 - smoothstep(${m(3600).toFixed(2)}, ${m(5600).toFixed(2)}, spanFocus);
         vec2 spans[MAX_CLOUDS];
         for (int c = 0; c < MAX_CLOUDS; c++) {
           spans[c] = vec2(-1.0);
           if (c < uCloudCount) spans[c] = sphereSpan(ro, rd, uCloud[c]);
         }
-        // Each pixel its own start, moved on every frame (the golden ratio's
-        // step) so the accumulation sees other depths each time (arXiv
-        // 1609.05344, 3.2); with the camera moving no history is kept and the
-        // start stays put, as before.
-        // Interleaved gradient noise (Jimenez, "Next Generation Post Processing
-        // in Call of Duty: Advanced Warfare", 2014): a start that reads as a
-        // fine even texture in one frame, where a white-noise hash grained the
-        // clouds whenever the view moved and no history smoothed it.
+        // Each pixel its own start, moved on every frame
         float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uFrame * 5.588238, vec2(0.06711056, 0.00583715))));
         // Lit by the sun on its sunward side, by the sky elsewhere; dim at night.
         vec3 skyLight = mix(uFogColor * 0.55 + vec3(0.12), vec3(0.03, 0.035, 0.05), uDark);
@@ -1266,14 +947,9 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
           float t0 = max(spans[best].x, 0.0);
           float t1 = min(spans[best].y, tScene);
           if (t1 <= t0) continue;
-          // Steps of one length through every cloud: 24 across its diameter,
-          // fewer through a chord near its rim or cut short by the scene.
-          // Each step's opacity is integrated over its length (Beer's law),
-          // so its light does not depend on how long the step is (Högfeldt,
-          // "Optimisations for Real-Time Volumetric Cloudscapes", 3.1).
+          // Steps of one length through every cloud
           const int STEPS = 24;
-          // uSteps across the diameter: 24 with the camera moving, fewer
-          // with it still, the history filling in what a frame leaves out.
+          // uSteps across the diameter: 24 with the camera moving, fewer with it still
           int steps = int(clamp(ceil(uSteps * (t1 - t0) / (2.0 * uCloud[best].w)), 4.0, float(STEPS)));
           float stepLen = (t1 - t0) / float(steps);
           for (int i = 0; i < STEPS; i++) {
@@ -1281,19 +957,11 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
             float t = t0 + (float(i) + jitter) * stepLen;
             vec3 q = ro + rd * t;
             float density = cloudDensity(best, q);
-            // Never pressed against the camera: a cloud within its own size
-            // of the eye fades out. (Fading every cloud nearer than most of
-            // the way to the ground looked at hid them all from above - the
-            // camera looks down through the sky at the land - and no cloud
-            // ever showed: the player, 2026-10-07.)
+            // Never pressed against the camera: a cloud within its own size of the eye fades out.
             float near = size * 1.3;
             density *= smoothstep(near * 0.4, near, t) * bodies;
             if (density < 0.01) continue;
-            // The sun's light reaching this point: a short march towards it
-            // through the cloud itself (Horizon Zero Dawn's light samples,
-            // Beer's law), so every billow shades its neighbours - bright
-            // crowns, grey hollows and undersides - and the heap's smooth
-            // form facing the sun on top of it.
+            // The sun's light reaching this point: a short march towards it through the cloud itself
             float towards = cloudDensity(best, q + uSunDir * size * 0.06) * 0.06
               + cloudDensity(best, q + uSunDir * size * 0.18) * 0.12;
             float sunT = exp(-towards * size * 0.02 * 2.2);
@@ -1310,24 +978,13 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
         }
       }
       vec4 now = vec4(light, transmit);
-      // The view unchanged since the last frame: this pixel's last result is
-      // at this same place, blended in (Playdead's TAA: lerp(current,
-      // history, feedback)).
+      // The view unchanged since the last frame: this pixel's last result is at this same place, blended in
       if (uHistory > 0.0) now = mix(now, texture2D(tCloudHistory, vUv), uHistory);
       gl_FragColor = now;
     }
 `;
 
-/**
- * Where the final image may be sharpened, 1 to 0, from the scene's depth.
- * CAS "enhances ... local high-frequency contrast" (AMD, ffx_cas.h); where a
- * pixel spans more than a few decimetres of the world (the town from afar)
- * the high frequencies left are windows and frames smaller than a pixel - the
- * aliasing of them, which it turned into a speckle over every facade (the
- * player, 2026-10-09). The pixel's span is measured in the world, from the
- * depth and the lens, so it holds in either camera at any zoom; the sky, at
- * the far plane, is never sharpened.
- */
+/** Where the final image may be sharpened, 1 to 0, from the scene's depth. */
 const SHARP_MASK = {
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -1352,19 +1009,7 @@ const SHARP_MASK = {
   `,
 };
 
-/**
- * A film grade on the display image: a gentle S-curve of contrast, colour
- * kept rich without neon (vibrance lifts the dull colours more than the
- * strong), warm light and cool shade (split toning), a vignette that holds
- * the eye in the frame. No film grain: noise added to every pixel is noise
- * in the picture (the player, 2026-10-09: "ruído na imagem").
- *
- * The fragment of three's OutputPass (`OutputShader.js`: tone mapping by the
- * renderer's define, then the sRGB transfer) with the grade after it, in the
- * same pass. `display` is what the OutputPass alone wrote to the screen; the
- * sharpening taps go through it too, so the grade sees the display image it
- * was tuned on.
- */
+/** A film grade on the display image: a gentle S-curve of contrast, colour kept rich without neon */
 const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
   precision highp float;
 
@@ -1404,17 +1049,7 @@ const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
   void main() {
     vec4 src = display(texture2D(tDiffuse, vUv));
     vec3 c = src.rgb;
-    // SHARPENING, AMD FidelityFX CAS (ffx_cas.h, the sharpen-only path):
-    // each pixel against the cross of its neighbours, weighted down where
-    // the local contrast is already high, so detail comes out crisp
-    // without halos or noise.
-    // On LINEAR colour, as CAS requires ("needs linear input color to
-    // perform correctly", AMD FidelityFX SDK, Contrast Adaptive
-    // Sharpening): the image here is display sRGB, so the five taps are
-    // taken to linear (gamma 2.2) and the result back. Run on the sRGB
-    // values it over-sharpened the dark side of every edge - the jaggies
-    // and the brick moire it was switched off for (2026-10-08).
-    // Only where a pixel sees real detail (SHARP_MASK).
+    // SHARPENING, AMD FidelityFX CAS (ffx_cas.h, the sharpen-only path)
     float sharpen = uSharpen > 0.0 ? uSharpen * texture2D(tSharpMask, vUv).r : 0.0;
     if (sharpen > 0.0) {
       vec2 texel = uTexel;
@@ -1433,14 +1068,11 @@ const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     // Contrast, an S round the middle grey.
     c = mix(c, smoothstep(0.0, 1.0, c), 0.25);
-    // Vibrance: the dull colours gain more than the vivid. Held back to
-    // 0.93 it left the town grey and dark (the player, 2026-10-09).
+    // Vibrance: the dull colours gain more than the vivid.
     float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
     float sat = mx - mn;
     c = mix(vec3(l), c, 1.0 + 0.3 * (1.0 - sat));
     // Split toning: warm highlights, cool shadows.
-    // Warm light, shadows left neutral: a blue push in them read as a
-    // teal cast over every shaded slope.
     c += mix(vec3(0.0), vec3(0.02, 0.008, -0.014), smoothstep(0.15, 0.85, l));
     // Vignette.
     vec2 d = vUv - 0.5;

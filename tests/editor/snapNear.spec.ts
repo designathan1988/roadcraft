@@ -15,13 +15,7 @@ import { Level, ROAD_TYPES, casingHalf, halfWidth, roadProfile } from '@world/ro
 import { roadStructure } from '@world/structures';
 import { m } from '@world/units';
 
-/**
- * The pointer's snap reads the places near it, not the map (class C2,
- * docs/PLANO-ESPINHA-2026-10-14.md): `findAnchor` (`editor/snap.ts`) and
- * `snapPlacement` (`editor/buildingSnap.ts`) ask the network's cells and the
- * buildings' grid. The answers must be the ones the walk over the whole map
- * gave - copied below as it stood - and the work must not grow with the map.
- */
+/** The pointer's snap reads the places near it, not the map (class C2): `findAnchor` */
 
 const mulberry32 = (seed: number) => (): number => {
   seed = (seed + 0x6d2b79f5) | 0;
@@ -308,8 +302,7 @@ describe('the snap under the pointer reads the places near it', () => {
   });
 
   it('looks at as many things in a town four times the area', () => {
-    // Points well inside the small town (a network cell is 256 m): the same
-    // places round them in both towns.
+    // Points well inside the small town (a network cell is 256 m): the same places round them in both towns.
     const points: Vec2[] = [];
     const rnd = mulberry32(3);
     for (let i = 0; i < 40; i++) points.push({ x: m(290) + rnd() * m(60), y: m(290) + rnd() * m(60) });

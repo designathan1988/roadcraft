@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importClosure } from '../../scripts/vite/cook-plugin';
 
-/**
- * The import closure the derived caches are fingerprinted by (`cook-plugin.ts`
- * `importClosure`), read on the code that builds a person: everything that
- * runs, nothing beside it. Hashing whole folders staled a cache on an edit to
- * code it is not made by. (The cooked people themselves are a fixed cast
- * since 2026-10-13, `CAST`: no longer fingerprinted by code.)
- */
+/** The import closure the derived caches are fingerprinted by */
 describe('the import closure a fingerprint reads', () => {
   const closure = importClosure(process.cwd(), 'src/render/riggedCitizens.ts')
     .map((file) => file.replace(/\\/g, '/').replace(`${process.cwd().replace(/\\/g, '/')}/`, ''));

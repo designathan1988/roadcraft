@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ForkMap } from '@core/forkMap';
 
-/**
- * A MAP LAID OVER ANOTHER READS AS A COPY OF IT GIVEN THE SAME WRITES
- * (`core/forkMap.ts`): the same keys, values, size and order - a key set again
- * keeps its place, one deleted and set again goes last (MDN, `Map`) - and the
- * map below is never written; taking the fork back (`applyTo`) leaves the map
- * below reading as the fork does.
- */
+/** A MAP LAID OVER ANOTHER READS AS A COPY OF IT GIVEN THE SAME WRITES (`core/forkMap.ts`) */
 function random(seed: number): () => number {
   let s = seed >>> 0;
   return () => {

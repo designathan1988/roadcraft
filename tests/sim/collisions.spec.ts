@@ -13,27 +13,9 @@ import { BODY_CLASSES, BODY_ENVELOPE, bodyClassOf } from '@world/conflictPoints'
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { LAYOUTS, bodiesOverlap, bodyOf, collisions, fixtureDoc, layoutDoc, simOf } from './support/bodies';
 
-/**
- * TWO CARS NEVER OCCUPY THE SAME PIECE OF ROAD.
- *
- * Every other safety check in this suite asks a proxy question: is the conflict
- * zone claimed, is the arc gap positive, is the lane order monotone. A
- * collision is none of those. It is two rectangles — at the real length, width
- * and DRAWN angle of the vehicles — overlapping, and that is what this measures.
- *
- * It found 120 overlapping pairs across seven seeded scenarios when the
- * conflict index was still the intersection of two centrelines: bodies grazing
- * on opposing left turns, a bus swinging over the turn beside it, a follower
- * driving into the tail of a leader that had taken the other movement out of
- * the same lane, and — the largest group — a vehicle driving into one that had
- * "already" changed lane while its body was still across the old one.
- */
+/** TWO CARS NEVER OCCUPY THE SAME PIECE OF ROAD. */
 
-/**
- * Simulated seconds per junction shape. Each shape is its own test, so a run
- * stays inside the 10 s of a test (it simulated 150 s per shape in one test,
- * 186 s in all, and ran in no check).
- */
+/** Simulated seconds per junction shape. */
 const SECONDS = 12;
 
 describe('vehicle bodies', () => {
@@ -71,10 +53,7 @@ describe('vehicle bodies', () => {
   }
 
   it('keep the vehicle in BOTH lanes while it slides between them', () => {
-    // The transfer moves the occupancy index at once; the body takes about a
-    // second to follow. `Vehicle.shadow` is what keeps it visible in the lane
-    // it is leaving, and this checks the shadow against the drawn body rather
-    // than against its own bookkeeping.
+    // The transfer moves the occupancy index at once; the body takes about a second to follow.
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 0x51de, 2);
     let changes = 0;
     let shadowed = 0;
@@ -119,8 +98,7 @@ describe('vehicle bodies', () => {
   });
 
   it('is never driven into by a vehicle entering the lane it is leaving', () => {
-    // The direct reproduction: a vehicle mid-change is an obstacle for
-    // whoever is behind it in the OLD lane, not only in the new one.
+    // The direct reproduction: a vehicle mid-change is an obstacle for whoever is behind it in the OLD lane
     const sim = simOf(layoutDoc(LAYOUTS[0]!).doc, 0x9e1);
     expect(spawnVehicle(sim)).toBe(true);
     const mover = sim.vehicles.get(1)!;
@@ -168,8 +146,7 @@ describe('vehicle bodies', () => {
   });
 
   it('measure every archetype against the size class its conflicts use', () => {
-    // The conflict index is built in `world`, which knows nothing about the
-    // fleet, so its envelopes must contain every archetype `sim` can spawn.
+    // The conflict index is built in `world`, which knows nothing about the fleet
     for (const archetype of ARCHETYPES) {
       const cls = bodyClassOf(archetype.length, archetype.width);
       const envelope = BODY_ENVELOPE[cls]!;
@@ -219,16 +196,13 @@ describe('zones reaching back over a stop line', () => {
     };
     const car = place(waiting.fromLane, waiting.id, 'sedan');
     const bus = place(turning.fromLane, turning.id, 'bus');
-    // The car is waiting for a pedestrian standing in its path on the crossing
-    // it is about to drive over, which leaves it at its line, not admitted.
+    // The car is waiting for a pedestrian standing in its path on the crossing it is about to drive over
     expect(waiting.outSegment).not.toBe(turning.outSegment);
     const crossingId = `${centre}:${waiting.outSegment}`;
     const zebra = sim.sidewalks.edges.get(sim.sidewalks.crossings.get(crossingId)!)!;
     const span = sim.crossingSpans.span(waiting.id, crossingId)!;
     expect(span).toBeTruthy();
-    // Vehicles read the crossing only through its published state
-    // (`sim/crossings/state.ts`), as the walking engine writes it: one person
-    // standing in the middle of the car's span, walking from the `from` kerb.
+    // Vehicles read the crossing only through its published state (`sim/crossings/state.ts`), as the walking engine writes it
     const crossing = emptyCrossingState(zebra.length);
     crossing.occupants.push({ id: 999, s: (span.s0 + span.s1) / 2, forward: true, v: 0, held: false });
     sim.crossingStates.set(crossingId, crossing);
@@ -242,8 +216,7 @@ describe('zones reaching back over a stop line', () => {
     for (let i = 0; i < 30 && !bus.admittedConnector; i++) step(sim, { traffic: true, pedestrians: false });
     expect(bus.admittedConnector).toBe(turning.id);
 
-    // The other order: a vehicle arriving while the bus holds the zone is
-    // told to stop short of it, not at its own stop line inside the sweep.
+    // The other order: a vehicle arriving while the bus holds the zone is told to stop short of it
     const late = place(waiting.fromLane, waiting.id, 'bus');
     const approach = sim.lanelet(waiting.fromLane)!;
     late.s = approach.length - 20;

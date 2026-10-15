@@ -8,17 +8,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { HEAVY } from '@world/conflictPoints';
 
-/**
- * A street whose only way out lies, lanes further on, through a bend no car
- * fits is a trap: the router never sends a car into it (`trapLanes`). In the
- * player's city a car took one and stood at its end for 75 s, its junction
- * queued (defects.spec, player-city).
- *
- * That bend - the hairpins of the player's grid - fits a car since a turn is
- * shaped for the largest body that can make it (P92, `turnPaths.ts
- * chooseTurn`), and it is driven; it still fits no bus, so for a bus the
- * street before it is the trap.
- */
+/** A street whose only way out lies, lanes further on, through a bend no car fits is a trap */
 describe('lanes a car can never leave', () => {
   it("player's city: the street before a bend no bus fits is a trap for a bus, not for a car; roads off the map never are", () => {
     const raw = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'player-city.json'), 'utf8')) as { document: unknown };
@@ -43,10 +33,7 @@ describe('lanes a car can never leave', () => {
   });
 
   it('are worked out again when an edit rebuilds the graph in place', () => {
-    // The world's graph is one object, built again in place by every road
-    // edit (`SimWorld.rebuildVehicleTopology`): traps remembered by that
-    // object alone outlived the edit, and the router kept avoiding lanes that
-    // were no longer traps, or sent cars into new ones.
+    // The world's graph is one object, built again in place by every road edit (`SimWorld.rebuildVehicleTopology`)
     const raw = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'player-city.json'), 'utf8')) as { document: unknown };
     const doc = RoadDoc.fromJSON(raw.document as never);
     const net = new Network(doc);

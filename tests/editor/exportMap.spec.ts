@@ -5,14 +5,7 @@ import type { SavedSettings } from '@editor/persistence';
 import { exportToFile } from '@editor/mapExport';
 import { RoadDoc } from '@world/doc';
 
-/**
- * SAVE MAP NEVER FAILS IN SILENCE. The export wrote the whole map as one
- * indented string (`JSON.stringify(saved, null, 2)`): V8 refuses a string past
- * 2^29 - 24 characters with `RangeError: Invalid string length` (MDN,
- * "String: length"), the error escaped the click and the player was told
- * nothing. The file is now written in pieces (MDN, `Blob()`: the content is
- * the concatenation of its parts) and a failure is reported.
- */
+/** SAVE MAP NEVER FAILS IN SILENCE. */
 
 const settings: SavedSettings = {
   camera: { x: 1, y: 2, zoom: 3 }, paused: false, speed: 1, trafficIntensity: 1, pedestrianIntensity: 1, congestionOverlay: false,

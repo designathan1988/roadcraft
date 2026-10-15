@@ -13,17 +13,7 @@ import { DT } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { collectBays } from '@sim/agents/parking';
 
-/**
- * A CAR PARKED IN A LOT STANDS IN THE LOT (the coordinator's photo, 2026-10-11:
- * vans in a works' car park with their noses through the fence).
- *
- * Every body standing in a stall of a lot - the scenery's and the lots' own -
- * is inside the lot and stands in none of its parts a car cannot drive
- * through (its boundary, posts, lamps, planters, bins...). A van of 5.6 m was
- * parked centred in a stall of 5 m whose back the fence takes 5 cm of: 35 cm
- * of it stood beyond the fence; cars stood in planters and a lamp at the ends
- * of their stalls.
- */
+/** A CAR PARKED IN A LOT STANDS IN THE LOT */
 const ZONES = [
   { use: 'commercial', density: 'low' }, { use: 'industrial', density: 'medium' }, { use: 'residential', density: 'high' },
   { use: 'commercial', density: 'high' }, { use: 'residential', density: 'medium' },

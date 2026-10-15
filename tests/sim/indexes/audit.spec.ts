@@ -7,12 +7,7 @@ import { createAgentWalkEngine } from '@sim/agents/walk';
 import { runAudit as oldRunAudit } from './oracle/invariantsOld';
 import { seededEdit, seededWorld } from './support';
 
-/**
- * The audit with the longest signal cycle worked out once (`runAudit`) says
- * what the audit of before said (`oracle/invariantsOld.ts`, the cycle worked
- * out again for every car stopped at a light), tick by tick, at both levels,
- * in a signalled town with traffic, through road edits.
- */
+/** The audit with the longest signal cycle worked out once (`runAudit`) says what the audit of before said */
 describe('the audit, the longest cycle worked out once', () => {
   it('finds what the old audit found, tick by tick', () => {
     const w = seededWorld(0xa0d17);

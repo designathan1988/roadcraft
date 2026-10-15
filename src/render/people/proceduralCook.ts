@@ -2,15 +2,7 @@ import { Matrix4 } from 'three';
 import type { ClipFrames } from '../citizenBake';
 import { packRecord, unpackRecord, type PackRecord, type PackValue } from './cookPack';
 
-/**
- * The procedural crowd cooked ahead (`proceduralCrowd.ts`): every body
- * class's data (shape basis, expressions, joint basis, face slots, clips) and
- * every hairstyle's cards, built once by `npm run cook:people` and read back
- * here. They are functions of the code and the assets alone, the same in
- * every game: built in the player's browser they were a stall of 40-240 ms
- * per class and 45-395 ms per hairstyle each time a new kind of person came
- * in (docs/performance.md #8). Missing or stale, they are built as before.
- */
+/** The procedural crowd cooked ahead (`proceduralCrowd.ts`): every body class's data */
 
 declare const __PROCEDURAL_COOK_HASH__: string | undefined;
 const COOK_HASH = typeof __PROCEDURAL_COOK_HASH__ !== 'undefined' ? __PROCEDURAL_COOK_HASH__ : null;
@@ -31,8 +23,7 @@ function cookedNames(): Promise<ReadonlySet<string> | null> {
       }
       return new Set(m.names);
     } catch (error) {
-      // Unreadable - an HTML page served in its place, as when the path
-      // missed the build's base: loud, since every class is then built in play.
+      // Unreadable - an HTML page served in its place, as when the path missed the build's base
       console.error(`The procedural people's manifest could not be read (${String(error)}): their classes and hairstyles are built during play.`);
       return null;
     }

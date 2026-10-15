@@ -43,14 +43,9 @@ describe('complete signal movement matrix', () => {
             const label = `${config.name}: ${a.id} conflicts with ${b.id}`;
             const ref = sim.conflicts.refs(a.id).find(r => r.other === b.id);
             const point = ref === undefined ? undefined : sim.conflicts.points[ref.point];
-            // No CENTRELINE crossing and no merge: two protected movements
-            // released together must never be two streams that cross.
+            // No CENTRELINE crossing and no merge: two protected movements released together must never be two streams that cross.
             expect(point?.kind === 'cross' || point?.kind === 'merge', label).toBe(false);
-            // And no ordinary car may touch another on a protected green. The
-            // remaining case — two HEAVY bodies whose swept areas graze, which
-            // is real geometry where lanes of unequal width meet, and between
-            // two lanes of one approach — is serialised by the claim table;
-            // `tests/sim/collisions.spec.ts` checks the bodies themselves.
+            // And no ordinary car may touch another on a protected green.
             expect(point?.zone(a.id, 1, 1) ?? null, label).toBeNull();
           }
         }
@@ -66,9 +61,7 @@ describe('complete signal movement matrix', () => {
         expect(controller.plan.stages.some(stage => stage.greenGroups.includes(movement.group)),
           `${config.name}: no green for ${movement.id}`).toBe(true);
       }
-      // Every signal group serves traffic. A one-way leg LEAVING the junction
-      // used to get a group, a head facing an empty road and a stage of green
-      // for nobody.
+      // Every signal group serves traffic.
       const junction = sim.graph.junctions.get(centre.id)!;
       for (const group of junction.groups) {
         expect(connectors.some(c => c.group === group.id),
@@ -83,10 +76,7 @@ describe('complete signal movement matrix', () => {
   });
 
   it('never gives green together to two movements whose cars could meet', () => {
-    // Permissive turns are gone from signal plans: a stage only combines
-    // approaches none of whose movements cross, merge or sweep into each other
-    // for two cars. What remains is the claim table's job - a bus's tail swing
-    // - and every green movement is protected.
+    // Permissive turns are gone from signal plans
     let stages = 0;
     for (const config of cases) {
       const doc = new RoadDoc();

@@ -6,42 +6,7 @@ import { sideLength } from './geometry';
 import type { MaterialSpec } from './materials';
 import { type BayComponent, type FaceId, type FacadeGeometry, type Volume, type VolumeDress, bayKey } from './types';
 
-/**
- * ARCHITECTURAL STYLES for the grown buildings, as a facade grammar.
- *
- * What made the generated city look generic (the player, 2026-10-09: "prédios
- * feios e genéricos"): every block was the same layer cake - a white moulding
- * at every floor, one window component repeated over every bay, a cornice -
- * with only the paint and the window drawn at random, so two buildings
- * differed in colour and not in kind, and the window, colour and roof of one
- * building were combinations without a reason.
- *
- * Here a style is a whole design, as CityEngine's facade rules write it
- * (Esri, CityEngine tutorials 6 and 9, "Basic/Advanced shape grammar":
- * the facade split into a ground floor and repeated upper floors, each floor
- * into a row of tiles, the tiles indexed so the same rule places the same
- * element in every floor's same column; Müller, Wonka et al., "Procedural
- * Modeling of Buildings", SIGGRAPH 2006), and as the classical facade is
- * composed: base, body and crown (Sullivan's base, shaft and cornice for a
- * tall building; the embasamento, corpo and coroamento of a Brazilian one):
- *
- * - COLUMNS, not bays at random: a facade is shared into an odd number of
- *   columns where it can be (a middle axis for the entrance), and each column
- *   takes its component from the style's RHYTHM, counted from the ends in,
- *   so the facade is symmetric and every opening stands over the one below;
- * - BASE, BODY, CROWN: the ground floor is the building's use (shopfronts, a
- *   lobby, a house's rooms), the body the rhythm, the top floor the style's
- *   own crown floor when the block is tall enough to have one;
- * - LINES and CROWN (`VolumeDress`): which horizontal mouldings the style
- *   draws - none, one string course over the base, flush slab edges, or a
- *   moulding at every floor - and how the top is finished (a cornice, a
- *   stepped deco cornice, a thin projecting slab, a deep plain attic);
- * - a SKIN family, a TRIM family that goes with it and the window's
- *   proportions: the colours vary inside the family, never across it.
- *
- * A building is ONE skin: its wings, its stepped top and its penthouse wear
- * the same walls (the player rejected stacked skins as "prédios empilhados").
- */
+/** ARCHITECTURAL STYLES for the grown buildings, as a facade grammar. */
 
 export type StyleKey =
   | 'colonial' | 'artDeco' | 'modernist' | 'contemporary' | 'brick' | 'tropical' | 'glass' | 'industrial'
@@ -77,8 +42,7 @@ export interface ArchStyle {
 const tones = (finish: MaterialSpec['finish'], colours: readonly number[]): MaterialSpec[] => colours.map((c) => mat(finish, c));
 
 export const STYLES: Readonly<Record<StyleKey, ArchStyle>> = {
-  // A street of the old centre: rendered in strong colours, white frames and
-  // surrounds, louvred shutters, a cornice and parapet hiding the roof.
+  // A street of the old centre: rendered in strong colours, white frames and surrounds, louvred shutters
   colonial: {
     key: 'colonial',
     skins: tones('plaster', [0xe9c46a, 0xd98c5f, 0x7fa8c9, 0xe8a7a0, 0x9cc5a1, 0xf1e3c6, 0xc96f53, 0xe0b54b, 0x88a9b5, 0xd7b9d5]),
@@ -89,8 +53,7 @@ export const STYLES: Readonly<Record<StyleKey, ArchStyle>> = {
     opening: { width: [0.36, 0.42], height: [0.6, 0.66], sill: 0.9 },
     module: 3,
   },
-  // Stone and cream render, bronze frames, vertical piers rising the whole
-  // body, a stepped cornice: the 1930s-50s blocks of Copacabana and the centro.
+  // Stone and cream render, bronze frames, vertical piers rising the whole body, a stepped cornice
   artDeco: {
     key: 'artDeco',
     skins: [...tones('stucco', [0xe8dcc4, 0xdccaa6, 0xefe4cf, 0xd8c7ad]), ...tones('stone', [0xcfc4ae, 0xd9cdb4])],
@@ -103,8 +66,7 @@ export const STYLES: Readonly<Record<StyleKey, ArchStyle>> = {
     stoneBase: true,
     module: 2.8,
   },
-  // Brazilian modernism: light walls or pastilhas, brise-soleil columns,
-  // ribbon windows, the slabs shown, a thin roof slab over all.
+  // Brazilian modernism: light walls or pastilhas, brise-soleil columns, ribbon windows, the slabs shown
   modernist: {
     key: 'modernist',
     skins: [...tones('ceramic', [0xe9ecea, 0x9fbfcf, 0xa9cbb4, 0xe8d38f, 0x7fa0bf, 0xd9a07a, 0x8fb5a8]), ...tones('plaster', [0xf2f0ea, 0xe6e4dc])],
@@ -115,14 +77,10 @@ export const STYLES: Readonly<Record<StyleKey, ArchStyle>> = {
     opening: { width: [0.7, 0.85], height: [0.5, 0.58], sill: 0.9 },
     module: 3,
   },
-  // Today's residential block: light render or pale pastilha, graphite
-  // frames, continuous glass-railed balconies (varandas gourmet) stacked in
-  // columns, loggias, a deep plain attic for a crown.
+  // Today's residential block: light render or pale pastilha, graphite frames, continuous glass-railed balconies
   contemporary: {
     key: 'contemporary',
-    // Light renders, and the colours of today's Brazilian blocks kept to
-    // earth and mineral tones (terracotta, sand, sage, slate, graphite, a
-    // deep teal) - never a candy colour, never all beige.
+    // Light renders, and the colours of today's Brazilian blocks kept to earth and mineral tones
     skins: [...tones('plaster', [0xf1f0ec, 0xe7e3dc, 0xcfc8bd, 0xd8b99a, 0xb7c2b0]),
       ...tones('ceramic', [0x8e959a, 0xb4673f, 0xc9a27a, 0x7d8b78, 0x4a5258, 0x3f6b72, 0xa65f45, 0x6f7f91]), mat('concrete', 0xbab7b0)],
     trims: [mat('metal', 0x2e3134), mat('metal', 0x4a4f53), mat('metal', 0x8e9396)],
@@ -144,8 +102,7 @@ export const STYLES: Readonly<Record<StyleKey, ArchStyle>> = {
     piers: { width: 0.35, depth: 0.12, every: 1 },
     module: 3,
   },
-  // The coloured Brazilian block of the 60s-70s: ceramic tile cladding in a
-  // strong colour, ribbon windows, balconies with metal railings.
+  // The coloured Brazilian block of the 60s-70s
   tropical: {
     key: 'tropical',
     skins: tones('ceramic', [0x3f78a8, 0x4f9a86, 0xc0633f, 0xd3a03a, 0x2f6f8f, 0x8fb9a0, 0xb84a3a, 0x6f8fb8, 0xe0c27a, 0x5a8a5a]),
@@ -231,13 +188,7 @@ const FOR: Readonly<Record<'house' | 'flats' | 'tower' | 'shop' | 'office' | 'wo
   works: [['industrial', 1]],
 };
 
-/**
- * The ERA of a quarter of the city: its buildings were mostly put up in one
- * period, so they share a family of styles (the old centre of render,
- * shutters and deco; the 1950s-70s ring of modernist and tiled blocks; the
- * new quarters of glass, gourmet balconies and modern houses). 0 old, 1 the
- * modern middle years, 2 new. How much each style belongs to each era.
- */
+/** The ERA of a quarter of the city: its buildings were mostly put up in one period, so they share a family of styles */
 export type Era = 0 | 1 | 2;
 const ERA_AFFINITY: Readonly<Record<StyleKey, readonly [number, number, number]>> = {
   colonial: [3, 0.5, 0.15], artDeco: [2.5, 1, 0.2], brick: [2, 1.5, 0.5], sobrado: [3, 1.5, 0.3], colonialHouse: [3, 0.8, 0.2],
@@ -245,11 +196,7 @@ const ERA_AFFINITY: Readonly<Record<StyleKey, readonly [number, number, number]>
   modernHouse: [0.2, 1, 3], industrial: [1, 1, 1],
 };
 
-/**
- * The style of a building of `kind`: its quarter's era weighs the styles
- * (`ERA_AFFINITY`); then half the time the street's own (its `character`,
- * so a street side reads as one), else drawn by weight.
- */
+/** The style of a building of `kind`: its quarter's era weighs the styles (`ERA_AFFINITY`) */
 export function styleFor(kind: keyof typeof FOR, rng: Rng, character?: number, era?: Era): ArchStyle {
   const list = FOR[kind].map(([key, w]) => [key, w * (era === undefined ? 1 : ERA_AFFINITY[key][era])] as const);
   const total = list.reduce((s, [, w]) => s + w, 0);
@@ -281,19 +228,14 @@ export interface StylePaints {
 export function paintsOf(style: ArchStyle, rng: Rng): StylePaints {
   const skin = pick(rng, style.skins);
   const wall = { ...skin, colour: tint(skin.colour, rng) };
-  // A light frame on a light wall disappears: on a pale skin, a style with a
-  // dark trim on its list prefers it.
+  // A light frame on a light wall disappears: on a pale skin, a style with a dark trim on its list prefers it.
   const light = (c: number): boolean => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255) > 600;
   const trims = light(wall.colour) && style.trims.some((t) => !light(t.colour)) && rng.float() < 0.5
     ? style.trims.filter((t) => !light(t.colour)) : style.trims;
   return { wall, trim: pick(rng, trims) };
 }
 
-/**
- * How many columns a face of `length` units is shared into on a module of
- * `module` metres: odd when an odd count is as near the module as an even
- * one (a middle axis), never fewer than one.
- */
+/** How many columns a face of `length` units is shared into on a module of `module` metres */
 export function columnsFor(length: number, module: number): number {
   const exact = stepsIn(length, module);
   const n = Math.max(1, Math.round(exact));
@@ -317,12 +259,7 @@ export interface Composition {
   readonly geometry: FacadeGeometry;
 }
 
-/**
- * Composes a building's solid blocks in a style: columns on every face, the
- * rhythm on the street and back faces, the side fill on the ends, the ground
- * floor by its role, the crown floor, the dress. One rhythm and one set of
- * proportions for the whole building, so its wings and steps read as one.
- */
+/** Composes a building's solid blocks in a style */
 export function composeFacades(volumes: readonly Volume[], style: ArchStyle, rng: Rng, ground: GroundRole, rhythm = pick(rng, style.rhythms)): Composition {
   const geometry: FacadeGeometry = {
     windowWidth: between(rng, style.opening.width),
@@ -333,9 +270,7 @@ export function composeFacades(volumes: readonly Volume[], style: ArchStyle, rng
   const tallest = Math.max(0, ...volumes.filter((v) => !v.open).map((v) => v.base + v.storeys.length));
   for (const v of volumes) {
     if (v.open) continue;
-    // A block with another standing on it (a setback, a base under its
-    // tower) carries no cornice of its own: a moulding at every step read
-    // as stacked buildings. Only the top of the building is crowned.
+    // A block with another standing on it (a setback, a base under its tower) carries no cornice of its own
     const carries = volumes.some((o) => o !== v && !o.open && o.base === v.base + v.storeys.length
       && o.x < v.x + v.w && o.x + o.w > v.x && o.y < v.y + v.d && o.y + o.d > v.y);
     v.dress = { ...style.dress, ...(carries ? { crown: 'none' as const } : {}) };
@@ -369,9 +304,7 @@ export function composeFacades(volumes: readonly Volume[], style: ArchStyle, rng
           const n = counts.get(side)!;
           for (let i = 0; i < n; i++) {
             const c = columnComponent(rhythm, i, n);
-            // Every column of the rhythm that is not the fill (the comment here
-            // promised to turn a balcony over a shop's street into a window;
-            // nothing does: noted as a defect to decide).
+            // Every column of the rhythm that is not the fill
             if (c !== fill) bays[bayKey(side, i)] = c;
           }
         }

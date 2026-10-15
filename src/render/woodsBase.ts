@@ -6,18 +6,7 @@ export const WOODS_SPACING = m(5);
 /** The step the land's slope is read over, either side of a cell's centre. */
 export const WOODS_SLOPE_STEP = m(6);
 
-/**
- * THE WOODS' DENSITY OF A PLATE BUT ITS ECOSYSTEM, off the page
- * (`flatGround.worker.ts`): per cell of `WOODS_SPACING` the slow noise's
- * masses and the hillside (the natural land's slope), as the tree sweep
- * works them out (`renderer.ts` natureSweep) - the sweep then adds only the
- * ecosystem's share, the density being linear in it. Some 15 ms of every
- * plate's sweep on the page (profiled 2026-10-11).
- *
- * `natural(x, y)`: the plate's natural land at a point of its map (as
- * `naturalRenderedHeightAt`); `cx`, `cy`: the plate's centre in world
- * coordinates.
- */
+/** THE WOODS' DENSITY OF A PLATE BUT ITS ECOSYSTEM, off the page (`flatGround.worker.ts`) */
 export function woodsBase(natural: (x: number, y: number) => number, half: number, cx: number, cy: number): Float32Array {
   const cells = Math.floor((half * 2) / WOODS_SPACING);
   const out = new Float32Array(cells * cells);
@@ -33,11 +22,7 @@ export function woodsBase(natural: (x: number, y: number) => number, half: numbe
   return out;
 }
 
-/**
- * A plate's natural land read from its corners as the terrain reads them
- * (`terrain.ts` sampleGrid: bilinear over each cell's two triangles, split
- * along the diagonal it is drawn with), `outside` past its edge.
- */
+/** A plate's natural land read from its corners as the terrain reads them */
 export function cornerLand(heights: Float64Array, flip: Uint8Array, side: number, half: number, cell: number, outside: (x: number, y: number) => number): (x: number, y: number) => number {
   const seg = side - 1;
   return (x, y) => {

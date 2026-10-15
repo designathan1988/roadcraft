@@ -1,14 +1,7 @@
 import { BufferGeometry, DynamicDrawUsage, Float32BufferAttribute, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
 import { pullTowardEye } from './depthConvention';
 
-/**
- * Fake shadows, as the three.js manual's "Shadows" article draws them: a flat
- * shape with a soft round shadow, just above the ground under what casts it,
- * unlit (`MeshBasicMaterial`), transparent and without depth writes. For what
- * is too small on the screen for the shadow map to be worth drawing it (the
- * far people, `proceduralCrowd.ts`): one instanced disc of 10 triangles each,
- * its middle dark and its rim clear by vertex alpha - no texture.
- */
+/** Fake shadows, as the three.js manual's "Shadows" article draws them */
 export interface BlobShadows {
   readonly mesh: InstancedMesh;
   /** Starts a frame's list. */
@@ -56,13 +49,7 @@ export function createBlobShadows(name: string, capacity: number, opacity = 0.34
   const local = new Matrix4();
   const placed = new Matrix4();
   let n = 0;
-  /**
-   * The buffer made at least `needed` long, doubling, what is written kept.
-   * `capacity` is where it starts, not a ceiling: DO NOT drop what passes it -
-   * the town's parked cars past the fleet's ceiling stood with no shadow.
-   * three cannot resize an attribute, so it is a new one, the old one's GPU
-   * buffer freed by the mesh's `dispose` (`WebGLObjects` `onInstancedMeshDispose`).
-   */
+  /** `capacity` is where it starts, not a ceiling: DO NOT drop what passes it */
   const grow = (needed: number): void => {
     let size = mesh.instanceMatrix.count;
     while (size < needed) size *= 2;

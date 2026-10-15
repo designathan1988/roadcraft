@@ -1,21 +1,11 @@
 import type { PieceShape, SkirtRing, SurfaceShape } from './tileShape';
 
-/**
- * ONE TILE OF A ROAD SURFACE MESHED FROM ITS SHAPE (`tileShape.ts`): each
- * vertex's height, texture frame, tint and place in the section read, the
- * triangles framed by one road where their texture would smear, the top
- * normals smoothed and the skirts hung. Pure (no three, no page): the road
- * tile workers run it (`roadTileMesh.ts`), and the page for a tile it builds
- * itself (`surfaceMesh.ts`), the same code over the same reads.
- */
+/** ONE TILE OF A ROAD SURFACE MESHED FROM ITS SHAPE (`tileShape.ts`) */
 
 export type HeightFn = (x: number, y: number) => number;
 /** `u` runs across the surface and `v` along it, both in world units. */
 export type UvFn = (x: number, y: number, out: [number, number]) => void;
-/**
- * The UV of (x, y), in the frame of whichever road is nearest to (pickX, pickY)
- * rather than to the point itself. See `uvFrame` below.
- */
+/** The UV of (x, y), in the frame of whichever road is nearest to (pickX, pickY) rather than to the point itself. */
 export type UvFrameFn = (x: number, y: number, pickX: number, pickY: number, out: [number, number]) => void;
 /** Writes a linear RGB tint for one vertex. */
 export type TintFn = (x: number, y: number, out: [number, number, number]) => void;
@@ -24,47 +14,15 @@ export type TintFn = (x: number, y: number, out: [number, number, number]) => vo
 export interface TileMeshOptions {
   /** Height of the visible top face. */
   readonly top: HeightFn;
-  /**
-   * Height of the bottom face of the skirt drawn down from the boundary.
-   *
-   * Omitted for a surface that lies flush on the ground. Supplied for anything
-   * that stands proud of it — a kerb, a raised deck — so the edge is a solid
-   * face instead of an infinitely thin sheet seen edge-on.
-   */
+  /** Height of the bottom face of the skirt drawn down from the boundary. */
   readonly bottom?: HeightFn;
   readonly uv: UvFn;
-  /**
-   * Keeps every triangle inside ONE texture frame.
-   *
-   * Road UVs are laid in the frame of the nearest road, which is what makes
-   * slabs and aggregate run along the street. At a junction corner the nearest
-   * road changes between two vertices of the same triangle, and the triangle
-   * then interpolates from one road's coordinates to the other's: tens of
-   * texture tiles squeezed across a metre, which is the zigzag smear a player
-   * saw in every footway corner. A triangle whose UV edges disagree with its
-   * real edges by more than a factor of two is detected here and given its own
-   * vertices, all framed by the road nearest its centroid - so the worst that
-   * can happen is a clean joint where two roads' paving meets, which is what a
-   * real corner looks like anyway.
-   *
-   * `uvWorld` is the world size of one UV unit, needed to compare the two.
-   */
+  /** Keeps every triangle inside ONE texture frame. */
   readonly uvFrame?: UvFrameFn;
   readonly uvWorld?: number;
-  /**
-   * Per-vertex tint, multiplied into the material's colour.
-   *
-   * This is what lets ONE asphalt mesh carry a residential street's grey and a
-   * boulevard's near-black: the alternative is a mesh per class, which means a
-   * junction polygon belonging to two classes at once and a draw call for each.
-   */
+  /** Per-vertex tint, multiplied into the material's colour. */
   readonly tint?: TintFn;
-  /**
-   * Per-vertex place in the road's cross-section, for the material's marks
-   * along its edges (the grime of the gutter, the wheel tracks, the footway's
-   * edges): three numbers, linear across the road so they interpolate
-   * exactly (`roadSurfaces.ts`). Written (0, -1, 0) - none - when absent.
-   */
+  /** Per-vertex place in the road's cross-section, for the material's marks along its edges */
   readonly section?: TintFn;
   /** Extra UV scale for the skirt, so its texture is not stretched. */
   readonly skirtUvScale?: number;
@@ -93,10 +51,7 @@ export interface Context {
   readonly cut: [number, number, number];
 }
 
-/**
- * The top face of one compact piece (`tileShape.ts` `pieceShape`): one read of
- * the height, texture frame and tint per vertex.
- */
+/** The top face of one compact piece (`tileShape.ts` `pieceShape`) */
 export function meshPiece(piece: PieceShape, context: Context, out: Streams): void {
   const { options, uv: scratch, rgb, cut } = context;
   const { top, uv, tint, section } = options;
@@ -115,10 +70,7 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
     if (section) section(x, y, cut);
     sections.push(cut[0], cut[1], cut[2]);
   }
-  // World Y is mirrored into three's Z. That reflection flips handedness, so
-  // a ring that is counter-clockwise on the map comes out clockwise in the
-  // scene: taken in order, the triangle's normal points UP, which is what a
-  // top face needs. A clockwise ring is emitted the other way round.
+  // World Y is mirrored into three's Z.
   for (let i = 0; i < tris.length; i += 3) {
     let a = base + (tris[i] as number);
     let b = base + (tris[i + 1] as number);
@@ -145,10 +97,7 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
   }
 }
 
-/**
- * The walls hung from a surface's outline down to `bottom`, along the edges of
- * its shape (`tileShape.ts` `skirtShape`).
- */
+/** The walls hung from a surface's outline down to `bottom`, along the edges of its shape (`tileShape.ts` `skirtShape`). */
 export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: Streams): void {
   const { options, rgb } = context;
   const { top, tint } = options;
@@ -177,8 +126,7 @@ export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: 
       for (let n = 0; n < 4; n++) colors.push(rgb[0], rgb[1], rgb[2]);
       // A skirt has no place in the section: none.
       for (let n = 0; n < 4; n++) sections.push(0, -1, 0);
-      // Written rather than averaged, so a kerb keeps its hard edge instead
-      // of smearing into the surface above it.
+      // Written rather than averaged, so a kerb keeps its hard edge instead of smearing into the surface above it.
       for (let n = 0; n < 4; n++) normals.push(nx, 0, nz);
       const u0 = run / scale;
       const u1 = (run + span) / scale;
@@ -193,10 +141,7 @@ export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: 
 
 // ------------------------------------------------------------------ tiles
 
-/**
- * One tile's worth of a surface: its top faces and the skirts along its part
- * of the outline, ready to be copied into the surface's mesh (`mergeTiles`).
- */
+/** One tile's worth of a surface: its top faces and the skirts along its part of the outline */
 export interface Tile {
   readonly positions: Float32Array;
   readonly normals: Float32Array;
@@ -205,39 +150,23 @@ export interface Tile {
   readonly sections: Float32Array;
   /** Local to the tile. */
   readonly indices: Uint32Array;
-  /**
-   * The tile's box, [minX, minY, minZ, maxX, maxY, maxZ] of its positions, made with it (in the
-   * worker): a block of tiles is bounded by its tiles' boxes, not by every vertex again on the page.
-   * Absent on a tile kept from before the boxes were (`derivedCache`): its block measures its vertices.
-   */
+  /** The tile's box, [minX, minY, minZ, maxX, maxY, maxZ] of its positions, made with it (in the worker) */
   readonly box?: Float32Array;
 }
 
-/**
- * One tile of a surface from its shape (`tileShape.ts`, made here or by a worker, `roadTile.worker.ts`):
- * each vertex's height, frame, tint and place in the section read here.
- */
+/** One tile of a surface from its shape (`tileShape.ts`, made here or by a worker, `roadTile.worker.ts`) */
 export function meshTileShape(shape: SurfaceShape, options: TileMeshOptions): Tile {
   const context: Context = { options, uv: [0, 0], rgb: [1, 1, 1], cut: [0, -1, 0] };
   const out = streams();
   for (const piece of shape.pieces) meshPiece(piece, context, out);
-  // No vertex is shared with another tile, so the smoothing is the one the
-  // whole mesh would get.
+  // No vertex is shared with another tile, so the smoothing is the one the whole mesh would get.
   smoothTopNormals(out.positions, out.normals, out.indices);
   if (shape.skirts) meshSkirts(shape.skirts, context, out);
   const welded = weldVertices(out);
   return { ...welded, box: boxOf(welded.positions) };
 }
 
-/**
- * The vertices that are the same in every attribute - position, normal, uv, tint, section - made one, the
- * triangles' indices pointing at it: the same picture from fewer vertices (a vertex is 56 bytes, on the GPU
- * and uploaded). A fifth of a road surface's vertices were such copies (a skirt's corner, a seam of two
- * pieces, the vertex two triangles each made), 1.4 GB of a 2,560 m city's geometry before and after the thin
- * triangles were gone. Exact, by the bits of every float: nothing is merged that differs in the least.
- * The first of equal vertices keeps its place, so the order is what a build makes.
- * DO NOT leave the vertices a triangle at a time: a copy per corner is what an unindexed mesh is.
- */
+/** DO NOT leave the vertices a triangle at a time: a copy per corner is what an unindexed mesh is. */
 export function weldVertices(out: { positions: number[]; normals: number[]; uvs: number[]; colors: number[]; sections: number[]; indices: number[] }):
   { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; sections: Float32Array; indices: Uint32Array } {
   const count = out.positions.length / 3;
@@ -296,11 +225,7 @@ function boxOf(positions: Float32Array): Float32Array {
   return box;
 }
 
-/**
- * Whether a triangle's UV edges have the lengths its world edges say they
- * should. A road frame is (almost) an isometry, so a ratio far from one means
- * the three vertices were framed by different roads.
- */
+/** Whether a triangle's UV edges have the lengths its world edges say they should. */
 function uvConsistent(
   positions: readonly number[],
   uvs: readonly number[],
@@ -322,22 +247,13 @@ function uvEdgeConsistent(positions: readonly number[], uvs: readonly number[], 
   return ratio > 0.5 && ratio < 2;
 }
 
-/**
- * Recomputes normals for the up-facing vertices only, in place.
- *
- * `computeVertexNormals` would average a kerb's vertical face into the footway
- * above it and round off every edge in the scene. The skirt already carries an
- * exact normal, so only the vertices that were flagged as flat-up are solved
- * here, and they are solved by area-weighted accumulation like any smooth
- * surface.
- */
+/** Recomputes normals for the up-facing vertices only, in place. */
 export function smoothTopNormals(
   positions: readonly number[],
   normals: number[],
   indices: readonly number[],
 ): void {
-  // By a flag per vertex, not a Set of them: asked three times per triangle
-  // of every road tile (1.1 s of a 2,560 m city's roads, 2026-10-15).
+  // By a flag per vertex, not a Set of them: asked three times per triangle of every road tile
   const count = normals.length / 3;
   const flat = new Uint8Array(count);
   let any = false;

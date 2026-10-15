@@ -13,13 +13,7 @@ import { createSceneryKit } from '@render/scenery';
 import { createStreetFurniture, furnitureProduct, meadowProduct } from '@render/streetFurnitureLayer';
 import { proveIncremental } from '../support/derivedEquivalence';
 
-/**
- * THE STREET FURNITURE ON THE SPINE (`streetFurnitureLayer.ts`): every placed
- * item kept from the diary is, at every step of random edits - items placed
- * and taken away, roads drawn and demolished under them -, the item made
- * from nothing; and the layer drawn from those items holds the instances a
- * layer made from nothing holds, through the city's hours as the plants grow.
- */
+/** THE STREET FURNITURE ON THE SPINE (`streetFurnitureLayer.ts`) */
 
 const span = m(500);
 const kit = createSceneryKit();

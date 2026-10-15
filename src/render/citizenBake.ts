@@ -1,10 +1,4 @@
-/**
- * Baking a body's motion into bone palettes (`riggedCitizens.ts` draws them):
- * the clip slots, the bakes, and the rig they are baked on. Free of the DOM,
- * so the same code runs on the main thread and in the bake workers
- * (`citizenBake.worker.ts`), which take the core clips off the main thread
- * behind the loading screen.
- */
+/** Baking a body's motion into bone palettes (`riggedCitizens.ts` draws them) */
 import { Bone, BufferAttribute, BufferGeometry, Matrix4, Object3D, Quaternion, Skeleton, SkinnedMesh, Vector3 } from 'three';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { RIDER_CLIPS, helmetShape, type RiderClip, type RiderClipKey } from './riderPoses';
@@ -16,13 +10,7 @@ import { ELDER_AMPLITUDE, SHUFFLE_AMPLITUDE, REST_AMPLITUDE, bakeFps, gaitClipOf
 import { directionalWalkFor } from './citizenStride';
 import { PACKED_BONE_FLOATS, packBoneMatrices } from './citizenPalette';
 
-/*
- * The citizen GLBs carry no clips. The Quaternius capture once converted onto
- * this skeleton is what hunched every walker, and nothing played it, so it was
- * stripped (`scripts/strip-citizen-animations.mjs`). A pedestrian plays
- * Rocketbox captures (`WALK`, `LIBRARY`), and a person in or on a vehicle an IK
- * pose (`RIDER_CLIPS`).
- */
+/* The citizen GLBs carry no clips. */
 /** The Rocketbox neutral walk of the body's sex, exactly as captured. */
 export const WALK = 0;
 /** The same walk with an older person's shorter step and quieter arms. */
@@ -48,20 +36,13 @@ export const GAIT_AT: Readonly<Record<GaitClipName, number>> = {
   walkHandL: WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length,
   walkHandR: WALK_SHUFFLE + 2 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length,
 };
-/**
- * People in and on vehicles (`riderPoses.ts`): car seats reclined to fit a
- * cabin, astride a motorcycle, pedalling a bicycle. Baked after the library.
- */
+/** People in and on vehicles (`riderPoses.ts`) */
 export const RIDER_AT = Object.fromEntries(RIDER_CLIPS.map((clip, i) => [clip.key, WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + i])) as
   Readonly<Record<RiderClipKey, number>>;
 /** The walk hand in hand, holding with the left or the right: baked after the riders. */
 const HAND_WALK_AT = { walkHandL: WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length,
   walkHandR: WALK_SHUFFLE + 2 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length } as const;
-/**
- * The clips somebody carrying a box plays, baked again with both arms holding
- * it in front (`carryBox`), after the hand-in-hand walks. Drawing swaps each
- * for its carried twin, same timing, so the gait needs to know nothing of it.
- */
+/** The clips somebody carrying a box plays, baked again with both arms holding it in front */
 const CARRIED = ['walk', 'walkShuffle', 'idle', 'turnLeft', 'turnRight', 'walkBack', 'walkLeft', 'walkRight'] as const satisfies readonly GaitClipName[];
 export const CARRY_AT = Object.fromEntries(CARRIED.map((name, i) =>
   [name, WALK_SHUFFLE + 3 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length + i])) as
@@ -102,25 +83,14 @@ export function setSliceMs(ms: number): void {
 }
 let sliceStart = 0;
 
-/**
- * Lets the frame loop in once this stretch of baking has run for `SLICE_MS`.
- * A body bakes some twenty-five clips, and baked in one go each body a
- * pedestrian first needed was a frame of 100 to 350 ms: the hitch every few
- * seconds while the crowd's bodies loaded.
- */
+/** Lets the frame loop in once this stretch of baking has run for `SLICE_MS`. */
 export async function breathe(): Promise<void> {
   if (performance.now() - sliceStart < SLICE_MS) return;
   await afterFrame();
   sliceStart = performance.now();
 }
 
-/**
- * Resolves just after the next frame has been drawn: one slice of work per
- * frame. Resumed by a bare zero timeout, several slices ran back to back
- * between two frames and took the time the frame needed; waiting for the
- * browser's idle callback, a game drawing every frame never had any and the
- * bodies were never finished.
- */
+/** Resolves just after the next frame has been drawn: one slice of work per frame. */
 export function afterFrame(): Promise<void> {
   if (typeof requestAnimationFrame !== 'function') return new Promise<void>(resolve => setTimeout(resolve, 0));
   return new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
@@ -154,11 +124,7 @@ export function restRig(scene: Object3D): BakeRig {
   };
 }
 
-/**
- * Bakes a pose function into bone palettes: `frames` intervals over
- * `duration`, one row more for the end, one more repeated so interpolation
- * past the last frame reads a real pose.
- */
+/** Bakes a pose function into bone palettes */
 export async function bakeFrames(body: BakeRig, pose: (time: number) => void, duration: number,
   loop: boolean, fps = FPS, withHands = false): Promise<{ data: Float32Array; frames: number; pelvisY: number; pelvisX: number; pelvisZ: number; hands?: Float32Array }> {
   const { rig, mesh } = body;
@@ -197,11 +163,7 @@ export async function bakeFrames(body: BakeRig, pose: (time: number) => void, du
   return { data, frames, pelvisY, pelvisX, pelvisZ, ...(hands ? { hands } : {}) };
 }
 
-/**
- * Bakes the Rocketbox walk onto one body: `amplitude` untouched is the capture
- * as recorded, anything less the elder's. `stride` is the ground one cycle
- * covers on THIS body, so moving it by that much per cycle plants the feet.
- */
+/** Bakes the Rocketbox walk onto one body: `amplitude` untouched is the capture as recorded, anything less the elder's. */
 export async function bakeWalk(body: BakeRig, sex: WalkSex, amplitude?: WalkAmplitude, hand?: 'L' | 'R', carry = false): Promise<ClipFrames> {
   body.reset();
   const walk = neutralWalkFor(body.rig, body.mesh, sex, amplitude);
@@ -215,17 +177,12 @@ export async function bakeWalk(body: BakeRig, sex: WalkSex, amplitude?: WalkAmpl
   return { ...baked, duration, loop: true, stride: WALK_ADVANCE[sex] * walk.scale * share };
 }
 
-/**
- * Bakes one library clip onto one body, with its travel and turn curves
- * resampled to the baked frames (`gaitClipOf`). A cycle baked with its swing
- * shrunk to `amplitude` covers that much less ground.
- */
+/** Bakes one library clip onto one body, with its travel and turn curves resampled to the baked frames (`gaitClipOf`). */
 export async function bakeLibraryClip(body: BakeRig, clip: LibraryClip, amplitude?: WalkAmplitude, name?: string, carry = false): Promise<ClipFrames> {
   body.reset();
   const transfer = clipTransferFor(body.rig, body.mesh, clip, amplitude);
   const room = LIMB_ROOM[name ?? ''] ?? LIMB_ROOM_DEFAULT;
-  // A long standing or seated loop is slow motion, captured at 10 fps in the
-  // library; baking it at 30 tripled the memory and the load for nothing.
+  // A long standing or seated loop is slow motion, captured at 10 fps in the library
   const baked = await bakeFrames(body, time => {
     transfer.pose(time);
     clearLimbs(body.rig, room[0], room[1]);
@@ -236,12 +193,7 @@ export async function bakeLibraryClip(body: BakeRig, clip: LibraryClip, amplitud
   return { ...baked, ...facts, stride: facts.stride * share };
 }
 
-/**
- * Room for the arms, by clip: how far the upper arms are carried out from the
- * body and the forearms lifted, degrees. The captures were taken on slimmer
- * bodies than the people they are played on: seated, the hands sank into the
- * thighs and the arms into the sides.
- */
+/** Room for the arms, by clip: how far the upper arms are carried out from the body and the forearms lifted, degrees. */
 const LIMB_ROOM: Readonly<Record<string, readonly [number, number]>> = {
   sitIdle: [13, 16], sitDown: [11, 12], standUp: [11, 12],
   idle: [8, 0], look: [8, 0], listen: [8, 0], talk: [6, 0], phone: [5, 0],
@@ -264,11 +216,7 @@ function turnInWorld(bone: Object3D, q: Quaternion): void {
   bone.updateMatrixWorld(true);
 }
 
-/**
- * The arm on one side held out a little, straight and still, its hand low
- * and to the side where a partner walking abreast takes it: the walk hand in
- * hand. The rest of the body walks on.
- */
+/** The arm on one side held out a little, straight and still */
 function holdHandOut(rig: Object3D, side: 'L' | 'R'): void {
   rig.updateMatrixWorld(true);
   const chest = rig.getObjectByName('Bip01_Spine2');
@@ -293,12 +241,7 @@ function holdHandOut(rig: Object3D, side: 'L' | 'R'): void {
   }
 }
 
-/**
- * Both arms holding a box in front: the upper arms down and a little forward,
- * the forearms level and reaching ahead, the hands on the box's sides, thumbs
- * up and fingers forward (so the palms face each other, on either hand). The
- * legs, hips and head walk or stand on as the clip has them.
- */
+/** Both arms holding a box in front */
 function carryBox(rig: Object3D): void {
   rig.updateMatrixWorld(true);
   const chest = rig.getObjectByName('Bip01_Spine2');
@@ -344,11 +287,7 @@ function carryBox(rig: Object3D): void {
   }
 }
 
-/**
- * Carries each upper arm out from the chest by `abduct` degrees and lifts each
- * forearm by `lift`, on the pose the rig is in, so a body broader than the
- * capture's keeps its limbs outside itself.
- */
+/** Carries each upper arm out from the chest by `abduct` degrees and lifts each forearm by `lift` */
 function clearLimbs(rig: Object3D, abduct: number, lift: number): void {
   if (abduct <= 0 && lift <= 0) return;
   rig.updateMatrixWorld(true);
@@ -387,33 +326,15 @@ function clearLimbs(rig: Object3D, abduct: number, lift: number): void {
   }
 }
 
-/**
- * Bakes everything one body plays, on one copy of it put back to rest between
- * clips, a few milliseconds at a time. No skeleton traversal occurs during
- * drawing.
- */
-/**
- * The library clips every walker plays all the time (starting, stopping,
- * turning, standing, the walks); the rest - gestures, sitting, crouching -
- * are baked the first time this body plays them (`Deferred`).
- */
+/** Bakes everything one body plays, on one copy of it put back to rest between clips, a few milliseconds at a time. */
+/** The library clips every walker plays all the time (starting, stopping, turning, standing, the walks); the rest */
 const CORE_LIBRARY: ReadonlySet<Played> = new Set<Played>([
   'start', 'stop', 'run', 'turnLeft', 'turnRight', 'idle', 'walkSlow',
   'walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast',
 ]);
 
-/**
- * A clip baked on first use: what to bake, and what stands in for it the
- * moment before (the standing idle for a gesture, the bare walk for a carried
- * one). Baking all of them at load was some 8,000 frames a body, 2.5 GB and
- * a minute and a half of the main thread for the roster; most bodies never
- * play most of them (load on demand, as engines stream animation).
- */
-/**
- * The seated poses with the head turned (or a phone in hand), baked on first
- * use like the gestures: until then the same seat looking ahead stands in.
- * Each is a seated loop solved by IK frame by frame, the dearest bake there is.
- */
+/** A clip baked on first use: what to bake, and what stands in for it the moment before */
+/** The seated poses with the head turned (or a phone in hand), baked on first use like the gestures */
 const RIDER_BASE: Readonly<Partial<Record<RiderClipKey, RiderClipKey>>> = {
   carDriveMirror: 'carDrive', carDriveRight: 'carDrive', carDead: 'carDrive', cabDead: 'cabDrive',
   carRideLeft: 'carRide', carRideRight: 'carRide',
@@ -431,8 +352,7 @@ export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClip
   // A helmet is fitted to this head, at rest, once.
   const helmet = helmetShape(body.rig);
   const clips: ClipFrames[] = [];
-  // The elder's step, and the shuffle's, cover less ground in the same time,
-  // in proportion to how far the feet then reach fore and aft (`strideShare`).
+  // The elder's step, and the shuffle's, cover less ground in the same time
   clips[WALK] = given?.[WALK] ?? await bakeWalk(body, sex);
   clips[WALK_ELDER] = given?.[WALK_ELDER] ?? await bakeWalk(body, sex, ELDER_AMPLITUDE);
   clips[WALK_SHUFFLE] = given?.[WALK_SHUFFLE] ?? await bakeLibraryClip(body, library.walkSlow, SHUFFLE_AMPLITUDE);
@@ -480,18 +400,13 @@ export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClip
   return { clips, helmet, deferred };
 }
 
-/**
- * Bakes one IK pose of a person in or on a vehicle. The rig is put back to its
- * rest pose before every frame, because the IK aims bones from wherever they
- * are. A still pose needs two frames, not thirty.
- */
+/** Bakes one IK pose of a person in or on a vehicle. */
 async function bakeRiderClip(body: BakeRig, clip: RiderClip): Promise<ClipFrames> {
   const pose = (time: number): void => {
     body.reset();
     clip.pose(body.rig, time);
   };
-  // A held pose is two frames; a seated idle loop (`SEATED_IDLE` s) six a
-  // second, enough for breathing and a turn of the head.
+  // A held pose is two frames; a seated idle loop
   const still = clip.key !== 'bikePedal' && clip.duration <= 1;
   const baked = await bakeFrames(body, pose, clip.duration, clip.loop, still ? 2 : clip.key === 'bikePedal' ? FPS : 6);
   pose(0);

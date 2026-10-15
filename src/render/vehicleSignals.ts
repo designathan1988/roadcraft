@@ -4,13 +4,7 @@ import { DT } from '@sim/params';
 import { m } from '@world/units';
 import { newFrame } from '@core/polyline';
 
-/**
- * What a vehicle is signalling and how its wheels sit, read straight off the
- * simulation. The lamps and the steering are functions of the state the
- * simulation already keeps, so a paused frame shows the same lamps and wheels
- * every time it is drawn; only the wheels' rolling angle needs a running total
- * (`WheelOdometer`).
- */
+/** What a vehicle is signalling and how its wheels sit, read straight off the simulation. */
 
 /** +1 indicating left, -1 right, 0 none — in the vehicle's own frame. */
 export type IndicatorSide = -1 | 0 | 1;
@@ -28,20 +22,7 @@ const BLINK_DUTY = 0.55;
 /** Largest front-wheel steering angle drawn, radians. */
 export const MAX_STEER = 0.6;
 
-/**
- * Which way a vehicle is signalling.
- *
- * The indicator used to be lit only DURING a lane change, from the leftover
- * offset of the slide - so drivers signalled after they had already started
- * moving across, and never at all for a turn at a junction, which is when a
- * real driver signals most. Three reasons now light it, first match wins:
- *
- *   1. a lane change under way: towards the lane being entered;
- *   2. a lane change signalled but not yet started (`laneIntent`), or one
- *      the route needs (`desiredLane`): the driver signals, then moves;
- *   3. a left or right turn ahead at the next junction, from a few seconds
- *      before the stop line until most of the turn has been driven.
- */
+/** Which way a vehicle is signalling. */
 /** What `indicatorSide` reads of the two lanes, made once. */
 const HERE = newFrame();
 const THERE = newFrame();
@@ -89,37 +70,20 @@ function turnSide(turn: string | undefined): IndicatorSide {
   return 0;
 }
 
-/**
- * Whether a flashing indicator is lit at this moment of the vehicle's life.
- *
- * Keyed on the vehicle's own age and a per-vehicle phase, so a queue of
- * turning cars does not flash in lockstep, and a frame drawn twice at the
- * same simulation time shows the same lamp.
- */
+/** Whether a flashing indicator is lit at this moment of the vehicle's life. */
 export function blinkOn(age: number, id: number): boolean {
   const phase = ((id * 0.618034) % 1 + age * BLINK_HZ) % 1;
   return phase < BLINK_DUTY;
 }
 
-/**
- * Front-wheel steering angle, radians, positive to the left.
- *
- * A bicycle model: the wheels point at `atan(wheelbase * curvature)`, where
- * the curvature is that of the path the vehicle is driving - the lanelet's
- * own bend under the front axle, plus the change in heading of a lane change
- * over the last step (`lateralSlope` is the tangent of that heading).
- */
+/** Front-wheel steering angle, radians, positive to the left. */
 export function steerAngle(w: SimWorld, v: Vehicle, wheelbase: number): number {
   if (wheelbase <= 0) return 0;
   const angle = Math.atan(wheelbase * pathCurvature(w, v));
   return Math.max(-MAX_STEER, Math.min(MAX_STEER, angle));
 }
 
-/**
- * Curvature of the path the vehicle is driving under its front axle, per
- * world unit, positive turning left: the lanelet's own bend plus the change
- * of heading of a lane change over the last step.
- */
+/** Curvature of the path the vehicle is driving under its front axle, per world unit, positive turning left */
 /** The two tangents `pathCurvature` reads: made once (every vehicle drawn, every frame). */
 const BEFORE = newFrame();
 const AFTER = newFrame();
@@ -143,16 +107,7 @@ export function pathCurvature(w: SimWorld, v: Vehicle): number {
   return curvature;
 }
 
-/**
- * Distance each vehicle has driven, for the rolling angle of its wheels.
- *
- * The arc position restarts on every lanelet, so a spin derived from it would
- * snap the hub round at each junction and lane change. This keeps a running
- * total per vehicle instead, advanced by the change in arc position within a
- * lanelet and by one step of travel across a lanelet boundary. It is the only
- * state here, it lives only as long as the vehicle object does, and it is
- * purely cosmetic: nothing in the simulation reads it.
- */
+/** Distance each vehicle has driven, for the rolling angle of its wheels. */
 export class WheelOdometer {
   private readonly seen = new WeakMap<Vehicle, { lanelet: string; s: number; total: number }>();
 

@@ -14,12 +14,7 @@ function setup(): { doc: RoadDoc; net: Network } {
   return { doc, net };
 }
 
-/**
- * A node dropped by the Move tool is reconciled with the network the way a
- * drawn road is. It used to be left as dropped: on its neighbour, on another
- * node, or carrying a road across another with no junction - where no
- * conflict zone exists and cars drive through each other.
- */
+/** A node dropped by the Move tool is reconciled with the network the way a drawn road is. */
 describe('a node dropped by Move', () => {
   it('on another node at its level becomes that node', () => {
     const { doc, net } = setup();
@@ -57,7 +52,6 @@ describe('a node dropped by Move', () => {
     doc.addSegment(w.id, e.id, 1);
     doc.addSegment(s.id, n.id, 1);
     // Drag the stub's end up across the east-west road.
-    // The network as the game has it before a drop: built for the roads.
     net.rebuild();
     doc.moveNode(n.id, { x: 0, y: 150 * U });
     expect(reconcileMovedNode(doc, net, n.id).committed).toBe(true);

@@ -1,19 +1,4 @@
-// COMPARE TWO RUNS OF THE SAME SCRIPT OF VIEWS, picture by picture (scripts/look.mjs):
-// node scripts/look-compare.mjs <dir before> <dir after> [out dir]
-//
-// An optimisation must leave the picture as it was (CLAUDE.md, the skill
-// `conferindo-no-jogo`), and reading two PNGs by eye misses a part that moved
-// a little. Each pair with the same file name is drawn in the installed
-// Chrome (no image package in the project) and compared pixel by pixel as
-// pixelmatch does (github.com/mapbox/pixelmatch): the colour difference in
-// OKLab by the HyAB distance, a pixel counting as changed past THRESHOLD; no
-// detection of anti-aliased pixels yet, so an edge moved by a pixel counts.
-// For each pair: the share of changed pixels and the box round them, and a
-// picture of the difference (changed pixels red on the "before" faded), so the
-// eye goes straight to it.
-//
-// A difference is not a verdict: the simulation moves cars and people between
-// runs, and the sky's clock moves the light. Read each difference picture.
+// COMPARE TWO RUNS OF THE SAME SCRIPT OF VIEWS, picture by picture (scripts/look.mjs)
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium } from '@playwright/test';

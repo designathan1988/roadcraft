@@ -5,16 +5,7 @@ import { applyOp, freshState, randomOp, type FuzzOp, type FuzzState } from './op
 import { checkWorld, type Defect } from './invariants';
 import { checkSim, type SimRun } from './simCheck';
 
-/**
- * The fuzz loop: generate, apply, check, shrink, record.
- *
- * Profiles (FUZZ_PROFILE):
- *  - `smoke` (default, part of `npm run check`): a handful of short seeded
- *    sequences and a short traffic run on each final network;
- *  - `deep`: many long sequences and long traffic runs, for a bug hunt.
- * FUZZ_SEEDS overrides the number of sequences, FUZZ_OPS their length,
- * FUZZ_FIRST the first seed; FUZZ_SIM=0 skips the traffic run.
- */
+/** The fuzz loop: generate, apply, check, shrink, record. */
 export interface Profile {
   readonly sequences: number;
   readonly ops: number;
@@ -56,11 +47,7 @@ export interface Outcome {
   readonly state: FuzzState;
 }
 
-/**
- * Replays a sequence and stops at the first operation after which the world
- * breaks. With `sim`, a sequence whose world never breaks is then driven.
- * `only` restricts the checks to one category (what the shrinker holds fixed).
- */
+/** Replays a sequence and stops at the first operation after which the world breaks. */
 export function replay(ops: readonly FuzzOp[], sim: SimRun | null, only?: string | ((category: string) => boolean)): Outcome {
   const state = freshState();
   const wanted = typeof only === 'string' ? (c: string) => c === only : only;
@@ -87,11 +74,7 @@ export function replay(ops: readonly FuzzOp[], sim: SimRun | null, only?: string
   return { defects: [], step: ops.length, state };
 }
 
-/**
- * Removes operations while the sequence still produces a defect of the same
- * category: first everything after the failing step, then halves, then single
- * operations (ddmin, simplified). The result is usually a handful of gestures.
- */
+/** Removes operations while the sequence still produces a defect of the same category */
 export function shrink(ops: readonly FuzzOp[], category: string, sim: SimRun | null): FuzzOp[] {
   const fails = (candidate: readonly FuzzOp[]): number | null => {
     const outcome = replay(candidate, sim, category);
@@ -128,11 +111,7 @@ export interface Fixture {
   readonly ops: readonly FuzzOp[];
   /** Present while the defect is not fixed: why, with the evidence. */
   readonly open?: string;
-  /**
-   * An open defect whose CATEGORY must still fail the smoke gate: the
-   * recorded instance is known, any new one is news. Without it an open
-   * fixture makes its whole category tolerated.
-   */
+  /** An open defect whose CATEGORY must still fail the smoke gate: the recorded instance is known, any new one is news. */
   readonly gate?: boolean;
 }
 

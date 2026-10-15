@@ -14,16 +14,7 @@ import { TUNED_UNIT } from '@world/units';
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
 
-/**
- * Shared harness for measuring what the player actually sees: two vehicle
- * BODIES occupying the same piece of road at the same instant.
- *
- * Every other safety check in the suite asks a proxy question — is a conflict
- * point claimed, is the arc gap positive, is the lanelet order monotone. A
- * collision is none of those; it is two rectangles, at their real length,
- * width and drawn angle, overlapping. This module answers that directly, so a
- * proxy that is right on paper and wrong on screen cannot hide behind itself.
- */
+/** Shared harness for measuring what the player actually sees */
 
 export interface Body {
   readonly vehicle: Vehicle;
@@ -34,12 +25,7 @@ export interface Body {
   readonly halfWidth: number;
 }
 
-/**
- * Overlap tolerance, in world units, removed from each half-dimension.
- *
- * 0.1 u is 4 cm: two bodies touching paint to paint are not a collision, and a
- * floating-point sliver at a bumper is not one either.
- */
+/** Overlap tolerance, in world units, removed from each half-dimension. 0.1 u is 4 cm */
 const BODY_TOLERANCE = 0.1 * U;
 
 export function bodyOf(w: SimWorld, v: Vehicle): Body | null {
@@ -81,12 +67,7 @@ export interface Collision {
   readonly category: string;
 }
 
-/**
- * Every overlapping pair of vehicle bodies at this instant.
- *
- * A uniform grid keeps it linear in the fleet size; the cell is larger than the
- * longest body, so only neighbouring cells need testing.
- */
+/** Every overlapping pair of vehicle bodies at this instant. */
 export function collisions(w: SimWorld): Collision[] {
   const cell = 40 * U;
   // Cells keyed by number: a string per body and per neighbour a tick was most of the check.
@@ -149,10 +130,7 @@ export interface Layout {
   readonly oneWay?: boolean;
 }
 
-/**
- * The junction shapes every physical-conflict measurement runs against. The
- * same five the connector-footprint test uses, plus a mixed-lane-count cross.
- */
+/** The junction shapes every physical-conflict measurement runs against. */
 export const LAYOUTS: readonly Layout[] = [
   { name: 'four-way-avenues', bearings: [0, 90, 180, 270], types: [3, 3, 3, 3] },
   { name: 'mixed-T', bearings: [0, 90, 180], types: [2, 1, 3] },
@@ -189,11 +167,7 @@ export function simOf(doc: RoadDoc, seed: number, intensity = 2): SimWorld {
   sim.trafficIntensity = intensity;
   sim.demandMultiplier = intensity;
   sim.clock.paused = false;
-  // People on the footways as the game has them (`main.ts`): the agents'
-  // walking engine, the scenery's life coming in at the road ends. Until
-  // 2026-10-08 a world was made with the legacy pedestrian engine running;
-  // with it gone a world had nobody walking, and every spec measuring
-  // walkers, crossings or kerb stops measured nothing.
+  // People on the footways as the game has them (`main.ts`)
   sim.usePedestrianEngine(createAgentWalkEngine());
   sim.ambient.enabled = true;
   sim.ambient.source = 'edges';

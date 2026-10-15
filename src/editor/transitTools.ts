@@ -12,21 +12,7 @@ import { pointInPolygon } from '@core/polygon';
 
 import { onCarriageway } from '@world/carriageway';
 
-/**
- * The public transport tool (`world/transit.ts`), as Cities: Skylines II lays
- * it out: stops and stations first, tracks, then lines.
- *
- * - STOP: a click by a street puts a bus stop on its footway;
- * - TERMINAL: a click on a bus stop makes it a terminal (or not);
- * - TRACK (train or metro): clicks put the points of a run down; a double
- *   click or Enter ends it, Backspace takes the last point back, Esc drops it;
- *   an end near another track's point joins it;
- * - STATION (train or metro): a click on a track puts a station there;
- * - LINE: clicks on stops (or stations) in order; Enter or a double click
- *   makes the line, of the mode of its first stop.
- *
- * Shift-click takes away what is under the pointer: a stop, a station, a track.
- */
+/** The public transport tool (`world/transit.ts`), as Cities: Skylines II lays it out */
 export type TransitToolKind = 'stop' | 'terminal' | 'track' | 'station' | 'line';
 
 export interface TransitToolDeps {
@@ -64,12 +50,7 @@ export class TransitTool {
 
   private get data(): TransitData { return this.deps.doc().transit; }
 
-  /**
-   * Whether a point is inside a building (a block built out over its footway):
-   * the buildings filed round it only (`BuildingStore.near`). DO NOT walk
-   * `buildings.all()`: the metro's way down asked it of every footway point
-   * of the map against every building.
-   */
+  /** DO NOT walk `buildings.all()`: the metro's way down asked it of every footway point of the map against every building. */
   private built(p: Vec2): boolean {
     // Every volume, upper floors too: a block may overhang its footway, and the way down would be under it.
     const pad = m(1);
@@ -79,14 +60,7 @@ export class TransitTool {
     return false;
   }
 
-  /**
-   * The footway point by a street nearest `p`, and its road: the footways of
-   * the roads filed within `reach` (`Network.ribbonsMeeting`, in the walking
-   * network's own order, so the same one wins a tie), laid as it lays them
-   * (`footwayPath`). DO NOT build the walking network of the whole map for a
-   * click (it was built again after every edit, and every footway of the map
-   * was measured).
-   */
+  /** DO NOT build the walking network of the whole map for a click */
   private footwayAt(p: Vec2, reach = STOP_REACH, clear = false): { x: number; y: number; segment: number } | null {
     return nearestFootway(this.deps.net(), p, reach, clear ? (q) => this.built(q) : undefined);
   }
@@ -99,10 +73,7 @@ export class TransitTool {
     return stopNear(this.data, p, PICK, mode)?.id ?? null;
   }
 
-  /**
-   * A track point (an end or a corner) within joining reach, or the point itself.
-   * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
-   */
+  /** @perInput A track point (an end or a corner) within joining reach, or the point itself. */
   private snapTrack(p: Vec2): Vec2 {
     // The track points round the pointer only (`trackPointNear`), not every point of every track.
     const point = trackPointNear(this.data, p, JOIN * 2, this.rail);
@@ -218,10 +189,7 @@ export class TransitTool {
     const data = this.data;
     ctx.save();
     ctx.lineJoin = ctx.lineCap = 'round';
-    // Tracks are drawn in the scene as they are built - the train's on its
-    // ballast, the metro's in its bore seen through the ground
-    // (`render/transit.ts`) - not as lines over the map.
-    // Lines: their colour, from stop to stop.
+    // Tracks are drawn in the scene as they are built
     if (active) {
       for (const line of data.lines) {
         ctx.strokeStyle = line.colour;
@@ -256,8 +224,7 @@ export class TransitTool {
       ctx.fillText(s.mode === 'bus' ? 'B' : s.mode === 'metro' ? 'M' : 'T', q.x, q.y + 0.5);
     }
     if (!active) { ctx.restore(); return; }
-    // The run being laid is built in the scene as the real track
-    // (`preview`); only its points are marked here.
+    // The run being laid is built in the scene as the real track (`preview`); only its points are marked here.
     for (const p of this.points) {
       const s = at(p);
       ctx.fillStyle = '#ffffff';

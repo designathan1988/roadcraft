@@ -1,14 +1,6 @@
 import { type Profiler, type ProfilerView } from '@core/profiler';
 
-/**
- * The profiler's HUD (`core/profiler.ts`): shown when the game starts,
- * Shift+F9 hides and shows it. Redrawn four times a second from the last
- * closed window of a second - DO NOT redraw it every frame: writing the DOM
- * at 60 Hz is a cost of its own, measured by the profiler it shows.
- *
- * Diagnostic text for the developer, not the player's interface: not in
- * the dictionaries.
- */
+/** Redrawn four times a second from the last closed window of a second - DO NOT redraw it every frame */
 export function mountProfilerHud(profiler: Profiler, options: { readonly visible?: boolean } = {}): { toggle(): void } {
   const box = document.createElement('div');
   box.className = 'profiler-hud';

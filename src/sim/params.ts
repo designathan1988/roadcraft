@@ -1,12 +1,6 @@
 import { kmh, m } from '@world/units';
 
-/**
- * Every tunable of the simulation, in world units and seconds.
- *
- * One unit system, one file. The V6 monolith spread magic numbers across ~120
- * functions and mixed scales inside single expressions, which is how the
- * downstream-storage formula came out negative for short links (defect 2.2).
- */
+/** Every tunable of the simulation, in world units and seconds. */
 
 /** Fixed simulation step (`dt.ts`, a module of its own for the people's cook). */
 export { DT } from './dt';
@@ -14,31 +8,10 @@ export { DT } from './dt';
 export const MAX_SUBSTEPS = 5;
 /** Wall-clock time is clamped to this before being accumulated. */
 export const MAX_FRAME = 0.25;
-/**
- * The most wall time the simulation's steps may take in one frame, ms
- * (`SimClock.advance`): half a 60 Hz frame, the other half the drawing's.
- */
+/** The most wall time the simulation's steps may take in one frame, ms (`SimClock.advance`) */
 export const SIM_FRAME_BUDGET_MS = 8;
 
-/**
- * A lane change is a PATH, not a slide.
- *
- * The offset used to follow a minimum-jerk profile in TIME: about three
- * seconds a lane whatever the car was doing. At speed that is fine, but a car
- * creeping in a queue kept moving sideways at the same rate while hardly
- * moving forward, and the heading it points along, the direction of its real
- * velocity, could not keep up: the body crabbed across, reported as cars
- * "floating sideways" instead of steering into the lane. A car can only move
- * sideways by driving forwards at an angle, so the offset is now a function
- * of the DISTANCE driven since the transfer: stopped mid-change, it stays
- * where it is, angled, and the body always points along the curve it traces.
- *
- * The length of that curve is set by the steering angle a driver uses: sharp
- * at a crawl, where a lane is taken in little more than two car lengths, and
- * shallow at speed, where the same lane takes four or five seconds. A long
- * vehicle is steered more gently still: the curve is never shorter than a few
- * of its own lengths, or a truck would pivot across the line like a car.
- */
+/** A lane change is a PATH, not a slide. */
 const LANE_CHANGE_HEADING_SLOW = 0.42;
 const LANE_CHANGE_HEADING_FAST = 0.1;
 /** Speed at which the shallow heading is reached, world units a second. */
@@ -83,14 +56,7 @@ export const L_MIN = MAX_VEHICLE_LENGTH + JAM_GAP + m(2);
 export const REQUEST_TIME = 3.0;
 export const REQUEST_MIN_DISTANCE = m(8);
 
-/**
- * Speed above which a vehicle counts as rolling rather than queueing.
- *
- * Used on both sides of the convoy test in `admission.ts`: the convoy already
- * inside the junction must be moving, and a follower joining it from behind
- * must be moving too. Anything at or below this is a standing queue, and a
- * standing queue may not take a claim it would then sit on.
- */
+/** Speed above which a vehicle counts as rolling rather than queueing. */
 export const CONVOY_ROLLING = m(0.2);
 
 /** Critical gaps for yielding movements, in seconds. */
@@ -106,31 +72,13 @@ export const IMPATIENCE_RATE = 0.06;
 export const IMPATIENCE_MAX = 1.5;
 export const CRITICAL_GAP_FLOOR = 3.0;
 
-/**
- * Seconds a driver may wait for a gap before taking the next one offered.
- *
- * Impatience alone cannot guarantee this. It shortens the required gap by
- * `IMPATIENCE_RATE` per second up to `IMPATIENCE_MAX` and then stops, and the
- * gap can never fall below `CRITICAL_GAP_FLOOR` — so a stream that never
- * offers even the floor gap is waited out forever. That is a feedback loop, not
- * a queue: measured on an unsignalised node, four of nine vehicles were stopped
- * with the leader carrying `yield` indefinitely and three more piled behind it.
- *
- * A deadlock is a game failure, not realism. Twelve seconds is longer than any
- * real driver waits at a minor approach and short enough that a player never
- * sees the city seize. The ceiling waives only the COURTESY of a gap: the claim
- * table, the Banker safety check, downstream storage and the pedestrian
- * crossing all still have to allow the movement, so it cannot cause a
- * collision — it can only stop the polite driver from being polite forever.
- */
+/** Seconds a driver may wait for a gap before taking the next one offered. */
 export const WAIT_CEILING = 12;
 
 /** Signal timing, in seconds. */
 export const SIGNAL = {
   minGreen: 6,
-  // The widest built-in boulevard crossing is about 55 world units. At the
-  // design walking speed it needs 22 s including start lag; 20 s of green plus
-  // amber/all-red guarantees that full protected window.
+  // The widest built-in boulevard crossing is about 55 world units.
   baseGreen: 20,
   maxGreen: 34,
   /** Target green of an exclusive stage serving turns that are otherwise permissive. */
@@ -168,36 +116,12 @@ export const PED = {
 /** Vehicle population target, per unit of total road length. */
 export const TRAFFIC_DENSITY = 1 / m(45);
 
-/**
- * Safety ceilings on the agent population. Runaway guards, not design targets.
- *
- * The fleet is meant to follow the city: build more road and more traffic uses
- * it. It did not. Both spawners ended in `Math.min(cap, byLength)` with `cap` a
- * bare 90 and 44, and on a nine-fold larger network — 84 roads to 760 — the
- * population did not move off 134. The `min` swallowed the whole city. Found
- * while measuring frame rate; it is a defect in the game, not in the renderer.
- *
- * These are set far above any density the length formula produces for a city
- * anyone would build, so what actually decides the number is the road network,
- * and the ceiling only exists so a pathological map cannot allocate without
- * bound.
- */
-//
+/** Safety ceilings on the agent population. */
 // They are ALSO what the renderer sizes its instance buffers from
-// (`render/agents.ts`), so the simulation can never hold an agent the screen
-// cannot draw. They used to be 3000 and 1500 against buffers of 1200 and 1000:
-// past those, agents existed, took road space and held claims, invisibly.
 export const FLEET_CEILING = 1200;
 export const PED_CEILING = 1000;
 
-/**
- * Share of the ceiling allowed on a narrow screen.
- *
- * A phone has less to draw with and less to look at, so it gets a smaller
- * population — but proportionally, like everything else here. It used to be a
- * second bare constant, which meant a narrow screen was capped at 48 vehicles
- * whether it was showing four roads or four hundred.
- */
+/** Share of the ceiling allowed on a narrow screen. */
 export const NARROW_SCREEN_SHARE = 0.5;
 /** Viewport width, CSS pixels, under which a screen counts as narrow. */
 export const NARROW_SCREEN_WIDTH = 800;
@@ -208,20 +132,7 @@ export const STUCK_SECONDS = 10;
 /** Free-flow speed sampling. */
 export const DRIVER_NOISE = { lo: 0.92, hi: 1.08 } as const;
 
-/**
- * Speed cap through curvature, expressed as the lateral acceleration a driver
- * accepts, which FALLS with speed.
- *
- * It was one number, 2.5 m/s², at every speed. That is a fair figure for a
- * motorway curve and far below what anybody accepts turning a street corner:
- * observed intersection turns run at 3.5 to 4.5 m/s² at 15 to 25 km/h, and
- * the comfortable figure falls towards 2 m/s² by motorway speeds. With the old
- * constant a right turn of 7 m radius was taken at 15 km/h and a left of 14 m
- * at 21 km/h - the "extremely slow" turns players reported.
- *
- * `MAX_LATERAL_ACCEL` is the figure at a crawl; each world unit per second of
- * speed takes `LATERAL_ACCEL_FALL` off it, down to `MIN_LATERAL_ACCEL`.
- */
+/** Speed cap through curvature, expressed as the lateral acceleration a driver accepts, which FALLS with speed. */
 export const MAX_LATERAL_ACCEL = m(4.0);
 /** Reduction of the accepted lateral acceleration per unit of speed, per second. */
 export const LATERAL_ACCEL_FALL = 0.09;

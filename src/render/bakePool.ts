@@ -4,12 +4,7 @@ import { type ClipFrames, rigData } from './citizenBake';
 import type { BakedClip } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
 
-/**
- * The bake workers: a body's core clips baked on other cores while the game
- * keeps drawing. Grow with concurrent visual requests, up to one fewer than
- * the cores and at most six; a single body needs only one worker. Where there
- * are no workers, or one fails, the caller bakes on the main thread instead.
- */
+/** The bake workers: a body's core clips baked on other cores while the game keeps drawing. */
 type Result = (ClipFrames | undefined)[] | null;
 
 const SIZE = Math.max(1, Math.min(6, (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4) - 1));
@@ -54,8 +49,7 @@ function createWorker(): Worker {
     }
     finished(worker, e.data.clips.map((c) => (c ? { ...c, ...(c.head ? { head: new Matrix4().fromArray(c.head) } : {}) } as ClipFrames : undefined)));
   };
-  // A reply that could not be read fails its job as an error does: DO NOT
-  // leave the job pending and the worker counted busy for good.
+  // A reply that could not be read fails its job as an error does
   worker.onmessageerror = () => fail('a reply could not be read');
   worker.onerror = (event) => {
     event.preventDefault();
@@ -83,8 +77,7 @@ function dispatch(): void {
         worker = createWorker();
       } catch (error) {
         console.error('Citizen bake worker could not start', error);
-        // These bodies are baked on the page (null); the next asks a worker
-        // again. DO NOT give up on workers for the session on one failure.
+        // DO NOT give up on workers for the session on one failure.
         if (busy.size === 0) for (const job of queue.splice(0)) job.resolve(null);
         return;
       }
@@ -102,11 +95,7 @@ function dispatch(): void {
   }
 }
 
-/**
- * The core clips of the body whose rig is `scene`, baked in a worker; null
- * when no worker can (the caller bakes them itself). Deferred slots are
- * undefined.
- */
+/** The core clips of the body whose rig is `scene`, baked in a worker; null when no worker can */
 export function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<Result> {
   releaseRequested = false;
   if (!usable) return Promise.resolve(null);

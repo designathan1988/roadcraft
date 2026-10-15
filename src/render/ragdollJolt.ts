@@ -2,28 +2,7 @@ import type JoltModule from 'jolt-physics/wasm-compat';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { validFrame } from './ragdollAxes';
 
-/**
- * The bodies on the ground simulated by Jolt Physics (JoltPhysics.js, the
- * WebAssembly build of the engine Horizon Forbidden West shipped with): a
- * ragdoll is a dozen rigid parts - trunk, head, upper arms, forearms,
- * thighs, shins, feet - held by joints with the reach a body has (a hinge for
- * a knee or an elbow, a cone and a twist for a shoulder, a hip, the neck, an
- * ankle: Jolt's `SwingTwistConstraint`, made to approximate a human joint),
- * parts next to each other not colliding (`GroupFilterTable`), the ground a
- * height field and the walls, poles and cars convex prisms. The hand-written
- * stick figure it replaces (`ragdoll.ts` step) went limp like elastic, folded
- * a corpse onto its knees, turned a foot back and threw a hand off the edge
- * of a footway (2026-10-06).
- *
- * The rest of `ragdoll.ts` still reads and writes its particles (the joints'
- * points): after each step they are set from the parts; a change made to
- * them between steps (a bullet's push, a blast, arms put out to break a fall,
- * a knee drawn up) is turned into an impulse on the part that carries the
- * particle. Everything inside Jolt is in metres; the particles are in world
- * units (`toMetres`).
- *
- * https://github.com/jrouwe/JoltPhysics.js · https://jrouwe.github.io/JoltPhysics/
- */
+/** The bodies on the ground simulated by Jolt Physics */
 
 type JoltApi = typeof JoltModule;
 type JBody = InstanceType<JoltApi['Body']>;
@@ -61,11 +40,7 @@ export type JointSpec = {
   readonly parent: number; readonly child: number; readonly at: Vector3;
 } & ({
   readonly kind: 'hinge'; readonly axis: Vector3; readonly normal: Vector3; readonly min: number; readonly max: number;
-  /**
-   * Its tone: a weak motor towards a relaxed bend (`relax`, radians from now,
-   * `tone` newton metres at most) - not enough to hold weight, enough that a
-   * shin is not left balanced straight up in the air.
-   */
+  /** Its tone: a weak motor towards a relaxed bend (`relax`, radians from now, `tone` newton metres at most) */
   readonly relax?: number; readonly tone?: number;
 } | {
   /** Each body's frame: its twist and plane axes, unit and perpendicular (`ragdollAxes.ts` coneFrames). */
@@ -189,8 +164,7 @@ export class JoltWorld {
         const axis = tmpV.subVectors(b, a);
         const len = axis.length();
         rot.setFromUnitVectors(tmpW.set(0, 1, 0), len > 1e-6 ? axis.divideScalar(len) : tmpW.set(0, 1, 0));
-        // The settings destroyed once the shape is made, as `ground` and `prism` do: kept,
-        // they hold the shape too (their cached result), and every ragdoll leaked twelve of each.
+        // The settings destroyed once the shape is made, as `ground` and `prism` do: kept, they hold the shape too
         const settings = new J.CapsuleShapeSettings(Math.max(0.01, len / 2), radius);
         shape = settings.Create().Get();
         J.destroy(settings);
@@ -229,9 +203,7 @@ export class JoltWorld {
 
   private joint(j: JointSpec, parts: readonly JBody[]): JConstraint {
     const J = this.J;
-    // Jolt makes the joint's frames rotations from these axes and checks them
-    // only in its debug build: refused here, never handed to the solver
-    // (`ragdollAxes.ts`, docs/PROBLEMS.md R1).
+    // Jolt makes the joint's frames rotations from these axes and checks them only in its debug build
     const frames = j.kind === 'hinge' ? [[j.axis, j.normal]] as const : [[j.twist1, j.plane1], [j.twist2, j.plane2]] as const;
     for (const [a, b] of frames) {
       if (!validFrame(a, b)) throw new Error(`Ragdoll joint ${j.parent}-${j.child} (${j.kind}): axes not unit and perpendicular`);
@@ -305,13 +277,7 @@ export class JoltWorld {
   }
   active(id: JBodyID): boolean { return this.bodies.IsActive(id); }
   deactivate(id: JBodyID): void { this.bodies.DeactivateBody(id); }
-  /**
-   * A joint out of the physics: refused, loudly, when it is not in it. Jolt's
-   * `ConstraintManager::Remove` checks this only in a debug build; in this
-   * release build a constraint already out pops ANOTHER one off its list, or
-   * reads freed memory, and the engine breaks later inside `Step` ("table index
-   * is out of bounds", docs/PROBLEMS.md R1).
-   */
+  /** A joint out of the physics: refused, loudly, when it is not in it. */
   removeConstraint(c: JConstraint): void {
     if (!this.live.delete(this.J.getPointer(c))) {
       throw new Error('A Jolt constraint was taken out twice (or never put in): every joint has one owner (ragdollJolt.ts tear)');
@@ -363,11 +329,7 @@ export class JoltRagdoll {
     this.world.impulse(part.GetID(), dv.clone().multiplyScalar(this.world.mass(part) * share), at);
   }
 
-  /**
-   * A muscle's pull: particles `a` and `b` drawn towards each other by
-   * `impulse` (newton seconds) - equal and opposite, so the body as a whole
-   * is not moved (a knee drawn up to the belly does not sit the body up).
-   */
+  /** A muscle's pull: particles `a` and `b` drawn towards each other by `impulse` (newton seconds) */
   pull(a: number, b: number, impulse: number): void {
     const oa = this.owner.get(a), ob = this.owner.get(b);
     const pa = oa ? this.parts[oa.part] : null, pb = ob ? this.parts[ob.part] : null;
@@ -392,16 +354,10 @@ export class JoltRagdoll {
   /** Every part put to sleep (the body lies still; a push wakes it). */
   sleep(): void { for (const p of this.parts) if (p) this.world.deactivate(p.GetID()); }
 
-  /**
-   * Parts torn off (`ragdoll.ts` detach): the joints holding them to the rest
-   * let go, and they go to a ragdoll of their own; the particles they carried
-   * here stay where the tear is, carried by `stump` at the point `at`.
-   */
+  /** Parts torn off (`ragdoll.ts` detach): the joints holding them to the rest let go, and they go to a ragdoll of their own */
   tear(torn: readonly number[], stump: number, at: Vector3, moved: readonly number[], root?: { particle: number; part: number }): JoltRagdoll {
     const set = new Set(torn);
-    // The joint it came off at goes with the piece too, on its first part:
-    // left behind, the piece's bone was drawn from there to wherever the
-    // limb flew, a sleeve stretched metres long.
+    // The joint it came off at goes with the piece too, on its first part
     let rootOwner: { part: number; local: Vector3 } | null = null;
     const rootBody = root ? this.parts[root.part] : null;
     if (root && rootBody) {
@@ -421,9 +377,7 @@ export class JoltRagdoll {
     const pieceParts = this.parts.map((p, i) => (set.has(i) ? p : null));
     const pieceJoints = this.joints.map((c, i) => (c && set.has(this.jointSpecs[i]!.child) && set.has(this.jointSpecs[i]!.parent) ? c : null));
     for (const i of torn) this.parts[i] = null;
-    // The joints inside the piece go WITH it: one owner for every joint. Kept
-    // here too, both halves took them out of Jolt when destroyed, and a second
-    // `RemoveConstraint` corrupts the engine (docs/PROBLEMS.md R1).
+    // The joints inside the piece go WITH it: one owner for every joint.
     pieceJoints.forEach((c, i) => { if (c) this.joints[i] = null; });
     // The particles that went with the piece stay here at the tear, on the stump.
     const stumpPart = this.parts[stump];

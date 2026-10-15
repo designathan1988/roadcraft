@@ -21,27 +21,7 @@ import { m } from '@world/units';
 import { TREE_PIT } from '@world/streetFurniture';
 import { CURB_BAND, FOOTWAY_RISE } from '@world/roadTypes';
 
-/**
- * Procedural geometry for everything that stands on the ground.
- *
- * The previous props were single primitives - a cone on a cylinder for a tree,
- * a sphere for a bush, a box for a bench - and at any zoom closer than the map
- * view they read as exactly that: a diagram of a street. Each prop here is a
- * small merged model with its colours baked into the vertices, so one prop is
- * still ONE instanced draw call, however many parts it has.
- *
- * Two conventions every caller relies on:
- *
- *  - **Vegetation is authored one unit tall**, root at the origin. The
- *    instance's Y scale is then its height in world units, and the wind shader
- *    (`wind.ts`) reads local `y` as the fraction of height.
- *  - **Furniture is authored at real size**, in world units, root at the
- *    origin, facing a documented local axis.
- *
- * Vertex colours carry a baked ambient-occlusion term (darker low in a canopy
- * and deep inside it), which is most of what makes a lump of triangles read as
- * a crown of leaves under a single sun.
- */
+/** Procedural geometry for everything that stands on the ground. */
 
 type Rgb = readonly [number, number, number];
 
@@ -56,10 +36,7 @@ interface Placement {
   readonly scale?: readonly [number, number, number];
 }
 
-/**
- * Normalises a primitive into the shared layout - non-indexed, position,
- * normal and colour only - so any two parts can be merged.
- */
+/** Normalises a primitive into the shared layout - non-indexed, position, normal and colour only */
 function part(
   geometry: BufferGeometry,
   /** A flat colour, or one per vertex given its position, normal and face centre. */
@@ -139,10 +116,7 @@ export function bushParts(kind: BushKind): LowPolyParts {
   return lowPolyTreeParts(kind, 0xb05 + kind.length * 17);
 }
 
-/**
- * A tuft of grass: seven tapered blades leaning out from one root, dark at the
- * base and pale at the tip. One unit tall; about half a unit across.
- */
+/** A tuft of grass: seven tapered blades leaning out from one root, dark at the base and pale at the tip. */
 export function grassTuftGeometry(): BufferGeometry {
   const rng = new Rng(0x6a55);
   const positions: number[] = [];
@@ -154,8 +128,7 @@ export function grassTuftGeometry(): BufferGeometry {
     const yaw = (b / blades) * Math.PI * 2 + rng.float() * 0.7;
     const lean = 0.12 + rng.float() * 0.34;
     const height = 0.6 + rng.float() * 0.4;
-    // Far wider than a real blade (a centimetre or less): at the zoom grass is
-    // drawn at, a true-width blade is a hairline and the tuft disappears.
+    // Far wider than a real blade (a centimetre or less)
     const width = 0.07 + rng.float() * 0.035;
     const ox = (rng.float() - 0.5) * 0.14;
     const oz = (rng.float() - 0.5) * 0.14;
@@ -192,9 +165,7 @@ export function grassTuftGeometry(): BufferGeometry {
   }
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  // Blades are lit as the sward they belong to: facing the sky. Lit by their
-  // own facing, a tuft flickers light and dark as the camera's angle to each
-  // blade changes, and at this size that reads as noise, not as grass.
+  // Blades are lit as the sward they belong to: facing the sky.
   const normals = new Float32Array(positions.length);
   for (let i = 1; i < normals.length; i += 3) normals[i] = 1;
   g.setAttribute('normal', new BufferAttribute(normals, 3));
@@ -218,17 +189,11 @@ export function wildflowerGeometry(): BufferGeometry {
 /** A residential lighting column is 8 to 10 m with a 1.5 to 2.5 m outreach. */
 export const LAMP_HEIGHT = m(9);
 export const LAMP_OUTREACH = m(2.1);
-/**
- * Galvanised grey, not near-black. Seen from above a column is a thin line,
- * and a dark one on dark asphalt was invisible: all a player saw of a street
- * light was its shadow.
- */
+/** Galvanised grey, not near-black. */
 const LAMP_METAL = rgb(0x8a918e);
 const LAMP_PLINTH = rgb(0x5d6461);
 
-/**
- * A lighting column, root at the origin, arm reaching along local +X.
- */
+/** A lighting column, root at the origin, arm reaching along local +X. */
 export function lampGeometry(): BufferGeometry {
   const plinth = m(0.7);
   const armY = LAMP_HEIGHT - m(0.12);
@@ -244,8 +209,7 @@ export function lampGeometry(): BufferGeometry {
       at: [LAMP_OUTREACH / 2, armY + Math.sin(rise) * (LAMP_OUTREACH / 2), 0],
       rotate: [0, 0, rise],
     }),
-    // The luminaire housing: a flat, slightly tapered shell, pale enough to
-    // read from above, where it is the whole of the lamp the player sees.
+    // The luminaire housing: a flat, slightly tapered shell, pale enough to read from above
     part(new BoxGeometry(m(0.78), m(0.14), m(0.38)), rgb(0xa9b0ad), {
       at: [LAMP_OUTREACH, armY + Math.sin(rise) * LAMP_OUTREACH - m(0.02), 0],
       rotate: [0, 0, rise * 0.4],
@@ -253,14 +217,7 @@ export function lampGeometry(): BufferGeometry {
   ]);
 }
 
-/**
- * The lamp's lens, in the lamp's own frame, for the unlit glow material.
- *
- * ONE downward-facing face, under the housing. It was a box: its sides and
- * the glow round it showed from above as bright white discs over the
- * carriageway - on the yellow centre line, where the arms reach - and read as
- * an editor marker left on screen. A lens only shines down.
- */
+/** The lamp's lens, in the lamp's own frame, for the unlit glow material. */
 export function lampLensGeometry(): BufferGeometry {
   const armY = LAMP_HEIGHT - m(0.12);
   const rise = 0.1;
@@ -276,10 +233,7 @@ export function lampLensGeometry(): BufferGeometry {
 const WOOD = rgb(0x8d6540);
 const IRON = rgb(0x262b2a);
 
-/**
- * A park bench, 1.8 m long, root at the origin. The seat runs along local +X
- * and the back stands on the local -Z side, so a bench faces +Z.
- */
+/** A park bench, 1.8 m long, root at the origin. */
 export function benchGeometry(): BufferGeometry {
   const L = m(1.8);
   const seat = m(0.45);
@@ -356,11 +310,7 @@ export function postboxGeometry(): BufferGeometry {
   ]);
 }
 
-/**
- * A Brazilian public phone, the "orelhão" (Chu Ming Silveira, 1971): a
- * fibreglass shell shaped like an ear on a steel post, open to the footway,
- * the handset inside. Faces +Z.
- */
+/** A Brazilian public phone, the "orelhão" (Chu Ming Silveira, 1971) */
 export function phoneGeometry(): BufferGeometry {
   const shell = rgb(0xe8772e);
   const inner = rgb(0xd9d4c8);
@@ -380,11 +330,7 @@ export function phoneGeometry(): BufferGeometry {
   ]);
 }
 
-/**
- * A kerb inlet ("boca de lobo"): an iron grate in the gutter, in front of a
- * dark mouth cut into the kerb. The origin is on the kerb's back edge at the
- * footway's level; the road is toward -Z and a footway rise below.
- */
+/** A kerb inlet ("boca de lobo"): an iron grate in the gutter, in front of a dark mouth cut into the kerb. */
 export function drainGeometry(): BufferGeometry {
   const iron = rgb(0x2b2e2f);
   const concrete = rgb(0x9a9890);
@@ -406,10 +352,7 @@ export function drainGeometry(): BufferGeometry {
   return merge(parts);
 }
 
-/**
- * A tree pit in the footway: a square of dark soil behind a steel grate,
- * root at the footway surface.
- */
+/** A tree pit in the footway: a square of dark soil behind a steel grate, root at the footway surface. */
 export function treePitGeometry(): BufferGeometry {
   const soil = rgb(0x3a2c1f);
   const steel = rgb(0x3d4341);

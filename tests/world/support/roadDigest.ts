@@ -10,14 +10,7 @@ import { streetFurniture } from '@world/streetFurniture';
 import { junctionDetail, segmentMarkings } from '@world/markings';
 import { sectionOf } from '@world/section';
 
-/**
- * Everything the road network derives, one line per piece, so two builds
- * that differ say WHICH piece differs: the network (ribbons, trims, junction
- * rings, plates, marks), the lanelets, the surface bands, the walkways, the
- * street furniture, the markings and each road's cross-section. Shared by
- * the incremental oracle and the "old maps identical" lock of the road system
- * (docs/source/VIAS.md).
- */
+/** Everything the road network derives, one line per piece, so two builds that differ say WHICH piece differs: the network */
 const ringDigest = (ring: Ring): number => {
   const d = new Digest();
   for (const p of ring.flatten()) d.add(p.x).add(p.y);

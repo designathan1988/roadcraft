@@ -63,12 +63,7 @@ export interface LaneletRuntime {
   readonly id: LaneletId;
   /** Ascending by `s`; index 0 is nearest the entry, last is nearest the exit. */
   order: VehicleId[];
-  /**
-   * Vehicles whose body still overlaps this lane while they slide out of it.
-   * A lane change moves a vehicle's occupancy to the new lane at once, but its
-   * body crosses the gap over the next second; until it has, anyone behind it
-   * in the lane it is leaving must still see it. See `Vehicle.shadow`.
-   */
+  /** Vehicles whose body still overlaps this lane while they slide out of it. */
   shadows: VehicleId[];
   /** A retired lanelet still carrying agents: no new entries accepted. */
   ghost: boolean;
@@ -109,10 +104,7 @@ function forkStreams(seed: number): SimStreams {
     signalOffsets: root.fork('signalOffsets'),
     occupancy: root.fork('occupancy'),
     people: root.fork('people'),
-    // Forked last: each fork takes one draw of the root, so the streams above
-    // keep their numbers. DO NOT give the lots, the lorries or the scenery a
-    // fixed seed of their own again: every world drew the same lots and
-    // lorries whatever its seed.
+    // DO NOT give the lots, the lorries or the scenery a fixed seed of their own again
     lots: root.fork('lots'),
     lorries: root.fork('lorries'),
     ambient: root.fork('ambient'),
@@ -128,13 +120,7 @@ const NO_RUNTIME: LaneletRuntime = Object.freeze({
   ghostSince: 0,
 });
 
-/**
- * Everything the simulation owns.
- *
- * Read-only access to `world` topology, mutable agent state, and the indices
- * that make both cheap. Nothing here imports from `render`, `editor` or `ui`,
- * and a source scan in `tests/arch` enforces it.
- */
+/** Everything the simulation owns. */
 export class SimWorld {
   readonly clock = new SimClock();
   readonly graph = new LaneletGraph();
@@ -146,95 +132,46 @@ export class SimWorld {
 
   /** @mapWide Every vehicle on the map. */
   readonly vehicles = new VersionedMap<VehicleId, Vehicle>();
-  /**
-   * What moves the people (`people/engine.ts`); everything else reaches them
-   * through it. The game installs the agents' walking engine as it opens
-   * (`main.ts`, `agents/walk.ts`); until one is installed nobody walks (the
-   * null engine, Nystrom's "null service").
-   */
+  /** What moves the people (`people/engine.ts`); everything else reaches them through it. */
   pedEngine: PedestrianEngine = NO_PEDESTRIANS;
-  /**
-   * The vehicle model: Drive v2 (`drive/*`), the only one (the plain-IDM
-   * legacy model was taken out on 2026-10-08). Kept as a field so the specs
-   * that set it still read as they did.
-   */
+  /** The vehicle model: Drive v2 (`drive/*`), the only one (the plain-IDM legacy model was taken out on 2026-10-08). */
   driveModel = 'v2' as const;
   /** @mapWide One per lanelet a vehicle (or its shadow) has been on; written only through `runtimeFor`. */
   readonly runtime = new Map<LaneletId, LaneletRuntime>();
   readonly controllers = new Map<NodeId, SignalController>();
-  /**
-   * DOING LESS (docs/relatorio-desempenho-mapas-enormes-2026-10-11.md 5.1,
-   * phase 1): the work of a tick follows what moves, not the map. On, a tick
-   * visits only the lanes that hold a vehicle (`occupied`), the lanes left
-   * behind by an edit (`ghostCandidates`), and the signals that can change
-   * (a junction with nobody near rests in its green). Off, every lane, every
-   * junction and every signal each tick, as before: the oracle the result is
-   * held to, tick by tick (`tests/sim/doLess.spec.ts`).
-   */
+  /** DOING LESS (phase 1) */
   doLess = true;
   /** Lanes with a vehicle on them: written only by `enterLanelet`/`exitLanelet`, the only writers of `order`. */
   readonly occupied = new Set<LaneletId>();
   /** What the car being integrated was clearing as its step began: integration's own scratch, filled per car (`integrate.ts`). */
   readonly clearancesAtStart = new Set<Vehicle['clearingConnectors'][number]>();
-  /**
-   * The vehicles that may hold something at a junction: given a movement
-   * (`admittedConnector`, admission), clearing one with their rear
-   * (`clearingConnectors`, integration), or on a connector
-   * (`enterLanelet`). Noted by those writers (`noteHolder`), dropped by
-   * `junctionHolders` once they hold nothing. DO NOT find them by walking
-   * the fleet: three passes over every vehicle of the map each tick (the
-   * signals' reservations, the walkers', the admission's holders) for the
-   * few at a junction.
-   */
+  /** DO NOT find them by walking the fleet: three passes over every vehicle of the map each tick */
   private readonly maybeHolders = new Set<Vehicle>();
   /** Runtime lanes no longer in the graph (an edit took them): stage 7's work list (`collectGhosts`). */
   readonly ghostCandidates = new Set<LaneletId>();
-  /**
-   * Signals asleep (`signalsAsleep`): rested in green with nobody near on
-   * their last step. Stage 1 only keeps their time until somebody comes.
-   */
+  /** Signals asleep (`signalsAsleep`): rested in green with nobody near on their last step. */
   private readonly asleep = new Set<SignalController>();
   private asleepSince = { roads: -1, junctions: -1 };
 
-  /**
-   * What vehicles, signals and the audit may know about the people at each
-   * crossing (`crossings/state.ts`). Published by the pedestrian engine at the
-   * end of its stage; the only pedestrian state read outside it.
-   * @mapWide One per crossing of the map.
-   */
+  /** @mapWide What vehicles, signals and the audit may know about the people at each crossing (`crossings/state.ts`). */
   readonly crossingStates: CrossingStates = new Map();
-  /**
-   * Every person as the renderer and the counters see them (`people/view.ts`),
-   * in id order, published at the end of each tick. The object for an id lives
-   * as long as the person.
-   * @mapWide Every person on the map.
-   */
+  /** @mapWide Every person as the renderer and the counters see them */
   readonly pedViews: PedView[] = [];
   /** @mapWide Every person on the map, by id. */
   readonly pedViewById = new Map<number, PedView>();
   /** Stretch of each zebra that each movement drives over. */
   readonly crossingSpans = new CrossingSpans();
 
-  /**
-   * Tick at which each junction last admitted a vehicle.
-   *
-   * This is what separates congestion from a wedge. A vehicle waiting its turn
-   * at a junction that keeps admitting others is queued, and FIFO priority
-   * guarantees its turn arrives. A junction that has admitted nobody for cycles
-   * is genuinely stuck.
-   */
+  /** Tick at which each junction last admitted a vehicle. */
   readonly lastAdmission = new Map<NodeId, number>();
-  /**
-   * The lane that last sent a vehicle into each lane two or more lanes merge
-   * into, for the zipper (`zipperHolds` in `intersections/admission.ts`).
-   */
+  /** The lane that last sent a vehicle into each lane two or more lanes merge into, for the zipper */
   readonly mergeTurn = new Map<LaneletId, LaneletId>();
   /** Cumulative link entries since the current simulation session began. */
   readonly segmentVolume = new Map<number, number>();
-  /** Vehicles an hour into each junction from each leg, as a trend (docs/VIAS.md V5). */
+  /** Vehicles an hour into each junction from each leg, as a trend. */
   get flow(): FlowStats { return this.flowStats; }
   private flowStats = new FlowStats();
-  /** The control each junction left on "automatic" gets from its flows (docs/VIAS.md V5). */
+  /** The control each junction left on "automatic" gets from its flows. */
   get advisor(): ControlAdvisor { return this.controlAdvisor; }
   private controlAdvisor = new ControlAdvisor();
 
@@ -243,11 +180,7 @@ export class SimWorld {
   private streams: SimStreams;
 
   nextVehicleId = 1;
-  /**
-   * The next person's id, kept by the world as the vehicles' are: a reset
-   * gives on from here, and a new world told the same walks as the reset one
-   * (a person's pace and manner are drawn from the id, `agents/walk.ts`).
-   */
+  /** The next person's id, kept by the world as the vehicles' are */
   nextPersonId = 1;
   /** The summed length of the roads, kept by what each rebuild changed (`world/networkLength.ts`). */
   readonly roadLength = new NetworkLength();
@@ -257,11 +190,7 @@ export class SimWorld {
   readonly laneReaches = new LaneReaches();
   /** Per-world population timer; simulations must never influence each other. */
   vehicleSpawnClock = 0;
-  /**
-   * Traffic waiting to come in at each boundary entry lane: when its next
-   * arrival is due, and the arrival times of vehicles held outside the map
-   * because the entry was full (`sim/vehicles/spawn.ts`).
-   */
+  /** Traffic waiting to come in at each boundary entry lane */
   /** Per entry: the next arrival, the rate it was drawn at, and the arrivals waiting outside. */
   readonly entryDemand = new Map<LaneletId, { next: number; rate: number; waiting: number[] }>();
   /** Arrivals turned away because an entry's outside queue was full. */
@@ -271,65 +200,25 @@ export class SimWorld {
   /** User-facing density multipliers; topology and physics remain unchanged. */
   trafficIntensity = 1;
   pedestrianIntensity = 1;
-  /**
-   * How many cars and how many people on foot the player wants on the map
-   * (the panel's Traffic and People, `main.ts`). Set, a map opened is filled
-   * with them at once (`ambient/ambient.ts` open); then they come in at the
-   * ends of the roads and out of the lots, and leave at a road's end or into
-   * a lot (`vehicles/spawn.ts` stepDispatch, `agents/lotTraffic.ts`,
-   * `ambient/ambient.ts` edgePeople);
-   * null (tests, harnesses), the arrival rates of `trafficIntensity` and the
-   * density ceiling rule as before.
-   */
+  /** How many cars and how many people on foot the player wants on the map (the panel's Traffic and People, `main.ts`). */
   trafficCount: number | null = null;
   pedestrianCount: number | null = null;
-  /**
-   * The game's way (`main.ts`): the panel's Traffic and People are shares of
-   * the city's own density (`trafficIntensity`, `pedestrianIntensity`, 1 =
-   * 100 %), and the map is kept at the numbers they make, as with a count -
-   * one car per `TRAFFIC_DENSITY` of road times the demand, the lots' street
-   * tables for people (`vehicles/spawn.ts` chosenTraffic, `ambient.ts`
-   * peopleTarget). A fixed count of 10 left every city empty whatever its
-   * size (docs/investigacao-populacao.md, 2026-10-11): the numbers follow
-   * the city now, with no ceiling but the engine's.
-   */
+  /** The game's way (`main.ts`): the panel's Traffic and People are shares of the city's own density */
   followCity = false;
   /** Shared demand multiplier for the current simulation period. */
   demandMultiplier = 1;
-  /**
-   * Traffic from outside: cars at the map's edge entries, people at doors and
-   * road ends (set by `City.step`).
-   */
+  /** Traffic from outside: cars at the map's edge entries, people at doors and road ends (set by `City.step`). */
   edgeTraffic = true;
   /** The city's services - the time of day, the public transport (`sim/city/city.ts`) - stepped by the pipeline. */
   readonly city = new City();
   /** The life of the scenery: people and traffic made round the view (`sim/ambient`). */
   readonly ambient = new AmbientWorld();
-  /**
-   * Share of the population ceilings this device carries (1, or
-   * `NARROW_SCREEN_SHARE` on a narrow screen). SET BY THE COMPOSITION ROOT:
-   * the spawners used to read `window.innerWidth` themselves, which put the
-   * DOM inside `sim` and made the same seed grow a different city on a phone.
-   */
+  /** Share of the population ceilings this device carries (1, or `NARROW_SCREEN_SHARE` on a narrow screen). */
   populationShare = 1;
-  /**
-   * Where the player is looking, world units, and whether people there are
-   * drawn large enough to see how they step round each other. SET BY THE
-   * RENDERER each frame; null (tests, harnesses) simulates everybody in full.
-   * Out of it, people still follow their routes and keep off walls, but skip
-   * negotiating with each other (`sim/people`): nobody can see that, and it
-   * was most of a frame's simulation in a town.
-   */
+  /** Where the player is looking, world units */
   focus: {
     readonly x: number; readonly y: number; readonly r: number; readonly detail: boolean;
-    /**
-     * Playing (`play.ts`), the camera looks along the ground from behind the
-     * player and sees far down the street, past `r`: its eye, the way it
-     * looks (unit), the cosine of half its width with a margin, and how far
-     * anybody is still drawn big enough to notice. What is made or taken away
-     * (`ambient/ambient.ts`) is made or taken away outside this cone, as GTA
-     * spawns and culls off screen. Null in the view from above.
-     */
+    /** Playing (`play.ts`), the camera looks along the ground from behind the player and sees far down the street, past `r` */
     readonly view?: { readonly ex: number; readonly ey: number; readonly dx: number; readonly dy: number; readonly cos: number; readonly far: number } | null;
   } | null = null;
 
@@ -351,10 +240,7 @@ export class SimWorld {
     this.streams = forkStreams(seed);
   }
 
-  /**
-   * Switches the model that moves the people. Everybody walking is dropped:
-   * the two engines share no state, only what they publish.
-   */
+  /** Switches the model that moves the people. */
   usePedestrianEngine(engine: PedestrianEngine): void {
     this.crossingStates.clear();
     this.pedViews.length = 0;
@@ -363,21 +249,7 @@ export class SimWorld {
     engine.rebind(this);
   }
 
-  /**
-   * Forgets every agent and everything learned about the previous map.
-   *
-   * For loading a DIFFERENT document (open, import, new map). Lanelet and
-   * footway ids are built from small integers and coincide between maps, so
-   * rebinding after a load kept old vehicles - with their routes, claims and
-   * kerb stops - on unrelated roads of the new map, and carried issues,
-   * volumes and trip counts across. Undo and redo keep rebinding: they edit
-   * the same map. The world is then a new world with the same seed
-   * (`tests/sim/resetLikeNew.spec.ts`; the scenery's own reset is
-   * `AmbientWorld.reset`), but for three things kept on purpose: the
-   * settings, the clock (the city's hour, `City.minutes`) and the ids still
-   * to give (`nextVehicleId`: the renderer keeps a car's look by its id, and
-   * an id given again would dress a new car as an old one).
-   */
+  /** Forgets every agent and everything learned about the previous map. */
   reset(): void {
     this.vehicles.clear();
     this.maybeHolders.clear();
@@ -388,10 +260,7 @@ export class SimWorld {
     // What was built from the graph is gone: the next rebuild builds it whole, as a new world's first.
     this.graph.forget();
     this.prepGraph?.forget();
-    // The kerbs and zebras of the old map: a new world has none until its
-    // topology is built, and the controllers made in its first half read them
-    // (`crossingsAt`). Kept, a reset world made its signals from the old
-    // map's crossings and ran otherwise than a new one.
+    // The kerbs and zebras of the old map
     this.sidewalks.clear();
     this.walkSeen = null;
     this.signalPosts.reset();
@@ -412,12 +281,7 @@ export class SimWorld {
     this.issues.length = 0;
     this.topologyRevision = -1;
     this.vehicleTopologyRevision = -1;
-    // As a new world with the same seed: the junctions' flows and the
-    // controls chosen from them were the old map's (node ids coincide between
-    // maps), and the random streams start again from the seed. DO NOT keep
-    // them: the advisor turned the new map's junctions to signals it had
-    // measured on the old one, and the same map opened twice ran two
-    // different cities.
+    // DO NOT keep them: the advisor turned the new map's junctions to signals it had measured on the old one
     this.flowStats = new FlowStats();
     this.controlAdvisor = new ControlAdvisor();
     this.streams = forkStreams(this.seed);
@@ -441,16 +305,7 @@ export class SimWorld {
     return this.graph.connectors.get(id);
   }
 
-  /**
-   * A lane's occupants, to read. A lane nobody has been on answers the
-   * shared empty runtime (`NO_RUNTIME`, Nystrom's null service): frozen, so
-   * a write through it throws instead of being lost. DO NOT create the
-   * runtime here: routing, lane changes and the inspector read every lane
-   * they look at through this, and each read used to leave a runtime behind
-   * (a lane id gone from the graph a ghost candidate too) - the map grew to
-   * one per lane looked at, all of them walked by the full cleanup and audit.
-   * Writers go through `runtimeFor` (TC39 upsert: `get` reads, `getOrInsert` writes).
-   */
+  /** DO NOT create the runtime here: routing, lane changes and the inspector read every lane they look at through this */
   rt(id: LaneletId): LaneletRuntime {
     return this.runtime.get(id) ?? NO_RUNTIME;
   }
@@ -479,11 +334,7 @@ export class SimWorld {
     this.maybeHolders.add(v);
   }
 
-  /**
-   * The vehicles holding or clearing a movement, or on a connector, now - in
-   * no set order (every reader's answer is a set: who reserves what, who
-   * holds what). Those noted that hold nothing any more are dropped here.
-   */
+  /** The vehicles holding or clearing a movement, or on a connector, now - in no set order */
   junctionHolders(): Vehicle[] {
     const out: Vehicle[] = [];
     for (const v of this.maybeHolders) {
@@ -494,15 +345,7 @@ export class SimWorld {
     return out;
   }
 
-  /**
-   * Deterministic iteration order for any pass with cross-agent effects: the
-   * fleet by id, kept in that order as it changes (`VersionedMap.inKeyOrder`).
-   * The array handed out is never changed afterwards - a change of the fleet
-   * after it was handed out works on a copy - so a pass that adds or removes
-   * vehicles while walking it walks what it was given. DO NOT sort the fleet
-   * again at each change of it: a car made or gone each tick was the whole
-   * fleet copied and sorted each tick.
-   */
+  /** DO NOT sort the fleet again at each change of it */
   vehiclesInIdOrder(): readonly Vehicle[] {
     return this.vehicles.inKeyOrder();
   }
@@ -518,11 +361,7 @@ export class SimWorld {
     return this.junctionOrder.signalised;
   }
 
-  /**
-   * Moves whenever the junctions or their controllers do (a topology rebuild,
-   * a control the advisor switched): the node order and the signalised list
-   * were sorted and looked up afresh every tick, for every junction of the map.
-   */
+  /** Moves whenever the junctions or their controllers do (a topology rebuild, a control the advisor switched) */
   private junctionsVersion = 0;
   private junctionOrder: {
     version: number; nodes: readonly NodeId[]; signalised: readonly SignalController[];
@@ -556,12 +395,7 @@ export class SimWorld {
     this.junctionOrder = { version: this.junctionsVersion, nodes, signalised, junctionOf, approachOf, crossingOf };
   }
 
-  /**
-   * The junctions with a vehicle on one of their approaches, in node order:
-   * the only ones with a lane head to admit (`laneHead` reads `order`, which
-   * only `occupied` lanes have). Stage 5 looked at every approach of every
-   * junction of the map each tick (phase 1). Written into one list, kept.
-   */
+  /** The junctions with a vehicle on one of their approaches, in node order: the only ones with a lane head to admit */
   junctionsApproached(): readonly NodeId[] {
     if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
     const { junctionOf } = this.junctionOrder;
@@ -580,21 +414,7 @@ export class SimWorld {
   private readonly approached: NodeId[] = [];
   private readonly approachedSeen = new Set<NodeId>();
 
-  /**
-   * The signals stage 1 lets sleep this tick (SUMO schedules an actuated
-   * signal's next look instead of asking it every step,
-   * `MSActuatedTrafficLightLogic::trySwitch`). Asleep: it rested in green
-   * with nobody near (`stepController` true), and nothing its rest reads
-   * has changed since - every answer of `junctionQuiet`, every crossing it
-   * reads (`pedestriansCrossing`), its settings. Woken here, from what is
-   * busy rather than from the map: a vehicle on one of its approaches
-   * (`occupied`), somebody on or at one of its crossings (`crossingStates`
-   * holds only those), a reservation for it; and all of them by an edit of
-   * the roads or their traffic plan, or a rebuilt topology. Off (`doLess`
-   * false), none sleeps. DO NOT wake them on the document's revision: every
-   * building grown woke every signal of the town, and none slept while the
-   * city grew.
-   */
+  /** DO NOT wake them on the document's revision */
   signalsAsleep(deps: WorldSignalDeps): Set<SignalController> {
     const asleep = this.asleep;
     const roads = this.doc.changes.serialOf('roads', 'traffic');
@@ -621,56 +441,24 @@ export class SimWorld {
 
   // -------------------------------------------------------------- topology
 
-  /**
-   * Rebuilds every derived index from the current network geometry.
-   * @rebuild Called when the network's traffic revision moved.
-   */
+  /** @rebuild Rebuilds every derived index from the current network geometry. */
   rebuildTopology(): void {
     this.rebuildVehicleTopology();
     this.rebuildWalkTopology();
   }
 
-  /**
-   * The first half of `rebuildTopology`: lanelets, conflict zones, claims and
-   * the signal controllers - what the vehicles run on.
-   *
-   * The two halves can run in consecutive frames while the simulation is held
-   * (`main.ts`), so an edit is never one long stall of both: measured on the
-   * player map, the conflict zones and the footway graph each cost up to about
-   * 110 ms. The world is not stepped until the second half has run.
-   */
-  /**
-   * A second lanelet graph, built from the same document, that is never run:
-   * `prepareVehicleTopology` measures the conflict zones of an edit on it
-   * while this world keeps the graph its agents are bound to. It keeps its
-   * own caches, so building it again after an edit costs what the edit
-   * touched.
-   */
+  /** The first half of `rebuildTopology`: lanelets, conflict zones, claims and the signal controllers */
+  /** A second lanelet graph, built from the same document, that is never run */
   private prepGraph: LaneletGraph | null = null;
 
-  /**
-   * The slow half of `rebuildVehicleTopology` ahead of time, in steps: the
-   * conflict zones of every new pair of movements measured into the caches
-   * (`ConflictIndex.prepare`). Nothing the agents read changes; the rebuild
-   * that follows reads every pair back. A new crossroads used to stall the
-   * frame of its rebuild about a tenth of a second.
-   * @rebuild Run while the topology is behind the network (`frameLoop.ts` `TopologyCatchUp`).
-   */
+  /** @rebuild The slow half of `rebuildVehicleTopology` ahead of time, in steps */
   *prepareVehicleTopology(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
-    // The turns the build does not know are chosen by `measurer`'s workers when it has them
-    // (`TurnPlan`, `conflictPool.ts`): the build stands them in, and the junctions that did are built again
-    // with the answers. DO NOT sweep them here: a generated city's turns held one frame 25 s (2026-10-15).
-    // A preparation given up while the workers chose its turns (the network edited meanwhile) left its
-    // junctions on stand-ins: its plan is carried on, its asks sent again with this one's, and those junctions
-    // finished with the answers (`redoProvisional`), or here when there are no workers. DO NOT start a new
-    // plan over it: the junctions the next edit did not reach kept their stand-in turns in the graph.
+    // DO NOT sweep them here: a generated city's turns held one frame 25 s (2026-10-15).
     const left = graph.turnPlan;
     if (left) left.recording = measurer?.chooseTurns !== undefined;
     graph.turnPlan = measurer?.chooseTurns ? left ?? new TurnPlan() : left;
-    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say,
-    // through its steps as the edit's (`updateSteps`). DO NOT call `update` here: a whole build was one call.
-    // A graph built whole has its junctions built by `measurer`'s workers when there are some (`junctionsOffPage`).
+    // DO NOT call `update` here: a whole build was one call.
     const changed = this.prepReach(yield* graph.updateSteps(this.doc, this.net, measurer ?? null));
     const plan = graph.turnPlan;
     if (plan && plan.asks.size > 0) {
@@ -686,21 +474,15 @@ export class SimWorld {
     // The junctions that stood turns in, their movements shaped with them (none: nothing to do).
     graph.redoProvisional(this.doc, this.net);
     yield;
-    // The new pairs of the junctions built again since a preparation last ran to its end, measured by
-    // `measurer`'s workers when there are some (`conflictPool.ts`).
+    // The new pairs of the junctions built again since a preparation last ran to its end
     yield* this.conflicts.prepare(graph, measurer, changed);
     yield;
-    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.updateSteps`),
-    // their corners rounded by `measurer`'s workers when there are some.
+    // The residents' walkways brought up to the network: only what the edit reached
     yield* this.walkways.updateSteps(this.net, measurer);
     this.prepReached = new Set();
   }
 
-  /**
-   * The junctions the preparation graph built again since a preparation last ran to its end (null: the
-   * graph built whole since): those a preparation given up built are prepared by the next. DO NOT prepare
-   * only the last edit's: the junctions of the one given up had their pairs measured on the page at the swap.
-   */
+  /** DO NOT prepare only the last edit's: the junctions of the one given up had their pairs measured on the page at the swap. */
   private prepReached: Set<NodeId> | null = new Set();
   private prepReach(changed: GraphChange | null): ReadonlySet<NodeId> | null {
     if (changed === null || this.prepReached === null) this.prepReached = null;
@@ -725,20 +507,14 @@ export class SimWorld {
     graph.redoProvisional(this.doc, this.net);
   }
 
-  /**
-   * What each build of the lane graph changed (`LaneletGraph.update`; null: built whole), for what is
-   * derived from it to redo only that: the kerbs and zebras, their spans, the controllers.
-   */
+  /** What each build of the lane graph changed */
   readonly topologyLog = new ChangeLog<GraphChange>();
   /** The topology's state the kerbs, zebras and spans were brought up to (`walkTopologySteps`). */
   private walkSeen: object | null = null;
 
   /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
-    // What the edit changed, and only that, from here on (`LaneletGraph.update`; null: the graph built whole):
-    // taken from the graph the preparation built when it stands for the network as it is (`adopt`), built
-    // here otherwise. DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the
-    // whole map for an edit: every road drawn paid for the town.
+    // DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the whole map for an edit
     const prep = this.prepGraph;
     const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
@@ -750,16 +526,7 @@ export class SimWorld {
       if (!this.doc.segment(segment as SegmentId)) this.segmentVolume.delete(segment);
     }
     this.vehicleTopologyRevision = this.net.trafficRevision;
-    // The lanes the edit took, kept while vehicles still drive on them
-    // (`collectGhosts`); and a ghost whose id is in the graph again (an undo
-    // gives the same road the same lane ids) is a lane again, before the
-    // vehicles are rebound and routed onto it. DO NOT leave this to stage 7:
-    // the mark only ever went on, and a lane given back would stay dead to
-    // routes, bays, lane changes, entry and spawning for good - and the
-    // rebind right after this plans every route round a lane still marked.
-    // (Today a vehicle on a lane gone is removed before stage 7 can mark it -
-    // `rebindVehicles`, `integrateAll`, `stepDespawn` - so this is the guard
-    // for the day one is kept, as the ghost's own comment intends.)
+    // DO NOT leave this to stage 7: the mark only ever went on, and a lane given back would stay dead to routes, bays
     for (const id of changed ? changed.lanelets : this.runtime.keys()) {
       const rt = this.runtime.get(id);
       if (!rt) continue;
@@ -778,34 +545,17 @@ export class SimWorld {
       const gone = new Set([...changed.junctions].filter((node) => !this.graph.junctions.has(node)));
       if (gone.size) { this.flow.drop(gone); this.advisor.drop(gone); }
     }
-    // The junctions whose control the rebuild changed are noted by `syncControllers`; those at the ends
-    // of the segments the edit reached (their posts stand where the roads are) are noted here. DO NOT
-    // forget the log here: every road drawn anywhere had every junction's posts and heads placed again.
+    // DO NOT forget the log here: every road drawn anywhere had every junction's posts and heads placed again.
     this.noteJunctionsReached();
     if (this.applyAutoControl(changed?.junctions)) this.syncControllers(changed?.junctions ?? null);
   }
 
-  /**
-   * The junctions whose signal came or went with the roads as they were (the
-   * advisor's choice, `applyAutoControl`), oldest first, since
-   * `signalLogBase`, and the serial of the latest. Forgotten when the
-   * junctions are built again (an edit of the roads) or the world is reset:
-   * every junction is then to be read again. For whatever keeps something by
-   * a junction's control (the posts the walkers keep clear of, the drawn
-   * signals and posts). DO NOT read a junction's control off
-   * `topologyRevision` alone: a switch by the advisor moves no revision, and
-   * a junction it turned to a signal showed no lights until the next edit of
-   * the roads.
-   */
+  /** DO NOT read a junction's control off `topologyRevision` alone */
   private signalLog: NodeId[] = [];
   private signalLogBase = 0;
   private signalSerial = 0;
 
-  /**
-   * The junctions whose signal came or went since `serial` (`signalLog`),
-   * and the serial now; `nodes` null: every junction is to be read again (a
-   * first look, a rebuilt graph, a log forgotten).
-   */
+  /** The junctions whose signal came or went since `serial` (`signalLog`), and the serial now; `nodes` null */
   signalChangesSince(serial: number): { readonly serial: number; readonly nodes: readonly NodeId[] | null } {
     if (serial < this.signalLogBase || serial > this.signalSerial) return { serial: this.signalSerial, nodes: null };
     return { serial: this.signalSerial, nodes: this.signalLog.slice(serial - this.signalLogBase) };
@@ -814,9 +564,7 @@ export class SimWorld {
   private noteSignal(node: NodeId): void {
     this.signalLog.push(node);
     this.signalSerial++;
-    // Twice as long as reading every junction: the older half let go, the base moved past it. A reader
-    // behind the base reads every junction (`signalChangesSince` null); one that keeps up never is. DO NOT
-    // forget the whole log here: a reader that had just read was sent to read every junction again.
+    // DO NOT forget the whole log here: a reader that had just read was sent to read every junction again.
     const most = 2 * Math.max(64, this.graph.junctions.size);
     if (this.signalLog.length > most) {
       const drop = this.signalLog.length - most / 2;
@@ -847,15 +595,10 @@ export class SimWorld {
     this.signalLogBase = ++this.signalSerial;
   }
 
-  /**
-   * The control a junction on "automatic" runs (docs/VIAS.md V5): the
-   * advisor's choice once it has spoken, else the game's geometric default
-   * (`lanelets.ts` `shouldSignalise`). True when a junction's signal came or went.
-   */
+  /** The control a junction on "automatic" runs */
   private applyAutoControl(only?: Iterable<NodeId>): boolean {
     let changed = false;
-    // The junctions built again keep no choice of the old graph's: only they are asked (`only`); a junction
-    // not built again keeps the control it was given.
+    // The junctions built again keep no choice of the old graph's: only they are asked (`only`)
     const asked = only ? [...only].map((node) => [node, this.graph.junctions.get(node)] as const).filter((e): e is readonly [NodeId, JunctionTopology] => e[1] !== undefined) : this.graph.junctions;
     for (const [node, junction] of asked) {
       rebuildWork.lanes++;
@@ -872,12 +615,7 @@ export class SimWorld {
     return changed;
   }
 
-  /**
-   * Stage 0's measuring of the junctions (docs/VIAS.md V5): the flows aged,
-   * and every so often each junction on "automatic" given the control its
-   * trend warrants. A change of signal rebuilds that junction's controller
-   * alone (`syncControllers`).
-   */
+  /** Stage 0's measuring of the junctions */
   stepControlAdvisor(dt: number): void {
     this.flow.step(dt);
     if (!this.advisor.tick(dt)) return;
@@ -898,16 +636,10 @@ export class SimWorld {
     if (changed && this.applyAutoControl()) this.syncControllers();
   }
 
-  /**
-   * The second half: the footway graph and its crossings, and the controllers
-   * again, which give crossings their pedestrian phases. Completes the
-   * topology for `topologyRevision`.
-   */
+  /** The second half: the footway graph and its crossings, and the controllers again */
   rebuildWalkTopology(): void {
     if (this.vehicleTopologyRevision !== this.net.trafficRevision) this.rebuildVehicleTopology();
-    // What the lane graph changed since the kerbs, zebras and their spans were last brought up
-    // (`topologyLog`; null: build them whole). DO NOT build them, nor sync every controller, for the
-    // whole map on an edit: every road drawn made the town's again.
+    // DO NOT build them, nor sync every controller, for the whole map on an edit: every road drawn made the town's again.
     const changes = this.topologyLog.since(this.walkSeen);
     this.walkSeen = this.topologyLog.state;
     let nodes: Set<NodeId> | null = null;
@@ -924,9 +656,7 @@ export class SimWorld {
   /** Crossing ids at a node, one per incident segment. */
   crossingsAt(node: NodeId): CrossingId[] {
     const n = this.doc.node(node);
-    // A junction, or a mid-block crossing (a two-road node the player put one
-    // on): without it a signal crossing's plan held no crossing at all, and its
-    // single stage never stopped the cars for anybody.
+    // A junction, or a mid-block crossing (a two-road node the player put one on)
     if (!n || (n.incident.length < 3 && !(n.crossing && n.incident.length === 2))) return [];
     return n.incident
       .slice()
@@ -935,18 +665,7 @@ export class SimWorld {
       .filter((id) => this.sidewalks.crossings.has(id));
   }
 
-  /**
-   * What the signal controllers read about the world, for one pass over them.
-   *
-   * Its answers made afresh at the top of every step (`pipeline.ts`), before
-   * anything else moves, so answers that only read the world can be kept for
-   * the rest of the pass. They are: the controllers asked for the same
-   * demand, per stage and per group, over and over, and the reservation
-   * question scanned the whole fleet on every one of those asks. Nothing here
-   * is keyed on the clock, which does not advance when a test drives `step`
-   * directly. The object and its functions are kept: only the answers go
-   * (phase 1, nothing made per step that a step does not need).
-   */
+  /** What the signal controllers read about the world, for one pass over them. */
   signalDeps(): WorldSignalDeps {
     const kept = (this.keptSignalDeps ??= this.makeSignalDeps());
     kept.fresh();
@@ -955,11 +674,7 @@ export class SimWorld {
   private keptSignalDeps: { readonly deps: WorldSignalDeps; readonly fresh: () => void } | null = null;
 
   private makeSignalDeps(): { readonly deps: WorldSignalDeps; readonly fresh: () => void } {
-    // Kept by the node and the very arrays asked about (a plan's stages hand
-    // the same `greenGroups` and `demandMovements` every time): a key string
-    // joined from them on every ask was most of the controllers' time on a
-    // quiet map (audit, 2026-10-09). An array made afresh by a caller only
-    // misses the memo; the answer is the same.
+    // Kept by the node and the very arrays asked about
     const demands = new Map<NodeId, Map<readonly number[], Map<readonly string[] | undefined, { active: number; score: number }>>>();
     const demandOf = (node: NodeId, groups: readonly number[], movements?: readonly string[]) => {
       let byGroups = demands.get(node);
@@ -985,10 +700,7 @@ export class SimWorld {
           vehicle.clearingConnectors.length > 0 ||
           lane?.kind === 'connector';
         if (!ownsAllocation) continue;
-        // A soft Banker's intent does not occupy its future junctions. Only
-        // expedite the movement the physical holder must acquire next;
-        // advertising the whole chain starves unrelated stages several nodes
-        // before the vehicle can reach them.
+        // A soft Banker's intent does not occupy its future junctions.
         const next = vehicle.reservedConnectors[0];
         if (!next) continue;
         const connector = this.connector(next);
@@ -1005,13 +717,9 @@ export class SimWorld {
     const deps: WorldSignalDeps = {
       tick: () => this.clock.tick,
       connectorsOf: (id: string) => this.graph.connectors.get(id),
-      // Each stage's yellow is timed for the fastest approach it releases
-      // (ITE kinematic equation, `plan.ts` `withAmbers`).
+      // Each stage's yellow is timed for the fastest approach it releases (ITE kinematic equation, `plan.ts` `withAmbers`).
       approachSpeed: (lane: string) => this.graph.lanelets.get(lane)?.speedLimit ?? 0,
-      // Conflicts between two CARS. A tail swing only a bus or a truck can
-      // make is serialised by the claim table as the bus arrives; letting it
-      // split two approaches into separate stages would halve their green for
-      // a vehicle that is one in forty.
+      // Conflicts between two CARS.
       conflictsOf: (id: string) => this.conflicts.refs(id)
         .filter((ref) => this.conflicts.points[ref.point]?.zone(id, CAR_CLASS, CAR_CLASS))
         .map((ref) => ref.other),
@@ -1037,24 +745,7 @@ export class SimWorld {
     return { deps, fresh: () => { demands.clear(); reserved = null; } };
   }
 
-  /**
-   * What a green for these groups would actually serve right now.
-   *
-   * The detector used to be "is any vehicle anywhere on an approach link",
-   * which on a 400-unit block is true almost always: no stage ever gapped out,
-   * every stage ran to its target, and every cycle was the same length however
-   * light the traffic. This reads the queue the way a loop detector and a
-   * driver's eye do:
-   *
-   *   - `active`: the head of some lane is at the line or will reach it within
-   *     the passage time, wants a movement this green serves, and has room to
-   *     leave on the far side. While this is zero a green is wasted;
-   *   - `score`: queue length, time already waited, and arrivals weighted by how
-   *     soon they will be there. Used to pick which stage runs next.
-   *
-   * Vehicles whose exit is full do not count: a green for them discharges
-   * nobody (capacity after the junction).
-   */
+  /** What a green for these groups would actually serve right now. */
   signalDemand(node: NodeId, groups: readonly number[], movements?: readonly string[]): { active: number; score: number } {
     const junction = this.graph.junctions.get(node);
     let active = 0;
@@ -1101,13 +792,7 @@ export class SimWorld {
     return !reserved().has(c.node);
   }
 
-  /**
-   * Whether a bus is on an approach of `node`, within reach of its line,
-   * bound for a movement of one of these signal groups (V5, bus priority).
-   * Read from the vehicles on the junction's approaches (the links into it,
-   * `inbound`), not the whole fleet: asked by every bus-priority signal at
-   * every tick (phase 1, docs/relatorio-desempenho-mapas-enormes-2026-10-11.md).
-   */
+  /** Whether a bus is on an approach of `node`, within reach of its line, bound for a movement of one of these signal groups */
   busNear(node: NodeId, groups: readonly number[]): boolean {
     for (const laneId of this.graph.junctions.get(node)?.inbound ?? []) {
       const order = this.runtime.get(laneId)?.order;
@@ -1130,20 +815,10 @@ export class SimWorld {
     return this.clock.tick;
   }
 
-  /**
-   * The controllers brought up to the junctions: a new junction gets one, a
-   * junction gone loses its own, and a junction whose plan's inputs changed
-   * (`PlanInputs`) has its controller rebuilt. A junction an edit did not
-   * reach keeps its controller as it runs - its stage, its timer, its
-   * history. DO NOT rebuild every controller here: `rebuildController` puts
-   * one caught between greens into ALL_RED from nought, so every road drawn
-   * anywhere, and every control the advisor switched, reset the lights of the
-   * whole city (and paid a plan per junction of the map).
-   */
+  /** DO NOT rebuild every controller here */
   private syncControllers(only: ReadonlySet<NodeId> | null = null): void {
     const deps = this.signalDeps();
-    // The junctions an edit built again (`LaneletGraph.update`), or every one; a junction not built again
-    // has the controller and the plan it had.
+    // The junctions an edit built again (`LaneletGraph.update`), or every one
     const asked = only ? [...only].map((node) => [node, this.graph.junctions.get(node)] as const).filter((e): e is readonly [NodeId, JunctionTopology] => e[1] !== undefined) : this.graph.junctions;
     for (const [node, junction] of asked) {
       const crossings = this.crossingsAt(node);
@@ -1160,8 +835,7 @@ export class SimWorld {
         if (settings?.mode === 'fixed') seekFixed(existing, settings, this.tickCount() * DT);
       } else {
         rebuildWork.signals++;
-        // A deterministic per-node offset so neighbouring junctions do not all
-        // switch together.
+        // A deterministic per-node offset so neighbouring junctions do not all switch together.
         const offset = (node * 7.317) % 60;
         const created = createController(junction, crossings, deps, offset);
         if (settings?.mode === 'fixed') seekFixed(created, settings, this.tickCount() * DT);
@@ -1184,14 +858,7 @@ export class SimWorld {
   /** What each controller's plan was made from (`syncControllers`). */
   private readonly planInputs = new Map<NodeId, PlanInputs>();
 
-  /**
-   * What a junction's plan is made from (`signals/plan.ts` buildSignalPlan):
-   * its approach groups and connectors - kept as the very objects while the
-   * lanelet graph reuses the junction (`LaneletGraph.buildJunctions`, whose
-   * key holds the node's control, legs, lane links and every lane meeting
-   * there, so their speeds and the movements' conflicts with them) - whether
-   * it is signalised, its crossings and the player's settings.
-   */
+  /** What a junction's plan is made from (`signals/plan.ts` buildSignalPlan): its approach groups and connectors */
   private planInputsOf(junction: JunctionTopology, crossings: readonly CrossingId[], settings: SignalSettings | undefined): PlanInputs {
     return {
       groups: junction.groups,
@@ -1270,11 +937,7 @@ export class SimWorld {
     v.shadow = null;
   }
 
-  /**
-   * Every body in a lane with its front arc position there: the occupants, the
-   * vehicles still sliding out of it, projected onto its centreline, and the
-   * tails of vehicles whose front has already moved on to the next lanelet.
-   */
+  /** Every body in a lane with its front arc position there */
   bodiesIn(id: LaneletId): { vehicle: Vehicle; s: number }[] {
     const rt = this.rt(id);
     const out: { vehicle: Vehicle; s: number }[] = [];
@@ -1336,13 +999,7 @@ function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
   return true;
 }
 
-/**
- * A Map that counts its changes of membership, for caches over it, and keeps
- * its values in the order of their keys (`inKeyOrder`): a key above every
- * other - a new vehicle's id - goes on the end, any other is put in its place
- * by halving, and one taken out leaves its place. The list handed out is
- * shared until the next change, which copies it first (copy on write).
- */
+/** A Map that counts its changes of membership, for caches over it, and keeps its values in the order of their keys */
 class VersionedMap<K extends number, V> extends Map<K, V> {
   version = 0;
   private orderedKeys: K[] = [];

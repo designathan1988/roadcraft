@@ -15,8 +15,7 @@ describe('ground cover', () => {
   });
 
   it('grows every tree light: body and foliage cards together under 300 triangles', () => {
-    // The game's one tree style (`lowPolyTrees.ts`): a low-poly trunk and
-    // inner crown under alpha-cut foliage cards, conifers included.
+    // The game's one tree style (`lowPolyTrees.ts`)
     for (const species of FOREST_SPECIES) {
       for (let seed = 0; seed < 4; seed++) {
         const model = treeModel(species, seed);

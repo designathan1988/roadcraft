@@ -13,52 +13,25 @@ import { m } from '@world/units';
 import type { Facing, Viewport } from '@view/viewport';
 import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, pullWeight, viewDistance } from '@view/cameraProfile';
 
-/**
- * Close inspection of pedestrian faces, gaits and the people inside vehicles.
- * A view 14 m tall showed a person about eighty pixels high; at 4 m a person
- * fills about half of it; at 1.6 m (the player asked to come closer,
- * 2026-10-02) the view is a face and shoulders.
- */
+/** Close inspection of pedestrian faces, gaits and the people inside vehicles. */
 export const MIN_HALF_HEIGHT = m(0.8);
 /** Out to the whole map (`world/bounds.ts`): its side and a tenth more. */
 export const MAX_HALF_HEIGHT = Math.round(MAP_SIZE * 0.55);
 
-/**
- * The zoom range the iso rig can represent at a given viewport height.
- *
- * `zoom` is `height / (halfHeight * 2)` and `halfHeight` is clamped to
- * [MIN_HALF_HEIGHT, MAX_HALF_HEIGHT], so this is the rig's own range and NOT the
- * flat camera's `MIN_ZOOM`/`MAX_ZOOM`. Restoring a session clamps against it, so
- * a zoom the rig produced (up to 80 at 800 px tall) is never rejected by a
- * narrower fallback range. One definition, used by the rig's `zoomBounds` and by
- * the boot-time clamp before the rig exists.
- */
+/** The zoom range the iso rig can represent at a given viewport height. */
 export function isoZoomBounds(height: number): { min: number; max: number } {
   return { min: height / (MAX_HALF_HEIGHT * 2), max: height / (MIN_HALF_HEIGHT * 2) };
 }
 
-/**
- * The orbit the camera starts in, and the one "reset view" returns to: looking
- * north-west-ish down at 48 degrees, the angle the whole game was drawn for.
- */
+/** The orbit the camera starts in, and the one "reset view" returns to */
 export const DEFAULT_AZIMUTH = Math.PI / 4;
 export const DEFAULT_ELEVATION = (48 * Math.PI) / 180;
-/**
- * How low the camera may look. The view is orthographic: there is no horizon to
- * look at, and below about thirty degrees the ground seen grows to twice the
- * screen's height in depth, which is paid for in shadows and detail with little
- * gained. Straight down (90) is a true plan view.
- */
+/** How low the camera may look. */
 export const MIN_ELEVATION = (20 * Math.PI) / 180;
 export const MAX_ELEVATION = Math.PI / 2;
 /** The orthographic camera's distance from the view's centre: past the farthest ground a zoomed-out low view takes in. */
 const DISTANCE = m(2000);
-/**
- * The perspective camera's vertical field of view far away, degrees: a long
- * lens, so a street keeps its proportions and the town still reads as a
- * model. Close up it widens to a person's view (`view/cameraProfile.ts`
- * `fieldOfView`); the camera's own `fov` is the one in use.
- */
+/** The perspective camera's vertical field of view far away, degrees */
 export const PERSPECTIVE_FOV = 35;
 const TAU = Math.PI * 2;
 /** The most steps a zoom or a turn takes to bring the point it holds back under the pointer (`keeping`). */
@@ -76,33 +49,16 @@ export interface IsoRig {
   /** The camera drawn with: orthographic, or perspective (`setPerspective`). */
   readonly camera: OrthographicCamera | PerspectiveCamera;
   readonly perspective: boolean;
-  /**
-   * Perspective on or off. The view keeps its centre, its orbit and its scale
-   * at the centre (`zoom` is still pixels per unit there).
-   */
+  /** Perspective on or off. */
   setPerspective(on: boolean): void;
   readonly viewport: Viewport;
   readonly target: Vector3;
   resize(width: number, height: number): void;
-  /**
-   * The height of what is drawn at a map point (x, y): the perspective view
-   * looks at the ground there, and never goes under it (`apply`).
-   */
+  /** The height of what is drawn at a map point (x, y) */
   setGround(groundAt: (x: number, y: number) => number): void;
-  /**
-   * The lowest the perspective camera's eye may stand at a map point, world
-   * height: over the roofs near a building (`world/buildings/cameraSolids.ts`).
-   * A continuous function of position, so the camera is lifted out of a
-   * building without a jump and never blocked.
-   */
+  /** The lowest the perspective camera's eye may stand at a map point, world height: over the roofs near a building */
   setSolids(floorAt: ((x: number, y: number) => number) | null, roofAt?: ((x: number, y: number) => number) | null): void;
-  /**
-   * One frame of the pull's own time, `dt` seconds, as Cinemachine's
-   * Deoccluder times it: nothing until a building has stood in the way
-   * `PULL_WAIT` ("Minimum Occlusion Time"), then eased in ("Damping When
-   * Occluded"), held at the nearest point ("Smoothing Time"), eased back out
-   * ("Damping"). Whether it is still moving (draw again).
-   */
+  /** One frame of the pull's own time, `dt` seconds, as Cinemachine's Deoccluder times it */
   settle(dt: number): boolean;
 }
 
@@ -138,12 +94,7 @@ export function createIsoRig(
   let height = 1;
   let halfHeight = Math.min(MAX_HALF_HEIGHT, Math.max(MIN_HALF_HEIGHT, initialHalfHeight));
   let azimuth = wrapAzimuth(Number.isFinite(orbit.azimuth) ? orbit.azimuth : DEFAULT_AZIMUTH);
-  /**
-   * The player's tilt, as it would be far away. The orthographic view uses
-   * it as it is; the perspective view adds what the distance does by itself
-   * (`tiltNow`): the camera eases towards the street as it comes closer, and
-   * the player's own tilt rides on top of that.
-   */
+  /** The player's tilt, as it would be far away. */
   let farTilt = clampElevation(Number.isFinite(orbit.elevation) ? orbit.elevation : DEFAULT_ELEVATION);
   /** The tilt in use now, rad. */
   const tiltNow = (): number => camera === persp
@@ -161,8 +112,7 @@ export function createIsoRig(
   const apply = (): void => {
     const aspect = Math.max(0.1, width / Math.max(1, height));
     elevation = tiltNow();
-    // The view's centre stays over the map: dragged off it, the view
-    // showed nothing but sky - a white screen.
+    // The view's centre stays over the map: dragged off it, the view showed nothing but sky - a white screen.
     const edge = MAP_HALF + m(80);
     target.x = Math.max(-edge, Math.min(edge, target.x));
     target.z = Math.max(-edge, Math.min(edge, target.z));
@@ -172,17 +122,12 @@ export function createIsoRig(
       ortho.right = halfHeight * aspect;
       ortho.top = halfHeight;
       ortho.bottom = -halfHeight;
-      // The ground the view takes in runs `halfHeight` cot(elevation) nearer
-      // and farther than the point looked at: the camera stands behind its
-      // near edge and sees past its far one (out on the whole map some
-      // kilometres; the fixed distance alone cut the ground off).
+      // The ground the view takes in runs `halfHeight` cot(elevation) nearer and farther than the point looked at
       const deep = halfHeight / Math.tan(Math.max(elevation, MIN_ELEVATION));
       distance = Math.max(distance, deep + m(400));
       ortho.far = Math.max(m(5600), distance + deep + m(800));
     } else {
-      // As far back as makes the view `halfHeight` tall at the centre: the
-      // same scale there as the orthographic view had, through a lens that
-      // widens in the street (`cameraProfile`).
+      // As far back as makes the view `halfHeight` tall at the centre
       persp.fov = fieldOfView(halfHeight);
       distance = viewDistance(halfHeight);
       persp.aspect = aspect;
@@ -190,12 +135,7 @@ export function createIsoRig(
       persp.far = distance * 4 + m(2400);
     }
 
-    // In perspective the view looks at the ground itself, at its height
-    // there: at the height of the plane at zero, a camera brought close over
-    // a hill or a chapada ended inside it and showed the land from below
-    // (the player, 2026-10-07).
-    // Close up, the point looked at rises to a person's eyes: the closest
-    // view is a pedestrian's, looking down the street, not at the asphalt.
+    // In perspective the view looks at the ground itself, at its height there
     if (camera === persp) target.y = (groundAt ? groundAt(target.x, -target.z) : 0) + eyeLift(halfHeight);
     const horizontal = Math.cos(elevation) * distance;
     camera.position.set(
@@ -203,27 +143,9 @@ export function createIsoRig(
       (camera === persp ? target.y : 0) + Math.sin(elevation) * distance,
       target.z + Math.sin(azimuth) * horizontal,
     );
-    // "Up" on screen: the camera's own up with no roll, the world's up tipped
-    // forward by the tilt - straight up looking level, the way the camera
-    // faces over the ground looking straight down (where the world's up is
-    // the view direction itself and `lookAt` would spin the plan view at
-    // random). The way it faces alone, used at every tilt, turned the picture
-    // upside down once the camera looked up from the street (the player,
-    // 2026-10-10; master 2feec96a): three's `lookAt` keeps the part of `up`
-    // across the view, and looking up that direction falls DOWN the screen.
+    // "Up" on screen: the camera's own up with no roll, the world's up tipped forward by the tilt
     camera.up.set(-Math.cos(azimuth) * Math.sin(elevation), Math.cos(elevation), -Math.sin(azimuth) * Math.sin(elevation));
-    // Never behind a building from the point looked at, close up: the eye is
-    // brought in along the line of sight to just short of the building that
-    // stands between (camera-controls' `_collisionTest`; Cinemachine's
-    // Deoccluder, "Pull Camera Forward"). Each sample of the sightline weighs
-    // by how deep it stands in a building's margin (`cameraSolids.ts` eases
-    // its floor down over 2 m round the walls), so the pull grows as a
-    // corner comes in rather than flipping from nothing to metres. And it is
-    // taken as the Deoccluder takes it (`settle`): only once the building
-    // has stood in the way a moment, eased in, held, eased back out. Taken
-    // whole in every frame, every corner a drag carried through the sightline
-    // jerked the eye by metres and the camera shook (the player,
-    // 2026-10-13: "a câmera fica tripidando").
+    // Never behind a building from the point looked at, close up
     const pull = camera === persp && solidsAt ? pullWeight(halfHeight) : 0;
     let wanted = 0;
     if (pull > 0 && solidsAt) {
@@ -249,55 +171,27 @@ export function createIsoRig(
       persp.near = Math.max(m(0.08), camera.position.distanceTo(target) * 0.02);
     }
     if (camera === persp && solidsAt) {
-      // At any distance, never inside a building: the eye stood inside the
-      // towers it orbited, the walls cut by the near plane (the player,
-      // 2026-10-13: "a câmera não pode atravessar o prédio").
-      // Brought forward along the line of sight to where it leaves the
-      // building (Cinemachine's Deoccluder, "Pull Camera Forward"); with the
-      // point looked at inside too, lifted over the roof.
+      // At any distance, never inside a building: the eye stood inside the towers it orbited, the walls cut by the near plane
       const floorAt = solidsAt;
       const inside = (t: number): boolean => {
         const y = camera.position.y + (target.y - camera.position.y) * t;
         return y < floorAt(camera.position.x + (target.x - camera.position.x) * t, -(camera.position.z + (target.z - camera.position.z) * t));
       };
-      // Inside a building's walls, not merely in the margin round them that
-      // the floor above eases down over (`cameraSolids.ts` `roofAt`, no margin).
+      // Inside a building's walls, not merely in the margin round them that the floor above eases down over
       const roof = roofAt;
       const within = (t: number): boolean => {
         const y = camera.position.y + (target.y - camera.position.y) * t;
         return y < roof!(camera.position.x + (target.x - camera.position.x) * t, -(camera.position.z + (target.z - camera.position.z) * t));
       };
       if (roof) {
-        // Decided by the walls, NOT by the margin round them alone: the point
-        // looked at in a podium by a tower, the eye in the tower, took the eye
-        // up to the eased floor over it - 58 m up, looking down into its own
-        // roof, a grey screen; an eye merely beside a wall was lifted half the
-        // tower's height, or left a hand from a window looking into the room
-        // (2026-10-14). In turn:
-        // 1. The point looked at and the eye both inside a building: the point
-        //    goes onto the roof over it, the eye with it, and the view looks
-        //    across the roof at its own tilt (a view set on a tower, a building
-        //    grown where the view looked).
-        //    ONLY with the eye inside too. DO NOT lift the point whenever it
-        //    falls in a building: with the eye outside nothing needs it, and
-        //    the view's height then jumped by a building's height wherever
-        //    its centre crossed a wall; a pan, holding the ground grabbed
-        //    under the hand, found the point elsewhere at the new height and
-        //    moved the centre back out - in, out, in on alternate frames, the
-        //    eye leaping 24-60 m (2026-10-14, the town of seed 1 at the
-        //    bairro zoom: the camera shook in every drag over buildings;
-        //    `tests/render/cameraPanBuildings.spec.ts`). A camera kept out of
-        //    obstacles moves the eye, not the point it looks at (Cinemachine's
-        //    Deoccluder).
+        // DO NOT lift the point whenever it falls in a building
         if (within(1) && within(0)) {
           const lift = roof(target.x, -target.z) + eyeLift(halfHeight) - target.y;
           target.y += lift;
           camera.position.y += lift;
         }
         if (within(0) && !within(1)) {
-          // 2. The eye inside a building, the point outside it: the eye brought
-          //    along the line of sight to where it leaves the walls
-          //    (Cinemachine's Deoccluder, "Pull Camera Forward"), past them.
+          // 2.
           let lo = 0, hi = 1;
           for (let i = 0; i < 20; i++) {
             const mid = (lo + hi) / 2;
@@ -309,10 +203,7 @@ export function createIsoRig(
           camera.position.y = Math.max(camera.position.y, floorAt(camera.position.x, -camera.position.z));
         }
         if (!within(0) && inside(0)) {
-          // 3. The eye outside the walls but nearer one than the camera's
-          //    radius (the margin, Cinemachine's "Camera Radius": "distance to
-          //    maintain from any obstacle"): a step back along the line of
-          //    sight, away from the wall, as far as the margin, at most `BACK`.
+          // 3.
           const length = Math.max(camera.position.distanceTo(target), 1e-6);
           const back = -BACK / length;
           if (!inside(back)) {
@@ -335,15 +226,12 @@ export function createIsoRig(
           camera.position.lerp(target, hi);
         }
       }
-      // The near plane short of the nearest building: at 2 % of a long view
-      // distance it stood metres ahead of the eye and cut the facade open.
+      // The near plane short of the nearest building
       const gap = camera.position.y - floorAt(camera.position.x, -camera.position.z);
       persp.near = Math.max(m(0.08), Math.min(persp.near, camera.position.distanceTo(target) * 0.02, (gap + m(1)) * 0.5));
     }
     if (camera === persp && groundAt) {
-      // And never under the ground where it stands: raised over it, still
-      // looking at the same point (the camera-terrain clamp of Cesium's and
-      // Unity's orbit cameras, read from the height field).
+      // And never under the ground where it stands: raised over it, still looking at the same point
       const floor = groundAt(camera.position.x, -camera.position.z) + GROUND_CLEARANCE;
       if (camera.position.y < floor) camera.position.y = floor;
     }
@@ -371,17 +259,7 @@ export function createIsoRig(
   let roofAt: ((x: number, y: number) => number) | null = null;
   const projected = new Vector3();
 
-  /**
-   * The point under a pointer, on the horizontal plane at `atHeight`, or null
-   * where the pointer's ray does not reach that plane (three's
-   * `Ray.intersectPlane`: above its horizon).
-   *
-   * Height is not cosmetic here. The camera looks down at an angle, so a
-   * surface fifteen units up projects about thirteen units away from the ground
-   * point beneath it at 48 degrees. Solving on the wrong plane is why pointing
-   * at the end of an elevated road picked open ground thirteen units away and
-   * the snap never found the node that was plainly drawn there.
-   */
+  /** The point under a pointer, on the horizontal plane at `atHeight` */
   const hitAt = (px: number, py: number, atHeight: number): Vec2 | null => {
     ndc.set((px / Math.max(1, width)) * 2 - 1, 1 - (py / Math.max(1, height)) * 2);
     raycaster.setFromCamera(ndc, camera);
@@ -393,14 +271,7 @@ export function createIsoRig(
   /** The same; a pointer whose ray meets no ground reads the view's centre. */
   const worldAt = (px: number, py: number, atHeight = 0): Vec2 => hitAt(px, py, atHeight) ?? { x: target.x, y: -target.z };
 
-  /**
-   * The plane a zoom or a turn holds under the pointer. Far down a street, at
-   * a grazing angle, the ground under the pointer lies many times the view's
-   * distance away, and holding it swung the view metres per notch for a tiny
-   * change of tilt (an ill-conditioned hold); over the horizon there is no
-   * ground at all. The point held is then the one on the pointer's ray at
-   * three times the view's distance: the zoom still goes towards the pointer.
-   */
+  /** The plane a zoom or a turn holds under the pointer. */
   const holdHeight = (px: number, py: number, atHeight: number): number => {
     if (camera !== persp) return atHeight;
     ndc.set((px / Math.max(1, width)) * 2 - 1, 1 - (py / Math.max(1, height)) * 2);
@@ -419,16 +290,9 @@ export function createIsoRig(
     const before = grabbed ?? hitAt(px, py, atHeight);
     change();
     apply();
-    // A pointer over the horizon holds no ground: the change is made about
-    // the view's centre. (Its old stand-in, the centre itself, set against a
-    // real point after the change, threw the view across the map.)
+    // A pointer over the horizon holds no ground: the change is made about the view's centre.
     if (!before) return;
-    // On the plane one step is exact; looking at the ground, the view's
-    // height moves with its centre, and a second step takes up what the
-    // first left. Close up the tilt, the lens and the eye's lift change with
-    // the zoom too: the steps go on until the point stands within a hundredth
-    // of a unit (`KEEP_PASSES` at most), as a fixed three left a point far
-    // down the road pixels off and the place pointed at slid away.
+    // On the plane one step is exact; looking at the ground, the view's height moves with its centre
     for (let pass = camera === persp ? KEEP_PASSES : 1; pass > 0; pass--) {
       const found = hitAt(px, py, atHeight);
       if (!found) break;
@@ -458,16 +322,10 @@ export function createIsoRig(
         y: (-projected.y * 0.5 + 0.5) * cssH,
       };
     },
-    // The same test the zoom's hold makes (`holdHeight`): met within three
-    // times the view's distance.
+    // The same test the zoom's hold makes (`holdHeight`): met within three times the view's distance.
     holds: (px, py, atHeight) => camera !== persp || holdHeight(px, py, atHeight) === atHeight,
     panTo(grabbed, px, py, _cssW, _cssH, atHeight = 0) {
-      // The grabbed point is held on its own plane (the height of what was
-      // under the pointer), as zoom and orbit hold theirs (`keeping`): on the
-      // plane at zero, close over a hill a pixel moved the view far, and a
-      // ray above that plane's horizon jumped it to the target. Looking at the
-      // ground, the view's height moves with its centre: a second step takes
-      // up what the first left. A ray that misses the plane moves nothing.
+      // The grabbed point is held on its own plane (the height of what was under the pointer), as zoom and orbit hold theirs
       for (let pass = camera === persp && groundAt ? 2 : 1; pass > 0; pass--) {
         const found = hitAt(px, py, atHeight);
         if (!found) break;
@@ -484,17 +342,14 @@ export function createIsoRig(
     zoomAt(px, py, factor, _cssW, _cssH, atHeight = 0, grabbed) {
       if (!(factor > 0) || !Number.isFinite(factor)) return;
       const wanted = halfHeight / factor;
-      // The closest zoom is a person's eyes on the ground, and the zoom stops
-      // there (the player, 2026-10-10: "zoom máximo até pegar o nível do chão
-      // e encaixar, pronto, aí não vai mais"; master 2feec96a).
+      // The closest zoom is a person's eyes on the ground, and the zoom stops there
       if (wanted < MIN_HALF_HEIGHT && halfHeight <= MIN_HALF_HEIGHT) return;
       keeping(px, py, () => {
         halfHeight = Math.min(MAX_HALF_HEIGHT, Math.max(MIN_HALF_HEIGHT, wanted));
       }, atHeight, grabbed);
     },
     slide(right, forward) {
-      // Along the ground the camera faces: forward is away from the camera
-      // over the ground, whatever the tilt (straight down included).
+      // Along the ground the camera faces: forward is away from the camera over the ground, whatever the tilt
       const fx = -Math.cos(azimuth), fz = -Math.sin(azimuth);
       target.x += fx * forward - fz * right;
       target.z += fz * forward + fx * right;
@@ -506,9 +361,7 @@ export function createIsoRig(
       });
     },
     orbit(dAzimuth, dElevation, pivot) {
-      // About the point the player grabbed (the player, 2026-10-07): that
-      // ground stays under the pointer while the camera swings round and over
-      // it. Without a pivot, about the centre of the view.
+      // About the point the player grabbed (the player, 2026-10-07)
       const turn = (): void => {
         azimuth = wrapAzimuth(azimuth + dAzimuth);
         askTilt(tiltNow() + dElevation);

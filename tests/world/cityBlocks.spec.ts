@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 
-/**
- * The default generated city is laid in rectangular blocks (the player,
- * 2026-10-09: "quarteirões certos, retangulares"): every street straight and
- * axis-aligned, every block the same rectangle, nothing curved or wedged.
- */
+/** The default generated city is laid in rectangular blocks (the player, 2026-10-09: "quarteirões certos, retangulares") */
 describe('city in rectangular blocks', () => {
   for (const size of ['small', 'medium', 'large'] as const) {
     it(`${size}: straight, axis-aligned streets on a regular grid`, () => {

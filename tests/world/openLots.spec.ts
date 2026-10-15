@@ -6,13 +6,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { Rng } from '@core/rng';
 import { m } from '@world/units';
 
-/**
- * The open lots kept by the document (`world/openLots.ts`) answer what the
- * loop over every lot answered (`growOnLot` before it): how many are open,
- * the k-th of them in the list's order, the building grown last, the open
- * ones round a point - after lots grown, refused, their buildings knocked
- * down, the lots changed and the set aside emptied, in any order.
- */
+/** The open lots kept by the document (`world/openLots.ts`) answer what the loop over every lot answered */
 const REACH = m(70);
 
 function brute(doc: RoadDoc, refused: ReadonlySet<number>): { open: Lot[]; last: { x: number; y: number } | null } {

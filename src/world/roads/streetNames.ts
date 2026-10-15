@@ -7,18 +7,7 @@ import { roadType } from '../roadTypes';
 import { METERS_PER_UNIT, m } from '../units';
 import { streetChain } from './streetChain';
 
-/**
- * STREET NAMES AND NUMBERING (docs/source/VIAS.md V8).
- *
- * A street's name is the `streetname` item placed on it (the landscaping
- * tool's, drawn as plates at its corners, `render/signs.ts`); a new street is
- * given one (`nameFor`), the player renames or removes it as any item.
- *
- * Numbering is the metric numbering most Brazilian cities use: a building's
- * number is its distance in metres from the start of the street, even on the
- * right and odd on the left going away from the start; the start is the end
- * nearer the city's zero mark ("marco zero", here the map's centre).
- */
+/** STREET NAMES AND NUMBERING. */
 
 /** The names new streets are given: the ones every Brazilian town has. */
 const NAMES = [
@@ -41,13 +30,7 @@ function prefixFor(type: number): string {
 /** How far from a street its name plate may stand and still name it. */
 const NAME_REACH = m(30);
 
-/**
- * The street a name item belongs to: the segment nearest it, within reach
- * (the first in id order of equals). The roads near it are read from the
- * network's cells (`Network.ribbonsMeeting`, in the order of `ribbons`).
- * DO NOT walk every ribbon for each plate: the names of a city were plates ×
- * roads.
- */
+/** DO NOT walk every ribbon for each plate: the names of a city were plates × roads. */
 function nameItemSegment(net: Network, item: Vec2): SegmentId | null {
   let best: SegmentId | null = null, bestD = NAME_REACH;
   for (const ribbon of net.ribbonsMeeting([item.x - NAME_REACH, item.y - NAME_REACH, item.x + NAME_REACH, item.y + NAME_REACH])) {
@@ -70,11 +53,7 @@ function platesNear(net: Network, chain: readonly SegmentId[]): LandscapeItem[] 
   return [...found.values()].sort((a, b) => a.id - b.id);
 }
 
-/**
- * The name of the street a segment runs in, or null: the first plate (by id)
- * that names one of its roads. The plates near the street are read by place
- * (`RoadDoc.landscapeIn`), not the whole map's.
- */
+/** The name of the street a segment runs in, or null: the first plate (by id) that names one of its roads. */
 export function streetNameOf(net: Network, segment: SegmentId): string | null {
   const ids = streetChain(net.doc, segment).map((p) => p.id);
   const chain = new Set(ids);
@@ -86,13 +65,7 @@ export function streetNameOf(net: Network, segment: SegmentId): string | null {
   return null;
 }
 
-/**
- * Names for the streets of `segments` that have none: one `streetname` item
- * per street, on its first segment's middle, a name no street of the map
- * already has while any is left (`RoadDoc.streetNamesInUse`). Deterministic.
- * Whether a street is named is asked of the plates near it, not of every
- * plate of the map.
- */
+/** Names for the streets of `segments` that have none */
 export function nameFor(net: Network, segments: Iterable<SegmentId>): { at: Vec2; text: string }[] {
   const doc = net.doc;
   const used = new Set<string>(doc.streetNamesInUse.keys());

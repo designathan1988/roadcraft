@@ -3,23 +3,7 @@ import {
   RepeatWrapping, RGBAFormat, SRGBColorSpace, UnsignedByteType, type Texture,
 } from 'three';
 
-/**
- * Procedural texture baking.
- *
- * Every surface in the game is textured from canvases painted here rather than
- * from image files. Three reasons, in order of weight:
- *
- *  1. **They tile seamlessly by construction.** The noise below is periodic, so
- *     a road can repeat its asphalt a thousand times with no visible seam — the
- *     failure a photographic tile always eventually shows.
- *  2. **The normal and roughness maps come from the same height field as the
- *     colour**, so the lighting agrees with what the surface looks like. That
- *     agreement is most of what makes a flat polygon read as a material.
- *  3. Nothing to download, so the first frame is never a grey placeholder.
- *
- * Every texture is cached by key: a rebuild of the road network must not bake a
- * new 512x512 canvas per band per structure, which is what made an edit stutter.
- */
+/** Procedural texture baking. */
 
 const cache = new Map<string, Texture>();
 
@@ -145,12 +129,7 @@ function canvasOf(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderi
   return { canvas, ctx: canvas.getContext('2d') };
 }
 
-/**
- * Derives a tangent-space normal map from a height field, by central difference.
- *
- * The strength is in texels, so the same number means the same visual relief
- * whatever the resolution.
- */
+/** Derives a tangent-space normal map from a height field, by central difference. */
 export function normalMapFrom(height: Float32Array, size: number, strength: number): HTMLCanvasElement {
   const { canvas, ctx } = canvasOf(size);
   if (!ctx) return canvas;
@@ -172,14 +151,10 @@ export function normalTexels(height: Float32Array, size: number, strength: numbe
       const dx = ((height[row + right] as number) - (height[row + left] as number)) * strength;
       const dy = ((height[below + x] as number) - (height[above + x] as number)) * strength;
       left = x;
-      // Recipe heights are bounded near 0..1, so direct length cannot overflow;
-      // the general-purpose hypot scaling was repeated for every texel.
+      // Recipe heights are bounded near 0..1, so direct length cannot overflow
       const length = Math.sqrt(dx * dx + dy * dy + 1);
       const index = (y * size + x) * 4;
-      // Every channel in [-1, 1] as [0, 1]: three decodes all three with
-      // `* 2.0 - 1.0` (normal_fragment_maps; glTF 2.0 normalTexture). Z was
-      // written as 1/length, so a tilted texel decoded flatter than meant,
-      // and past length 2 turned inward - black specks on brick and stone.
+      // Every channel in [-1, 1] as [0, 1]: three decodes all three with `* 2.0 - 1.0`
       out[index] = Math.round(((-dx / length) * 0.5 + 0.5) * 255);
       out[index + 1] = Math.round(((-dy / length) * 0.5 + 0.5) * 255);
       out[index + 2] = Math.round(((1 / length) * 0.5 + 0.5) * 255);
@@ -188,12 +163,7 @@ export function normalTexels(height: Float32Array, size: number, strength: numbe
   }
 }
 
-/**
- * Roughness in red and green and, when `metal` is given, metalness in blue:
- * three reads roughness from G and metalness from B of their maps
- * (roughnessmap_fragment, metalnessmap_fragment), the glTF 2.0
- * metallicRoughnessTexture layout, so one texture serves as both.
- */
+/** Roughness in red and green and, when `metal` is given, metalness in blue */
 function grayscaleCanvas(values: Float32Array, size: number, metal?: Float32Array): HTMLCanvasElement {
   const { canvas, ctx } = canvasOf(size);
   if (!ctx) return canvas;
@@ -213,11 +183,7 @@ export interface SurfaceRecipe {
   readonly size: number;
   /** World units covered by one tile of the texture. */
   readonly worldSize: number;
-  /**
-   * Fills colour (0..1 rgb), height (0..1) and roughness (0..1) for one texel,
-   * and metalness (0..1, reset to 0 for each texel) where `metallic` is set.
-   * `u`/`v` are texel coordinates, so a recipe can draw lines as well as noise.
-   */
+  /** Fills colour (0..1 rgb), height (0..1) and roughness (0..1) for one texel, and metalness */
   readonly shade: (
     u: number,
     v: number,
@@ -225,20 +191,11 @@ export interface SurfaceRecipe {
   ) => void;
   /** Relief strength of the derived normal map. */
   readonly relief: number;
-  /**
-   * A surface of metal and non-metal side by side (a curtain wall's aluminium
-   * mullions round its glass): `out.metal` is baked into the blue channel of
-   * the roughness map, to be set as the material's `metalnessMap` too.
-   */
+  /** A surface of metal and non-metal side by side (a curtain wall's aluminium mullions round its glass) */
   readonly metallic?: boolean;
 }
 
-/**
- * Bakes one material's colour, normal and roughness maps in a single sweep.
- *
- * `repeat` is derived from the world size the recipe declares and the world
- * size of the surface it goes on, which is set where the material is used.
- */
+/** Bakes one material's colour, normal and roughness maps in a single sweep. */
 export function bakeSurface(key: string, recipe: SurfaceRecipe, anisotropy: number): SurfaceBake {
   const cached = cache.get(`${key}:map`);
   if (cached) {

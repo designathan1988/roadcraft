@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cityBudgetTable, memoryGroup, type CityMeasure } from '@core/perfBudget';
 
-/**
- * THE CITY PLAN'S BUDGETS AGAINST THE GAME (`core/perfBudget.ts`
- * `cityBudgetTable`, `__roadcraft.budget`): each scene object counted in the
- * plan's level its name says, the rows furthest over the plan first, and
- * what the plan does not budget or the game cannot measure said so, never
- * passed as within.
- */
+/** THE CITY PLAN'S BUDGETS AGAINST THE GAME (`core/perfBudget.ts` `cityBudgetTable`, `__roadcraft.budget`) */
 const measure = (over: Partial<CityMeasure> = {}): CityMeasure => ({
   view: 'rua',
   triangles: 5_000_000,

@@ -10,25 +10,7 @@ import { m } from '@world/units';
 /** How many lanelets ahead the leader search will walk. */
 const LOOKAHEAD_HOPS = 3;
 
-/**
- * Nearest obstacle ahead, following the vehicle's own planned lanelet sequence.
- *
- * Because a route already includes the CONNECTOR the vehicle will use, looking
- * across a junction is the same loop as looking down a straight — there is no
- * special case, and a vehicle correctly slows for a queue on the far side of a
- * junction before entering it.
- *
- * The V6 monolith rebuilt a full occupancy map from scratch in six different
- * places every frame and scanned all vehicles per lane-head test (defect 5.7).
- * Here each lanelet keeps a sorted occupancy list maintained on entry and exit.
- *
- * Two kinds of body are in a lane without being in its occupancy list, and
- * both used to be driven into:
- *
- *   - a vehicle sliding OUT of the lane after a lane change (its `shadow`);
- *   - a vehicle that left the same stop line on a DIFFERENT movement and whose
- *     body still sweeps the shared start of both turns (`divergeObstacle`).
- */
+/** Nearest obstacle ahead, following the vehicle's own planned lanelet sequence. */
 export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
   const rt = w.rt(v.lanelet);
   const idx = laneSlot(w, rt.order, v);
@@ -48,11 +30,7 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
       lead = next === undefined ? undefined : w.veh(next);
     }
     if (lead) {
-      // Stopped at the kerb: hold back far enough to pull out round it - when
-      // there is still room to stop there in comfort. A car already closer
-      // than that follows the real gap: the hold point used to be a gap of
-      // minus eight metres, and the safe speed stopped the car dead in one
-      // tick (audit P1-47).
+      // Stopped at the kerb: hold back far enough to pull out round it - when there is still room to stop there in comfort.
       const standing = lead.kerbStop && lead.kerbStop.phase !== 'approach' ? pullOutRoom(w, v) : 0;
       const real = lead.s - lead.archetype.length - v.s;
       const hold = real - Math.max(0, standing - Math.max(v.driver.s0, 0));
@@ -110,17 +88,7 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
   return null;
 }
 
-/**
- * Where a vehicle stands in its lane's occupancy list, found by bisection on
- * the order the list is kept in: arc position, then id (`SimWorld.sortLane`).
- * Every list is in that order whenever the leaders are looked for: sorted on
- * every entry (`enterLanelet`), left in order by every exit, and sorted at the
- * end of `integrateAll`, the only writer of `s` besides the joins that sort as
- * they enter. A list found out of order (the bisection lands elsewhere) is
- * searched instead: the answer is always the list's. DO NOT go back to
- * `indexOf` for every vehicle: it read the lane up to itself for each car of a
- * queue, quadratic in the queue.
- */
+/** DO NOT go back to `indexOf` for every vehicle */
 function laneSlot(w: SimWorld, order: readonly number[], v: Vehicle): number {
   let lo = 0, hi = order.length - 1;
   while (lo <= hi) {
@@ -154,18 +122,7 @@ function shadowsAhead(
   return out;
 }
 
-/**
- * The body of a vehicle that took a DIFFERENT movement out of the same lane,
- * while it still sweeps the start this vehicle's movement shares with it.
- *
- * Two turns leaving one stop line coincide at the line and part a few metres
- * later. Car-following only looked down its own connector, so once the leader
- * had turned onto the other one it vanished from view with its tail still on
- * the approach: measured in seeded traffic, 33 followers drove into such a
- * tail. `ConflictIndex.diverges` says, per pair and size, how far the leader's
- * centre has to get before the two bodies can no longer touch; until then its
- * rear is followed like any other leader's, projected onto the shared start.
- */
+/** The body of a vehicle that took a DIFFERENT movement out of the same lane */
 export function divergeObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
   const here = w.lanelet(v.lanelet);
   if (!here) return null;
@@ -176,8 +133,7 @@ export function divergeObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
     connectorId = here.id;
     offset = -v.s;
   } else {
-    // Only the vehicle nearest the stop line needs this; everyone behind it
-    // follows it.
+    // Only the vehicle nearest the stop line needs this; everyone behind it follows it.
     if (w.laneHead(here.id)?.id !== v.id) return null;
     connectorId = v.route[1];
     offset = here.length - v.s;
@@ -219,30 +175,11 @@ export function divergeObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
 /** Sideways clearance kept from a body in the lane being left, world units. */
 const SHADOW_SIDE_MARGIN = m(0.16);
 
-/**
- * A vehicle mid-lane-change is itself an obstacle for its OWN forward motion
- * against whatever it still overlaps in the lane it is leaving.
- *
- * The occupancy index switches lanes on the transfer tick, so from that
- * instant `findLeader` only sees the NEW lane; nothing gated the vehicle's
- * own acceleration against a body still sitting in the OLD lane, at the
- * position the drawn body was still sweeping. That was invisible while the
- * slide was near-instant (`LATERAL_CLOSE_RATE`), because the overlap window
- * was under a second. Easing the slide to a believable three seconds
- * (`laneChangeOffset`) widened that window enough for a vehicle to drive its
- * own body into a leader — commonly a queued vehicle — it could no longer
- * see, because its forward motion only ever looked at the lane it had
- * already, administratively, left.
- */
+/** A vehicle mid-lane-change is itself an obstacle for its OWN forward motion against whatever it still overlaps in the */
 export function shadowLeaderObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
   if (!v.shadow) return null;
   const front = v.s + v.shadow.offset;
-  // How far the FRONT of this body still reaches back towards the old lane's
-  // centre - the front is what drives into a leader. The lanes are
-  // `2 * clearAt` apart (`integrate.ts`) and the body centre is `lateral`
-  // short of the new centre; the body points into the new lane, so its front
-  // corners are carried further across by half its length, while the rear
-  // corner is the one still swinging over the line.
+  // How far the FRONT of this body still reaches back towards the old lane's centre
   const spacing = 2 * v.shadow.clearAt;
   const angle = Math.atan(Math.abs(v.lateralSlope));
   const nearEdge = spacing - Math.abs(v.lateral) +
@@ -250,11 +187,7 @@ export function shadowLeaderObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
   let best: Obstacle | null = null;
   for (const body of w.bodiesIn(v.shadow.lanelet)) {
     if (body.vehicle.id === v.id) continue;
-    // Only a body this one can still touch. A car already most of the way
-    // across is clear of the car in front in the old lane, and holding it
-    // there - as if its whole body were still in that lane - is how a car
-    // stood across both lanes behind a car stopped at the kerb, for as long
-    // as that car stood.
+    // Only a body this one can still touch.
     const reach = body.vehicle.archetype.width / 2 + Math.abs(body.vehicle.lateral) + SHADOW_SIDE_MARGIN;
     if (nearEdge >= reach) continue;
     const rear = body.s - body.vehicle.archetype.length;

@@ -4,11 +4,7 @@ import type { SimWorld } from '@sim/world';
 import type { CrossingId } from '@sim/signals/plan';
 import { fixtureDoc, simOf } from './support/bodies';
 
-/**
- * Crossing spans are reused from the previous topology build wherever the
- * movement and the crossing are unchanged. A reused span must be exactly the
- * span a cold build measures, or a turning vehicle waits for the wrong person.
- */
+/** Crossing spans are reused from the previous topology build wherever the movement and the crossing are unchanged. */
 
 function allSpans(w: SimWorld, spans: CrossingSpans): unknown[] {
   const out: unknown[] = [];

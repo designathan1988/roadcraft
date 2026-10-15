@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { flipSection, normalizeRoadSection, sameRoadSection, sameRoadSectionIgnoringArrows } from '@world/roadSection';
 import { m } from '@world/units';
 
-/**
- * A road stored b -> a is the same road as one stored a -> b once its section
- * is flipped (`flipSection`): the editor joins two pieces by that comparison
- * (`editor/commit.ts`). The comparison must read the fields, not the order
- * they were written in.
- */
+/** A road stored b -> a is the same road as one stored a -> b once its section is flipped (`flipSection`) */
 const base = { laneWidth: m(4), sidewalk: m(4), median: m(2), speedKmh: 40, priority: 3 };
 
 describe('a flipped section compared with the same road', () => {

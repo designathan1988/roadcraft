@@ -1,10 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 
-/**
- * Vehicle bodies as oriented rectangles, for the turn-path sweep
- * (`turnPaths.ts`): the separating-axis test between two of them, and a
- * whole queue of them culled at once by the box their centres stand in.
- */
+/** Vehicle bodies as oriented rectangles, for the turn-path sweep (`turnPaths.ts`) */
 
 export interface Rect { cx: number; cy: number; ux: number; uy: number; hl: number; hw: number; r: number }
 
@@ -28,11 +24,7 @@ function separatedOn(a: Rect, b: Rect, dx: number, dy: number, ax: number, ay: n
   return d >= ra + rb;
 }
 
-/**
- * The car bodies standing in one waiting lane, and the box their centres
- * span: a turning body whose bounding circle stays clear of that box touches
- * none of them (`sweep`).
- */
+/** The car bodies standing in one waiting lane, and the box their centres span */
 export interface Queue {
   readonly bodies: readonly Rect[];
   readonly minX: number;
@@ -53,15 +45,7 @@ export function queueOf(bodies: readonly Rect[], r: number): Queue {
   return { bodies, minX, minY, maxX, maxY, r };
 }
 
-/**
- * Whether `body` is certainly clear of every body in `queue` by `overlap`'s
- * own first test, the bounding circles. The gap from the body's centre to the
- * box of the queue's centres is never more than its gap to any one of them
- * (floating-point subtraction, squaring and adding all round monotonically),
- * so when even the box is further than the two radii, every pair's
- * `dx * dx + dy * dy` is too: the same answer `overlap` gives, without asking
- * it once per queued car.
- */
+/** Whether `body` is certainly clear of every body in `queue` by `overlap`'s own first test, the bounding circles. */
 export function clearOfQueue(body: Rect, queue: Queue): boolean {
   const gx = body.cx < queue.minX ? queue.minX - body.cx : body.cx > queue.maxX ? body.cx - queue.maxX : 0;
   const gy = body.cy < queue.minY ? queue.minY - body.cy : body.cy > queue.maxY ? body.cy - queue.maxY : 0;

@@ -4,17 +4,7 @@ import { createIsoRig } from '@render/isoViewport';
 import { CameraGestures } from '@view/cameraGestures';
 import { m } from '@world/units';
 
-/**
- * A DRAG ACROSS A TOWN (`render/isoViewport.ts`, `view/cameraGestures.ts`):
- * the middle button held and moved at an even pace over blocks of buildings,
- * in perspective, from the bairro view to the street. The view must follow
- * the hand evenly: no step many times the others, never back the other way,
- * the eye never leaping up or down.
- *
- * The point looked at was put onto the roof of any building it fell in: at
- * the bairro zoom the centre went 30, 49, 48, 41, 47, 28 m on successive
- * steps of an even drag and the eye 106, 130, 166, 154 m up (2026-10-14).
- */
+/** A DRAG ACROSS A TOWN (`render/isoViewport.ts`, `view/cameraGestures.ts`) */
 const W = 1280;
 const H = 720;
 const REACH = m(2), CLEAR = m(1);
@@ -81,8 +71,7 @@ function dragAcross(half: number, from: { x: number; y: number }, to: { x: numbe
 }
 
 describe('a middle-button drag across the town', () => {
-  // The bairro drag takes the centre over three buildings (36, 60 and 24 m);
-  // the street one along the street, the eye beside a tower.
+  // The bairro drag takes the centre over three buildings (36, 60 and 24 m)
   const cases = [
     ['bairro', m(45), { x: 200, y: 700 }, { x: 1250, y: 150 }, 240],
     ['rua alta', m(14), { x: 500, y: 600 }, { x: 900, y: 420 }, 120],
@@ -103,8 +92,7 @@ describe('a middle-button drag across the town', () => {
         back,
         leap: Math.max(...steps.map((s) => Math.abs(s.dz))) / median,
       };
-      // No step many times the hand's, never back the other way, the eye's
-      // height moving no more than the ground under the hand does.
+      // No step many times the hand's, never back the other way
       expect(worst.back).toBe(0);
       expect(worst.step).toBeLessThan(3);
       expect(worst.leap).toBeLessThan(3);

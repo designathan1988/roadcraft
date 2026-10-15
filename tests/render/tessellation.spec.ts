@@ -7,15 +7,7 @@ import { bands, surfaces } from '@world/surfaces';
 import type { MultiPoly } from '@core/clipper';
 import { buildSurfaceMesh } from './support/surfaceMesh';
 
-/**
- * Cost, measured rather than hoped for.
- *
- * Ear clipping a long thin band fans, and refining a fan is exponential. Both
- * defects are invisible in a correctness test — the mesh is valid either way —
- * and show up only as a number: one straight road once cost 1 026 232 triangles
- * and 900 ms. These ceilings are the measured values with head-room, so they can
- * only ever come down.
- */
+/** Cost, measured rather than hoped for. */
 
 const MAX_EDGE = 8;
 
@@ -58,8 +50,7 @@ describe('tessellation cost', () => {
     const strip: MultiPoly = [[[[0, 0], [1400, 0], [1400, 1.5], [0, 1.5]]]];
     const built = mesh(strip)!;
     expect(longestEdge(built)).toBeLessThanOrEqual(MAX_EDGE + 1e-6);
-    // 2 100 square units at an 8-unit edge is a few hundred triangles. The
-    // ceiling is ten times that, and still four hundred times under the fan.
+    // 2 100 square units at an 8-unit edge is a few hundred triangles.
     expect(triangles(built)).toBeLessThan(4_000);
   });
 

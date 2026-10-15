@@ -1,15 +1,4 @@
-/**
- * GULLIES where the player wants them. Gullies are cut where runoff gathers
- * on a steep slope with little to hold the soil - their heads lie where the
- * slope and the area draining to a point pass a threshold, and ground cover
- * prevents them (Dewitte et al., "Predicting the susceptibility to gully
- * initiation in data-poor regions", Geomorphology 2015) - so on a grassed,
- * wooded country they are the exception, not every hillside (the player,
- * 2026-10-07: "pontualmente e não em toda elevação"). The land's own gullies
- * (`render/terrainRelief.ts`) stand only on steep ground in scattered
- * patches, as many as the map's setting asks; this brush lays more where the
- * player wants them, or wipes them away. The document keeps the dabs.
- */
+/** GULLIES where the player wants them. */
 
 export interface GullyDab {
   readonly x: number;

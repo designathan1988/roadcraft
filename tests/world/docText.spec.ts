@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { buildDefaultTown } from './support/town/defaultTown';
 
-/**
- * The undo and the autosave keep the document as text (`RoadDoc.toText`), with
- * each building's text written once per record; writing every building again
- * was most of the text taken on each road drawn (docs/source/performance.md #21). It
- * must be the very text `JSON.stringify(toJSON())` writes.
- */
+/** The undo and the autosave keep the document as text */
 describe('the document as text', () => {
   it('is JSON.stringify(toJSON()) for the default town, before and after edits', () => {
     const doc = new RoadDoc();

@@ -25,49 +25,11 @@ import { parkingLinesOf, parksAlong } from '@world/parkingLayout';
 import { PAINT_COLOURS, STOP_PAINT, ZEBRA_PAINT, barQuad, roadStrokes, strokeQuads, type QuadSink } from './markings';
 import { FOOTWAY_EDGE_CELL } from './roadSurfaceReads';
 
-/**
- * THE ROAD SURFACES' INPUTS, KEPT ROAD BY ROAD AND NODE BY NODE (`roadSurfaces.ts`).
- *
- * What a pass of the surfaces is cut from - each road's rings of every level,
- * its median, its carriageway for the paint, its lines and its parking; each
- * node's junction plates, taper, mini-roundabout plate, dropped kerbs, stop
- * lines, zebras and legends - is made for an item when the network's change
- * names it (`Network.changesSince`, the change the lane graph and the dropped
- * kerbs read), and filed into the tiles its rings reach, each pass's tiles
- * holding what reaches them. An edit costs the items it touched and their
- * tiles, whatever the size of the map: the change a build system propagates
- * item by item (Mokhov, Mitchell and Peyton Jones, "Build systems à la carte").
- *
- * DO NOT gather a pass's inputs by walking the whole map and filtering by the
- * pass (`levelRings(net, level, include)`, `markingQuads(net, include)`): every
- * road edit - and every road a growing city laid - flattened every ring of the
- * map again, once per pass (2026-10-15).
- *
- * A tile's inputs come out in the order a walk of the whole map meets them
- * (the roads by id, then the junctions by id; the paint by kind, then by id):
- * the same rings in the same order however the edits came, so a tile built
- * after any edits is the tile a build from nothing makes, byte for byte
- * (`tests/render/roadTileWorkers.spec.ts`).
- */
+/** DO NOT gather a pass's inputs by walking the whole map and filtering by the pass */
 
-/**
- * World size of one tile.
- *
- * A road edit used to merge, cut and triangulate every band of the whole
- * network: a quarter of a million triangles and every polygon boolean, most of
- * the time a new road took to appear, and more on a bigger map. Everything is
- * now done a tile at a time from the rings that reach the tile, and a tile
- * whose rings and surroundings (`SurfaceReuse.dependsOn`) have not changed is
- * copied from the last build, so an edit pays for the tiles it reaches. A
- * multiple of the ground and deck spans (8 x 6 and 16 x 6), so a tile holds
- * whole pieces.
- */
+/** World size of one tile. */
 export const TILE = m(76.8);
-/**
- * Where the tile grid starts. Off any round number, so no road drawn on a
- * round coordinate has its edge lie along a tile line, where it would be taken
- * for a cut and lose its kerb (`meshTile`).
- */
+/** Where the tile grid starts. */
 export const TILE_ORIGIN = m(0.1484);
 /** How far round a tile a ring may reach and still be read by it. */
 const TILE_REACH = m(0.2);
@@ -88,11 +50,7 @@ export interface Reach {
   readonly quads: ReadonlyMap<string, readonly Input[]>;
 }
 
-/**
- * One input of an item, as a pass files it: its kind (`slot`), its pass, and
- * where a walk of the map meets it - `phase` (which loop of that walk), `id`
- * (the road or node), `seq` (its place among the item's own).
- */
+/** One input of an item, as a pass files it: its kind (`slot`), its pass, and where a walk of the map meets it - `phase` */
 interface Entry {
   readonly input: Input;
   readonly slot: string;
@@ -104,12 +62,7 @@ interface Entry {
   readonly tiles: readonly number[];
 }
 
-/**
- * The junctions' stop lines, zebras, islands and legends: the old walk painted
- * all of them in every pass at ground level, clipped to that pass's carriageway
- * (`roadTileShape.ts`), so they are filed once and read by each such pass in
- * the tiles where it has carriageway - a tile with none paints nothing of them.
- */
+/** The junctions' stop lines, zebras, islands and legends */
 const DETAILS = '*details';
 
 const LEVEL_SLOTS = ['casing', 'sidewalk', 'curb', 'asphalt'] as const;
@@ -124,13 +77,7 @@ const medianSlot = (part: string): string => `median:${part}`;
 const paintSlot = (color: string): string => `paint:${color}`;
 const PAINT_PREFIX = 'paint:';
 
-/**
- * The phases of the walk the inputs are ordered by, as `roadSurfaces.ts` once
- * walked the map: the levels' roads then junctions; the carriageway's roads,
- * tapers, mini-roundabout plates; the paint's road lines, parking, tapers,
- * junctions' then mid-block stop lines, junctions' then mid-block zebras,
- * islands and legends.
- */
+/** The phases of the walk the inputs are ordered by, as `roadSurfaces.ts` once walked the map */
 const PHASE = {
   road: 0, junction: 1,
   taper: 1, mini: 2,
@@ -176,11 +123,7 @@ interface SegmentItem {
   readonly entries: readonly Entry[];
 }
 
-/**
- * The inputs of every pass, kept between builds and brought up to the network
- * by its change (`refresh`). One per `SurfaceReuse` (the renderer's); a build
- * without one makes a fresh one, from the whole map.
- */
+/** The inputs of every pass, kept between builds and brought up to the network by its change (`refresh`). */
 export class SurfaceInputs {
   private net: Network | null = null;
   /** The network's state the inputs stand for (`Network.state`). */
@@ -203,11 +146,7 @@ export class SurfaceInputs {
   /** Every paint colour met (a handful: the catalogue's, `PAINT_COLOURS`, and any it lacks). */
   private readonly met = new Set<string>();
 
-  /**
-   * Brings the inputs up to `net`: the items its change since the last refresh
-   * names, and the roads round them, made again; everything when it cannot say.
-   * @rebuild Called once a build of the surfaces, when the network was rebuilt.
-   */
+  /** @rebuild Brings the inputs up to `net`: the items its change since the last refresh names, and the roads round them, made again */
   refresh(net: Network): void {
     const doc = net.doc;
     const same = this.net === net && this.token !== null;
@@ -217,16 +156,14 @@ export class SurfaceInputs {
     this.net = net;
     this.token = net.state;
     this.style = doc.markingStyle;
-    // A change of the paint's standard repaints every road and junction, and a change of buildings the
-    // diary cannot place may move any street's parking: the whole map changed.
+    // A change of the paint's standard repaints every road and junction
     if (delta === null || styleChanged || buildings === null || buildings.some((entry) => entry.rects === null)) {
       this.rebuildAll(net);
       return;
     }
 
     const segs = new Set<SegmentId>(delta.segments);
-    // A crossing is fitted to the footway along its road, a flush footway lowers the kerbs on it: a
-    // change where a road reaches moves its paint and its ramps (`Network.forgetCrossings`).
+    // A crossing is fitted to the footway along its road, a flush footway lowers the kerbs on it
     if (delta.rects.length) for (const id of net.segmentCells.idsMeetingAny(delta.rects)) segs.add(id);
     const nodes = new Set<NodeId>(delta.nodes);
     const ends = (id: SegmentId): void => {
@@ -236,8 +173,7 @@ export class SurfaceInputs {
       if (item) { nodes.add(item.ends[0]); nodes.add(item.ends[1]); }
     };
     for (const id of segs) ends(id);
-    // A road's lines stop at its nodes' stop lines and crossings, and its mouths overlap their plates:
-    // every road of a node that changed.
+    // A road's lines stop at its nodes' stop lines and crossings, and its mouths overlap their plates
     for (const node of nodes) for (const id of doc.node(node)?.incident ?? []) segs.add(id);
     for (const id of segs) ends(id);
     // A building changed beside a street with parking: the bays keep clear of its gates.
@@ -282,12 +218,7 @@ export class SurfaceInputs {
       Math.abs(net.doc.node(segment.b)?.heightOffset ?? 0) > 1e-6);
   }
 
-  /**
-   * The alignments of `ids` made again: each road's flag read, every alignment
-   * one of them was or is in walked again from it (roads raised by hand that
-   * run on from one another through a two-way node are ONE surface). Returns
-   * every road whose alignment may have moved.
-   */
+  /** The alignments of `ids` made again */
   private reassign(net: Network, ids: Iterable<SegmentId>): Set<SegmentId> {
     const doc = net.doc;
     const redo = new Set<SegmentId>();
@@ -375,8 +306,7 @@ export class SurfaceInputs {
         add(medianSlot('kerb'), PHASE.road, median.kerb);
         add(medianSlot(median.paved ? 'paved' : 'planting'), PHASE.road, median.inner);
       }
-      // Paint belongs to the road legs, not to the shared intersection interior,
-      // so it is clipped to the ribbons' carriageway alone.
+      // Paint belongs to the road legs, not to the shared intersection interior
       const ring = ribbon.rings[Level.Asphalt];
       if (ring && !ring.isEmpty) add('ribbons', PHASE.road, [ring.flatten().map((point) => [point.x, point.y])]);
       const paint = (phase: number): QuadSink => (color, quad) => { this.colour(color); add(paintSlot(color), phase, [quad]); };
@@ -417,8 +347,7 @@ export class SurfaceInputs {
         }
       }
     }
-    // ...and to the tapers where a road carries on at another width, whose lane
-    // lines and edge lines run on through them (see transitionMarkings).
+    // ...and to the tapers where a road carries on at another width, whose lane lines and edge lines run on through them
     if (net.transitions.has(node)) {
       const leg = plate?.legs[0];
       const pass = leg ? this.passOf(net, leg.seg) : null;
@@ -428,8 +357,7 @@ export class SurfaceInputs {
         for (const spec of transitionMarkings(net, node)) strokeQuads(sink, spec);
       }
     }
-    // ...and to a mini-roundabout's plate, where its island is painted (docs/VIAS.md V5): in each pass
-    // one of its roads is drawn in.
+    //...and to a mini-roundabout's plate, where its island is painted
     if (plate && record.control === 'mini' && record.incident.length >= 3) {
       const input = inputOf([plate.ring.flatten().map((point) => [point.x, point.y])]);
       const seen = new Set<string>();
@@ -471,10 +399,7 @@ export class SurfaceInputs {
     this.file(entries);
   }
 
-  /**
-   * The pass a junction's plates are drawn in: that of its lowest road that is
-   * not a tunnel (the first such in its order), or none.
-   */
+  /** The pass a junction's plates are drawn in: that of its lowest road that is not a tunnel */
   private ownerOf(net: Network, node: NodeId): string | null {
     const record = net.doc.node(node);
     if (!record) return null;
@@ -564,10 +489,7 @@ export class SurfaceInputs {
     }
   }
 
-  /**
-   * The passes of the surfaces: every structural level, then each alignment
-   * raised by hand, by its lowest road.
-   */
+  /** The passes of the surfaces: every structural level, then each alignment raised by hand, by its lowest road. */
   passList(): SurfacePass[] {
     const out: SurfacePass[] = ROAD_STRUCTURES.map((structure) => ({ id: structure.id, structure: structure.id }));
     for (const root of [...this.chains.keys()].sort((p, q) => p - q)) {
@@ -581,10 +503,7 @@ export class SurfaceInputs {
     return (this.count.get(pass) ?? 0) > 0;
   }
 
-  /**
-   * Every colour a pass may paint in: the catalogue's, then any other met (none is:
-   * `tests/render/paintCatalogue.spec.ts`), in order.
-   */
+  /** Every colour a pass may paint in: the catalogue's, then any other met */
   paintColours(): string[] {
     return [...PAINT_COLOURS, ...[...this.met].filter((color) => !PAINT_COLOURS.includes(color)).sort()];
   }
@@ -599,11 +518,7 @@ export class SurfaceInputs {
     return [...this.passes.get(pass)?.tiles.keys() ?? []].sort((p, q) => p - q);
   }
 
-  /**
-   * What a tile of a pass reads, put together when something in it changed:
-   * its entries and, in a pass at ground level that paints there, the
-   * junctions' paint - each kind in the order a walk of the map meets it.
-   */
+  /** What a tile of a pass reads, put together when something in it changed */
   reachOf(passId: string, key: number): { readonly reach: Reach; readonly digest: number; readonly colours: readonly string[] } {
     const pass = this.passes.get(passId)!;
     const tile = pass.tiles.get(key)!;
@@ -653,18 +568,7 @@ export class SurfaceInputs {
     return { reach, digest: tile.digest, colours };
   }
 
-  /**
-   * The footways' outer edges round one cell of `FOOTWAY_EDGE_CELL` for a pass
-   * (`roadSurfaceReads.ts` `fromFootway`): the union of the footways that come
-   * within `EDGE_PAD` of the cell, each straight piece of its outline whose box,
-   * padded so, covers the cell - four numbers a piece; undefined when none.
-   *
-   * Only a distance under `CASING_BAND` changes the batter (`vergeTop` clamps
-   * it), and the outline within twice that of the cell is the outline of the
-   * footways that reach there, whatever lies further. DO NOT merge every
-   * footway of the pass for it: the union of a town's footways is one ring round
-   * the town, made again on every edit for the cells of the tiles it built.
-   */
+  /** DO NOT merge every footway of the pass for it */
   footwayEdges(passId: string, cell: number): number[] | undefined {
     const pass = this.passes.get(passId);
     if (!pass) return undefined;

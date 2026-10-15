@@ -87,15 +87,7 @@ import { applyFacadePattern, updateFacadeGeometry, type FacadeTarget } from './b
 import { addRoofDetail, removeRoofDetail, updateRoofDetail } from './buildingRoofs';
 import { splitVolumeAtFloor, reshapeTier as reshapeTierPlan } from './buildingProfile';
 
-/**
- * The building tool, as a state machine in world coordinates.
- *
- * It knows neither the DOM nor three.js: `main.ts` hands it a `ToolView` for
- * the few things only the viewport can answer, and a `ToolHost` whose
- * `commit` records the undo snapshot and stores the edit. Every gesture here
- * previews on a COPY of the building (shown by the renderer as a ghost) and
- * commits once, on release, through the same validated commands a test calls.
- */
+/** The building tool, as a state machine in world coordinates. */
 export interface ToolView {
   /** Screen position (CSS px) of a world point at absolute height `z`. */
   project(x: number, y: number, z: number): Vec2;
@@ -217,10 +209,7 @@ export class BuildingTool {
   paintBrush: Partial<MaterialSpec> = { finish: 'brick', colour: FINISH_COLOUR.brick };
   /** Alt held: drags follow the pointer freely, without snapping to the grid. */
   free = false;
-  /**
-   * What the gesture in progress measures, for the overlay to show beside
-   * it: a length or a depth (world units) at a world point, or a count.
-   */
+  /** What the gesture in progress measures, for the overlay to show beside it: a length or a depth */
   measure: { readonly kind: 'length' | 'depth' | 'floors'; readonly value: number; readonly x: number; readonly y: number; readonly z: number } | null = null;
   /** The kind of free element the palette has armed: the pointer places one. */
   armed: ElementKind | null = null;
@@ -259,11 +248,7 @@ export class BuildingTool {
     return this.host.context().doc.buildings.get(this.selection.building) ?? null;
   }
 
-  /**
-   * Selects a building just made elsewhere (built from a 3D reference): its
-   * first block, in edit mode, as a building drawn here is (`finishPlan`) -
-   * what the player works on next is the one made last.
-   */
+  /** Selects a building just made elsewhere (built from a 3D reference) */
   selectBuilding(id: BuildingId): void {
     const b = this.host.context().doc.buildings.get(id);
     if (!b) return;
@@ -272,12 +257,7 @@ export class BuildingTool {
     this.stage = 'shape';
   }
 
-  /**
-   * The point of the plan under the pointer on a floor of the building cut
-   * open: on the floor of the block it falls in, which in a split level
-   * stands at its own height (`liftAt`) - found on the level's floor first,
-   * then read again at that block's.
-   */
+  /** The point of the plan under the pointer on a floor of the building cut open */
   private onCutFloor(b: Building, screen: Vec2, level: number): Vec2 {
     const z = this.floorOf(b) + levelElevation(b, level);
     const first = worldToLocalAt(b, this.view.planeAt(screen, z));
@@ -315,10 +295,7 @@ export class BuildingTool {
     const volume = volumeById(shown, this.selection.volume);
     const detailed = (volume?.outline?.length ?? 4) <= 12;
     const selectedSide = this.selection.bay?.side;
-    // A building picked: its arrows, its corners, move, turn, scale. A face
-    // picked (the second click): the push-pull arrow on it, and nothing that
-    // would compete with it. The corner dots only on a plan with more than
-    // four corners - on a box they sat on top of the scale and move handles.
+    // A building picked: its arrows, its corners, move, turn, scale.
     const corners = volume?.outline?.length ?? 4;
     return all.filter((h) => h.kind === 'move' || h.kind === 'rotate' || h.kind === 'storeys' ||
       (!region && (h.kind === 'scale' || h.kind === 'lift')) ||
@@ -346,11 +323,7 @@ export class BuildingTool {
     return this.pick(screen);
   }
 
-  /**
-   * A key for the workspace's hint sentence: `hint.builder.<key>` in the
-   * dictionaries. The plan being drawn has its own sentence per shape, the
-   * rest follow the stage or the tool the model palette has armed.
-   */
+  /** A key for the workspace's hint sentence: `hint.builder.<key>` in the dictionaries. */
   builderHintKey(): string {
     if (this.pathKind) return `run.${this.pathKind}`;
     if (this.planPoints) return `draw.${this.stage === 'sketch' ? 'sketch' : this.planAction}`;
@@ -402,10 +375,7 @@ export class BuildingTool {
     this.host.changed();
   }
 
-  /**
-   * Agrupar: every volume of another building moves into this record, brought
-   * into its frame; the emptied record goes. One undo step.
-   */
+  /** Agrupar: every volume of another building moves into this record, brought into its frame; the emptied record goes. */
   groupWith(otherId: BuildingId): boolean {
     const building = this.selected();
     if (!building) return false;
@@ -414,25 +384,13 @@ export class BuildingTool {
     return result.ok;
   }
 
-  /**
-   * The Draw tools: a preset footprint sized by dragging on the ground.
-   * Click one corner, drag, release - the shape fills the rectangle drawn,
-   * and the map shows the same ghost it will place.
-   */
+  /** The Draw tools: a preset footprint sized by dragging on the ground. */
   shapeDragStart: Vec2 | null = null;
   shapeDragShape: PlanShape | null = null;
   shapeDragAction: PlanAction = 'new';
-  /**
-   * The screen's own axes on the ground, as an angle: the rectangle the player
-   * drags is the one they see. Measured along the map's axes instead, a
-   * diagonal drag under a turned camera built a long thin sliver (P1-03).
-   */
+  /** The screen's own axes on the ground, as an angle: the rectangle the player drags is the one they see. */
   private shapeDragAngle = 0;
-  /**
-   * The ground height the drag started on: the cursor is read on that level.
-   * Read off the drawn world, it landed on the ghost's own roof as the shape
-   * grew under it, and the far corner was dragged back towards the viewer.
-   */
+  /** The ground height the drag started on: the cursor is read on that level. */
   private shapeDragZ = 0;
 
   /** The drag's span from `start` to `at`, in the screen-aligned frame. */
@@ -449,8 +407,7 @@ export class BuildingTool {
   beginShapeDrag(shape: PlanShape, at: Vec2, action: PlanAction = 'new', screen: Vec2 | null = this.lastScreen): void {
     this.shapeDragShape = shape;
     this.shapeDragZ = this.view.groundAt(at.x, at.y);
-    // A mass stacked on a roof is drawn on the roof: read on the ground, the
-    // rectangle landed behind the building and was always "without support".
+    // A mass stacked on a roof is drawn on the roof
     const b = this.selected();
     const source = b && this.selection ? volumeById(b, this.selection.volume) : undefined;
     if (action === 'top' && b && source) {
@@ -505,8 +462,7 @@ export class BuildingTool {
       this.chooseShape(this.shapeDragShape);
       this.placeDrawn(start, at);
     } else {
-      // The wing, the stack and the cut are plans: the drag writes the
-      // outline, and the ordinary plan preview and finish do the rest.
+      // The wing, the stack and the cut are plans
       this.planPoints = this.shapeDragRing();
       this.updatePlanPreview();
     }
@@ -517,9 +473,7 @@ export class BuildingTool {
   endShapeDrag(cancelled: boolean): void {
     const dragging = this.shapeDragStart !== null;
     const action = this.shapeDragAction;
-    // Read before the drag is put away: the ring is drawn from its start, and
-    // read afterwards it was empty - every wing, stack and cut ended with no
-    // points and built nothing.
+    // Read before the drag is put away: the ring is drawn from its start, and read afterwards it was empty
     const ring = this.shapeDragRing();
     this.shapeDragStart = null;
     this.shapeDragShape = null;
@@ -667,9 +621,7 @@ export class BuildingTool {
       const draft = cloneBuilding(existing);
       const points = this.planPoints.map((p) => worldToLocalAt(draft, p));
       if (this.planAction === 'cut') {
-        // A cut is a block too - a void one, as tall as the block it is drawn
-        // on: it takes its space out when drawn, and stays a block that can be
-        // moved, reshaped or deleted, the cut going with it.
+        // A cut is a block too - a void one, as tall as the block it is drawn on
         const source = volumeById(draft, s.volume);
         if (!source) return null;
         const id = addPlanMass(draft, s.volume, points, source.base, source.storeys.length);
@@ -683,13 +635,10 @@ export class BuildingTool {
         if (!source) return null;
         const top = this.planAction === 'top';
         const base = top ? source.base + source.storeys.length : 0;
-        // On a roof the mass is kept to the roof; on the ground it is as tall
-        // as the mass it grows from, so the two read as one building.
+        // On a roof the mass is kept to the roof
         const ring = top ? clipRing(points, localFootprint(source)) : points;
         if (!ring) return null;
-        // A block added to the building: whole, overlapping or not - nothing
-        // of it or of its neighbours is cut away, so it can be moved, pulled
-        // or taken off again later.
+        // A block added to the building: whole, overlapping or not
         if (addPlanMass(draft, s.volume, ring, base, top ? 2 : source.storeys.length) === null) return null;
       }
       return draft;
@@ -802,10 +751,7 @@ export class BuildingTool {
     this.onSelected((draft) => updateRoofDetail(draft, s.volume, id, { h: metres / METERS_PER_UNIT }));
   }
 
-  /**
-   * The selected block's width and depth (world units, null keeps one), about
-   * its centre: a setback typed to size stays centred on what carries it.
-   */
+  /** The selected block's width and depth (world units, null keeps one), about its centre */
   setVolumeSize(w: number | null, d: number | null): void {
     const s = this.selection;
     if (!s) return;
@@ -825,11 +771,7 @@ export class BuildingTool {
     });
   }
 
-  /**
-   * The block a block is measured from: the one it stands on (the most floor
-   * shared on the level under it), or for a block on the ground the first
-   * ground block. Null for that first block itself.
-   */
+  /** The block a block is measured from: the one it stands on */
   referenceOf(b: Building, v: Volume): Volume | null {
     if (v.base === 0) {
       const first = b.volumes.find((o) => o.base === 0);
@@ -910,22 +852,14 @@ export class BuildingTool {
     return v ? volumeLift(v) : 0;
   }
 
-  /**
-   * Raises (or, negative, lowers) the selected block's floor to `lift` above
-   * the building's ground floor, as typed: what stands on the block and what
-   * hangs on its walls go with it (`opSetLift`). One undo step.
-   */
+  /** Raises (or, negative, lowers) the selected block's floor to `lift` above the building's ground floor, as typed */
   setBlockLift(lift: number): void {
     const s = this.selection;
     if (!s) return;
     this.onSelected((draft) => opSetLift(draft, s.volume, lift));
   }
 
-  /**
-   * A copy of the selected block, set beside it on its free side (or on top
-   * when it stands alone): the way a symmetric wing or a repeated tower is
-   * made. It joins the building; any overlap is cut out of the copy.
-   */
+  /** A copy of the selected block, set beside it on its free side (or on top when it stands alone) */
   copyBlock(): void {
     const s = this.selection;
     if (!s) return;
@@ -975,10 +909,7 @@ export class BuildingTool {
     if (this.cutLevel === null || !b) return null;
     const level = Math.max(0, Math.min(this.cutLevel, topLevel(b) - 1));
     const dir = Math.round(Math.atan2(this.cutView.y, this.cutView.x) / (Math.PI / 4));
-    // The store's record is replaced whenever the building changes, never
-    // changed in place (`BuildingStore.put`): its identity says whether it
-    // moved. DO NOT key on `JSON.stringify(b)`: it wrote the whole building out
-    // every frame (`beforeDraw`).
+    // DO NOT key on `JSON.stringify(b)`: it wrote the whole building out every frame (`beforeDraw`).
     if (b !== this.cutRecord || level !== this.cutAt || dir !== this.cutDir) {
       this.cutRecord = b;
       this.cutAt = level;
@@ -1020,12 +951,7 @@ export class BuildingTool {
     });
   }
 
-  /**
-   * Furnishing, as in The Sims: a piece (or a light) in hand is put down where
-   * the cut floor is clicked; 'move' picks a piece up with one click and puts
-   * it down with the next; 'remove' takes away the one clicked. R turns the
-   * piece in hand, or the one being moved, a quarter turn.
-   */
+  /** Furnishing, as in The Sims: a piece (or a light) in hand is put down where the cut floor is clicked */
   furnitureKind: FurnitureKind | 'move' | 'remove' | null = null;
   furnitureAngle = 0;
   /** The piece picked up by 'move', by index on the floor shown. */
@@ -1084,8 +1010,7 @@ export class BuildingTool {
     }
     const carried = this.carried;
     this.onSelected((draft) => {
-      // The first change to a floor keeps what was there: the arrangement made
-      // for the building's function becomes the player's own.
+      // The first change to a floor keeps what was there
       const list = [...(draft.furnishing?.[String(level)] ?? furnishingOf(draft, level))];
       if (kind === 'remove') {
         const i = under(list);
@@ -1113,13 +1038,7 @@ export class BuildingTool {
     this.host.changed();
   }
 
-  /**
-   * The basic shape in hand, placed where the pointer is - on a roof it stands
-   * on that roof, centred there; against a wall it stands out from the wall,
-   * from the block's floor up to the floor pointed at; on open ground it is a
-   * new building - as a draft: the ghost while it is carried, the edit when it
-   * is dropped. Null when there is nothing to put it on.
-   */
+  /** The basic shape in hand, placed where the pointer is - on a roof it stands on that roof, centred there */
   private primitiveDraft(hit: BuildingHit | null, world: Vec2): { draft: Building; existing: BuildingId | null; made: number | null } | null {
     const p = this.primitive;
     if (!p) return null;
@@ -1168,8 +1087,7 @@ export class BuildingTool {
       shape(v);
       if (hit.face !== 'top') v.base = source.base;
     }
-    // Dropped on top, the roof under it stays as it was: blocks never change
-    // one another.
+    // Dropped on top, the roof under it stays as it was: blocks never change one another.
     const under = volumeById(draft, source.id);
     if (under && hit.face === 'top') under.roof = source.roof;
     return made !== null ? { draft, existing: building.id, made } : null;
@@ -1253,10 +1171,7 @@ export class BuildingTool {
     });
   }
 
-  /**
-   * Extrudes the picked face as a NEW block: a brick the face's width and
-   * the block's height, set against it - then edited like any other block.
-   */
+  /** Extrudes the picked face as a NEW block: a brick the face's width and the block's height, set against it */
   extrudeFaceBlock(depth: number): void {
     const s = this.selection;
     const side = this.faceInHand();
@@ -1288,11 +1203,7 @@ export class BuildingTool {
     this.host.changed();
   }
 
-  /**
-   * Insets the picked face: its bays, all but a frame of one bay at each end
-   * and the top and bottom storeys, set back `depth` - a recessed panel, a
-   * loggia front.
-   */
+  /** Insets the picked face: its bays, all but a frame of one bay at each end and the top and bottom storeys */
   insetFace(depth: number): void {
     const s = this.selection;
     const side = this.faceInHand();
@@ -1337,11 +1248,7 @@ export class BuildingTool {
     });
   }
 
-  /**
-   * Takes the selected block - and what stands on it - out of the building
-   * into a building of its own, in the same place: what was joined can be
-   * unjoined.
-   */
+  /** Takes the selected block - and what stands on it - out of the building into a building of its own, in the same place */
   detachBlock(): void {
     const s = this.selection;
     const b = this.selected();
@@ -1463,8 +1370,7 @@ export class BuildingTool {
     this.blueprintKey = key;
     this.stage = 'sketch';
     this.component = null;
-    // Picking a model puts the plan pencil down: with it still in hand, the
-    // click meant to set the house on the ground started a plan instead.
+    // Picking a model puts the plan pencil down
     this.activeModelTool = null;
     this.planPoints = null;
     this.setMode('place');
@@ -1540,10 +1446,7 @@ export class BuildingTool {
     this.host.changed();
   }
 
-  /**
-   * One more storey in the selected mass, a copy of storey `at`, put in at
-   * `at` (below it) or `at + 1` (above it); whatever stands on the mass rises.
-   */
+  /** One more storey in the selected mass, a copy of storey `at`, put in at `at` (below it) or `at + 1` (above it) */
   insertStorey(at: number, above: boolean): void {
     const s = this.selection;
     if (!s) return;
@@ -1690,11 +1593,7 @@ export class BuildingTool {
     });
   }
 
-  /**
-   * The canvas paint tool as a BRUSH: whatever the pointer is over is painted,
-   * and a drag paints face after face without ever stopping to select one.
-   * One commit per face crossed, so undo steps back wall by wall.
-   */
+  /** The canvas paint tool as a BRUSH */
   private lastPaintKey: string | null = null;
 
   paintStroke(screen: Vec2): boolean {
@@ -1709,8 +1608,7 @@ export class BuildingTool {
     const bay = hit.face === 'top' ? null : { storey: hit.storey, side: hit.face, index: hit.index };
     this.selection = { building: hit.building, volume: hit.volume, bay };
     if (this.mode === 'place') this.setMode('edit');
-    // A roof face paints the roof; a wall face paints that wall (the whole
-    // side, so one drag down a facade is one decision, not one per bay).
+    // A roof face paints the roof; a wall face paints that wall
     this.materialScope = hit.face === 'top' ? 'roof' : 'face';
     this.paint(this.paintBrush);
     this.host.changed();
@@ -1741,11 +1639,7 @@ export class BuildingTool {
     this.host.changed();
   }
 
-  /**
-   * A run of fence, wall or paving, traced as a path: the points are clicked
-   * like a plan's, and finishing lays one part per segment, end to end - the
-   * way a road is drawn, not a part at a time.
-   */
+  /** A run of fence, wall or paving, traced as a path */
   pathKind: ElementKind | null = null;
 
   /** The Move block tool: the press takes hold of the selected mass itself. */
@@ -1782,9 +1676,7 @@ export class BuildingTool {
       return;
     }
     const local = points.map((p) => worldToLocalAt(building, p));
-    // A stair laid along the path climbs the floor being edited, its rise
-    // spread over the segments in proportion to their length: the run turns
-    // where the trace turns and still lands on the floor above.
+    // A stair laid along the path climbs the floor being edited
     const selection = this.selection;
     const volume = volumeById(building, selection?.volume ?? 0) ?? building.volumes[0];
     const level = volume ? volume.base + (selection?.bay?.storey ?? 0) : 0;
@@ -1863,11 +1755,7 @@ export class BuildingTool {
     return this.selected()?.elements?.find((e) => e.id === id) ?? null;
   }
 
-  /**
-   * The ghost of the armed element under the pointer: against the facade bay
-   * it points at (the first candidate that fits - a stair that cannot run out
-   * turns along the facade), or on the ground around the building.
-   */
+  /** The ghost of the armed element under the pointer: against the facade bay it points at */
   private hoverElement(screen: Vec2, world: Vec2): void {
     const b = this.selected();
     const kind = this.armed;
@@ -1916,8 +1804,7 @@ export class BuildingTool {
     }
     const draft = preview.building;
     const added = draft.elements?.[draft.elements.length - 1];
-    // A part placed against an identical one is a continuation of it: two
-    // flights side by side are one wide flight, not two with a gap.
+    // A part placed against an identical one is a continuation of it
     if (added) opFuseElement(draft, added.id);
     const result = this.host.commit(() => replaceBuilding(this.host.context(), draft));
     this.setPreview(null);
@@ -2119,8 +2006,7 @@ export class BuildingTool {
       }
     }
     const selected = this.selected();
-    // A part in hand goes where it is clicked: the handles stand aside (the
-    // floor arrow, just over a small roof, swallowed the click meant for it).
+    // A part in hand goes where it is clicked: the handles stand aside
     if (this.mode === 'edit' && selected && this.selection && !this.roofDetailKind && !this.armed && !this.component && !this.primitive && !this.coreKind && !this.furnitureKind) {
       const handle = this.handleAt(screen);
       if (handle) {
@@ -2183,8 +2069,7 @@ export class BuildingTool {
         this.drag = { kind: 'move', origin, start: this.view.planeAt(screen, handle.z), z: handle.z };
         break;
       case 'lift': {
-        // Up and down the screen, as the floors arrow: the screen height of
-        // one ground storey at the handle gives the scale.
+        // Up and down the screen, as the floors arrow: the screen height of one ground storey at the handle gives the scale.
         const rise = levelHeight(origin, 0);
         const top = this.view.project(handle.x, handle.y, handle.z + rise);
         const foot = this.view.project(handle.x, handle.y, handle.z);
@@ -2260,9 +2145,7 @@ export class BuildingTool {
     if (!drag) {
       this.hoverHandle = this.mode === 'edit' ? this.handleAt(screen) : null;
       if (this.mode === 'place') {
-        // A model in hand follows the pointer everywhere, over a building
-        // too: that is how a block is set against a house to join it. It used
-        // to vanish there, and the click selected the house instead.
+        // A model in hand follows the pointer everywhere, over a building too
         this.hover = null;
         if (!this.activeModelTool || this.activeModelTool === 'draw') this.hoverPlace(world);
         else this.setPreview(null);
@@ -2281,11 +2164,7 @@ export class BuildingTool {
     if (drag.kind === 'click') {
       // A press that travels is not a click: it neither places nor selects.
       if (Math.hypot(screen.x - drag.start.x, screen.y - drag.start.y) > DRAG_START_PIXELS) drag.moved = true;
-      // ... unless it took hold of the selected building: then it carries it,
-      // the way any object is moved - press on it and drag.
-      // A block is a brick: pressed on and dragged, the block under the
-      // pointer goes (and what stands on it); a building of one block goes
-      // whole. The building as a whole moves by its move handle.
+      // ... unless it took hold of the selected building: then it carries it, the way any object is moved
       const held = this.selected();
       const hit = drag.hit;
       if (drag.moved && held && hit && hit.building === held.id && this.mode === 'edit' && this.freeHand()) {
@@ -2362,8 +2241,7 @@ export class BuildingTool {
           // Near a street it faces the street, as a new building does.
           placeAt(draft, snap.anchor, snap.rotation);
         } else {
-          // Anywhere else it keeps the bearing the player gave it: snapped to
-          // a neighbour's, moving undid every turn.
+          // Anywhere else it keeps the bearing the player gave it: snapped to a neighbour's, moving undid every turn.
           const step = this.free ? 0 : GRID;
           const dx = p.x - drag.start.x;
           const dy = p.y - drag.start.y;
@@ -2383,8 +2261,7 @@ export class BuildingTool {
         break;
       }
       case 'massMove': {
-        // One block of the building, dragged in its own plan: the block goes
-        // where it is put, and the validator says whether it still stands.
+        // One block of the building, dragged in its own plan
         const p = this.view.planeAt(screen, drag.z);
         const a = worldToLocalAt(draft, drag.start);
         const b = worldToLocalAt(draft, p);
@@ -2416,8 +2293,7 @@ export class BuildingTool {
         break;
       }
     }
-    // A drag that lands on another building welds on release: the ghost reads
-    // what the release will do, weld included.
+    // A drag that lands on another building welds on release: the ghost reads what the release will do, weld included.
     const blocking = this.verdict(draft, draft.id);
     this.problem = blocking;
     this.setPreview({ building: draft, valid: blocking === null, problem: blocking, hides: draft.id, serial: 0 });
@@ -2458,8 +2334,7 @@ export class BuildingTool {
       return;
     }
     const draft = preview.building;
-    // Dragged against another building? It welds: the neighbour's masses come
-    // into this record and the overlap is cut away, in the same undo step.
+    // Dragged against another building?
     const result = this.host.commit(() => {
       const ctx = this.host.context();
       const absorbed = weldInto(ctx, draft, []);
@@ -2472,12 +2347,7 @@ export class BuildingTool {
     this.report(result);
   }
 
-  /**
-   * What a drop of `draft` will meet, weld included: the same question the
-   * release asks. The ghost used to call any overlap with another building
-   * green ("they will weld"), and the release then refused it - a green
-   * ghost that would not build.
-   */
+  /** What a drop of `draft` will meet, weld included: the same question the release asks. */
   private verdict(draft: Building, self: BuildingId | undefined): BuildingProblem | null {
     const ctx = this.host.context();
     const problem = validateBuilding(ctx, draft, self);
@@ -2567,8 +2437,7 @@ export class BuildingTool {
       this.host.changed();
       return;
     }
-    // A model in hand is set down where its ghost stands, over a building or
-    // not: overlapping, the two join.
+    // A model in hand is set down where its ghost stands, over a building or not: overlapping, the two join.
     if (this.mode === 'place' && !this.activeModelTool && this.preview && this.preview.hides === null) {
       this.placeHere();
       return;
@@ -2577,9 +2446,7 @@ export class BuildingTool {
       const wasPlacing = this.mode === 'place';
       const changedBuilding = this.selection?.building !== hit.building;
       const faceHit = hit.face === 'top' ? null : { storey: hit.storey, side: hit.face, index: hit.index };
-      // The first click picks the building (the mass clicked); a second click
-      // on the same mass picks the face under the pointer. Tools that work on
-      // a face - windows, paint - take the face at once.
+      // The first click picks the building (the mass clicked); a second click on the same mass picks the face under the pointer.
       const wantsFace = this.component !== null || this.activeModelTool === 'paint';
       const again = !changedBuilding && this.selection?.volume === hit.volume && !this.selection?.element;
       const bay = wantsFace || again ? faceHit : null;
@@ -2648,11 +2515,7 @@ export class BuildingTool {
     this.ghostAt(snap.anchor, snap.rotation);
   }
 
-  /**
-   * The ghost of a dragged shape: exactly the rectangle drawn, square to the
-   * screen, its front towards the viewer. Snapped like a model it was pulled
-   * onto the nearest kerb and turned to face it, nowhere near the drag.
-   */
+  /** The ghost of a dragged shape: exactly the rectangle drawn, square to the screen, its front towards the viewer. */
   private placeDrawn(start: Vec2, at: Vec2): void {
     const { a0, b0, w } = this.shapeDragSpan(start, at);
     const c = Math.cos(this.shapeDragAngle);
@@ -2663,11 +2526,9 @@ export class BuildingTool {
   }
 
   private ghostAt(anchor: Vec2, rotation: number): void {
-    // The body shared, not copied (`placeBody`): the ghost is only read, and
-    // cloned when it is placed (`placeHere`).
+    // The body shared, not copied (`placeBody`): the ghost is only read, and cloned when it is placed (`placeHere`).
     const draft = { ...placeBody(this.body, anchor, rotation, this.blueprintKey ?? undefined), id: PREVIEW_ID } as Building;
-    // Overlapping another building is a weld, not a refusal - when the weld
-    // works: the ghost is green only if the drop will build.
+    // Overlapping another building is a weld, not a refusal - when the weld works
     const blocking = this.verdict(draft, undefined);
     this.problem = blocking;
     this.setPreview({ building: draft, valid: blocking === null, problem: blocking, hides: null, serial: 0 });
@@ -2734,11 +2595,9 @@ export class BuildingTool {
         this.selectedRoofDetail = null;
       } else if (this.mode === 'place') {
         this.setMode('edit');
-      // The pointer selecting is where the Builder rests (`buildingsWiring`
-      // activate): nothing to put down.
+      // The pointer selecting is where the Builder rests (`buildingsWiring` activate): nothing to put down.
       } else if (this.activeModelTool && this.activeModelTool !== 'select') this.activeModelTool = null;
-      // Nothing else in hand: Escape puts the building down, and the panel
-      // goes back to the ways to create.
+      // Nothing else in hand: Escape puts the building down, and the panel goes back to the ways to create.
       else if (this.selection) this.selection = null;
       // Nothing at all: the key is not the Builder's (the game's Escape puts the tool down).
       else return false;
@@ -2787,17 +2646,7 @@ const PICK_STEP = m(64);
 /** How far round the ray's track a step looks: a building is picked on its own volumes, inside its stored box. */
 const PICK_PAD = m(2);
 
-/**
- * The nearest building face under `ray`, `hides` left out: the buildings filed
- * along the ray's track on the map (`BuildingStore.near`), a step at a time
- * from the eye outwards, until a face is hit nearer than the next step begins
- * (a hit point lies in its building's box, so a nearer one lies in a step
- * already read: Amanatides & Woo, "A Fast Voxel Traversal Algorithm", the walk
- * front to back with its early stop). A pointer over open ground reads the
- * cells under its ray across the map, never every building of the city.
- * DO NOT copy `buildings.all()` here: every move of the pointer over the map
- * copied and tested the whole city (audit A9).
- */
+/** DO NOT copy `buildings.all()` here: every move of the pointer over the map copied and tested the whole city (audit A9). */
 export function pickAlongRay(
   store: { near(minX: number, minY: number, maxX: number, maxY: number): Building[] },
   ray: Ray3, hides: BuildingId | null, floorOf: (b: Building) => number,

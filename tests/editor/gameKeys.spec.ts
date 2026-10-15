@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createGameKeys, type GameKeyDeps } from '@editor/gameKeys';
 import type { Tool } from '@editor/toolMachine';
 
-/**
- * One key, one command. At the SOURCE (4cc2926e) four `keydown` listeners each
- * read every key, so these presses did two things each (docs/PROBLEMS.md R16).
- */
+/** One key, one command. */
 interface World {
   tool: Tool;
   smoothNode: boolean;

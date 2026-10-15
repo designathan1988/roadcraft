@@ -11,19 +11,7 @@ import { FOOTWAY_RISE } from '@world/roadTypes';
 import { rampsOfNode, walkingRise } from '@world/curbRamps';
 import { m } from '@world/units';
 
-/**
- * NOBODY IS LIFTED OR DROPPED BETWEEN TWO FRAMES (docs/PLANO.md, Etapa 5c).
- *
- * The body is drawn at the walking surface's height under it
- * (`render/agents.ts`, `walkingRise`). Measured on 2026-10-09 it was chosen
- * by the walker's ground instead - the footway's 15 cm or the carriageway's 0 -
- * and every step from a footway onto a zebra dropped the body 15 cm in one
- * frame (17 times a minute with ten people). With the dropped kerbs the two
- * read the same on the ramp, and the body walks down it.
- *
- * The height is taken exactly as the renderer takes it, over the road's own
- * deck, for everyone off the open ground (the lot gates are Etapa 5b).
- */
+/** NOBODY IS LIFTED OR DROPPED BETWEEN TWO FRAMES (Etapa 5c). */
 
 function city(): SimWorld {
   const doc = new RoadDoc();
@@ -53,8 +41,7 @@ function rise(sim: SimWorld, x: number, y: number, ground: string): number {
 describe('walking height', () => {
   it('builds a dropped kerb at each end of every crossing', () => {
     const sim = city();
-    // Four legs, a zebra on each, a ramp at each of its two ends; and the
-    // unmarked crossing at each of the four road ends, two ramps each.
+    // Four legs, a zebra on each, a ramp at each of its two ends
     const ramps = [...sim.doc.nodes.keys()].flatMap((id) => rampsOfNode(sim.net, id));
     expect(ramps.length).toBe(16);
     for (const r of ramps) {
@@ -100,16 +87,7 @@ describe('walking height', () => {
     expect(worst, detail).toBeLessThanOrEqual(m(0.01));
   });
 
-  /**
-   * NOR MOVED OR TURNED FURTHER THAN THEY WALK, NOR GLIDING (Etapa 5a). The
-   * body is drawn between `prev` and the tick's position: a step longer than
-   * the walk forward and the step aside allow is a jump ("like a chess
-   * piece"), a turn faster than `turnV` is a snap. A walker steps aside into
-   * its stripe at up to `SIDESTEP` even stood still, as SUMO's striping does
-   * (`MSPModel_Striping` `maxYSpeed`); the gait is drawn at that real speed
-   * (`gaitSpeed`), or the idle pose glided along - 15 099 times in four
-   * minutes on 2026-10-10.
-   */
+  /** NOR MOVED OR TURNED FURTHER THAN THEY WALK, NOR GLIDING (Etapa 5a). */
   it('moves and turns every walker no further in a tick than its own speed allows', () => {
     const sim = city();
     sim.usePedestrianEngine(createAgentWalkEngine());

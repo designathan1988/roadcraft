@@ -4,12 +4,7 @@ import { CellPool } from '@render/buildings/cellPool';
 import type { KitBoxes } from '@render/buildings/cellArrays';
 import type { CellEntry } from '@render/buildings/cellWork';
 
-/**
- * A JOB WAITING ITS TURN HOLDS NO TEXT (`cellPool.ts`): a building's record is
- * written as JSON when its job is handed to a worker, never when the job is
- * asked. A town's masses asked at its opening held every building's text
- * while they waited (109 MB live at 2,560 m, 2026-10-15).
- */
+/** A JOB WAITING ITS TURN HOLDS NO TEXT (`cellPool.ts`) */
 class FakeWorker {
   static made: FakeWorker[] = [];
   readonly posted: unknown[] = [];

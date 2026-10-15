@@ -7,26 +7,7 @@ import type { RoadStructure } from './structures';
 import { METERS_PER_UNIT } from './units';
 import { ROAD_TUNING } from './roads/tuning';
 
-/**
- * THE MINIMAL ECONOMY (docs/source/VIAS.md V0, the player's decision of 2026-10-09):
- * a balance, saved with the map, and what roads cost to build.
- *
- * A road's price is its cross-section - carriageway, central reservation,
- * footways, each by its own price per square metre - times its length in
- * each way of building it, times that way's multiplier: at grade, on an
- * embankment, in a cutting, on piers, in a tunnel (`ROAD_TUNING.economy`).
- * The way is read from what the player authored, not from a solve: a
- * structure (`tunnel`, or the legacy `elevated`/`bridge`) prices the whole
- * road; a road at grade is priced by its authored height over the designed
- * ground along it (linear between its two nodes, as the editing rules read
- * it), so a ramp up to a viaduct pays embankment, then piers.
- *
- * What an edit costs is what the roads are worth after it less what they
- * were worth before (`roadValue`): a road drawn costs its price, a road
- * split or joined costs nothing, a road widened costs the difference, and a
- * road demolished gives back a share of its price (`chargeFor`). Every road
- * edit, whatever tool made it, is charged by that one rule.
- */
+/** THE MINIMAL ECONOMY (the player's decision of 2026-10-09) */
 export type BuildKind = 'ground' | 'embankment' | 'trench' | 'bridge' | 'tunnel';
 export const BUILD_KINDS: readonly BuildKind[] = ['ground', 'embankment', 'trench', 'bridge', 'tunnel'];
 
@@ -59,12 +40,7 @@ export function pricePerUnit(rt: RoadType): number {
     2 * rt.sidewalk * PER_SQUARE_UNIT.footway;
 }
 
-/**
- * How much of a road of `length` is built each way, from its structure and
- * the authored height at its two ends (world units over the designed ground).
- * Exact for the linear height between them, so a road split anywhere sums
- * to the same lengths.
- */
+/** How much of a road of `length` is built each way, from its structure and the authored height at its two ends */
 export function buildLengths(structure: RoadStructure, heightA: number, heightB: number, length: number): Record<BuildKind, number> {
   const out: Record<BuildKind, number> = { ground: 0, embankment: 0, trench: 0, bridge: 0, tunnel: 0 };
   if (structure === 'tunnel') { out.tunnel = length; return out; }
@@ -93,12 +69,7 @@ export function segmentCost(doc: RoadDoc, segment: RoadSegment, length: number):
   return total;
 }
 
-/**
- * A document's road prices, kept from its diary: each road's price, and their
- * sum kept by difference (Jane Street's Incremental: an aggregate updated by
- * the change of its parts). A working copy (`RoadDoc.forkOrigin`) starts on the
- * original's, read through, and keeps only the prices of the roads it changed.
- */
+/** A document's road prices, kept from its diary: each road's price, and their sum kept by difference */
 interface Ledger {
   readonly journal: ChangeJournal;
   /** The diary's serial read up to. */
@@ -134,17 +105,7 @@ function priceAll(doc: RoadDoc): Ledger {
   return { journal: doc.changes, seen: doc.changes.version, costs, base: null, total };
 }
 
-/**
- * What every road in the document is worth: the sum of their prices.
- *
- * Kept from the diary: the roads its entries name since the last ask (a
- * road's id, or a node's - its roads: a node moved or raised changes their
- * length and their build) are priced again, and the sum moves by the
- * difference. A working copy starts from the original's as it stood. DO NOT
- * price every road of the map for each edit and each preview of a draft (and
- * DO NOT keep the prices in a cache by text that empties itself: both were
- * here).
- */
+/** DO NOT price every road of the map for each edit and each preview of a draft */
 export function roadValue(doc: RoadDoc): number {
   let ledger = ledgers.get(doc);
   if (!ledger || ledger.journal !== doc.changes) {
@@ -195,13 +156,7 @@ export interface RoadCharge {
   readonly affordable: boolean;
 }
 
-/**
- * The charge for turning roads worth `valueBefore` into roads worth
- * `valueAfter` with `balance` in hand: the difference when they are worth
- * more, a share of it given back (`demolitionRefund`) when they are worth
- * less. Less than one unit of money either way is the rounding of a road
- * re-cut (a split), not an edit: nothing.
- */
+/** The charge for turning roads worth `valueBefore` into roads worth `valueAfter` with `balance` in hand */
 export function chargeFor(valueBefore: number, valueAfter: number, balance: number): RoadCharge {
   const delta = valueAfter - valueBefore;
   if (Math.abs(delta) < 1) return { amount: 0, balance, affordable: true };

@@ -1,17 +1,7 @@
 import { BufferGeometry, Material, Texture, WebGLRenderTarget, type WebGLRenderer } from 'three';
 import { profiler } from '@core/profiler';
 
-/**
- * The profiler's hooks into three and WebGL (`core/profiler.ts`): every
- * `dispose` of a geometry, material, texture and render target, every
- * geometry given its positions (one built), and every buffer and texture
- * sent to the GPU, counted with the caller.
- *
- * The prototypes are wrapped once, keeping the original method: a subclass
- * that overrides `dispose` and calls `super.dispose()` is still counted once
- * (three r186: `BufferGeometry`, `Material`, `Texture` and
- * `WebGLRenderTarget` each dispatch `dispose` from the base method).
- */
+/** The profiler's hooks into three and WebGL (`core/profiler.ts`) */
 /** Set on `BufferGeometry.prototype` once the prototypes are wrapped: they are wrapped once. */
 const HOOKED = Symbol('profiler hooks');
 

@@ -2,20 +2,7 @@ import type { ChangeRect } from './changes';
 import { m } from './units';
 import { uniqueCounter } from '@core/identityMemo';
 
-/**
- * THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the
- * partition an edit's cost is
- * measured in (docs/source/relatorio-desempenho-mapas-enormes-2026-10-11.md 6.2).
- *
- * A fixed grid, not a tree: the cheapest structure to keep in step with
- * edits, and a thing is filed in the cells its bounds reach, so a question
- * about a place reads only the cells round it (Nystrom, "Spatial Partition";
- * Unreal World Partition's runtime grid, 256 m cells). Whatever is derived
- * from what a cell holds is keyed by the cell's version and made again only
- * when that moves: an edit pays for the cells it reaches, never for the map.
- *
- * Pure: no three, no DOM.
- */
+/** THE WORLD'S CELLS: one fixed grid over the plane the map is laid on, the partition an edit's cost is measured in */
 
 /** The side of a cell, world units (Unreal's default runtime grid cell). */
 export const CELL = m(256);
@@ -47,31 +34,15 @@ export const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1
 /** Whether two rectangles overlap (touching counts). */
 const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
-/**
- * The clock every filing's cell versions are read from: a version names one
- * change of one cell of one filing, never another's. A stamp (`stamp`) made
- * against one filing then never matches another's cells, nor the same
- * filing's after it took another's (`copyFrom`) or started again: whatever
- * is kept by stamp stays right through `Network.adopt` and a full rebuild.
- */
+/** The clock every filing's cell versions are read from */
 const nextVersion = uniqueCounter();
 
 /** The work a filing did: things filed and cells visited. A count for the performance budgets (`core/perfBudget.ts`). */
 export const cellWork = { filed: 0, cellsRead: 0 };
 
-/**
- * Things (by id) filed in the cells their bounds reach, each with the object
- * it was filed for: filing the same object again is free, a new object (a
- * ribbon built again, a junction solved again) moves it. Every cell has a
- * version that moves whenever something in it comes, goes or changes, so a
- * result made from a set of cells is still good while their versions stand.
- */
+/** Things (by id) filed in the cells their bounds reach, each with the object it was filed for */
 export class CellFiling<Id extends number, T extends object> {
-  /**
-   * `side`: the side of its cells, world units - the world's cell by default;
-   * smaller for small things asked about at a point (the street furniture), so
-   * a question reads a few of them, not a city block's.
-   */
+  /** `side`: the side of its cells, world units - the world's cell by default */
   constructor(private readonly side = CELL) {}
 
   private readonly entries = new Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }>();
@@ -114,12 +85,7 @@ export class CellFiling<Id extends number, T extends object> {
     return this.entries.get(id)?.item === item;
   }
 
-  /**
-   * The rectangle `id` is filed over, or undefined. A point is answered with
-   * `id` by `idsMeeting` exactly when this rectangle holds it (edges
-   * included): whoever rasterizes what the point questions answer
-   * (`world/zoneGrid.ts` `markPaved`) reads it to give the same answer.
-   */
+  /** The rectangle `id` is filed over, or undefined. */
   rectOf(id: Id): ChangeRect | undefined {
     return this.entries.get(id)?.rect;
   }
@@ -129,10 +95,7 @@ export class CellFiling<Id extends number, T extends object> {
     return this.entries.keys();
   }
 
-  /**
-   * The ids whose bounds meet `rect`, each once, in increasing order (a
-   * result made from them does not depend on the order things were filed in).
-   */
+  /** The ids whose bounds meet `rect`, each once, in increasing order */
   idsMeeting(rect: ChangeRect): Id[] {
     const out = new Set<Id>();
     forCellsOver(rect, (key) => {
@@ -147,14 +110,7 @@ export class CellFiling<Id extends number, T extends object> {
     return [...out].sort((a, b) => a - b);
   }
 
-  /**
-   * The ids whose bounds meet any of `rects`, each once, in increasing order:
-   * what `idsMeeting` of each gives, joined - each cell read once for all the
-   * rectangles over it. DO NOT ask `idsMeeting` rectangle by rectangle for a
-   * change of many: an entry's blocks, grown by a reach, overlap, and every
-   * cell they share was read, made a set of and sorted again for each
-   * (the street furniture's diary, 2026-10-15).
-   */
+  /** DO NOT ask `idsMeeting` rectangle by rectangle for a change of many */
   idsMeetingAny(rects: readonly ChangeRect[]): Id[] {
     if (rects.length === 1) return this.idsMeeting(rects[0]!);
     const over = new Map<number, ChangeRect[]>();
@@ -210,8 +166,7 @@ export class CellFiling<Id extends number, T extends object> {
   private bump(key: number): void {
     const version = nextVersion();
     this.versions.set(key, version);
-    // From the same clock: an epoch names one change too, never another
-    // filing's (`poleLines.ts` keeps its regions by epoch across `adopt`).
+    // From the same clock: an epoch names one change too, never another filing's
     this.epoch = version;
   }
 }

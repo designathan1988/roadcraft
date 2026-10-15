@@ -1,16 +1,4 @@
-/**
- * WHEN A TOWN PUT TOGETHER UNSEEN IS SHOWN (the opening and every map opened,
- * `SceneHandle.beginLoad`): held until it is whole - Unity's
- * `allowSceneActivation = false`, the scene loaded in the background and
- * activated once ready - then one frame drawn unseen so its meshes reach the
- * GPU behind the curtain, then shown.
- *
- * The safety limit is the time spent WORKING on it, not the time on the
- * clock: a load in a pane the browser stopped drawing (hidden or covered:
- * `requestAnimationFrame` waits for the page to be visible) gets no frames,
- * and a wall-clock limit lifted the curtain on a town with no buildings yet
- * (2026-10-09). A frame's gap counts at most `MAX_GAP_MS`.
- */
+/** WHEN A TOWN PUT TOGETHER UNSEEN IS SHOWN (the opening and every map opened, `SceneHandle.beginLoad`) */
 export type RevealStep = 'hold' | 'warm' | 'show';
 
 /** Working time after which the town is shown however far it got: never a curtain for ever. */

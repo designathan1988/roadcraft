@@ -20,19 +20,7 @@ import { NEAR, PAVED, firstTrue, gridRect, type RasterGrid } from './rasterGrid'
 import type { Junction } from './junction/build';
 import type { SegmentRibbon } from './network';
 
-/**
- * The line wire poles stand on, and the kerb they stand behind.
- *
- * The outline of everything a kerb bounds (carriageway and kerb stone of
- * every ground street with footways, `surfaces().curb`), grown by
- * `POLE_KERB_INSET` with round joins (Clipper2, as the walking lines in
- * `walkways.ts` are). Each closed contour runs round one block at exactly that
- * distance from the kerb - along a street, round a corner's kerb return - so a
- * pole on it is on the pavement, never in a junction. The pole tool plans on
- * it (`editor/poles.ts`); the renderer turns a pole's lamp towards the kerb
- * nearest it (`kerbward`), which is right at a corner too, where no single
- * street owns the footway.
- */
+/** The line wire poles stand on, and the kerb they stand behind. */
 
 /** How far behind the kerb stone the pole line runs: the middle of the lamp zone. */
 export const POLE_KERB_INSET = LAMP_ZONE / 2;
@@ -80,18 +68,7 @@ export interface OnContour {
   readonly distance: number;
 }
 
-/**
- * The nearest place on the lines' contours within `reach`, exactly as walking
- * every contour with `Polyline.closestPoint` answers it: per contour the first
- * edge at the least squared distance, then the first contour strictly nearer
- * than the ones before it. Only the edges filed near the point are measured
- * (`PoleLines.edges`): an edge within `reach` is always among them, and one
- * farther could never be the answer. Walking every edge of every contour was
- * the cost of the pole route graph's casts across the streets and grew with
- * the city (in a network of open streets the kerb line is one contour round
- * the whole town): 11.4 s of the generation of a city of radius 2,560 m.
- * DO NOT go back to scanning the contours: the question is local.
- */
+/** DO NOT go back to scanning the contours: the question is local. */
 export function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnContour | null {
   const { buckets } = lines.edges;
   const px = at.x, py = at.y;
@@ -162,15 +139,7 @@ function contoursOf(kerbed: MultiPoly): Polyline[] {
   return contours;
 }
 
-/**
- * The pole lines of the WHOLE map's ground streets that have footways, made
- * at each call: the oracle of `poleLinesIn` / `poleLinesAt`, which read only
- * the cells round a place (`tests/world/poleLinesCells.spec.ts`). Nothing in
- * the game asks this. DO NOT keep it per network revision again: every road
- * edit made it again for every street of the map (33 ms of a road's click in a
- * town of 237 buildings, 2026-10-11), and a memo keyed by the network - a
- * thing changed in place - answers for what the network was.
- */
+/** DO NOT keep it per network revision again: every road edit made it again for every street of the map */
 export function poleLines(net: Network): PoleLines {
   const include = polesInclude(net);
   const kerbed = levelPolygons(net, Level.Curb, include);
@@ -179,14 +148,7 @@ export function poleLines(net: Network): PoleLines {
   return { contours, paving, kerbed, accesses: crossingAccesses(net), edges: contourEdges(contours) };
 }
 
-/**
- * How far round a place its pole lines are made from: the farthest any
- * question about a point reaches (a footway snap, 12 m, `editor/poles.ts`)
- * plus the kerb-line inset, with room. A kerb line at a point depends only on
- * the kerbs within the inset of it (a union and an offset are local), so the
- * lines made from every ribbon and junction within this of a rectangle are
- * the whole map's lines inside it.
- */
+/** How far round a place its pole lines are made from: the farthest any question about a point reaches */
 const LINES_HALO = m(32);
 
 
@@ -199,20 +161,7 @@ function regionStamp(net: Network, rect: ChangeRect): string {
   return `${net.segmentCells.stamp(around)}|${net.junctionCells.stamp(around)}`;
 }
 
-/**
- * What the pole lines keep of ONE network, owned by it (`Network.poleLines`):
- * the lines of each rectangle asked about, and each street's and junction's
- * footway rings by the object the network built for it.
- *
- * A rectangle's lines are kept exactly while the cells they are made from
- * stand: when the network's cells move (an edit), the rectangles whose cells
- * moved are let go at the next question, and only those - nothing still
- * right is thrown away, nothing wrong is kept. DO NOT go back to a ceiling
- * that lets the least recently asked go (`REGIONAL_KEPT`, 64): the pole tool
- * made again, one after another, the cells it had just left, and nothing
- * there had changed; nor to a memo of the module keyed by the network (a
- * thing changed in place).
- */
+/** DO NOT go back to a ceiling that lets the least recently asked go (`REGIONAL_KEPT`, 64) */
 export class PoleLineState {
   private readonly regions = new Map<string, { readonly rect: ChangeRect; readonly stamp: string; readonly lines: PoleLines }>();
   /** The cells' epochs the regions were last checked at (`stale`). */
@@ -231,11 +180,7 @@ export class PoleLineState {
     return lines;
   }
 
-  /**
-   * The regions some cell of whose moved since they were made, let go: once
-   * per edit of the network (its cells' epochs), whatever is asked after it.
-   * @rebuild Only when the network's cells moved.
-   */
+  /** @rebuild The regions some cell of whose moved since they were made, let go: once per edit of the network */
   private letGoStale(net: Network): void {
     const epochs = `${net.segmentCells.epoch},${net.junctionCells.epoch}`;
     if (epochs === this.checkedAt) return;
@@ -247,25 +192,13 @@ export class PoleLineState {
 /** The network's pole line state, made when first asked. */
 const stateOf = (net: Network): PoleLineState => (net.poleLines ??= new PoleLineState());
 
-/**
- * The pole lines inside `rect`: the same lines `poleLines` has there, made
- * from the ribbons and junctions within `LINES_HALO` of it only
- * (`Network.segmentCells`), and kept while none of those cells moves
- * (`PoleLineState`). An edit makes again only the rectangles it reached; the
- * rest of the map is not read. Its crossing landings are those of the nodes
- * of its streets.
- */
+/** The pole lines inside `rect`: the same lines `poleLines` has there */
 export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
   return stateOf(net).linesIn(net, rect);
 }
 
 
-/**
- * The pole lines inside `rect`, made now and not kept (`poleLinesIn` keeps
- * them): from the ribbons and junctions within `LINES_HALO` of it only.
- * Whoever plans many runs over one place (a generated city's power lines,
- * `editor/poles.ts` `poleRunPlanner`) makes them once and holds them.
- */
+/** The pole lines inside `rect`, made now and not kept (`poleLinesIn` keeps them) */
 export function poleLinesOf(net: Network, rect: ChangeRect): PoleLines {
   const around = grow(rect, LINES_HALO);
   const segments = net.segmentCells.idsMeeting(around), nodes = net.junctionCells.idsMeeting(around);
@@ -300,12 +233,7 @@ export function poleLinesAt(net: Network, p: Vec2): PoleLines {
   return poleLinesIn(net, cellRect(cellAt(p.x, p.y)));
 }
 
-/**
- * A ring as Clipper takes it in (`core/clipper.ts` `input`): its vertices on
- * Clipper's grid (in grid steps), a vertex repeating the one before dropped and
- * the closing repeat too, an outer ring turned to positive winding and a hole
- * to negative; with its bounds, in grid steps.
- */
+/** A ring as Clipper takes it in (`core/clipper.ts` `input`): its vertices on Clipper's grid */
 interface WindingRing { readonly xy: Float64Array; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 
 function windingRings(polys: MultiPoly): WindingRing[] {
@@ -358,18 +286,7 @@ function windingOf(ring: WindingRing, x: number, y: number): number {
 /** The footway and kerb rings of a street or a junction (`NetworkLines.rings`): made again with the object the network builds for it. */
 interface FootRings { readonly paving: WindingRing[]; readonly kerbed: WindingRing[] }
 
-/**
- * Whether a point is inside the union of a level's rings of the streets with
- * footways round it: the union is NonZero (`core/clipper.ts`), so the point is
- * in it exactly when the windings of the rings round it add up to anything
- * but 0 - asked of the rings of the streets and junctions filed over the
- * point, with no union made. The question used to make the union and the
- * kerb-line offset of every street round the point's cell (Clipper) just to
- * answer it, and to throw that away again from a cache of 64 regions shared
- * with the pole runs: on a city of radius 2,560 m it was 17.6 s of the
- * generation, growing faster than the city.
- * DO NOT answer a point from a region's union again: the answer is local.
- */
+/** DO NOT answer a point from a region's union again: the answer is local. */
 function insideLevels(net: Network, p: Vec2): { readonly paving: boolean; readonly kerbed: boolean } {
   const x = p.x * CLIPPER_SCALE, y = p.y * CLIPPER_SCALE;
   let paving = 0, kerbed = 0;
@@ -423,21 +340,7 @@ function localRings(net: Network, rect: ChangeRect): FootRings[] {
   return out;
 }
 
-/**
- * `onFootway || onKerbed` on a raster (`zoneGrid.ts` `markPaved`): every `NEAR` cell
- * whose centre is inside the paving or a kerb, as `insideLevels` answers it,
- * turned to `PAVED`. Each ring is filled scanline by scanline: along a row,
- * an edge crossing it adds its winding to the cells left of the crossing -
- * `windingOf`'s test, `(bx - ax) * (y - ay) - (x - ax) * (by - ay)`, is
- * monotone in x (each operation rounds monotonically), so the cells it counts
- * are a run from the left, found by bisection on the very same arithmetic.
- * The windings are summed per row in two difference arrays (paving, kerbed)
- * and read off by a running sum: exactly the sums `insideLevels` makes, a
- * ring counting only at the centres inside its owner's filed rectangle (what
- * `idsMeeting` of the point gives) and inside its bounds (as `insideLevels`
- * tests them). DO NOT go back to asking each cell: that is the whole raster
- * times the rings round each cell.
- */
+/** DO NOT go back to asking each cell: that is the whole raster times the rings round each cell. */
 export function* markPlates(net: Network, grid: RasterGrid, label: Int32Array): Generator<void, void> {
   const { minX, minY, W, H, step } = grid;
   const S = CLIPPER_SCALE;
@@ -534,10 +437,7 @@ export function onFootway(net: Network, p: Vec2): boolean {
   return inside.paving && !inside.kerbed;
 }
 
-/**
- * `onFootway || onKerbed` in one question: inside the paving or a kerb. DO NOT
- * ask the two in turn: each walked the rings round the point again.
- */
+/** DO NOT ask the two in turn: each walked the rings round the point again. */
 export function onPaving(net: Network, p: Vec2): boolean {
   const inside = insideLevels(net, p);
   return inside.paving || inside.kerbed;
@@ -561,10 +461,7 @@ function ringBoxes(polys: MultiPoly): readonly (readonly [number, number, number
   return out;
 }
 
-/**
- * The unit direction from a point to the nearest kerb edge (the carriageway's
- * side), or null when no kerbed street is within `reach`.
- */
+/** The unit direction from a point to the nearest kerb edge */
 export function kerbward(net: Network, p: Vec2, reach: number): Vec2 | null {
   let best: Vec2 | null = null;
   // As far as the cell's lines would answer (`poleLinesAt`, within their halo).
@@ -575,17 +472,7 @@ export function kerbward(net: Network, p: Vec2, reach: number): Vec2 | null {
   for (const set of rings) for (const r of set.kerbed) if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) winding += windingOf(r, x, y);
   // Inside the carriageway the union has no edge where two kerbs overlap, so the rings' nearest edge is not its: asked of the union there.
   if (winding !== 0) return kerbwardOfUnion(net, p, reach);
-  /**
-   * Outside every kerb (where a pole stands), the nearest point of the
-   * kerbs' union is the nearest point of the nearest ring: a nearer one would
-   * lie inside another ring, whose edge would be nearer still. So the
-   * kerbs are read from the rings of the streets round the point, with the
-   * union's arithmetic (Clipper's grid) and its tie rule. Every pole of the
-   * map asked its cell's union (Clipper) after any road edit, through a
-   * cache of 64 cells: on a city each edit made the cells again one after
-   * another.
-   * DO NOT ask a pole's kerb of a region's union again: the answer is local.
-   */
+  /** DO NOT ask a pole's kerb of a region's union again: the answer is local. */
   const reachSq = (bestD * CLIPPER_SCALE) ** 2;
   for (const set of rings) {
     for (const r of set.kerbed) {
@@ -622,10 +509,7 @@ function kerbwardOfUnion(net: Network, p: Vec2, reach: number): Vec2 | null {
   let r = 0;
   for (const poly of kerbed) {
     for (const ring of poly) {
-      // A ring whose bounds are no nearer than the kerb found so far holds
-      // no nearer edge (the bound's distance never exceeds the edge's): not
-      // walked. Every pole of the town walked every kerb edge of the town,
-      // on every road edit (90 ms of each on the player's map, 2026-10-11).
+      // A ring whose bounds are no nearer than the kerb found so far holds no nearer edge
       const box = boxes[r++]!;
       if (Math.hypot(Math.max(box[0] - p.x, 0, p.x - box[2]), Math.max(box[1] - p.y, 0, p.y - box[3])) > bestD + 1e-6) continue;
       kerbWork.edges += ring.length;
@@ -637,9 +521,7 @@ function kerbwardOfUnion(net: Network, p: Vec2, reach: number): Vec2 | null {
         const qx = ax + dx * t - p.x, qy = ay + dy * t - p.y;
         const d = Math.hypot(qx, qy);
         if (d <= 1e-9 || d > bestD + 1e-9) continue;
-        // Two kerbs as near (a point on a street's middle line): the answer
-        // must not hang on the order the rings come in - the cell's lines and
-        // the whole map's list them differently - so the tie goes by direction.
+        // Two kerbs as near (a point on a street's middle line): the answer must not hang on the order the rings come in
         const x = qx / d, y = qy / d;
         if (best && d >= bestD - 1e-9 && (x < best.x || (x === best.x && y <= best.y))) continue;
         bestD = Math.min(bestD, d);

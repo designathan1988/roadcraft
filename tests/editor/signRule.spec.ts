@@ -8,11 +8,7 @@ import { derivedSigns } from '../world/oracle/derivedSigns';
 import { legRule } from '@world/roads/rules';
 import { m } from '@world/units';
 
-/**
- * "PLACA = REGRA" (docs/source/VIAS.md V7): a stop or give-way plate put at a
- * junction's approach sets that leg's rule, and the plate drawn is the one
- * the rule puts up; anywhere else a plate is only a plate.
- */
+/** "PLACA = REGRA" */
 function tee() {
   const doc = new RoadDoc();
   const c = doc.addNode({ x: 0, y: 0 });

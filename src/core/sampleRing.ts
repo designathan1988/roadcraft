@@ -1,12 +1,4 @@
-/**
- * The last `capacity` samples of a measure (ms), in a ring: nothing allocated
- * per sample, so it can be fed every frame. Read rarely (the F9 monitor, the
- * performance gate): a read sorts a copy. Percentiles by nearest rank, as
- * `core/health.ts` `percentile` (always a measured value; the 100th is the
- * largest, which NVIDIA's frame-time analysis keeps out of comparisons).
- *
- * Pure: no three, no DOM.
- */
+/** The last `capacity` samples of a measure (ms), in a ring: nothing allocated per sample, so it can be fed every frame. */
 export class SampleRing {
   private readonly values: Float32Array;
   private head = 0;

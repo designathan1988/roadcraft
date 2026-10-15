@@ -8,14 +8,7 @@ import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 
-/**
- * A BATCH'S BOUNDS WORKED OUT WITH ITS ARRAYS ARE THREE'S (`cellArrays.ts`):
- * the box and sphere of each shell as `BufferGeometry.computeBoundingBox` and
- * `computeBoundingSphere` make them, and of each instanced batch as
- * `InstancedMesh.computeBoundingBox` and `Box3.getBoundingSphere` do - to the
- * last bit, so a batch put together in a worker is culled and shadowed as one
- * put together on the page.
- */
+/** A BATCH'S BOUNDS WORKED OUT WITH ITS ARRAYS ARE THREE'S (`cellArrays.ts`) */
 const groundAt = (x: number, y: number): number => x * 0.02 - y * 0.01;
 
 describe('a batch as arrays', () => {

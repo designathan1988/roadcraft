@@ -9,11 +9,7 @@ import { toggleLaneLink } from '@world/roads/connectors';
 import { nodeLanes } from '@ui/roads/connectorPanel';
 import { layoutDoc, simOf } from './support/bodies';
 
-/**
- * LANE CONNECTORS, LANE USES AND LINES (docs/VIAS.md V4), run as the traffic
- * drives them: a lane given connections by hand is left only by those; a bus
- * lane carries buses only; nobody changes lane across a solid line.
- */
+/** LANE CONNECTORS, LANE USES AND LINES, run as the traffic drives them */
 const AVENUES = { name: 'avenues', bearings: [0, 90, 180, 270], types: [3, 3, 3, 3] } as const;
 const SECONDS = 40;
 
@@ -35,8 +31,7 @@ describe('lane connections by hand', () => {
     const other = (sim.graph.inbound.get(centre) ?? []).find((id) => sim.lanelet(id)?.segment === north && sim.lanelet(id)?.laneIndex === 1)!;
     expect(sim.graph.exitsOf(other).length).toBeGreaterThan(0);
 
-    // Until the lane has carried a vehicle through the junction (50 vehicle-ticks on its connectors),
-    // at most 80 s: waited for on what happened, not on a length of time.
+    // Until the lane has carried a vehicle through the junction (50 vehicle-ticks on its connectors), at most 80 s
     const used = new Map<string, number>();
     let through = 0;
     for (let i = 0; i < Math.round(80 / DT) && through < 50; i++) {

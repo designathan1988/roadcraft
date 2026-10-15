@@ -1,36 +1,9 @@
 import { bodyClassOf, type BodyClass } from '@world/conflictPoints';
 import { m } from '@world/units';
 
-/**
- * Vehicle classes, in world units.
- *
- * Dimensions are real, in metres through `m()`: a sedan is 4.7 m. The V6 monolith called a 9.6-unit vehicle a "sedan" against road
- * widths of 15 to 46 — roughly half scale relative to the carriageway, and the
- * mismatch is part of why its storage arithmetic came out negative.
- *
- * The fleet is deliberately mixed: hatchbacks and sedans dominate, with SUVs
- * and vans behind them, a scattering of motorcycles and bicycles, and buses
- * and trucks rare enough that meeting one is an event. The share is `weight`
- * and the shares sum to one, so the spawn draw needs no normalisation.
- *
- * Two groups of fields are carried here that the simulation itself never
- * reads. The first is `palette`: paint has to be picked at spawn from a
- * seeded stream, not at draw time, or a car changes colour whenever the
- * renderer is rebuilt. The second is the body plan — `shape`, `height`,
- * `cabinFraction`, `cabinShift`, `axles`, `seats`. That data lives here
- * because it is a property of the class, and because the alternative is a
- * chain of `if (id === 'truck')` tests inside the render loop, which is how
- * the old renderer ended up drawing a bus as a long hatchback. `src/sim` must
- * not import three, so these are plain numbers; the renderer turns them into
- * geometry.
- */
+/** Vehicle classes, in world units. */
 
-/**
- * Body plan the renderer builds from.
- *
- * A discriminator rather than an id test: adding a second bus class must not
- * mean editing the renderer.
- */
+/** Body plan the renderer builds from. */
 export type VehicleShape = 'car' | 'bus' | 'truck' | 'motorcycle' | 'bicycle';
 
 /** Silhouette of a `car`: where the roof ends and how the tail is cut. */
@@ -46,16 +19,9 @@ export interface Archetype {
   readonly width: number;
   /** Overall height above the road surface, roof included. */
   readonly height: number;
-  /**
-   * Greenhouse length as a fraction of the body length. A truck's cab is a
-   * quarter of the vehicle; a van's is two thirds.
-   */
+  /** Greenhouse length as a fraction of the body length. */
   readonly cabinFraction: number;
-  /**
-   * Greenhouse centre, forward of the body centre, as a fraction of length.
-   * Negative pulls the roofline back, which is what makes a hatchback read as
-   * a hatchback next to a sedan.
-   */
+  /** Greenhouse centre, forward of the body centre, as a fraction of length. */
   readonly cabinShift: number;
   /** Number of axles, which decides the wheel count and their spacing. */
   readonly axles: number;
@@ -63,11 +29,7 @@ export interface Archetype {
   readonly wheelRadius: number;
   /** Seats the renderer may fill with occupants, driver included. */
   readonly seats: number;
-  /**
-   * Doors on each side, each serving the seat behind it (a car's body model
-   * has `2 * doorsPerSide` seats). Zero for a vehicle nobody gets out of at
-   * the kerb in this game: buses, trucks, two-wheelers.
-   */
+  /** Doors on each side, each serving the seat behind it (a car's body model has `2 * doorsPerSide` seats). */
   readonly doorsPerSide: number;
   /** Comfortable acceleration. */
   readonly a: number;
@@ -159,8 +121,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     length: m(5.6),
     width: m(2.0),
     height: m(2.35),
-    // The cabin runs forward and long: a panel van has no boot, so the
-    // greenhouse sits over the front axle and the box behind it is blind.
+    // The cabin runs forward and long
     cabinFraction: 0.4,
     cabinShift: 0.24,
     axles: 2,
@@ -182,8 +143,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     length: m(12.0),
     width: m(2.55),
     height: m(3.2),
-    // Glazing runs nearly the whole length, so the "cabin" here is the roof
-    // cap rather than a separate passenger box.
+    // Glazing runs nearly the whole length, so the "cabin" here is the roof cap rather than a separate passenger box.
     cabinFraction: 0.98,
     cabinShift: 0,
     axles: 3,
@@ -253,9 +213,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     wheelRadius: m(0.34),
     seats: 1,
     doorsPerSide: 0,
-    // A bicycle is not a slow car: it accelerates gently, brakes far worse
-    // than anything with four wheels, and tops out near a fifth of an urban
-    // limit. `speedFactor` is what keeps it out of the way of the fleet.
+    // A bicycle is not a slow car: it accelerates gently, brakes far worse than anything with four wheels
     a: m(1.2),
     b: m(2.2),
     bEmergency: m(3.5),
@@ -270,13 +228,7 @@ export const ARCHETYPES: readonly Archetype[] = [
 export const archetypeWeights = (): readonly (readonly [Archetype, number])[] =>
   ARCHETYPES.map((a) => [a, a.weight] as const);
 
-/**
- * Lookup by id, falling back to the sedan.
- *
- * The fallback is not defensive noise: a saved document can name a class this
- * build no longer ships, and the alternative to substituting the commonest
- * car is a crash on load.
- */
+/** Lookup by id, falling back to the sedan. */
 export const archetypeById = (id: string): Archetype =>
   ARCHETYPES.find((a) => a.id === id) ?? (ARCHETYPES[1] as Archetype);
 
