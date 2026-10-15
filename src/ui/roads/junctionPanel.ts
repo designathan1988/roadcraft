@@ -113,6 +113,7 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
     const name = document.createElement('span');
     name.textContent = `${compassOf(doc, node, segment)}${main?.includes(id) ? ` · ${t('junction.mainRoad')}` : ''}`;
     const value = document.createElement('strong');
+    value.dataset['segment'] = String(id);
     value.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });
     r.append(name, value);
     flows.append(r);
@@ -223,11 +224,12 @@ export function refreshJunctionFlows(sim: SimWorld, doc: RoadDoc, node: NodeId):
   if (!flowsShown?.isConnected) return;
   const n = doc.node(node);
   if (!n) return;
-  const values = flowsShown.querySelectorAll('strong');
-  n.incident.forEach((id, i) => {
-    const el = values[i];
-    if (el) el.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });
-  });
+  // Each value by its own road: a leg the panel skipped (no segment) left the
+  // rows one short, and by position every number after it went to the wrong leg.
+  for (const el of flowsShown.querySelectorAll<HTMLElement>('strong[data-segment]')) {
+    const id = Number(el.dataset['segment']) as SegmentId;
+    if (n.incident.includes(id)) el.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });
+  }
 }
 
 function moveChip(host: JunctionPanelHost, from: SegmentId, to: SegmentId, blocked: boolean, turn: string | null): HTMLButtonElement {
