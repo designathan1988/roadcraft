@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshDepthMaterial, Object3D, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
+import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
 /**
  * Textures waiting to be sent to the GPU ahead of their first use.
@@ -187,27 +187,65 @@ export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene,
   do warmOne(renderer, camera, scene, target);
   while (toWarm.length > 0 && toWarm[0]!.loose && performance.now() < until);
 }
-/** Whether `object` hangs under `scene` (what three's render walks). */
-function reaches(scene: Scene, object: Object3D): boolean {
-  for (let o: Object3D | null = object; o; o = o.parent) if (o === scene) return true;
-  return false;
-}
 /** Milliseconds a frame for loose meshes (`drainWarm`). */
 const WARM_SLICE_MS = 6;
+/** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
+export function warmPending(): boolean {
+  return toWarm.length > 0;
+}
+
+/**
+ * A loose mesh's buffers sent up in a scene of its own (`warmLoose`): three uploads every attribute
+ * of a drawn geometry, whatever its material (`WebGLObjects.update`), so one plain material and a
+ * 1x1 target do; its programs are built apart (`compileAhead`). Matrices are not touched.
+ */
+const LOOSE = {
+  scene: Object.assign(new ThreeScene(), { matrixWorldAutoUpdate: false }),
+  camera: new OrthographicCamera(),
+  material: new MeshBasicMaterial(),
+  target: new WebGLRenderTarget(1, 1),
+};
+LOOSE.scene.overrideMaterial = LOOSE.material;
+
+/**
+ * Sends one loose mesh's geometry to the GPU, alone. DO NOT draw the whole scene for it (on a layer
+ * of its own): three walks every object of the scene for each such draw, a few milliseconds each in
+ * a city, a few blocks a frame - the road blocks of a generated city queued for minutes, and every
+ * one kept its arrays on the CPU meanwhile (`mesh/gpuOnly.ts`; 476 MB at 2 560 m, 2026-10-15).
+ */
+function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
+  const parent = mesh.parent;
+  const at = parent ? parent.children.indexOf(mesh) : -1;
+  const visible = mesh.visible, culled = mesh.frustumCulled, original = mesh.geometry;
+  const previous = renderer.getRenderTarget();
+  LOOSE.scene.add(mesh);
+  try {
+    mesh.visible = true;
+    mesh.frustumCulled = false;
+    renderer.setRenderTarget(LOOSE.target);
+    for (const geometry of geometries) {
+      mesh.geometry = geometry;
+      renderer.render(LOOSE.scene, LOOSE.camera);
+    }
+  } finally {
+    mesh.geometry = original;
+    mesh.visible = visible;
+    mesh.frustumCulled = culled;
+    LOOSE.scene.remove(mesh);
+    // Back where it was among its group's children: the order meshes of one render order are drawn in.
+    if (parent) { parent.add(mesh); parent.children.splice(parent.children.length - 1, 1); parent.children.splice(at, 0, mesh); }
+    renderer.setRenderTarget(previous);
+  }
+}
+
 function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   const job = toWarm.shift();
   if (!job) return;
   const { mesh, geometries, done, loose } = job;
-  // A loose mesh is put in the scene for the moment, where it stands, never culled.
-  // One whose group is not in the scene (a cell's batch, `buildings/cellRequests.ts`)
-  // is loose too: DO NOT test only `mesh.parent` - three draws what it reaches
-  // from the scene (`WebGLRenderer.projectObject`), the cells' meshes were never
-  // drawn here, went up in the frame they were first seen, and the arrays of every
-  // cell not yet in view stayed on the CPU (`mesh/gpuOnly.ts`).
-  const parent = mesh.parent;
-  const culled = mesh.frustumCulled;
-  const detached = loose === true && !reaches(scene, mesh);
-  if (detached) { scene.add(mesh); mesh.updateMatrixWorld(true); mesh.frustumCulled = false; }
+  if (loose) {
+    try { warmLoose(renderer, mesh, geometries); } finally { done(); }
+    return;
+  }
   let lights = lightsOf.get(scene);
   if (!lights) {
     lights = [];
@@ -237,11 +275,6 @@ function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: 
   } finally {
     mesh.geometry = original;
     mesh.visible = visible;
-    if (detached) {
-      // Back in its own group (`add` takes it out of the scene); its matrix is its group's again next frame.
-      if (parent) parent.add(mesh); else scene.remove(mesh);
-      mesh.frustumCulled = culled;
-    }
     mesh.layers.disable(WARM_LAYER);
     for (const light of lights) light.layers.disable(WARM_LAYER);
     camera.layers.mask = mask;

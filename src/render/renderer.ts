@@ -66,7 +66,7 @@ import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
+import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill } from './stillTree';
@@ -3395,6 +3395,8 @@ export function createSceneRenderer(
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
       drainWarm(renderer, rig.camera, scene, post.target);
+      // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
+      if (warmPending()) onAssetsReady();
 
       if (delta > 0) fps = fps * 0.9 + (1 / Math.min(1, delta)) * 0.1;
     },
