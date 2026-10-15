@@ -1637,8 +1637,9 @@ export class RoadDoc {
     if (!rec) return null;
     this.recorder = null;
     this.listen(null);
+    // The map after is the map as it stands: taken only when the step is undone (`editor/history.ts`), never kept twice.
     if (rec.whole) {
-      const whole = { before: rec.whole, after: this.toJSON() };
+      const whole = { before: rec.whole, after: null };
       return { records: [], lists: [], values: [], whole, bytes: patchBytes([], [], [], whole) };
     }
     const records: DocPatch['records'][number][] = [];
@@ -1671,6 +1672,8 @@ export class RoadDoc {
   /** A record's state before its first write in the edit, kept once. */
   private note(part: RecordPart, id: number, was: unknown): void {
     const rec = this.recorder!;
+    // The whole map is put back by this step already (`replaceWith`): nothing of its records to keep.
+    if (rec.whole) return;
     let kept = rec.records.get(part);
     if (!kept) rec.records.set(part, kept = new Map());
     if (!kept.has(id)) kept.set(id, copyRecord(part, was));
@@ -1679,7 +1682,7 @@ export class RoadDoc {
   /** A list's state before its first write in the edit, kept once (only the lists the edit writes are copied). */
   private noteList(part: ListPart): void {
     const rec = this.recorder;
-    if (rec && !rec.lists.has(part)) rec.lists.set(part, this.listOf(part).slice());
+    if (rec && !rec.whole && !rec.lists.has(part)) rec.lists.set(part, this.listOf(part).slice());
   }
 
   /** The record maps and the stores told of their writes while an edit is recorded (`RecordMap.before`). */

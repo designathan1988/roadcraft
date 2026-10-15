@@ -45,8 +45,10 @@ export class History {
   /** Puts back the document as it was before the last step; false with nothing to undo. */
   undo(doc: RoadDoc): boolean {
     this.settle();
-    const patch = this.undoStack.pop();
+    let patch = this.undoStack.pop();
     if (!patch) return false;
+    // A step that replaced the whole map keeps the map after only from now, for its redo (`RoadDoc.endEdit`).
+    if (patch.whole && !patch.whole.after) patch = { ...patch, whole: { before: patch.whole.before, after: doc.toJSON() } };
     doc.restore(sideOf(patch, 'before'));
     this.redoStack.push(patch);
     return true;

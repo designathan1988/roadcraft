@@ -16,7 +16,7 @@ export interface DocPatch {
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly before: readonly unknown[]; readonly after: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly before: unknown; readonly after: unknown }[];
   /** The whole map before and after, when the edit replaced it whole (a map opened, a city generated). */
-  readonly whole?: { readonly before: SerializedDoc; readonly after: SerializedDoc };
+  readonly whole?: { readonly before: SerializedDoc; readonly after: SerializedDoc | null };
   /** Roughly what it holds, UTF-16 bytes of its text. */
   readonly bytes: number;
 }
@@ -24,7 +24,7 @@ export interface DocPatch {
 /** One side of a patch as `RoadDoc.restore` takes it: `before` undoes, `after` redoes. */
 export function sideOf(patch: DocPatch, side: 'before' | 'after'): Restoration {
   const back = side === 'before';
-  if (patch.whole) return { records: [], lists: [], values: [], whole: back ? patch.whole.before : patch.whole.after };
+  if (patch.whole) return { records: [], lists: [], values: [], whole: back ? patch.whole.before : patch.whole.after! };
   return {
     records: patch.records.map((r) => ({ part: r.part, id: r.id, value: back ? r.before : r.after })),
     lists: patch.lists.map((l) => ({ part: l.part, start: l.start, remove: back ? l.after.length : l.before.length, items: back ? l.before : l.after })),
