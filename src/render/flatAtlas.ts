@@ -1,9 +1,10 @@
 import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial, type WebGLRenderer } from 'three';
 import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
 import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
-import type { GullyDab } from '@world/gullies';
 import type { RoadDoc } from '@world/doc';
 import { MAP_HALF, MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
+import type { ChangeKind, ChangeRect } from '@world/changes';
+import { JournalCursor } from '@world/derived';
 import { GroundChanges } from './groundChanges';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
 import { readFarWoods } from './ecologyPool';
@@ -44,6 +45,8 @@ const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
 const SIDE = Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1;
 const PLATES = MAP_REGIONS.length;
+/** The kinds of change that put content on a plate (`readContent`): what the whole read marks. */
+const CONTENT_KINDS: readonly ChangeKind[] = ['roads', 'buildings', 'lots', 'utilities', 'landscape', 'trees', 'barriers', 'terrain', 'paint'];
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -238,15 +241,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let lastSun: { x: number; y: number; z: number } | null = null;
   const lastLook = { waves: NaN, foam: NaN, current: NaN, windX: NaN, windZ: NaN, windSpeed: NaN };
   let lookGiven = false;
-  let lastGullies: { dabs: readonly GullyDab[]; auto: number } | null = null;
   let lastDoc: TerrainSource | null = null;
   let highest = 0;
 
-  const gulliesFor = (p: Plate, dabs: readonly GullyDab[], auto: number): void => {
-    const mine: GullyDab[] = [];
-    for (const d of dabs) if (reaches(p, d.x, d.y, d.radius)) mine.push({ ...d, x: d.x - p.cx, y: d.y - p.cy });
-    p.surface!.setGullies(mine, auto);
-  };
+
   /** A plate's highest drawn corner, read once each time its ground moved (not every plate's 90 601 at every change of the set). */
   const measureTop = (p: Plate): void => {
     const heights = p.surface!.ground.geometry.getAttribute('position').array;
@@ -278,7 +276,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     performance.measure('hitch:flat-plate/create', { start: t0, end: t1 });
     if (lastSun) s.setSun(lastSun);
     if (lookGiven) s.setWaterLook(lastLook);
-    if (lastGullies) gulliesFor(p, lastGullies.dabs, lastGullies.auto);
     measureTop(p);
     return s;
   };
@@ -322,11 +319,38 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   };
 
   let contentKey = '';
+  /**
+   * What changed on the map since the content was last read (`world/derived.ts`): a change marks the
+   * plates its rectangles reach. DO NOT walk every node, building, lot, pole, plant and wall of the
+   * map at each change (it was: every building grown read the whole town again - quadratic as a
+   * town grows); the whole map is read only when the diary cannot say where (`@rebuild`). A plate
+   * emptied keeps its ground in full until then (it only costs that plate being drawn in full).
+   */
+  const contentCursor = new JournalCursor(CONTENT_KINDS);
+  const plateCountOf = (rect: ChangeRect, into: Set<number>): void => {
+    const kx0 = Math.round(rect[0] / PLATE_SIZE), kx1 = Math.round(rect[2] / PLATE_SIZE);
+    const ky0 = Math.round(rect[1] / PLATE_SIZE), ky1 = Math.round(rect[3] / PLATE_SIZE);
+    for (let kx = kx0; kx <= kx1; kx++) for (let ky = ky0; ky <= ky1; ky++) into.add(plateOf(kx * PLATE_SIZE, ky * PLATE_SIZE));
+  };
   const readContent = (doc: TerrainSource): boolean => {
     const d = doc as Partial<RoadDoc>;
-    const key = [d.revision, d.buildings?.revision, d.lotRevision, d.utilityRevision, d.treeRevision, doc.terrainRevision, doc.paintRevision, lastGullies?.dabs.length ?? 0].join(':');
+    const key = [d.revision, d.buildings?.revision, d.lotRevision, d.utilityRevision, d.treeRevision, doc.terrainRevision, doc.paintRevision].join(':');
     if (key === contentKey) return false;
     contentKey = key;
+    const entries = contentCursor.read(doc.changes);
+    if (entries && entries.every((e) => e.rects !== null)) {
+      const next = new Set(content);
+      for (const e of entries) for (const rect of e.rects!) plateCountOf(rect, next);
+      for (const p of plates) if (p.source.terrainStamps.length || p.source.terrainPaint.length) next.add(p.index);
+      const changed = next.size !== content.size;
+      content = next;
+      return changed;
+    }
+    return readWholeContent(doc);
+  };
+  /** @rebuild Every plate's content read from the whole document: the first time, or when the diary cannot say where. */
+  const readWholeContent = (doc: TerrainSource): boolean => {
+    const d = doc as Partial<RoadDoc>;
     const next = new Set<number>();
     const mark = (x: number, y: number): void => { next.add(plateOf(x, y)); };
     for (const n of d.nodes?.values() ?? []) mark(n.x, n.y);
@@ -523,9 +547,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       for (const p of shownList) p.surface!.setSun(direction);
       farSurface.setSun(direction);
     },
-    bakeRelief(renderer: WebGLRenderer, focus) {
-      const at = focus ? plates[plateOf(focus.x, -focus.z)]! : null;
-      for (const p of shownList) p.surface!.bakeRelief(renderer, p === at && focus ? { x: focus.x - p.cx, z: focus.z + p.cy } : null);
+    bakeRelief(renderer: WebGLRenderer) {
       // The far woods: each plate's fade from whether it is in full and its own trees can grow.
       const now = performance.now() / 1000;
       for (const p of plates) farForest.book.setFull(p.index, p.shown, p.surface?.ecology() != null, now);
@@ -539,11 +561,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       lookGiven = true;
       for (const p of plates) p.surface?.setWaterLook(look);
     },
-    setGullies(dabs: readonly GullyDab[], auto) {
-      lastGullies = { dabs, auto };
-      for (const p of plates) if (p.surface) gulliesFor(p, dabs, auto);
-      if (lastDoc && readContent(lastDoc)) refresh();
-    },
+    // The gullies were drawn by the fine relief alone, which nothing the ground draws read (`terrain.ts` `bakeRelief`).
+    setGullies() {},
+
     setVegetation(amount) {
       farForest.book.setVegetation(amount);
     },

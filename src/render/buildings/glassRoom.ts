@@ -1,6 +1,5 @@
 import { Color, type MeshStandardMaterial } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
-import { SLOT_WIDTH, litTableDriven, litTexture } from './lightSlots';
 import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
 
 /**
@@ -27,8 +26,6 @@ export function roomBehindGlass(
   // some cooler (a television) - so a block reads as rooms, not a lamp.
   const glassy = material;
   glassy.onBeforeCompile = (shader) => {
-    shader.uniforms.litTable = { value: litTexture };
-    shader.uniforms.litTableDriven = litTableDriven;
     shader.uniforms.roomsAwake = roomsAwake;
     shader.uniforms.roomDaylight = roomDaylight;
     shader.uniforms.tvClock = tvClock;
@@ -39,8 +36,6 @@ varying float vRoomLot;
 varying float vLit;
 varying vec2 vPane;
 attribute float litSlot;
-uniform sampler2D litTable;
-uniform float litTableDriven;
 uniform float roomsAwake;
 attribute vec4 roomA;
 attribute vec4 roomB;
@@ -73,18 +68,12 @@ vec3 roomAt = instanceMatrix[3].xyz;
 vec3 roomAt = vec3(0.0);
 #endif
 vRoomLot = fract(sin(dot(floor(roomAt * 0.37), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-// The room behind the pane (lightSlots.ts): lit exactly when somebody is
-// in it and awake, when a simulation of the residents drives the table.
-// Without one (the residents are not simulated) each space draws its own
-// lot - every window of a flat with the flat - against the share of people
-// awake at this hour (\`roomsAwake\`, ATUS): lit in the evening, most dark
-// after midnight. A pane with no room known draws by where it stands.
-if (litSlot > -0.5 && litTableDriven > 0.5) {
-  vLit = texture2D(litTable, vec2((mod(litSlot, ${SLOT_WIDTH}.0) + 0.5) / ${SLOT_WIDTH}.0, (floor(litSlot / ${SLOT_WIDTH}.0) + 0.5) / 64.0)).r;
-} else {
-  float spaceLot = litSlot > -0.5 ? fract(sin(litSlot * 12.9898 + 4.1414) * 43758.5453) : vRoomLot;
-  vLit = step(1.0 - roomsAwake, spaceLot);
-}`);
+// The room behind the pane (lightSlots.ts): each space draws its own lot
+// from its seed - every window of a flat with the flat - against the share
+// of people awake at this hour (\`roomsAwake\`, ATUS): lit in the evening,
+// most dark after midnight. A pane with no room known draws by where it stands.
+float spaceLot = litSlot > -0.5 ? fract(sin(litSlot * 12.9898 + 4.1414) * 43758.5453) : vRoomLot;
+vLit = step(1.0 - roomsAwake, spaceLot);`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 varying float vRoomLot;

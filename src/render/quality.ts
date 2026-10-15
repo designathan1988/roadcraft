@@ -4,9 +4,9 @@
  * Every expensive feature is named here once, so a tier is a table entry rather
  * than a set of conditionals scattered across the renderer. `auto` draws at
  * `high`: the governor below (`QualityGovernor.sample`) that would step it
- * down by the measured frame time has NO caller - a tier change rebuilds the
- * world (`renderer.ts` `applyQuality`) and lowers quality, which is the
- * player's call. DO NOT describe `auto` as adaptive until it is wired.
+ * down by the measured frame time has NO caller - a tier change lowers
+ * quality, which is the player's call. DO NOT describe `auto` as adaptive
+ * until it is wired.
  */
 
 import { m, perM } from '@world/units';
@@ -36,8 +36,6 @@ export interface QualitySettings {
   readonly detailProps: boolean;
   /** Scatter vegetation over the terrain. */
   readonly vegetation: number;
-  /** Grass clumps (tufts and wildflowers), drawn at close zoom only. */
-  readonly grass: number;
   /** Blades in the GPU grass field round the camera (`grass.ts`); 0 draws none. */
   readonly grassBlades: number;
   /** The close-zoom texture detail layer (`mesh/detailLayer.ts`). */
@@ -86,7 +84,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     anisotropy: 2,
     detailProps: false,
     vegetation: 0,
-    grass: 0,
     grassBlades: 0,
     surfaceDetail: false,
     detailCutoffZoom: perM(1.25),
@@ -112,7 +109,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     anisotropy: 4,
     detailProps: true,
     vegetation: 600,
-    grass: 600,
     grassBlades: 30_000,
     surfaceDetail: true,
     detailCutoffZoom: perM(0.85),
@@ -140,7 +136,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     anisotropy: 8,
     detailProps: true,
     vegetation: 1_400,
-    grass: 1_400,
     grassBlades: 60_000,
     surfaceDetail: true,
     detailCutoffZoom: perM(0.65),
@@ -166,7 +161,6 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     anisotropy: 16,
     detailProps: true,
     vegetation: 2_600,
-    grass: 2_600,
     grassBlades: 90_000,
     surfaceDetail: true,
     detailCutoffZoom: perM(0.5),

@@ -35,7 +35,7 @@ export interface Sink {
 }
 
 export type Side = 'front' | 'back' | 'left' | 'right';
-export const SIDES: readonly Side[] = ['front', 'right', 'back', 'left'];
+const SIDES: readonly Side[] = ['front', 'right', 'back', 'left'];
 
 /** A wall of a rectangular mass `[x0, x1] x [y0, y1]`. */
 export interface Face {
@@ -43,7 +43,7 @@ export interface Face {
   readonly x0: number; readonly x1: number; readonly y0: number; readonly y1: number;
 }
 
-export const faceOf = (side: Side, x0: number, x1: number, y0: number, y1: number): Face => ({ side, x0, x1, y0, y1 });
+const faceOf = (side: Side, x0: number, x1: number, y0: number, y1: number): Face => ({ side, x0, x1, y0, y1 });
 /** The four faces of a mass. */
 export const facesOf = (x0: number, x1: number, y0: number, y1: number): Face[] => SIDES.map((s) => faceOf(s, x0, x1, y0, y1));
 /** The length of a face along `u`. */
@@ -207,7 +207,7 @@ function archRing(p: Sink, f: Face, mat: string, a: number, b: number, z: number
 }
 
 /** A triangular pediment on a face: a gable `h` high over `u0..u1`, `depth` out. */
-export function pediment(p: Sink, f: Face, mat: string, u0: number, u1: number, z: number, h: number, depth: number): void {
+function pediment(p: Sink, f: Face, mat: string, u0: number, u1: number, z: number, h: number, depth: number): void {
   const A = fpoint(f, u0, 0), B = fpoint(f, u1, 0);
   const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x), y0 = Math.min(A.y, B.y), y1 = Math.max(A.y, B.y);
   if (f.side === 'front') p.gable(mat, x0, x1, f.y0 - depth, f.y0, z, h, 'x');
@@ -248,27 +248,6 @@ export function band(p: Sink, f: Face, mat: string, u0: number, u1: number, z0: 
 /** A pier or pilaster standing proud of a face. */
 export function pier(p: Sink, f: Face, mat: string, u: number, w: number, z0: number, z1: number, out = 0.2): void {
   fbox(p, f, mat, u - w / 2, u + w / 2, -0.05, out, z0, z1);
-}
-
-/**
- * Rusticated stone: courses with deep joints (the base of a classical
- * front), drawn as blocks a little proud of the wall with gaps between.
- */
-export function rustication(p: Sink, f: Face, mat: string, u0: number, u1: number, z0: number, z1: number, course = 0.6): void {
-  for (let z = z0; z < z1 - 0.05; z += course) {
-    fbox(p, f, mat, u0, u1, -0.05, 0.06, z + 0.05, Math.min(z1, z + course));
-  }
-}
-
-/** Quoins: alternating long and short stones up a corner of the face (`at` 'start' or 'end' of u). */
-export function quoins(p: Sink, f: Face, mat: string, at: 'start' | 'end', z0: number, z1: number, course = 0.55): void {
-  const L = span(f);
-  let k = 0;
-  for (let z = z0; z < z1 - 0.05; z += course, k++) {
-    const len = k % 2 ? 0.55 : 0.9;
-    const u0 = at === 'start' ? 0 : L - len, u1 = at === 'start' ? len : L;
-    fbox(p, f, mat, u0, u1, -0.05, 0.08, z + 0.04, Math.min(z1, z + course));
-  }
 }
 
 export interface CurtainSpec {
@@ -325,18 +304,6 @@ export function balcony(p: Sink, f: Face, u0: number, u1: number, z: number, dep
   }
 }
 
-/** A marquise: a thin canopy out from the wall, hung on rods. */
-export function marquise(p: Sink, f: Face, u0: number, u1: number, z: number, depth: number, mat = 'metal'): void {
-  fbox(p, f, mat, u0, u1, 0, depth, z, z + 0.16);
-  fbox(p, f, 'sconce', u0 + 0.3, u1 - 0.3, depth * 0.3, depth * 0.7, z - 0.03, z);
-  for (const u of [u0 + 0.4, u1 - 0.4]) {
-    for (let k = 0; k < 6; k++) {
-      const t = k / 5;
-      fbox(p, f, 'frame', u - 0.025, u + 0.025, depth * t * 0.9, depth * t * 0.9 + 0.05, z + 0.16 + 1.2 * (1 - t), z + 0.16 + 1.2 * (1 - t) + 0.22);
-    }
-  }
-}
-
 /** A shop awning: a sloped fabric hood out from the wall over an opening. */
 export function awning(p: Sink, f: Face, u0: number, u1: number, z: number, depth: number, mat: string): void {
   const len = u1 - u0;
@@ -390,50 +357,6 @@ export function door(p: Sink, f: Face, u0: number, u1: number, z0: number, h: nu
   void w;
 }
 
-/** A shopfront bay: glass from a low stallriser to a fascia, mullions, a sign band. */
-export function shopfront(p: Sink, f: Face, u0: number, u1: number, z0: number, z1: number, wall: string, fascia: string): void {
-  fbox(p, f, wall, u0, u1, -WALL, 0, z0, z0 + 0.45);
-  fbox(p, f, fascia, u0, u1, -WALL, 0.05, z1 - 0.7, z1);
-  fbox(p, f, 'podiumGlass', u0, u1, -WALL + 0.02, -WALL + 0.06, z0 + 0.45, z1 - 0.7);
-  const n = Math.max(1, Math.round((u1 - u0) / 1.6));
-  for (let k = 0; k <= n; k++) {
-    const u = u0 + ((u1 - u0) * k) / n;
-    fbox(p, f, 'frame', u - 0.04, u + 0.04, -WALL + 0.04, -WALL + 0.12, z0 + 0.45, z1 - 0.7);
-  }
-  fbox(p, f, 'frame', u0, u1, -WALL + 0.04, -WALL + 0.12, z1 - 1.3, z1 - 1.24);
-}
-
-/**
- * A mansard roof over a rectangle: a steep lower slope (a frustum) with
- * dormers through it, a low upper slope, a crest rail at the curb; the
- * dormers on every side, `every` metres apart.
- */
-export function mansard(p: Sink, x0: number, x1: number, y0: number, y1: number, z: number, h: number, mat: string, trim: string, every = 3.2): void {
-  const inset = h * 0.32;
-  // The lower, steep slope: a frustum from the full plan to the inset curb.
-  p.hip(mat, x0, x1, y0, y1, z, h, 1 - (2 * inset) / Math.min(x1 - x0, y1 - y0));
-  // The upper slope, almost flat.
-  p.hip(mat, x0 + inset, x1 - inset, y0 + inset, y1 - inset, z + h, h * 0.18, 0.55);
-  // Cresting at the curb.
-  for (const f of facesOf(x0 + inset, x1 - inset, y0 + inset, y1 - inset)) fbox(p, f, trim, 0, span(f), 0, 0.06, z + h, z + h + 0.12);
-  // Dormers: a box with a window and a pediment, standing out of the slope.
-  for (const f of facesOf(x0, x1, y0, y1)) {
-    const L = span(f);
-    const edges = repeat(L - 2 * inset, every);
-    for (let i = 0; i + 1 < edges.length; i++) {
-      const c = inset + (edges[i]! + edges[i + 1]!) / 2;
-      const dw = Math.min(1.5, every * 0.42);
-      const zb = z + h * 0.18, zt = zb + h * 0.55;
-      fbox(p, f, trim, c - dw / 2 - 0.12, c + dw / 2 + 0.12, -inset * 0.6, 0.1 - inset * 0.25, zb, zt);
-      fbox(p, f, 'glass', c - dw / 2 + 0.1, c + dw / 2 - 0.1, -inset * 0.25 + 0.06, -inset * 0.25 + 0.12, zb + 0.15, zt - 0.1);
-      fbox(p, f, 'frame', c - 0.03, c + 0.03, -inset * 0.25 + 0.1, -inset * 0.25 + 0.16, zb + 0.15, zt - 0.1);
-      const pf = { ...f, x0: f.x0 + (f.side === 'left' ? inset * 0.25 : 0), x1: f.x1 - (f.side === 'right' ? inset * 0.25 : 0),
-        y0: f.y0 + (f.side === 'front' ? inset * 0.25 : 0), y1: f.y1 - (f.side === 'back' ? inset * 0.25 : 0) };
-      pediment(p, pf, trim, c - dw / 2 - 0.2, c + dw / 2 + 0.2, zt, 0.45, inset * 0.5);
-    }
-  }
-}
-
 /** A spire: a tapering mast of stacked prisms ending in a needle (an Art Deco crown's top). */
 export function spire(p: Sink, x: number, y: number, z: number, h: number, mat: string, r = 0.9): void {
   let zz = z, rr = r;
@@ -447,14 +370,6 @@ export function spire(p: Sink, x: number, y: number, z: number, h: number, mat: 
   const needle = new ConeGeometry(rr, h - (zz - z), 8);
   needle.translate(x, zz + (h - (zz - z)) / 2, -p.Y(y));
   p.pushRaw(mat, needle);
-}
-
-/** Roof plant: a lift overrun, units and a water tank, kept back from the edge. */
-export function roofPlant(p: Sink, x0: number, x1: number, y0: number, y1: number, z: number, mat = 'concreteLight'): void {
-  const w = x1 - x0, d = y1 - y0;
-  p.box(mat, x0 + w * 0.3, x0 + w * 0.62, y0 + d * 0.35, y0 + d * 0.7, z, z + 2.8);
-  p.box('roofing', x0 + w * 0.28, x0 + w * 0.64, y0 + d * 0.33, y0 + d * 0.72, z + 2.8, z + 2.95);
-  for (const fx of [0.15, 0.75]) p.box('metal', x0 + w * fx, x0 + w * fx + 1.4, y0 + d * 0.2, y0 + d * 0.2 + 1.1, z, z + 1.2);
 }
 
 /** A finial: a pedestal, a ball and a point (on a mansard's corners, a parapet's posts). */
@@ -578,21 +493,4 @@ export function lampPost(p: Sink, x: number, y: number, z = 0.2, h = 3.4): void 
   p.box('blackSteel', x - 0.16, x + 0.16, y - 0.16, y + 0.16, z + h, z + h + 0.06);
   p.box('sconce', x - 0.12, x + 0.12, y - 0.12, y + 0.12, z + h + 0.06, z + h + 0.45);
   p.box('blackSteel', x - 0.17, x + 0.17, y - 0.17, y + 0.17, z + h + 0.45, z + h + 0.52);
-}
-
-/** A planted terrace edge: planters along it with shrubs and small trees. */
-export function terraceGarden(p: Sink, f: Face, u0: number, u1: number, z: number, trees = true): void {
-  fbox(p, f, 'pot', u0, u1, -1.0, -0.2, z, z + 0.55);
-  for (let u = u0 + 0.6; u < u1 - 0.3; u += 1.2) {
-    const q = fpoint(f, u, -0.6);
-    p.bush(q.x, q.y, z + 0.45, 0.42, Math.round(u) % 2 === 0);
-  }
-  if (trees) {
-    for (let u = u0 + 1.5; u < u1 - 1; u += 4.5) {
-      const q = fpoint(f, u, -0.6);
-      p.cylinder('woodDark', q.x, q.y, z + 0.5, z + 1.8, 0.07);
-      p.bush(q.x, q.y, z + 1.5, 0.75, false);
-      p.bush(q.x + 0.2, q.y, z + 2.0, 0.5, true);
-    }
-  }
 }

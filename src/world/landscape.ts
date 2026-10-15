@@ -335,7 +335,7 @@ export function onCrossingAccess(
  * own radius: the landing runs from the road's centre out past its footway
  * (`across`, the widest road's half and footway) and half a zebra along it.
  */
-const ACCESS_REACH = m(40);
+export const ACCESS_REACH = m(40);
 
 /**
  * `onCrossingAccess` against the landings near the point only: the crossings

@@ -1,41 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { BufferGeometry, Float32BufferAttribute, MeshBasicMaterial, type InstancedMesh } from 'three';
 
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { buildRoadElevation } from '@world/elevation';
-import { buildGrass } from '@render/grass';
-
-/** A one-triangle stand-in for the tuft and flower models. */
-function kit() {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
-  const material = new MeshBasicMaterial();
-  return { tuft: geometry, flower: geometry, grass: material, flowers: material };
-}
+import { grassClump } from '@render/grass';
 
 /** Every tuft's ground position, rounded to a centimetre-ish grid. */
 function tufts(doc: RoadDoc): Set<string> {
   const net = new Network(doc);
   net.rebuild();
   const elevation = buildRoadElevation(net, () => 0);
-  const field = buildGrass(net, elevation, () => 0, () => false, 1_400, kit());
   const out = new Set<string>();
-  for (const child of field.group.children) {
-    const mesh = child as InstancedMesh;
-    const m = mesh.instanceMatrix.array;
-    for (let i = 0; i < m.length / 16; i++) out.add(`${Math.round(m[i * 16 + 12]! * 10)},${Math.round(m[i * 16 + 14]! * 10)}`);
+  for (const item of doc.landscape.values()) {
+    if (item.kind !== 'meadow') continue;
+    const clump = grassClump(elevation, () => 0, item);
+    for (const t of [...clump.tufts, ...clump.flowers]) out.add(`${Math.round(t.x * 10)},${Math.round(t.y * 10)}`);
   }
-  field.dispose();
   return out;
 }
 
 /**
  * Drawing a road anywhere moved 90 % of the grass on screen: placement drew
- * from one random stream shared by the whole map, and its roadside clumps were
- * dropped along a road picked at random from the list. The meadow jumped on
- * every edit. Grass is seeded by map cell now, so an edit changes only the
- * grass beside the road it touched.
+ * from one random stream shared by the whole map. A placed clump is seeded by
+ * its own id now (no grass grows by itself any more), so an edit elsewhere
+ * moves none of it.
  */
 describe('grass placement', () => {
   function grid(): RoadDoc {
@@ -49,12 +37,14 @@ describe('grass placement', () => {
         if (j < 2) doc.addSegment(here.id, nodes[i * 3 + j + 1]!.id, 1);
       }
     }
+    // Long grass placed in the blocks and beside the roads.
+    for (let k = 0; k < 60; k++) doc.addLandscape('meadow', { x: -280 + (k % 10) * 57, y: -280 + Math.floor(k / 10) * 97 });
     return doc;
   }
 
   it('is the same grass after a road is drawn somewhere else', () => {
     const before = tufts(grid());
-    expect(before.size).toBeGreaterThan(5_000);
+    expect(before.size).toBeGreaterThan(2_000);
     const edited = grid();
     const a = edited.addNode({ x: 900, y: -900 });
     const b = edited.addNode({ x: 1_050, y: -920 });

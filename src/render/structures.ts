@@ -267,54 +267,30 @@ interface Placement {
   readonly cy: number;
 }
 
+/** A column's foot over its width: `CylinderGeometry(1, 1.08, ...)` scaled by the width (`buildStructureDetails`). */
+const PIER_FOOT_FLARE = 1.08;
+
 /**
- * A grid of every road's casing, so "is this point on another road" is O(1).
- *
- * The pier placer used to ask that question by walking every segment in the
- * document for every candidate position, which is quadratic in the size of the
- * network and showed up as a rebuild stall on a large map.
+ * Whether a column `clearance` round, standing at (x, y), reaches into the
+ * casing of a road other than `self`: its distance to that road's line - to
+ * its SEGMENTS, the nearest point of each (`Polyline.distanceTo`, the point
+ * projected on the segment and clamped to its ends) - within the casing's
+ * half width and the clearance. The roads asked are those the network files
+ * over that place (`Network.segmentCells`, each road over the box of its
+ * whole line and widest surface), not every road of the map.
+ * DO NOT file a road by the cells round its vertices again: a pier falling on
+ * the middle of a long straight road, between two vertices, found no road
+ * there and stood in the carriageway.
  */
-class CasingIndex {
-  private readonly cell = m(19.2);
-  private readonly buckets = new Map<number, SegmentId[]>();
-
-  constructor(private readonly net: Network) {
-    for (const [id, segment] of net.doc.segments) {
-      const line = net.polylines.get(net.doc, id);
-      const reach = casingHalf(roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking));
-      for (let i = 0; i < line.n; i++) {
-        const point = line.point(i);
-        const x0 = Math.floor((point.x - reach) / this.cell);
-        const x1 = Math.floor((point.x + reach) / this.cell);
-        const y0 = Math.floor((point.y - reach) / this.cell);
-        const y1 = Math.floor((point.y + reach) / this.cell);
-        for (let x = x0; x <= x1; x++) {
-          for (let y = y0; y <= y1; y++) {
-            const key = x * 73_856_093 + y * 19_349_663;
-            const bucket = this.buckets.get(key);
-            if (bucket) {
-              if (!bucket.includes(id)) bucket.push(id);
-            } else {
-              this.buckets.set(key, [id]);
-            }
-          }
-        }
-      }
-    }
+export function onAnotherCasing(net: Network, self: SegmentId, x: number, y: number, clearance = 0): boolean {
+  for (const id of net.segmentCells.idsMeeting([x - clearance, y - clearance, x + clearance, y + clearance])) {
+    if (id === self) continue;
+    const segment = net.doc.segment(id);
+    if (!segment) continue;
+    const reach = casingHalf(roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking));
+    if (net.polylines.get(net.doc, id).distanceTo({ x, y }) < reach + clearance) return true;
   }
-
-  /** True when the point falls inside the casing of a road other than `self`. */
-  blocked(self: SegmentId, x: number, y: number): boolean {
-    const key = Math.floor(x / this.cell) * 73_856_093 + Math.floor(y / this.cell) * 19_349_663;
-    for (const id of this.buckets.get(key) ?? []) {
-      if (id === self) continue;
-      const segment = this.net.doc.segment(id);
-      if (!segment) continue;
-      const reach = casingHalf(roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking));
-      if (this.net.polylines.get(this.net.doc, id).distanceTo({ x, y }) <= reach) return true;
-    }
-    return false;
-  }
+  return false;
 }
 
 function instanced(
@@ -552,7 +528,6 @@ export function buildStructureDetails(
   const caps: Placement[] = [];
   const abutments: Placement[] = [];
   const parapets = new Extrusion();
-  const casings = new CasingIndex(net);
 
   for (const ribbon of raised) {
     const segment = net.doc.requireSegment(ribbon.id);
@@ -613,22 +588,24 @@ export function buildStructureDetails(
       const soffit = deckAt(frame.p.x, frame.p.y) - spec.deck - m(0.144) - BEARING;
       const beam = soffit - CAP_HEIGHT;
 
-      const feet: { readonly x: number; readonly y: number; readonly ground: number }[] = [];
+      const standing: { readonly x: number; readonly y: number; readonly ground: number }[] = [];
       for (const side of sides) {
         const x = frame.p.x + frame.n.x * spread * side;
         const y = frame.p.y + frame.n.y * spread * side;
-        if (casings.blocked(segment.id, x, y)) continue;
         const ground = terrainAt(x, y);
         if (beam - ground < MIN_SUPPORT) continue;
-        feet.push({ x, y, ground });
+        standing.push({ x, y, ground });
       }
-      if (feet.length === 0) return;
+      if (standing.length === 0) return;
 
       // One width for the whole bent, from the TALLEST of its feet: sizing each
       // column against its own height makes the two legs of one bent different
       // widths wherever the ground slopes across the deck.
-      const tallest = feet.reduce((mx, foot) => Math.max(mx, beam - foot.ground), 0);
+      const tallest = standing.reduce((mx, foot) => Math.max(mx, beam - foot.ground), 0);
       const width = Math.min(radius * PIER_MAX_WIDTH_FACTOR, Math.max(radius, tallest / PIER_SLENDERNESS));
+      // Not on another road: the column's whole foot clear of its casing, not only its axis.
+      const feet = standing.filter((foot) => !onAnotherCasing(net, segment.id, foot.x, foot.y, width * PIER_FOOT_FLARE));
+      if (feet.length === 0) return;
 
       for (const foot of feet) {
         const height = beam - foot.ground + 0.5;
@@ -670,7 +647,7 @@ export function buildStructureDetails(
     triangles += (count / 3) * (mesh instanceof InstancedMesh ? mesh.count : 1);
   };
 
-  const pierGeometry = new CylinderGeometry(1, 1.08, 1, 16);
+  const pierGeometry = new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
   const capGeometry = new BoxGeometry(1, 1, 1);
   attach(instanced('structure-piers', pierGeometry, materials.concrete, piers));
   attach(instanced('structure-pier-caps', capGeometry, materials.concrete, caps));
@@ -826,6 +803,8 @@ export function buildStructureDetails(
     spans,
     dispose() {
       for (const geometry of owned) geometry.dispose();
+      // The instance buffers are let go only by the mesh's own dispose (three r186 WebGLObjects, 'dispose').
+      for (const o of group.children) if ((o as InstancedMesh).isInstancedMesh) (o as InstancedMesh).dispose();
       group.clear();
     },
   };

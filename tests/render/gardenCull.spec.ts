@@ -4,6 +4,7 @@ import { Rng } from '@core/rng';
 import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { SHADOW_REACH, createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
+import { townChanges } from '../support/gardenChange';
 
 /**
  * The gardens are culled cell by cell down a quadtree (`gardens.ts`, audit
@@ -65,10 +66,11 @@ describe('garden cull', () => {
     const spread = m(3000);
     let lists = town(150, spread, 7);
     const gardens = createGardens(kit);
-    gardens.update(lists);
+    const change = townChanges();
+    gardens.update(change(lists));
     // Some gardens gone and changed: dead slots in the cells, then a repack.
     lists = lists.map((list, g) => (g % 4 === 0 ? town(1, spread, 1000 + g)[0]! : list)).filter((_, g) => g % 3 !== 1);
-    gardens.update(lists);
+    gardens.update(change(lists));
     // Every plant, with its sphere as the per-plant test would make it.
     gardens.cull(everything, new Matrix4().makeTranslation(-1, 0, 0));
     const all = new Map<string, { key: string; sphere: Sphere }[]>();
@@ -106,7 +108,7 @@ describe('garden cull', () => {
 
   it('sends nothing to the GPU again when the same plants are in view', () => {
     const gardens = createGardens(kit);
-    gardens.update(town(200, m(2000), 3));
+    gardens.update({ added: town(200, m(2000), 3), removed: [] });
     const camera = new PerspectiveCamera(50, 1.6, 1, m(800));
     camera.position.set(0, m(80), 0);
     camera.lookAt(m(200), 0, -m(200));
@@ -128,7 +130,7 @@ describe('garden cull', () => {
 
   it('keeps at most one pending upload range while a mesh is not drawn', () => {
     const gardens = createGardens(kit);
-    gardens.update(town(200, m(2000), 5));
+    gardens.update({ added: town(200, m(2000), 5), removed: [] });
     const rng = new Rng(4);
     for (let c = 0; c < 30; c++) {
       const { frustum, view } = viewOf(cameraAt(rng, m(2000)));

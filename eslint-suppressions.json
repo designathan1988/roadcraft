@@ -183,11 +183,6 @@
       "count": 1
     }
   },
-  "src/render/buildings/lightSlots.ts": {
-    "roadcraft/no-module-state": {
-      "count": 2
-    }
-  },
   "src/render/buildings/parts.ts": {
     "roadcraft/no-module-state": {
       "count": 2
@@ -396,16 +391,6 @@
       "count": 1
     }
   },
-  "src/render/scenery.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/render/signs.ts": {
-    "roadcraft/no-module-state": {
-      "count": 2
-    }
-  },
   "src/render/structures.ts": {
     "max-lines": {
       "count": 1
@@ -421,7 +406,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/render/terrainLight.worker.ts": {
@@ -435,11 +420,6 @@
   "src/render/terrainLightPool.ts": {
     "roadcraft/no-module-state": {
       "count": 2
-    }
-  },
-  "src/render/terrainRelief.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
     }
   },
   "src/render/transit.ts": {

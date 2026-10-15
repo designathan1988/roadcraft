@@ -29,6 +29,12 @@ const KEPT = 512;
 export interface GroundRecord {
   readonly version: number;
   touches(since: number, area: Area): boolean;
+  /**
+   * Where the ground changed after `since`; null when the record cannot say
+   * (the whole map, or forgotten). Absent: the reader asks `touches` of each
+   * of its areas instead of finding them by place.
+   */
+  rectsSince?(since: number): readonly Rect[] | null;
 }
 
 export class GroundChanges implements GroundRecord {
@@ -75,6 +81,18 @@ export class GroundChanges implements GroundRecord {
       for (const a of list) if (overlaps(r, a)) return true;
     }
     return false;
+  }
+
+  rectsSince(since: number): readonly Rect[] | null {
+    if (since < this.forgotten) return null;
+    const out: Rect[] = [];
+    for (let i = this.log.length - 1; i >= 0; i--) {
+      const entry = this.log[i]!;
+      if (entry.serial <= since) break;
+      if (entry.rect === null) return null;
+      out.push(entry.rect);
+    }
+    return out;
   }
 }
 

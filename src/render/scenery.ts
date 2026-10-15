@@ -1,19 +1,15 @@
-import { plantGrowth } from '@world/landscape';
 import {
   AdditiveBlending,
   CircleGeometry,
   Color,
   CylinderGeometry,
   DoubleSide,
-  DynamicDrawUsage,
   FrontSide,
   Frustum,
   InstancedMesh,
   Matrix4,
-  Vector3,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  Object3D,
   ShaderMaterial,
   type BufferGeometry,
   Group,
@@ -21,16 +17,9 @@ import {
   type MeshDepthMaterial,
 } from 'three';
 
-import { Rng } from '@core/rng';
-import { angleOf } from '@core/vec2';
-import type { Network } from '@world/network';
-import type { RoadElevation } from '@world/elevation';
-import { streetFurniture, type FurnitureItem, type FurnitureKind } from '@world/streetFurniture';
-import { FOOTWAY_RISE } from '@world/roadTypes';
-import { footwayRiseAt } from '@world/roads/footwayRise';
+import type { Rng } from '@core/rng';
+import type { FurnitureKind } from '@world/streetFurniture';
 import { m, perM } from '@world/units';
-import { buildGrass, type GrassField } from './grass';
-import { createInstanceCull, spatialOrder, type CulledInstances } from './instanceCull';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { leafCardMaterials } from './lowPolyTrees';
 import { lightPoolTexture } from './lightLevels';
@@ -45,14 +34,11 @@ import {
   hydrantGeometry,
   lampGeometry,
   lampLensGeometry,
-  LAMP_HEIGHT,
-  LAMP_OUTREACH,
   postboxGeometry,
   phoneGeometry,
   drainGeometry,
   treeParts,
   treePitGeometry,
-  trianglesOf,
   wildflowerGeometry,
   type BushKind,
   type TreeSpecies,
@@ -84,9 +70,6 @@ export { LAMP_HEIGHT, LAMP_OUTREACH } from './propGeometry';
  * writes instance matrices.
  */
 
-/** Street trees are pollarded smaller than a tree in open ground. */
-const STREET_TREE_MIN = m(6.5);
-const STREET_TREE_RANGE = m(3);
 
 /** How each kind of plant answers the wind; see `wind.ts`. */
 const TREE_WIND: WindResponse = { sway: 0.045, flutter: 0.009 };
@@ -105,7 +88,7 @@ export const LAMP_POOL_RADIUS = m(4.6);
  * road dark between the lamps (the player, 2026-10-13: "a via toda fica
  * iluminada, não é?").
  */
-const POOL_ALONG = 1.6;
+export const POOL_ALONG = 1.6;
 /**
  * A lamp's visible cone of light, drawn as Volumetric Light Beam draws one
  * (saladgamer.com/vlb-doc/comp-lightbeam-sd/): an open cone, additive, its
@@ -369,56 +352,41 @@ export function createSceneryKit(): SceneryKit {
 }
 
 /**
- * The instanced meshes of trees and bushes - each kind's body and its foliage
- * cards on the same placements, one model at every zoom - added to `meshes`
- * and to `plants`.
- */
-function plantMeshes(prefix: string, trees: Map<TreeSpecies, Placement[]>, bushes: Map<BushKind, Placement[]>, kit: SceneryKit,
-  meshes: InstancedMesh[], plants: [InstancedMesh, BufferGeometry, BufferGeometry][]): void {
-  const add = (mesh: InstancedMesh | null, model: BufferGeometry, cards = false): void => {
-    if (!mesh) return;
-    // The crown's heart throws the plant's shadow; alpha-cut cards in the
-    // shadow pass cost 70 ms a frame.
-    if (cards) mesh.castShadow = false;
-    meshes.push(mesh);
-    plants.push([mesh, model, model]);
-  };
-  for (const species of TREE_SPECIES) {
-    const placed = trees.get(species) ?? [];
-    add(build(`${prefix}trees-${species}`, kit.trees[species], kit.foliage, placed, kit.foliageDepth, kit.trees[species]), kit.trees[species]);
-    const cards = kit.cards[species];
-    if (cards) add(build(`${prefix}trees-${species}-cards`, cards, kit.treeCards, placed, kit.treeCardsDepth, cards), cards, true);
-  }
-  for (const kind of BUSH_KINDS) {
-    const placed = bushes.get(kind) ?? [];
-    add(build(`${prefix}bushes-${kind}`, kit.bushes[kind], kit.shrubs, placed, kit.shrubsDepth, kit.bushes[kind]), kit.bushes[kind]);
-    const cards = kit.cards[kind];
-    if (cards) add(build(`${prefix}bushes-${kind}-cards`, cards, kit.shrubCards, placed, kit.shrubCardsDepth, cards), cards, true);
-  }
-}
-
-/**
- * One of every plant as the gardens draw them, with and without a tint of
- * their own (an instance colour is a program variant), and each as its shadow
- * pass draws it (its depth material), for compiling their programs ahead
- * (three's `compileAsync`: objects to be added later are precompiled before
- * they are drawn). The first lots painted grew gardens whose programs were
- * built in that frame: some 600 ms on the first stroke of the zone brush.
+ * One of every plant as the gardens and the street draw them, with and
+ * without a tint of their own (an instance colour is a program variant), and
+ * each as its shadow pass draws it (its depth material), for compiling their
+ * programs ahead (three's `compileAsync`: objects to be added later are
+ * precompiled before they are drawn). The first lots painted grew gardens
+ * whose programs were built in that frame: some 600 ms on the first stroke of
+ * the zone brush.
  */
 export function plantSamples(kit: SceneryKit): { readonly group: Group; readonly depth: Group; dispose(): void } {
   const meshes: InstancedMesh[] = [];
-  for (const tint of [undefined, new Color(1, 1, 1)]) {
-    const one: Placement[] = [{ x: 0, y: 0, z: 0, yaw: 0, sx: 1, sy: 1, sz: 1, ...(tint ? { tint } : {}) }];
-    plantMeshes('sample-', new Map(TREE_SPECIES.map((s) => [s, one])), new Map(BUSH_KINDS.map((k) => [k, one])), kit, meshes, []);
+  const models: [BufferGeometry, Material, MeshDepthMaterial][] = [];
+  for (const species of TREE_SPECIES) {
+    models.push([kit.trees[species], kit.foliage, kit.foliageDepth]);
+    const cards = kit.cards[species];
+    if (cards) models.push([cards, kit.treeCards, kit.treeCardsDepth]);
+  }
+  for (const kind of BUSH_KINDS) {
+    models.push([kit.bushes[kind], kit.shrubs, kit.shrubsDepth]);
+    const cards = kit.cards[kind];
+    if (cards) models.push([cards, kit.shrubCards, kit.shrubCardsDepth]);
   }
   const group = new Group(), depth = new Group();
-  for (const mesh of meshes) {
-    group.add(mesh);
-    if (!mesh.customDepthMaterial) continue;
-    const shadow = new InstancedMesh(mesh.geometry, mesh.customDepthMaterial, 1);
-    shadow.instanceMatrix.copy(mesh.instanceMatrix);
-    if (mesh.instanceColor) shadow.instanceColor = mesh.instanceColor;
-    depth.add(shadow);
+  for (const tinted of [false, true]) {
+    for (const [geometry, material, depthMaterial] of models) {
+      const mesh = new InstancedMesh(geometry, material, 1);
+      mesh.setMatrixAt(0, new Matrix4());
+      if (tinted) mesh.setColorAt(0, new Color(1, 1, 1));
+      mesh.customDepthMaterial = depthMaterial;
+      meshes.push(mesh);
+      group.add(mesh);
+      const shadow = new InstancedMesh(geometry, depthMaterial, 1);
+      shadow.instanceMatrix.copy(mesh.instanceMatrix);
+      if (mesh.instanceColor) shadow.instanceColor = mesh.instanceColor;
+      depth.add(shadow);
+    }
   }
   return { group, depth, dispose() { for (const mesh of meshes) mesh.dispose(); } };
 }
@@ -462,16 +430,13 @@ export interface Scenery {
 export const SHADOW_REACH = m(28);
 
 /*
- * Every instance of one mesh is kept apart from what is drawn (`instances`,
- * `CulledInstances`).
- *
  * Each species used to be ONE instanced mesh spread over the whole map, so
  * its bounding sphere was the map and nothing was ever off screen: zoomed in
  * on a crossroads, every bush on the map went to the GPU in close-up detail,
- * three times over (picture, shadow map, occlusion) - four million triangles
- * a frame, most of them outside the window. The instances in view are copied
- * to the front of the buffer when the camera moves, and only those are drawn;
- * they are found cell by cell down a quadtree of the ground (`instanceCull.ts`).
+ * three times over (picture, shadow map, occlusion). The instances in view
+ * are copied to the front of the buffer when the camera moves, and only
+ * those are drawn, found cell by cell down a quadtree of the ground
+ * (`instanceRuns.ts`, `gardens.ts`).
  */
 
 /** Zoom at and above which plants are drawn with their close-up models. */
@@ -479,321 +444,8 @@ export const PLANT_NEAR_ZOOM = perM(3.5);
 /** Below this zoom the plants' leaf cards are left out (`Scenery.setMap`). */
 export const PLANT_MAP_ZOOM = perM(2.5);
 
-interface Placement {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  sx: number;
-  sy: number;
-  sz: number;
-  tint?: Color;
-}
-
-function build(
-  name: string,
-  geometry: BufferGeometry,
-  material: Material,
-  given: readonly Placement[],
-  depth?: MeshDepthMaterial,
-  near?: BufferGeometry,
-): InstancedMesh | null {
-  if (given.length === 0) return null;
-  const object = new Object3D();
-  // Every instance's bounding sphere, from the larger of the model's reach
-  // and the plant's close-up model's (`setNear` swaps them), round the
-  // matrix as the instance buffer holds it (float32).
-  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-  const reach = Math.max(geometry.boundingSphere?.radius ?? 1, near?.boundingSphere?.radius ?? 0);
-  const centre = geometry.boundingSphere?.center ?? new Vector3();
-  const given4 = new Float32Array(given.length * 4);
-  {
-    const point = new Vector3();
-    const matrix = new Matrix4();
-    const held = new Float32Array(16);
-    given.forEach((p, i) => {
-      object.position.set(p.x, p.z, -p.y);
-      object.rotation.set(0, p.yaw, 0);
-      object.scale.set(p.sx, p.sy, p.sz);
-      object.updateMatrix();
-      object.matrix.toArray(held);
-      point.copy(centre).applyMatrix4(matrix.fromArray(held));
-      given4[i * 4] = point.x;
-      given4[i * 4 + 1] = point.y;
-      given4[i * 4 + 2] = point.z;
-      given4[i * 4 + 3] = reach * Math.max(p.sx, p.sy, p.sz);
-    });
-  }
-  // Stored in the order the cull walks the ground's cells (`instanceCull.ts`):
-  // what one cell holds is one run of the buffer.
-  const order = spatialOrder(given4, given.length);
-  const placements = Array.from(order, (i) => given[i]!);
-  const spheres = new Float32Array(given.length * 4);
-  order.forEach((from, to) => spheres.set(given4.subarray(from * 4, from * 4 + 4), to * 4));
-  const mesh = new InstancedMesh(geometry, material, placements.length);
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  // Culled per instance instead (`Scenery.cull`): a sphere round the whole
-  // map rejects nothing, and it would go stale when the model is swapped.
-  mesh.frustumCulled = false;
-  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-  // The shadow pass bends with the wind too, or the shadows would lie still
-  // under moving trees.
-  if (depth) mesh.customDepthMaterial = depth;
-  let tinted = false;
-  placements.forEach((placement, index) => {
-    object.position.set(placement.x, placement.z, -placement.y);
-    object.rotation.set(0, placement.yaw, 0);
-    object.scale.set(placement.sx, placement.sy, placement.sz);
-    object.updateMatrix();
-    mesh.setMatrixAt(index, object.matrix);
-    if (placement.tint) {
-      mesh.setColorAt(index, placement.tint);
-      tinted = true;
-    }
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  if (tinted && mesh.instanceColor) {
-    mesh.instanceColor.setUsage(DynamicDrawUsage);
-    mesh.instanceColor.needsUpdate = true;
-  }
-  mesh.computeBoundingSphere();
-  instances.set(mesh, {
-    matrices: Float32Array.from(mesh.instanceMatrix.array as Float32Array),
-    colours: tinted && mesh.instanceColor ? Float32Array.from(mesh.instanceColor.array as Float32Array) : null,
-    spheres,
-    count: placements.length,
-  });
-  return mesh;
-}
-
-const instances = new WeakMap<InstancedMesh, CulledInstances>();
-
 /** A near-white multiplier, so no two plants of one species are identical. */
 export function foliageTint(rng: Rng): Color {
   const warm = rng.float();
   return new Color(0.9 + warm * 0.18, 0.93 + rng.float() * 0.12, 0.86 + (1 - warm) * 0.14);
-}
-
-/** Picks a species for a street tree: mostly planes, some flowering ipês. */
-function streetSpecies(roll: number): TreeSpecies {
-  if (roll < 0.55) return 'broadleafTall';
-  if (roll < 0.78) return 'broadleaf';
-  return roll < 0.89 ? 'ipeYellow' : 'ipePink';
-}
-
-export interface ScenerySettings {
-  /** Grass clumps. */
-  readonly grass: number;
-}
-
-/**
- * The ground cover of the open land: grass and wildflowers at close zoom.
- *
- * No trees or bushes are scattered over the terrain or along the roads any
- * more (the player's order of 2026-10-05): every tree on the map is one the
- * player planted with the landscaping tool, or one of a building's gardens.
- */
-export function buildScenery(
-  net: Network,
-  elevation: RoadElevation,
-  terrainAt: (x: number, y: number) => number,
-  wetAt: (x: number, y: number) => boolean,
-  settings: ScenerySettings,
-  kit: SceneryKit,
-): Scenery {
-  // No grass grows by itself (the player's order of 2026-10-05): long grass
-  // is placed with the landscaping tool and drawn with the street furniture.
-  void settings;
-  const grass: GrassField = buildGrass(net, elevation, terrainAt, wetAt, 0, kit);
-  return {
-    meshes: [],
-    grass: grass.group,
-    triangles: grass.triangles,
-    setNear() {},
-    setMap() {},
-    cull(frustum, view) {
-      if (grass.group.visible) grass.cull(frustum, view);
-    },
-    exclude() {},
-    dispose() {
-      grass.dispose();
-    },
-  };
-}
-
-/**
- * What the player placed on the footways (`world/streetFurniture.ts`): street
- * lights, benches, bins, hydrants, post boxes, street trees in their pits and
- * shrubs. Rebuilt on `doc.utilityRevision`, so placing a bench rebuilds this
- * and nothing else.
- */
-export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit: SceneryKit,
-  terrainAt: (x: number, y: number) => number = () => 0, now = Number.NaN): Scenery {
-  const furniture = new Map<string, Placement[]>();
-  const put = (key: string, placement: Placement): void => {
-    const list = furniture.get(key);
-    if (list) list.push(placement);
-    else furniture.set(key, [placement]);
-  };
-  const trees = new Map<TreeSpecies, Placement[]>(TREE_SPECIES.map((s) => [s, []]));
-  const bushes = new Map<BushKind, Placement[]>(BUSH_KINDS.map((k) => [k, []]));
-  const lens = kit.lens;
-
-  // On the item's OWN road. The unfiltered field answers for whichever road is
-  // nearest, and a lamp on a street passing under a viaduct was lifted onto the
-  // deck above it.
-  const deckAt = (item: FurnitureItem): number => elevation.onSegment(item.segment, item.x, item.y) + footwayRiseAt(net, item.x, item.y);
-  for (const item of streetFurniture(net)) {
-    const base = deckAt(item);
-    // Local +X of a lamp reaches over the road; local -Z of a bench, a post
-    // box or a hydrant turns its back on the road.
-    const inward = angleOf({ x: -item.outward.x, y: -item.outward.y });
-    const facing = angleOf({ x: item.outward.y, y: -item.outward.x });
-    const at = { x: item.x, y: item.y, z: base, sx: 1, sy: 1, sz: 1 };
-    switch (item.kind) {
-      case 'lamp': {
-        put('lamp', { ...at, yaw: inward });
-        // The light falls over the road and the footway behind the lamp:
-        // across, the carriageway's width; along it, POOL_ALONG mounting
-        // heights each way. Local X of the pool runs across the road.
-        const road = net.ribbons.get(item.segment)?.road;
-        const across = Math.max(LAMP_POOL_RADIUS, (road ? road.width : m(7)) * 0.55 + m(2.5));
-        const centre = Math.max(LAMP_OUTREACH * 0.85, across - m(3));
-        put('pool', { x: item.x - item.outward.x * centre, y: item.y - item.outward.y * centre, z: base + m(0.012),
-          yaw: inward, sx: across, sy: 1, sz: LAMP_HEIGHT * POOL_ALONG });
-        // And the cone it is lit by, from the lens down to the road under it.
-        put('beam', { x: item.x - item.outward.x * lens.reach, y: item.y - item.outward.y * lens.reach, z: base + lens.height,
-          yaw: 0, sx: LAMP_BEAM_RADIUS, sy: lens.height + FOOTWAY_RISE, sz: LAMP_BEAM_RADIUS });
-        break;
-      }
-      case 'bin':
-        put('bin', { ...at, yaw: item.seed * Math.PI * 2 });
-        break;
-      case 'bench': {
-        // Its seat faces where the layout says somebody sitting looks.
-        const faces = item.faces ?? { x: -item.outward.x, y: -item.outward.y };
-        put('bench', { ...at, yaw: angleOf({ x: -faces.y, y: faces.x }) });
-        break;
-      }
-      case 'postbox':
-      case 'hydrant':
-      case 'phone':
-      case 'drain':
-        // Built facing -Z; turned so the phone's shell opens to the footway
-        // and the drain's grate lies in the gutter on the road side.
-        put(item.kind, { ...at, yaw: facing + Math.PI });
-        break;
-      case 'streetTree': {
-        put('treePit', { ...at, yaw: angleOf(item.along) });
-        // Planted young, it grows to its full height over a few days.
-        const height = (STREET_TREE_MIN + item.seed * STREET_TREE_RANGE) * plantGrowth(item.planted, now);
-        const rng = new Rng(Math.floor(item.seed * 0xffffff));
-        (trees.get(streetSpecies(rng.float())) as Placement[]).push({
-          x: item.x,
-          y: item.y,
-          z: base + m(0.03),
-          yaw: rng.float() * Math.PI * 2,
-          sx: height * (0.85 + rng.float() * 0.2),
-          sy: height,
-          sz: height * (0.85 + rng.float() * 0.2),
-          tint: foliageTint(rng),
-        });
-        break;
-      }
-      case 'shrub': {
-        const rng = new Rng(Math.floor(item.seed * 0xffffff));
-        const height = (m(0.8) + rng.float() * m(0.4)) * plantGrowth(item.planted, now);
-        (bushes.get(rng.float() < 0.4 ? 'bushFlowering' : 'bush') as Placement[]).push({
-          x: item.x,
-          y: item.y,
-          z: base - m(0.05),
-          yaw: rng.float() * Math.PI * 2,
-          sx: height * 1.05,
-          sy: height,
-          sz: height * 1.05,
-          tint: foliageTint(rng),
-        });
-        break;
-      }
-    }
-  }
-
-  const meshes = [
-    build('street-lights', kit.furniture.lamp, kit.props, furniture.get('lamp') ?? []),
-    build('street-light-lamps', kit.lampLens, kit.glow, furniture.get('lamp') ?? []),
-    build('street-light-pools', kit.pool, kit.poolGlow, furniture.get('pool') ?? []),
-    build('street-light-beams', kit.beam, kit.beamGlow, furniture.get('beam') ?? []),
-    build('street-bins', kit.furniture.bin, kit.props, furniture.get('bin') ?? []),
-    build('benches', kit.furniture.bench, kit.props, furniture.get('bench') ?? []),
-    build('hydrants', kit.furniture.hydrant, kit.props, furniture.get('hydrant') ?? []),
-    build('post-boxes', kit.furniture.postbox, kit.props, furniture.get('postbox') ?? []),
-    build('phones', kit.furniture.phone, kit.props, furniture.get('phone') ?? []),
-    build('drains', kit.furniture.drain, kit.props, furniture.get('drain') ?? []),
-    build('tree-pits', kit.treePit, kit.props, furniture.get('treePit') ?? []),
-  ].filter((mesh): mesh is InstancedMesh => mesh !== null);
-
-  /** Each plant mesh with its two models, near first. */
-  const plants: [InstancedMesh, BufferGeometry, BufferGeometry][] = [];
-  plantMeshes('street-', trees, bushes, kit, meshes, plants);
-  const leafMeshes = meshes.filter((mesh) => mesh.name.endsWith('-leaves'));
-  // The lens is lit from inside; it neither casts nor takes a shadow.
-  for (const mesh of meshes) {
-    if (mesh.name === 'street-light-lamps' || mesh.name === 'tree-pits' || mesh.name === 'street-light-pools' || mesh.name === 'street-light-beams') mesh.castShadow = false;
-    if (mesh.name === 'street-light-pools') { mesh.receiveShadow = false; mesh.renderOrder = 3; }
-    if (mesh.name === 'street-light-beams') { mesh.receiveShadow = false; mesh.renderOrder = 4; }
-  }
-
-  let triangles = 0;
-  for (const mesh of meshes) triangles += trianglesOf(mesh.geometry) * mesh.count;
-  // Every mesh's instances filed by the ground's cells, once per build: a
-  // camera move costs the cells at the view's edge and the instances in view.
-  const cells = createInstanceCull(meshes.map((mesh) => ({ mesh, instances: instances.get(mesh)! })), SHADOW_REACH);
-  let culledFor: Matrix4 | null = null;
-  let nearMode: boolean | null = null;
-  let mapMode: boolean | null = null;
-
-  // Long grass placed on open ground (Paisagismo > Mato).
-  const meadows = [...net.doc.landscape.values()].filter((item) => item.kind === 'meadow');
-  const meadow = buildGrass(net, elevation, terrainAt, () => false, 0, kit, meadows);
-  triangles += meadow.triangles;
-
-  return {
-    meshes,
-    grass: meadow.group,
-    triangles,
-    setNear(near) {
-      if (nearMode === near) return;
-      nearMode = near;
-      for (const [mesh, close, far] of plants) mesh.geometry = near ? close : far;
-    },
-    setMap(map) {
-      if (mapMode === map) return;
-      mapMode = map;
-      culledFor = null;
-      for (const mesh of leafMeshes) mesh.visible = !map;
-    },
-    cull(frustum, view) {
-      if (!culledFor || !culledFor.equals(view)) {
-        culledFor = (culledFor ?? new Matrix4()).copy(view);
-        cells.invalidate();
-        meadow.cull(frustum, view);
-      }
-      // Only the meshes drawn this frame: one hidden (zoomed out past the
-      // props, the leaves at map zoom) is culled when it is shown again, for
-      // the view of that frame. Culling the hidden ones over a town seen
-      // whole cost every instance of the town per move, for nothing drawn.
-      // DO NOT cull every mesh of the town at every move whatever is shown.
-      cells.cull(frustum, (k) => {
-        const mesh = meshes[k]!;
-        return mesh.visible && !(mapMode === true && mesh.name.endsWith('-leaves'));
-      });
-    },
-    exclude() {},
-    dispose() {
-      for (const mesh of meshes) mesh.dispose();
-      meadow.dispose();
-    },
-  };
 }

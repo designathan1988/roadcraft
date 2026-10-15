@@ -1,21 +1,21 @@
-import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
 import { m } from '@world/units';
+import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
-import type { MassingChunk } from './massing';
 
 /**
  * THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid
  * (`layer.ts` BATCH_CELL) has one mesh of its buildings' masses
- * (`massing.ts`), drawn instead of the detailed cell when the detail would
- * show under a couple of pixels - a hierarchical level of detail as
- * Unreal's HLOD (one proxy mesh and one material a cell, rebuilt only when
- * its buildings changed) chosen as 3D Tiles are refined: by the error the
- * coarser level makes, projected on the screen (Cesium's
- * `Cesium3DTile.getScreenSpaceError`: error * screen height / (distance *
- * 2 tan(fov / 2)) in perspective, error / pixel size in an orthographic
- * view), with a margin each way so a cell at the edge does not flicker
- * (three's `LOD.update` hysteresis).
+ * (`massing.ts`, put together in the cell workers, `cellWork.ts` 'mass'),
+ * drawn instead of the detailed cell when the detail would show under a
+ * couple of pixels - a hierarchical level of detail as Unreal's HLOD (one
+ * proxy mesh and one material a cell, rebuilt only when its buildings
+ * changed) chosen as 3D Tiles are refined: by the error the coarser level
+ * makes, projected on the screen (Cesium's `Cesium3DTile.getScreenSpaceError`:
+ * error * screen height / (distance * 2 tan(fov / 2)) in perspective, error /
+ * pixel size in an orthographic view), with a margin each way so a cell at the
+ * edge does not flicker (three's `LOD.update` hysteresis).
  */
 
 /**
@@ -42,10 +42,13 @@ const HYSTERESIS = 0.85;
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
 
+/** A cell's key from its column and row (`layer.ts` `cellOf`). */
+const keyOf = (i: number, j: number): string => `${i},${j}`;
+
 interface Cell {
-  /** The masses it was made from, in its buildings' order: kept while they are the same. */
-  masses: readonly MassingChunk[];
   mesh: Mesh | null;
+  /** Its buildings have no mass (lots only): drawn by its detail alone, always near. */
+  massless: boolean;
   /** Its box in the plan (map x/y) and its highest point, for the distance to the eye. */
   x0: number; y0: number; x1: number; y1: number; top: number;
   near: boolean;
@@ -53,14 +56,18 @@ interface Cell {
 
 export interface MassCells {
   readonly group: Group;
-  /** The cells made again from their buildings' masses (by cell key); a cell whose masses are the same objects is kept. */
-  update(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
   /**
-   * Only the cells given made again (a cell given no masses goes), the others
-   * left as they are: what one building changed costs its cell, not the town
-   * (docs/AUDITORIA-2026-10-14.md A1).
+   * A cell whose masses are asked (new, or its buildings changed): kept as it
+   * stands until they come (`land`); a new one stands as its square, near or
+   * far by its distance like any other, with nothing drawn yet.
    */
-  patch(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
+  plan(key: string): void;
+  /** A cell's masses come: its mesh made of them (null: its buildings have no mass, the cell always near). */
+  land(key: string, mass: CellMass | null): void;
+  /** A cell with no building left: gone. */
+  remove(key: string): void;
+  /** Every cell there is (the whole town filed again, `layer.ts`). */
+  keys(): IterableIterator<string>;
   /**
    * Which cells are drawn near (their detail) and which far (their masses),
    * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
@@ -72,71 +79,45 @@ export interface MassCells {
    * ground an orthographic view takes in; Infinity for no limit).
    */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
-  /** Whether a cell is drawn near; a cell with no mass (lawns only) always is. */
+  /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
+  /** The cells drawn near now (what the streaming of the detail reads, `layer.ts` `landCells`). */
+  nearKeys(): Iterable<string>;
   /**
-   * A near cell whose detail is not made yet (`layer.ts` streaming) keeps its
-   * mass shown (`held` true) until the detail lands: between the two the
-   * cell stood empty for the seconds its buildings took to come.
+   * Whether a cell's detail is shown (`layer.ts` streaming): a near cell
+   * keeps its mass shown until its detail lands - between the two the cell
+   * stood empty for the seconds its buildings took to come.
    */
-  holdMass(key: string, held: boolean): void;
+  setDetailed(key: string, detailed: boolean): void;
   dispose(): void;
 }
 
-const sameMasses = (a: readonly MassingChunk[], b: readonly MassingChunk[]): boolean =>
-  a.length === b.length && a.every((c, i) => c === b[i]);
-
-/** A cell's masses, in order, as one mesh's arrays (the indices shifted), and its highest point; null for none. */
-function massArrays(masses: readonly MassingChunk[]): {
-  position: Float32Array; normal: Float32Array; color: Float32Array; facade: Float32Array; glazing: Float32Array; index: Uint32Array; top: number;
-} | null {
-  let vertices = 0, indices = 0;
-  for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
-  if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
-  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = new Uint32Array(indices);
-  let v = 0, n = 0, top = -Infinity;
-  for (const c of masses) {
-    position.set(c.position, v * 3);
-    normal.set(c.normal, v * 3);
-    color.set(c.colour, v * 3);
-    facade.set(c.facade, v * 4);
-    glazing.set(c.glazing, v * 2);
-    for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
-    for (let i = 1; i < c.position.length; i += 3) top = Math.max(top, c.position[i]!);
-    v += c.position.length / 3;
-    n += c.index.length;
-  }
-  return { position, normal, color, facade, glazing, index, top };
-}
+const boxOf = (b: Float64Array): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
+const sphereOf = (b: Float64Array): Sphere => new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
 
 /**
- * A cell's mesh from its buildings' masses. The masses are what the layer
- * keeps (`layer.ts` `masses`, a cell made again from them when one changes);
- * the mesh is a copy for the GPU and keeps no arrays once there (`gpuOnly`):
- * kept, the town's cells were 465 MB of the heap in a 2,560 m city.
+ * A cell's mesh from its masses' arrays, taken as they came (DO NOT wrap them
+ * in a Float32BufferAttribute, which copies them), its bounds with them. The
+ * mesh keeps no arrays once on the GPU (`gpuOnly`); a lost context asks the
+ * workers again (`layer.ts` `refill`).
  */
-function cellMesh(masses: readonly MassingChunk[], kit: BuildingKit): { mesh: Mesh; top: number } | null {
-  const arrays = massArrays(masses);
-  if (!arrays) return null;
+function cellMesh(mass: CellMass, kit: BuildingKit): Mesh {
   const g = new BufferGeometry();
-  // Taken as made: DO NOT wrap them in a Float32BufferAttribute, which copies them (`buildingMesh.ts` assembly).
-  g.setAttribute('position', new BufferAttribute(arrays.position, 3));
-  g.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
-  g.setAttribute('color', new BufferAttribute(arrays.color, 3));
-  g.setAttribute('facade', new BufferAttribute(arrays.facade, 4));
-  g.setAttribute('glazing', new BufferAttribute(arrays.glazing, 2));
-  g.setIndex(new BufferAttribute(arrays.index, 1));
-  g.computeBoundingSphere();
-  g.computeBoundingBox();
-  const top = arrays.top;
+  g.setAttribute('position', new BufferAttribute(mass.position, 3));
+  g.setAttribute('normal', new BufferAttribute(mass.normal, 3));
+  g.setAttribute('color', new BufferAttribute(mass.color, 3));
+  g.setAttribute('facade', new BufferAttribute(mass.facade, 4));
+  g.setAttribute('glazing', new BufferAttribute(mass.glazing, 2));
+  g.setIndex(new BufferAttribute(mass.index, 1));
+  g.boundingBox = boxOf(mass.bounds);
+  g.boundingSphere = sphereOf(mass.bounds);
   const mesh = new Mesh(g, kit.massing);
-  gpuOnly(mesh, () => { const { top: _top, ...again } = massArrays(masses)!; return again; });
+  gpuOnly(mesh, () => ({}));
   mesh.name = 'building-massing';
   mesh.matrixAutoUpdate = false;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return { mesh, top };
+  return mesh;
 }
 
 export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
@@ -144,55 +125,80 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
   const cells = new Map<string, Cell>();
+  /**
+   * The cells drawn near now, and those whose detail is shown: what `choose`
+   * reads besides the cells round the eye. DO NOT walk every cell of the town
+   * each frame to choose: the cells that may change are those near now and
+   * those within reach of the eye (`choose`), a number set by the view.
+   */
+  const nearKeys = new Set<string>();
+  const detailed = new Set<string>();
+  /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
+  let overhang = 0;
+  /** A cell's mass shown: far, or near with no detail to stand in for it. */
+  const showMass = (key: string, cell: Cell): void => {
+    if (cell.mesh) cell.mesh.visible = !cell.near || !detailed.has(key);
+  };
+  const setNear = (key: string, cell: Cell, near: boolean): void => {
+    cell.near = near;
+    if (near) nearKeys.add(key); else nearKeys.delete(key);
+    showMass(key, cell);
+  };
   const drop = (cell: Cell): void => {
     if (!cell.mesh) return;
     group.remove(cell.mesh);
     cell.mesh.geometry.dispose();
     cell.mesh = null;
   };
-  /** A cell made again from its buildings' masses, unless they are the same objects. */
-  const put = (key: string, masses: readonly MassingChunk[]): void => {
-    const known = cells.get(key);
-    if (known && sameMasses(known.masses, masses)) return;
-    if (known) drop(known);
+  /** A cell's square on the map. */
+  const square = (key: string): { x0: number; y0: number; x1: number; y1: number } => {
     const comma = key.indexOf(',');
     const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-    const made = cellMesh(masses, kit);
-    const cell: Cell = {
-      masses, mesh: made?.mesh ?? null,
-      x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize,
-      top: made?.top ?? 0, near: known?.near ?? true,
-    };
-    // A building reaching past its cell's edge: the cell's box is its masses'.
-    const box = made?.mesh.geometry.boundingBox;
-    if (box) { cell.x0 = Math.min(cell.x0, box.min.x); cell.x1 = Math.max(cell.x1, box.max.x); cell.y0 = Math.min(cell.y0, -box.max.z); cell.y1 = Math.max(cell.y1, -box.min.z); }
-    if (made) { made.mesh.visible = !cell.near; group.add(made.mesh); }
-    cells.set(key, cell);
+    return { x0: i * cellSize, y0: j * cellSize, x1: (i + 1) * cellSize, y1: (j + 1) * cellSize };
   };
   return {
     group,
-    /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, the whole town). */
-    update(byCell) {
-      for (const [key, masses] of byCell) put(key, masses);
-      for (const [key, cell] of cells) {
-        if (byCell.has(key)) continue;
-        drop(cell);
-        cells.delete(key);
-      }
+    plan(key) {
+      if (cells.has(key)) return;
+      // Near until the eye says otherwise (`choose`), as a cell made before the eye is known.
+      const cell: Cell = { mesh: null, massless: false, ...square(key), top: 0, near: true };
+      cells.set(key, cell);
+      setNear(key, cell, true);
     },
-    /** @rebuild Called when some buildings changed (`layer.ts` `update`, their cells only). */
-    patch(byCell) {
-      for (const [key, masses] of byCell) {
-        if (masses.length) { put(key, masses); continue; }
-        const known = cells.get(key);
-        if (known) { drop(known); cells.delete(key); }
+    land(key, mass) {
+      const known = cells.get(key);
+      if (known) drop(known);
+      const cell: Cell = { mesh: null, massless: mass === null, ...square(key), top: 0, near: known?.near ?? true };
+      if (mass) {
+        const mesh = cellMesh(mass, kit);
+        const box = mesh.geometry.boundingBox!;
+        cell.mesh = mesh;
+        cell.top = mass.top;
+        // A building reaching past its cell's edge: the cell's box is its masses'.
+        const { x0, y0, x1, y1 } = cell;
+        cell.x0 = Math.min(x0, box.min.x); cell.x1 = Math.max(x1, box.max.x); cell.y0 = Math.min(y0, -box.max.z); cell.y1 = Math.max(y1, -box.min.z);
+        overhang = Math.max(overhang, x0 - cell.x0, cell.x1 - x1, y0 - cell.y0, cell.y1 - y1);
+        group.add(mesh);
       }
+      cells.set(key, cell);
+      // A cell with no mass is always near (its detail is all it has).
+      setNear(key, cell, cell.massless || cell.near);
+    },
+    remove(key) {
+      const cell = cells.get(key);
+      if (!cell) return;
+      drop(cell);
+      cells.delete(key);
+      nearKeys.delete(key);
+    },
+    keys() {
+      return cells.keys();
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
-      for (const [key, cell] of cells) {
+      const decide = (key: string, cell: Cell): void => {
         let near: boolean;
         const forced = allNear === true || (allNear !== false && allNear.has(key));
-        if (forced || !cell.mesh) near = true;
+        if (forced || cell.massless) near = true;
         else {
           // To the cell's nearest point (Cesium measures to the tile's bounding volume).
           const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1);
@@ -211,21 +217,51 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
           // Within reach, with a margin for a cell already near (hysteresis).
           near = pixels >= allowed * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
         }
-        if (near === cell.near) continue;
-        cell.near = near;
-        if (cell.mesh) cell.mesh.visible = !near;
+        if (near !== cell.near) setNear(key, cell, near);
+      };
+      // Those near now may go far; those named stay near.
+      for (const key of [...nearKeys]) decide(key, cells.get(key)!);
+      if (allNear !== true && allNear !== false) for (const key of allNear) { const cell = cells.get(key); if (cell && !cell.near) decide(key, cell); }
+      // A far cell comes near only within the farthest a near cell may be on the map: within
+      // `reach`, and where what the far level leaves out still spans `NEAR_PIXELS` (the error
+      // allowed only grows with the distance, `HORIZON_HALF`).
+      const within = allNear === true ? Infinity
+        : orthoPx !== null ? (FAR_ERROR * orthoPx >= NEAR_PIXELS ? reach : 0)
+          : Math.min(reach, (FAR_ERROR * pxAtMetre) / NEAR_PIXELS);
+      if (within <= 0) return;
+      const r = within + overhang;
+      const i0 = Math.floor((eyeX - r) / cellSize), i1 = Math.floor((eyeX + r) / cellSize);
+      const j0 = Math.floor((eyeY - r) / cellSize), j1 = Math.floor((eyeY + r) / cellSize);
+      const span = (i1 - i0 + 1) * (j1 - j0 + 1);
+      // Past the town's own cells (a view of the whole map): its cells, no more.
+      if (!Number.isFinite(span) || span > cells.size) {
+        for (const [key, cell] of cells) if (!cell.near) decide(key, cell);
+        return;
+      }
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          const key = keyOf(i, j);
+          const cell = cells.get(key);
+          if (cell && !cell.near) decide(key, cell);
+        }
       }
     },
     near(key) {
       return cells.get(key)?.near ?? true;
     },
-    holdMass(key, held) {
+    nearKeys() {
+      return nearKeys;
+    },
+    setDetailed(key, on) {
+      if (on) detailed.add(key); else detailed.delete(key);
       const cell = cells.get(key);
-      if (cell?.mesh) cell.mesh.visible = held || !cell.near;
+      if (cell) showMass(key, cell);
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);
       cells.clear();
+      nearKeys.clear();
+      detailed.clear();
     },
   };
 }
