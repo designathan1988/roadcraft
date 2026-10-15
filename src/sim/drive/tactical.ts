@@ -2,6 +2,7 @@ import type { LaneletId } from '@world/lanelets';
 import type { BodyClass } from '@world/conflictPoints';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
+import { tripLowerBound } from '../routing/lowerBound';
 
 /**
  * Drive v2, tactical layer: which LANE a trip is driven in.
@@ -58,6 +59,8 @@ interface Node {
   /** Arrived by a lane change: another may not follow on the same lane. */
   readonly changed: boolean;
   readonly cost: number;
+  /** `cost` and a lower bound of what is left to the goal (`tripLowerBound`): the order the search takes nodes in. */
+  readonly f: number;
 }
 
 interface Step {
@@ -68,7 +71,7 @@ interface Step {
 
 const keyOf = (lane: LaneletId, changed: boolean): string => (changed ? `${lane}|c` : lane);
 
-const compare = (a: Node, b: Node): number => a.cost - b.cost || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+const compare = (a: Node, b: Node): number => a.f - b.f || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 function push(heap: Node[], value: Node): void {
   let at = heap.length;
@@ -116,6 +119,16 @@ function connectorCost(w: SimWorld, connectorId: LaneletId, body: BodyClass, sha
  * lane changes included. `startChange` false plans the trip as driven from
  * the start lane without leaving it first - the fallback while a change is
  * pending. Null when the goal cannot be reached at all.
+ *
+ * A* (Hart, Nilsson and Raphael, 1968): the nodes are taken by their cost so
+ * far plus a lower bound of the cost still to go (`tripLowerBound`: the
+ * straight line from the end of the lane to the end of the goal at the
+ * fastest lane's limit, which no way there can beat), so the search reaches
+ * towards the goal instead of round every lane nearer the start than it - the
+ * cheapest trip all the same (an admissible bound; amitp's "Heuristics":
+ * "A* is guaranteed to find a shortest path"). DO NOT go back to Dijkstra's
+ * order (cost alone): the goal is a road end anywhere on the map, and each
+ * trip planned searched the whole town - each car made, each lane change.
  */
 export function planTrip(
   w: SimWorld,
@@ -134,7 +147,8 @@ export function planTrip(
   const best = new Map<string, number>([[start, 0]]);
   const parent = new Map<string, Step>();
   const heap: Node[] = [];
-  push(heap, { key: start, lane: start, changed: !startChange, cost: 0 });
+  const toGo = tripLowerBound(w, goal);
+  push(heap, { key: start, lane: start, changed: !startChange, cost: 0, f: toGo(start) });
 
   let reached: Node | null = null;
   while (heap.length) {
@@ -151,7 +165,8 @@ export function planTrip(
       const step = connectorCost(w, id, body, shape);
       if (!Number.isFinite(step)) continue;
       const out = w.connector(id)!.toLane;
-      relax(heap, best, parent, { key: out, lane: out, changed: false, cost: node.cost + step }, { from: node.key, connector: id });
+      const cost = node.cost + step;
+      relax(heap, best, parent, { key: out, lane: out, changed: false, cost, f: cost + toGo(out) }, { from: node.key, connector: id });
     }
 
     if (node.changed || lane.laneIndex === undefined) continue;
@@ -163,7 +178,8 @@ export function planTrip(
       const lanes = Math.abs(other.laneIndex - lane.laneIndex);
       if (lanes === 0 || room < lanes * ROOM_PER_LANE) continue;
       const key = keyOf(sibling, true);
-      relax(heap, best, parent, { key, lane: sibling, changed: true, cost: node.cost + lanes * CHANGE_COST }, { from: node.key, connector: null });
+      const cost = node.cost + lanes * CHANGE_COST;
+      relax(heap, best, parent, { key, lane: sibling, changed: true, cost, f: cost + toGo(sibling) }, { from: node.key, connector: null });
     }
   }
   if (!reached) return null;

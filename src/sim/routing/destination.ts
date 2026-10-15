@@ -2,10 +2,13 @@ import type { LaneletId } from '@world/lanelets';
 import type { BodyClass } from '@world/conflictPoints';
 import type { SimWorld } from '../world';
 import { m } from '@world/units';
+import { tripLowerBound } from './lowerBound';
 
 interface RouteStep {
   readonly lane: LaneletId;
   readonly cost: number;
+  /** `cost` and a lower bound of what is left (`tripLowerBound`): the order the search takes steps in. */
+  readonly f: number;
 }
 
 interface Parent {
@@ -21,7 +24,7 @@ interface ReachableCache {
 const reachable = new WeakMap<SimWorld, ReachableCache>();
 
 const compare = (a: RouteStep, b: RouteStep): number =>
-  a.cost - b.cost || (a.lane < b.lane ? -1 : a.lane > b.lane ? 1 : 0);
+  a.f - b.f || (a.lane < b.lane ? -1 : a.lane > b.lane ? 1 : 0);
 
 function push(heap: RouteStep[], value: RouteStep): void {
   let at = heap.length;
@@ -101,14 +104,20 @@ export function chooseVehicleDestination(w: SimWorld, start: LaneletId, body: Bo
   return exits[Math.floor(w.rng.route.float() * exits.length)] ?? exits[0] ?? null;
 }
 
-/** Least-time lanelet route to a fixed endpoint, with congestion priced at planning time. */
+/**
+ * Least-time lanelet route to a fixed endpoint, with congestion priced at
+ * planning time. A*, by the same lower bound as the trip planner
+ * (`drive/tactical.ts` planTrip, `tripLowerBound`): the same least-time
+ * route, without searching the whole town on the way to a far road end.
+ */
 export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletId, body: BodyClass): LaneletId[] | null {
   if (start === goal) return [start];
   if (!w.lanelet(start) || !w.lanelet(goal) || w.rt(goal).ghost) return null;
   const best = new Map<LaneletId, number>([[start, 0]]);
   const parent = new Map<LaneletId, Parent>();
   const heap: RouteStep[] = [];
-  push(heap, { lane: start, cost: 0 });
+  const toGo = tripLowerBound(w, goal);
+  push(heap, { lane: start, cost: 0, f: toGo(start) });
 
   while (heap.length) {
     const current = pop(heap)!;
@@ -135,7 +144,7 @@ export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletI
       if (cost >= (best.get(out.id) ?? Infinity) - 1e-9) continue;
       best.set(out.id, cost);
       parent.set(out.id, { lane: current.lane, connector: id });
-      push(heap, { lane: out.id, cost });
+      push(heap, { lane: out.id, cost, f: cost + toGo(out.id) });
     }
   }
   return null;
