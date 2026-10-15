@@ -171,11 +171,7 @@ export class Network {
    */
   rebuild(options: { readonly full?: boolean } = {}): void {
     const started = performance.now();
-    if (options.full || this.build.empty) {
-      this.clear();
-      // The filings start again from version 0: a cell made before could read as current.
-      this.crossingWalkable = null;
-    }
+    if (options.full || this.build.empty) this.clear();
     const delta = this.build.rebuild();
     this.forgetCrossings(delta);
     this.log.advance(delta);
@@ -270,18 +266,13 @@ export class Network {
     this.log.takeFrom(other.log);
     // The crossing caches belong to the geometry just replaced: what changed
     // between the state this network was in and the one it takes is dropped
-    // (everything, when the log cannot say), and the other's are taken. Kept
-    // whole, after every road drawn the zebras, stop lines, lanelets and
-    // footway furniture read crossing distances of the network before the
-    // edit (a highway joined to a junction still had its zebras).
+    // (everything, when the log cannot say); the rest is worked out again
+    // when asked. Kept whole, after every road drawn the zebras, stop lines,
+    // lanelets and footway furniture read crossing distances of the network
+    // before the edit (a highway joined to a junction still had its zebras).
+    // The footway's cells (`walkable.ts`) are kept by the versions of the
+    // filings, unique to each change of each cell (`cells.ts`): they stay.
     this.forgetCrossings(this.log.since(before));
-    for (const [seg, byNode] of other.crossingDistances) {
-      let mine = this.crossingDistances.get(seg);
-      if (!mine) this.crossingDistances.set(seg, mine = new Map());
-      for (const [node, distance] of byNode) mine.set(node, distance);
-    }
-    // The cells as the other made them, against the filings just copied (`walkable.ts`).
-    this.crossingWalkable = other.crossingWalkable ? new WalkableSurface(this, other.crossingWalkable) : null;
   }
 
   /**

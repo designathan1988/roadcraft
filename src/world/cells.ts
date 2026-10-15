@@ -46,6 +46,15 @@ export const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1
 /** Whether two rectangles overlap (touching counts). */
 const rectsMeet = (a: ChangeRect, b: ChangeRect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
+/**
+ * The clock every filing's cell versions are read from: a version names one
+ * change of one cell of one filing, never another's. A stamp (`stamp`) made
+ * against one filing then never matches another's cells, nor the same
+ * filing's after it took another's (`copyFrom`) or started again: whatever
+ * is kept by stamp stays right through `Network.adopt` and a full rebuild.
+ */
+let versionClock = 0;
+
 /** The work a filing did: things filed and cells visited. A count for the performance budgets (`core/perfBudget.ts`). */
 export const cellWork = { filed: 0, cellsRead: 0 };
 
@@ -67,7 +76,7 @@ export class CellFiling<Id extends number, T extends object> {
   private readonly entries = new Map<Id, { readonly item: T; readonly rect: ChangeRect; readonly cells: readonly number[] }>();
   private readonly byCell = new Map<number, Set<Id>>();
   private readonly versions = new Map<number, number>();
-  /** Moves whenever any cell's version does. */
+  /** Moves whenever any cell's version does: the clock's reading at the latest change. */
   epoch = 0;
 
   get size(): number {
@@ -157,7 +166,9 @@ export class CellFiling<Id extends number, T extends object> {
   }
 
   private bump(key: number): void {
-    this.versions.set(key, (this.versions.get(key) ?? 0) + 1);
-    this.epoch++;
+    this.versions.set(key, ++versionClock);
+    // From the same clock: an epoch names one change too, never another
+    // filing's (`poleLines.ts` keeps its regions by epoch across `adopt`).
+    this.epoch = versionClock;
   }
 }

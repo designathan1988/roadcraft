@@ -27,18 +27,15 @@ import { levelRingsOf } from './surfaces';
  * rebuild: every road edit paid for the whole map's footways before the first
  * crossing was placed (`Network.crosswalkDistanceAt`).
  *
- * One per network, kept across its rebuilds (the versions move with every
- * ribbon and junction filed again). A network that takes over another's
- * filings (`Network.adopt`) takes a copy of its cells too: the versions are
- * the other network's then, and a cell made against its own earlier versions
- * could be read as current.
+ * One per network, kept across its rebuilds and through `Network.adopt`:
+ * a cell's version names one change of it, never another filing's
+ * (`cells.ts` versionClock), so a cell made before reads as current only
+ * when nothing filed over it moved.
  */
 export class WalkableSurface {
   private readonly made = new Map<number, { readonly stamp: string; readonly outer: RegionIndex; readonly road: RegionIndex }>();
 
-  constructor(private readonly net: Network, from?: WalkableSurface) {
-    if (from) for (const [key, cell] of from.made) this.made.set(key, cell);
-  }
+  constructor(private readonly net: Network) {}
 
   /** Cells of the grids made so far, for the performance budgets (`core/perfBudget.ts`). */
   get cells(): number {
