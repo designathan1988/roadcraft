@@ -22,9 +22,16 @@ interface FaceunitMeta {
  */
 let shapes: Promise<Readonly<Record<string, Float32Array>>> | undefined;
 
+/** A file fetched, or the load failed: a 404 page read as the shapes was no face. */
+async function fetched(url: string): Promise<Response> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  return response;
+}
+
 export function expressionShapes(): Promise<Readonly<Record<string, Float32Array>>> {
   if (shapes) return shapes;
-  const loading = Promise.all([fetch(metaUrl).then((r) => r.json() as Promise<FaceunitMeta>), fetch(binaryUrl).then((r) => r.arrayBuffer())])
+  const loading = Promise.all([fetched(metaUrl).then((r) => r.json() as Promise<FaceunitMeta>), fetched(binaryUrl).then((r) => r.arrayBuffer())])
     .then(([meta, binary]) => {
       const indices = new Uint16Array(binary, 0, meta.entryCount);
       const deltas = new Int16Array(binary, meta.deltaOffset, meta.entryCount * 3);
