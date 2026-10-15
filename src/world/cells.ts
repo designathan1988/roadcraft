@@ -114,6 +114,16 @@ export class CellFiling<Id extends number, T extends object> {
     return this.entries.get(id)?.item === item;
   }
 
+  /**
+   * The rectangle `id` is filed over, or undefined. A point is answered with
+   * `id` by `idsMeeting` exactly when this rectangle holds it (edges
+   * included): whoever rasterizes what the point questions answer
+   * (`world/zoneGrid.ts` `markPaved`) reads it to give the same answer.
+   */
+  rectOf(id: Id): ChangeRect | undefined {
+    return this.entries.get(id)?.rect;
+  }
+
   /** The ids filed (any order). */
   ids(): IterableIterator<Id> {
     return this.entries.keys();

@@ -6,7 +6,9 @@ import { carriesPedestrians } from './pedestrianAccess';
 import { Level, halfWidth } from './roadTypes';
 import { m } from './units';
 import { GRID_CELL } from './grid';
-import { onFootway, onKerbed } from './poleLines';
+import { markPlates, onPaving } from './poleLines';
+import { segmentDistSq } from '@core/polyline';
+import { LAND, NEAR, PAVED, gridRect, type RasterGrid } from './rasterGrid';
 
 /**
  * The zoning grid: the land along every street, cut into cells the player
@@ -131,8 +133,116 @@ export function pavedTester(doc: RoadDoc, net: Network): { onRoad: (p: Vec2) => 
   // widest mouth) used to stand in for the junction, and took a bite out of
   // every block corner: the zones stopped short of the corners, broken.
   // Read from the cells round each point (`poleLinesAt`), not the whole map's lines.
-  const onPlate = (p: Vec2): boolean => onFootway(net, p) || onKerbed(net, p);
+  const onPlate = (p: Vec2): boolean => onPaving(net, p);
   return { onRoad, onPlate };
+}
+
+/**
+ * The paving on a raster: which cell centres `pavedTester` (above)
+ * answers paved - `onRoad || onPlate` - found by scan conversion of what is
+ * paved instead of a question per cell.
+ *
+ * The lots' raster (`lots.ts` `planLotsSteps`) asked every cell of a town's
+ * box: each a walk of the network's cells round it, the distance to every
+ * street filed there and the windings of every footway ring - 7.7 s of a
+ * 2,560 m city's lots, growing with the town's AREA. Here each street's
+ * centreline is swept segment by segment over only the rows and columns its
+ * reach covers (a capsule per segment), and each footway and kerb ring is
+ * filled scanline by scanline (the even-odd/winding fill of a polygon:
+ * Foley, van Dam et al., "Computer Graphics", 3.6; the crossings of each row
+ * found per edge): the work is the paving's area and its rings' edges, not
+ * the town's.
+ *
+ * Exact: every cell this marks is one the point questions mark, and the
+ * other way round. The street's distance is the same arithmetic as
+ * `Polyline.distanceTo` (`segmentDistSq`), evaluated at every cell centre a
+ * capsule a little wider than the street's reach could hold; a ring's
+ * winding is the same crossing test as `windingOf` (`poleLines.ts`), whose
+ * answer along a row is a step at one column (it is monotone in x), found by
+ * bisection; and a street or a ring counts at a cell only where the point
+ * questions would have read it - inside the rectangle it is filed over
+ * (`CellFiling.rectOf`) and inside the bounds they test.
+ * DO NOT go back to testing every cell against the network.
+ */
+
+/**
+ * Every `NEAR` cell of `label` whose centre is paved turned to `PAVED`, the
+ * other `NEAR` cells to `LAND`: as `pavedTester`'s `onRoad || onPlate` would
+ * answer at each centre. It yields after each street and each band of rows.
+ */
+export function* markPaved(doc: RoadDoc, net: Network, grid: RasterGrid, label: Int32Array): Generator<void, void> {
+  yield* markRoads(doc, net, grid, label);
+  yield* markPlates(net, grid, label);
+  for (let c = 0; c < label.length; c++) if (label[c] === NEAR) label[c] = LAND;
+}
+
+/** How much wider than a street's reach its capsules are scanned: far more than any rounding. */
+const SWEEP_SLACK = m(0.5);
+
+/**
+ * `onRoad` (`zoneGrid.ts`) on the raster: a cell is on a ground street when
+ * the street is filed over its centre, the centre is within the street's box
+ * grown by its reach, and its distance to the centreline is under the reach
+ * less 5 cm - the distance being the least over the centreline's segments,
+ * a cell is on it when it is on one segment's capsule.
+ */
+function* markRoads(doc: RoadDoc, net: Network, grid: RasterGrid, label: Int32Array): Generator<void, void> {
+  const { minX, minY, W, H, step } = grid;
+  for (const id of net.segmentCells.idsMeeting(gridRect(grid))) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon || doc.segment(id)?.structure !== 'ground') continue;
+    const filed = net.segmentCells.rectOf(id);
+    if (!filed) continue;
+    const reach = halfWidth(ribbon.road, Level.Sidewalk);
+    const bb = ribbon.full.bbox;
+    // The bounds `onRoad` tests, as it computes them.
+    const bx0 = bb.minX - reach, bx1 = bb.maxX + reach, by0 = bb.minY - reach, by1 = bb.maxY + reach;
+    const within = reach - m(0.05);
+    if (!(within > 0)) continue;
+    const r = within + SWEEP_SLACK;
+    const xy = ribbon.full.xy;
+    for (let k = 0; k + 1 < ribbon.full.n; k++) {
+      const ax = xy[k * 2]!, ay = xy[k * 2 + 1]!, ex = xy[k * 2 + 2]!, ey = xy[k * 2 + 3]!;
+      const j0 = Math.max(0, Math.floor((Math.min(ay, ey) - r - minY) / step - 0.5) - 1);
+      const j1 = Math.min(H - 1, Math.ceil((Math.max(ay, ey) + r - minY) / step - 0.5) + 1);
+      const len = Math.hypot(ex - ax, ey - ay);
+      // The band's corners: the segment pushed either side by r.
+      const nx = len > 0 ? (-(ey - ay) / len) * r : 0, ny = len > 0 ? ((ex - ax) / len) * r : 0;
+      const qx = [ax + nx, ex + nx, ex - nx, ax - nx], qy = [ay + ny, ey + ny, ey - ny, ay - ny];
+      for (let j = j0; j <= j1; j++) {
+        const py = minY + (j + 0.5) * step;
+        if (py < filed[1] || py > filed[3] || py < by0 || py > by1) continue;
+        // The capsule's chord along this row: its two end discs and its band (convex, so their span).
+        let xl = Infinity, xr = -Infinity;
+        for (let e = 0; e < 2; e++) {
+          const cx = e ? ex : ax, dy = py - (e ? ey : ay);
+          if (Math.abs(dy) > r) continue;
+          const h = Math.sqrt(r * r - dy * dy);
+          xl = Math.min(xl, cx - h); xr = Math.max(xr, cx + h);
+        }
+        if (len > 0) {
+          for (let e = 0; e < 4; e++) {
+            const px0 = qx[e]!, py0 = qy[e]!, px1 = qx[(e + 1) % 4]!, py1 = qy[(e + 1) % 4]!;
+            if (py < Math.min(py0, py1) || py > Math.max(py0, py1)) continue;
+            if (py0 === py1) { xl = Math.min(xl, px0, px1); xr = Math.max(xr, px0, px1); continue; }
+            const x = px0 + ((py - py0) * (px1 - px0)) / (py1 - py0);
+            xl = Math.min(xl, x); xr = Math.max(xr, x);
+          }
+        }
+        if (xl > xr) continue;
+        const i0 = Math.max(0, Math.floor((xl - minX) / step - 0.5) - 1);
+        const i1 = Math.min(W - 1, Math.ceil((xr - minX) / step - 0.5) + 1);
+        const row = j * W;
+        for (let i = i0; i <= i1; i++) {
+          if (label[row + i] !== NEAR) continue;
+          const px = minX + (i + 0.5) * step;
+          if (px < filed[0] || px > filed[2] || px < bx0 || px > bx1) continue;
+          if (Math.sqrt(segmentDistSq(xy, k, px, py)) < within) label[row + i] = PAVED;
+        }
+      }
+    }
+    yield;
+  }
 }
 
 /** Builds the grid of every ground street that carries pedestrians. */
