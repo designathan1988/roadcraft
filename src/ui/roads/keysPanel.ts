@@ -89,10 +89,10 @@ export function openRoadKeys(anchor?: HTMLElement): void {
     note = '';
     render();
   };
-  // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
   // Removed with the panel (`closeRoadKeys`), not on the next key: a panel opened
   // and closed many times left one listener each until a key was pressed.
   const listening = new AbortController();
+  // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
   window.addEventListener('keydown', onKey, { capture: true, signal: listening.signal });
 
   if (anchor) {
