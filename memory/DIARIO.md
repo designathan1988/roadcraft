@@ -64,3 +64,4 @@
 - 2026-10-14 noite (Análise): fase 1, segurança: nome e cor de linha de transporte vindos do arquivo do mapa iam ao innerHTML do painel (um `<img onerror>` no nome rodava código); cor só `#rrggbb` na carga e linha do painel por textContent (`ui/v2/transitLine.ts`), teste que falhou antes e passa depois, conferido no jogo. Barreira da classe pendente (fase do roteamento).
 - 2026-10-14 ~21h40: juntados fix/ui (src/ui lido e corrigido; 605 chaves mortas; uma barra de ver por dentro) e fix/editor-ui (36 commits revisados); conferido no jogo; corte de ver por dentro não desenha (render-cidade).
 - 2026-10-14 ~22h: juntados analisador em 3 módulos, coalescedTask, fix/people; render-vivos devolvido (regressão no pós); sonda da cidade de 10 km iniciada (probe10, 5340).
+- 2026-10-14 ~23h: juntados fix/world, fix/editor-3, fix/render-vivos; agentes world-2 e render-cenario lançados; sonda de 10 km ainda gerando.
