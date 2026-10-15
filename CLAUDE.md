@@ -63,13 +63,17 @@ pasted in the session that started this; these are its binding decisions.
 - Renderer: decided by a 4-day spike (WebGL2 vs WebGPU with compute culling and indirect draw).
   Decision: <pending>.
 - Phases: F0 prep, F0b relief, F1 data, F2 threads, F3 spike, F4 buildings, F5 world,
-  F6 light, F7 whole-map generation, F8 Steam, F9 validation. Current: block B (data).
+  F6 light, F7 whole-map generation, F8 Steam, F9 validation. Current: block D (buildings).
 - Player's queue (2026-10-15, replaces the phase gates: tsc, commit, a look at the game per block): A undo/COOP/sim
   worker, B data, C threads, D buildings, E world, F light, G whole-map generator, H Steam.
 - Done: F0 route and worst-case city (57d2eb7); F0b frame without scene walks, detail byte cap (0331e1a); layered
   network fork and in-place edits on forks (d79c945, 7a464c2, 6dbd5ba). Block A: undo by commands (3a55403),
   COOP/COEP (1b9ba07), simulation in a worker with a SharedArrayBuffer triple buffer (7bf4b16). Left from A: the
   meso model over the whole map (goes with the far density cars, block E); the micro window is the ambient's focus.
+- Block B: building records hash-consed (bd4862f; seed + delta is not possible: growth reads neighbours, `nextId` and
+  corners); whole-map undo without a second city (25ea349); save head in parts on `rewrite/b-save-head-parts` (919814d,
+  changes the save format: waits for the player). Block C: one job pool (da8c810); growth in the pool's `growth` lane
+  (2b029a9). Medium city after C: growth 14.9 s, 14.8 M triangles, 1,371 draws, GPU p95 254 ms on the UHD 770 (D's target).
 - Measured before (worst case 4x4, 81,128 buildings, 17,160 segments): growth 5.7 min, JS heap ~3 GB, ~18 GB of
   Chrome memory, the world not shown 4 min after; a medium city lost its WebGL context (GL_OUT_OF_MEMORY) in a
   8 GB job: 28 workers in the page's process (14 pools) and ~1 GB of geometry.
