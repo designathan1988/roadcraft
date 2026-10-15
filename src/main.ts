@@ -33,6 +33,7 @@ import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
 import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan } from '@world/cityGen/plan';
+import { replicatePlan } from '@world/cityGen/replica';
 import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -1853,8 +1854,7 @@ mountAbout();
 let cityGrowth: { left: number; total: number; started: number; guard: number;
   /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
   layout?: Generator<void, { zoned: number; squares: number; pieces: number }> } | null = null;
-function generateCity(options: CityOptions): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
-  const plan = planCity(options);
+function generateCity(options: CityOptions, plan = planCity(options)): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
   const cityDoc = layCity(plan);
   history.begin(doc);
   // The footways wide enough for street trees before the lots are cut (V7).
@@ -3722,6 +3722,8 @@ const healthPanel = mountHealthPanel({
   surface,
   DT,
   exportMap: () => exportToFile(doc, sessionSettings()),
+  /** The autosave written now, resolved once it is stored (the route's reopening step, `scripts/look/route.json`). */
+  saved: () => { persistence.saveSessionSoon(doc, sessionSettings); persistence.flush(); return persistence.written(); },
   importMap: async () => openImported(await importFromFile()),
   /** The public transport tool. */
   transit: transitEditor,
@@ -3733,7 +3735,12 @@ const healthPanel = mountHealthPanel({
     requestDraw();
   },
   /** A generated city (`editor/cityGenerator.ts`), and how far its building has gone. */
-  generateCity: (options: Partial<CityOptions> = {}) => generateCity({ ...DEFAULT_CITY, ...options }),
+  generateCity: (options: Partial<CityOptions> & { replicas?: number } = {}) => {
+    const { replicas = 1, ...asked } = options;
+    const chosen = { ...DEFAULT_CITY, ...asked };
+    // The worst case until the whole-map generator (rewrite F7): the same city `replicas` × `replicas` over the map.
+    return generateCity(chosen, replicas > 1 ? replicatePlan(planCity(chosen), replicas) : planCity(chosen));
+  },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
   cityGrowth: () => (cityGrowth || cityProgress.style.display === 'block' ? { pending: true } : null),
@@ -3790,6 +3797,7 @@ ${JSON.stringify(counts)}`;
     const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
     return {
       geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes), targetMB: mb(scene.targetBytes()),
+      buildingDetailMB: mb(scene.buildingDetailBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
       buffers: c.buffers, textures: c.textures,
