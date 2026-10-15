@@ -1,6 +1,6 @@
 # Estado — Roadcraft 2
 
-> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
 
 Atualizado ao fim de cada etapa. Plano: `docs/PLAN.md`. Problemas: `docs/PROBLEMS.md`.
 
@@ -28,7 +28,7 @@ Atualizado ao fim de cada etapa. Plano: `docs/PLAN.md`. Problemas: `docs/PROBLEM
 ### E2 — Cópia e igualdade (fechada)
 - Commits `7ff7726` (cópia fiel, 2.930 arquivos dos blobs, conferidos por
   `git hash-object`), `1993740` e `075ef9a` (retirada do SAI guiada por ferramenta e
-  dados de teste), `7513dc0` (provas). Detalhes em `docs/MIGRATION.md`.
+  dados de teste), `7513dc0` (provas). Detalhes em `MIGRATION.md` (removido; no git).
 - Igualdade: build igual à da FONTE em 4.401 de 4.445 arquivos (as diferenças são o que
   saiu de propósito, o selo e as impressões digitais do cozimento); portão antigo × novo
   dentro da dispersão; os 9 mapas do jogador reabrem com as mesmas contagens e fotos

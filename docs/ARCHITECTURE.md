@@ -1,7 +1,7 @@
 # Architecture — Roadcraft 2
 
 The rules are in `CLAUDE.md`; this file says how the code meets them, stage by
-stage. Each stage of `docs/PLAN.md` writes here, BEFORE it starts, what it
+stage. Each stage of the old plan (`docs/PLAN.md`, historical) wrote here, BEFORE it starts, what it
 changes in the chain (what it reads, what it writes, who depends on it), and the
 code is checked against it when the stage closes.
 
@@ -61,7 +61,7 @@ command ──► document (records) ──► diary entry (kind, rectangles, ca
 
 ### 3.1 Derived products at the SOURCE: what each reads today
 
-Measured and read in the code (audit `docs/reference/auditoria-roadcraft-2026-10-12.md` §3,
+Measured and read in the code (audit `auditoria-roadcraft-2026-10-12.md` §3, removida; no git,
 and the files below). "Whole map" marks the products that F3 turns into per-cell ones.
 
 | product | file | gate today | reads | cost class |

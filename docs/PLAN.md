@@ -1,5 +1,7 @@
 # Plano — Roadcraft 2
 
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
+
 O único plano deste repositório. A etapa ATUAL está marcada com **← ATUAL**.
 Regras de trabalho: `CLAUDE.md` (vale por inteiro). Estado: `docs/STATUS.md`.
 Problemas abertos e "Aguardando o jogador": `docs/PROBLEMS.md`. Arquitetura e a
@@ -171,7 +173,7 @@ branco: o jogo nunca rodou nos dados). Onde procurei:
 ---
 
 ## 3. Pesquisa: lida e a ler, por etapa
-Ponto de partida: `docs/reference/` (auditoria e pesquisa do FORMA) e a pesquisa
+Ponto de partida: `reference/` (removida; no git) (auditoria e pesquisa do FORMA) e a pesquisa
 da FONTE (`docs/pesquisa/fase-0` a `fase-8`, copiada para `docs/research/source/`
 na E2). Cada fato que decide algo é reconferido na fonte e registrado em
 `docs/research/<tema>.md` com o link aberto. O que não abrir fica como "não lido".
@@ -220,7 +222,7 @@ com fotos examinadas uma a uma, `docs/STATUS.md` atualizado, commit e push.
 |---|---|---|---|---|---|
 | E0 Preparação (feita) | — | sessões conferidas; FONTE registrada; backup duplo dos mapas com manifesto; repositório com `origin`, `.gitignore`, `.gitattributes`; jogo antigo (build de `git archive` da FONTE) servido na 4299; `.claude/launch.json` com 5300/5301/4299/4300; mapas reabertos no antigo numa origem de rascunho | — | cada mapa aberto no antigo | build da FONTE sem pessoas cozidas → cozinhar fora do jogo do jogador, com `run-limited` |
 | E1 Portão | E0 | `scripts/gate.mjs` rodando no ANTIGO, nos dois modos, todos os cenários; ruído A/A; linha de base (números e fotos) guardada | todas as da seção 2 | todas as dos cenários | ruído alto (variação de 1,7× já vista) → mais rodadas, máquina conferida |
-| E2 Cópia e igualdade | E1 | cópia calculada por ferramenta e conferida por `git hash-object`; `docs/MIGRATION.md`; SAI removido guiado por `tsc`/`knip`/lint; portão novo × antigo dentro do ruído e fotos iguais por pixel; mapas abrem iguais; specs verdes; teste de jogo inteiro | portão A/B antigo × novo | todas, lado a lado | arquivo carregado só em execução escapar → registro de rede |
+| E2 Cópia e igualdade | E1 | cópia calculada por ferramenta e conferida por `git hash-object`; `MIGRATION.md` (removido; no git); SAI removido guiado por `tsc`/`knip`/lint; portão novo × antigo dentro do ruído e fotos iguais por pixel; mapas abrem iguais; specs verdes; teste de jogo inteiro | portão A/B antigo × novo | todas, lado a lado | arquivo carregado só em execução escapar → registro de rede |
 | E3 Proteções (feita; envio junto com F1) | E2 | `npm run check` (lint de camadas, 800 linhas, `catch` mudo, estado de módulo, knip, ciclos, tipos, specs, arquitetura, escala); `.githooks/pre-push` com check + portão; dívida trazida em linha de base que só diminui; documentos vivos | o próprio check provocado de propósito (cada regra reprova uma vez) | — | dívida grande → linha de base com contagem que o `tests/arch` reprova se crescer |
 | F1 Controladores (feita: ferramenta e teclado; barramento entra na F2) | E3 | store da sessão, máquinas de estado, barramento, registro de comandos; `main.ts` só conecta | portão igual | iguais | acoplamento em `main.ts` (4.777 linhas) → extração guiada por testes e portão |
 | **S Escala da cidade** ← ATUAL (ordem do jogador, 2026-10-13: cidade densa de 10 km; direção do relatório "Arquitetura de alto desempenho para o Citybuilder 3D") | — | S1a HLOD dos prédios: versão de longe por célula com a mesma silhueta, cor e ritmo de janelas (shader), acesas à noite, troca pelo erro em pixels (fórmula do Cesium) com histerese, e ela como projetora de sombra no lugar da casca detalhada; S1b detalhe só nas células perto (streaming, descarte longe); S2 cache da topologia por forma de cruzamento (R20); S3 registro compacto dos prédios gerados (semente + regra + alterações); S4 crescimento em fatias/worker; S5 gerador de 10 km (autoestradas, avenidas, sem praças, quadras cheias); S6 simulação hierárquica (micro perto, agregada longe) | GPU, CPU, heap e memória da GPU por tamanho de cidade (514, 1.348, 2.480 prédios e maiores); custo por quadro igual com a mesma vista em cidades maiores | perto igual; transição sem salto de cor nem de silhueta; noite | aparência do nível de longe → fotos lado a lado na distância da troca |

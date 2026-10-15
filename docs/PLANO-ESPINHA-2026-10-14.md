@@ -1,5 +1,7 @@
 # Plano: construir a espinha que falta (célula + derivado incremental) e acabar com a regeneração indevida
 
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
+
 ## Diretriz do jogador (manda em tudo abaixo; 2026-10-14 noite)
 - **O objetivo:** otimizar o jogo para ter desempenho e qualidade e rodar em computadores
   diferentes do dele, rumo à cidade sem limite: **primeiro a cidade no mapa de 10 km × 10 km,
@@ -44,7 +46,7 @@ ela, provar igual, e remover os remendos que escondiam o custo.
   do diário + células com vizinhança), refaz só células sujas, nunca chaveia cache em contador global.
 - ✔ Em 13/10 a etapa "S Escala da cidade" passou na frente (`docs/PLAN.md:226`, "← ATUAL, ordem do
   jogador, 2026-10-13"). Da F2 só saiu o desfazer (F2a); da F3 só a F3a (✔ relatório de 14/10,
-  `docs/RELATORIO-DESEMPENHO-2026-10-14.md:226`). Desde então, todas as conversas atacam sintomas que a
+  `RELATORIO-DESEMPENHO-2026-10-14.md:226`, removido; no git). Desde então, todas as conversas atacam sintomas que a
   F3 resolve pela estrutura. O plano definitivo é retomar a F3 como projetada, agora com o inventário.
 
 ## Diagnóstico
@@ -53,11 +55,11 @@ vi o padrão e respondi com correção ponto a ponto; lancei agentes sem conferi
 código de 80 commits atrás); confundi movimento com resultado; joguei decisões no jogador; disse
 "já existe" por ter achado um nome (o `BatchedMesh`, que só aparecia num comentário).
 **Ambiente:** memória partida por conversa (projeto, pastas temporárias); ✔ CLAUDE.md:51 e
-ORDENS.md:17 ("Agentes livres") contradizem a memória do projeto; ✔ memory/ESTADO.md (14.665
+ORDENS.md:17 ("Agentes livres") contradizem a memória do projeto; ✔ o `ESTADO.md` da memória (14.665
 bytes) importado em toda conversa; hook de pesquisa reabre a cada mensagem que chega no meio do
 trabalho (ritual); três conversas no mesmo diretório, índice e servidor 5300; ✔ worktrees do Agent
 tool nascem do ramo padrão, não do HEAD (doc oficial de subagentes), e o `origin/main` está 80
-commits atrás (nunca enviado); ✔ `src/sim/CLAUDE.md` cita `sim/peds/state.ts`, `publish.ts`,
+commits atrás (nunca enviado); ✔ o `CLAUDE.md` de `sim` (removido) cita `sim/peds/state.ts`, `publish.ts`,
 `behaviour.ts`, `corridor.ts`, que não existem (`sim/peds` só tem `sidewalk.ts`).
 
 **Conferido por mim (comando → resultado):** `git rev-list --count origin/main..main` → 80;
@@ -492,7 +494,7 @@ mudada (semáforos por atributo, agentes com vaga estável).
 Lendo o código inteiro e conferindo cada achado na linha, achei e provei em horas o que semanas de
 testes, perfis e contadores não acharam. É o método de trabalho daqui em diante, para achar e para
 corrigir; teste e perfil ficam para o que se destinam (provar que a correção funciona e medir).
-Arquivo `.claude/skills/lendo-o-codigo/SKILL.md` (formato da doc oficial: frontmatter na 1ª linha,
+A skill `lendo-o-codigo` (removida em 2026-10-15) (formato da doc oficial: frontmatter na 1ª linha,
 `description` com o uso primeiro), criado na aprovação. Conteúdo:
 - **Princípio:** o erro está no código. Teste, perfil e contador não acham a causa e não corrigem.
 - **1 Escopo:** a lista dos arquivos com `wc -l`. Cada arquivo lido da primeira à última linha;
@@ -705,7 +707,7 @@ todos os seus casos, e UMA barreira que impede a volta.
   `editRules.ts:113`) e o reescreve (`doc.replaceWith`, commit.ts:185/386, editRules.ts:136); a rede
   é reconstruída a cada pedaço (commit.ts:163) e o editor varre todos os nós/trechos (commit.ts
   422/698/745/767, editRules.ts 258/332). É a dívida da F2 (documento por comandos com inverso).
-- ✔ `src/editor/CLAUDE.md`: "Every dab of the terrain brush re-solves the whole road network", contida
+- ✔ o `CLAUDE.md` de `editor` (removido): "Every dab of the terrain brush re-solves the whole road network", contida
   por ritmo (amortização); e a regra velha da trava global do run-limited ("one at a time on the
   machine (a lock file)"), que não existe mais desde `03c2647`.
 

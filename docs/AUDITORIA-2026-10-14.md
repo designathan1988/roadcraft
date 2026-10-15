@@ -1,5 +1,7 @@
 # Auditoria por padrão — 2026-10-14
 
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
+
 Varredura somente leitura feita por quatro agentes, um por área, a pedido do jogador ("ir no código,
 compreender, identificar e corrigir"). Nada foi medido: cada achado precisa de um número
 (`__roadcraft.budget(vista)`, perfil ou contador) antes de entrar na fila, e de prova de resultado

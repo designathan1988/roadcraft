@@ -1,6 +1,6 @@
 # Problemas de desempenho e soluções
 
-> **HISTÓRICO** (marcado em 2026-10-14): não é o estado atual nem a lista de trabalho. O estado está em `memory/ESTADO.md`; os problemas de desempenho, com a regra de "feito", em `OTIMIZACAO.md`. Leia este arquivo só para saber o que já se tentou e mediu.
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
 
 Registro vivo. Uma linha por problema relatado pelo jogador. Uma linha só fecha
 com a medida "depois", tirada do mesmo jeito que a "antes": na página aberta,

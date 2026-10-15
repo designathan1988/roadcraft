@@ -1,5 +1,7 @@
 # Cidade no mapa inteiro (10 km): plano de engenharia
 
+> **HISTÓRICO** (2026-10-15): registro do que se fez e mediu até 2026-10-14; não é o estado atual nem a lista de trabalho. O estado, os achados abertos e o índice dos documentos estão em `docs/ESTADO.md`. Fica no repositório porque o código cita os itens dele.
+
 Pedido do jogador (2026-10-14): a cidade gerada cobrindo o mapa inteiro de 10,24 km,
 bonita e rápida, em computadores diferentes; depois maior e maior, rumo à cidade sem limite.
 "Feito" é o código sem o problema: o algoritmo escala com a cidade. **Os números deste

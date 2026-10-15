@@ -18,6 +18,9 @@ instruções do projeto: não crie outro (nem `memory/`, nem `CLAUDE.md` em subp
   papelada, plano ou nota no lugar de corrigir.
 - Diga a verdade: o que não conferiu, diga que não conferiu. Nunca "já existe" ou "funciona" sem
   ter lido o código que USA a coisa (o chamador, até o quadro, a edição ou o ponteiro).
+- Tenha noção e seja ético. Caso precise mudar a arquitetura de algo para funcionar, comunique. Caso autorizado mude. Não fique insistindo em consertos inúteis e perdendo tempo, ache a solução adequada, informa e peça autorização.
+- Não confie no seu conhecimento, busque na documentação oficial na internet e em sites adequados ao assunto em pauta.
+- Não comete tentativa e erro. Caso não saiba como resolver, ou não consiga na primeira vez: PESQUISE NA INTERNET.
 
 ## Idioma
 - Código em inglês: identificadores, comentários, testes, mensagens de erro. Comentário contra a
@@ -42,19 +45,11 @@ instruções do projeto: não crie outro (nem `memory/`, nem `CLAUDE.md` em subp
 - Desenhar ou guardar o que não se vê: sem nível de distância; cópia na CPU do que já está na GPU.
 - Esperar a GPU no meio do quadro (`getImageData`) ou compilar shader durante o jogo.
 
-## Achados abertos (lidos no código em 2026-10-14 noite, não corrigidos)
-- Os cinco blocos da auditoria (camada de prédios, refeituras por edição de via, cache de 128 MB,
-  alocações do tráfego, texto JSON por prédio) foram corrigidos: `OTIMIZACAO.md`, "Motor central".
-- Ainda O(mapa) por mudança: transporte (`renderer.ts`, `transitAreaOf` e `buildTransit` por
-  revisão), névoa e ravinas por revisão do terreno, florestas e cobertura reescritas pela lista
-  inteira quando o conjunto mantido muda (`natureTrees.ts` `update`, `buildGroundCover`).
-- `terrain.ts` (19 leituras de revisão), `flatAtlas.ts` (9), `main.ts` (10): ainda por converter.
-- O motor (`core/engine.ts`) tem só os produtos da fase `draw`; os outros derivados ainda se
-  atualizam sozinhos. A trava do ESLint (proibir revisão global fora do motor) não existe ainda.
-- Células de detalhe longe ficam na GPU (ordem do jogador): a memória de vídeo cresce com a área já
-  visitada; falta o teto pelo orçamento da placa (residência), sem refazer o que volta.
-- Pesquisa e propostas: `docs/research/especificacao-externa-cidade-infinita.md`,
-  `docs/PESQUISA-CIDADE-10KM.md`, `docs/CIDADE-10KM.md`, `docs/PLANO-ESPINHA-2026-10-14.md`.
+## Estado e documentos
+- O estado atual, os achados abertos e o índice dos documentos: `docs/ESTADO.md` (o único). Os
+  outros arquivos de `docs/` marcados HISTÓRICO não são lista de trabalho.
+- Não crie relatório, prompt ou plano novo em `docs/`: achado vai para `docs/ESTADO.md`, correção
+  feita para `OTIMIZACAO.md`.
 
 ## Conferir no jogo
 - `node scripts/look.mjs <roteiro.json>` (exemplo `scripts/look/views.json`): Chrome instalado sem

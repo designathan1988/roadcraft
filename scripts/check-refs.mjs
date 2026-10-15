@@ -5,7 +5,7 @@
 // `public/...`) must name a file or folder that exists, with the same case.
 // Scanned: .ts .mjs .cjs .js .md, except node_modules, dist, worktrees,
 // public (assets) and the historical copies of the old game (docs/source,
-// docs/research/source, docs/reference, docs/migration).
+// docs/research/source).
 //
 // What is already broken is listed in `refs.baseline.json` ({"<file>  <path>": count}),
 // which only shrinks: the check fails on a broken path not in it and on an
@@ -23,7 +23,7 @@ const root = rootAt >= 0 ? resolve(process.argv[rootAt + 1]) : process.cwd();
 const BASELINE = join(root, 'refs.baseline.json');
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'worktrees', '.git']);
-const SKIP_PATHS = new Set(['public', 'docs/source', 'docs/research/source', 'docs/reference', 'docs/migration']);
+const SKIP_PATHS = new Set(['public', 'docs/source', 'docs/research/source']);
 const SCANNED = /\.(ts|mjs|cjs|js|md)$/;
 /** A repository path: a known top folder, then path characters, ending on a word character. */
 const PATH = /(?<![\w./@~\\-])((?:src|scripts|tests|docs|memory|\.claude|public)\/[\w./@-]*\w)/g;
