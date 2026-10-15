@@ -6,7 +6,7 @@ import type { SurfaceData, TileMeshes } from './roadTileMesh';
 import type { PassDesc } from './roadSurfaceReads';
 import type { TilePolys } from './roadTileShape';
 
-/** DO NOT wait without a deadline. */
+/** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share (a failure comes as an error). */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { readonly job: TileJob; resolve(tiles: TileMeshes[]): void; reject(error: Error): void }>;
@@ -14,9 +14,11 @@ interface Lane {
   readonly coarsening: Map<number, { resolve(arrays: BlockArrays | null): void; reject(error: Error): void }>;
   /** When the worker last spoke, or was handed a job (`performance.now()`). */
   heard: number;
+  /** Whether this stretch of silence was already said. */
+  told: boolean;
 }
 
-/** Longest a worker with tiles waiting may stay silent (it reports every 500 ms while it works). */
+/** Silence past which a worker with tiles waiting is reported (it beats every 500 ms while it works, when it runs). */
 const SILENCE_MS = 10_000;
 /** Most workers the pool opens. */
 const MOST_LANES = 4;
@@ -35,7 +37,7 @@ export interface TileJob {
 export interface RoadTiler {
   /** Each tile's surfaces, finished, in the order asked; rejected when they cannot be made off the page. */
   tiles(job: TileJob): Promise<Map<string, Tile>[]>;
-  /** Called while waiting: fails the pool if a worker with tiles waiting has been silent too long. */
+  /** Called while waiting: reports a worker with tiles waiting silent too long (queued behind other work or without CPU, still waited for). */
   check(now?: number): void;
   /** A block's far level (`mesh/roadLodPure.ts`) made off the page: `arrays` are handed over */
   coarsen?(arrays: BlockArrays, lock: readonly [number, number, number, number]): Promise<BlockArrays | null>;
@@ -83,10 +85,10 @@ export class RoadTilePool implements RoadTiler {
 
   check(now = performance.now()): void {
     for (const lane of this.lanes ?? []) {
-      if ((lane.waiting.size || lane.coarsening.size) && now - lane.heard > SILENCE_MS) {
-        this.fail(`a road tile worker was silent for ${SILENCE_MS} ms with tiles waiting`);
-        return;
-      }
+      if (lane.told || !(lane.waiting.size || lane.coarsening.size) || now - lane.heard <= SILENCE_MS) continue;
+      // Said once a stretch, and waited for: the page building the tiles itself would stall every frame after it.
+      lane.told = true;
+      console.warn(`[roads] a road tile worker has been silent for ${Math.round(now - lane.heard)} ms with tiles waiting (busy or without CPU); still waiting`);
     }
   }
 
@@ -98,10 +100,11 @@ export class RoadTilePool implements RoadTiler {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('roadTiles', k);
-        const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now() };
+        const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string; coarse?: BlockArrays | null }>) => {
           if (this.lanes !== lanes) return;
           lane.heard = performance.now();
+          lane.told = false;
           const { id, beat, need, tiles, error } = event.data;
           if (beat) return;
           const block = lane.coarsening.get(id);

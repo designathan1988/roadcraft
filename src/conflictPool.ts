@@ -8,11 +8,11 @@ import type { JunctionAnswer, JunctionAsk } from '@world/junctionBuild';
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { resolve(answer: unknown[]): void; reject(error: Error): void }>;
-  /** Fails the pool when the worker stays silent with jobs waiting (`SILENCE_MS`). */
+  /** Reports the worker silent with jobs waiting (`SILENCE_MS`). */
   watchdog: ReturnType<typeof setTimeout> | null;
 }
 
-/** DO NOT wait without a deadline: the topology catch-up yields WAITING until the answer comes */
+/** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share; a failure comes as an error (`onerror`, an `error` answer). */
 export const SILENCE_MS = 10_000;
 
 /** Most workers the pool opens: past four, a city's pairs are done before the copies are. */
@@ -198,11 +198,11 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  /** The lane's silence deadline started again, or stopped when nothing waits on it. */
+  /** The lane's silence report started again, or stopped when nothing waits on it: said, and still waited for (measuring on the page would stall the simulation). */
   private arm(lane: Lane): void {
     if (lane.watchdog !== null) clearTimeout(lane.watchdog);
     lane.watchdog = lane.waiting.size
-      ? setTimeout(() => this.fail(`a conflict worker was silent for ${SILENCE_MS} ms with pairs waiting`), SILENCE_MS)
+      ? setTimeout(() => console.warn(`[traffic] a conflict worker has been silent for ${SILENCE_MS} ms with pairs waiting (busy or without CPU); still waiting`), SILENCE_MS)
       : null;
   }
 

@@ -9,9 +9,11 @@ interface Lane {
   readonly waiting: Map<number, { resolve(answer: Bay[][]): void; reject(error: Error): void }>;
   /** When the worker last spoke, or was handed a job (`performance.now()`). */
   heard: number;
+  /** Whether this stretch of silence was already said. */
+  told: boolean;
 }
 
-/** DO NOT wait without a deadline: a lot waiting on a hung worker kept its old bays for the page's life. */
+/** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share; a failure comes as an error (`onerror`, an `error` answer). */
 const SILENCE_MS = 10_000;
 
 /** Most workers the pool opens. */
@@ -46,10 +48,10 @@ export class BayPool implements BayWorkers {
 
   check(now = performance.now()): void {
     for (const lane of this.lanes ?? []) {
-      if (lane.waiting.size && now - lane.heard > SILENCE_MS) {
-        this.fail(`a bays worker was silent for ${SILENCE_MS} ms with lots waiting`);
-        return;
-      }
+      if (lane.told || !lane.waiting.size || now - lane.heard <= SILENCE_MS) continue;
+      // Said once a stretch, and waited for: the page working the lots out itself would stall it.
+      lane.told = true;
+      console.warn(`[parking] a bays worker has been silent for ${Math.round(now - lane.heard)} ms with lots waiting (busy or without CPU); still waiting`);
     }
   }
 
@@ -61,11 +63,12 @@ export class BayPool implements BayWorkers {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('bays', k);
-        const lane: Lane = { worker, waiting: new Map(), heard: performance.now() };
+        const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string }>) => {
           if (this.lanes !== lanes) return;
           // Any word from the worker, a beat or an answer: it is alive.
           lane.heard = performance.now();
+          lane.told = false;
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (!job) return;
           lane.waiting.delete(event.data.id);
