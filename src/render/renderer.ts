@@ -744,6 +744,9 @@ export function createSceneRenderer(
   let storedRead = tilesPrefix === null;
   /** What the store holds now, by `storedKey`. */
   const storedKeys = new Set<string>();
+  /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
+  const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
+    ? new Worker(new URL('./derivedWriter.worker.ts', import.meta.url), { type: 'module' }) : null;
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
@@ -760,7 +763,15 @@ export function createSceneRenderer(
     keep: (key, bundle) => {
       if (!tilesPrefix || storedKeys.has(key)) return;
       storedKeys.add(key);
-      writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
+      // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are
+      // merged (`SurfaceReuse.keep`). Without workers, written here as before.
+      if (tileWriter) {
+        const buffers: ArrayBuffer[] = [];
+        for (const tile of bundle.values()) {
+          for (const a of [tile.positions, tile.normals, tile.uvs, tile.colors, tile.sections, tile.indices]) buffers.push(a.buffer as ArrayBuffer);
+        }
+        tileWriter.postMessage({ prefix: tilesPrefix, entries: [[key, bundle]] }, buffers);
+      } else writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
     },
   };
   if (tilesPrefix && ROAD_TILES_HASH) {
@@ -3411,6 +3422,7 @@ export function createSceneRenderer(
     },
     dispose() {
       roadTiles.dispose();
+      tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the
       // previews and the effects too (they were left out, and a renderer
       // made again - a map opened, the tier changed - left them all behind).

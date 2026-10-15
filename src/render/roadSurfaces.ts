@@ -175,7 +175,10 @@ export interface SurfaceReuse {
    * built from, so a kept tile is the tile a build would make.
    */
   readonly stored?: Map<string, TileBundle>;
-  /** Each tile built afresh, to be kept for a later session. */
+  /**
+   * Each tile built afresh, to be kept for a later session: called once its blocks are merged, when
+   * nothing of the build reads its arrays any more - the keeper may take them (transfer them).
+   */
   readonly keep?: (key: string, bundle: TileBundle) => void;
 }
 
@@ -1025,10 +1028,12 @@ export function* roadSurfaceSteps(
         }
       }
     };
+    /** The tiles built afresh this pass: kept for a later session once merged (below). */
+    const fresh: PassTile[] = [];
     yield* buildAll(tiles.filter((t) => t.surfaces === null), (tile) => {
       built++;
       rebuilt.push(tile.rect);
-      reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle!);
+      fresh.push(tile);
     });
     for (const tile of tiles) kept.set(tile.value, tile.surfaces!);
     reuse?.tiles.set(pass.id, kept);
@@ -1099,6 +1104,9 @@ export function* roadSurfaceSteps(
     }
     // The tiles' arrays go with `tiles` here: copied into the blocks, which send them to the GPU.
     mergeMs += performance.now() - mergeAt;
+    // Kept for a later session only now, every block merged: nothing here reads a tile's arrays after
+    // this, so the keeper may hand them to another thread instead of copying them (`renderer.ts` keep).
+    for (const tile of fresh) reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle!);
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
