@@ -1,6 +1,5 @@
 import { type FrameTimer, type HealthEntry, type HealthLog, LONG_FRAME_MS, systemsOf } from '@core/health';
 import { stepBudget } from '@core/perfBudget';
-import { t } from './i18n';
 
 /**
  * The page's own signals wired into the game's health log (`core/health.ts`):
@@ -109,11 +108,11 @@ export function watchHealth(options: {
   let workerError: { message: string; at: number } | null = null;
   window.addEventListener('error', (event) => {
     if (workerError && workerError.message === event.message && performance.now() - workerError.at < 1000) return;
-    write('error', 'broken', event.message || t('health.msg.noMessage'), (event.error as Error | undefined)?.stack ?? `${event.filename}:${event.lineno}:${event.colno}`);
+    write('error', 'broken', event.message || 'Erro sem mensagem', (event.error as Error | undefined)?.stack ?? `${event.filename}:${event.lineno}:${event.colno}`);
   });
   window.addEventListener('unhandledrejection', (event) => {
     const reason: unknown = event.reason;
-    write('rejection', 'broken', reason instanceof Error ? `${reason.name}: ${reason.message}` : t('health.msg.rejected', { reason: safeJSON(reason) }), reason instanceof Error ? reason.stack : undefined);
+    write('rejection', 'broken', reason instanceof Error ? `${reason.name}: ${reason.message}` : `Promessa rejeitada: ${safeJSON(reason)}`, reason instanceof Error ? reason.stack : undefined);
   });
 
   const consoleError = console.error.bind(console);
@@ -136,15 +135,15 @@ export function watchHealth(options: {
       const name = String(url).split('/').pop()?.split('?')[0] ?? 'worker';
       this.addEventListener('error', (event) => {
         workerError = { message: event.message, at: performance.now() };
-        write('worker', 'broken', event.message ? t('health.msg.worker', { name, message: event.message }) : t('health.msg.workerFailed', { name }), `${event.filename}:${event.lineno}:${event.colno}`);
+        write('worker', 'broken', `Worker ${name}: ${event.message || 'falhou'}`, `${event.filename}:${event.lineno}:${event.colno}`);
       });
-      this.addEventListener('messageerror', () => write('worker', 'broken', t('health.msg.workerUnreadable', { name })));
+      this.addEventListener('messageerror', () => write('worker', 'broken', `Worker ${name}: mensagem ilegível`));
     }
   }
   window.Worker = WatchedWorker;
 
-  canvas.addEventListener('webglcontextlost', () => write('webgl', 'broken', t('health.msg.contextLost')));
-  canvas.addEventListener('webglcontextrestored', () => write('webgl', 'warning', t('health.msg.contextRestored')));
+  canvas.addEventListener('webglcontextlost', () => write('webgl', 'broken', 'Contexto WebGL perdido: nada é desenhado até ele voltar'));
+  canvas.addEventListener('webglcontextrestored', () => write('webgl', 'warning', 'Contexto WebGL restaurado'));
 
   // The code's own measured steps (`performance.measure('hitch:...')`), kept to explain a long frame.
   const hitches: { name: string; start: number; end: number }[] = [];
@@ -168,7 +167,7 @@ export function watchHealth(options: {
         // seen while playing, not found later.
         const over = stepBudget(m.name);
         if (over && m.duration > over.budget.max) {
-          log.record('budget', 'warning', t('health.msg.budget', { step: over.key }), {
+          log.record('budget', 'warning', `Orçamento de desempenho estourado: ${over.key}`, {
             ms: Math.round(m.duration), detail: `${Math.round(m.duration)} ms > ${over.budget.max} ms — ${over.budget.why}`,
           });
         }
@@ -182,10 +181,10 @@ export function watchHealth(options: {
       .sort((a, b) => (b.end - b.start) - (a.end - a.start)).slice(0, 5)
       .map((h) => `${h.name} ${Math.round(h.end - h.start)} ms`);
     const top = systems[0];
-    const message = top ? t('health.msg.longFrame', { what: top[0] }) : steps[0] ? t('health.msg.longFrame', { what: steps[0].replace(/ \d+ ms$/, '') }) : t('health.msg.longFrameOutside');
+    const message = top ? `Quadro longo: ${top[0]}` : steps[0] ? `Quadro longo: ${steps[0].replace(/ \d+ ms$/, '')}` : 'Quadro longo fora do laço do jogo';
     let where = '';
     try { where = context(); } catch { /* without it */ }
-    const detail = [...(steps.length ? [`${t('health.msg.steps')}: ${steps.join(' · ')}`] : []), ...(scripts.length ? [`scripts: ${scripts.join(' · ')}`] : [])].join('\n');
+    const detail = [...(steps.length ? [`etapas: ${steps.join(' · ')}`] : []), ...(scripts.length ? [`scripts: ${scripts.join(' · ')}`] : [])].join('\n');
     log.record('slow-frame', 'slow', message, {
       ms: Math.round(work), systems, ...(detail ? { detail } : {}), ...(where ? { context: where } : {}),
     });
