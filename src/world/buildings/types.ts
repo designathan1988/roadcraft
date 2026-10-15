@@ -1,3 +1,4 @@
+import { internMembers } from './intern';
 import { m } from '../units';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingMaterials, MaterialSpec, VolumeMaterials } from './materials';
@@ -379,6 +380,8 @@ export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>,
     if (old !== undefined && typeof value === 'object' && value !== null && old[key] === value) continue;
     settleMember(record, key, value);
   }
+  // What it has alike with other buildings shared with them (`intern.ts`): a storey, a facade, a material once for the city.
+  internMembers(record);
   settled.add(b);
   return b;
 }

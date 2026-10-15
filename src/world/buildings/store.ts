@@ -1,3 +1,4 @@
+import { internMembers } from './intern';
 import { RecordMap } from '@core/recordMap';
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
@@ -211,6 +212,7 @@ export class BuildingStore {
     for (const raw of data ?? []) {
       const building = migrateBuilding(raw);
       if (!building || this.items.has(building.id)) continue;
+      internMembers(building as unknown as Record<string, unknown>);
       this.items.set(building.id, building);
       this.ids.reserve(building.id);
     }
