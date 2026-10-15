@@ -1851,6 +1851,15 @@ export function createSceneRenderer(
         buildUtilities(warmNet, poleGroundAt(warmElevation, flat), sceneryKit),
       ];
       for (const part of parts) group.add(part.group);
+      // And the street furniture's, the long grass's and the signs' meshes as their layers draw them, with
+      // their shadows (`warm`): made when their first thing stands, their programs were linked in that frame.
+      const placedShadows = new Group();
+      for (const mesh of [...furniture.warm(), ...signs.warm()]) {
+        group.add(mesh);
+        const standIn = shadowStandIn(mesh);
+        if (standIn) placedShadows.add(standIn);
+      }
+      void compileAhead(placedShadows, true).then(() => placedShadows.clear());
       void compileAhead(group).then(() => {
         for (const part of parts) part.dispose();
       });

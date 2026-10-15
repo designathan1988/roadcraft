@@ -13,7 +13,7 @@ import { FOOTWAY_RISE } from '@world/roadTypes';
 import { furnitureOf } from '@world/streetFurniture';
 import { m } from '@world/units';
 import { CLUMP_READ_REACH, grassClump, type Tuft } from './grass';
-import { RunBuilder, createInstanceRuns, sameRun, type Run, type RunStore } from './instanceRuns';
+import { RunBuilder, createInstanceRuns, sameRun, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
 import { LAMP_BEAM_RADIUS, LAMP_HEIGHT, LAMP_OUTREACH, LAMP_POOL_RADIUS, POOL_ALONG, SHADOW_REACH, foliageTint, type SceneryKit } from './scenery';
 
@@ -259,6 +259,16 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
       for (const id of this.allKeys(source)) out.add(id);
       return;
     }
+    // The landscaping's entry names its items (`RoadDoc.addLandscapeMany`), and an item reads only its own
+    // record of the landscaping: those, and none round them. DO NOT look round each of an entry's
+    // rectangles: a generated city's one entry of 11,000 items asked the cells round every one of them.
+    if (change.kind === 'landscape' && change.ids) {
+      for (const id of change.ids) {
+        const item = source.net.doc.landscape.get(id);
+        if (!item || this.wanted(item)) out.add(id);
+      }
+      return;
+    }
     const pad = this.pads[change.kind] ?? 0;
     for (const rect of change.rects) {
       const area: ChangeRect = grow(rect, pad);
@@ -337,6 +347,13 @@ export interface StreetFurnitureLayer {
   /** Brings the furniture and the long grass up to the diary (and the hour); the items computed (the engine's ledger, `core/engine.ts`). */
   sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): number;
   setMap(map: boolean): void;
+  /**
+   * A mesh of each of its stores, as it draws them, for its programs to be
+   * compiled before the first thing of a store stands (`uploads.ts`
+   * compileAhead): the meshes are made only when a thing comes, and the first
+   * frame of a generated city's furniture linked their programs.
+   */
+  warm(): InstancedMesh[];
   cull(frustum: Frustum, view: Matrix4): void;
   dispose(): void;
 }
@@ -349,7 +366,8 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
   const { stores } = furnitureStores(kit);
   const furniture = createInstanceRuns('street-furniture', stores, SHADOW_REACH);
   // The grass throws no shadow: only what the view itself takes.
-  const meadow = createInstanceRuns('grass', MEADOW_STORES(kit), 0);
+  const meadowStores = MEADOW_STORES(kit);
+  const meadow = createInstanceRuns('grass', meadowStores, 0);
   const places = furnitureProduct(kit);
   const clumps = meadowProduct(kit);
   /** Each item's run as drawn, and the growth it was sized at. */
@@ -423,6 +441,9 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
     },
     setMap(map) {
       furniture.setMap(map);
+    },
+    warm() {
+      return warmMeshes([...stores, ...meadowStores]);
     },
     cull(frustum, view) {
       furniture.cull(frustum, view);

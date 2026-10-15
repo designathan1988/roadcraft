@@ -191,6 +191,46 @@ const ALL_PLANES = 0b111111;
 const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
 
 /**
+ * A store's mesh of `capacity` slots, none drawn: as the layer draws it - its
+ * program's variant (instanced, with instance colours or not) and its shadow's
+ * depth material. What compiles a layer's programs ahead makes its meshes here
+ * (`warmMeshes`), so they are the variants the layer draws.
+ */
+export function runMesh(spec: RunStore, capacity: number): InstancedMesh {
+  const mesh = new InstancedMesh(spec.geometry, spec.material, capacity);
+  mesh.name = spec.name;
+  mesh.castShadow = spec.castShadow;
+  mesh.receiveShadow = spec.receiveShadow;
+  if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
+  // Culled per slot (`cull`): a sphere round the whole map rejects nothing.
+  mesh.frustumCulled = false;
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  // The shadow pass bends with the wind too.
+  if (spec.depth) mesh.customDepthMaterial = spec.depth;
+  if (spec.tinted) {
+    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+    mesh.instanceColor.setUsage(DynamicDrawUsage);
+  }
+  mesh.count = 0;
+  return mesh;
+}
+
+/**
+ * Meshes of each of these stores, one slot each, as the layer draws them: what
+ * compiles the layer's programs ahead (`uploads.ts` compileAhead) is handed
+ * these. A store's mesh was made the first time a thing of it came, and its
+ * program built in the frame it was first drawn (`getProgramInfoLog`, 377 ms
+ * in the frame a generated city's furniture stood, 2026-10-15).
+ */
+export function warmMeshes(specs: readonly RunStore[]): InstancedMesh[] {
+  return specs.map((spec) => {
+    const mesh = runMesh(spec, 1);
+    mesh.count = 1;
+    return mesh;
+  });
+}
+
+/**
  * The layer over these stores. `margin`: how far outside the view an
  * instance is still drawn (the longest shadow it throws into the picture).
  */
@@ -269,25 +309,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
     for (let i = 0; i < s.used; i++) if (s.spheres[i * 4 + 3] !== -Infinity) file(s, i);
   };
 
-  const newMesh = (s: Store): InstancedMesh => {
-    const { spec } = s;
-    const mesh = new InstancedMesh(spec.geometry, spec.material, s.capacity);
-    mesh.name = spec.name;
-    mesh.castShadow = spec.castShadow;
-    mesh.receiveShadow = spec.receiveShadow;
-    if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
-    // Culled per slot (`cull`): a sphere round the whole map rejects nothing.
-    mesh.frustumCulled = false;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    // The shadow pass bends with the wind too.
-    if (spec.depth) mesh.customDepthMaterial = spec.depth;
-    if (spec.tinted) {
-      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(s.capacity * 3).fill(1), 3);
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
-    }
-    mesh.count = 0;
-    return mesh;
-  };
+  const newMesh = (s: Store): InstancedMesh => runMesh(s.spec, s.capacity);
   /** The store's arrays sized for `capacity`; packed (`pack`), its live runs from slot 0 in the order they stood. */
   const repack = (s: Store, capacity: number, pack: boolean): void => {
     const matrices = new Float32Array(capacity * 16), colours = new Float32Array(s.spec.tinted ? capacity * 3 : 0).fill(1);
