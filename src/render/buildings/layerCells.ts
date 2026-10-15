@@ -55,8 +55,6 @@ export const LOADING_COUNT = 100;
  * the browser's limit and the collector stalled the game (2026-10-14).
  */
 export const CHUNK_CACHE_BYTES = 128 * 1024 * 1024;
-/** Cells landed into the scene at most in one frame (`landCells`, `layer.ts`). */
-export const STREAM_CELLS_PER_FRAME = 4;
 /** Cells asked of the workers at once while the eye streams the town in (`landCells`, `layer.ts`), nearest first. */
 export const STREAM_AHEAD = 8;
 /** Side of the cells the buildings are batched in, world units. */

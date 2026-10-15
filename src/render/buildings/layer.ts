@@ -10,7 +10,7 @@ import { CellFiling } from '@world/cells';
 import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells, watchedCells,
-  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, STREAM_AHEAD, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
+  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, STREAM_AHEAD, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { drawsSignature } from './signature';
@@ -457,7 +457,6 @@ export function createBuildingLayer(): BuildingLayer {
       };
       order.sort((a, b) => away(a) - away(b));
     }
-    let landed = 0;
     for (const cell of order) {
       if (!cellNear(cell)) {
         patchCell(cell, null, shownAt());
@@ -486,14 +485,15 @@ export function createBuildingLayer(): BuildingLayer {
         done = false;
         if (!requests.isAsked(kind, cell) && requests.asking >= STREAM_AHEAD) continue;
         const got = requests.want(kind, cell, entries, env, true);
-        if (!got || landed >= STREAM_CELLS_PER_FRAME) continue;
+        // On the GPU already (`warmLooseAhead`): taken the frame it is ready. DO NOT hold ready cells
+        // back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
+        if (!got) continue;
         requests.take(kind, cell);
         if (kind === 'cell') show(cell, got);
         else {
           dropCell(cache, cell, faded);
           if (got.batch) { cache.set(cell, { entries, part: got.batch }); faded?.group.add(got.batch.group); }
         }
-        landed++;
         changed = true;
       }
       if (done) pendingCells.delete(cell);
