@@ -2,7 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import { lotCentre } from './lotRings';
 import type { ChangeRect } from './changes';
 import type { JournalCursor } from './derived';
-import type { Lot } from './lots';
+import type { Lot } from './lotRecord';
 import { LotStore } from './lotStore';
 import { m } from './units';
 

@@ -6,11 +6,10 @@ import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
 import { union, type MultiPoly } from '@core/clipper';
 import { EndType, FillRule, JoinType, inflatePathsD, unionD, type PathsD } from 'clipper2-ts';
-import type { SegmentId } from './ids';
+import type { NodeId, SegmentId } from './ids';
 import { m, stepsIn } from './units';
-import type { Network } from './network';
 import { Level, type SurfaceLevel } from './roadTypes';
-import { levelRingsOf } from './surfaces';
+import { type SurfaceNet, type SurfaceRibbon, levelRingsOf } from './surfaces';
 import type { ChangeRect } from './changes';
 import type { RoadStructure } from './structures';
 
@@ -78,6 +77,17 @@ export function cornerPath(p0: Vec2, d0: Vec2, p1: Vec2, d1: Vec2, radius: numbe
 }
 
 /**
+ * What the walking lines read of the network (`Network`): the surfaces' reads
+ * and the pieces filed in a box. DO NOT import `network.ts` here: it reaches
+ * `walkways.ts`, which imports this file, and the type import closed an import
+ * cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface WalkingNet extends SurfaceNet {
+  readonly junctionCells: { idsMeeting(rect: ChangeRect): readonly NodeId[] };
+  ribbonsMeeting(rect: ChangeRect): Iterable<SurfaceRibbon>;
+}
+
+/**
  * The walking lines round one node, at one inset on one deck: the outline of
  * everything a kerb bounds (carriageway and kerb stone, as drawn), grown by
  * the inset. Each closed contour runs at exactly that distance from the
@@ -103,7 +113,7 @@ export class LocalLines {
   private readonly edges = new Map<string, Polyline[]>();
   private readonly pavings = new Map<string, MultiPoly>();
   /** `deckOf`: the deck a road's footways belong to (`walkways.ts`). */
-  constructor(private readonly net: Network, private readonly rect: ChangeRect, private readonly deckOf: (id: SegmentId) => RoadStructure) {}
+  constructor(private readonly net: WalkingNet, private readonly rect: ChangeRect, private readonly deckOf: (id: SegmentId) => RoadStructure) {}
 
   /** The merged rings of a level on one deck, of the pieces in the box. */
   private polygons(level: SurfaceLevel, deck: RoadStructure): MultiPoly {

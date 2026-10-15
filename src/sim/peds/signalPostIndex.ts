@@ -1,7 +1,22 @@
+import type { RoadDoc } from '@world/doc';
 import type { NodeId } from '@world/ids';
+import type { LaneletGraph } from '@world/lanelets';
+import type { Network } from '@world/network';
 import { type SignalPost, signalPostPlace, signalPosts } from '@world/signalPosts';
 import { m } from '@world/units';
-import type { SimWorld } from '../world';
+
+/**
+ * What the index reads of the world (`SimWorld`): the roads, the lane graph's
+ * junctions and the junctions' control changes. DO NOT import `SimWorld`:
+ * `sim/world.ts` imports this file, and the type import closed an import
+ * cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface SignalPostWorld {
+  readonly doc: RoadDoc;
+  readonly net: Network;
+  readonly graph: LaneletGraph;
+  signalChangesSince(serial: number): { readonly serial: number; readonly nodes: readonly NodeId[] | null };
+}
 
 /** Cell of the posts' grid, world units: a walker's look ahead (`walk.ts` LOOK). */
 const POST_CELL = m(8);
@@ -37,7 +52,7 @@ export class SignalPostIndex {
   }
 
   /** Brought up to the junctions' controls now. */
-  follow(w: SimWorld): void {
+  follow(w: SignalPostWorld): void {
     const { serial, nodes } = w.signalChangesSince(this.serial);
     if (serial === this.serial && nodes !== null) return;
     this.serial = serial;
@@ -59,7 +74,7 @@ export class SignalPostIndex {
    * DO NOT ask `signalPosts` for them: its whole-map pass is in the same
    * function as the pass round a point.
    */
-  private placeJunction(w: SimWorld, node: NodeId): void {
+  private placeJunction(w: SignalPostWorld, node: NodeId): void {
     const junction = w.graph.junctions.get(node);
     const record = w.doc.node(node);
     if (!junction?.signalised || !record) return;
@@ -71,7 +86,7 @@ export class SignalPostIndex {
   }
 
   /** @rebuild Every post of the map placed: the junctions were rebuilt (an edit of the roads, a new map). */
-  private placeAll(w: SimWorld): void {
+  private placeAll(w: SignalPostWorld): void {
     for (const post of signalPosts(w.net, w.graph)) this.file(post);
   }
 

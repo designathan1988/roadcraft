@@ -1,7 +1,14 @@
 import { kmh, m } from './units';
 import { PARKING_DEPTH, parkingAllowed, type ParkingKind, type SegmentParking } from './parking';
-import type { SegmentDirection } from './doc';
 import type { CentreLine, RoadSection, LaneLine, LaneTurnRule, LaneUse, SectionMaterials } from './roadSection';
+
+/**
+ * Legal driving directions, relative to the stored `a -> b` orientation
+ * (`RoadSegment.direction`; `doc.ts` re-exports it). Here, not in `doc.ts`:
+ * the document imports this file, and the type import from it closed an
+ * import cycle (`tests/arch/imports.spec.ts`).
+ */
+export type SegmentDirection = 'both' | 'aToB' | 'bToA';
 
 /**
  * Surface levels, in painting order.

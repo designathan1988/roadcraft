@@ -37,7 +37,7 @@ import { DEFAULT_GULLY_AUTO, MAX_GULLY_DABS, readGullyDab, type GullyDab } from 
 import { DEFAULT_FOG, MAX_FOG_DABS, readFogDab, readFogSettings, type FogDab, type FogSettings } from './fogPaint';
 import { isNatureSettings, type NatureSettings } from './ecology';
 import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './transit';
-import { casingHalf, roadProfile } from './roadTypes';
+import { type SegmentDirection, casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
 import type { SerializedBuilding } from './buildings/serialize';
 import type { Building, BuildingId } from './buildings/types';
@@ -58,8 +58,8 @@ export function fitRoadCurve(
   return fitShapeToRadius(a, b, shape, casingHalf(roadProfile(type, lanes, direction, section, parking)));
 }
 
-/** Legal driving directions, relative to the stored `a -> b` orientation. */
-export type SegmentDirection = 'both' | 'aToB' | 'bToA';
+/** Legal driving directions, relative to the stored `a -> b` orientation (`roadTypes.ts`). */
+export type { SegmentDirection };
 
 /** Explicit junction policy. `auto` retains the class-based default policy. */
 /** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
