@@ -526,7 +526,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 7
+      "count": 6
     }
   },
   "src/sim/intersections/cycles.ts": {
@@ -565,11 +565,6 @@
     }
   },
   "src/sim/vehicles/integrate.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/sim/vehicles/kerbStops.ts": {
     "roadcraft/no-module-state": {
       "count": 1
     }
