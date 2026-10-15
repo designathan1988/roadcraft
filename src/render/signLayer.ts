@@ -40,12 +40,12 @@ interface Stand {
 }
 
 /** A key's signs and the ground they read: a change there stands them again. */
-interface SignValue {
+export interface SignValue {
   readonly stands: readonly Stand[];
   readonly reads: ChangeRect;
 }
 
-interface SignSource {
+export interface SignSource {
   readonly changes: ChangeJournal;
   readonly net: Network;
   readonly elevation: RoadElevation;
@@ -76,7 +76,12 @@ const itemKey = (id: number): number => id * 2 + 1;
 /** The signs as a product of the diary, key by key: a junction's (`nodeKey`), a placed sign's or a street name's (`itemKey`). */
 class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
   readonly name = 'signs';
-  readonly kinds: readonly ChangeKind[] = ['roads', 'terrain', 'landscape', 'elevation'];
+  /**
+   * `markingStyle`: the regional standard decides which plates a junction puts up (`signsAtNode`), and
+   * it is written as a kind of its own, never as `roads`. DO NOT leave it out: the plates of the old
+   * standard stood after the style changed.
+   */
+  readonly kinds: readonly ChangeKind[] = ['roads', 'terrain', 'landscape', 'elevation', 'markingStyle'];
   readonly byId = false;
   /** Each key holding signs, by the ground it reads. */
   private readonly filing = new CellFiling<number, SignValue>();
@@ -96,6 +101,25 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
       return;
     }
     const { net } = source;
+    // A junction's plates read its roads and their heights (`signsAtNode`), never the landscaping: a
+    // bench, a lamp or a street's name placed changes no junction's plates. DO NOT stand the junctions
+    // round a landscaping entry again: a generated city's 11,000 pieces of furniture stood every
+    // junction of the city again.
+    if (change.kind === 'landscape') {
+      // The entry names its items (`RoadDoc.addLandscapeMany`): those, an item's plates reading only its own record.
+      if (change.ids) {
+        for (const id of change.ids) {
+          const item = net.doc.landscape.get(id);
+          if (!item || isSignItem(item)) out.add(itemKey(id));
+        }
+        return;
+      }
+      for (const rect of change.rects) {
+        for (const key of this.filing.idsMeeting(rect)) if (key % 2 === 1) out.add(key);
+        for (const item of net.doc.landscapeIn(grow(rect, ITEM_READS))) if (isSignItem(item)) out.add(itemKey(item.id));
+      }
+      return;
+    }
     for (const rect of change.rects) {
       // What stands already and reads this ground.
       for (const key of this.filing.idsMeeting(rect)) out.add(key);
@@ -125,6 +149,11 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
     if (after === undefined) this.filing.remove(key);
     else this.filing.file(key, after, after.reads);
   }
+}
+
+/** The signs' product, made from nothing at its first refresh. */
+export function signProduct(): Derived<SignSource, number, SignValue> {
+  return new Derived(new SignProduct());
 }
 
 /** A junction's signs (`signsAtNode`), reading its segments' ground. */
@@ -241,7 +270,7 @@ export function createSignLayer(): SignLayerKept {
       stores.delete(sheet);
     },
   });
-  const product = new Derived(new SignProduct());
+  const product = signProduct();
   const standing = new Map<number, Standing>();
   // Scratch, one for the layer (never one per post or per plate).
   const matrix = new Matrix4(), corner = new Vector3(), scale = new Vector3();
