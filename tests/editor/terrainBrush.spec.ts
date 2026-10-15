@@ -43,16 +43,17 @@ describe('the terrain brush', () => {
   });
 
   it('flattens to the height the stroke started at, and keeps levelling while held still', () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const { brush: b, doc } = brush('flatten');
     b.begin(1, { x: 0, y: 0 });
     const first = doc.terrainStamps.length;
-    vi.advanceTimersByTime(500);
+    // Held still: the frames level on (`TerrainBrush.tick`, run by the frame loop), half a second of them.
+    const start = performance.now();
+    for (let t = 16; t <= 500; t += 16) expect(b.tick(start + t)).toBe(true);
     expect(doc.terrainStamps.length).toBeGreaterThan(first);
     expect(doc.terrainStamps.every((s) => s.level === 7)).toBe(true);
     b.end();
     const held = doc.terrainStamps.length;
-    vi.advanceTimersByTime(500);
+    for (let t = 516; t <= 1000; t += 16) expect(b.tick(start + t)).toBe(false);
     expect(doc.terrainStamps.length).toBe(held);
   });
 

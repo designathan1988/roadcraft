@@ -400,9 +400,13 @@ export class RoadTool {
     const key = road ? this.draftKey(road) : null;
     if (key !== this.judged.key) {
       this.judged = { key, reason: null, cost: null, stations: null };
-      if (this.judgeTimer !== null) clearTimeout(this.judgeTimer);
-      this.judgeTimer = null;
-      if (key !== null) this.judgeTimer = setTimeout(() => this.judge(key), VERDICT_DELAY);
+      this.judgeAt = key === null ? null : performance.now() + VERDICT_DELAY;
+    }
+    // Judged in the first frame after it rested, frames asked for until then: DO NOT go back to a
+    // timer of its own, which judged between frames, in the middle of whatever the page was doing.
+    if (this.judgeAt !== null && key !== null) {
+      if (performance.now() >= this.judgeAt) { this.judgeAt = null; this.judge(key); }
+      else this.host.redraw();
     }
     return this.judged.reason;
   }
@@ -430,7 +434,8 @@ export class RoadTool {
     this.verdict();
     return this.judged.cost;
   }
-  private judgeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the draft in hand will have rested long enough to be judged (`verdict`); null: nothing waiting. */
+  private judgeAt: number | null = null;
 
   private draftKey(d: RoadDraft): string {
     const s = this.host.settings();
@@ -440,7 +445,6 @@ export class RoadTool {
   }
 
   private judge(key: string): void {
-    this.judgeTimer = null;
     const road = this.draft ?? this.chainPreview;
     if (!road || this.draftKey(road) !== key) return;
     const { host } = this;
