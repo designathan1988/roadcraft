@@ -4368,7 +4368,7 @@ ${JSON.stringify(counts)}`;
     const c = countMemory(scene.scene);
     const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
     return {
-      geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes),
+      geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes), targetMB: mb(scene.targetBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
       buffers: c.buffers, textures: c.textures,
@@ -4393,6 +4393,7 @@ ${JSON.stringify(counts)}`;
       fps: scene.stats.fps,
       bytesByName: c.bytesByName,
       textureBytes: c.textureBytes,
+      targetBytes: scene.targetBytes(),
       geometryCpuBytes: c.geometryCpuBytes,
       heapBytes: (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null,
     });

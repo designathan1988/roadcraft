@@ -16,7 +16,7 @@ import type { Archetype } from '@sim/vehicles/archetypes';
 import type { SimWorld } from '@sim/world';
 import { takeWounds } from '@sim/people/casualties';
 import { impactCasualties } from '@sim/people/casualties';
-import { vehiclePose } from '@sim/pose';
+import { newPose, vehiclePoseInto } from '@sim/pose';
 import { solidsOf } from '@world/solids';
 import { floorHeight } from '@world/buildings/foundation';
 import { roofHeightAt, roofRise, volumeCorners, volumeElevation, worldToLocal } from '@world/buildings/geometry';
@@ -241,6 +241,31 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     ragdollGround.set(key, h);
     return h;
   };
+  /** A vehicle as a body sees it: where it stands and the box it fills. */
+  interface VehicleBox { x: number; y: number; angle: number; hl: number; hw: number; height: number }
+  /**
+   * Every vehicle's box at one tick of one world: made once for all the bodies born in it (a blast
+   * throws dozens at once), not for each body. DO NOT walk and pose the whole fleet for every body
+   * that falls: ~700-1,200 vehicles a body, a hundred thousand objects in the frame of a blast.
+   */
+  const vehicleBoxes = { sim: null as SimWorld | null, tick: -1, list: [] as VehicleBox[] };
+  const poseScratch = newPose();
+  const boxesAtThisTick = (sim: SimWorld): readonly VehicleBox[] => {
+    if (vehicleBoxes.sim === sim && vehicleBoxes.tick === sim.clock.tick) return vehicleBoxes.list;
+    const list: VehicleBox[] = [];
+    for (const v of sim.vehiclesInIdOrder()) {
+      if (!vehiclePoseInto(sim, v, 1, poseScratch)) continue;
+      list.push({ x: poseScratch.p.x, y: poseScratch.p.y, angle: poseScratch.angle, hl: v.archetype.length / 2, hw: v.archetype.width / 2, height: v.archetype.height });
+    }
+    for (const v of sim.ambient.parked) {
+      if (!v.free) continue;
+      list.push({ x: v.free.x, y: v.free.y, angle: v.free.angle, hl: v.archetype.length / 2, hw: v.archetype.width / 2, height: v.archetype.height });
+    }
+    vehicleBoxes.sim = sim;
+    vehicleBoxes.tick = sim.clock.tick;
+    vehicleBoxes.list = list;
+    return list;
+  };
   const ragdollWorld: RagdollWorld = {
     groundAt(x, y) {
       // Between the heights at the corners of its cell, as a physics
@@ -304,15 +329,13 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
         }
       }
       // The traffic, and the cars parked off the road.
-      const standing = [...(ragdollSim?.ambient.parked ?? [])]
-        .filter((v) => v.free).map((v) => ({ v, pose: { p: { x: v.free!.x, y: v.free!.y }, angle: v.free!.angle } }));
-      const moving = [...(ragdollSim?.vehicles.values() ?? [])].map((v) => ({ v, pose: vehiclePose(ragdollSim!, v, 1) }));
-      for (const { v, pose } of [...moving, ...standing]) {
-        if (!pose || Math.hypot(pose.p.x - x, pose.p.y - y) > reach) continue;
-        const a = v.archetype, c = Math.cos(pose.angle), sn = Math.sin(pose.angle);
-        const hl = a.length / 2, hw = a.width / 2;
-        const ring = [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([u, w]) => ({ x: pose.p.x + c * u! - sn * w!, y: pose.p.y + sn * u! + c * w! }));
-        out.push({ ring, top: ragdollWorld.groundAt(pose.p.x, pose.p.y) + a.height * 0.85 });
+      if (ragdollSim) {
+        for (const v of boxesAtThisTick(ragdollSim)) {
+          if (Math.hypot(v.x - x, v.y - y) > reach) continue;
+          const c = Math.cos(v.angle), sn = Math.sin(v.angle);
+          const ring = [[v.hl, v.hw], [v.hl, -v.hw], [-v.hl, -v.hw], [-v.hl, v.hw]].map(([u, w]) => ({ x: v.x + c * u! - sn * w!, y: v.y + sn * u! + c * w! }));
+          out.push({ ring, top: ragdollWorld.groundAt(v.x, v.y) + v.height * 0.85 });
+        }
       }
       return out.filter((w) => w.ring.length >= 3);
     },

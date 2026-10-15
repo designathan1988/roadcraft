@@ -54,6 +54,8 @@ export interface PostChain {
   readonly enabled: boolean;
   /** What the scene is drawn into (null: the screen): shaders are compiled ahead for it. */
   readonly target: WebGLRenderTarget | null;
+  /** Every render target the chain holds (the scene's, the composer's two, the masks, the clouds'), for the video memory count (`targetBytes.ts`). */
+  targets(): readonly WebGLRenderTarget[];
   render(delta: number): void;
   setSize(width: number, height: number, pixelRatio: number): void;
   /**
@@ -125,6 +127,7 @@ export function createPostChain(
     return {
       enabled: false,
       target: null,
+      targets: () => [],
       render() {
         renderer.render(scene, camera);
       },
@@ -516,6 +519,7 @@ export function createPostChain(
   return {
     enabled: true,
     target: sceneTarget,
+    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget],
     render(delta) {
       if (clouds) {
         camera.updateMatrixWorld();

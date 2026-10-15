@@ -151,6 +151,8 @@ export interface CityMeasure {
   /** GPU geometry bytes by object name (`render/memoryCounters.ts`). */
   readonly bytesByName: ReadonlyMap<string, number>;
   readonly textureBytes: number;
+  /** The render targets and shadow maps (`render/targetBytes.ts`, an estimate); null where they are not counted. */
+  readonly targetBytes?: number | null;
   /** Geometry still held by JavaScript arrays: exact, part of the heap. */
   readonly geometryCpuBytes: number;
   /** Chromium's `performance.memory.usedJSHeapSize`: V8 heap PLUS external memory (the arrays), bucketed; null elsewhere. */
@@ -193,7 +195,7 @@ export function cityBudgetTable(m: CityMeasure): BudgetRow[] {
   }
   for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) cap(`memória de vídeo: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB');
   cap('memória de vídeo: texturas (sem mipmaps)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
-  cap('memória de vídeo: alvos de render e sombras', null, 300, 'MB');
+  cap('memória de vídeo: alvos de render e sombras', m.targetBytes == null ? null : mb(m.targetBytes), 300, 'MB');
   rows.push({ item: 'geometria presa na CPU (parte do heap)', medido: `${fmt(mb(m.geometryCpuBytes))} MB`, orçamento: '—', situação: 'sem orçamento no plano', vezes: 0 });
   rows.push({
     item: 'heap JS (performance.memory: heap + arrays, arredondado)',

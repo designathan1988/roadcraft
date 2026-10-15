@@ -54,6 +54,7 @@ import { createAgentMeshes, type AgentMeshes } from './agents';
 import { createEnvironment, slopeScaledShadowOffset } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
+import { renderTargetsBytes } from './targetBytes';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
@@ -291,6 +292,8 @@ export interface SceneHandle {
   busy(): boolean;
   /** Clouds drifting over the map: worth a frame now and then even with nothing else moving. */
   drifting(): boolean;
+  /** The bytes of the render targets and shadow maps alive (an estimate, `targetBytes.ts`): not in the scene, so not in `countMemory`. */
+  targetBytes(): number;
   /** Forgets a building's ruin (it was removed). */
   forgetRuin(id: number): void;
   /**
@@ -2778,6 +2781,7 @@ export function createSceneRenderer(
     onStrike(listener) { strikeListeners.push(listener); },
     cloudDrift: () => cloudDrift,
     busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
+    targetBytes: () => renderTargetsBytes([...post.targets(), environment.sun.shadow.map]),
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,
     forgetRuin(id) { fx?.forgetRuin(id); },
     setTransitXray(on) {
