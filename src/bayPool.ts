@@ -1,3 +1,4 @@
+import { jobLanes, jobPort } from './jobs/jobPool';
 import type { Bay } from '@sim/agents/bay';
 import { type LotAsk, shareOf } from '@sim/agents/lotBays';
 import type { BayWorkers } from '@sim/agents/parking';
@@ -55,12 +56,11 @@ export class BayPool implements BayWorkers {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-    const count = Math.max(1, Math.min(MOST_LANES, cores - 1));
+    const count = jobLanes(MOST_LANES);
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = new Worker(new URL('./bays.worker.ts', import.meta.url), { type: 'module' });
+        const worker = jobPort('bays', k);
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now() };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string }>) => {
           if (this.lanes !== lanes) return;

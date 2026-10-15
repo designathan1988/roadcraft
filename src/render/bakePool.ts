@@ -1,3 +1,7 @@
+import { jobPort } from '../jobs/jobPool';
+
+/** The next bake's lane of the job system: the bakes spread over its workers. */
+let bakeLane = 0;
 import { Matrix4, type Object3D } from 'three';
 
 import { type ClipFrames, rigData } from './citizenBake';
@@ -40,7 +44,7 @@ function finished(worker: Worker, result: Result): void {
 }
 
 function createWorker(): Worker {
-  const worker = new Worker(new URL('./citizenBake.worker.ts', import.meta.url), { type: 'module' });
+  const worker = jobPort('citizenBake', bakeLane++);
   worker.onmessage = (e: MessageEvent<{ id: number; clips?: (BakedClip | null)[]; error?: string }>) => {
     if (!e.data.clips) {
       console.error('Citizen bake worker failed', e.data.error);

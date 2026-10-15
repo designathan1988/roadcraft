@@ -1,6 +1,7 @@
 import type { Finish } from '@world/buildings/materials';
 import type { KitBoxes } from './cellArrays';
 import { type CellJob, CellWork, replyBuffers } from './cellWork';
+import type { JobScope } from '../../jobs/jobScope';
 
 /** One worker of the buildings' cells (`cellPool.ts`): the page's messages */
 type Message =
@@ -10,7 +11,7 @@ type Message =
   | { readonly type: 'cancel'; readonly job: number };
 
 /** The worker's messages answered by the one `CellWork` it makes on `init`. */
-function serve(scope: Worker): void {
+export function serve(scope: JobScope): void {
   let work: CellWork | null = null;
   scope.onmessage = (event: MessageEvent<Message>) => {
     const message = event.data;
@@ -28,4 +29,3 @@ function serve(scope: Worker): void {
   };
 }
 
-serve(self as unknown as Worker);

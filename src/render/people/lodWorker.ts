@@ -1,3 +1,4 @@
+import type { JobScope } from '../../jobs/jobScope';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** The coarser levels of a person, simplified off the main thread */
@@ -59,10 +60,9 @@ export function simplifyIndex(source: Uint32Array, positions: Float32Array, tria
   }
 }
 
-// In a worker: answer each request.
-const scope = globalThis as unknown as { onmessage: ((e: MessageEvent<LodRequest | IndexRequest>) => void) | null; postMessage?: (m: unknown, t: Transferable[]) => void; document?: unknown };
-if (typeof scope.document === 'undefined' && typeof scope.postMessage === 'function' && typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== 'undefined') {
-  scope.onmessage = async (e) => {
+/** The people's levels' service of the job system (`jobs/job.worker.ts`): each request answered. */
+export function serve(self: JobScope): void {
+  self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest>) => {
     const req = e.data;
     // Every request answered, a failure too (`lodPool.ts` rejects it)
     try {
@@ -70,14 +70,14 @@ if (typeof scope.document === 'undefined' && typeof scope.postMessage === 'funct
       if ('kind' in req) {
         const index = simplifyIndex(req.index, req.positions, req.triangles);
         // The source comes back when it was kept whole: transferred, not copied.
-        scope.postMessage!({ id: req.id, index }, index ? [index.buffer] : []);
+        self.postMessage({ id: req.id, index }, index ? [index.buffer] : []);
         return;
       }
       const levels = simplifyLevels(req);
-      scope.postMessage!({ id: req.id, levels }, levels.map((l) => l.index.buffer));
+      self.postMessage({ id: req.id, levels }, levels.map((l) => l.index.buffer));
     } catch (error) {
       console.error('[lod worker]', error);
-      scope.postMessage!({ id: req.id, error: String(error) }, []);
+      self.postMessage({ id: req.id, error: String(error) }, []);
     }
   };
 }

@@ -1,3 +1,4 @@
+import { jobPort } from '../../jobs/jobPool';
 import { padGarmentPixels, type GarmentPadRequest, type GarmentPadResponse } from './garmentPadding';
 
 type Input = Omit<GarmentPadRequest, 'id' | 'url'> & { readonly pixels: Uint8ClampedArray };
@@ -66,7 +67,7 @@ function startWorker(): Worker | null {
   if (worker || unavailable) return worker;
   if (typeof Worker === 'undefined') return null;
   try {
-    const created = new Worker(new URL('./garmentPadding.worker.ts', import.meta.url), { type: 'module' });
+    const created = jobPort('garmentPadding', 0);
     created.onmessage = ({ data }: MessageEvent<GarmentPadResponse>) => {
       const job = waiting.get(data.id);
       if (!job) return;

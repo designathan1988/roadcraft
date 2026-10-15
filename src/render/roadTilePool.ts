@@ -1,3 +1,4 @@
+import { jobLanes, jobPort } from '../jobs/jobPool';
 import type { Tile } from './mesh/tileMesh';
 import type { BlockArrays } from './mesh/roadLodPure';
 import type { TileRect } from './mesh/tileShape';
@@ -93,12 +94,11 @@ export class RoadTilePool implements RoadTiler {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-    const count = Math.max(1, Math.min(MOST_LANES, cores - 1));
+    const count = jobLanes(MOST_LANES);
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = new Worker(new URL('./roadTile.worker.ts', import.meta.url), { type: 'module' });
+        const worker = jobPort('roadTiles', k);
         const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now() };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string; coarse?: BlockArrays | null }>) => {
           if (this.lanes !== lanes) return;

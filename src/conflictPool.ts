@@ -1,3 +1,4 @@
+import { jobLanes, jobPort } from './jobs/jobPool';
 import { type FinishAsk, type FinishedPair, type PairMeasurer, type SampledSweep, type SweepAsk, type SweepSamples, TABLE_SIZE } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
@@ -208,12 +209,11 @@ export class ConflictPool implements PairMeasurer {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-    const count = Math.max(1, Math.min(MOST_LANES, cores - 1));
+    const count = jobLanes(MOST_LANES);
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
+        const worker = jobPort('conflicts', k);
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string }>) => {
           if (this.lanes !== lanes) return;

@@ -1,5 +1,6 @@
 import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
 import { type BlockArrays, coarseArrays } from './mesh/roadLodPure';
+import type { JobScope } from '../jobs/jobScope';
 
 /** One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a share shaped and meshed whole */
 type Message =
@@ -10,10 +11,9 @@ type Message =
 /** Most time between two words to the page while working: the pool hears the worker is alive. */
 const BEAT_MS = 500;
 
-const post = self as unknown as { postMessage(message: unknown, transfer?: Transferable[]): void };
 
 /** The worker's answer to the page's messages, holding the shares that wait on the page for the ground's heights. */
-function serve(): (event: MessageEvent<Message>) => void {
+function handler(post: JobScope): (event: MessageEvent<Message>) => void {
   /** The shares waiting on the page for the ground's heights, with the points asked. */
   const waiting = new Map<number, { readonly mesher: TileMesher; readonly points: Float64Array }>();
   return (event) => {
@@ -63,4 +63,7 @@ function serve(): (event: MessageEvent<Message>) => void {
   };
 }
 
-self.onmessage = serve();
+/** The road tiles' service of the job system (`jobs/job.worker.ts`). */
+export function serve(self: JobScope): void {
+  self.onmessage = handler(self) as (event: MessageEvent) => void;
+}

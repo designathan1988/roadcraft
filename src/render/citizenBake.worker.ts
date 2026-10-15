@@ -1,4 +1,5 @@
 /** A bake worker: a body's core clips baked off the main thread (`citizenBake.ts`, `bakePool.ts`). */
+import type { JobScope } from '../jobs/jobScope';
 import { type ClipFrames, type RigNode, bake, rigFromData, setSliceMs } from './citizenBake';
 import { loadRocketboxClips, type RocketboxClips, type WalkSex } from './citizenWalk';
 
@@ -12,12 +13,12 @@ export type BakedClip = Omit<ClipFrames, 'head'> & { head?: number[] };
 // Reuse decoded clips across this worker's jobs.
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
 
-const scope = globalThis as unknown as {
-  onmessage: ((e: MessageEvent<Job>) => void) | null;
-  postMessage(message: unknown, transfer?: Transferable[]): void;
-};
+/** The bakes' service of the job system (`jobs/job.worker.ts`). */
+export function serve(scope: JobScope): void {
+  scope.onmessage = (e: MessageEvent<Job>) => { void bakeJob(scope, e); };
+}
 
-scope.onmessage = async (e) => {
+async function bakeJob(scope: JobScope, e: MessageEvent<Job>): Promise<void> {
   const { id, nodes, sex } = e.data;
   try {
     const library = libraries[sex] ??= await loadRocketboxClips(sex);
@@ -33,4 +34,4 @@ scope.onmessage = async (e) => {
   } catch (error) {
     scope.postMessage({ id, error: String(error) });
   }
-};
+}

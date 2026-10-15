@@ -1,3 +1,4 @@
+import { jobPort } from '../jobs/jobPool';
 import { BufferAttribute, BufferGeometry, Group, Matrix3, Mesh, Sphere, Vector3, type Material } from 'three';
 
 import type { Building } from '@world/buildings/types';
@@ -91,7 +92,7 @@ export function createDestruction(
   const workerOf = (): Worker => {
     const size = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 1));
     if (workers.length < size) {
-      const worker = new Worker(new URL('./buildings/fracture.worker.ts', import.meta.url), { type: 'module' });
+      const worker = jobPort('fracture', workers.length);
       workers.push(worker);
       const failAll = (why: string): void => { for (const [id, job] of [...jobs]) if (job.worker === worker) fail(id, why); };
       worker.onerror = (e) => { e.preventDefault(); failAll(e.message || 'worker error'); };

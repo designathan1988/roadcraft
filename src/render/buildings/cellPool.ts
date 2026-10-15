@@ -1,3 +1,4 @@
+import { jobLanes, jobPort } from '../../jobs/jobPool';
 import type { GroundAt } from '@world/buildings/foundation';
 import type { Finish } from '@world/buildings/materials';
 import type { PavingSource } from '@world/paving';
@@ -145,13 +146,12 @@ export class CellPool {
   private start(): Lane[] | null {
     if (this.lanes || this.broken || !this.workers) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-    const count = Math.max(1, Math.min(MOST_LANES, cores - 1));
+    const count = jobLanes(MOST_LANES);
     try {
       const boxes = this.boxes();
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = new Worker(new URL('./cell.worker.ts', import.meta.url), { type: 'module' });
+        const worker = jobPort('cells', k);
         const lane: Lane = { worker, jobs: new Map(), queue: [] };
         worker.onmessage = (event: MessageEvent<WorkReply | { kind: 'error'; job: number; message: string }>) => this.answer(lane, event.data);
         worker.onerror = (event) => {

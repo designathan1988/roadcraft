@@ -1,3 +1,4 @@
+import { jobPort } from '../../jobs/jobPool';
 import type { IndexRequest, LodLevel, LodRequest } from './lodWorker';
 
 /** The simplifier worker (`lodWorker.ts`), started once and shared: a built person's levels */
@@ -10,7 +11,7 @@ let pool: Pool | null | undefined;
 export function lodPool(): Pool | null {
   if (pool !== undefined) return pool;
   if (typeof Worker === 'undefined' || typeof window === 'undefined') return (pool = null);
-  const worker = new Worker(new URL('./lodWorker.ts', import.meta.url), { type: 'module' });
+  const worker = jobPort('peopleLod', 0);
   type Answer = { id: number; levels?: LodLevel[]; index?: Uint32Array | null; error?: string };
   const waiting = new Map<number, { resolve: (answer: Answer) => void; reject: (error: Error) => void }>();
   let next = 1;

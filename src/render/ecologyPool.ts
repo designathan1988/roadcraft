@@ -1,3 +1,4 @@
+import { jobPort } from '../jobs/jobPool';
 import type { EcologyField, EcologyInput } from '@world/ecology';
 import type { FarWoods, FarWoodsAsk } from './farWoods';
 
@@ -32,7 +33,7 @@ function start(): Worker | null {
   if (worker || broken) return worker;
   if (typeof Worker === 'undefined') { broken = true; return null; }
   try {
-    worker = new Worker(new URL('./ecology.worker.ts', import.meta.url), { type: 'module' });
+    worker = jobPort('ecology', 0);
     worker.onmessage = (event: MessageEvent<{ id: number; field?: EcologyField; woods?: FarWoods; error?: string }>) => {
       const job = busy;
       busy = null;

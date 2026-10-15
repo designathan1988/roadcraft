@@ -56,15 +56,9 @@
     "entry": [
       "index.html",
       "src/main.ts!",
-      "src/conflictTable.worker.ts!",
-      "src/render/buildings/fracture.worker.ts!",
-      "src/render/citizenBake.worker.ts!",
-      "src/render/ecology.worker.ts!",
-      "src/render/flatGround.worker.ts!",
-      "src/render/people/garmentPadding.worker.ts!",
-      "src/render/people/lodWorker.ts!",
+      "src/sim/sim.worker.ts!",
+      "src/jobs/job.worker.ts!",
       "src/render/surfaceBake.worker.ts!",
-      "src/render/terrainLight.worker.ts!",
       "scripts/**/*.mjs",
       "desktop/main.cjs",
       "eslint-rules/*.js"

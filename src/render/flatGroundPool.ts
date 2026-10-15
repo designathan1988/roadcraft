@@ -1,3 +1,4 @@
+import { jobPort } from '../jobs/jobPool';
 import type { ReliefVersion } from '@world/terrain';
 import type { PlateMesh } from './plateMesh';
 
@@ -33,7 +34,7 @@ function start(): Lane[] | null {
   try {
     lanes = [];
     for (let k = 0; k < LANES; k++) {
-      const worker = new Worker(new URL('./flatGround.worker.ts', import.meta.url), { type: 'module' });
+      const worker = jobPort('flatGround', k);
       const lane: Lane = { worker, busy: null };
       worker.onmessage = (event: MessageEvent<{ id: number; mesh?: PlateMesh; error?: string }>) => {
         const job = lane.busy;
