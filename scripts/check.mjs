@@ -14,6 +14,7 @@
 // docs only → nothing; tests only → everything but the build; anything else → everything, the specs
 // chosen by what they import (test impact analysis; docs/research/regression-barrier.md).
 // `--all` runs every step and every spec whatever changed (the pre-push, on the commit being pushed).
+// `--base <branch>`: the changes since this branch left <branch> (a block's branch, before its merge).
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -24,11 +25,17 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const node = process.execPath;
 
-/** Files of the working tree that differ from HEAD, untracked ones included; null outside a repository. */
-function changed() {
+/**
+ * Files of the working tree that differ from HEAD, untracked ones included; null outside a repository.
+ * With `base` (`--base main`, the end of a block on its branch): from where the branch left that base
+ * (`git merge-base`), so the block's commits count. DO NOT check a committed block against HEAD: it
+ * saw nothing and ran no step.
+ */
+function changed(base) {
   const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
   try {
-    return [...new Set([...git(['diff', '--name-only', 'HEAD']), ...git(['ls-files', '--others', '--exclude-standard'])])];
+    const from = base ? git(['merge-base', base, 'HEAD'])[0] : 'HEAD';
+    return [...new Set([...git(['diff', '--name-only', from]), ...git(['ls-files', '--others', '--exclude-standard'])])];
   } catch (error) {
     console.error(`check: git could not list the changes (${error.message.split('\n')[0]}); every step runs`);
     return null;
@@ -171,7 +178,8 @@ function run(name) {
 }
 
 async function main() {
-  const files = process.argv.includes('--all') ? null : changed();
+  const at = process.argv.indexOf('--base');
+  const files = process.argv.includes('--all') ? null : changed(at > 0 ? process.argv[at + 1] : undefined);
   picked = files;
   fastRun = process.argv.includes('--fast');
   const steps = stepsFor(files, fastRun).filter((s) => s !== 'lint' || !fastRun || !files || lintable(files).length);
