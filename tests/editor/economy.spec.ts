@@ -138,7 +138,7 @@ describe('the balance on disk', () => {
   });
 
   it('loads the test town (saved before the economy) as it was, at the starting balance', () => {
-    const text = readFileSync('maps/cidade-com-estacionamento.json', 'utf8');
+    const text = readFileSync('tests/fixtures/parking-town.json', 'utf8');
     const saved = JSON.parse(text);
     expect(isSerializedDoc(saved)).toBe(true);
     const doc = RoadDoc.fromJSON(saved);

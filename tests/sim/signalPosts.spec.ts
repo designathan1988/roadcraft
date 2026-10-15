@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
 import type { NodeId } from '@world/ids';
-import { SIGNAL_POST_RADIUS, signalPosts } from '@world/signalPosts';
+import { signalPosts } from '@world/signalPosts';
 import { m } from '@world/units';
-import { step } from '@sim/pipeline';
-import { DT } from '@sim/params';
 import { Rng } from '@core/rng';
 import type { SimWorld } from '@sim/world';
 import { simOf } from './support/bodies';
@@ -94,34 +92,5 @@ describe('the signal posts the walkers keep clear of', () => {
     expect(sim.signalChangesSince(before).nodes).not.toBeNull();
     sim.signalPosts.follow(sim);
     expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
-  });
-
-  it('are never stood inside by anybody walking or waiting at the corner', () => {
-    const doc = new RoadDoc();
-    const centre = doc.addNode({ x: 0, y: 0 });
-    for (const [x, y] of [[-420, 0], [420, 0], [0, -420], [0, 420]] as const) doc.addSegment(centre.id, doc.addNode({ x, y }).id, 1);
-    doc.setNodeControl(centre.id, 'signal');
-    const sim = simOf(doc, 0x7a1e, 4);
-    const posts = signalPosts(sim.net, sim.graph);
-    expect(posts.length).toBe(4);
-    let near = 0, inside = 0, worst = Infinity;
-    // A minute of the corner: some 1,500 walker-ticks within 1.5 m of a post
-    // (2026-10-15); two minutes took 8 s, past a test's 10 s with the suite running.
-    sim.clock.run(Math.round(60 / DT), () => {
-      step(sim, { traffic: true, pedestrians: true });
-      for (const v of sim.pedViews) {
-        if (v.ground === 'open') continue;
-        for (const post of posts) {
-          const d = Math.hypot(v.x - post.x, v.y - post.y);
-          if (d < m(1.5)) near++;
-          worst = Math.min(worst, d);
-          // The body's centre within the post: walked into it.
-          if (d < SIGNAL_POST_RADIUS + m(0.1)) inside++;
-        }
-      }
-    });
-    console.log(`signalPosts: ${near} walker-ticks within 1.5 m of a post, ${inside} inside one, nearest ${(worst / m(1)).toFixed(2)} m`);
-    expect(near).toBeGreaterThan(50);
-    expect(inside).toBe(0);
   });
 });

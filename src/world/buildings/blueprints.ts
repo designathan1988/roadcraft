@@ -66,7 +66,7 @@ export const DEFAULT_GROUND_HEIGHT = m(3.6);
 export const DEFAULT_STOREY_HEIGHT = m(3.1);
 
 /** The default facade of one storey, by use and level. */
-export function defaultFacade(use: BuildingUse, level: number, width: number, rich = true): Facade {
+function defaultFacade(use: BuildingUse, level: number, width: number, rich = true): Facade {
   const door = Math.floor(width / 2);
   const front: Record<string, BayComponent> = {};
   switch (use) {
@@ -95,7 +95,7 @@ export function defaultFacade(use: BuildingUse, level: number, width: number, ri
 }
 
 /** The use a storey of a building of `use` has at `level`. */
-export const storeyUse = (use: BuildingUse, level: number): BuildingUse | undefined =>
+const storeyUse = (use: BuildingUse, level: number): BuildingUse | undefined =>
   use === 'mixed' ? (level === 0 ? 'commercial' : 'residential') : undefined;
 
 function defaultStorey(use: BuildingUse, level: number, width: number): Storey {
@@ -111,7 +111,7 @@ function defaultRoof(use: BuildingUse, storeys: number): RoofKind {
   return 'flat';
 }
 
-export const DEFAULT_PALETTE: Readonly<Record<BuildingUse, number>> = {
+const DEFAULT_PALETTE: Readonly<Record<BuildingUse, number>> = {
   residential: 0,
   commercial: 2,
   industrial: 7,

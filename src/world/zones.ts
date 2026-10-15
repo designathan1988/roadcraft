@@ -1,6 +1,6 @@
 /** Authored land-use area. Buildings generated from it remain ordinary editable buildings. */
-export const ZONE_USES = ['residential', 'commercial', 'industrial'] as const;
-export const ZONE_DENSITIES = ['low', 'medium', 'high'] as const;
+const ZONE_USES = ['residential', 'commercial', 'industrial'] as const;
+const ZONE_DENSITIES = ['low', 'medium', 'high'] as const;
 export type ZoneUse = (typeof ZONE_USES)[number];
 export type ZoneDensity = (typeof ZONE_DENSITIES)[number];
 

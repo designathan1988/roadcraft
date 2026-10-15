@@ -30,7 +30,7 @@ function memoryStore(): PartStore & { readonly blobs: Map<string, Blob>; writes:
   return store;
 }
 
-const town = (): RoadDoc => RoadDoc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8')));
+const town = (): RoadDoc => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
 
 describe('a map saved in parts', () => {
   it('reads back the map it saved', async () => {

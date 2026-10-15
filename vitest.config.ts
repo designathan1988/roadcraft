@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitest/config';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { cpus } from 'node:os';
 import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
@@ -17,12 +16,6 @@ if (process.env['ROADCRAFT_IN_JOB'] !== '1') {
 /** As many workers as the share has processors (6 of 24 at 25 %). */
 const SHARE_WORKERS = Math.max(1, Math.floor((cpus().length * share().percent) / 100));
 
-/**
- * The specs that took 10 s or more (`tests/slow.json`): left out of every run
- * but `npm run test:slow`, so `npm run check` and the push take about a minute.
- * The list only shrinks (`tests/arch/slowSpecs.spec.ts`).
- */
-export const SLOW_SPECS: readonly string[] = Object.keys((JSON.parse(readFileSync(r('./tests/slow.json'), 'utf8')) as { files: Record<string, number> }).files);
 
 export default defineConfig({
   // The model files' URLs (`model-urls-plugin.ts`), as the game imports them.
@@ -57,7 +50,7 @@ export default defineConfig({
     // file at a time (`vitest.scale.config.ts`): they build whole grids of
     // traffic, and beside the rest of the suite they ran out of time on CPU
     // contention, not on a defect.
-    exclude: ['tests/e2e/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*', ...SLOW_SPECS],
+    exclude: ['tests/e2e/**', 'tests/perf/**', 'tests/scale/**', 'tests/**/_*/**', 'tests/**/_*', 'tests/**/zz*/**', 'tests/**/zz*'],
     // Tests always run with invariant assertions armed.
     env: { SIM_STRICT: '1' },
     // A test that needs more than 10 s does not belong in the check (the
@@ -68,8 +61,7 @@ export default defineConfig({
     // picks the specs by their imports (`scripts/check.mjs`, `vitest related`). Vitest's own three first.
     forceRerunTriggers: [
       '**/package.json', '**/vitest.config.*', '**/vite.config.*',
-      '**/maps/**', '**/lots/**', '**/public/**', '**/index.html', '**/tests/fixtures/**', '**/tests/fuzz/fixtures/**',
-      '**/tests/slow.json',
+      '**/lots/**', '**/public/**', '**/index.html', '**/tests/fixtures/**', '**/tests/fuzz/fixtures/**',
       '**/src/**/*.json',
     ],
     // A CAP on the workers, not the default of one per hardware thread. Each

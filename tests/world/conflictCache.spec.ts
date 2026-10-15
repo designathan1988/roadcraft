@@ -155,7 +155,7 @@ describe('conflict zone cache', () => {
     // FNV-1a, every movement shared its key with its mirror image, the two
     // threw each other out of the cache, and every rebuild measured some six
     // hundred pairs again - a third of a second on every road edit.
-    const doc = Doc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8')));
+    const doc = Doc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const graph = graphOf(doc);
     const index = new ConflictIndex();
     index.build(graph);

@@ -19,7 +19,7 @@ describe('the paint catalogue', () => {
   const cities = [
     () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small' })),
     () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document),
-    () => RoadDoc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8'))),
+    () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8'))),
   ];
   for (const style of ['classic', 'br', 'us', 'eu'] as MarkingStyleId[]) {
     it(`holds every colour painted in the ${style} standard`, () => {

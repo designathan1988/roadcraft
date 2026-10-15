@@ -163,7 +163,7 @@ export const ROAD_TUNING = {
     /**
      * Money a new map, and a map saved before the economy, starts with: a
      * little more than the roads of the test town are worth at the prices
-     * below (16.5 million, `maps/cidade-com-estacionamento.json`).
+     * below (16.5 million, `tests/fixtures/parking-town.json`).
      */
     startingFunds: 20_000_000,
     /**

@@ -57,11 +57,8 @@ describe('the tests', () => {
   });
 
   it('give no test more than 10 s', () => {
-    // The specs still being rewritten (`tests/slow.json`, `tests/arch/slowSpecs.spec.ts`) until the list is empty.
-    const slow = Object.keys((JSON.parse(readFileSync(join(root, 'tests', 'slow.json'), 'utf8')) as { files: Record<string, number> }).files);
     const over: string[] = [];
     for (const [file, src] of SOURCE) {
-      if (slow.includes(file)) continue;
       src.split('\n').forEach((line, i) => {
         // A test or a hook closed with `}, 120_000);`, or `{ timeout: 120_000 }`.
         for (const m of line.matchAll(/(?:^\s*\}\s*,\s*|timeout\s*:\s*)(\d[\d_]*)/g)) {

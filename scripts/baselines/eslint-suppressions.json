@@ -1,14 +1,4 @@
 {
-  "build-stamp.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 2
-    }
-  },
-  "cook-plugin.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
   "scripts/cook-people.mjs": {
     "roadcraft/no-silent-catch": {
       "count": 2
@@ -133,9 +123,6 @@
     }
   },
   "src/editor/zoning.ts": {
-    "max-lines": {
-      "count": 1
-    },
     "roadcraft/no-module-state": {
       "count": 3
     }

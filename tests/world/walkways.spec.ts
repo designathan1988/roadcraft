@@ -183,7 +183,7 @@ describe('walkways', () => {
       doc.addSegment(c.id, doc.addNode({ x: 280, y: -10 }).id, 0);
       return doc;
     }],
-    ['test city', () => RoadDoc.fromJSON(JSON.parse(readFileSync(join(process.cwd(), 'maps', 'cidade-com-estacionamento.json'), 'utf8')) as never)],
+    ['test city', () => RoadDoc.fromJSON(JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'parking-town.json'), 'utf8')) as never)],
   ] as const) {
     it(`${name}: every road end is walked to from every other`, () => {
       const doc = make();

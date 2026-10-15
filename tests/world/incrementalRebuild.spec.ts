@@ -83,7 +83,7 @@ describe('incremental network and height rebuild', () => {
   });
 
   it('equals a full rebuild on the test town, over its terrain, through the edits a player makes', () => {
-    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8')));
+    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const net = new Network(doc);
     net.rebuild({ full: true });
     const index = new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief);

@@ -26,9 +26,7 @@
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "test:scale:raw": "vitest run -c vitest.scale.config.ts",
-    "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw",
-    "test:slow": "node scripts/run-limited.mjs npm run test:slow:raw",
-    "test:slow:raw": "vitest run -c vitest.slow.config.ts"
+    "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

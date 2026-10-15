@@ -12,7 +12,6 @@ export default defineConfig({
   test: {
     ...base.test,
     include: ['tests/perf/**/*.spec.ts', 'tests/scale/**/*.spec.ts'],
-    // The slow list stays out (`tests/slow.json`).
     exclude: (base.test?.exclude ?? []).filter((pattern) => pattern !== 'tests/perf/**' && pattern !== 'tests/scale/**'),
     fileParallelism: false,
     maxWorkers: 1,

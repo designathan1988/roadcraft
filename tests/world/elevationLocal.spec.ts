@@ -30,7 +30,7 @@ const STRUCTURES: readonly RoadStructure[] = ['ground', 'ground', 'elevated', 'b
 
 describe('the roads\' heights solved where a change reaches', () => {
   for (const seed of [1, 2, 3]) it(`equal a solve from nothing after every random edit (seed ${seed})`, () => {
-    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8')));
+    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const net = new Network(doc);
     net.rebuild({ full: true });
     const index = new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief);

@@ -1,6 +1,0 @@
-{
-  "about": "Specs that take more than a test may (10 s). They run only with npm run test:slow, never in npm run check or before a push, and the list only shrinks (tests/arch/slowSpecs.spec.ts). Left (2026-10-13): lorryDocks, whose 13 s are the simulation planning every yard's docks in the background (hybridAStar, Reeds-Shepp, inside step) and whose lorry never docks with fewer works in the block (6 or 12 of them): both in src/sim, reported, to be fixed there.",
-  "files": {
-    "tests/sim/agents/lorryDocks.spec.ts": 13
-  }
-}

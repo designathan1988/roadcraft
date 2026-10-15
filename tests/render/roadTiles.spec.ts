@@ -126,7 +126,7 @@ describe('road surface tiles', () => {
     // line made the town's paint colours come in another order, and with the
     // order in every tile's key all hundred tiles were built again (a second's
     // stall in the game for one street). The new street reaches eight.
-    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('maps/cidade-com-estacionamento.json', 'utf8')));
+    const doc = RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')));
     const net = new Network(doc);
     net.rebuild();
     let elevation = buildRoadElevation(net, ground);

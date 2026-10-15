@@ -35,7 +35,7 @@ function maps(): [string, () => RoadDoc][] {
     return RoadDoc.fromJSON(data.document ?? data);
   };
   return [
-    ['test town', map('maps/cidade-com-estacionamento.json')],
+    ['test town', map('tests/fixtures/parking-town.json')],
     ['grid and bends', map('tests/fixtures/grid-and-bends.json')],
     ['player city', map('tests/fixtures/player-city.json')],
   ];
