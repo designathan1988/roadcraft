@@ -9,7 +9,6 @@ import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 import { type PartStore, PartedSaves, indexedDbParts } from './chunkedSave';
-import { withUnit } from './mapExport';
 
 /** Where the map is kept. */
 const KEY = 'roadcraft.world.v7';
@@ -70,6 +69,12 @@ export interface SavedSettings {
   /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10 (docs/source/ESCALA.md). */
   readonly unit?: number;
 }
+
+/**
+ * Settings as stored: with the unit their camera is in (the autosave's and the file's, one rule).
+ * Here, with the settings it stamps: in `mapExport.ts` it made the two files import each other.
+ */
+export const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
 
 export interface SavedSession {
   readonly document: SerializedDoc;
@@ -548,8 +553,6 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
     typeof settings.congestionOverlay === 'boolean';
 }
 
-/** Save map: the map as a file (`mapExport.ts`). */
-export { exportToFile } from './mapExport';
 
 /** What a file pick came to: a map, nothing chosen, or a file that is not one. */
 export type ImportResult =

@@ -4,7 +4,6 @@ import { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
 import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
-import type { ChosenTurn, SurfaceRings, TurnAsk } from './junctionTurns';
 
 /**
  * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
@@ -25,6 +24,39 @@ import type { ChosenTurn, SurfaceRings, TurnAsk } from './junctionTurns';
  * of turn lanes do not touch, two buses in the same pair do.
  */
 export type BodyClass = 0 | 1 | 2;
+
+/** A turn as `turnPaths.ts` chose it: one cubic's handle, or two cubics through a point inside the junction. */
+export type TurnChoice = number | { x: number; y: number; share: number };
+
+/** What the search for a turn answers (`turnPaths.ts` `chooseTurn`): the choice and the largest body it fits. */
+export interface ChosenTurn {
+  readonly choice: TurnChoice;
+  readonly maxBodyClass: BodyClass | -1;
+}
+
+/**
+ * What a turn is chosen from, as plain numbers, for a worker (`conflictPool.ts`): the arriving and
+ * departing lanes and the waiting ones as flat x, y lists (`Polyline.xy`), the junction's surface by
+ * its key with its centre and rings, and whether a lane meets a road's end. The same numbers the page
+ * would sweep: the turn chosen there is the one chosen here.
+ */
+export interface TurnAsk {
+  /** The lanes' own lists (`Polyline.xy`, never changed once made): not copied here, once by the message. */
+  readonly inXY: Float64Array;
+  readonly outXY: Float64Array;
+  readonly waiting: readonly Float64Array[];
+  /** The junction's surface, kept once a key in the plan (`TurnPlan.surfaces`). */
+  readonly surfaceKey: string;
+  readonly fromRoadEnd: boolean;
+  readonly toRoadEnd: boolean;
+}
+
+/** A junction's surface as a worker makes it again: its centre and its rings as flat x, y lists. */
+export interface SurfaceRings {
+  readonly centre: { readonly x: number; readonly y: number };
+  readonly rings: readonly Float64Array[];
+}
+
 export const BODY_CLASSES: readonly BodyClass[] = [0, 1, 2];
 export const BODY_CLASS_NAMES = ['small', 'car', 'heavy'] as const;
 export const BODY_ENVELOPE: readonly { readonly length: number; readonly width: number }[] = [

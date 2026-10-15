@@ -1,9 +1,5 @@
 import type { RoadDoc, SerializedDoc } from '@world/doc';
-import { METERS_PER_UNIT } from '@world/units';
-import type { SavedSession, SavedSettings } from './persistence';
-
-/** Settings as stored: with the unit their camera is in (the autosave's and the file's, one rule). */
-export const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
+import { type SavedSession, type SavedSettings, withUnit } from './persistence';
 
 /** A file as Save map writes it (`persistence.ts` `importFromFile` reads it back). */
 interface SerializedSession extends SavedSession {
