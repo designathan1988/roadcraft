@@ -2182,10 +2182,8 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   return { zoned, ...green };
 }
 /**
- * Builds on the generated city's lots, forty milliseconds a frame, the
- * buildings held from the renderer meanwhile (`holdBuildings`) and drawn
- * once at the end: growing one costs a millisecond or two, but drawing each
- * as it came re-meshed the layer every frame - two buildings a second.
+ * Builds on the generated city's lots, `GROW_SLICE_MS` a frame: each building
+ * graded and drawn in the frame it grows, its own site and cell only.
  */
 const cityProgress = document.createElement('div');
 cityProgress.className = 'city-progress';
@@ -2194,16 +2192,17 @@ cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:transla
 document.body.appendChild(cityProgress);
 function growCity(): void {
   if (!cityGrowth) return;
-  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame,
-  // the buildings held from the renderer until the last one (`holdBuildings`),
-  // so the page answers and the notice counts up. Built in one go, 1 348 lots
-  // froze the page for 3 s (2026-10-13); drawn one by one, each new building
-  // set off the rebuilds that follow a building edit, three buildings a second.
+  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame, so
+  // the page answers and the notice counts up. Built in one go, 1 348 lots
+  // froze the page for 3 s (2026-10-13). Each building is graded and drawn in
+  // the frame it grows, its own site and cell only (`changedSites`, the
+  // layer's diary). DO NOT hold the buildings from the renderer until the
+  // last one: every site of the city was graded and every building put in
+  // the layer in the one frame they were let go, 5.6 s at 2 560 m (2026-10-15).
   const growing = cityGrowth;
   if (cityProgress.style.display !== 'block') {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
-    scene.holdBuildings(true);
     lotTool.holdOverlay(true);
     requestDraw();
     return;
@@ -2231,7 +2230,6 @@ function growCity(): void {
   cityGrowth = null;
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
-  scene.holdBuildings(false);
   lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();

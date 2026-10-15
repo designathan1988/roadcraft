@@ -298,12 +298,6 @@ export interface SceneHandle {
   setAtmosphere(atmosphere: Atmosphere): void;
   /** Perspective camera on, or the orthographic (isometric) view. */
   setPerspective(on: boolean): void;
-  /**
-   * While a whole city is being built (`editor/cityGenerator.ts`), the
-   * buildings and the ground graded round them are not rebuilt every frame:
-   * once, when it is let go.
-   */
-  holdBuildings(on: boolean): void;
   /** A shot: a tracer from the muzzle to where it struck, and the muzzle's flash (world x, y, height). */
   shot(from: readonly [number, number, number], to: readonly [number, number, number]): void;
   /**
@@ -1434,7 +1428,7 @@ export function createSceneRenderer(
       return [[q[0], q[1], mx, my], [mx, q[1], q[2], my], [q[0], my, mx, q[3]], [mx, my, q[2], q[3]]];
     };
     const regions = blocks.flatMap(quarters).map(terrainRegion);
-    if (sites) regions.push(...quarters(sites).map(terrainRegion));
+    if (sites) regions.push(...sites.map(terrainRegion));
     // A block a step: three were 33 ms, past the frame's allowance (`core/frameWork.ts`).
     const BATCH = 1;
     let shaping = 0;
@@ -2013,7 +2007,6 @@ export function createSceneRenderer(
   let transitPreview: TrackPreview | null = null;
   let transitPreviewKey = '';
 
-  let buildingsHeld = false;
   /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
   let plantMapFor: { map: boolean | null; gardens: Gardens | null } = { map: null, gardens: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
@@ -2446,9 +2439,6 @@ export function createSceneRenderer(
     // effects, and now the physics the bodies fall with (`warmPhysics`). The
     // idle preload below makes the effects only.
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
-    holdBuildings(on) {
-      buildingsHeld = on;
-    },
     flashGrid(cells) {
       if (!cells.length) return;
       const pos: number[] = [], ring: number[] = [];
@@ -2704,10 +2694,12 @@ export function createSceneRenderer(
       // a building re-graded the whole map and every platform: a hitch for
       // every building the zones grew, the profile of 2026-10-05).
       // While a road edit is prepared in slices its steps grade the sites (`shapeBlocksSteps`).
-      if (!buildingsHeld && !worldJob && gradedFor !== net.doc.buildings.revision) {
+      // Each site on its own (`changedSites`): the buildings a frame of a generated city grew, wherever
+      // they stand, cut and fill the ground round each of them, not the box round them all.
+      if (!worldJob && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
-        if (changed) shapeGround(net, terrainRegion(changed), true);
+        if (changed) shapeGround(net, changed.map(terrainRegion), true);
       }
       // What stands on the ground - the buildings, the walls, the transport,
       // the gardens - waits while an edit's world is still being built: each
@@ -2734,7 +2726,7 @@ export function createSceneRenderer(
       // A map opened behind the curtain: not on the old map's ground while
       // its own world is still being built - they were emitted twice, on
       // the ground going and then on the one coming.
-      if (!buildingsHeld && roads !== null && (reveal.opened || !worldJob)) {
+      if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new
         // casters: the shadow map is drawn again.
@@ -2771,8 +2763,7 @@ export function createSceneRenderer(
       // have. Not in the middle of a stroke, and not while an edit's world is
       // still being built: the old one is drawn meanwhile, and the ground the
       // plants stand on is only final when it is swapped in.
-      // Not while the buildings are held: the covers they stand on are brought up when they are let go.
-      if (!stroking && !worldJob && !buildingsHeld) {
+      if (!stroking && !worldJob) {
         keepNet = net;
         // What the tests read that changed since the last look, and where (null: the diary cannot say).
         const entries = vegetationRead.read(net.doc.changes);

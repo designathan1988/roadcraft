@@ -43,7 +43,8 @@ describe('the sites graded, a change at a time', () => {
       else if (roll < 0.5) store.remove(pick);
       else if (roll < 0.8) { const b = store.get(pick)!; store.put({ ...b, x: b.x + (rand() - 0.5) * m(60) }); }
       else { const b = store.get(pick)!; store.put({ ...b, palette: (b.palette + 1) % 8 }); }
-      expect(live.changedSites(store)).toEqual(whole.changedSites(all));
+      const sorted = (list: readonly (readonly number[])[] | null): string[] => (list ?? []).map((q) => q.join(',')).sort();
+      expect(sorted(live.changedSites(store))).toEqual(sorted(whole.changedSites(all)));
       live.rebuild(store);
       whole.rebuild(all);
       const a = live.pads!, b = whole.pads!;

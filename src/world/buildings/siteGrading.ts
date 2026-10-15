@@ -18,8 +18,12 @@ export type SiteBox = readonly [number, number, number, number];
 export interface SiteGrading {
   /** The town's platforms as last put together (`rebuild`), reused while a stroke is held. */
   readonly pads: TownPads | null;
-  /** What changed among the buildings since the ground was graded: the box of every site added, removed or changed, or null when none did. */
-  changedSites(buildings: BuildingStore): SiteBox | null;
+  /**
+   * What changed among the buildings since the ground was graded: the box of each site added, removed
+   * or changed - each on its own, not their union: the union of a city's sites grown in a frame was the
+   * whole city to cut and fill again - or null when none did.
+   */
+  changedSites(buildings: BuildingStore): SiteBox[] | null;
   /** A building's platform worked out again (the roads round it moved). */
   refresh(b: Building): void;
   /** The town's platforms put together from each building's (`pads`); null for a town with none. */
@@ -91,11 +95,9 @@ export function siteGrading(
   /** Buildings whose platform was worked out again for the roads (`refresh`) since the town's platforms were put together. */
   const refreshed = new Set<BuildingId>();
   /** @rebuild The whole store read only the first time, after `forget`, or when the diary cannot say which buildings changed. */
-  const changedSites = (buildings: BuildingStore): SiteBox | null => {
-    let box: [number, number, number, number] | null = null;
-    const take = (q: SiteBox): void => {
-      box = box ? [Math.min(box[0], q[0]), Math.min(box[1], q[1]), Math.max(box[2], q[2]), Math.max(box[3], q[3])] : [...q];
-    };
+  const changedSites = (buildings: BuildingStore): SiteBox[] | null => {
+    const boxes: SiteBox[] = [];
+    const take = (q: SiteBox): void => { boxes.push(q); };
     const grade = (b: Building): void => {
       const was = graded.get(b.id);
       if (was?.ref === b) return;
@@ -114,7 +116,7 @@ export function siteGrading(
         if (b) grade(b);
         else { const was = graded.get(id); if (was) { take(was.box); graded.delete(id); } }
       }
-      return box;
+      return boxes.length ? boxes : null;
     }
     const seen = new Set<number>();
     for (const b of buildings.all()) {
@@ -122,7 +124,7 @@ export function siteGrading(
       grade(b);
     }
     for (const [id, was] of graded) if (!seen.has(id)) { take(was.box); graded.delete(id); }
-    return box;
+    return boxes.length ? boxes : null;
   };
   return {
     get pads() { return padsCache; },
