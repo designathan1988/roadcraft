@@ -312,6 +312,7 @@ export class RoadDoc {
    * load, an edited copy taken back), as `BuildingStore`'s grid.
    */
   private treeGrid: ItemGrid<PlantedTree> | null = null;
+  /** @rebuild The whole list filed only on the first ask after it was replaced whole; the writers keep it after. */
   private get treeCells(): ItemGrid<PlantedTree> {
     if (!this.treeGrid) {
       this.treeGrid = new ItemGrid(LANDSCAPE_CELL);
@@ -334,6 +335,7 @@ export class RoadDoc {
   readonly elements: ElementItem[] = [];
   /** The elements by place (`elementsIn`): made when first asked, null after the whole list is replaced (as `treeGrid`). */
   private elementGrid: ItemGrid<ElementItem> | null = null;
+  /** @rebuild The whole list filed only on the first ask after it was replaced whole; the writers keep it after. */
   private get elementCells(): ItemGrid<ElementItem> {
     if (!this.elementGrid) {
       this.elementGrid = new ItemGrid(LANDSCAPE_CELL);
