@@ -2675,7 +2675,7 @@ let actionsWarm = false;
 let topologyAfterDraw = false;
 /** The traffic's topology catching up with an edit, a slice a frame (`frameLoop.ts`). */
 // The new junctions' conflict pairs measured on the other cores (`conflictPool.ts`).
-const topology = new TopologyCatchUp(new ConflictPool());
+const topology = new TopologyCatchUp(new ConflictPool(ZONES_PREFIX));
 
 function requestDraw(): void {
   frameClock.request();

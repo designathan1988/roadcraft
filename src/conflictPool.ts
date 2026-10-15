@@ -36,11 +36,21 @@ export const SILENCE_MS = 10_000;
 const MOST_LANES = 4;
 
 export class ConflictPool implements PairMeasurer {
+  /**
+   * `keepPrefix`: the key prefix the tables are kept under for the next session (`render/derivedCache.ts`),
+   * by the workers that measure them; none: not kept here.
+   */
+  constructor(private readonly keepPrefix: string | null = null) {}
+
+  get keeps(): boolean {
+    return this.keepPrefix !== null;
+  }
+
   private lanes: Lane[] | null = null;
   private broken = false;
   private nextId = 1;
 
-  measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples }[]): Promise<readonly (Float64Array | null)[]> {
+  measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples; readonly key?: string }[]): Promise<readonly (Float64Array | null)[]> {
     const lanes = this.start();
     if (!lanes) return Promise.reject(new Error('no workers in this browser'));
     // Contiguous shares, one a lane, each with only the sweeps its pairs read.
@@ -61,17 +71,18 @@ export class ConflictPool implements PairMeasurer {
       };
       const indices = new Int32Array(share.length * 2);
       share.forEach((p, q) => { indices[q * 2] = at(p.a); indices[q * 2 + 1] = at(p.b); });
-      parts.push(this.ask(lanes[k]!, sweeps, indices));
+      const keep = this.keepPrefix !== null ? { prefix: this.keepPrefix, keys: share.map((p) => p.key ?? '') } : null;
+      parts.push(this.ask(lanes[k]!, sweeps, indices, keep));
     }
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
-  private ask(lane: Lane, sweeps: readonly object[], pairs: Int32Array): Promise<(Float64Array | null)[]> {
+  private ask(lane: Lane, sweeps: readonly object[], pairs: Int32Array, keep: { prefix: string; keys: readonly string[] } | null): Promise<(Float64Array | null)[]> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       lane.waiting.set(id, { resolve: (answer) => resolve(answer as (Float64Array | null)[]), reject });
       // The samples are copied (the page keeps its own); the indices handed over.
-      lane.worker.postMessage({ kind: 'pairs', id, sweeps, pairs }, [pairs.buffer]);
+      lane.worker.postMessage({ kind: 'pairs', id, sweeps, pairs, keep }, [pairs.buffer]);
       this.arm(lane);
     });
   }

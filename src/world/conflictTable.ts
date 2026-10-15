@@ -269,7 +269,14 @@ function widen(table: Float64Array, at: number, c: number): void {
  * measures them on the page).
  */
 export interface PairMeasurer {
-  measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples }[]): Promise<readonly (Float64Array | null)[]>;
+  /** `key`: the pair's key, under which a measurer that `keeps` stores its table for the next session. */
+  measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples; readonly key?: string }[]): Promise<readonly (Float64Array | null)[]>;
+  /**
+   * Whether it keeps the tables it measures for the next session itself (where it measures them): the
+   * page then does not (`ConflictIndex.takeMeasured`). DO NOT keep them from the page: the structured
+   * clone of a city's tables in one write held a frame 0.9 s (2026-10-15).
+   */
+  readonly keeps?: boolean;
   /**
    * Chooses many junction turns somewhere else, each as `turnPaths.ts` `chooseTurnOf` would here, answered
    * in the order asked; rejected when it cannot (the turns are then chosen on the page,

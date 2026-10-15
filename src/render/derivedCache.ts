@@ -148,19 +148,26 @@ export function writeDerived(key: string, value: unknown): void {
  * - a town's conflict zones - would otherwise open as many transactions.
  */
 export function writeDerivedMany(prefix: string, values: ReadonlyMap<string, unknown>): void {
+  void keepDerivedMany(prefix, values);
+}
+
+/**
+ * As `writeDerivedMany`, resolved once the store has taken its copy of every value (`put` copies by the
+ * structured clone when it is called): a worker may then hand the values' buffers over.
+ */
+export async function keepDerivedMany(prefix: string, values: ReadonlyMap<string, unknown>): Promise<void> {
   if (!values.size) return;
-  void database().then((db) => {
-    if (!db) return;
-    try {
-      const store = db.transaction(STORE, 'readwrite').objectStore(STORE);
-      for (const [key, value] of values) {
-        const request = store.put(value, `${prefix}${key}`);
-        request.onerror = (event) => event.preventDefault();
-      }
-    } catch {
-      // Not kept (no space, private window): made again next time.
+  const db = await database();
+  if (!db) return;
+  try {
+    const store = db.transaction(STORE, 'readwrite').objectStore(STORE);
+    for (const [key, value] of values) {
+      const request = store.put(value, `${prefix}${key}`);
+      request.onerror = (event) => event.preventDefault();
     }
-  });
+  } catch {
+    // Not kept (no space, private window): made again next time.
+  }
 }
 
 /**

@@ -2,6 +2,7 @@ import { type SweepSamples, pairTable } from '@world/conflictTable';
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
+import { keepDerivedMany } from './render/derivedCache';
 
 /**
  * The traffic's pure work off the page's thread (`conflictPool.ts`), answered
@@ -18,6 +19,8 @@ interface PairsAsk {
   readonly sweeps: readonly { readonly c0: number; readonly count: number; readonly length: number; readonly frame: Float64Array; readonly frameLengthSq: Float64Array }[];
   /** Two indices into `sweeps` a pair. */
   readonly pairs: Int32Array;
+  /** The pairs' keys, and the prefix their tables are kept under for the next session (`derivedCache.ts`); none: not kept here. */
+  readonly keep: { readonly prefix: string; readonly keys: readonly string[] } | null;
 }
 interface TurnsAsk {
   readonly kind: 'turns';
@@ -32,7 +35,7 @@ interface TurnsAsk {
 /** Most time between two words to the page while working: the pool's watchdog hears the worker is alive (`SILENCE_MS`). */
 const BEAT_MS = 500;
 
-self.onmessage = (event: MessageEvent<PairsAsk | TurnsAsk>) => {
+self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk>) => {
   const ask = event.data;
   let spoke = performance.now();
   const beat = (): void => {
@@ -61,6 +64,8 @@ self.onmessage = (event: MessageEvent<PairsAsk | TurnsAsk>) => {
       if (table) transfer.push(table.buffer as ArrayBuffer);
       beat();
     }
+    // Kept for the next session here, off the page: the store copies them before they are handed over.
+    if (ask.keep) await keepDerivedMany(ask.keep.prefix, new Map(tables.map((table, k) => [ask.keep!.keys[k]!, table])));
     (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id: ask.id, tables }, transfer);
   } catch (error) {
     // Reported here and answered: the page does this work itself (`ConflictIndex.prepare`, `LaneletGraph.redoProvisional`).
