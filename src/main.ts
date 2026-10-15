@@ -44,7 +44,7 @@ import { blockGridChoice, onRoadGridChange, roadGridShown, signChoice, strikeCho
 import { TERRAIN_MIN_MS, TerrainBrush, type DabSettings } from '@editor/terrainBrush';
 import { scatterClouds } from '@world/clouds';
 import { CloudTool } from '@editor/cloudTool';
-import { playThunder } from '@ui/thunder';
+import { createThunder } from '@ui/thunder';
 import { MAP_SIZE } from '@world/bounds';
 import { blockGridLines, commitBlockGrid } from '@editor/blocks';
 import { m, stepsIn } from '@world/units';
@@ -1686,7 +1686,8 @@ const brushSlider = (min: number, max: number, step: number, get: () => number, 
 // THE WEATHER (Paisagem > Céu, `world/weather.ts`) and the water under the
 // river brush: the map's, one undo step a drag. The thunder is heard at every
 // strike, as late as sound takes to come.
-scene.onStrike((_x, _y, distance) => playThunder(distance / UNITS_PER_METER, doc.weather.thunder));
+const thunder = createThunder();
+scene.onStrike((_x, _y, distance) => thunder.play(distance / UNITS_PER_METER, doc.weather.thunder));
 const weatherSlider = (key: keyof typeof doc.weather, min: number, max: number, step: number, scale: number): ShellSlider =>
   mapSlider(min, max, step, () => Math.round(doc.weather[key] * scale * 10) / 10, (v) => doc.setWeather({ [key]: v / scale }));
 
