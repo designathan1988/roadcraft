@@ -79,7 +79,11 @@ function pieceShape(polygon: Poly, maxEdge: number): PieceShape | null {
     builder.xs.push(flat[i] as number);
     builder.ys.push(flat[i + 1] as number);
   }
+  // Ear clipping joins the outline's points with long thin triangles (a fan); the diagonals are turned to
+  // Delaunay's before the refinement, which halves the long edges but leaves a sliver a sliver.
+  flipToDelaunay(builder, maxEdge);
   refine(builder, maxEdge);
+  flipToDelaunay(builder, maxEdge);
   const xy = new Float64Array(builder.xs.length * 2);
   for (let i = 0; i < builder.xs.length; i++) { xy[i * 2] = builder.xs[i]!; xy[i * 2 + 1] = builder.ys[i]!; }
   return { xy, tris: Uint32Array.from(builder.tris), flip };
@@ -117,6 +121,74 @@ function skirtShape(polygons: MultiPoly, maxEdge: number, cut?: TileRect): Skirt
     }
   }
   return out;
+}
+
+/**
+ * The interior diagonals turned to the Delaunay triangulation of the same vertices (Lawson, "Software for C1
+ * surface interpolation", 1977): an edge shared by two triangles whose quadrilateral is convex is swapped for
+ * the other diagonal when the fourth point lies in the circle of the other three. Outline edges (one triangle)
+ * never move, nor does a vertex, so a cut between two pieces stays crack-free. A swap that would make the
+ * diagonal longer than both the old one and `maxEdge` is not made: the edge limit holds.
+ * DO NOT leave the fan ear clipping made: its slivers were most of the road surfaces' triangles (a verge's
+ * triangle was a twelfth of the area its longest edge allows; 1.4 GB of a 2,560 m city, 2026-10-15).
+ */
+function flipToDelaunay(b: Builder, maxEdge: number): void {
+  const t = b.tris, xs = b.xs, ys = b.ys;
+  const count = t.length / 3;
+  if (count < 2) return;
+  const key = (i: number, j: number): number => (i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i);
+  const owners = new Map<number, number[]>();
+  const own = (i: number, j: number, tri: number): void => {
+    const k = key(i, j);
+    const list = owners.get(k);
+    if (list) list.push(tri); else owners.set(k, [tri]);
+  };
+  for (let tri = 0; tri < count; tri++) {
+    const a = t[tri * 3]!, c = t[tri * 3 + 1]!, d = t[tri * 3 + 2]!;
+    own(a, c, tri); own(c, d, tri); own(d, a, tri);
+  }
+  const orient = (a: number, c: number, d: number): number =>
+    (xs[c]! - xs[a]!) * (ys[d]! - ys[a]!) - (xs[d]! - xs[a]!) * (ys[c]! - ys[a]!);
+  const inCircle = (a: number, c: number, d: number, p: number): number => {
+    const ax = xs[a]! - xs[p]!, ay = ys[a]! - ys[p]!, bx = xs[c]! - xs[p]!, by = ys[c]! - ys[p]!, cx = xs[d]! - xs[p]!, cy = ys[d]! - ys[p]!;
+    return (ax * ax + ay * ay) * (bx * cy - cx * by) - (bx * bx + by * by) * (ax * cy - cx * ay) + (cx * cx + cy * cy) * (ax * by - bx * ay);
+  };
+  const stack: number[] = [];
+  for (const [k, list] of owners) if (list.length === 2) stack.push(k);
+  const third = (tri: number, i: number, j: number): number => {
+    for (let n = 0; n < 3; n++) { const v = t[tri * 3 + n]!; if (v !== i && v !== j) return v; }
+    return -1;
+  };
+  let budget = count * 12;
+  while (stack.length && budget-- > 0) {
+    const k = stack.pop()!;
+    const list = owners.get(k);
+    if (!list || list.length !== 2) continue;
+    const j = k % 0x4000_0000, i = (k - j) / 0x4000_0000;
+    const t1 = list[0]!, t2 = list[1]!;
+    const p = third(t1, i, j), q = third(t2, i, j);
+    if (p < 0 || q < 0 || p === q) continue;
+    // The quadrilateral i-p-j-q must be strictly convex for the other diagonal to lie inside it.
+    if (orient(p, q, i) * orient(p, q, j) >= 0) continue;
+    const side = orient(i, j, p);
+    if (inCircle(i, j, p, q) * (side > 0 ? 1 : -1) <= 1e-9 * Math.abs(side)) continue;
+    const old = Math.hypot(xs[i]! - xs[j]!, ys[i]! - ys[j]!), made = Math.hypot(xs[p]! - xs[q]!, ys[p]! - ys[q]!);
+    if (made > Math.max(old, maxEdge)) continue;
+    // The two triangles keep their winding (that of the first, all of a piece's run one way).
+    const wind = Math.sign(orient(t[t1 * 3]!, t[t1 * 3 + 1]!, t[t1 * 3 + 2]!));
+    const put = (tri: number, a: number, c: number, d: number): void => {
+      if (Math.sign(orient(a, c, d)) !== wind) { t[tri * 3] = a; t[tri * 3 + 1] = d; t[tri * 3 + 2] = c; } else { t[tri * 3] = a; t[tri * 3 + 1] = c; t[tri * 3 + 2] = d; }
+    };
+    // t1 = (i, j, p) and t2 = (j, i, q) become (i, q, p) and (q, j, p): the edges j-p and i-q change owner,
+    // i-j goes, p-q is new.
+    owners.set(key(j, p), [t2, ...(owners.get(key(j, p)) ?? []).filter((x) => x !== t1)]);
+    owners.set(key(i, q), [t1, ...(owners.get(key(i, q)) ?? []).filter((x) => x !== t2)]);
+    owners.delete(k);
+    owners.set(key(p, q), [t1, t2]);
+    put(t1, i, q, p);
+    put(t2, q, j, p);
+    for (const e of [[i, q], [q, j], [j, p], [p, i]] as const) stack.push(key(e[0], e[1]));
+  }
 }
 
 interface Builder {
