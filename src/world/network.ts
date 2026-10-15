@@ -82,6 +82,8 @@ export class Network {
   readonly polylines = new PolylineCache();
   /** What the pole lines keep of this network (`poleLines.ts` `PoleLineState`) */
   poleLines: PoleLineState | null = null;
+  /** The network this one is a working copy of (`fork`), its maps laid over that one's; null for a network of its own. */
+  forkedFrom: Network | null = null;
 
   /** Matches `RoadDoc.revision` at the time of the last rebuild. */
   revision = -1;
@@ -161,6 +163,7 @@ export class Network {
     copy.polylines.forkFrom(this.polylines);
     copy.build.forkFrom(this.build);
     copy.log.takeFrom(this.log);
+    copy.forkedFrom = this;
     const upToDate = this.revision === this.doc.revision;
     copy.revision = upToDate ? work.revision : -1;
     copy.trafficRevision = upToDate ? work.trafficRevision : -1;

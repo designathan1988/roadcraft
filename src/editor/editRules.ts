@@ -1,4 +1,6 @@
 import type { Vec2 } from '@core/vec2';
+import { ForkMap } from '@core/forkMap';
+import { samePlain } from '@core/plain';
 import { COARSE_EPS } from '@core/scalar';
 import type { RoadDoc, RoadSegment } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
@@ -39,11 +41,11 @@ const SAME_PLACE = 1;
 
 /** The reason to refuse turning `before` into `after`, or null when the edit may stand. */
 export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRefusal | null {
-  for (const [node, gap] of after.net.impossible) {
+  for (const [node, gap] of written(before.net, after.net, 'impossible')) {
     const was = before.doc.node(node) ? before.net.impossible.get(node) : undefined;
     if (was === undefined || gap < was - GAP_NOISE) return 'sharp';
   }
-  for (const [node, short] of after.net.squeezed) {
+  for (const [node, short] of written(before.net, after.net, 'squeezed')) {
     const was = before.doc.node(node) ? before.net.squeezed.get(node) : undefined;
     if (was === undefined || short > was + SQUEEZE_SLACK) return 'squeezed';
   }
@@ -56,6 +58,15 @@ export function refuseRoadEdit(before: RoadState, after: RoadState): RoadEditRef
     (solved ??= buildRoadElevation(after.net, FLAT_GROUND)).onSegment(id, p.x, p.y);
   if (changed.some((id) => overlapsAnother(before, after, id, deck))) return 'overlap';
   return null;
+}
+
+/** The marks of `after` that may differ from `before`'s: on a working copy of it (`Network.fork`), only those the copy wrote */
+function written(before: Network, after: Network, name: 'impossible' | 'squeezed'): Iterable<[NodeId, number]> {
+  const map = after[name];
+  // DO NOT walk every mark of the map for each edit and each pause of the pointer: the others are `before`'s own.
+  if (after.forkedFrom !== before || !(map instanceof ForkMap)) return map;
+  const { replaced, added } = (map as ForkMap<NodeId, number>).changes();
+  return [...replaced, ...added];
 }
 
 /** DO NOT copy the map to judge an edit against (`doc.clone()` and the whole network, every in-place edit) */
@@ -88,22 +99,29 @@ function changedSegments(before: RoadDoc, after: RoadDoc): SegmentId[] {
     }
     for (const id of candidates) {
       const seg = after.segment(id)!, old = before.segment(id);
-      if (!old || segmentKey(before, old) !== segmentKey(after, seg)) out.push(id);
+      if (!old || !sameSegment(before, old, after, seg)) out.push(id);
     }
     return out;
   }
   for (const [id, seg] of after.segments) {
     const old = before.segment(id);
-    if (!old || segmentKey(before, old) !== segmentKey(after, seg)) out.push(id);
+    if (!old || !sameSegment(before, old, after, seg)) out.push(id);
   }
   return out;
 }
 
-function segmentKey(doc: RoadDoc, seg: RoadSegment): string {
-  const a = doc.node(seg.a);
-  const b = doc.node(seg.b);
-  return JSON.stringify([seg.a, seg.b, seg.type, seg.lanes, seg.direction, seg.structure, seg.curve, seg.section ?? null,
-    seg.parking ?? null, a?.x, a?.y, a?.heightOffset, b?.x, b?.y, b?.heightOffset]);
+/** Whether a segment's shape, class, structure and end points are the same in both documents (no text written per road). */
+function sameSegment(before: RoadDoc, old: RoadSegment, after: RoadDoc, seg: RoadSegment): boolean {
+  if (old === seg) return sameEnd(before, after, seg.a) && sameEnd(before, after, seg.b);
+  return old.a === seg.a && old.b === seg.b && old.type === seg.type && old.lanes === seg.lanes && old.direction === seg.direction &&
+    old.structure === seg.structure && samePlain(old.curve ?? null, seg.curve ?? null) && samePlain(old.section ?? null, seg.section ?? null) &&
+    samePlain(old.parking ?? null, seg.parking ?? null) && sameEnd(before, after, seg.a) && sameEnd(before, after, seg.b);
+}
+
+function sameEnd(before: RoadDoc, after: RoadDoc, id: NodeId): boolean {
+  const p = before.node(id), q = after.node(id);
+  if (p === q) return true;
+  return !!p && !!q && p.x === q.x && p.y === q.y && p.heightOffset === q.heightOffset;
 }
 
 /** The deck's authored height along a segment at arc length `s` (as `commit.ts` `segmentOffsetAt`). */
