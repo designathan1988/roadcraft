@@ -168,7 +168,9 @@ export function paintMaterial(color: string): Material {
           diffuseColor.a *= cover * 0.92;
         }`);
   };
-  material.customProgramCacheKey = () => `paint-worn-aa-${color}`;
+  // One program for every colour: the colour is a uniform, the code the same. DO NOT key it by the
+  // colour: each new colour of paint built another program, in play.
+  material.customProgramCacheKey = () => 'paint-worn-aa';
   return material;
 }
 
