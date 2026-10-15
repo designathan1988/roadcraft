@@ -22,7 +22,7 @@ function gameCity(groundAt: (x: number, y: number) => number): { doc: ReturnType
   net.rebuild();
   applyLots(doc, planLots(doc, net));
   greenCity(doc, net, DEFAULT_CITY.seed);
-  const zoned = zoneCity(doc, plan);
+  const zoned = zoneCity(doc, net, plan);
   const refused = new Set<number>();
   for (let guard = 0; guard < zoned * 3 + 50; guard++) {
     const id = growOnLot({ doc, net, groundAt }, refused, 0x5eed);

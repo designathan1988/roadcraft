@@ -2072,7 +2072,7 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   // A square in each neighbourhood and the streets' trees and furniture (V7).
   const green = yield* greenCitySteps(doc, net, seed);
   yield;
-  const zoned = zoneCity(doc, plan);
+  const zoned = zoneCity(doc, net, plan);
   lotTool.refused.clear();
   lotTool.refusedFor(net.revision);
   return { zoned, ...green };
