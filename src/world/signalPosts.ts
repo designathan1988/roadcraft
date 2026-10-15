@@ -11,16 +11,15 @@ import { m } from './units';
  * junction, on the kerb side, two metres back from the zebra.
  *
  * ONE definition, read by the renderer that draws the posts
- * (`render/signals.ts`) and by the footway graph the pedestrians walk
- * (`sim/peds/sidewalk.ts`). The position used to be worked out only in the
- * renderer, so the simulation never knew the posts were there: people queued
- * for the crossing standing inside them, exactly where the post is, and
- * walked through them along the footway.
+ * (`render/signals.ts`) and by the blast that knocks them down
+ * (`actionsWiring.ts`). The pedestrians' footway graph (`sim/peds/sidewalk.ts`)
+ * does NOT read it today, whatever this said before: people queuing for the
+ * crossing can stand inside a post.
  */
 
 /** Clearance from the carriageway edge to the post's centre line. */
 export const SIGNAL_POST_KERB = m(0.9);
-/** Radius of the post as the pedestrians see it: the drawn pole, 0.165 m. */
+/** Radius of the post: the drawn pole, 0.165 m (the pedestrians do not read it yet, see above). */
 export const SIGNAL_POST_RADIUS = m(0.17);
 
 export interface SignalPost {
