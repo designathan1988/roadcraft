@@ -1,6 +1,6 @@
 import { DT, JAM_GAP, STUCK_SECONDS } from './params';
 import type { SimWorld } from './world';
-import { stepController } from './signals/fsm';
+import { restController, stepController } from './signals/fsm';
 import { longitudinalConstraints } from './vehicles/obstacles';
 import {
   compactReservationChain,
@@ -90,7 +90,7 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   const deps = w.signalDeps();
   const asleep = w.signalsAsleep(deps);
   for (const c of w.signalisedControllers()) {
-    if (asleep.has(c)) { c.elapsed += DT; continue; }
+    if (asleep.has(c)) { restController(c); continue; }
     tickWork.controllers++;
     if (stepController(c, deps) && w.doLess) asleep.add(c);
   }

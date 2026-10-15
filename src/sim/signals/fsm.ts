@@ -184,9 +184,16 @@ const isStrict = (): boolean =>
   typeof process !== 'undefined' && process.env?.['SIM_STRICT'] === '1';
 
 /**
- * Advances one controller. This is the ONLY function permitted to mutate
- * `stageIndex`, `sub` or `elapsed`.
+ * A tick of a controller asleep (`SimWorld.signalsAsleep`): resting in its
+ * green with nobody near, it only keeps its time - the same sum its step would
+ * make, so the result is the same as stepping it (`tests/sim/doLess.spec.ts`).
+ * With `stepController`, the only writers of `elapsed` in a step (a rebuild
+ * and a seek, `rebuildController`, `seekFixed`, set it outright).
  */
+export function restController(c: SignalController): void {
+  c.elapsed += DT;
+}
+
 /**
  * Longest a green is held past its maximum for people still on its crossings,
  * seconds.
