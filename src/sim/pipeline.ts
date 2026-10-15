@@ -124,9 +124,11 @@ export function rebindAgents(w: SimWorld): void {
   rebindPeds(w);
 }
 
-/** @rebuild The vehicle half of `rebindAgents`, after `SimWorld.rebuildVehicleTopology`. */
+/** @rebuild The vehicle half of `rebindAgents`: DO NOT walk the fleet, only those the edits reached (`vehiclesReached`); replanning all held an edit 4.5 s (1,200 cars, 2026-10-15). */
 export function rebindVehicles(w: SimWorld): void {
-  for (const v of w.vehiclesInIdOrder()) {
+  for (const v of w.vehiclesReached() ?? w.vehiclesInIdOrder()) {
+    if (w.vehicles.get(v.id) !== v) continue;
+    tickWork.rebound++;
     // A shadow is a projection onto a sibling lane that may have been rebuilt with a different length
     w.clearShadow(v);
     const lane = w.lanelet(v.lanelet);
@@ -164,7 +166,7 @@ export function rebindPeds(w: SimWorld): void {
 }
 
 /** The work of the ticks: lanes stage 7 looked at, lanes retired, controllers stage 1 ran. */
-export const tickWork = { cleanupLanes: 0, retired: 0, controllers: 0 };
+export const tickWork = { cleanupLanes: 0, retired: 0, controllers: 0, rebound: 0 };
 
 /** Retires lanelets that no longer exist once their occupants have left. */
 function collectGhosts(w: SimWorld): void {
@@ -267,6 +269,7 @@ function ensureVehicleRoutes(w: SimWorld): void {
         if (v.route[0] !== lane.id || v.route[1] !== admitted.id) {
           if (!pinReservedRoute(w, v)) {
             v.route = [lane.id, admitted.id, admitted.toLane];
+            w.noteRoute(v);
             repairRoute(w, v);
           }
         }
@@ -409,6 +412,7 @@ function pinReservedRoute(w: SimWorld, v: Vehicle): boolean {
   const suffixAt = v.route.indexOf(expectedLink);
   const suffix = suffixAt >= 0 ? v.route.slice(suffixAt + 1) : [];
   v.route = [...prefix, ...suffix];
+  w.noteRoute(v);
   // `repairRoute` deliberately reconstructs connector routes from scratch
   if (lane.kind === 'link') repairRoute(w, v);
   return true;

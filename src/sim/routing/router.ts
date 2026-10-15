@@ -114,6 +114,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
       if (plan.changeTo) v.movementIntent = plan.intent;
       if (plan.route.length >= 3) {
         v.route = plan.route;
+        w.noteRoute(v);
         if (!plan.changeTo) v.movementIntent = plan.route[1]!;
         return plan.route[1]!;
       }
@@ -124,6 +125,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
         const conn = pick ? w.connector(pick) : undefined;
         if (!pick || !conn) return null;
         v.route = [v.lanelet, pick, conn.toLane];
+        w.noteRoute(v);
         return pick;
       }
     } else {
@@ -135,6 +137,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
     const first = trip && trip.length >= 3 ? w.connector(trip[1]!) : undefined;
     if (trip && first) {
       v.route = trip;
+      w.noteRoute(v);
       v.movementIntent = first.id;
       v.desiredLane = null;
       return first.id;
@@ -176,6 +179,7 @@ export function planFrom(w: SimWorld, v: Vehicle): LaneletId | null {
   if (!conn) return null;
 
   v.route = [v.lanelet, best, conn.toLane];
+  w.noteRoute(v);
   extend(w, v);
   return best;
 }
@@ -192,7 +196,7 @@ export function extend(w: SimWorld, v: Vehicle): void {
       const plan = planTrip(w, tail!, 0, v.destination, body, true, shape);
       // A change due on the tail lane is planned when the car gets there
       if (plan) {
-        if (!plan.changeTo) v.route.push(...plan.route.slice(1));
+        if (!plan.changeTo) { v.route.push(...plan.route.slice(1)); w.noteRoute(v); }
         return;
       }
       v.destination = null;
@@ -202,10 +206,11 @@ export function extend(w: SimWorld, v: Vehicle): void {
     const tail = v.route[v.route.length - 1];
     if (tail === v.destination) return;
     const suffix = tail ? routeToDestination(w, tail, v.destination, body) : null;
-    if (suffix) { v.route.push(...suffix.slice(1)); return; }
+    if (suffix) { v.route.push(...suffix.slice(1)); w.noteRoute(v); return; }
     v.destination = null;
   }
   let guard = 0;
+  const before = v.route.length;
   while (v.route.length < HORIZON && guard++ < HORIZON) {
     const tail = v.route[v.route.length - 1];
     if (tail === undefined) break;
@@ -225,6 +230,7 @@ export function extend(w: SimWorld, v: Vehicle): void {
 
     v.route.push(pick, conn.toLane);
   }
+  if (v.route.length !== before) w.noteRoute(v);
 }
 
 function chooseExit(
@@ -323,6 +329,7 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
   const current = w.lanelet(v.lanelet);
   if (!current) {
     v.route = [v.lanelet];
+    w.noteRoute(v);
     return;
   }
 
@@ -331,6 +338,7 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
     const connector = w.connector(current.id);
     const to = connector ? w.lanelet(connector.toLane) : undefined;
     v.route = to ? [current.id, to.id] : [current.id];
+    w.noteRoute(v);
     extend(w, v);
     return;
   }
@@ -347,11 +355,13 @@ export function repairRoute(w: SimWorld, v: Vehicle): void {
 
   if (!valid.length || valid[0] !== v.lanelet) {
     v.route = [v.lanelet];
+    w.noteRoute(v);
     planFrom(w, v);
     return;
   }
 
   v.route = valid;
+  w.noteRoute(v);
   // A bare link route is valid data but not a usable junction intention.
   if (v.route.length < 2) {
     planFrom(w, v);

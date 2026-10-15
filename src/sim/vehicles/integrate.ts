@@ -182,6 +182,7 @@ function applyLaneChange(w: SimWorld, v: Vehicle): ReturnType<SimWorld['lanelet'
   w.enterLanelet(v, target, false);
   if (v.desiredLane === target) v.desiredLane = null;
   v.route = [target];
+  w.noteRoute(v);
   planFrom(w, v);
   return lane;
 }
@@ -255,6 +256,7 @@ function advance(w: SimWorld, v: Vehicle, carried: number): boolean {
         expected = reserved.toLane;
       }
       v.route = pinned;
+      w.noteRoute(v);
     }
   }
 
@@ -314,6 +316,7 @@ function advanceTo(w: SimWorld, v: Vehicle, target: string, carried: number): bo
 
   if (v.route[1] === target) v.route.shift();
   else v.route = [target, ...v.route.slice(1)];
+  w.noteRoute(v);
 
   if (lane.kind === 'link') {
     if (v.reservedConnectors.length === 0) v.firstRequestTick = null;

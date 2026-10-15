@@ -8,6 +8,7 @@ import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
 import { LaneGrid } from './agents/laneGrid';
 import { LaneReaches } from './routing/laneReach';
+import { RouteIndex } from './routing/routeIndex';
 import { ConflictIndex, type BodyClass, WAITING } from '@world/conflictPoints';
 import { type ChosenTurn, TurnPlan } from '@world/junctionTurns';
 import type { PairMeasurer } from '@world/conflictTable';
@@ -140,8 +141,17 @@ export class SimWorld {
   readonly signalPosts = new SignalPostIndex();
   readonly claims = new ClaimTable();
 
-  /** @mapWide Every vehicle on the map. */
-  readonly vehicles = new VersionedMap<VehicleId, Vehicle>();
+  /** @mapWide Every vehicle on the map; each filed by its route as it comes and goes (`routes`). */
+  readonly vehicles = new VersionedMap<VehicleId, Vehicle>({
+    set: (v, was) => { if (was && was !== v) this.routes.unfile(was); this.routes.file(v); },
+    delete: (v) => this.routes.unfile(v),
+    clear: () => this.routes.clear(),
+  });
+  /** The vehicles by the lanes and movements of their routes (`noteRoute`): those an edit reached (`vehiclesReached`). */
+  readonly routes = new RouteIndex();
+  /** The lanes and movements the builds since the last rebind took or made again (`vehiclesReached`); `rebindAll` after a whole build. */
+  private readonly rebindLanes = new Set<LaneletId>();
+  private rebindAll = false;
   /** Whether the conflicts are kept only in the micro window (the game, `simHost.ts`); the specs keep every junction's. */
   private microWindow = false;
   /** The junctions by place, filed as each graph build changes them (`fileJunctions`). */
@@ -270,6 +280,8 @@ export class SimWorld {
   /** Forgets every agent and everything learned about the previous map. */
   reset(): void {
     this.vehicles.clear();
+    this.rebindLanes.clear();
+    this.rebindAll = false;
     this.maybeHolders.clear();
     this.runtime.clear();
     this.claims.clear();
@@ -345,6 +357,35 @@ export class SimWorld {
 
   controller(node: NodeId): SignalController | undefined {
     return this.controllers.get(node);
+  }
+
+  /** A vehicle's route written (`Vehicle.route`): for its writers, so an edit finds who drives over what it took (`routes`). */
+  noteRoute(v: Vehicle): void {
+    if (this.vehicles.get(v.id) === v) this.routes.file(v);
+  }
+
+  /** The vehicles the builds since the last call reached, in id order (null: every one, a whole build) */
+  vehiclesReached(): readonly Vehicle[] | null {
+    const all = this.rebindAll, lanes = this.rebindLanes;
+    this.rebindAll = false;
+    if (all) { lanes.clear(); return null; }
+    const out = new Set<Vehicle>();
+    const take = (id: VehicleId): void => { const v = this.vehicles.get(id); if (v) out.add(v); };
+    for (const id of lanes) {
+      const rt = this.runtime.get(id);
+      if (rt) { for (const v of rt.order) take(v); for (const v of rt.shadows) take(v); }
+      for (const v of this.routes.routing(id) ?? []) out.add(v);
+    }
+    // What a vehicle holds at a junction is not on its lane: the movements granted, reserved or being cleared.
+    if (lanes.size) {
+      for (const v of this.junctionHolders()) {
+        if ((v.admittedConnector !== null && lanes.has(v.admittedConnector)) ||
+            v.reservedConnectors.some((id) => lanes.has(id)) ||
+            v.clearingConnectors.some((token) => lanes.has(token.connector))) out.add(v);
+      }
+    }
+    lanes.clear();
+    return [...out].sort((a, b) => a.id - b.id);
   }
 
   /** A vehicle that may now hold something at a junction (`maybeHolders`): for the writers of what it holds. */
@@ -590,6 +631,10 @@ export class SimWorld {
     const prep = this.prepGraph;
     const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
+    // What the next rebind looks at: nothing while no vehicle is out, as a vehicle made later is made on this graph.
+    if (this.vehicles.size === 0) { this.rebindLanes.clear(); this.rebindAll = false; }
+    else if (changed === null) this.rebindAll = true;
+    else for (const id of changed.lanelets) this.rebindLanes.add(id);
     this.fileJunctions(changed);
     if (changed === null) this.conflicts.build(this.graph); else this.conflicts.update(this.graph, changed.junctions);
     this.claims.dropMissing(this.conflicts);
@@ -1075,6 +1120,10 @@ function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
 /** A Map that counts its changes of membership, for caches over it, and keeps its values in the order of their keys */
 class VersionedMap<K extends number, V> extends Map<K, V> {
   version = 0;
+  /** Told of each value put in, replaced (`was`) or taken out. */
+  constructor(private readonly listener?: { set(value: V, was: V | undefined): void; delete(value: V): void; clear(): void }) {
+    super();
+  }
   private orderedKeys: K[] = [];
   private ordered: V[] = [];
   /** The list was handed out: the next change copies it first. */
@@ -1083,7 +1132,9 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
   override set(key: K, value: V): this {
     this.version++;
     const had = super.has(key);
+    const was = had ? super.get(key) : undefined;
     super.set(key, value);
+    this.listener?.set(value, was);
     this.own();
     const keys = this.orderedKeys;
     const at = had ? slotOf(keys, key) : keys.length && keys[keys.length - 1]! >= key ? slotOf(keys, key) : keys.length;
@@ -1093,8 +1144,10 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
   }
   override delete(key: K): boolean {
     this.version++;
+    const was = super.get(key);
     const had = super.delete(key);
     if (had) {
+      this.listener?.delete(was as V);
       this.own();
       const at = slotOf(this.orderedKeys, key);
       this.orderedKeys.splice(at, 1);
@@ -1105,6 +1158,7 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
   override clear(): void {
     this.version++;
     super.clear();
+    this.listener?.clear();
     this.orderedKeys = [];
     this.ordered = [];
     this.shared = false;
