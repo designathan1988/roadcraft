@@ -518,6 +518,9 @@ function planDepth(p: Footprint, q: Footprint): number {
   return best;
 }
 
+/** The radius of a circle round every footprint of a part (`footprintOf`, its own or a trunk's). */
+const planReach = (e: BuildingElement): number => Math.hypot(Math.max(e.w, TRUNK), Math.max(e.d, TRUNK)) / 2;
+
 /** Heights running into each other by more than a contact (a flush joint of two plates is a contact). */
 const heightsMeet = (a0: number, a1: number, b0: number, b1: number): boolean => Math.min(a1, b1) - Math.max(a0, b0) > MEET + m(0.001);
 
@@ -530,6 +533,12 @@ const heightsMeet = (a0: number, a1: number, b0: number, b1: number): boolean =>
  * planting grows under the crown, a roof does not go through it.
  */
 export function elementsMeet(a: BuildingElement, b: BuildingElement): boolean {
+  // Apart for any turn: the circles round their footprints do not meet (each
+  // footprint below - a trunk's `TRUNK` square, a crown's - within it). Most
+  // pairs of a lot, answered before any footprint is made: a lot furnished
+  // asked every part against every part laid, 2.8 s of a city's growth
+  // (2026-10-15).
+  if (Math.hypot(b.x - a.x, b.y - a.y) > planReach(a) + planReach(b)) return false;
   if (SURFACE_KINDS.has(a.kind) || SURFACE_KINDS.has(b.kind)) return false;
   if (isStructure(a) && isStructure(b)) return false;
   // A plant against a thin run of the boundary grows through it (a shrub

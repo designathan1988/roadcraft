@@ -92,8 +92,18 @@ function reach(entry: string): Set<string> {
   return seen;
 }
 
+describe('the road tiles kept for a later session', () => {
+  it('are handed to the writer worker, not copied on the page, once their blocks are merged', () => {
+    const renderer = read('src/render/renderer.ts');
+    const keep = renderer.slice(renderer.indexOf('keep: (key, bundle) =>'), renderer.indexOf('keep: (key, bundle) =>') + 900);
+    expect(keep).toMatch(/tileWriter\.postMessage\(\{ prefix: tilesPrefix, entries: \[\[key, bundle\]\] \}, buffers\)/);
+    const surfaces = read('src/render/roadSurfaces.ts');
+    expect(surfaces.indexOf('reuse?.keep?.(')).toBeGreaterThan(surfaces.indexOf('mergeMs +='));
+  });
+});
+
 describe('the workers', () => {
-  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts']) {
+  for (const worker of ['src/render/roadTile.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];
       expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);

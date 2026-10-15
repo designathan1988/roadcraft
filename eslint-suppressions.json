@@ -150,7 +150,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 17
+      "count": 15
     },
     "roadcraft/no-logic-timer": {
       "count": 3
@@ -194,9 +194,6 @@
   },
   "src/render/agents.ts": {
     "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-global-revision": {
       "count": 1
     },
     "roadcraft/no-module-state": {
@@ -437,9 +434,6 @@
     },
     "roadcraft/no-global-revision": {
       "count": 42
-    },
-    "roadcraft/no-logic-timer": {
-      "count": 1
     },
     "roadcraft/no-silent-catch": {
       "count": 1

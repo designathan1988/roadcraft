@@ -106,5 +106,5 @@ describe('flights of steps', () => {
     }
     expect(flights).toBeGreaterThan(20);
     expect(through.slice(0, 20)).toEqual([]);
-  }, 60_000);
+  });
 });

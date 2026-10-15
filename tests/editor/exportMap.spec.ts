@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { exportToFile, type SavedSettings } from '@editor/persistence';
+import type { SavedSettings } from '@editor/persistence';
+import { exportToFile } from '@editor/mapExport';
 import { RoadDoc } from '@world/doc';
 
 /**

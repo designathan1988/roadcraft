@@ -10,6 +10,7 @@ import type { SceneMaterials } from '@render/materials';
 import { buildRoadSurfaces, roadSurfaceSteps, type SurfaceReuse } from '@render/roadSurfaces';
 import { buildDefaultTown } from '@world/defaultTown';
 import { TUNED_UNIT } from '@world/units';
+import { refillArrays } from '@render/mesh/gpuOnly';
 
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
@@ -51,6 +52,7 @@ function reuseFor(elevation: () => RoadElevation): SurfaceReuse {
     // The ground here is a fixed function, so the roads are all there is to digest.
     dependsOn: (minX, minY, maxX, maxY) => elevation().digest(minX, minY, maxX, maxY),
     paint: new Map(),
+    chunks: new Map(),
   };
 }
 
@@ -61,6 +63,8 @@ describe('road surface tiles', () => {
   let elevation = buildRoadElevation(net, ground);
   const reuse = reuseFor(() => elevation);
   const cold = buildRoadSurfaces(net, elevation, materials, ground, reuse);
+  // Before the next build: a block it keeps moves to that build's group (`adopt`).
+  const coldPrint = fingerprint(cold.group);
 
   it('builds every tile the first time', () => {
     expect(cold.built).toBeGreaterThan(20);
@@ -71,7 +75,7 @@ describe('road surface tiles', () => {
     const again = buildRoadSurfaces(net, elevation, materials, ground, reuse);
     expect(again.built).toBe(0);
     expect(again.reused).toBe(cold.built);
-    expect(fingerprint(again.group)).toBe(fingerprint(cold.group));
+    expect(fingerprint(again.group)).toBe(coldPrint);
   });
 
   it('rebuilds only what an edit reaches, into exactly the mesh a fresh build makes', () => {
@@ -153,7 +157,7 @@ describe('road surface tiles', () => {
     const net = new Network(town);
     net.rebuild();
     let elevation = buildRoadElevation(net, ground);
-    const reuse: SurfaceReuse = { ...reuseFor(() => elevation), chunks: new Map() };
+    const reuse: SurfaceReuse = reuseFor(() => elevation);
     const before = buildRoadSurfaces(net, elevation, kept, ground, reuse);
     const end = [...town.nodes.values()].filter((n) => n.incident.length === 1).sort((p, q) => q.x - p.x)[0]!;
     town.addSegment(end.id, town.addNode({ x: end.x + 60, y: end.y + 20 }).id, 1);
@@ -163,6 +167,8 @@ describe('road surface tiles', () => {
     const same = after.meshes.filter((mesh) => before.meshes.includes(mesh)).length;
     expect(after.meshes.length).toBeGreaterThan(8);
     expect(same).toBeGreaterThan(after.meshes.length * 0.6);
+    // The blocks the street reached merged again, their unchanged tiles built again from their rings.
+    expect(after.remade).toBeGreaterThan(0);
     const fresh = buildRoadSurfaces(net, elevation, kept, ground, reuseFor(() => elevation));
     expect(fingerprint(after.group)).toBe(fingerprint(fresh.group));
 
@@ -213,6 +219,30 @@ describe('road surface tiles', () => {
       const warm = buildRoadSurfaces(net, elevation, materials, ground, reuse);
       const fresh = buildRoadSurfaces(net, elevation, materials, ground, reuseFor(() => elevation));
       expect(fingerprint(warm.group)).toBe(fingerprint(fresh.group));
+    }
+  });
+
+  it('keeps no tile arrays between builds, and a lost context gets every block back the same from the rings', () => {
+    // The tiles were kept whole (`reuse.tiles`, and again by the blocks they were merged into, and
+    // by each block's refill): a second copy of every road on the GPU, 330 MB of a 1,280 m city.
+    const net = new Network(fixture());
+    net.rebuild();
+    const elevation = buildRoadElevation(net, ground);
+    const reuse = reuseFor(() => elevation);
+    const built = buildRoadSurfaces(net, elevation, materials, ground, reuse);
+    for (const tiles of reuse.tiles.values()) for (const surfaces of tiles.values()) {
+      expect(surfaces.every((name) => typeof name === 'string')).toBe(true);
+    }
+    for (const { parts } of reuse.chunks.values()) expect(parts.every((digest) => typeof digest === 'number')).toBe(true);
+    // Each block let go of its arrays (uploaded), then filled again as a restored context does.
+    for (const mesh of built.meshes) {
+      const geometry = mesh.geometry;
+      const before = fingerprint(mesh);
+      for (const attribute of [...Object.values(geometry.attributes), geometry.getIndex()!]) {
+        (attribute as { array: ArrayLike<number> | null }).array = null;
+      }
+      refillArrays(mesh);
+      expect(fingerprint(mesh)).toBe(before);
     }
   });
 });

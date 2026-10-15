@@ -1,7 +1,6 @@
-import type { LaneletId } from '@world/lanelets';
+import type { Lanelet, LaneletId } from '@world/lanelets';
 import { ROAD_SECTION_LIMITS } from '@world/roadSection';
 import { kmh } from '@world/units';
-import type { SimWorld } from '../world';
 
 /**
  * A LOWER BOUND OF A TRIP'S COST, for the route searches (`drive/tactical.ts`
@@ -26,8 +25,17 @@ import type { SimWorld } from '../world';
  */
 const FASTEST_LIMIT = kmh(ROAD_SECTION_LIMITS.speedKmh[1]);
 
+/**
+ * What the bound reads of the world (`SimWorld.lanelet`). DO NOT import
+ * `SimWorld`: the world reaches this file, and the type import closed an
+ * import cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface LaneLookup {
+  lanelet(id: LaneletId): Lanelet | undefined;
+}
+
 /** The bound to `goal` from the end of a lane, seconds, each lane's worked out once a search. */
-export function tripLowerBound(w: SimWorld, goal: LaneletId): (lane: LaneletId) => number {
+export function tripLowerBound(w: LaneLookup, goal: LaneletId): (lane: LaneletId) => number {
   const target = w.lanelet(goal);
   if (!target) return () => 0;
   const end = target.centre.point(target.centre.n - 1);

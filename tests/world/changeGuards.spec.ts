@@ -58,3 +58,18 @@ describe('the sites changed', () => {
     for (const q of boxes) expect(area(q)).toBeLessThanOrEqual(m(60) * m(60) + 1e-6);
   });
 });
+
+describe('a reader asking whether a change reached it', () => {
+  it('is answered from the entries of its kinds, no list made of them', () => {
+    const j = new ChangeJournal();
+    for (let k = 0; k < 3_000; k++) j.record(k % 2 ? 'ground' : 'buildings', [[k * 10, 0, k * 10 + 5, 5]]);
+    let listed = 0;
+    const since = j.since.bind(j);
+    j.since = ((...a: Parameters<typeof since>) => { listed++; return since(...a); }) as typeof j.since;
+    expect(j.touches(0, [29_990, 0, 29_995, 5], KINDS)).toBe(true);
+    expect(j.touches(0, [-100, -100, -50, -50], KINDS)).toBe(false);
+    // The building entry at 29,980 m is serial 2,999: not after it.
+    expect(j.touches(2_999, [29_980, 0, 29_985, 5], ['ground', 'buildings'])).toBe(false);
+    expect(listed).toBe(0);
+  });
+});

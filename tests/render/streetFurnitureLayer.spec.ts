@@ -135,7 +135,45 @@ describe('the street furniture kept from the diary', () => {
     }
     expect(compared).toBeGreaterThan(1_000);
     kept.dispose();
-  }, 20_000);
+  });
+
+  it('is the furniture and the grass made from nothing when items come in batches (one diary entry each)', () => {
+    // As the city generator places its furniture (`RoadDoc.addLandscapeMany`): one entry naming its items.
+    const batch = (town: Town, rng: Rng): void => {
+      const n = 1 + Math.floor(rng.float() * 30);
+      town.doc.addLandscapeMany(Array.from({ length: n }, () => {
+        const kind = KINDS[Math.floor(rng.float() * KINDS.length)]!;
+        const at = { x: rng.float() * span, y: rng.float() * span };
+        const snap = snapLandscape(town.net, town.doc.landscape.values(), kind, at, m(30));
+        return { kind, at: snap.ok ? snap.at : at };
+      }));
+      town.settle();
+    };
+    proveIncremental({ source: new Town(), make: () => furnitureProduct(kit), edits: [...edits, batch, batch], steps: 60, seed: 0xba7c });
+    proveIncremental({ source: new Town(), make: () => meadowProduct(kit), edits: [...edits, batch, batch], steps: 40, seed: 0xba7d });
+  });
+
+  it('compiles ahead every store as the layer draws it', () => {
+    const town = new Town();
+    const rng = new Rng(0x3a);
+    for (let i = 0; i < 400; i++) edits[0]!(town, rng);
+    const layer = createStreetFurniture(kit);
+    layer.sync(town.net, town.elevation, town.groundAt, 0);
+    const warm = new Map(layer.warm().map((mesh) => [mesh.name, mesh]));
+    const drawn = [...layer.meshes, ...(layer.grass.children as InstancedMesh[])];
+    expect(drawn.length).toBeGreaterThan(8);
+    // What three keys a program by: the geometry, the material, the instancing and its colours, the shadow's depth material.
+    for (const mesh of drawn) {
+      const ahead = warm.get(mesh.name);
+      expect(ahead, mesh.name).toBeDefined();
+      expect(ahead!.geometry, mesh.name).toBe(mesh.geometry);
+      expect(ahead!.material, mesh.name).toBe(mesh.material);
+      expect(ahead!.customDepthMaterial, mesh.name).toBe(mesh.customDepthMaterial);
+      expect(!!ahead!.instanceColor, mesh.name).toBe(!!mesh.instanceColor);
+      expect([ahead!.castShadow, ahead!.receiveShadow], mesh.name).toEqual([mesh.castShadow, mesh.receiveShadow]);
+    }
+    layer.dispose();
+  });
 
   it('places again only the items an edit reached', () => {
     const town = new Town();

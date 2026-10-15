@@ -1,6 +1,5 @@
 import { m } from './units';
-import { CURB_BAND, type RoadSide, flushOn, footwayOn, laneOffset, laneWidth, symmetric, travelLanes, type RoadType } from './roadTypes';
-import type { SegmentDirection } from './doc';
+import { CURB_BAND, type RoadSide, type SegmentDirection, flushOn, footwayOn, laneOffset, laneWidth, symmetric, travelLanes, type RoadType } from './roadTypes';
 import { carriesPedestrians } from './pedestrianAccess';
 
 /**

@@ -145,6 +145,18 @@ class KindLog {
     this.entries = this.entries.slice(cut);
   }
 
+  /** Whether an entry after `since` reaches one of `list` (a whole-map entry reaches all), newest first; each one looked at counted. */
+  reachesAfter(since: number, list: readonly ChangeRect[]): boolean {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const entry = this.entries[i]!;
+      journalWork.entries++;
+      if (entry.serial <= since) return false;
+      if (entry.rects === null) return true;
+      for (const r of entry.rects) for (const a of list) if (overlaps(r, a)) return true;
+    }
+    return false;
+  }
+
   /** Its entries after `since`, newest first, into `out`; each one looked at counted. */
   after(since: number, out: Change[]): void {
     for (let i = this.entries.length - 1; i >= 0; i--) {
@@ -323,7 +335,20 @@ export class ChangeJournal {
     if (area === null || since >= this.serial) return false;
     const list = isRect(area) ? [area] : area;
     if (list.length === 0) return false;
-    const entries = this.since(since, kinds);
+    if (kinds) {
+      // Each kind's own entries, newest first, back to `since`: no list made
+      // and sorted per question. DO NOT go through `since` here: a building's
+      // plants asking "did the ground move under me" made and sorted every
+      // entry since it was planted, buildings x entries a change (2026-10-15).
+      if (since >= this.serialOf(...kinds)) return false;
+      for (const kind of kinds) {
+        const log = this.byKind.get(kind);
+        if (since < (log ? log.missingUpTo : this.startedAt)) return true;
+        if (log?.reachesAfter(since, list)) return true;
+      }
+      return false;
+    }
+    const entries = this.since(since);
     if (entries === null) return true;
     for (const entry of entries) {
       if (entry.rects === null) return true;

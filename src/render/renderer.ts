@@ -744,8 +744,9 @@ export function createSceneRenderer(
   let storedRead = tilesPrefix === null;
   /** What the store holds now, by `storedKey`. */
   const storedKeys = new Set<string>();
-  /** Tiles built since the last build was kept, to be written. */
-  const toKeep = new Map<string, TileBundle>();
+  /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
+  const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
+    ? new Worker(new URL('./derivedWriter.worker.ts', import.meta.url), { type: 'module' }) : null;
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
@@ -756,7 +757,22 @@ export function createSceneRenderer(
     chunks: new Map(),
     retired: [],
     stored: new Map(),
-    keep: (key, bundle) => { if (tilesPrefix) toKeep.set(key, bundle); },
+    // Written as each tile is built (the store copies it by the structured clone, MDN IndexedDB), so
+    // its arrays go with its build. DO NOT hold the built tiles for idle writes: at the opening that
+    // was every tile of the city, held on the CPU after its blocks were on the GPU.
+    keep: (key, bundle) => {
+      if (!tilesPrefix || storedKeys.has(key)) return;
+      storedKeys.add(key);
+      // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are
+      // merged (`SurfaceReuse.keep`). Without workers, written here as before.
+      if (tileWriter) {
+        const buffers: ArrayBuffer[] = [];
+        for (const tile of bundle.values()) {
+          for (const a of [tile.positions, tile.normals, tile.uvs, tile.colors, tile.sections, tile.indices]) buffers.push(a.buffer as ArrayBuffer);
+        }
+        tileWriter.postMessage({ prefix: tilesPrefix, entries: [[key, bundle]] }, buffers);
+      } else writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
+    },
   };
   if (tilesPrefix && ROAD_TILES_HASH) {
     forgetOtherDerived('roadtiles', ROAD_TILES_HASH);
@@ -769,9 +785,8 @@ export function createSceneRenderer(
   }
   /**
    * After a build: the store made to hold the network just built - its new
-   * tiles written, the tiles no network uses any more forgotten - in idle
-   * time, a few tiles a transaction (MDN, IndexedDB: values are copied by the
-   * structured clone, on this thread).
+   * tiles written as they were built (`keep`), the tiles no network uses any
+   * more (a build overtaken by an edit's included) forgotten.
    */
   const keepTiles = (): void => {
     surfaceReuse.stored!.clear();
@@ -781,19 +796,6 @@ export function createSceneRenderer(
     const gone = [...storedKeys].filter((key) => !current.has(key));
     for (const key of gone) storedKeys.delete(key);
     forgetDerivedKeys(tilesPrefix, gone);
-    const fresh = [...toKeep].filter(([key]) => current.has(key) && !storedKeys.has(key));
-    toKeep.clear();
-    for (const [key] of fresh) storedKeys.add(key);
-    const write = (): void => {
-      const batch = new Map(fresh.splice(0, 8));
-      if (batch.size) writeDerivedMany(tilesPrefix, batch);
-      if (fresh.length) idle(write);
-    };
-    if (fresh.length) idle(write);
-  };
-  const idle = (fn: () => void): void => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 4000 });
-    else setTimeout(fn, 50);
   };
 
   /**
@@ -1165,6 +1167,17 @@ export function createSceneRenderer(
   const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
   /** The serial of the latest change of the ground (not of the diary: a zone drawn is no change of the ground), and how far the diary was read for it. */
   let groundVersion = 0, groundScanned = 0;
+  /** Where the ground changed after `since`, from the diary; null where it cannot say (the whole map, or forgotten). */
+  const groundRectsSince = (since: number): ChangeRect[] | null => {
+    const entries = groundDiary?.since(since, GROUND_KINDS);
+    if (!entries) return null;
+    const rects: ChangeRect[] = [];
+    for (const entry of entries) {
+      if (entry.rects === null) return null;
+      rects.push(...entry.rects);
+    }
+    return rects;
+  };
   const groundChanges: GroundRecord = {
     get version() {
       const diary = groundDiary;
@@ -1176,22 +1189,17 @@ export function createSceneRenderer(
       return groundVersion;
     },
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
+    // DO NOT leave it out: without it the gardens asked every planted
+    // building of the city whether the ground moved under it, at every
+    // change of the ground (`gardenLists.ts` `groundMoved`).
+    rectsSince: (since) => groundRectsSince(since),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
-    rectsSince(since) {
-      const entries = groundDiary?.since(since, GROUND_KINDS);
-      if (!entries) return null;
-      const rects: ChangeRect[] = [];
-      for (const entry of entries) {
-        if (entry.rects === null) return null;
-        rects.push(...entry.rects);
-      }
-      return rects;
-    },
+    rectsSince: (since) => groundRectsSince(since),
   };
   /** Where a building's floor reads the ground and the paving (`FLOOR_READ_REACH`), once per record. */
   const floorBoxes = new WeakMap<Building, ChangeRect>();
@@ -1851,6 +1859,15 @@ export function createSceneRenderer(
         buildUtilities(warmNet, poleGroundAt(warmElevation, flat), sceneryKit),
       ];
       for (const part of parts) group.add(part.group);
+      // And the street furniture's, the long grass's and the signs' meshes as their layers draw them, with
+      // their shadows (`warm`): made when their first thing stands, their programs were linked in that frame.
+      const placedShadows = new Group();
+      for (const mesh of [...furniture.warm(), ...signs.warm()]) {
+        group.add(mesh);
+        const standIn = shadowStandIn(mesh);
+        if (standIn) placedShadows.add(standIn);
+      }
+      void compileAhead(placedShadows, true).then(() => placedShadows.clear());
       void compileAhead(group).then(() => {
         for (const part of parts) part.dispose();
       });
@@ -3411,6 +3428,7 @@ export function createSceneRenderer(
     },
     dispose() {
       roadTiles.dispose();
+      tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the
       // previews and the effects too (they were left out, and a renderer
       // made again - a map opened, the tier changed - left them all behind).

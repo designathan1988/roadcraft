@@ -1,37 +1,10 @@
-import type { BodyClass } from './conflictPoints';
 import type { NodeId } from './ids';
 
-/** A turn as `turnPaths.ts` chose it: one cubic's handle, or two cubics through a point inside the junction. */
-export type TurnChoice = number | { x: number; y: number; share: number };
-
-/** What the search for a turn answers (`turnPaths.ts` `chooseTurn`): the choice and the largest body it fits. */
-export interface ChosenTurn {
-  readonly choice: TurnChoice;
-  readonly maxBodyClass: BodyClass | -1;
-}
-
-/**
- * What a turn is chosen from, as plain numbers, for a worker (`conflictPool.ts`): the arriving and
- * departing lanes and the waiting ones as flat x, y lists (`Polyline.xy`), the junction's surface by
- * its key with its centre and rings, and whether a lane meets a road's end. The same numbers the page
- * would sweep: the turn chosen there is the one chosen here.
- */
-export interface TurnAsk {
-  /** The lanes' own lists (`Polyline.xy`, never changed once made): not copied here, once by the message. */
-  readonly inXY: Float64Array;
-  readonly outXY: Float64Array;
-  readonly waiting: readonly Float64Array[];
-  /** The junction's surface, kept once a key in the plan (`TurnPlan.surfaces`). */
-  readonly surfaceKey: string;
-  readonly fromRoadEnd: boolean;
-  readonly toRoadEnd: boolean;
-}
-
-/** A junction's surface as a worker makes it again: its centre and its rings as flat x, y lists. */
-export interface SurfaceRings {
-  readonly centre: { readonly x: number; readonly y: number };
-  readonly rings: readonly Float64Array[];
-}
+// The turn's question and answer as a worker reads them live with the measurer's interface
+// (`conflictTable.ts`): here they are only named. DO NOT define them here: `conflictTable.ts`
+// importing this file closed an import cycle through `conflictPoints.ts`.
+export type { ChosenTurn, SurfaceRings, TurnAsk, TurnChoice } from './conflictTable';
+import type { ChosenTurn, SurfaceRings, TurnAsk } from './conflictTable';
 
 /**
  * The turns of one build of the lane graph chosen off the page (`LaneletGraph.update` with a plan):

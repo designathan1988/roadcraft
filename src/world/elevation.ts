@@ -200,6 +200,11 @@ const MAX_SOLVE_PASSES = 64;
 /** Softness of the blend between neighbouring profiles, in world units. */
 const BLEND_TAU = m(1);
 /**
+ * A road this much farther than the nearest one weighs under the blend's
+ * 1e-4 cut for sure (exp(-9.26) < 9.6e-5): skipped without its exponential.
+ */
+const BLEND_SKIP = BLEND_TAU * (Math.log(1e4) + 0.05);
+/**
  * How far from a road its own profile is the whole answer.
  *
  * Comfortably past the widest casing (a boulevard's is 31.5) and past the reach
@@ -369,6 +374,12 @@ export interface RoadElevation {
   differences?(other: RoadElevation): { minX: number; minY: number; maxX: number; maxY: number }[] | null;
   /** Each road's whole solved profile as a digest, with its box (for `differences`). */
   summaries?(): ReadonlyMap<SegmentId, { digest: number; box: Aabb; oversized: boolean }>;
+  /**
+   * Runs `work` with every point it reads remembered, so a point asked again
+   * (another surface's vertex there, a skirt's top and bottom) is not searched
+   * again; forgotten when `work` ends. The answers are the same numbers.
+   */
+  remembering?<T>(work: () => T): T;
   /** How many road solves this build ran (a road solved again in a later round counts again): what an edit cost. */
   readonly solved?: number;
 }
@@ -974,9 +985,34 @@ export function buildRoadElevation(
     /** NaN until the height itself has been asked for at this point. */
     height: NaN,
   };
+  /**
+   * Every point asked while `remembering` runs, with what `last` holds for it.
+   * A road tile's vertex is asked again and again, not only in a row: by each
+   * surface sharing it (the asphalt's edge is the kerb's), by both edges of a
+   * skirt and its top and bottom, by the pieces either side of a cut. One
+   * remembered point was 5.5 million height reads for 3.1 million points in
+   * a 2,560 m city (2026-10-15). Emptied when the work ends: it holds one tile's
+   * points, never the map's. DO NOT keep it across `remembering` calls, nor cap
+   * it and evict (CLAUDE.md: a capped cache that evicts and recomputes).
+   */
+  const memo = new PointMemo<Profile>();
+  let memoOn = false;
   const remembers = (x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined,
-    includeManual: boolean): boolean =>
-    last.x === x && last.y === y && last.structures === structures && last.includeManual === includeManual;
+    includeManual: boolean): boolean => {
+    if (last.x === x && last.y === y && last.structures === structures && last.includeManual === includeManual) return true;
+    if (!memoOn) return false;
+    const e = memo.find(x, y);
+    if (e < 0 || memo.structures[e] !== structures || memo.manual[e] !== (includeManual ? 1 : 0)) return false;
+    last.x = x;
+    last.y = y;
+    last.structures = structures;
+    last.includeManual = includeManual;
+    last.road = memo.roads[e]!;
+    last.s = memo.s[e]!;
+    last.distance = memo.distance[e]!;
+    last.height = memo.height[e]!;
+    return true;
+  };
   const remember = (x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined,
     includeManual: boolean, road: Profile | null, s: number, distance: number, height: number): void => {
     last.x = x;
@@ -987,6 +1023,7 @@ export function buildRoadElevation(
     last.s = s;
     last.distance = distance;
     last.height = height;
+    if (memoOn) memo.put(x, y, structures, includeManual, road, s, distance, height);
   };
 
   /** The road nearest a point, out of the structural levels asked for; its arc and distance in `last`. */
@@ -1042,28 +1079,41 @@ export function buildRoadElevation(
 
   /** The height at a point from the `found` candidates just measured. */
   const blend = (x: number, y: number, best: number, found: number): number => {
-    const ground = terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
-    if (found === 0) return ground;
+    // The ground is read only where it is used: under a road's full authority
+    // (every vertex of its surface) it is not. DO NOT read it first for all.
+    if (found === 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
     // How much the roads have to say here at all: everything within
     // `PROFILE_REACH`, nothing past `PROFILE_FADE`, eased in between.
     const authority = 1 - smoothstep(PROFILE_REACH, PROFILE_FADE, best);
-    if (authority <= 0) return ground;
+    if (authority <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
     let sum = 0;
     let weight = 0;
     for (let i = 0; i < found; i++) {
+      // Surely under the cut below: no exponential for a road that cannot count.
+      if ((distances[i] as number) - best > BLEND_SKIP) continue;
       const w = Math.exp(-((distances[i] as number) - best) / BLEND_TAU);
       if (w < 1e-4) continue;
       sum += w * heightAtArc(picked[i] as Profile, arcs[i] as number);
       weight += w;
     }
-    if (weight <= 0) return ground;
+    if (weight <= 0) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
     const road = sum / weight;
-    return authority >= 1 ? road : road * authority + ground * (1 - authority);
+    return authority >= 1 ? road : road * authority + (terrainAt(x, y) + ROAD_GROUND_CLEARANCE) * (1 - authority);
   };
 
   const result: RoadElevation = {
     solved: solvedCount,
     at: query,
+    remembering(work) {
+      if (memoOn) return work();
+      memoOn = true;
+      try {
+        return work();
+      } finally {
+        memoOn = false;
+        memo.clear();
+      }
+    },
     differences(other) {
       const mine = profileSummaries;
       const theirs = other.summaries?.();
@@ -2022,3 +2072,99 @@ class SpatialIndex {
 }
 
 const EMPTY: readonly Profile[] = [];
+
+// ------------------------------------------------------------ point memo
+
+const hashF64 = new Float64Array(1);
+const hashU32 = new Uint32Array(hashF64.buffer);
+
+/**
+ * What the height field found at each point of one piece of work
+ * (`RoadElevation.remembering`), keyed by the point's exact coordinates: open
+ * addressing over typed arrays, grown by doubling and never evicting, emptied
+ * as a whole by `clear`.
+ */
+class PointMemo<R> {
+  private slots = new Int32Array(1 << 12);
+  private xs: Float64Array = new Float64Array(1 << 11);
+  private ys: Float64Array = new Float64Array(1 << 11);
+  s: Float64Array = new Float64Array(1 << 11);
+  distance: Float64Array = new Float64Array(1 << 11);
+  height: Float64Array = new Float64Array(1 << 11);
+  manual: Uint8Array = new Uint8Array(1 << 11);
+  roads: (R | null)[] = [];
+  structures: (ReadonlySet<RoadStructure> | undefined)[] = [];
+  private size = 0;
+
+  private slot(x: number, y: number): number {
+    hashF64[0] = x + 0;
+    let h = Math.imul(hashU32[0]! ^ Math.imul(hashU32[1]!, 0x27d4eb2d), 0x9e3779b1);
+    hashF64[0] = y + 0;
+    h = Math.imul(h ^ hashU32[0]! ^ Math.imul(hashU32[1]!, 0x85ebca6b), 0xc2b2ae35);
+    const mask = this.slots.length - 1;
+    let at = (h ^ (h >>> 15)) & mask;
+    for (;;) {
+      const e = this.slots[at]! - 1;
+      if (e < 0 || (this.xs[e] === x && this.ys[e] === y)) return at;
+      at = (at + 1) & mask;
+    }
+  }
+
+  /** The entry of (x, y), or -1. */
+  find(x: number, y: number): number {
+    return this.slots[this.slot(x, y)]! - 1;
+  }
+
+  put(x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined, includeManual: boolean,
+    road: R | null, s: number, distance: number, height: number): void {
+    let at = this.slot(x, y);
+    let e = this.slots[at]! - 1;
+    if (e >= 0) {
+      // Asked with other filters: the first answer stays (DO NOT overwrite and evict it).
+      if (this.structures[e] !== structures || this.manual[e] !== (includeManual ? 1 : 0)) return;
+    } else {
+      if ((this.size + 1) * 2 > this.slots.length) {
+        this.grow();
+        at = this.slot(x, y);
+      }
+      e = this.size++;
+      if (e >= this.xs.length) this.growEntries();
+      this.slots[at] = e + 1;
+      this.xs[e] = x;
+      this.ys[e] = y;
+    }
+    this.structures[e] = structures;
+    this.manual[e] = includeManual ? 1 : 0;
+    this.roads[e] = road;
+    this.s[e] = s;
+    this.distance[e] = distance;
+    this.height[e] = height;
+  }
+
+  /** Forgets every point; keeps the arrays, sized for the largest piece of work so far. */
+  clear(): void {
+    if (this.size === 0) return;
+    this.slots.fill(0);
+    this.roads.length = 0;
+    this.structures.length = 0;
+    this.size = 0;
+  }
+
+  private grow(): void {
+    this.slots = new Int32Array(this.slots.length * 2);
+    for (let e = 0; e < this.size; e++) this.slots[this.slot(this.xs[e]!, this.ys[e]!)] = e + 1;
+  }
+
+  private growEntries(): void {
+    const n = this.xs.length * 2;
+    const f64 = (a: Float64Array): Float64Array => { const b = new Float64Array(n); b.set(a); return b; };
+    this.xs = f64(this.xs);
+    this.ys = f64(this.ys);
+    this.s = f64(this.s);
+    this.distance = f64(this.distance);
+    this.height = f64(this.height);
+    const manual = new Uint8Array(n);
+    manual.set(this.manual);
+    this.manual = manual;
+  }
+}

@@ -1,12 +1,27 @@
 import { Polyline } from '@core/polyline';
 import { offsetPolyline } from '@core/offset';
-import type { SegmentDirection } from './doc';
-import type { Network, SegmentRibbon } from './network';
 import type { Vec2 } from '@core/vec2';
+import type { ChangeRect } from './changes';
 import type { SegmentId } from './ids';
-import { Level } from './roadTypes';
+import { Level, type RoadType, type SegmentDirection } from './roadTypes';
 import { bandMid, sectionOf } from './section';
 import { m } from './units';
+
+/**
+ * What a footway is laid from, of a road's ribbon (`SegmentRibbon`) and of the
+ * network (`Network`). DO NOT import `network.ts` or `doc.ts` here: both reach
+ * `walkways.ts`, which imports this file, and the type imports closed an import
+ * cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface FootwayRibbon {
+  readonly id: SegmentId;
+  readonly road: RoadType;
+  readonly centre: Record<number, Polyline>;
+}
+export interface FootwayNet {
+  readonly doc: { segment(id: SegmentId): { readonly direction: SegmentDirection } | undefined };
+  ribbonsMeeting(rect: ChangeRect): Iterable<FootwayRibbon>;
+}
 
 /**
  * One side's footway of a road, as the walking network lays it: down the
@@ -15,7 +30,7 @@ import { m } from './units';
  * network (`walkwaySteps`) and what asks for the footway near a point
  * (`editor/transitTools.ts`) both read it here (`walkways.ts` is the network).
  */
-export function footwayPath(ribbon: SegmentRibbon, direction: SegmentDirection, side: 1 | -1): Polyline | null {
+export function footwayPath(ribbon: FootwayRibbon, direction: SegmentDirection, side: 1 | -1): Polyline | null {
   const section = sectionOf(ribbon.road, direction);
   if (!section.walkable) return null;
   const centre = ribbon.centre[Level.Sidewalk];
@@ -35,7 +50,7 @@ const REJECT_STEP = m(1);
  * one wins a tie as a walk of every footway). DO NOT build the walking network
  * of the whole map to find the footway at one point.
  */
-export function nearestFootway(net: Network, p: Vec2, reach: number, rejects?: (point: Vec2) => boolean): { x: number; y: number; segment: SegmentId; d: number } | null {
+export function nearestFootway(net: FootwayNet, p: Vec2, reach: number, rejects?: (point: Vec2) => boolean): { x: number; y: number; segment: SegmentId; d: number } | null {
   let best: { x: number; y: number; segment: SegmentId; d: number } | null = null;
   for (const ribbon of net.ribbonsMeeting([p.x - reach, p.y - reach, p.x + reach, p.y + reach])) {
     const segment = net.doc.segment(ribbon.id);

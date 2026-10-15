@@ -161,7 +161,7 @@ describe('the Banker reads the applicant\'s group', () => {
     for (let i = 0; i < Math.round(40 / DT); i++) step(sim, { traffic: true, pedestrians: true });
     expect(compared).toBeGreaterThan(50);
     console.log(`admissionGroup: ${compared} Banker verdicts compared, ${groupOnly} for the group alone`);
-  }, 60_000);
+  });
 });
 
 describe('the ring meter', () => {
@@ -194,5 +194,5 @@ describe('the ring meter', () => {
       }
     }
     expect(asked).toBeGreaterThan(100);
-  }, 60_000);
+  });
 });
