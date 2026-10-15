@@ -146,7 +146,18 @@ export class Persistence {
    */
   documentText: ((doc: RoadDoc) => string | null) | null = null;
 
+  /**
+   * Which save is the newest: each `saveSession` takes the next. A write that
+   * finishes later than a newer one (the parts or IndexedDB, asynchronous)
+   * points the small key at itself only while it is still the newest.
+   * DO NOT write the pointer unasked: a slow write of the parts came back
+   * after a newer whole map was put in the small key, pointed it at the older
+   * parts, and the reload opened the map as it was before.
+   */
+  private generation = 0;
+
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
+    const generation = ++this.generation;
     if (doc.buildings.size >= PARTS_FROM_BUILDINGS) {
       // A large map in parts, the parts its edit reached (`chunkedSave.ts`); the small key points there.
       this.writeSettings(settings);
@@ -154,8 +165,9 @@ export class Persistence {
       this.partsKept = true;
       void this.parted.save(doc, withUnit(settings), savedAt).then((ok) => {
         if (!ok) { this.onSaveFailed?.(); return; }
+        if (generation !== this.generation) return;
         try { localStorage.setItem(key, `{"version":2,"stored":"parts","savedAt":${savedAt}}`); } catch (error) { console.error('[save] the pointer to the parts was not written; the parts stand', error); }
-      });
+      }, (error: unknown) => { console.error('[save] the parts could not be written', error); this.onSaveFailed?.(); });
       return true;
     }
     let session: string;
@@ -183,9 +195,10 @@ export class Persistence {
     const savedAt = Date.now();
     void this.store.put(key, session).then((ok) => {
       if (!ok) { this.onSaveFailed?.(); return; }
+      if (generation !== this.generation) return;
       this.dropParts();
       try { localStorage.setItem(key, `{"version":2,"stored":"indexeddb","savedAt":${savedAt}}`); } catch { /* the stored copy stands */ }
-    });
+    }, (error: unknown) => { console.error('[save] the map could not be written to IndexedDB', error); this.onSaveFailed?.(); });
     return true;
   }
 
