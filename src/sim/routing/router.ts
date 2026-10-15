@@ -43,15 +43,7 @@ class TrapIndex {
   traps(w: SimWorld, body: number): ReadonlySet<LaneletId> {
     this.follow(w);
     let known = this.bodies.get(body);
-    if (!known) {
-      // @rebuild A body class asked for the first time on this graph: every lane looked at once.
-      known = { seeds: new Set(), traps: null };
-      for (const lane of w.graph.lanelets.values()) {
-        rebuildWork.routing++;
-        if (lane.kind === 'link' && isSeed(w, lane.id, body)) known.seeds.add(lane.id);
-      }
-      this.bodies.set(body, known);
-    }
+    if (!known) this.bodies.set(body, known = { seeds: seedsOf(w, body), traps: null });
     return known.traps ??= peel(w, body, known.seeds);
   }
 
@@ -76,6 +68,19 @@ class TrapIndex {
       known.traps = null;
     }
   }
+}
+
+/**
+ * Every lane with exits none of which this body fits.
+ * @rebuild A body class asked for the first time on this graph: every lane looked at once.
+ */
+function seedsOf(w: SimWorld, body: number): Set<LaneletId> {
+  const seeds = new Set<LaneletId>();
+  for (const lane of w.graph.lanelets.values()) {
+    rebuildWork.routing++;
+    if (lane.kind === 'link' && isSeed(w, lane.id, body)) seeds.add(lane.id);
+  }
+  return seeds;
 }
 
 /** The movements out of a lane this body fits. */

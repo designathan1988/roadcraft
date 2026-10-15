@@ -368,14 +368,8 @@ export class Walkways {
     const doc = net.doc;
     const delta = this.netState === null ? null : net.changesSince(this.netState);
     this.netState = net.state;
-    const rawSegs = new Set<SegmentId>(), nodes = new Set<NodeId>();
-    if (delta === null) {
-      // @rebuild Everything: the first build, a map opened, a network further behind than it remembers.
-      for (const id of this.segments.keys()) rawSegs.add(id);
-      for (const id of doc.segments.keys()) rawSegs.add(id);
-      for (const id of this.nodeUnits.keys()) nodes.add(id);
-      for (const id of doc.nodes.keys()) nodes.add(id);
-    } else {
+    const { rawSegs, nodes } = delta === null ? this.everything(doc) : { rawSegs: new Set<SegmentId>(), nodes: new Set<NodeId>() };
+    if (delta !== null) {
       // A node's record (its height: the deck of its roads) is read by every road at it.
       for (const id of delta.segments) rawSegs.add(id);
       for (const id of delta.nodes) {
@@ -425,6 +419,16 @@ export class Walkways {
     }
     g.settle();
     return g;
+  }
+
+  /**
+   * Every road and node, those built and those there now.
+   * @rebuild The first build, a map opened, a network further behind than it remembers.
+   */
+  private everything(doc: RoadDoc): { rawSegs: Set<SegmentId>; nodes: Set<NodeId> } {
+    const rawSegs = new Set<SegmentId>([...this.segments.keys(), ...doc.segments.keys()]);
+    const nodes = new Set<NodeId>([...this.nodeUnits.keys(), ...doc.nodes.keys()]);
+    return { rawSegs, nodes };
   }
 
   /** A road's two footways, down the middle of each side's through zone. */
