@@ -953,7 +953,10 @@ export class BuildingTool {
   cutView: { x: number; y: number } = { x: 0, y: 1 };
   /** A core in hand (lift or stair), or 'remove': the next click on the cut floor places or removes one. */
   coreKind: CoreKind | 'remove' | null = null;
-  private cutKey = '';
+  /** What the cut preview was made from: the record, the level and the direction. */
+  private cutRecord: Building | null = null;
+  private cutAt = -1;
+  private cutDir = Number.NaN;
   private cutPreview: BuildingPreview | null = null;
 
   setCutLevel(level: number | null): void {
@@ -973,9 +976,14 @@ export class BuildingTool {
     if (this.cutLevel === null || !b) return null;
     const level = Math.max(0, Math.min(this.cutLevel, topLevel(b) - 1));
     const dir = Math.round(Math.atan2(this.cutView.y, this.cutView.x) / (Math.PI / 4));
-    const key = `${JSON.stringify(b)}|${level}|${dir}`;
-    if (key !== this.cutKey) {
-      this.cutKey = key;
+    // The store's record is replaced whenever the building changes, never
+    // changed in place (`BuildingStore.put`): its identity says whether it
+    // moved. DO NOT key on `JSON.stringify(b)`: it wrote the whole building out
+    // every frame (`beforeDraw`).
+    if (b !== this.cutRecord || level !== this.cutAt || dir !== this.cutDir) {
+      this.cutRecord = b;
+      this.cutAt = level;
+      this.cutDir = dir;
       const a = dir * (Math.PI / 4);
       const cut = cutOpen(cloneBuilding(b), level, { x: Math.cos(a), y: Math.sin(a) });
       this.serial++;
