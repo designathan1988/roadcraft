@@ -562,29 +562,29 @@ export interface FacadeBay {
  * only partly against one keeps its exposed piece, as plain wall.
  */
 /**
- * Each building's bays as last worked out, with the record they came from:
- * the platforms, the door links, the access signature and the meshes each
- * worked them out again for every building on every edit (docs/source/performance.md
- * #18). Checked against the record's text, in case one is changed in place.
- * The list handed out is shared: read it, never change it.
+ * Each building's bays as last worked out, by the record they came from: the
+ * platforms, the door links, the access signature and the meshes each worked
+ * them out again for every building on every edit (docs/source/performance.md
+ * #18). The list handed out is shared: read it, never change it.
+ *
+ * By the record itself: a stored record is never changed in place
+ * (`BuildingStore`, OWNERSHIP), so the same object has the same bays. DO NOT
+ * write the whole record as text on every ask to compare it (a furnished
+ * building's JSON, for every bay question of every building).
+ *
+ * The least recently asked let go first: kept for every building (with each
+ * one's record as text then) they were 150 MB of a city of 5 400
+ * (2026-10-14); a building's bays are asked while it is emitted, graded or
+ * walked into, a few hundred at a time.
  */
-/**
- * The bays of the buildings worked out last, the least recently asked let go
- * first. Kept for every building, with each one's whole record as text, they
- * were 150 MB of a city of 5 400 (2026-10-14): a building's bays are asked
- * while it is emitted, graded or walked into, a few hundred at a time.
- * NÃO voltar ao WeakMap sem teto: os prédios vivem enquanto o documento vive.
- */
-const BAYS = new Map<Building, { text: string; bays: FacadeBay[] }>();
+const BAYS = new Map<Building, FacadeBay[]>();
 const BAYS_KEPT = 1024;
 export function facadeBays(b: Building): FacadeBay[] {
-  const text = JSON.stringify(b);
   const known = BAYS.get(b);
-  if (known) BAYS.delete(b);
-  if (known && known.text === text) { BAYS.set(b, known); return known.bays; }
+  if (known) { BAYS.delete(b); BAYS.set(b, known); return known; }
   const bays = workOutFacadeBays(b);
   if (BAYS.size >= BAYS_KEPT) BAYS.delete(BAYS.keys().next().value!);
-  BAYS.set(b, { text, bays });
+  BAYS.set(b, bays);
   return bays;
 }
 
