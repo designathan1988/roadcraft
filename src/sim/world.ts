@@ -433,19 +433,18 @@ export class SimWorld {
     return this.controllers.get(node);
   }
 
-  /** Deterministic iteration order for any pass with cross-agent effects. */
-  //
-  // Sorted once per change of the fleet, not on every call: a tick asked for
-  // it about ten times, each a copy and a sort. The array handed out is never
-  // changed afterwards - a change of the fleet makes a new one - so a pass
-  // that adds or removes vehicles while walking it walks what it was given.
+  /**
+   * Deterministic iteration order for any pass with cross-agent effects: the
+   * fleet by id, kept in that order as it changes (`VersionedMap.inKeyOrder`).
+   * The array handed out is never changed afterwards - a change of the fleet
+   * after it was handed out works on a copy - so a pass that adds or removes
+   * vehicles while walking it walks what it was given. DO NOT sort the fleet
+   * again at each change of it: a car made or gone each tick was the whole
+   * fleet copied and sorted each tick.
+   */
   vehiclesInIdOrder(): readonly Vehicle[] {
-    if (this.vehicleOrder.version !== this.vehicles.version) {
-      this.vehicleOrder = { version: this.vehicles.version, list: [...this.vehicles.values()].sort((a, b) => a.id - b.id) };
-    }
-    return this.vehicleOrder.list;
+    return this.vehicles.inKeyOrder();
   }
-  private vehicleOrder: { version: number; list: readonly Vehicle[] } = { version: -1, list: [] };
 
   junctionNodesInOrder(): readonly NodeId[] {
     if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
@@ -1135,19 +1134,70 @@ function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
   return true;
 }
 
-/** A Map that counts its changes of membership, for caches over it (`vehiclesInIdOrder`). */
-export class VersionedMap<K, V> extends Map<K, V> {
+/**
+ * A Map that counts its changes of membership, for caches over it, and keeps
+ * its values in the order of their keys (`inKeyOrder`): a key above every
+ * other - a new vehicle's id - goes on the end, any other is put in its place
+ * by halving, and one taken out leaves its place. The list handed out is
+ * shared until the next change, which copies it first (copy on write).
+ */
+export class VersionedMap<K extends number, V> extends Map<K, V> {
   version = 0;
+  private orderedKeys: K[] = [];
+  private ordered: V[] = [];
+  /** The list was handed out: the next change copies it first. */
+  private shared = false;
+
   override set(key: K, value: V): this {
     this.version++;
-    return super.set(key, value);
+    const had = super.has(key);
+    super.set(key, value);
+    this.own();
+    const keys = this.orderedKeys;
+    const at = had ? slotOf(keys, key) : keys.length && keys[keys.length - 1]! >= key ? slotOf(keys, key) : keys.length;
+    if (had) this.ordered[at] = value;
+    else { keys.splice(at, 0, key); this.ordered.splice(at, 0, value); }
+    return this;
   }
   override delete(key: K): boolean {
     this.version++;
-    return super.delete(key);
+    const had = super.delete(key);
+    if (had) {
+      this.own();
+      const at = slotOf(this.orderedKeys, key);
+      this.orderedKeys.splice(at, 1);
+      this.ordered.splice(at, 1);
+    }
+    return had;
   }
   override clear(): void {
     this.version++;
     super.clear();
+    this.orderedKeys = [];
+    this.ordered = [];
+    this.shared = false;
   }
+
+  /** The values in the order of their keys; the array is never changed after it is handed out. */
+  inKeyOrder(): readonly V[] {
+    this.shared = true;
+    return this.ordered;
+  }
+
+  private own(): void {
+    if (!this.shared) return;
+    this.orderedKeys = this.orderedKeys.slice();
+    this.ordered = this.ordered.slice();
+    this.shared = false;
+  }
+}
+
+/** Where `key` is, or would go, in ascending `keys` (the first not below it). */
+function slotOf<K extends number>(keys: readonly K[], key: K): number {
+  let lo = 0, hi = keys.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (keys[mid]! < key) lo = mid + 1; else hi = mid;
+  }
+  return lo;
 }
