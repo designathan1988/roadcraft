@@ -8,7 +8,7 @@ import {
   blueprintByKey,
   bodyOf,
   generateBlock,
-  instantiate,
+  placeBody,
 } from '@world/buildings/blueprints';
 import { cityBuilding } from '@world/buildings/cityBuildings';
 import { FURNITURE_SIZE, type FurnitureKind, cutOpen, furnishingOf } from '@world/buildings/interior';
@@ -1140,7 +1140,8 @@ export class BuildingTool {
     };
     if (!hit) {
       const body = shapeBody(spec.shape, size, size, 3);
-      const draft = { ...instantiate(body, world, 0), id: PREVIEW_ID } as Building;
+      // A body made here for this draft alone: placed, not copied (`placeBody`).
+      const draft = { ...placeBody(body, world, 0), id: PREVIEW_ID } as Building;
       const v = draft.volumes[0];
       if (v) shape(v);
       return { draft, existing: null, made: v?.id ?? null };
@@ -2662,7 +2663,9 @@ export class BuildingTool {
   }
 
   private ghostAt(anchor: Vec2, rotation: number): void {
-    const draft = { ...instantiate(this.body, anchor, rotation, this.blueprintKey ?? undefined), id: PREVIEW_ID } as Building;
+    // The body shared, not copied (`placeBody`): the ghost is only read, and
+    // cloned when it is placed (`placeHere`).
+    const draft = { ...placeBody(this.body, anchor, rotation, this.blueprintKey ?? undefined), id: PREVIEW_ID } as Building;
     // Overlapping another building is a weld, not a refusal - when the weld
     // works: the ghost is green only if the drop will build.
     const blocking = this.verdict(draft, undefined);

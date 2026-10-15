@@ -41,7 +41,18 @@ export interface Blueprint {
  * want it, and the renderer may not reach into `editor/`.
  */
 export function instantiate(body: BlueprintBody, anchor: Vec2, rotation: number, blueprint?: string): Omit<Building, 'id'> {
-  const draft = { ...(JSON.parse(JSON.stringify(body)) as BlueprintBody), x: 0, y: 0, rotation } as Omit<Building, 'id'>;
+  return placeBody(JSON.parse(JSON.stringify(body)) as BlueprintBody, anchor, rotation, blueprint);
+}
+
+/**
+ * `instantiate` without the copy: the record SHARES the body's volumes,
+ * storeys and elements, so it is only to be read - a ghost under the pointer
+ * (`BuildingTool.ghostAt`), cloned before it is stored. DO NOT copy the body
+ * for a ghost: every pointer move wrote the whole body to JSON and read it
+ * back to move it.
+ */
+export function placeBody(body: BlueprintBody, anchor: Vec2, rotation: number, blueprint?: string): Omit<Building, 'id'> {
+  const draft = { ...body, x: 0, y: 0, rotation } as Omit<Building, 'id'>;
   const f = footprintBox(draft as Building);
   const local = { x: (f.x0 + f.x1) / 2, y: f.y0 };
   const offset = localDirToWorld(draft as Building, local.x, local.y);
