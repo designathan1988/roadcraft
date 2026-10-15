@@ -2641,14 +2641,14 @@ function frame(now: number): void {
   beginFrameWork();
   // Everyone watching the game's state is told what changed, once, here.
   gameState.flush();
-  frameTimer.mark('painéis');
+  frameTimer.mark('panels');
   const wall = frameClock.tick(now);
   // The camera's glide: keys held, the wheel's notches being spent.
   if (cameraMotion.step(now)) persistence.saveSettingsSoon(sessionSettings);
   // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's
   // time on the events' clock: it starts at the release itself.
   cameraHand.advance(now);
-  frameTimer.mark('câmera');
+  frameTimer.mark('camera');
 
   // The opening puts the town together in parts (`SceneHandle.worldBusy`):
   // the traffic waits for the roads it drives on to be drawn.
@@ -2673,7 +2673,7 @@ function frame(now: number): void {
     holdSim = true;
     requestDraw();
   }
-  frameTimer.mark('topologia');
+  frameTimer.mark('topology');
   const alpha = holdSim
     ? 1
     : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }), SIM_FRAME_BUDGET_MS);
@@ -2683,7 +2683,7 @@ function frame(now: number): void {
   if (growthDue.due(simTime)) growZones();
   if (decayDue.due(simTime)) decayWatch();
   actions.tick(simTime);
-  frameTimer.mark('simulação');
+  frameTimer.mark('simulation');
 
   if (net.revision !== doc.revision) {
     // Geometry is still refreshed during a drag, but a 20 Hz preview is more
@@ -2694,22 +2694,22 @@ function frame(now: number): void {
       if (!mover.dragging && sim.topologyRevision !== net.trafficRevision) rebuildSimulationTopology();
     }
   }
-  frameTimer.mark('rede viária');
+  frameTimer.mark('roadNetwork');
   buildings.beforeDraw(game.tool === 'building');
-  frameTimer.mark('prédios');
+  frameTimer.mark('buildings');
   // The pole run under the pointer, planned once per frame: the 3D preview
   // shows it as it will stand, the overlay marks only what cannot be built.
   framePolePlan = poleTool.plan();
   scene.setPolePreview(net, framePolePlan && !framePolePlan.refused && framePolePlan.poles.length >= 2
     ? { poles: framePolePlan.poles.map((pole) => ({ x: pole.at.x, y: pole.at.y, lamp: pole.lamp, standing: pole.existing !== null })) }
     : null);
-  frameTimer.mark('postes');
+  frameTimer.mark('poles');
   scene.draw(net, sim, alpha, wall, { holdRoads: terrainBrush.stroking });
-  frameTimer.mark('desenho');
+  frameTimer.mark('drawing');
   drawnOnce = true;
   drawOverlayScreen();
   updateCompass();
-  frameTimer.mark('sobreposição');
+  frameTimer.mark('overlay');
   if (topologyAfterDraw) {
     topologyAfterDraw = false;
     requestDraw();
@@ -2726,7 +2726,7 @@ function frame(now: number): void {
     noteSimulationIssues();
   }
   syncLoadingCurtain();
-  frameTimer.mark('painéis');
+  frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
 

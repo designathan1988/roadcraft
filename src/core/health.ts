@@ -148,19 +148,32 @@ const FRAME_BUDGET_MS = 1000 / 60;
 export const LONG_FRAME_MS = 50;
 
 /**
+ * The systems of the frame loop (`main.ts` `frame`), by id: what a frame's
+ * time is told by. The F9 monitor shows each through the dictionary
+ * (`health.system.<id>`). DO NOT name a system by its words in one
+ * language: they were the monitor's text in Portuguese whatever the game's
+ * language was.
+ */
+export type FrameSystem = 'panels' | 'camera' | 'topology' | 'simulation' | 'roadNetwork' | 'buildings' | 'poles' | 'drawing' | 'overlay';
+
+/** The dictionary key of a system's name, as the monitor shows it. */
+export const systemKey = (system: string): string => `health.system.${system}`;
+
+/**
  * Each system's share of a frame, ms: declared once, here. A system over
  * its share is named in a long frame's entry; the shares add to more than a
- * frame because they are rarely all spent in the same one.
+ * frame because they are rarely all spent in the same one. Absent (the
+ * camera): a whole frame.
  */
-const SYSTEM_BUDGET_MS: Readonly<Record<string, number>> = {
-  'simulação': 4,
-  'topologia': 6,
-  'rede viária': 4,
-  'prédios': 3,
-  'postes': 1,
-  'desenho': 8,
-  'sobreposição': 2,
-  'painéis': 2,
+const SYSTEM_BUDGET_MS: Readonly<Partial<Record<FrameSystem, number>>> = {
+  simulation: 4,
+  topology: 6,
+  roadNetwork: 4,
+  buildings: 3,
+  poles: 1,
+  drawing: 8,
+  overlay: 2,
+  panels: 2,
 };
 
 /** One frame's systems, ms each. */
@@ -192,7 +205,7 @@ export class FrameTimer {
   }
 
   /** The time since the last mark (or the beginning) was `system`'s. */
-  mark(system: string, now = performance.now()): void {
+  mark(system: FrameSystem, now = performance.now()): void {
     this.current.set(system, (this.current.get(system) ?? 0) + (now - this.lap));
     this.lap = now;
   }
@@ -255,5 +268,5 @@ export function systemsOf(frames: readonly FrameRecord[]): [string, number][] {
 
 /** The systems of a frame that went over their share (`SYSTEM_BUDGET_MS`). */
 export function overBudget(frame: FrameRecord): [string, number][] {
-  return [...frame.systems].filter(([name, ms]) => ms > (SYSTEM_BUDGET_MS[name] ?? FRAME_BUDGET_MS));
+  return [...frame.systems].filter(([name, ms]) => ms > (SYSTEM_BUDGET_MS[name as FrameSystem] ?? FRAME_BUDGET_MS));
 }

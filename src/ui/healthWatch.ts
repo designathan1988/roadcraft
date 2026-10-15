@@ -1,4 +1,4 @@
-import { type FrameTimer, type HealthEntry, type HealthLog, LONG_FRAME_MS, systemsOf } from '@core/health';
+import { type FrameTimer, type HealthEntry, type HealthLog, LONG_FRAME_MS, systemKey, systemsOf } from '@core/health';
 import { stepBudget } from '@core/perfBudget';
 import { t } from './i18n';
 
@@ -28,6 +28,17 @@ import { t } from './i18n';
  * written. DO NOT write a message's text here: they were Portuguese in the
  * code, and an English player read "Erro sem mensagem".
  */
+/**
+ * A frame system's name in the game's language (`health.system.<id>`,
+ * `core/health.ts` `FrameSystem`); its id where the dictionary has none (an
+ * entry of an earlier session, written under the old names).
+ */
+export function systemName(system: string): string {
+  const key = systemKey(system);
+  const name = t(key);
+  return name === key ? system : name;
+}
+
 export interface HealthWatch {
   /** Whether the browser reports long frames itself; if not, the frame loop does (`frameEnded`). */
   readonly longFrames: boolean;
@@ -187,7 +198,7 @@ export function watchHealth(options: {
       .sort((a, b) => (b.end - b.start) - (a.end - a.start)).slice(0, 5)
       .map((h) => `${h.name} ${Math.round(h.end - h.start)} ms`);
     const top = systems[0];
-    const message = top ? t('health.msg.slowFrame', { what: top[0] }) : steps[0] ? t('health.msg.slowFrame', { what: steps[0].replace(/ \d+ ms$/, '') }) : t('health.msg.slowFrameOutside');
+    const message = top ? t('health.msg.slowFrame', { what: systemName(top[0]) }) : steps[0] ? t('health.msg.slowFrame', { what: steps[0].replace(/ \d+ ms$/, '') }) : t('health.msg.slowFrameOutside');
     let where = '';
     try { where = context(); } catch { /* without it */ }
     const detail = [...(steps.length ? [t('health.msg.steps', { list: steps.join(' · ') })] : []), ...(scripts.length ? [t('health.msg.scripts', { list: scripts.join(' · ') })] : [])].join('\n');
