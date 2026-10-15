@@ -119,6 +119,7 @@ import { clearBulbs } from '@world/junction/bulb';
 
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
+import { RoadTop } from '@editor/roadTop';
 
 type Alignment = 'straight' | 'curve' | 'free';
 
@@ -970,26 +971,21 @@ const PICK_STEP = m(0.8);
 /**
  * The highest surface drawn anywhere - the ground's corners (the mesh is flat
  * between them, so its top is one of them) and every road's height at its
- * nodes - with a margin for the decks between nodes and the platforms graded
- * under buildings, once per road or land edit. The picks march down the ray
- * from here: from a fixed ceiling over the highest possible mountain they
- * sampled the scene a hundred times and more on every pointer move above
- * nothing at all.
+ * nodes (`editor/roadTop.ts`, kept by cell from the diary) - with a margin for
+ * the decks between nodes and the platforms graded under buildings. The picks
+ * march down the ray from here: from a fixed ceiling over the highest possible
+ * mountain they sampled the scene a hundred times and more on every pointer
+ * move above nothing at all.
+ * DO NOT walk `doc.nodes` here on each road edit: `RoadTop` reads only the
+ * cells the edit reached.
  */
-let surfaceTopFor = '';
-let surfaceTopValue = PICK_TOP;
+const roadTop = new RoadTop(doc, net, (x, y) => scene.elevationAt(x, y));
 function surfaceTop(): number {
   // The land as drawn (`SceneHandle.landTop`, read again by the renderer when
   // it rewrites the ground); a road's cut and fill only brings the ground to
   // its deck, which the nodes' heights cover.
-  const land = scene.landTop();
-  const key = `${doc.revision}:${land}`;
-  if (key === surfaceTopFor) return surfaceTopValue;
-  surfaceTopFor = key;
-  let top = land;
-  for (const node of doc.nodes.values()) top = Math.max(top, scene.elevationAt(node.x, node.y));
-  surfaceTopValue = Number.isFinite(top) ? top + 12 : PICK_TOP;
-  return surfaceTopValue;
+  const top = Math.max(scene.landTop(), roadTop.height());
+  return Number.isFinite(top) ? top + 12 : PICK_TOP;
 }
 
 /**
