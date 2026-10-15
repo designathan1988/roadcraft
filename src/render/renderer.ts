@@ -2156,6 +2156,24 @@ export function createSceneRenderer(
     kept: { readonly key: string; readonly of: readonly Candidate[]; readonly idx: readonly number[]; readonly z: readonly number[] } | null;
   }
   const naturePlates = new WeakMap<object, NaturePlate>();
+  /**
+   * Each plate's land, as a serial moved only when a change of the terrain reached that plate (the
+   * diary's 'terrain' rectangles), and the latest serial: what a plate's sweep reads of the land. DO NOT
+   * key every plate's sweep on the document's terrain revision: a dab of the brush anywhere swept every
+   * plate of the map again (some 35 ms a plate).
+   */
+  const plateLandRead = new JournalCursor(['terrain']);
+  const plateLand = new WeakMap<object, number>();
+  let landSerial = 0;
+  const bringPlateLand = (doc: RoadDoc): void => {
+    const entries = plateLandRead.read(doc.changes);
+    if (entries !== null && entries.length === 0) return;
+    for (const part of terrain.parts) {
+      const box: ChangeRect = [part.cx - TERRAIN_HALF - TERRAIN_CELL, part.cy - TERRAIN_HALF - TERRAIN_CELL, part.cx + TERRAIN_HALF + TERRAIN_CELL, part.cy + TERRAIN_HALF + TERRAIN_CELL];
+      const reached = entries === null || entries.some((e) => e.rects === null || e.rects.some((r) => r[0] <= box[2] && r[2] >= box[0] && r[1] <= box[3] && r[3] >= box[1]));
+      if (reached) plateLand.set(part.surface, ++landSerial);
+    }
+  };
   const natureSweep = (key: string): NatureSweep => {
     const trees: Candidate[] = [];
     if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key, trees, budget: 0, room: null };
@@ -2182,17 +2200,16 @@ export function createSceneRenderer(
     const plates: NaturePlate[] = [];
     let treeSum = 0;
     const d = WOODS_SLOPE_STEP;
-    // What a plate's density reads besides its own ecology: the land's
-    // revision and the vegetation setting (the key less the ecology summed
-    // over every plate).
-    const rest = key.slice(key.indexOf(':'));
+    // What a plate's density reads besides its own ecology: its own land (`plateLand`) and the
+    // vegetation setting.
+    const vegetation = quality.vegetation;
     for (const part of terrain.parts) {
       const field = part.surface.ecology();
       if (!field) continue;
       // Kept from the last sweep while its own ecology and the land are as
       // they were: every plate brought in full or let go swept all the others
       // again (half a second over a camera's turn).
-      const plateKey = `${part.surface.ecologyRevision}${rest}`;
+      const plateKey = `${part.surface.ecologyRevision}:${plateLand.get(part.surface) ?? 0}:${vegetation}`;
       const known = naturePlates.get(part.surface);
       if (known && known.key === plateKey) {
         plates.push(known);
@@ -2869,7 +2886,8 @@ export function createSceneRenderer(
           coverKept = { ...next, geology, standIns };
         }
         // The ecosystem's own trees.
-        const natureSweepKey = `${terrain.ecologyRevision}:${net.doc.terrainRevision}:${quality.vegetation}`;
+        bringPlateLand(net.doc);
+        const natureSweepKey = `${terrain.ecologyRevision}:${landSerial}:${quality.vegetation}`;
         if (natureSweepWant !== natureSweepKey || natureSweepPending) {
           const at = performance.now();
           natureSweepWant = natureSweepKey;
