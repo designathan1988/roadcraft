@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import type { ChangeRect } from '@world/changes';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import {
@@ -96,7 +97,7 @@ export class LotTool {
    * milliseconds a frame (`planLotsSteps`), again when the roads or the lots
    * change; nothing is stored until the player paints.
    */
-  private proposal: { key: string; steps: Generator<void, LotPlan> | null; lots: readonly Vec2[][]; keys: readonly string[] } | null = null;
+  private proposal: { key: string; steps: Generator<void, LotPlan> | null; lots: readonly Vec2[][]; keys: readonly string[]; keyRects: readonly ChangeRect[] } | null = null;
   private corner: { pointer: number; from: Vec2; to: Vec2 } | null = null;
   private drawn: { pointer: number; a: Vec2; b: Vec2; angle: number } | null = null;
   private joinFirst: number | null = null;
@@ -215,7 +216,7 @@ export class LotTool {
   advanceProposal(budget = PROPOSAL_BUDGET_MS): boolean {
     const key = this.proposalKey();
     if (!this.proposal || this.proposal.key !== key) {
-      this.proposal = { key, steps: planLotsSteps(this.doc, this.net), lots: this.proposal?.lots ?? [], keys: [] };
+      this.proposal = { key, steps: planLotsSteps(this.doc, this.net), lots: this.proposal?.lots ?? [], keys: [], keyRects: [] };
     }
     const p = this.proposal;
     if (!p.steps) return false;
@@ -226,6 +227,7 @@ export class LotTool {
         p.steps = null;
         p.lots = r.value.add.map((c) => c.corners);
         p.keys = r.value.keys;
+        p.keyRects = r.value.keyRects ?? [];
         if (this.waiting) {
           const { stroke, use, density } = this.waiting;
           this.waiting = null;
@@ -270,7 +272,7 @@ export class LotTool {
     // waited for the whole street land to be planned anew.
     if (before && fresh.length) {
       const laid = new Set(stroke.fresh);
-      this.proposal = { key: this.proposalKey(), steps: null, lots: before.lots.filter((_, k) => !laid.has(k)), keys: before.keys };
+      this.proposal = { key: this.proposalKey(), steps: null, lots: before.lots.filter((_, k) => !laid.has(k)), keys: before.keys, keyRects: before.keyRects };
     }
     this.refused.clear();
     host.hint(stroke.remove ? 'hint.zone.removed' : 'hint.zone.painted');
@@ -406,7 +408,10 @@ export class LotTool {
     const prop = this.proposal;
     if (!prop || prop.steps || prop.key !== this.proposalKey() || !prop.lots.length) return;
     const add = prop.lots.map((corners) => ({ key: '', corners: [...corners] }));
-    this.host.mutate(() => applyLots(this.doc, { add, keys: [...prop.keys], drop: [] }));
+    // With where each key's land lies (`LotPlan.keyRects`): DO NOT hand the
+    // keys without it - a key with no place is written as the whole map, and
+    // every reader of the lots worked the town out again.
+    this.host.mutate(() => applyLots(this.doc, { add, keys: [...prop.keys], drop: [], keyRects: [...prop.keyRects] }));
   }
 
   /** @perInput Runs once an input on one thing (a press, a release, a click): nothing it reaches may walk the map. */
