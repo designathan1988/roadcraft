@@ -86,7 +86,7 @@ describe('the lot grid', () => {
     let blocked = 0;
     for (const args of seen.calls.splice(0)) blocked += same(args as Args);
     expect(blocked).toBeGreaterThan(1000);
-  }, 120_000);
+  });
 
   it('is the grid of before for random lots of turned parts and walls', () => {
     const rng = new Rng(0x1a7);

@@ -57,7 +57,7 @@ describe('a lane an edit took and an undo gave back', () => {
       entered = sim.rt(lane).order.some((id) => !onItAtUndo.has(id));
     }
     expect(entered, 'a vehicle drove into the lane after the undo').toBe(true);
-  }, 60_000);
+  });
 });
 
 describe('reading a lane', () => {

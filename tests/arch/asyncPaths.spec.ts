@@ -98,7 +98,7 @@ describe('the road tiles kept for a later session', () => {
     const keep = renderer.slice(renderer.indexOf('keep: (key, bundle) =>'), renderer.indexOf('keep: (key, bundle) =>') + 900);
     expect(keep).toMatch(/tileWriter\.postMessage\(\{ prefix: tilesPrefix, entries: \[\[key, bundle\]\] \}, buffers\)/);
     const surfaces = read('src/render/roadSurfaces.ts');
-    expect(surfaces.indexOf('reuse?.keep?.(')).toBeGreaterThan(surfaces.indexOf('mergeMs += performance.now() - mergeAt;'));
+    expect(surfaces.indexOf('reuse?.keep?.(')).toBeGreaterThan(surfaces.indexOf('mergeMs +='));
   });
 });
 

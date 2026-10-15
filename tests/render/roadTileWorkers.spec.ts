@@ -81,5 +81,5 @@ describe('road surface tiles shaped off the page', () => {
     const off = await stepped(net, tiler);
     expect(tiler.asked).toBeGreaterThan(20);
     expect(bytesOf(off.group)).toBe(bytesOf(here.group));
-  }, 300_000);
+  });
 });

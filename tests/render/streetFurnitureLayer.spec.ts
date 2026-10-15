@@ -135,7 +135,7 @@ describe('the street furniture kept from the diary', () => {
     }
     expect(compared).toBeGreaterThan(1_000);
     kept.dispose();
-  }, 20_000);
+  });
 
   it('is the furniture and the grass made from nothing when items come in batches (one diary entry each)', () => {
     // As the city generator places its furniture (`RoadDoc.addLandscapeMany`): one entry naming its items.

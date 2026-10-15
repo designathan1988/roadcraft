@@ -155,7 +155,7 @@ describe('instances kept thing by thing', () => {
     }
     expect(compared).toBeGreaterThan(5_000);
     layer.dispose();
-  }, 20_000);
+  });
 
   it('sends nothing to the GPU again when the same instances are in view', () => {
     const rng = new Rng(5);

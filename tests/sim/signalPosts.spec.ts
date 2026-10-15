@@ -94,7 +94,7 @@ describe('the signal posts the walkers keep clear of', () => {
     expect(sim.signalChangesSince(before).nodes).not.toBeNull();
     sim.signalPosts.follow(sim);
     expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
-  }, 60_000);
+  });
 
   it('are never stood inside by anybody walking or waiting at the corner', () => {
     const doc = new RoadDoc();
@@ -121,5 +121,5 @@ describe('the signal posts the walkers keep clear of', () => {
     console.log(`signalPosts: ${near} walker-ticks within 1.5 m of a post, ${inside} inside one, nearest ${(worst / m(1)).toFixed(2)} m`);
     expect(near).toBeGreaterThan(50);
     expect(inside).toBe(0);
-  }, 120_000);
+  });
 });
