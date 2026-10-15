@@ -132,9 +132,6 @@
   "src/people/body/proxy.ts": {
     "roadcraft/no-module-state": {
       "count": 1
-    },
-    "roadcraft/no-silent-catch": {
-      "count": 2
     }
   },
   "src/people/roster.ts": {
