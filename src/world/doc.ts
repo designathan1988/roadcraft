@@ -4,6 +4,7 @@ import { type LaneLink, linksDigest, normalizeLaneLinks } from './roads/connecto
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
 import { isLot, type Lot } from './lots';
 import { OpenLots } from './openLots';
+import { LotStore } from './lotStore';
 import type { Vec2 } from '@core/vec2';
 import { type CurveShape, fitShapeToRadius } from '@core/bezier';
 import {
@@ -394,36 +395,63 @@ export class RoadDoc {
    * only so old maps load; nothing makes them any more.
    */
   readonly zoneMarks: ZoneMark[] = [];
-  /** The land's lots (`world/lots.ts`): the cadastre the player zones and edits. */
-  readonly lots: Lot[] = [];
+  /**
+   * The land's lots (`world/lots.ts`): the cadastre the player zones and
+   * edits, with its owner (`lotStore.ts`): by id, by place, every change in
+   * the diary with its ids. Written only through it.
+   */
+  readonly lotStore = new LotStore(this.changes);
+  /**
+   * The lots as an array, in their order: made again after each change, for
+   * the readers that still walk the whole list (`editor/lotTool.ts`,
+   * `editor/bulldozer.ts`, `editor/cityGenerator.ts`, `sim/agents/lorryDocks.ts`,
+   * `render/renderer.ts`, `main.ts`).
+   * @deprecated Pending: ask by place (`lotsIn`, `lotAt`) or by id (`lot`),
+   * the count by `lotStore.size`; the whole list only where the whole map is
+   * the work (`lotStore.all()`).
+   */
+  get lots(): readonly Lot[] {
+    return this.lotStore.list();
+  }
   /** The blocks and strips already cut into lots, so a lot deleted on purpose is not made again. */
-  readonly lotKeys: string[] = [];
-  nextLotId = 1;
-  /** The open lots in order and by place, for the growth (`openLots.ts`): made when first asked, checked against the diary at every question. */
-  private openLotsIndex: OpenLots<Lot> | null = null;
-  get openLots(): OpenLots<Lot> {
-    return this.openLotsIndex ??= new OpenLots<Lot>({
-      lots: this.lots,
-      lotRevision: () => this.lotRevision,
+  get lotKeys(): readonly string[] {
+    return this.lotStore.keys;
+  }
+  /** The id the next lot gets. */
+  get nextLotId(): number {
+    return this.lotStore.nextId;
+  }
+  /** A lot by its id. */
+  lot(id: number): Lot | undefined {
+    return this.lotStore.get(id);
+  }
+  /** The lots whose box meets a rectangle (a superset: test each), in increasing id order. */
+  lotsIn(rect: ChangeRect): Lot[] {
+    return this.lotStore.in(rect);
+  }
+  /** The lot whose shape holds a point, or undefined. */
+  lotAt(p: Vec2): Lot | undefined {
+    return this.lotStore.at(p);
+  }
+  /** The open lots in order and by place, for the growth (`openLots.ts`): made when first asked, kept by the diary's entries by id. */
+  private openLotsIndex: OpenLots | null = null;
+  get openLots(): OpenLots {
+    return this.openLotsIndex ??= new OpenLots({
+      lots: this.lotStore,
       standing: (id) => this.buildings.has(id as BuildingId),
       place: (id) => { const b = this.buildings.get(id as BuildingId); return b ? { x: b.x, y: b.y } : null; },
       buildingsRevision: () => this.buildings.revision,
       buildingsSince: (serial) => this.changes.since(serial, ['buildings']),
-      lotsChanged: (rects, cause) => this.lotsChanged(rects, cause),
     });
   }
 
   /**
-   * The zoning or the lots changed there (`zoneRevision`, `lotRevision`):
-   * the way in for the tools that change them in place (`world/lots.ts`,
-   * `editor/zoning.ts`), so the overlay and the growth notice it.
+   * The zoning changed there (`zoneRevision`): the way in for the tools that
+   * change it in place (`editor/zoning.ts`), so the overlay and the growth
+   * notice it. The lots are written by their owner (`lotStore`).
    */
   zonesChanged(rects: readonly ChangeRect[] | null, cause?: string): void {
     this.changes.record('zones', rects, cause ? { cause } : {});
-  }
-
-  lotsChanged(rects: readonly ChangeRect[] | null, cause?: string): void {
-    this.changes.record('lots', rects, cause ? { cause } : {});
   }
 
   /**
@@ -1079,13 +1107,14 @@ export class RoadDoc {
   setMarkingStyle(style: MarkingStyleId): void {
     if (this.markingStyle === style) return;
     this.markingStyle = style;
-    // The whole map, on purpose: every road's paint changes, and the network
-    // takes in a change with places only for the roads whose sources differ
-    // (`networkBuild.ts` `segmentSourceKey`, which does not hold the style) -
-    // with the roads' rectangles nothing would be painted again. DO NOT give
-    // this entry rectangles before the style is a source of the paint (a
-    // diary kind of its own, or part of the source key). Not the traffic.
-    this.roadsChanged(null, false, { detail: 'paint style' });
+    // Its own kind, the whole map: every road's paint and the plates the
+    // regional standard puts up change, and nothing else. DO NOT write it as a
+    // change of the roads again: `revision` moved, and the network, the lanes,
+    // the conflict table, the simulation and the roads' heights were worked
+    // out again for every road of the map, for a coat of paint. What draws the
+    // paint reads this kind (`render/renderer.ts`: the road surfaces and the
+    // signs).
+    this.changes.record('markingStyle', null, { detail: 'paint style' });
   }
 
   /** A U-turn through the median for the traffic arriving from `from` (`RoadNode.uturn`), or none. */
@@ -1533,10 +1562,9 @@ export class RoadDoc {
     copy.economy = { ...this.economy };
     copy.zones.push(...this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
     copy.zoneMarks.push(...this.zoneMarks.map((mark) => ({ ...mark })));
-    copy.lots.push(...this.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) as unknown as Lot['corners'] })));
-    copy.lotKeys.push(...this.lotKeys);
+    // The records shared, as the buildings' (never changed in place: `LotStore` OWNERSHIP).
+    copy.lotStore.shareFrom(this.lotStore);
     copy.nextZoneId = this.nextZoneId;
-    copy.nextLotId = this.nextLotId;
     // Deep, as the file writes them (`serialized`): nested specs, never aliased.
     copy.people.push(...this.people.map((person) => JSON.parse(JSON.stringify(person)) as PersonSpec));
     copy.transit = JSON.parse(JSON.stringify(this.transit)) as TransitData;
@@ -1572,11 +1600,12 @@ export class RoadDoc {
     const moved = this.movedIn(source);
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
+    const lotIds = this.lotsMovedIn(source);
     const roads = moved('roads', 'traffic') ? roadDifferences(this, source) : { rects: [], ids: [], traffic: false };
     const stamps = !moved('terrain') ? { rects: [], ids: [] }
       : this.terrainRelief !== source.terrainRelief ? null : stampDifferences(this.terrainStamps, source.terrainStamps);
     const items = itemDifferences(this, source, moved);
-    const changed = this.replaceContents(source, moved, buildingIds);
+    const changed = this.replaceContents(source, moved, buildingIds, lotIds);
     const where = (rects: readonly ChangeRect[] | undefined): readonly ChangeRect[] | null => rects && rects.length ? rects : null;
     // The traffic's plan only when it moved (`roadDifferences`): a node only
     // raised leaves it, as `setNodeHeightOffset` does.
@@ -1625,6 +1654,13 @@ export class RoadDoc {
     return source.buildings.changedSince(fork.version);
   }
 
+  /** The ids of the lots a working copy of this document changed since it was copied, as `buildingsMovedIn`; null: compare them all. */
+  private lotsMovedIn(source: RoadDoc): readonly number[] | null {
+    const fork = source.forkedFrom;
+    if (!fork || fork.doc !== this || fork.version !== this.changes.version) return null;
+    return source.lotStore.changedSince(fork.version);
+  }
+
   // --------------------------------------------------- undo by records
   // `world/docImage.ts` keeps the document as last committed and hands back,
   // for undo and redo, the records, list stretches and values as they were;
@@ -1648,6 +1684,7 @@ export class RoadDoc {
     // DO NOT write `traffic` for every road record: an undo of a node raised rebuilt the simulation's plan.
     let traffic = false;
     const roadIds: number[] = [];
+    const lotRecords: { id: number; value: Lot | undefined }[] = [];
     // Where the roads stand: each record's own rectangle, and a node's roads (its move moves them).
     const roadRects = (): void => {
       for (const { part, id } of r.records) {
@@ -1692,12 +1729,16 @@ export class RoadDoc {
           if (value === undefined) this.deleteBarrierRecord(id); else this.putBarrierRecord(structuredClone(value) as Barrier);
           kinds.add('barriers'); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
+        // Kept by reference, as the buildings (`LotStore` OWNERSHIP); all of them in one entry, below.
+        case 'lots': lotRecords.push({ id, value: value as Lot | undefined }); break;
       }
     }
+    if (lotRecords.length) this.lotStore.restore(lotRecords, 'restaurados');
     for (const { part, start, remove, items } of r.lists) {
       const kind = LIST_KINDS[part];
       const put = items.map((item) => structuredClone(item));
-      const gone = spliceIn(this.listOf(part), start, remove, put);
+      // The keys through their owner, which keeps them as a set too.
+      const gone = part === 'lotKeys' ? this.lotStore.spliceKeys(start, remove, put as string[]) : spliceIn(this.listOf(part) as unknown[], start, remove, put);
       if (part === 'elements') {
         for (const e of gone as ElementItem[]) this.elementGrid?.remove(e);
         for (const e of put as ElementItem[]) this.elementGrid?.add(e);
@@ -1721,8 +1762,7 @@ export class RoadDoc {
     itemRects();
     const where = (rects: readonly ChangeRect[]): readonly ChangeRect[] | null => (rects.length ? rects : null);
     if (roadsTouched) this.roadsChanged(where(roads), traffic, { ids: roadIds, detail: 'restored' });
-    // The paint style is every road's paint, not the traffic's plan (`setMarkingStyle`).
-    if (kinds.has('roads')) this.roadsChanged(null, false, { detail: 'paint style restored' });
+    // The paint style is written with the other values below, as its own kind (`setMarkingStyle`).
     if (kinds.has('utilities')) this.changes.record('utilities', where(utilities));
     if (kinds.has('landscape')) this.changes.record('landscape', where(landscape));
     if (kinds.has('barriers')) this.changes.record('barriers', where(barriers));
@@ -1731,11 +1771,11 @@ export class RoadDoc {
       // A stretch put back as it was moves nothing (an empty list of rectangles writes no entry).
       this.changes.record(kind, rects);
     }
-    for (const kind of kinds) if (!['roads', 'utilities', 'landscape', 'barriers'].includes(kind)) this.changes.record(kind, null);
+    for (const kind of kinds) if (!['utilities', 'landscape', 'barriers'].includes(kind)) this.changes.record(kind, null);
   }
 
-  /** A list of the document by its part's name (`restore`, `world/docImage.ts`). */
-  listOf(part: ListPart): unknown[] {
+  /** A list of the document by its part's name (`restore`, `world/docImage.ts`); read-only to the image (written through `restore`). */
+  listOf(part: ListPart): readonly unknown[] {
     switch (part) {
       case 'terrainStamps': return this.terrainStamps;
       case 'terrainPaint': return this.terrainPaint;
@@ -1747,8 +1787,7 @@ export class RoadDoc {
       case 'elements': return this.elements;
       case 'zones': return this.zones;
       case 'zoneMarks': return this.zoneMarks;
-      case 'lots': return this.lots;
-      case 'lotKeys': return this.lotKeys;
+      case 'lotKeys': return this.lotStore.keys;
       case 'people': return this.people;
     }
   }
@@ -1765,7 +1804,7 @@ export class RoadDoc {
       case 'economy': return this.economy;
       case 'transit': return this.transit;
       case 'nextZoneId': return this.nextZoneId;
-      case 'nextLotId': return this.nextLotId;
+      case 'nextLotId': return this.lotStore.nextId;
       case 'allocators': return this.allocatorMarks();
     }
   }
@@ -1774,7 +1813,7 @@ export class RoadDoc {
     const value = structuredClone(raw);
     switch (part) {
       case 'terrainRelief': this.terrainRelief = value as ReliefVersion; kinds.add('terrain'); return;
-      case 'markingStyle': this.markingStyle = value as MarkingStyleId; kinds.add('roads'); return;
+      case 'markingStyle': this.markingStyle = value as MarkingStyleId; kinds.add('markingStyle'); return;
       case 'nature': this.nature = value as NatureSettings | null; kinds.add('nature'); return;
       case 'fogSettings': this.fogSettings = value as FogSettings; kinds.add('fog'); return;
       case 'gullyAuto': this.gullyAuto = value as number; kinds.add('gullies'); return;
@@ -1782,7 +1821,7 @@ export class RoadDoc {
       case 'economy': this.economy = value as Economy; kinds.add('economy'); return;
       case 'transit': this.transit = value as TransitData; kinds.add('transit'); return;
       case 'nextZoneId': this.nextZoneId = value as number; return;
-      case 'nextLotId': this.nextLotId = value as number; return;
+      case 'nextLotId': this.lotStore.restoreNextId(value as number); return;
       case 'allocators': {
         const [nodes, segs, poles, spans, barriers, landscape, terrain, buildings] = value as number[];
         this.nodeIds = new IdAllocator(nodes!);
@@ -1805,7 +1844,7 @@ export class RoadDoc {
    * source did not change (`movedIn`) is neither compared nor copied: it
    * holds what this document holds.
    */
-  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null): {
+  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null): {
     roads: boolean; land: boolean; barriers: boolean; others: DocChangeKind[];
   } {
     const others: DocChangeKind[] = [];
@@ -1862,14 +1901,8 @@ export class RoadDoc {
       this.zoneMarks.push(...source.zoneMarks.map((mark) => ({ ...mark })));
       others.push('zones');
     }
-    this.nextLotId = source.nextLotId;
-    if (moved('lots') && (JSON.stringify(this.lots) !== JSON.stringify(source.lots) || this.lotKeys.join('\n') !== source.lotKeys.join('\n'))) {
-      this.lots.length = 0;
-      this.lots.push(...source.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ ...q })) as unknown as Lot['corners'] })));
-      this.lotKeys.length = 0;
-      this.lotKeys.push(...source.lotKeys);
-      others.push('lots');
-    }
+    // The lots write their own, by id (`LotStore.replaceWith`); of a working copy, only those its diary names.
+    if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'substituídos por uma edição ou um desfazer');
     if (moved('transit') && JSON.stringify(this.transit) !== JSON.stringify(source.transit)) {
       this.transit = JSON.parse(JSON.stringify(source.transit)) as TransitData;
       others.push('transit');
@@ -1940,8 +1973,9 @@ export class RoadDoc {
 
     if (this.markingStyle !== source.markingStyle) {
       this.markingStyle = source.markingStyle;
-      this.roadsChanged(null, false, { detail: 'paint style' });
+      others.push('markingStyle');
     }
+
     if (landMoved) {
       this.terrainStamps.length = 0;
       this.terrainStamps.push(...source.terrainStamps.map((stamp) => ({ ...stamp })));
@@ -2052,9 +2086,9 @@ export class RoadDoc {
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
       ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
       ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
-      ...(this.lots.length > 0 || this.lotKeys.length > 0 ? {
-        lots: this.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) as unknown as Lot['corners'] })),
-        lotKeys: [...this.lotKeys],
+      ...(this.lotStore.size > 0 || this.lotStore.keys.length > 0 ? {
+        lots: this.lotStore.toJSON(),
+        lotKeys: [...this.lotStore.keys],
       } : {}),
       // Likewise the people: only a city that has some carries the key.
       ...(this.people.length > 0 ? { people: this.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec) } : {}),
@@ -2293,15 +2327,16 @@ export class RoadDoc {
       doc.zoneMarks.push(standing ? { ...mark } : free);
     }
     const lotIds = new Set<number>();
+    const lots: Lot[] = [];
     for (const lot of data.lots ?? []) {
       if (!isLot(lot) || lotIds.has(lot.id)) continue;
       lotIds.add(lot.id);
       const standing = lot.building !== undefined && doc.buildings.has(lot.building as Parameters<typeof doc.buildings.has>[0]);
-      const { building: _gone, ...free } = lot;
-      doc.lots.push(standing ? { ...lot } : free);
-      doc.nextLotId = Math.max(doc.nextLotId, lot.id + 1);
+      // Its own corners: a stored record is never changed in place, and the data read may be.
+      const { building: _gone, ...free } = { ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) };
+      lots.push(standing ? { ...free, building: lot.building! } : free);
     }
-    for (const key of data.lotKeys ?? []) if (typeof key === 'string') doc.lotKeys.push(key);
+    doc.lotStore.load(lots, (data.lotKeys ?? []).filter((key): key is string => typeof key === 'string'));
     // People, each brought into range; anything that is not one is dropped.
     const seen = new Set<number>();
     for (const raw of data.people ?? []) {
@@ -2324,15 +2359,15 @@ function coordinateKey(x: number, y: number): string {
 }
 
 /** The document's keyed collections, its ordered lists and its single values, as undo restores them (`RoadDoc.restore`). */
-export type RecordPart = 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings';
+export type RecordPart = 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings' | 'lots';
 export type ListPart = 'terrainStamps' | 'terrainPaint' | 'fogDabs' | 'gullyDabs' | 'clouds' | 'trees' | 'treeClearings' | 'elements'
-  | 'zones' | 'zoneMarks' | 'lots' | 'lotKeys' | 'people';
+  | 'zones' | 'zoneMarks' | 'lotKeys' | 'people';
 export type ValuePart = 'terrainRelief' | 'markingStyle' | 'nature' | 'fogSettings' | 'gullyAuto' | 'weather' | 'economy' | 'transit'
   | 'nextZoneId' | 'nextLotId' | 'allocators';
 /** The diary kind each list is written under. */
 export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind>> = {
   terrainStamps: 'terrain', terrainPaint: 'paint', fogDabs: 'fog', gullyDabs: 'gullies', clouds: 'clouds', trees: 'trees',
-  treeClearings: 'clearings', elements: 'elements', zones: 'zones', zoneMarks: 'zones', lots: 'lots', lotKeys: 'lots', people: 'people',
+  treeClearings: 'clearings', elements: 'elements', zones: 'zones', zoneMarks: 'zones', lotKeys: 'lotKeys', people: 'people',
 };
 /** What undo or redo puts back: records (undefined: none), stretches of lists (`splice`), values. */
 export interface Restoration {
@@ -2542,11 +2577,6 @@ function listBox(part: ListPart, items: readonly unknown[]): ChangeRect | null |
       let pad = 0;
       for (const c of items as readonly PlacedCloud[]) pad = Math.max(pad, c.size);
       return rectAround(items as readonly PlacedCloud[], pad);
-    }
-    case 'lots': {
-      const corners: { x: number; y: number }[] = [];
-      for (const lot of items as readonly Lot[]) for (const q of lot.corners) corners.push(q);
-      return rectAround(corners);
     }
     default: return undefined;
   }

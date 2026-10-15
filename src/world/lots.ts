@@ -18,16 +18,6 @@ import { grow } from './cells';
 import type { BuildingId } from './buildings/types';
 
 /**
- * Where these lots lie, for the diary (`RoadDoc.lotsChanged`): only that
- * region is marked as changed (Unity `TerrainData.DirtyHeightmapRegion`
- * does the same for a heightmap), the whole map when there is none.
- */
-function lotRects(lots: readonly { readonly corners: readonly Vec2[] }[]): readonly ChangeRect[] | null {
-  const rects = lots.map((l) => rectAround(l.corners)).filter((r): r is ChangeRect => r !== null);
-  return rects.length ? rects : null;
-}
-
-/**
  * Lots: the land cut into plots the player zones and buildings grow on, as a
  * town's cadastre is.
  *
@@ -41,7 +31,8 @@ function lotRects(lots: readonly { readonly corners: readonly Vec2[] }[]): reado
  *   lot, from the back of the footway, cut into equal lots too: CityEngine's
  *   offset subdivision.
  *
- * Lots are STORED in the document (`RoadDoc.lots`): the player moves their
+ * Lots are STORED in the document (`RoadDoc.lotStore`, by id and by place,
+ * every change written in the diary with its ids): the player moves their
  * corners, splits, joins, deletes and adds them. Land is subdivided only once:
  * each block or strip leaves a key (`RoadDoc.lotKeys`) so a lot deleted on
  * purpose is not made again; a road moved or added makes new land (a new key),
@@ -621,39 +612,16 @@ function cutSpans(spans: readonly (readonly [number, number])[], target: number)
 
 /** Stores a plan: the covered lots removed, the new ones added, the land's keys kept. */
 export function applyLots(doc: RoadDoc, plan: LotPlan): boolean {
-  const known = new Set(doc.lotKeys);
-  if (!plan.add.length && !plan.drop.length && plan.keys.every((k) => known.has(k))) return false;
-  // The covered lots taken out in place, in one pass. DO NOT go back to
-  // `doc.lots.splice(0, n, ...kept)`: every lot of the town spread into
-  // arguments passes the engine's limit (MDN, `Function.prototype.apply`),
-  // after two more copies of the list; and nothing to drop walks nothing.
-  const gone: Lot[] = [];
-  if (plan.drop.length) {
-    const dropped = new Set(plan.drop);
-    let at = 0;
-    for (const lot of doc.lots) {
-      if (dropped.has(lot.id)) gone.push(lot);
-      else doc.lots[at++] = lot;
-    }
-    doc.lots.length = at;
-  }
-  for (const c of plan.add) doc.lots.push({ id: doc.nextLotId++, corners: c.corners });
-  // Where the lots went and came, and the land of each key new to the
-  // document. DO NOT write `null` (the whole map) when only keys are new:
-  // every reader of the lots worked the town out again for land that has no
-  // lot more or less. A key with no place (a plan made by hand) is the whole map.
-  const rects: ChangeRect[] = [];
-  for (const lot of [...gone, ...plan.add]) { const r = rectAround(lot.corners); if (r) rects.push(r); }
-  let placeless = false;
-  // By a set, not `lotKeys.includes` per key (keys × keys).
-  plan.keys.forEach((k, i) => {
-    if (known.has(k)) return;
-    known.add(k);
-    doc.lotKeys.push(k);
-    const r = plan.keyRects?.[i];
-    if (r) rects.push(r); else placeless = true;
-  });
-  doc.lotsChanged(placeless ? null : rects, 'lotes planejados');
+  const store = doc.lotStore;
+  if (!plan.add.length && !plan.drop.length && plan.keys.every((k) => store.hasKey(k))) return false;
+  // The covered lots taken out by id and the new ones put last, by the lots'
+  // owner, in one entry with their ids. DO NOT go back to filtering the list
+  // of every lot for the few dropped: it was the whole town per plan applied.
+  store.apply({ remove: plan.drop, add: plan.add.map((c) => ({ corners: c.corners })) }, 'lotes planejados');
+  // The land of each key new to the document, as `lotKeys`: DO NOT write it as
+  // a change of the lots (no lot came or went), nor as `null` (the whole map):
+  // every reader of the lots worked the town out again for it.
+  store.addKeys(plan.keys, plan.keyRects, 'terreno cortado em lotes');
   return true;
 }
 
@@ -734,9 +702,8 @@ export function cutLines(l: Pick<Lot, 'corners'>, cut: LotCut): [Vec2, Vec2][] {
 
 /** Cuts a lot by `cut`; false when nothing worth a lot is left on both sides. */
 export function splitLot(doc: RoadDoc, id: number, cut: LotCut): boolean {
-  const at = doc.lots.findIndex((l) => l.id === id);
-  if (at < 0) return false;
-  const lot = doc.lots[at]!;
+  const lot = doc.lot(id);
+  if (!lot) return false;
   const front: [Vec2, Vec2] = [lot.corners[0]!, lot.corners[1]!];
   let pieces: Vec2[][] = [[...lot.corners]];
   for (const [a, b] of cutLines(lot, cut)) {
@@ -748,9 +715,9 @@ export function splitLot(doc: RoadDoc, id: number, cut: LotCut): boolean {
     pieces = next;
   }
   if (pieces.length < 2) return false;
-  const made = pieces.map((piece) => ({ id: doc.nextLotId++, corners: facingCorners(withFront(piece, front)), ...(lot.use ? { use: lot.use, density: lot.density ?? 'low' as const } : {}) }));
-  doc.lots.splice(at, 1, ...made);
-  doc.lotsChanged(lotRects([lot]), 'lote dividido');
+  // The pieces are new lots, last in the order (`LotStore` ORDER).
+  const made = pieces.map((piece) => ({ corners: facingCorners(withFront(piece, front)), ...(lot.use ? { use: lot.use, density: lot.density ?? 'low' as const } : {}) }));
+  doc.lotStore.apply({ remove: [id], add: made }, 'lote dividido');
   return true;
 }
 
@@ -759,9 +726,9 @@ export function splitLot(doc: RoadDoc, id: number, cut: LotCut): boolean {
  * round, the shared stretch left out. False when they share no side.
  */
 export function joinLots(doc: RoadDoc, idA: number, idB: number): boolean {
-  const ia = doc.lots.findIndex((l) => l.id === idA), ib = doc.lots.findIndex((l) => l.id === idB);
-  if (ia < 0 || ib < 0 || ia === ib) return false;
-  const A = doc.lots[ia]!.corners, B = doc.lots[ib]!.corners;
+  const lotA = doc.lot(idA), lotB = doc.lot(idB);
+  if (!lotA || !lotB || idA === idB) return false;
+  const A = lotA.corners, B = lotB.corners;
   const onB = A.map((p) => B.findIndex((q) => near(p, q)));
   // A side of A whose two corners are both corners of B.
   let start = -1;
@@ -777,25 +744,20 @@ export function joinLots(doc: RoadDoc, idA: number, idB: number): boolean {
   const j0 = onB[i0]!, j1 = onB[i1]!;
   for (let k = (j0 + 1) % B.length; k !== j1; k = (k + 1) % B.length) ring.push(B[k]!);
   if (ring.length < 3) return false;
-  const lotA = doc.lots[ia]!;
   // The front stays the first lot's: the ring started at the end of the
   // shared run; the front side is found again by its corners.
   const fa = lotA.corners[0]!, fb = lotA.corners[1]!;
   let f = ring.findIndex((p, k) => near(p, fa) && near(ring[(k + 1) % ring.length]!, fb));
   if (f < 0) f = ring.findIndex((p) => near(p, fa));
   const ordered = f > 0 ? [...ring.slice(f), ...ring.slice(0, f)] : ring;
-  const joined: Lot = { id: doc.nextLotId++, corners: facingCorners(ordered), ...(lotA.use ? { use: lotA.use, density: lotA.density ?? 'low' } : {}) };
-  doc.lots.splice(Math.max(ia, ib), 1);
-  doc.lots.splice(Math.min(ia, ib), 1, joined);
-  doc.lotsChanged(lotRects([joined]), 'lotes unidos');
+  // A new lot, last in the order (`LotStore` ORDER).
+  doc.lotStore.apply({ remove: [idA, idB], add: [{ corners: facingCorners(ordered), ...(lotA.use ? { use: lotA.use, density: lotA.density ?? 'low' } : {}) }] }, 'lotes unidos');
   return true;
 }
 
 export function deleteLot(doc: RoadDoc, id: number): boolean {
-  const at = doc.lots.findIndex((l) => l.id === id);
-  if (at < 0) return false;
-  const gone = doc.lots.splice(at, 1);
-  doc.lotsChanged(lotRects(gone), 'lote apagado');
+  if (!doc.lotStore.has(id)) return false;
+  doc.lotStore.apply({ remove: [id] }, 'lote apagado');
   return true;
 }
 
@@ -918,11 +880,10 @@ export function addPolygonLot(doc: RoadDoc, points: readonly Vec2[], front: numb
   if (points.length < 3 || Math.abs(lotArea({ corners: points })) < MIN_LOT * MIN_LOT / 2) return null;
   const ring = [...points.slice(front), ...points.slice(0, front)];
   const corners = facingCorners(ring);
-  if (doc.lots.some((l) => quadsOverlap(corners, l.corners, m(0.5)) && overlapDeep(corners, l.corners))) return null;
-  const lot: Lot = { id: doc.nextLotId++, corners };
-  doc.lots.push(lot);
-  doc.lotsChanged(lotRects([lot]), 'lote desenhado');
-  return lot;
+  // The lots there only (their boxes within the overlap test's margin), never every lot of the city.
+  const box = rectAround(corners)!;
+  if (doc.lotsIn(grow(box, m(0.5))).some((l) => quadsOverlap(corners, l.corners, m(0.5)) && overlapDeep(corners, l.corners))) return null;
+  return doc.lotStore.apply({ add: [{ corners }] }, 'lote desenhado')[0]!;
 }
 
 /**
@@ -932,16 +893,14 @@ export function addPolygonLot(doc: RoadDoc, points: readonly Vec2[], front: numb
  * facing the new front grows in its place.
  */
 export function setLotFront(doc: RoadDoc, id: number, side: number): boolean {
-  const at = doc.lots.findIndex((l) => l.id === id);
-  const lot = doc.lots[at];
+  const lot = doc.lot(id);
   if (!lot) return false;
   const n = lot.corners.length;
   const k = ((side % n) + n) % n;
   if (k === 0) return false;
   if (lot.building !== undefined) doc.buildings.remove(lot.building as Parameters<typeof doc.buildings.remove>[0]);
   const { building: _gone, ...rest } = lot;
-  doc.lots[at] = { ...rest, corners: [...lot.corners.slice(k), ...lot.corners.slice(0, k)] };
-  doc.lotsChanged(lotRects([lot]), 'frente do lote');
+  doc.lotStore.apply({ put: [{ ...rest, corners: [...lot.corners.slice(k), ...lot.corners.slice(0, k)] }] }, 'frente do lote');
   return true;
 }
 
@@ -959,18 +918,19 @@ function overlapDeep(p: readonly Vec2[], q: readonly Vec2[]): boolean {
  * same point with it, so neighbours keep sharing their boundary.
  */
 export function moveLotCorner(doc: RoadDoc, from: Vec2, to: Vec2): boolean {
-  const touched: { corners: readonly Vec2[] }[] = [];
-  for (let i = 0; i < doc.lots.length; i++) {
-    const l = doc.lots[i]!;
+  const reach = m(0.8);
+  const put: Lot[] = [];
+  // The lots with a corner on the point: those whose box reaches it, never every lot of the city.
+  for (const l of doc.lotsIn([from.x - reach, from.y - reach, from.x + reach, from.y + reach])) {
     let changed = false;
     const corners = l.corners.map((q) => {
-      if (near(q, from, m(0.8))) { changed = true; return { x: to.x, y: to.y }; }
+      if (near(q, from, reach)) { changed = true; return { x: to.x, y: to.y }; }
       return q;
     });
-    if (changed) { doc.lots[i] = { ...l, corners }; touched.push(l, { corners }); }
+    if (changed) put.push({ ...l, corners });
   }
-  if (touched.length) doc.lotsChanged(lotRects(touched), 'canto do lote movido');
-  return touched.length > 0;
+  if (put.length) doc.lotStore.apply({ put }, 'canto do lote movido');
+  return put.length > 0;
 }
 
 /**
@@ -988,9 +948,10 @@ export function curveLotSide(doc: RoadDoc, a: Vec2, b: Vec2, through: Vec2): boo
     }
     return out;
   };
-  let changed = false;
-  for (let i = 0; i < doc.lots.length; i++) {
-    const l = doc.lots[i]!;
+  const put: Lot[] = [];
+  // The lots with a corner by `a` (each side bent has one): those whose box reaches it, never every lot.
+  const reach = m(1.2);
+  for (const l of doc.lotsIn([a.x - reach, a.y - reach, a.x + reach, a.y + reach])) {
     const q = l.corners;
     for (let k = 0; k < q.length; k++) {
       const p = q[k]!, r = q[(k + 1) % q.length]!;
@@ -998,39 +959,37 @@ export function curveLotSide(doc: RoadDoc, a: Vec2, b: Vec2, through: Vec2): boo
       if (near(p, a) && near(r, b)) inner = curve(a, b);
       else if (near(p, b) && near(r, a)) inner = curve(a, b).reverse();
       if (!inner) continue;
-      const corners = [...q.slice(0, k + 1), ...inner, ...q.slice(k + 1)];
-      doc.lots[i] = { ...l, corners };
-      changed = true;
+      put.push({ ...l, corners: [...q.slice(0, k + 1), ...inner, ...q.slice(k + 1)] });
       break;
     }
   }
   // The curve lies within the triangle of its ends and its control point, and
   // can bulge past `through` along the side: the control point is written too.
-  if (changed) doc.lotsChanged(lotRects([{ corners: [a, b, through, control] }]), 'lado do lote curvado');
-  return changed;
+  if (put.length) doc.lotStore.apply({ put, also: [rectAround([a, b, through, control])!] }, 'lado do lote curvado');
+  return put.length > 0;
 }
 
 /** Zones lots (or clears them, `zone` null). */
 export function zoneLots(doc: RoadDoc, ids: readonly number[], zone: { use: ZoneUse; density: ZoneDensity } | null): boolean {
-  const zoned: Lot[] = [];
-  // By a set: `ids.includes` per lot was lots × the lots of the stroke.
-  const wanted = new Set(ids);
-  for (let i = 0; i < doc.lots.length && wanted.size; i++) {
-    const l = doc.lots[i]!;
-    if (!wanted.delete(l.id)) continue;
+  const store = doc.lotStore;
+  // The lots of the stroke by id, in the lots' order (as the walk over the
+  // whole list met them). DO NOT walk every lot of the city for a stroke.
+  const lots = [...new Set(ids)].map((id) => store.get(id)).filter((l): l is Lot => l !== undefined)
+    .sort((p, q) => store.orderOf(p.id)! - store.orderOf(q.id)!);
+  const put: Lot[] = [];
+  for (const l of lots) {
     if (zone ? l.use === zone.use && l.density === zone.density : !l.use) continue;
     const { use: _u, density: _d, building, ...rest } = l;
-    if (zone) doc.lots[i] = { ...rest, use: zone.use, density: zone.density, ...(building !== undefined ? { building } : {}) };
+    if (zone) put.push({ ...rest, use: zone.use, density: zone.density, ...(building !== undefined ? { building } : {}) });
     else {
       // Taking the zone off takes what grew on it (the player, 2026-10-09):
       // the land goes back to unzoned, empty.
       if (building !== undefined && doc.buildings.has(building as BuildingId)) doc.buildings.remove(building as BuildingId);
-      doc.lots[i] = rest;
+      put.push(rest);
     }
-    zoned.push(l);
   }
-  if (zoned.length) doc.lotsChanged(lotRects(zoned), zone ? 'lotes zoneados' : 'zona tirada dos lotes');
-  return zoned.length > 0;
+  if (put.length) store.apply({ put }, zone ? 'lotes zoneados' : 'zona tirada dos lotes');
+  return put.length > 0;
 }
 
 export function isLot(raw: unknown): raw is Lot {
@@ -1078,13 +1037,25 @@ function footwayEdgesNear(net: Network, box: ChangeRect): number[] {
  * gap and no overlap (the player, 2026-10-06). Near a corner of that outline
  * (where a straight back meets the curve, or two backs meet), onto the corner
  * itself. Another lot's corner first, so neighbours close up.
+ *
+ * The lots' corners are read by place: the lots whose box reaches the snap's
+ * reach (`RoadDoc.lotsIn`), never every lot of the city at each pointer move.
+ * `apart`: a corner being dragged from there - corners within 0.8 m of it are
+ * not snapped to (`editor/lotTool.ts` filtered a copy of every lot for it).
+ * `lots`: an explicit list instead (a caller that still hands one; pending its
+ * move to `apart`).
  */
-export function lotSnapper(doc: RoadDoc, net: Network, lots: readonly Pick<Lot, 'id' | 'corners'>[] = doc.lots): (p: Vec2, reach: number, skip?: number) => { p: Vec2; kind: 'corner' | 'street' | 'lot' | null } {
+export function lotSnapper(doc: RoadDoc, net: Network, lots?: readonly Pick<Lot, 'id' | 'corners'>[], apart?: Vec2): (p: Vec2, reach: number, skip?: number) => { p: Vec2; kind: 'corner' | 'street' | 'lot' | null } {
   return (p, reach, skip) => {
     let lotBest: Vec2 | null = null, lotD = reach * 0.7;
-    for (const l of lots) {
+    const r = lotD;
+    for (const l of lots ?? doc.lotsIn([p.x - r, p.y - r, p.x + r, p.y + r])) {
       if (l.id === skip) continue;
-      for (const q of l.corners) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < lotD) { lotD = d; lotBest = q; } }
+      for (const q of l.corners) {
+        if (apart && Math.hypot(q.x - apart.x, q.y - apart.y) <= m(0.8)) continue;
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < lotD) { lotD = d; lotBest = q; }
+      }
     }
     if (lotBest) return { p: { x: lotBest.x, y: lotBest.y }, kind: 'lot' };
     let best: Vec2 | null = null, bestD = reach;

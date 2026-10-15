@@ -139,7 +139,6 @@ export function nearestOnContour(lines: PoleLines, at: Vec2, reach: number): OnC
   return best;
 }
 
-const cache = new WeakMap<Network, { revision: number; lines: PoleLines }>();
 
 /** The streets whose kerb lines carry poles: ground streets with footways (the two levels read; `surfaces` unions all four). */
 function polesInclude(net: Network): (id: SegmentId) => boolean {
@@ -163,23 +162,20 @@ function contoursOf(kerbed: MultiPoly): Polyline[] {
 }
 
 /**
- * The pole lines of the WHOLE map's ground streets that have footways, cached
- * per network revision: every road edit made them again for every street of
- * the map (33 ms of a road's click in a town of 237 buildings, 2026-10-11).
- * What asks about one place asks `poleLinesIn` / `poleLinesAt`, which read
- * only the cells round it; this stays as their oracle
- * (`tests/world/poleLinesCells.spec.ts`).
+ * The pole lines of the WHOLE map's ground streets that have footways, made
+ * at each call: the oracle of `poleLinesIn` / `poleLinesAt`, which read only
+ * the cells round a place (`tests/world/poleLinesCells.spec.ts`). Nothing in
+ * the game asks this. DO NOT keep it per network revision again: every road
+ * edit made it again for every street of the map (33 ms of a road's click in a
+ * town of 237 buildings, 2026-10-11), and a memo keyed by the network - a
+ * thing changed in place - answers for what the network was.
  */
 export function poleLines(net: Network): PoleLines {
-  const known = cache.get(net);
-  if (known && known.revision === net.revision) return known.lines;
   const include = polesInclude(net);
   const kerbed = levelPolygons(net, Level.Curb, include);
   const paving = levelPolygons(net, Level.Sidewalk, include);
   const contours = contoursOf(kerbed);
-  const lines = { contours, paving, kerbed, accesses: crossingAccesses(net), edges: contourEdges(contours) };
-  cache.set(net, { revision: net.revision, lines });
-  return lines;
+  return { contours, paving, kerbed, accesses: crossingAccesses(net), edges: contourEdges(contours) };
 }
 
 /**
@@ -196,64 +192,72 @@ const LINES_HALO = m(32);
 /** What the regional pole lines did: made, kept, and the streets made from. A count for the budgets (`core/perfBudget.ts`). */
 export const poleLinesWork = { made: 0, kept: 0, segments: 0 };
 
-/** Regional lines of a network, by rectangle, with the cell versions they were made at. */
-interface Regional {
-  segmentEpoch: number;
-  junctionEpoch: number;
-  readonly stamp: string;
-  readonly lines: PoleLines;
+/** The versions of the cells a region's lines are made from (`LINES_HALO` round it): equal, nothing they read moved. */
+function regionStamp(net: Network, rect: ChangeRect): string {
+  const around = grow(rect, LINES_HALO);
+  return `${net.segmentCells.stamp(around)}|${net.junctionCells.stamp(around)}`;
 }
-/** What is kept per network: the regional lines by rectangle, and each street's and junction's footway rings by the object the network built for it. */
-interface NetworkLines { readonly regions: Map<string, Regional>; readonly rings: WeakMap<object, FootRings> }
-const perNetwork = new WeakMap<Network, NetworkLines>();
-function stateOf(net: Network): NetworkLines {
-  let state = perNetwork.get(net);
-  if (!state) perNetwork.set(net, state = { regions: new Map(), rings: new WeakMap() });
-  return state;
-}
+
 /**
- * Rectangles kept per network, the least recently asked let go first: the
- * runs being planned and the cell under the pointer. Kept up to a town's
- * every cell, the lines and their route graphs were 190 MB of a city of
- * 5 400 buildings and would be gigabytes on the whole map (2026-10-14);
- * only the pole tool reads them, a few cells at a time.
- * DO NOT keep the whole city again: the memory grows with the map.
+ * What the pole lines keep of ONE network, owned by it (`Network.poleLines`):
+ * the lines of each rectangle asked about, and each street's and junction's
+ * footway rings by the object the network built for it.
+ *
+ * A rectangle's lines are kept exactly while the cells they are made from
+ * stand: when the network's cells move (an edit), the rectangles whose cells
+ * moved are let go at the next question, and only those - nothing still
+ * right is thrown away, nothing wrong is kept. DO NOT go back to a ceiling
+ * that lets the least recently asked go (`REGIONAL_KEPT`, 64): the pole tool
+ * made again, one after another, the cells it had just left, and nothing
+ * there had changed; nor to a memo of the module keyed by the network (a
+ * thing changed in place).
  */
-const REGIONAL_KEPT = 64;
+export class PoleLineState {
+  private readonly regions = new Map<string, { readonly rect: ChangeRect; readonly stamp: string; readonly lines: PoleLines }>();
+  /** The cells' epochs the regions were last checked at (`stale`). */
+  private checkedAt = '';
+  /** The footway rings of each street and junction, by the object the network built for it (`localRings`). */
+  readonly rings = new WeakMap<object, FootRings>();
+
+  /** The lines of `rect`, kept or made now. */
+  linesIn(net: Network, rect: ChangeRect): PoleLines {
+    this.letGoStale(net);
+    const key = `${rect[0]},${rect[1]},${rect[2]},${rect[3]}`;
+    const known = this.regions.get(key);
+    if (known) { poleLinesWork.kept++; return known.lines; }
+    const lines = poleLinesOf(net, rect);
+    this.regions.set(key, { rect, stamp: regionStamp(net, rect), lines });
+    return lines;
+  }
+
+  /**
+   * The regions some cell of whose moved since they were made, let go: once
+   * per edit of the network (its cells' epochs), whatever is asked after it.
+   * @rebuild Only when the network's cells moved.
+   */
+  private letGoStale(net: Network): void {
+    const epochs = `${net.segmentCells.epoch},${net.junctionCells.epoch}`;
+    if (epochs === this.checkedAt) return;
+    this.checkedAt = epochs;
+    for (const [key, region] of this.regions) if (regionStamp(net, region.rect) !== region.stamp) this.regions.delete(key);
+  }
+}
+
+/** The network's pole line state, made when first asked. */
+const stateOf = (net: Network): PoleLineState => (net.poleLines ??= new PoleLineState());
 
 /**
  * The pole lines inside `rect`: the same lines `poleLines` has there, made
  * from the ribbons and junctions within `LINES_HALO` of it only
- * (`Network.segmentCells`), and kept while none of those cells moves. An
- * edit makes again only the rectangles it reached; the rest of the map is
- * not read. Its crossing landings are those of the nodes of its streets.
+ * (`Network.segmentCells`), and kept while none of those cells moves
+ * (`PoleLineState`). An edit makes again only the rectangles it reached; the
+ * rest of the map is not read. Its crossing landings are those of the nodes
+ * of its streets.
  */
 export function poleLinesIn(net: Network, rect: ChangeRect): PoleLines {
-  const byRect = stateOf(net).regions;
-  const key = `${rect[0]},${rect[1]},${rect[2]},${rect[3]}`;
-  const known = byRect.get(key);
-  const segmentEpoch = net.segmentCells.epoch, junctionEpoch = net.junctionCells.epoch;
-  // Asked again: to the back of the line, the last to be let go.
-  if (known) { byRect.delete(key); byRect.set(key, known); }
-  if (known && known.segmentEpoch === segmentEpoch && known.junctionEpoch === junctionEpoch) { poleLinesWork.kept++; return known.lines; }
-  const sources = [grow(rect, LINES_HALO)];
-  let stamp = '';
-  for (const r of sources) stamp += `${net.segmentCells.stamp(r)}|${net.junctionCells.stamp(r)};`;
-  if (known && known.stamp === stamp) {
-    known.segmentEpoch = segmentEpoch;
-    known.junctionEpoch = junctionEpoch;
-    poleLinesWork.kept++;
-    return known.lines;
-  }
-  const lines = poleLinesOf(net, rect);
-  // Only a new rectangle takes a place: one already kept (moved to the back
-  // above) is replaced where it is. DO NOT let go of the oldest when `key` is
-  // kept: it threw away a rectangle nothing had touched, made again on its
-  // next question.
-  if (!known && byRect.size >= REGIONAL_KEPT) byRect.delete(byRect.keys().next().value!);
-  byRect.set(key, { segmentEpoch, junctionEpoch, stamp, lines });
-  return lines;
+  return stateOf(net).linesIn(net, rect);
 }
+
 
 /**
  * The pole lines inside `rect`, made now and not kept (`poleLinesIn` keeps

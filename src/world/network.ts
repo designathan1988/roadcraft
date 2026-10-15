@@ -22,6 +22,7 @@ import type { ChangeRect } from './changes';
 import { NetworkBuild } from './networkBuild';
 import type { SegmentRibbon, SegmentTrims } from './ribbons';
 import { DeltaLog, type NetworkDelta } from './networkDelta';
+import type { PoleLineState } from './poleLines';
 
 /** A `hitch:` entry for the frame monitor and `scripts/probe-hitches.mjs`, where the platform measures. */
 function measureHitch(name: string, start: number): void {
@@ -126,6 +127,12 @@ export class Network {
    */
   readonly transitions = new Set<NodeId>();
   readonly polylines = new PolylineCache();
+  /**
+   * What the pole lines keep of this network (`poleLines.ts` `PoleLineState`):
+   * made when first asked, and this network's own - it goes with it. Each
+   * region kept checks the cells it was made from, so a rebuild clears nothing.
+   */
+  poleLines: PoleLineState | null = null;
 
   /** Matches `RoadDoc.revision` at the time of the last rebuild. */
   revision = -1;

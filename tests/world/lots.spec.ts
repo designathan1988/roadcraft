@@ -61,11 +61,12 @@ describe('lots', () => {
     const before = doc.lots.length;
     expect(splitLot(doc, first.id, { kind: 'vertical', parts: 2 })).toBe(true);
     expect(doc.lots.length).toBe(before + 1);
-    const halves = doc.lots.slice(0, 2);
+    // The pieces are new lots, last in the order (`LotStore` ORDER).
+    const halves = doc.lots.slice(-2);
     expect(joinLots(doc, halves[0]!.id, halves[1]!.id)).toBe(true);
     expect(doc.lots.length).toBe(before);
-    expect(Math.abs(Math.abs(lotArea(doc.lots[0]!)) - Math.abs(lotArea(first)))).toBeLessThan(1);
-    const gone = doc.lots[0]!;
+    expect(Math.abs(Math.abs(lotArea(doc.lots.at(-1)!)) - Math.abs(lotArea(first)))).toBeLessThan(1);
+    const gone = doc.lots.at(-1)!;
     deleteLot(doc, gone.id);
     const made = addLot(doc, gone.corners[0]!, gone.corners[2]!, lotFrame(gone).rotation);
     expect(made).not.toBeNull();
@@ -83,10 +84,10 @@ describe('lots', () => {
     const lot = doc.lots[0]!;
     const whole = lotArea(lot);
     expect(splitLot(doc, lot.id, { kind: 'horizontal', parts: 3 })).toBe(true);
-    const pieces = doc.lots.slice(0, 3);
+    const pieces = doc.lots.slice(-3);
     expect(Math.abs(pieces.reduce((s, l) => s + lotArea(l), 0) - whole)).toBeLessThan(whole * 0.01);
     for (const p of pieces) expect(lotArea(p)).toBeGreaterThan(0);
-    const next = doc.lots[3]!;
+    const next = doc.lots[0]!;
     const c = lotCentre(next);
     expect(splitLot(doc, next.id, { kind: 'line', a: { x: c.x - m(50), y: c.y - m(5) }, b: { x: c.x + m(50), y: c.y + m(5) } })).toBe(true);
   });
