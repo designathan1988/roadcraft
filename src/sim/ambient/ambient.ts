@@ -749,6 +749,11 @@ export class AmbientWorld {
     this.logParked(body, false);
   }
 
+  /** The serial the parked cars' log stands at (what `parkedSince` reads from next). */
+  parkedSerialNow(): number {
+    return this.parkedSerial;
+  }
+
   /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. */
   parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null {
     if (serial < this.parkedBase || serial > this.parkedSerial) return null;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
-import { BLINK_HZ, MAX_STEER, WheelOdometer, blinkOn, indicatorSide, steerAngle } from '@render/vehicleSignals';
+import { BLINK_HZ, MAX_STEER, WheelOdometer, blinkOn, indicatorSide, steerAngle } from '@sim/vehicleSignals';
 import { LAYOUTS, layoutDoc, simOf } from '../sim/support/bodies';
 
 /** What a driver shows the road: which way they are about to go, and wheels that steer and roll. */

@@ -78,9 +78,13 @@ export function blinkOn(age: number, id: number): boolean {
 
 /** Front-wheel steering angle, radians, positive to the left. */
 export function steerAngle(w: SimWorld, v: Vehicle, wheelbase: number): number {
+  return steerFrom(pathCurvature(w, v), wheelbase);
+}
+
+/** Front-wheel steering angle for a path's curvature (`pathCurvature`) and a wheelbase: what the page draws from the worker's numbers. */
+export function steerFrom(curvature: number, wheelbase: number): number {
   if (wheelbase <= 0) return 0;
-  const angle = Math.atan(wheelbase * pathCurvature(w, v));
-  return Math.max(-MAX_STEER, Math.min(MAX_STEER, angle));
+  return Math.max(-MAX_STEER, Math.min(MAX_STEER, Math.atan(wheelbase * curvature)));
 }
 
 /** Curvature of the path the vehicle is driving under its front axle, per world unit, positive turning left */

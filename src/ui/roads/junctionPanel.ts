@@ -2,15 +2,14 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { movementKey, type JunctionControl, type RoadDoc } from '@world/doc';
 import { type ApproachRule, type ApproachRuleEntry, GREEN_LIMITS, OFFSET_LIMIT, type SignalSettings, legRule, mainRoadLegs } from '@world/roads/rules';
 import { UNITS_PER_METER } from '@world/units';
-import type { SimWorld } from '@sim/world';
-import { greenWave } from '@sim/roads/greenWave';
+import type { SimClient } from '@sim/host/simClient';
 import { formatDecimal, t } from '../i18n';
 import './roads.css';
 
 /** THE JUNCTION PANEL, in the inspector: the junction's height, its control as buttons */
 export interface JunctionPanelHost {
   readonly doc: RoadDoc;
-  readonly sim: SimWorld;
+  readonly sim: SimClient;
   readonly node: NodeId;
   setHeight(metres: number): void;
   setControl(control: JunctionControl): void;
@@ -70,9 +69,11 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
   const seg = segmented(controls, n.control, (c) => t(`junction.control.${c}`), (c) => host.setControl(c), 'dense');
   seg.dataset['role'] = 'junctionControl';
   block.append(seg);
-  const signalised = sim.graph.junctions.get(node)?.signalised === true;
+  // The traffic's view of the junction, as the simulation's worker last told it (`SimClient.junction`).
+  const answer = sim.junction(node);
+  const signalised = answer?.signalised === true;
   if (n.control === 'auto') {
-    const choice = sim.advisor.choice(node) ?? (signalised ? 'signal' : 'priority');
+    const choice = answer?.choice ?? (signalised ? 'signal' : 'priority');
     const note = div('rp-note');
     note.dataset['role'] = 'autoChoice';
     note.textContent = t('junction.autoChoice', { choice: t(`junction.auto.${choice}`) });
@@ -98,7 +99,7 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
     name.textContent = `${compassOf(doc, node, segment)}${main?.includes(id) ? ` · ${t('junction.mainRoad')}` : ''}`;
     const value = document.createElement('strong');
     value.dataset['segment'] = String(id);
-    value.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });
+    value.textContent = t('junction.perHour', { n: Math.round(flowOf(answer?.flows, id)) });
     r.append(name, value);
     flows.append(r);
   }
@@ -127,20 +128,20 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
   }
 
   // The signal's timing.
-  const ctl = sim.controllers.get(node);
+  const ctl = answer?.plan ?? null;
   if (signalised && ctl) {
     const s = n.signal;
     const block2 = div('rp-block');
     block2.append(head(t('junction.signal')));
     block2.append(row(t('junction.signalMode'), segmented(['adaptive', 'fixed'] as const, s?.mode === 'fixed' ? 'fixed' : 'adaptive',
       (m) => t(`junction.mode.${m}`), (m) => host.setSignal(m === 'fixed'
-        ? { ...s, mode: 'fixed', greens: ctl.plan.stages.map((st) => Math.round(st.targetGreen)) }
+        ? { ...s, mode: 'fixed', greens: ctl.greens.map((g) => Math.round(g)) }
         : withoutFixed(s)))));
     if (s?.mode === 'fixed') {
-      ctl.plan.stages.forEach((st, i) => {
-        const green = s.greens?.[i] ?? Math.round(st.targetGreen);
+      ctl.greens.forEach((target, i) => {
+        const green = s.greens?.[i] ?? Math.round(target);
         const set = (g: number): void => {
-          const greens = ctl.plan.stages.map((x, k) => s.greens?.[k] ?? Math.round(x.targetGreen));
+          const greens = ctl.greens.map((x, k) => s.greens?.[k] ?? Math.round(x));
           greens[i] = Math.max(GREEN_LIMITS[0], Math.min(GREEN_LIMITS[1], g));
           host.setSignal({ ...s, greens });
         };
@@ -153,9 +154,12 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
         t('junction.earlier'), t('junction.later'))));
     }
     const wave = button(t('junction.greenWave'), () => {
-      const plan = greenWave(sim, node);
-      if (plan.size) host.setSignals(plan);
-      else waveNote.textContent = t('junction.greenWaveNone');
+      // Worked out in the simulation's worker, on its lanes: applied when it answers.
+      void sim.ask({ kind: 'greenWave', node }).then((entries) => {
+        const plan = new Map(entries as [NodeId, SignalSettings][]);
+        if (plan.size) host.setSignals(plan);
+        else waveNote.textContent = t('junction.greenWaveNone');
+      });
     });
     wave.dataset['action'] = 'greenWave';
     const waveNote = div('rp-note');
@@ -173,10 +177,7 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
   const list = div('rp-moves');
   const byLeg = new Map<SegmentId, { to: SegmentId; turn: string | null; blocked: boolean }[]>();
   const seen = new Set<string>();
-  const junctionTopo = sim.graph.junctions.get(node);
-  for (const id of junctionTopo?.connectors ?? []) {
-    const c = sim.connector(id);
-    if (!c) continue;
+  for (const c of answer?.connectors ?? []) {
     const key = movementKey(c.inSegment, c.outSegment);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -204,14 +205,14 @@ export function mountJunctionPanel(container: HTMLElement, host: JunctionPanelHo
 }
 
 /** Rewrites the flows in place (the inspector's refresh), without rebuilding the panel. */
-export function refreshJunctionFlows(sim: SimWorld, doc: RoadDoc, node: NodeId): void {
+export function refreshJunctionFlows(sim: SimClient, doc: RoadDoc, node: NodeId): void {
   if (!flowsShown?.isConnected) return;
   const n = doc.node(node);
   if (!n) return;
   // Each value by its own road: a leg the panel skipped
   for (const el of flowsShown.querySelectorAll<HTMLElement>('strong[data-segment]')) {
     const id = Number(el.dataset['segment']) as SegmentId;
-    if (n.incident.includes(id)) el.textContent = t('junction.perHour', { n: Math.round(sim.flow.rate(node, id)) });
+    if (n.incident.includes(id)) el.textContent = t('junction.perHour', { n: Math.round(flowOf(sim.junction(node)?.flows, id)) });
   }
 }
 
@@ -316,4 +317,9 @@ function toggle(label: string, on: boolean, change: (on: boolean) => void): HTML
   b.querySelector('.txt')!.textContent = label;
   b.onclick = () => change(!on);
   return b;
+}
+
+/** A leg's flow, vehicles an hour, from the junction's answer (`SimClient.junction`); 0 before the first. */
+function flowOf(flows: readonly (readonly [SegmentId, number])[] | undefined, id: SegmentId): number {
+  return flows?.find(([segment]) => segment === id)?.[1] ?? 0;
 }

@@ -7,7 +7,7 @@ import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from
 
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
-import type { TrainView } from '@sim/transit/transit';
+import type { TrainState } from '@sim/host/protocol';
 
 /** The materials of the transport, made once and shared by every rebuild: one made afresh on each rebuild */
 const sharedMaterials = new Map<string, MeshStandardMaterial>();
@@ -33,7 +33,7 @@ export interface TransitMeshes {
   /** The metro under the ground, seen as a cut (the transit tool) */
   setXray(on: boolean): void;
   /** The trains where the simulation has them now. */
-  update(trains: readonly TrainView[], groundAt: (x: number, y: number) => number): void;
+  update(trains: readonly TrainState[], groundAt: (x: number, y: number) => number): void;
   dispose(): void;
 }
 

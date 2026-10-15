@@ -48,6 +48,8 @@ export default defineConfig({
     },
   },
   preview: { headers: ISOLATED },
+  // ES workers: the simulation's worker makes workers of its own and imports its walkers when it starts (Vite, worker.format).
+  worker: { format: 'es' },
   build: {
     target: 'es2022',
     sourcemap: true,

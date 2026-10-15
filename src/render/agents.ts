@@ -20,7 +20,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 
-import { newPose, pedPoseInto, vehiclePoseInto } from '@sim/pose';
+import { framesPoseInto, newPose, pedPoseInto } from '@sim/pose';
 import { roadFrameInto } from './vehicleFrame';
 import {
   ARCHETYPES,
@@ -28,8 +28,8 @@ import {
   type Archetype,
   type VehicleShape,
 } from '@sim/vehicles/archetypes';
-import type { SimWorld } from '@sim/world';
-import type { Vehicle as SimVehicle } from '@sim/vehicles/state';
+import type { SimClient, VehicleView as SimVehicle } from '@sim/host/simClient';
+import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import type { ChangeKind } from '@world/changes';
 import { ChangeSweep } from '@world/derived';
@@ -49,7 +49,7 @@ import { kerbTransfer, seatPerson, type KerbStop } from '@sim/vehicles/kerbStops
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { walkingRise } from '@world/curbRamps';
 import { groundGradient } from './groundShear';
-import { WheelOdometer, blinkOn, indicatorSide, pathCurvature, steerAngle } from './vehicleSignals';
+import { blinkOn, steerFrom } from '@sim/vehicleSignals';
 import {
   axleStations, buildBusModel, buildTruckModel, buildTwoWheelerModel, seatFitScale, rimGeometry, spokedRimGeometry,
   merge, tyreGeometry, type TwoWheelerModel, type VehicleModel,
@@ -130,7 +130,7 @@ export interface AgentMeshes {
   readonly castersChanged: boolean;
   /** Whether the last `sync` drew anything into the shadow map (vehicles, two-wheelers, people): the map's moving casters. */
   readonly casting: boolean;
-  sync(world: SimWorld, alpha: number, detailed: boolean, zoom?: number, options?: AgentRenderOptions): void;
+  sync(world: SimClient, net: Network, alpha: number, detailed: boolean, zoom?: number, options?: AgentRenderOptions): void;
   /** Every figure drawn last frame and the body it was cast as (`citizenCasting.ts`). */
   census(): ReturnType<ReturnType<typeof createRiggedCitizens>['census']>;
   /** The burnt-out shell of this vehicle's own body */
@@ -155,7 +155,7 @@ export interface AgentMeshes {
 /** Time constant of the pitch and roll ease, seconds. */
 const SUSPENSION_TAU = 0.06;
 
-type ElevationAt = (world: SimWorld, x: number, y: number, segment?: SegmentId) => number;
+type ElevationAt = (x: number, y: number, segment?: SegmentId) => number;
 
 // ---------------------------------------------------------------- variation
 
@@ -291,8 +291,8 @@ const POSE = newPose();
 const WANT = { deck: 0, pitch: 0, roll: 0 };
 
 /** How far a two-wheeler leans into the bend it is on */
-function leanOf(world: SimWorld, v: SimVehicle): number {
-  const target = Math.max(-MAX_LEAN, Math.min(MAX_LEAN, Math.atan((v.v * v.v * pathCurvature(world, v)) / GRAVITY)));
+function leanOf(v: SimVehicle): number {
+  const target = Math.max(-MAX_LEAN, Math.min(MAX_LEAN, Math.atan((v.v * v.v * v.curvature) / GRAVITY)));
   const state = leans.get(v);
   if (!state) {
     leans.set(v, { lean: target, age: v.age });
@@ -1231,12 +1231,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** The fleet's version `forgetCast` last looked at. */
   let castFleet = -1;
   /** The people of the vehicles gone from the world let go by the casting, when the fleet changed */
-  const forgetCast = (world: SimWorld): void => {
-    const fleet = world.vehicles.version;
+  const forgetCast = (world: SimClient): void => {
+    const fleet = world.fleet;
     if (fleet === castFleet) return;
     castFleet = fleet;
     for (const [id, vehicle] of castVehicles) {
-      if (world.vehicles.get(id) === vehicle || world.ambient.isParked(vehicle)) continue;
+      if (world.vehicles.get(id) === vehicle || world.isParked(vehicle)) continue;
       castVehicles.delete(id);
       pedestrians.forgetCompany(vehicleCompany(vehicle), id);
     }
@@ -1439,17 +1439,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   /** Refreshed for every vehicle, read by whichever body builder runs. */
   const lamp: LampState = { head: HEADLAMP, tail: TAILLAMP, indicate: 0, steer: 0, spin: 0, crank: 0 };
-  const odometer = new WheelOdometer();
   // One elevation callback for every vehicle and pedestrian drawn this frame.
-  let currentWorld: SimWorld | undefined;
   let currentSegment: SegmentId | undefined;
-  const elevationOnCurrent = (x: number, y: number): number => elevationAt(currentWorld!, x, y, currentSegment);
+  const elevationOnCurrent = (x: number, y: number): number => elevationAt(x, y, currentSegment);
   /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over */
   const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number; seen: number }>();
   /** DO NOT ask the diary per car (`touches`): every car read every entry since its serial, cars x entries a frame */
   let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
-  const offRoadDeck = (world: SimWorld, v: SimVehicle, x: number, y: number): number => {
+  const offRoadDeck = (v: SimVehicle, x: number, y: number): number => {
     const known = offRoadDecks.get(v);
     if (known && known.x === x && known.y === y) {
       if (known.seen >= offRoadSerial) return known.deck;
@@ -1460,7 +1458,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     }
     const lot = v.free?.lot ?? null;
     const onLot = lot !== null && lotAt ? lotAt(lot, x, y) : NaN;
-    const deck = Number.isFinite(onLot) ? onLot : elevationAt(world, x, y, undefined);
+    const deck = Number.isFinite(onLot) ? onLot : elevationAt(x, y, undefined);
     offRoadDecks.set(v, { x, y, deck, seen: offRoadSerial });
     return deck;
   };
@@ -1597,16 +1595,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       lampDark.value = dark;
     },
     renderPalettes: (renderer) => procedural?.renderPalettes(renderer),
-    sync(world, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
-      currentWorld = world;
+    sync(world, net, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       // A new document has a journal of its own: the sweep follows the one the world stands on.
-      if (offRoadSweep?.journal !== world.net.doc.changes) offRoadSweep = new ChangeSweep(world.net.doc.changes, OFF_ROAD_GROUND);
+      if (offRoadSweep?.journal !== net.doc.changes) offRoadSweep = new ChangeSweep(net.doc.changes, OFF_ROAD_GROUND);
       offRoadSweep.advance();
       offRoadSerial = offRoadSweep.serial;
       const now = typeof performance !== 'undefined' ? performance.now() : suspensionClock + 16;
       suspensionDt = Math.min(0.1, Math.max(0, (now - suspensionClock) / 1000));
       suspensionClock = now;
-      const simNow = world.clock.time + alpha * DT;
+      const simNow = world.time + alpha * DT;
       gaitDt = gaitClock < 0 ? 0 : Math.min(0.5, Math.max(0, simNow - gaitClock));
       gaitClock = simNow;
       suspensionFrame++;
@@ -1635,17 +1632,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       vehicleBlobs.begin();
       if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot.
-      for (const list of [world.vehiclesInIdOrder(), world.ambient.parked]) for (const vehicle of list) {
+      for (const list of [world.traffic, world.parked]) for (const vehicle of list) {
         // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
         const at = vehicle.free;
         const pose = POSE;
         if (at && at.px === at.x && at.py === at.y && at.pangle === at.angle) { pose.p.x = at.x; pose.p.y = at.y; pose.angle = at.angle; }
-        else if (!vehiclePoseInto(world, vehicle, alpha, pose)) continue;
+        else framesPoseInto(vehicle.frames, alpha, pose);
         const free = vehicle.free !== null;
-        const lane = free ? undefined : world.lanelet(vehicle.lanelet);
         const plan = planOf(vehicle.archetype);
         const twoWheeled = plan.shape === 'motorcycle' || plan.shape === 'bicycle';
-        const deck = free ? offRoadDeck(world, vehicle, pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, lane?.segment);
+        const deck = free ? offRoadDeck(vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
         // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
         if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.5 + plan.height * 2)) continue;
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
@@ -1695,7 +1691,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         // The road under each axle and each side
         const front = plan.axleAlong[0] ?? plan.length * 0.35;
         const rear = plan.axleAlong[plan.axleAlong.length - 1] ?? -plan.length * 0.35;
-        const seg = lane?.segment ?? (lane ? world.connector(lane.id)?.inSegment : undefined);
+        const seg = free ? undefined : vehicle.inSegment;
         currentSegment = seg;
         // A car off the road stands level on its lot (lots are laid near flat).
         const slope = !free && (level >= 2 || twoWheeled || !ride || (level === 1 && ((suspensionFrame + vehicle.id) & 1) === 0));
@@ -1719,7 +1715,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           ride.lod = own;
         }
         frameAt(pose.p.x, pose.p.y, pose.angle, ride.deck,
-          twoWheeled ? leanOf(world, vehicle) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
+          twoWheeled ? leanOf(vehicle) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
           ride.pitch, ride.roll);
         const paintHex = hexOf(vehicle.color);
         let lookEntry = looks.get(vehicle.id);
@@ -1738,11 +1734,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         lamp.tail = parked ? TAILLAMP_OFF : decel >= BRAKE_DECEL ? BRAKELAMP : TAILLAMP;
         // `lateral` is the unfinished part of a lane change, signed towards the lane being left
         if (level >= 1 || twoWheeled) {
-          const side = free ? 0 : indicatorSide(world, vehicle);
+          const side = free ? 0 : vehicle.indicator;
           lamp.indicate = side !== 0 && blinkOn(vehicle.age, vehicle.id) ? side : 0;
           const axles = plan.axleAlong;
-          lamp.steer = free ? 0 : steerAngle(world, vehicle, (axles[0] ?? 0) - (axles[axles.length - 1] ?? 0));
-          const driven = odometer.advance(vehicle);
+          lamp.steer = free ? 0 : steerFrom(vehicle.curvature, (axles[0] ?? 0) - (axles[axles.length - 1] ?? 0));
+          const driven = vehicle.odometer;
           lamp.spin = -driven / Math.max(plan.wheelRadius, 1e-3);
           // A bicycle's cranks turn a little over half a turn per turn of the wheel: about 80 rpm at a city cyclist's 18 km/h.
           lamp.crank = (driven / (2 * Math.PI * Math.max(plan.wheelRadius, 1e-3))) * CRANK_RATIO * 2 * Math.PI;
@@ -1795,10 +1791,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           currentSegment = segment;
           const land = open && groundAt ? groundAt : elevationOnCurrent;
           // DO NOT ask them of every walker of the simulation before the test.
-          const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, segment);
+          const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, segment);
           if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, below)) continue;
-          const rise = open ? m(0.04) : footwayRiseAt(world.net, pose.p.x, pose.p.y) * walkingRise(world.net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
-            segment === undefined ? 'ground' : world.net.doc.segment(segment)?.structure ?? 'ground');
+          const rise = open ? m(0.04) : footwayRiseAt(net, pose.p.x, pose.p.y) * walkingRise(net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
+            segment === undefined ? 'ground' : net.doc.segment(segment)?.structure ?? 'ground');
           const deck = (open && roughGroundAt ? land(pose.p.x, pose.p.y) : below) + rise;
           frameAt(pose.p.x, pose.p.y, pose.angle, deck);
           if (procedural && ped.id !== PLAYER_ID) {

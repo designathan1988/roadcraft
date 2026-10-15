@@ -83,6 +83,49 @@ export function vehiclePoseInto(w: SimWorld, v: Vehicle, alpha: number, out: Pos
   return true;
 }
 
+/** A vehicle's two poses of the tick as `vehiclePoseInto` blends them: the simulation's worker writes these, the page blends. */
+export interface VehicleFrames {
+  bx: number; by: number; bangle: number;
+  x: number; y: number; angle: number;
+  yawBefore: number; yawNow: number;
+  /** No blend: the pose now alone (no pose before, or a jump past `POSE_JUMP_LIMIT`). */
+  jump: boolean;
+}
+
+/** `vehiclePoseInto`'s two ends, unblended; false where there is none. Off the road: its free pose, before and now. */
+export function vehicleFramesInto(w: SimWorld, v: Vehicle, out: VehicleFrames): boolean {
+  const free = v.free;
+  if (free) {
+    out.bx = free.px; out.by = free.py; out.bangle = free.pangle;
+    out.x = free.x; out.y = free.y; out.angle = free.angle;
+    out.yawBefore = 0; out.yawNow = 0; out.jump = false;
+    return true;
+  }
+  const frame = axleFrame(w, v, v, v.archetype.length, AXLE_NOW);
+  if (!frame) return false;
+  const side = bodyOffset(v, v.archetype.length) + cycleShift(v, w.lanelet(v.lanelet), v.s);
+  out.x = frame.p.x - frame.t.y * side; out.y = frame.p.y + frame.t.x * side;
+  out.angle = Math.atan2(frame.t.y, frame.t.x);
+  out.yawBefore = 0; out.yawNow = 0;
+  const before = axleFrame(w, v, v.prev, v.archetype.length, AXLE_BEFORE);
+  if (!before) { out.jump = true; out.bx = out.x; out.by = out.y; out.bangle = out.angle; return true; }
+  const sideBefore = bodyOffset(v.prev, v.archetype.length) + cycleShift(v, w.lanelet(v.prev.lanelet), v.prev.s);
+  out.bx = before.p.x - before.t.y * sideBefore; out.by = before.p.y + before.t.x * sideBefore;
+  out.bangle = Math.atan2(before.t.y, before.t.x);
+  out.jump = Math.hypot(out.bx - out.x, out.by - out.y) > POSE_JUMP_LIMIT;
+  out.yawBefore = laneChangeYaw(v.prev.lateralSlope);
+  out.yawNow = laneChangeYaw(v.lateralSlope);
+  return true;
+}
+
+/** The pose between a vehicle's two (`vehicleFramesInto`) at `alpha` of the tick: what `vehiclePoseInto` gives. */
+export function framesPoseInto(f: Readonly<VehicleFrames>, alpha: number, out: PoseOut): void {
+  const t = clamp(alpha, 0, 1);
+  if (f.jump) { out.p.x = f.x; out.p.y = f.y; out.angle = f.angle; return; }
+  out.p.x = lerp(f.bx, f.x, t); out.p.y = lerp(f.by, f.y, t);
+  out.angle = lerpAngle(f.bangle, f.angle, t) + lerp(f.yawBefore, f.yawNow, t);
+}
+
 /** The last step's body centre on its own chart, written in place. */
 const BEFORE_OWN = { x: 0, y: 0 };
 

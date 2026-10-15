@@ -2,7 +2,6 @@ import { onEcologyRead } from './ecologyPool';
 import { GRID_CELL } from '@world/grid';
 import type { BodyPart, Severable } from '@sim/people/view';
 import type { Archetype } from '@sim/vehicles/archetypes';
-import type { Vehicle } from '@sim/vehicles/state';
 import { workUntil } from '@core/frameWork';
 import { pointInPolygon } from '@core/polygon';
 import type { Occupant, RagdollProbe } from './ragdoll';
@@ -46,7 +45,7 @@ import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
-import type { SimWorld } from '@sim/world';
+import type { SimClient, VehicleView } from '@sim/host/simClient';
 import type { Viewport } from '@view/viewport';
 
 import { createAgentMeshes, type AgentMeshes } from './agents';
@@ -281,7 +280,7 @@ export interface SceneHandle {
   /** A shot striking a vehicle at world (x, y, height z), coming along (dirX, dirY) */
   vehicleHit(x: number, y: number, z: number, dirX: number, dirY: number, glass: boolean, blood: boolean): void;
   /** The body a vehicle's driver or rider is drawn with (`AgentMeshes.driverBody`). */
-  driverBody(vehicle: Vehicle, x: number, y: number): number | null;
+  driverBody(vehicle: VehicleView, x: number, y: number): number | null;
   /** A two-wheeler its rider was shot off: the machine itself falling over and sliding to a stop. */
   dropVehicle(v: { id: number; archetype: Archetype; x: number; y: number; angle: number; color: number; dirX: number; dirY: number }): void;
   /** The height the terrain is drawn at — what anything laid on it must clear. */
@@ -305,7 +304,7 @@ export interface SceneHandle {
   /** The height of the paving at a point - footway or carriageway of a road at grade - or NaN off the roads. */
   pavedHeightAt(x: number, y: number): number;
   resize(): void;
-  draw(net: Network, sim: SimWorld, alpha: number, delta: number, options?: DrawOptions): void;
+  draw(net: Network, sim: SimClient, alpha: number, delta: number, options?: DrawOptions): void;
   setQuality(level: QualityLevel | 'auto'): void;
   readonly quality: QualityLevel | 'auto';
   /** The inspection camera (`inspector.ts`); null outside development builds. */
@@ -680,7 +679,6 @@ export function createSceneRenderer(
   let terrainMs = 0;
 
   const deckHeight = (
-    _world: SimWorld,
     x: number,
     y: number,
     segment: SegmentId | undefined,
@@ -2230,7 +2228,7 @@ export function createSceneRenderer(
       renderer.info.reset();
       groundDiary = net.doc.changes;
       // Planted trees and shrubs grow with the city's clock: resized once a city hour.
-      cityMinutes = sim.city.minutes(sim);
+      cityMinutes = sim.minutes;
       const wallNow = performance.now();
       const wallDt = lastWall < 0 ? 0 : Math.min(0.1, (wallNow - lastWall) / 1000);
       // The bodies, guts and debris on their own clock
@@ -2550,8 +2548,8 @@ export function createSceneRenderer(
       transit.cull(crowdFrustum, crowdProjection);
       for (const plants of [coverCells, natureCards, natureForest, paintedForest, plantedForest]) plants?.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
-      transit.update(sim.city.transit.trains(), terrain.renderedHeightAt);
-      agents.sync(sim, alpha, detailed, rig.viewport.zoom, {
+      transit.update(sim.trains, terrain.renderedHeightAt);
+      agents.sync(sim, net, alpha, detailed, rig.viewport.zoom, {
         pedestrianDetail: quality.pedestrianDetail,
         pedestrianVisible,
         personPixels,
@@ -2573,10 +2571,10 @@ export function createSceneRenderer(
       for (const ped of sim.pedViews) if (ped.v > 0.05) wear.feet(ped.x, ped.y, wallDt);
       wear.tick(wallDt);
       // The rooms cut open are lit from inside: brighter as the day goes.
-      const key = cutSpec ? `${cutSpec.level}@${cutSpec.x},${cutSpec.y}:${sim.doc.buildings.revision}` : '';
+      const key = cutSpec ? `${cutSpec.level}@${cutSpec.x},${cutSpec.y}:${net.doc.buildings.revision}` : '';
       if (key !== lampsKey) {
         lampsKey = key;
-        const lamps = roomLamps.lamps(sim, cutSpec, builtGroundAt, pavedHeightAt, ROOM_LIGHTS);
+        const lamps = roomLamps.lamps(net.doc, cutSpec, builtGroundAt, pavedHeightAt, ROOM_LIGHTS);
         roomLights.forEach((light, i) => {
           const at = lamps[i];
           light.userData['used'] = !!at;
@@ -2585,7 +2583,7 @@ export function createSceneRenderer(
       }
       // Falls off with the distance in world units: the same lamp in metres at any unit.
       for (const light of roomLights) light.intensity = cutSpec && light.userData['used'] ? 55 * TUNED_UNIT ** light.decay * (0.25 + 0.75 * lastDark) : 0;
-      signals.sync(sim, detailed, crowdFrustum);
+      signals.sync(sim.signals, net, detailed, crowdFrustum);
 
       target.copy(rig.target);
       const halfHeight = canvas.clientHeight / Math.max(0.001, rig.viewport.zoom * 2);
@@ -2597,7 +2595,7 @@ export function createSceneRenderer(
       const tallestTop = Math.max(0, buildings.top);
       // Day and night, by the city's clock (`sim/city/city.ts`).
       const fixedHour = skyMode === 'day' ? 16 * 60 : skyMode === 'night' ? 22 * 60 : null;
-      const clock = fixedHour === null ? sim.city.minutes(sim) : fixedHour;
+      const clock = fixedHour === null ? sim.minutes : fixedHour;
       {
         // THE WEATHER (`world/weather.ts`): the wind carries the clouds and bends the plants and the smoke
         const weather = net.doc.weather;
@@ -2680,7 +2678,7 @@ export function createSceneRenderer(
         // The two-wheelers changed between casting and a soft disc: their shadows come or go now.
         if (agents.castersChanged) shadowMoved = true;
         // Moving only when something that moves is in the pass (`movingCasters`) or the wind bends the trees
-        const moving = net.doc.weather.wind > 0 || (!sim.clock.paused && movingCasters());
+        const moving = net.doc.weather.wind > 0 || (!sim.paused && movingCasters());
         if (castersMoved && !moving) shadowMoved = true;
         castersMoved = moving;
         const every = rig.viewport.zoom >= SHADOW_FULL_ZOOM ? 1 : SHADOW_FAR_EVERY;

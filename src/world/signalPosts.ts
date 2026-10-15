@@ -1,6 +1,5 @@
 import { addScaled, angleOf, perp } from '@core/vec2';
 import { crosswalkDistance } from './approach';
-import type { LaneletGraph } from './lanelets';
 import type { Network } from './network';
 import type { NodeId, SegmentId } from './ids';
 import { roadProfile } from './roadTypes';
@@ -46,7 +45,12 @@ export function signalPostPlace(net: Network, node: NodeId, segmentId: SegmentId
 }
 
 /** DO NOT ask for every post of the map to keep those round one point (a blast, `actionsWiring.ts`). */
-export function signalPosts(net: Network, graph: LaneletGraph, near?: { readonly x: number; readonly y: number; readonly radius: number }): SignalPost[] {
+/** What `signalPosts` reads of the junctions: the lanes' graph, or the page's view of its signals (`sim/host/simClient.ts`). */
+export interface SignalJunctions {
+  readonly junctions: ReadonlyMap<NodeId, { readonly signalised: boolean; readonly groups: readonly { readonly segments: readonly SegmentId[] }[] }>;
+}
+
+export function signalPosts(net: Network, graph: SignalJunctions, near?: { readonly x: number; readonly y: number; readonly radius: number }): SignalPost[] {
   const out: SignalPost[] = [];
   let nodes: NodeId[];
   if (near) {

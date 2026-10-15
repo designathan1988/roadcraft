@@ -21,9 +21,10 @@ import {
 
 import { signalPostPlace } from '@world/signalPosts';
 import { JournalCursor } from '@world/derived';
-import type { SimWorld } from '@sim/world';
+import type { SignalFeed } from '@sim/host/simClient';
+import type { Network } from '@world/network';
 import type { NodeId, SegmentId } from '@world/ids';
-import { signalStateFor, type SignalState } from '@sim/signals/query';
+import type { SignalState } from '@sim/signals/query';
 import { m } from '@world/units';
 
 /** Physical traffic signal heads. ## Why every head is double-sided A real signal aims its lenses at the traffic it */
@@ -53,7 +54,7 @@ const FACES = [1, -1] as const;
 export interface SignalHeads {
   readonly group: Group;
   /** `frustum`: what the camera sees this frame; the lamps of cells out of it wait until they come in. */
-  sync(world: SimWorld, detailed: boolean, frustum?: Frustum): void;
+  sync(feed: SignalFeed, net: Network, detailed: boolean, frustum?: Frustum): void;
   dispose(): void;
 }
 
@@ -76,10 +77,8 @@ interface Head {
 interface Junction {
   readonly node: NodeId;
   readonly heads: Head[];
-  /** The phase seen (`plan`, `stageIndex`, `sub`): the heads are asked again only when it moves. */
-  plan: unknown;
-  stage: number;
-  sub: string;
+  /** The stage seen (`SignalFeed.stage`): the heads are asked again only when it moves. */
+  stage: string;
 }
 
 type BatchName = 'posts' | 'arms' | 'boxes' | 'visors' | 'lit' | 'halos' | 'red' | 'amber' | 'green';
@@ -96,7 +95,7 @@ interface Cell {
 /** Builds and updates the physical signal heads used by the Three.js renderer. */
 export function createSignalHeads(
   scene: Scene,
-  elevationAt: (world: SimWorld, x: number, y: number, segment?: SegmentId) => number = () => 0,
+  elevationAt: (x: number, y: number, segment?: SegmentId) => number = () => 0,
 ): SignalHeads {
   const group = new Group();
   group.name = 'traffic-signals';
@@ -242,7 +241,7 @@ export function createSignalHeads(
   const cells = new Map<number, Cell>();
   const junctionCell = new Map<NodeId, number>();
   /** The network the heads stand on, the junctions' log as last read (`signalChangesSince`), and the land's changes. */
-  let placedNetwork: SimWorld['net'] | null = null;
+  let placedNetwork: Network | null = null;
   let signalSerial = -1;
   const landRead = new JournalCursor(['terrain', 'elevation']);
 
@@ -278,23 +277,23 @@ export function createSignalHeads(
   };
 
   /** A signalised junction's heads, one on each approach of a signal group, where the world stands its post. */
-  const junctionOf = (world: SimWorld, node: NodeId): Junction | null => {
-    const junction = world.graph.junctions.get(node);
-    if (!junction?.signalised || !world.controller(node)) return null;
-    const nodeRecord = world.doc.node(node);
+  const junctionOf = (feed: SignalFeed, net: Network, node: NodeId): Junction | null => {
+    const layout = feed.layout(node);
+    if (!layout?.groups.length) return null;
+    const nodeRecord = net.doc.node(node);
     if (!nodeRecord) return null;
     const heads: Head[] = [];
     for (const segmentId of nodeRecord.incident) {
-      const segment = world.doc.segment(segmentId);
+      const segment = net.doc.segment(segmentId);
       if (!segment) continue;
-      const signalGroup = junction.groups.find((candidate) => candidate.segments.includes(segmentId));
+      const signalGroup = layout.groups.find((candidate) => candidate.segments.includes(segmentId));
       if (!signalGroup) continue;
       // Where the post stands is the world's (`world/signalPosts.ts`): the pedestrians walk round the same post.
-      const post = signalPostPlace(world.net, node, segmentId);
+      const post = signalPostPlace(net, node, segmentId);
       if (!post) continue;
       heads.push({
         x: post.x,
-        height: elevationAt(world, post.x, post.y, segmentId),
+        height: elevationAt(post.x, post.y, segmentId),
         y: post.y,
         // Local +X carries the arm inward over the road.
         yaw: post.yaw,
@@ -303,7 +302,7 @@ export function createSignalHeads(
         state: null,
       });
     }
-    return heads.length ? { node, heads, plan: null, stage: -1, sub: '' } : null;
+    return heads.length ? { node, heads, stage: '' } : null;
   };
   const cellKeyOf = (j: Junction): number => Math.floor(j.heads[0]!.x / SIGNAL_CELL) * 100_003 + Math.floor(j.heads[0]!.y / SIGNAL_CELL);
   /** A cell's batches made again from its junctions: that cell's alone. */
@@ -337,12 +336,12 @@ export function createSignalHeads(
   };
 
   /** @rebuild Every head of the map placed again, cell by cell. */
-  const placeAll = (world: SimWorld): void => {
+  const placeAll = (feed: SignalFeed, net: Network): void => {
     dropCells();
     shown.clear();
     const byCell = new Map<number, Junction[]>();
-    for (const node of world.junctionNodesInOrder()) {
-      const entry = junctionOf(world, node);
+    for (const node of feed.nodes()) {
+      const entry = junctionOf(feed, net, node);
       if (!entry) continue;
       const key = cellKeyOf(entry);
       junctionCell.set(node, key);
@@ -354,7 +353,7 @@ export function createSignalHeads(
   };
 
   /** These junctions placed again, and the cells they left or came into made again. */
-  const placeSome = (world: SimWorld, nodes: Iterable<NodeId>): void => {
+  const placeSome = (feed: SignalFeed, net: Network, nodes: Iterable<NodeId>): void => {
     const touched = new Map<number, Junction[]>();
     const cellJunctions = (key: number): Junction[] => {
       let list = touched.get(key);
@@ -370,7 +369,7 @@ export function createSignalHeads(
         if (at >= 0) list.splice(at, 1);
         junctionCell.delete(node);
       }
-      const entry = junctionOf(world, node);
+      const entry = junctionOf(feed, net, node);
       if (!entry) continue;
       const key = cellKeyOf(entry);
       junctionCell.set(node, key);
@@ -382,29 +381,29 @@ export function createSignalHeads(
 
   return {
     group,
-    sync(world, detailed, frustum) {
+    sync(feed, net, detailed, frustum) {
       if (!detailed) {
         group.visible = false;
         return;
       }
       group.visible = true;
       // DO NOT place every head of the map again on a revision of the network, the traffic, the land or the topology
-      const log = world.signalChangesSince(signalSerial);
-      const land = landRead.read(world.doc.changes);
-      if (placedNetwork !== world.net || log.nodes === null || land === null || land.some((e) => e.rects === null)) {
-        placedNetwork = world.net;
-        placeAll(world);
+      const log = feed.changesSince(signalSerial);
+      const land = landRead.read(net.doc.changes);
+      if (placedNetwork !== net || log.nodes === null || land === null || land.some((e) => e.rects === null)) {
+        placedNetwork = net;
+        placeAll(feed, net);
       } else {
         const nodes = new Set<NodeId>(log.nodes);
         for (const entry of land) {
           for (const rect of entry.rects!) {
-            for (const id of world.net.segmentCells.idsMeeting(rect)) {
-              const segment = world.doc.segment(id);
+            for (const id of net.segmentCells.idsMeeting(rect)) {
+              const segment = net.doc.segment(id);
               if (segment) { nodes.add(segment.a); nodes.add(segment.b); }
             }
           }
         }
-        if (nodes.size) placeSome(world, nodes);
+        if (nodes.size) placeSome(feed, net, nodes);
       }
       signalSerial = log.serial;
       // DO NOT ask every head of the map each frame, nor write every lens of the map at a change of one.
@@ -412,14 +411,11 @@ export function createSignalHeads(
       for (const cell of cells.values()) {
         if (frustum && !frustum.intersectsSphere(cell.sphere)) continue;
         for (const junction of cell.junctions) {
-          const controller = world.controller(junction.node);
-          const plan = controller?.plan ?? null, stage = controller?.stageIndex ?? -1, sub = controller?.sub ?? '';
-          if (junction.plan === plan && junction.stage === stage && junction.sub === sub && junction.heads[0]!.state !== null) continue;
-          junction.plan = plan;
+          const stage = feed.stage(junction.node);
+          if (junction.stage === stage && junction.heads[0]!.state !== null) continue;
           junction.stage = stage;
-          junction.sub = sub;
           for (const head of junction.heads) {
-            const state = controller ? signalStateFor(controller, head.groupId) : 'red';
+            const state = feed.state(junction.node, head.groupId);
             if (head.state === state) continue;
             head.state = state;
             shown.set(head.key, state);
