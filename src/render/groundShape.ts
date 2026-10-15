@@ -218,7 +218,7 @@ export interface BlockDigestAsk {
  * for a block that reads ground the ask does not hold (a plate not made, or
  * past the map's edge): the page digests that one itself.
  */
-export function digestBlocks(ask: BlockDigestAsk): Float64Array[] {
+function digestBlocks(ask: BlockDigestAsk): Float64Array[] {
   const plates = new Map(ask.plates.map((p) => [p.index, p]));
   const naturalAt = (x: number, y: number): number => {
     const p = plates.get(plateOf(x, y));

@@ -23,7 +23,7 @@ const SILENCE_MS = 20_000;
 const MOST_LANES = 2;
 
 /** What does the ground's work off the page (`renderer.ts` `shapeGround`, `changedBlocks`). */
-export interface GroundWorkers {
+interface GroundWorkers {
   /** Whether jobs can be handed off the page at all (false: no workers here, or the pool failed). */
   readonly available: boolean;
   shape(ask: GroundShapeAsk): Promise<PlateShapeAnswer[]>;
