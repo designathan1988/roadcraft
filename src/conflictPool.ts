@@ -1,4 +1,5 @@
 import type { PairMeasurer, SweepSamples } from '@world/conflictTable';
+import type { ChosenTurn, TurnAsk } from '@world/junctionTurns';
 
 /**
  * THE TRAFFIC'S CONFLICT PAIRS, MEASURED ON THE OTHER CORES. Each pair of
@@ -14,7 +15,7 @@ import type { PairMeasurer, SweepSamples } from '@world/conflictTable';
  */
 interface Lane {
   readonly worker: Worker;
-  readonly waiting: Map<number, { resolve(tables: (Float64Array | null)[]): void; reject(error: Error): void }>;
+  readonly waiting: Map<number, { resolve(answer: unknown[]): void; reject(error: Error): void }>;
   /** Fails the pool when the worker stays silent with jobs waiting (`SILENCE_MS`). */
   watchdog: ReturnType<typeof setTimeout> | null;
 }
@@ -68,11 +69,45 @@ export class ConflictPool implements PairMeasurer {
   private ask(lane: Lane, sweeps: readonly object[], pairs: Int32Array): Promise<(Float64Array | null)[]> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      lane.waiting.set(id, { resolve, reject });
+      lane.waiting.set(id, { resolve: (answer) => resolve(answer as (Float64Array | null)[]), reject });
       // The samples are copied (the page keeps its own); the indices handed over.
-      lane.worker.postMessage({ id, sweeps, pairs }, [pairs.buffer]);
+      lane.worker.postMessage({ kind: 'pairs', id, sweeps, pairs }, [pairs.buffer]);
       this.arm(lane);
     });
+  }
+
+  /**
+   * Junction turns chosen across the workers (`conflictTable.worker.ts`, `chooseTurnOf`): contiguous
+   * shares in the order asked - a junction's turns come one after another, so they mostly go to one
+   * worker - each share with its junctions' surfaces once, the asks pointing at them.
+   */
+  chooseTurns(asks: readonly TurnAsk[]): Promise<readonly ChosenTurn[]> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const per = Math.ceil(asks.length / lanes.length);
+    const parts: Promise<ChosenTurn[]>[] = [];
+    for (let k = 0; k < lanes.length && k * per < asks.length; k++) {
+      const share = asks.slice(k * per, (k + 1) * per);
+      const index = new Map<string, number>();
+      const surfaces: { centre: { x: number; y: number }; rings: readonly Float64Array[]; key: string }[] = [];
+      const turns = share.map((a) => {
+        let at = index.get(a.surfaceKey);
+        if (at === undefined) {
+          at = surfaces.length;
+          index.set(a.surfaceKey, at);
+          surfaces.push({ centre: a.centre, rings: a.rings, key: a.surfaceKey });
+        }
+        return { surface: at, inXY: a.inXY, outXY: a.outXY, waiting: a.waiting, fromRoadEnd: a.fromRoadEnd, toRoadEnd: a.toRoadEnd };
+      });
+      const lane = lanes[k]!;
+      const id = this.nextId++;
+      parts.push(new Promise<ChosenTurn[]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as ChosenTurn[]), reject });
+        lane.worker.postMessage({ kind: 'turns', id, surfaces, turns });
+        this.arm(lane);
+      }));
+    }
+    return Promise.all(parts).then((answers) => answers.flat());
   }
 
   /** The lane's silence deadline started again, or stopped when nothing waits on it. */
@@ -93,7 +128,7 @@ export class ConflictPool implements PairMeasurer {
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; error?: string }>) => {
           if (this.lanes !== lanes) return;
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (job) lane.waiting.delete(event.data.id);
@@ -101,6 +136,7 @@ export class ConflictPool implements PairMeasurer {
           this.arm(lane);
           if (!job) return;
           if (event.data.tables) job.resolve(event.data.tables);
+          else if (event.data.turns) job.resolve(event.data.turns);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
         // A worker that cannot run, or a message it cannot read: the pool is

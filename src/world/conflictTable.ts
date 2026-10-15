@@ -1,4 +1,5 @@
 import { m } from './units';
+import type { ChosenTurn, TurnAsk } from './junctionTurns';
 
 /**
  * WHERE TWO MOVEMENTS' BODIES MEET, measured from their sampled sweeps alone
@@ -269,4 +270,10 @@ function widen(table: Float64Array, at: number, c: number): void {
  */
 export interface PairMeasurer {
   measure(pairs: readonly { readonly a: SweepSamples; readonly b: SweepSamples }[]): Promise<readonly (Float64Array | null)[]>;
+  /**
+   * Chooses many junction turns somewhere else, each as `turnPaths.ts` `chooseTurnOf` would here, answered
+   * in the order asked; rejected when it cannot (the turns are then chosen on the page,
+   * `LaneletGraph.redoProvisional`). Absent: every turn is chosen on the page.
+   */
+  chooseTurns?(asks: readonly TurnAsk[]): Promise<readonly ChosenTurn[]>;
 }

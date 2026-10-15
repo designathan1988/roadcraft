@@ -14,7 +14,7 @@ import { orientedPolyline } from './geometry';
 import { type ApproachGroup, computeApproachGroups } from './approachGroups';
 import { TUNNELS_DRAWN } from './structures';
 import { JunctionSurface, bulbTurnPath, medianUturnPath, turnPath } from './turnPaths';
-import { JunctionTurns } from './junctionTurns';
+import { JunctionTurns, type TurnPlan } from './junctionTurns';
 import { BULB_TURN_RADIUS } from './junction/bulb';
 import type { BodyClass } from './conflictPoints';
 import { m } from './units';
@@ -230,6 +230,13 @@ export class LaneletGraph {
     this.netState = net.state;
   }
 
+  /**
+   * The turns of the next build chosen off the page (`SimWorld.prepareVehicleTopology`): set, a turn a
+   * junction does not know is asked of it and stood in for, and `redoProvisional` builds those
+   * junctions again once it holds the answers. Null: every turn is chosen here, as it always was.
+   */
+  turnPlan: TurnPlan | null = null;
+
   /** The network's state this graph was last brought up to (`update`). */
   private netState: object | null = null;
   /** The key the last `buildJunction` was built under (`update` keeps it). */
@@ -330,6 +337,32 @@ export class LaneletGraph {
     for (const key of oldJunctionKeys) if (!keptJunctionKeys.has(key)) this.junctionCache.delete(key);
     this.revision = net.revision;
     return { junctions, lanelets: changedLanes, segments };
+  }
+
+  /**
+   * The junctions the last build stood on turns still to be chosen (`turnPlan`), built again now that
+   * the plan holds the answers: their connectors out, then in again from the cache and the plan's
+   * turns - the junction a build that chose every turn here makes. A turn the plan could not answer (its
+   * workers failed) is chosen here. Only those junctions: DO NOT build the graph again for them.
+   */
+  redoProvisional(doc: RoadDoc, net: Network): void {
+    const plan = this.turnPlan;
+    if (!plan) return;
+    plan.recording = false;
+    for (const [nodeId, turns] of [...plan.provisional].sort((a, b) => a[0] - b[0])) {
+      for (const cid of this.junctions.get(nodeId)?.connectors ?? []) {
+        const connector = this.connectors.get(cid);
+        if (connector) drop(this.exits, connector.fromLane, cid);
+        this.connectors.delete(cid);
+        this.lanelets.delete(cid);
+      }
+      this.junctions.delete(nodeId);
+      const node = doc.node(nodeId);
+      if (node) this.buildJunction(doc, net, nodeId, node, this.junctionCache, this.junctionCache, () => ({ turns }));
+    }
+    this.siblings.clear();
+    this.changes.clear();
+    this.turnPlan = null;
   }
 
   /**
@@ -534,7 +567,7 @@ export class LaneletGraph {
 
   /** The connectors of one node (`buildJunctions`): kept whole when its key is known, built otherwise. */
   private buildJunction(doc: RoadDoc, net: Network, nodeId: NodeId, node: RoadNode,
-    previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>, before: (node: NodeId) => JunctionCache | undefined): void {
+    previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>, before: (node: NodeId) => { readonly turns: JunctionTurns } | undefined): void {
     laneletWork.nodes++;
     // A road's end that is a turning circle turns its traffic round (`junction/bulb.ts`).
     const bulb = node.incident.length === 1 && node.end === 'bulb';
@@ -619,7 +652,7 @@ export class LaneletGraph {
     const connectorIds: ConnectorId[] = [];
     const road = carriedPair(doc, nodeId);
     // The turns this junction chose before: a movement whose geometry did not move keeps its turn.
-    const turns = new JunctionTurns(before(nodeId)?.turns ?? null);
+    const turns = new JunctionTurns(before(nodeId)?.turns ?? null, this.turnPlan, nodeId);
 
     const addConnector = (
       inId: LaneletId, inLane: Lanelet, outId: LaneletId, outLane: Lanelet, turn: TurnKind, carried = false,
@@ -791,6 +824,9 @@ export class LaneletGraph {
       signalised,
       control: node.control,
     });
+    // A junction standing on turns still to be chosen off the page is not kept: built again with them
+    // (`redoProvisional`), and a later build must not hand back its stand-ins.
+    if (turns.provisional) return;
     next.set(key, {
       node: nodeId,
       turns: turns.settle(),

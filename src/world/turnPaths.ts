@@ -8,6 +8,7 @@ import { Level, halfWidth } from './roadTypes';
 import { mouthOverlapStrip } from './junction/mouthOverlap';
 import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictPoints';
 import { m, stepsIn } from './units';
+import { TurnDigest as Digest } from './turnDigest';
 import { HEADING_CHORD, chordHeading } from './heading';
 import { type Queue, type Rect, clearOfQueue, overlap, queueOf, rect } from './sweptBodies';
 import type { JunctionTurns, TurnChoice } from './junctionTurns';
@@ -88,6 +89,15 @@ const insideArea = (p: Vec2, area: Area): boolean =>
 const inBox = (p: Vec2, box: Box): boolean =>
   !(p.x < box.minX || p.x > box.maxX || p.y < box.minY || p.y > box.maxY);
 
+/** A surface's key: digest of its centre and every ring point. */
+function surfaceKey(centre: Vec2, areas: readonly Area[]): string {
+  const digest = new Digest(); digest.point(centre);
+  for (const area of areas) digest.mix(area.hashA, area.hashB);
+  return digest.value();
+}
+const flat = (poly: Poly): Float64Array => Float64Array.from(poly.flatMap((p) => [p.x, p.y]));
+const unflat = (xy: Float64Array): Vec2[] => Array.from({ length: xy.length / 2 }, (_, i) => ({ x: xy[i * 2]!, y: xy[i * 2 + 1]! }));
+
 /** The drivable surface around one node: its junction plate and its legs. */
 export class JunctionSurface {
   private readonly areas: Area[] = [];
@@ -98,13 +108,21 @@ export class JunctionSurface {
   /** Digest of every ring point, for `turnPath`'s memo. */
   readonly key: string;
 
-  constructor(net: Network, node: NodeId) {
-    const at = net.doc.node(node);
-    this.centre = { x: at?.x ?? 0, y: at?.y ?? 0 };
+  /** The surface round `node`; or, from its centre and flat rings (a worker's, `chooseTurnOf`), the same one, the same key. */
+  constructor(from: Network | { readonly centre: Vec2; readonly rings: readonly Float64Array[] }, node?: NodeId) {
     const add = (ring: Poly): void => {
       if (ring.length < 3) return;
       this.areas.push(areaOf(ring));
     };
+    if (!('ribbons' in from)) {
+      this.centre = { x: from.centre.x, y: from.centre.y };
+      for (const xy of from.rings) add(unflat(xy));
+      this.key = surfaceKey(this.centre, this.areas);
+      return;
+    }
+    const net = from;
+    const at = net.doc.node(node!);
+    this.centre = { x: at?.x ?? 0, y: at?.y ?? 0 };
     // A road's own outline and, on a curved road, the strips the drawn surface
     // lays across its mouths (`junction/mouthOverlap.ts`).
     const road = (segment: SegmentId, level: Level.Asphalt | Level.Curb, mouths: readonly NodeId[]): void => {
@@ -125,9 +143,9 @@ export class JunctionSurface {
       }
     };
     for (const level of [Level.Asphalt, Level.Curb] as const) {
-      const junction = net.junctions.get(node)?.get(level);
+      const junction = net.junctions.get(node!)?.get(level);
       for (const ring of junction?.rings ?? []) if (!ring.isEmpty) add(ring.flatten());
-      for (const segment of net.doc.node(node)?.incident ?? []) {
+      for (const segment of net.doc.node(node!)?.incident ?? []) {
         // And the plate at the leg's far end: a body sweeps on past the
         // start of its exit lane, and where the leg is shorter than that it is
         // already crossing the next junction - drivable ground the sweep must
@@ -135,8 +153,8 @@ export class JunctionSurface {
         // a movement onto a short leg fitted no vehicle (fuzz
         // `turnOffSurface`, a 0.5-unit leg between two junctions).
         const seg = net.doc.segments.get(segment);
-        const far = seg ? (seg.a === node ? seg.b : seg.a) : undefined;
-        road(segment, level, far === undefined || far === node ? [node] : [node, far]);
+        const far = seg ? (seg.a === node! ? seg.b : seg.a) : undefined;
+        road(segment, level, far === undefined || far === node ? [node!] : [node!, far]);
         if (far === undefined || far === node) continue;
         for (const farRing of net.junctions.get(far)?.get(level)?.rings ?? []) if (!farRing.isEmpty) add(farRing.flatten());
         // And the roads on beyond it: past a node with no plate (one road
@@ -148,10 +166,12 @@ export class JunctionSurface {
         }
       }
     }
-    const digest = new Digest();
-    digest.point(this.centre);
-    for (const a of this.areas) digest.mix(a.hashA, a.hashB);
-    this.key = digest.value();
+    this.key = surfaceKey(this.centre, this.areas);
+  }
+
+  /** Its rings as flat x, y lists, in order: what a worker builds the same surface from. */
+  flatRings(): Float64Array[] {
+    return this.areas.map((a) => flat(a.poly));
   }
 
   /**
@@ -480,6 +500,12 @@ export function turnPath(inCentre: Polyline, outCentre: Polyline, surface: Junct
   if (known !== undefined) return {
     path: makeChoice(inCentre, outCentre, known.choice), maxBodyClass: known.maxBodyClass,
   };
+  // Off the page (`TurnPlan`): asked of the workers; the junction stands on the old shape until built again with the answer.
+  if (turns?.deferring) {
+    turns.defer(key, () => ({ inXY: inCentre.xy.slice(), outXY: outCentre.xy.slice(), waiting: waiting.map((lane) => lane.centre.xy.slice()),
+      surfaceKey: surface.key, centre: surface.centre, rings: surface.flatRings(), ...ends }));
+    return { path: bezierTurn(inCentre, outCentre, FALLBACK_HANDLE), maxBodyClass: HEAVY };
+  }
   // The search already knows the largest body the chosen path fits: it is the
   // one the path was chosen for (see `chooseTurn`). DO NOT sweep the chosen
   // path again, class by class, to find it: that was one to three more full
@@ -642,31 +668,6 @@ function laneEndKey(lane: Polyline, atEnd: boolean, reach = LANE_REACH): string 
   return value;
 }
 
-/** FNV-1a over numbers quantised to 1e-5, as two 32-bit lanes. */
-class Digest {
-  a = 0x811c9dc5;
-  b = 0x01000193;
-  /** Folds in another digest's two lanes. */
-  mix(a: number, b: number): void {
-    this.a = Math.imul(this.a ^ a, 0x01000193) >>> 0;
-    this.b = Math.imul(this.b ^ b, 0x5bd1e995) >>> 0;
-    this.b = (this.b ^ (this.b >>> 13)) >>> 0;
-  }
-  add(n: number): void {
-    const q = Math.round(n * 1e5);
-    this.a = Math.imul(this.a ^ (q & 0xffff), 0x01000193) >>> 0;
-    this.a = Math.imul(this.a ^ ((q >>> 16) & 0xffff), 0x01000193) >>> 0;
-    this.b = Math.imul(this.b ^ q, 0x5bd1e995) >>> 0;
-    this.b = (this.b ^ (this.b >>> 13)) >>> 0;
-  }
-  point(p: Vec2): void {
-    this.add(p.x);
-    this.add(p.y);
-  }
-  value(): string {
-    return `${this.a.toString(36)}${this.b.toString(36)}`;
-  }
-}
 
 /**
  * The handle `turnPath` settles on, by sweeping the candidates.
@@ -681,7 +682,7 @@ class Digest {
  * (fuzz `turnOffSurface`, `open-bus-leaves-kerb-on-acute-turn`). Where the bus
  * fits, nothing here changed.
  */
-function chooseTurn(inCentre: Polyline, outCentre: Polyline, surface: JunctionSurface,
+export function chooseTurn(inCentre: Polyline, outCentre: Polyline, surface: JunctionSurface,
   waiting: readonly WaitingLane[], ends: RoadEnds): { choice: TurnChoice; path: Polyline; body: BodyClass | -1 } {
   const queues = waiting.map(waitingBodies);
   const candidates = new Candidates(inCentre, outCentre);

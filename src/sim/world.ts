@@ -8,7 +8,8 @@ import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
 import { LaneGrid } from './agents/laneGrid';
 import { LaneReaches } from './routing/laneReach';
-import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
+import { ConflictIndex, type BodyClass, WAITING } from '@world/conflictPoints';
+import { type ChosenTurn, TurnPlan } from '@world/junctionTurns';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
 import { ClaimTable } from './intersections/claims';
@@ -657,8 +658,25 @@ export class SimWorld {
    */
   *prepareVehicleTopology(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
+    // The turns the build does not know are chosen by `measurer`'s workers when it has them
+    // (`TurnPlan`, `conflictPool.ts`): the build stands them in, and the junctions that did are built again
+    // with the answers. DO NOT sweep them here: a generated city's turns held one frame 25 s (2026-10-15).
+    graph.turnPlan = measurer?.chooseTurns ? new TurnPlan() : null;
     // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say.
     const changed = graph.update(this.doc, this.net);
+    const plan = graph.turnPlan;
+    if (plan && plan.asks.size > 0) {
+      const keys = [...plan.asks.keys()];
+      const answer: { turns?: readonly ChosenTurn[]; failed?: boolean } = {};
+      measurer!.chooseTurns!(keys.map((k) => plan.asks.get(k)!)).then(
+        (turns) => { answer.turns = turns; },
+        (error: unknown) => { console.warn('[traffic] the turn workers failed; the turns are chosen on the page', error); answer.failed = true; },
+      );
+      while (!answer.turns && !answer.failed) yield WAITING;
+      keys.forEach((k, i) => { const turn = answer.turns?.[i]; if (turn) plan.chosen.set(k, turn); });
+    }
+    // The junctions that stood turns in, built again with them (none: nothing to do).
+    graph.redoProvisional(this.doc, this.net);
     yield;
     // The new pairs of the junctions built again, measured by `measurer`'s workers when there are some (`conflictPool.ts`).
     yield* this.conflicts.prepare(graph, measurer, changed?.junctions ?? null);
