@@ -2319,6 +2319,23 @@ export function createSceneRenderer(
     }
     return { key, trees, budget, room: null, pending, slices };
   };
+  /**
+   * The clearings' index (`world/trees.ts` clearingIndex), made again only when
+   * the clearings changed: it reads nothing else. DO NOT make it at every keep -
+   * a keep runs at every road, building and terrain edit (its key), and made
+   * the index of every clearing of the map again each time.
+   */
+  let clearingsFor = -1;
+  let clearingsDoc: RoadDoc | null = null;
+  let clearings: ((x: number, y: number) => boolean) | null = null;
+  const clearingsOf = (doc: RoadDoc): ((x: number, y: number) => boolean) => {
+    if (!clearings || clearingsDoc !== doc || clearingsFor !== doc.clearingRevision) {
+      clearingsDoc = doc;
+      clearingsFor = doc.clearingRevision;
+      clearings = clearingIndex(doc.treeClearings);
+    }
+    return clearings;
+  };
   /** Water, a cliff, a road or a building: nothing of the ecosystem grows there. */
   const natureOpen = (net: Network, x: number, y: number, z: number): boolean => {
     const plate = regionAt(x, y);
@@ -2347,7 +2364,7 @@ export function createSceneRenderer(
       const of = plate.picked?.trees ?? [];
       let kept = plate.kept;
       if (!kept || kept.key !== key || kept.of !== of) {
-        cleared ??= clearingIndex(net.doc.treeClearings);
+        cleared ??= clearingsOf(net.doc);
         const mine: number[] = [], ground: number[] = [];
         for (let k = 0; k < count; k++) {
           const c = sweep.trees[start + k]!;
@@ -2469,7 +2486,7 @@ export function createSceneRenderer(
   const coverKeep = (net: Network, sweep: CoverSweep): CoverKept => {
     const free = (x: number, y: number): boolean => !onCarriageway(net, { x, y }) && !buildings.covers(x, y);
     // Where the player cut the trees away (`world/trees.ts`), none grows.
-    const cleared = clearingIndex(net.doc.treeClearings);
+    const cleared = clearingsOf(net.doc);
     const keep = (list: readonly Candidate[], cap: number, also: (c: Candidate) => boolean = () => true): Kept => {
       const idx: number[] = [], z: number[] = [];
       for (let k = 0; k < list.length && idx.length < cap; k++) {
