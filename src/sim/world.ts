@@ -7,6 +7,7 @@ import { type Connector, type GraphChange, type JunctionTopology, type Lanelet, 
 import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
 import { LaneGrid } from './agents/laneGrid';
+import { LaneReaches } from './routing/laneReach';
 import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
@@ -251,6 +252,8 @@ export class SimWorld {
   readonly roadLength = new NetworkLength();
   /** The lanes by place, kept by what each build of the lane graph changed (`agents/laneGrid.ts`). */
   readonly laneGrid = new LaneGrid();
+  /** The road ends each lane reaches, per body class, kept by what each edit changed (`routing/laneReach.ts`). */
+  readonly laneReaches = new LaneReaches();
   /** Per-world population timer; simulations must never influence each other. */
   vehicleSpawnClock = 0;
   /**

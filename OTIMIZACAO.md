@@ -205,6 +205,7 @@ Cada linha é um commit; a causa estava no algoritmo e saiu do código.
 - Faixa de cada caminho dos pedestres validada pelo registro do próprio nó (`SidewalkGraph.madeAt`), não pela revisão da topologia.
 - Lotes recusados soltos só perto do que a rede mudou (`lotTool.refusedNow`); antes o crescimento tentava de novo todos os recusados da cidade a cada rua.
 - Motor: barreiras e transporte como produtos `draw`; pedestres e grade de faixas como produtos `frame` (fase agora chamada pelo laço do quadro).
+- Alcance dos destinos (`routing/laneReach.ts`): componentes fortemente conexos das faixas mantidos pelo diário da topologia; remoção conferida por busca das duas pontas ao mesmo tempo (Even–Shiloach), Tarjan só no componente que de fato se partiu, fusão pelos ciclos do grafo condensado, saídas somadas sob demanda. Antes: Tarjan do mapa inteiro a cada revisão de tráfego.
 
 ## Pendente e por quê
 

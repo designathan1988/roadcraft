@@ -51,8 +51,13 @@ function catchUp(net: Network, w: SimWorld): void {
   w.rebuildTopology();
   w.walkwaysNow();
   trapLanes(w, 1);
+  // The road ends a lane reaches (`laneReach.ts`), asked as a car made at a road end asks.
+  const first = [...w.graph.lanelets.values()].find((lane) => lane.kind === 'link');
+  if (first) w.laneReaches.exitsFrom(w, first.id, 1 as never);
 }
 
+/** The work of the world being measured's lane reach (`LaneReaches.work`), read by `counters`. */
+let reachWork = 0;
 const counters = (): Record<string, number> => ({
   'net.sources': networkWork.sources,
   'net.junctions': networkWork.junctions,
@@ -67,6 +72,7 @@ const counters = (): Record<string, number> => ({
   spans: rebuildWork.spans,
   'sim.lanes': rebuildWork.lanes,
   routing: rebuildWork.routing,
+  reach: reachWork,
 });
 
 /** What one isolated road beside the grid costs each product, once the grid is built. */
@@ -75,12 +81,14 @@ function editWork(n: number): Record<string, number> {
   const net = new Network(doc);
   const w = new SimWorld(doc, net, 0x5ca1e);
   catchUp(net, w);
+  reachWork = w.laneReaches.work;
   const before = counters();
   const x = m(BLOCK) * (n / 2 + 2);
   const a = doc.addNode({ x, y: 0 });
   const b = doc.addNode({ x: x + m(60), y: 0 });
   doc.addSegment(a.id, b.id, 1);
   catchUp(net, w);
+  reachWork = w.laneReaches.work;
   const after = counters();
   const out: Record<string, number> = {};
   for (const key of Object.keys(after)) out[key] = after[key]! - before[key]!;
