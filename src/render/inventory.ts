@@ -100,6 +100,9 @@ export function sceneInventory(root: Object3D): Inventory {
       if (!row) rows.set(key, row = { layer, kind, meshes: 0, shown: 0, instances: 0, vertices: 0, triangles: 0, gpuBytes: 0, cpuBytes: 0, materials: new Set(), textures: new Set() });
       row.meshes++;
       if (shown) row.shown++;
+      // A block of road whose own mesh has been given back to the GPU (`mesh/roadResidency.ts`: its far level is drawn)
+      // holds no buffer: it is counted as a mesh, its bytes are not.
+      const resident = (object.userData.lod as { full?: boolean } | undefined)?.full !== false;
       const instances = holder.isInstancedMesh ? (holder as unknown as InstancedMesh).count : 1;
       row.instances += instances;
       const position = g.getAttribute('position') as Attribute | undefined;
@@ -109,7 +112,7 @@ export function sceneInventory(root: Object3D): Inventory {
       if (!geometries.has(g)) { geometries.add(g); row.vertices += vertices; }
       row.triangles += (indices / 3) * instances;
       const add = (a: Attribute | null | undefined): void => {
-        if (!a) return;
+        if (!a || !resident) return;
         const owner: { array: (ArrayLike<number> & { byteLength?: number }) | null; count: number; itemSize?: number; stride?: number } =
           a.isInterleavedBufferAttribute && a.data ? a.data as never : a as never;
         if (buffers.has(owner)) return;
