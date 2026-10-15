@@ -740,19 +740,30 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     },
     seeInside: (command) => {
       if (command === 'toggle') {
-        seeInside.on = !seeInside.on;
-        // Switched on from the button: the building in the middle of the view.
-        if (seeInside.on && seeInside.target === null) {
+        if (seeInside.on) {
+          // Switched off: the building is let go, so the next switch-on opens the one in view.
+          seeInside.on = false;
+          seeInside.target = null;
+        } else {
+          // Switched on from the button: the building in the middle of the view,
+          // from its ground floor. DO NOT switch on with no building: the bar
+          // showed 'Térreo' over the street and climbed to any floor, nothing open.
           const { w, h } = deps.size();
-          seeInside.target = tool.buildingAt({ x: w / 2, y: h / 2 });
+          const target = tool.buildingAt({ x: w / 2, y: h / 2 });
+          if (target === null) {
+            deps.flash('hint.inside.none');
+            return { ...seeInside };
+          }
+          seeInside.on = true;
+          seeInside.target = target;
+          seeInside.level = 0;
         }
-        // Switched off: the building is let go, so the next switch-on opens the one in view.
-        if (!seeInside.on) seeInside.target = null;
       }
+      // A floor up or down only with a building open, no higher than its top floor.
+      else if (!seeInside.on) return { ...seeInside };
       else if (command === 'up') {
-        // No higher than the open building's top floor.
         const b = seeInside.target !== null ? doc.buildings.get(seeInside.target) : undefined;
-        seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 60, seeInside.level + 1);
+        seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 0, seeInside.level + 1);
       }
       else seeInside.level = Math.max(0, seeInside.level - 1);
       tellInside();
@@ -1040,6 +1051,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       } else if (seeInside.on && hit !== null) {
         seeInside.target = hit;
       } else return false;
+      // The floor seen goes on in the building opened, no higher than its top:
+      // the bar named a floor the building did not have.
+      const b = hit !== null ? doc.buildings.get(hit) : undefined;
+      seeInside.level = b ? Math.min(seeInside.level, Math.max(0, topLevel(b) - 1)) : 0;
       tellInside();
       deps.requestDraw();
       return true;

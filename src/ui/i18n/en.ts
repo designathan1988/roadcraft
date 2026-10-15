@@ -1045,6 +1045,7 @@ export const EN: Dictionary = {
   'inside.down': 'Floor below',
   'inside.up': 'Floor above',
   'inside.ground': 'Ground',
+  'hint.inside.none': 'No building in the middle of the view: point the view at one, or double-click it',
   'inside.floor': 'Floor {n}',
   'building.fn.house': 'House',
   'building.fn.townhouse': 'Townhouse',

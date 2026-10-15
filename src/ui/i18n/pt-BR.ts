@@ -1031,6 +1031,7 @@ export const PT_BR: Dictionary = {
   'inside.down': 'Andar abaixo',
   'inside.up': 'Andar acima',
   'inside.ground': 'Térreo',
+  'hint.inside.none': 'Nenhum prédio no centro da vista: aponte a vista para um, ou dê dois cliques nele',
   'inside.floor': '{n}º andar',
   'building.fn.house': 'Casa',
   'building.fn.townhouse': 'Sobrado',
