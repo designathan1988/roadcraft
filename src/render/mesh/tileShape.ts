@@ -1,0 +1,464 @@
+import earcut from 'earcut';
+
+import { cutAtAxis } from '@core/axisCut';
+import { intersection, type MultiPoly, type Poly } from '@core/clipper';
+import { m } from '@world/units';
+
+/**
+ * THE SHAPE OF A SURFACE, WITHOUT ITS HEIGHTS: the pieces a band is cut into,
+ * their triangulation and refinement, and the edges its skirts hang from - all
+ * read off x and y alone, so a worker makes them (`roadTile.worker.ts`) and the
+ * page only reads each vertex's height, frame and tint (`surfaceMesh.ts`).
+ * Moved here whole from `surfaceMesh.ts`, the same arithmetic in the same
+ * order: the page building a shape itself makes the same one.
+ * Pure: no three, no DOM.
+ */
+
+/** One compact piece's triangulation: its vertices, its triangles as clipped and refined, and whether they run clockwise. */
+export interface PieceShape {
+  readonly xy: Float64Array;
+  readonly tris: Uint32Array;
+  readonly flip: boolean;
+}
+/** One ring of an outline's skirt: its edges [ax, ay, bx, by, ...] in order, with its polygon's winding. */
+export interface SkirtRing {
+  readonly flip: boolean;
+  readonly edges: Float64Array;
+}
+/** A surface's shape: its pieces and, for a surface with a bottom, its skirts. */
+export interface SurfaceShape {
+  readonly pieces: readonly PieceShape[];
+  readonly skirts: readonly SkirtRing[] | null;
+}
+
+/**
+ * The shape of `polygons` (one compact piece at a time, `splitToSpan`), and the
+ * skirts along their outline when `skirts` - except the edges a tile's cut made
+ * (`cut`), interior to the whole surface.
+ */
+export function surfaceShape(polygons: MultiPoly, maxEdge: number, skirts: boolean, cut?: TileRect): SurfaceShape {
+  const spans: Poly[] = [];
+  for (const polygon of polygons) splitToSpan(polygon, maxEdge * 6, spans);
+  const pieces: PieceShape[] = [];
+  for (const span of spans) {
+    const piece = pieceShape(span, maxEdge);
+    if (piece) pieces.push(piece);
+  }
+  return { pieces, skirts: skirts ? skirtShape(polygons, maxEdge, cut) : null };
+}
+
+/**
+ * One compact piece: ear clipping and refinement. The outline is sampled at
+ * exactly `maxEdge`, which is what makes the result crack-free across a cut:
+ * refinement only ever splits an edge LONGER than `maxEdge`, so no boundary
+ * edge is ever split, so two pieces that share a cut keep the identical
+ * vertices along it.
+ */
+function pieceShape(polygon: Poly, maxEdge: number): PieceShape | null {
+  const outer = polygon[0];
+  if (!outer || outer.length < 3) return null;
+  const flat: number[] = [];
+  const holes: number[] = [];
+  for (let ringIndex = 0; ringIndex < polygon.length; ringIndex++) {
+    const ring = polygon[ringIndex];
+    if (!ring || ring.length < 3) continue;
+    if (ringIndex > 0) holes.push(flat.length / 2);
+    densify(flat, ring, maxEdge);
+  }
+  const seed = earcut(flat, holes, 2);
+  if (seed.length === 0) return null;
+  // Which way round the TRIANGLES run decides which side faces the sky, so
+  // that is what is measured. Relying on the clipper's ring orientation is
+  // how a whole road network came to be drawn inside-out and vanished under
+  // the terrain. Measuring the RING instead was wrong the other way: earcut
+  // hands back anticlockwise triangles whatever the ring's winding, so a
+  // clockwise piece was flipped face down. The triangles are what is drawn; ask them.
+  const flip = trianglesArea(flat, seed) < 0;
+  const builder: Builder = { xs: [], ys: [], tris: [...seed], midpoints: new Map() };
+  for (let i = 0; i < flat.length; i += 2) {
+    builder.xs.push(flat[i] as number);
+    builder.ys.push(flat[i + 1] as number);
+  }
+  refine(builder, maxEdge);
+  const xy = new Float64Array(builder.xs.length * 2);
+  for (let i = 0; i < builder.xs.length; i++) { xy[i * 2] = builder.xs[i]!; xy[i * 2 + 1] = builder.ys[i]!; }
+  return { xy, tris: Uint32Array.from(builder.tris), flip };
+}
+
+/**
+ * The edges the walls hang from, from the ORIGINAL outlines, never from the
+ * pieces: a cut made for triangulation is an interior line, and giving it a
+ * wall would hang a sheet of kerb down the middle of the carriageway.
+ */
+function skirtShape(polygons: MultiPoly, maxEdge: number, cut?: TileRect): SkirtRing[] {
+  const out: SkirtRing[] = [];
+  for (const polygon of polygons) {
+    const outer = polygon[0];
+    if (!outer || outer.length < 3) continue;
+    const flip = ringArea(outer) < 0;
+    for (const ring of polygon) {
+      if (!ring || ring.length < 3) continue;
+      const flat: number[] = [];
+      densify(flat, ring, maxEdge);
+      const count = flat.length / 2;
+      const edges: number[] = [];
+      for (let k = 0; k < count; k++) {
+        const i = k * 2;
+        const j = ((k + 1) % count) * 2;
+        const ax = flat[i] as number;
+        const ay = flat[i + 1] as number;
+        const bx = flat[j] as number;
+        const by = flat[j + 1] as number;
+        if (Math.hypot(bx - ax, by - ay) < 1e-6) continue;
+        if (cut && alongCut(cut, ax, ay, bx, by)) continue;
+        edges.push(ax, ay, bx, by);
+      }
+      out.push({ flip, edges: Float64Array.from(edges) });
+    }
+  }
+  return out;
+}
+
+interface Builder {
+  readonly xs: number[];
+  readonly ys: number[];
+  readonly tris: number[];
+  readonly midpoints: Map<number, number>;
+}
+
+function addVertex(b: Builder, x: number, y: number): number {
+  b.xs.push(x);
+  b.ys.push(y);
+  return b.xs.length - 1;
+}
+
+function midpoint(b: Builder, i: number, j: number): number {
+  const key = i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i;
+  const cached = b.midpoints.get(key);
+  if (cached !== undefined) return cached;
+  const index = addVertex(
+    b,
+    ((b.xs[i] as number) + (b.xs[j] as number)) / 2,
+    ((b.ys[i] as number) + (b.ys[j] as number)) / 2,
+  );
+  b.midpoints.set(key, index);
+  return index;
+}
+
+const edgeLength = (b: Builder, i: number, j: number): number =>
+  Math.hypot((b.xs[i] as number) - (b.xs[j] as number), (b.ys[i] as number) - (b.ys[j] as number));
+
+/**
+ * Refines until no triangle edge is longer than `maxEdge`.
+ *
+ * ## Longest-edge bisection, not uniform subdivision
+ *
+ * Each round marks only the LONGEST edge of each over-long triangle, then
+ * rewrites the mesh with the red/green closure below. That choice is the
+ * difference between a mesh and a hang:
+ *
+ * Ear clipping a long, thin, densely-sampled band — which is exactly what a
+ * road's verge is, 1400 units long and 1.5 wide — emits fans whose triangles
+ * reach from one end of the strip to the other. Marking EVERY over-long edge
+ * quarters every such triangle every round, so a 1400-unit edge needs eight
+ * rounds at four times the count each: measured, a single 1400x1.5 strip came
+ * out at 256 736 vertices, and one straight road cost over a million triangles.
+ *
+ * Bisecting the longest edge halves it instead, doubling only the triangles
+ * that were actually too big, and leaves well-shaped triangles alone. The same
+ * strip now costs a few thousand vertices, and the result is still conforming
+ * because the marking is global: an edge is split for both of the triangles
+ * that share it, or for neither.
+ */
+function refine(b: Builder, maxEdge: number, maxRounds = 24, budget = 600_000): void {
+  // A triangle with every edge within `maxEdge` is finished: no round marks
+  // one of its edges (a mark is a triangle's own longest edge over the
+  // limit), so it is never split again. Each round reads only the triangles
+  // still too big - every round used to measure every triangle of the piece
+  // again, most of a road edit (docs/performance.md #10). The vertices are
+  // made in the same order as before; only the triangles' order differs.
+  const done: number[] = [];
+  let active: number[] = [];
+  const long = (x: number, y: number, z: number): boolean =>
+    edgeLength(b, x, y) > maxEdge || edgeLength(b, y, z) > maxEdge || edgeLength(b, z, x) > maxEdge;
+  for (let t = 0; t < b.tris.length; t += 3) {
+    const a = b.tris[t] as number, c = b.tris[t + 1] as number, d = b.tris[t + 2] as number;
+    if (long(a, c, d)) active.push(a, c, d); else done.push(a, c, d);
+  }
+  for (let round = 0; round < maxRounds && active.length; round++) {
+    if ((done.length + active.length) / 3 > budget) break;
+    const marked = new Set<number>();
+    for (let t = 0; t < active.length; t += 3) {
+      const a = active[t] as number;
+      const c = active[t + 1] as number;
+      const d = active[t + 2] as number;
+      // The three edges in the order a-c, c-d, d-a; the first of equal longest wins.
+      const ac = edgeLength(b, a, c);
+      const cd = edgeLength(b, c, d);
+      const da = edgeLength(b, d, a);
+      let bestLength = maxEdge;
+      let i = -1;
+      let j = -1;
+      if (ac > bestLength) { bestLength = ac; i = a; j = c; }
+      if (cd > bestLength) { bestLength = cd; i = c; j = d; }
+      if (da > bestLength) { i = d; j = a; }
+      if (i >= 0) marked.add(i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i);
+    }
+    if (marked.size === 0) break;
+
+    const split = (i: number, j: number): number | null => {
+      const key = i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i;
+      return marked.has(key) ? midpoint(b, i, j) : null;
+    };
+
+    const next: number[] = [];
+    for (let t = 0; t < active.length; t += 3) {
+      const a = active[t] as number;
+      const c = active[t + 1] as number;
+      const d = active[t + 2] as number;
+      emit(next, a, c, d, split(a, c), split(c, d), split(d, a));
+    }
+    active = [];
+    for (let t = 0; t < next.length; t += 3) {
+      const a = next[t] as number, c = next[t + 1] as number, d = next[t + 2] as number;
+      if (long(a, c, d)) active.push(a, c, d); else done.push(a, c, d);
+    }
+  }
+  b.tris.length = 0;
+  for (const v of done) b.tris.push(v);
+  for (const v of active) b.tris.push(v);
+}
+
+/** The red/green cases: 0, 1, 2 or 3 split edges of one triangle. */
+function emit(
+  out: number[],
+  a: number,
+  b: number,
+  c: number,
+  ab: number | null,
+  bc: number | null,
+  ca: number | null,
+): void {
+  const count = (ab !== null ? 1 : 0) + (bc !== null ? 1 : 0) + (ca !== null ? 1 : 0);
+  if (count === 0) {
+    out.push(a, b, c);
+    return;
+  }
+  if (count === 3) {
+    out.push(a, ab as number, ca as number);
+    out.push(ab as number, b, bc as number);
+    out.push(ca as number, bc as number, c);
+    out.push(ab as number, bc as number, ca as number);
+    return;
+  }
+  if (count === 1) {
+    if (ab !== null) out.push(a, ab, c, ab, b, c);
+    else if (bc !== null) out.push(b, bc, a, bc, c, a);
+    else out.push(c, ca as number, b, ca as number, a, b);
+    return;
+  }
+  // Two split edges: cut off the corner they share, then split the quad left
+  // over along its shorter diagonal — which is what keeps the triangles fat.
+  if (ab !== null && bc !== null) out.push(b, bc, ab, ab, bc, c, ab, c, a);
+  else if (bc !== null && ca !== null) out.push(c, ca as number, bc, bc, ca as number, a, bc, a, b);
+  else out.push(a, ab as number, ca as number, ca as number, ab as number, b, ca as number, b, c);
+}
+
+/** Appends a ring, inserting points so no edge is longer than `step`. */
+function densify(flat: number[], ring: readonly (readonly number[])[], step: number): void {
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i] as readonly number[];
+    const b = ring[(i + 1) % ring.length] as readonly number[];
+    const ax = a[0] as number;
+    const ay = a[1] as number;
+    const bx = b[0] as number;
+    const by = b[1] as number;
+    flat.push(ax, ay);
+    const cuts = Math.min(512, Math.floor(Math.hypot(bx - ax, by - ay) / step));
+    for (let k = 1; k <= cuts; k++) {
+      const t = k / (cuts + 1);
+      flat.push(ax + (bx - ax) * t, ay + (by - ay) * t);
+    }
+  }
+}
+
+/**
+ * Cuts a polygon down until no piece is wider than `span` in either axis.
+ *
+ * ## Why this is here, and why it is not optional
+ *
+ * Ear clipping is a triangulation, not a MESHING, algorithm: it guarantees a
+ * valid cover and says nothing about triangle shape. On a long thin band — a
+ * road's 1400-by-1.5 verge — it emits a fan, and measured on exactly that
+ * shape every one of the 352 triangles it returned had an edge up to 1392 units
+ * long. No refinement can recover cheaply from that: bisecting a sliver whose
+ * long edge is shared by its neighbour cascades, and the same strip refined to
+ * an 8-unit edge cost 274 000 triangles for 2 100 square units of surface.
+ *
+ * Cutting first fixes the cause instead of paying for the symptom. Each piece is
+ * compact, so earcut's worst output inside one is its diagonal, and the
+ * refinement afterwards has three or four halvings to do rather than eight.
+ *
+ * The cut is a recursive bisection along the longer axis rather than a sweep
+ * over a grid, so the clipper does `O(log n)` passes over the polygon instead of
+ * one pass per cell — the difference between a fraction of a second and several
+ * seconds on a city-sized network.
+ */
+function splitToSpan(polygon: Poly, span: number, out: Poly[], depth = 0): void {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const outer = polygon[0];
+  if (!outer || outer.length < 3) return;
+  for (const point of outer) {
+    const x = point[0] as number;
+    const y = point[1] as number;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  const width = maxX - minX;
+  const height = maxY - minY;
+  // Depth is bounded so a pathological shape cannot recurse for ever; at 12
+  // levels a piece is already 4096 times smaller than the whole.
+  if ((width <= span && height <= span) || depth >= 12) {
+    out.push(polygon);
+    return;
+  }
+
+  const cutX = width >= height;
+  const middle = cutX ? (minX + maxX) / 2 : (minY + maxY) / 2;
+  // A straight cut, done as one (see `cutAtAxis`); the general clipper only
+  // for a polygon the fast path declines.
+  const halves = cutAtAxis(polygon, cutX ? 0 : 1, middle) ?? clipHalves(polygon, span, cutX, middle, minX, minY, maxX, maxY);
+  for (const half of halves) {
+    for (const piece of half) splitToSpan(piece, span, out, depth + 1);
+  }
+}
+
+/** The two sides of a cut, by intersection with a rectangle either side of it. */
+function clipHalves(
+  polygon: Poly,
+  pad: number,
+  cutX: boolean,
+  middle: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): MultiPoly[] {
+  const rect = (x0: number, y0: number, x1: number, y1: number): MultiPoly => [
+    [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]],
+  ];
+  const halves: MultiPoly[] = cutX
+    ? [
+        rect(minX - pad, minY - pad, middle, maxY + pad),
+        rect(middle, minY - pad, maxX + pad, maxY + pad),
+      ]
+    : [
+        rect(minX - pad, minY - pad, maxX + pad, middle),
+        rect(minX - pad, middle, maxX + pad, maxY + pad),
+      ];
+  return halves.map((half) => intersection([polygon], half));
+}
+
+/** Twice the summed signed area of triangles over a flat [x,y,...] list; positive means CCW. */
+function trianglesArea(flat: readonly number[], tris: readonly number[]): number {
+  let sum = 0;
+  for (let i = 0; i + 2 < tris.length; i += 3) {
+    const a = (tris[i] as number) * 2;
+    const b = (tris[i + 1] as number) * 2;
+    const c = (tris[i + 2] as number) * 2;
+    const ax = flat[a] as number;
+    const ay = flat[a + 1] as number;
+    sum += ((flat[b] as number) - ax) * ((flat[c + 1] as number) - ay)
+      - ((flat[b + 1] as number) - ay) * ((flat[c] as number) - ax);
+  }
+  return sum;
+}
+
+/** An axis-aligned rectangle a surface has been cut to: [minX, minY, maxX, maxY]. */
+export type TileRect = readonly [number, number, number, number];
+
+/**
+ * How far a cut may land from the line it was asked for: `cutAtAxis` moves a
+ * cut a few thousandths off any vertex it would otherwise pass through.
+ */
+const CUT_SLACK = m(0.04);
+
+/**
+ * The parts of `polygons` inside a rectangle, by four straight cuts (see
+ * `cutAtAxis`). Both sides of a cut come from the same crossing points, so
+ * the neighbouring rectangle, cut along the same line, meets these pieces
+ * vertex for vertex.
+ */
+export function clipToRect(polygons: MultiPoly, rect: TileRect): MultiPoly {
+  let pieces: MultiPoly = polygons;
+  const cuts: [0 | 1, number, boolean][] = [
+    [0, rect[0], true], [0, rect[2], false], [1, rect[1], true], [1, rect[3], false],
+  ];
+  for (const [axis, at, keepAbove] of cuts) {
+    const next: MultiPoly = [];
+    for (const polygon of pieces) {
+      const box = bounds(polygon);
+      if (!box) continue;
+      const low = axis === 0 ? box[0] : box[1];
+      const high = axis === 0 ? box[2] : box[3];
+      // Wholly on the kept side, or wholly off it: no cut to make.
+      if (keepAbove ? low >= at : high <= at) {
+        next.push(polygon);
+        continue;
+      }
+      if (keepAbove ? high <= at : low >= at) continue;
+      const [below = [], above = []] = cutAtAxis(polygon, axis, at) ??
+        clipHalves(polygon, Math.max(box[2] - box[0], box[3] - box[1]) + 1, axis === 0, at,
+          box[0], box[1], box[2], box[3]);
+      for (const piece of keepAbove ? above : below) next.push(piece);
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
+/** Whether an edge runs along one of the lines a tile was cut on. */
+function alongCut(rect: TileRect, ax: number, ay: number, bx: number, by: number): boolean {
+  for (let k = 0; k < 4; k++) {
+    const at = rect[k] as number;
+    if (k % 2 === 0 ? Math.abs(ax - at) < CUT_SLACK && Math.abs(bx - at) < CUT_SLACK
+      : Math.abs(ay - at) < CUT_SLACK && Math.abs(by - at) < CUT_SLACK) return true;
+  }
+  return false;
+}
+
+/** Bounding box of a polygon's outer ring, [minX, minY, maxX, maxY]. */
+function bounds(polygon: Poly): [number, number, number, number] | null {
+  const outer = polygon[0];
+  if (!outer || outer.length < 3) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of outer) {
+    const x = point[0] as number;
+    const y = point[1] as number;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return [minX, minY, maxX, maxY];
+}
+
+/** Twice the signed area of a ring of [x, y] pairs; positive means CCW. */
+function ringArea(ring: readonly (readonly number[])[]): number {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i] as readonly number[];
+    const b = ring[(i + 1) % ring.length] as readonly number[];
+    sum += (a[0] as number) * (b[1] as number) - (b[0] as number) * (a[1] as number);
+  }
+  return sum;
+}
+

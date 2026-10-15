@@ -1,6 +1,6 @@
 import { Color, Group, type Material, type Mesh } from 'three';
 
-import { difference, intersection, opened, union, type MultiPoly, type Poly } from '@core/clipper';
+import type { MultiPoly, Poly } from '@core/clipper';
 import { Digest } from '@core/digest';
 import { offsetPolyline } from '@core/offset';
 import type { NodeId, SegmentId } from '@world/ids';
@@ -26,10 +26,12 @@ import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import { mergeTiles } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
+import { type TilePolys, type TileSource, type TileSpec, tileShapes } from './roadTileShape';
+import type { RoadTiler } from './roadTilePool';
+import type { SurfaceShape } from './mesh/tileShape';
 import {
-  clipToRect,
   disposeMesh,
-  meshTile,
+  meshTileShape,
   type HeightFn,
   type SurfaceMeshOptions,
   type Tile,
@@ -86,8 +88,6 @@ import {
 const KERB_RISE = FOOTWAY_RISE + m(0.01);
 /** Depth of the verge below the carriageway, where the grass starts. */
 const VERGE_DROP = m(0.04);
-/** A band thinner than twice this is a sliver of two outlines nearly meeting, not a surface (`buildTile`). */
-const SLIVER = m(0.002);
 /**
  * Drop of the verge skirt into the ground.
  *
@@ -295,11 +295,17 @@ const FOOTWAY_TINT: Readonly<Record<FootwayMaterial, readonly [number, number, n
 /** Slabs in a footway panel along a bend: a joint every this many tiles (`surfaceFrameAt`). */
 const FOOTWAY_PANEL_TILES = 2;
 
-/** What each surface of a tile is made from. */
-type Source =
-  | { readonly kind: 'band'; readonly band: 'verge' | 'footway' | 'kerb' | 'asphalt' | 'curbRamp' }
-  | { readonly kind: 'median'; readonly part: 'kerb' | 'planting' | 'paved' }
-  | { readonly kind: 'paint'; readonly color: string };
+/** What each surface of a tile is made from (`roadTileShape.ts`). */
+type Source = TileSource;
+
+/** Everything that reaches each tile, by kind, in input order. */
+interface Reach {
+  readonly levels: Record<'casing' | 'sidewalk' | 'curb' | 'asphalt', Input[]>;
+  readonly medians: Record<'kerb' | 'planting' | 'paved', Input[]>;
+  readonly ramps: Input[];
+  readonly ribbons: Input[];
+  readonly quads: Map<string, Input[]>;
+}
 
 /** One surface of a structural level: how it is meshed, and from what. */
 interface SurfaceSpec {
@@ -338,7 +344,9 @@ export function* roadSurfaceSteps(
   terrainAt: (x: number, y: number) => number,
   reuse?: SurfaceReuse,
   groundMaterial?: Material,
-): Generator<void, RoadSurfaces, void> {
+  /** Shapes the tiles off the page (`roadTilePool.ts`); then the steps yield 'wait' while it works. None: all here. */
+  tiler?: RoadTiler | null,
+): Generator<'wait' | void, RoadSurfaces, void> {
   const started = performance.now();
   let tilesMs = 0;
   let mergeMs = 0;
@@ -803,14 +811,6 @@ export function* roadSurfaceSteps(
     }
 
     // ----------------------------------------------------------------- tiles
-    /** Everything that reaches each tile, by kind, in input order. */
-    interface Reach {
-      readonly levels: Record<keyof typeof levels, Input[]>;
-      readonly medians: Record<keyof typeof medians, Input[]>;
-      readonly ramps: Input[];
-      readonly ribbons: Input[];
-      readonly quads: Map<string, Input[]>;
-    }
     const reach = new Map<number, Reach>();
     const reachOf = (key: number): Reach => {
       let value = reach.get(key);
@@ -876,6 +876,8 @@ export function* roadSurfaceSteps(
     /** Each surface's tiles, by block of tiles, in tile order. */
     const parts = new Map<string, Map<string, Tile[]>>();
     for (const spec of specs) parts.set(spec.options.name, new Map());
+    /** The tiles in tile order, each kept from before or still to build (`bundle` null). */
+    const tiles: { value: number; ix: number; iy: number; rect: TileRect; into: Reach; bundle: TileBundle | null }[] = [];
     // In tile order, so a mesh is laid out the same however it was reached.
     for (const key of [...reach.keys()].sort((a, b) => a - b)) {
       const into = reach.get(key)!;
@@ -908,21 +910,42 @@ export function* roadSurfaceSteps(
       }
       if (reuse) digest.add(reuse.dependsOn(rect[0] - 1, rect[1] - 1, rect[2] + 1, rect[3] + 1));
       const value = digest.value();
-      let bundle = previous?.get(value) ?? reuse?.stored?.get(storedKey(pass.id, value));
+      const bundle = previous?.get(value) ?? reuse?.stored?.get(storedKey(pass.id, value)) ?? null;
+      tiles.push({ value, ix, iy, rect, into, bundle });
       if (bundle) {
         reused++;
         // A step too: the digests of every tile kept, back to back, were a
         // slice of 20-30 ms after a road edit (docs/performance.md #34).
         yield;
-      } else {
-        const tileAt = performance.now();
-        bundle = buildTile(into, rect, specs);
-        tilesMs += performance.now() - tileAt;
-        built++;
-        rebuilt.push(rect);
-        reuse?.keep?.(storedKey(pass.id, value), bundle);
-        yield;
       }
+    }
+    // The tiles to build: shaped by the workers when there are some (`roadTilePool.ts`), the same
+    // shapes the page makes, while this thread draws; each vertex read here after. DO NOT cut and
+    // triangulate a city's tiles on the page: two thirds of its roads' build (2026-10-15).
+    const missing = tiles.filter((t) => t.bundle === null);
+    let shaped: Map<string, SurfaceShape>[] | null = null;
+    if (tiler && missing.length) {
+      const answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } = {};
+      const tileSpecs = specs.map(tileSpecOf);
+      tiler.shapes(missing.map((t) => ({ rect: t.rect, into: polysOf(t.into) })), tileSpecs).then(
+        (shapes) => { answer.shapes = shapes; },
+        (error: unknown) => { console.warn('[roads] the road tile workers failed; the tiles are built on the page', error); answer.failed = true; },
+      );
+      while (!answer.shapes && !answer.failed) { tiler.check(); yield 'wait'; }
+      shaped = answer.shapes ?? null;
+    }
+    for (const [k, tile] of missing.entries()) {
+      const tileAt = performance.now();
+      tile.bundle = shaped ? bundleOf(shaped[k]!, specs) : buildTile(tile.into, tile.rect, specs);
+      tilesMs += performance.now() - tileAt;
+      built++;
+      rebuilt.push(tile.rect);
+      reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle);
+      yield;
+    }
+    for (const tile of tiles) {
+      const { value, ix, iy } = tile;
+      const bundle = tile.bundle!;
       kept.set(value, bundle);
       const chunk = `${Math.floor(ix / CHUNK)},${Math.floor(iy / CHUNK)}`;
       for (const [name, tile] of bundle) {
@@ -1010,59 +1033,34 @@ function inputsOf(polys: readonly Poly[]): Input[] {
 /** The grid the footways' outer edges are filed by for the verge's fall (`fromFootway`). */
 const FOOTWAY_EDGE_CELL = m(32);
 
-function buildTile(
-  into: {
-    readonly levels: Record<'casing' | 'sidewalk' | 'curb' | 'asphalt', readonly Input[]>;
-    readonly medians: Record<'kerb' | 'planting' | 'paved', readonly Input[]>;
-    readonly ramps: readonly Input[];
-    readonly ribbons: readonly Input[];
-    readonly quads: ReadonlyMap<string, readonly Input[]>;
-  },
-  rect: TileRect,
-  specs: readonly SurfaceSpec[],
-): TileBundle {
-  const merged = (list: readonly Input[]): MultiPoly => list.length > 0 ? union(list.map((input) => input.poly)) : [];
-  const casing = merged(into.levels.casing);
-  const sidewalk = merged(into.levels.sidewalk);
-  const curb = merged(into.levels.curb);
-  const asphalt = merged(into.levels.asphalt);
-  const footway = difference(sidewalk, curb);
-  const kerb = difference(curb, asphalt);
-  // The dropped kerbs take their piece out of the footway and the kerb and
-  // are a surface of their own, sloping (`world/curbRamps.ts`).
-  const ramps = merged(into.ramps);
-  // Each band a difference of two outlines that meet edge to edge: where they
-  // nearly do (a leg drawn in a pass of its own, its kerb's end a fraction of
-  // a millimetre off its carriageway's), a sliver joined two strips across
-  // the road and was triangulated over it (AT2): opened (`core/clipper.ts`).
-  const bands: Record<'verge' | 'footway' | 'kerb' | 'asphalt' | 'curbRamp', MultiPoly> = {
-    verge: opened(difference(casing, sidewalk), SLIVER),
-    footway: opened(ramps.length > 0 ? difference(footway, ramps) : footway, SLIVER),
-    kerb: opened(ramps.length > 0 ? difference(kerb, ramps) : kerb, SLIVER),
-    asphalt,
-    curbRamp: ramps.length > 0 ? opened(intersection(difference(sidewalk, asphalt), ramps), SLIVER) : [],
-  };
-  let ribbonsOnly: MultiPoly | null = null;
+function buildTile(into: Reach, rect: TileRect, specs: readonly SurfaceSpec[]): TileBundle {
+  return bundleOf(tileShapes(polysOf(into), rect, specs.map(tileSpecOf)), specs);
+}
+
+/** A tile's surfaces from their shapes (made here, or by a worker): each vertex read here (`meshTileShape`). */
+function bundleOf(shapes: ReadonlyMap<string, SurfaceShape>, specs: readonly SurfaceSpec[]): TileBundle {
   const bundle = new Map<string, Tile>();
   for (const spec of specs) {
-    const source = spec.source;
-    let polygons: MultiPoly;
-    if (source.kind === 'band') polygons = bands[source.band];
-    else if (source.kind === 'median') {
-      const list = into.medians[source.part];
-      polygons = list.length > 0 ? intersection(merged(list), asphalt) : [];
-    } else {
-      const list = into.quads.get(source.color) ?? [];
-      if (list.length === 0) polygons = [];
-      else {
-        ribbonsOnly ??= merged(into.ribbons);
-        polygons = intersection(merged(list), ribbonsOnly);
-      }
-    }
-    const inside = polygons.length > 0 ? clipToRect(polygons, rect) : [];
-    if (inside.length > 0) bundle.set(spec.options.name, meshTile({ ...spec.options, polygons: inside }, rect));
+    const shape = shapes.get(spec.options.name);
+    if (shape) bundle.set(spec.options.name, meshTileShape(shape, spec.options));
   }
   return bundle;
+}
+
+/** What a surface's shape is made from (`roadTileShape.ts`). */
+const tileSpecOf = (spec: SurfaceSpec): TileSpec =>
+  ({ name: spec.options.name, source: spec.source, maxEdge: spec.options.maxEdge, skirts: spec.options.bottom !== undefined });
+
+/** A tile's rings without their digests: what its shapes are cut from. */
+function polysOf(into: Reach): TilePolys {
+  const polys = (list: readonly Input[]): Poly[] => list.map((input) => input.poly);
+  return {
+    levels: { casing: polys(into.levels.casing), sidewalk: polys(into.levels.sidewalk), curb: polys(into.levels.curb), asphalt: polys(into.levels.asphalt) },
+    medians: { kerb: polys(into.medians.kerb), planting: polys(into.medians.planting), paved: polys(into.medians.paved) },
+    ramps: polys(into.ramps),
+    ribbons: polys(into.ribbons),
+    quads: new Map([...into.quads].map(([color, list]) => [color, polys(list)])),
+  };
 }
 
 /**

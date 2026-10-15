@@ -58,6 +58,7 @@ import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
+import { RoadTilePool } from './roadTilePool';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
 import { createGardens, type GardenPlant, type Gardens } from './gardens';
@@ -809,6 +810,8 @@ export function createSceneRenderer(
   let worldJob: Generator<'wait' | void, void, void> | null = null;
   /** The roads' heights an edit solved ahead (`offerElevation`). */
   let offeredElevation: { elevation: RoadElevation; revision: number; terrain: number } | null = null;
+  /** The roads' surface tiles shaped on the other cores (`roadTilePool.ts`). */
+  const roadTiles = new RoadTilePool();
   /** The job was started in this frame (`pumpWorld` waits for the next). */
   let worldJobFresh = false;
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
@@ -1745,7 +1748,10 @@ export function createSceneRenderer(
       const since = performance.now();
       while (!storedRead && performance.now() - since < KEPT_TILES_WAIT_MS) yield 'wait';
     }
-    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial);
+    // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in
+    // one go (an edit's frame), on the page: nothing there may wait.
+    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
+      sliced ? roadTiles : null);
     keepTiles();
     derived(net, 'surfaces', freshRoads.rebuilt, 'superfícies das vias refeitas', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
@@ -3415,6 +3421,7 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      roadTiles.dispose();
       // Everything the renderer made, the GPU's included: the layers, the
       // previews and the effects too (they were left out, and a renderer
       // made again - a map opened, the tier changed - left them all behind).
