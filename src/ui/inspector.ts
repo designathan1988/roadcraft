@@ -1,6 +1,7 @@
 import { streetNameOf, streetNumbers } from '@world/roads/streetNames';
 import { PARKING_KINDS, parkingAllowed, type ParkingKind, type SegmentParking } from '@world/parking';
 import type { NodeId, SegmentId } from '@world/ids';
+import { laneletId } from '@world/lanelets';
 import { type JunctionControl, type NodeCrossingKind, type RoadDoc, type RoadEnd, type SegmentDirection } from '@world/doc';
 import type { Network } from '@world/network';
 import type { CurveShape } from '@core/bezier';
@@ -225,12 +226,20 @@ function segmentStats(doc: RoadDoc, net: Network, sim: SimWorld, id: SegmentId):
   let speedSum = 0;
   let speedCount = 0;
   let capacity = 0;
-  for (const lane of sim.graph.lanelets.values()) {
-    if (lane.kind === 'link' && lane.segment === id) {
-      const runtime = sim.rt(lane.id);
-      occupancy += runtime.order.length;
+  // The road's own lanes, found by their ids: lanes are numbered from 0 with
+  // no gap in each direction (`world/lanelets.ts` `buildSteps`). DO NOT walk
+  // `sim.graph.lanelets` here: this runs every refresh of the panel, and that
+  // map holds every lane of the city. DO NOT read through `sim.rt`, which
+  // creates a lane's runtime (and a ghost candidate) when it has none.
+  for (const [from, to] of [[seg.a, seg.b], [seg.b, seg.a]] as const) {
+    for (let k = 0; ; k++) {
+      const lane = sim.graph.lanelet(laneletId(id, from, to, k));
+      if (!lane) break;
       capacity += Math.max(1, lane.length / 12);
-      for (const vehicleId of runtime.order) {
+      const order = sim.runtime.get(lane.id)?.order;
+      if (!order) continue;
+      occupancy += order.length;
+      for (const vehicleId of order) {
         const vehicle = sim.veh(vehicleId);
         if (!vehicle) continue;
         speedSum += vehicle.v;

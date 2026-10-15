@@ -28,7 +28,7 @@ export function growCity(options: Partial<CityOptions>): GrownCity {
   const net = new Network(doc);
   net.rebuild();
   applyLots(doc, planLots(doc, net));
-  const zoned = zoneCity(doc, plan);
+  const zoned = zoneCity(doc, net, plan);
   const refused = new Set<number>();
   for (let guard = 0; guard < zoned * 3 + 50; guard++) {
     const id = growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed);

@@ -29,6 +29,8 @@ describe('a node dropped by Move', () => {
     const d = doc.addNode({ x: 200 * U, y: 200 * U });
     doc.addSegment(a.id, b.id, 1);
     doc.addSegment(c.id, d.id, 1);
+    // The network as the game has it before a drop: built for the roads.
+    net.rebuild();
     doc.moveNode(d.id, { x: 201 * U, y: 1 * U });
     expect(reconcileMovedNode(doc, net, d.id).committed).toBe(true);
     expect(doc.node(d.id)).toBeUndefined();
@@ -40,6 +42,8 @@ describe('a node dropped by Move', () => {
     const a = doc.addNode({ x: 0, y: 0 });
     const b = doc.addNode({ x: 200 * U, y: 0 });
     doc.addSegment(a.id, b.id, 1);
+    // The network as the game has it before a drop: built for the roads.
+    net.rebuild();
     doc.moveNode(b.id, { x: 1 * U, y: 0 });
     expect(reconcileMovedNode(doc, net, b.id)).toEqual({ committed: false, reason: 'tooShort' });
   });
@@ -53,6 +57,8 @@ describe('a node dropped by Move', () => {
     doc.addSegment(w.id, e.id, 1);
     doc.addSegment(s.id, n.id, 1);
     // Drag the stub's end up across the east-west road.
+    // The network as the game has it before a drop: built for the roads.
+    net.rebuild();
     doc.moveNode(n.id, { x: 0, y: 150 * U });
     expect(reconcileMovedNode(doc, net, n.id).committed).toBe(true);
     const junction = [...doc.nodes.values()].find((node) => node.incident.length === 4);

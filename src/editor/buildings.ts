@@ -4,6 +4,7 @@ import clipping from 'polygon-clipping';
 import { signedArea } from '@core/polygon';
 import { AREA_EPS, asPolygon, edgeFrame, localFootprint, offsetRing, supportedBy, overlapArea, roofDetailRing } from '@world/buildings/footprints';
 import { setVolumePlan } from './buildingPlans';
+import type { ChangeRect } from '@world/changes';
 
 import { clamp } from '@core/scalar';
 import { METERS_PER_UNIT, m } from '@world/units';
@@ -647,14 +648,19 @@ export function duplicateBuilding(ctx: BuildingContext, id: BuildingId): EditRes
 }
 
 /**
- * The road-wins rule: every building a road now
- * overlaps is removed. Returns how many were. Run after a road edit, inside
- * the same undo step.
+ * The road-wins rule: every building a road now overlaps is removed. Returns
+ * how many were. Run after an edit, inside the same undo step (`main.ts`
+ * `mutateBuilt`). `rects`: where the roads changed (`Network.changesSince`);
+ * only the buildings there are looked at - a building away from every road
+ * that changed cannot have started touching one. `null`: what changed is not
+ * known (a map loaded, the network rebuilt from nothing), every building.
+ * DO NOT walk `buildings.all()` for an edit: every pole, lot or storey edited
+ * read every building of the city against the roads.
  */
-export function clearBuildingsOnRoads(ctx: BuildingContext): number {
-  if (!ctx.net || ctx.doc.buildings.size === 0) return 0;
+export function clearBuildingsOnRoads(ctx: BuildingContext, rects: readonly ChangeRect[] | null): number {
+  if (!ctx.net || ctx.doc.buildings.size === 0 || rects?.length === 0) return 0;
   const doomed: BuildingId[] = [];
-  for (const b of ctx.doc.buildings.all()) {
+  for (const b of rects === null ? everyBuilding(ctx) : buildingsIn(ctx, rects)) {
     if (footprintRects(b, -m(0.02)).some((rect) => touchesRoad(ctx.net!, rect))) {
       doomed.push(b.id);
       continue;
@@ -669,6 +675,21 @@ export function clearBuildingsOnRoads(ctx: BuildingContext): number {
   }
   for (const id of doomed) ctx.doc.buildings.remove(id);
   return doomed.length;
+}
+
+/** @rebuild What changed is not known (a map loaded): every building, once. */
+function everyBuilding(ctx: BuildingContext): Building[] {
+  return [...ctx.doc.buildings.all()];
+}
+
+/** The buildings whose box meets one of `rects`, each once, in the store's order per rectangle. */
+function buildingsIn(ctx: BuildingContext, rects: readonly ChangeRect[]): Building[] {
+  const seen = new Set<BuildingId>();
+  const out: Building[] = [];
+  for (const [x0, y0, x1, y1] of rects) {
+    for (const b of ctx.doc.buildings.near(x0, y0, x1, y1)) if (!seen.has(b.id)) { seen.add(b.id); out.push(b); }
+  }
+  return out;
 }
 
 /**
@@ -934,7 +955,13 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
   const absorbed: BuildingId[] = [];
   const fresh = new Set(draft.volumes.map((v) => v.id));
   const mine = buildingBounds(draft, 0.5);
-  for (const other of [...ctx.doc.buildings.all()]) {
+  // Only a building whose outlines, grown by 0.5, reach `mine` can weld (the
+  // box test below); its outlines lie in its stored box, which the store's
+  // grid files (`BuildingStore.near`, in the order of `all()`).
+  // DO NOT walk `buildings.all()` here: the ghost of a placement asks this on
+  // every pointer move (`BuildingTool.verdict`), and it built the outlines of
+  // every building of the city each time.
+  for (const other of ctx.doc.buildings.near(mine.minX - 0.5, mine.minY - 0.5, mine.maxX + 0.5, mine.maxY + 0.5)) {
     if (other.id === draft.id || skip.includes(other.id)) continue;
     const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
     const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };

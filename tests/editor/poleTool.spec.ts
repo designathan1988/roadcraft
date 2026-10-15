@@ -46,7 +46,7 @@ describe('the pole tool', () => {
     const { pole, doc } = tool();
     click(pole, { x: -200 * U, y: Y });
     expect(doc.poles.size).toBe(0);
-    expect(pole.gesture()).toBe('poste: traçando a linha');
+    expect(pole.gesture()).toBe('gesture.pole.tracing');
     click(pole, { x: -60 * U, y: Y });
     expect(doc.poles.size).toBeGreaterThan(1);
     expect(doc.poleSpans.size).toBeGreaterThan(0);

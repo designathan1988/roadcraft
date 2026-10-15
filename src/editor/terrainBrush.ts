@@ -23,6 +23,8 @@ import { UNITS_PER_METER, m } from '@world/units';
 const TERRAIN_SPACING = 0.2;
 /** The shortest time between dabs, ms. */
 export const TERRAIN_MIN_MS = 45;
+/** Where the terrain stamps' allocator stands in `RoadDoc.allocatorMarks`. */
+const TERRAIN_STAMP_MARK = 6;
 /** How often a held flatten levels a little further, ms. */
 const TERRAIN_REPEAT_MS = 110;
 
@@ -210,8 +212,13 @@ export class TerrainBrush {
   begin(pointer: number, at: Vec2): void {
     const { host } = this;
     host.record();
-    let id = 1;
-    for (const stamp of host.doc.terrainStamps) if (stamp.stroke !== undefined && stamp.stroke >= id) id = stamp.stroke + 1;
+    // The stroke's id: the id its first dab will take (`RoadDoc.allocatorMarks`,
+    // the terrain stamps' allocator). Stamp ids are handed out in increasing
+    // order, never again, and every stroke before had an id no greater than one
+    // of its own stamps' (strokes counted up from 1 while each laid a stamp at
+    // least), so no stamp standing carries it. DO NOT find the next id by
+    // walking every stamp of the map at each press.
+    const id = host.doc.allocatorMarks()[TERRAIN_STAMP_MARK]!;
     this.stroke = { pointer, last: at, at, level: host.heightAt(at), applied: 0, id, origin: { x: at.x, y: at.y } };
     this.paint(at, true);
     this.disarm();

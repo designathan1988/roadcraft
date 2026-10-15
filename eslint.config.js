@@ -143,9 +143,11 @@ export default tseslint.config(
     // ESLint sees as Node code even though they are serialised and run in
     // Chromium. Every one of these scripts drives a real page through
     // Playwright; the callback bodies are browser code by construction.
+    // `scripts/look/*.js`: whole expressions look.mjs runs in the page (`evalFile`).
     files: [
       'scripts/cook-people.mjs',
       'scripts/look.mjs',
+      'scripts/look/*.js',
     ],
     languageOptions: {
       globals: {

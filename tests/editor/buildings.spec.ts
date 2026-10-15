@@ -248,12 +248,29 @@ describe('building commands', () => {
     expect(result.committed).toBe(true);
     net.rebuild();
     expect(footprintRects(doc.buildings.get(b.id)!).some((r) => touchesRoad(net, r))).toBe(true);
-    expect(clearBuildingsOnRoads(ctx)).toBe(1);
+    expect(clearBuildingsOnRoads(ctx, null)).toBe(1);
     expect(doc.buildings.size).toBe(0);
     history.undo(doc);
     followNetwork(doc, net);
     expect(doc.buildings.size).toBe(1);
     expect(doc.segments.size).toBe(roadsBefore);
+  });
+
+  it('looks only where the network changed: the same buildings go as a look at every building', () => {
+    const { ctx, doc, net } = world();
+    const hit = place(ctx, 'house', { x: 0, y: 60 * U });
+    const far = place(ctx, 'house', { x: 0, y: -900 * U });
+    const seen = net.state;
+    const result = commitDraft(doc, net, { kind: 'free', at: { x: 20 * U, y: -200 * U } }, { kind: 'free', at: { x: 20 * U, y: 300 * U } }, 1, null, 'ground');
+    expect(result.committed).toBe(true);
+    net.rebuild();
+    const delta = net.changesSince(seen);
+    expect(delta).not.toBeNull();
+    expect(clearBuildingsOnRoads(ctx, delta!.rects)).toBe(1);
+    expect(doc.buildings.has(hit.id)).toBe(false);
+    expect(doc.buildings.has(far.id)).toBe(true);
+    // Nothing moved since: nothing looked at, nothing gone.
+    expect(clearBuildingsOnRoads(ctx, net.changesSince(net.state)!.rects)).toBe(0);
   });
 });
 

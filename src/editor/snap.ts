@@ -2,9 +2,10 @@ import { normalizeAngle } from '@core/scalar';
 import { type Vec2, addScaled, angleOf, dist, fromAngle, normalize, sub } from '@core/vec2';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
-import type { Network } from '@world/network';
+import type { Network, SegmentRibbon } from '@world/network';
+import type { ChangeRect } from '@world/changes';
 import { orientedPolyline } from '@world/geometry';
-import { casingHalf, roadProfile } from '@world/roadTypes';
+import { casingHalf } from '@world/roadTypes';
 import { segSeg } from '@core/intersect';
 import { roadStructure } from '@world/structures';
 import { GRID_STEP, onGrid, snapToGrid } from '@world/grid';
@@ -90,6 +91,27 @@ export function setRoadSnap(patch: Partial<RoadSnap>): void {
 }
 
 /**
+ * The ribbons filed in the network's cells (`Network.segmentCells`,
+ * `world/cells.ts`) whose bounds meet `rect`, in increasing id: the order of
+ * `net.ribbons`, which the build keeps in increasing id (`insertionWatch`,
+ * `world/networkBuild.ts`), so a search that keeps the first of equals finds
+ * what the walk over every ribbon found. A pointer move reads the cells round
+ * it, never the map.
+ * DO NOT walk `net.ribbons` / `doc.segments` instead, and DO NOT go through
+ * `Network.ribbonsMeeting`: its order table (`ribbonOrder`) is laid out again
+ * over every ribbon of the map each time the network moves, and the hover after
+ * an edit paid for it.
+ */
+export function ribbonsNear(net: Network, rect: ChangeRect): SegmentRibbon[] {
+  const out: SegmentRibbon[] = [];
+  for (const id of net.segmentCells.idsMeeting(rect)) {
+    const ribbon = net.ribbons.get(id);
+    if (ribbon) out.push(ribbon);
+  }
+  return out;
+}
+
+/**
  * Finds what the pointer is over: an existing node, a point on an existing
  * road, or open ground.
  *
@@ -107,18 +129,50 @@ export function findAnchor(
   targetHeightOffset?: number,
 ): Anchor {
   const nodeRadius = 30 / zoom;
+  const pickRadius = 26 / zoom;
   let best: Anchor = { kind: 'free', at: p };
   let bestScore = Infinity;
+  let bestNode: NodeId | null = null;
 
-  for (const node of doc.nodes.values()) {
-    if (exclude?.has(node.id)) continue;
-    if (targetHeightOffset !== undefined &&
-      Math.abs(node.heightOffset - targetHeightOffset) > m(0.3)) continue;
-    const d = dist(p, node);
-    if (d > nodeRadius) continue;
-    if (d < bestScore) {
-      bestScore = d;
-      best = { kind: 'node', at: { x: node.x, y: node.y }, node: node.id };
+  // THE ROADS NEAR THE POINTER, from the network's cells (`ribbonsNear`):
+  // a pointer move reads the few cells round it, never the map. Both loops below used to walk every node and every segment of the
+  // document on every move (class C2, docs/PLANO-ESPINHA-2026-10-14.md).
+  //
+  // Why this misses nothing the old walk found (the network must be current,
+  // as every caller's is - `main.ts` rebuilds it after each edit):
+  // - a ribbon is filed over `ribbonBounds`, its whole centreline's box grown
+  //   by the casing (`world/ribbons.ts`);
+  // - a node within `nodeRadius` is the end of a road, so it lies in that
+  //   road's centreline box: the square of `nodeRadius` round `p` meets the
+  //   ribbon's bounds. A node with no road is not found, and none is left:
+  //   every edit prunes them (`RoadDoc.pruneOrphanNodes`);
+  // - a segment passes the box test below only when `p` is within its radius,
+  //   `max(pickRadius, casing)`, of its centreline box: within the casing, `p`
+  //   is inside the filed bounds; within `pickRadius`, the square of it meets them.
+  // DO NOT go back to `doc.nodes` / `doc.segments` here: it runs on every pointer move.
+  const reach = Math.max(nodeRadius, pickRadius);
+  const near = ribbonsNear(net, [p.x - reach, p.y - reach, p.x + reach, p.y + reach]);
+
+  // Equal distances go to the smaller id, which is the first the old walk over
+  // `doc.nodes` met: ids are handed out in increasing order and every copy,
+  // undo and load keeps the map's order. The order the cells give is then
+  // irrelevant, and a node shared by two roads met twice changes nothing.
+  for (const ribbon of near) {
+    const seg = doc.segment(ribbon.id);
+    if (!seg) continue;
+    for (let end = 0; end < 2; end++) {
+      const node = doc.node(end === 0 ? seg.a : seg.b);
+      if (!node) continue;
+      if (exclude?.has(node.id)) continue;
+      if (targetHeightOffset !== undefined &&
+        Math.abs(node.heightOffset - targetHeightOffset) > m(0.3)) continue;
+      const d = dist(p, node);
+      if (d > nodeRadius) continue;
+      if (d < bestScore || (d === bestScore && bestNode !== null && node.id < bestNode)) {
+        bestScore = d;
+        bestNode = node.id;
+        best = { kind: 'node', at: { x: node.x, y: node.y }, node: node.id };
+      }
     }
   }
 
@@ -129,23 +183,23 @@ export function findAnchor(
   // click and the Move tool panned the camera instead of moving the junction.
   if (best.kind === 'node') return best;
 
-  for (const [id, seg] of doc.segments) {
+  let bestSegment: SegmentId | null = null;
+  for (const ribbon of near) {
+    const id = ribbon.id;
+    const seg = doc.segment(id);
+    if (!seg) continue;
     // A pointer visibly inside a road must be able to attach to that road even
     // when zoomed in.  A screen-only radius shrank below the physical casing at
     // high zoom, creating endpoints that overlapped the rendered road while
     // remaining topologically disconnected.
-    const segRadius = Math.max(
-      26 / zoom,
-      casingHalf(roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking)),
-    );
+    // The profile is the ribbon's own (`makeRibbon`, made from this segment):
+    // DO NOT call `roadProfile` here, it builds a new object per road per move.
+    const segRadius = Math.max(pickRadius, casingHalf(ribbon.road));
     const pl = net.polylines.get(doc, id);
     const q = p;
     // Reject by bounding box first. `closestPoint` walks every flattened point
-    // of the polyline, and this ran on EVERY segment of the map for every
-    // pointer move — so simply sliding the mouse across a large map cost a full
-    // sweep of its geometry, which is felt as lag long before anything is
-    // clicked. A segment whose box is further than the snap radius cannot hold
-    // the closest point, and the box test is four comparisons.
+    // of the polyline; a segment whose box is further than the snap radius
+    // cannot hold the closest point, and the box test is four comparisons.
     const bb = pl.bbox;
     if (
       q.x < bb.minX - segRadius ||
@@ -164,11 +218,12 @@ export function findAnchor(
       const height = a + (b - a) * fraction + roadStructure(seg.structure).clearance;
       if (Math.abs(height - targetHeightOffset) > m(0.3)) continue;
     }
-    if (hit.distance < bestScore) {
+    // Equal distances to the smaller id, the first the old walk over `doc.segments` met.
+    if (hit.distance < bestScore || (hit.distance === bestScore && bestSegment !== null && id < bestSegment)) {
       bestScore = hit.distance;
+      bestSegment = id;
       best = { kind: 'segment', at: hit.point, segment: id, s: hit.s };
     }
-    void seg;
   }
 
   return best;

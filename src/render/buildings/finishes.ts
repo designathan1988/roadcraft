@@ -3,6 +3,7 @@ import { DoubleSide, MeshStandardMaterial } from 'three';
 import { type Finish, FINISHES } from '@world/buildings/materials';
 import { m } from '@world/units';
 import { type SurfaceRecipe, bakeSurface, fbm, makeNoise } from '../mesh/textureBaker';
+import { applyLotOverlay } from '../lotOverlay';
 
 /**
  * The building finishes (docs/buildings.md, "Materials"): one material per
@@ -438,6 +439,10 @@ export function createFinishMaterials(anisotropy = 8): Record<Finish, MeshStanda
     }
     material.name = `building-${finish}`;
     applyWeathering(material, finish);
+    // A built lot's yard - the paving and paths are this shell's level faces
+    // at the lot's ground - coloured with the lot in the Zoning tool
+    // (`lotOverlay.ts`); walls and roofs never.
+    applyLotOverlay(material, `building-${finish}`, { building: true });
     out[finish] = material;
   }
   return out;

@@ -191,6 +191,29 @@ export function profileIssues(profile: RoadProfileSpec, typeIndex: number): Prof
   return out;
 }
 
+/** Whether two flat records hold the same values, an absent field the same as `undefined`. */
+function sameFlat(a: object, b: object): boolean {
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  for (const k in x) if (x[k] !== y[k]) return false;
+  for (const k in y) if (!(k in x) && y[k] !== undefined) return false;
+  return true;
+}
+
+/**
+ * Whether two profiles are the same road, field by field. DO NOT compare
+ * profiles by `JSON.stringify`: the text follows the order the keys were
+ * written in, so a profile edited by a spread (`{ ...element, width }` puts
+ * nothing new first, but `{ material, ...element }` does) or read back from a
+ * template stops being equal to the identical one built by `profileOf`.
+ */
+export function sameProfile(a: RoadProfileSpec, b: RoadProfileSpec): boolean {
+  if (a === b) return true;
+  const { elements: ea, ...ra } = a;
+  const { elements: eb, ...rb } = b;
+  return ea.length === eb.length && sameFlat(ra, rb) && ea.every((e, i) => sameFlat(e, eb[i]!));
+}
+
 /** The segment's own fields for a profile (`profileProblems` must be empty). */
 export interface AppliedProfile {
   /** Null: the class's own lane count. */
@@ -210,7 +233,7 @@ export interface AppliedProfile {
 export function applyProfile(profile: RoadProfileSpec, typeIndex?: number): AppliedProfile {
   const authored = authoredFields(profile);
   if (typeIndex === undefined) return authored;
-  const same = (p: RoadProfileSpec): boolean => JSON.stringify(p) === JSON.stringify(profile);
+  const same = (p: RoadProfileSpec): boolean => sameProfile(p, profile);
   const base = { type: typeIndex, direction: authored.direction, ...(authored.parking ? { parking: authored.parking } : {}) };
   if (same(profileOf({ ...base, lanes: null }))) return { ...authored, lanes: null, section: undefined };
   if (same(profileOf({ ...base, lanes: authored.lanes }))) return { ...authored, section: undefined };

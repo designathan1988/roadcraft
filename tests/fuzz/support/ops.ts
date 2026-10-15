@@ -166,10 +166,8 @@ export function applyOp(state: FuzzState, op: FuzzOp): boolean {
       const node = id === undefined ? undefined : doc.node(id);
       if (!node || id === undefined) return false;
       // As main.ts's drop (`NodeMover.drop`): move, reconcile and judge; a
-      // refused drop is undone.
-      const before = doc.toJSON();
+      // refused drop is put back by `moveNodeChecked` itself.
       changed = moveNodeChecked(doc, net, id, { x: node.x + op.dx, y: node.y + op.dy }).committed;
-      if (!changed) doc.replaceFromJSON(before, { repair: false });
       break;
     }
     case 'type': case 'upgrade': {

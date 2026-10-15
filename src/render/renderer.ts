@@ -238,13 +238,12 @@ export interface SceneHandle {
   setTransitXray(on: boolean): void;
   /** The track being laid, built as it will be (`buildTrackPreview`); null removes it. */
   setTransitPreview(preview: { mode: 'train' | 'metro'; points: readonly { x: number; y: number }[] } | null): void;
-  /** The lots of the Zoning tool laid on the ground (`lotOverlay.ts`); null removes them. */
   /**
-   * The lots on the ground; `changes`, the document's diary: what the ground
-   * moved under is laid again. True while lots are left to lay in the next
-   * frames (`lotOverlay.ts` `LAY_SLICE_MS`): a frame is wanted.
+   * The lots of the Zoning tool coloured into the ground, all of them from
+   * the next frame (`lotOverlay.ts`); null removes them. `changes`, the
+   * document's diary: where the ground moved, a built lot's level is read again.
    */
-  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): boolean;
+  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): void;
   /**
    * A blow on a building at world (x, y, z), `strength` 1..10: it breaks
    * (`destruction.ts`). Returns true when nothing of it is left standing.
@@ -2015,10 +2014,7 @@ export function createSceneRenderer(
         group.add(track.group);
         done.push(() => track.dispose());
       }
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      const lots = lotOverlay.warm();
-      group.add(lots.group);
-      done.push(() => lots.dispose());
+      // The lots need no program of their own: the ground's materials draw them (`lotOverlay.ts`).
       void compileAhead(group).then(() => { for (const finish of done) finish(); });
     } catch (error) {
       console.warn('preview shader warm-up skipped', error);
@@ -2700,8 +2696,8 @@ export function createSceneRenderer(
       }
     },
     setLotOverlay(input, changes) {
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      return lotOverlay.set(input, changes);
+      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y));
+      lotOverlay.set(input, changes);
     },
     setPolePreview(net, preview) {
       const key = preview && elevation
@@ -3352,7 +3348,7 @@ export function createSceneRenderer(
       // itself moved: the shadow map is drawn again only when it did, when a
       // caster moved, or when this view is close enough for a frame of a
       // caster's movement to be seen.
-      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
+      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y), rig.camera.position.distanceTo(target));
       // What the simulation must show in full: people step round each other
       // only where they are seen, and big enough to see it (`SimWorld.focus`).
       {
