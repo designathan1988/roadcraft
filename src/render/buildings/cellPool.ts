@@ -1,14 +1,12 @@
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
-import type { SlotAllocator } from './buildingMesh';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
-import { slotFor } from './lightSlots';
 
 /**
  * THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`,
  * `cell.worker.ts`): a cell always goes to the same worker, which keeps its
- * buildings' chunks; the page answers the readings of the ground and the light
- * slots a job asks for, and is handed the cell's batches as arrays. Cesium's
+ * buildings' chunks; the page answers the readings of the ground a job asks
+ * for, and is handed the cell's batches as arrays. Cesium's
  * `TaskProcessor`: a worker made on the first task, the result handed back
  * with its buffers transferred. The workers are as many as the cores the
  * browser reports, one left to the page, at most `MOST_LANES`.
@@ -18,13 +16,11 @@ import { slotFor } from './lightSlots';
  * is the same either way. A worker that fails hands its jobs to the page.
  */
 
-/** What a job reads on the page: the ground as drawn and as it was, the paving, and who gives the light slots. */
+/** What a job reads on the page: the ground as drawn and as it was, and the paving. */
 export interface CellEnv {
   readonly groundAt: GroundAt;
   readonly naturalAt: GroundAt;
   readonly pavedAt?: PavedAt;
-  /** The page's light slots (`lightSlots.ts`); a test may give its own. */
-  readonly slots?: SlotAllocator;
 }
 
 interface Running { readonly job: CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null }
@@ -132,10 +128,7 @@ export class CellPool {
     this.local ??= new CellWork(this.boxes(), this.budget);
     const work = this.local;
     let reply = work.start(running.job);
-    while (reply.kind !== 'done') {
-      reply = reply.kind === 'need' ? work.readings(reply.job, readingsOf(reply.points, running.env))
-        : work.slots(reply.job, slotsOf(reply.requests, running.env));
-    }
+    while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
     this.finish(running, reply.result);
   }
 
@@ -189,8 +182,8 @@ export class CellPool {
       return;
     }
     // The readings answered on the page, the buffer handed back (MDN, transfer).
-    const values = reply.kind === 'need' ? readingsOf(reply.points, running.env) : slotsOf(reply.requests, running.env);
-    lane.worker.postMessage({ type: reply.kind === 'need' ? 'readings' : 'slots', job: reply.job, values }, [values.buffer]);
+    const values = readingsOf(reply.points, running.env);
+    lane.worker.postMessage({ type: 'readings', job: reply.job, values }, [values.buffer]);
   }
 
   private giveUp(): void {
@@ -214,17 +207,6 @@ function readingsOf(points: Float64Array, env: CellEnv): Float64Array {
   for (let i = 0, at = 0; i < points.length; i += 3, at++) {
     const kind = points[i]!, x = points[i + 1]!, y = points[i + 2]!;
     out[at] = kind === GROUND ? env.groundAt(x, y) : kind === NATURAL ? env.naturalAt(x, y) : kind === PAVED ? env.pavedAt!(x, y) : NaN;
-  }
-  return out;
-}
-
-/** The page's light slots of building, level, volume, x, y fives, given in order. */
-function slotsOf(requests: Float64Array, env: CellEnv): Float64Array {
-  const slots = env.slots ?? slotFor;
-  const out = new Float64Array(requests.length / 5);
-  for (let i = 0; i < out.length; i++) {
-    const r = i * 5;
-    out[i] = slots(requests[r]!, requests[r + 1]!, requests[r + 2]!, requests[r + 3]!, requests[r + 4]!);
   }
   return out;
 }

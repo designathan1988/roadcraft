@@ -17,8 +17,8 @@ import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
  * slots' table - is asked of the page: emitted once with the readings unknown,
  * a building says which points it read, the page reads them, and the next
  * emission, with them all known, reads nothing else (a point that depends on an
- * answer is asked in the next round); the light slots are requests numbered in
- * the order the emission on the page would have asked them.
+ * answer is asked in the next round). A window's light needs nothing of the
+ * page: its space's seed is a hash (`lightSlots.ts`).
  *
  * DO NOT send the page a chunk per building: rebuilding each one's dozens of
  * arrays on the page cost as much as emitting it there (2026-10-14,
@@ -69,14 +69,11 @@ export interface CellResult {
 export type WorkReply =
   /** The readings still unknown: kind, x, y threes. */
   | { readonly kind: 'need'; readonly job: number; readonly points: Float64Array }
-  /** The light slots asked for, in order: building, level, volume, x, y fives. */
-  | { readonly kind: 'slots'; readonly job: number; readonly requests: Float64Array }
   | { readonly kind: 'done'; readonly job: number; readonly result: CellResult };
 
 /** Every buffer of a reply: handed over, not copied (MDN, `postMessage` transfer). */
 export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
   if (reply.kind === 'need') return [reply.points.buffer as ArrayBuffer];
-  if (reply.kind === 'slots') return [reply.requests.buffer as ArrayBuffer];
   const out = reply.result.batch ? cellBuffers(reply.result.batch) : [];
   for (const [, arrays] of reply.result.details) out.push(...cellBuffers(arrays));
   return out;
@@ -95,8 +92,6 @@ interface Emitting {
   readonly known: Map<string, number>;
   asked: number[];
   chunk: BuildingChunk | null;
-  /** Its light-slot requests: building, level, volume, x, y fives, numbered from 0 in its own emission. */
-  slots: number[];
 }
 
 interface JobState {
@@ -153,7 +148,7 @@ export class CellWork {
       chunks.push(null);
       // The record parsed once a record: the same text, the same building.
       const building = known && known.record === entry.record ? known.building : JSON.parse(entry.record) as Building;
-      emitting.push({ entry, building, known: new Map(), asked: [], chunk: null, slots: [] });
+      emitting.push({ entry, building, known: new Map(), asked: [], chunk: null });
     }
     const state: JobState = { job, chunks, emitting, rounds: 0 };
     this.jobs.set(job.id, state);
@@ -171,21 +166,6 @@ export class CellWork {
       for (let i = 0; i < e.asked.length; i += 3) e.known.set(readingKey(e.asked[i]!, e.asked[i + 1]!, e.asked[i + 2]!), values[at++]!);
     }
     return this.emitRound(state);
-  }
-
-  /** The page's light slots for the requests, in their order: each pane given its space's slot. */
-  slots(id: number, values: Float64Array): WorkReply {
-    const state = this.jobs.get(id)!;
-    let at = 0;
-    for (const e of state.emitting) {
-      const given = values.subarray(at, at + e.slots.length / 5);
-      at += e.slots.length / 5;
-      for (const kind of ['glass', 'glassDark'] as const) {
-        const panes = e.chunk!.parts[kind].slots;
-        if (panes) for (let i = 0; i < panes.length; i++) if (panes[i]! >= 0) panes[i] = given[panes[i]!]!;
-      }
-    }
-    return this.finish(state);
   }
 
   /** A job no longer wanted: its state let go; a reading for it that comes later is not asked for. */
@@ -214,21 +194,15 @@ export class CellWork {
         if (!asked.has(k)) { asked.add(k); points.push(kind, x, y); }
         return kind === PAVED ? NaN : 0;
       };
-      const slots: number[] = [];
-      const chunk = emitChunk(e.building, reading(GROUND), state.job.paved ? reading(PAVED) : undefined, reading(NATURAL),
-        (building, level, volume, x, y) => { slots.push(building, level, volume, x, y); return slots.length / 5 - 1; });
+      const chunk = emitChunk(e.building, reading(GROUND), state.job.paved ? reading(PAVED) : undefined, reading(NATURAL));
       e.asked = points;
       if (points.length) { need.push(...points); continue; }
       e.chunk = chunk;
-      e.slots = slots;
     }
     if (need.length) {
       if (++state.rounds > MOST_ROUNDS) throw new Error(`[buildings] a cell's readings never settled (${state.job.cell})`);
       return { kind: 'need', job: state.job.id, points: Float64Array.from(need) };
     }
-    const requests: number[] = [];
-    for (const e of state.emitting) requests.push(...e.slots);
-    if (requests.length) return { kind: 'slots', job: state.job.id, requests: Float64Array.from(requests) };
     return this.finish(state);
   }
 

@@ -16,7 +16,7 @@ import { m } from '@world/units';
 /**
  * A CELL PUT TOGETHER BY A WORKER IS THE ONE PUT TOGETHER ON THE PAGE, BYTE
  * FOR BYTE (`cellWork.ts`, `cellPool.ts`): the rounds of readings the worker
- * asks the page for, the light slots answered in the order asked, the chunks it
+ * asks the page for, the light seeds of the spaces (hashes), the chunks it
  * keeps from one job of a cell to the next, give what emitting every building
  * on the page and joining them (`cellArrays.ts`) gives - the coarse batch, each
  * detail cell's, and what the page keeps of each building (flags, the lots'
@@ -27,17 +27,6 @@ const groundAt = (x: number, y: number): number => x * 0.031 - y * 0.017 + Math.
 const naturalAt = (x: number, y: number): number => groundAt(x, y) - m(0.3) + Math.cos(y * 0.07) * m(0.2);
 /** A footway along a band of the map, NaN off it. */
 const pavedAt = (x: number, y: number): number => (Math.abs(((y % m(60)) + m(60)) % m(60) - m(30)) < m(4) ? groundAt(x, y) + m(0.15) : NaN);
-
-/** A light-slot table as the page's: a number per space, in the order first asked. */
-function slotTable(): (b: number, level: number, volume: number, x: number, y: number) => number {
-  const slots = new Map<string, number>();
-  return (b, level, volume, x, y) => {
-    const key = `${b}|${level}|${volume}|${x}|${y}`;
-    let s = slots.get(key);
-    if (s === undefined) slots.set(key, (s = slots.size));
-    return s;
-  };
-}
 
 /** Every array of a batch by its path, as bytes, and its other values. */
 function leavesOf(o: unknown, path = '', out = new Map<string, unknown>()): Map<string, unknown> {
@@ -89,14 +78,13 @@ describe('a cell put together off the page', () => {
       const town = [...doc.buildings.all()];
       expect(town.length).toBeGreaterThan(20);
       const pool = new CellPool(() => boxes, 64 * 1024 * 1024, false);
-      const direct = slotTable(), pooled = slotTable();
-      const env = { groundAt, naturalAt, ...(paved ? { pavedAt: paved } : {}), slots: pooled };
+      const env = { groundAt, naturalAt, ...(paved ? { pavedAt: paved } : {}) };
       /** The cells of `list` both ways: emitted and joined here, and by the pool. */
       const compare = (list: readonly Building[]): void => {
         const byCell = new Map<string, Building[]>();
         for (const b of list) { const c = cellOf(b); byCell.set(c, [...byCell.get(c) ?? [], b]); }
         for (const [cell, buildings] of byCell) {
-          const chunks = new Map<Building, BuildingChunk>(buildings.map((b) => [b, emitChunk(b, groundAt, paved, naturalAt, direct)]));
+          const chunks = new Map<Building, BuildingChunk>(buildings.map((b) => [b, emitChunk(b, groundAt, paved, naturalAt)]));
           let got: CellResult | null = null;
           pool.run('cell', cell, buildings.map(entryOf), env, (result) => { got = result; });
           expect(got).not.toBeNull();

@@ -3,13 +3,13 @@ import { type CellJob, CellWork, replyBuffers } from './cellWork';
 
 /**
  * One worker of the buildings' cells (`cellPool.ts`): the page's messages -
- * a cell to put together, the readings and light slots it asked for, a cell
- * let go - answered by its `CellWork`, each reply's arrays handed over.
+ * a cell to put together, the readings it asked for, a cell let go -
+ * answered by its `CellWork`, each reply's arrays handed over.
  */
 type Message =
   | { readonly type: 'init'; readonly boxes: KitBoxes; readonly budget: number }
   | { readonly type: 'start'; readonly job: CellJob }
-  | { readonly type: 'readings' | 'slots'; readonly job: number; readonly values: Float64Array }
+  | { readonly type: 'readings'; readonly job: number; readonly values: Float64Array }
   | { readonly type: 'release'; readonly cell: string }
   | { readonly type: 'cancel'; readonly job: number };
 
@@ -23,8 +23,7 @@ function serve(scope: Worker): void {
     if (message.type === 'cancel') { work!.cancel(message.job); return; }
     const job = message.type === 'start' ? message.job.id : message.job;
     try {
-      const reply = message.type === 'start' ? work!.start(message.job)
-        : message.type === 'readings' ? work!.readings(message.job, message.values) : work!.slots(message.job, message.values);
+      const reply = message.type === 'start' ? work!.start(message.job) : work!.readings(message.job, message.values);
       scope.postMessage(reply, replyBuffers(reply));
     } catch (error) {
       // Reported to the page, which puts this cell together itself (`cellPool.ts`).

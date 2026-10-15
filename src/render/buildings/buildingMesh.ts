@@ -4,7 +4,7 @@ import { resolveBlocks } from '@world/buildings/blocks';
 import { type LotSurface as LotPlane, lotSurfaces } from '@world/buildings/lots';
 import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
-import { slotFor } from './lightSlots';
+import { spaceSeed } from './lightSlots';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
@@ -638,11 +638,7 @@ function emitPorchLight(e: Emitter, f: BayFace, W: number, am: number, w: number
 }
 
 /** The light slot of a bay's window: the space on its floor behind it. */
-/**
- * Who gives a space its light slot: the page's one table (`lightSlots.ts`
- * `slotFor`), or, in an emit worker, a request numbered for the page to
- * answer in the same order (`cellWork.ts`).
- */
+/** Who gives a space its seed for its windows' light (`lightSlots.ts` `spaceSeed`; a test may give its own). */
 export type SlotAllocator = (building: number, level: number, volume: number, x: number, y: number) => number;
 
 function slotOfBay(b: Building, v: Volume, bay: FacadeBay, spaces: ReturnType<typeof deriveSpaces>, slots: SlotAllocator): number {
@@ -667,7 +663,7 @@ function emitBuilding(
   furniture: Partial<Record<FurnitureKind, Placement[]>> = {},
   onLot?: (el: BuildingElement) => boolean,
   designedFloor?: number,
-  slots: SlotAllocator = slotFor,
+  slots: SlotAllocator = spaceSeed,
 ): number {
   const e = new Emitter(b, shell, parts, furniture);
   const bays = facadeBays(b);
@@ -3305,7 +3301,7 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
   return resolved.volumes.some((v) => !v.open) ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
-export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = slotFor): BuildingChunk {
+export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
   const parts = Object.fromEntries(PART_KINDS.map((k) => [k, [] as Placement[]])) as Record<PartKind, Placement[]>;
