@@ -50,6 +50,7 @@ import {
   type TerrainStamp,
 } from '@world/terrain';
 import { bakeSurface, fbm, makeNoise, type SurfaceBake, type SurfaceRecipe } from './mesh/textureBaker';
+import { markAll, markBox } from './mesh/updateRanges';
 import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
@@ -2189,6 +2190,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    */
   const wholePlateMoved = (): void => {
     geometry.computeVertexNormals();
+    markAll(geometry.getAttribute('normal') as BufferAttribute);
     refreshAllSteep();
     geometry.computeBoundingSphere();
   };
@@ -2275,7 +2277,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         }
       }
     }
-    triangles.needsUpdate = true;
+    markBox(triangles as BufferAttribute, 6, TERRAIN_SEGMENTS, cx0, cx1, cy0, cy1);
   };
 
   /** Bilinear read of one corner array, reproducing the plane's own diagonal. */
@@ -2399,13 +2401,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     for (const [i, was] of before) if (grid[i] !== was) changed.push(i);
     if (changed.length === 0) return false;
     for (const i of changed) position.setY(i, grid[i] as number);
-    position.needsUpdate = true;
     {
       let x0 = GRID, x1 = -1, y0 = GRID, y1 = -1;
       for (const i of changed) {
         const ix = i % GRID, iy = (i - ix) / GRID;
         if (ix < x0) x0 = ix; if (ix > x1) x1 = ix; if (iy < y0) y0 = iy; if (iy > y1) y1 = iy;
       }
+      markBox(position as BufferAttribute, 3, GRID, x0, x1, y0, y1);
       retriangulate(x0, x1 + 1, y0, y1 + 1);
       // The land's light is worked out again round these corners only (`setSun`).
       markLand({ x0, x1, y0, y1 });
@@ -2459,7 +2461,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const cellSteep = new Float32Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
   const refreshAllSteep = (): void => {
     steepnessInto(position.array as ArrayLike<number>, flip, GRID, cellSteep, steep);
-    steepAttribute.needsUpdate = true;
+    markAll(steepAttribute);
   };
   /**
    * Recomputes the normals round the corners that moved: the corners
@@ -2469,9 +2471,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    */
   const refreshNormals = (moved: readonly number[]): void => {
     const touched = new Set<number>();
+    let nx0 = GRID, nx1 = -1, ny0 = GRID, ny1 = -1;
     for (const i of moved) {
       const ix = i % GRID;
       const iy = (i - ix) / GRID;
+      if (ix - 1 < nx0) nx0 = ix - 1; if (ix + 1 > nx1) nx1 = ix + 1; if (iy - 1 < ny0) ny0 = iy - 1; if (iy + 1 > ny1) ny1 = iy + 1;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const x = ix + dx;
@@ -2507,8 +2511,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       normal.setXYZ(v, sum.x, sum.y, sum.z);
       steep[v] = faceSteep;
     }
-    normal.needsUpdate = true;
-    steepAttribute.needsUpdate = true;
+    if (nx1 >= 0) {
+      nx0 = Math.max(0, nx0); ny0 = Math.max(0, ny0); nx1 = Math.min(GRID - 1, nx1); ny1 = Math.min(GRID - 1, ny1);
+      markBox(normal as BufferAttribute, 3, GRID, nx0, nx1, ny0, ny1);
+      markBox(steepAttribute, 1, GRID, nx0, nx1, ny0, ny1);
+    }
   };
 
   let wetDiscs: readonly WaterStamp[] = [];
@@ -3127,12 +3134,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         natural.set(h);
         naturalFlip.set(made.flip);
         lastRegion = null;
-        position.needsUpdate = true;
+        markAll(position as BufferAttribute);
         retriangulate(0, GRID - 1, 0, GRID - 1);
         (normal.array as Float32Array).set(made.normals);
-        normal.needsUpdate = true;
+        markAll(normal as BufferAttribute);
         steep.set(made.steep);
-        steepAttribute.needsUpdate = true;
+        markAll(steepAttribute);
         geometry.boundingSphere = new Sphere(new Vector3(0, (made.low + made.high) / 2, 0), Math.hypot(TERRAIN_HALF * Math.SQRT2, (made.high - made.low) / 2));
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
@@ -3158,7 +3165,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         lastRegion = box;
       }
 
-      position.needsUpdate = true;
+      if (box) markBox(position as BufferAttribute, 3, GRID, box[0], box[1], box[2], box[3]);
+      else markAll(position as BufferAttribute);
       if (box) retriangulate(box[0], Math.min(GRID - 1, box[1] + 1), box[2], Math.min(GRID - 1, box[3] + 1));
       else retriangulate(0, GRID - 1, 0, GRID - 1);
       if (box) {

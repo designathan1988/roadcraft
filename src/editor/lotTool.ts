@@ -145,9 +145,38 @@ export class LotTool {
       if (this.quiet && this.held) return this.quiet.overlay;
       return this.remakeQuiet(key);
     }
-    // In the tool, what is under the pointer changes the drawing: compared whole.
-    const drawn = this.overlay(editing);
-    return { ...drawn, key: JSON.stringify([drawn.polygons, drawn.lines, drawn.points]) };
+    // In the tool, what is under the pointer changes the drawing: it is made again when the state it is
+    // drawn from changed (`liveKey`), not on every frame, and not compared by writing it all out as text.
+    // The proposal is moved on here, before the key: a cached overlay would stop it half worked out.
+    if (editing && this.advanceProposal()) this.host.redraw();
+    const key = this.liveKey(editing);
+    if (this.live?.key === key) return this.live.overlay;
+    const overlay = { ...this.overlay(editing), key };
+    this.live = { key, overlay };
+    return overlay;
+  }
+
+  /** The overlay of the last gesture frame and the state it was made from (`overlayKeyed`). */
+  private live: { key: string; overlay: LotOverlay & { readonly key: string } } | null = null;
+
+  /**
+   * Everything `overlay` reads, as a short string: the lots and buildings by revision, the mode and its
+   * settings, the pointer (where it is changes what is lit, snapped and measured), the gestures under way and
+   * the proposal. DO NOT build the overlay and write it out as JSON to compare it: that is every lot of the
+   * town, every frame, and grows with it. A field `overlay` starts reading goes here too.
+   */
+  private liveKey(editing: boolean): string {
+    const at = (q: Vec2 | null): string => (q ? `${q.x},${q.y}` : '-');
+    const prop = this.proposal;
+    const proposal = prop ? `${prop.key}/${prop.steps ? 'w' : 'r'}/${prop.lots.length}/${prop.keys.length}` : '-';
+    const stroke = this.stroke ? `${this.stroke.remove ? 'r' : 'a'}${this.stroke.ids.size}/${this.stroke.fresh.size}` : '-';
+    const corner = this.corner ? `${at(this.corner.from)}>${at(this.corner.to)}` : '-';
+    const drawn = this.drawn ? `${at(this.drawn.a)}>${at(this.drawn.b)}@${this.drawn.angle}` : '-';
+    const cut = this.cutLine ? `${at(this.cutLine.a)}>${at(this.cutLine.b)}` : '-';
+    const curve = this.curve ? `${at(this.curve.a)}>${at(this.curve.b)}~${at(this.curve.through)}` : '-';
+    const polygon = this.polygon.map(at).join(';');
+    return [editing ? 'e' : 'q', this.doc.lotRevision, this.doc.buildings.revision, JSON.stringify(this.host.settings()),
+      at(this.hover), this.hover ? this.host.zoom() : 0, this.joinFirst ?? '-', stroke, corner, drawn, cut, curve, polygon, proposal].join('|');
   }
 
   /** @rebuild Called when the lots or the buildings changed (`overlayKeyed`). */
