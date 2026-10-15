@@ -1,21 +1,34 @@
-import { BoxGeometry, Group, InstancedMesh, type Material, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Group, type Frustum, type Material, Matrix4, MeshStandardMaterial, Object3D } from 'three';
 
 import { BARRIER_SIZE, type Barrier } from '@world/barriers';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
+import { CellFiling } from '@world/cells';
+import { Derived, type DerivedSpec } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
+import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from './instanceRuns';
 
 /**
- * Walls, fences and hedges on screen (`world/barriers.ts`).
+ * Walls, fences and hedges on screen (`world/barriers.ts`), KEPT BARRIER BY
+ * BARRIER: each barrier a run of every part it draws in an instanced layer
+ * (`instanceRuns.ts`), made again only when the diary says it changed or the
+ * ground under it moved (a product of the diary, `Derived`).
  *
  * Every piece is one unit box, instanced and placed: a wall is a run of
  * blocks with a coping on top, a fence posts every couple of metres with two
  * rails between them, a hedge a run of clipped green blocks. A run is cut
  * into pieces no longer than `PIECE` so it follows the ground it stands on.
- * Built behind its own revision (`doc.barrierRevision`), like the poles.
+ * DO NOT build every barrier of the map again for one placed or for the ground
+ * moved under one: the whole layer was made again, and its pieces' areas all
+ * asked, at each.
  */
 export interface Barriers {
   readonly group: Group;
   readonly triangles: number;
+  /** Brings the barriers up to the diary and the ground; the barriers made again. */
+  sync(doc: RoadDoc, groundAt: (x: number, y: number) => number): number;
+  /** The parts the camera can see (`InstanceRuns.cull`), every frame. */
+  cull(frustum: Frustum, view: Matrix4): void;
   dispose(): void;
 }
 
@@ -28,54 +41,110 @@ const SINK = m(0.15);
 
 interface Box { x: number; y: number; z: number; yaw: number; length: number; width: number; height: number }
 
-/** @rebuild Called when the barriers' revision or the ground under them moved (`renderer.ts`). */
-export function buildBarriers(doc: RoadDoc, groundAt: (x: number, y: number) => number): Barriers {
-  const group = new Group();
-  group.name = 'barriers';
-  const walls: Box[] = [], copings: Box[] = [], posts: Box[] = [], rails: Box[] = [], hedges: Box[] = [];
-  const steelPosts: Box[] = [], beams: Box[] = [], railPosts: Box[] = [], railBars: Box[] = [];
-  for (const barrier of doc.barriers.values()) {
-    placeBarrier(barrier, groundAt, { walls, copings, posts, rails, hedges, steelPosts, beams, railPosts, railBars });
+/** The parts, in the order of the layer's stores. */
+const KINDS = ['walls', 'copings', 'posts', 'rails', 'hedges', 'steelPosts', 'beams', 'railPosts', 'railBars'] as const;
+type PartList = Record<(typeof KINDS)[number], Box[]>;
+
+interface BarrierSource { readonly changes: ChangeJournal; readonly doc: RoadDoc; readonly groundAt: (x: number, y: number) => number }
+/** A barrier as drawn: its run and the box its pieces stand in (what a change of the ground there reaches). */
+interface BarrierPlace { readonly run: Run; readonly box: ChangeRect; readonly boxes: number }
+
+/** How far round a barrier's points the ground it reads lies (a piece's corners, a margin). */
+const READ_REACH = m(1);
+
+class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace> {
+  readonly name = 'barriers';
+  readonly kinds: readonly ChangeKind[] = ['barriers', 'terrain', 'elevation', 'ground'];
+  readonly byId = false;
+  private readonly filing = new CellFiling<number, BarrierPlace>();
+
+  constructor(private readonly stores: readonly RunStore[]) {}
+
+  /** @rebuild Every barrier of the map: read only when everything changed (a load, the diary forgotten). */
+  allKeys(source: BarrierSource): Iterable<number> {
+    const out: number[] = [];
+    for (const id of source.doc.barriers.keys()) out.push(id);
+    for (const id of this.filing.ids()) out.push(id);
+    return out;
   }
 
-  const { unit, material } = PARTS;
-  let triangles = 0;
-  const add = (name: string, boxes: readonly Box[], mat: Material): void => {
-    if (boxes.length === 0) return;
-    const mesh = new InstancedMesh(unit, mat, boxes.length);
-    mesh.name = name;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+  dirty(change: Change, out: Set<number>, source: BarrierSource): void {
+    if (change.rects === null) {
+      for (const id of this.allKeys(source)) out.add(id);
+      return;
+    }
+    for (const r of change.rects) {
+      for (const barrier of source.doc.barriersIn([r[0] - READ_REACH, r[1] - READ_REACH, r[2] + READ_REACH, r[3] + READ_REACH])) out.add(barrier.id);
+      for (const id of this.filing.idsMeeting(r)) out.add(id);
+    }
+  }
+
+  compute(id: number, source: BarrierSource): BarrierPlace | undefined {
+    const barrier = source.doc.barriers.get(id as Barrier['id']);
+    if (!barrier || barrier.points.length < 2) return undefined;
+    const parts = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as PartList;
+    placeBarrier(barrier, source.groundAt, parts);
+    const builder = new RunBuilder(this.stores);
     const o = new Object3D();
-    boxes.forEach((b, i) => {
-      // World y is three's -z, as everywhere in the renderer.
-      o.position.set(b.x, b.z + b.height / 2, -b.y);
-      o.rotation.set(0, b.yaw, 0);
-      o.scale.set(b.length, b.height, b.width);
-      o.updateMatrix();
-      mesh.setMatrixAt(i, o.matrix);
+    let boxes = 0;
+    KINDS.forEach((kind, store) => {
+      for (const b of parts[kind]) {
+        // World y is three's -z, as everywhere in the renderer.
+        o.position.set(b.x, b.z + b.height / 2, -b.y);
+        o.rotation.set(0, b.yaw, 0);
+        o.scale.set(b.length, b.height, b.width);
+        o.updateMatrix();
+        builder.add(store, o.matrix.elements, Math.max(b.length, b.height, b.width));
+        boxes++;
+      }
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    group.add(mesh);
-    triangles += boxes.length * 12;
-  };
-  add('barrier-wall', walls, material.wall);
-  add('barrier-coping', copings, material.coping);
-  add('barrier-post', posts, material.post);
-  add('barrier-rail', rails, material.rail);
-  add('barrier-hedge', hedges, material.hedge);
-  add('barrier-guardrail-post', steelPosts, material.guardrailPost);
-  add('barrier-guardrail-beam', beams, material.guardrailBeam);
-  add('barrier-railing-post', railPosts, material.railingPost);
-  add('barrier-railing-bar', railBars, material.railingBar);
+    let box: ChangeRect | null = null;
+    for (const q of barrier.points) box = box ? [Math.min(box[0], q.x), Math.min(box[1], q.y), Math.max(box[2], q.x), Math.max(box[3], q.y)] : [q.x, q.y, q.x, q.y];
+    const b = box!;
+    return { run: builder.build(), box: [b[0] - READ_REACH, b[1] - READ_REACH, b[2] + READ_REACH, b[3] + READ_REACH], boxes };
+  }
+
+  equals(a: BarrierPlace, b: BarrierPlace): boolean {
+    return a.box.every((v, i) => v === b.box[i]) && sameRun(a.run, b.run);
+  }
+
+  changed(id: number, _before: BarrierPlace | undefined, after: BarrierPlace | undefined): void {
+    if (after === undefined) this.filing.remove(id);
+    else this.filing.file(id, after, after.box);
+  }
+}
+
+export function createBarriers(): Barriers {
+  const { unit, material } = PARTS;
+  const names = ['barrier-wall', 'barrier-coping', 'barrier-post', 'barrier-rail', 'barrier-hedge', 'barrier-guardrail-post', 'barrier-guardrail-beam', 'barrier-railing-post', 'barrier-railing-bar'];
+  const mats = [material.wall, material.coping, material.post, material.rail, material.hedge, material.guardrailPost, material.guardrailBeam, material.railingPost, material.railingBar];
+  const stores: RunStore[] = names.map((name, i) => ({ name, geometry: unit, material: mats[i]!, castShadow: true, receiveShadow: true, tinted: false, cards: false }));
+  const runs = createInstanceRuns('barriers', stores, m(4));
+  const product = new Derived(new BarrierProduct(stores));
+  const drawn = new Map<number, BarrierPlace>();
+  let boxes = 0;
   return {
-    group,
-    triangles,
-    // The box and the materials are the module's (`PARTS`): only the instances are this build's.
+    group: runs.group,
+    get triangles() { return boxes * 12; },
+    sync(doc, groundAt) {
+      const source: BarrierSource = { changes: doc.changes, doc, groundAt };
+      const removed: Run[] = [], added: Run[] = [];
+      for (const id of product.refresh(source)) {
+        const was = drawn.get(id);
+        if (was) { removed.push(was.run); boxes -= was.boxes; drawn.delete(id); }
+        const now = product.get(id);
+        if (now) { added.push(now.run); boxes += now.boxes; drawn.set(id, now); }
+      }
+      if (removed.length || added.length) runs.update({ removed, added });
+      return product.work.last;
+    },
+    cull(frustum, view) {
+      runs.cull(frustum, view);
+    },
+    // The box and the materials are the module's (`PARTS`): only the instances are this layer's.
     dispose() {
-      for (const mesh of group.children) (mesh as InstancedMesh).dispose();
-      group.clear();
+      runs.dispose();
+      drawn.clear();
     },
   };
 }
@@ -86,7 +155,7 @@ export function buildBarriers(doc: RoadDoc, groundAt: (x: number, y: number) => 
  * materials and disposed nine, each new one paying its program lookup and its
  * uniforms (CLAUDE.md: "Never create a material inside a rebuild"; as
  * `utilities.ts` `utilityParts` and `transit.ts` `sharedMaterial`).
- * NÃO criar material dentro de `buildBarriers`.
+ * NÃO criar material dentro da camada (`createBarriers`).
  */
 const PARTS = barrierParts();
 function barrierParts(): { unit: BoxGeometry; material: Record<'wall' | 'coping' | 'post' | 'rail' | 'hedge' | 'guardrailPost' | 'guardrailBeam' | 'railingPost' | 'railingBar', Material> } {
@@ -109,8 +178,7 @@ function barrierParts(): { unit: BoxGeometry; material: Record<'wall' | 'coping'
   };
 }
 
-function placeBarrier(barrier: Barrier, groundAt: (x: number, y: number) => number,
-  out: { walls: Box[]; copings: Box[]; posts: Box[]; rails: Box[]; hedges: Box[]; steelPosts: Box[]; beams: Box[]; railPosts: Box[]; railBars: Box[] }): void {
+function placeBarrier(barrier: Barrier, groundAt: (x: number, y: number) => number, out: PartList): void {
   if (barrier.kind === 'guardrail' || barrier.kind === 'railing') {
     placeKerbBarrier(barrier, groundAt, out);
     return;

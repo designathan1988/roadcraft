@@ -87,7 +87,7 @@ import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
-import { buildBarriers, type Barriers } from './barriers';
+import { createBarriers } from './barriers';
 import { buildTrackPreview, buildTransit, createTrackPreview, type TrackPreview, type TransitMeshes } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
@@ -724,8 +724,8 @@ export function createSceneRenderer(
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
   const signs = createSignLayer();
   let polePreviewKey = '';
-  /** Walls, fences and hedges (`barriers.ts`), and the state they were built for. */
-  let barriers: Barriers | null = null;
+  /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
+  const barriers = createBarriers();
   /**
    * The rectangles a run of points stands on, piece by piece, grown by `pad`:
    * a long diagonal wall or track has a box over half the map, and every
@@ -736,16 +736,6 @@ export function createSceneRenderer(
     if (points.length === 1) out.push(rectAround(points, pad)!);
     for (let i = 1; i < points.length; i++) out.push(rectAround([points[i - 1]!, points[i]!], pad)!);
     return out;
-  };
-  /** Where the walls, fences and hedges stand, each piece its own rectangle, by barrier revision. */
-  let barriersAreaFor = -1;
-  let barriersArea: Rect[] = [];
-  const barriersAreaOf = (doc: RoadDoc): Rect[] => {
-    if (barriersAreaFor !== doc.barrierRevision) {
-      barriersAreaFor = doc.barrierRevision;
-      barriersArea = [...doc.barriers.values()].flatMap((b) => piecesOf(b.points, m(1)));
-    }
-    return barriersArea;
   };
   /** Public transport (`transit.ts`), and the state it was built for. */
   let transit: TransitMeshes | null = null;
@@ -1211,7 +1201,6 @@ export function createSceneRenderer(
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
   };
   const onGround = {
-    barriers: new GroundDependant(groundChanges),
     transit: new GroundDependant(groundChanges),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
@@ -2772,15 +2761,13 @@ export function createSceneRenderer(
         requestIdleCallback(() => { void loadEffects(); }, { timeout: 5000 });
       }
       // Walls, fences and hedges: on their own revision, and on the ground under each piece of them.
-      if (groundSettled && onGround.barriers.stale(String(net.doc.barrierRevision), barriersAreaOf(net.doc))) {
-        if (barriers) {
-          builtTriangles -= barriers.triangles;
-          world.remove(barriers.group);
-          barriers.dispose();
-        }
-        barriers = buildBarriers(net.doc, terrain.renderedHeightAt);
-        world.add(barriers.group);
-        builtTriangles += barriers.triangles;
+      // Only the barriers the diary says changed, or whose ground moved (`barriers.ts`). DO NOT build every
+      // barrier of the map again on its revision or on a change of the ground under any one of them.
+      if (groundSettled) {
+        if (!barriers.group.parent) world.add(barriers.group);
+        const before = barriers.triangles;
+        barriers.sync(net.doc, terrain.renderedHeightAt);
+        builtTriangles += barriers.triangles - before;
       }
       // Public transport: tracks, stations, stops (`transit.ts`), on its own revision.
       if (groundSettled && onGround.transit.stale(String(net.doc.transitRevision), transitAreaOf(net.doc))) {
@@ -3172,6 +3159,7 @@ export function createSceneRenderer(
       // Plants and street furniture outside the view are not drawn at all.
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
+      barriers.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
       transit?.update(sim.city.transit.trains(), terrain.renderedHeightAt);
       agents.sync(sim, alpha, detailed, rig.viewport.zoom, {
@@ -3504,7 +3492,7 @@ export function createSceneRenderer(
       fx?.dispose();
       exhaust.dispose();
       wear.dispose();
-      barriers?.dispose();
+      barriers.dispose();
       transit?.dispose();
       transitPreview?.dispose();
       polePreview?.dispose();

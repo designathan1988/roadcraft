@@ -55,7 +55,7 @@ const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.
 /** The lots' traffic's own state, read for the oracle. */
 interface LotsInside {
   cars: Map<number, { bay: Bay; body: Vehicle | null }>;
-  bays: Bay[];
+  bays: Map<string, Bay>;
   freeBays(w: SimWorld): Bay[];
   sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[];
 }
@@ -99,11 +99,11 @@ describe('the cars standing in bays, asked by the lots', () => {
       const taken = new Set<string>();
       for (const car of parked) if (car.free) taken.add(bayKey(car.free));
       for (const car of lots.cars.values()) taken.add(bayKey(car.bay));
-      const oldFree = lots.bays.filter((b) => !taken.has(bayKey(b)));
+      const oldFree = [...lots.bays.values()].filter((b) => !taken.has(bayKey(b)));
       expect(lots.freeBays(w)).toEqual(oldFree);
       freeSeen += oldFree.length;
       // The scenery's cars in gated bays: the old walk over every parked car (the oracle).
-      const byKey = new Map(lots.bays.map((b) => [bayKey(b), b] as const));
+      const byKey = new Map([...lots.bays.values()].map((b) => [bayKey(b), b] as const));
       const oldPool: { bay: Bay; body: Vehicle }[] = [];
       for (const body of parked) {
         if (!body.free || lots.cars.has(body.id)) continue;
@@ -112,7 +112,7 @@ describe('the cars standing in bays, asked by the lots', () => {
       }
       // In the order of the bays (the list of parked cars keeps none: a car
       // taken out of it leaves its place to the last, `AmbientWorld.removeParked`).
-      const rank = new Map(lots.bays.map((bay, i) => [bay, i] as const));
+      const rank = new Map([...lots.bays.values()].map((bay, i) => [bay, i] as const));
       oldPool.sort((p, q) => rank.get(p.bay)! - rank.get(q.bay)!);
       expect(lots.sceneryInBays(w)).toEqual(oldPool);
       sceneryPooled += oldPool.length;
