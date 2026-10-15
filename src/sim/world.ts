@@ -28,7 +28,7 @@ import type { PedestrianEngine } from './people/engine';
 import { City } from './city/city';
 import { AmbientWorld } from './ambient/ambient';
 import { buildWalkways, walkwaySteps, type WalkGraph } from '@world/walkways';
-import { mainRoadLegs } from '@world/roads/rules';
+import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
 import { type AutoControl, ControlAdvisor } from './roads/controlAdvisor';
 import { rebuildWork } from '@world/rebuildWork';
@@ -1030,13 +1030,13 @@ export class SimWorld {
    * there, so their speeds and the movements' conflicts with them) - whether
    * it is signalised, its crossings and the player's settings.
    */
-  private planInputsOf(junction: JunctionTopology, crossings: readonly CrossingId[], settings: unknown): PlanInputs {
+  private planInputsOf(junction: JunctionTopology, crossings: readonly CrossingId[], settings: SignalSettings | undefined): PlanInputs {
     return {
       groups: junction.groups,
       connectors: junction.connectors.map((id) => this.graph.connectors.get(id)),
       signalised: junction.signalised,
       crossings: crossings.join(','),
-      settings: settings === undefined ? '' : JSON.stringify(settings),
+      settings: settingsKey(settings),
     };
   }
 
@@ -1159,6 +1159,12 @@ interface PlanInputs {
   readonly signalised: boolean;
   readonly crossings: string;
   readonly settings: string;
+}
+
+/** The player's settings of a signal as one string, field by field (`SignalSettings`). */
+function settingsKey(s: SignalSettings | undefined): string {
+  if (!s) return '';
+  return `${s.mode ?? '-'}|${s.greens?.join(',') ?? '-'}|${s.offset ?? '-'}|${s.busPriority ? 1 : 0}`;
 }
 
 function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
