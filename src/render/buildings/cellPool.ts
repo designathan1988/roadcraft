@@ -24,7 +24,12 @@ export interface CellEnv {
   readonly pavedAt?: PavedAt;
 }
 
-interface Running { readonly job: CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
+/**
+ * A job asked for. Its message is written when it is handed to a worker (`job()`), not when asked:
+ * DO NOT write each record's text into a job waiting its turn - a town's masses asked at its opening
+ * held every building's JSON text while they waited (109 MB of a 2 560 m city's live heap, 2026-10-15).
+ */
+interface Running { readonly id: number; readonly job: () => CellJob; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
 
 /** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
 interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; readonly queue: Running[] }
@@ -51,8 +56,8 @@ export class CellPool {
   private readonly abandoned = new Set<number>();
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
-  /** `text`: an entry's record as text, for the job's message (the page keeps none). */
-  constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => string, private readonly workers = true,
+  /** `text`: an entry's record, taken when asked, written as text for the job's message when it is sent (the page keeps none). */
+  constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => () => string, private readonly workers = true,
     private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
   /** Jobs handed out or waiting their turn, not done yet. */
@@ -68,17 +73,20 @@ export class CellPool {
    * The id it returns cancels it.
    */
   run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void): number {
-    // Each record's text written for this job's message alone (`CellJobEntry`).
-    const job: CellJob = { id: this.nextId++, kind, cell, entries: entries.map((e) => ({ ...e, record: this.text(e) })), paved: env.pavedAt !== undefined };
+    // Each record taken now and written as text for this job's message alone, when it is sent (`CellJobEntry`).
+    const id = this.nextId++;
+    const writers = entries.map((e) => this.text(e));
+    const paved = env.pavedAt !== undefined;
+    const job = (): CellJob => ({ id, kind, cell, entries: entries.map((e, i) => ({ ...e, record: writers[i]!() })), paved });
     const lanes = this.start();
     const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
     const rank = entries.some((e) => e.key.includes('|')) ? -1 : PRIORITY[kind];
-    const running: Running = { job, env, done, lane, rank };
-    if (!lane) { this.onPage(running); return job.id; }
+    const running: Running = { id, job, env, done, lane, rank };
+    if (!lane) { this.onPage(running); return id; }
     lane.queue.push(running);
     this.pump(lane);
-    return job.id;
+    return id;
   }
 
   /**
@@ -91,8 +99,8 @@ export class CellPool {
       let at = 0;
       for (let i = 1; i < lane.queue.length && lane.queue[at]!.rank > -1; i++) if (lane.queue[i]!.rank < lane.queue[at]!.rank) at = i;
       const next = lane.queue.splice(at, 1)[0]!;
-      lane.jobs.set(next.job.id, next);
-      lane.worker.postMessage({ type: 'start', job: next.job });
+      lane.jobs.set(next.id, next);
+      lane.worker.postMessage({ type: 'start', job: next.job() });
     }
   }
 
@@ -111,7 +119,7 @@ export class CellPool {
    */
   cancel(id: number): void {
     for (const lane of this.lanes ?? []) {
-      const waiting = lane.queue.findIndex((r) => r.job.id === id);
+      const waiting = lane.queue.findIndex((r) => r.id === id);
       if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
       if (lane.jobs.delete(id)) {
         this.abandoned.delete(id);
@@ -132,7 +140,7 @@ export class CellPool {
 
   /** Whether a job is still waiting or being worked on (one done on the page never is). */
   isRunning(id: number): boolean {
-    return (this.lanes ?? []).some((lane) => lane.jobs.has(id) || lane.queue.some((r) => r.job.id === id));
+    return (this.lanes ?? []).some((lane) => lane.jobs.has(id) || lane.queue.some((r) => r.id === id));
   }
 
   dispose(): void {
@@ -145,7 +153,7 @@ export class CellPool {
   private onPage(running: Running): void {
     this.local ??= new CellWork(this.boxes(), this.tone);
     const work = this.local;
-    let reply = work.start(running.job);
+    let reply = work.start(running.job());
     while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
     this.finish(running, reply.result);
   }
