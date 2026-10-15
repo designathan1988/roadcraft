@@ -77,7 +77,7 @@ import { buildStructureDetails, structureRibbons, type StructureDetails } from '
 import { createExhaust } from './exhaust';
 import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
-import { buildSigns, type SignLayer } from './signs';
+import { createSignLayer } from './signLayer';
 import { RevealGate } from './revealGate';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
@@ -713,8 +713,8 @@ export function createSceneRenderer(
     onAssetsReady();
   });
   let polePreview: Utilities | null = null;
-  /** Placed signs and street name plates (`signs.ts`), on `doc.utilityRevision` with the furniture. */
-  let signs: SignLayer | null = null;
+  /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
+  const signs = createSignLayer();
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), and the state they were built for. */
   let barriers: Barriers | null = null;
@@ -1539,14 +1539,6 @@ export function createSceneRenderer(
     performance.measure('hitch:utilities/poles', { start: at, end: performance.now() });
   };
 
-  /**
-   * What the signs were last made from: the roads (their names and their
-   * junctions), the landscaping (the placed signs) and the land (what they
-   * stand on). Below it they are put together again - a furniture rebuild the
-   * growing hour started rebuilt them too, and building them walks every
-   * ribbon of the map for every street name it draws (`signs.ts` `streetChain`).
-   */
-  let signsFor = '';
   /** The city's clock, read each frame: the planted trees and shrubs grow with it (`plantGrowth`). */
   let cityMinutes = Number.NaN;
   /**
@@ -1564,13 +1556,10 @@ export function createSceneRenderer(
     furniture.sync(net, elevation, terrain.renderedHeightAt, cityMinutes);
     builtTriangles += furniture.triangles - before;
     performance.measure('hitch:furniture', { start: at, end: performance.now() });
-    const signsKey = `${net.doc.changes.serialOf('roads', 'terrain', 'landscape')}`;
-    if (signsKey !== signsFor || !signs) {
-      signsFor = signsKey;
-      if (signs) { world.remove(signs.group); signs.dispose(); }
-      signs = buildSigns(net, elevation, net.doc.landscape.values());
-      world.add(signs.group);
-    }
+    // Only the signs whose ground a change reached (`signLayer.ts`). DO NOT build every sign of the
+    // map again on a serial of the roads, the land or the landscaping: every edit anywhere did.
+    if (!signs.group.parent) world.add(signs.group);
+    signs.sync(net, elevation);
   };
   /** Whether a change in `blocks` (`null`: everywhere) reaches any of these boxes. */
   const blocksReach = (blocks: readonly (readonly [number, number, number, number])[] | null,
@@ -3164,6 +3153,7 @@ export function createSceneRenderer(
       cssHalfH = renderer.domElement.clientHeight * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
       furniture.cull(crowdFrustum, crowdProjection);
+      signs.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
       transit?.update(sim.city.transit.trains(), terrain.renderedHeightAt);
       agents.sync(sim, alpha, detailed, rig.viewport.zoom, {
@@ -3501,7 +3491,7 @@ export function createSceneRenderer(
       transitPreview?.dispose();
       polePreview?.dispose();
       utilities?.dispose();
-      signs?.dispose();
+      signs.dispose();
       for (const flash of gridFlashes) flash.mesh.geometry.dispose();
       agents.dispose();
       signals.dispose();
