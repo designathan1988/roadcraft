@@ -1,4 +1,5 @@
 import type { Vec2 } from '@core/vec2';
+import { Heap } from '@core/heap';
 import type { SegmentId } from './ids';
 import { m } from './units';
 
@@ -186,20 +187,33 @@ export function railGraph(t: TransitData, mode: 'train' | 'metro'): RailGraph {
   const points: Vec2[] = [];
   const edges: RailEdge[] = [];
   const at = new Map<number, number[]>();
+  // The points by cell of `JOIN`: a point within `JOIN` of another is in its
+  // cell or one beside it. DO NOT search every point for each point: a city's
+  // rails were points² for every line built.
+  const cells = new Map<number, number[]>();
+  const cellOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768);
   const node = (p: Vec2): number => {
-    for (let i = 0; i < points.length; i++) {
-      if (Math.hypot(points[i]!.x - p.x, points[i]!.y - p.y) < JOIN) return i;
+    const ci = Math.floor(p.x / JOIN), cj = Math.floor(p.y / JOIN);
+    // The first point (lowest index) within reach, as the search of every point found.
+    let found = -1;
+    for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) {
+      for (const k of cells.get(cellOf(i, j)) ?? []) {
+        if ((found < 0 || k < found) && Math.hypot(points[k]!.x - p.x, points[k]!.y - p.y) < JOIN) found = k;
+      }
     }
+    if (found >= 0) return found;
     points.push({ x: p.x, y: p.y });
-    return points.length - 1;
+    const k = points.length - 1, key = cellOf(ci, cj);
+    const list = cells.get(key);
+    if (list) list.push(k); else cells.set(key, [k]);
+    return k;
   };
   const link = (a: number, b: number): void => {
     if (a === b) return;
     const e = edges.length;
     const pa = points[a]!, pb = points[b]!;
     edges.push({ a, b, length: Math.hypot(pa.x - pb.x, pa.y - pb.y) });
-    at.set(a, [...(at.get(a) ?? []), e]);
-    at.set(b, [...(at.get(b) ?? []), e]);
+    for (const end of [a, b]) { const list = at.get(end); if (list) list.push(e); else at.set(end, [e]); }
   };
   for (const track of t.tracks) {
     if (track.mode !== mode) continue;
@@ -258,15 +272,21 @@ export function railPath(g: RailGraph, from: Vec2, to: Vec2): Vec2[] | null {
   const se = g.edges[s.e]!;
   dist[se.a] = se.length * s.u;
   dist[se.b] = se.length * (1 - s.u);
-  for (;;) {
-    let k = -1;
-    for (let i = 0; i < n; i++) if (!done[i] && dist[i]! < Infinity && (k < 0 || dist[i]! < dist[k]!)) k = i;
-    if (k < 0) break;
+  // The nearest point not settled from a binary heap (stale entries skipped).
+  // DO NOT scan every point for the nearest at each step: points² per stretch
+  // of every line.
+  const queue = new Heap();
+  queue.push(se.a, dist[se.a]!);
+  queue.push(se.b, dist[se.b]!);
+  while (queue.size) {
+    const key = queue.peekKey();
+    const k = queue.pop();
+    if (done[k] || key > dist[k]!) continue;
     done[k] = 1;
     for (const ei of g.at.get(k) ?? []) {
       const e = g.edges[ei]!;
       const o = e.a === k ? e.b : e.a;
-      if (dist[k]! + e.length < dist[o]!) { dist[o] = dist[k]! + e.length; prev[o] = k; }
+      if (dist[k]! + e.length < dist[o]!) { dist[o] = dist[k]! + e.length; prev[o] = k; queue.push(o, dist[o]!); }
     }
   }
   const te = g.edges[t.e]!;
