@@ -1,4 +1,4 @@
-import type { BufferAttribute, BufferGeometry, InstancedMesh, InterleavedBuffer, Material, Mesh, Object3D, Texture } from 'three';
+import type { BufferAttribute, BufferGeometry, InstancedMesh, InterleavedBuffer, Material, Object3D, Texture } from 'three';
 
 /**
  * THE INVENTORY OF EVERYTHING THE SCENE HOLDS: each layer of the world and each
@@ -16,7 +16,7 @@ import type { BufferAttribute, BufferGeometry, InstancedMesh, InterleavedBuffer,
  */
 
 /** One row: a kind of mesh in a layer. */
-export interface InventoryRow {
+interface InventoryRow {
   /** The layer (the scene's child the mesh hangs under, then its child: `world / road-network`). */
   readonly layer: string;
   /** The kind of mesh, its name without the tile or hash suffix. */
@@ -39,7 +39,7 @@ export interface InventoryRow {
 }
 
 /** A figure that says a row is out of proportion. */
-export interface InventoryFlag {
+interface InventoryFlag {
   readonly row: InventoryRow;
   readonly what: string;
 }
@@ -62,7 +62,7 @@ function kindOf(name: string, fallback: string): string {
 const MB = 1_000_000;
 
 /** The thresholds of the flags: a figure past one is where to look first. */
-export const FLAGS = {
+const FLAGS = {
   /** A mesh of one layer holding more than this share of the scene's geometry. */
   dominantShare: 0.2,
   /** Bytes a vertex: position, normal, uv, colour and section are 56; more is padding or extra attributes. */
@@ -192,9 +192,4 @@ export function formatInventory(inventory: Inventory, top = 40): string {
     for (const f of inventory.flags) lines.push(`  ${f.row.layer} / ${f.row.kind}: ${f.what}`);
   }
   return lines.join('\n');
-}
-
-/** Typed shorthand for callers holding a mesh: a mesh's own vertex count. */
-export function vertexCount(mesh: Mesh): number {
-  return mesh.geometry.getAttribute('position')?.count ?? 0;
 }

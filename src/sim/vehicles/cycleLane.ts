@@ -14,7 +14,7 @@ import type { Vehicle } from './state';
  */
 
 /** Distance at each end of a link over which a bicycle eases into and out of the cycle lane. */
-export const CYCLE_EASE = m(8);
+const CYCLE_EASE = m(8);
 
 const isBicycle = (v: Vehicle): boolean => v.archetype.shape === 'bicycle';
 

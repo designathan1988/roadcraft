@@ -40,7 +40,7 @@ const AWAKE_BY_HOUR = [
   0.964, 0.959, 0.958, 0.961, 0.964, 0.97, 0.975, 0.973, 0.95, 0.855, 0.628, 0.349,
 ];
 /** The awake share at a clock time (hours), between the survey's hourly figures. */
-export function awakeShare(hour: number): number {
+function awakeShare(hour: number): number {
   const h = ((hour % 24) + 24) % 24;
   const i = Math.floor(h);
   const a = AWAKE_BY_HOUR[i] as number;
@@ -363,7 +363,7 @@ function glassRailGeometry(): BufferGeometry {
  * One instance a bay, scaled to it: the fins drawn one by one were thirty
  * thousand instances in a city.
  */
-export const BRISE_FINS = 6;
+const BRISE_FINS = 6;
 function briseGeometry(): BufferGeometry {
   const t = 0.035;
   const parts: BufferGeometry[] = [];

@@ -1,4 +1,3 @@
-import { CITIZEN_MODELS } from './citizenCatalog';
 import { wornBy } from '@people/wardrobe';
 import { makeRoster } from '@people/roster';
 import type { PersonSpec } from '@people/spec';
@@ -34,8 +33,8 @@ import { m } from '@world/units';
  * stands only with itself, so a party dressed so is dressed so throughout.
  */
 export type Wardrobe = 'casual' | 'smart-casual' | 'business' | 'sport-casual' | 'traditional';
-export type AgeBand = 'child' | 'young' | 'adult' | 'senior';
-export type Sex = 'f' | 'm';
+type AgeBand = 'child' | 'young' | 'adult' | 'senior';
+type Sex = 'f' | 'm';
 
 export interface CitizenModel {
   readonly id: string;
@@ -50,37 +49,6 @@ export interface CitizenModel {
   readonly person?: PersonSpec;
   /** False for a body that cannot reach a two-wheeler's controls. */
   readonly rides?: boolean;
-}
-
-const WARDROBES: readonly Wardrobe[] = ['casual', 'smart-casual', 'business', 'sport-casual', 'traditional'];
-const AGE_BANDS: readonly AgeBand[] = ['child', 'young', 'adult', 'senior'];
-
-interface ManifestEntry {
-  readonly id?: unknown;
-  readonly allowedInCrowd?: unknown;
-  readonly wardrobe?: unknown;
-  readonly ageBand?: unknown;
-  readonly gender?: unknown;
-  readonly quality?: unknown;
-}
-
-/**
- * The whitelist: entries whose every tag is present and valid, allowed in the
- * crowd, of good quality, and with an asset in the catalog. Anything else is
- * left out - including a model the manifest does not mention at all.
- */
-export function whitelist(entries: readonly ManifestEntry[], available: readonly string[] = CITIZEN_MODELS): CitizenModel[] {
-  const have = new Set(available);
-  const out: CitizenModel[] = [];
-  for (const e of entries) {
-    if (typeof e.id !== 'string' || !have.has(e.id)) continue;
-    if (e.allowedInCrowd !== true || e.quality !== 'ok') continue;
-    if (!WARDROBES.includes(e.wardrobe as Wardrobe)) continue;
-    if (!AGE_BANDS.includes(e.ageBand as AgeBand)) continue;
-    if (e.gender !== 'f' && e.gender !== 'm') continue;
-    out.push({ id: e.id, wardrobe: e.wardrobe as Wardrobe, ageBand: e.ageBand as AgeBand, gender: e.gender });
-  }
-  return out;
 }
 
 /**
@@ -141,7 +109,7 @@ export function compatible(a: Wardrobe, b: Wardrobe): boolean {
 /** A group's dress code: the wardrobes its members are drawn from, all pairwise compatible. */
 export type DressCode = readonly Wardrobe[];
 
-export const CODES = {
+const CODES = {
   everyday: ['casual', 'smart-casual'],
   sporty: ['casual', 'sport-casual'],
   office: ['business', 'smart-casual'],
@@ -161,7 +129,7 @@ export type Company = 'solo' | 'family' | 'couple' | 'friends' | 'colleagues' | 
  * code that has no body for one of the members is skipped for the next;
  * `office` is never offered to a party with a child in it.
  */
-export function codesFor(company: Company, hash: number, hasChild: boolean): DressCode[] {
+function codesFor(company: Company, hash: number, hasChild: boolean): DressCode[] {
   const rotate = (list: DressCode[]): DressCode[] => {
     const k = hash % list.length;
     return [...list.slice(k), ...list.slice(0, k)];
@@ -219,7 +187,7 @@ export interface Casting {
 }
 
 /** No two people within this distance (25 m) wear the same body, if the roster allows. */
-export const CAST_NEAR = m(25);
+const CAST_NEAR = m(25);
 
 const hashOf = (n: number): number => {
   let h = (n | 0) + 0x7f4a7c15;

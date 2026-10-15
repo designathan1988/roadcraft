@@ -22,7 +22,7 @@ import {
 } from './junctionBuild';
 import { WAITING, answered } from './waiting';
 
-export { classifyTurn, connectorId, type TurnKind } from './junctionBuild';
+export { classifyTurn,  type TurnKind } from './junctionBuild';
 
 export type LaneletId = string;
 export type ConnectorId = string;

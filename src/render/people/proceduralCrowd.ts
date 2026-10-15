@@ -33,7 +33,7 @@ import {
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
 
-export { SHAPES, classBase, type AgeBand } from './proceduralBake';
+;
 
 /**
  * Procedural people (`people-lab.html`, then the game): one MakeHuman body
@@ -115,7 +115,7 @@ const COVER_WIDTH = 4096;
 /** How far skin under a garment sinks, metres. */
 const SINK = 0.025;
 
-export function bandOf(years: number): AgeBand {
+function bandOf(years: number): AgeBand {
   return years < 14 ? 'child' : years < 32 ? 'young' : years < 58 ? 'adult' : 'senior';
 }
 
@@ -262,7 +262,7 @@ export interface ProceduralPerson {
   pixels?: number | undefined;
 }
 
-export interface ProceduralStats {
+interface ProceduralStats {
   readonly classes: number;
   readonly people: number;
   readonly pieces: number;
@@ -303,7 +303,7 @@ function plainTexture(): DataTexture {
  * their reference vertices and scale axes, so an outfit sits on a child body
  * as on an adult one.
  */
-export function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
+function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
   const look = spec.look;
   const female = spec.body.gender < 0.5;
   const h = Math.abs(spec.id * 2654435761) >>> 0;

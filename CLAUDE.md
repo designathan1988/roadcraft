@@ -244,7 +244,10 @@ is hidden every frame (no overdraw).
 - Loading validates with the document's own predicates (`persistence.ts`).
 
 ## Third-party assets
-- Trees: Kenney Nature Kit 2.1 (kenney.nl/assets/nature-kit), CC0 1.0, in `public/models/nature/`
-  (used by `src/render/natureTrees.ts`).
-- People: MakeHuman (CC0) and Microsoft Rocketbox animations (MIT); their license texts ship next to
-  the assets (`public/models/people/`, `public/models/citizens/`, `src/render/motion/`) and must stay.
+- Trees are procedural (`render/lowPolyTrees.ts`); only their proportions follow Kenney's Nature Kit.
+- People: MakeHuman base and community items (`public/models/people/`, each item's licence in
+  `proxies/community.json`; CC-BY items credited in the About panel), Microsoft Rocketbox (MIT) and
+  Quaternius animations (CC0). The licence texts in `public/models/people/` and
+  `public/models/citizens/` ship with the game (`render/citizenAssets.ts` shows them) and must stay.
+- The people catalogue offers every community item (`people/wardrobe.ts` `itemsOf`), so all of
+  `public/models/people/proxies` is in use, not only the street selection.

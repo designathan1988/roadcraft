@@ -32,7 +32,7 @@ const SOLID: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'shrub', 'bin', 'lamp', 'bollard', 'parking',
 ]);
 /** What a person cannot walk through on a lot: a car's list less the stairs and ramps, and the flower beds. */
-export const PEOPLE_SOLID: ReadonlySet<ElementKind> = new Set<ElementKind>([
+const PEOPLE_SOLID: ReadonlySet<ElementKind> = new Set<ElementKind>([
   'pillar', 'wall', 'fence', 'tree', 'bench', 'planter', 'railing', 'rocks', 'clock', 'hedge',
   'shrub', 'bin', 'lamp', 'bollard', 'parking', 'flowers',
 ]);

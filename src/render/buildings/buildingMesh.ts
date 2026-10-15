@@ -98,7 +98,7 @@ import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
 import type { FlagInstance } from './flagLayer';
 import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, ShellChunk } from './chunk';
-export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, ShellChunk } from './chunk';
+export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './chunk';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
 

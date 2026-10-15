@@ -18,7 +18,7 @@ export interface Gradient {
 }
 
 /** Steepest gradient a body is sheared to; beyond it the ground is a step, not a slope. */
-export const MAX_SHEAR_GRADIENT = 0.3;
+const MAX_SHEAR_GRADIENT = 0.3;
 
 /** The ground's gradient at a point, from two forward differences off the height already known there. */
 export function groundGradient(heightAt: (x: number, y: number) => number, x: number, y: number, h: number,

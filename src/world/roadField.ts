@@ -68,7 +68,7 @@ export interface FieldProfile {
   readonly bbox: Aabb;
 }
 
-export interface RoadSample {
+interface RoadSample {
   /** Distance along the nearest road, in world units. */
   readonly along: number;
   /** Signed offset across it. */

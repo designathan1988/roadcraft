@@ -6,11 +6,11 @@ import {
 } from 'three';
 
 import type { MultiPoly } from '@core/clipper';
-import { surfaceShape, type TileRect } from './tileShape';
-import { type Context, type TileMeshOptions, meshPiece, meshSkirts, meshTileShape, smoothTopNormals, streams, type Tile } from './tileMesh';
+import { surfaceShape } from './tileShape';
+import { type Context, type TileMeshOptions, meshPiece, meshSkirts, smoothTopNormals, streams } from './tileMesh';
 
-export { clipToRect, type TileRect } from './tileShape';
-export { meshTileShape, type HeightFn, type Tile, type TileMeshOptions, type TintFn, type UvFn, type UvFrameFn } from './tileMesh';
+export {  type TileRect } from './tileShape';
+export { meshTileShape,  type Tile,     } from './tileMesh';
 
 /**
  * Turns a clipped surface band into a solid, watertight mesh.
@@ -81,15 +81,6 @@ export function finish(geometry: BufferGeometry,
   mesh.castShadow = options.castShadow ?? false;
   mesh.receiveShadow = options.receiveShadow ?? true;
   return mesh;
-}
-
-/**
- * Builds one tile of a surface: the top faces of `options.polygons` (already
- * cut to `rect`), and the skirts along every edge of their outline except the
- * edges the cut itself made, which are interior to the whole surface.
- */
-export function meshTile(options: SurfaceMeshOptions, rect: TileRect): Tile {
-  return meshTileShape(surfaceShape(options.polygons, options.maxEdge, options.bottom !== undefined, rect), options);
 }
 
 export function disposeMesh(mesh: Mesh): void {

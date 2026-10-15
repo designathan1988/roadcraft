@@ -100,7 +100,7 @@ export async function readDerivedAll<T>(prefix: string): Promise<Map<string, T>>
  * value or hand its buffers to another thread. A write that fails is made
  * again next time.
  */
-export async function keepDerived(key: string, value: unknown): Promise<void> {
+async function keepDerived(key: string, value: unknown): Promise<void> {
   const db = await database();
   if (!db) return;
   try {

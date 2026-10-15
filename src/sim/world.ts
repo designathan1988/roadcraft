@@ -1343,7 +1343,7 @@ function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
  * by halving, and one taken out leaves its place. The list handed out is
  * shared until the next change, which copies it first (copy on write).
  */
-export class VersionedMap<K extends number, V> extends Map<K, V> {
+class VersionedMap<K extends number, V> extends Map<K, V> {
   version = 0;
   private orderedKeys: K[] = [];
   private ordered: V[] = [];

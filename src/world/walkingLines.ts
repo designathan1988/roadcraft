@@ -269,7 +269,7 @@ function inRing(p: Vec2, r: PavingRing): boolean {
 }
 
 /** Points along a polyline at `count + 1` evenly spaced shares of its length. */
-export function resample(points: readonly Vec2[], count: number): Vec2[] {
+function resample(points: readonly Vec2[], count: number): Vec2[] {
   const line = Polyline.fromPoints(points.filter((p, q) => q === 0 || Math.hypot(p.x - points[q - 1]!.x, p.y - points[q - 1]!.y) > 1e-9));
   const out: Vec2[] = [];
   for (let q = 0; q <= count; q++) out.push(line.sampleAt((line.length * q) / count).p);
@@ -284,7 +284,7 @@ const STRETCH_REACH = m(0.8);
  * point nearest `to`, going the way that passes none of `avoid` (the other
  * footway ends at the junction). Null when the two ends are not on one line.
  */
-export function stretch(lines: readonly Polyline[], from: Vec2, to: Vec2, avoid: readonly Vec2[]): Vec2[] | null {
+function stretch(lines: readonly Polyline[], from: Vec2, to: Vec2, avoid: readonly Vec2[]): Vec2[] | null {
   let line: Polyline | null = null, best = Infinity;
   for (const l of lines) {
     // A line whose box is no nearer the two ends than the best found, or than

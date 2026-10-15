@@ -34,7 +34,7 @@ interface Lane {
 }
 
 /** Longest a worker with tiles waiting may stay silent (it reports every 500 ms while it works). */
-export const SILENCE_MS = 10_000;
+const SILENCE_MS = 10_000;
 /** Most workers the pool opens. */
 const MOST_LANES = 4;
 

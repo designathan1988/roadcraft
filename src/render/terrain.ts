@@ -112,7 +112,7 @@ const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
  * Where the grass field stands this frame (`grassField.ts`): world x, y, how
  * far it reaches, and 1 when it is drawn. The ground shades itself under it.
  */
-export const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
+const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
 /**
  * The universal grid drawn by the ground itself (`SceneHandle.setGrid`): the
  * cell (world units), the strength (0: off) and the map's half size. Part of
@@ -126,7 +126,7 @@ export const TERRAIN_GRID: { value: [number, number, number] } = { value: [m(10)
  * to 1 (the height of the drought: the savanna's grass straw-gold). Shared
  * by the ground and the grass; the seasons set it.
  */
-export const SEASON_DRY: { value: number } = { value: 0.4 };
+const SEASON_DRY: { value: number } = { value: 0.4 };
 
 /**
  * What the surface reads of the document: one plate's share of it, in the
@@ -592,7 +592,7 @@ function streakNoise(noise: (x: number, y: number, period: number) => number, u:
 // (postprocess.ts GRADE) push a yellow-green further, and at 0.40 0.49 0.20
 // the lawn read as neon from the map's zoom (the player, 2026-10-09: "verde
 // muito neon"). Lower chroma (lit green over blue 1.9x, was 2.45x), a touch darker.
-export const GRASS_TONES = {
+const GRASS_TONES = {
   dark: [0.27, 0.34, 0.19],
   lit: [0.33, 0.4, 0.21],
   dry: [0.41, 0.4, 0.28],
@@ -3487,7 +3487,7 @@ export function unifiedWaterGeometry(
 }
 
 /** One point of a river's course: where, how wide its water each side, at what level. */
-export interface RiverPoint {
+interface RiverPoint {
   readonly x: number;
   readonly y: number;
   readonly half: number;
@@ -3512,7 +3512,7 @@ const RIBBON_ACROSS = 6;
  * ground hides it, so the shore is where the ground meets the water, with no
  * grid in it.
  */
-export function riverRibbon(path: RiverPath, groundAt: (x: number, y: number) => number, positions: number[], depths: number[], flows?: number[]): void {
+function riverRibbon(path: RiverPath, groundAt: (x: number, y: number) => number, positions: number[], depths: number[], flows?: number[]): void {
   if (path.length < 2) return;
   // Downstream: from the higher end (the order the falls are read in).
   const n = path.length;

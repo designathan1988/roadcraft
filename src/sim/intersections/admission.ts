@@ -1281,7 +1281,7 @@ function mainRoadRank(w: SimWorld, junction: JunctionTopology): number {
  * keeps a minor road alive against a busy major one — but it is bounded and
  * floored, so it can never fall below a physically safe gap.
  */
-export function hasAcceptableGap(w: SimWorld, r: Request): boolean {
+function hasAcceptableGap(w: SimWorld, r: Request): boolean {
   const need = clearTime(w, r);
   const impatience = Math.min(IMPATIENCE_MAX, IMPATIENCE_RATE * r.v.waited);
   // The critical gap is the driver's, not the movement's. Two cars waiting to
@@ -1396,7 +1396,7 @@ function stoppedForWalker(v: Vehicle, toLine: number): boolean {
  * this movement drives over (`CrossingSpans`). Somebody on the far half of the
  * crossing, or who has already passed the vehicle's path, is no reason to wait.
  */
-export function crossingBusy(w: SimWorld, conn: Connector): boolean {
+function crossingBusy(w: SimWorld, conn: Connector): boolean {
   for (const segment of w.doc.node(conn.node)?.incident ?? []) {
     if (pedestrianInSpan(w, conn.id, `${conn.node}:${segment}`)) return true;
   }

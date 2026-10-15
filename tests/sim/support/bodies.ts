@@ -40,7 +40,7 @@ export interface Body {
  * 0.1 u is 4 cm: two bodies touching paint to paint are not a collision, and a
  * floating-point sliver at a bumper is not one either.
  */
-export const BODY_TOLERANCE = 0.1 * U;
+const BODY_TOLERANCE = 0.1 * U;
 
 export function bodyOf(w: SimWorld, v: Vehicle): Body | null {
   const pose = vehiclePose(w, v, 1);
@@ -121,7 +121,7 @@ export function collisions(w: SimWorld): Collision[] {
 }
 
 /** Why two bodies are allowed to be near each other at all, as a label. */
-export function categorise(w: SimWorld, a: Vehicle, b: Vehicle): string {
+function categorise(w: SimWorld, a: Vehicle, b: Vehicle): string {
   const la = w.lanelet(a.lanelet);
   const lb = w.lanelet(b.lanelet);
   if (Math.abs(a.lateral) > 0.02 * U || Math.abs(b.lateral) > 0.02 * U) return 'lane-change';

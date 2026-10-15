@@ -39,12 +39,12 @@ export const SIM_FRAME_BUDGET_MS = 8;
  * vehicle is steered more gently still: the curve is never shorter than a few
  * of its own lengths, or a truck would pivot across the line like a car.
  */
-export const LANE_CHANGE_HEADING_SLOW = 0.42;
-export const LANE_CHANGE_HEADING_FAST = 0.1;
+const LANE_CHANGE_HEADING_SLOW = 0.42;
+const LANE_CHANGE_HEADING_FAST = 0.1;
 /** Speed at which the shallow heading is reached, world units a second. */
-export const LANE_CHANGE_FAST_SPEED = kmh(45);
+const LANE_CHANGE_FAST_SPEED = kmh(45);
 /** Never quicker than this at any speed, seconds. */
-export const LANE_CHANGE_MIN_TIME = 2;
+const LANE_CHANGE_MIN_TIME = 2;
 /** Shortest curve, in body lengths of the vehicle driving it. */
 const LANE_CHANGE_MIN_BODIES = 2.5;
 /** Peak slope of the quintic profile, as a multiple of its mean slope. */
@@ -75,7 +75,7 @@ export function laneChangeSlope(start: number, travelled: number, length: number
 /** Bumper-to-bumper spacing at a standstill. */
 export const JAM_GAP = m(2);
 /** Longest vehicle in the fleet, used to size link capacity. */
-export const MAX_VEHICLE_LENGTH = m(9.8);
+const MAX_VEHICLE_LENGTH = m(9.8);
 /** Shortest link that can hold the largest vehicle plus its jam gap. */
 export const L_MIN = MAX_VEHICLE_LENGTH + JAM_GAP + m(2);
 

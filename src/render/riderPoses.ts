@@ -108,7 +108,7 @@ export const CAB_WHEEL: WheelSpec = { forward: 0.42, up: 0.13, tilt: 1.0, radius
  * A point on the rim of a wheel, pelvis frame (+X left, +Y up, +Z forward):
  * `clock` radians round from the top, positive to the left.
  */
-export function rimPoint(clock: number, wheel: WheelSpec = DRIVER_WHEEL): V3 {
+function rimPoint(clock: number, wheel: WheelSpec = DRIVER_WHEEL): V3 {
   const { forward, up, tilt, radius } = wheel;
   const across = Math.sin(clock) * radius;
   const along = Math.cos(clock) * radius;

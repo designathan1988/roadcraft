@@ -4,9 +4,9 @@ import { TransitSim } from '../transit/transit';
 import { LotTraffic } from '../agents/lotTraffic';
 
 /** Game seconds per simulated second: a day lasts 72 minutes of play. */
-export const TIME_SCALE = 20;
+const TIME_SCALE = 20;
 /** The time of day the city wakes at, minutes after midnight. */
-export const DAY_START = 6 * 60 + 30;
+const DAY_START = 6 * 60 + 30;
 
 /**
  * THE CITY'S OWN SERVICES, with nobody living in it: the time of day, read

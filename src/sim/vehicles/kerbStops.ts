@@ -44,12 +44,12 @@ import { lanesInBox } from '../agents/parking';
 
 export type ErrandKind = 'drop' | 'pick' | 'service' | 'deliver';
 /** What one task of a stop does: somebody gets out, or somebody gets in. */
-export type TaskKind = 'drop' | 'pick';
+type TaskKind = 'drop' | 'pick';
 
-export type KerbStopPhase = 'approach' | 'halt' | 'hold' | 'fetch' | 'open' | 'transfer' | 'close';
+type KerbStopPhase = 'approach' | 'halt' | 'hold' | 'fetch' | 'open' | 'transfer' | 'close';
 
 /** The person moving between the seat and the footway. */
-export type KerbPerson = Boarder;
+type KerbPerson = Boarder;
 
 export interface KerbStop {
   readonly kind: TaskKind;

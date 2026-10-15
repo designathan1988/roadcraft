@@ -58,7 +58,7 @@ function untextured(name: string): ArrayBuffer {
 const cache = new Map<string, Promise<Object3D>>();
 
 /** The asset's scene, parsed once per body. */
-export function citizenScene(name: string): Promise<Object3D> {
+function citizenScene(name: string): Promise<Object3D> {
   let pending = cache.get(name);
   if (!pending) {
     pending = new GLTFLoader().parseAsync(untextured(name), '').then((gltf) => gltf.scene);

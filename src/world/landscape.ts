@@ -445,7 +445,7 @@ export function snapLandscape(
 }
 
 /** The placed item nearest a point, within `radius`. */
-export function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: number): LandscapeItem | null {
+function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: number): LandscapeItem | null {
   let best: LandscapeItem | null = null;
   let bestD = radius;
   for (const item of items) {

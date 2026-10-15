@@ -34,7 +34,7 @@ import { m } from '@world/units';
 export type VehicleShape = 'car' | 'bus' | 'truck' | 'motorcycle' | 'bicycle';
 
 /** Silhouette of a `car`: where the roof ends and how the tail is cut. */
-export type BodyStyle = 'hatch' | 'sedan' | 'suv' | 'van';
+type BodyStyle = 'hatch' | 'sedan' | 'suv' | 'van';
 
 export interface Archetype {
   readonly id: string;

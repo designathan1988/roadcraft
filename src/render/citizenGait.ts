@@ -55,7 +55,7 @@ export interface GaitClip {
   readonly yaw?: Float32Array;
 }
 
-export const GAIT_CLIP_NAMES = [
+const GAIT_CLIP_NAMES = [
   'walk', 'walkElder', 'walkSlow', 'walkShuffle', 'walkRest', 'walkBack', 'walkLeft', 'walkRight', 'run', 'walkDrunk', 'walkHandL', 'walkHandR', 'start', 'stop', 'turnLeft', 'turnRight',
   'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp',
   'read', 'bag', 'trolley', 'umbrella', 'cheer', 'dance', 'wave', 'drink', 'photo', 'crouchDown', 'crouchIdle', 'crouchUp', 'laugh', 'angry', 'argue', 'knock', 'headphones', 'eatIdle', 'workTable',
@@ -149,7 +149,7 @@ export const REST_AMPLITUDE: WalkAmplitude = { arms: 0, legs: 0, hips: 0 };
 /** Baking rate of a clip: long, slow loops at 10 fps, everything else at the capture's 30. */
 export const bakeFps = (clip: { readonly loop: boolean; readonly duration: number }): number =>
   clip.loop && clip.duration > 6 ? 10 : 30;
-export const bakedFrames = (duration: number, fps: number): number => Math.max(1, Math.round(duration * fps));
+const bakedFrames = (duration: number, fps: number): number => Math.max(1, Math.round(duration * fps));
 
 /** Samples a per-source-frame curve of a library clip at a fraction of it. */
 function curveAt(curve: Float32Array, loop: boolean, fraction: number): number {
@@ -181,7 +181,7 @@ export function gaitClipOf(clip: LibraryClip, scale: number, frames: number): Ga
 }
 
 /** The Rocketbox library clips the gait plays, by the name the gait knows them by. */
-export const GAIT_LIBRARY = [
+const GAIT_LIBRARY = [
   'walkSlow', 'start', 'stop', 'run', 'turnLeft', 'turnRight',
   'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp',
   'read', 'bag', 'trolley', 'umbrella', 'cheer', 'dance', 'wave', 'drink', 'photo', 'crouchDown', 'crouchIdle', 'crouchUp', 'laugh', 'angry', 'argue', 'knock', 'headphones', 'eatIdle', 'workTable',
@@ -305,9 +305,9 @@ const CARRY_WALKS = ['walkShuffle', 'walk'] as const satisfies readonly Cycle[];
  * so a street is not a file of one gait.
  */
 export const WALK_STYLES = ['walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast'] as const;
-export type WalkStyle = (typeof WALK_STYLES)[number];
+type WalkStyle = (typeof WALK_STYLES)[number];
 /** Which walk somebody walks in, from their id. */
-export const walkStyle = (id: number): WalkStyle => WALK_STYLES[id % WALK_STYLES.length]!;
+const walkStyle = (id: number): WalkStyle => WALK_STYLES[id % WALK_STYLES.length]!;
 /** A person's walks, slowest first: the shuffle, the slow walk, their own, and the brisk walk on top. */
 const styleWalks = new WeakMap<GaitClips, Map<WalkStyle, readonly Cycle[]>>();
 function walksOf(clips: GaitClips, style: WalkStyle): readonly Cycle[] {

@@ -33,7 +33,7 @@ import type { BuildingKit, PartKind } from './kit';
  */
 
 /** Edge of a Voronoi cell: the size of a fragment. */
-export const FRAGMENT = m(2.8);
+const FRAGMENT = m(2.8);
 /** Longest triangle edge after subdivision. */
 const MAX_EDGE = m(1.4);
 /** Thickness given to a wall fragment. */

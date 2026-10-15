@@ -26,9 +26,9 @@ import { garmentSlotOf } from './garmentSlots';
 
 /** Kinds of item that cover the skin under them: only these may hide it. */
 /** Card items drawn with their own texture, by slot (see `skinAppearance.ts`). */
-export const CARD_SLOT: Readonly<Record<string, number>> = { hair: 1, eyebrows: 2, eyelashes: 3, beard: 4 };
+const CARD_SLOT: Readonly<Record<string, number>> = { hair: 1, eyebrows: 2, eyelashes: 3, beard: 4 };
 /** The same mark for the eyeballs: drawn wet (`skinAppearance.ts`). */
-export const EYE_SLOT = 5;
+const EYE_SLOT = 5;
 
 const COVERING = new Set(['clothes', 'shoes', 'top', 'bottom', 'skirt', 'dress', 'suit', 'gloves']);
 
@@ -132,7 +132,7 @@ export interface PersonRigInput {
 }
 
 /** A MakeHuman item fitted to a rigged body, as a separate skinned piece. */
-export interface WornPiece {
+interface WornPiece {
   /** Vertices in the body's bind posture, metres. */
   readonly positions: Float32Array;
   /** Bones in the skeleton's order, four a vertex, and their weights. */
@@ -436,7 +436,7 @@ interface Builder {
  * The person as one indexed geometry, hems cut in, colours in the vertices,
  * skin weights per vertex (bone indices in the skeleton's order).
  */
-export function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, texturedSkin = false): BufferGeometry {
+function clothedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, texturedSkin = false): BufferGeometry {
   // The tailoring is measured in the packs' decimetres.
   const cut = tailor(data, posed.map((x) => x * 10));
   const parts = facesFor(data, look, cut);
@@ -583,7 +583,7 @@ export function clothedGeometry(data: PersonMeshData, posed: Float32Array, look:
 const toLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
 /** A MakeHuman item as worn: fitted and posed, metres, with its skin weights. */
-export interface WornItem {
+interface WornItem {
   readonly name: string;
   readonly item: ProxyItem;
   readonly positions: Float32Array;
@@ -600,7 +600,7 @@ const SOLID = 0.45;
  * vertices, hair dyed the look's colour, an outfit dyed when the look says
  * so. One geometry, skin weights per vertex, as the crowd draws it.
  */
-export function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, worn: readonly WornItem[], texturedSkin = false, shell?: BufferGeometry): BufferGeometry {
+function dressedGeometry(data: PersonMeshData, posed: Float32Array, look: PersonLook, worn: readonly WornItem[], texturedSkin = false, shell?: BufferGeometry): BufferGeometry {
   const values = (name: string): number[] => shell ? Array.from(shell.getAttribute(name).array) : [];
   const out: Builder = {
     positions: values('position'), colours: values('color'), joints: values('skinIndex'), weights: values('skinWeight'),
@@ -856,7 +856,7 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
  * that collapse are dropped. The result indexes the same vertex buffers, so
  * skinning and colours are untouched.
  */
-export function clusterIndex(positions: readonly number[], colours: readonly number[], index: readonly number[], cell: number): Uint32Array {
+function clusterIndex(positions: readonly number[], colours: readonly number[], index: readonly number[], cell: number): Uint32Array {
   const representative = new Map<string, number>();
   const map = new Uint32Array(positions.length / 3);
   for (let v = 0; v < map.length; v++) {

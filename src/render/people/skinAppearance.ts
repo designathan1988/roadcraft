@@ -250,15 +250,6 @@ export function itemTexture(name: string, item: ProxyItem): Promise<Texture> | n
   return item.transparent ? cardLeaseOf(item.textureFile).texture : paddedGarment(name, item).texture;
 }
 
-/**
- * A garment's texture padded (its UV islands grown out), whatever its alpha:
- * drawn opaque, a garment never shows the sheet's background at a seam. Held
- * for the life of the page; null without a texture.
- */
-export function paddedItemTexture(name: string, item: ProxyItem): Promise<Texture> | null {
-  return item.textureFile ? paddedGarment(name, item).texture : null;
-}
-
 /** Existing CC0 skin and eye packs, selected by the authored body and look. */
 export async function loadSkinAppearance(person: PersonSpec): Promise<SkinAppearance> {
   const { name: skinName, url, eyeFile, tint } = skinChoice(person);

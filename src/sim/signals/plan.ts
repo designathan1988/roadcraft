@@ -7,7 +7,7 @@ import { PED, SIGNAL } from '../params';
 export type GroupId = number;
 export type CrossingId = string;
 
-export interface Stage {
+interface Stage {
   readonly greenGroups: readonly GroupId[];
   /** Crossings showing WALK during this stage. */
   readonly pedWalk: readonly CrossingId[];
@@ -511,7 +511,7 @@ export function crossingsCompatibleWith(
  * True when this connector must yield to pedestrians already in the crossing
  * over its destination leg. Every turning movement does.
  */
-export const mustYieldToPeds = (c: Connector): boolean => c.turn !== 'through';
+const mustYieldToPeds = (c: Connector): boolean => c.turn !== 'through';
 
 /** Crossing ids are `${nodeId}:${segmentId}`. */
 export const makeCrossingId = (node: NodeId, segment: number): CrossingId =>

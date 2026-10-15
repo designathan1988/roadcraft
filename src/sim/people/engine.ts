@@ -64,12 +64,6 @@ export interface PedestrianEngine {
   getUp?(w: SimWorld, id: number, x: number, y: number, heading: number, seconds: number, crawl?: boolean): void;
 }
 
-/**
- * First id of the resident agents' own person ids (`sim/agents`): far above
- * the footway's numbering and the seat people's (`kerbStops` PERSON_BASE).
- */
-export const AGENT_PERSON_BASE = 1 << 25;
-
 export interface ResidentWalk {
   /** The city's id for this trip, handed back when it ends. */
   readonly trip: number;

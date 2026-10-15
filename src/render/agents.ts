@@ -166,7 +166,7 @@ interface LampState {
   crank: number;
 }
 
-export interface AgentRenderOptions {
+interface AgentRenderOptions {
   readonly pedestrianDetail?: 0 | 1 | 2;
   readonly pedestrianVisible?: (x: number, y: number, height: number) => boolean;
   /** Whether a vehicle of this reach, centred here, can be on screen or cast a shadow onto it. */
@@ -352,7 +352,7 @@ const BOX_BODY = 0xe6e8ea;
 /** Height of a seated head above the middle of its torso. */
 const SEAT_HEAD_RISE = m(0.38);
 
-export type PedBuild = 'child' | 'adult' | 'elder';
+type PedBuild = 'child' | 'adult' | 'elder';
 
 export interface PedLook {
   readonly build: PedBuild;

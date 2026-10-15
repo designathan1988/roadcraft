@@ -66,7 +66,7 @@ function cah(p: DriverParams, v: number, o: Obstacle): number {
 }
 
 /** Adaptive Cruise Control acceleration against one obstacle. */
-export function accAccel(p: DriverParams, v: number, v0: number, o: Obstacle): number {
+function accAccel(p: DriverParams, v: number, v0: number, o: Obstacle): number {
   const aIidm = iidm(p, v, v0, o);
   const aCah = cah(p, v, o);
   if (aIidm >= aCah) return aIidm;

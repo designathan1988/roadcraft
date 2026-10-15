@@ -34,9 +34,9 @@ import { PACKED_BONE_FLOATS } from '../citizenPalette';
  */
 
 /** Texels a bone takes in the animation texture (twelve floats). */
-export const ATLAS_TEXELS = 3;
+const ATLAS_TEXELS = 3;
 /** Plays blended per person in the palette pass (a rider's are four). */
-export const PLAYS = 4;
+const PLAYS = 4;
 /** Texels of a person's row of plays: one a play, then (variant, override, resting). */
 const PLAY_TEXELS = PLAYS + 1;
 
@@ -66,7 +66,7 @@ export function buildClassAnimation(clips: Readonly<Record<string, ClipFrames>>,
 }
 
 /** A packed bone of row `row` as a mat4 (GLSL), from a sampler named `atlas`. */
-export function atlasBoneGlsl(name: string, atlas: string): string {
+function atlasBoneGlsl(name: string, atlas: string): string {
   return `
 mat4 ${name}(int row, int bone) {
   vec4 a = texelFetch(${atlas}, ivec2(bone * ${ATLAS_TEXELS}, row), 0);
@@ -77,7 +77,7 @@ mat4 ${name}(int row, int bone) {
 }
 
 /** One play of a person in the palette pass: an atlas row, the fraction to the next row, its weight. */
-export interface PalettePlay {
+interface PalettePlay {
   readonly row: number;
   readonly t: number;
   readonly weight: number;

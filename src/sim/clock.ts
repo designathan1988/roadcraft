@@ -111,7 +111,7 @@ export class SimClock {
  * The time lost or gained is under a thousandth of the frame.
  */
 const SNAP = 0.0005;
-export function snapToTicks(seconds: number): number {
+function snapToTicks(seconds: number): number {
   for (let k = 1; k <= 4; k++) if (Math.abs(seconds - k * DT) < SNAP) return k * DT;
   return seconds;
 }

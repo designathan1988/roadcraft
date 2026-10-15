@@ -22,14 +22,14 @@ import { CASING_BAND, FOOTWAY_RISE, type RoadType, flushOn, footwayOn } from '..
 const hit = { s: 0, distance: 0 };
 
 /** What `flushHolds` reads of a road: its widths and which footway is flush. */
-export type FlushRoad = Pick<RoadType, 'width' | 'sidewalk' | 'sidewalkLeft' | 'sidewalkRight' | 'flushLeft' | 'flushRight'>;
+type FlushRoad = Pick<RoadType, 'width' | 'sidewalk' | 'sidewalkLeft' | 'sidewalkRight' | 'flushLeft' | 'flushRight'>;
 
 /**
  * Whether (x, y) is on a footway of this road laid flush. Pure: the page asks
  * it of the roads filed at the point, a road tile worker of the roads handed
  * to it (`render/roadTileMesh.ts`).
  */
-export function flushHolds(full: Polyline, road: FlushRoad, x: number, y: number): boolean {
+function flushHolds(full: Polyline, road: FlushRoad, x: number, y: number): boolean {
   const reach = road.width / 2 + road.sidewalk + CASING_BAND;
   full.closestInto(x, y, hit);
   if (hit.distance > reach) return false;

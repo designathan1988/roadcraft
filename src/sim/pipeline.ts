@@ -536,4 +536,4 @@ function pinReservedRoute(w: SimWorld, v: Vehicle): boolean {
   return true;
 }
 
-export { DT };
+;

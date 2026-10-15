@@ -29,7 +29,7 @@ export interface Lightning {
 }
 
 /** The bolt's channel: midpoint displacement between two points, then branches. Pairs of points, one pair a segment. */
-export function boltSegments(from: Vector3, to: Vector3, random: () => number): { main: number[]; branches: number[] } {
+function boltSegments(from: Vector3, to: Vector3, random: () => number): { main: number[]; branches: number[] } {
   const length = from.distanceTo(to);
   const split = (a: Vector3, b: Vector3, kick: number, generations: number): Vector3[] => {
     let points = [a.clone(), b.clone()];

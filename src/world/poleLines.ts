@@ -634,11 +634,6 @@ export function onPaving(net: Network, p: Vec2): boolean {
   return inside.paving || inside.kerbed;
 }
 
-/** Whether a point is on a kerbed carriageway (inside a kerb). */
-export function onKerbed(net: Network, p: Vec2): boolean {
-  return insideLevels(net, p).kerbed;
-}
-
 /** The work `kerbward` did: kerb edges walked. A count for the performance budgets (`core/perfBudget.ts`). */
 export const kerbWork = { edges: 0 };
 

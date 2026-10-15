@@ -188,7 +188,7 @@ export interface BlastHit {
   readonly items: readonly { kind: string; x: number; y: number }[];
 }
 
-export interface RenderStats {
+interface RenderStats {
   /** Built scene geometry budget; `gl.info.render.triangles` counts drawn passes. */
   readonly triangles: number;
   /** Actual draw calls across every pass of the last game frame. */
@@ -205,7 +205,7 @@ export interface RenderStats {
   readonly terrainMs: number;
 }
 
-export interface DrawOptions {
+interface DrawOptions {
   /**
    * Keep the roads, and everything laid along them, as they are: only the
    * ground is updated, and shaped to the roads' current heights. Set while a

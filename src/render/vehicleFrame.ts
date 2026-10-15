@@ -22,8 +22,8 @@ export interface RoadFrameOut {
 }
 
 /** Steepest gradient and camber a frame will take from its samples. */
-export const MAX_FRAME_PITCH = 0.35;
-export const MAX_FRAME_ROLL = 0.25;
+const MAX_FRAME_PITCH = 0.35;
+const MAX_FRAME_ROLL = 0.25;
 
 /**
  * The frame through the road under the axles and the sides.

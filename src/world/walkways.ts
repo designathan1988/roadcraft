@@ -49,7 +49,7 @@ import { WAITING, answered } from './waiting';
  * of 2026-10-01).
  */
 
-export type WalkwayKind = 'footway' | 'corner' | 'crossing';
+type WalkwayKind = 'footway' | 'corner' | 'crossing';
 
 export interface WalkNode {
   readonly id: number;
@@ -92,7 +92,7 @@ export interface Walkway {
 }
 
 /** A road at grade lifted more than this by its own heights is a viaduct for whoever walks it, u. */
-export const RAISED_BY_HAND = m(2.5);
+const RAISED_BY_HAND = m(2.5);
 
 /**
  * The deck a road's footways belong to. A road at grade raised by hand is a

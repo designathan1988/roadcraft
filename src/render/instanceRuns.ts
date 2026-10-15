@@ -61,7 +61,7 @@ export interface RunStore {
 }
 
 /** A thing's instances in one store: matrices (three's column order), tints (tinted stores) and each one's largest scale. */
-export interface RunPack {
+interface RunPack {
   readonly matrices: Float32Array;
   readonly colours: Float32Array | null;
   readonly scales: Float32Array;
@@ -72,7 +72,7 @@ export interface RunPack {
 export type Run = ReadonlyMap<number, RunPack>;
 
 /** Runs to take away and to put in. A run is taken away by the same object that was put in. */
-export interface RunChange {
+interface RunChange {
   readonly removed: readonly Run[];
   readonly added: readonly Run[];
 }
@@ -196,7 +196,7 @@ const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000
  * depth material. What compiles a layer's programs ahead makes its meshes here
  * (`warmMeshes`), so they are the variants the layer draws.
  */
-export function runMesh(spec: RunStore, capacity: number): InstancedMesh {
+function runMesh(spec: RunStore, capacity: number): InstancedMesh {
   const mesh = new InstancedMesh(spec.geometry, spec.material, capacity);
   mesh.name = spec.name;
   mesh.castShadow = spec.castShadow;

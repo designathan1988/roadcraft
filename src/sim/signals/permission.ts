@@ -61,7 +61,7 @@ export function signalHolds(
   return stop;
 }
 
-export function mustStopAtSignal(
+function mustStopAtSignal(
   state: SignalState,
   turn: TurnKind,
   rightOnRedCredit: boolean,

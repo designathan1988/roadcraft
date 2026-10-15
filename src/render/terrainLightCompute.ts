@@ -41,7 +41,7 @@ export interface CornerRect {
   readonly y1: number;
 }
 
-export interface Sun {
+interface Sun {
   readonly x: number;
   readonly y: number;
   readonly z: number;
@@ -56,7 +56,7 @@ export interface Sun {
  * Machine's convexity selector, Gaea's curvature map): ridges and tops
  * against hollows and valley floors.
  */
-export interface LandShape {
+interface LandShape {
   readonly sky: Float32Array;
   /** Degrees. */
   readonly slope: Float32Array;
@@ -73,7 +73,7 @@ const CONVEX_RING = 3;
 /** The penumbra's width: k of Quilez's k h / t. */
 const SOFT = 9;
 
-export const wholeGrid = (grid: LightGrid): CornerRect => ({ x0: 0, x1: grid.n - 1, y0: 0, y1: grid.n - 1 });
+const wholeGrid = (grid: LightGrid): CornerRect => ({ x0: 0, x1: grid.n - 1, y0: 0, y1: grid.n - 1 });
 
 const clampRect = (grid: LightGrid, r: CornerRect): CornerRect => ({
   x0: Math.max(0, Math.floor(r.x0)), x1: Math.min(grid.n - 1, Math.ceil(r.x1)),
@@ -86,17 +86,17 @@ export const unionCorners = (a: CornerRect, b: CornerRect): CornerRect => ({
   x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1),
 });
 
-export function emptyShape(grid: LightGrid): LandShape {
+function emptyShape(grid: LightGrid): LandShape {
   const count = grid.n * grid.n;
   return { sky: new Float32Array(count), slope: new Float32Array(count), convex: new Float32Array(count), steep: new Float32Array(count) };
 }
 
 /** The corners whose shape (`shapeLand`) a change of the heights in `moved` alters. */
-export const shapeReach = (grid: LightGrid, moved: CornerRect): CornerRect =>
+const shapeReach = (grid: LightGrid, moved: CornerRect): CornerRect =>
   clampRect(grid, grow(moved, Math.max(SKY_REACH[SKY_REACH.length - 1]!, CONVEX_RING + 2)));
 
 /** The land's shape (`LandShape`) worked out again for the corners in `rect`; the rest is kept. */
-export function shapeLand(grid: LightGrid, heights: Float64Array, shape: LandShape, rect: CornerRect): void {
+function shapeLand(grid: LightGrid, heights: Float64Array, shape: LandShape, rect: CornerRect): void {
   const n = grid.n, cell = grid.cell;
   const { steep, slope, convex } = shape;
   // The steepness is blended with the ring round each corner: worked out one corner further.
@@ -204,7 +204,7 @@ function heightRange(heights: Float64Array): { min: number; max: number } {
  * as a ray can still pass under the highest ground ((max - min) / rise
  * cells; a ray above it is cut off, `lightLand`).
  */
-export function lightReach(grid: LightGrid, heights: Float64Array, sun: Sun, moved: CornerRect): CornerRect {
+function lightReach(grid: LightGrid, heights: Float64Array, sun: Sun, moved: CornerRect): CornerRect {
   const aim = aimAt(grid, sun);
   const { min, max } = heightRange(heights);
   const t = Math.min(grid.n * 1.5, (max + 1 - min) / aim.rise + 1);
@@ -219,7 +219,7 @@ export function lightReach(grid: LightGrid, heights: Float64Array, sun: Sun, mov
  * corners a row, the rect's first corner at 0): R the sun, G the sky, B the
  * convexity, A the slope.
  */
-export function lightLand(
+function lightLand(
   grid: LightGrid,
   heights: Float64Array,
   sun: Sun,

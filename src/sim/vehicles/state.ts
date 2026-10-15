@@ -20,7 +20,7 @@ export interface Kinematics {
   readonly rearPath: readonly LaneletId[];
 }
 
-export interface ConnectorClearance {
+interface ConnectorClearance {
   /** Connector whose exit the front of the vehicle has already crossed. */
   readonly connector: ConnectorId;
   /** Distance travelled by the front beyond that connector's exit. */

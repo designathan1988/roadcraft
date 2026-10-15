@@ -37,7 +37,7 @@ export function anyGreen(c: SignalController): boolean {
  * otherwise use its leg. Counts the remaining green plus the whole clearance,
  * because vehicles are held for both.
  */
-export function remainingProtectedTime(c: SignalController, crossing: CrossingId): number {
+function remainingProtectedTime(c: SignalController, crossing: CrossingId): number {
   const st = c.plan.stages[c.stageIndex];
   if (!st || !st.pedWalk.includes(crossing)) return 0;
   const clearance = st.amber + st.allRed;

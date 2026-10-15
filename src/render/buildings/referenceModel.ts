@@ -24,7 +24,7 @@ export interface ReferenceTarget {
   readonly rotation: number;
 }
 
-export interface ReferenceInfo {
+interface ReferenceInfo {
   readonly name: string;
   /** Size in metres: across, deep, tall. */
   readonly size: readonly [number, number, number];
@@ -51,7 +51,7 @@ export interface ReferenceModel {
   readonly opacity: number;
 }
 
-export interface ReferenceCapture {
+interface ReferenceCapture {
   readonly triangles: Triangle[];
   readonly sample: ReferenceSampler;
 }

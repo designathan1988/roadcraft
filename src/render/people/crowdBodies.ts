@@ -15,7 +15,7 @@ import { DataTexture, FloatType, NearestFilter, RGBAFormat } from 'three';
  * `WIDTH` texels a body (vertex v of body b at b * stride + v). `joints`: each
  * body's bone heads moved with it, a row of `bones` texels a body.
  */
-export const BODIES = 16;
+const BODIES = 16;
 /** Texels across the bodies texture (the shader's divisor). */
 export const BODY_WIDTH = 4096;
 const WIDTH = BODY_WIDTH;

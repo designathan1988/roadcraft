@@ -41,7 +41,7 @@ export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0, verifie
  * must all be read again (the diary forgot that far back, or an entry names
  * none: a load, a clear, a store shared).
  */
-export function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
+function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
   if (serial >= journal.version) return new Set();
   const entries = journal.since(serial, ['buildings']);
   if (!entries) return null;

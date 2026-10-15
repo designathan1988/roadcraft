@@ -67,7 +67,7 @@ import { UNITS_PER_METER } from '@world/units';
  */
 /** Leaves in the far clump, and the near clump's times as many. */
 const FAR_LEAVES = 300;
-export const NEAR_LEAVES = 2.5;
+const NEAR_LEAVES = 2.5;
 /** World distance from the eye over which a card goes from the near clump to the far one, metres. */
 const LEAF_NEAR = 22;
 const LEAF_FAR = 70;

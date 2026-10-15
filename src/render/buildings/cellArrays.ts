@@ -32,7 +32,7 @@ export interface CellSelection {
 /** A box and a sphere: minX, minY, minZ, maxX, maxY, maxZ, then centre x, y, z and radius (three's `Box3` and `Sphere`). */
 export type Bounds = Float64Array;
 
-export interface ShellArrays {
+interface ShellArrays {
   readonly position: Float32Array;
   readonly normal: Float32Array;
   readonly colour: Float32Array;
@@ -42,7 +42,7 @@ export interface ShellArrays {
   readonly bounds: Bounds;
 }
 
-export interface InstanceArrays {
+interface InstanceArrays {
   readonly count: number;
   readonly instanceMatrix: Float32Array;
   readonly instanceColor?: Float32Array;
@@ -150,10 +150,6 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
   return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top };
 }
 
-/** The bytes of a building's mass (what the workers' cache counts). */
-export const massBytes = (c: MassingChunk): number =>
-  c.position.byteLength + c.normal.byteLength + c.colour.byteLength + c.facade.byteLength + c.glazing.byteLength + c.index.byteLength;
-
 /** Every buffer of a cell's masses: handed over, not copied. */
 export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
   [c.position, c.normal, c.color, c.facade, c.glazing, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
@@ -252,7 +248,7 @@ function furnitureMatrices(chunks: readonly BuildingChunk[], kind: FurnitureKind
  * `computeBoundingSphere` work them out: the box of the vertices, and a
  * sphere round the box's centre as far as the farthest vertex.
  */
-export function shellBounds(position: Float32Array): Bounds {
+function shellBounds(position: Float32Array): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < position.length; i += 3) {
     const x = position[i]!, y = position[i + 1]!, z = position[i + 2]!;
@@ -274,7 +270,7 @@ export function shellBounds(position: Float32Array): Bounds {
  * (`Box3.applyMatrix4`: its eight corners), all of them united - and the
  * sphere round that box (`Box3.getBoundingSphere`).
  */
-export function instanceBounds(matrices: Float32Array, count: number, box: readonly number[]): Bounds {
+function instanceBounds(matrices: Float32Array, count: number, box: readonly number[]): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   const [bx0, by0, bz0, bx1, by1, bz1] = box as [number, number, number, number, number, number];
   for (let i = 0; i < count; i++) {

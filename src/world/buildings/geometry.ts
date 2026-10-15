@@ -605,7 +605,8 @@ export function facadeBays(b: Building): FacadeBay[] {
 
 /** Numbers per bay in a `GroundBays` table, and where each lies. */
 export const GROUND_BAY_STRIDE = 8;
-export const GB_X = 0, GB_Y = 1, GB_NX = 2, GB_NY = 3, GB_Z = 4, GB_SIDE = 5, GB_WIDTH = 6, GB_COMPONENT = 7;
+export const GB_X = 0, GB_Y = 1, GB_NX = 2, GB_NY = 3, GB_Z = 4, GB_SIDE = 5, GB_WIDTH = 6;
+const GB_COMPONENT = 7;
 
 /**
  * The ground storey's bays (level 0) of a building, packed: `GROUND_BAY_STRIDE`

@@ -18,14 +18,14 @@ import { type BlockLevels, levelsOf } from './roadLod';
 /** A block goes far when it is this much farther than `reach`, so one near the line is not asked twice. */
 export const FAR_MARGIN = 1.25;
 /** Blocks brought near in one look: each is made again from its tiles, a few milliseconds. */
-export const BRING_PER_LOOK = 3;
+const BRING_PER_LOOK = 3;
 
 /** The block's distance to the camera in the ground plane, scene units (x, z = -y). */
 const distance = (levels: BlockLevels, focusX: number, focusY: number): number =>
   Math.hypot(levels.x - focusX, levels.z + focusY);
 
 /** The arrays of a mesh's attributes and index let go (made again by `refillArrays`). */
-export function giveBackArrays(mesh: Mesh): void {
+function giveBackArrays(mesh: Mesh): void {
   const geometry = mesh.geometry as BufferGeometry;
   const letGo = (attribute: BufferAttribute): void => { (attribute as unknown as { array: ArrayLike<number> | null }).array = null; };
   for (const attribute of Object.values(geometry.attributes)) letGo(attribute as BufferAttribute);

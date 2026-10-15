@@ -28,9 +28,9 @@ export const WALK = 0;
 /** The same walk with an older person's shorter step and quieter arms. */
 export const WALK_ELDER = 1;
 /** The Rocketbox slow walk with its swing shrunk: short steps, for inching along. */
-export const WALK_SHUFFLE = 2;
+const WALK_SHUFFLE = 2;
 /** The Rocketbox library clips, baked after the walks in this order. */
-export const LIBRARY = [
+const LIBRARY = [
   'start', 'stop', 'run', 'turnLeft', 'turnRight',
   'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp', 'walkSlow', 'walkDrunk',
   'read', 'bag', 'trolley', 'umbrella', 'cheer', 'dance', 'wave', 'drink', 'photo', 'crouchDown', 'crouchIdle', 'crouchUp', 'laugh', 'angry', 'argue', 'knock', 'headphones', 'eatIdle', 'workTable',
@@ -39,8 +39,8 @@ export const LIBRARY = [
 export type Played = (typeof LIBRARY)[number];
 export const LIBRARY_AT = Object.fromEntries(LIBRARY.map((name, i) => [name, WALK_SHUFFLE + 1 + i])) as
   Readonly<Record<Played, number>>;
-export const DIRECTIONAL = ['walkRest', 'walkBack', 'walkLeft', 'walkRight'] as const;
-export const DIRECTIONAL_AT = Object.fromEntries(DIRECTIONAL.map((name, i) => [name, WALK_SHUFFLE + 1 + LIBRARY.length + i])) as
+const DIRECTIONAL = ['walkRest', 'walkBack', 'walkLeft', 'walkRight'] as const;
+const DIRECTIONAL_AT = Object.fromEntries(DIRECTIONAL.map((name, i) => [name, WALK_SHUFFLE + 1 + LIBRARY.length + i])) as
   Readonly<Record<(typeof DIRECTIONAL)[number], number>>;
 /** Where each clip the gait plays (`citizenGait.ts`) is baked. */
 export const GAIT_AT: Readonly<Record<GaitClipName, number>> = {
@@ -55,14 +55,14 @@ export const GAIT_AT: Readonly<Record<GaitClipName, number>> = {
 export const RIDER_AT = Object.fromEntries(RIDER_CLIPS.map((clip, i) => [clip.key, WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + i])) as
   Readonly<Record<RiderClipKey, number>>;
 /** The walk hand in hand, holding with the left or the right: baked after the riders. */
-export const HAND_WALK_AT = { walkHandL: WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length,
+const HAND_WALK_AT = { walkHandL: WALK_SHUFFLE + 1 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length,
   walkHandR: WALK_SHUFFLE + 2 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length } as const;
 /**
  * The clips somebody carrying a box plays, baked again with both arms holding
  * it in front (`carryBox`), after the hand-in-hand walks. Drawing swaps each
  * for its carried twin, same timing, so the gait needs to know nothing of it.
  */
-export const CARRIED = ['walk', 'walkShuffle', 'idle', 'turnLeft', 'turnRight', 'walkBack', 'walkLeft', 'walkRight'] as const satisfies readonly GaitClipName[];
+const CARRIED = ['walk', 'walkShuffle', 'idle', 'turnLeft', 'turnRight', 'walkBack', 'walkLeft', 'walkRight'] as const satisfies readonly GaitClipName[];
 export const CARRY_AT = Object.fromEntries(CARRIED.map((name, i) =>
   [name, WALK_SHUFFLE + 3 + LIBRARY.length + DIRECTIONAL.length + RIDER_CLIPS.length + i])) as
   Readonly<Partial<Record<GaitClipName, number>>>;
@@ -70,7 +70,7 @@ export const CARRY_AT = Object.fromEntries(CARRIED.map((name, i) =>
 export type CitizenClipKey = RiderClipKey | 'walk' | Played;
 
 
-export const FPS = 30;
+const FPS = 30;
 export interface ClipFrames {
   /** Twelve affine values per bone and frame; the fixed fourth row is restored for the GPU. */
   data: Float32Array;
@@ -95,12 +95,12 @@ export interface ClipFrames {
 }
 
 /** Longest stretch of baking between two frames, milliseconds. */
-export let SLICE_MS = 4;
+let SLICE_MS = 4;
 /** Sets the longest stretch of baking between two frames (Infinity in a worker: nothing to yield to). */
 export function setSliceMs(ms: number): void {
   SLICE_MS = ms;
 }
-export let sliceStart = 0;
+let sliceStart = 0;
 
 /**
  * Lets the frame loop in once this stretch of baking has run for `SLICE_MS`.
@@ -242,22 +242,22 @@ export async function bakeLibraryClip(body: BakeRig, clip: LibraryClip, amplitud
  * bodies than the people they are played on: seated, the hands sank into the
  * thighs and the arms into the sides.
  */
-export const LIMB_ROOM: Readonly<Record<string, readonly [number, number]>> = {
+const LIMB_ROOM: Readonly<Record<string, readonly [number, number]>> = {
   sitIdle: [13, 16], sitDown: [11, 12], standUp: [11, 12],
   idle: [8, 0], look: [8, 0], listen: [8, 0], talk: [6, 0], phone: [5, 0],
   start: [6, 0], stop: [6, 0], run: [6, 0], walkSlow: [6, 0],
   turnLeft: [7, 0], turnRight: [7, 0], turnLeft180: [7, 0], turnRight180: [7, 0],
 };
-export const LIMB_ROOM_DEFAULT: readonly [number, number] = [6, 0];
+const LIMB_ROOM_DEFAULT: readonly [number, number] = [6, 0];
 
 /** The clips whose hands hold something (`HELD`): their hand bones are baked too. */
-export const HELD_CLIPS = new Set(['read', 'drink', 'phone', 'photo', 'bag', 'umbrella']);
+const HELD_CLIPS = new Set(['read', 'drink', 'phone', 'photo', 'bag', 'umbrella']);
 
-export const limbA = new Vector3(), limbB = new Vector3(), limbAxis = new Vector3();
-export const limbQ = new Quaternion(), limbWorld = new Quaternion(), limbParent = new Quaternion();
+const limbA = new Vector3(), limbB = new Vector3(), limbAxis = new Vector3();
+const limbQ = new Quaternion(), limbWorld = new Quaternion(), limbParent = new Quaternion();
 
 /** Turns `bone` in world space by `q`, keeping its parent where it is. */
-export function turnInWorld(bone: Object3D, q: Quaternion): void {
+function turnInWorld(bone: Object3D, q: Quaternion): void {
   bone.getWorldQuaternion(limbWorld);
   if (bone.parent) bone.parent.getWorldQuaternion(limbParent); else limbParent.identity();
   bone.quaternion.copy(limbParent.invert().multiply(q.clone().multiply(limbWorld)));
@@ -269,7 +269,7 @@ export function turnInWorld(bone: Object3D, q: Quaternion): void {
  * and to the side where a partner walking abreast takes it: the walk hand in
  * hand. The rest of the body walks on.
  */
-export function holdHandOut(rig: Object3D, side: 'L' | 'R'): void {
+function holdHandOut(rig: Object3D, side: 'L' | 'R'): void {
   rig.updateMatrixWorld(true);
   const chest = rig.getObjectByName('Bip01_Spine2');
   const upper = rig.getObjectByName(`Bip01_${side}_UpperArm`);
@@ -299,7 +299,7 @@ export function holdHandOut(rig: Object3D, side: 'L' | 'R'): void {
  * up and fingers forward (so the palms face each other, on either hand). The
  * legs, hips and head walk or stand on as the clip has them.
  */
-export function carryBox(rig: Object3D): void {
+function carryBox(rig: Object3D): void {
   rig.updateMatrixWorld(true);
   const chest = rig.getObjectByName('Bip01_Spine2');
   if (!chest) return;
@@ -349,7 +349,7 @@ export function carryBox(rig: Object3D): void {
  * forearm by `lift`, on the pose the rig is in, so a body broader than the
  * capture's keeps its limbs outside itself.
  */
-export function clearLimbs(rig: Object3D, abduct: number, lift: number): void {
+function clearLimbs(rig: Object3D, abduct: number, lift: number): void {
   if (abduct <= 0 && lift <= 0) return;
   rig.updateMatrixWorld(true);
   const chest = rig.getObjectByName('Bip01_Spine2');
@@ -397,7 +397,7 @@ export function clearLimbs(rig: Object3D, abduct: number, lift: number): void {
  * turning, standing, the walks); the rest - gestures, sitting, crouching -
  * are baked the first time this body plays them (`Deferred`).
  */
-export const CORE_LIBRARY: ReadonlySet<Played> = new Set<Played>([
+const CORE_LIBRARY: ReadonlySet<Played> = new Set<Played>([
   'start', 'stop', 'run', 'turnLeft', 'turnRight', 'idle', 'walkSlow',
   'walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast',
 ]);
@@ -414,7 +414,7 @@ export const CORE_LIBRARY: ReadonlySet<Played> = new Set<Played>([
  * use like the gestures: until then the same seat looking ahead stands in.
  * Each is a seated loop solved by IK frame by frame, the dearest bake there is.
  */
-export const RIDER_BASE: Readonly<Partial<Record<RiderClipKey, RiderClipKey>>> = {
+const RIDER_BASE: Readonly<Partial<Record<RiderClipKey, RiderClipKey>>> = {
   carDriveMirror: 'carDrive', carDriveRight: 'carDrive', carDead: 'carDrive', cabDead: 'cabDrive',
   carRideLeft: 'carRide', carRideRight: 'carRide',
   carRearLeft: 'carRearRide', carRearRight: 'carRearRide',
@@ -485,7 +485,7 @@ export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClip
  * rest pose before every frame, because the IK aims bones from wherever they
  * are. A still pose needs two frames, not thirty.
  */
-export async function bakeRiderClip(body: BakeRig, clip: RiderClip): Promise<ClipFrames> {
+async function bakeRiderClip(body: BakeRig, clip: RiderClip): Promise<ClipFrames> {
   const pose = (time: number): void => {
     body.reset();
     clip.pose(body.rig, time);

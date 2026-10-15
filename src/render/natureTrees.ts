@@ -108,7 +108,7 @@ export interface NatureForest {
 export const varietyOf = (tree: { readonly seed: number }, varieties: number): number => Math.min(varieties - 1, Math.floor(tree.seed * varieties));
 
 /** How many of these trees (or places a tree may stand, by seed) each variety of the kit takes: the room a forest built for them needs. */
-export function forestRoom(trees: readonly { readonly seed: number }[], kit: NatureTreeKit): number[] {
+function forestRoom(trees: readonly { readonly seed: number }[], kit: NatureTreeKit): number[] {
   const room = kit.variants.map(() => 0);
   for (const tree of trees) room[varietyOf(tree, room.length)]!++;
   return room;

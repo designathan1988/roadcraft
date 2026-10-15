@@ -41,7 +41,7 @@ import { grow } from '@world/cells';
  * and lots the paving now covers are removed.
  */
 
-export interface Lot {
+interface Lot {
   readonly id: number;
   /**
    * The boundary, counter-clockwise (the inside on the left of each side):
@@ -71,9 +71,9 @@ const RASTER = m(2);
 /** An outline edge at least this long is a straight back of a footway; shorter ones are a corner's curve. */
 const STRAIGHT_BACK = m(2);
 
-export { lotCentre } from '@world/lotRings';
+;
 
-export function lotArea(l: Pick<Lot, 'corners'>): number {
+function lotArea(l: Pick<Lot, 'corners'>): number {
   let a = 0;
   const q = l.corners;
   for (let i = 0; i < q.length; i++) { const p = q[i]!, r = q[(i + 1) % q.length]!; a += p.x * r.y - r.x * p.y; }
@@ -127,7 +127,7 @@ export function planLots(doc: RoadDoc, net: Network): LotPlan {
  * milliseconds a frame (`main.ts`) and applies the plan
  * only if nothing it read has changed meanwhile.
  */
-export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
+function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
   const { onRoad, onPlate } = pavedTester(doc, net);
   yield;
   const paved = (p: Vec2): boolean => onRoad(p) || onPlate(p);
@@ -586,7 +586,7 @@ const PAVING_MARGIN = m(2);
  * player, 2026-10-06: "snap certinho nas calçadas, rente"). The largest piece
  * is kept; null when nothing of it is on land.
  */
-export function onLand(net: Network, points: readonly Vec2[], square = true, clearance = 0): Vec2[] | null {
+function onLand(net: Network, points: readonly Vec2[], square = true, clearance = 0): Vec2[] | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   // The paving round the lot's box alone (`pavingNear`).

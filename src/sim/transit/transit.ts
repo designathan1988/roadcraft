@@ -40,8 +40,6 @@ const TRAIN_GAP = m(120);
 const APPROACH = m(25);
 /** Seconds between two buses of a line leaving the terminal. */
 const BUS_SPACING = 40;
-/** Farthest a passenger walks to a stop, and from one. */
-export const STOP_REACH = m(450);
 /** A bus is at its stop this near the stopping point, below this speed. */
 const AT_STOP = m(2.5), STOPPED = m(0.3);
 /** The track ahead of a moving train kept clear by walkers. */

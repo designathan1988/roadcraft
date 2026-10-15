@@ -3,7 +3,7 @@ import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/chang
 import { CellFiling } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
 import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from './instanceRuns';
-export type { Box as TransitBox };
+;
 
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
@@ -64,7 +64,7 @@ const GAUGE = m(1.435);
 const MAX_CARS = 256;
 const CAR = { length: m(17.5), width: m(2.9), height: m(3.6) };
 /** The metro's rails below the ground; its tunnel's inside width and height. */
-export const METRO_DEPTH = m(12);
+const METRO_DEPTH = m(12);
 const TUNNEL = { width: m(9), height: m(6) };
 
 /**
@@ -74,7 +74,7 @@ const TUNNEL = { width: m(9), height: m(6) };
  * `METRO_DEPTH` under the ground in its tunnel: a floor, two walls and a roof
  * slab, so the cut shows the bore.
  */
-export function trackBoxes(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
+function trackBoxes(points: readonly { x: number; y: number }[], mode: 'train' | 'metro',
   groundAt: (x: number, y: number) => number, pavedAt: (x: number, y: number) => number = () => NaN): Record<'ballast' | 'sleepers' | 'rails' | 'tunnel' | 'roof', Box[]> {
   const out = { ballast: [] as Box[], sleepers: [] as Box[], rails: [] as Box[], tunnel: [] as Box[], roof: [] as Box[] };
   for (let i = 1; i < points.length; i++) {

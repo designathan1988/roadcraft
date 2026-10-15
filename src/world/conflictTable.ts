@@ -75,7 +75,7 @@ export const HEAVY: BodyClass = 2;
  * rectangle is lengthened by half a step at both ends, so consecutive samples
  * overlap and a thin conflict cannot fall between two of them.
  */
-export const SWEEP_STEP = m(0.4);
+const SWEEP_STEP = m(0.4);
 /**
  * How far behind its stop line the front of a waiting body is swept, world
  * units: vehicles stop a few units short of the line, and a long one turning

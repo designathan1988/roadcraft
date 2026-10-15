@@ -73,7 +73,7 @@ const FOOTWAY_PANEL_TILES = 2;
 /** The grid the footways' outer edges are filed by for the verge's fall (`fromFootway`). */
 export const FOOTWAY_EDGE_CELL = m(32);
 /** The key of a cell of that grid. */
-export const footwayEdgeCell = (x: number, y: number): number =>
+const footwayEdgeCell = (x: number, y: number): number =>
   (Math.floor(x / FOOTWAY_EDGE_CELL) + 32768) * 65536 + (Math.floor(y / FOOTWAY_EDGE_CELL) + 32768);
 
 /** A road pass as its surfaces are read (`roadSurfaceSteps`): plain data, handed to a worker as it is. */

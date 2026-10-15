@@ -14,7 +14,7 @@ import { ambientIndexWork, atRoll, cellKey, type Kind } from './ambientIndex';
  * falls on, both in O(log n). Whole numbers, so adding and taking away never
  * leaves a rounding behind.
  */
-export class Fenwick {
+class Fenwick {
   private cap = 16;
   private tree = new Float64Array(this.cap + 1);
   private raw = new Float64Array(this.cap);

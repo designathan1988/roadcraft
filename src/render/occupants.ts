@@ -19,7 +19,7 @@ import { m } from '@world/units';
  */
 
 /** Anything the rigged citizens can play (`riggedCitizens.CitizenClipKey`, without the import cycle). */
-export type OccupantClip = RiderClipKey | 'walk' | 'walkSlow' | 'standUp' | 'idle';
+type OccupantClip = RiderClipKey | 'walk' | 'walkSlow' | 'standUp' | 'idle';
 
 export interface Play {
   key: OccupantClip;
@@ -119,10 +119,10 @@ export const DOOR_SWING = 1.15;
  * stand-up (`standUp`), metres, over the roster: the rise is anchored with
  * the seated pelvis on the sill, so the person ends standing this far out.
  */
-export const STAND_UP_REACH = 0.36;
+const STAND_UP_REACH = 0.36;
 
 /** Clearance kept from the edge of an open door leaf by a body walking past it, metres. */
-export const LEAF_CLEARANCE = 0.42;
+const LEAF_CLEARANCE = 0.42;
 
 /** Everything the choreography needs from the body model, in its frame (X forward, Z right). */
 export interface KerbPlaces {
@@ -157,13 +157,13 @@ export function createKerbFigure(): KerbFigure {
 }
 
 /** The open leaf's free end, vehicle frame, for a door swung by `open` (0 to 1). */
-export function leafTip(door: KerbPlaces['door'], open: number): { x: number; z: number } {
+function leafTip(door: KerbPlaces['door'], open: number): { x: number; z: number } {
   const angle = open * DOOR_SWING;
   return { x: door.hingeX - door.length * Math.cos(angle), z: door.hingeZ + door.side * door.length * Math.sin(angle) };
 }
 
 /** Where the person stands up, and the way they walk from there to the footway. */
-export function kerbRoute(p: KerbPlaces): { sill: { x: number; z: number }; stand: { x: number; z: number }; via: { x: number; z: number } | null } {
+function kerbRoute(p: KerbPlaces): { sill: { x: number; z: number }; stand: { x: number; z: number }; via: { x: number; z: number } | null } {
   const side = p.door.side;
   const flank = Math.abs(p.door.hingeZ);
   const sill = { x: p.seat.x, z: side * flank };

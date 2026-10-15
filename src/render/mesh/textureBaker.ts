@@ -194,7 +194,7 @@ export function normalTexels(height: Float32Array, size: number, strength: numbe
  * (roughnessmap_fragment, metalnessmap_fragment), the glTF 2.0
  * metallicRoughnessTexture layout, so one texture serves as both.
  */
-export function grayscaleCanvas(values: Float32Array, size: number, metal?: Float32Array): HTMLCanvasElement {
+function grayscaleCanvas(values: Float32Array, size: number, metal?: Float32Array): HTMLCanvasElement {
   const { canvas, ctx } = canvasOf(size);
   if (!ctx) return canvas;
   const image = ctx.createImageData(size, size);

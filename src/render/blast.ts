@@ -54,14 +54,14 @@ import type { Exhaust } from './exhaust';
  * and sparks for a while.
  */
 
-export type DebrisKind = 'asphalt' | 'concrete' | 'earth' | 'brick' | 'wood' | 'metal' | 'glass' | 'char' | 'leaf' | 'flesh';
+type DebrisKind = 'asphalt' | 'concrete' | 'earth' | 'brick' | 'wood' | 'metal' | 'glass' | 'char' | 'leaf' | 'flesh';
 
 const COLORS: Readonly<Record<DebrisKind, number>> = {
   asphalt: 0x2b2b2d, concrete: 0x9a968e, earth: 0x5b4632, brick: 0x8a4a35, wood: 0x6b4a2e,
   metal: 0x3c3f44, glass: 0x9fb8c4, char: 0x1c1a19, leaf: 0x3d6b2a, flesh: 0x6e0d10,
 };
 
-export interface DebrisSpec {
+interface DebrisSpec {
   /** `car`: a car's shell (bonnet, windscreen, roof, boot), length x height x width. */
   /** `slab`: a broken plate of the ground, jagged at its edges (unit size, thin along y). */
   /** `mesh`: a geometry of its own (`geometry`, world units about its centre): a vehicle's own burnt-out body. */
@@ -83,7 +83,7 @@ export interface DebrisSpec {
   readonly color?: number;
 }
 
-export interface BlastWorld {
+interface BlastWorld {
   groundAt(x: number, y: number): number;
 }
 

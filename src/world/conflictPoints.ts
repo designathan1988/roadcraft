@@ -14,7 +14,7 @@ import { WAITING, answered } from './waiting';
 /** Yielded by `ConflictIndex.prepare` while its pairs are measured off the page (`waiting.ts`). */
 export { WAITING } from './waiting';
 
-export { BODY_CLASSES, BODY_CLASS_NAMES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Diverge, HEAVY, type Zone } from './conflictTable';
+export { BODY_CLASSES, BODY_CLASS_NAMES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Diverge, HEAVY,  } from './conflictTable';
 
 export function bodyClassOf(length: number, width: number): BodyClass {
   for (const c of BODY_CLASSES) {

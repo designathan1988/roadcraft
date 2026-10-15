@@ -55,10 +55,3 @@ export const issue = (
   subject: string | number,
   detail: string,
 ): AuditIssue => ({ code, tick, subject: String(subject), detail });
-
-/** Counts issues by code, for a compact status readout. */
-export function summarize(issues: readonly AuditIssue[]): Map<AuditCode, number> {
-  const out = new Map<AuditCode, number>();
-  for (const i of issues) out.set(i.code, (out.get(i.code) ?? 0) + 1);
-  return out;
-}

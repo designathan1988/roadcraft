@@ -12,7 +12,7 @@ import {
   roundRobinPlan,
 } from './plan';
 
-export type SubPhase = 'GREEN' | 'AMBER' | 'ALL_RED';
+type SubPhase = 'GREEN' | 'AMBER' | 'ALL_RED';
 
 /**
  * Per-junction signal state.
@@ -339,7 +339,7 @@ export function stepController(c: SignalController, deps: SignalDeps): boolean {
 }
 
 /** Chooses the next stage without skipping any vehicle or pedestrian service. */
-export function pickNextStage(c: SignalController, deps: SignalDeps): number {
+function pickNextStage(c: SignalController, deps: SignalDeps): number {
   const stages = c.plan.stages;
   if (stages.length <= 1) return 0;
   const sequential = (c.stageIndex + 1) % stages.length;
@@ -491,7 +491,7 @@ export function rebuildController(
   }
 }
 
-export function currentGreenGroups(c: SignalController): readonly GroupId[] {
+function currentGreenGroups(c: SignalController): readonly GroupId[] {
   if (c.sub !== 'GREEN') return [];
   return c.plan.stages[c.stageIndex]?.greenGroups ?? [];
 }

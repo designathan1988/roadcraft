@@ -303,7 +303,7 @@ function junctionIsStuck(w: SimWorld, node: number | undefined, limit: number): 
   return w.clock.since(last) > limit;
 }
 
-export function maxCycle(w: SimWorld): number {
+function maxCycle(w: SimWorld): number {
   let max = 30;
   for (const c of w.controllers.values()) max = Math.max(max, c.plan.cycle);
   return Math.min(max, 200);

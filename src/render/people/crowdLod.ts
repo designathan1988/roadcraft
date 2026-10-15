@@ -38,7 +38,7 @@ import { lodPool } from './lodPool';
  * (meshoptimizer for the meshes; hair cards, which a simplifier cannot merge,
  * chosen card by card), so a piece's vertex data is on the GPU once.
  */
-export const LEVEL_PIXELS = [40, 20, 8, 3] as const;
+const LEVEL_PIXELS = [40, 20, 8, 3] as const;
 /** Levels drawn: 0..3. */
 export const LEVELS = 4;
 /** Hysteresis: a person goes back up a level only this far past its edge. */
@@ -64,7 +64,7 @@ export function levelFor(pixels: number, was: number): number {
 export type PieceRole = 'skin' | 'outfit' | 'garment' | 'shoes' | 'hair' | 'brows' | 'lashes' | 'mouth' | 'accessory';
 
 /** The body's triangles at level 0: no hair costs more. */
-export const SKIN_TRIANGLES_LEVEL0 = 26756;
+const SKIN_TRIANGLES_LEVEL0 = 26756;
 
 /**
  * Triangles a piece keeps at each level (Infinity: all of it; 0: not drawn
@@ -108,7 +108,7 @@ function positionsOf(geometry: BufferGeometry): Float32Array {
  * triangles over the same vertices; the indices themselves when they are
  * within it, null when the simplifier cannot run.
  */
-export function simplifiedIndex(geometry: BufferGeometry, triangles: number, indices?: Uint32Array): Uint32Array | null {
+function simplifiedIndex(geometry: BufferGeometry, triangles: number, indices?: Uint32Array): Uint32Array | null {
   const source = indices ?? (geometry.getIndex() ? Uint32Array.from(geometry.getIndex()!.array as ArrayLike<number>) : null);
   if (!source || !geometry.getAttribute('position')) return null;
   if (!Number.isFinite(triangles) || source.length <= triangles * 3) return source;

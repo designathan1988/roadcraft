@@ -176,7 +176,7 @@ export function occupantScale(seat: SeatModel): number {
 }
 
 /** Where a steering wheel sits and how it is inclined, in the vehicle frame. */
-export interface SteeringModel {
+interface SteeringModel {
   readonly geometry: BufferGeometry;
   /** Seat (index into `seats`) whose occupant holds it. */
   readonly seat: number;
@@ -1395,13 +1395,4 @@ function archOutline(cx: number, cy: number, radius: number): P2[] {
     out.push([cx + Math.cos(a) * inner, cy + Math.sin(a) * inner]);
   }
   return out;
-}
-
-/**
- * The body with every door shut, as one painted and one glazed geometry.
- * Kept for callers written against the older model: the model now carries
- * them itself.
- */
-export function closedBody(model: VehicleModel): { shell: BufferGeometry; glass: BufferGeometry } {
-  return { shell: model.shell, glass: model.glass };
 }

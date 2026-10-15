@@ -131,7 +131,7 @@ export function paintCatalogue(): Map<string, Material> {
 }
 
 /** Paint of one colour: lit like the asphalt under it, drawn over it. */
-export function paintMaterial(color: string): Material {
+function paintMaterial(color: string): Material {
   const material = new MeshStandardMaterial({
     color: new Color(color).multiplyScalar(0.88),
     roughness: 0.72,

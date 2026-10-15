@@ -27,7 +27,7 @@ import { bakeLibraryClip, bakeWalk, breathe, restRig, type ClipFrames } from '..
 
 /** Principal components carried per body: 16 keep a body within about 1.5 cm of the full model. */
 export const SHAPES = 16;
-export const SHAPE_WIDTH = 4096;
+const SHAPE_WIDTH = 4096;
 /** Rows of a person's own face (`procFace`) are this wide; the vertex-to-face index (`procFaceIndex`) this wide. */
 export const FACE_WIDTH = 2048;
 export const FACE_INDEX_WIDTH = 4096;
@@ -39,7 +39,7 @@ export type AgeBand = 'child' | 'young' | 'adult' | 'senior';
 const BAND_YEARS: Readonly<Record<AgeBand, number>> = { child: 9, young: 22, adult: 42, senior: 72 };
 
 /** A class's own body: the middle of every slider at the band's age. */
-export function classBase(sex: WalkSex, band: AgeBand): MacroParams {
+function classBase(sex: WalkSex, band: AgeBand): MacroParams {
   return { ...DEFAULT_MACRO, gender: sex === 'female' ? 0 : 1, age: ageFromYears(BAND_YEARS[band]),
     muscle: 0.5, weight: 0.5, height: 0.5, proportions: 0.5, african: 1 / 3, asian: 1 / 3, caucasian: 1 / 3 };
 }
@@ -74,7 +74,7 @@ export function createBakeEnv(): BakeEnv {
 }
 
 /** A proxy pack as a cooked record, and back (`proceduralCook.ts`). */
-export function packRecordOf(pack: ProxyPack): PackRecord {
+function packRecordOf(pack: ProxyPack): PackRecord {
   return {
     name: pack.name, kind: pack.kind, scaleRefs: pack.scaleRefs, scaleBase: pack.scaleBase, refs: pack.refs,
     weights: pack.weights, offsets: pack.offsets, index: pack.index, deleteVerts: pack.deleteVerts, colour: pack.colour,
@@ -140,7 +140,7 @@ export interface ClassData {
   /** On hands and knees, crawling (CMU 111_03). */
   readonly crawl: ClipFrames;
 }
-export const classRecord = (d: ClassData): PackRecord => ({
+const classRecord = (d: ClassData): PackRecord => ({
   shapePixels: d.shapePixels, jointBasis: d.jointBasis, faceIndexPixels: d.faceIndexPixels, faceList: d.faceList,
   exprPixels: d.exprPixels, ...clipFields('walk', d.walk), ...clipFields('idle', d.idle),
   ...clipFields('run', d.run), ...clipFields('cower', d.cower), ...clipFields('sprint', d.sprint), ...clipFields('photo', d.photo), ...clipFields('getUp', d.getUp), ...clipFields('duck', d.duck), ...clipFields('hurtWalk', d.hurtWalk),

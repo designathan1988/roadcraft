@@ -21,7 +21,7 @@ import {
  * above the seated heads (the roof), one along the camera side of a vehicle
  * (the near door), so the people inside can be seen whole.
  */
-export interface InspectShot {
+interface InspectShot {
   /** Point looked at, world units: (x, y) on the map and `h` its height. */
   readonly x: number;
   readonly y: number;

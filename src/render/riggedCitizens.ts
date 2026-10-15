@@ -59,7 +59,7 @@ interface CitizenBatch {
 }
 
 /** The company a walker is dressed with (`citizenCasting.codesFor`): their party's kind, or alone. */
-export function companyOf(party: Pick<PartyView, 'size' | 'archetype'>): Company {
+function companyOf(party: Pick<PartyView, 'size' | 'archetype'>): Company {
   return party.size > 1 ? party.archetype : 'solo';
 }
 
@@ -1201,7 +1201,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
  * (`people/cartoon.ts`). Chosen with `?style=pixar` or kept in
  * `roadcraft.peopleStyle`; realistic otherwise.
  */
-export function peopleStyle(): CartoonStyle {
+function peopleStyle(): CartoonStyle {
   try {
     const asked = new URLSearchParams(location.search).get('style') ?? localStorage.getItem('roadcraft.peopleStyle');
     return asked === 'pixar' ? PIXAR : REALISTIC;

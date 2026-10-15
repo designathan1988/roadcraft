@@ -22,7 +22,7 @@ import { Color, DataTexture, LinearFilter, RGBAFormat, SRGBColorSpace } from 'th
  * UN R6 category 2, 50-200 cd (treaties.un.org, UNTS vol. 607, A-4789). The
  * headlamps keep the 3.0 they were drawn at.
  */
-export const BLOOM_THRESHOLD = 0.92;
+const BLOOM_THRESHOLD = 0.92;
 
 /** I in candela as luminance on the scale above. */
 const fromCandela = (cd: number): number => BLOOM_THRESHOLD + 0.7 * Math.log10(cd / 3);

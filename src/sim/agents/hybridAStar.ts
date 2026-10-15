@@ -269,20 +269,8 @@ interface Node {
   closed: boolean;
 }
 
-/**
- * The way from `start` to `goal` (rear-axle poses), as waypoints a step apart
- * (each with the direction it is driven in), ending within the tolerance of
- * the goal; null when there is none. `field` is the clearance of the yard,
- * in the same frame as the poses.
- */
-export function planWay(field: Clearance, body: Steered, start: AxlePose, goal: AxlePose, options: PlanOptions = {}): Waypoint[] | null {
-  const search = new WaySearch(field, body, start, goal, options);
-  while (search.state === 'running') search.run(MAX_EXPANDED);
-  return search.way;
-}
-
 /** Poses expanded and searches made, all told (for probes and measures). */
-export const searchStats = { expanded: 0, searches: 0, found: 0 };
+const searchStats = { expanded: 0, searches: 0, found: 0 };
 
 /**
  * The search, run a slice at a time: the simulation gives it a few hundred

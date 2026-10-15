@@ -216,7 +216,7 @@ const padCellKey = (cx: number, cy: number): number => cx * 100_003 + cy;
  * first of equals in `shapeAt` stays the one it was). NOT the town's
  * platforms filed again for one building (docs/AUDITORIA-2026-10-14.md C8).
  */
-export function townPads(apron: number): TownPads {
+function townPads(apron: number): TownPads {
   const CELL = PAD_CELL;
   const cellKey = padCellKey;
   const cells = new Map<number, Pad[]>();

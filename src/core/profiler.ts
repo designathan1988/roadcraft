@@ -63,7 +63,7 @@ function shortLine(line: string): string {
 }
 
 /** The caller's lines of a stack, three and the profiler left out. */
-export function callerLines(stack: string): string[] {
+function callerLines(stack: string): string[] {
   return stack.split('\n').slice(1).filter((l) => l.includes(' at ') && !NOT_CALLER.test(l)).map(shortLine);
 }
 

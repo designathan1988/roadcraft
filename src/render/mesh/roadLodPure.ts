@@ -22,9 +22,9 @@ export interface BlockArrays extends Readonly<Record<string, ArrayLike<number>>>
 /** What a coarse block may deviate by from the block, metres (absolute: a 1 % error of a 250 m block is 2.5 m). */
 export const COARSE_ERROR = 0.12;
 /** The share of the triangles aimed at: the simplifier stops sooner when the error is reached. */
-export const COARSE_RATIO = 0.08;
+const COARSE_RATIO = 0.08;
 /** A block with fewer triangles than this is not simplified: its far level would save nothing. */
-export const COARSE_MIN_TRIANGLES = 160;
+const COARSE_MIN_TRIANGLES = 160;
 
 /**
  * The coarse arrays of a block, or null when it is too small to be worth it or the simplifier cannot run.

@@ -17,8 +17,7 @@ import { DT } from '../dt';
 
 export type PersonAgeClass = 'child' | 'adult' | 'elder';
 export type PersonGender = 'f' | 'm';
-export type PartyArchetype = 'solo' | 'family' | 'couple' | 'friends' | 'colleagues' | 'elders' | 'tourists';
-export const PARTY_ARCHETYPES: readonly PartyArchetype[] = ['solo', 'family', 'couple', 'friends', 'colleagues', 'elders', 'tourists'];
+type PartyArchetype = 'solo' | 'family' | 'couple' | 'friends' | 'colleagues' | 'elders' | 'tourists';
 
 /** The group someone walks with. Its id is its first member's; members are `id + rank`. */
 export interface PartyView {
@@ -41,8 +40,8 @@ export type GestureKind = 'look' | 'phone' | 'talk' | 'bench'
   | 'mourn'
   // Gravely wounded, dragging themself off on hands and knees, bleeding.
   | 'crawl';
-export type GesturePhase = 'approach' | 'hold' | 'step' | 'turn' | 'sitDown' | 'seated' | 'standUp' | 'leave';
-export interface GestureView {
+type GesturePhase = 'approach' | 'hold' | 'step' | 'turn' | 'sitDown' | 'seated' | 'standUp' | 'leave';
+interface GestureView {
   kind: GestureKind;
   phase: GesturePhase;
   /** Seconds into the phase: a sit-down or stand-up clip is played to it. */
@@ -59,7 +58,7 @@ export const SIT_DOWN_SECONDS = { m: 2.9, f: 4.9 } as const;
 export const STAND_UP_SECONDS = { m: 2.5, f: 3.33 } as const;
 
 /** What the body stands on, which sets the height it is drawn at. */
-export type PedGround = 'footway' | 'crossing' | 'open';
+type PedGround = 'footway' | 'crossing' | 'open';
 /** What a body can lose: an arm or a leg (each side), or the head. */
 export type Severable = 'armL' | 'armR' | 'legL' | 'legR' | 'head';
 /** Where a shot strikes a body. */

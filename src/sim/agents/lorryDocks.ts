@@ -38,7 +38,7 @@ import {
  */
 
 /** The rear axle's least turning radius (SU-30, above). */
-export const LORRY_RADIUS = m(9.7);
+const LORRY_RADIUS = m(9.7);
 /** Where the rear axles are, as a share of the length behind the body's centre (the drawn model's axles, `render/vehicleModels.ts` axleStations: the pair at -0.21 L and -0.34 L). */
 const REAR_SHARE = 0.275;
 /** Kept between the lorry and anything solid while it is planned. */
@@ -595,7 +595,7 @@ const SETTLE_STEP = m(0.2);
  * axle along a cubic Hermite curve whose ends point along the two headings
  * (the way `manoeuvre.ts` joins its points), the body along the curve.
  */
-export function settle(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
+function settle(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
   const len = Math.hypot(to.x - from.x, to.y - from.y);
   const dir = reverse ? -1 : 1;
   const k = 0.6 * len;

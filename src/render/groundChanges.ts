@@ -108,13 +108,6 @@ export function unionRect(a: Rect | null, b: Rect): Rect {
   return a === null ? b : [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
 }
 
-/** The rectangle round points, grown by `pad`; `null` for none. */
-export function rectAround(points: Iterable<{ readonly x: number; readonly y: number }>, pad: number): Rect | null {
-  let r: Rect | null = null;
-  for (const p of points) r = unionRect(r, [p.x - pad, p.y - pad, p.x + pad, p.y + pad]);
-  return r;
-}
-
 /**
  * A thing drawn on the ground: built again only when its own key changes or
  * the ground changes under its area. `stale` says whether to build it now,

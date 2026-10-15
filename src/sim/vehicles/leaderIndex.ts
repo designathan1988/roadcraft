@@ -266,7 +266,7 @@ export function shadowLeaderObstacle(w: SimWorld, v: Vehicle): Obstacle | null {
 }
 
 /** The next `n` lanelets on the vehicle's route, excluding the current one. */
-export function upcomingLanelets(w: SimWorld, v: Vehicle, n: number): LaneletId[] {
+function upcomingLanelets(w: SimWorld, v: Vehicle, n: number): LaneletId[] {
   const out: LaneletId[] = [];
   for (let i = 1; i < v.route.length && out.length < n; i++) {
     const id = v.route[i];

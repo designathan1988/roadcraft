@@ -45,10 +45,10 @@ export const STREAM_AHEAD = 8;
 export const BATCH_CELL = m(240);
 export const DETAIL_CELL = m(120);
 /** A window frame's side, m (`buildingMesh.ts`, the frames' depth). */
-export const FRAME_SIDE = m(0.06);
+const FRAME_SIDE = m(0.06);
 /** A detail cell's frames and railings are drawn whole while a frame's side spans this many pixels (`cullDetails`). */
-export const FULL_DETAIL_PIXELS = 0.4;
-export const DETAIL_HYSTERESIS = 0.1;
+const FULL_DETAIL_PIXELS = 0.4;
+const DETAIL_HYSTERESIS = 0.1;
 // Frozen tables, not state (`eslint-rules/no-module-state.js`).
 export const DETAIL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['frame', 'railing', 'roofRailing', 'louvre']));
 export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind))));
@@ -61,7 +61,7 @@ export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KI
  */
 /** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
 export type CellCache = Map<string, CellBatch>;
-export interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes }
+interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes }
 
 /** A cell cache that tells `told` each key that comes in (true) or goes (false). */
 export function watchedCells(told: (key: string, has: boolean) => void): CellCache {

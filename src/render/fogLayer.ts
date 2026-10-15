@@ -13,7 +13,7 @@ import { fogAt, type FogDab, type FogSample } from '@world/fogPaint';
  */
 
 /** Texels across the map: some 20 m a texel. */
-export const FOG_RES = 512;
+const FOG_RES = 512;
 
 export interface FogLayer {
   readonly texture: DataTexture;

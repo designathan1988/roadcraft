@@ -40,7 +40,7 @@ export const GROUND = 0;
 export const NATURAL = 1;
 export const PAVED = 2;
 
-export type { CellEntry, CellJobEntry } from './chunk';
+export type { CellEntry,  } from './chunk';
 
 /**
  * What a job makes: a cell's detail (its coarse batch and its detail cells'),

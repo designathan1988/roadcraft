@@ -32,7 +32,7 @@ type JBodyID = InstanceType<JoltApi['BodyID']>;
 
 const LAYER_STATIC = 0, LAYER_MOVING = 1;
 /** Parts a ragdoll has (`RagdollSpec.parts`), for its collision groups. */
-export const MAX_PARTS = 16;
+const MAX_PARTS = 16;
 
 let api: JoltApi | null = null;
 let loading: Promise<void> | null = null;

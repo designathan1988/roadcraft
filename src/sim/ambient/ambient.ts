@@ -64,8 +64,8 @@ import { LotPlaces, PLACE_KINDS } from './lotPlaces';
 /** How far round a road end its footway points are looked for, u. */
 const END_LOOK = m(16);
 /** Most people on foot at once, and cars driving, and the cars driving when zoomed out. */
-export const MAX_WALKERS = 260;
-export const MAX_DRIVERS = 180;
+const MAX_WALKERS = 260;
+const MAX_DRIVERS = 180;
 const MAX_DRIVERS_FAR = 110;
 /** Seconds between two looks at the budget. */
 const LOOK_EVERY = 0.25;

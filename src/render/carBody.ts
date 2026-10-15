@@ -71,7 +71,7 @@ const CHROME = 0xb9bec4;
  * description the seats, the floor, the wheel and the poses are all built
  * from (`riderPoses.ts` reads the same numbers).
  */
-export const CAR_PACKAGE = {
+const CAR_PACKAGE = {
   /** Hip point over the floor (the heel point's floor), every car seat. */
   hipOverFloor: 0.27,
   /** Heel point: forward of the hip and below it, on the floor. */
@@ -86,8 +86,8 @@ export const CAR_PACKAGE = {
 } as const;
 
 /** A van's cab seat: the hip over the floor, and the heels ahead of it (`riderPoses` CAB poses). */
-export const CAB_HIP_OVER_FLOOR = 0.45;
-export const CAB_HEEL_FORWARD = 0.42;
+const CAB_HIP_OVER_FLOOR = 0.45;
+const CAB_HEEL_FORWARD = 0.42;
 
 /**
  * How far an upright seat's cushion (a van's or a truck's cab, a bus's)
@@ -314,7 +314,7 @@ interface Face {
 }
 
 /** The surface description a body is built from, kept for the anchors and the tests. */
-export interface CarShape {
+interface CarShape {
   readonly style: CarStyle;
   readonly top: (x: number) => number;
   readonly bottom: (x: number) => number;
@@ -353,7 +353,7 @@ function axlesOf(a: Archetype): number[] {
   return [a.length * 0.31, -a.length * 0.31];
 }
 
-export function carShape(a: Archetype, styleName: CarStyle): CarShape {
+function carShape(a: Archetype, styleName: CarStyle): CarShape {
   const s = STYLES[styleName];
   const L = a.length;
   const W = a.width;
@@ -414,7 +414,7 @@ function seatPoints(a: Archetype, styleName: CarStyle): { x: number; z: number; 
 }
 
 /** The seat a door serves and a seat's number: the driver's side first, front to back, then the kerb side. */
-export function seatIndex(side: DoorSide, row: number, perSide: number): number {
+function seatIndex(side: DoorSide, row: number, perSide: number): number {
   return (side === -1 ? 0 : perSide) + row;
 }
 

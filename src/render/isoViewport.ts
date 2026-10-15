@@ -64,11 +64,11 @@ const TAU = Math.PI * 2;
 /** The most steps a zoom or a turn takes to bring the point it holds back under the pointer (`keeping`). */
 const KEEP_PASSES = 8;
 
-export function clampElevation(e: number): number {
+function clampElevation(e: number): number {
   return Math.min(MAX_ELEVATION, Math.max(MIN_ELEVATION, e));
 }
 
-export function wrapAzimuth(a: number): number {
+function wrapAzimuth(a: number): number {
   return ((a % TAU) + TAU) % TAU;
 }
 

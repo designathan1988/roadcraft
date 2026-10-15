@@ -23,7 +23,7 @@
  */
 
 /** An input of the engine that is not the diary (the view, the clock, the quality): a serial moved when it changes. */
-export class EngineInput {
+class EngineInput {
   /** Moved by every input's `touch`: part of the engine's stamp (`Engine.watch`). */
   static epoch = 0;
   private serialNow = 0;
@@ -39,21 +39,6 @@ export class EngineInput {
   touch(): void {
     this.serialNow++;
     EngineInput.epoch++;
-  }
-}
-
-/** Reads an input's changes since its last read: true once per change, then false until the next. */
-export class InputCursor {
-  private seen = -1;
-
-  constructor(readonly input: EngineInput) {}
-
-  /** Whether the input changed since the last read (the first read: yes). */
-  moved(): boolean {
-    const now = this.input.serial;
-    if (now === this.seen) return false;
-    this.seen = now;
-    return true;
   }
 }
 

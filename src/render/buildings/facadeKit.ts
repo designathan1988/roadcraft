@@ -34,7 +34,7 @@ export interface Sink {
   Y(y: number): number;
 }
 
-export type Side = 'front' | 'back' | 'left' | 'right';
+type Side = 'front' | 'back' | 'left' | 'right';
 const SIDES: readonly Side[] = ['front', 'right', 'back', 'left'];
 
 /** A wall of a rectangular mass `[x0, x1] x [y0, y1]`. */
@@ -84,7 +84,7 @@ export function repeat(length: number, target: number, min = 1): number[] {
 /** Wall depth: how far the glass and the inner mass stand behind the face. */
 export const WALL = 0.32;
 
-export type Head = 'none' | 'cornice' | 'pediment' | 'arch' | 'keystone';
+type Head = 'none' | 'cornice' | 'pediment' | 'arch' | 'keystone';
 
 export interface WindowSpec {
   /** Wall material round the opening. */

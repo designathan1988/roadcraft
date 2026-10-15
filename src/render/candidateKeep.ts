@@ -17,7 +17,7 @@ import { m } from '@world/units';
  */
 
 /** The places' cells, world units: also the cells their drawing is kept in (`plantCells.ts`). */
-export const KEEP_CELL = m(64);
+const KEEP_CELL = m(64);
 const CELL = KEEP_CELL;
 /** A cell's key, from its column and row. */
 export const keepCellKey = (i: number, j: number): number => (i + 0x8000) * 0x10000 + (j + 0x8000);

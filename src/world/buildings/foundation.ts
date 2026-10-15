@@ -370,31 +370,6 @@ function adjacentEntrance(a: Entrance, b: Entrance): boolean {
   return b.index === a.index + Math.max(1, bays);
 }
 
-/**
- * Ground-floor heights of stored buildings, by record, remembered until `key`
- * changes. The caller builds the key from what the GROUND depends on (the
- * roads shape the terrain, so the network's counts as well as the land's);
- * a building changed is a new record and is worked out again by itself.
- * DO NOT put the buildings' revision in the key, nor key the floors by id:
- * every building edited dropped every floor of the town.
- */
-export class FloorCache {
-  private key = '';
-  private floors = new WeakMap<Building, number>();
-
-  floorOf(b: Building, groundAt: GroundAt, key: string, pavedAt: PavedAt = NO_PAVING): number {
-    if (key !== this.key) {
-      this.key = key;
-      this.floors = new WeakMap();
-    }
-    const known = this.floors.get(b);
-    if (known !== undefined) return known;
-    const floor = floorHeight(b, groundAt, pavedAt);
-    this.floors.set(b, floor);
-    return floor;
-  }
-}
-
 /** The absolute ground-floor height of a building, uncached. Same rule as `foundationOf`. */
 export function floorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = NO_PAVING): number {
   const { lowest, highest } = sampleFootprint(b, groundAt);

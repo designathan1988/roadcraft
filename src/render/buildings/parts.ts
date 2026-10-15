@@ -75,7 +75,7 @@ function blank(): Building | null {
  * window, that block under the roof in question, or a pad with one element
  * standing on it.
  */
-export function partSample(id: string): Building | null {
+function partSample(id: string): Building | null {
   // A lot of the lot lab, once read (`ThumbnailStudio.request` reads it first).
   if (id.startsWith('lot:')) {
     const lot = loadedLot(id.slice(4));

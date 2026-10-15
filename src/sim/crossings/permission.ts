@@ -157,7 +157,7 @@ export const PED_COURTESY = 8;
  * that time; a vehicle standing still is not approaching
  * (sumo.dlr.de/docs/Simulation/Pedestrians.html).
  */
-export function heldOnlyByPedestrians(w: SimWorld, v: Vehicle): boolean {
+function heldOnlyByPedestrians(w: SimWorld, v: Vehicle): boolean {
   return v.heldByPedestriansTick !== undefined && w.clock.tick - v.heldByPedestriansTick <= 1;
 }
 
@@ -171,7 +171,7 @@ export function heldOnlyByPedestrians(w: SimWorld, v: Vehicle): boolean {
  * held people at the kerb for three minutes — but "can everything coming
  * stop for me, and is nothing about to arrive regardless".
  */
-export function pedGapAccepted(w: SimWorld, crossing: SidewalkEdge, waited: number): boolean {
+function pedGapAccepted(w: SimWorld, crossing: SidewalkEdge, waited: number): boolean {
   const impatience = Math.min(1.5, 0.05 * waited);
   const critical = Math.max(2.5, PED.criticalGap - impatience);
 

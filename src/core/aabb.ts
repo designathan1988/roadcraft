@@ -44,6 +44,3 @@ export const expand = (b: Aabb, m: number): Aabb => ({
   maxX: b.maxX + m,
   maxY: b.maxY + m,
 });
-
-export const intersects = (a: Aabb, b: Aabb): boolean =>
-  a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;

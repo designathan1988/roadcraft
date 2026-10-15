@@ -27,7 +27,7 @@ export function unitOr(v: Vector3, fallback: Vector3): Vector3 {
 }
 
 /** A unit vector perpendicular to the unit vector `axis`. */
-export function perpendicular(axis: Vector3): Vector3 {
+function perpendicular(axis: Vector3): Vector3 {
   const other = Math.abs(axis.x) < 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
   return new Vector3().crossVectors(axis, other).normalize();
 }

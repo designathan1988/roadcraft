@@ -150,19 +150,6 @@ export function vehiclePoseInto(w: SimWorld, v: Vehicle, alpha: number, out: Pos
 /** The last step's body centre on its own chart, written in place. */
 const BEFORE_OWN = { x: 0, y: 0 };
 
-/**
- * Where a vehicle is now, for the simulation itself: `vehiclePose` at the end
- * of the tick (alpha 1), without the previous step's frame that only the
- * drawing's blend between two steps needs (Glenn Fiedler, "Fix Your
- * Timestep!": the blended state is for rendering, the simulation works from
- * its current state). Half the work of `vehiclePose(w, v, 1)`, which the
- * walkers' gap check paid for every vehicle in town every tick.
- */
-export function vehiclePoseNow(w: SimWorld, v: Vehicle): Pose | null {
-  const out = newPose();
-  return vehiclePoseNowInto(w, v, out) ? out : null;
-}
-
 /** `vehiclePoseNow` into `out`; false where there is none (the walkers read every vehicle's every tick). */
 export function vehiclePoseNowInto(w: SimWorld, v: Vehicle, out: PoseOut): boolean {
   const free = v.free;

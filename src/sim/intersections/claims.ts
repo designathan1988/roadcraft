@@ -242,7 +242,7 @@ export class ClaimTable {
 }
 
 /** Body-centre position past which `cls` on `connector` is clear of the zone. */
-export function clearedAt(point: ConflictPoint, connector: ConnectorId, cls: BodyClass): number {
+function clearedAt(point: ConflictPoint, connector: ConnectorId, cls: BodyClass): number {
   if (point.a !== connector && point.b !== connector) return Infinity;
   let exit = -Infinity;
   for (const theirs of BODY_CLASSES) {

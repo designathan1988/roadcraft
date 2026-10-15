@@ -12,7 +12,7 @@ import { FloatType, HalfFloatType, RedFormat, RGFormat, UnsignedByteType, Unsign
  */
 
 /** Bytes of one texel of a texture: channels by component size. */
-export function texelBytesOf(texture: Pick<Texture, 'type' | 'format'>): number {
+function texelBytesOf(texture: Pick<Texture, 'type' | 'format'>): number {
   const channels = texture.format === RedFormat ? 1 : texture.format === RGFormat ? 2 : 4;
   const component = texture.type === FloatType || texture.type === UnsignedIntType ? 4
     : texture.type === HalfFloatType || texture.type === UnsignedShortType ? 2

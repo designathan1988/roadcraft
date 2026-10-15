@@ -32,7 +32,7 @@ import {
  * ground storey and `s` the others, `upper` the storeys over the ground.
  */
 
-export interface LandmarkSink extends Sink {
+interface LandmarkSink extends Sink {
   lamp(x: number, y: number, z?: number, h?: number): void;
 }
 type Design = (p: LandmarkSink, W: number, D: number, g: number, s: number, upper: number) => void;

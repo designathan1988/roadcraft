@@ -177,7 +177,7 @@ export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
 /** Every surface of one tile, by mesh name. */
 export type TileBundle = ReadonlyMap<string, Tile>;
 /** A tile kept between builds: the names of the surfaces it has. Its digest is its key. */
-export type KeptTile = readonly string[];
+type KeptTile = readonly string[];
 
 /** One tile of a pass in a build: its digest and block, its rings, its surfaces and arrays once known. */
 interface PassTile {

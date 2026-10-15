@@ -31,7 +31,7 @@ import { fixtureDoc, simOf } from '../../sim/support/bodies';
 const motion = (name: string): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'src', 'render', 'motion', name), 'utf8'));
 const LIBRARY = decodeRocketboxLibrary(motion('rocketboxMale.json'), motion('rocketboxFemale.json'));
-export const GAIT_CLIPS: Readonly<Record<'male' | 'female', GaitClips>> = {
+const GAIT_CLIPS: Readonly<Record<'male' | 'female', GaitClips>> = {
   male: gaitClipsOf(LIBRARY.male, 'male'),
   female: gaitClipsOf(LIBRARY.female, 'female'),
 };

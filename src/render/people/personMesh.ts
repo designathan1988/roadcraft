@@ -266,11 +266,11 @@ const WAIST_SHARE = 0.4;
 /** Along-limb margin faces are kept past a cut, so the clipping plane always has cloth to cut. */
 const HEM_MARGIN = 0.18;
 /** Where a sleeve ends along the arm: 0 shoulder, 1 elbow, 2 wrist. */
-export function sleeveEnd(look: PersonLook): number {
+function sleeveEnd(look: PersonLook): number {
   return look.top === 'tank' ? -0.05 : look.top === 'tshirt' ? 0.42 : look.top === 'longsleeve' ? 1.9 : -1;
 }
 /** Where a leg ends along the leg: 0 hip, 1 knee, 2 ankle. */
-export function legEnd(look: PersonLook): number {
+function legEnd(look: PersonLook): number {
   return look.bottom === 'trousers' ? 1.93 : look.bottom === 'shorts' ? 0.62 : 0.12;
 }
 

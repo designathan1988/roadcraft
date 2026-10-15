@@ -7,7 +7,7 @@ import {
   TRAFFIC_DENSITY,
 } from '../params';
 import type { SimWorld } from '../world';
-import { ARCHETYPES, type Archetype, archetypeWeights, bodyClassOfArchetype } from './archetypes';
+import { type Archetype, archetypeWeights, bodyClassOfArchetype } from './archetypes';
 import { makeDriver } from './driver';
 import { idmAccel } from './idm';
 import { createVehicle, snapshot, type Vehicle } from './state';
@@ -20,9 +20,9 @@ import { curveSpeedCap } from './curvature';
  * Arrival rate at one boundary entry lane, vehicles per second, at traffic
  * intensity and demand 1 (about 180 an hour a lane, a quiet city street).
  */
-export const ENTRY_RATE = 0.05;
+const ENTRY_RATE = 0.05;
 /** Vehicles an entry holds outside the map before further arrivals are lost. */
-export const ENTRY_QUEUE = 6;
+const ENTRY_QUEUE = 6;
 /**
  * Arrivals a second at one entry with a number of cars chosen
  * (`SimWorld.trafficCount`) once the map holds it: a car that leaves is soon
@@ -61,14 +61,14 @@ export function trafficTarget(w: SimWorld): number {
  * city (`SimWorld.followCity`), its road length's density times the panel's
  * share and the demand; null when neither (the harnesses' arrival rates).
  */
-export function chosenTraffic(w: SimWorld): number | null {
+function chosenTraffic(w: SimWorld): number | null {
   if (w.trafficCount !== null) return w.trafficCount;
   if (!w.followCity) return null;
   return roadLength(w) * TRAFFIC_DENSITY * w.trafficIntensity * w.demandMultiplier;
 }
 
 /** The road length of a network, kept by what each rebuild changed (`world/networkLength.ts`). */
-export function roadLength(w: SimWorld): number {
+function roadLength(w: SimWorld): number {
   return w.roadLength.of(w.net);
 }
 
@@ -407,4 +407,4 @@ export function stepDespawn(w: SimWorld): void {
   }
 }
 
-export { ARCHETYPES };
+;

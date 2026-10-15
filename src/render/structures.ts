@@ -65,7 +65,7 @@ export const SPAN_REACH = m(24);
  * reaches one of those boxes are asked, found by place (`segmentCells`);
  * with `candidates`, only those. DO NOT walk every ribbon of the map for a box.
  */
-export function structureRibbons(
+function structureRibbons(
   net: Network,
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
