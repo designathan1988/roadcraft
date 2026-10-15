@@ -26,7 +26,9 @@ describe('the frame and the world rebuild', () => {
     expect(at).toBeGreaterThan(-1);
     const block = frame.slice(at, frame.indexOf('}', at));
     expect(block).not.toMatch(/rebuildSimulationTopology|rebuildTopology|rebuildVehicleTopology/);
-    expect(frame).toMatch(/topology\.step\(sim,/);
+    // The topology caught up in the simulation's worker (`simHost.ts`), never in the page's frame.
+    expect(frame).not.toMatch(/topology\.step\(/);
+    expect(read('src/sim/host/simHost.ts')).toMatch(/this\.topology\.step\(sim,/);
   });
 
   it('builds the world sliced, its roads shaped by the tile workers', () => {
@@ -97,6 +99,42 @@ describe('the workers', () => {
       expect(modules.filter((m) => /src\/(main|render\/renderer|ui\/|view\/|editor\/)/.test(m))).toEqual([]);
     });
   }
+
+  it('src/growth.worker.ts reaches pure modules only: the growth\'s design, never a tool, the page or the drawing', () => {
+    const modules = [...reach('src/growth.worker.ts')];
+    expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);
+    expect(modules.filter((m) => /src\/(main|growthPool|render\/|ui\/|view\/|sim\/|people\/)/.test(m))).toEqual([]);
+    // Of the editor, the growth's pure part alone (the lot planned, the building made for it, checked).
+    expect(modules.filter((m) => m.startsWith('src/editor/')).sort())
+      .toEqual(['src/editor/growthReplica.ts', 'src/editor/lotBoundaryRuns.ts', 'src/editor/lotPlan.ts', 'src/editor/zoning.ts']);
+  });
+});
+
+describe('the growth of the buildings', () => {
+  // A building grown was designed on the page, in the frame: 28.6 s of a 2,560 m city's 120 s of work, the town stuttering as it grew (2026-10-15). The city's growth and the zones' ask the growth's worker (`growthFeed.ts`).
+  const main = read('src/main.ts');
+  it('designs no building of a city or a zone on the page', () => {
+    for (const name of ['growCity', 'askCity', 'growZones', 'growthAnswered']) {
+      expect(bodyOf(main, name), name).not.toMatch(/growOnLot\(|designOnLot\(/);
+    }
+    expect(bodyOf(main, 'askCity')).toMatch(/growth\.ask\(lotTool\.refused, /);
+    expect(bodyOf(main, 'growZones')).toMatch(/growth\.ask\(lotRefused, /);
+    expect(main).toMatch(/new GrowthPool\(\(answer\) => growthAnswered\(answer\)/);
+    expect(main).toMatch(/new GrowthSession\(growthPool, /);
+    // On the page only the probe that times `growOnLot` itself (`growTimed`) calls it.
+    const calls = [...main.matchAll(/growOnLot\(/g)].map((m) => main.lastIndexOf('\n', m.index));
+    expect(calls.map((at) => main.slice(at, at + 40).trim().split(':')[0])).toEqual(['growTimed']);
+    expect(main).not.toMatch(/designOnLot/);
+  });
+
+  it('the pool posts to the growth worker, and the page writes only what it answers', () => {
+    const pool = read('src/growthPool.ts');
+    expect(pool).toMatch(/jobPort\('growth', 0\)/);
+    const feed = read('src/editor/growthFeed.ts');
+    expect(feed).not.toMatch(/(designOnLot|growOnLot)\(/);
+    // Asked again when the document moved: checked against it before it is written.
+    expect(feed.slice(feed.indexOf('  receive('), feed.indexOf('  private lotOpen('))).toMatch(/moved && validateBuilding\(/);
+  });
 });
 
 describe('the ground cut and filled', () => {
@@ -144,9 +182,9 @@ describe('the ground cut and filled', () => {
 
 describe('the bays of the lots', () => {
   it('are asked of the workers in the game, worked out on the page only by a world without them', () => {
-    // The game's world has the pool (`bayPool.ts`, `bays.worker.ts`).
-    expect(read('src/main.ts')).toMatch(/useBayWorkers\(sim, new BayPool\(\)\);/);
-    expect(read('src/bayPool.ts')).toMatch(/new Worker\(new URL\('\.\/bays\.worker\.ts', import\.meta\.url\)/);
+    // The simulation's worker has the pool (`bayPool.ts`, the job system's `bays` lanes).
+    expect(read('src/sim/host/simHost.ts')).toMatch(/useBayWorkers\(sim, new BayPool\(\)\);/);
+    expect(read('src/bayPool.ts')).toMatch(/jobPort\('bays', k\)/);
     const parking = read('src/sim/agents/parking.ts');
     // A lot looked at is asked of the workers when the world has them; `bayRows` on the page only without.
     expect(bodyOf(parking, 'baysNow')).toMatch(/lookAtLot\([^;]*workers \? asked : null\);/);

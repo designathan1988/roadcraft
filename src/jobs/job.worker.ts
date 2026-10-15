@@ -4,6 +4,7 @@ import type { FromJob, JobScope, JobService, ToJob } from './jobScope';
 
 type Serve = (scope: JobScope) => void;
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
+  growth: () => import('../growth.worker'),
   bays: () => import('../bays.worker'),
   conflicts: () => import('../conflictTable.worker'),
   cells: () => import('../render/buildings/cell.worker'),

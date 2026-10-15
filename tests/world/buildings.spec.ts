@@ -220,10 +220,12 @@ describe('validation', () => {
     // The neighbour moved away: a new record, seen anew (a ring kept by record never answers for the old one).
     doc.buildings.put({ ...doc.buildings.get(first.id)!, x: 900 });
     expect(validateBuilding(ctx, probe)).toBeNull();
-    // DO NOT turn the neighbours' corners into the world at each check (3.8 s of a city's growth, 2026-10-15).
+    // DO NOT turn the neighbours' corners into the world at each check (3.8 s of a city's growth, 2026-10-15). The neighbour's rings as its neighbours read them (`neighbours.ts`): once per record.
     const source = readFileSync('src/world/buildings/validate.ts', 'utf8');
-    expect(source).toMatch(/const others = obstaclesOf\(other\);/);
-    expect(source).toMatch(/const obstaclesOf = identityMemo\(/);
+    expect(source).toMatch(/const others = other\.obstacles;/);
+    const neighbours = readFileSync('src/world/buildings/neighbours.ts', 'utf8');
+    expect(neighbours).toMatch(/const groundOf = identityMemo\(/);
+    expect(neighbours).toMatch(/export const neighbourOf = identityMemo\(/);
   });
 
   it('rejects a building off the map', () => {

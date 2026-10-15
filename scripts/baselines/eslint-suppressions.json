@@ -124,7 +124,7 @@
   },
   "src/editor/zoning.ts": {
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "src/frameLoop.ts": {

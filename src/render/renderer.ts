@@ -302,8 +302,8 @@ export interface SceneHandle {
   roadsSolve(): { readonly elevation: RoadElevation; readonly terrainRevision: number } | null;
   /** The top of what is drawn at a point: a deck where a road's casing covers it, the terrain elsewhere. */
   surfaceHeightAt(x: number, y: number): number;
-  /** The height of the paving at a point - footway or carriageway of a road at grade - or NaN off the roads. */
-  pavedHeightAt(x: number, y: number): number;
+  /** The height of the paving at a point (NaN off the roads); with `pack`, what a worker reads it from over a rectangle (`world/paving.ts`). */
+  readonly pavedHeightAt: PavingSource;
   resize(): void;
   draw(net: Network, sim: SimClient, alpha: number, delta: number, options?: DrawOptions): void;
   setQuality(level: QualityLevel | 'auto'): void;

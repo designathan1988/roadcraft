@@ -316,7 +316,7 @@ function travelProfile(
 }
 
 /** Half-width of a road type at a given surface level. */
-export function halfWidth(rt: RoadType, level: SurfaceLevel): number {
+export function halfWidth(rt: Pick<RoadType, 'width' | 'sidewalk'>, level: SurfaceLevel): number {
   switch (level) {
     case Level.Asphalt:
       return rt.width / 2;

@@ -119,6 +119,10 @@ import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
+import { GrowthSession } from '@editor/growthFeed';
+import { BATCH_MOST, type GrowAnswer } from '@editor/growthReplica';
+import { GrowthPool } from './growthPool';
+import { TERRAIN_CELL } from '@render/terrain';
 import { bulbClearing } from '@world/junction/bulb';
 
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
@@ -1808,7 +1812,9 @@ mountAbout();
 /** A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the map replaced */
 let cityGrowth: { left: number; total: number; started: number; guard: number;
   /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
-  layout?: Generator<void, { zoned: number; squares: number; pieces: number }> } | null = null;
+  layout?: Generator<void, { zoned: number; squares: number; pieces: number }>;
+  /** Every lot built on: the progress notice let go at the next frame. */
+  done?: boolean } | null = null;
 function generateCity(options: CityOptions, plan = planCity(options)): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
   const cityDoc = layCity(plan);
   history.begin(doc);
@@ -1835,7 +1841,7 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   lotTool.refusedNow();
   return { zoned, ...green };
 }
-/** Builds on the generated city's lots, `GROW_SLICE_MS` a frame */
+/** Builds on the generated city's lots: each building made in the growth's worker (`growth`), drawn in the next frame. */
 const cityProgress = document.createElement('div');
 cityProgress.className = 'city-progress';
 cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:50;display:none;'
@@ -1843,7 +1849,7 @@ cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:transla
 document.body.appendChild(cityProgress);
 function growCity(): void {
   if (!cityGrowth) return;
-  // DO NOT hold the buildings from the renderer until the last one
+  // DO NOT hold the buildings from the renderer until the last one: every site was graded in one frame, 5.6 s at 2,560 m.
   const growing = cityGrowth;
   if (cityProgress.style.display !== 'block') {
     cityProgress.style.display = 'block';
@@ -1868,10 +1874,10 @@ function growCity(): void {
     requestDraw();
     return;
   }
-  const done = growSlice(growing);
+  // The next building asked for when none is being made (its answer asks for the one after, `growthAnswered`).
+  askCity(growing);
   cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
-  requestDraw();
-  if (!done) return;
+  if (!growing.done) return;
   cityGrowth = null;
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
@@ -1879,30 +1885,45 @@ function growCity(): void {
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
 }
-/** @rebuild One slice of the generated city's growth: lots built until `GROW_SLICE_MS` is spent; true when none is left. */
-function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
-  const until = performance.now() + GROW_SLICE_MS;
-  let done = false;
-  caused('city generated', () => {
-    while (performance.now() < until) {
-      if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
-      const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
-      if (id === null) {
-        // DO NOT filter `doc.lots` here: it ran once per lot refused, every lot each time.
-        if (doc.openLots.count(lotTool.refused) === 0) { done = true; break; }
-        continue;
-      }
-      const fresh = doc.buildings.get(id as BuildingId);
-      if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
-      growing.left--;
-    }
-  });
-  return done;
+/** @rebuild The generated city's next buildings asked of the growth's worker, when none is being made (DO NOT design them on the page). */
+function askCity(growing: NonNullable<typeof cityGrowth>): void {
+  if (growing.done || growing.layout || growth.busy || mover.dragging) return;
+  if (++growing.guard > growing.total * 3 + 50) { growing.done = true; requestDraw(); return; }
+  // Several buildings an ask (`BATCH_MOST`): none left open, the city is built.
+  if (!caused('city generated', () => growth.ask(lotTool.refused, 0x5eed, BATCH_MOST))) { growing.done = true; requestDraw(); }
 }
-/** Milliseconds a frame spent building the generated city's lots (`growCity`). */
+/** Milliseconds a frame spent laying the generated city's lots (`growCity`). */
 const GROW_SLICE_MS = 100;
 /** Seconds the last generated city took, from the call to its last building (probes). */
 let cityBuiltIn = 0;
+
+/** THE GROWTH (`editor/growthFeed.ts`): the generated city's buildings and the zones' (`growZones`), one at a time, each designed in the growth's worker (`growthPool.ts`, `growth.worker.ts`) and written here when its answer comes - outside the frame, in the worker's message - checked again first when the document moved meanwhile. */
+const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => growth.restart());
+const growth = new GrowthSession(growthPool, () => ({
+  doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: scene.pavedHeightAt, cell: TERRAIN_CELL,
+}));
+/** The worker's answer: the building written, stamped as grown now, and the next asked for while a city is being built. False: not now - nothing is written in the middle of a drag (an authoring preview); the pool offers it again at the next frame (`GrowthPool.pump`). */
+function growthAnswered(answer: GrowAnswer): boolean {
+  if (mover.dragging) return false;
+  const city = cityGrowth;
+  const cause = city ? 'city generated' : 'zone growth';
+  // Each building stamped as grown now as it is written, before the next (`GrowthSession.receive`).
+  const outcome = caused(cause, () => growth.receive(answer, (id) => {
+    const fresh = doc.buildings.get(id as BuildingId);
+    if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
+  }));
+  if (outcome.kind === 'answered' && outcome.grown.length) {
+    if (city) city.left -= outcome.grown.length;
+    else {
+      persistence.saveSessionSoon(doc, sessionSettings);
+      updateStatus();
+    }
+    requestDraw();
+  }
+  // The city's next building at once, not at the next frame.
+  if (city && cityGrowth === city) askCity(city);
+  return true;
+}
 
 function newMap(): void {
   if (!window.confirm(t('confirm.newMap'))) return;
@@ -2263,18 +2284,10 @@ function growZones(): void {
   const now = sim.clock.time;
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
-  // DO NOT read `doc.lots` here (`lots.some` walked every lot twice a second).
-  const grown = caused('zone growth', () => {
-    const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
-    const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
-    if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
-    return id;
-  });
-  if (grown !== null) {
-    persistence.saveSessionSoon(doc, sessionSettings);
-    updateStatus();
-    requestDraw();
-  }
+  // While a generated city is built, its growth asks for the lots.
+  if (cityGrowth || growth.busy) return;
+  // DO NOT read `doc.lots` here nor design the building on the page: the growth's worker answers (`growthAnswered`).
+  caused('zone growth', () => growth.ask(lotRefused, 0x5eed));
 }
 
 /** The loading curtain: over the page while a town is put together unseen */
@@ -2331,6 +2344,8 @@ function frame(now: number): void {
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
+  // An answer held through a drag; the growth on the page where there is no worker.
+  growthPool.pump();
   if (growthDue.due(simTime)) growZones();
   if (decayDue.due(simTime)) decayWatch();
   actions.tick(simTime);

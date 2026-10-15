@@ -34,7 +34,7 @@ export class BuildingStore {
   /** The records made plain JSON data when they were adopted (`settleBuilding`, OWNERSHIP above): one handed back */
   private settled = new WeakSet<object>();
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
-  private grid: BuildingGrid | null = null;
+  private grid: BuildingGrid<Building> | null = null;
 
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
@@ -98,7 +98,7 @@ export class BuildingStore {
   /** The buildings whose box (or anchor) may reach the rectangle, in the order of `all()` */
   near(minX: number, minY: number, maxX: number, maxY: number): Building[] {
     if (this.below) return this.below.near(minX, minY, maxX, maxY);
-    this.grid ??= new BuildingGrid(this.items.values());
+    this.grid ??= new BuildingGrid(this.items.values(), (b) => storedBounds(b));
     return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
   }
 
@@ -106,7 +106,7 @@ export class BuildingStore {
   nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
     meets: (b: Building, rect: readonly [number, number, number, number]) => boolean): Building[] {
     if (this.below) return this.below.nearAny(rects, pad, meets);
-    this.grid ??= new BuildingGrid(this.items.values());
+    this.grid ??= new BuildingGrid(this.items.values(), (b) => storedBounds(b));
     return this.grid.nearAny(rects, pad, (id, rect) => meets(this.items.get(id)!, rect)).map((id) => this.items.get(id)!);
   }
 

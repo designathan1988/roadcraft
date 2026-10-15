@@ -1,3 +1,4 @@
+import { cellDiagonal } from '@world/groundPatch';
 import { steepnessInto } from './terrainSteep';
 
 /** A TERRAIN PLATE'S MESH FROM ITS CORNERS, off the page (`flatGround.worker.ts`) */
@@ -41,7 +42,7 @@ export function buildPlateMesh(ground: Float64Array, side: number, half: number,
     for (let cx = 0; cx < seg; cx++) {
       const a = cx + side * cy, b = cx + side * (cy + 1), c = cx + 1 + side * (cy + 1), d = cx + 1 + side * cy;
       // A margin, so near-flat cells keep the plane's diagonal.
-      flip[cx + cy * seg] = Math.abs(heights[a]! - heights[c]!) + 0.5 < Math.abs(heights[b]! - heights[d]!) ? 1 : 0;
+      flip[cx + cy * seg] = cellDiagonal(heights[a]!, heights[b]!, heights[c]!, heights[d]!);
     }
   }
   // Area-weighted face normals summed at each corner: (c - b) x (a - b) per triangle, as three forms them.

@@ -1,4 +1,5 @@
 import type { Aabb } from '@core/aabb';
+import { cellHeight } from '@world/groundPatch';
 
 /** WHICH CORNERS OF A PLATE'S GROUND A SHAPING PASS ASKS */
 
@@ -88,9 +89,6 @@ export function sampleCorners(grid: Pick<CornerGrid, 'n' | 'cell' | 'half'>, cor
   const b = corners[ix + (iy + 1) * n] as number;
   const c = corners[ix + 1 + (iy + 1) * n] as number;
   const d = corners[ix + 1 + iy * n] as number;
-  // Each cell is split along the diagonal it is DRAWN with (`retriangulate`): b-d into (a, b, d) and (b, c, d), or a-c into
-  if (diagonals[ix + iy * segments]) {
-    return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
-  }
-  return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);
+  // Each cell is split along the diagonal it is DRAWN with (`retriangulate`): one rule with the growth's worker (`world/groundPatch.ts` `cellHeight`).
+  return cellHeight(a, b, c, d, u, v, diagonals[ix + iy * segments] as number);
 }

@@ -1,4 +1,7 @@
 import { DIV_EPS } from './scalar';
+/** The four words of an `Rng`'s state (`Rng.state`). */
+export type RngState = readonly [number, number, number, number];
+
 /** Deterministic RNG: xoshiro128** seeded through splitmix32. */
 export class Rng {
   private s0: number;
@@ -21,6 +24,18 @@ export class Rng {
     this.s3 = next();
     // Guard against the all-zero state.
     if ((this.s0 | this.s1 | this.s2 | this.s3) === 0) this.s0 = 1;
+  }
+
+  /** Where the stream stands: four words a message carries (`fromState` goes on from them, draw for draw). */
+  state(): RngState {
+    return [this.s0, this.s1, this.s2, this.s3];
+  }
+
+  /** A stream going on from `state()`: the same draws, in another worker. */
+  static fromState(state: RngState): Rng {
+    const rng = new Rng(0);
+    [rng.s0, rng.s1, rng.s2, rng.s3] = state;
+    return rng;
   }
 
   u32(): number {

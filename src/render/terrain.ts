@@ -1,4 +1,5 @@
 import { Digest } from '@core/digest';
+import { cellDiagonal } from '@world/groundPatch';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -919,8 +920,7 @@ function terrainMaterial(
          uniform float uGrassScale;
          uniform float uRockScale;
          uniform float uDirtScale;
-         // The two detail kinds as layers of one array each (0 grass, 1
-         // soil): two texture units, not four (\`detailLayers\`).
+         // The two detail kinds as layers of one array each (0 grass, 1 soil): two texture units, not four (\`detailLayers\`).
          uniform sampler2DArray uDetailMaps;
          uniform sampler2DArray uDetailNormals;
          uniform float uGrassDetailScale;
@@ -990,9 +990,7 @@ function terrainMaterial(
            vec2 acrossZ = world.xy * scale;
            return mix(acrossZ, acrossX, wXl);
          }
-         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar Shader"): one sample per plane, the SAMPLES blended.
-         // corner touches a WALL (a face over 50 degrees, \`aSteep\`) - the
-         // wall's, so a cliff narrower than the grid is drawn as rock.
+         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar Shader"): one sample per plane, the SAMPLES blended. corner touches a WALL (a face over 50 degrees, \`aSteep\`) - the wall's, so a cliff narrower than the grid is drawn as rock.
          vec4 terrainLand() {
            vec2 cell = vec2((vTerrainWorld.x + uPaintHalf) / ${TERRAIN_CELL.toFixed(6)}, (uPaintHalf + vTerrainWorld.z) / ${TERRAIN_CELL.toFixed(6)});
            return texture(uPaint, vec3((cell + 0.5) / uPaintRes, ${LIGHT_LAYER.toFixed(1)}));
@@ -1175,9 +1173,7 @@ function terrainMaterial(
            blended.rgb = mix(blended.rgb, scree, talus * 0.75);
            rockMix = max(rockMix, talus * 0.5);
          }
-         // The terrain lets the blades in from much further than the shared
-         // layer does (DETAIL_FAR is 0.16 units a pixel): between that and a
-         // unit a pixel the grass had nothing finer than its patches.
+         // The terrain lets the blades in from much further than the shared layer does (DETAIL_FAR is 0.16 units a pixel): between that and a unit a pixel the grass had nothing finer than its patches.
          terrainDetailW = max(terrainDetailW, uDetailOn * (1.0 - smoothstep(${m(0.048).toFixed(6)}, ${m(0.44).toFixed(6)}, max(fwidth(vTerrainWorld.x), fwidth(vTerrainWorld.z)))) * 0.75);
          if (terrainDetailW > 0.001) {
            vec3 bladeDetail = detailSampleLayer(uDetailMaps, vTerrainWorld.xz * uGrassDetailScale, 0.0);
@@ -1334,8 +1330,7 @@ function terrainMaterial(
          #if NUM_DIR_LIGHTS > 0
            reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.3, 0.28, 0.23) * rockMix * (1.0 - clamp(dot(normal, normalize(directionalLights[0].direction)), 0.0, 1.0));
          #endif
-         // The land's own baked light - the relief's shadow, the sky a hollow sees, the dark creases - is not applied any more:
-         // for the terrain's lights to go, 2026-10-08.)`,
+         // The land's own baked light - the relief's shadow, the sky a hollow sees, the dark creases - is not applied any more: for the terrain's lights to go, 2026-10-08.)`,
       )
       .replace(
         '#include <normal_fragment_maps>',
@@ -1361,8 +1356,7 @@ function terrainMaterial(
            mapN.xy += fineN.xy * 1.2 * terrainDetailW;
          }
          normal = normalize(tbn * mapN);
-         // (The fine relief's bumps are not added to the normal any more: the
-         // player asked for the terrain's effects to go.)`,
+         // (The fine relief's bumps are not added to the normal any more: the player asked for the terrain's effects to go.)`,
       );
   };
   // A changed program key forces three to compile this variant separately from any other standard material in the scene.
@@ -1713,8 +1707,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         const a = cx + GRID * cy, b = cx + GRID * (cy + 1), c = cx + 1 + GRID * (cy + 1), d = cx + 1 + GRID * cy;
-        // A margin, so near-flat cells keep the plane's diagonal.
-        into[cx + cy * TERRAIN_SEGMENTS] = Math.abs((corners[a] as number) - (corners[c] as number)) + 0.5 < Math.abs((corners[b] as number) - (corners[d] as number)) ? 1 : 0;
+        // A margin, so near-flat cells keep the plane's diagonal (`cellDiagonal`, read by the growth's worker too).
+        into[cx + cy * TERRAIN_SEGMENTS] = cellDiagonal(corners[a] as number, corners[b] as number, corners[c] as number, corners[d] as number);
       }
     }
   };

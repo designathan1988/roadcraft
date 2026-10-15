@@ -1,18 +1,21 @@
 import { AREA_EPS, validOutline, overlapArea, roofPartFits } from './footprints';
+import type { Aabb } from '@core/aabb';
+import type { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
 import { insideMap } from '../bounds';
+import type { ChangeRect } from '../changes';
 import type { RoadDoc } from '../doc';
-import type { Network, SegmentRibbon } from '../network';
-import type { Junction } from '../junction/build';
-import { Level, halfWidth } from '../roadTypes';
+import type { NodeId, SegmentId } from '../ids';
+import type { Network } from '../network';
+import { Level, type RoadType, type SurfaceLevel, halfWidth } from '../roadTypes';
+import type { RoadStructure } from '../structures';
 import { m } from '../units';
 import { MAX_ELEMENT, MIN_ELEMENT, elementClash, groundElements } from './elements';
 import { MAX_PLINTH, type GroundAt, sampleFootprint } from './foundation';
 import {
   MIN_SIZE,
   buildingBounds,
-  storedBounds,
   footprintRects,
   groundProjections,
   groundVolumes,
@@ -39,6 +42,7 @@ import {
   MIN_STOREY_HEIGHT,
 } from './types';
 import { identityMemo } from '@core/identityMemo';
+import { type NeighbourSource, ringBox, storeNeighbours } from './neighbours';
 
 /** Why a building cannot stand where it is. */
 export type BuildingProblem =
@@ -63,6 +67,47 @@ export interface SiteContext {
   readonly groundAt: GroundAt | null;
   /** The paving's height (footways, carriageways), NaN off it: the street floor a grown building takes. */
   readonly pavedAt?: (x: number, y: number) => number;
+}
+
+/** A road as the checks read it: its profile's widths and its whole centreline (`SegmentRibbon`). */
+export interface RoadReachRibbon {
+  readonly id: SegmentId;
+  readonly road: Pick<RoadType, 'width' | 'sidewalk'>;
+  readonly full: Polyline;
+}
+
+/** A junction's kerb ring as the checks read it (`core/ring.ts` `Ring`). */
+export interface JunctionRing {
+  readonly isEmpty: boolean;
+  readonly bbox: Aabb;
+  flatten(): readonly Vec2[];
+}
+
+/** What a check of a building against the roads reads of the network (`touchesRoad`, the growth's corner test): the roads and junctions filed by place, each road's centreline and widths, each junction's kerb ring, each road's structure. `Network` is one; the growth's worker keeps another, of the same numbers, for the places it grows on (`editor/growthReplica.ts`). */
+export interface RoadReach {
+  readonly doc: { segment(id: SegmentId): { readonly structure: RoadStructure } | undefined };
+  readonly segmentCells: { idsMeeting(rect: ChangeRect): readonly SegmentId[] };
+  readonly ribbons: { get(id: SegmentId): RoadReachRibbon | undefined };
+  readonly junctionCells: { idsMeeting(rect: ChangeRect): readonly NodeId[] };
+  readonly junctions: { get(node: NodeId): { get(level: SurfaceLevel): { readonly ring: JunctionRing } | undefined } | undefined };
+  /** The roads filed over `rect`, in increasing id order (`Network.ribbonsMeeting`). */
+  ribbonsMeeting(rect: ChangeRect): readonly RoadReachRibbon[];
+}
+
+/** What a check of a building on its site reads: the buildings round it, the roads, the ground. The document's (`siteOf` a `SiteContext`) on the page; the growth's worker's own off it (`editor/growthReplica.ts`). */
+export interface SiteReads {
+  readonly neighbours: NeighbourSource;
+  /** Null skips the road test. */
+  readonly net: RoadReach | null;
+  /** Null skips the slope test. */
+  readonly groundAt: GroundAt | null;
+  /** The paving's height, NaN off it (a grown building's street floor). */
+  readonly pavedAt?: (x: number, y: number) => number;
+}
+
+/** The document's site as the checks read it. */
+export function siteOf(ctx: SiteContext): SiteReads {
+  return { neighbours: storeNeighbours(ctx.doc.buildings), net: ctx.net, groundAt: ctx.groundAt, ...(ctx.pavedAt ? { pavedAt: ctx.pavedAt } : {}) };
 }
 
 /** Nothing the player builds may come closer than this to the map's rim. */
@@ -134,10 +179,6 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   return null;
 }
 
-/** DO NOT turn a neighbour's corners into the world again at each check */
-const obstaclesOf = identityMemo((other: Building): readonly { readonly ring: readonly Vec2[]; readonly box: ReturnType<typeof ringBox> }[] =>
-  [...footprintRects(other), ...groundProjections(other), ...groundElements(other)].map((ring) => ({ ring, box: ringBox(ring) })));
-
 /** The box round several rings. */
 function ringsBox(rings: readonly (readonly Vec2[])[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -148,25 +189,22 @@ function ringsBox(rings: readonly (readonly Vec2[])[]): { minX: number; minY: nu
   return { minX, minY, maxX, maxY };
 }
 
-/** A ring's box. */
-function ringBox(ring: readonly Vec2[]): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of ring) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-/** The first reason `b` cannot stand, or null. */
+/** The first reason `b` cannot stand, or null; `ignore` is the building being edited (not its own obstacle). */
 export function validateBuilding(
   ctx: SiteContext,
   b: Building,
   ignore?: BuildingId | readonly BuildingId[],
 ): BuildingProblem | null {
-  // One building (an edit of it) or several (the neighbours a weld is about to absorb)
+  return validateOn(siteOf(ctx), b, ignore);
+}
+
+/** `validateBuilding` on a site as the checks read it (`SiteReads`): the page's document, or the growth's worker's. */
+export function validateOn(
+  ctx: SiteReads,
+  b: Building,
+  ignore?: BuildingId | readonly BuildingId[],
+): BuildingProblem | null {
+  // One building (an edit of it) or several (the neighbours a weld is about to absorb): not obstacles to what is checked.
   const ignored = ignore === undefined ? undefined : Array.isArray(ignore) ? new Set(ignore) : new Set([ignore as BuildingId]);
   const structural = structuralProblem(b);
   if (structural) return structural;
@@ -177,18 +215,19 @@ export function validateBuilding(
 
   const rects = [...footprintRects(b, -TOUCH), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
-  if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as Network, rect))) return 'road';
+  if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as RoadReach, rect))) return 'road';
 
   // DO NOT ask over `buildingBounds` alone
   const reach = ringsBox(party.concat(rects));
   const partyBoxes = party.map(ringBox);
-  for (const other of ctx.doc.buildings.near(reach.minX - MAX_PROJECTION, reach.minY - MAX_PROJECTION,
+  for (const other of ctx.neighbours.near(reach.minX - MAX_PROJECTION, reach.minY - MAX_PROJECTION,
     reach.maxX + MAX_PROJECTION, reach.maxY + MAX_PROJECTION)) {
     if (other.id === b.id || ignored?.has(other.id)) continue;
-    const ob = storedBounds(other, MAX_PROJECTION);
+    const ob = other.reach;
     if (ob.minX > reach.maxX || ob.maxX < reach.minX || ob.minY > reach.maxY || ob.maxY < reach.minY) continue;
-    const others = obstaclesOf(other);
-    // Two buildings may share a party wall
+    // What it puts on the ground, worked out once per record (`neighbours.ts`).
+    const others = other.obstacles;
+    // Two buildings may share a party wall: volumes shrunk by `PARTY_WALL`, clipped only where their boxes meet.
     for (let i = 0; i < party.length; i++) {
       const a = party[i]!, pa = partyBoxes[i]!;
       for (const { ring: c, box: pc } of others) {
@@ -207,7 +246,7 @@ export function validateBuilding(
 }
 
 /** DO NOT go back to a grid of every road and junction of the map made again at each network revision (`RoadContacts`) */
-export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
+export function touchesRoad(net: RoadReach, rect: readonly Vec2[]): boolean {
   const box = boundsOf(rect);
   const area: readonly [number, number, number, number] = [box.minX, box.minY, box.maxX, box.maxY];
   for (const id of net.segmentCells.idsMeeting(area)) {
@@ -224,17 +263,17 @@ export function touchesRoad(net: Network, rect: readonly Vec2[]): boolean {
     if (!junction || junction.ring.isEmpty) continue;
     const jb = junction.ring.bbox;
     if (jb.minX > box.maxX || jb.maxX < box.minX || jb.minY > box.maxY || jb.maxY < box.minY) continue;
-    const ring = ringOf(junction);
+    const ring = ringOf(junction.ring);
     if (polygonsOverlap(ring, rect) && overlapArea(ring, rect) > JUNCTION_TOUCH) return true;
   }
   return false;
 }
 
 /** A road's full centreline as points, once per ribbon (ribbons are never changed, only replaced). */
-const lineOf = identityMemo((ribbon: SegmentRibbon): readonly Vec2[] => ribbon.full.toPoints());
+const lineOf = identityMemo((ribbon: RoadReachRibbon): readonly Vec2[] => ribbon.full.toPoints());
 
-/** A junction's kerb ring as points, once per junction. */
-const ringOf = identityMemo((junction: Junction): readonly Vec2[] => junction.ring.flatten());
+/** A junction's kerb ring as points, once per ring (a junction solved again is a new one). */
+const ringOf = identityMemo((ring: JunctionRing): readonly Vec2[] => ring.flatten());
 
 // ------------------------------------------------------------------ geometry
 
