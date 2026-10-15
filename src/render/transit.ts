@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, DynamicDrawUsage, type Frustum, Group, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, type Frustum, Group, InstancedBufferAttribute, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D } from 'three';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { CellFiling } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
@@ -28,6 +28,8 @@ function sharedMaterial(colour: number, roughness: number, metalness: number, op
 export interface TransitMeshes {
   readonly group: Group;
   readonly triangles: number;
+  /** Whether trains are drawn: the transport's only casters that move (its stops and tracks stand still). */
+  readonly moving: boolean;
   /** The metro under the ground, seen as a cut (the transit tool) */
   setXray(on: boolean): void;
   /** The trains where the simulation has them now. */
@@ -374,6 +376,8 @@ export function createTransit(): TransitMeshes & {
   };
   const cars = new InstancedMesh(unit, material(0xffffff, 0.45, 0.3), MAX_CARS);
   cars.name = 'transit-trains';
+  // Its colour per car from the start: one program and one shadow depth variant (`renderer.ts` `watchShadowDepth`), not a second on first use.
+  cars.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX_CARS * 3).fill(1), 3);
   cars.castShadow = true;
   // Its instances move all over the map
   cars.frustumCulled = false;
@@ -385,6 +389,7 @@ export function createTransit(): TransitMeshes & {
   return {
     group,
     get triangles() { return boxes * 12; },
+    get moving() { return cars.count > 0; },
     setXray(on) { xray.group.visible = on; },
     sync(doc, groundAt, pavedAt, onRoad) {
       const source: TransitSource = { changes: doc.changes, doc, groundAt, pavedAt, onRoad };

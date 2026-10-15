@@ -1,4 +1,4 @@
-import type { Group } from 'three';
+import { Box3, type Group } from 'three';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingMeshes } from './buildingMesh';
 import type { LandedCell } from './cellRequests';
@@ -60,14 +60,19 @@ export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
   set(b: Building, floor: number | undefined): void;
   remove(id: BuildingId): void;
   keepOnly(ids: ReadonlySet<BuildingId>): void;
+  /** The highest point of any body (`massCells.ts` `top` for the rest); -Infinity with none. */
+  top(): number;
 } {
-  const known = new Map<BuildingId, { key: string; group: Group }>();
+  const known = new Map<BuildingId, { key: string; group: Group; top: number }>();
+  /** The highest body's top, walked again only when that body went (`top`). */
+  let highest = -Infinity, stale = false;
   const remove = (id: BuildingId): void => {
     const k = known.get(id);
     if (!k) return;
     root.remove(k.group);
     disposeSignature(k.group);
     known.delete(id);
+    if (k.top >= highest) stale = true;
   };
   return {
     set(b, floor) {
@@ -76,11 +81,24 @@ export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
       if (known.get(b.id)?.key === key) return;
       remove(b.id);
       const built = buildSignature(b, floor);
-      if (built) { root.add(built); known.set(b.id, { key, group: built }); }
+      if (!built) return;
+      root.add(built);
+      // Its own few meshes measured once, as it is made.
+      const top = new Box3().setFromObject(built).max.y;
+      known.set(b.id, { key, group: built, top });
+      if (top >= highest) { highest = top; stale = false; }
     },
     remove,
     keepOnly(ids) {
       for (const id of [...known.keys()]) if (!ids.has(id)) remove(id);
+    },
+    top() {
+      if (stale) {
+        stale = false;
+        highest = -Infinity;
+        for (const k of known.values()) highest = Math.max(highest, k.top);
+      }
+      return highest;
     },
   };
 }
@@ -98,10 +116,10 @@ export function patchCell(key: string, landed: LandedCell | null, at: CellBatche
   dropCell(at.cells, key, at.stored);
   for (const sub of detailKeysOf(key)) dropCell(at.details, sub, at.detailed);
   if (!landed?.batch) return;
-  at.cells.set(key, { entries: landed.entries, part: landed.batch });
+  at.cells.set(key, { entries: landed.entries, part: landed.batch, bytes: landed.bytes });
   at.stored.group.add(landed.batch.group);
   for (const [sub, part] of landed.details) {
-    at.details.set(sub, { entries: landed.entries, part });
+    at.details.set(sub, { entries: landed.entries, part, bytes: 0 });
     at.detailed.group.add(part.group);
   }
 }

@@ -128,6 +128,8 @@ export interface AgentMeshes {
   readonly meshes: readonly Object3D[];
   /** Whether the last `sync` switched the two-wheelers between casting into the shadow map and a soft disc under them */
   readonly castersChanged: boolean;
+  /** Whether the last `sync` drew anything into the shadow map (vehicles, two-wheelers, people): the map's moving casters. */
+  readonly casting: boolean;
   sync(world: SimWorld, alpha: number, detailed: boolean, zoom?: number, options?: AgentRenderOptions): void;
   /** Every figure drawn last frame and the body it was cast as (`citizenCasting.ts`). */
   census(): ReturnType<ReturnType<typeof createRiggedCitizens>['census']>;
@@ -1011,6 +1013,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** Whether a two-wheeler was drawn whole last frame: then they all cast into the shadow map */
   let bikesWhole = false;
   let castersChanged = false;
+  let casting = false;
   let suspensionClock = typeof performance !== 'undefined' ? performance.now() : 0;
   let suspensionDt = 0;
   /** The simulation's own time between two frames drawn (tick and interpolation) */
@@ -1467,6 +1470,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   return {
     meshes,
     get castersChanged() { return castersChanged; },
+    get casting() { return casting; },
     census: () => pedestrians.census(),
     meshProbe() {
       const out: { id: number; stretch: number; stretchBone: string; scale: number; scaleBone: string; held: boolean; clip: string }[] = [];
@@ -1839,8 +1843,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       pedestrians.finish();
 
       // Upload only what was written this frame.
+      casting = pedestrians.casting || (procedural ? procedural.casting : false);
       for (const part of allParts) {
         part.mesh.count = part.n;
+        if (part.n > 0 && part.mesh.castShadow) casting = true;
         // An empty instanced mesh still costs a program bind, its uniforms and a state change in every pass
         part.mesh.visible = part.n > 0;
         const matrix = part.mesh.instanceMatrix;

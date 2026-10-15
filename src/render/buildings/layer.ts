@@ -1,4 +1,4 @@
-import { Group, type InstancedMesh, type Object3D } from 'three';
+import { Box3, Group, type InstancedMesh, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
@@ -28,8 +28,6 @@ import type { CellEntry, ChunkSummary } from './cellWork';
 /** What the page keeps of a building emitted in a worker: by the record and ground it was made for (their digests). */
 interface Kept { readonly sig: number; readonly digest: number; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
 
-/** How many times the ground the screen takes in a cell's detail stays resident on the GPU (`levelOfDetail`). */
-const RESIDENT_REACH = 2;
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
@@ -60,8 +58,17 @@ export function createBuildingLayer(): BuildingLayer {
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
+  /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds `budget` bytes at most. */
+  let budget = Infinity;
+  let resident = 0;
+  const residentBytes = new Map<string, number>();
   /** DO NOT set that for every cell of the town every frame (`levelOfDetail` did): it changes only here. */
-  const cells: CellCache = watchedCells((key, has) => massCells.setDetailed(key, has));
+  const cells: CellCache = watchedCells((key, has) => {
+    massCells.setDetailed(key, has);
+    const now = has ? cells.get(key)!.bytes : 0;
+    resident += now - (residentBytes.get(key) ?? 0);
+    if (now) residentBytes.set(key, now); else residentBytes.delete(key);
+  });
   const detailCells: CellCache = new Map();
   let details: BuildingMeshes | null = null;
   let dimmed: BuildingId | null | undefined = undefined;
@@ -74,7 +81,8 @@ export function createBuildingLayer(): BuildingLayer {
   let ghostKey = '';
   let preview: BuildingPreviewInput | null = null;
   let cutaway: CutawaySpec | null = null;
-  let version = 0;
+  /** The preview's and the solid building's tops (`top`), measured once each is made. */
+  let ghostTop = -Infinity, soloTop = -Infinity;
   let far = false;
   let shadowFar = false;
   /** HLOD streaming (see the file's comment). */
@@ -99,8 +107,21 @@ export function createBuildingLayer(): BuildingLayer {
   const pendingCells = new Set<string>();
   /** DO NOT let a far cell's detail go */
   let shownNear = new Set<string>();
-  /** Where the resident cells were last checked from (`levelOfDetail`) */
-  let residentFrom = { x: Infinity, y: Infinity, reach: -1 };
+  /** Over the budget, the cells drawn far let go, the farthest first: their masses, on the GPU already, stand for them */
+  const keepToBudget = (): void => {
+    if (resident <= budget || !eye || !stored || !details) return;
+    const at = eye;
+    const away = (key: string): number => {
+      const comma = key.indexOf(',');
+      return Math.hypot((Number(key.slice(0, comma)) + 0.5) * BATCH_CELL - at.x, (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL - at.y);
+    };
+    const far = [...cells.keys()].filter((key) => !shownNear.has(key) && !pendingCells.has(key)).sort((a, b) => away(b) - away(a));
+    for (const key of far) {
+      if (resident <= budget) break;
+      dropCell(cells, key, stored);
+      for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
+    }
+  };
   /** Each detail cell's centre (map x/y) and whether it is drawn by the far versions of its parts (`cullDetails`) */
   const detailState = new WeakMap<BuildingMeshes, DetailState>();
   /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
@@ -241,7 +262,6 @@ export function createBuildingLayer(): BuildingLayer {
     requests.mass(cell, entries, env, (mass) => {
       massCells.land(cell, mass);
       chooseNow();
-      version++;
     });
   };
   /** The cells a cut-open view reaches */
@@ -358,8 +378,8 @@ export function createBuildingLayer(): BuildingLayer {
     get triangles() {
       return (stored?.triangles ?? 0) + (details?.triangles ?? 0) + (ghost?.triangles ?? 0);
     },
-    get version() {
-      return version;
+    get top() {
+      return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
     },
     get pending() {
       return pendingCells.size > 0 || requests.massing > 0;
@@ -483,7 +503,6 @@ export function createBuildingLayer(): BuildingLayer {
         storedCut = cutKey;
         flyFlags();
         applyFacadeDetail();
-        version++;
         rebuilt = true;
       }
       // DO NOT put the town together again for it: every cell's masses were asked again and the cut cell waited behind them.
@@ -497,17 +516,18 @@ export function createBuildingLayer(): BuildingLayer {
       }
       // The cells pending land as they come back from the workers; those the eye neared since are asked; those long far go out (HLOD streaming).
       if (stored && details && landCells(env, groundAt, groundKey, pavedAt)) {
-        version++;
         rebuilt = true;
+        keepToBudget();
       }
       const left = typeof dimmed === 'number' ? doc.buildings.get(dimmed) : undefined;
       const soloWanted = left && left.id !== hides && !ruined.has(left.id) ? `${sigOf(left)}|${groundKey}` : '';
       if (soloWanted !== soloKey) {
         soloKey = soloWanted;
-        if (solo) { group.remove(solo.group); solo.dispose(); solo = null; }
+        if (solo) { group.remove(solo.group); solo.dispose(); solo = null; soloTop = -Infinity; }
         if (left && soloWanted) {
           solo = buildBuildingMeshes([left], groundAt, kit, false, pavedAt, naturalAt);
           group.add(solo.group);
+          soloTop = new Box3().setFromObject(solo.group).max.y;
         }
       }
       const wanted = preview ? `${preview.serial}|${groundKey}` : '';
@@ -517,6 +537,7 @@ export function createBuildingLayer(): BuildingLayer {
           group.remove(ghost.group);
           ghost.dispose();
           ghost = null;
+          ghostTop = -Infinity;
         }
         if (preview) {
           if (!preview.solid) kit.setGhostValid(preview.valid);
@@ -525,6 +546,7 @@ export function createBuildingLayer(): BuildingLayer {
           ghost = buildBuildingMeshes([edited as Building], groundAt, kit, !preview.solid, pavedAt, naturalAt);
           ghost.group.renderOrder = 2;
           group.add(ghost.group);
+          ghostTop = new Box3().setFromObject(ghost.group).max.y;
         }
       }
       return rebuilt;
@@ -558,18 +580,13 @@ export function createBuildingLayer(): BuildingLayer {
       for (const key of shownNear) if (!now.has(key)) cells.get(key)?.part.setVisible(false);
       for (const key of now) if (!shownNear.has(key)) cells.get(key)?.part.setVisible(true);
       shownNear = now;
-      if (Number.isFinite(reach) && (Math.hypot(eyeX - residentFrom.x, eyeY - residentFrom.y) > reach / 4 || reach !== residentFrom.reach)) {
-        residentFrom = { x: eyeX, y: eyeY, reach };
-        const keep = reach * RESIDENT_REACH;
-        for (const key of [...cells.keys()]) {
-          if (now.has(key) || pendingCells.has(key)) continue;
-          const comma = key.indexOf(',');
-          const cx = (Number(key.slice(0, comma)) + 0.5) * BATCH_CELL, cy = (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL;
-          if (Math.hypot(cx - eyeX, cy - eyeY) <= keep) continue;
-          dropCell(cells, key, stored);
-          for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
-        }
-      }
+    },
+    setDetailBudget(bytes) {
+      budget = bytes;
+      keepToBudget();
+    },
+    get residentBytes() {
+      return resident;
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
       cullDetailCells(detailCells, detailState, (key) => massCells.near(key), eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, (part, cellFar) => {

@@ -18,8 +18,8 @@ export interface BuildingPreviewInput {
 export interface BuildingLayer {
   readonly group: Group;
   readonly triangles: number;
-  /** Bumped whenever the stored buildings are rebuilt. */
-  readonly version: number;
+  /** The highest point of any building drawn, world height (-Infinity with none): kept as cells land, never a walk of the meshes. */
+  readonly top: number;
   /** A change is still being made: masses or near cells asked of the workers and not come. */
   readonly pending: boolean;
   /** Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`). */
@@ -42,6 +42,10 @@ export interface BuildingLayer {
   cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void;
   /** Each cell of buildings drawn near (in detail) or far (its buildings' masses, `massCells.ts`) by the error on the screen */
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number): void;
+  /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */
+  setDetailBudget(bytes: number): void;
+  /** What the cells' detail holds on the GPU now, bytes. */
+  readonly residentBytes: number;
   /** "Ocultar outros": undefined draws every building solid, null fades them all */
   setDimmed(except: BuildingId | null | undefined): void;
   /** Buildings drawn by someone else (a ruin being knocked down, `destruction.ts`): left out here. */

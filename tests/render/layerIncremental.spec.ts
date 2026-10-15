@@ -17,11 +17,13 @@ function body(index: number, x: number, y: number): Omit<Building, 'id'> {
   return { ...JSON.parse(JSON.stringify(bp.body)), x, y, rotation: 0 } as Omit<Building, 'id'>;
 }
 
-function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): void {
+/** Updates until nothing is pending; true when any update put something together again. */
+function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): boolean {
+  let rebuilt = false;
   for (let frame = 0; frame < 5000; frame++) {
     beginFrameWork();
-    layer.update(doc, flat, 'g');
-    if (!layer.pending) return;
+    if (layer.update(doc, flat, 'g')) rebuilt = true;
+    if (!layer.pending) return rebuilt;
   }
   throw new Error('the layer never settled');
 }
@@ -76,10 +78,9 @@ describe('the buildings layer, a change at a time', () => {
       const all = doc.buildings.all.bind(doc.buildings);
       let walked = 0;
       doc.buildings.all = () => { walked++; return all(); };
-      const before = live.version;
-      settle(live, doc);
+      const rebuilt = settle(live, doc);
       doc.buildings.all = all;
-      if (live.version > before && walked === 0) incremental++;
+      if (rebuilt && walked === 0) incremental++;
       const fresh = createBuildingLayer();
       settle(fresh, doc);
       expect(drawn(live)).toEqual(drawn(fresh));
@@ -113,10 +114,9 @@ describe('the buildings layer, a change at a time', () => {
     const all = doc.buildings.all.bind(doc.buildings);
     let walked = 0;
     doc.buildings.all = () => { walked++; return all(); };
-    const before = live.version;
-    settle(live, doc);
+    const rebuilt = settle(live, doc);
     doc.buildings.all = all;
-    expect(live.version).toBeGreaterThan(before);
+    expect(rebuilt).toBe(true);
     expect(walked).toBe(0);
     expect(worn()).toBeCloseTo(0.9, 5);
     live.dispose();

@@ -736,6 +736,8 @@ export interface ProceduralCrowd {
   /** Ground one walk cycle covers at the person's scale, metres (of `clip`, their own by default). */
   stride(person: ProceduralPerson, clip?: ProcClip): number;
   stats(): ProceduralStats;
+  /** Whether the last `update` drew anybody (each class casts through its shadow proxy): the shadow map's moving casters. */
+  readonly casting: boolean;
   /** Diagnosis: the shape the GPU sums for a person at base vertices, against the rig's exact one, metres. */
   probe(person: ProceduralPerson, vertices: readonly number[]): { v: number; linear: number[]; exact: number[] }[];
   readonly people: readonly ProceduralPerson[];
@@ -2188,6 +2190,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return { v, linear, exact: [exact[v * 3]!, exact[v * 3 + 1]!, exact[v * 3 + 2]!] };
       });
     },
+    get casting() { return trianglesDrawn > 0; },
     stats() {
       let pieces = 0, draws = 0, vertices = 0, textureBytes = 0;
       const names = new Set<string>();

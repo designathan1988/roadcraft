@@ -17,7 +17,6 @@ import {
   Float32BufferAttribute,
   Color,
   ACESFilmicToneMapping,
-  Box3,
   PointLight,
   Group,
   Frustum,
@@ -72,7 +71,7 @@ import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
+import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill } from './stillTree';
@@ -243,6 +242,8 @@ export interface SceneHandle {
   drifting(): boolean;
   /** The bytes of the render targets and shadow maps alive (an estimate, `targetBytes.ts`): not in the scene, so not in `countMemory`. */
   targetBytes(): number;
+  /** The bytes the buildings' detail holds on the GPU now (under the quality's `buildingDetailMB`). */
+  buildingDetailBytes(): number;
   /** Forgets a building's ruin (it was removed). */
   forgetRuin(id: number): void;
   /** The Builder's "Ocultar outros": undefined draws every building solid, null fades them all */
@@ -355,27 +356,10 @@ export function createSceneRenderer(
   let shadowMoved = true;
   /** Frames since the shadow map was last drawn (`SHADOW_FAR_EVERY`). */
   let shadowFrame = 0;
-  /** Whether anything that moves is drawn into the shadow map: a visible caster with instances outside what stands still */
-  const castsInto = (root: Object3D): boolean => {
-    const stack: Object3D[] = [root];
-    while (stack.length) {
-      const o = stack.pop()!;
-      if (!o.visible) continue;
-      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number };
-      if (mesh.isMesh && mesh.castShadow && (!mesh.isInstancedMesh || (mesh.count ?? 0) > 0)) return true;
-      for (const child of o.children) stack.push(child);
-    }
-    return false;
-  };
-  const movingCasters = (): boolean => {
-    for (const root of scene.children) {
-      if (root === world || root === buildings.group || root.name === 'traffic-signals' || stillRoots.has(root)) continue;
-      if (castsInto(root)) return true;
-    }
-    return castsInto(transit.group);
-  };
-  /** The ground and its grass, which never move (`movingCasters`). */
-  const stillRoots = new Set<Object3D>();
+  /** DO NOT walk the scene for it each frame: whether anything that moves is drawn into the shadow map, as the layers that move it say */
+  const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
+  /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
+  let castersMoved = false;
   const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
@@ -415,20 +399,30 @@ export function createSceneRenderer(
     // Anything three would give a depth material of its own (cut-outs, displacement, coverage) keeps three's own choice.
     return !(m.alphaTest > 0 && (m.map || m.alphaMap)) && !m.displacementMap && !m.alphaToCoverage;
   };
-  let shadowDepthFrame = 0;
-  const assignShadowDepth = (root: Object3D): void => {
+  /** DO NOT walk the scene for it (every 30 frames it walked every object): a mesh is given its variant's depth material as it comes in */
+  const depthFor = (object: Object3D): void => {
+    const mesh = object as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown };
+    // Whether it casts or not: a mesh switched to casting later (the two-wheelers) has its material already.
+    if (!mesh.isMesh) return;
+    const current = mesh.customDepthMaterial as MeshDepthMaterial | undefined;
+    if (current && !ownDepth.has(current)) return;
+    if (Array.isArray(mesh.material) || !plainOpaque(mesh.material)) return;
+    const wanted = !mesh.isInstancedMesh
+      ? depthVariants.plain
+      : mesh.instanceColor ? depthVariants.tinted : depthVariants.instanced;
+    if (current !== wanted) mesh.customDepthMaterial = wanted;
+  };
+  /** Every container under `root` told of what is added to it (three's `childadded`), and what is there now given its depth material. */
+  const watchedForDepth = new WeakSet<Object3D>();
+  const watchShadowDepth = (root: Object3D): void => {
     root.traverse((object) => {
-      const mesh = object as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown };
-      if (!mesh.isMesh || !mesh.castShadow) return;
-      const current = mesh.customDepthMaterial as MeshDepthMaterial | undefined;
-      if (current && !ownDepth.has(current)) return;
-      if (Array.isArray(mesh.material) || !plainOpaque(mesh.material)) return;
-      const wanted = !mesh.isInstancedMesh
-        ? depthVariants.plain
-        : mesh.instanceColor ? depthVariants.tinted : depthVariants.instanced;
-      if (current !== wanted) mesh.customDepthMaterial = wanted;
+      depthFor(object);
+      if ((object as Mesh).isMesh || watchedForDepth.has(object)) return;
+      watchedForDepth.add(object);
+      object.addEventListener('childadded', onChildAdded);
     });
   };
+  const onChildAdded = (event: { child: Object3D }): void => watchShadowDepth(event.child);
 
   let requested: QualityLevel | 'auto' = initialQuality;
   const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
@@ -482,6 +476,7 @@ export function createSceneRenderer(
   /** Behind the map while building it (`draw`): a plain dark blue. */
   const MAP_BACKGROUND = new Color(0x0c1a2c);
   const scene = new Scene();
+  watchShadowDepth(scene);
   // The root never moves.
   scene.matrixAutoUpdate = false;
   scene.updateMatrix();
@@ -512,7 +507,6 @@ export function createSceneRenderer(
   // DO NOT make it again unseen.
   if (import.meta.env.DEV) Object.assign(window, { __scene: scene, __gl: renderer });
   scene.add(...terrain.meshes);
-  for (const mesh of terrain.meshes) stillRoots.add(mesh);
 
   const world = new Group();
   world.name = 'world';
@@ -767,6 +761,7 @@ export function createSceneRenderer(
 
   // Modular buildings: their own layer, behind their own gate
   const buildings = createBuildingLayer();
+  buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
   scene.add(buildings.group);
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
@@ -889,14 +884,6 @@ export function createSceneRenderer(
     }
     return forestArea;
   };
-  // One representative per material and mesh program variant is enough for compileAsync.
-  const compiledVariants = new WeakMap<Material, Set<string>>();
-  let compileCheckedAt = 0;
-  let compiling = false;
-  /** The look for new materials in progress and their representative objects. */
-  const scanStack: Object3D[] = [];
-  const compileSamples: Object3D[] = [];
-  const SCAN_PER_FRAME = 1500;
   /** The buildings cut open, for the people drawn inside them (`indoors.ts`). */
   let cutSpec: CutawaySpec | null = null;
   let skyMode: SkyMode = 'day';
@@ -918,12 +905,9 @@ export function createSceneRenderer(
     roomLights.push(light);
   }
   let lampsKey = '';
-  let tallestFor = -1;
   /** The sky's mesh (`environment.ts`), found once by name (`draw`). */
   let skyMesh: Object3D | null = null;
   let lastDark = -1;
-  let tallestTop = 0;
-  const tallestBox = new Box3();
   const viewDirection = new Vector3();
   /** The building revision the ground was last graded for. */
   let gradedFor = -1;
@@ -1657,6 +1641,7 @@ export function createSceneRenderer(
 
   const applyQuality = (level: QualityLevel): void => {
     quality = QUALITY[level];
+    buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
     // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
     terrain.setVegetation?.(quality.vegetation);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio));
@@ -2174,6 +2159,7 @@ export function createSceneRenderer(
     cloudDrift: () => cloudDrift,
     busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
     targetBytes: () => renderTargetsBytes([...post.targets(), environment.sun.shadow.map]),
+    buildingDetailBytes: () => buildings.residentBytes,
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,
     forgetRuin(id) { fx?.forgetRuin(id); },
     setTransitXray(on) {
@@ -2454,51 +2440,6 @@ export function createSceneRenderer(
         }
         vegetationRedraw = false;
       }
-      // Discover new shader variants across frames, including hidden objects that may become visible as the player moves.
-      if (!compiling) {
-        if (scanStack.length === 0 && performance.now() - compileCheckedAt > 2000) {
-          compileCheckedAt = performance.now();
-          scanStack.push(scene);
-        }
-        for (let n = 0; n < SCAN_PER_FRAME && scanStack.length; n++) {
-          const o = scanStack.pop()!;
-          const material = (o as Mesh).material as Material | Material[] | undefined;
-          if (material) for (const m of Array.isArray(material) ? material : [material]) {
-            const mesh = o as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown; isSkinnedMesh?: boolean };
-            const variant = mesh.isSkinnedMesh ? 'skinned'
-              : mesh.isInstancedMesh ? mesh.instanceColor ? 'instanced-color' : 'instanced'
-                : o.type;
-            let known = compiledVariants.get(m);
-            if (!known) { known = new Set(); compiledVariants.set(m, known); }
-            if (!known.has(variant)) { known.add(variant); compileSamples.push(o); }
-          }
-          for (const child of o.children) scanStack.push(child);
-        }
-        if (scanStack.length === 0 && compileSamples.length > 0) {
-          const warm = new Group();
-          // Shown in the copy: three's compile walks only what is visible, and a mesh hidden until it has something to draw
-          const shadows = new Group();
-          for (const sample of compileSamples) {
-            const copy = compileCopy(sample);
-            copy.visible = true;
-            warm.add(copy);
-            const standIn = (sample as Mesh).isMesh ? shadowStandIn(sample as Mesh) : null;
-            if (standIn) shadows.add(standIn);
-          }
-          if (shadows.children.length) void compileAhead(shadows, true).then(() => shadows.clear());
-          compileSamples.length = 0;
-          compiling = true;
-          // For the target the scene is drawn into (`drainCompiles`).
-          const previous = renderer.getRenderTarget();
-          renderer.setRenderTarget(post.target);
-          void renderer.compileAsync(warm, rig.camera, scene).catch(() => {}).finally(() => {
-            warm.clear();
-            compiling = false;
-          });
-          renderer.setRenderTarget(previous);
-        }
-      }
-
       // The perspective camera kept out of the buildings (`IsoRig.setSolids`)
       followFloors(net);
       if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
@@ -2652,12 +2593,8 @@ export function createSceneRenderer(
       // The screen's height covers more ground the lower the camera looks
       const reach = rig.perspective ? 1.6 : 1;
       const groundHalfDepth = (reach * halfHeight) / Math.max(0.3, Math.sin(rig.viewport.elevation));
-      // The top of the tallest building, once per rebuild of the layer
-      if (tallestFor !== buildings.version) {
-        tallestFor = buildings.version;
-        tallestBox.setFromObject(buildings.group);
-        tallestTop = tallestBox.isEmpty() ? 0 : tallestBox.max.y;
-      }
+      // The top of the tallest building, as the layer keeps it (`BuildingLayer.top`).
+      const tallestTop = Math.max(0, buildings.top);
       // Day and night, by the city's clock (`sim/city/city.ts`).
       const fixedHour = skyMode === 'day' ? 16 * 60 : skyMode === 'night' ? 22 * 60 : null;
       const clock = fixedHour === null ? sim.city.minutes(sim) : fixedHour;
@@ -2744,6 +2681,8 @@ export function createSceneRenderer(
         if (agents.castersChanged) shadowMoved = true;
         // Moving only when something that moves is in the pass (`movingCasters`) or the wind bends the trees
         const moving = net.doc.weather.wind > 0 || (!sim.clock.paused && movingCasters());
+        if (castersMoved && !moving) shadowMoved = true;
+        castersMoved = moving;
         const every = rig.viewport.zoom >= SHADOW_FULL_ZOOM ? 1 : SHADOW_FAR_EVERY;
         if (shadowMoved || sunMoved || (moving && shadowFrame >= every) || shadowFrame >= SHADOW_SAFETY_FRAMES) {
           renderer.shadowMap.needsUpdate = true;
@@ -2751,8 +2690,6 @@ export function createSceneRenderer(
           shadowFrame = 0;
         }
       }
-      // It follows meshes a rebuild or an asset load adds, and instance colours created on first use - twice a second
-      if (renderer.shadowMap.enabled && ++shadowDepthFrame % 30 === 1) assignShadowDepth(scene);
       // An explosion shakes the camera for a moment.
       const shake = fx?.shake() ?? 0;
       if (shake > 0) {

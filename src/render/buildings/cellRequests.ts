@@ -1,7 +1,7 @@
 import type { Mesh } from 'three';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 import { type BuildingMeshes, meshesOf } from './buildingMesh';
-import type { CellMass } from './cellArrays';
+import { type CellMass, cellBytes } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import type { BuildingKit } from './kit';
@@ -17,6 +17,8 @@ export interface LandedCell {
   readonly entries: readonly CellEntry[];
   readonly batch: BuildingMeshes | null;
   readonly details: ReadonlyMap<string, BuildingMeshes>;
+  /** What its batches send to the GPU, bytes (`cellBytes`): the layer's residency budget counts it. */
+  readonly bytes: number;
 }
 
 interface Landing extends LandedCell { uploads: number }
@@ -138,7 +140,9 @@ export class CellRequests {
   private land(entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing {
     const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
     const details = new Map(result.details.map(([key, arrays]) => [key, meshesOf(arrays, this.kit, false, false)] as const));
-    const landing: Landing = { entries, batch, details, uploads: 0 };
+    let bytes = result.batch ? cellBytes(result.batch) : 0;
+    for (const [, arrays] of result.details) bytes += cellBytes(arrays);
+    const landing: Landing = { entries, batch, details, bytes, uploads: 0 };
     if (!upload) return landing;
     const sent = warmLooseAhead(meshesIn(landing));
     if (sent) { landing.uploads++; void sent.then(() => { landing.uploads--; }); }

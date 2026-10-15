@@ -196,6 +196,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   onAssetsReady: () => void = () => {}) {
   const group = new Group();
   group.name = 'rigged-citizens';
+  let casting = false;
   const batches = new Map<number, CitizenBatch>();
   const loading = new Map<number, Promise<void>>();
   const queuedLoads = new Map<number, { priority: boolean; wantedAt: number; resolve: () => void; reject: (error: unknown) => void }>();
@@ -921,7 +922,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       registry.recordCensus = true;
       return registry.census();
     },
+    /** Whether the last `finish` drew anybody into the shadow map (`renderer.ts` moving casters). */
+    get casting() { return casting; },
     finish() {
+      casting = false;
       if (visualFrame % 300 === 0) for (const [id, kept] of lastPose) if (visualFrame - kept.frame > 600) lastPose.delete(id);
       for (const batch of batches.values()) {
         if (batch.count > 0) {
@@ -939,6 +943,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           // An empty batch is still a program bind and its uniforms in every pass
           mesh.visible = batch.count > 0;
           mesh.castShadow = detail > 0 && band < 2;
+          if (mesh.castShadow && batch.count > 0) casting = true;
           if (batch.count > 0) {
             mesh.instanceMatrix.clearUpdateRanges();
             mesh.instanceMatrix.addUpdateRange(0, batch.count * 16);

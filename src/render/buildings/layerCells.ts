@@ -44,7 +44,8 @@ export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KI
 /** The buildings batched cell by cell, each cell its own meshes: a cell out of the view */
 /** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
 export type CellCache = Map<string, CellBatch>;
-interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes }
+/** `bytes`: what a coarse cell and its detail cells send to the GPU, on the coarse cell's entry (0 on the detail cells'). */
+interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes; bytes: number }
 
 /** A cell cache that tells `told` each key that comes in (true) or goes (false). */
 export function watchedCells(told: (key: string, has: boolean) => void): CellCache {

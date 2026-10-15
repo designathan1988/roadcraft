@@ -134,6 +134,20 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
 export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
   [c.position, c.normal, c.color, c.facade, c.glazing, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
 
+/** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
+export function cellBytes(arrays: CellArrays): number {
+  let bytes = 0;
+  for (const s of Object.values(arrays.shells)) if (s) bytes += s.position.byteLength + s.normal.byteLength + s.colour.byteLength + s.uv.byteLength + s.decay.byteLength + s.index.byteLength;
+  for (const list of [arrays.parts, arrays.furniture]) {
+    for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
+      if (!p) continue;
+      bytes += p.instanceMatrix.byteLength;
+      for (const a of [p.instanceColor, p.litSlot, p.rooms]) if (a) bytes += a.byteLength;
+    }
+  }
+  return bytes;
+}
+
 /** Every array buffer of a batch: handed over, not copied (MDN, `postMessage` transfer). */
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];

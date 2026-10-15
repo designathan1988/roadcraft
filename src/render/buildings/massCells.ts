@@ -47,6 +47,8 @@ export interface MassCells {
   nearKeys(): Iterable<string>;
   /** Whether a cell's detail is shown (`layer.ts` streaming): a near cell keeps its mass shown until its detail lands */
   setDetailed(key: string, detailed: boolean): void;
+  /** The highest point of any cell's masses (the shadow's reach over the view, `renderer.ts`); -Infinity with none. */
+  top(): number;
   dispose(): void;
 }
 
@@ -83,6 +85,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   const detailed = new Set<string>();
   /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
   let overhang = 0;
+  /** DO NOT walk the cells' meshes for it (`Box3.setFromObject` at every cell landed): the highest cell top, walked again only when that cell went or fell. */
+  let highest = -Infinity;
+  let highestStale = false;
+  const lowered = (top: number): void => { if (top >= highest) highestStale = true; };
   /** A cell's mass shown: far, or near with no detail to stand in for it. */
   const showMass = (key: string, cell: Cell): void => {
     if (cell.mesh) cell.mesh.visible = !cell.near || !detailed.has(key);
@@ -118,11 +124,14 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const known = cells.get(key);
       if (known) drop(known);
       const cell: Cell = { mesh: null, massless: mass === null, ...square(key), top: 0, near: known?.near ?? true };
+      if (known) lowered(known.top);
       if (mass) {
         const mesh = cellMesh(mass, kit);
         const box = mesh.geometry.boundingBox!;
         cell.mesh = mesh;
         cell.top = mass.top;
+        // At least the old highest: the highest of all, whatever went before it.
+        if (cell.top >= highest) { highest = cell.top; highestStale = false; }
         // A building reaching past its cell's edge: the cell's box is its masses'.
         const { x0, y0, x1, y1 } = cell;
         cell.x0 = Math.min(x0, box.min.x); cell.x1 = Math.max(x1, box.max.x); cell.y0 = Math.min(y0, -box.max.z); cell.y1 = Math.max(y1, -box.min.z);
@@ -141,6 +150,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       drop(cell);
       cells.delete(key);
       nearKeys.delete(key);
+      lowered(cell.top);
     },
     keys() {
       return cells.keys();
@@ -206,9 +216,19 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const cell = cells.get(key);
       if (cell) showMass(key, cell);
     },
+    top() {
+      if (highestStale) {
+        highestStale = false;
+        highest = -Infinity;
+        for (const cell of cells.values()) if (cell.mesh && cell.top > highest) highest = cell.top;
+      }
+      return highest;
+    },
     dispose() {
       for (const cell of cells.values()) drop(cell);
       cells.clear();
+      highest = -Infinity;
+      highestStale = false;
       nearKeys.clear();
       detailed.clear();
     },

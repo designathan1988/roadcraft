@@ -46,6 +46,8 @@ export interface QualitySettings {
   readonly mist: boolean;
   /** The spray and mist at the foot of waterfalls (their falling water is drawn on every tier). */
   readonly waterfalls: boolean;
+  /** The most the buildings' detail holds on the GPU, MB: past it the cells drawn far let it go (`layer.ts` `keepToBudget`). */
+  readonly buildingDetailMB: number;
 }
 
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
@@ -73,6 +75,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: false,
     mist: false,
     waterfalls: false,
+    buildingDetailMB: 256,
   },
   medium: {
     pixelRatio: 1.25,
@@ -98,6 +101,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: false,
     waterfalls: true,
+    buildingDetailMB: 512,
   },
   high: {
     pixelRatio: 1.5,
@@ -124,6 +128,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
+    buildingDetailMB: 1024,
   },
   ultra: {
     pixelRatio: 2,
@@ -149,6 +154,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     skyClouds: true,
     mist: true,
     waterfalls: true,
+    buildingDetailMB: 1536,
   },
 };
 
