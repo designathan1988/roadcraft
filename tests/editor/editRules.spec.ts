@@ -146,7 +146,11 @@ describe('editing rules: what is refused, and why', () => {
     draw(doc, net, [-200, 0], [200, 0], 1);
     draw(doc, net, [-200, 60], [200, 60], 1);
     const node = [...doc.nodes.values()].find((n) => n.x === 200 * U && n.y === 60 * U)!;
+    const before = doc.toJSON();
     expect(moveNodeChecked(doc, net, node.id, { x: 200 * U, y: 6 * U })).toMatchObject({ committed: false, reason: 'overlap' });
+    // A refused drop is put back by the check itself (the Move tool keeps no copy of the map).
+    expect(doc.toJSON()).toEqual(before);
+    expect(net.revision).toBe(doc.revision);
   });
 });
 

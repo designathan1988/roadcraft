@@ -472,6 +472,8 @@ export interface ShellHandle {
    * the key put it down (as the dock's second click), and I opens Information.
    */
   toolKeyed(tool: string): void;
+  /** Puts a control of the game's own in the top bar, before Help (F9's button, `ui/healthPanel.ts`). */
+  addToBar(control: HTMLElement): void;
 }
 
 export function mountShell(deps: ShellDeps): ShellHandle {
@@ -588,7 +590,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   ];
   const syncInside = (): void => {
     if (insideBar.hidden === inside.on) insideBar.hidden = !inside.on;
-    const level = inside.level === 0 ? t('inside.ground') : `${inside.level + 1}º`;
+    // The dictionary's own floor names (Térreo, 1º andar; Ground, Floor 1). DO NOT
+    // number it here: `level + 1` named the floor above the ground '2º'.
+    const level = inside.level === 0 ? t('inside.ground') : t('inside.floor', { n: inside.level });
     if (insideLevelEl.textContent !== level) insideLevelEl.textContent = level;
   };
   syncInside();
@@ -1831,7 +1835,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     if (s.shelf === 'patterns') {
       const { items } = section(label);
-      for (const p of FACADE_PATTERNS) items.appendChild(card(t(`creator.pattern.${p}`), state.pattern === p, () => actions.choosePattern(p), workspace.thumbnail(p), builderIconSvg(p, 30)));
+      // Until its picture comes (`requestThumbnails`), a pattern shows the facade glyph:
+      // the patterns have none of their own, and nine blank squares stood in a row.
+      for (const p of FACADE_PATTERNS) items.appendChild(card(t(`creator.pattern.${p}`), state.pattern === p, () => actions.choosePattern(p), workspace.thumbnail(p), builderIconSvg('face', 30)));
       return;
     }
     if (s.shelf === 'finishes') {
@@ -2125,10 +2131,10 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   syncSky();
   syncSpeed();
   syncHistory();
-  // The Builder reports its state every frame while it is in hand
-  // (`buildingsWiring.ts` refresh): the panel is rebuilt only when what it
-  // shows has changed - it was rebuilt, fifty cards and all, every frame. The
-  // same state handed again means its pictures arrived.
+  // The Builder reports its state whenever it marks it changed - a hint, a
+  // drag, a selection (`buildingsWiring.ts` refresh, `dirty`): the panel is
+  // rebuilt only when what it shows has changed - it was rebuilt, fifty cards
+  // and all, on every report. The same state handed again means its pictures arrived.
   let builderSig = '';
   const sigOf = (s: BuilderState): string => JSON.stringify([s.category, s.tool, s.armed, [...s.ready].sort().join(','), s.floor, s.snap, s.grid, s.hideOthers,
     s.selection, s.planning, s.planPoints, s.userBlueprints.map((b) => b.key), s.pattern, s.scope, s.roof, s.material, s.drawAction, s.inspectorOpen]);
@@ -2169,6 +2175,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     toolKeyed(next) {
       open = next === 'inspect' || tool() !== 'inspect';
       later();
+    },
+    addToBar(control) {
+      actionsBar.insertBefore(control, helpB);
     },
   };
 }

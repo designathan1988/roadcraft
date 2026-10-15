@@ -1693,6 +1693,11 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   // laid on its ground.
   const level = buildingFloor !== undefined ? buildingFloor : floor + m(0.12);
   const surfaces = lotSurfaces(b, level, pavedAt);
+  // Where the doors' flights stand: a path laid to a door stops at the foot
+  // of its steps. Laid on the land up to the facade it came up through the
+  // lower treads wherever the land under the flight rises over its foot (the
+  // player, 2026-10-14).
+  const feet = buildingFloor !== undefined ? flightFeet(b, groundAt, pavedAt, buildingFloor) : [];
   let low = Infinity;
   for (const v of lots) for (const p of localFootprint(v)) low = Math.min(low, at(p.x, p.y));
   const heightOf = new Map<Volume, (lx: number, ly: number) => number>();
@@ -1859,12 +1864,14 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
     if (seat && onLawn(el.x, el.y)) {
       // Its height within the object kept; its lowest parts at the seat.
       const placed = { ...el, z: el.z - seat.lowest };
-      emitElement(e, placed, seat.base, Math.min(low, seat.base) - m(0.3), look);
+      for (const piece of placed.kind === 'pavement' ? clearOf(placed, feet) : [placed]) {
+        emitElement(e, piece, seat.base, Math.min(low, seat.base) - m(0.3), look);
+      }
       continue;
     }
     // A run on the land in steps, each on the lot's surface under it, or on
     // the ground where no lot is laid: nothing floats over a slope.
-    for (const piece of followPieces(el)) {
+    for (const piece of followPieces(el).flatMap((p) => (p.kind === 'pavement' ? clearOf(p, feet) : [p]))) {
       const host = hostAt(piece.x, piece.y);
       // On a lawn the ground is the terrain as drawn (`pads.ts`), not the
       // lot's plane: a path laid at the plane's height stood over the grass
@@ -2209,6 +2216,76 @@ const LOT_LIFT = m(0.024);
 const PAVING: Paint = paint({ finish: 'stone', colour: 0xbdb5a6 });
 
 /**
+ * Where a door's flight of steps stands along its side, in the side's own
+ * axis (`sideStart`): the opening and a quarter metre each way, as
+ * `emitBuilding` draws the flight.
+ */
+function flightSpan(b: Building, v: Volume, x: Entrance): [number, number] {
+  const o = openingOf(x.component, x.width, levelHeight(b, 0)) ?? { a0: x.width * 0.2, a1: x.width * 0.8 };
+  const half = (o.a1 - o.a0 + m(0.5)) / 2;
+  const middle = x.index * bayWidth(b, v, x.side) + x.width / 2;
+  return [middle - half, middle + half];
+}
+
+/** A rectangle of the plan, local: x0, y0, x1, y1. */
+type PlanRect = readonly [number, number, number, number];
+
+/**
+ * The ground the doors' flights of steps stand on, in the plan (local
+ * rectangles): each from the facade out to the foot of its lowest tread. The
+ * entrances as `emitBuilding` lays them - the same foundation, from the
+ * building's blocks without its lots.
+ */
+function flightFeet(b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, floor: number): PlanRect[] {
+  const closed = b.volumes.filter((v) => !v.open);
+  if (closed.length === 0) return [];
+  const built = { ...b, volumes: closed };
+  const out: PlanRect[] = [];
+  for (const x of foundationOf(built, groundAt, undefined, pavedAt, floor).entrances) {
+    if (x.steps <= 0 || x.recess > 0) continue;
+    const v = closed.find((w) => w.id === x.volume);
+    if (!v) continue;
+    const [a0, a1] = flightSpan(built, v, x);
+    const s = sideStart(v, x.side), n = edgeFrame(v, x.side);
+    const xs: number[] = [], ys: number[] = [];
+    for (const a of [a0, a1]) {
+      for (const d of [x.push, x.push + flightRun(x.steps)]) {
+        xs.push(s.x + s.tx * a + n.nx * d);
+        ys.push(s.y + s.ty * a + n.ny * d);
+      }
+    }
+    out.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+  }
+  return out;
+}
+
+/** A level piece of paving with the ground of the flights taken out of it: what is left, in pieces of the same kind. */
+function clearOf(piece: BuildingElement, feet: readonly PlanRect[]): BuildingElement[] {
+  if (feet.length === 0 || piece.angle) return [piece];
+  let left: PlanRect[] = [elementRect(piece)];
+  let cut = false;
+  for (const [fx0, fy0, fx1, fy1] of feet) {
+    const next: PlanRect[] = [];
+    for (const r of left) {
+      const [x0, y0, x1, y1] = r;
+      if (fx0 >= x1 || fx1 <= x0 || fy0 >= y1 || fy1 <= y0) { next.push(r); continue; }
+      cut = true;
+      // The parts of `r` round the foot: below, above, then left and right between them.
+      if (fy0 > y0) next.push([x0, y0, x1, fy0]);
+      if (fy1 < y1) next.push([x0, fy1, x1, y1]);
+      const my0 = Math.max(y0, fy0), my1 = Math.min(y1, fy1);
+      if (fx0 > x0) next.push([x0, my0, fx0, my1]);
+      if (fx1 < x1) next.push([fx1, my0, x1, my1]);
+    }
+    left = next;
+  }
+  if (!cut) return [piece];
+  return left
+    .filter(([x0, y0, x1, y1]) => x1 - x0 > m(0.05) && y1 - y0 > m(0.05))
+    .map(([x0, y0, x1, y1]) => ({ ...piece, facing: 0, x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, d: y1 - y0 }));
+}
+
+/**
  * What seats a building in its lot: a paved apron round the base of every
  * ground volume, laid on the land (sampled, so it follows a slope) and left
  * out where there is paving already; and, from every way in that does not
@@ -2230,6 +2307,19 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
       e.shell.face(world.map((w) => [w[0], w[1], groundAt(w[0], w[1]) + LOT_LIFT] as V3), up, PAVING);
     }
   };
+  // The flights standing out of the sides (by block and side): the apron is
+  // laid round their feet, not through them. Laid on the land across a
+  // flight, it came up through its lower treads where the land in front of
+  // the door rises over the foot of the steps (the player, 2026-10-14).
+  const flights = new Map<string, { a0: number; a1: number; run: number }[]>();
+  for (const x of f.entrances) {
+    if (x.steps <= 0 || x.recess > 0) continue;
+    const v = b.volumes.find((w) => w.id === x.volume);
+    if (!v) continue;
+    const [a0, a1] = flightSpan(b, v, x);
+    const key = `${x.volume}:${x.side}`;
+    flights.set(key, [...(flights.get(key) ?? []), { a0, a1, run: flightRun(x.steps) }]);
+  }
   for (const v of b.volumes) {
     if (v.base !== 0) continue;
     const g = PLINTH_GROW;
@@ -2249,8 +2339,9 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
       // against the ring on a rectangle's back and left sides.
       const s = sideStart(v, i as FaceId);
       const reversed = s.tx * tx + s.ty * ty < 0;
-      const covered = coveredSpans(b, v, i as FaceId, 0)
-        .map(([a0, a1]) => (reversed ? [length - a1, length - a0] : [a0, a1]) as [number, number])
+      const toRing = ([a0, a1]: readonly [number, number]): [number, number] => (reversed ? [length - a1, length - a0] : [a0, a1]);
+      const steps = (flights.get(`${v.id}:${i}`) ?? []).map((fl) => ({ span: toRing([fl.a0, fl.a1]), run: fl.run }));
+      const covered = [...coveredSpans(b, v, i as FaceId, 0).map(toRing), ...steps.map((fl) => fl.span)]
         .sort((u, w) => u[0] - w[0]);
       for (const [p0, p1] of exposedParts(covered, 0, length)) {
         // Grown past the corner it starts from, to the plinth at the one it ends at.
@@ -2258,6 +2349,14 @@ function emitLot(e: Emitter, b: Building, f: Foundation, groundAt: GroundAt, pav
         const from = { x: p.x + tx * a0 + n.x * g, y: p.y + ty * a0 + n.y * g };
         const to = { x: p.x + tx * a1 + n.x * g, y: p.y + ty * a1 + n.y * g };
         strip(from, to, APRON, n.x, n.y);
+      }
+      // In front of a flight, only past its foot.
+      for (const { span: [s0, s1], run } of steps) {
+        const out = Math.max(g, run);
+        if (out >= g + APRON - 1e-6) continue;
+        const from = { x: p.x + tx * s0 + n.x * out, y: p.y + ty * s0 + n.y * out };
+        const to = { x: p.x + tx * s1 + n.x * out, y: p.y + ty * s1 + n.y * out };
+        strip(from, to, g + APRON - out, n.x, n.y);
       }
     }
   }

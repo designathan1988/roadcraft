@@ -41,7 +41,13 @@ export function commitRoundabout(
   // Refuse instead of silently burying existing roads or leaving unconnected
   // geometric crossings. Connecting existing junctions is a separate operation.
   const width = casingHalf(roadProfile(type, 2, 'both'));
-  for (const segment of doc.segments.values()) {
+  // The roads whose casing can come that near: filed (centreline box grown by
+  // their width) in the network's cells over the square of the reach and this
+  // road's half width. DO NOT measure every road of the map for one placement.
+  const near = reach + width;
+  for (const ribbon of net.ribbonsMeeting([centre.x - near, centre.y - near, centre.x + near, centre.y + near])) {
+    const segment = doc.segment(ribbon.id);
+    if (!segment) continue;
     const otherWidth = casingHalf(roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking));
     if (net.polylines.get(doc, segment.id).distanceTo(centre) < reach + width + otherWidth) {
       return { committed: false, reason: 'occupied' };

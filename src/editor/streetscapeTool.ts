@@ -1,11 +1,13 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { footwayAt, landscapeNear, snapLandscape, type LandscapeItem, type LandscapeKind, type LandscapeSnap } from '@world/landscape';
+import { MAX_ITEM_RADIUS, footwayAt, landscapeNearIn, snapLandscape, type LandscapeItem, type LandscapeKind, type LandscapeSnap } from '@world/landscape';
 import type { SignType } from '@world/landscape';
 import { m } from '@world/units';
 import { signApproach } from '@world/roads/derivedSigns';
 import { FURNITURE_CATALOG } from '@world/roads/furnitureCatalog';
+import { Level, halfWidth } from '@world/roadTypes';
+import { ribbonsNear } from './snap';
 
 /** What the landscaping tool reads of the game and does to it. */
 export interface StreetscapeToolHost {
@@ -50,7 +52,7 @@ export class StreetscapeTool {
     const { host } = this;
     const { doc } = host;
     if (shift) {
-      const hit = landscapeNear(doc.landscape.values(), world, this.reach());
+      const hit = landscapeNearIn(doc, world, this.reach());
       if (hit) {
         host.mutate(() => doc.removeLandscape(hit.id));
         host.hint('hint.streetscape.removed');
@@ -58,7 +60,7 @@ export class StreetscapeTool {
       return;
     }
     const kind = host.kind();
-    const placed = snapLandscape(host.net, doc.landscape.values(), kind, world, this.reach());
+    const placed = snapLandscape(host.net, itemsAround(host, world, this.reach()), kind, world, this.reach());
     // A stop or give-way plate at a junction's approach IS that leg's rule
     // (docs/source/VIAS.md V7): the rule is set, and the plate the rule puts up is drawn.
     const signType = kind === 'sign' ? host.extra(kind).signType : undefined;
@@ -102,7 +104,7 @@ export class StreetscapeTool {
       this.hover = null;
     } else {
       if (this.row && !pressed) this.row = null;
-      this.hover = snapLandscape(host.net, host.doc.landscape.values(), host.kind(), world, this.reach());
+      this.hover = snapLandscape(host.net, itemsAround(host, world, this.reach()), host.kind(), world, this.reach());
     }
     host.redraw();
   }
@@ -135,17 +137,41 @@ function rowPieces(host: StreetscapeToolHost, kind: LandscapeKind, from: Landsca
   const line = host.net.ribbons.get(start.segment)?.full;
   if (!line) return [];
   const dir = Math.sign(hit.s - start.s);
-  const items: LandscapeItem[] = [...host.doc.landscape.values()];
+  // The row's own pieces so far: each next one keeps clear of them too.
+  const laid: LandscapeItem[] = [];
   const out: LandscapeSnap[] = [];
   for (let k = 1; k <= 200 && dir !== 0; k++) {
     const s = start.s + dir * spacing * k;
     if ((s - hit.s) * dir > 0 || s < 0 || s > line.length) break;
     const f = line.sampleAt(s);
     const at = { x: f.p.x + f.n.x * start.across * start.side, y: f.p.y + f.n.y * start.across * start.side };
-    const snap = snapLandscape(host.net, items, kind, at, m(0.6));
+    const snap = snapLandscape(host.net, [...itemsAround(host, at, m(0.6)), ...laid], kind, at, m(0.6));
     if (!snap.ok || snap.hit?.segment !== start.segment) continue;
     out.push(snap);
-    items.push({ id: -k, kind, x: snap.at.x, y: snap.at.y });
+    laid.push({ id: -k, kind, x: snap.at.x, y: snap.at.y });
   }
   return out;
 }
+
+/**
+ * The placed items `snapLandscape` can meet for a point `at` and a `reach`, from
+ * the document's cells (`RoadDoc.landscapeIn`), never the whole map. It tests an item
+ * against the point it would place: on a footway, at most `reach` past the
+ * band and a footway's width in from it, so within `reach + 2H` of `at`, `H`
+ * the widest casing of the roads it looks at (those within `reach`); in a
+ * median or a meadow, nearer. An item counts within its radius and the new
+ * one's, and the gap between them, of that point.
+ * DO NOT hand it `doc.landscape.values()`: the hover ran over every item of the
+ * map on every pointer move, and a row dragged out did it per piece.
+ */
+function itemsAround(host: StreetscapeToolHost, at: Vec2, reach: number): LandscapeItem[] {
+  let widest = 0;
+  for (const ribbon of ribbonsNear(host.net, [at.x - reach, at.y - reach, at.x + reach, at.y + reach])) {
+    widest = Math.max(widest, halfWidth(ribbon.road, Level.Casing));
+  }
+  const r = reach + 2 * widest + 2 * MAX_ITEM_RADIUS + MEADOW_CLEAR;
+  return host.doc.landscapeIn([at.x - r, at.y - r, at.x + r, at.y + r]);
+}
+
+/** How far a meadow keeps from another (`snapLandscape`), and more than any gap between two items. */
+const MEADOW_CLEAR = m(2.5);

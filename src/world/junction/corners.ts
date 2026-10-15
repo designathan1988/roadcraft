@@ -207,7 +207,9 @@ function resolveCorner(
   //
   // Solving it is a fixed point, not a formula: enlarging the radius pushes the
   // tangency out, which raises the leg's trim, which is the number this reads.
-  // `buildJunction` iterates until it settles. A circular arc has one radius and
+  // `buildJunction` does NOT pass the trims today ("NOT DONE HERE" in
+  // `build.ts`: both ways it was tried broke something); this stays for that
+  // work, and runs only when a caller passes them. A circular arc has one radius and
   // therefore equal runs on both sides, so the LARGER of the two demands wins
   // and the shorter side's mouth grows to meet it on the next pass.
   //

@@ -9,6 +9,7 @@ import { roadStructure } from '@world/structures';
 import { ROAD_TUNING } from '@world/roads/tuning';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import { m } from '@world/units';
+import { ribbonsNear } from './snap';
 
 /**
  * What a road edit may not leave behind, judged on the network it builds.
@@ -252,11 +253,19 @@ function overlapsAnother(before: RoadState, after: RoadState, id: SegmentId,
   const to = length - (trims?.b[Level.Casing] ?? 0) - SAMPLE_STEP / 2;
   if (to <= from) return false;
 
-  // Candidate roads: any whose box comes within reach of this one's.
+  // Candidate roads: any whose box comes within reach of this one's. The reach
+  // is at most this road's footway half-width plus the other's, and the other
+  // is filed in the network's cells over its box grown by its casing, wider
+  // than its footway: the cells round this box grown by its own footway hold
+  // every candidate (`ribbonsNear`). DO NOT walk `doc.segments` here: each
+  // changed road of every edit and dry run read every road of the map.
   const box = line.bbox;
+  const grow = halfWidth(ribbon.road, Level.Sidewalk);
   const others: { id: SegmentId; seg: RoadSegment; limit: number }[] = [];
-  for (const [otherId, other] of doc.segments) {
-    if (otherId === id) continue;
+  for (const near of ribbonsNear(net, [box.minX - grow, box.minY - grow, box.maxX + grow, box.maxY + grow])) {
+    const otherId = near.id;
+    const other = doc.segment(otherId);
+    if (otherId === id || !other) continue;
     const ob = net.ribbons.get(otherId)?.full.bbox;
     const limit = overlapReach(net, id, otherId);
     if (!ob || ob.minX > box.maxX + limit || ob.maxX < box.minX - limit ||
@@ -327,9 +336,17 @@ function overlapReach(net: Network, a: SegmentId, b: SegmentId): number {
     halfWidth(ra, Level.Sidewalk) + halfWidth(rb, Level.Asphalt)) - OVERLAP_SLACK;
 }
 
+/**
+ * The roads whose centreline passes within `SAME_PLACE` of `p` at `height`: from
+ * the network's cells round the point (a ribbon is filed over its centreline's
+ * box grown by its casing). DO NOT walk `state.doc.segments`: this runs for
+ * every sample of every changed road.
+ */
 function segmentsThrough(state: RoadState, p: Vec2, height: number): SegmentId[] {
   const out: SegmentId[] = [];
-  for (const [id, seg] of state.doc.segments) {
+  for (const { id } of ribbonsNear(state.net, [p.x - SAME_PLACE, p.y - SAME_PLACE, p.x + SAME_PLACE, p.y + SAME_PLACE])) {
+    const seg = state.doc.segment(id);
+    if (!seg) continue;
     const line = state.net.polylines.get(state.doc, id);
     const box = line.bbox;
     if (p.x < box.minX - SAME_PLACE || p.x > box.maxX + SAME_PLACE || p.y < box.minY - SAME_PLACE || p.y > box.maxY + SAME_PLACE) continue;

@@ -1,49 +1,37 @@
 import {
-  BufferAttribute, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, ShapeUtils, Vector2, type Scene,
+  DataTexture, NearestFilter, RGBAIntegerFormat, UnsignedIntType, Vector4,
+  type Material, type WebGLProgramParametersWithUniforms,
 } from 'three';
 import type { Vec2 } from '@core/vec2';
-import { m } from '@world/units';
 import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
-import { pullTowardEye } from './depthConvention';
+import { MAP_HALF } from '@world/bounds';
+import {
+  DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
+} from './lotLattice';
 
 /**
- * What moves the ground a lot is laid on (`surfaceHeightAt`: the terrain and
- * the roads): its laid pieces there are made again. NOT 'buildings': a
- * building moves no ground by being there - the pads it levels are written
- * as 'ground' when they are cut (`renderer.ts` `shapeGround`). With it, a
- * generated city re-laid 3 000 lots in 18 passes of 190 ms each, 3.4 s of
- * its first 25 (2026-10-14).
- * NÃO pôr 'buildings' de volta: o nivelamento já chega como 'ground'.
- */
-const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
-
-/**
- * Milliseconds a frame spends laying lots on the ground, and how often what
- * is laid so far is shown while the rest waits. A generated city's 1 500
- * lots laid in one frame held it 1.3 s, the first frame the town was seen
- * (2026-10-14); a slice a frame, the colours spread over the town instead.
- * NÃO voltar a deitar tudo num quadro: é a travada de mais de um segundo.
- */
-const LAY_SLICE_MS = 12;
-const REVEAL_MS = 300;
-
-/** One polygon laid on the ground: its fill and outline triangles, and where it is. */
-interface Piece { readonly fillPos: Float32Array; readonly fillCol: Float32Array; readonly linePos: Float32Array; readonly lineCol: Float32Array; readonly box: ChangeRect }
-
-/**
- * The lots drawn in the scene (`world/lots.ts`, the Zoning tool): fills and
- * outlines laid on the ground itself - the road deck, the footway, the
- * terrain - so they stay where the land is as the camera moves. Drawn on a
- * 2D canvas over the picture at a guessed height, they slid against the
- * ground with every turn of the camera and sat crooked over the footway.
+ * The lots drawn in the scene (`world/lots.ts`, the Zoning tool, and the
+ * faint zones with the other tools): coloured into the ground by the
+ * ground's own shaders - the terrain, the footways, the kerbs, the verges,
+ * the carriageways (`applyLotOverlay`) - from the lots as vector shapes in a
+ * lattice (`lotLattice.ts`; Nehab & Hoppe 2008, random-access vector
+ * graphics). A pixel of the ground finds its 8 m cell and colours itself
+ * from the few shapes listed there: exact at every distance (no texture to
+ * pixelate up close or blur), on the ground wherever it drew itself (no
+ * lift to float over a slope or sink into it), antialiased by its distance
+ * to the nearest edge, and outlines of a constant width in metres.
  *
- * Outlines are ribbons of a constant width on the ground, subdivided so they
- * follow its relief; fills are the polygons triangulated with their edges
- * subdivided, each vertex at the ground's height. Rebuilt only when the
- * input's key changes, and then only the polygons that changed or whose
- * ground did (the diary's rectangles): each building grown laid all 468 lots
- * of a town on the ground again, 1.7 s a building. The polygons still to lay
- * are laid `LAY_SLICE_MS` a frame (`set` is true until they all are).
+ * Only the shapes that changed are written again: each is keyed by what it
+ * is, and the lattice rewrites the cells it touches. The shapes never sample
+ * the ground, so a road, a pad or a stroke of the terrain brush redraws no
+ * lot; a built lot keeps one number read from it, its level, for its yard's
+ * paving drawn by the buildings' materials.
+ *
+ * DO NOT go back to geometry laid on the ground per lot (a triangulation
+ * subdivided to 3 m with `groundAt` at every vertex): 3.5 million vertices
+ * built on the CPU for a town of 1 500 lots, 1.3 s that was then spread over
+ * frames (`LAY_SLICE_MS`, a slice of 12 ms a frame) - the cost hidden, not
+ * removed (OTIMIZACAO.md item 20).
  */
 export interface LotOverlayInput {
   /** Changes whenever anything drawn changes. */
@@ -56,274 +44,410 @@ export interface LotOverlayInput {
     readonly lineAlpha: number;
     /** Line width, metres on the ground. */
     readonly width: number;
+    /**
+     * A lot with a building: its yard's paving and paths - the building's
+     * own parts, not the ground - are coloured too (`applyLotOverlay`, `building`).
+     */
+    readonly built?: boolean;
   }[];
   readonly lines: readonly { readonly a: Vec2; readonly b: Vec2; readonly colour: number; readonly dashed: boolean; readonly width: number }[];
   readonly points: readonly { readonly p: Vec2; readonly colour: number; readonly radius: number }[];
 }
 
-/** An input being laid, a slice a frame: the polygons done, those to come, the loose lines and points. */
-interface Laying {
-  readonly input: LotOverlayInput;
-  next: number;
-  readonly laid: Piece[];
-  readonly kept: Map<string, Piece>;
-  readonly loose: { readonly pos: number[]; readonly col: number[] };
-  shownAt: number;
-  /** Pieces of `laid` already in meshes; the meshes of the input before are gone once one is. */
-  shown: number;
+/** A colour (0xRRGGBB, sRGB) and an alpha as the lattice keeps them: RGBA8, red lowest. */
+function rgba(colour: number, alpha: number): number {
+  const a = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
+  if (a === 0) return 0;
+  return ((colour >> 16) & 255 | (((colour >> 8) & 255) << 8) | ((colour & 255) << 16) | (a << 24)) >>> 0;
 }
 
-export function createLotOverlay(scene: Scene, groundAt: (x: number, y: number) => number) {
-  const group = new Group();
-  group.name = 'lot-overlay';
-  group.renderOrder = 10;
-  scene.add(group);
-  const material = (alpha: boolean): MeshBasicMaterial => {
-    const made = new MeshBasicMaterial({ vertexColors: true, transparent: alpha, opacity: 1, depthWrite: false, side: DoubleSide });
-    pullTowardEye(made, 4, 16);
-    return made;
-  };
-  const fillMat = material(true), lineMat = material(true);
-  fillMat.forceSinglePass = true;
-  lineMat.forceSinglePass = true;
-  let key = '';
-  let meshes: Mesh[] = [];
-  /** Each polygon as last laid, by what it is (`pieceKey`). */
-  let pieces = new Map<string, Piece>();
-  /** The input still being laid (`LAY_SLICE_MS` a frame); null when all is shown. */
-  let laying: Laying | null = null;
-  /** The diary's serial the pieces' ground was read at. */
-  let groundSeen = -1;
-  const pieceKey = (poly: LotOverlayInput['polygons'][number]): string =>
-    `${poly.fill}|${poly.fillAlpha}|${poly.line}|${poly.lineAlpha}|${poly.width}|${poly.corners.map((q) => `${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(';')}`;
-  /** The pieces whose ground moved since they were laid are forgotten. */
-  /** True when a piece still drawn was forgotten. */
-  const forgetMovedGround = (changes: ChangeJournal | undefined): boolean => {
-    if (!changes || changes.version === groundSeen) return false;
-    const entries = groundSeen < 0 ? null : changes.since(groundSeen, GROUND_KINDS);
-    groundSeen = changes.version;
-    const before = pieces.size;
-    if (entries === null) { pieces.clear(); return before > 0; }
-    for (const entry of entries) {
-      if (entry.rects === null) { pieces.clear(); break; }
-      for (const [k, piece] of pieces) {
-        if (entry.rects.some((r) => r[0] <= piece.box[2] && r[2] >= piece.box[0] && r[1] <= piece.box[3] && r[3] >= piece.box[1])) pieces.delete(k);
-      }
-    }
-    return pieces.size < before;
-  };
-  const LIFT = m(0.12);
-  /** The longest side of a fill triangle: about the terrain's own cell, so the fill bends with it. */
-  const FILL_EDGE = m(3);
+/** The lattice's texture when there is nothing: an integer texture still, for the `usampler2D`. */
+const EMPTY = new DataTexture(new Uint32Array(4), 1, 1, RGBAIntegerFormat, UnsignedIntType);
+EMPTY.internalFormat = 'RGBA32UI';
+EMPTY.needsUpdate = true;
 
-  /** World (x, y) on the ground, as three's (x, height, -y). */
-  const at = (x: number, y: number, lift = LIFT): [number, number, number] => [x, groundAt(x, y) + lift, -y];
-  const colour = new Color();
-  const pushColour = (into: number[], c: number, alpha: number, n: number): void => {
-    colour.set(c);
-    for (let i = 0; i < n; i++) into.push(colour.r, colour.g, colour.b, alpha);
-  };
-  const ribbon = (pos: number[], col: number[], a: Vec2, b: Vec2, width: number, c: number, alpha: number, lift: number): void => {
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    if (len < 1e-6) return;
-    const nx = -(b.y - a.y) / len * width / 2, ny = (b.x - a.x) / len * width / 2;
-    const steps = Math.max(1, Math.ceil(len / m(2)));
-    // Each cross-section's two ground points once: a step shares its end
-    // with the next step's start (the ground was asked twice for each).
-    let r0 = at(a.x - nx, a.y - ny, lift), l0 = at(a.x + nx, a.y + ny, lift);
-    for (let k = 0; k < steps; k++) {
-      const t1 = (k + 1) / steps;
-      const p1x = a.x + (b.x - a.x) * t1, p1y = a.y + (b.y - a.y) * t1;
-      const l1 = at(p1x + nx, p1y + ny, lift), r1 = at(p1x - nx, p1y - ny, lift);
-      pos.push(...r0, ...l0, ...l1, ...r0, ...l1, ...r1);
-      pushColour(col, c, alpha, 6);
-      r0 = r1; l0 = l1;
-    }
-  };
+/**
+ * Shared by every ground material (`applyLotOverlay`), set by the overlay:
+ * the lattice's texture and its frame - x the map's half, y the cell, z the
+ * cells a side, w on (1) or off (0).
+ */
+const UNIFORMS = {
+  uLots: { value: EMPTY },
+  uLotsGrid: { value: new Vector4(MAP_HALF, LOT_CELL, Math.ceil((2 * MAP_HALF) / LOT_CELL), 0) },
+  uLotsTiles: { value: Math.ceil(Math.ceil((2 * MAP_HALF) / LOT_CELL) / TILE_CELLS) },
+};
 
-  /** One polygon laid on the ground, into its own lists. */
-  function layPiece(poly: LotOverlayInput['polygons'][number]): Piece {
-    const ring = poly.corners;
-    const fillPos: number[] = [], fillCol: number[] = [], linePos: number[] = [], lineCol: number[] = [];
-    if (poly.fill !== null && poly.fillAlpha > 0) {
-      // Edges subdivided every 3 m so the fill bends with the ground.
-      const pts: Vec2[] = [];
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
-        const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / m(3)));
-        for (let k = 0; k < steps; k++) pts.push({ x: a.x + (b.x - a.x) * k / steps, y: a.y + (b.y - a.y) * k / steps });
-      }
-      const tris = ShapeUtils.triangulateShape(pts.map((p) => new Vector2(p.x, p.y)), []);
-      // Each triangle cut until no side is longer than 3 m, every vertex on
-      // the ground: with vertices on the edges only, a lot's middle was a
-      // few large flat triangles, and wherever the land rose inside it the
-      // ground showed through the colour in holes (the player, 2026-10-06).
-      const fill = poly.fill;
-      // A vertex is shared by up to six triangles: its ground asked once.
-      // Keyed by a number, not a string: building the keys was 2.5 s of the
-      // 7 s a generated city's 1 530 lots took to lay (2026-10-09).
-      const heights = new Map<number, [number, number, number]>();
-      const ground = (p: Vec2): [number, number, number] => {
-        const k = (Math.round(p.x * 1000) + 4_194_304) * 8_388_608 + (Math.round(p.y * 1000) + 4_194_304);
-        let v = heights.get(k);
-        if (!v) { v = at(p.x, p.y); heights.set(k, v); }
-        return v;
-      };
-      const emit = (a: Vec2, b: Vec2, cc: Vec2, depth: number): void => {
-        const ab = Math.hypot(b.x - a.x, b.y - a.y), bc = Math.hypot(cc.x - b.x, cc.y - b.y), ca = Math.hypot(a.x - cc.x, a.y - cc.y);
-        if (Math.max(ab, bc, ca) <= FILL_EDGE || depth > 12) {
-          fillPos.push(...ground(a), ...ground(b), ...ground(cc));
-          pushColour(fillCol, fill, poly.fillAlpha, 3);
-          return;
+/**
+ * How far above or below a built lot's ground level a building's level
+ * surface is still its yard (metres): paving, paths and a pool's coping lie
+ * at the lot's level, a flat roof or a terrace a storey up does not.
+ */
+const LEVEL_REACH = 0.75;
+/** A building's surface facing up at least this much (world normal's y): a wall's never is. */
+const FACING_UP = 0.9;
+
+const LOT_PARS = /* glsl */ `
+  uniform highp usampler2D uLots;
+  uniform vec4 uLotsGrid;
+  uniform float uLotsTiles;
+  uvec4 lotTexel(uint a) { return texelFetch(uLots, ivec2(int(a & ${TEXTURE_WIDTH - 1}u), int(a >> ${Math.log2(TEXTURE_WIDTH)}u)), 0); }
+  float lotCross(vec2 u, vec2 v) { return u.x * v.y - u.y * v.x; }
+  vec3 lotLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+  vec4 lotColour(uint c) {
+    vec4 v = vec4(uvec4(c, c >> 8u, c >> 16u, c >> 24u) & 255u) / 255.0;
+    return vec4(lotLinear(v.rgb), v.a);
+  }
+  // The lots over \`base\` at world point w (x, y), dw/dx and dw/dy the
+  // pixel's footprint (Nehab & Hoppe 2008: parity for inside, the nearest
+  // edge's distance scaled to pixels for the antialiased edge and the stroke).
+  // \`building\`: a building's level surface at world height \`height\`: only
+  // the built lots whose ground level is within LEVEL_REACH of it draw there
+  // (the yard's paving, not a flat roof).
+  vec3 lotOver(vec3 base, vec2 w, vec2 dx, vec2 dy, float height, bool building) {
+    vec2 g = (w + uLotsGrid.x) / uLotsGrid.y;
+    if (any(lessThan(g, vec2(0.0))) || any(greaterThanEqual(g, vec2(uLotsGrid.z)))) return base;
+    ivec2 c = ivec2(g);
+    ivec2 t = c / ${TILE_CELLS};
+    int tile = t.y * int(uLotsTiles) + t.x;
+    uint block = lotTexel(uint(tile >> 2))[tile & 3];
+    if (block == 0u) return base;
+    int local = (c.y - t.y * ${TILE_CELLS}) * ${TILE_CELLS} + (c.x - t.x * ${TILE_CELLS});
+    uint entry = lotTexel(block + uint(local >> 2))[local & 3];
+    uint count = entry & 255u;
+    if (count == 0u) return base;
+    uint at = entry >> 8u;
+    if (count == 255u) { count = lotTexel(at).x; at += 1u; }
+    // Cell-local, as the edges are stored: the cell's centre is (c + 0.5) cells from the map's corner.
+    vec2 p = (w + uLotsGrid.x) - (vec2(c) + 0.5) * uLotsGrid.y;
+    // Premultiplied, each over the ones before: every fill under every stroke.
+    vec4 fills = vec4(0.0), strokes = vec4(0.0);
+    for (uint r = 0u; r < count; r++) {
+      uvec4 h = lotTexel(at);
+      at += 1u;
+      uint n = h.z & 1023u;
+      uint flags = (h.z >> 10u) & 63u;
+      float hw = unpackHalf2x16(h.z >> 16u).x;
+      bool levelled = (flags & ${FLAG_LEVEL}u) != 0u;
+      float level = 0.0;
+      if (levelled) { level = uintBitsToFloat(lotTexel(at).x); at += 1u; }
+      if (building && (!levelled || abs(height - level) > ${LEVEL_REACH.toFixed(3)})) { at += n; continue; }
+      if ((flags & ${FLAG_BUTT}u) != 0u) {
+        // A line with square ends, as a ribbon: across, the band of its
+        // width; along, cut at its ends - or at its dash's (dashes of
+        // ${DASH} m every ${DASH + GAP} m from its start).
+        uvec4 q = lotTexel(at);
+        at += n;
+        vec2 a = uintBitsToFloat(q.xy), ab = uintBitsToFloat(q.zw) - a;
+        float len = length(ab);
+        vec2 u = ab / len, nrm = vec2(-u.y, u.x);
+        float along = dot(p - a, u), across = abs(dot(p - a, nrm));
+        float lo = 0.0, hi = len;
+        if ((flags & ${FLAG_DASHED}u) != 0u) {
+          float d0 = floor(along / ${(DASH + GAP).toFixed(4)}) * ${(DASH + GAP).toFixed(4)};
+          float next = d0 + ${(DASH + GAP).toFixed(4)};
+          float d1 = d0 + ${DASH.toFixed(4)};
+          if (along > d1 && next < len && next - along < along - d1) { d0 = next; d1 = next + ${DASH.toFixed(4)}; }
+          lo = max(d0, 0.0); hi = min(d1, len);
         }
-        // The longest side halved: two triangles, no T-junctions along shared sides.
-        if (ab >= bc && ab >= ca) { const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; emit(a, mid, cc, depth + 1); emit(mid, b, cc, depth + 1); }
-        else if (bc >= ca) { const mid = { x: (b.x + cc.x) / 2, y: (b.y + cc.y) / 2 }; emit(a, b, mid, depth + 1); emit(a, mid, cc, depth + 1); }
-        else { const mid = { x: (cc.x + a.x) / 2, y: (cc.y + a.y) / 2 }; emit(a, b, mid, depth + 1); emit(mid, b, cc, depth + 1); }
-      };
-      for (const tri of tris) emit(pts[tri[0]!]!, pts[tri[1]!]!, pts[tri[2]!]!, 0);
-    }
-    for (let i = 0; i < ring.length; i++) ribbon(linePos, lineCol, ring[i]!, ring[(i + 1) % ring.length]!, m(poly.width), poly.line, poly.lineAlpha, LIFT * 1.5);
-    const xs = ring.map((q) => q.x), ys = ring.map((q) => q.y);
-    const pad = m(poly.width);
-    return { fillPos: Float32Array.from(fillPos), fillCol: Float32Array.from(fillCol),
-      linePos: Float32Array.from(linePos), lineCol: Float32Array.from(lineCol),
-      box: [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad] };
-  }
-
-  /** The loose lines and points of an input, laid at once (a few). */
-  function layLoose(input: LotOverlayInput): Laying['loose'] {
-    const pos: number[] = [], col: number[] = [];
-    for (const line of input.lines) {
-      if (!line.dashed) { ribbon(pos, col, line.a, line.b, m(line.width), line.colour, 1, LIFT * 2); continue; }
-      const len = Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y);
-      const dash = m(2), gap = m(1.2);
-      for (let s = 0; s < len; s += dash + gap) {
-        const t0 = s / len, t1 = Math.min(1, (s + dash) / len);
-        ribbon(pos, col, { x: line.a.x + (line.b.x - line.a.x) * t0, y: line.a.y + (line.b.y - line.a.y) * t0 },
-          { x: line.a.x + (line.b.x - line.a.x) * t1, y: line.a.y + (line.b.y - line.a.y) * t1 }, m(line.width), line.colour, 1, LIFT * 2);
+        float mppN = max(length(vec2(dot(dx, nrm), dot(dy, nrm))), 1e-6);
+        float mppU = max(length(vec2(dot(dx, u), dot(dy, u))), 1e-6);
+        float ds = across / mppN, ws = hw / mppN;
+        vec4 s = lotColour(h.y);
+        float cover = (smoothstep(-1.0, 1.0, ws - ds) - smoothstep(-1.0, 1.0, -ws - ds))
+          * smoothstep(-1.0, 1.0, min(along - lo, hi - along) / mppU) * s.a;
+        strokes = vec4(s.rgb * cover, cover) + strokes * (1.0 - cover);
+        continue;
+      }
+      vec2 ref = unpackHalf2x16(h.w);
+      bool inside = (flags & ${FLAG_INSIDE}u) != 0u;
+      float best = 1e9;
+      vec2 dir = vec2(1.0, 0.0);
+      vec2 rp = p - ref;
+      for (uint e = 0u; e < n; e++) {
+        uvec4 q = lotTexel(at + e);
+        vec2 a = uintBitsToFloat(q.xy), b = uintBitsToFloat(q.zw);
+        vec2 ab = b - a;
+        // The way from the reference to the pixel crossing this edge flips the side.
+        if (((lotCross(ab, ref - a) > 0.0) != (lotCross(ab, p - a) > 0.0)) && ((lotCross(rp, a - ref) > 0.0) != (lotCross(rp, b - ref) > 0.0))) inside = !inside;
+        float len2 = dot(ab, ab);
+        float s = len2 > 0.0 ? clamp(dot(p - a, ab) / len2, 0.0, 1.0) : 0.0;
+        vec2 v = p - (a + ab * s);
+        float d = length(v);
+        if (d < best) {
+          best = d;
+          dir = d > 1e-5 ? v / d : (len2 > 0.0 ? normalize(vec2(-ab.y, ab.x)) : vec2(1.0, 0.0));
+        }
+      }
+      at += n;
+      // Metres a pixel across, along the way to the nearest edge (the Jacobian of the view).
+      float mpp = max(length(vec2(dot(dx, dir), dot(dy, dir))), 1e-6);
+      if ((flags & ${FLAG_FILL}u) != 0u) {
+        vec4 f = lotColour(h.x);
+        float cover = smoothstep(-1.0, 1.0, (inside ? best : -best) / mpp) * f.a;
+        fills = vec4(f.rgb * cover, cover) + fills * (1.0 - cover);
+      }
+      if ((flags & ${FLAG_STROKE}u) != 0u) {
+        // An outline (round at its corners) or a dot.
+        vec4 s = lotColour(h.y);
+        float ds = best / mpp, ws = hw / mpp;
+        float cover = (smoothstep(-1.0, 1.0, ws - ds) - smoothstep(-1.0, 1.0, -ws - ds)) * s.a;
+        strokes = vec4(s.rgb * cover, cover) + strokes * (1.0 - cover);
       }
     }
-    for (const point of input.points) {
-      // A disc of 12 sides.
-      const r = m(point.radius), c = at(point.p.x, point.p.y, LIFT * 2.5);
-      for (let k = 0; k < 12; k++) {
-        const a0 = k / 12 * Math.PI * 2, a1 = (k + 1) / 12 * Math.PI * 2;
-        pos.push(...c, c[0] + Math.cos(a0) * r, c[1], c[2] + Math.sin(a0) * r, c[0] + Math.cos(a1) * r, c[1], c[2] + Math.sin(a1) * r);
-        pushColour(col, point.colour, 1, 3);
-      }
+    base = base * (1.0 - fills.a) + fills.rgb;
+    return base * (1.0 - strokes.a) + strokes.rgb;
+  }
+`;
+
+/**
+ * Makes a material colour the lots into itself: chained after whatever it
+ * already does to its shader, its colour blended right after the lighting
+ * (`opaque_fragment`), so the lots are unlit paint over the lit surface as
+ * the transparent sheets of before were, before tone mapping and fog.
+ * `world`: a varying of the material already holding the world position
+ * (the terrain's `vTerrainAtlas`), or a varying of its own. `building`: a
+ * building's material (its shell, its far massing), which draws only the
+ * built lots, on its surfaces facing up near their ground level (the yard's
+ * paving and paths; never a wall or a roof). The code is always in the
+ * shader, switched by the uniform: opening the Zoning tool compiles nothing.
+ */
+export function applyLotOverlay(material: Material, key: string, options: { readonly world?: string; readonly building?: boolean } = {}): void {
+  const { world, building = false } = options;
+  const previous = material.onBeforeCompile.bind(material);
+  const previousKey = material.customProgramCacheKey.bind(material);
+  const varying = world ?? 'vLotWorld';
+  const declare = `${world ? '' : 'varying vec3 vLotWorld;'}\n${building ? 'varying float vLotUp;' : ''}`;
+  material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms, renderer) => {
+    previous(shader, renderer);
+    Object.assign(shader.uniforms, UNIFORMS);
+    if (!world || building) {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${declare}`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+          {
+            vec4 lotWorld = vec4(transformed, 1.0);
+            vec3 lotNormal = objectNormal;
+            #ifdef USE_BATCHING
+              lotWorld = batchingMatrix * lotWorld;
+              lotNormal = mat3(batchingMatrix) * lotNormal;
+            #endif
+            #ifdef USE_INSTANCING
+              lotWorld = instanceMatrix * lotWorld;
+              lotNormal = mat3(instanceMatrix) * lotNormal;
+            #endif
+            ${world ? '' : 'vLotWorld = (modelMatrix * lotWorld).xyz;'}
+            // The surface's own normal in the world, not the normal map's:
+            // a wall is a wall however its bricks are bumped.
+            ${building ? 'vLotUp = normalize(mat3(modelMatrix) * lotNormal).y;' : ''}
+          }`);
     }
-    return { pos, col };
-  }
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${declare}\n${LOT_PARS}`)
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+        if (uLotsGrid.w > 0.5) {
+          // World (x, y): three's z is the world's -y. The footprint taken
+          // here, before any branch a pixel's neighbours may not share.
+          vec2 lotW = vec2(${varying}.x, -${varying}.z);
+          vec2 lotDx = dFdx(lotW), lotDy = dFdy(lotW);
+          ${building
+            ? `if (vLotUp > ${FACING_UP.toFixed(2)}) gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, lotDx, lotDy, ${varying}.y, true);`
+            : 'gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, lotDx, lotDy, 0.0, false);'}
+        }`);
+  };
+  material.customProgramCacheKey = () => `${previousKey()}-lots-${key}`;
+}
 
-  /** Polygons laid until `until`, the known ones read back; true when none is left. */
-  function layUntil(job: Laying, until: number): boolean {
-    const polygons = job.input.polygons;
-    while (job.next < polygons.length) {
-      const poly = polygons[job.next++]!;
-      if (poly.corners.length < 3) continue;
-      const k = pieceKey(poly);
-      const known = pieces.get(k) ?? job.kept.get(k);
-      const piece = known ?? layPiece(poly);
-      job.laid.push(piece);
-      job.kept.set(k, piece);
-      if (!known && performance.now() >= until) break;
-    }
-    return job.next >= polygons.length;
-  }
+/** What one shape of the input is, its key: the same key, the same shape. */
+type Keyed = { key: string; make(order: number): LatticeShape };
 
-  function clear(): void {
-    for (const mesh of meshes) { group.remove(mesh); mesh.geometry.dispose(); }
-    meshes = [];
+/**
+ * The input's shapes, keyed, in drawing order: the polygons, then the lines,
+ * then the dots. A built lot, a line and a dot carry their ground level
+ * (`levelOf`, by where they are), in their key.
+ */
+function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: readonly Vec2[]) => number): Keyed[] {
+  const out: Keyed[] = [];
+  for (const poly of input.polygons) {
+    const ring = poly.corners;
+    if (ring.length < 3) continue;
+    const fill = poly.fill === null ? 0 : rgba(poly.fill, poly.fillAlpha);
+    const line = rgba(poly.line, poly.lineAlpha);
+    if (!fill && !line) continue;
+    const where = ring.map((q) => `${q.x},${q.y}`).join(';');
+    const level = poly.built ? levelOf(where, ring) : undefined;
+    out.push({
+      key: `p|${fill}|${line}|${poly.width}|${level ?? ''}|${where}`,
+      make: (order) => {
+        const edges = new Float64Array(ring.length * 4);
+        ring.forEach((q, i) => { const r = ring[(i + 1) % ring.length]!; edges.set([q.x, q.y, r.x, r.y], i * 4); });
+        return { edges, fill, line, halfWidth: poly.width / 2, dashed: false, butt: false, order, ...(level === undefined ? {} : { level }) };
+      },
+    });
   }
+  for (const l of input.lines) {
+    // A line of no length drew nothing as a ribbon, and draws nothing here.
+    if (l.a.x === l.b.x && l.a.y === l.b.y) continue;
+    const line = rgba(l.colour, 1);
+    // A line or a dot is drawn over a yard's paving too (a lot's front, its
+    // arrow): it carries the level of the ground under its middle.
+    const where = `${l.a.x},${l.a.y};${l.b.x},${l.b.y}`;
+    const level = levelOf(where, [l.a, l.b]);
+    out.push({
+      key: `l|${line}|${l.width}|${l.dashed ? 1 : 0}|${level}|${where}`,
+      make: (order) => ({ edges: Float64Array.of(l.a.x, l.a.y, l.b.x, l.b.y), fill: 0, line, halfWidth: l.width / 2, dashed: l.dashed, butt: true, order, level }),
+    });
+  }
+  for (const d of input.points) {
+    const line = rgba(d.colour, 1);
+    const where = `${d.p.x},${d.p.y}`;
+    const level = levelOf(where, [d.p]);
+    out.push({
+      key: `o|${line}|${d.radius}|${level}|${where}`,
+      make: (order) => ({ edges: Float64Array.of(d.p.x, d.p.y, d.p.x, d.p.y), fill: 0, line, halfWidth: d.radius, dashed: false, butt: false, order, level }),
+    });
+  }
+  return out;
+}
 
+/**
+ * What moves the ground a built lot's level is read from (`surfaceHeightAt`):
+ * its level is read again there. Only the built lots' levels: the shapes
+ * themselves never ask the ground (`applyLotOverlay`).
+ */
+const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
+
+/** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle. */
+export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
+  const lattice = new LotLattice(MAP_HALF);
+  let texture: DataTexture | null = null;
+  let key = '';
+  /** The shapes in the lattice by key (a list: the same shape twice is two). */
+  let held = new Map<string, LatticeShape[]>();
+  /** The diary's serial the levels were read at. */
+  let groundSeen = -1;
   /**
-   * The pieces laid since the last time, and with `last` the loose lines and
-   * points, as one more mesh of fills and one of outlines: shown a chunk at a
-   * time, not all joined again - re-joined at each look the meshes grew to
-   * millions of vertices copied and sent to the GPU every 150 ms, and the
-   * frames of a growing city from 160 to 240 ms (2026-10-14).
+   * The ground levels read, by where the shape is: each read once, not on
+   * every pointer move of the Zoning tool (which makes the input again);
+   * forgotten where the ground moved.
    */
-  function show(job: Laying, last: boolean): void {
-    if (job.shown === 0) clear();
-    const chunk = job.laid.slice(job.shown);
-    job.shown = job.laid.length;
-    // Copied into one buffer each (a copy per piece, not a push per number: 146 ms for a town's lots).
-    const joined = (parts: readonly Float32Array[], extra: readonly number[]): Float32Array => {
-      let n = extra.length;
-      for (const p of parts) n += p.length;
-      const out = new Float32Array(n);
-      let at = 0;
-      for (const p of parts) { out.set(p, at); at += p.length; }
-      out.set(extra, at);
-      return out;
-    };
-    const loose = last ? job.loose : { pos: [], col: [] };
-    const fills = [joined(chunk.map((p) => p.fillPos), []), joined(chunk.map((p) => p.fillCol), [])] as const;
-    const outlines = [joined(chunk.map((p) => p.linePos), loose.pos), joined(chunk.map((p) => p.lineCol), loose.col)] as const;
-    for (const [pos, col, mat, order] of [[fills[0], fills[1], fillMat, 10], [outlines[0], outlines[1], lineMat, 11]] as const) {
-      if (!pos.length) continue;
-      const geometry = new BufferGeometry();
-      // The joined arrays as they are: `Float32BufferAttribute` copied each
-      // again (15 ms a building grown in a town of 1 200 lots, audit M3a).
-      geometry.setAttribute('position', new BufferAttribute(pos, 3));
-      geometry.setAttribute('color', new BufferAttribute(col, 4));
-      const mesh = new Mesh(geometry, mat);
-      mesh.renderOrder = order;
-      mesh.frustumCulled = false;
-      meshes.push(mesh);
-      group.add(mesh);
+  const levels = new Map<string, number>();
+  /** The levels read, by the lattice cell of the point they were read at: those a ground change reaches, found by place. */
+  const levelsByCell = new Map<number, Set<string>>();
+  const cellOf = (x: number, y: number): number =>
+    Math.floor((y + MAP_HALF) / LOT_CELL) * lattice.cellsPerSide + Math.floor((x + MAP_HALF) / LOT_CELL);
+  /** A shape's ground level: the ground at its points' mean (a built lot's: under its building, its pad), to the centimetre. */
+  const levelOf = (where: string, points: readonly Vec2[]): number => {
+    const known = levels.get(where);
+    if (known !== undefined) return known;
+    let x = 0, y = 0;
+    for (const q of points) { x += q.x; y += q.y; }
+    x /= points.length; y /= points.length;
+    const level = Math.round(groundAt(x, y) * 100) / 100;
+    levels.set(where, level);
+    const cell = cellOf(x, y);
+    let set = levelsByCell.get(cell);
+    if (!set) levelsByCell.set(cell, set = new Set());
+    set.add(where);
+    return level;
+  };
+  /** The levels read where the ground moved, forgotten (all, with no rectangles); true when any was. */
+  const forgetLevels = (entries: readonly { readonly rects: readonly ChangeRect[] | null }[] | null): boolean => {
+    if (levels.size === 0) return false;
+    if (entries === null || entries.some((e) => e.rects === null)) {
+      levels.clear();
+      levelsByCell.clear();
+      return true;
     }
-    job.shownAt = performance.now();
-  }
+    let forgot = false;
+    for (const { rects } of entries) {
+      for (const [x0, y0, x1, y1] of rects!) {
+        const n = lattice.cellsPerSide;
+        const cx0 = Math.max(0, Math.floor((x0 + MAP_HALF) / LOT_CELL)), cx1 = Math.min(n - 1, Math.floor((x1 + MAP_HALF) / LOT_CELL));
+        const cy0 = Math.max(0, Math.floor((y0 + MAP_HALF) / LOT_CELL)), cy1 = Math.min(n - 1, Math.floor((y1 + MAP_HALF) / LOT_CELL));
+        for (let cy = cy0; cy <= cy1; cy++) {
+          for (let cx = cx0; cx <= cx1; cx++) {
+            const set = levelsByCell.get(cy * n + cx);
+            if (!set) continue;
+            for (const where of set) levels.delete(where);
+            levelsByCell.delete(cy * n + cx);
+            forgot = true;
+          }
+        }
+      }
+    }
+    return forgot;
+  };
+
+  /** The lattice's writes sent to its texture: in place, or a texture of the new size. */
+  const upload = (): void => {
+    const { whole, ranges } = lattice.takeUpload();
+    const rows = lattice.rows;
+    if (!texture || texture.image.height !== rows) {
+      texture?.dispose();
+      texture = new DataTexture(lattice.data, TEXTURE_WIDTH, rows, RGBAIntegerFormat, UnsignedIntType);
+      texture.internalFormat = 'RGBA32UI';
+      texture.minFilter = NearestFilter;
+      texture.magFilter = NearestFilter;
+      texture.generateMipmaps = false;
+      texture.needsUpdate = true;
+      UNIFORMS.uLots.value = texture;
+      return;
+    }
+    // A compaction left the size and replaced the array: sent whole.
+    texture.image.data = lattice.data;
+    if (whole) { texture.clearUpdateRanges(); texture.needsUpdate = true; return; }
+    if (!ranges.length) return;
+    for (let i = 0; i < ranges.length; i += 2) texture.addUpdateRange(ranges[i]!, ranges[i + 1]!);
+    texture.needsUpdate = true;
+  };
 
   return {
-    /** Lays `input` (null: none) on the ground; true while polygons are left for the next frames. */
-    set(input: LotOverlayInput | null, changes?: ChangeJournal): boolean {
-      // The pieces laid by a job under way join the rest: read back if the
-      // input changes again, forgotten with the rest if their ground moves.
-      if (laying) for (const [k, piece] of laying.kept) pieces.set(k, piece);
-      // The ground moved under pieces still drawn: laid again even with the same input.
-      const moved = forgetMovedGround(changes);
-      const next = input?.key ?? '';
-      if (next !== key || moved) {
-        key = next;
-        if (!input) { laying = null; clear(); return false; }
-        laying = { input, next: 0, laid: [], kept: new Map(), loose: layLoose(input), shownAt: performance.now(), shown: 0 };
-      }
-      if (!laying) return false;
-      const job = laying;
-      if (layUntil(job, performance.now() + LAY_SLICE_MS)) {
-        // Only the polygons drawn now are kept: the others are gone.
-        pieces = job.kept;
-        laying = null;
-        show(job, true);
-        return false;
-      }
-      if (performance.now() - job.shownAt >= REVEAL_MS) show(job, false);
-      return true;
-    },
+    /** The lattice: for the tests, the work an edit cost. */
+    lattice,
     /**
-     * Its materials on a triangle each, out of the scene: for their programs
-     * to be compiled ahead (`renderer.ts` `warmPreviewShaders`), not in the
-     * frame the Zoning tool first draws a lot.
+     * Draws `input` (null: no lots) into the ground from the next frame.
+     * `changes`, the document's diary: where the ground moved, a built lot's
+     * level is read again (the only thing here read from the ground).
      */
-    warm(): { group: Group; dispose(): void } {
-      const warm = new Group();
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 0, 1], 3));
-      geometry.setAttribute('color', new Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 4));
-      for (const mat of [fillMat, lineMat]) {
-        const mesh = new Mesh(geometry, mat);
-        mesh.frustumCulled = false;
-        warm.add(mesh);
+    set(input: LotOverlayInput | null, changes?: ChangeJournal): void {
+      let moved = false;
+      if (changes && changes.version !== groundSeen) {
+        const entries = groundSeen < 0 ? null : changes.since(groundSeen, GROUND_KINDS);
+        groundSeen = changes.version;
+        moved = forgetLevels(entries);
       }
-      return { group: warm, dispose() { geometry.dispose(); } };
+      const next = input?.key ?? '';
+      if (next === key && !moved) return;
+      key = next;
+      if (!input) {
+        lattice.clear();
+        held = new Map();
+        UNIFORMS.uLotsGrid.value.w = 0;
+        upload();
+        return;
+      }
+      const shapes = shapesOf(input, levelOf);
+      const kept = new Map<string, LatticeShape[]>();
+      shapes.forEach((s, order) => {
+        const old = held.get(s.key);
+        let shape = old?.pop();
+        if (shape) shape.order = order;
+        else { shape = s.make(order); lattice.add(shape); }
+        let list = kept.get(s.key);
+        if (!list) kept.set(s.key, list = []);
+        list.push(shape);
+      });
+      for (const list of held.values()) for (const shape of list) lattice.remove(shape);
+      held = kept;
+      lattice.flush();
+      UNIFORMS.uLotsGrid.value.w = lattice.size > 0 ? 1 : 0;
+      upload();
     },
     dispose(): void {
-      for (const mesh of meshes) mesh.geometry.dispose();
-      fillMat.dispose(); lineMat.dispose();
-      scene.remove(group);
+      lattice.clear();
+      if (texture) { texture.dispose(); texture = null; }
+      UNIFORMS.uLots.value = EMPTY;
+      UNIFORMS.uLotsGrid.value.w = 0;
     },
   };
 }

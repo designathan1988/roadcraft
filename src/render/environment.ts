@@ -93,7 +93,7 @@ export interface SceneEnvironment {
    * a shadow map of this scene would hold, so the caller redraws it only when
    * this is true (`renderer.ts`, the shadow pass).
    */
-  follow(target: Vector3, halfWidth: number, halfHeight: number, view?: Vector3, rise?: number): boolean;
+  follow(target: Vector3, halfWidth: number, halfHeight: number, view?: Vector3, rise?: number, eyeDistance?: number): boolean;
   setQuality(quality: EnvironmentQuality): void;
   /**
    * The time of day, minutes after midnight: the sun's path, the sky, the
@@ -488,7 +488,7 @@ export function createEnvironment(
   return {
     sun,
     skyColor: horizon,
-    follow(target, halfWidth, halfHeight, view, rise = 0) {
+    follow(target, halfWidth, halfHeight, view, rise = 0, eyeDistance = Infinity) {
       sky.position.copy(target);
       sky.scale.setScalar(m(3_600));
       lightRight.crossVectors(WORLD_UP, sunDirection).normalize();
@@ -501,8 +501,16 @@ export function createEnvironment(
       // column and widened by its extent in the light's view.
       let du = 0;
       let dv = 0;
+      // Up the line of sight no further than the eye: past it the line runs
+      // behind the camera, where nothing is seen. Taken up to the tallest roof
+      // of the town, a close view from a roof or over a doorstep fitted the
+      // map to some 150 m of space behind the camera - a texel of 8 cm where
+      // the screen's pixel is 3, and every shadow edge drawn in steps (a
+      // parapet's on its roof, a wall's on a canopy: 2026-10-14). Microsoft,
+      // "Cascaded Shadow Maps": the light's projection is fitted tightly round
+      // the view frustum. DO NOT drop the cap.
       if (view && rise > 0 && view.y < -0.05) {
-        top.copy(target).addScaledVector(view, -rise / -view.y);
+        top.copy(target).addScaledVector(view, -Math.min(rise / -view.y, eyeDistance));
         offset.subVectors(top, target);
         du = offset.dot(lightRight);
         dv = offset.dot(lightUp);

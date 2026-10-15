@@ -42,6 +42,11 @@ export const MAX_STEER = 0.6;
  *   3. a left or right turn ahead at the next junction, from a few seconds
  *      before the stop line until most of the turn has been driven.
  */
+/** What `indicatorSide` reads of the two lanes, made once. */
+const HERE = newFrame();
+const THERE = newFrame();
+const HIT = { s: 0, distance: 0 };
+
 export function indicatorSide(w: SimWorld, v: Vehicle): IndicatorSide {
   if (Math.abs(v.lateral) > LANE_CHANGE_DONE) return v.lateral > 0 ? -1 : 1;
 
@@ -52,9 +57,10 @@ export function indicatorSide(w: SimWorld, v: Vehicle): IndicatorSide {
   if (wanted) {
     const target = w.lanelet(wanted);
     if (target && here.kind === 'link') {
-      const frame = here.centre.sampleAt(Math.min(Math.max(0, v.s), here.length));
-      const hit = target.centre.closestPoint(frame.p);
-      const at = target.centre.sampleAt(hit.s).p;
+      // Into frames made once: every vehicle signalling a lane change, every frame drawn.
+      const frame = here.centre.sampleAtInto(Math.min(Math.max(0, v.s), here.length), HERE);
+      target.centre.closestInto(frame.p.x, frame.p.y, HIT);
+      const at = target.centre.sampleAtInto(HIT.s, THERE).p;
       const leftward = (at.x - frame.p.x) * -frame.t.y + (at.y - frame.p.y) * frame.t.x;
       if (Math.abs(leftward) > 1e-6) return leftward > 0 ? 1 : -1;
     }

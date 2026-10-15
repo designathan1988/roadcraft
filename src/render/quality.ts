@@ -2,10 +2,11 @@
  * Graphics quality tiers.
  *
  * Every expensive feature is named here once, so a tier is a table entry rather
- * than a set of conditionals scattered across the renderer. `auto` starts at
- * `high` and steps down when the measured frame time says the machine cannot
- * hold it — the balance the brief asks for: quality that never costs the frame
- * rate on the machine actually running it.
+ * than a set of conditionals scattered across the renderer. `auto` draws at
+ * `high`: the governor below (`QualityGovernor.sample`) that would step it
+ * down by the measured frame time has NO caller - a tier change rebuilds the
+ * world (`renderer.ts` `applyQuality`) and lowers quality, which is the
+ * player's call. DO NOT describe `auto` as adaptive until it is wired.
  */
 
 import { m, perM } from '@world/units';

@@ -4,7 +4,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { Level } from '@world/roadTypes';
 import { m } from '@world/units';
-import { BULB_RADIUS, clearBulbs } from '@world/junction/bulb';
+import { BULB_RADIUS, bulbClearing } from '@world/junction/bulb';
 import { levelPolygons } from '@world/surfaces';
 import { area } from '@core/clipper';
 import { buildWalkways } from '@world/walkways';
@@ -85,7 +85,7 @@ describe('a turning circle at a road end', () => {
     doc.addElements([{ kind: 'bench', x: m(58), y: m(-7), angle: 0 } as never]);
     doc.setNodeEnd(end as never, 'bulb');
     net.rebuild();
-    expect(clearBulbs(doc, net)).toBe(2);
+    expect(bulbClearing()(doc, net)).toBe(2);
     expect(doc.poles.has(inCircle.id)).toBe(false);
     expect(doc.poles.has(back.id)).toBe(true);
     expect(doc.elements.length).toBe(0);

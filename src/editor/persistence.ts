@@ -9,6 +9,7 @@ import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 import { PARTS_FROM_BUILDINGS, type PartStore, PartedSaves, indexedDbParts } from './chunkedSave';
+import { withUnit } from './mapExport';
 
 /** Where the map is kept. */
 const KEY = 'roadcraft.world.v7';
@@ -73,10 +74,6 @@ export interface SavedSettings {
 export interface SavedSession {
   readonly document: SerializedDoc;
   readonly settings: SavedSettings;
-}
-
-interface SerializedSession extends SavedSession {
-  readonly version: 2;
 }
 
 /**
@@ -149,7 +146,18 @@ export class Persistence {
    */
   documentText: ((doc: RoadDoc) => string | null) | null = null;
 
+  /**
+   * Which save is the newest: each `saveSession` takes the next. A write that
+   * finishes later than a newer one (the parts or IndexedDB, asynchronous)
+   * points the small key at itself only while it is still the newest.
+   * DO NOT write the pointer unasked: a slow write of the parts came back
+   * after a newer whole map was put in the small key, pointed it at the older
+   * parts, and the reload opened the map as it was before.
+   */
+  private generation = 0;
+
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
+    const generation = ++this.generation;
     if (doc.buildings.size >= PARTS_FROM_BUILDINGS) {
       // A large map in parts, the parts its edit reached (`chunkedSave.ts`); the small key points there.
       this.writeSettings(settings);
@@ -157,8 +165,9 @@ export class Persistence {
       this.partsKept = true;
       void this.parted.save(doc, withUnit(settings), savedAt).then((ok) => {
         if (!ok) { this.onSaveFailed?.(); return; }
+        if (generation !== this.generation) return;
         try { localStorage.setItem(key, `{"version":2,"stored":"parts","savedAt":${savedAt}}`); } catch (error) { console.error('[save] the pointer to the parts was not written; the parts stand', error); }
-      });
+      }, (error: unknown) => { console.error('[save] the parts could not be written', error); this.onSaveFailed?.(); });
       return true;
     }
     let session: string;
@@ -186,9 +195,10 @@ export class Persistence {
     const savedAt = Date.now();
     void this.store.put(key, session).then((ok) => {
       if (!ok) { this.onSaveFailed?.(); return; }
+      if (generation !== this.generation) return;
       this.dropParts();
       try { localStorage.setItem(key, `{"version":2,"stored":"indexeddb","savedAt":${savedAt}}`); } catch { /* the stored copy stands */ }
-    });
+    }, (error: unknown) => { console.error('[save] the map could not be written to IndexedDB', error); this.onSaveFailed?.(); });
     return true;
   }
 
@@ -488,8 +498,6 @@ export function normalizeSettings(settings: SavedSettings): SavedSettings {
  */
 export const MAX_INTENSITY = 3;
 
-/** Settings as stored: with the unit their camera is in. */
-const withUnit = (settings: SavedSettings): SavedSettings => ({ ...settings, unit: METERS_PER_UNIT });
 
 /**
  * The saved camera in this build's world unit (`world/rescale.ts`): its zoom
@@ -525,27 +533,8 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
     typeof settings.congestionOverlay === 'boolean';
 }
 
-/** Offers the current map as a downloadable JSON file. */
-export function exportToFile(
-  doc: RoadDoc,
-  settings?: SavedSettings,
-  filename = 'roadcraft-map.json',
-): void {
-  const saved: SerializedSession | SerializedDoc = settings
-    ? { version: 2, document: doc.toJSON(), settings: withUnit(settings) }
-    : doc.toJSON();
-  const blob = new Blob([JSON.stringify(saved, null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  // Revoked a moment later: revoking synchronously can cancel the download
-  // before Firefox or Safari has started it.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
+/** Save map: the map as a file (`mapExport.ts`). */
+export { exportToFile } from './mapExport';
 
 /** What a file pick came to: a map, nothing chosen, or a file that is not one. */
 export type ImportResult =

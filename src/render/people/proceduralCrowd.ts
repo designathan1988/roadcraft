@@ -1273,8 +1273,18 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return piece;
   };
 
-  /** Room for twice the people in a piece, what is written kept. */
+  /**
+   * Room for twice the people in a piece, what is written kept. three cannot
+   * resize an attribute, so they are new ones; the old `instanceMatrix`'s GPU
+   * buffer and the mesh's vertex array states are freed first (`WebGLObjects`
+   * `onInstancedMeshDispose`). DO NOT dispose the geometry for its old
+   * per-person attributes: its vertex data is shared with the piece's other
+   * levels, and three deletes a shared buffer under their vertex arrays
+   * (`WebGLGeometries` `onGeometryDispose`). Those old attributes are left to
+   * three, a doubling's worth at most (less than the piece's size now).
+   */
   const growPiece = (piece: Piece): void => {
+    piece.mesh.dispose();
     const capacity = piece.capacity * 2;
     const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     matrices.setUsage(DynamicDrawUsage);
@@ -1940,7 +1950,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     }
   };
 
-  /** Rows given back by twins (`untwin`), for the next. */
+  /** Rows given back (`untwin`: twins, and spare bodies let go), for the next body or twin. */
   const spareRows = new Map<BodyClass, number[]>();
   const charSlots = (person: ProceduralPerson, on: boolean): void => {
     if (on) charred.add(person); else charred.delete(person);
@@ -1988,7 +1998,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
 
       await breathe();
       if (epoch !== started) throw new Error('crowd cleared');
-      const row = takeRow(cls, false);
+      // A row given back (`untwin`: a twin, or a spare body let go) first. DO
+      // NOT take a new row for every body made: the rows grew with every
+      // body of the session, and with them every texture by row and the
+      // palette pass, which works out every row ever taken each frame.
+      const row = takeRow(cls, true);
       // Their shape on the class body: their sliders at the class's height
       // (height is the instance's scale), less the class's own - drawn with
       // the class's baked body nearest it.
@@ -2003,18 +2017,20 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       // `Target.apply`), so only their moves are made, and posed at the head's
       // vertices alone (`deltasAt`): the whole body shaped and posed for them
       // was some 10 ms of the main thread a person.
+      const faceRows = cls.uniforms.procFaceRows.value;
+      // A reused row holds the last person's face: theirs replaces it, or none.
+      cls.face.fill(0, row * faceRows * FACE_WIDTH * 4, (row + 1) * faceRows * FACE_WIDTH * 4);
+      touchRows(cls.uniforms.procFace.value, row * faceRows, faceRows);
       if (Object.keys(spec.features).length) {
         const offset = new Float32Array(mo.vertexCount * 3);
         mo.addRegional(offset, spec.features);
         const moved = cls.rig.deltasAt!(offset, cls.faceVerts);
-        const faceRows = cls.uniforms.procFaceRows.value;
         const at = row * faceRows * FACE_WIDTH * 4;
         for (let i = 0; i < cls.faceVerts.length; i++) {
           cls.face[at + i * 4] = moved[i * 3]!;
           cls.face[at + i * 4 + 1] = moved[i * 3 + 1]!;
           cls.face[at + i * 4 + 2] = moved[i * 3 + 2]!;
         }
-        touchRows(cls.uniforms.procFace.value, row * faceRows, faceRows);
       }
       // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).
       const tall = mo.height(spec.body, a.bodyRange);
@@ -2246,7 +2262,6 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         cls.uniforms.procTime.value = time;
         cls.drawn = 0;
         const width = cls.bones * SKIN_BONE_FLOATS;
-        let faces = false;
         for (const person of cls.people) {
           const st = states.get(person)!;
           if (st.want !== st.level) moveTo(person, st, st.want);
@@ -2290,12 +2305,13 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
             const w = faceAt(person.spec.id, time, person.activity, person.spec.mood ?? 0);
             const at = person.row * EXPR_SLOTS;
             for (let c = 0; c < EXPR.length; c++) cls.exprW[at + c] = Math.min(1, w[EXPR[c]!] ?? 0);
-            faces = true;
+            // Their row alone to the GPU. DO NOT send the whole texture: a row
+            // for every body of the class, for the few faces close enough to show.
+            touchRows(cls.uniforms.procExprW.value, person.row, 1);
           }
           // The far ones' shadow: a soft disc under them.
           if (st.level >= 2 && shadows) blobs.add(person.matrix, BLOB_RADIUS * person.scale);
         }
-        if (faces) cls.uniforms.procExprW.value.needsUpdate = true;
         for (const piece of cls.pieces) {
           const n = piece.people.length;
           if (n) {

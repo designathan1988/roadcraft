@@ -115,14 +115,14 @@ export const COMMUNITY: readonly WardrobeItem[] = (community.items as CommunityE
 const BY_NAME = new Map(COMMUNITY.map((i) => [i.name, i]));
 export const communityItem = (name: string): WardrobeItem | undefined => BY_NAME.get(name);
 
-/** Community items of a kind; for the street, only the ones a passer-by may wear, suiting their sex. */
 /** Whom a worn item is for: the community items as reviewed, the system outfits by their name. */
 export function wornBy(name: string): WardrobeItem['sex'] {
-  const item = COMMUNITY.find((i) => i.name === name);
+  const item = BY_NAME.get(name);
   if (item) return item.sex;
   return /^female_/.test(name) ? 'female' : /^male_/.test(name) ? 'male' : 'any';
 }
 
+/** Community items of a kind; for the street, only the ones a passer-by may wear, suiting their sex. */
 export function itemsOf(kind: WardrobeItem['kind'], options: { street?: boolean; sex?: 'female' | 'male' } = {}): readonly string[] {
   return COMMUNITY.filter((i) => i.kind === kind
     && (!options.street || i.street)

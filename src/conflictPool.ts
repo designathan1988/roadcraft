@@ -74,14 +74,10 @@ export class ConflictPool implements PairMeasurer {
           if (event.data.tables) job.resolve(event.data.tables);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
-        worker.onerror = (event) => {
-          // A worker that cannot run: its jobs fail (measured on the page), and so does the pool from now on.
-          console.warn('[traffic] a conflict worker failed', event.message);
-          for (const job of lane.waiting.values()) job.reject(new Error(event.message));
-          lane.waiting.clear();
-          this.broken = true;
-          this.lanes = null;
-        };
+        // A worker that cannot run, or a message it cannot read: the pool is
+        // done (`fail`).
+        worker.onerror = (event) => this.fail(`a conflict worker failed: ${event.message}`);
+        worker.onmessageerror = () => this.fail('a conflict worker sent a message that cannot be read');
         lanes.push(lane);
       }
       this.lanes = lanes;
@@ -91,5 +87,33 @@ export class ConflictPool implements PairMeasurer {
       this.lanes = null;
     }
     return this.lanes;
+  }
+
+  /**
+   * The pool fails: every job waiting on ANY of its workers is rejected (its
+   * pairs are then measured on the page, `ConflictIndex.prepare`) and every
+   * worker is ended. DO NOT end only the lane that failed: the others were left
+   * running for the page's life, their jobs answered into a pool marked broken.
+   */
+  private fail(why: string): void {
+    if (this.broken) return;
+    console.warn(`[traffic] ${why}; the pairs are measured on the page`);
+    this.broken = true;
+    this.end(new Error(why));
+  }
+
+  /** Ends the workers, every job still waiting rejected (`fail`; the page going away). */
+  dispose(): void {
+    this.broken = true;
+    this.end(new Error('the conflict pool was closed'));
+  }
+
+  private end(error: Error): void {
+    for (const lane of this.lanes ?? []) {
+      for (const job of lane.waiting.values()) job.reject(error);
+      lane.waiting.clear();
+      lane.worker.terminate();
+    }
+    this.lanes = null;
   }
 }

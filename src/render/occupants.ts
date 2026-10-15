@@ -69,18 +69,13 @@ const smooth = (x: number): number => {
 export function occupantPlays(seat: Pick<SeatModel, 'pose' | 'driver' | 'row' | 'z'>, seed: number, time: number, out: Play[], slain = false): Play[] {
   const clips = clipsFor(seat);
   // Shot dead at the wheel: slumped over it, still.
-  if (slain && seat.driver && seat.pose !== 'chair') {
-    out.length = 0;
-    out.push({ key: seat.pose === 'cab' ? 'cabDead' : 'carDead', phase: 0, weight: 1 });
-    return out;
-  }
+  if (slain && seat.driver && seat.pose !== 'chair') return onePlay(out, seat.pose === 'cab' ? 'cabDead' : 'carDead', 0);
   const h = mix(seed);
   const period = 6 + (h % 7);
   const t = time / period + ((h >>> 8) & 0xff) / 256;
   const cycle = Math.floor(t);
   const u = t - cycle;
   const c = mix(h ^ cycle);
-  out.length = 0;
   // One cycle in four passes without a glance.
   let glance = (c & 3) === 0 ? 0 : smooth((u - 0.5) / 0.12) * (1 - smooth((u - 0.86) / 0.12));
   const variant = 1 + ((c >>> 4) & 1);
@@ -96,7 +91,21 @@ export function occupantPlays(seat: Pick<SeatModel, 'pose' | 'driver' | 'row' | 
   // collapsed "clown" faces in the cars. The glance is the pose itself, held
   // for the glance's span (its own idle loop turns the head in the meantime).
   const idle = time / SEATED_IDLE + (h & 0xff) / 256;
-  out.push({ key: glance > 0.5 ? key : clips[0], phase: idle, weight: 1 });
+  return onePlay(out, glance > 0.5 ? key : clips[0]!, idle);
+}
+
+/**
+ * `out` holding the one play, its object kept from call to call: a seated
+ * person is posed every frame they are drawn. DO NOT push a new object a call.
+ */
+function onePlay(out: Play[], key: OccupantClip, phase: number): Play[] {
+  const play = out[0] ?? { key, phase, weight: 1 };
+  play.key = key;
+  play.phase = phase;
+  play.weight = 1;
+  delete play.distance;
+  out.length = 1;
+  out[0] = play;
   return out;
 }
 

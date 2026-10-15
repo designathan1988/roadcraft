@@ -164,6 +164,13 @@ export function sampleTexture(t: ProxyTexture | null, u: number, v: number): [nu
   return [t.data[o]! / 255, t.data[o + 1]! / 255, t.data[o + 2]! / 255, t.data[o + 3]! / 255];
 }
 
+/** A file fetched, or the load failed: a 404 page read as a garment was no garment. */
+async function fetched(url: string): Promise<Response> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  return response;
+}
+
 /** Largest side a proxy's texture is read back at, pixels. */
 const SAMPLE_SIZE = 256;
 
@@ -177,8 +184,8 @@ export function loadProxyItem(name: string): Promise<ProxyItem> {
   let item = ITEMS.get(name);
   if (!item) {
     item = (async () => {
-      const meta = (await (await fetch(proxyUrl(`${name}.json`))).json()) as ProxyMeta;
-      const bin = await (await fetch(proxyUrl(`${name}.bin`))).arrayBuffer();
+      const meta = (await (await fetched(proxyUrl(`${name}.json`))).json()) as ProxyMeta;
+      const bin = await (await fetched(proxyUrl(`${name}.bin`))).arrayBuffer();
       let texture: ProxyTexture | null = null;
       if (meta.texture && typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function') {
         try {
@@ -189,7 +196,7 @@ export function loadProxyItem(name: string): Promise<ProxyItem> {
           // game at 6 fps for its first minute. `willReadFrequently` makes the
           // canvas a software one (MDN, getContext), and the downscale is done
           // by createImageBitmap's own resize, off the main thread.
-          const full = await createImageBitmap(await (await fetch(proxyUrl(meta.texture))).blob());
+          const full = await createImageBitmap(await (await fetched(proxyUrl(meta.texture))).blob());
           const scale = Math.min(1, SAMPLE_SIZE / Math.max(full.width, full.height));
           const width = Math.max(1, Math.round(full.width * scale)), height = Math.max(1, Math.round(full.height * scale));
           const bitmap = scale < 1
@@ -200,12 +207,20 @@ export function loadProxyItem(name: string): Promise<ProxyItem> {
           ctx.drawImage(bitmap, 0, 0);
           texture = { width, height, data: ctx.getImageData(0, 0, width, height).data };
           bitmap.close();
-        } catch { texture = null; }
+        } catch (error) {
+          // Drawn in its plain colour: said, not swallowed.
+          console.warn(`[people] the texture of ${name} could not be read; drawn in its plain colour`, error);
+          texture = null;
+        }
       }
       return { pack: parseProxy(meta, bin), texture, transparent: !!meta.transparent, textureFile: meta.texture ?? null };
     })();
     ITEMS.set(name, item);
-    item.catch(() => ITEMS.delete(name));
+    // A load that failed is said and asked again by the next person who wears it.
+    item.catch((error: unknown) => {
+      console.error(`[people] ${name} could not be loaded; the next person asks again`, error);
+      ITEMS.delete(name);
+    });
   }
   return item;
 }

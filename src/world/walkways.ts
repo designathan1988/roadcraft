@@ -2,12 +2,12 @@ import { EPS } from '@core/scalar';
 import { Polyline } from '@core/polyline';
 import { filletCorner } from '@core/fillet';
 import { lineLine } from '@core/intersect';
-import { offsetPolyline } from '@core/offset';
 import type { Vec2 } from '@core/vec2';
 import type { NodeId, SegmentId } from './ids';
 import type { RoadDoc } from './doc';
 import { m, stepsIn } from './units';
 import type { Network } from './network';
+import { footwayPath } from './footwayPath';
 import { Level } from './roadTypes';
 import { bandMid, bandWidth, sectionOf } from './section';
 import { orientedPolyline } from './geometry';
@@ -530,18 +530,15 @@ export function* walkwaySteps(net: Network): Generator<void, WalkGraph, void> {
     if (!ribbon) continue;
     const section = sectionOf(ribbon.road, seg.direction);
     if (!section.walkable) continue;
-    const centre = ribbon.centre[Level.Sidewalk];
-    if (!centre || centre.n < 2 || centre.length < 1e-6) continue;
-    const pts = centre.toPoints();
     for (const side of [1, -1] as const) {
       // Each side's own footway (an asymmetric road, docs/VIAS.md V1).
+      const path = footwayPath(ribbon, seg.direction, side);
+      if (!path) continue;
       const zones = side > 0 ? section.left : section.right;
       const mid = bandMid(zones.through);
       const width = bandWidth(zones.through);
       const inset = mid - zones.curb.outer;
       const outer = zones.frontage.outer - mid;
-      // `offsetPolyline` offsets to the LEFT for a positive distance.
-      const path = Polyline.fromPoints(offsetPolyline(pts, side * mid));
       const first = path.sampleAt(0), last = path.sampleAt(path.length);
       // Along a to b, the path's left is away from the road on the left
       // side (+1), towards it on the right side (-1).

@@ -8,6 +8,7 @@ import { shapeFromControl, type CurveShape } from '@core/bezier';
 import { fitRoadCurve, type RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
+import type { LandscapeItem } from '@world/landscape';
 import { GRID_CELL, GRID_STEP, snapToGrid } from '@world/grid';
 import { Level, halfWidth, roadProfile } from '@world/roadTypes';
 import { sectionForWidth } from '@world/roadSection';
@@ -18,7 +19,7 @@ import {
   type Anchor, anchorForHeight as anchorAtHeight, anchorHeightOffset as anchorHeightAt, findAnchor, setGridSnapStep, snapRoadEndpoint,
   snapRoadStart, type SnapResult,
 } from './snap';
-import { commitRoadPath } from './commit';
+import { commitRoadPath, nextSegmentId, segmentsFrom } from './commit';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import type { RoadProfileSpec } from '@world/roads/profile';
@@ -132,10 +133,10 @@ export class RoadTool {
   constructor(private readonly host: RoadToolHost) {}
 
   gesture(): string | null {
-    if (this.draft) return 'via: desenhando';
-    if (this.curvePending) return 'via: curvando';
-    if (this.chain) return 'via: encadeando';
-    if (this.settling) return 'via: assentando';
+    if (this.draft) return 'gesture.road.drawing';
+    if (this.curvePending) return 'gesture.road.curving';
+    if (this.chain) return 'gesture.road.chaining';
+    if (this.settling) return 'gesture.road.settling';
     return null;
   }
 
@@ -460,9 +461,10 @@ export class RoadTool {
     const settings = host.settings();
     const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
     let result: ReturnType<typeof commitRoadPath> = { committed: false };
-    let before = new Set<SegmentId>();
+    /** The segment ids from here on are the edit's own (ids are handed out in increasing order, never again). */
+    let firstNew = 0;
     host.mutate(() => {
-      before = new Set(doc.segments.keys());
+      firstNew = nextSegmentId(doc);
       result = commitRoadPath(doc, net, d.start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
         (x, y) => host.naturalHeightAt(x, y), { groundSolve: host.groundSolve?.() ?? null });
       if (result.elevation) host.offerElevation(result.elevation, net.revision);
@@ -473,7 +475,7 @@ export class RoadTool {
       // segments just laid take it, paid for as the road was (`roads/economy.ts`);
       // what the balance cannot cover is not laid, and the road keeps its class.
       if (result.committed && (settings.profile || settings.width !== null)) {
-        const laid = [...doc.segments.keys()].filter((id) => !before.has(id));
+        const laid = laidFrom(doc, firstNew);
         const kept = laid.map((id) => ({ ...doc.requireSegment(id) }));
         const money = roadsBefore(doc);
         if (settings.profile) applyProfileTo(doc, laid, settings.profile.profile, settings.profile.type);
@@ -495,16 +497,16 @@ export class RoadTool {
       }
       // Retaining walls in the cuttings of the roads just laid (V3).
       if (result.committed && settings.cutWalls) {
-        for (const id of doc.segments.keys()) if (!before.has(id)) doc.setSegmentCutWalls(id, true);
+        for (const id of laidFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
       }
       // The furniture of the roads just laid, in the same undo step (V7):
       // ordinary placed items, edited or removed one by one like any other.
       if (result.committed && settings.furniture && settings.furniture !== 'none') {
         if (net.revision !== doc.revision) net.rebuild();
-        const laid = [...doc.segments.keys()].filter((id) => !before.has(id));
+        const laid = laidFrom(doc, firstNew);
         // The complete set: a power line down the left, its poles lit (V7).
         const power = settings.furniture === 'complete' && layPowerLines(doc, net, laid) > 0;
-        for (const piece of furnitureFor(net, laid, settings.furniture, doc.landscape.values(), power)) doc.addLandscape(piece.kind, piece.at);
+        for (const piece of furnitureFor(net, laid, settings.furniture, landscapeAlong(doc, net, laid), power)) doc.addLandscape(piece.kind, piece.at);
         // A new street is given a name (V8), its plates at the corners; renamed or removed as any item.
         for (const name of nameFor(net, laid)) doc.addLandscape('streetname', name.at, { text: name.text });
       }
@@ -526,7 +528,7 @@ export class RoadTool {
     host.setHeight(finalHeight, 'via terminada');
     this.heightEdited = false;
     if (result.heightLimited) host.hint('hint.road.gradeLimited');
-    const laid = [...doc.segments.keys()].filter((id) => !before.has(id));
+    const laid = laidFrom(doc, firstNew);
     if (laid.length) host.flash(laid);
     return true;
   }
@@ -589,3 +591,26 @@ export class RoadTool {
     return fitRoadCurve(a, b, shapeFromControl(a, b, { x: mid.x + nx * side * 1.36, y: mid.y + ny * side * 1.36 }), typeIndex);
   }
 }
+
+/** The segment ids an edit made: those from `first` on (`commit.ts` `segmentsFrom`). */
+const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc, first).map((seg) => seg.id);
+
+/**
+ * The placed items the furniture of `laid` can meet (`furnitureFor` reads those
+ * in its cells of `FURNITURE_CELL` round each road's box grown by its footway
+ * and `m(4)`): the items in that box grown by a whole cell more, from the
+ * document's cells (`RoadDoc.landscapeIn`), not the whole map.
+ */
+function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]): LandscapeItem[] {
+  const out = new Map<number, LandscapeItem>();
+  for (const id of laid) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon) continue;
+    const box = ribbon.full.bbox, pad = ribbon.road.width / 2 + ribbon.road.sidewalk + m(4) + FURNITURE_CELL;
+    for (const item of doc.landscapeIn([box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad])) out.set(item.id, item);
+  }
+  return [...out.values()].sort((a, b) => a.id - b.id);
+}
+
+/** The side of `furnitureFor`'s cells (`world/roads/furnitureSets.ts` CELL). */
+const FURNITURE_CELL = m(40);

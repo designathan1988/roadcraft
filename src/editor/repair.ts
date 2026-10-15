@@ -1,9 +1,10 @@
 import type { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
-import { casingHalf, roadProfile } from '@world/roadTypes';
+import { casingHalf } from '@world/roadTypes';
 import { roadStructure } from '@world/structures';
 import { splitSegment } from './commit';
+import { ribbonsNear } from './snap';
 import { m } from '@world/units';
 
 interface Candidate {
@@ -49,7 +50,14 @@ function nearestCandidate(doc: RoadDoc, net: Network, rejected: ReadonlySet<stri
     const source = doc.segment(sourceId);
     if (!source) continue;
 
-    for (const [targetId, target] of doc.segments) {
+    // Only a road whose casing reaches the end can take it, and its ribbon is
+    // filed over its centreline's box grown by that casing: the roads filed
+    // where the end is (`ribbonsNear`). DO NOT walk `doc.segments` for every
+    // dead end (dead ends × roads, at every load).
+    for (const ribbon of ribbonsNear(net, [node.x, node.y, node.x, node.y])) {
+      const targetId = ribbon.id;
+      const target = doc.segment(targetId);
+      if (!target) continue;
       if (targetId === sourceId || target.a === node.id || target.b === node.id) continue;
       if (target.structure !== source.structure) continue;
       if (rejected.has(`${node.id}:${targetId}`)) continue;
@@ -61,7 +69,8 @@ function nearestCandidate(doc: RoadDoc, net: Network, rejected: ReadonlySet<stri
         roadStructure(target.structure).clearance;
       const sourceOffset = node.heightOffset + roadStructure(source.structure).clearance;
       if (Math.abs(sourceOffset - targetOffset) > m(0.3)) continue;
-      const reach = casingHalf(roadProfile(target.type, target.lanes, target.direction, target.section, target.parking));
+      // The ribbon's own profile, made from this segment (`makeRibbon`).
+      const reach = casingHalf(ribbon.road);
       if (hit.distance > reach || (best && hit.distance >= best.distance)) continue;
       best = { node: node.id, segment: targetId, s: hit.s, at: hit.point, distance: hit.distance };
     }

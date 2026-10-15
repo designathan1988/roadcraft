@@ -56,9 +56,7 @@ describe('keys used in code', () => {
     }
     for (const mode of ['raise', 'lower', 'flatten', 'river']) {
       expect(isTerrainMode(mode)).toBe(true);
-      for (const prefix of ['hint', 'hint.mobile']) {
-        if (!defined(`${prefix}.terrain.${mode}`)) missing.push(`${prefix}.terrain.${mode}`);
-      }
+      if (!defined(`hint.terrain.${mode}`)) missing.push(`hint.terrain.${mode}`);
     }
     for (const alignment of ['curve', 'free']) {
       if (!defined(`hint.road.${alignment}`)) missing.push(`hint.road.${alignment}`);
@@ -74,5 +72,36 @@ describe('keys used in code', () => {
     expect(kinds.size).toBeGreaterThanOrEqual(4);
     const missing = [...kinds].filter((kind) => !defined(`hint.builder.run.${kind}`));
     expect(missing).toEqual([]);
+  });
+
+  /**
+   * Every key of the dictionaries is one the game can ask for: named in a
+   * quote in the code or the page, or built by a template, each `${...}` of
+   * which stands for one segment of the key (`hint.${tool}` asks for
+   * `hint.road`, never `hint.mobile.zone`). 591 keys nothing asked for were
+   * removed on 2026-10-14: a player mode never wired in, the touch hints, the
+   * person editor's - text no player could see, kept translated by hand, and
+   * one of them naming a button by a name it no longer had.
+   */
+  it('every key of the dictionaries is asked for by the code', () => {
+    const pages = [...sources, fileURLToPath(new URL('../../index.html', import.meta.url))];
+    const text = pages.map((path) => readFileSync(path, 'utf8')).join('\n');
+    const quoted = new Set([...text.matchAll(/['"`]([\w.-]+)['"`]/g)].map((m) => m[1] as string));
+    const escape = (s: string): string => s.replace(/[.-]/g, (c) => `\\${c}`);
+    const built = [...text.matchAll(/`([\w.-]*(?:\$\{[^}`]*\}[\w.-]*)+)`/g)]
+      .map((m) => m[1] as string)
+      // A template with no word of its own (`${prefix}.${tool}`) would stand for any key.
+      .filter((template) => template.includes('.') && /[a-z]/i.test(template.replace(/\$\{[^}]*\}/g, '')))
+      .map((template) => new RegExp(`^${template.split(/\$\{[^}]*\}/).map(escape).join('([\\w.-]+)')}$`));
+    // What one `${...}` may stand for: one segment, or a dotted text the code
+    // itself writes or builds (`hint.builder.${key}` with key `draw.${action}`).
+    const fills = (part: string): boolean => !part.includes('.') || quoted.has(part)
+      || built.some((pattern) => pattern.exec(part)?.slice(1).every((inner) => !inner.includes('.')) ?? false);
+    const asked = (key: string): boolean => quoted.has(key)
+      || built.some((pattern) => pattern.exec(key)?.slice(1).every(fills) ?? false);
+    const PLURAL = /\.(zero|one|two|few|many|other)$/;
+    const unused = Object.keys(EN).filter((key) => !asked(key) && !asked(key.replace(PLURAL, '')));
+    expect(built.length).toBeGreaterThan(50);
+    expect(unused).toEqual([]);
   });
 });

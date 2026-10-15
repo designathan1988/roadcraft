@@ -1,6 +1,6 @@
 import type { GroundAt, PavedAt } from './foundation';
 import { type Pad, type TownPads, buildingPads, padOf } from './pads';
-import type { BuildingStore } from './store';
+import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
 /**
@@ -83,8 +83,8 @@ export function siteGrading(
    * that building's site. NOT the whole store read and its platforms filed
    * again for one building (docs/AUDITORIA-2026-10-14.md C8).
    */
-  let sitesRead = -1;
-  let padsBuilt = -1;
+  const sitesRead = BuildingStore.cursor();
+  const padsBuilt = BuildingStore.cursor();
   /** Buildings whose platform was worked out again for the roads (`refresh`) since the town's platforms were put together. */
   const refreshed = new Set<BuildingId>();
   /** @rebuild The whole store read only the first time, after `forget`, or when the diary cannot say which buildings changed. */
@@ -104,8 +104,7 @@ export function siteGrading(
       take(now);
       graded.set(b.id, { ref: b, site, box: now });
     };
-    const ids = sitesRead < 0 ? null : buildings.changedSince(sitesRead);
-    sitesRead = buildings.revision;
+    const ids = buildings.changedFor(sitesRead);
     if (ids) {
       for (const id of ids) {
         const b = buildings.get(id);
@@ -137,7 +136,7 @@ export function siteGrading(
     /** @rebuild The whole town's platforms filed only the first time, after `forget`, or when the diary cannot say which buildings changed. */
     rebuild(buildings) {
       const town = padsCache;
-      const ids = town && padsBuilt >= 0 ? buildings.changedSince(padsBuilt) : null;
+      const ids = buildings.changedFor(padsBuilt);
       if (town && ids) {
         for (const id of new Set([...ids, ...refreshed])) {
           const b = buildings.get(id);
@@ -150,13 +149,12 @@ export function siteGrading(
         }
       } else padsCache = buildings.size > 0 ? buildingPads(buildings.all(), groundAt, pavedAt, apron, padsKnown) : null;
       refreshed.clear();
-      padsBuilt = buildings.revision;
     },
     forget(buildings) {
       padsKnown = new WeakMap();
       graded.clear();
-      sitesRead = -1;
-      padsBuilt = -1;
+      sitesRead.reset();
+      padsBuilt.reset();
       changedSites(buildings);
     },
   };

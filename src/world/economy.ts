@@ -1,4 +1,6 @@
 import type { RoadDoc, RoadSegment } from './doc';
+import type { ChangeJournal } from './changes';
+import type { SegmentId } from './ids';
 import { segmentPolyline } from './geometry';
 import { type RoadType, roadProfile } from './roadTypes';
 import type { RoadStructure } from './structures';
@@ -91,39 +93,96 @@ export function segmentCost(doc: RoadDoc, segment: RoadSegment, length: number):
   return total;
 }
 
-/** Everything a road's price is made of, as text. */
-function costKey(doc: RoadDoc, s: RoadSegment): string {
-  const a = doc.node(s.a), b = doc.node(s.b);
-  return `${s.type}|${s.lanes}|${s.direction}|${s.structure}|${s.curve ? `${s.curve.t},${s.curve.h}` : '-'}|` +
-    `${s.section ? JSON.stringify(s.section) : '-'}|${s.parking ? JSON.stringify(s.parking) : '-'}|` +
-    `${a?.x},${a?.y},${a?.heightOffset}|${b?.x},${b?.y},${b?.heightOffset}`;
+/**
+ * A document's road prices, kept from its diary: each road's price, and their
+ * sum kept by difference (Jane Street's Incremental: an aggregate updated by
+ * the change of its parts). A working copy (`RoadDoc.forkOrigin`) starts on the
+ * original's, read through, and keeps only the prices of the roads it changed.
+ */
+interface Ledger {
+  readonly journal: ChangeJournal;
+  /** The diary's serial read up to. */
+  seen: number;
+  /** Each road's price (0: gone), over the base's. */
+  readonly costs: Map<SegmentId, number>;
+  /** The original's ledger as it stood when the copy was made; null for a document's own. */
+  readonly base: Ledger | null;
+  total: number;
+}
+
+const ledgers = new WeakMap<RoadDoc, Ledger>();
+
+function priceOf(ledger: Ledger, id: SegmentId): number {
+  for (let at: Ledger | null = ledger; at; at = at.base) {
+    const cost = at.costs.get(id);
+    if (cost !== undefined) return cost;
+  }
+  return 0;
+}
+
+const segmentPrice = (doc: RoadDoc, s: RoadSegment): number => segmentCost(doc, s, segmentPolyline(doc, s).length);
+
+/** @rebuild Every road priced, only when the diary cannot say which changed (the first ask, a load, entries without ids). */
+function priceAll(doc: RoadDoc): Ledger {
+  const costs = new Map<SegmentId, number>();
+  let total = 0;
+  for (const segment of doc.segments.values()) {
+    const cost = segmentPrice(doc, segment);
+    costs.set(segment.id, cost);
+    total += cost;
+  }
+  return { journal: doc.changes, seen: doc.changes.version, costs, base: null, total };
 }
 
 /**
- * Road prices as worked out, by everything they were worked out from: the
- * same text is the same price, in any document (an edit's working copy
- * included). Emptied when it grows past what a big map holds.
- */
-const priced = new Map<string, number>();
-const PRICED_MAX = 50_000;
-
-/**
- * What every road in the document is worth: the sum of their prices. Only
- * roads never priced as they stand are priced (their line flattened).
+ * What every road in the document is worth: the sum of their prices.
+ *
+ * Kept from the diary: the roads its entries name since the last ask (a
+ * road's id, or a node's - its roads: a node moved or raised changes their
+ * length and their build) are priced again, and the sum moves by the
+ * difference. A working copy starts from the original's as it stood. DO NOT
+ * price every road of the map for each edit and each preview of a draft (and
+ * DO NOT keep the prices in a cache by text that empties itself: both were
+ * here).
  */
 export function roadValue(doc: RoadDoc): number {
-  if (priced.size > PRICED_MAX) priced.clear();
-  let total = 0;
-  for (const segment of doc.segments.values()) {
-    const key = costKey(doc, segment);
-    let cost = priced.get(key);
-    if (cost === undefined) {
-      cost = segmentCost(doc, segment, segmentPolyline(doc, segment).length);
-      priced.set(key, cost);
-    }
-    total += cost;
+  let ledger = ledgers.get(doc);
+  if (!ledger || ledger.journal !== doc.changes) {
+    const origin = doc.forkOrigin;
+    if (origin) {
+      roadValue(origin);
+      const base = ledgers.get(origin)!;
+      ledger = { journal: doc.changes, seen: origin.changes.version, costs: new Map(), base, total: base.total };
+    } else ledger = priceAll(doc);
+    ledgers.set(doc, ledger);
   }
-  return total;
+  // A copy whose original moved on since it was made reads the original as it is now: priced whole instead.
+  if (ledger.base && !doc.forkOrigin) { ledger = priceAll(doc); ledgers.set(doc, ledger); }
+  if (ledger.seen === doc.changes.version) return ledger.total;
+  const entries = doc.changes.since(ledger.seen, ['roads', 'traffic']);
+  if (entries === null || entries.some((e) => !e.ids)) {
+    ledger = priceAll(doc);
+    ledgers.set(doc, ledger);
+    return ledger.total;
+  }
+  const dirty = new Set<SegmentId>();
+  for (const entry of entries) {
+    for (const id of entry.ids!) {
+      // An id may be a road's or a node's (they share the roads' entries): both read.
+      dirty.add(id as SegmentId);
+      for (const s of doc.node(id as never)?.incident ?? []) dirty.add(s);
+    }
+  }
+  for (const id of dirty) {
+    const segment = doc.segment(id);
+    const was = priceOf(ledger, id);
+    const now = segment ? segmentPrice(doc, segment) : 0;
+    if (now === was) continue;
+    ledger.costs.set(id, now);
+    ledger.total += now - was;
+  }
+  ledger.seen = doc.changes.version;
+  return ledger.total;
 }
 
 /** What an edit costs and what the balance becomes. */

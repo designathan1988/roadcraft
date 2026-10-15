@@ -84,12 +84,10 @@ import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { buildBarriers, type Barriers } from './barriers';
-import { buildTrackPreview, buildTransit, type TransitMeshes } from './transit';
-import { GRASS_FIELD, SEASON_DRY, TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
+import { buildTrackPreview, buildTransit, createTrackPreview, type TrackPreview, type TransitMeshes } from './transit';
+import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
-import { GRASS_NEAR_REACH, type MaskRect, createGrass, createGrassMask } from './grassField';
-import { surfaces as roadSurfacesOf } from '@world/surfaces';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';
@@ -131,7 +129,7 @@ import { FOREST_SPECIES, buildGroundCover, createGroundCoverKit, type CoverPlace
 import { clearingIndex } from '@world/trees';
 import { natureDensity } from './natureNoise';
 import { buildNatureForest, forestRoom, loadNatureTrees, seedOfKind, type NatureForest, type NatureTreeKit } from './natureTrees';
-import { createFogTexture, rasterFog, type FogLayer } from './fogLayer';
+import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { buildElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 
@@ -238,13 +236,12 @@ export interface SceneHandle {
   setTransitXray(on: boolean): void;
   /** The track being laid, built as it will be (`buildTrackPreview`); null removes it. */
   setTransitPreview(preview: { mode: 'train' | 'metro'; points: readonly { x: number; y: number }[] } | null): void;
-  /** The lots of the Zoning tool laid on the ground (`lotOverlay.ts`); null removes them. */
   /**
-   * The lots on the ground; `changes`, the document's diary: what the ground
-   * moved under is laid again. True while lots are left to lay in the next
-   * frames (`lotOverlay.ts` `LAY_SLICE_MS`): a frame is wanted.
+   * The lots of the Zoning tool coloured into the ground, all of them from
+   * the next frame (`lotOverlay.ts`); null removes them. `changes`, the
+   * document's diary: where the ground moved, a built lot's level is read again.
    */
-  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): boolean;
+  setLotOverlay(input: LotOverlayInput | null, changes?: ChangeJournal): void;
   /**
    * A blow on a building at world (x, y, z), `strength` 1..10: it breaks
    * (`destruction.ts`). Returns true when nothing of it is left standing.
@@ -400,6 +397,9 @@ export interface SceneHandle {
 
 /** Roads at grade, and the decks above them, as `surfaceHeightAt` asks them. */
 const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Set<RoadStructure>(['elevated', 'bridge'])];
+
+/** A plant's leaf cards (`scenery.ts` `plantMeshes`, `gardens.ts`): `...-trees-<species>-cards`, `...-bushes-<kind>-cards`. */
+const isLeafCards = (mesh: Object3D): boolean => mesh.name.endsWith('-cards');
 
 /** The plants of every building's garden, in the world, on the ground they stand on. */
 function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
@@ -643,76 +643,13 @@ export function createSceneRenderer(
   const builtGroundAt = (x: number, y: number): number => terrain.naturalRenderedHeightAt(x, y);
   // The perspective view looks at the ground and stays over it (`IsoRig.setGround`).
   rig.setGround((x, y) => terrain.renderedHeightAt(x, y));
-  // The grass field round the camera (`grass.ts`): its ground heights and the
-  // mask that keeps it off paving and buildings, rebuilt when those change.
-  // One mask for both rings, drawn again only where the roads or the buildings changed (`grassField.ts`).
-  const grassMask = createGrassMask();
-  const grass = createGrass(quality, undefined, grassMask);
-  // The far ring: three times the spacing, out to three times the reach, where the near one fades.
-  const grassFar = createGrass(quality, { scale: 3, inner: GRASS_NEAR_REACH * 0.85 }, grassMask);
-  scene.add(grass.mesh, grassFar.mesh);
-  stillRoots.add(grass.mesh).add(grassFar.mesh);
-  // The blades follow the ecosystem's ground and the season.
-  grass.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
-  grassFar.setEcology(terrain.ecologyTexture, TERRAIN_HALF, TERRAIN_CELL, SEASON_DRY);
-  if (import.meta.env.DEV) (window as unknown as { __grass?: unknown; __scene?: unknown }).__grass = grass;
+  // NO GPU grass field (`grassField.ts`): the player had it taken off
+  // (2026-10-06, "melhor tirar e usar uma textura"), and it was still made -
+  // its blades, its mask over the whole map, 384 x 384 heights - and updated
+  // every frame, hidden; its mask walked every building and lot of the town
+  // at each of their revisions. The ground's own grass texture covers the map
+  // (`GRASS_FIELD` stays at its default, off). DO NOT make it again unseen.
   if (import.meta.env.DEV) Object.assign(window, { __scene: scene, __gl: renderer });
-  let grassGroundFor = '';
-  let grassMaskFor = '';
-  /** Where the grass mask must be drawn again: a rectangle, the whole map, or nowhere. */
-  let grassDirty: MaskRect | 'all' | null = 'all';
-  const markGrass = (box: MaskRect | null): void => {
-    if (box === null) { grassDirty = 'all'; return; }
-    if (grassDirty === 'all') return;
-    grassDirty = grassDirty === null ? box
-      : [Math.min(grassDirty[0], box[0]), Math.min(grassDirty[1], box[1]), Math.max(grassDirty[2], box[2]), Math.max(grassDirty[3], box[3])];
-  };
-  /** Each building footprint and lot the mask was drawn with, by key: what it was, and its box. */
-  const grassBlockers = new Map<string, { ref: unknown; box: MaskRect }>();
-  let grassCheckedAt = 0;
-  const GRASS_SAMPLES = 384;
-  const keepGrassInputs = (net: Network): void => {
-    if (performance.now() - grassCheckedAt < 300) return;
-    grassCheckedAt = performance.now();
-    const groundKey = `${net.doc.terrainRevision}:${net.revision}`;
-    if (groundKey !== grassGroundFor) {
-      grassGroundFor = groundKey;
-      const n = GRASS_SAMPLES, size = TERRAIN_HALF * 2;
-      const heights = new Float32Array(n * n);
-      for (let r = 0; r < n; r++) {
-        const y = -TERRAIN_HALF + ((r + 0.5) / n) * size;
-        for (let c = 0; c < n; c++) heights[r * n + c] = terrain.renderedHeightAt(-TERRAIN_HALF + ((c + 0.5) / n) * size, y);
-      }
-      grass.setHeights(heights, n, size);
-      grassFar.setHeights(heights, n, size);
-    }
-    const maskKey = `${net.revision}:${net.doc.buildings.revision}:${net.doc.lotRevision}`;
-    if (maskKey !== grassMaskFor) {
-      grassMaskFor = maskKey;
-      const rings: { x: number; y: number }[][] = [];
-      // What blocks grass, by building and by lot: the box of each one that
-      // came, went or changed joins the area drawn again.
-      const seen = new Set<string>();
-      const blocker = (key: string, ref: unknown, ring: readonly { x: number; y: number }[]): void => {
-        rings.push(ring as { x: number; y: number }[]);
-        seen.add(key);
-        const was = grassBlockers.get(key);
-        if (was?.ref === ref) return;
-        let box: MaskRect = [Infinity, Infinity, -Infinity, -Infinity];
-        for (const p of ring) box = [Math.min(box[0], p.x), Math.min(box[1], p.y), Math.max(box[2], p.x), Math.max(box[3], p.y)];
-        if (was) markGrass(was.box);
-        markGrass(box);
-        grassBlockers.set(key, { ref, box });
-      };
-      for (const b of net.doc.buildings.all()) solidFootprints(b).forEach((ring, i) => blocker(`b${b.id}:${i}`, b, ring));
-      for (const lot of net.doc.lots) if (lot.building !== undefined) blocker(`l${lot.id}`, `${lot.building}:${lot.corners.map((q) => `${q.x},${q.y}`).join(';')}`, [...lot.corners]);
-      for (const [key, was] of grassBlockers) if (!seen.has(key)) { markGrass(was.box); grassBlockers.delete(key); }
-      const roads = net.doc.segments.size ? [roadSurfacesOf(net).sidewalk] : [];
-      const rect = grassDirty === 'all' ? null : grassDirty;
-      if (grassDirty !== null) grassMask.draw(roads, rings, TERRAIN_HALF * 2, rect);
-      grassDirty = null;
-    }
-  };
   scene.add(...terrain.meshes);
   for (const mesh of terrain.meshes) stillRoots.add(mesh);
 
@@ -993,7 +930,9 @@ export function createSceneRenderer(
       return Number.isFinite(lot) ? Math.max(lot, ground) : ground;
     },
     // A resident's parked car stands on its lot as the lot is drawn.
-    (building, x, y) => buildings.lotHeightAt(building as BuildingId, x, y));
+    (building, x, y) => buildings.lotHeightAt(building as BuildingId, x, y),
+    // The land alone: whether a walker off the streets is on screen at all, before the yards are asked.
+    (x, y) => terrain.renderedHeightAt(x, y));
 
   const crowdFrustum = new Frustum();
   const crowdProjection = new Matrix4();
@@ -1126,7 +1065,12 @@ export function createSceneRenderer(
   /** The painted fog's map (`fogLayer.ts`), and the fog and land it was built for. */
   const fogTexture = createFogTexture();
   let fogLayer: FogLayer | null = null;
-  let fogFor = '';
+  const fogField = createFogField(fogTexture);
+  /** What the fog map follows in the diary, and how far it was read. */
+  const FOG_KINDS: readonly ChangeKind[] = ['fog', 'terrain', 'ground'];
+  let fogJournal: ChangeJournal | null = null;
+  let fogSeen = -1;
+  let fogTerrainSeen = -1;
   let fogMoving = false;
   /** Clouds placed on the map: they boil, so the frame is drawn now and then. */
   let placedCloudsShown = false;
@@ -1285,6 +1229,29 @@ export function createSceneRenderer(
    * the diary names it or the ground moved where its floor reads it. NOT its bank (`bankBox`, 40 m and more
    * round it): every site graded in a growing town floored again the dozens of buildings round it.
    */
+  /**
+   * Where the buildings or the ground under them changed since the canyon
+   * light last asked (`canyonLight.ts`): the diary's rectangles; null when it
+   * cannot say (a load, entries forgotten). DO NOT key the canyon on a
+   * revision of the whole town again: it laid its whole window at every building.
+   */
+  const CANYON_KINDS: readonly ChangeKind[] = ['buildings', 'ground', 'elevation'];
+  const CANYON_GROUND_REACH = FLOOR_READ_REACH + m(64);
+  let canyonJournal: ChangeJournal | null = null;
+  let canyonSerial = -1;
+  const NOTHING_CHANGED: readonly ChangeRect[] = [];
+  const canyonChanges = (journal: ChangeJournal): readonly ChangeRect[] | null => {
+    const serial = journal.serialOf(...CANYON_KINDS);
+    if (journal === canyonJournal && serial === canyonSerial) return NOTHING_CHANGED;
+    const entries = journal === canyonJournal && canyonSerial >= 0 ? journal.since(canyonSerial, CANYON_KINDS) : null;
+    canyonJournal = journal;
+    canyonSerial = serial;
+    if (!entries || entries.some((e) => e.rects === null)) return null;
+    // The ground moved under a building's floor (it reads the ground round it) lifts the whole building:
+    // its rectangle grown by a building's reach.
+    const grow = (r: ChangeRect, d: number): ChangeRect => [r[0] - d, r[1] - d, r[2] + d, r[3] + d];
+    return entries.flatMap((e) => e.kind === 'buildings' ? e.rects! : e.rects!.map((r) => grow(r, CANYON_GROUND_REACH)));
+  };
   const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt), floorBox, FLOOR_READ_REACH);
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
@@ -1741,11 +1708,6 @@ export function createSceneRenderer(
     // The roads' own heights (the footway, the carriageway) moved where the
     // solve did: the 'elevation' entry just written is what the things on the
     // ground read (`groundChanges`).
-    // The footways moved where the solve did: the grass mask is drawn again there.
-    const atGrass = performance.now();
-    if (changed === null) markGrass(null);
-    else for (const block of changed) markGrass(block);
-    performance.measure('hitch:road-edit/grass marked', { start: atGrass, end: performance.now() });
     const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25;
     pendingBlocks = local ? blocks : null;
     // The land itself changed: at once. After a road edit, and for the first
@@ -2015,10 +1977,7 @@ export function createSceneRenderer(
         group.add(track.group);
         done.push(() => track.dispose());
       }
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      const lots = lotOverlay.warm();
-      group.add(lots.group);
-      done.push(() => lots.dispose());
+      // The lots need no program of their own: the ground's materials draw them (`lotOverlay.ts`).
       void compileAhead(group).then(() => { for (const finish of done) finish(); });
     } catch (error) {
       console.warn('preview shader warm-up skipped', error);
@@ -2068,10 +2027,13 @@ export function createSceneRenderer(
   const inspect = import.meta.env.DEV ? createInspector(renderer, scene) : null;
   let lotOverlay: ReturnType<typeof createLotOverlay> | null = null;
   let transitXray = false;
-  let transitPreview: ReturnType<typeof buildTrackPreview> | null = null;
+  let transitPreview: TrackPreview | null = null;
   let transitPreviewKey = '';
 
   let buildingsHeld = false;
+  /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
+  let plantMapFor: { map: boolean | null; gardens: Gardens | null; scenery: Scenery | null; furniture: Scenery | null } =
+    { map: null, gardens: null, scenery: null, furniture: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
@@ -2357,6 +2319,23 @@ export function createSceneRenderer(
     }
     return { key, trees, budget, room: null, pending, slices };
   };
+  /**
+   * The clearings' index (`world/trees.ts` clearingIndex), made again only when
+   * the clearings changed: it reads nothing else. DO NOT make it at every keep -
+   * a keep runs at every road, building and terrain edit (its key), and made
+   * the index of every clearing of the map again each time.
+   */
+  let clearingsFor = -1;
+  let clearingsDoc: RoadDoc | null = null;
+  let clearings: ((x: number, y: number) => boolean) | null = null;
+  const clearingsOf = (doc: RoadDoc): ((x: number, y: number) => boolean) => {
+    if (!clearings || clearingsDoc !== doc || clearingsFor !== doc.clearingRevision) {
+      clearingsDoc = doc;
+      clearingsFor = doc.clearingRevision;
+      clearings = clearingIndex(doc.treeClearings);
+    }
+    return clearings;
+  };
   /** Water, a cliff, a road or a building: nothing of the ecosystem grows there. */
   const natureOpen = (net: Network, x: number, y: number, z: number): boolean => {
     const plate = regionAt(x, y);
@@ -2385,7 +2364,7 @@ export function createSceneRenderer(
       const of = plate.picked?.trees ?? [];
       let kept = plate.kept;
       if (!kept || kept.key !== key || kept.of !== of) {
-        cleared ??= clearingIndex(net.doc.treeClearings);
+        cleared ??= clearingsOf(net.doc);
         const mine: number[] = [], ground: number[] = [];
         for (let k = 0; k < count; k++) {
           const c = sweep.trees[start + k]!;
@@ -2507,7 +2486,7 @@ export function createSceneRenderer(
   const coverKeep = (net: Network, sweep: CoverSweep): CoverKept => {
     const free = (x: number, y: number): boolean => !onCarriageway(net, { x, y }) && !buildings.covers(x, y);
     // Where the player cut the trees away (`world/trees.ts`), none grows.
-    const cleared = clearingIndex(net.doc.treeClearings);
+    const cleared = clearingsOf(net.doc);
     const keep = (list: readonly Candidate[], cap: number, also: (c: Candidate) => boolean = () => true): Kept => {
       const idx: number[] = [], z: number[] = [];
       for (let k = 0; k < list.length && idx.length < cap; k++) {
@@ -2693,15 +2672,16 @@ export function createSceneRenderer(
       const key = preview ? `${preview.mode}:${preview.points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(';')}` : '';
       if (key === transitPreviewKey) return;
       transitPreviewKey = key;
-      if (transitPreview) { world.remove(transitPreview.group); transitPreview.dispose(); transitPreview = null; }
-      if (preview && preview.points.length >= 2) {
-        transitPreview = buildTrackPreview(preview.points, preview.mode, terrain.renderedHeightAt, pavedHeightAt);
+      // ONE preview for the tool's life, written again as the track changes (`createTrackPreview`).
+      if (!transitPreview) {
+        transitPreview = createTrackPreview();
         world.add(transitPreview.group);
       }
+      transitPreview.set(preview?.points ?? [], preview?.mode ?? 'train', terrain.renderedHeightAt, pavedHeightAt);
     },
     setLotOverlay(input, changes) {
-      lotOverlay ??= createLotOverlay(scene, (x, y) => handle.surfaceHeightAt(x, y));
-      return lotOverlay.set(input, changes);
+      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y));
+      lotOverlay.set(input, changes);
     },
     setPolePreview(net, preview) {
       const key = preview && elevation
@@ -2868,11 +2848,14 @@ export function createSceneRenderer(
         }
         // A metro entrance stands off the streets and out of the buildings:
         // their footprints read only if an entrance asks.
-        let solids: Vec2[][] | null = null;
+        // The buildings at the point only (`BuildingStore.near`): DO NOT take every
+        // building of the town's footprints for one entrance.
         transit = buildTransit(net.doc, terrain.renderedHeightAt, pavedHeightAt, (p) => {
           if (onCarriageway(net, p)) return true;
-          solids ??= [...net.doc.buildings.all()].flatMap((b) => solidFootprints(b));
-          return solids.some((ring) => pointInPolygon(p, ring));
+          for (const b of net.doc.buildings.near(p.x, p.y, p.x, p.y)) {
+            if (solidFootprints(b).some((ring) => pointInPolygon(p, ring))) return true;
+          }
+          return false;
         });
         transit.setXray(transitXray);
         world.add(transit.group);
@@ -3105,7 +3088,7 @@ export function createSceneRenderer(
         townSolids = () => cameraSolidsKept.solids();
       }
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
-      post.followTown(rig.target.x, -rig.target.z, townSolids, cameraSolidsKept.key);
+      post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
       const plantMap = rig.viewport.zoom < PLANT_MAP_ZOOM;
       // Keep the full facade at street zoom: the planar far mesh loses frames
@@ -3145,20 +3128,30 @@ export function createSceneRenderer(
       if (roads) roads.group.visible = true;
       if (details) details.group.visible = true;
       watchRoads(net);
-      gardens?.setMap(plantMap);
-      scenery?.setMap(plantMap);
-      furniture?.setMap(plantMap);
+      // The plants' leaf cards (`scenery.ts`/`gardens.ts` name them `...-cards`)
+      // are left out at the map zoom. DO NOT test `-leaves`: no mesh is named
+      // so, and the cards were drawn at every zoom.
       for (const mesh of furniture?.meshes ?? []) {
-        mesh.visible = quality.detailProps && detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
       }
       furniture?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
       for (const mesh of scenery?.meshes ?? []) {
-        mesh.visible = quality.detailProps && detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
       }
       for (const mesh of gardens?.meshes ?? []) {
-        mesh.visible = detailed && (!plantMap || !mesh.name.endsWith('-leaves'));
+        mesh.visible = detailed && (!plantMap || !isLeafCards(mesh));
       }
       gardens?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
+      // After `visible` is set (the contract of `Scenery.setMap`), and only
+      // when the map zoom is crossed or the layer is new: `gardens.setMap`
+      // throws its cull away, and called every frame it culled every garden
+      // of the town again on every frame with the camera still.
+      if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens || scenery !== plantMapFor.scenery || furniture !== plantMapFor.furniture) {
+        plantMapFor = { map: plantMap, gardens, scenery, furniture };
+        gardens?.setMap(plantMap);
+        scenery?.setMap(plantMap);
+        furniture?.setMap(plantMap);
+      }
       // The roads just laid: a strip over their whole width, on their own deck.
       if (pendingRoadFlash.length && elevation) {
         const pos: number[] = [], ring: number[] = [];
@@ -3259,7 +3252,7 @@ export function createSceneRenderer(
       }
       // Falls off with the distance in world units: the same lamp in metres at any unit.
       for (const light of roomLights) light.intensity = cutSpec && light.userData['used'] ? 55 * TUNED_UNIT ** light.decay * (0.25 + 0.75 * lastDark) : 0;
-      signals.sync(sim, detailed);
+      signals.sync(sim, detailed, crowdFrustum);
 
       target.copy(rig.target);
       const halfHeight = canvas.clientHeight / Math.max(0.001, rig.viewport.zoom * 2);
@@ -3335,24 +3328,11 @@ export function createSceneRenderer(
       // uniform's value, read at the next upload, no program change.
       buildings.setNight(lastDark, clock / 60);
       rig.camera.getWorldDirection(viewDirection);
-      // The grass blades are off: grown only round the camera, the field ended
-      // in a line a little way off and the land beyond was bare (the player,
-      // 2026-10-06: "melhor tirar e usar uma textura"). The ground's own
-      // grass texture covers the whole map.
-      {
-        const show = false;
-        const atGrass = performance.now();
-        if (show) keepGrassInputs(net);
-        performance.measure('hitch:draw/Grass', { start: atGrass, end: performance.now() });
-        grass.update(target.x, target.z, show, windClock);
-        GRASS_FIELD.value = [target.x, -target.z, GRASS_NEAR_REACH * 3, show ? 1 : 0];
-        grassFar.update(target.x, target.z, show, windClock);
-      }
       // The shadows round the ground looked at. It answers whether the light
       // itself moved: the shadow map is drawn again only when it did, when a
       // caster moved, or when this view is close enough for a frame of a
       // caster's movement to be seen.
-      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y));
+      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y), rig.camera.position.distanceTo(target));
       // What the simulation must show in full: people step round each other
       // only where they are seen, and big enough to see it (`SimWorld.focus`).
       {
@@ -3450,13 +3430,22 @@ export function createSceneRenderer(
         // The painted fog: its map again when the fog or the land under it
         // changed (never in the middle of a sculpting stroke).
         const doc = net.doc;
-        const key = `${doc.fogRevision}:${doc.terrainRevision}`;
         // A fog stroke shows as it is painted; a land stroke waits for its end.
-        const landHeld = !!options?.holdRoads && fogFor.split(':')[1] !== String(doc.terrainRevision);
-        if (key !== fogFor && !landHeld) {
-          fogFor = key;
+        const landHeld = !!options?.holdRoads && fogTerrainSeen !== doc.terrainRevision;
+        const fogSerial = doc.changes.serialOf(...FOG_KINDS);
+        if ((fogJournal !== doc.changes || fogSerial !== fogSeen) && !landHeld) {
           const startedAt = performance.now();
-          fogLayer = doc.fogDabs.length > 0 ? rasterFog(fogTexture, doc.fogDabs, (x, y) => terrain.renderedHeightAt(x, y)) : null;
+          // Only where the fog, the land or the ground under it changed (`createFogField`): DO NOT
+          // raster the whole map at every dab of a brush.
+          const entries = fogJournal === doc.changes && fogSeen >= 0 ? doc.changes.since(fogSeen, FOG_KINDS) : null;
+          const ground = (x: number, y: number): number => terrain.renderedHeightAt(x, y);
+          const laid = !entries || entries.some((e) => e.rects === null)
+            ? fogField.whole(doc.fogDabs, ground)
+            : fogField.update(doc.fogDabs, ground, entries.flatMap((e) => e.rects!));
+          fogLayer = laid.any ? laid : null;
+          fogJournal = doc.changes;
+          fogSeen = fogSerial;
+          fogTerrainSeen = doc.terrainRevision;
           performance.measure('hitch:fog', { start: startedAt, end: performance.now() });
         }
         const f = doc.fogSettings;
@@ -3553,6 +3542,19 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      // Everything the renderer made, the GPU's included: the layers, the
+      // previews and the effects too (they were left out, and a renderer
+      // made again - a map opened, the tier changed - left them all behind).
+      fx?.dispose();
+      exhaust.dispose();
+      wear.dispose();
+      barriers?.dispose();
+      transit?.dispose();
+      transitPreview?.dispose();
+      polePreview?.dispose();
+      utilities?.dispose();
+      signs?.dispose();
+      for (const flash of gridFlashes) flash.mesh.geometry.dispose();
       agents.dispose();
       signals.dispose();
       buildings.dispose();

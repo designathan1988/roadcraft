@@ -520,7 +520,7 @@ export class PoleTool {
   }
 
   gesture(): string | null {
-    return this.draft || this.chain ? 'poste: traçando a linha' : null;
+    return this.draft || this.chain ? 'gesture.pole.tracing' : null;
   }
 
   inProgress(): boolean {

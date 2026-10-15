@@ -228,7 +228,7 @@ const hashOf = (n: number): number => {
   return (h ^ (h >>> 15)) >>> 0;
 };
 
-interface Entry { index: number; size: number; x: number; y: number; seen: number; group: string; code: DressCode; company: Company; companyId: number }
+interface Entry { index: number; size: number; x: number; y: number; group: string; code: DressCode; company: Company; companyId: number }
 
 /**
  * The casting registry: who wears which body, chosen once and kept while the
@@ -237,37 +237,75 @@ interface Entry { index: number; size: number; x: number; y: number; seen: numbe
 export class CastingRegistry {
   private readonly cast = new Map<number, Entry>();
   private readonly wearers = new Map<number, Set<number>>();
+  /**
+   * Each company's members, by `group`: what a company's code is checked and
+   * changed over. DO NOT walk every person ever cast for one company (it
+   * was, on every member who joined one or changed company).
+   */
+  private readonly members = new Map<string, Set<number>>();
   /** Each company's dress code, settled by its first member drawn. */
   private readonly codes = new Map<string, DressCode>();
-  private frame = 0;
   /** Figures drawn this frame, for the census (`census`). */
   private drawn: { seed: number; index: number; company: Company; companyId: number; code: DressCode }[] = [];
   recordCensus = false;
 
   /**
-   * `remember`: how many people are kept dressed at most. A person's body is
-   * theirs for good: forgotten after a minute out of sight (3600 frames), a
-   * walker came back on screen re-cast - by where they stood and who was
-   * near - in other clothes and another haircut (the player, 2026-10-13: "se
-   * trocam de roupa e cabelo"). Only past this many, the longest unseen go.
+   * A person's body is theirs for good: the first casting depends on where
+   * they stood and who was near (`CAST_NEAR`), so a person forgotten and cast
+   * again comes back in other clothes and another haircut (the player,
+   * 2026-10-13: "se trocam de roupa e cabelo"). DO NOT forget anybody by a
+   * count or by time out of sight: the renderer passed 3600 as that count,
+   * and past 3600 people drawn the longest unseen were re-dressed. An entry
+   * is a few numbers; the entries grow with the people drawn on the cooked
+   * bodies (occupants, riders, people at the kerb, the player - walkers are
+   * procedural). Their end is the simulation's to tell, never a guess here:
+   * a vehicle gone from the world takes its company with it (`forgetCompany`,
+   * called by `agents.ts` when the fleet no longer holds it).
    */
-  constructor(private readonly roster: readonly CitizenModel[] = CROWD, private readonly remember = 40_000) {}
+  constructor(private readonly roster: readonly CitizenModel[] = CROWD) {}
 
-  /** Starts a frame: the census empties and, past `remember`, the longest unseen are forgotten. */
+  /**
+   * Everybody cast in this company forgotten: the vehicle they rode in is
+   * gone from the world (`agents.ts`). Their entries, their bodies' wearers
+   * and the company's code go; without it the registry grew by every person
+   * ever drawn in a vehicle, and every new person walked every wearer of a
+   * body ever cast.
+   */
+  forgetCompany(company: Company, companyId: number): void {
+    const group = `${company}:${companyId}`;
+    const seeds = this.members.get(group);
+    if (seeds) for (const seed of seeds) this.drop(seed);
+    this.members.delete(group);
+    this.codes.delete(group);
+  }
+
+  /** One person's entry and their place among the wearers and their company. */
+  private drop(seed: number): void {
+    const entry = this.cast.get(seed);
+    if (!entry) return;
+    this.cast.delete(seed);
+    const worn = this.wearers.get(entry.index);
+    worn?.delete(seed);
+    if (worn?.size === 0) this.wearers.delete(entry.index);
+    const group = this.members.get(entry.group);
+    group?.delete(seed);
+    if (group?.size === 0) this.members.delete(entry.group);
+  }
+
+  /** Files `seed` in its company's members. */
+  private join(seed: number, group: string): void {
+    const set = this.members.get(group);
+    if (set) set.add(seed); else this.members.set(group, new Set([seed]));
+  }
+
+  /** How many people are remembered (tests). */
+  get remembered(): number {
+    return this.cast.size;
+  }
+
+  /** Starts a frame: the census empties. */
   beginFrame(): void {
-    this.frame++;
     this.drawn.length = 0;
-    if (this.frame % 240 !== 0 || this.cast.size <= this.remember) return;
-    const oldest = [...this.cast].sort((a, b) => a[1].seen - b[1].seen).slice(0, this.cast.size - this.remember);
-    for (const [seed, entry] of oldest) {
-      this.cast.delete(seed);
-      this.wearers.get(entry.index)?.delete(seed);
-    }
-    for (const key of this.codes.keys()) {
-      let used = false;
-      for (const entry of this.cast.values()) if (entry.group === key) { used = true; break; }
-      if (!used) this.codes.delete(key);
-    }
   }
 
   /**
@@ -321,12 +359,16 @@ export class CastingRegistry {
         // barely seen inside it); a party on foot keeps every member's clothes:
         // re-cast in view, they changed clothes in front of the player.
         const vehicle = ctx.company === 'car' || ctx.company === 'bus' || ctx.company === 'truck';
-        for (const [seed, entry] of this.cast) {
-          if (seed === ctx.seed || entry.group !== group) continue;
+        for (const seed of [...(this.members.get(group) ?? [])]) {
+          if (seed === ctx.seed) continue;
+          const entry = this.cast.get(seed)!;
           if (!vehicle || code.includes(this.roster[entry.index]!.wardrobe)) { entry.code = code; continue; }
-          this.cast.delete(seed);
-          this.wearers.get(entry.index)?.delete(seed);
+          this.drop(seed);
         }
+        const left = this.members.get(known.group);
+        left?.delete(ctx.seed);
+        if (left?.size === 0) this.members.delete(known.group);
+        this.join(ctx.seed, group);
         known.group = group;
         known.code = code;
         known.company = ctx.company;
@@ -334,7 +376,6 @@ export class CastingRegistry {
       }
       known.x = ctx.x;
       known.y = ctx.y;
-      known.seen = this.frame;
       this.note(ctx, known);
       return known;
     }
@@ -386,8 +427,9 @@ export class CastingRegistry {
       if (!fromSpare && nearest > farthest) { farthest = nearest; fallback = candidate; }
     }
     if (index < 0) index = fallback;
-    const entry: Entry = { index, size, x: ctx.x, y: ctx.y, seen: this.frame, group, code, company: ctx.company, companyId: ctx.companyId };
+    const entry: Entry = { index, size, x: ctx.x, y: ctx.y, group, code, company: ctx.company, companyId: ctx.companyId };
     this.cast.set(ctx.seed, entry);
+    this.join(ctx.seed, group);
     const list = this.wearers.get(index);
     if (list) list.add(ctx.seed);
     else this.wearers.set(index, new Set([ctx.seed]));
@@ -397,15 +439,15 @@ export class CastingRegistry {
 
   /** Whether everybody already cast in `group` is dressed inside `code`. */
   private dressesMembers(group: string, code: DressCode): boolean {
-    for (const entry of this.cast.values()) {
-      if (entry.group === group && !code.includes(this.roster[entry.index]!.wardrobe)) return false;
+    for (const seed of this.members.get(group) ?? []) {
+      if (!code.includes(this.roster[this.cast.get(seed)!.index]!.wardrobe)) return false;
     }
     return true;
   }
 
   private recode(group: string, code: DressCode): void {
     this.codes.set(group, code);
-    for (const entry of this.cast.values()) if (entry.group === group) entry.code = code;
+    for (const seed of this.members.get(group) ?? []) this.cast.get(seed)!.code = code;
   }
 
   private note(ctx: CastingContext, entry: Entry): void {

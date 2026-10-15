@@ -28,8 +28,9 @@ import { PACKED_BONE_FLOATS } from '../citizenPalette';
  * blended from up to four clips between two frames and moved to that
  * person's own joints (`proceduralCrowd.ts` `refit`, the same sums, walking
  * up the bone's parents) - written to a float render target the skinning
- * reads. Nothing of it is worked out in JavaScript, nothing of it is uploaded
- * a frame but four numbers a play.
+ * reads. Nothing of it is worked out in JavaScript; a frame uploads the plays
+ * that changed (a row each, or the whole plays texture - 80 bytes a row of
+ * the class - past eight), and the overrides written.
  */
 
 /** Texels a bone takes in the animation texture (twelve floats). */
@@ -88,7 +89,12 @@ export interface PalettePass {
   readonly capacity: number;
   /** What person `row` plays this frame, the body variant whose joints they have; null plays: a palette of their own (`setOverride`). */
   setPlays(row: number, plays: readonly PalettePlay[] | null, variant: number): void;
-  /** Person `row` is not drawn this frame: their row is not worked out (off the screen costs nothing). */
+  /**
+   * Person `row` is not drawn this frame: their row is not blended. It is
+   * still covered by the pass (every row up to `used`), a fetch and a return
+   * a texel: the class's rows are reused (`proceduralCrowd.ts` `takeRow`), so
+   * `used` stays near the people living, not every body ever made.
+   */
   rest(row: number): void;
   /** A palette worked out on the CPU for a person (held by a ragdoll, wounded, a limb lost). */
   setOverride(row: number, palette: Float32Array): void;

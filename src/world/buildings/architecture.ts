@@ -369,8 +369,9 @@ export function composeFacades(volumes: readonly Volume[], style: ArchStyle, rng
           const n = counts.get(side)!;
           for (let i = 0; i < n; i++) {
             const c = columnComponent(rhythm, i, n);
-            // A balcony that would stand out over the street at the first
-            // floor of a shop is a window there instead.
+            // Every column of the rhythm that is not the fill (the comment here
+            // promised to turn a balcony over a shop's street into a window;
+            // nothing does: noted as a defect to decide).
             if (c !== fill) bays[bayKey(side, i)] = c;
           }
         }

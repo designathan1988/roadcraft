@@ -2,8 +2,8 @@ import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { deleteLot, lotCentre } from '@world/lots';
-import { landscapeNear } from '@world/landscape';
-import type { Anchor } from './snap';
+import { landscapeNearIn } from '@world/landscape';
+import { type Anchor, ribbonsNear } from './snap';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 
 /** What the bulldozer reads of the game and does to it. */
@@ -37,7 +37,7 @@ export class Bulldozer {
   constructor(private readonly host: BulldozerHost) {}
 
   gesture(): string | null {
-    return this.drag ? 'demolir: retângulo' : null;
+    return this.drag ? 'gesture.bulldoze.box' : null;
   }
 
   inProgress(): boolean {
@@ -105,7 +105,8 @@ export class Bulldozer {
       return;
     }
     // Likewise a bench, a tree or a street light on the footway.
-    const item = landscapeNear(doc.landscape.values(), world, host.itemReach());
+    // The items round the pointer, by place (`RoadDoc.landscapeIn`): one counts within its own radius of the reach.
+    const item = landscapeNearIn(doc, world, host.itemReach());
     if (item) {
       host.mutate(() => doc.removeLandscape(item.id));
       host.hint('hint.streetscape.removed');
@@ -133,16 +134,21 @@ export class Bulldozer {
   private boxed(a: Vec2, b: Vec2): void {
     const { doc, net } = this.host;
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    const box = [x0, y0, x1, y1] as const;
     const inside = (p: Vec2): boolean => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
-    const segments = [...doc.segments.keys()].filter((id) => {
-      const line = net.ribbons.get(id)?.full;
-      return line ? inside(line.sampleAt(line.length / 2).p) : false;
-    });
-    const builtIds = [...doc.buildings.all()].filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
+    // Each kind from its own index, the box's cells only: a road's middle lies
+    // in its ribbon's filed bounds, a building's anchor in its stored bounds,
+    // an item's point and a wall's points in their filed boxes.
+    // DO NOT walk `doc.segments`, `doc.buildings.all()`, `doc.landscape` or
+    // `doc.barriers` here: a box on a street read the whole map, five times.
+    const segments = ribbonsNear(net, box).filter((ribbon) => inside(ribbon.full.sampleAt(ribbon.full.length / 2).p)).map((ribbon) => ribbon.id);
+    const builtIds = doc.buildings.near(x0, y0, x1, y1).filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
+    // The lots have no index of their own yet (`world/lots.ts`, their diary
+    // entries carry no ids): read whole, once a box let go.
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
     const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
-    const items = [...doc.landscape.values()].filter((it) => inside(it)).map((it) => it.id);
-    const walls = [...doc.barriers.values()].filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
+    const items = doc.landscapeIn(box).filter((it) => inside(it)).map((it) => it.id);
+    const walls = doc.barriersIn(box).filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
     if (!segments.length && !builtIds.length && !lots.length && !poles.length && !items.length && !walls.length) return;
     this.host.mutate(() => {
       const money = roadsBefore(doc);

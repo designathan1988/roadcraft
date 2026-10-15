@@ -497,7 +497,6 @@ function house(rng: Rng, env: Envelope): MadeBuilding {
       }
     }
   })();
-  // A pitched roof shows its eaves; a cornice is for a parapet.
   const made = finish('house', `house:${form}:${style.key}`, body, env, rng, style, 'house', free, rng.float() < 0.3 ? 'doubleDoor' : 'door', doorBlock, keep);
   return made;
 }

@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
+import { BufferGeometry, DynamicDrawUsage, Float32BufferAttribute, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial } from 'three';
 import { pullTowardEye } from './depthConvention';
 
 /**
@@ -45,7 +45,8 @@ export function createBlobShadows(name: string, capacity: number, opacity = 0.34
   });
   // Over the ground it lies on, never into it.
   pullTowardEye(material, 2, 4);
-  const mesh = new InstancedMesh(geometry, material, capacity);
+  const mesh = new InstancedMesh(geometry, material, Math.max(1, capacity));
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
   mesh.name = name;
   mesh.count = 0;
   mesh.visible = false;
@@ -55,11 +56,27 @@ export function createBlobShadows(name: string, capacity: number, opacity = 0.34
   const local = new Matrix4();
   const placed = new Matrix4();
   let n = 0;
+  /**
+   * The buffer made at least `needed` long, doubling, what is written kept.
+   * `capacity` is where it starts, not a ceiling: DO NOT drop what passes it -
+   * the town's parked cars past the fleet's ceiling stood with no shadow.
+   * three cannot resize an attribute, so it is a new one, the old one's GPU
+   * buffer freed by the mesh's `dispose` (`WebGLObjects` `onInstancedMeshDispose`).
+   */
+  const grow = (needed: number): void => {
+    let size = mesh.instanceMatrix.count;
+    while (size < needed) size *= 2;
+    const matrices = new InstancedBufferAttribute(new Float32Array(size * 16), 16);
+    matrices.array.set(mesh.instanceMatrix.array);
+    matrices.setUsage(DynamicDrawUsage);
+    mesh.dispose();
+    mesh.instanceMatrix = matrices;
+  };
   return {
     mesh,
     begin() { n = 0; },
     add(matrix, radius, length = radius) {
-      if (n >= capacity) return;
+      if (n >= mesh.instanceMatrix.count) grow(n + 1);
       local.makeScale(radius, 1, length);
       local.elements[13] = LIFT;
       mesh.setMatrixAt(n++, placed.multiplyMatrices(matrix, local));
@@ -75,6 +92,7 @@ export function createBlobShadows(name: string, capacity: number, opacity = 0.34
       }
     },
     dispose() {
+      mesh.dispose();
       geometry.dispose();
       material.dispose();
     },

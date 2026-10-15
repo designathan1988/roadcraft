@@ -20,46 +20,126 @@ export interface SkinAppearance { texture: Texture; eyeTexture: Texture; tint: C
  * frame and the 17th - the sun's shadow - was not bound (2026-10-10).
  */
 const FACE_CARD_SIZE = 256;
+const FACE_CARD_BYTES = FACE_CARD_SIZE * FACE_CARD_SIZE * 4;
+/** Layers the array starts with: the catalogue's textured brows and lashes (16) fit with room to spare. */
 const FACE_CARD_LAYERS = 24;
-let faceCards: DataArrayTexture | null = null;
-const faceCardLayers = new Map<Texture, number>();
-let faceCardCanvas: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
 
-function faceCardArray(): DataArrayTexture {
-  if (!faceCards) {
-    faceCards = new DataArrayTexture(new Uint8Array(FACE_CARD_SIZE * FACE_CARD_SIZE * 4 * FACE_CARD_LAYERS), FACE_CARD_SIZE, FACE_CARD_SIZE, FACE_CARD_LAYERS);
-    faceCards.colorSpace = SRGBColorSpace;
-    faceCards.magFilter = LinearFilter;
-    faceCards.minFilter = LinearMipmapLinearFilter;
-    faceCards.generateMipmaps = true;
-    faceCards.unpackAlignment = 4;
-    faceCards.needsUpdate = true;
-  }
-  return faceCards;
+/**
+ * The face cards' array and who holds which layer, owned by whoever makes the
+ * materials (`createRiggedCitizens`) and disposed with them.
+ */
+export interface FaceCardAtlas {
+  /** The layer a card's texture is drawn in (copied there when first asked for); -1 without a texture. */
+  layerOf(texture: Texture | undefined): number;
+  /**
+   * The array, ONE uniform for every material: when the array grows, every
+   * program reads the new one (three keeps a material's uniforms by
+   * reference, as `riggedCitizens.ts` shares `citizenBones`).
+   */
+  readonly uniform: { value: DataArrayTexture | null };
+  dispose(): void;
 }
 
-/** The layer a face card's texture is drawn in, copied there the first time it is asked for; -1 without one. */
-function faceCardLayer(texture: Texture | undefined): number {
-  if (!texture) return -1;
-  const known = faceCardLayers.get(texture);
-  if (known !== undefined) return known;
-  const image = texture.image as CanvasImageSource | undefined;
-  if (!image || faceCardLayers.size >= FACE_CARD_LAYERS) return -1;
-  faceCardCanvas ??= typeof OffscreenCanvas === 'function'
-    ? new OffscreenCanvas(FACE_CARD_SIZE, FACE_CARD_SIZE).getContext('2d', { willReadFrequently: true })
-    : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
-  const ctx = faceCardCanvas;
-  if (!ctx) return -1;
-  if (ctx.canvas.width !== FACE_CARD_SIZE) { ctx.canvas.width = FACE_CARD_SIZE; ctx.canvas.height = FACE_CARD_SIZE; }
-  ctx.clearRect(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
-  ctx.drawImage(image, 0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
-  const layer = faceCardLayers.size;
-  const array = faceCardArray();
-  (array.image.data as Uint8Array).set(ctx.getImageData(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE).data, layer * FACE_CARD_SIZE * FACE_CARD_SIZE * 4);
-  array.addLayerUpdate(layer);
+function newFaceCardArray(depth: number): DataArrayTexture {
+  const array = new DataArrayTexture(new Uint8Array(FACE_CARD_BYTES * depth), FACE_CARD_SIZE, FACE_CARD_SIZE, depth);
+  array.colorSpace = SRGBColorSpace;
+  array.magFilter = LinearFilter;
+  array.minFilter = LinearMipmapLinearFilter;
+  array.generateMipmaps = true;
+  array.unpackAlignment = 4;
   array.needsUpdate = true;
-  faceCardLayers.set(texture, layer);
-  return layer;
+  return array;
+}
+
+export function createFaceCardAtlas(): FaceCardAtlas {
+  const uniform: { value: DataArrayTexture | null } = { value: null };
+  /** Each held card's layer, and how it gives it back. */
+  const held = new Map<Texture, { layer: number; release: () => void }>();
+  /** Layers given back by cards let go, reused before the array grows. */
+  const free: number[] = [];
+  /** Layers ever handed out: the next new one. */
+  let used = 0;
+  let canvas: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
+  /**
+   * Whether the array in use has not reached the GPU whole yet (made, or
+   * grown). Its first upload must send every layer: three allocates the
+   * storage and, with layer updates listed, sends ONLY those layers
+   * (`WebGLTextures` `texStorage3D` then `texSubImage3D` per layer). DO NOT
+   * list a layer on an array not yet uploaded: grown past 24 cards, every
+   * card copied into the new array was left blank on the GPU.
+   */
+  let whole = true;
+  const array = (): DataArrayTexture => uniform.value ??= fresh(newFaceCardArray(FACE_CARD_LAYERS));
+  /** A new array: sent whole on its first upload (three calls `onUpdate` once it has been). */
+  const fresh = (texture: DataArrayTexture): DataArrayTexture => {
+    whole = true;
+    texture.onUpdate = () => { if (uniform.value === texture) whole = false; };
+    return texture;
+  };
+  /**
+   * A free layer: one given back, else the next unused, the array doubled
+   * when every layer is held (its pixels copied, the whole of it sent again
+   * once). DO NOT cap the layers or hand out -1 when full: a brow without a
+   * layer is drawn as an opaque grey card (it was, after 24 cards had come
+   * and gone).
+   */
+  const take = (): number => {
+    const reused = free.pop();
+    if (reused !== undefined) return reused;
+    const current = array();
+    if (used >= current.image.depth) {
+      const grown = fresh(newFaceCardArray(current.image.depth * 2));
+      (grown.image.data as Uint8Array).set(current.image.data as Uint8Array);
+      current.dispose();
+      uniform.value = grown;
+    }
+    return used++;
+  };
+  return {
+    uniform,
+    /**
+     * The layer is the texture's until the texture is disposed (its last
+     * wearer gone, `acquireTexture`), then given back. DO NOT keep layers by
+     * texture for good: every person who comes back loads their card as a new
+     * texture, and the layers ran out.
+     */
+    layerOf(texture) {
+      if (!texture) return -1;
+      const known = held.get(texture);
+      if (known) return known.layer;
+      const image = texture.image as CanvasImageSource | undefined;
+      if (!image) return -1;
+      canvas ??= typeof OffscreenCanvas === 'function'
+        ? new OffscreenCanvas(FACE_CARD_SIZE, FACE_CARD_SIZE).getContext('2d', { willReadFrequently: true })
+        : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const ctx = canvas;
+      if (!ctx) return -1;
+      if (ctx.canvas.width !== FACE_CARD_SIZE) { ctx.canvas.width = FACE_CARD_SIZE; ctx.canvas.height = FACE_CARD_SIZE; }
+      ctx.clearRect(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
+      ctx.drawImage(image, 0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
+      const layer = take();
+      const target = array();
+      (target.image.data as Uint8Array).set(ctx.getImageData(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE).data, layer * FACE_CARD_BYTES);
+      if (!whole) target.addLayerUpdate(layer);
+      target.needsUpdate = true;
+      const release = (): void => {
+        texture.removeEventListener('dispose', release);
+        held.delete(texture);
+        free.push(layer);
+      };
+      held.set(texture, { layer, release });
+      texture.addEventListener('dispose', release);
+      return layer;
+    },
+    dispose() {
+      for (const [texture, { release }] of held) texture.removeEventListener('dispose', release);
+      held.clear();
+      free.length = 0;
+      used = 0;
+      uniform.value?.dispose();
+      uniform.value = null;
+    },
+  };
 }
 
 const EYE_TEXTURES = ['eye-brown.webp', 'eye-brownlight.webp', 'eye-brownlight.webp', 'eye-green.webp', 'eye-blue.webp', 'eye-grey.webp'] as const;
@@ -240,7 +320,7 @@ export async function loadSkinAppearance(person: PersonSpec): Promise<SkinAppear
     if (!texture || !eyeTexture) throw new Error(`Missing loaded skin or eye texture: ${skinName}, ${eyeFile}`);
     const garments = loaded.slice(1, cardStart).map((map) => map ?? null);
     // Sent to the GPU ahead of the first frame this person is drawn in.
-    // Brows and lashes are drawn from the face cards' array (`faceCardLayer`), not uploaded on their own.
+    // Brows and lashes are drawn from the face cards' array (`FaceCardAtlas`), not uploaded on their own.
     queueUpload(texture, eyeTexture, ...garments, hairTexture, beardTexture);
     const appearance: SkinAppearance = { texture, eyeTexture, tint, hair: new Color(person.look.hair), garments,
       outfitTint: person.look.outfitTint == null ? null : new Color(person.look.outfitTint),
@@ -267,8 +347,11 @@ export function releaseSkinAppearance(appearance: SkinAppearance): void {
   release();
 }
 
-/** Extends the crowd shader after its bone-palette hook, preserving one draw batch. */
-export function applySkinAppearance(material: MeshStandardMaterial, geometry: BufferGeometry, skin: SkinAppearance): void {
+/**
+ * Extends the crowd shader after its bone-palette hook, preserving one draw
+ * batch. Brows and lashes are drawn from `faceCards` (`createFaceCardAtlas`).
+ */
+export function applySkinAppearance(material: MeshStandardMaterial, geometry: BufferGeometry, skin: SkinAppearance, faceCards: FaceCardAtlas): void {
   if (!geometry.hasAttribute('skinMask')) return;
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey();
@@ -309,8 +392,8 @@ export function applySkinAppearance(material: MeshStandardMaterial, geometry: Bu
     if (texturedHair) {
       shader.uniforms.personHair = { value: cards[0] ?? BLANK };
       shader.uniforms.personBeard = { value: cards[3] ?? BLANK };
-      const brow = faceCardLayer(cards[1]), lash = faceCardLayer(cards[2]);
-      shader.uniforms.faceCards = { value: faceCardArray() };
+      const brow = faceCards.layerOf(cards[1]), lash = faceCards.layerOf(cards[2]);
+      shader.uniforms.faceCards = faceCards.uniform;
       shader.uniforms.faceCardLayer = { value: new Vector2(Math.max(0, brow), Math.max(0, lash)) };
       shader.uniforms.cardTextures = { value: [cards[0] ? 1 : 0, brow >= 0 ? 1 : 0, lash >= 0 ? 1 : 0, cards[3] ? 1 : 0] };
     }

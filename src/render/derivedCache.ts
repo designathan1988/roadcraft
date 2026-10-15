@@ -36,14 +36,20 @@ function database(): Promise<IDBDatabase | null> {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
+    // A connection closed, refused or blocked is forgotten, and the next read
+    // or write opens one again. DO NOT keep it: closed for another tab's
+    // upgrade, every transaction on it threw (silently) until the page was
+    // reloaded, and the store was dead for the session.
+    const forget = (): void => { opening = null; };
     request.onsuccess = () => {
       const db = request.result;
       // Another tab of a newer build asks to upgrade: let it.
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => { db.close(); forget(); };
+      db.onclose = forget;
       resolve(db);
     };
-    request.onerror = () => resolve(null);
-    request.onblocked = () => resolve(null);
+    request.onerror = () => { forget(); resolve(null); };
+    request.onblocked = () => { forget(); resolve(null); };
   });
   return opening;
 }

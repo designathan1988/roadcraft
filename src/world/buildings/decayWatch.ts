@@ -1,12 +1,13 @@
 import { Heap } from '@core/heap';
 import type { RoadDoc } from '../doc';
+import { JournalCursor } from '../derived';
 import { type Building, type BuildingId, DECAY_GRACE, DECAY_SPAN, decayOf } from './types';
 
 /**
  * THE BUILDINGS' DECAY (`decayOf`), each building looked at only when its next
  * tenth is due. A record changes only when its decay moves a tenth.
  *
- * - What came or changed is read from the diary (`doc.changes.since`). An
+ * - What came or changed is read from the diary (`JournalCursor`). An
  *   entry without ids is the whole store replaced - cleared, a map loaded
  *   (`BuildingStore.changed(null, ...)`) - and, like a diary that forgot or a
  *   clock that went back, files the town again. DO NOT read `change.ids ?? []`:
@@ -22,7 +23,7 @@ export function createDecayWatch(doc: RoadDoc, wear: (id: BuildingId, decay: num
   /** Each built record's next tenth, city minutes; absent: fully run down or gone. */
   const due = new Map<BuildingId, number>();
   const queue = new Heap();
-  let seen = -1;
+  const seen = new JournalCursor(['buildings'], true);
   let lastNow = -Infinity;
   const nextTenth = (b: Building, now: number): number => {
     if (b.builtAt === undefined) return Infinity;
@@ -38,10 +39,11 @@ export function createDecayWatch(doc: RoadDoc, wear: (id: BuildingId, decay: num
   };
   /** One look at city minute `now`; true when a building's decay changed. */
   return (now: number): boolean => {
-    const changes = seen < 0 || now < lastNow ? null : doc.changes.since(seen, ['buildings']);
-    seen = doc.changes.version;
+    // A clock that went back reads the town again, as a diary that forgot does.
+    if (now < lastNow) seen.reset();
+    const changes = seen.read(doc.changes);
     lastNow = now;
-    if (changes === null || changes.some((c) => !c.ids)) {
+    if (changes === null) {
       due.clear();
       queue.clear();
       for (const b of doc.buildings.all()) file(b, b.id, now);
