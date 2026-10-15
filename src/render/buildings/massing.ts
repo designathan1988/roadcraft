@@ -193,11 +193,12 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
     const list = rows.get(key);
     if (list) list.push(bay); else rows.set(key, [bay]);
   }
+  /** One run of a storey (bays side by side with the same relief and glass), before the storeys alike are stacked into one. */
+  interface Run { side: number; a0: number; a1: number; d: number; z0: number; z1: number; zb: number; height: number; glass: number; colour: Rgb }
+  const runs: Run[] = [];
   for (const row of rows.values()) {
     row.sort((p, q) => p.start - q.start);
     const side = row[0]!.side;
-    const f = edgeFrame(v, side), s = sideStart(v, side);
-    const t = { x: s.tx, y: s.ty };
     // The run's outward offset: a relief's push, an arcade's wall set back.
     const offsetOf = (bay: FacadeBay): number => (bay.component === 'pillar' ? -ARCADE : bay.push);
     const shareOf = (bay: FacadeBay): number => GLASS_SHARE[bay.component] ?? 0;
@@ -208,24 +209,38 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
       while (j < row.length && Math.abs(offsetOf(row[j]!) - offsetOf(first)) < 1e-3 && shareOf(row[j]!) === shareOf(first)
         && Math.abs(row[j]!.start - (row[j - 1]!.start + row[j - 1]!.width)) < 1e-3) j++;
       const last = row[j - 1]!;
-      const a0 = first.start, a1 = last.start + last.width, d = offsetOf(first);
-      const z0 = floor + first.z, z1 = z0 + first.height;
-      // A storey on the ground runs down past the lowest ground under it, as the plinth does.
-      const zb = v.base === 0 && first.storey === 0 ? z0 - BURY : z0;
+      const z0 = floor + first.z;
       const spec = wallMaterial(b, v, side, first.storey);
-      const glass = spec.finish === 'glass' ? 1 : shareOf(first);
-      const at = (a: number, out: number, z: number): [number, number, number] => w.P(s.x + t.x * a + f.nx * out, s.y + t.y * a + f.ny * out, z);
-      const facade = { bay: bayWidth(b, v, side), storey: first.height, z0, share: glass };
-      w.face([at(a0, d, zb), at(a1, d, zb), at(a1, d, z1), at(a0, d, z1)], w.N(f.nx, f.ny), rgb(spec), facade, [a0, a1, a1, a0]);
-      if (Math.abs(d) > 1e-3) {
-        // Its cheeks at both ends and its head: a box standing out, or a recess.
-        const colour = rgb(spec);
-        const sign = d > 0 ? 1 : -1;
-        w.face([at(a0, 0, zb), at(a0, d, zb), at(a0, d, z1), at(a0, 0, z1)], w.N(-t.x * sign, -t.y * sign), colour);
-        w.face([at(a1, d, zb), at(a1, 0, zb), at(a1, 0, z1), at(a1, d, z1)], w.N(t.x * sign, t.y * sign), colour);
-        w.face([at(a0, 0, z1), at(a1, 0, z1), at(a1, d, z1), at(a0, d, z1)], w.N(0, 0, sign), colour);
-      }
+      runs.push({
+        side, a0: first.start, a1: last.start + last.width, d: offsetOf(first), z0, z1: z0 + first.height,
+        // A storey on the ground runs down past the lowest ground under it, as the plinth does.
+        zb: v.base === 0 && first.storey === 0 ? z0 - BURY : z0,
+        height: first.height, glass: spec.finish === 'glass' ? 1 : shareOf(first), colour: rgb(spec),
+      });
       i = j;
+    }
+  }
+  // DO NOT draw a quad a storey: the storeys alike, one above the other, are one wall whose windows the shader counts up from the lowest (`massingMaterial.ts`, `(height - z0) / storey`).
+  const alike = (p: Run, q: Run): boolean => p.side === q.side && Math.abs(p.a0 - q.a0) < 1e-3 && Math.abs(p.a1 - q.a1) < 1e-3 && Math.abs(p.d - q.d) < 1e-3
+    && Math.abs(p.height - q.height) < 1e-3 && p.glass === q.glass && p.colour[0] === q.colour[0] && p.colour[1] === q.colour[1] && p.colour[2] === q.colour[2];
+  runs.sort((p, q) => p.side - q.side || p.a0 - q.a0 || p.d - q.d || p.z0 - q.z0);
+  for (let i = 0; i < runs.length;) {
+    const first = runs[i]!;
+    let z1 = first.z1, j = i + 1;
+    while (j < runs.length && alike(runs[j]!, first) && Math.abs(runs[j]!.z0 - z1) < 1e-3) z1 = runs[j++]!.z1;
+    i = j;
+    const { side, a0, a1, d, z0, zb, colour } = first;
+    const f = edgeFrame(v, side), s = sideStart(v, side);
+    const t = { x: s.tx, y: s.ty };
+    const at = (a: number, out: number, z: number): [number, number, number] => w.P(s.x + t.x * a + f.nx * out, s.y + t.y * a + f.ny * out, z);
+    const facade = { bay: bayWidth(b, v, side), storey: first.height, z0, share: first.glass };
+    w.face([at(a0, d, zb), at(a1, d, zb), at(a1, d, z1), at(a0, d, z1)], w.N(f.nx, f.ny), colour, facade, [a0, a1, a1, a0]);
+    if (Math.abs(d) > 1e-3) {
+      // Its cheeks at both ends and its head: a box standing out, or a recess.
+      const sign = d > 0 ? 1 : -1;
+      w.face([at(a0, 0, zb), at(a0, d, zb), at(a0, d, z1), at(a0, 0, z1)], w.N(-t.x * sign, -t.y * sign), colour);
+      w.face([at(a1, d, zb), at(a1, 0, zb), at(a1, 0, z1), at(a1, d, z1)], w.N(t.x * sign, t.y * sign), colour);
+      w.face([at(a0, 0, z1), at(a1, 0, z1), at(a1, d, z1), at(a0, d, z1)], w.N(0, 0, sign), colour);
     }
   }
   const flat = v.roof === 'flat';

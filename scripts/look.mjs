@@ -162,6 +162,7 @@ async function steps(page, report) {
       line.value = { name: sampling.name, ...allocationStats(profile, (Date.now() - sampling.t0) / 1000) };
       console.log(`allocations "${sampling.name}": ${line.value.mbPerSecond} MB/s over ${line.value.seconds} s\n  ${line.value.top.map(([k, mb]) => `${mb} MB  ${k}`).join('\n  ')}`);
       console.log(`  by the game's frames:\n  ${line.value.stacks.map(([k, mb]) => `${mb} MB  ${k}`).join('\n  ')}`);
+      console.log(`  by the game's files:\n  ${line.value.files.map(([k, mb]) => `${mb} MB  ${k}`).join('\n  ')}`);
       sampling = null;
     } else if (step.trace) {
       // The Performance panel's trace (open the file in DevTools > Performance).
@@ -367,6 +368,7 @@ function playwrightFfmpeg() {
 function allocationStats(profile, seconds) {
   const self = new Map();
   const stacks = new Map();
+  const files = new Map();
   let bytes = 0;
   // Also by the nearest three of the game's own frames (`src/`): which part of the game holds it, not only who allocated.
   const walk = (node, ours) => {
@@ -375,6 +377,7 @@ function allocationStats(profile, seconds) {
     self.set(k, (self.get(k) ?? 0) + node.selfSize);
     const mine = String(node.callFrame.url).includes('/src/') ? [...ours, k.replace(' @ src/', '@')].slice(-3) : ours;
     if (node.selfSize) { const key = mine.join(' < ') || '(none of ours)'; stacks.set(key, (stacks.get(key) ?? 0) + node.selfSize); }
+    if (node.selfSize) { const file = (mine[mine.length - 1] ?? '(none of ours)').replace(/^[^@]*@/, '').replace(/:\d+$/, ''); files.set(file, (files.get(file) ?? 0) + node.selfSize); }
     for (const c of node.children ?? []) walk(c, mine);
   };
   walk(profile.head, []);
@@ -382,6 +385,7 @@ function allocationStats(profile, seconds) {
     seconds: Math.round(seconds * 10) / 10, mb: Math.round(bytes / 1e5) / 10, mbPerSecond: Math.round(bytes / 1e5 / seconds) / 10,
     top: [...self].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, b]) => [k, Math.round(b / 1e5) / 10]),
     stacks: [...stacks].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, b]) => [k, Math.round(b / 1e5) / 10]),
+    files: [...files].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, b]) => [k, Math.round(b / 1e5) / 10]),
   };
 }
 
