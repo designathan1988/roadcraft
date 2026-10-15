@@ -1,18 +1,18 @@
 import type { Vec2 } from '@core/vec2';
 import { Rng as RngStream } from '@core/rng';
-import type { RoadDoc } from './doc';
-import type { NodeId } from './ids';
-import type { RoadStructure } from './structures';
-import { Level, ROAD_TYPES, halfWidth, roadProfile } from './roadTypes';
-import type { SegmentParking } from './parking';
-import type { TerrainMode, TerrainStamp } from './terrain';
-import { type BlueprintBody } from './buildings/blueprints';
-import { Model, mat } from './buildings/cityBuildings';
-import type { Building, BuildingFunction, LotSurface } from './buildings/types';
-import { buildingBounds } from './buildings/geometry';
+import type { RoadDoc } from '@world/doc';
+import type { NodeId } from '@world/ids';
+import type { RoadStructure } from '@world/structures';
+import { Level, ROAD_TYPES, halfWidth, roadProfile } from '@world/roadTypes';
+import type { SegmentParking } from '@world/parking';
+import type { TerrainMode, TerrainStamp } from '@world/terrain';
+import { type BlueprintBody } from '@world/buildings/blueprints';
+import { Model, mat } from '@world/buildings/cityBuildings';
+import type { Building, BuildingFunction, LotSurface } from '@world/buildings/types';
+import { buildingBounds } from '@world/buildings/geometry';
 import { type Box, type Edge, facingBody, inside, overlaps } from './sampleTown';
 import { courtyard, houses, park, perimeter, varied, type Placer } from './town';
-import { m } from './units';
+import { m } from '@world/units';
 
 /**
  * THE TOWN THE GAME OPENS ON.

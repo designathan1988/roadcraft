@@ -3,7 +3,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
-import { lotEntrances } from '@world/parkingLayout';
+import { entrancesOf } from '@world/parkingLayout';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
@@ -159,7 +159,7 @@ describe('a lot car park reached through its car gate', () => {
   });
 
   it('paints no kerb bay across a car gate', () => {
-    const entrances = lotEntrances(doc);
+    const entrances = [...doc.buildings.all()].flatMap((b) => entrancesOf(b));
     for (const b of parks) {
       for (const g of carGates(b)) {
         const c = localToWorld(b, g.x, g.y);

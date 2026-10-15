@@ -773,12 +773,6 @@ export function deleteLot(doc: RoadDoc, id: number): boolean {
   return true;
 }
 
-/** A new lot: a rectangle from `a` to `b` aligned with `angle` (the nearest street's direction). */
-export function addLot(doc: RoadDoc, a: Vec2, b: Vec2, angle: number): Lot | null {
-  const rect = lotRect(a, b, angle);
-  return rect ? addPolygonLot(doc, rect, 0) : null;
-}
-
 /** The rectangle from `a` to `b` square to `angle` (a street's direction), counter-clockwise; null when too small. */
 export function lotRect(a: Vec2, b: Vec2, angle: number): Vec2[] | null {
   const u = { x: Math.cos(angle), y: Math.sin(angle) }, v = { x: -u.y, y: u.x };

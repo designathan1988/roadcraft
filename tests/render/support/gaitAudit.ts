@@ -5,7 +5,7 @@ import { personHash, type PedView } from '@sim/people/view';
 import type { SimWorld } from '@sim/world';
 import { m } from '@world/units';
 import { SIGNAL_POST_RADIUS, signalPosts } from '@world/signalPosts';
-import { blocksPedestrians, streetFurniture } from '@world/streetFurniture';
+import { streetFurniture } from '@world/streetFurniture';
 import { WALK_STYLES, type GaitClipName, type GaitClips, type GaitPlay } from '@render/citizenGait';
 import { fixtureDoc, simOf } from '../../sim/support/bodies';
 import { gaitClipsOf } from './gaitClips';
@@ -216,7 +216,7 @@ export interface FlowAudit {
 export function auditFlow(seconds: number, seed = 3, breakdown?: Map<string, number>): FlowAudit {
   const sim = simOf(fixtureDoc(), seed, 2);
   interface Obstacle { x: number; y: number; radius: number; along?: { x: number; y: number }; halfLength?: number; halfWidth?: number; kind?: string }
-  const items: Obstacle[] = streetFurniture(sim.net).filter(blocksPedestrians);
+  const items: Obstacle[] = streetFurniture(sim.net).filter((item) => item.on === 'footway');
   for (const pole of sim.doc.poles.values()) items.push({ x: pole.x, y: pole.y, radius: m(0.18), kind: 'utilityPole' });
   // Signal posts are furniture too, and the one people meet most: at the kerb.
   for (const post of signalPosts(sim.net, sim.graph)) items.push({ x: post.x, y: post.y, radius: SIGNAL_POST_RADIUS, kind: 'signalPost' });

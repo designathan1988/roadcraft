@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { buildDefaultTown, townBlocks } from '@world/defaultTown';
+import { buildDefaultTown, townBlocks } from './support/town/defaultTown';
 import { footprintRects } from '@world/buildings/geometry';
 import { structuralProblem, validateBuilding } from '@world/buildings/validate';
 import { Network } from '@world/network';

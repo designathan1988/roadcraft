@@ -140,10 +140,3 @@ export function buildRuns(stations: readonly RoadStation[]): BuildRun[] {
   if (tail) tail.to = stations[stations.length - 1]!.s;
   return runs;
 }
-
-/** Length built each way. */
-export function buildTotals(runs: readonly BuildRun[]): Record<BuildMode, number> {
-  const out: Record<BuildMode, number> = { ground: 0, embankment: 0, cutting: 0, bridge: 0, tunnel: 0 };
-  for (const run of runs) out[run.mode] += run.to - run.from;
-  return out;
-}

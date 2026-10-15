@@ -7,7 +7,7 @@ import { m } from '@world/units';
 import { BULB_RADIUS, bulbClearing } from '@world/junction/bulb';
 import { levelPolygons } from '@world/surfaces';
 import { area } from '@core/clipper';
-import { buildWalkways } from '@world/walkways';
+import { buildWalkways } from './oracle/buildWalkways';
 import { junctionDetail } from '@world/markings';
 
 /**

@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
-import { BODY_CLASSES, BODY_CLASS_NAMES, ConflictIndex } from '@world/conflictPoints';
+import { BODY_CLASSES, ConflictIndex } from '@world/conflictPoints';
 import { LAYOUTS, fixtureDoc, layoutDoc } from '../sim/support/bodies';
+
+/** The body classes by name, for the report. */
+const BODY_CLASS_NAMES = ['small', 'car', 'heavy'] as const;
 
 /**
  * Conflict zones are measured from swept bodies, not centrelines.

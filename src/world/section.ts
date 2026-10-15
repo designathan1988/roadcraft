@@ -138,6 +138,5 @@ function sideZones(rt: RoadType, sidewalk: number, flush: boolean, walkable: boo
   return { curb, furnishing, through, frontage: { inner: edge - frontage, outer: edge } };
 }
 
-/** Centre of a band, and its width. */
+/** Centre of a band. */
 export const bandMid = (b: Band): number => (b.inner + b.outer) / 2;
-export const bandWidth = (b: Band): number => b.outer - b.inner;

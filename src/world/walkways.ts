@@ -305,11 +305,6 @@ interface FootwayEnd {
   readonly into: Vec2;
 }
 
-/** The pedestrian network of the whole map, from nothing. Pure: the same network gives the same walkways. */
-export function buildWalkways(net: Network): WalkGraph {
-  return new Walkways().update(net);
-}
-
 /** A road's footways: what its corners and crossings join, and the pieces the crossings cut them into. */
 interface SegmentUnit {
   /** Its nodes when it was built: what a change of it builds again. */

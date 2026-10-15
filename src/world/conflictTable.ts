@@ -62,7 +62,6 @@ export interface SurfaceRings {
 }
 
 export const BODY_CLASSES: readonly BodyClass[] = [0, 1, 2];
-export const BODY_CLASS_NAMES = ['small', 'car', 'heavy'] as const;
 export const BODY_ENVELOPE: readonly { readonly length: number; readonly width: number }[] = [
   { length: m(2.2), width: m(0.9) },
   { length: m(5.7), width: m(2.05) },

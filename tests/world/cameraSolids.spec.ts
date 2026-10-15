@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { BLUEPRINTS, instantiate } from '../../src/world/buildings/blueprints';
-import { cameraSolids } from '../../src/world/buildings/cameraSolids';
+import { cameraSolidsKeeper } from '../../src/world/buildings/cameraSolids';
+import { BuildingStore } from '../../src/world/buildings/store';
 import { buildingHeight, footprintCentre } from '../../src/world/buildings/geometry';
 import type { Building } from '../../src/world/buildings/types';
 import { m } from '../../src/world/units';
 
-const block = (): Building => {
-  const body = BLUEPRINTS.find((b) => b.key === 'block')!.body;
-  return { ...instantiate(body, { x: 100, y: 50 }, 0.4), id: 1 } as Building;
-};
+const town = new BuildingStore();
+const block = (): Building => town.add(instantiate(BLUEPRINTS.find((b) => b.key === 'block')!.body, { x: 100, y: 50 }, 0.4));
 
 // The camera is lifted out of a building smoothly and never kept inside it
 // (`render/isoViewport.ts` `setSolids`).
 describe('camera solids', () => {
   const b = block();
-  const solids = cameraSolids([b], () => 10);
+  // Filed as the renderer files them (`render/renderer.ts`): the keeper, the ground never moved.
+  const keeper = cameraSolidsKeeper(() => 10, () => [0, 0, 0, 0], 0);
+  keeper.follow(town, { version: 0, rectsSince: () => [] });
+  const solids = keeper.solids();
   const c = footprintCentre(b);
 
   it('keeps the eye over the roof inside the footprint', () => {

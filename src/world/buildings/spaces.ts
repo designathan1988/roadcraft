@@ -73,13 +73,6 @@ function workOutSpaces(b: Building): StoreySpaces[] {
   return out;
 }
 
-/** Gross floor area, in square world units: every storey of every volume. */
-export function floorArea(b: Building): number {
-  let area = 0;
-  for (const v of b.volumes) area += v.w * v.d * v.storeys.length;
-  return area;
-}
-
 /** One home on a residential floor, and how it lies. */
 interface FlatCell {
   readonly x: number;

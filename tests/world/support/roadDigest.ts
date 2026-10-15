@@ -5,7 +5,7 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { bands, surfaces } from '@world/surfaces';
-import { buildWalkways } from '@world/walkways';
+import { buildWalkways } from '../oracle/buildWalkways';
 import { streetFurniture } from '@world/streetFurniture';
 import { junctionDetail, segmentMarkings } from '@world/markings';
 import { sectionOf } from '@world/section';

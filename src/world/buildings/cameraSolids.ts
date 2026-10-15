@@ -192,13 +192,6 @@ export function cameraSolidsKeeper(floorAt: (b: Building) => number, boxOf: (b: 
 
 const overlaps = (a: Rect, b: Rect): boolean => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
-/** Files every solid volume of `buildings`; `floorOf` gives each one's ground-floor world height. */
-export function cameraSolids(buildings: Iterable<Building>, floorOf: (b: Building) => number): CameraSolids {
-  const filing = new SolidFiling();
-  for (const b of buildings) filing.add(b, floorOf(b));
-  return filing;
-}
-
 const cellKey = (cx: number, cy: number): number => (cx + 4096) * 8192 + (cy + 4096);
 
 /** The solid volumes filed by cell (their slots in `SolidPages`), each building's taken out and filed again on its own. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
-import { addLot, addPolygonLot, applyLots, curveLotSide, lotArea, deleteLot, insideLot, joinLots, lotCentre, lotFrame, moveLotCorner, planLots, splitLot, zoneLots } from '@world/lots';
+import { addPolygonLot, applyLots, curveLotSide, lotArea, deleteLot, insideLot, joinLots, lotCentre, lotFrame, moveLotCorner, planLots, splitLot, zoneLots } from '@world/lots';
 import { quadsOverlap } from '@world/zoneGrid';
 
 /** A block 90 x 70 m between four streets, and one street running off it into open land. */
@@ -68,8 +68,6 @@ describe('lots', () => {
     expect(Math.abs(Math.abs(lotArea(doc.lots.at(-1)!)) - Math.abs(lotArea(first)))).toBeLessThan(1);
     const gone = doc.lots.at(-1)!;
     deleteLot(doc, gone.id);
-    const made = addLot(doc, gone.corners[0]!, gone.corners[2]!, lotFrame(gone).rotation);
-    expect(made).not.toBeNull();
     const corner = doc.lots[0]!.corners[1]!;
     expect(moveLotCorner(doc, corner, { x: corner.x + m(2), y: corner.y })).toBe(true);
     const id = doc.lots[0]!.id;

@@ -301,25 +301,6 @@ export const planOverlap = (a: Volume, c: Volume): boolean =>
   a.outline || c.outline ? overlapArea(localFootprint(a), localFootprint(c)) > EPS :
   a.x < c.x + c.w - EPS && c.x < a.x + a.w - EPS && a.y < c.y + c.d - EPS && c.y < a.y + a.d - EPS;
 
-/** Pairs of volumes that would stand in the same space: overlapping in plan and in levels. */
-export function clashes(b: Building): [number, number][] {
-  const out: [number, number][] = [];
-  for (let i = 0; i < b.volumes.length; i++) {
-    const a = b.volumes[i] as Volume;
-    for (let j = i + 1; j < b.volumes.length; j++) {
-      const c = b.volumes[j] as Volume;
-      // By height: two blocks on the same levels at floors of their own (a
-      // block under another's lifted floor) do not meet.
-      const meet = Math.abs(volumeLift(a) - volumeLift(c)) < EPS
-        ? a.base < volumeTop(c) && c.base < volumeTop(a)
-        : volumeElevation(b, a, a.base) < volumeElevation(b, c, volumeTop(c)) - EPS &&
-          volumeElevation(b, c, c.base) < volumeElevation(b, a, volumeTop(a)) - EPS;
-      if (meet && planOverlap(a, c)) out.push([a.id, c.id]);
-    }
-  }
-  return out;
-}
-
 /**
  * Whether a volume above the ground has something under every part of it:
  * its rectangle is covered by the volumes that have a storey on the level

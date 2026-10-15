@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from './support/town/defaultTown';
 import { buildRoadElevation } from '@world/elevation';
 
 /**

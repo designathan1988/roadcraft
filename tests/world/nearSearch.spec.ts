@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from './support/town/defaultTown';
 import { crossingAccesses, crossingAccessTester, onCrossingAccess } from '@world/landscape';
 import { Rng } from '@core/rng';
 import { m } from '@world/units';

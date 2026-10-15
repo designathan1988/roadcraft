@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from './support/town/defaultTown';
 import { LEGACY_METERS_PER_UNIT, rescaleSerializedDoc, unitFactor } from '@world/rescale';
 import type { Building } from '@world/buildings/types';
 import { METERS_PER_UNIT } from '@world/units';

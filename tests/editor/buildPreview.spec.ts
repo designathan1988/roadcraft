@@ -4,12 +4,19 @@ import { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import { buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
-import { buildModeAt, buildRuns, buildTotals, orderAlong, stationsAlong } from '@world/roads/buildMode';
+import { type BuildMode, type BuildRun, buildModeAt, buildRuns, orderAlong, stationsAlong } from '@world/roads/buildMode';
 import { RAISED_LIFT } from '@world/structures';
 import { ROAD_TUNING } from '@world/roads/tuning';
 import { STATION_STEP, commitRoadPath } from '@editor/commit';
 import type { RoadPathPiece } from '@editor/roadPath';
 import { m } from '@world/units';
+
+/** Length built each way. */
+function buildTotals(runs: readonly BuildRun[]): Record<BuildMode, number> {
+  const out: Record<BuildMode, number> = { ground: 0, embankment: 0, cutting: 0, bridge: 0, tunnel: 0 };
+  for (const run of runs) out[run.mode] += run.to - run.from;
+  return out;
+}
 
 /**
  * THE PREVIEW IS THE BUILD (docs/source/VIAS.md V3): the road tool's preview draws

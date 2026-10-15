@@ -14,15 +14,15 @@ import {
   footprintRects,
   levelElevation,
   localToWorld,
-  clashes,
   worldToLocal,
 } from '@world/buildings/geometry';
+import { clashes } from './support/clashes';
 import { buildingHandles } from '@world/buildings/handles';
 import { FLAT_ROOF_MATERIAL, PALETTE_MATERIALS, applyMaterial, roofMaterial, wallMaterial } from '@world/buildings/materials';
 import { pickBuilding } from '@world/buildings/pick';
 import { migrateBuilding } from '@world/buildings/serialize';
-import { deriveSpaces, floorArea } from '@world/buildings/spaces';
-import { convexOverlap, structuralProblem, validateBuilding } from '@world/buildings/validate';
+import { deriveSpaces } from '@world/buildings/spaces';
+import { structuralProblem, validateBuilding } from '@world/buildings/validate';
 import { type Building, asBuildingId, componentAt } from '@world/buildings/types';
 import { isSerializedDoc } from '@editor/persistence';
 import { TUNED_UNIT } from '@world/units';
@@ -236,14 +236,6 @@ describe('validation', () => {
     expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: MAP_HALF + 35, y: 0 }))).toBe('bounds');
   });
 
-  it('treats touching rectangles as not overlapping', () => {
-    const a = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
-    const b = a.map((p) => ({ x: p.x + 10, y: p.y }));
-    const c = a.map((p) => ({ x: p.x + 9, y: p.y + 3 }));
-    expect(convexOverlap(a, b)).toBe(false);
-    expect(convexOverlap(a, c)).toBe(true);
-  });
-
   it('keeps every built-in preset valid on flat open ground', () => {
     const doc = new RoadDoc();
     for (const bp of BLUEPRINTS) {
@@ -395,12 +387,11 @@ describe('serialisation', () => {
 });
 
 describe('extension points', () => {
-  it('derives default spaces and floor area from the volumes', () => {
+  it('derives default spaces from the volumes', () => {
     const b = building();
     const spaces = deriveSpaces(b);
     expect(spaces).toHaveLength(3);
     expect(spaces[0]!.spaces.length).toBeGreaterThan(0);
-    expect(floorArea(b)).toBeCloseTo(4 * 3 * 3 * b.module * b.module, 6);
   });
 
   it('has a footprint for every ground volume', () => {

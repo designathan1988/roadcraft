@@ -4,7 +4,7 @@ import type { Vec2 } from '@core/vec2';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
 import { Network } from '@world/network';
-import { buildWalkways } from '@world/walkways';
+import { buildWalkways } from './oracle/buildWalkways';
 import { nearestFootway } from '@world/footwayPath';
 import { type TransitData, emptyTransit, addStop, addTrack, stopNear, stopById, trackPointNear } from '@world/transit';
 import { m } from '@world/units';

@@ -4,7 +4,7 @@ import { StreetscapeTool } from '@editor/streetscapeTool';
 import { RoadDoc } from '@world/doc';
 import type { SegmentId } from '@world/ids';
 import { Network } from '@world/network';
-import { derivedSigns } from '@world/roads/derivedSigns';
+import { derivedSigns } from '../world/oracle/derivedSigns';
 import { legRule } from '@world/roads/rules';
 import { m } from '@world/units';
 

@@ -5,7 +5,7 @@ import type { Budget } from '@core/perfBudget';
 import { COUNT_BUDGETS, withinBudget } from './support/countBudgets';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { buildDefaultTown } from '@world/defaultTown';
+import { buildDefaultTown } from '../world/support/town/defaultTown';
 import { buildingPads, padsWork } from '@world/buildings/pads';
 import { kerbward, kerbWork } from '@world/poleLines';
 import { buildRoadElevation } from '@world/elevation';
