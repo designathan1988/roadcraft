@@ -421,7 +421,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
     b.v.y -= GRAVITY * dt;
     b.p.addScaledVector(b.v, dt);
     const angle = b.w.length() * dt;
-    if (angle > 1e-6) b.q.premultiply(new Quaternion().setFromAxisAngle(tmp1.copy(b.w).normalize(), angle)).normalize();
+    if (angle > 1e-6) b.q.premultiply(spinQ.setFromAxisAngle(tmp1.copy(b.w).normalize(), angle)).normalize();
     let touching = false;
     let deepest = 0;
     /** How far the lowest corner is above the ground (negative: into it). */
@@ -724,10 +724,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       }
       if (redraw) {
         boxes.count = nb; cylinders.count = nc; shells.count = ns; slabs.count = nl;
-        for (const mesh of [boxes, cylinders, shells, slabs]) {
-          mesh.instanceMatrix.needsUpdate = true;
-          if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        }
+        for (const mesh of [boxes, cylinders, shells, slabs]) uploadWritten(mesh);
       }
       const counts = [0, 0];
       for (const c of craters) {
@@ -743,13 +740,9 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       // Only what was written goes up, and nothing when there are none: the
       // whole crater buffers were sent every frame of the game.
       craterMeshes.forEach((mesh, k) => {
-        if (k >= 2) return;
-        const n = counts[k]!;
-        if (n === 0 && mesh.count === 0) return;
-        mesh.count = n;
-        mesh.instanceMatrix.clearUpdateRanges();
-        if (n > 0) mesh.instanceMatrix.addUpdateRange(0, n * 16);
-        mesh.instanceMatrix.needsUpdate = true;
+        if (k >= 2 || (counts[k] === 0 && mesh.count === 0)) return;
+        mesh.count = counts[k]!;
+        uploadWritten(mesh);
       });
       // Soot is still: written again only when some was added.
       if (sootDirty) {
@@ -763,7 +756,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
           mesh.setMatrixAt(i, o.matrix);
         });
         mesh.count = soots.length;
-        mesh.instanceMatrix.needsUpdate = true;
+        uploadWritten(mesh);
       }
       // An empty batch is still a program bind and its uniforms in every pass
       // (the shadow pass too): seven of them stood in every frame of the game.
@@ -772,7 +765,8 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       for (const r of ropes) {
         for (let k = 1; k < r.p.length; k++) {
           const a = r.p[k - 1]!, b = r.p[k]!;
-          wirePositions.set([a.x, a.y, a.z, b.x, b.y, b.z], w);
+          wirePositions[w] = a.x; wirePositions[w + 1] = a.y; wirePositions[w + 2] = a.z;
+          wirePositions[w + 3] = b.x; wirePositions[w + 4] = b.y; wirePositions[w + 5] = b.z;
           w += 6;
         }
       }
@@ -789,7 +783,8 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
     },
     dispose() {
       for (const p of pieces) if (p.object) dropObject(p.object);
-      boxes.geometry.dispose(); cylinders.geometry.dispose(); shellGeometry.dispose(); debrisMaterial.dispose();
+      for (const mesh of [boxes, cylinders, shells, slabs, ...craterMeshes]) mesh.dispose();
+      boxes.geometry.dispose(); cylinders.geometry.dispose(); shellGeometry.dispose(); slabGeometry.dispose(); debrisMaterial.dispose();
       craterGeometry.dispose(); for (const mat of craterMaterials) { mat.map?.dispose(); mat.dispose(); }
       ring.geometry.dispose(); ringMaterial.dispose(); wireGeometry.dispose(); (wires.material as LineBasicMaterial).dispose();
     },
@@ -797,3 +792,8 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
 }
 
 const tmp1 = new Vector3(), tmp2 = new Vector3(), tmp3 = new Vector3(), tmp4 = new Vector3(), tmp5 = new Vector3();
+const spinQ = new Quaternion();
+/** The instances written (`count`) to the GPU, not the whole buffer (1 400 pieces' worth) each frame one moves. */
+function uploadWritten(mesh: InstancedMesh): void {
+  for (const a of [mesh.instanceMatrix, mesh.instanceColor]) if (a) { a.clearUpdateRanges(); if (mesh.count) a.addUpdateRange(0, mesh.count * a.itemSize); a.needsUpdate = true; }
+}
