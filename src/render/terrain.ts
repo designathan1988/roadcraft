@@ -1,4 +1,3 @@
-import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
 import {
   BufferAttribute,
@@ -55,6 +54,7 @@ import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
+import { type CornerGrid, type TerrainRegion, type TerrainShaper, shapeCorners } from './terrainShaping';
 
 /**
  * Side of one terrain plate, in world units: the map is laid in square plates
@@ -291,8 +291,7 @@ export interface TerrainSurface {
   dispose(): void;
 }
 
-/** A box of grid corners, inclusive: x0..x1 across, y0..y1 down. */
-export type TerrainRegion = readonly [number, number, number, number];
+export type { TerrainRegion, TerrainShaper } from './terrainShaping';
 
 /**
  * A plate of the ground and where its centre stands (`flatAtlas.ts`).
@@ -302,13 +301,6 @@ export interface TerrainPart {
   readonly surface: TerrainSurface;
   readonly cx: number;
   readonly cy: number;
-}
-
-/** What `shapeToRoads` needs to know about the road network. */
-export interface TerrainShaper {
-  shapeAt(x: number, y: number, naturalGround: number): { height: number; weight: number };
-  /** Boxes outside which `shapeAt` always answers weight 0. */
-  shapeBounds(): readonly Aabb[];
 }
 
 /** 0..1 hash of an integer lattice point. */
@@ -2310,9 +2302,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    * weight out where the road is buried deeply, so the ground closes over the
    * bore and stays open at the portals.
    */
-  /** Corners visited by the current shaping pass, by stamp, so boxes that overlap visit each once. */
+  /** Corners visited by the current shaping pass, by stamp, so regions and boxes that overlap visit each once. */
   const visited = new Int32Array(GRID * GRID);
   let pass = 0;
+  /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
+  const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: (i) => position.getX(i), y: (i) => -position.getZ(i) };
 
   /** The corners the last shaping pass moved (`touchesWater`). */
   let lastChanged: readonly number[] = [];
@@ -2343,36 +2337,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const fresh: number[] = [];
 
     if (shape) {
-      // Only the corners some road could shape: everywhere else `shapeAt`
-      // answers weight 0, and asking all 90 601 of them was most of the pass.
+      // Only the corners of the regions, or of the boxes some road or platform
+      // could shape (`shapeCorners`): asking all 90 601 of them was most of the pass.
       pass++;
-      for (const box of shape.shapeBounds()) {
-        const bx0 = Math.max(0, Math.floor((box.minX + TERRAIN_HALF) / TERRAIN_CELL));
-        const bx1 = Math.min(GRID - 1, Math.ceil((box.maxX + TERRAIN_HALF) / TERRAIN_CELL));
-        const by0 = Math.max(0, Math.floor((TERRAIN_HALF - box.maxY) / TERRAIN_CELL));
-        const by1 = Math.min(GRID - 1, Math.ceil((TERRAIN_HALF - box.minY) / TERRAIN_CELL));
-        for (const r of regions ?? [null]) {
-          const x0 = r ? Math.max(bx0, r[0]) : bx0, x1 = r ? Math.min(bx1, r[1]) : bx1;
-          const y0 = r ? Math.max(by0, r[2]) : by0, y1 = r ? Math.min(by1, r[3]) : by1;
-          for (let iy = y0; iy <= y1; iy++) {
-            for (let ix = x0; ix <= x1; ix++) {
-              const i = ix + iy * GRID;
-              if (visited[i] === pass) continue;
-              visited[i] = pass;
-              const x = position.getX(i);
-              const worldY = -position.getZ(i);
-              const ground = natural[i] as number;
-              const { height, weight } = shape.shapeAt(x, worldY, ground);
-              if (weight <= 0.001) continue;
-              const blended = ground + (height - ground) * weight;
-              if (Math.abs(blended - ground) < 0.002) continue;
-              grid[i] = blended;
-              shapedCorners[i] = 1;
-              fresh.push(i);
-            }
-          }
-        }
-      }
+      shapeCorners(corners, natural, shape, regions, visited, pass, (i, height) => {
+        grid[i] = height;
+        shapedCorners[i] = 1;
+        fresh.push(i);
+      });
     }
 
     for (const i of fresh) {
