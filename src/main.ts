@@ -19,7 +19,7 @@ import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
 import { RoadDoc, type JunctionControl } from '@world/doc';
-import { DOC_CHANGE_KINDS, type Change, type ChangeKind } from '@world/changes';
+import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
@@ -46,7 +46,7 @@ import { TERRAIN_MIN_MS, TerrainBrush, type DabSettings } from '@editor/terrainB
 import { scatterClouds } from '@world/clouds';
 import { CloudTool } from '@editor/cloudTool';
 import { playThunder } from '@ui/thunder';
-import { MAP_SIZE } from '@world/bounds';
+import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { blockGridLines, commitBlockGrid } from '@editor/blocks';
 import { m, stepsIn } from '@world/units';
 import { GRID_CELL } from '@world/grid';
@@ -2768,6 +2768,31 @@ function simShowsMotion(): boolean {
  * now share one plan - keeping the drawing beside the rest of the hairlines
  * hid that.
  */
+/**
+ * The map's rectangle the screen can show: its corners and the middles of its
+ * sides on the ground and on the highest surface (`surfaceTop`), within the
+ * map; the whole map when a corner looks past the horizon.
+ */
+function groundOnScreen(w: number, h: number): ChangeRect {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const top = surfaceTop();
+  for (const [px, py] of [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]] as const) {
+    // The pixel's line of sight where the view has one: a ray level with or
+    // above the horizon meets no ground (`toWorldAt` then reads the view's centre).
+    const ray = view.rayAt?.(px, py, w, h);
+    for (const z of [0, top]) {
+      let p: Vec2;
+      if (ray) {
+        const t = (z - ray.oz) / ray.dz;
+        if (!(ray.dz < 0) || !(t >= 0) || !Number.isFinite(t)) return [-MAP_HALF, -MAP_HALF, MAP_HALF, MAP_HALF];
+        p = { x: ray.ox + ray.dx * t, y: ray.oy + ray.dy * t };
+      } else p = view.toWorldAt(px, py, z, w, h);
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    }
+  }
+  return [Math.max(-MAP_HALF, x0), Math.max(-MAP_HALF, y0), Math.min(MAP_HALF, x1), Math.min(MAP_HALF, y1)];
+}
+
 /** Pick radius for a barrier under a shift-click, screen pixels. */
 const BARRIER_PICK_PIXELS = 10;
 
@@ -3212,8 +3237,11 @@ function drawOverlayScreen(): void {
     ctx.font = '600 10px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const node of doc.nodes.values()) {
-      if (node.incident.length < 3) continue;
+    // The junctions on screen only (`net.junctionCells`), never every node of
+    // the map each frame.
+    for (const id of net.junctionCells.idsMeeting(groundOnScreen(w, h))) {
+      const node = doc.node(id);
+      if (!node || node.incident.length < 3) continue;
       const centre = at({ x: node.x, y: node.y });
       const colour = CONTROL_COLOUR[node.control] ?? HOVER;
       const hot = hoverAnchor?.kind === 'node' && hoverAnchor.node === node.id;
