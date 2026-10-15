@@ -359,9 +359,10 @@ export function createBuildingLayer(): BuildingLayer {
       putKept(b.id, { record: entry.record, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
     }
   };
+  /** What is kept of a building, if made for its record and the ground under it now (the digest its mass was last made on). */
   const keptFor = (b: Building): Kept | undefined => {
     const k = kept.get(b.id);
-    return k && k.record === recordText(b) ? k : undefined;
+    return k && k.record === recordText(b) && k.digest === groundDigests.get(b.id)?.digest ? k : undefined;
   };
   const pool = new CellPool(() => kitBoxes(kit), CHUNK_CACHE_BYTES);
   pool.warm();
