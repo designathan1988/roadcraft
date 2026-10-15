@@ -3,7 +3,7 @@ import type { BufferAttribute, BufferGeometry, InterleavedBuffer, Object3D } fro
 /** DO NOT keep a mesh's arrays for a later rebuild: rebuild from the data it was made from. */
 
 /** Each attribute's array by the attribute's name, and the index's under `index`. */
-export type GeometryArrays = Readonly<Record<string, ArrayLike<number>>>;
+export type GeometryArrays = Readonly<Record<string, ArrayLike<number> | undefined>>;
 
 /** What three uploads with an upload callback: an attribute or an interleaved buffer. */
 type Uploaded = BufferAttribute | InterleavedBuffer;

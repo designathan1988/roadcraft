@@ -3,6 +3,7 @@ import { MeshBasicMaterial, type BufferAttribute, type Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { coarseArrays } from '@render/mesh/roadLod';
+import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
 import { attachFarLevel, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
@@ -42,6 +43,25 @@ const levels = (mesh: Mesh): { coarse: Mesh; full: boolean } => mesh.userData.lo
 const trianglesOf = (mesh: Mesh): number => (mesh.geometry.index?.count ?? 0) / 3;
 
 describe('a block of road with a far level', () => {
+  it('carries the colour and the section only where its material reads them, at both levels', () => {
+    const plain = make(true);
+    for (const level of [plain, levels(plain).coarse]) {
+      expect(level.geometry.getAttribute('color')).toBeUndefined();
+      expect(level.geometry.getAttribute('roadSection')).toBeUndefined();
+    }
+    const reading = new MeshBasicMaterial({ vertexColors: true });
+    marksRoadSection(reading);
+    const both = { ...options, material: reading };
+    const mesh = mergeTiles([strip()], both, () => [strip()], {
+      lock, near: true,
+      start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, both, () => [strip()], lock, true); },
+    })!;
+    for (const level of [mesh, levels(mesh).coarse]) {
+      expect(level.geometry.getAttribute('color')).toBeDefined();
+      expect(level.geometry.getAttribute('roadSection')).toBeDefined();
+    }
+  });
+
   it('has a far level a tenth of its size or less, that keeps the block\'s outer edge where it was', () => {
     const mesh = make(true);
     const coarse = levels(mesh).coarse;

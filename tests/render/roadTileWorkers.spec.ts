@@ -17,10 +17,18 @@ import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { TileMesher, type TileMeshes } from '@render/roadTileMesh';
 import type { RoadTiler, TileJob } from '@render/roadTilePool';
+import { marksRoadSection } from '@render/mesh/roadEdges';
+
+/** A stand-in material that reads every attribute a road surface may carry: the digests cover all of them. */
+function readingAll(): MeshBasicMaterial {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  marksRoadSection(material);
+  return material;
+}
 
 /** THE ROADS' TILES MADE OFF THE PAGE (`roadTilePool.ts`): the steps with a tiler that does what the workers do */
 const materials = new Proxy({}, {
-  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
+  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : readingAll(),
 }) as unknown as SceneMaterials;
 const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
 
@@ -109,7 +117,7 @@ describe('road surface tiles made off the page', () => {
     net.rebuild();
     if (make === authored) expect(net.flushCells.size).toBeGreaterThan(0);
     // The ground verge on the terrain's own material (its UV in world x, y) in one of the two.
-    const groundMaterial = lawn ? new MeshBasicMaterial() : undefined;
+    const groundMaterial = lawn ? readingAll() : undefined;
     const here = buildRoadSurfaces(net, buildRoadElevation(net, ground), materials, ground, undefined, groundMaterial);
     const tiler = workerTiler();
     const off = await stepped(net, tiler, groundMaterial);
@@ -142,7 +150,7 @@ describe('road surface inputs kept between builds', () => {
   const kept = new Proxy({}, {
     get: (_target, key) => {
       if (key === 'scale') return new Proxy({}, { get: () => 4 });
-      if (!stable.has(key)) stable.set(key, new MeshBasicMaterial());
+      if (!stable.has(key)) stable.set(key, readingAll());
       return stable.get(key);
     },
   }) as unknown as SceneMaterials;

@@ -1,5 +1,5 @@
 import { type MeshAsk, TileMesher, tileBuffers } from './roadTileMesh';
-import { type BlockArrays, coarseArrays } from './mesh/roadLodPure';
+import { type BlockArrays, blockBuffers, coarseArrays } from './mesh/roadLodPure';
 import type { JobScope } from '../jobs/jobScope';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
@@ -29,7 +29,7 @@ function handler(post: JobScope): (event: MessageEvent<Message>) => void {
       if ('coarse' in data) {
         // A block's far level (`mesh/roadLodPure.ts`): simplified here, handed back with its buffers transferred.
         const made = coarseArrays(data.coarse.arrays, data.coarse.lock);
-        post.postMessage({ id, coarse: made }, made ? [made.position.buffer, made.normal.buffer, made.uv.buffer, made.color.buffer, made.roadSection.buffer, made.index.buffer] as ArrayBuffer[] : []);
+        post.postMessage({ id, coarse: made }, made ? blockBuffers(made) : []);
         return;
       }
       let mesher: TileMesher;
@@ -68,6 +68,9 @@ function handler(post: JobScope): (event: MessageEvent<Message>) => void {
 export function serve(self: JobScope): void {
   const handle = handler(self) as (event: MessageEvent) => void;
   // DO NOT simplify before the simplifier's WebAssembly is made: every far block failed and was drawn whole (meshoptimizer README, `MeshoptSimplifier.ready`).
-  const ready = MeshoptSimplifier.ready.catch(() => undefined);
+  const ready = MeshoptSimplifier.ready.catch((error: unknown) => {
+    // The far levels then fail one by one, each reported where it is asked (`coarseArrays`).
+    console.error('[roads] meshoptimizer did not load in the road tiles worker', error);
+  });
   self.onmessage = (event: MessageEvent) => void ready.then(() => handle(event));
 }

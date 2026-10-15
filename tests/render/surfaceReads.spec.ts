@@ -10,10 +10,18 @@ import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity } from '@editor/cityGenerator';
 import type { SceneMaterials } from '@render/materials';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
+import { marksRoadSection } from '@render/mesh/roadEdges';
+
+/** A stand-in material that reads every attribute a road surface may carry: the digests cover all of them. */
+function readingAll(): MeshBasicMaterial {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  marksRoadSection(material);
+  return material;
+}
 
 /** DO NOT update these digests to make a change pass: a different digest is a different road on screen. */
 const materials = new Proxy({}, {
-  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
+  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : readingAll(),
 }) as unknown as SceneMaterials;
 const ground = (x: number, y: number): number => 2 * Math.sin(x / 90) + 1.5 * Math.cos(y / 70);
 
@@ -51,7 +59,7 @@ describe('road surface reads', () => {
     const elevation = buildRoadElevation(net, ground);
     const own = buildRoadSurfaces(net, elevation, materials, ground);
     expect(bytesOf(own.group)).toBe(plain);
-    const terrain = buildRoadSurfaces(net, elevation, materials, ground, undefined, new MeshBasicMaterial());
+    const terrain = buildRoadSurfaces(net, elevation, materials, ground, undefined, readingAll());
     expect(bytesOf(terrain.group)).toBe(onTerrain);
     // Remembered only while a tile is read: the same point asked afterwards is searched again, and agrees.
     expect(elevation.at(10.5, 20.25)).toBe(elevation.remembering!(() => elevation.at(10.5, 20.25)));

@@ -1,13 +1,24 @@
-import { Box3, BufferAttribute, BufferGeometry, Sphere, type Mesh } from 'three';
+import { Box3, BufferGeometry, Sphere, type Material, type Mesh } from 'three';
 import { gpuOnly } from './gpuOnly';
 import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
+import { readsRoadSection } from './roadEdges';
 import { makeFar } from './roadResidency';
 import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
 
-/** A surface's tiles, in order, as one mesh's arrays (the indices shifted); null for none. */
-function tileArrays(parts: readonly Tile[]): {
-  position: Float32Array; normal: Float32Array; uv: Float32Array; color: Float32Array; roadSection: Float32Array; index: Uint16Array | Uint32Array;
-} | null {
+/** The attributes a surface's material reads besides position, normal and uv: no other is sent to the GPU. */
+interface SurfaceReads {
+  readonly color: boolean;
+  readonly section: boolean;
+}
+
+/** What `material` reads: the vertex colour only with `vertexColors` (three defines USE_COLOR from it), the section only with the road edges. */
+function readsOf(material: Material | Material[]): SurfaceReads {
+  const one = Array.isArray(material) ? material : [material];
+  return { color: one.some((m) => m.vertexColors), section: one.some(readsRoadSection) };
+}
+
+/** A surface's tiles, in order, as one mesh's arrays (the indices shifted), with only what its material reads; null for none. */
+function tileArrays(parts: readonly Tile[], reads: SurfaceReads): BlockArrays | null {
   let vertices = 0;
   let count = 0;
   for (const tile of parts) {
@@ -18,8 +29,8 @@ function tileArrays(parts: readonly Tile[]): {
   const position = new Float32Array(vertices * 3);
   const normal = new Float32Array(vertices * 3);
   const uv = new Float32Array(vertices * 2);
-  const color = new Float32Array(vertices * 3);
-  const roadSection = new Float32Array(vertices * 3);
+  const color = reads.color ? new Float32Array(vertices * 3) : undefined;
+  const roadSection = reads.section ? new Float32Array(vertices * 3) : undefined;
   const index = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
   let v = 0;
   let k = 0;
@@ -27,28 +38,22 @@ function tileArrays(parts: readonly Tile[]): {
     position.set(tile.positions, v * 3);
     normal.set(tile.normals, v * 3);
     uv.set(tile.uvs, v * 2);
-    color.set(tile.colors, v * 3);
-    roadSection.set(tile.sections, v * 3);
+    color?.set(tile.colors, v * 3);
+    roadSection?.set(tile.sections, v * 3);
     const local = tile.indices;
     for (let i = 0; i < local.length; i++) index[k++] = (local[i] as number) + v;
     v += tile.positions.length / 3;
   }
-  return { position, normal, uv, color, roadSection, index };
+  return { position, normal, uv, ...(color ? { color } : {}), ...(roadSection ? { roadSection } : {}), index };
 }
 
 /** DO NOT pass a source that returns `parts`: the closure would hold every tile's arrays for as long as the mesh lives. */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
   far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void }): Mesh | null {
-  const arrays = tileArrays(parts);
+  const arrays = tileArrays(parts, readsOf(options.material));
   if (!arrays) return null;
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(arrays.position, 3));
-  geometry.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
-  geometry.setAttribute('uv', new BufferAttribute(arrays.uv, 2));
-  geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
-  geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
-  geometry.setIndex(new BufferAttribute(arrays.index, 1));
+  const geometry = coarseGeometry(arrays);
   // Bounded by its tiles' boxes, made with them in the worker (`tileMesh.ts`)
   if (parts.every((tile) => tile.box)) {
     const box = new Box3();
@@ -73,7 +78,11 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
 
 /** A block's arrays copied: what a worker is handed to simplify while the block keeps its own. */
 export function cloneBlock(arrays: BlockArrays): BlockArrays {
-  return { position: arrays.position.slice(), normal: arrays.normal.slice(), uv: arrays.uv.slice(), color: arrays.color.slice(), roadSection: arrays.roadSection.slice(), index: arrays.index.slice() };
+  return {
+    position: arrays.position.slice(), normal: arrays.normal.slice(), uv: arrays.uv.slice(),
+    ...(arrays.color ? { color: arrays.color.slice() } : {}), ...(arrays.roadSection ? { roadSection: arrays.roadSection.slice() } : {}),
+    index: arrays.index.slice(),
+  };
 }
 
 /** The block's far level (`roadLod.ts`) as it arrives from its worker */
@@ -82,7 +91,7 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   lock: readonly [number, number, number, number], near: boolean): Mesh {
   const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
   // Made again from the block's tiles when a lost context asks, like the block's own.
-  gpuOnly(level, () => coarseArrays(tileArrays(source())!, lock) ?? coarse);
+  gpuOnly(level, () => coarseArrays(tileArrays(source(), readsOf(options.material))!, lock) ?? coarse);
   const levels = mesh.userData[LOD_KEY] as BlockLevels;
   (levels as { coarse: Mesh | null }).coarse = level;
   level.renderOrder = mesh.renderOrder;
@@ -94,5 +103,6 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
 
 /** A merged mesh's arrays let go once on the GPU, and made again from `source`'s tiles when asked (`gpuOnly`). */
 export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
-  gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source())!);
+  const reads = readsOf(mesh.material);
+  gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source(), reads)!);
 }

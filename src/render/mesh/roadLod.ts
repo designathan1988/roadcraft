@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry, type Mesh } from 'three';
 import type { BlockArrays } from './roadLodPure';
 
-export { coarseArrays, type BlockArrays } from './roadLodPure';
+export { blockBuffers, coarseArrays, type BlockArrays } from './roadLodPure';
 
 /** DO NOT draw a far block at full detail: nothing there is resolved. */
 
@@ -11,8 +11,8 @@ export function coarseGeometry(arrays: BlockArrays): BufferGeometry {
   geometry.setAttribute('position', new BufferAttribute(arrays.position, 3));
   geometry.setAttribute('normal', new BufferAttribute(arrays.normal, 3));
   geometry.setAttribute('uv', new BufferAttribute(arrays.uv, 2));
-  geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
-  geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
+  if (arrays.color) geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
+  if (arrays.roadSection) geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
   geometry.setIndex(new BufferAttribute(arrays.index, 1));
   return geometry;
 }

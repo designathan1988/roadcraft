@@ -1,7 +1,17 @@
-import type { MeshStandardMaterial } from 'three';
+import type { Material, MeshStandardMaterial } from 'three';
 
 /** WHERE A STREET IS DIRTY AND WHERE IT IS WORN */
+
+/** Where a material says its shader reads the `roadSection` attribute: no other surface is given it (`surfaceTiles.ts`). */
+const SECTION = 'readsRoadSection';
+export const readsRoadSection = (material: Material): boolean => material.userData[SECTION] === true;
+/** Gives `material`'s surfaces the `roadSection` attribute: its shader reads it. */
+export function marksRoadSection(material: Material): void {
+  material.userData[SECTION] = true;
+}
+
 export function applyRoadEdges(material: MeshStandardMaterial, kind: 'carriageway' | 'footway'): void {
+  marksRoadSection(material);
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey;
   material.onBeforeCompile = (shader, renderer) => {

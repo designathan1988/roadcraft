@@ -12,6 +12,14 @@ import { SurfaceInputs } from '@render/roadSurfaceInputs';
 import { buildDefaultTown } from '../world/support/town/defaultTown';
 import { TUNED_UNIT } from '@world/units';
 import { refillArrays } from '@render/mesh/gpuOnly';
+import { marksRoadSection } from '@render/mesh/roadEdges';
+
+/** A stand-in material that reads every attribute a road surface may carry: the digests cover all of them. */
+function readingAll(): MeshBasicMaterial {
+  const material = new MeshBasicMaterial({ vertexColors: true });
+  marksRoadSection(material);
+  return material;
+}
 
 /** The 0.4 m unit these scenes were laid out in: lengths below in it, times U. */
 const U = TUNED_UNIT;
@@ -19,7 +27,7 @@ const U = TUNED_UNIT;
 /** The road surfaces are built a tile at a time, and a tile an edit does not reach is copied from the build before. */
 
 const materials = new Proxy({}, {
-  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : new MeshBasicMaterial(),
+  get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : readingAll(),
 }) as unknown as SceneMaterials;
 
 /** Gently rolling ground, read the way the terrain mesh would be. */
@@ -137,7 +145,7 @@ describe('road surface tiles', () => {
     const kept = new Proxy({}, {
       get: (_target, key) => {
         if (key === 'scale') return new Proxy({}, { get: () => 4 });
-        if (!stable.has(key)) stable.set(key, new MeshBasicMaterial());
+        if (!stable.has(key)) stable.set(key, readingAll());
         return stable.get(key);
       },
     }) as unknown as SceneMaterials;
