@@ -2,7 +2,7 @@ import { Color, Group, Object3D, type Frustum, type InstancedMesh, type Matrix4,
 
 import { Rng } from '@core/rng';
 import { angleOf } from '@core/vec2';
-import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind } from '@world/changes';
 import { CellFiling, grow } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
 import type { RoadElevation } from '@world/elevation';
@@ -270,11 +270,11 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
       return;
     }
     const pad = this.pads[change.kind] ?? 0;
-    for (const rect of change.rects) {
-      const area: ChangeRect = grow(rect, pad);
-      for (const item of source.net.doc.landscapeIn(area)) if (this.wanted(item)) out.add(item.id);
-      for (const id of this.filing.idsMeeting(area)) out.add(id);
-    }
+    // All the entry's rectangles in one look each (`landscapeInAny`, `idsMeetingAny`): an entry of the
+    // roads' heights is many blocks, grown by the reach they overlap, and each was looked round alone.
+    const areas = change.rects.map((rect) => grow(rect, pad));
+    for (const item of source.net.doc.landscapeInAny(areas)) if (this.wanted(item)) out.add(item.id);
+    for (const id of this.filing.idsMeetingAny(areas)) out.add(id);
   }
 
   compute(key: number, source: FurnitureSource): V | undefined {

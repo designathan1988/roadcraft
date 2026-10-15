@@ -88,6 +88,7 @@ export const ALWAYS = [
   'tests/render/warmLoose.spec.ts',
   'tests/render/groundDigest.spec.ts',
   'tests/world/buildings.spec.ts',
+  'tests/world/cellFilingAny.spec.ts',
 ];
 
 /**
