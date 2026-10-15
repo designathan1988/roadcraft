@@ -229,6 +229,8 @@ if (saved) {
     doc.changes.causeNext('mapa salvo carregado');
     restoreInto(doc, saved, net);
     doc.changes.causeNext('jogo');
+    // Opened from the map's parts: those parts are this document, the next save writes only what changes.
+    persistence.adoptLoaded(doc);
   } catch (error) {
     console.error('The saved map could not be loaded; it was set aside.', error);
     persistence.quarantineStored();
