@@ -217,7 +217,12 @@ export class RoadDoc {
    * they are not part of the road network and keep their own revision,
    * `barrierRevision`: a fence drawn must not rebuild the roads.
    */
-  readonly barriers = new Map<number, Barrier>();
+  // Written only through `putBarrierRecord`/`deleteBarrierRecord`/`clearBarrierRecords`,
+  // which keep `barrierCells` in step. DO NOT write this map directly.
+  private readonly barrierMap = new Map<number, Barrier>();
+  readonly barriers: ReadonlyMap<number, Barrier> = this.barrierMap;
+  /** The barriers by place (`barriersIn`), filed over the box of their points. */
+  private readonly barrierCells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
   private barrierIds = new IdAllocator(1);
 
   /**
@@ -544,21 +549,45 @@ export class RoadDoc {
     const path = points.map((p) => clampToMap(p));
     if (path.length < 2) return null;
     const barrier: Barrier = { id: this.barrierIds.take(), kind, points: path.map((p) => ({ x: p.x, y: p.y })) };
-    this.barriers.set(barrier.id, barrier);    this.changes.record('barriers', rectsAlong(barrier.points, ITEM_PAD), { ids: [barrier.id] });
+    this.putBarrierRecord(barrier);
+    this.changes.record('barriers', rectsAlong(barrier.points, ITEM_PAD), { ids: [barrier.id] });
     return barrier;
   }
 
   removeBarrier(id: number): boolean {
     const barrier = this.barriers.get(id);
-    if (!barrier || !this.barriers.delete(id)) return false;    this.changes.record('barriers', rectsAlong(barrier.points, ITEM_PAD), { ids: [id] });
+    if (!barrier) return false;
+    this.deleteBarrierRecord(id);
+    this.changes.record('barriers', rectsAlong(barrier.points, ITEM_PAD), { ids: [id] });
     return true;
   }
 
-  /** The barrier whose path passes nearest a point, within `radius`, or null. */
+  /** The barriers whose box reaches a rectangle (a superset: test each), in increasing id order. */
+  barriersIn(rect: ChangeRect): Barrier[] {
+    return this.barrierCells.idsMeeting(rect).map((id) => this.barrierMap.get(id)!);
+  }
+
+  /** A barrier put (new, or replacing the one of its id, which keeps its place in the map's order). */
+  private putBarrierRecord(barrier: Barrier): void {
+    this.barrierMap.set(barrier.id, barrier);
+    this.barrierCells.file(barrier.id, barrier, rectAround(barrier.points)!);
+  }
+
+  private deleteBarrierRecord(id: number): void {
+    this.barrierMap.delete(id);
+    this.barrierCells.remove(id);
+  }
+
+  private clearBarrierRecords(): void {
+    this.barrierMap.clear();
+    this.barrierCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
+  }
+
+  /** The barrier whose path passes nearest a point, within `radius`, or null: those round it only (`barriersIn`). */
   barrierNear(at: { x: number; y: number }, radius: number): Barrier | null {
     let best: Barrier | null = null;
     let bestD = radius;
-    for (const barrier of this.barriers.values()) {
+    for (const barrier of this.barriersIn([at.x - radius, at.y - radius, at.x + radius, at.y + radius])) {
       for (let i = 1; i < barrier.points.length; i++) {
         const a = barrier.points[i - 1]!, b = barrier.points[i]!, q = at;
         const dx = b.x - a.x, dy = b.y - a.y;
@@ -1407,7 +1436,7 @@ export class RoadDoc {
     for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
     for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
     for (const item of this.landscape.values()) copy.putLandscapeRecord({ ...item });
-    for (const [id, barrier] of this.barriers) copy.barriers.set(id, { ...barrier, points: barrier.points.map((q) => ({ ...q })) });
+    for (const barrier of this.barriers.values()) copy.putBarrierRecord({ ...barrier, points: barrier.points.map((q) => ({ ...q })) });
     copy.buildings.shareFrom(this.buildings);
     copy.buildings.copyAllocator(this.buildings);
     copy.terrainStamps.push(...this.terrainStamps.map((stamp) => ({ ...stamp })));
@@ -1582,7 +1611,9 @@ export class RoadDoc {
         case 'landscape':
           if (value === undefined) this.deleteLandscapeRecord(id); else this.putLandscapeRecord(structuredClone(value) as LandscapeItem);
           kinds.add('landscape'); break;
-        case 'barriers': put(this.barriers); kinds.add('barriers'); break;
+        case 'barriers':
+          if (value === undefined) this.deleteBarrierRecord(id); else this.putBarrierRecord(structuredClone(value) as Barrier);
+          kinds.add('barriers'); break;
         case 'buildings': this.buildings.restore(id as BuildingId, value as Building | undefined); break;
       }
     }
@@ -1727,8 +1758,8 @@ export class RoadDoc {
       for (const item of source.landscape.values()) this.putLandscapeRecord({ ...item });
     }
     if (moved('barriers') && !sameBarriers(this, source)) {
-      this.barriers.clear();
-      for (const [id, barrier] of source.barriers) this.barriers.set(id, { ...barrier, points: barrier.points.map((p) => ({ ...p })) });
+      this.clearBarrierRecords();
+      for (const barrier of source.barriers.values()) this.putBarrierRecord({ ...barrier, points: barrier.points.map((p) => ({ ...p })) });
       barriersChanged = true;
     }
     // Writes a change only of the buildings that differ; of a working copy,
@@ -2150,7 +2181,7 @@ export class RoadDoc {
       const points = raw.points.filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
         .map((p) => (repair ? clampToMap(p) : { x: p.x, y: p.y }));
       if (points.length < 2) continue;
-      doc.barriers.set(raw.id, { id: raw.id, kind: raw.kind, points });
+      doc.putBarrierRecord({ id: raw.id, kind: raw.kind, points });
       doc.barrierIds.reserve(raw.id);
     }
     // Buildings, if the map has any; each one through `migrateBuilding`.
