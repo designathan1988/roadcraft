@@ -6,6 +6,31 @@
  */
 let context: AudioContext | null = null;
 
+/** The longest clap (far off), in seconds: `length` below at `near` 0. */
+const LONGEST = 5.6;
+/** Seconds of noise kept: the longest clap, and room to start it anywhere in the first part. */
+const NOISE_SECONDS = LONGEST + 4;
+/**
+ * The rumble's brown noise, made once for the context and played by every clap
+ * from a different point of it. DO NOT make it per strike: that was 125 to 270
+ * thousand samples of `Math.random` on the page at each bolt; a buffer is meant
+ * to be reused by many cheap source nodes (MDN, AudioBufferSourceNode).
+ */
+let noise: AudioBuffer | null = null;
+function noiseOf(ctx: AudioContext): AudioBuffer {
+  if (noise && noise.sampleRate === ctx.sampleRate) return noise;
+  const frames = Math.floor(ctx.sampleRate * NOISE_SECONDS);
+  const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  // Brown noise: a random walk, the rumble of air.
+  let last = 0;
+  for (let i = 0; i < frames; i++) {
+    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+    data[i] = last * 3.5;
+  }
+  return (noise = buffer);
+}
+
 /** Plays a thunderclap for a strike `metres` away, at `volume` (0..1). */
 export function playThunder(metres: number, volume: number): void {
   if (volume <= 0) return;
@@ -20,17 +45,8 @@ export function playThunder(metres: number, volume: number): void {
   const delay = Math.min(6, metres / 343);
   const near = 1 / (1 + metres / 500);
   const length = 2.6 + 3 * (1 - near);
-  const frames = Math.floor(ctx.sampleRate * length);
-  const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  // Brown noise: a random walk, the rumble of air.
-  let last = 0;
-  for (let i = 0; i < frames; i++) {
-    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
-    data[i] = last * 3.5;
-  }
   const source = ctx.createBufferSource();
-  source.buffer = buffer;
+  source.buffer = noiseOf(ctx);
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   // A near strike keeps its high crack; far off, only the low roll arrives.
@@ -45,6 +61,6 @@ export function playThunder(metres: number, volume: number): void {
   gain.gain.setTargetAtTime(peak * 0.7, start + 0.9 + Math.random() * 0.6, 0.25);
   gain.gain.setTargetAtTime(0.0001, start + 1.6 + Math.random(), length * 0.25);
   source.connect(filter).connect(gain).connect(ctx.destination);
-  source.start(start);
-  source.stop(start + length);
+  // A part of the noise of its own: no two claps the same stretch.
+  source.start(start, Math.random() * (NOISE_SECONDS - length), length);
 }
