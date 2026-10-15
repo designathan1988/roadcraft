@@ -3,7 +3,7 @@ import { Digest } from '@core/digest';
 import { pointInPolygon } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
-import { buildingBounds, footprintRects, solidFootprints } from '@world/buildings/geometry';
+import { footprintRects, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
 import type { BuildingChunk, BuildingMeshes } from './buildingMesh';
@@ -20,9 +20,13 @@ import { PART_KINDS, type PartKind } from './kit';
  * A fingerprint of the ground under and around a building: a 6 x 6 grid over
  * its bounds grown by two modules (the entrance steps land out there), of the
  * land and of the paving. Any change the foundation could see changes this.
+ * `b` is a record of the store (the layer's town): its box is worked out once
+ * (`storedBounds`). DO NOT work it out again here: every building the ground
+ * moved near turned its corners into the world again, 3 s of a 2,560 m city's
+ * growth (2026-10-15).
  */
 export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt): number {
-  const box = buildingBounds(b, b.module * 2);
+  const box = storedBounds(b, b.module * 2);
   // To the centimetre, as the text it replaced was; a number, never a string kept per building.
   const out = new Digest();
   for (let i = 0; i <= 5; i++) {
