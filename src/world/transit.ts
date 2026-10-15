@@ -259,6 +259,20 @@ const trackCells = identityMemo((t: TransitData): Map<number, TrackStretch[]> =>
  * DO NOT walk every point of every track for each move of the pointer.
  */
 export function nearestTrack(t: TransitData, p: Vec2, reach: number, mode?: 'train' | 'metro'): { track: number; x: number; y: number; d: number } | null {
+  let best: { track: number; x: number; y: number; d: number } | null = null;
+  for (const s of stretchesNear(t, p, reach)) {
+    if (mode && s.mode !== mode) continue;
+    const { a, b } = s, q = p;
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const u = len2 > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2)) : 0;
+    const x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(q.x - x, q.y - y);
+    if (d < reach && (!best || d < best.d)) best = { track: s.track, x, y, d };
+  }
+  return best;
+}
+
+/** The stretches of track filed in the cells within `reach` of `p`, in the order a walk of every track meets them. */
+function stretchesNear(t: TransitData, p: Vec2, reach: number): TrackStretch[] {
   const cells = trackCells(t);
   const found = new Set<TrackStretch>();
   for (let x = Math.floor((p.x - reach) / TRACK_CELL); x <= Math.floor((p.x + reach) / TRACK_CELL); x++) {
@@ -266,14 +280,61 @@ export function nearestTrack(t: TransitData, p: Vec2, reach: number, mode?: 'tra
       for (const s of cells.get((x + 32768) * 65536 + (y + 32768)) ?? []) found.add(s);
     }
   }
-  let best: { track: number; x: number; y: number; d: number } | null = null;
-  for (const s of [...found].sort((u, v) => u.order - v.order)) {
-    if (mode && s.mode !== mode) continue;
-    const { a, b } = s, q = p;
-    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
-    const u = len2 > 0 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / len2)) : 0;
-    const x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(q.x - x, q.y - y);
-    if (d < reach && (!best || d < best.d)) best = { track: s.track, x, y, d };
+  return [...found].sort((u, v) => u.order - v.order);
+}
+
+/**
+ * The first point of a track (an end or a corner) closer than `reach` to `p`,
+ * in the order a walk of every track's points meets them; null when none is.
+ * A point within reach ends a stretch filed in a cell within reach, and the
+ * stretches are walked in order, their start before their end: the same point
+ * the walk of every point of every track found. DO NOT walk every point of
+ * every track for each move of the pointer (the track tool's snap).
+ */
+export function trackPointNear(t: TransitData, p: Vec2, reach: number, mode: 'train' | 'metro'): Vec2 | null {
+  for (const s of stretchesNear(t, p, reach)) {
+    if (s.mode !== mode) continue;
+    for (const q of [s.a, s.b]) if (Math.hypot(q.x - p.x, q.y - p.y) < reach) return q;
+  }
+  return null;
+}
+
+/** Side of the cells the stops are filed in, world units. */
+const STOP_CELL = m(32);
+/** The stops of a version of the transit data, by id and by cell with their place in its list (the data is replaced whole by each edit). */
+const stopIndex = identityMemo((t: TransitData) => {
+  const byId = new Map<number, TransitStop>();
+  const cells = new Map<number, { stop: TransitStop; order: number }[]>();
+  t.stops.forEach((stop, order) => {
+    byId.set(stop.id, stop);
+    const key = (Math.floor(stop.x / STOP_CELL) + 32768) * 65536 + (Math.floor(stop.y / STOP_CELL) + 32768);
+    const list = cells.get(key);
+    if (list) list.push({ stop, order }); else cells.set(key, [{ stop, order }]);
+  });
+  return { byId, cells };
+});
+
+/** A stop by its id, or undefined. DO NOT `stops.find` it: the lines' drawing asked every stop of the map for each stop of each line, every frame. */
+export const stopById = (t: TransitData, id: number): TransitStop | undefined => stopIndex(t).byId.get(id);
+
+/**
+ * The stop (or station) nearest `p` closer than `reach`, of a mode if given:
+ * the first of equals in the list's order, as a walk of every stop found it.
+ * Read in the cells within reach only.
+ */
+export function stopNear(t: TransitData, p: Vec2, reach: number, mode?: TransitMode): TransitStop | null {
+  const { cells } = stopIndex(t);
+  const found: { stop: TransitStop; order: number }[] = [];
+  for (let x = Math.floor((p.x - reach) / STOP_CELL); x <= Math.floor((p.x + reach) / STOP_CELL); x++) {
+    for (let y = Math.floor((p.y - reach) / STOP_CELL); y <= Math.floor((p.y + reach) / STOP_CELL); y++) {
+      for (const e of cells.get((x + 32768) * 65536 + (y + 32768)) ?? []) found.push(e);
+    }
+  }
+  let best: TransitStop | null = null, bestD = reach;
+  for (const { stop } of found.sort((u, v) => u.order - v.order)) {
+    if (mode && stop.mode !== mode) continue;
+    const d = Math.hypot(stop.x - p.x, stop.y - p.y);
+    if (d < bestD) { bestD = d; best = stop; }
   }
   return best;
 }
