@@ -120,6 +120,8 @@ interface Store {
   readonly centre: Vector3;
   readonly reach: number;
   mesh: InstancedMesh | null;
+  /** Instances the mesh's buffers hold: the most ever in view, not the store's (`growBuffers`). */
+  meshCapacity: number;
   capacity: number;
   used: number;
   dead: number;
@@ -198,7 +200,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
     const sphere = spec.geometry.boundingSphere;
     return {
       index, spec, centre: sphere?.center.clone() ?? new Vector3(), reach: sphere?.radius ?? 1,
-      mesh: null, capacity: 0, used: 0, dead: 0,
+      mesh: null, meshCapacity: 0, capacity: 0, used: 0, dead: 0,
       matrices: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), bounds: null, runs: new Map(),
       shown: new Int32Array(0), current: false, active: false, drawn: 0, firstChanged: 0,
     };
@@ -265,7 +267,29 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
     for (let i = 0; i < s.used; i++) if (s.spheres[i * 4 + 3] !== -Infinity) file(s, i);
   };
 
-  const newMesh = (s: Store): InstancedMesh => runMesh(s.spec, s.capacity);
+  /** The mesh's instance buffers made for `capacity` instances in view (DO NOT size them by the store: a GPU buffer and its CPU copy of every thing of the map). */
+  const sizeBuffers = (s: Store, mesh: InstancedMesh, capacity: number): void => {
+    mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    if (s.spec.tinted) {
+      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+      mesh.instanceColor.setUsage(DynamicDrawUsage);
+    }
+    s.meshCapacity = capacity;
+    s.shown = new Int32Array(capacity).fill(-1);
+  };
+  /** More in view than the buffers hold: new ones twice as large, the old let go (three r186 `WebGLObjects` frees an instanced mesh's buffers on `dispose`). */
+  const growBuffers = (s: Store, needed: number): void => {
+    let capacity = s.meshCapacity;
+    while (capacity < needed) capacity *= 2;
+    s.mesh!.dispose();
+    sizeBuffers(s, s.mesh!, capacity);
+  };
+  const newMesh = (s: Store): InstancedMesh => {
+    const mesh = runMesh(s.spec, MIN_CAPACITY);
+    sizeBuffers(s, mesh, MIN_CAPACITY);
+    return mesh;
+  };
   /** The store's arrays sized for `capacity`; packed (`pack`), its live runs from slot 0 in the order they stood. */
   const repack = (s: Store, capacity: number, pack: boolean): void => {
     const matrices = new Float32Array(capacity * 16), colours = new Float32Array(s.spec.tinted ? capacity * 3 : 0).fill(1);
@@ -343,6 +367,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
       const sp = s.spheres, shown = s.shown, matrices = s.matrices, colours = s.colours;
       const target = mesh.instanceMatrix.array as Float32Array;
       const tints = s.spec.tinted ? mesh.instanceColor!.array as Float32Array : null;
+      const room = s.meshCapacity;
       let n = s.drawn;
       for (const i of slots) {
         const r = sp[i * 4 + 3]!;
@@ -353,8 +378,8 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
           probe.radius = r + margin;
           if (!cullFrustum!.intersectsSphere(probe)) continue;
         }
-        // Written only when this position held another slot.
-        if (shown[n] !== i) {
+        // Written only when this position held another slot; past the buffers' room only counted (`growBuffers`, after the walk).
+        if (n < room && shown[n] !== i) {
           shown[n] = i;
           if (n < s.firstChanged) s.firstChanged = n;
           for (let j = 0; j < 16; j++) target[n * 16 + j] = matrices[i * 16 + j]!;
@@ -397,10 +422,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
           repack(s, Math.max(s.capacity, MIN_CAPACITY), true);
           moved = true;
         }
-        if (s.used + coming > s.capacity) {
-          repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), false);
-          s.mesh = null;
-        }
+        if (s.used + coming > s.capacity) repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), false);
         for (const run of change.added) {
           const one = run.get(s.index);
           if (one) append(s, run, one);
@@ -417,10 +439,7 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
           }
         }
         // DO NOT forget every store's positions at every edit: one thing more sent every instance in view to the GPU again.
-        if (moved || was !== s.mesh) {
-          if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
-          s.shown.fill(-1);
-        }
+        if (moved) s.shown.fill(-1);
         // Its slots came or went: culled again at the next frame.
         s.current = false;
       }
@@ -451,6 +470,14 @@ export function createInstanceRuns(name: string, specs: readonly RunStore[], mar
       if (!any) return;
       cullFrustum = frustum;
       for (const root of rootOrder) visit(root, ALL_PLANES);
+      // More in view than the buffers hold: grown, and the walk run again into them (no frame drawn short).
+      let grew = false;
+      for (const s of stores) if (s.active && s.drawn > s.meshCapacity) { growBuffers(s, s.drawn); grew = true; }
+      if (grew) {
+        // DO NOT forget where the first walk wrote (`firstChanged` kept): the same walk lays the same positions again.
+        for (const s of stores) if (s.active) s.drawn = 0;
+        for (const root of rootOrder) visit(root, ALL_PLANES);
+      }
       cullFrustum = null;
       for (const s of stores) {
         if (!s.active) continue;

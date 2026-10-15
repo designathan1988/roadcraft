@@ -120,8 +120,9 @@ describe('instances kept thing by thing', () => {
         for (const mesh of layer.meshes) {
           if (!mesh.visible) continue;
           const store = specs.findIndex((s) => s.name === mesh.name);
-          let copy = gpu.get(mesh);
-          if (!copy) gpu.set(mesh, copy = { matrix: new GpuCopy(mesh.instanceMatrix), colour: mesh.instanceColor ? new GpuCopy(mesh.instanceColor) : null });
+          // Kept by attribute, as `WebGLAttributes` keeps a buffer: buffers grown for more in view are new attributes.
+          let copy = gpu.get(mesh.instanceMatrix);
+          if (!copy) gpu.set(mesh.instanceMatrix, copy = { matrix: new GpuCopy(mesh.instanceMatrix), colour: mesh.instanceColor ? new GpuCopy(mesh.instanceColor) : null });
           const on = copy.matrix.draw(), tints = copy.colour?.draw() ?? null;
           const got: string[] = [];
           for (let i = 0; i < mesh.count; i++) {

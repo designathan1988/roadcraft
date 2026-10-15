@@ -525,7 +525,8 @@ export function createGardens(kit: SceneryKit): Gardens {
       let grew = false;
       for (const s of stores) if (s.mesh && s.drawn > s.meshCapacity) { growBuffers(s, s.drawn); grew = true; }
       if (grew) {
-        for (const s of stores) { s.drawn = 0; s.firstChanged = Infinity; }
+        // DO NOT forget where the first walk wrote (`firstChanged` kept): the same walk lays the same positions again.
+        for (const s of stores) s.drawn = 0;
         for (const root of rootOrder) visit(root, ALL_PLANES);
       }
       cullFrustum = null;
