@@ -9,7 +9,6 @@ import { fitRoadCurve, type RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import type { LandscapeItem } from '@world/landscape';
-import { landscapeMeeting } from './itemCells';
 import { GRID_CELL, GRID_STEP, snapToGrid } from '@world/grid';
 import { Level, halfWidth, roadProfile } from '@world/roadTypes';
 import { sectionForWidth } from '@world/roadSection';
@@ -600,7 +599,7 @@ const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc,
  * The placed items the furniture of `laid` can meet (`furnitureFor` reads those
  * in its cells of `FURNITURE_CELL` round each road's box grown by its footway
  * and `m(4)`): the items in that box grown by a whole cell more, from the
- * document's cells (`itemCells.ts`), not the whole map.
+ * document's cells (`RoadDoc.landscapeIn`), not the whole map.
  */
 function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]): LandscapeItem[] {
   const out = new Map<number, LandscapeItem>();
@@ -608,7 +607,7 @@ function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]):
     const ribbon = net.ribbons.get(id);
     if (!ribbon) continue;
     const box = ribbon.full.bbox, pad = ribbon.road.width / 2 + ribbon.road.sidewalk + m(4) + FURNITURE_CELL;
-    for (const item of landscapeMeeting(doc, [box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad])) out.set(item.id, item);
+    for (const item of doc.landscapeIn([box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad])) out.set(item.id, item);
   }
   return [...out.values()].sort((a, b) => a.id - b.id);
 }

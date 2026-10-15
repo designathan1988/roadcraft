@@ -2,8 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { deleteLot, lotCentre } from '@world/lots';
-import { landscapeNear } from '@world/landscape';
-import { LANDSCAPE_RADIUS_MOST, barriersMeeting, landscapeAround } from './itemCells';
+import { landscapeNearIn } from '@world/landscape';
 import { type Anchor, ribbonsNear } from './snap';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 
@@ -106,9 +105,8 @@ export class Bulldozer {
       return;
     }
     // Likewise a bench, a tree or a street light on the footway.
-    // The items round the pointer (`itemCells.ts`): one counts within its own radius of the reach.
-    const reach = host.itemReach();
-    const item = landscapeNear(landscapeAround(doc, world, reach + LANDSCAPE_RADIUS_MOST), world, reach);
+    // The items round the pointer, by place (`RoadDoc.landscapeIn`): one counts within its own radius of the reach.
+    const item = landscapeNearIn(doc, world, host.itemReach());
     if (item) {
       host.mutate(() => doc.removeLandscape(item.id));
       host.hint('hint.streetscape.removed');
@@ -149,8 +147,8 @@ export class Bulldozer {
     // entries carry no ids): read whole, once a box let go.
     const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
     const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
-    const items = landscapeAround(doc, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, Math.max(x1 - x0, y1 - y0) / 2).filter((it) => inside(it)).map((it) => it.id);
-    const walls = barriersMeeting(doc, box).filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
+    const items = doc.landscapeIn(box).filter((it) => inside(it)).map((it) => it.id);
+    const walls = doc.barriersIn(box).filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
     if (!segments.length && !builtIds.length && !lots.length && !poles.length && !items.length && !walls.length) return;
     this.host.mutate(() => {
       const money = roadsBefore(doc);

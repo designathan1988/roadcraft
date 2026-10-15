@@ -410,7 +410,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     // city: frame median 17 ms with and without). ?expressions=off for comparison.
     if (new URLSearchParams(location.search).get('expressions') !== 'off') {
       const faceAt = performance.now();
-      await attachFacialMorphs(input, rig, channelShapes(await expressionShapes(person.body)));
+      await attachFacialMorphs(input, rig, channelShapes(await expressionShapes()));
       performance.measure('person-face', { start: faceAt, end: performance.now() });
     }
     {

@@ -1,5 +1,5 @@
 import type { SegmentDirection } from '../doc';
-import { CARRIAGEWAY_MATERIALS, type CarriagewayMaterial, FOOTWAY_MATERIALS, type FootwayMaterial, MEDIAN_MATERIALS, ROAD_SECTION_LIMITS } from '../roadSection';
+import { CARRIAGEWAY_MATERIALS, CENTRE_LINES, type CarriagewayMaterial, type CentreLine, FOOTWAY_MATERIALS, type FootwayMaterial, MEDIAN_MATERIALS, ROAD_SECTION_LIMITS } from '../roadSection';
 import { ROAD_TYPES } from '../roadTypes';
 import { type ProfileElement, type RoadProfileSpec, profileOf, profileProblems } from './profile';
 
@@ -82,9 +82,14 @@ export function normalizeTemplate(raw: unknown): RoadTemplate | null {
   if (typeof speed !== 'number' || speed < ROAD_SECTION_LIMITS.speedKmh[0] || speed > ROAD_SECTION_LIMITS.speedKmh[1]) return null;
   if (typeof priority !== 'number' || priority < ROAD_SECTION_LIMITS.priority[0] || priority > ROAD_SECTION_LIMITS.priority[1]) return null;
   if (carriageway !== undefined && !(CARRIAGEWAY_MATERIALS as readonly unknown[]).includes(carriageway)) return null;
+  // The centre line chosen in the profile editor (`RoadProfileSpec.centreLine`):
+  // left out here, a template saved with one came back without it.
+  const centreLine = profile['centreLine'];
+  if (centreLine !== undefined && !(CENTRE_LINES as readonly unknown[]).includes(centreLine)) return null;
   const spec: RoadProfileSpec = {
     elements, speedKmh: speed, priority: Math.round(priority),
     ...(carriageway ? { carriageway: carriageway as CarriagewayMaterial } : {}),
+    ...(centreLine ? { centreLine: centreLine as CentreLine } : {}),
   };
   if (profileProblems(spec, type).length) return null;
   return { id, name: name.trim().slice(0, 40), type, profile: spec };

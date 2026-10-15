@@ -16,8 +16,6 @@ import { laneTurnAllowed } from './roadSection';
 import type { Network, SegmentRibbon } from '@world/network';
 import { offsetPolyline } from '@core/offset';
 import type { Vec2 } from '@core/vec2';
-import { type Aabb, intersects } from '@core/aabb';
-import type { Junction } from '@world/junction/build';
 import type { Leg } from '@world/junction/legs';
 import { TransitionAxis, taperEase } from '@world/junction/transition';
 import type { NodeId } from '@world/ids';
@@ -384,41 +382,11 @@ function zebraBars(frameAt: (along: number) => { p: Vec2; nrm: Vec2 }, rt: RoadT
 }
 
 /**
- * Whether any of a junction's painted detail can reach the view.
- *
- * The detail of one leg occupies the band from the near edge of the zebra to
- * the stop line, spanning the carriageway laterally. Both distances are
- * measured from the leg's virtual origin along its direction, and a large trim
- * puts that band a long way from the node — which is exactly what the previous
- * origin-only test missed.
+ * Collects stop bars and crosswalks for every junction approach (the road
+ * surfaces' paint, `render/markings.ts`, when the surfaces are built). A
+ * culling by view was here and nobody passed one: taken out.
  */
-function junctionDetailReachesView(junction: Junction, view: Aabb): boolean {
-  return junction.legs.some((leg, i) => {
-    const trim = junction.trims[i] as number;
-    const near = crosswalkDistance(trim) - CROSSWALK_DEPTH / 2;
-    const far = stopLineDistance(trim);
-    const a = { x: leg.origin.x + leg.dir.x * near, y: leg.origin.y + leg.dir.y * near };
-    const b = { x: leg.origin.x + leg.dir.x * far, y: leg.origin.y + leg.dir.y * far };
-    // The band spans the carriageway, so grow the segment's box by half a road.
-    const half = leg.road.width / 2;
-    const band: Aabb = {
-      minX: Math.min(a.x, b.x) - half,
-      minY: Math.min(a.y, b.y) - half,
-      maxX: Math.max(a.x, b.x) + half,
-      maxY: Math.max(a.y, b.y) + half,
-    };
-    return intersects(band, view);
-  });
-}
-
-/**
- * Collects stop bars and crosswalks for every junction approach.
- *
- * `view`, when given, skips junctions whose legs all fall outside it. The bars
- * are rebuilt every frame, so building them for a junction nobody can see is
- * pure waste. Omit it to collect everything, which is what tests want.
- */
-export function junctionDetail(net: Network, view?: Aabb): { stops: Bar[]; zebras: Bar[] } {
+export function junctionDetail(net: Network): { stops: Bar[]; zebras: Bar[] } {
   const stops: Bar[] = [];
   const zebras: Bar[] = [];
 
@@ -427,17 +395,6 @@ export function junctionDetail(net: Network, view?: Aabb): { stops: Bar[]; zebra
     if (!junction) continue;
     if (junction.legs.some((leg) => leg.road.id === 'highway' || leg.road.id === 'ramp')) continue;
 
-    // Cull against where the bars are actually painted, not where the leg
-    // starts.
-    //
-    // This used to test `containsPoint(view, leg.origin)`, and for a straight
-    // leg `leg.origin` IS the node — while the bars it gates sit at
-    // `trim + stopLineDistance` along the leg. `buildJunction` allows a trim of
-    // up to 40x the half-width because a shallow fork legitimately needs a very
-    // long gore, so on a 3-leg fork at 0/8/180 degrees the trims reach 336
-    // units and every marking vanished while the asphalt under it still
-    // painted, the cached scene paths not being culled at all.
-    if (view && !junctionDetailReachesView(junction, view)) continue;
 
     // A stop line exists because movements conflict, which needs three legs.
     // A crossing exists on two-leg junctions that are not through transitions:
@@ -466,7 +423,7 @@ export function junctionDetail(net: Network, view?: Aabb): { stops: Bar[]; zebra
     });
   }
 
-  midBlockDetail(net, view, stops, zebras);
+  midBlockDetail(net, stops, zebras);
   return { stops, zebras };
 }
 
@@ -480,14 +437,10 @@ export function junctionDetail(net: Network, view?: Aabb): { stops: Bar[]; zebra
  * the half its traffic arrives in. Frames are taken at each distance, so a
  * crossing on a curve follows the curve.
  */
-function midBlockDetail(net: Network, view: Aabb | undefined, stops: Bar[], zebras: Bar[]): void {
+function midBlockDetail(net: Network, stops: Bar[], zebras: Bar[]): void {
   const doc = net.doc;
   for (const node of doc.nodes.values()) {
     if (!node.crossing || node.incident.length !== 2) continue;
-    if (view) {
-      const reach = m(16);
-      if (!intersects({ minX: node.x - reach, minY: node.y - reach, maxX: node.x + reach, maxY: node.y + reach }, view)) continue;
-    }
     for (const segId of node.incident) {
       const seg = doc.segment(segId);
       if (!seg) continue;

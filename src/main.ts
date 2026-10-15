@@ -33,7 +33,6 @@ import { DEFAULT_REGION, isRegionId, type NatureSettings } from '@world/ecology'
 import type { NodeId, SegmentId } from '@world/ids';
 import { BARRIER_KINDS, type BarrierKind } from '@world/barriers';
 import { BarrierTool } from '@editor/barriers';
-import { barrierNear } from '@editor/itemCells';
 import {
   POLE_PICK_PIXELS,
   PoleTool,
@@ -115,10 +114,13 @@ import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
-import { clearBulbs } from '@world/junction/bulb';
+import { bulbClearing } from '@world/junction/bulb';
 
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
+
+/** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
+const clearBulbs = bulbClearing();
 
 type Alignment = 'straight' | 'curve' | 'free';
 
@@ -495,8 +497,8 @@ const barrierTool = new BarrierTool({
   net: () => net,
   kind: () => game.barrierKind,
   removeAt: (at) => {
-    // The runs round the point only (`editor/itemCells.ts`), not every wall of the map.
-    const hit = barrierNear(doc, at, BARRIER_PICK_PIXELS / view.zoom);
+    // The runs round the point only (`RoadDoc.barrierNear`), not every wall of the map.
+    const hit = doc.barrierNear(at, BARRIER_PICK_PIXELS / view.zoom);
     if (!hit) return false;
     mutate(() => doc.removeBarrier(hit.id));
     return true;

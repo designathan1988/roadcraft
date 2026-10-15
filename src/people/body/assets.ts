@@ -47,9 +47,16 @@ interface SkeletonMeta {
 let loading: Promise<PeopleAssets> | null = null;
 
 export function loadPeopleAssets(): Promise<PeopleAssets> {
-  loading ??= (async () => {
-    const text = async <T>(url: string): Promise<T> => (await (await fetch(url)).json()) as T;
-    const binary = async (url: string): Promise<ArrayBuffer> => (await fetch(url)).arrayBuffer();
+  if (loading) return loading;
+  loading = (async () => {
+    // A file that is not there fails the load: a 404 page read as a pack gave a broken body, silently.
+    const fetched = async (url: string): Promise<Response> => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+      return response;
+    };
+    const text = async <T>(url: string): Promise<T> => (await (await fetched(url)).json()) as T;
+    const binary = async (url: string): Promise<ArrayBuffer> => (await fetched(url)).arrayBuffer();
     const [base, baseData, macro, macroData, local, localData, modifiers, skeleton, weights] = await Promise.all([
       text<BaseMeta & { faceCount: number }>(baseJson), binary(baseBin),
       text<PeoplePacks['macro']>(macroJson), binary(macroBin),
@@ -84,5 +91,11 @@ export function loadPeopleAssets(): Promise<PeopleAssets> {
       },
     };
   })();
+  // A load that failed is said and tried again by the next person, not kept failed for the session.
+  const attempt = loading;
+  attempt.catch((error: unknown) => {
+    console.error('[people] the MakeHuman packs could not be loaded; the next person asks again', error);
+    if (loading === attempt) loading = null;
+  });
   return loading;
 }

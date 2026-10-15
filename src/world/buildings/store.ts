@@ -1,5 +1,6 @@
 import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
+import { JournalCursor } from '../derived';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
@@ -8,10 +9,14 @@ import { type Building, type BuildingId, asBuildingId, cloneBuilding, settleBuil
 /** Each stored record's text (`BuildingStore.toText`). */
 const RECORD_TEXT = new WeakMap<Building, string>();
 
-/** Where a building stands, for the diary. */
-function rectOf(b: Building): ChangeRect | null {
+/**
+ * Where a building stands, for the diary: its box, or - a record with no
+ * volume to measure - its anchor. DO NOT answer null for it: one such record
+ * made the whole entry (every building of an edit) the whole map.
+ */
+function rectOf(b: Building): ChangeRect {
   const box = storedBounds(b);
-  return Number.isFinite(box.minX) ? [box.minX, box.minY, box.maxX, box.maxY] : null;
+  return Number.isFinite(box.minX) ? [box.minX, box.minY, box.maxX, box.maxY] : [b.x, b.y, b.x, b.y];
 }
 
 /**
@@ -74,9 +79,8 @@ export class BuildingStore {
   /** Writes a change of these buildings (their rectangles, or the whole map when any has none). */
   private changed(buildings: readonly Building[] | null, detail?: string): void {
     const rects = buildings?.map(rectOf) ?? null;
-    const known = rects && rects.every((r): r is ChangeRect => r !== null) ? rects : null;
     const ids = buildings?.map((b) => b.id as number);
-    this.journal.record('buildings', known, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
+    this.journal.record('buildings', rects, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
   }
 
   /**
@@ -91,6 +95,24 @@ export class BuildingStore {
     const entries = this.journal.since(serial, ['buildings']);
     if (!entries || entries.some((e) => !e.ids)) return null;
     return entries.flatMap((e) => e.ids!) as BuildingId[];
+  }
+
+  /** A reader's place in the buildings' diary, for `changedFor`. */
+  static cursor(): JournalCursor {
+    return new JournalCursor(['buildings'], true);
+  }
+
+  /**
+   * The ids of the buildings changed since `cursor` last read this store
+   * (`BuildingStore.cursor()`); null: read them all - the first read, another
+   * store (a map opened), entries forgotten or without ids. What a product kept
+   * from the buildings reads instead of holding a serial of its own: a serial
+   * read against another document's diary answers "nothing changed" in silence
+   * (`derived.ts` `JournalCursor`).
+   */
+  changedFor(cursor: JournalCursor): BuildingId[] | null {
+    const entries = cursor.read(this.journal);
+    return entries === null ? null : entries.flatMap((e) => e.ids!) as BuildingId[];
   }
 
   get size(): number {
@@ -168,8 +190,7 @@ export class BuildingStore {
     const now = settleBuilding({ ...was, decay }, this.settled, was);
     this.items.set(id, now);
     this.grid?.update(now);
-    const rect = rectOf(now);
-    this.journal.record('buildingWear', rect ? [rect] : null, { ids: [id as number] });
+    this.journal.record('buildingWear', [rectOf(now)], { ids: [id as number] });
   }
 
   /**
@@ -271,26 +292,55 @@ export class BuildingStore {
    * the buildings actually differ, and only of those that do (where they
    * stood and where they stand). Drawing a road replaces the whole document
    * with an edited clone; that must not rebuild every building.
+   *
+   * `changed`: the ids the source changed since it shared this store's
+   * records (`RoadDoc.clone`, read from the copy's diary by
+   * `RoadDoc.buildingsMovedIn`); only those are read. Null: any source (a map
+   * loaded, an undo through JSON), every id compared, record by record.
+   *
+   * Only the records that differ are taken, each through the grid's own
+   * writers (`insert`, `update`, `delete`), so the grid stays (a record kept
+   * keeps its place in the order, a new one goes last, as `restore` does).
+   * DO NOT go back to clearing the store and the grid and writing every
+   * record again, nor to comparing the whole store as text (`toText` twice):
+   * that was the whole town, twice over, on every road drawn.
    */
-  replaceWith(source: BuildingStore): void {
+  replaceWith(source: BuildingStore, changed: readonly BuildingId[] | null = null): void {
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
-    // The same records (a clone shares them, `shareFrom`): nothing to compare.
-    if (this.items.size === source.items.size && [...source.items].every(([id, b]) => this.items.get(id) === b)) return;
-    if (this.toText() === source.toText()) return;
     const touched: Building[] = [];
-    for (const [id, was] of this.items) {
-      const now = source.items.get(id);
-      if (!now || (now !== was && this.textOf(now) !== this.textOf(was))) touched.push(was);
-    }
-    for (const [id, now] of source.items) {
+    /** Records that differ in their wear alone (`wear`): written as `buildingWear`, never as a change of shape. */
+    const worn: Building[] = [];
+    const take = (id: BuildingId): void => {
       const was = this.items.get(id);
-      if (!was || (now !== was && this.textOf(now) !== this.textOf(was))) touched.push(now);
+      const now = source.items.get(id);
+      if (was === now) return;
+      if (!now) {
+        this.items.delete(id);
+        this.grid?.delete(id);
+        touched.push(was!);
+        return;
+      }
+      // The source's record itself, as `shareFrom` does: read-only once stored (OWNERSHIP above).
+      const kept = settleBuilding(now, this.settled);
+      this.items.set(id, kept);
+      if (!was) {
+        this.grid?.insert(kept);
+        touched.push(kept);
+      } else if (this.textOf(kept) !== this.textOf(was)) {
+        this.grid?.update(kept);
+        if ((kept.decay ?? 0) !== (was.decay ?? 0) && JSON.stringify({ ...kept, decay: was.decay }) === this.textOf(was)) worn.push(kept);
+        else touched.push(was, kept);
+      }
+    };
+    if (changed) {
+      for (const id of new Set(changed)) take(id);
+    } else {
+      // Deleting the entry being visited is safe: a Map iteration skips only entries deleted before their visit (MDN, Map.prototype.forEach).
+      for (const id of this.items.keys()) if (!source.items.has(id)) take(id);
+      for (const id of source.items.keys()) take(id);
     }
-    this.items.clear();
-    this.grid = null;
-    // The source's records themselves, as `shareFrom` does: read-only once stored (OWNERSHIP above).
-    for (const b of source.items.values()) this.items.set(b.id, settleBuilding(b, this.settled));
-    this.changed(touched, 'replaced by an edit or an undo');
+    if (touched.length) this.changed(touched, 'replaced by an edit or an undo');
+    if (worn.length) this.journal.record('buildingWear', worn.map(rectOf), { ids: worn.map((w) => w.id as number) });
   }
 
   /**

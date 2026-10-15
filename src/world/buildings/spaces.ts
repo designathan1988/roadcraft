@@ -1,6 +1,7 @@
 import { baysOn, levelHeight } from './geometry';
 import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
+import { identityMemo } from '@core/identityMemo';
 
 /**
  * Extension point for interiors and occupants.
@@ -27,7 +28,15 @@ const KIND: Readonly<Record<BuildingUse, SpaceKind>> = {
   mixed: 'unit',
 };
 
-export function deriveSpaces(b: Building): StoreySpaces[] {
+/**
+ * Each record's spaces, worked out once (a stored record is never changed in
+ * place, `BuildingStore` OWNERSHIP): the list handed out is shared, read it and
+ * never change it. A floor's furniture (`interior.ts` `homeUnits`) asked the
+ * whole building's for each of its volumes and floors.
+ */
+export const deriveSpaces: (b: Building) => StoreySpaces[] = identityMemo(workOutSpaces);
+
+function workOutSpaces(b: Building): StoreySpaces[] {
   const out: StoreySpaces[] = [];
   for (const v of b.volumes) {
     v.storeys.forEach((storey, k) => {

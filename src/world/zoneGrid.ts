@@ -7,7 +7,6 @@ import { Level, halfWidth } from './roadTypes';
 import { m } from './units';
 import { GRID_CELL } from './grid';
 import { onFootway, onKerbed } from './poleLines';
-import type { Polyline } from '@core/polyline';
 
 /**
  * The zoning grid: the land along every street, cut into cells the player
@@ -103,7 +102,6 @@ export function quadsOverlap(a: readonly Vec2[], b: readonly Vec2[], slack: numb
   return true;
 }
 
-/** Builds the grid of every ground street that carries pedestrians. */
 /**
  * What land may not be built on: any ground road's carriageway and footway
  * (`onRoad`, by the street's reach), and the paving as drawn - kerbs,
@@ -111,31 +109,19 @@ export function quadsOverlap(a: readonly Vec2[], b: readonly Vec2[], slack: numb
  * and the lots (`lots.ts`).
  */
 export function pavedTester(doc: RoadDoc, net: Network): { onRoad: (p: Vec2) => boolean; onPlate: (p: Vec2) => boolean } {
-  // What a cell may not sit on: any road's carriageway and footway, at ground.
-  const ribbons = [...net.ribbons.values()].filter((r) => doc.segment(r.id)?.structure === 'ground');
-  // Each road's line and reach.
-  interface Road { readonly line: Polyline; readonly reach: number }
-  const roads: Road[] = ribbons.map((r) => ({ line: r.full, reach: halfWidth(r.road, Level.Sidewalk) }));
-  // The roads bucketed by their reach, so a point is measured against the
-  // few streets near it, not every street in the town.
-  const ROAD_CELL = m(25);
-  const roadBuckets = new Map<string, Road[]>();
-  for (const r of roads) {
-    const bb = r.line.bbox;
-    for (let bx = Math.floor((bb.minX - r.reach) / ROAD_CELL); bx <= Math.floor((bb.maxX + r.reach) / ROAD_CELL); bx++) {
-      for (let by = Math.floor((bb.minY - r.reach) / ROAD_CELL); by <= Math.floor((bb.maxY + r.reach) / ROAD_CELL); by++) {
-        const k = `${bx},${by}`;
-        let list = roadBuckets.get(k);
-        if (!list) roadBuckets.set(k, list = []);
-        list.push(r);
-      }
-    }
-  }
+  // What a cell may not sit on: any road's carriageway and footway, at ground,
+  // read from the network's cells round the point (`Network.segmentCells`: a
+  // ribbon is filed over its casing, past its footway). DO NOT bucket every
+  // ribbon of the map for each tester: every zone stroke and lot plan paid
+  // for the whole map first.
   const onRoad = (p: Vec2): boolean => {
-    for (const r of roadBuckets.get(`${Math.floor(p.x / ROAD_CELL)},${Math.floor(p.y / ROAD_CELL)}`) ?? []) {
-      const bb = r.line.bbox;
-      if (p.x < bb.minX - r.reach || p.x > bb.maxX + r.reach || p.y < bb.minY - r.reach || p.y > bb.maxY + r.reach) continue;
-      if (r.line.distanceTo(p) < r.reach - m(0.05)) return true;
+    for (const id of net.segmentCells.idsMeeting([p.x, p.y, p.x, p.y])) {
+      const ribbon = net.ribbons.get(id);
+      if (!ribbon || doc.segment(id)?.structure !== 'ground') continue;
+      const reach = halfWidth(ribbon.road, Level.Sidewalk);
+      const bb = ribbon.full.bbox;
+      if (p.x < bb.minX - reach || p.x > bb.maxX + reach || p.y < bb.minY - reach || p.y > bb.maxY + reach) continue;
+      if (ribbon.full.distanceTo(p) < reach - m(0.05)) return true;
     }
     return false;
   };
@@ -149,6 +135,7 @@ export function pavedTester(doc: RoadDoc, net: Network): { onRoad: (p: Vec2) => 
   return { onRoad, onPlate };
 }
 
+/** Builds the grid of every ground street that carries pedestrians. */
 export function buildZoneGrid(doc: RoadDoc, net: Network): ZoneGrid {
   const steps = zoneGridSteps(doc, net);
   let step = steps.next();
