@@ -24,7 +24,7 @@ import { medianNose } from '@world/landscape';
 import { PAINT_RISE, markingQuads, paintMaterial } from './markings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
-import { mergeTiles } from './mesh/surfaceTiles';
+import { mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { type TilePolys, type TileSource, type TileSpec, tileShapes } from './roadTileShape';
 import type { RoadTiler } from './roadTilePool';
@@ -142,8 +142,13 @@ const MEDIAN_PLANTING = FOOTWAY_RISE + m(0.02);
  * everything afresh.
  */
 export interface SurfaceReuse {
-  /** The tiles of the last build, per structural level. */
-  readonly tiles: Map<string, Map<number, TileBundle>>;
+  /**
+   * The tiles of the last build, per structural level, by digest: what
+   * identifies each (`KeptTile`), not its arrays. DO NOT keep a tile's arrays
+   * here: copied into its block's mesh and sent to the GPU, they were a second
+   * copy of every road on the CPU (330 MB of a 1,280 m city's heap, 2026-10-15).
+   */
+  readonly tiles: Map<string, Map<number, KeptTile>>;
   /**
    * A digest of everything the height field and the texture frames read in a
    * rectangle: the solved roads near it and the ground under it, both as
@@ -154,11 +159,12 @@ export interface SurfaceReuse {
   readonly paint: Map<string, Material>;
   /**
    * The meshes of each block of tiles (`CHUNK` tiles a side), by pass,
-   * surface and block, with the tiles they were merged from. A block whose
-   * tiles are the same objects keeps its mesh and its buffers on the GPU.
+   * surface and block, with the digests of the tiles they were merged from. A
+   * block whose tiles are the same keeps its mesh and its buffers on the GPU;
+   * one that changed is merged again, its tiles kept from before built again.
    * Owned by the cache: `disposeSurfaceReuse` frees them.
    */
-  readonly chunks?: Map<string, { readonly parts: readonly Tile[]; readonly mesh: Mesh }>;
+  readonly chunks: Map<string, { readonly parts: readonly number[]; readonly mesh: Mesh }>;
   /** Block meshes replaced but maybe still drawn: freed by the owner once the new roads are in. */
   readonly retired?: Mesh[];
   /**
@@ -186,6 +192,33 @@ export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
 
 /** Every surface of one tile, by mesh name. */
 export type TileBundle = ReadonlyMap<string, Tile>;
+/** A tile kept between builds: the names of the surfaces it has. Its digest is its key. */
+export type KeptTile = readonly string[];
+
+/** One tile of a pass in a build: its digest and block, its rings, its surfaces and arrays once known. */
+interface PassTile {
+  readonly value: number;
+  readonly chunk: string;
+  readonly rect: TileRect;
+  readonly into: Reach;
+  surfaces: KeptTile | null;
+  bundle: TileBundle | null;
+}
+
+/** Whether a block's tiles are the ones its mesh was merged from, by digest. */
+function sameTiles(parts: readonly number[], list: readonly PassTile[]): boolean {
+  return parts.length === list.length && list.every((tile, i) => tile.value === parts[i]);
+}
+
+/**
+ * One surface's tiles in a block, built again from their rings (a lost WebGL
+ * context, `mesh/gpuOnly.ts`): only that surface, each tile read as it was.
+ */
+function surfaceSource(spec: SurfaceSpec, tiles: readonly { readonly rect: TileRect; readonly into: Reach }[],
+  reading: <T>(work: () => T) => T): () => Tile[] {
+  return () => tiles.map(({ rect, into }) =>
+    reading(() => bundleOf(tileShapes(polysOf(into), rect, [tileSpecOf(spec)]), [spec]).get(spec.options.name)!));
+}
 
 export interface RoadSurfaces {
   readonly group: Group;
@@ -194,6 +227,8 @@ export interface RoadSurfaces {
   /** Tiles the build made afresh, and copied from the build before. */
   readonly built: number;
   readonly reused: number;
+  /** Tiles kept from before built again to merge a block that changed (their arrays are not kept). */
+  readonly remade: number;
   /** Where the tiles made afresh lie (`world/changes.ts`). */
   readonly rebuilt: readonly TileRect[];
   /** The time the tiles and their blocks took, ms, without the frames between slices. */
@@ -357,6 +392,7 @@ export function* roadSurfaceSteps(
   let mergeMs = 0;
   let chunksMerged = 0;
   let chunksKept = 0;
+  let remade = 0;
   const chunks = reuse?.chunks;
   const usedChunks = new Set<string>();
   // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`):
@@ -900,12 +936,9 @@ export function* roadSurfaceSteps(
     const saltValue = salt.value();
 
     const previous = reuse?.tiles.get(pass.id);
-    const kept = new Map<number, TileBundle>();
-    /** Each surface's tiles, by block of tiles, in tile order. */
-    const parts = new Map<string, Map<string, Tile[]>>();
-    for (const spec of specs) parts.set(spec.options.name, new Map());
-    /** The tiles in tile order, each kept from before or still to build (`bundle` null). */
-    const tiles: { value: number; ix: number; iy: number; rect: TileRect; into: Reach; bundle: TileBundle | null }[] = [];
+    const kept = new Map<number, KeptTile>();
+    /** The tiles in tile order: kept from before (its surfaces known, its arrays not), read from the store, or to build. */
+    const tiles: PassTile[] = [];
     // In tile order, so a mesh is laid out the same however it was reached.
     for (const key of [...reach.keys()].sort((a, b) => a - b)) {
       const into = reach.get(key)!;
@@ -938,88 +971,120 @@ export function* roadSurfaceSteps(
       }
       if (reuse) digest.add(reuse.dependsOn(rect[0] - 1, rect[1] - 1, rect[2] + 1, rect[3] + 1));
       const value = digest.value();
-      const bundle = previous?.get(value) ?? reuse?.stored?.get(storedKey(pass.id, value)) ?? null;
-      tiles.push({ value, ix, iy, rect, into, bundle });
-      if (bundle) {
+      const surfaces = previous?.get(value);
+      const stored = surfaces ? undefined : reuse?.stored?.get(storedKey(pass.id, value));
+      const chunk = `${Math.floor(ix / CHUNK)},${Math.floor(iy / CHUNK)}`;
+      tiles.push({ value, chunk, rect, into, surfaces: surfaces ?? (stored ? [...stored.keys()] : null), bundle: stored ?? null });
+      if (surfaces || stored) {
         reused++;
         // A step too: the digests of every tile kept, back to back, were a
         // slice of 20-30 ms after a road edit (docs/performance.md #34).
         yield;
       }
     }
-    // The tiles to build: shaped by the workers when there are some (`roadTilePool.ts`), the same
-    // shapes the page makes, while this thread draws; each vertex read here after. DO NOT cut and
-    // triangulate a city's tiles on the page: two thirds of its roads' build (2026-10-15).
-    const missing = tiles.filter((t) => t.bundle === null);
-    /** Asks the tiler for the shapes of `SHAPE_BATCH` tiles from `from` on; the answer lands in the record it returns. */
-    const ask = (from: number): { readonly from: number; readonly answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } } => {
-      const answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } = {};
-      tiler!.shapes(missing.slice(from, from + SHAPE_BATCH).map((t) => ({ rect: t.rect, into: polysOf(t.into) })), tileSpecs).then(
-        (shapes) => { answer.shapes = shapes; },
-        (error: unknown) => { console.warn('[roads] the road tile workers failed; the tiles are built on the page', error); answer.failed = true; },
-      );
-      return { from, answer };
-    };
     const tileSpecs = specs.map(tileSpecOf);
-    // A batch at a time, the next asked before this one is read: the workers shape it while the page
-    // reads the heights of this one. DO NOT ask for every tile at once: the shapes of a whole city held
-    // together, before any was read, took the page past 7 GB (2026-10-15).
-    let job = tiler && missing.length ? ask(0) : null;
-    let failed = false;
-    for (let from = 0; from < missing.length; from += SHAPE_BATCH) {
-      let shaped: Map<string, SurfaceShape>[] | null = null;
-      if (job && !failed) {
-        while (!job.answer.shapes && !job.answer.failed) { tiler!.check(); yield 'wait'; }
-        shaped = job.answer.shapes ?? null;
-        if (!shaped) failed = true;
-        job = !failed && from + SHAPE_BATCH < missing.length ? ask(from + SHAPE_BATCH) : null;
+    /**
+     * Builds `list`'s tiles, each handed to `done`: shaped by the workers when there are some
+     * (`roadTilePool.ts`), the same shapes the page makes, while this thread draws; each vertex read
+     * here after. DO NOT cut and triangulate a city's tiles on the page: two thirds of its roads'
+     * build (2026-10-15).
+     */
+    const buildAll = function* (list: readonly PassTile[], done: (tile: PassTile) => void): Generator<'wait' | void, void, void> {
+      /** Asks the tiler for the shapes of `SHAPE_BATCH` tiles from `from` on; the answer lands in the record it returns. */
+      const ask = (from: number): { readonly from: number; readonly answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } } => {
+        const answer: { shapes?: Map<string, SurfaceShape>[]; failed?: boolean } = {};
+        tiler!.shapes(list.slice(from, from + SHAPE_BATCH).map((t) => ({ rect: t.rect, into: polysOf(t.into) })), tileSpecs).then(
+          (shapes) => { answer.shapes = shapes; },
+          (error: unknown) => { console.warn('[roads] the road tile workers failed; the tiles are built on the page', error); answer.failed = true; },
+        );
+        return { from, answer };
+      };
+      // A batch at a time, the next asked before this one is read: the workers shape it while the page
+      // reads the heights of this one. DO NOT ask for every tile at once: the shapes of a whole city held
+      // together, before any was read, took the page past 7 GB (2026-10-15).
+      let job = tiler && list.length ? ask(0) : null;
+      let failed = false;
+      for (let from = 0; from < list.length; from += SHAPE_BATCH) {
+        let shaped: Map<string, SurfaceShape>[] | null = null;
+        if (job && !failed) {
+          while (!job.answer.shapes && !job.answer.failed) { tiler!.check(); yield 'wait'; }
+          shaped = job.answer.shapes ?? null;
+          if (!shaped) failed = true;
+          job = !failed && from + SHAPE_BATCH < list.length ? ask(from + SHAPE_BATCH) : null;
+        }
+        for (let k = from; k < Math.min(list.length, from + SHAPE_BATCH); k++) {
+          const tile = list[k]!;
+          const tileAt = performance.now();
+          // Every point of the tile remembered while its vertices are read (`RoadElevation.remembering`).
+          const bundle = reading(() => shaped ? bundleOf(shaped[k - from]!, specs) : buildTile(tile.into, tile.rect, specs));
+          tile.bundle = bundle;
+          tile.surfaces = [...bundle.keys()];
+          tilesMs += performance.now() - tileAt;
+          done(tile);
+          yield;
+        }
       }
-      for (let k = from; k < Math.min(missing.length, from + SHAPE_BATCH); k++) {
-        const tile = missing[k]!;
-        const tileAt = performance.now();
-        // Every point of the tile remembered while its vertices are read (`RoadElevation.remembering`).
-        tile.bundle = reading(() => shaped ? bundleOf(shaped[k - from]!, specs) : buildTile(tile.into, tile.rect, specs));
-        tilesMs += performance.now() - tileAt;
-        built++;
-        rebuilt.push(tile.rect);
-        reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle);
-        yield;
-      }
-    }
+    };
+    yield* buildAll(tiles.filter((t) => t.surfaces === null), (tile) => {
+      built++;
+      rebuilt.push(tile.rect);
+      reuse?.keep?.(storedKey(pass.id, tile.value), tile.bundle!);
+    });
+    for (const tile of tiles) kept.set(tile.value, tile.surfaces!);
+    reuse?.tiles.set(pass.id, kept);
+
+    /** Each surface's tiles, by block of tiles, in tile order. */
+    const parts = new Map<string, Map<string, PassTile[]>>();
+    for (const spec of specs) parts.set(spec.options.name, new Map());
     for (const tile of tiles) {
-      const { value, ix, iy } = tile;
-      const bundle = tile.bundle!;
-      kept.set(value, bundle);
-      const chunk = `${Math.floor(ix / CHUNK)},${Math.floor(iy / CHUNK)}`;
-      for (const [name, tile] of bundle) {
+      for (const name of tile.surfaces!) {
         const blocks = parts.get(name);
         if (!blocks) continue;
-        const list = blocks.get(chunk);
+        const list = blocks.get(tile.chunk);
         if (list) list.push(tile);
-        else blocks.set(chunk, [tile]);
+        else blocks.set(tile.chunk, [tile]);
       }
     }
-    reuse?.tiles.set(pass.id, kept);
+    // A block keeps its mesh while its tiles are the same (by digest). One that changed is merged
+    // again from the arrays of all its tiles: those kept from before hold none (`KeptTile`), and are
+    // built again from their rings - the tiles that made the mesh on the GPU, made the same way.
+    const keyOf = (spec: SurfaceSpec, chunk: string): string =>
+      `${pass.id}|${spec.options.name}|${chunk}|${spec.options.material.uuid}|${spec.renderOrder ?? ''}`;
+    const again = new Set<PassTile>();
+    for (const spec of specs) {
+      for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
+        const known = chunks?.get(keyOf(spec, chunk));
+        if (known && sameTiles(known.parts, list)) continue;
+        for (const tile of list) if (!tile.bundle) again.add(tile);
+      }
+    }
+    yield* buildAll([...again], () => { remade++; });
 
     const mergeAt = performance.now();
     for (const spec of specs) {
       for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
-        const key = `${pass.id}|${spec.options.name}|${chunk}|${spec.options.material.uuid}|${spec.renderOrder ?? ''}`;
+        const key = keyOf(spec, chunk);
         const known = chunks?.get(key);
         let mesh: Mesh | null;
-        if (known && known.parts.length === list.length && known.parts.every((tile, i) => tile === list[i])) {
+        // A lost WebGL context puts the arrays back from this build's rings (`gpuOnly`), the block's
+        // tiles built again for this surface alone. DO NOT let the mesh hold its tiles for it: a
+        // second copy of every road on the GPU, kept on the CPU (81 MB of a 1,280 m city).
+        const source = surfaceSource(spec, list.map((tile) => ({ rect: tile.rect, into: tile.into })), reading);
+        if (known && sameTiles(known.parts, list)) {
           mesh = known.mesh;
+          // Bound to this build's rings: the build that made it lets go of its own.
+          tilesOnGpu(mesh, source);
           chunksKept++;
         } else {
           if (known) retire(known.mesh);
-          mesh = mergeTiles(list, spec.options);
+          mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source);
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
           // Sent to the GPU ahead, a few a frame (`warmLooseAhead`), so its arrays let go at once
           // (`mesh/gpuOnly.ts`). DO NOT wait for the camera to frame it: a block out of view was never
           // uploaded and kept its copy on the CPU - 476 MB of a 2 560 m city's heap (asphalt, footway,
           // kerb, verge, kerb ramps; 2026-10-15), and the whole map's would not fit a tab.
           if (mesh) void warmLooseAhead([mesh]);
-          if (mesh) chunks?.set(key, { parts: list, mesh });
+          if (mesh) chunks?.set(key, { parts: list.map((tile) => tile.value), mesh });
           else chunks?.delete(key);
           chunksMerged++;
           yield;
@@ -1032,19 +1097,21 @@ export function* roadSurfaceSteps(
         triangles += (mesh.geometry.index?.count ?? 0) / 3;
       }
     }
+    // The tiles' arrays go with `tiles` here: copied into the blocks, which send them to the GPU.
     mergeMs += performance.now() - mergeAt;
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
   // Where an edit's time went (`hitch:` entries, scripts/probe-hitches.mjs; docs/performance.md).
   const end = performance.now();
-  performance.measure(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, { start: started, end });
+  performance.measure(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept ${remade} remade, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, { start: started, end });
   return {
     group,
     meshes,
     triangles,
     built,
     reused,
+    remade,
     rebuilt,
     workMs: tilesMs + mergeMs,
     adopt() {

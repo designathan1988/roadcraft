@@ -69,7 +69,8 @@ describe('meshes that live on the GPU', () => {
   });
 
   it('a road block lets its arrays go once uploaded, and takes them back the same', () => {
-    const mesh = mergeTiles([tile(0), tile(2), tile(5)], { name: 'asphalt', material: new MeshBasicMaterial() })!;
+    const tiles = [tile(0), tile(2), tile(5)];
+    const mesh = mergeTiles(tiles, { name: 'asphalt', material: new MeshBasicMaterial() }, () => tiles)!;
     checks(mesh, mesh);
   });
 
